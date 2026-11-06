@@ -261,6 +261,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
     constexpr ImGuiWindowFlags flags = kLayoutOwnedPanelFlagsUVE;
     // Match the Outliner panel's neutral charcoal surface. Inputs and nested fields keep the
     // darker FrameBg/ChildBg layers from the shared theme, so depth and editability remain clear.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
     ImGui::Begin(kPanelLabelInspectorUVE, nullptr, flags);
 
@@ -268,11 +269,35 @@ void EditorUVE::DrawInspectorPanelUVE() {
     // elsewhere (the Content Browser opens the Inspector), so a change made outside the strip is
     // pushed into it once, on the frame it happened.
     const bool externallyChanged = m_activeRightPanelTab != m_drawnRightPanelTab;
+    {
+        // Empty dark well matching the Outliner / Viewport header strip, so all three tab rows line up.
+        const ImVec2 winPos = ImGui::GetWindowPos();
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            winPos, ImVec2{winPos.x + ImGui::GetWindowWidth(), winPos.y + kEditorTabRowHeightUVE},
+            kEditorHeaderStripColorUVE);
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 6.0F);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{10.0F, 5.0F});
+    ImGui::PushStyleColor(ImGuiCol_TabSelected, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
+    ImGui::PushStyleColor(ImGuiCol_TabSelectedOverline, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
+    ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
+    // Seat the tabs flush at y = 0 of the Inspector window (matching Outliner & Viewport tabs)
+    ImGui::SetCursorPos(ImVec2{0.0F, 0.0F});
     if (ImGui::BeginTabBar("##right-panel-tabs", ImGuiTabBarFlags_FittingPolicyResizeDown)) {
         const auto drawTab = [this, externallyChanged](const char* const label, const EditorRightPanelTabUVE tab) {
             const ImGuiTabItemFlags tabFlags =
                 externallyChanged && m_activeRightPanelTab == tab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-            if (ImGui::BeginTabItem(label, nullptr, tabFlags)) {
+            const bool selected = ImGui::BeginTabItem(label, nullptr, tabFlags);
+            if (selected) {
+                ImDrawList* const inspectorDrawList = ImGui::GetWindowDrawList();
+                const ImVec2 tabMin = ImGui::GetItemRectMin();
+                const ImVec2 tabMax{ImGui::GetItemRectMax().x, ImGui::GetWindowPos().y + kEditorTabRowHeightUVE + 1.0F};
+                DrawActiveTopRoundedTabUVE(*inspectorDrawList, tabMin, tabMax, IM_COL32(27, 30, 33, 255), 6.0F, true);
+                const ImVec2 labelSize = ImGui::CalcTextSize(label);
+                inspectorDrawList->AddText(
+                    ImVec2{(tabMin.x + tabMax.x - labelSize.x) * 0.5F,
+                           (tabMin.y + ImGui::GetItemRectMax().y - labelSize.y) * 0.5F},
+                    IM_COL32(235, 240, 248, 255), label);
                 if (!externallyChanged) {
                     m_activeRightPanelTab = tab;
                 }
@@ -284,7 +309,27 @@ void EditorUVE::DrawInspectorPanelUVE() {
         drawTab("Events", EditorRightPanelTabUVE::Events);
         ImGui::EndTabBar();
     }
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(2);
     m_drawnRightPanelTab = m_activeRightPanelTab;
+
+    // 3-dot (⋮) dock options button at the far right edge of the Inspector header
+    {
+        const ImVec2 winPos = ImGui::GetWindowPos();
+        constexpr float kInspDotsW = 20.0F;
+        const float dotsX = winPos.x + ImGui::GetWindowWidth() - kInspDotsW - 6.0F;
+        const float dotsY = winPos.y + (kEditorTabRowHeightUVE - kInspDotsW) * 0.5F;
+        if (DrawDockThreeDotsButtonUVE(*ImGui::GetWindowDrawList(), "##inspector-dock-dots",
+                                      ImVec2{dotsX, dotsY}, ImVec2{kInspDotsW, kInspDotsW})) {
+            ImGui::OpenPopup("##uve-inspector-dock-popup");
+        }
+        const char* const activeRightTabName =
+            (m_activeRightPanelTab == EditorRightPanelTabUVE::Inspector) ? "Inspector" :
+            ((m_activeRightPanelTab == EditorRightPanelTabUVE::Import) ? "Import" : "Events");
+        DrawVisualDockPositionSelectorUVE("##uve-inspector-dock-popup", activeRightTabName,
+                                         EditorDockSlotUVE::Right, &m_inspectorPanelVisible, layout,
+                                         ImVec2{dotsX, dotsY}, ImVec2{dotsX + kInspDotsW, dotsY + kInspDotsW});
+    }
 
     switch (m_activeRightPanelTab) {
         case EditorRightPanelTabUVE::Inspector:
@@ -300,6 +345,7 @@ void EditorUVE::DrawInspectorPanelUVE() {
     }
     ImGui::End();
     ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
 }
 
 void EditorUVE::DrawImportQueueMonitorUVE() {

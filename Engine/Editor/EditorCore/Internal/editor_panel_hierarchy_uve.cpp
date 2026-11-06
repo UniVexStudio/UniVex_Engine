@@ -229,9 +229,13 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     // hidden Outliner is brought back.
     // NoResize matters as much as NoTitleBar here: without it ImGui hands the panel's own border to
     // its resize grip, which fights the seam that straddles it - see kLayoutOwnedPanelFlagsUVE.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
     ImGui::Begin(kPanelLabelSceneUVE, nullptr, kLayoutOwnedPanelFlagsUVE);
     DrawHierarchyBodyUVE();
     ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
 }
 
 void EditorUVE::DrawHierarchyBodyUVE() {

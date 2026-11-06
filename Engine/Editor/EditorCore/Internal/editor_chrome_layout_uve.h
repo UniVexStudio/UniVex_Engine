@@ -3,11 +3,66 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 #include <imgui.h>
 
+#include <cstdint>
+#include <cstdio>
+
 namespace UVE::Editor {
+
+/// Dock position slots for panels and docks
+enum class EditorDockSlotUVE : std::uint8_t {
+    Left,
+    Right,
+    Bottom,
+    Floating
+};
+
+inline constexpr float kViewportTabInsetX = 0.0F;
+
+/// Empty dark header background shared behind the titlebar, menu row, and tab strips so the
+/// rounded tabs sit directly on an empty dark row without boxed frames or border gaps.
+inline constexpr ImU32 kEditorHeaderStripColorUVE = IM_COL32(14, 17, 22, 255);
+
+/// The active tab look used by every tab strip: top-only rounded corners, a flat bottom that
+/// merges into the panel under it, and a thin blue rim that fades out within the first few pixels.
+/// `drawFill` is false where ImGui has already drawn the tab body and its label.
+inline void DrawActiveTopRoundedTabUVE(ImDrawList& drawList, const ImVec2 tabMin, const ImVec2 tabMax,
+                                       const ImU32 fillCol, const float topRounding = 6.0F,
+                                       const bool drawFill = true) {
+    if (drawFill) {
+        drawList.AddRectFilled(tabMin, tabMax, fillCol, topRounding, ImDrawFlags_RoundCornersTop);
+    }
+    const float tabHeight = std::max(1.0F, tabMax.y - tabMin.y);
+    const int fadeSteps = std::max(2, static_cast<int>(std::floor(std::min(8.0F, tabHeight * 0.4F))));
+    for (int step = 0; step < fadeSteps; ++step) {
+        const float y = static_cast<float>(step);
+        float inset = 0.0F;
+        if (y + 0.5F < topRounding) {
+            const float dy = topRounding - (y + 0.5F);
+            inset = topRounding - std::sqrt(std::max(0.0F, (topRounding * topRounding) - (dy * dy)));
+        }
+        int alpha = 0;
+        if (step == 0) {
+            alpha = 140;
+        } else {
+            const float t = static_cast<float>(step - 1) / static_cast<float>(std::max(1, fadeSteps - 1));
+            alpha = static_cast<int>(std::lround(40.0F * (1.0F - t) * (1.0F - t)));
+        }
+        if (alpha > 0 && (tabMin.x + inset) < (tabMax.x - inset)) {
+            drawList.AddRectFilled(ImVec2{tabMin.x + inset, tabMin.y + y},
+                                   ImVec2{tabMax.x - inset, tabMin.y + y + 1.0F}, IM_COL32(46, 136, 248, alpha));
+        }
+    }
+    if (drawFill) {
+        drawList.AddRect(tabMin, tabMax, IM_COL32(60, 70, 84, 175), topRounding, ImDrawFlags_RoundCornersTop, 1.0F);
+        drawList.AddLine(ImVec2{tabMin.x + 1.0F, tabMax.y - 1.0F}, ImVec2{tabMax.x - 1.0F, tabMax.y - 1.0F}, fillCol,
+                         1.0F);
+    }
+}
 
 /// Where each of the editor's structural panels sits this frame.
 ///
@@ -72,6 +127,224 @@ struct EditorChromeLayoutUVE final {
     ImVec2 inspectorRestoreSize;
 };
 
+/// 3-dot (⋮) button for dock options with pill hover background and crisp vertical circles.
+inline bool DrawDockThreeDotsButtonUVE(ImDrawList& drawList, const char* strId, const ImVec2 pos, const ImVec2 size) {
+    ImGui::SetCursorScreenPos(pos);
+    const bool pressed = ImGui::InvisibleButton(strId, size);
+    const bool hovered = ImGui::IsItemHovered();
+    const ImVec2 bMin = ImGui::GetItemRectMin();
+    const ImVec2 bMax = ImGui::GetItemRectMax();
+    const ImVec2 center{(bMin.x + bMax.x) * 0.5F, (bMin.y + bMax.y) * 0.5F};
+    if (hovered) {
+        drawList.AddRectFilled(bMin, bMax, IM_COL32(56, 66, 80, 220), 3.0F);
+        ImGui::SetTooltip("Dock Options & Position");
+    }
+    const ImU32 dotCol = hovered ? IM_COL32(245, 248, 255, 255) : IM_COL32(185, 196, 212, 230);
+    for (int dot = -1; dot <= 1; ++dot) {
+        drawList.AddCircleFilled(ImVec2{center.x, center.y + (static_cast<float>(dot) * 4.0F)}, 1.4F, dotCol, 8);
+    }
+    return pressed;
+}
+
+/// AAA Visual Dock Position Selector popup with interactive miniature layout and real-time screen overlay highlights.
+inline void DrawVisualDockPositionSelectorUVE(const char* popupId, const char* panelName,
+                                             const EditorDockSlotUVE currentSlot, bool* isVisible,
+                                             const EditorChromeLayoutUVE& layout,
+                                             const ImVec2 anchorMin = ImVec2{0, 0},
+                                             const ImVec2 anchorMax = ImVec2{0, 0}) {
+    const ImGuiViewport* const mainVp = ImGui::GetMainViewport();
+    const float edMinX = mainVp->WorkPos.x;
+    const float edMinY = mainVp->WorkPos.y;
+    const float edMaxX = edMinX + mainVp->WorkSize.x;
+    const float edMaxY = edMinY + mainVp->WorkSize.y;
+
+    constexpr float kEstPopupW = 188.0F;
+    constexpr float kEstPopupH = 196.0F;
+
+    if (anchorMax.x > anchorMin.x) {
+        float posX = anchorMin.x;
+        float pivotX = 0.0F;
+        // When opening rightward would exceed the editor's right boundary (or within 8px margin),
+        // flip to open INWARD to the left!
+        if (anchorMin.x + kEstPopupW > edMaxX - 8.0F) {
+            posX = anchorMax.x;
+            pivotX = 1.0F;
+        } else if (anchorMin.x < edMinX + 8.0F) {
+            posX = edMinX + 8.0F;
+            pivotX = 0.0F;
+        }
+
+        float posY = anchorMax.y + 2.0F;
+        float pivotY = 0.0F;
+        // When opening downward would exceed the editor's bottom boundary,
+        // flip to open INWARD upward!
+        if (posY + kEstPopupH > edMaxY - 8.0F) {
+            posY = anchorMin.y - 2.0F;
+            pivotY = 1.0F;
+        } else if (anchorMin.y < edMinY + 8.0F) {
+            posY = edMinY + 8.0F;
+            pivotY = 0.0F;
+        }
+
+        ImGui::SetNextWindowPos(ImVec2{posX, posY}, ImGuiCond_Appearing, ImVec2{pivotX, pivotY});
+    }
+
+    if (ImGui::BeginPopup(popupId)) {
+        // Enforce hard boundary clamping: the popup window must NEVER protrude outside the editor window!
+        const ImVec2 curPos = ImGui::GetWindowPos();
+        const ImVec2 curSize = ImGui::GetWindowSize();
+        const float clampedX = std::clamp(curPos.x, edMinX + 4.0F, std::max(edMinX + 4.0F, edMaxX - curSize.x - 4.0F));
+        const float clampedY = std::clamp(curPos.y, edMinY + 4.0F, std::max(edMinY + 4.0F, edMaxY - curSize.y - 4.0F));
+        if (clampedX != curPos.x || clampedY != curPos.y) {
+            ImGui::SetWindowPos(ImVec2{clampedX, clampedY});
+        }
+
+        ImGui::TextDisabled("DOCK POSITION: %s", panelName);
+        ImGui::Separator();
+
+        // Visual Dock Layout Icon widget: 164px wide x 92px high
+        const ImVec2 widgetPos = ImGui::GetCursorScreenPos();
+        constexpr float kW = 164.0F;
+        constexpr float kH = 92.0F;
+        const ImVec2 widgetMin = widgetPos;
+        const ImVec2 widgetMax{widgetMin.x + kW, widgetMin.y + kH};
+
+        ImDrawList* const drawList = ImGui::GetWindowDrawList();
+        ImDrawList* const fgDrawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
+
+        // Background of mini editor frame
+        drawList->AddRectFilled(widgetMin, widgetMax, IM_COL32(18, 21, 26, 255), 4.0F);
+        drawList->AddRect(widgetMin, widgetMax, IM_COL32(48, 56, 68, 220), 4.0F, 0, 1.0F);
+
+        // Mini Titlebar (top 10px)
+        drawList->AddRectFilled(widgetMin, ImVec2{widgetMax.x, widgetMin.y + 10.0F}, IM_COL32(28, 33, 40, 255), 4.0F,
+                                ImDrawFlags_RoundCornersTop);
+        drawList->AddLine(ImVec2{widgetMin.x, widgetMin.y + 10.0F}, ImVec2{widgetMax.x, widgetMin.y + 10.0F},
+                          IM_COL32(42, 50, 62, 220));
+
+        // Slots layout:
+        const ImVec2 leftMin{widgetMin.x + 3.0F, widgetMin.y + 13.0F};
+        const ImVec2 leftMax{widgetMin.x + 44.0F, widgetMin.y + 64.0F};
+
+        const ImVec2 centerMin{widgetMin.x + 46.0F, widgetMin.y + 13.0F};
+        const ImVec2 centerMax{widgetMin.x + 118.0F, widgetMin.y + 64.0F};
+
+        const ImVec2 rightMin{widgetMin.x + 120.0F, widgetMin.y + 13.0F};
+        const ImVec2 rightMax{widgetMax.x - 3.0F, widgetMin.y + 64.0F};
+
+        const ImVec2 bottomMin{widgetMin.x + 3.0F, widgetMin.y + 66.0F};
+        const ImVec2 bottomMax{widgetMax.x - 3.0F, widgetMax.y - 3.0F};
+
+        // Draw center viewport dummy
+        drawList->AddRectFilled(centerMin, centerMax, IM_COL32(24, 28, 35, 255), 2.0F);
+        drawList->AddRect(centerMin, centerMax, IM_COL32(38, 44, 54, 200), 2.0F);
+        const ImVec2 vpTextSize = ImGui::CalcTextSize("3D");
+        drawList->AddText(ImVec2{(centerMin.x + centerMax.x - vpTextSize.x) * 0.5F,
+                                 (centerMin.y + centerMax.y - vpTextSize.y) * 0.5F},
+                          IM_COL32(90, 100, 115, 200), "3D");
+
+        // Helper for interactive slot button
+        const auto handleSlot = [&](const char* slotId, const ImVec2 sMin, const ImVec2 sMax, const char* label,
+                                    const EditorDockSlotUVE slotType, const ImVec2 screenOverlayMin,
+                                    const ImVec2 screenOverlayMax) {
+            ImGui::SetCursorScreenPos(sMin);
+            const ImVec2 sSize{sMax.x - sMin.x, sMax.y - sMin.y};
+            const bool pressed = ImGui::InvisibleButton(slotId, sSize);
+            const bool hovered = ImGui::IsItemHovered();
+            const bool isCurrent = (currentSlot == slotType);
+
+            ImU32 fillCol = IM_COL32(28, 33, 42, 230);
+            ImU32 borderCol = IM_COL32(48, 58, 72, 220);
+            ImU32 textCol = IM_COL32(160, 172, 190, 230);
+
+            if (hovered) {
+                fillCol = IM_COL32(32, 112, 228, 240);
+                borderCol = IM_COL32(110, 185, 255, 255);
+                textCol = IM_COL32(255, 255, 255, 255);
+
+                // Live screen overlay highlight on the actual editor window!
+                if (screenOverlayMax.x > screenOverlayMin.x && screenOverlayMax.y > screenOverlayMin.y) {
+                    fgDrawList->AddRectFilled(screenOverlayMin, screenOverlayMax, IM_COL32(36, 120, 240, 75), 4.0F);
+                    fgDrawList->AddRect(screenOverlayMin, screenOverlayMax, IM_COL32(96, 185, 255, 245), 4.0F, 0, 2.5F);
+
+                    char badgeText[64]{};
+                    std::snprintf(badgeText, sizeof(badgeText), "Dock: %s", label);
+                    const ImVec2 badgeTextSize = ImGui::CalcTextSize(badgeText);
+                    const ImVec2 badgeCenter{(screenOverlayMin.x + screenOverlayMax.x) * 0.5F,
+                                             (screenOverlayMin.y + screenOverlayMax.y) * 0.5F};
+                    constexpr float kBadgePadX = 14.0F;
+                    constexpr float kBadgePadY = 6.0F;
+                    const ImVec2 bMin{badgeCenter.x - (badgeTextSize.x * 0.5F) - kBadgePadX,
+                                      badgeCenter.y - (badgeTextSize.y * 0.5F) - kBadgePadY};
+                    const ImVec2 bMax{badgeCenter.x + (badgeTextSize.x * 0.5F) + kBadgePadX,
+                                      badgeCenter.y + (badgeTextSize.y * 0.5F) + kBadgePadY};
+                    fgDrawList->AddRectFilled(bMin, bMax, IM_COL32(16, 20, 28, 230), 6.0F);
+                    fgDrawList->AddRect(bMin, bMax, IM_COL32(96, 185, 255, 240), 6.0F, 0, 1.5F);
+                    fgDrawList->AddText(ImVec2{badgeCenter.x - (badgeTextSize.x * 0.5F),
+                                               badgeCenter.y - (badgeTextSize.y * 0.5F)},
+                                        IM_COL32(245, 250, 255, 255), badgeText);
+                }
+            } else if (isCurrent) {
+                fillCol = IM_COL32(26, 68, 128, 220);
+                borderCol = IM_COL32(60, 130, 220, 220);
+                textCol = IM_COL32(220, 235, 255, 255);
+            }
+
+            drawList->AddRectFilled(sMin, sMax, fillCol, 2.0F);
+            drawList->AddRect(sMin, sMax, borderCol, 2.0F, 0, hovered ? 1.5F : 1.0F);
+
+            const ImVec2 lSize = ImGui::CalcTextSize(label);
+            drawList->AddText(ImVec2{(sMin.x + sMax.x - lSize.x) * 0.5F,
+                                     (sMin.y + sMax.y - lSize.y) * 0.5F},
+                              textCol, label);
+
+            return pressed;
+        };
+
+        const ImVec2 leftScreenMin = layout.scenePos;
+        const ImVec2 leftScreenMax{layout.scenePos.x + layout.sceneSize.x, layout.scenePos.y + layout.sceneSize.y};
+
+        const ImVec2 rightScreenMin = layout.inspectorPos;
+        const ImVec2 rightScreenMax{layout.inspectorPos.x + layout.inspectorSize.x,
+                                    layout.inspectorPos.y + layout.inspectorSize.y};
+
+        const ImVec2 bottomScreenMin = layout.contentBrowserPos;
+        const ImVec2 bottomScreenMax{layout.contentBrowserPos.x + layout.contentBrowserSize.x,
+                                     layout.contentBrowserPos.y + layout.contentBrowserSize.y + layout.dockTabBarSize.y};
+
+        if (handleSlot("##slot-left", leftMin, leftMax, "Left", EditorDockSlotUVE::Left, leftScreenMin, leftScreenMax)) {
+            ImGui::CloseCurrentPopup();
+        }
+        if (handleSlot("##slot-right", rightMin, rightMax, "Right", EditorDockSlotUVE::Right, rightScreenMin,
+                       rightScreenMax)) {
+            ImGui::CloseCurrentPopup();
+        }
+        if (handleSlot("##slot-bottom", bottomMin, bottomMax, "Bottom", EditorDockSlotUVE::Bottom, bottomScreenMin,
+                       bottomScreenMax)) {
+            ImGui::CloseCurrentPopup();
+        }
+
+        // Advance cursor past the miniature layout widget
+        ImGui::SetCursorScreenPos(ImVec2{widgetMin.x, widgetMax.y + 6.0F});
+        ImGui::Separator();
+
+        if (ImGui::MenuItem("Make Floating")) {
+            ImGui::CloseCurrentPopup();
+        }
+
+        char hideBuf[64]{};
+        std::snprintf(hideBuf, sizeof(hideBuf), "Hide %s", panelName);
+        if (ImGui::MenuItem(hideBuf)) {
+            if (isVisible != nullptr) {
+                *isVisible = false;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
 /// Shared across the editor's panel translation units.
 ///
 /// These four were file-local constants while every panel lived in editor_uve.cpp. Each is used
@@ -112,7 +385,9 @@ constexpr float kMinimumViewportHeightUVE = 64.0F;
 constexpr float kAssetsPanelHeightUVE = 192.0F;
 constexpr float kMinimumBottomDockHeightUVE = 96.0F;
 constexpr float kDockTabBarHeightUVE = 24.0F;
-constexpr float kEditorTitleBarHeightUVE = 24.0F;
+constexpr float kEditorOsTitleBarRowHeightUVE = 24.0F;
+constexpr float kEditorMenuBarRowHeightUVE = 24.0F;
+constexpr float kEditorTitleBarHeightUVE = kEditorOsTitleBarRowHeightUVE + kEditorMenuBarRowHeightUVE;
 constexpr float kEditorTabRowHeightUVE = 26.0F;
 constexpr float kEditorToolbarHeightUVE = 52.0F;
 constexpr float kEditorTopChromeHeightUVE = kEditorTitleBarHeightUVE + kEditorToolbarHeightUVE;
