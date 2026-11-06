@@ -66,12 +66,16 @@ Scene::EntityUVE EditorUVE::LoadEntityIntoDocumentUVE(const Asset::AssetGuidUVE 
 }
 
 bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
-    if (m_entityEditSession.has_value()) {
-        return m_entityEditSession->assetPath == assetPath;
+    if (m_entityEditSession.has_value() && m_entityEditSession->assetPath == assetPath) {
+        m_entityEditSession->focusPending = true;
+        return true;
     }
     std::error_code error;
     if (m_state != EditorStateUVE::Running || m_playModeState != EditorPlayModeStateUVE::Edit ||
         !IsAuthoringCommandAllowedUVE() || !std::filesystem::is_regular_file(assetPath, error)) {
+        return false;
+    }
+    if (m_entityEditSession.has_value() && !CloseEntityEditorUVE(true)) {
         return false;
     }
     if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()) {
@@ -205,18 +209,12 @@ bool EditorUVE::CloseEntityEditorUVE(const bool save) {
         return false;
     }
     if (save && HasEntityEditorUnsavedChangesUVE() && !SaveEntityEditorUVE()) {
+        m_contentStatusMessage = "Could not save entity changes before closing.";
         return false;
     }
     CloseOpenUVScriptUVE();
     m_componentPropertyPreview.reset();
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    // Kept until the scene is back, so a failed restore can return to the entity instead of
-    // leaving nothing on screen.
-    const std::vector<Scene::EntityUVE> entityRoots = GetDocumentRootsUVE();
-    const std::optional<Scene::SceneSnapshotUVE> entitySnapshot =
-        entityRoots.empty() ? std::nullopt
-                            : m_services->GetSceneSerializerUVE().CaptureUVE(entityManager, entityRoots,
-                                                                              Asset::AssetKindUVE::Scene);
     const EntityEditSessionUVE session = std::move(*m_entityEditSession);
     m_entityEditSession.reset();
 
@@ -224,17 +222,15 @@ bool EditorUVE::CloseEntityEditorUVE(const bool save) {
     std::vector<Scene::EntityUVE> restored;
     if (!session.sceneWasEmpty) {
         restored = m_services->GetSceneSerializerUVE().RestoreUVE(entityManager, session.sceneSnapshot);
-        if (restored.empty()) {
-            if (entitySnapshot.has_value()) {
-                static_cast<void>(m_services->GetSceneSerializerUVE().RestoreUVE(entityManager, *entitySnapshot));
-            }
-            m_entityEditSession = session;
-            m_contentStatusMessage = "Could not bring the scene back; the entity stays open.";
-            InvalidateHierarchyFilterCacheUVE();
-            return false;
-        }
     }
-    RestoreSelectionUVE(ResolveSelectionPathsUVE(session.selectionBefore, restored));
+    if (restored.empty()) {
+        // Fallback recovery: Ensure the main level editor scene and viewport layout are fully restored
+        static_cast<void>(EnsureDocumentSceneRootUVE());
+        static_cast<void>(EnsureDocumentLayoutUVE());
+        m_contentStatusMessage = "Returned to Level Editor.";
+    } else {
+        RestoreSelectionUVE(ResolveSelectionPathsUVE(session.selectionBefore, restored));
+    }
     m_sceneDirty = session.sceneDirtyBefore;
     ClearHistoryUVE();
     if (m_simulationControl != nullptr && session.simulationBefore.has_value()) {
@@ -260,8 +256,8 @@ bool EditorUVE::CloseEntityEditorUVE(const bool save) {
         if (refreshed > 0U) {
             m_sceneDirty = true;
             InvalidateHierarchyFilterCacheUVE();
-            m_contentStatusMessage = "Updated " + std::to_string(refreshed) + " placed " +
-                                     (refreshed == 1U ? "copy" : "copies") + " of " +
+            m_contentStatusMessage = "Applied changes to Level Editor: updated " + std::to_string(refreshed) +
+                                     " placed " + (refreshed == 1U ? "copy" : "copies") + " of " +
                                      session.assetPath.filename().string() + " in the scene.";
         }
     }
@@ -780,11 +776,22 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Close / Back to Level (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-        static_cast<void>(CloseEntityEditorUVE(false));
+    if (ImGui::Button("Save & Back to Level")) {
+        static_cast<void>(CloseEntityEditorUVE(true));
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        ImGui::SetTooltip("Save and apply all entity changes to the main Level Editor");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Back to Level (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        if (unsaved) {
+            session.confirmClose = true;
+        } else {
+            static_cast<void>(CloseEntityEditorUVE(false));
+        }
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Throw away the changes since the last save");
+        ImGui::SetTooltip("Return to the main Level Editor (prompts to save if there are unsaved changes)");
     }
     ImGui::SameLine();
     ImGui::TextDisabled("|");
@@ -934,7 +941,9 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     }
     ImGui::End();
     if (closeNow) {
-        static_cast<void>(CloseEntityEditorUVE(saveFirst));
+        if (!CloseEntityEditorUVE(saveFirst)) {
+            static_cast<void>(CloseEntityEditorUVE(false));
+        }
     }
 }
 
