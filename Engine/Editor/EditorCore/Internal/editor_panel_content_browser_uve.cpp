@@ -484,6 +484,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
     // The path: each part goes there; the arrow after a part lists the folders inside it.
     const float settingsWidth = ImGui::CalcTextSize(kIconAdjustmentsUVE).x + ImGui::CalcTextSize(" Settings").x +
                                 ImGui::GetStyle().FramePadding.x * 2.0F;
+    const float totalControlsWidth = settingsWidth + 26.0F;
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("%s", kIconFolderUVE);
@@ -544,10 +545,25 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
     ImGui::PopStyleColor();
 
     ImGui::SameLine();
-    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - settingsWidth));
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - totalControlsWidth));
     if (ImGui::Button((std::string{kIconAdjustmentsUVE} + " Settings##content-settings").c_str())) {
         ImGui::OpenPopup("##content-settings-menu");
     }
+    ImGui::SameLine(0.0F, 4.0F);
+    constexpr float kCbDotsW = 20.0F;
+    const ImVec2 cbDotsPos{ImGui::GetCursorScreenPos().x,
+                           ImGui::GetCursorScreenPos().y + (ImGui::GetFrameHeight() - kCbDotsW) * 0.5F};
+    if (DrawDockThreeDotsButtonUVE(*ImGui::GetWindowDrawList(), "##content-browser-dock-dots", cbDotsPos,
+                                  ImVec2{kCbDotsW, kCbDotsW})) {
+        ImGui::OpenPopup("##content-dock-popup");
+    }
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    const EditorChromeLayoutUVE cbLayout =
+        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
+                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible);
+    DrawVisualDockPositionSelectorUVE("##content-dock-popup", "Content Browser", EditorDockSlotUVE::Bottom,
+                                     &m_bottomDockVisible, cbLayout, cbDotsPos,
+                                     ImVec2{cbDotsPos.x + kCbDotsW, cbDotsPos.y + kCbDotsW});
     if (ImGui::BeginPopup("##content-settings-menu")) {
         // The mode sets how the whole panel works and where pinned, folders and shelves sit.
         ImGui::TextDisabled("Mode");
