@@ -40,7 +40,7 @@ TEST(EditorChromeLayoutUVETest, FullWidthBottomDockSitsUnderUpperPanels) {
     EXPECT_FLOAT_EQ(layout.inspectorPos.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportHeaderPos.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.y, kEditorTitleBarHeightUVE);
-    EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTopChromeHeightUVE);
+    EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTitleBarHeightUVE + kEditorTabRowHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportPos.y, kEditorTopChromeHeightUVE);
 
     // Full-width bottom dock spans the entire width under Outliner, Viewport, and Inspector
@@ -58,11 +58,14 @@ TEST(EditorChromeLayoutUVETest, FullWidthBottomDockSitsUnderUpperPanels) {
     EXPECT_FLOAT_EQ(layout.viewportPos.y + layout.viewportSize.y, layout.contentBrowserPos.y);
     EXPECT_FLOAT_EQ(layout.inspectorPos.y + layout.inspectorSize.y, layout.contentBrowserPos.y);
 
-    // The viewport's header spans exactly its column; the logo spans both top rows.
+    // The viewport's header spans exactly its column; the logo sits in the title bar;
+    // the outliner header spans the full width of the outliner panel.
     EXPECT_FLOAT_EQ(layout.viewportHeaderPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.viewportHeaderSize.x, layout.viewportSize.x);
-    EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTopChromeHeightUVE);
-    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.logoPos.x + layout.logoSize.x);
+    EXPECT_FLOAT_EQ(layout.viewportHeaderSize.y, kEditorToolbarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.scenePos.x);
+    EXPECT_FLOAT_EQ(layout.outlinerHeaderSize.y, kEditorTabRowHeightUVE);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x + layout.outlinerHeaderSize.x, layout.scenePos.x + layout.sceneSize.x);
 }
 
@@ -240,7 +243,8 @@ TEST(EditorChromeLayoutUVETest, LayoutIsOffsetByTheViewportOrigin) {
         ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F, kOriginX, kOriginY), true);
 
     EXPECT_FLOAT_EQ(layout.scenePos.x, kOriginX);
-    EXPECT_FLOAT_EQ(layout.scenePos.y, kOriginY + kEditorTopChromeHeightUVE);
+    EXPECT_FLOAT_EQ(layout.scenePos.y, kOriginY + kEditorTitleBarHeightUVE + kEditorTabRowHeightUVE);
+    EXPECT_FLOAT_EQ(layout.viewportPos.y, kOriginY + kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.logoPos.y, kOriginY);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX);
     // The dock spans the entire bottom, so its tab row starts at the origin as well.

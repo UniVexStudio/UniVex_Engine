@@ -113,7 +113,8 @@ constexpr float kAssetsPanelHeightUVE = 192.0F;
 constexpr float kMinimumBottomDockHeightUVE = 96.0F;
 constexpr float kDockTabBarHeightUVE = 24.0F;
 constexpr float kEditorTitleBarHeightUVE = 24.0F;
-constexpr float kEditorToolbarHeightUVE = 26.0F;
+constexpr float kEditorTabRowHeightUVE = 26.0F;
+constexpr float kEditorToolbarHeightUVE = 52.0F;
 constexpr float kEditorTopChromeHeightUVE = kEditorTitleBarHeightUVE + kEditorToolbarHeightUVE;
 constexpr float kScenePanelWidthFractionUVE = 0.16F;
 constexpr float kScenePanelWidthMinUVE = 184.0F;
@@ -255,7 +256,9 @@ inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
 
     const float top = originY + chromeHeight;
     const float sideTop = originY + kEditorTitleBarHeightUVE;
+    const float sceneTop = originY + kEditorTitleBarHeightUVE + kEditorTabRowHeightUVE;
     const float upperHeight = std::max(kMinimumViewportHeightUVE, upperAreaBottom - top);
+    const float sceneHeight = std::max(kMinimumViewportHeightUVE, upperAreaBottom - sceneTop);
     const float sideHeight = std::max(kMinimumViewportHeightUVE + kEditorToolbarHeightUVE, upperAreaBottom - sideTop);
 
     const float defaultSceneWidth =
@@ -277,15 +280,12 @@ inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
     layout.sceneVisible = sceneVisible;
     layout.inspectorVisible = inspectorVisible;
     layout.logoPos = ImVec2{originX, originY};
-    layout.logoSize = ImVec2{kEditorTopChromeHeightUVE, kEditorTopChromeHeightUVE};
-    layout.outlinerHeaderPos = ImVec2{originX + kEditorTopChromeHeightUVE, sideTop};
-    layout.outlinerHeaderSize =
-        ImVec2{std::max(0.0F, sceneWidth - kEditorTopChromeHeightUVE), kEditorToolbarHeightUVE};
-    layout.scenePos = ImVec2{originX, top};
-    layout.sceneSize = ImVec2{sceneWidth, upperHeight};
-    // The header row starts past the logo even when the Outliner is hidden, so the logo never
-    // paints over the viewport's own tab and transport.
-    layout.viewportHeaderPos = ImVec2{originX + std::max(sceneWidth, kEditorTopChromeHeightUVE), sideTop};
+    layout.logoSize = ImVec2{kEditorTitleBarHeightUVE, kEditorTitleBarHeightUVE};
+    layout.outlinerHeaderPos = ImVec2{originX, sideTop};
+    layout.outlinerHeaderSize = ImVec2{sceneWidth, kEditorTabRowHeightUVE};
+    layout.scenePos = ImVec2{originX, sceneTop};
+    layout.sceneSize = ImVec2{sceneWidth, sceneHeight};
+    layout.viewportHeaderPos = ImVec2{originX + sceneWidth, sideTop};
     layout.viewportHeaderSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
     layout.viewportPos = ImVec2{originX + sceneWidth, top};
     layout.viewportSize = ImVec2{viewportWidth, upperHeight};
