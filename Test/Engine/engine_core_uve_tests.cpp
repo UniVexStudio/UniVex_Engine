@@ -3500,7 +3500,7 @@ TEST(EngineCoreUVETest, WindowedMode_ReachesRunningAndPresentsEmptyRendererScene
     });
 
     // A few frames let Renderer3DUVE complete scene, tone-mapping, and presentation work.
-    for (int frame = 0; frame < 3; ++frame) {
+    for (int frame = 0; frame < 10; ++frame) {
         engine.TickFrameUVE();
     }
     engine.SetPostRenderCallbackUVE({});
