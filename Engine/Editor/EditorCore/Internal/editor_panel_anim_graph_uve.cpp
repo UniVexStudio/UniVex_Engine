@@ -917,7 +917,7 @@ void EditorUVE::DrawAnimationSequencerPickerSlotUVE(const char* const id, const 
     ImGui::TextDisabled("Sequencer:");
     ImGui::SameLine(0.0F, 6.0F);
 
-    const std::string label = displayName + "  ▼";
+    const std::string label = displayName + "  v";
     if (!isBound) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55F, 0.55F, 0.58F, 1.0F));
     } else {
@@ -942,7 +942,7 @@ void EditorUVE::DrawAnimationSequencerPickerSlotUVE(const char* const id, const 
 
     if (isBound) {
         ImGui::SameLine(0.0F, 4.0F);
-        if (ImGui::SmallButton("✕##clear-seq")) {
+        if (ImGui::SmallButton("X##clear-seq")) {
             if (onPicked) {
                 onPicked(Scene::kInvalidEntityUVE);
             }
@@ -1061,7 +1061,7 @@ void EditorUVE::DrawAnimationSequencerPickerModalUVE(const Scene::EntityUVE curr
                     std::string tip = "Entity ID: " + std::to_string(item.entity.index) + "\nClips in library:";
                     for (const auto& c : clips) {
                         const std::filesystem::path cp = m_services->GetAssetDatabaseUVE().ResolveUVE(c);
-                        tip += "\n  • " + (cp.empty() ? "(clip)" : cp.stem().string());
+                        tip += "\n  - " + (cp.empty() ? "(clip)" : cp.stem().string());
                     }
                     ImGui::SetTooltip("%s", tip.c_str());
                 }
