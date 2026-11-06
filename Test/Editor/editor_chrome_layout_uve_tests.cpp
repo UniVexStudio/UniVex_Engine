@@ -31,9 +31,9 @@ TEST(EditorChromeLayoutUVETest, ThreeColumnsExactlyFillTheWidthWithNoGapOrOverla
     }
 }
 
-TEST(EditorChromeLayoutUVETest, SidePanelsRunFullHeightAndTheDockSitsUnderTheViewport) {
-    // Outliner and Inspector run from under the title bar down to the dock tab strip; the centre
-    // column holds the tool strip, the viewport under it and the dock under that.
+TEST(EditorChromeLayoutUVETest, FullWidthBottomDockSitsUnderUpperPanels) {
+    // Outliner, Viewport, and Inspector sit above the full-width bottom dock;
+    // the dock spans the full width at the bottom of the screen.
     const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
 
     // Header row: the Outliner's name beside the logo, the viewport's header, the Inspector's tabs.
@@ -42,47 +42,41 @@ TEST(EditorChromeLayoutUVETest, SidePanelsRunFullHeightAndTheDockSitsUnderTheVie
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportPos.y, kEditorTopChromeHeightUVE);
-    // The side columns reach the bottom edge of the frame: the dock's tab row belongs to the dock,
-    // not to a band shared with the panels beside it.
-    EXPECT_FLOAT_EQ(layout.inspectorSize.y, 1080.0F - kEditorTitleBarHeightUVE);
-    EXPECT_FLOAT_EQ(layout.sceneSize.y + kEditorToolbarHeightUVE, layout.inspectorSize.y);
-    // The centre column holds the viewport, then the dock's tab row, then the dock's body.
-    EXPECT_FLOAT_EQ(layout.viewportSize.y + kDockTabBarHeightUVE + layout.contentBrowserSize.y, layout.sceneSize.y);
-    // The viewport's header spans exactly its column; the logo spans both top rows, and the
-    // Outliner's header fills the rest of its column beside it.
+
+    // Full-width bottom dock spans the entire width under Outliner, Viewport, and Inspector
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, 0.0F);
+    EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, 1920.0F);
+    EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, 0.0F);
+    EXPECT_FLOAT_EQ(layout.dockTabBarSize.x, 1920.0F);
+
+    // The dock tab bar sits anchored at the bottom edge
+    EXPECT_FLOAT_EQ(layout.dockTabBarPos.y + layout.dockTabBarSize.y, 1080.0F);
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.y + layout.contentBrowserSize.y, layout.dockTabBarPos.y);
+
+    // Upper panels reach down to the top of the dock
+    EXPECT_FLOAT_EQ(layout.scenePos.y + layout.sceneSize.y, layout.contentBrowserPos.y);
+    EXPECT_FLOAT_EQ(layout.viewportPos.y + layout.viewportSize.y, layout.contentBrowserPos.y);
+    EXPECT_FLOAT_EQ(layout.inspectorPos.y + layout.inspectorSize.y, layout.contentBrowserPos.y);
+
+    // The viewport's header spans exactly its column; the logo spans both top rows.
     EXPECT_FLOAT_EQ(layout.viewportHeaderPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.viewportHeaderSize.x, layout.viewportSize.x);
     EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.logoPos.x + layout.logoSize.x);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x + layout.outlinerHeaderSize.x, layout.scenePos.x + layout.sceneSize.x);
-    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, layout.viewportPos.x);
-    EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, layout.viewportSize.x);
-    // The dock's body starts below the tab row, not at the viewport's edge: the row is the body's
-    // header and belongs to the dock.
-    EXPECT_FLOAT_EQ(layout.contentBrowserPos.y,
-                    layout.viewportPos.y + layout.viewportSize.y + kDockTabBarHeightUVE);
-    // The tab strip is the dock's own header: the viewport column's width, directly on top of the
-    // dock's body, and the block as a whole ends at the bottom edge.
-    EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, layout.viewportPos.x);
-    EXPECT_FLOAT_EQ(layout.dockTabBarSize.x, layout.viewportSize.x);
-    EXPECT_FLOAT_EQ(layout.dockTabBarPos.y + layout.dockTabBarSize.y, layout.contentBrowserPos.y);
-    EXPECT_FLOAT_EQ(layout.contentBrowserPos.y + layout.contentBrowserSize.y, 1080.0F);
 }
 
-TEST(EditorChromeLayoutUVETest, HidingTheBottomDockGivesItsHeightBackToTheViewport) {
+TEST(EditorChromeLayoutUVETest, HidingTheBottomDockGivesItsHeightBackToTheUpperPanels) {
     const EditorChromeLayoutUVE shown = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
     const EditorChromeLayoutUVE hidden = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), false);
 
-    // The dock body's height goes back to the viewport; the tab row stays, because with the dock
-    // hidden it is the only way back to it.
-    EXPECT_FLOAT_EQ(hidden.viewportSize.y - shown.viewportSize.y, kAssetsPanelHeightUVE - kDockTabBarHeightUVE);
+    // The dock body's height goes back to the upper panels; the tab row stays at the bottom edge.
     EXPECT_FLOAT_EQ(hidden.contentBrowserSize.y, 0.0F);
-    // The side columns follow the column they share: it keeps the tab row, so it is that much
-    // shorter, and the strip itself drops to the bottom edge where it can still be clicked.
-    EXPECT_FLOAT_EQ(hidden.sceneSize.y, shown.sceneSize.y - kDockTabBarHeightUVE);
     EXPECT_FLOAT_EQ(hidden.dockTabBarPos.y + hidden.dockTabBarSize.y, 1080.0F);
-    EXPECT_LT(shown.dockTabBarPos.y, hidden.dockTabBarPos.y);
-    EXPECT_FLOAT_EQ(hidden.viewportSize.x, shown.viewportSize.x);
+    EXPECT_FLOAT_EQ(shown.dockTabBarPos.y + shown.dockTabBarSize.y, 1080.0F);
+    EXPECT_FLOAT_EQ(hidden.viewportSize.y - shown.viewportSize.y, shown.contentBrowserSize.y);
+    EXPECT_FLOAT_EQ(hidden.sceneSize.y - shown.sceneSize.y, shown.contentBrowserSize.y);
+    EXPECT_FLOAT_EQ(hidden.inspectorSize.y - shown.inspectorSize.y, shown.contentBrowserSize.y);
 }
 
 TEST(EditorChromeLayoutUVETest, TheDockHeightIsDraggableWithinLimits) {
@@ -94,11 +88,11 @@ TEST(EditorChromeLayoutUVETest, TheDockHeightIsDraggableWithinLimits) {
     // Too small is lifted to the minimum.
     EXPECT_FLOAT_EQ(ComputeEditorChromeLayoutUVE(viewport, true, 10.0F).contentBrowserSize.y,
                     kMinimumBottomDockHeightUVE - kDockTabBarHeightUVE);
-    // Too large is capped, and the cap has two ceilings: a fraction of the column, and whatever
+    // Too large is capped, and the cap has two ceilings: a fraction of the available height, and whatever
     // still leaves the viewport its minimum height. The tighter one wins.
     const EditorChromeLayoutUVE huge = ComputeEditorChromeLayoutUVE(viewport, true, 100000.0F);
-    const float column = huge.viewportSize.y + huge.contentBrowserSize.y + kDockTabBarHeightUVE;
-    EXPECT_LE(huge.contentBrowserSize.y + kDockTabBarHeightUVE, column * kBottomDockMaxFractionUVE + 0.5F);
+    const float available = 1080.0F - kEditorTopChromeHeightUVE;
+    EXPECT_LE(huge.contentBrowserSize.y + kDockTabBarHeightUVE, available * kBottomDockMaxFractionUVE + 0.5F);
     EXPECT_GE(huge.viewportSize.y, kMinimumViewportHeightUVE);
 }
 
@@ -164,6 +158,7 @@ TEST(EditorChromeLayoutUVETest, SplitterGripsExistOnlyWhereThereIsASeam) {
     EXPECT_FLOAT_EQ(full.sceneSplitterSize.x, kPanelSplitterThicknessUVE);
     EXPECT_FLOAT_EQ(full.inspectorSplitterSize.x, kPanelSplitterThicknessUVE);
     EXPECT_FLOAT_EQ(full.dockSplitterSize.y, kPanelSplitterThicknessUVE);
+    EXPECT_FLOAT_EQ(full.dockSplitterSize.x, 1920.0F);
 
     // The Outliner | viewport seam still exists when the Outliner is showing, and is at the
     // Outliner's right edge.
@@ -178,6 +173,7 @@ TEST(EditorChromeLayoutUVETest, SplitterGripsExistOnlyWhereThereIsASeam) {
     const EditorChromeLayoutUVE noDock =
         ComputeEditorChromeLayoutUVE(viewport, false, kAssetsPanelHeightUVE);
     EXPECT_FLOAT_EQ(noDock.dockSplitterSize.y, 0.0F) << "no dock, no grab line above it";
+    EXPECT_FLOAT_EQ(noDock.dockSplitterSize.x, 0.0F);
 }
 
 TEST(EditorChromeLayoutUVETest, PanelResizeClampsAgreeWithTheLayout) {
@@ -246,9 +242,9 @@ TEST(EditorChromeLayoutUVETest, LayoutIsOffsetByTheViewportOrigin) {
     EXPECT_FLOAT_EQ(layout.scenePos.x, kOriginX);
     EXPECT_FLOAT_EQ(layout.scenePos.y, kOriginY + kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.logoPos.y, kOriginY);
-    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX + layout.sceneSize.x);
-    // The dock's tab row belongs to the viewport's column, so it starts where that column does.
-    EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, layout.viewportPos.x);
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX);
+    // The dock spans the entire bottom, so its tab row starts at the origin as well.
+    EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, kOriginX);
 }
 
 } // namespace
