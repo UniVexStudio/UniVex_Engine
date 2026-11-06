@@ -301,8 +301,8 @@ inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
     // The grips straddle their seam, so a drag that started on the divider keeps tracking when the
     // pointer wanders a pixel or two onto either panel.
     constexpr float halfGrip = kPanelSplitterThicknessUVE * 0.5F;
-    layout.sceneSplitterPos = ImVec2{originX + sceneWidth - halfGrip, top};
-    layout.sceneSplitterSize = sceneVisible ? ImVec2{kPanelSplitterThicknessUVE, upperHeight} : ImVec2{0.0F, 0.0F};
+    layout.sceneSplitterPos = ImVec2{originX + sceneWidth - halfGrip, sideTop};
+    layout.sceneSplitterSize = sceneVisible ? ImVec2{kPanelSplitterThicknessUVE, sideHeight} : ImVec2{0.0F, 0.0F};
     layout.inspectorSplitterPos = ImVec2{originX + sceneWidth + viewportWidth - halfGrip, sideTop};
     layout.inspectorSplitterSize =
         inspectorVisible ? ImVec2{kPanelSplitterThicknessUVE, sideHeight} : ImVec2{0.0F, 0.0F};

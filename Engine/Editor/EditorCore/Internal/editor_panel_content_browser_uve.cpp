@@ -976,23 +976,28 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
     };
     // Divider: drag to resize the sidebar, which sits left (Tiles) or right (Details).
     const auto drawSplitter = [&](const bool sidebarOnRight) {
-        constexpr float kSplitterHitWidthUVE = 8.0F;
+        constexpr float kSplitterHitWidthUVE = 10.0F;
         ImGui::InvisibleButton("##content-browser-splitter", ImVec2{kSplitterHitWidthUVE, bodyHeight});
+        const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
+        if (hot) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            ImGui::SetTooltip("Drag to resize folder tree\nDouble-click to reset");
+        }
         if (ImGui::IsItemActive() && std::abs(ImGui::GetIO().MouseDelta.x) > 0.0F) {
             const float delta = sidebarOnRight ? -ImGui::GetIO().MouseDelta.x : ImGui::GetIO().MouseDelta.x;
-            m_contentBrowserSplitRatio = std::clamp((listWidth + delta) / bodyWidth, 0.12F, 0.6F);
+            m_contentBrowserSplitRatio = std::clamp((listWidth + delta) / bodyWidth, 0.12F, 0.60F);
         }
-        if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            m_contentBrowserSplitRatio = 0.22F;
         }
         const ImVec2 hitMin = ImGui::GetItemRectMin();
         const ImVec2 hitMax = ImGui::GetItemRectMax();
         const float barX = (hitMin.x + hitMax.x) * 0.5F;
-        ImGui::GetWindowDrawList()->AddLine(ImVec2{barX, hitMin.y}, ImVec2{barX, hitMax.y},
-                                            ImGui::IsItemActive() || ImGui::IsItemHovered()
-                                                ? ImGui::GetColorU32(kAccentUVE)
-                                                : IM_COL32(28, 32, 39, 255),
-                                            ImGui::IsItemActive() ? 2.0F : 1.0F);
+        const ImU32 lineColor = hot ? IM_COL32(14, 112, 227, 255) : IM_COL32(40, 44, 52, 220);
+        ImGui::GetWindowDrawList()->AddLine(ImVec2{barX, hitMin.y}, ImVec2{barX, hitMax.y}, lineColor, hot ? 2.0F : 1.0F);
+        const float midY = (hitMin.y + hitMax.y) * 0.5F;
+        const ImU32 handleColor = hot ? IM_COL32(255, 255, 255, 255) : IM_COL32(70, 80, 94, 200);
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{barX - 1.5F, midY - 14.0F}, ImVec2{barX + 1.5F, midY + 14.0F}, handleColor, 1.5F);
     };
     // Recent and Board have no folder tree (they already look through every folder below):
     // pinned paths and shelves ride along as one strip of chips; a chip takes drops too.

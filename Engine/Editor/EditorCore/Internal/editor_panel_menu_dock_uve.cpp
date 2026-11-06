@@ -634,34 +634,31 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                ImGui::SetTooltip("Drag to resize Outliner\nDouble-click to reset");
             }
             const ImVec2 gripMin = ImGui::GetItemRectMin();
             const ImVec2 gripMax = ImGui::GetItemRectMax();
             const float seamX = (gripMin.x + gripMax.x) * 0.5F;
             const ImU32 lineColor = hot
-                                        ? (ImGui::IsItemActive() ? IM_COL32(90, 160, 240, 255) : IM_COL32(75, 140, 225, 230))
-                                        : IM_COL32(48, 55, 64, 220);
+                                        ? (ImGui::IsItemActive() ? IM_COL32(14, 112, 227, 255) : IM_COL32(56, 140, 240, 230))
+                                        : IM_COL32(44, 48, 56, 220);
             const float halfThickness = hot ? 1.5F : 0.5F;
             ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - halfThickness, gripMin.y},
                                                       ImVec2{seamX + halfThickness, gripMax.y},
                                                       lineColor);
             const float midY = (gripMin.y + gripMax.y) * 0.5F;
             const ImU32 handleColor = hot
-                                          ? (ImGui::IsItemActive() ? IM_COL32(140, 195, 255, 255) : IM_COL32(110, 175, 245, 255))
+                                          ? (ImGui::IsItemActive() ? IM_COL32(255, 255, 255, 255) : IM_COL32(14, 112, 227, 255))
                                           : IM_COL32(70, 80, 94, 200);
-            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.5F, midY - 14.0F},
-                                                      ImVec2{seamX + 1.5F, midY + 14.0F},
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.5F, midY - 16.0F},
+                                                      ImVec2{seamX + 1.5F, midY + 16.0F},
                                                       handleColor, 1.5F);
             if (ImGui::IsItemActive()) {
-                // The same shape the entity editor's column seams use: the width the author set is
-                // the starting point, the frame's movement is added to it, and the result is what
-                // the next frame reads. Guarding on a non-zero delta is not an optimisation - a
-                // held-but-still pointer must not write, or a stray frame without movement would
-                // re-clamp a width the author chose and quietly move the seam under them.
-                if (io.MouseDelta.x != 0.0F) {
-                    const float from = m_scenePanelWidth > 0.0F ? m_scenePanelWidth : layout.sceneSize.x;
-                    m_scenePanelWidth = ClampScenePanelWidthUVE(totalWidth, from + io.MouseDelta.x);
-                }
+                const float newWidth = io.MousePos.x - mainViewport->WorkPos.x;
+                m_scenePanelWidth = ClampScenePanelWidthUVE(totalWidth, newWidth);
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                m_scenePanelWidth = totalWidth * kScenePanelWidthFractionUVE;
             }
         }
         ImGui::End();
@@ -672,30 +669,31 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                ImGui::SetTooltip("Drag to resize Inspector\nDouble-click to reset");
             }
             const ImVec2 gripMin = ImGui::GetItemRectMin();
             const ImVec2 gripMax = ImGui::GetItemRectMax();
             const float seamX = (gripMin.x + gripMax.x) * 0.5F;
             const ImU32 lineColor = hot
-                                        ? (ImGui::IsItemActive() ? IM_COL32(90, 160, 240, 255) : IM_COL32(75, 140, 225, 230))
-                                        : IM_COL32(48, 55, 64, 220);
+                                        ? (ImGui::IsItemActive() ? IM_COL32(14, 112, 227, 255) : IM_COL32(56, 140, 240, 230))
+                                        : IM_COL32(44, 48, 56, 220);
             const float halfThickness = hot ? 1.5F : 0.5F;
             ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - halfThickness, gripMin.y},
                                                       ImVec2{seamX + halfThickness, gripMax.y},
                                                       lineColor);
             const float midY = (gripMin.y + gripMax.y) * 0.5F;
             const ImU32 handleColor = hot
-                                          ? (ImGui::IsItemActive() ? IM_COL32(140, 195, 255, 255) : IM_COL32(110, 175, 245, 255))
+                                          ? (ImGui::IsItemActive() ? IM_COL32(255, 255, 255, 255) : IM_COL32(14, 112, 227, 255))
                                           : IM_COL32(70, 80, 94, 200);
-            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.5F, midY - 14.0F},
-                                                      ImVec2{seamX + 1.5F, midY + 14.0F},
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.5F, midY - 16.0F},
+                                                      ImVec2{seamX + 1.5F, midY + 16.0F},
                                                       handleColor, 1.5F);
             if (ImGui::IsItemActive()) {
-                if (io.MouseDelta.x != 0.0F) {
-                    const float from =
-                        m_inspectorPanelWidth > 0.0F ? m_inspectorPanelWidth : layout.inspectorSize.x;
-                    m_inspectorPanelWidth = ClampInspectorPanelWidthUVE(totalWidth, from - io.MouseDelta.x);
-                }
+                const float newWidth = (mainViewport->WorkPos.x + totalWidth) - io.MousePos.x;
+                m_inspectorPanelWidth = ClampInspectorPanelWidthUVE(totalWidth, newWidth);
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                m_inspectorPanelWidth = totalWidth * kInspectorPanelWidthFractionUVE;
             }
         }
         ImGui::End();
@@ -706,32 +704,52 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                ImGui::SetTooltip("Drag to resize Bottom Dock\nDouble-click to reset");
             }
             const ImVec2 gripMin = ImGui::GetItemRectMin();
             const ImVec2 gripMax = ImGui::GetItemRectMax();
             const float seamY = (gripMin.y + gripMax.y) * 0.5F;
             const ImU32 lineColor = hot
-                                        ? (ImGui::IsItemActive() ? IM_COL32(90, 160, 240, 255) : IM_COL32(75, 140, 225, 230))
-                                        : IM_COL32(48, 55, 64, 220);
+                                        ? (ImGui::IsItemActive() ? IM_COL32(14, 112, 227, 255) : IM_COL32(56, 140, 240, 230))
+                                        : IM_COL32(44, 48, 56, 220);
             const float halfThickness = hot ? 1.5F : 0.5F;
             ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{gripMin.x, seamY - halfThickness},
                                                       ImVec2{gripMax.x, seamY + halfThickness},
                                                       lineColor);
             const float midX = (gripMin.x + gripMax.x) * 0.5F;
             const ImU32 handleColor = hot
-                                          ? (ImGui::IsItemActive() ? IM_COL32(140, 195, 255, 255) : IM_COL32(110, 175, 245, 255))
+                                          ? (ImGui::IsItemActive() ? IM_COL32(255, 255, 255, 255) : IM_COL32(14, 112, 227, 255))
                                           : IM_COL32(70, 80, 94, 200);
-            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{midX - 20.0F, seamY - 1.5F},
-                                                      ImVec2{midX + 20.0F, seamY + 1.5F},
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{midX - 22.0F, seamY - 1.5F},
+                                                      ImVec2{midX + 22.0F, seamY + 1.5F},
                                                       handleColor, 1.5F);
             if (ImGui::IsItemActive()) {
-                // Dragging up grows the dock, so the mouse delta is subtracted from its height.
-                if (io.MouseDelta.y != 0.0F) {
-                    const float availableHeight = mainViewport->WorkSize.y - kEditorTopChromeHeightUVE;
-                    const float currentDockHeight = layout.dockTabBarSize.y + layout.contentBrowserSize.y;
-                    const float from =
-                        m_bottomDockHeight > 0.0F ? m_bottomDockHeight : currentDockHeight;
-                    m_bottomDockHeight = ClampBottomDockHeightUVE(availableHeight, from - io.MouseDelta.y);
+                const float availableHeight = mainViewport->WorkSize.y - kEditorTopChromeHeightUVE;
+                const float newHeight = (mainViewport->WorkPos.y + mainViewport->WorkSize.y) - io.MousePos.y;
+                m_bottomDockHeight = ClampBottomDockHeightUVE(availableHeight, newHeight);
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                m_bottomDockHeight = kAssetsPanelHeightUVE;
+            }
+        }
+        ImGui::End();
+    } else if (!m_bottomDockVisible) {
+        // When bottom dock is collapsed, allow dragging up on the top edge of the tab bar to open it
+        const ImVec2 tabGripPos{mainViewport->WorkPos.x, layout.dockTabBarPos.y - (kPanelSplitterThicknessUVE * 0.5F)};
+        const ImVec2 tabGripSize{totalWidth, kPanelSplitterThicknessUVE};
+        if (beginHandle("##bottom-dock-tab-open-grip", tabGripPos, tabGripSize)) {
+            ImGui::InvisibleButton("##grip-dock-open", tabGripSize);
+            const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
+            if (hot) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                ImGui::SetTooltip("Drag up to open Bottom Dock");
+            }
+            if (ImGui::IsItemActive()) {
+                const float availableHeight = mainViewport->WorkSize.y - kEditorTopChromeHeightUVE;
+                const float requestedHeight = (mainViewport->WorkPos.y + mainViewport->WorkSize.y) - io.MousePos.y;
+                if (requestedHeight > kDockTabBarHeightUVE + 20.0F) {
+                    m_bottomDockVisible = true;
+                    m_bottomDockHeight = ClampBottomDockHeightUVE(availableHeight, requestedHeight);
                 }
             }
         }
