@@ -62,6 +62,7 @@
 #include "uve/objects/3d/camera_3d_uve.h"
 #include "uve/component/visibility_component_uve.h"
 #include "uve/asset/material_asset_uve.h"
+#include "uve/asset/shader_asset_uve.h"
 #include "uve/core/engine_project_settings_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/color_uve.h"
@@ -441,7 +442,8 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
     const std::string sectionTitle{entry.sectionTitle != nullptr ? entry.sectionTitle(instance)
                                                                  : entry.displayName.c_str()};
     const std::string header = sectionTitle + "###" + std::string(entry.typeId.ToStringUVE());
-    const bool sectionOpen = DrawInspectorFoldUVE(header.c_str(), "section:" + std::string(entry.typeId.ToStringUVE()), true, true, 0);
+    const std::uintptr_t compIcon = m_uiAssets.GetComponentIconTextureIdUVE(entry.typeId.ToStringUVE());
+    const bool sectionOpen = DrawInspectorFoldUVE(header.c_str(), "section:" + std::string(entry.typeId.ToStringUVE()), true, true, 0, compIcon);
     DrawInspectorSectionMenuUVE(&entry, sectionTitle.c_str());
     if (sectionOpen) {
         if (entry.typeId == "component.mesh") {
@@ -477,8 +479,9 @@ void EditorUVE::DrawMetadataComponentDrawerUVE(const Scene::EntityUVE entity, co
             ImGui::PushID(child->typeId.ToCStringUVE());
             constexpr ImGuiTreeNodeFlags kNestedFlags = ImGuiTreeNodeFlags_SpanAvailWidth |
                                                         ImGuiTreeNodeFlags_FramePadding;
+            const std::uintptr_t childIcon = m_uiAssets.GetComponentIconTextureIdUVE(child->typeId.ToStringUVE());
             if (DrawInspectorFoldUVE(child->displayName.c_str(), "nested:" + std::string(child->typeId.ToStringUVE()), true, false,
-                                     kNestedFlags)) {
+                                     kNestedFlags, childIcon)) {
                 DrawMetadataPropertyRowsUVE(*child, entityManager.GetComponentPointerUVE(entity, child->typeIndex));
                 ImGui::TreePop();
             }
@@ -1907,30 +1910,35 @@ void EditorUVE::DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& abso
         // 5. Custom Shader
         ImGui::Spacing();
         ImGui::TextDisabled("CUSTOM SHADER");
-        if (ImGui::Checkbox("Use Custom Shader", &mat.useCustomShaderCode)) {
-            // The Kind selector above is the visible summary of this switch; flipping it directly
-            // must not leave the summary claiming a preset the material no longer matches.
-            if (!mat.useCustomShaderCode && mat.kind == Asset::MaterialKindUVE::Shader) {
-                mat.kind = Asset::MaterialKindUVE::Standard;
-            } else if (mat.useCustomShaderCode) {
-                mat.kind = Asset::MaterialKindUVE::Shader;
+        if (BeginPropertyRowsUVE("##table_mat_custom_shader")) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Custom Shader");
+            ImGui::TableSetColumnIndex(1);
+            if (ImGui::Checkbox("##useCustomShader", &mat.useCustomShaderCode)) {
+                if (!mat.useCustomShaderCode && mat.kind == Asset::MaterialKindUVE::Shader) {
+                    mat.kind = Asset::MaterialKindUVE::Standard;
+                } else if (mat.useCustomShaderCode) {
+                    mat.kind = Asset::MaterialKindUVE::Shader;
+                }
+                changed = true;
             }
-            changed = true;
-        }
-        if (mat.useCustomShaderCode) {
-            if (BeginPropertyRowsUVE("##table_mat_custom_shader")) {
+
+            if (mat.useCustomShaderCode || mat.kind == Asset::MaterialKindUVE::Shader) {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted("Shader Asset");
+                ImGui::TextUnformatted("Shader");
                 ImGui::TableSetColumnIndex(1);
                 ImGui::SetNextItemWidth(-FLT_MIN);
-                if (const auto picked = DrawAssetPickerUVE("##customShaderAsset", mat.customShader, ".uvshader", "Pick Shader Asset")) {
-                    mat.customShader = *picked;
+                if (DrawStandardShaderSlotUVE(nullptr, "##customShaderSlot", mat.customShader)) {
+                    mat.useCustomShaderCode = true;
+                    mat.kind = Asset::MaterialKindUVE::Shader;
                     changed = true;
                 }
-                ImGui::EndTable();
             }
+            ImGui::EndTable();
         }
 
         if (changed) {
@@ -2042,6 +2050,235 @@ bool EditorUVE::DrawStandardMaterialSlotUVE(const char* const label, const char*
             DrawMaterialPbrEditorInlineUVE(absPath, id);
         }
     }
+    return edited;
+}
+
+
+bool EditorUVE::DrawStandardShaderSlotUVE(const char* const label, const char* const id,
+                                          Asset::AssetGuidUVE& inOutGuid) {
+    bool edited = false;
+    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+
+    const std::uint32_t widgetId = ImGui::GetID(id != nullptr ? id : "shader_slot");
+    if (const auto found = m_assetPickerPendingPicks.find(widgetId); found != m_assetPickerPendingPicks.end()) {
+        inOutGuid = found->second;
+        edited = true;
+        m_assetPickerPendingPicks.erase(found);
+    }
+
+    std::string shaderDisplayName = "(None - Default Surface)";
+    std::filesystem::path currentShaderPath;
+    if (inOutGuid != Asset::kInvalidAssetGuidUVE) {
+        currentShaderPath = database.ResolveUVE(inOutGuid);
+        if (!currentShaderPath.empty()) {
+            shaderDisplayName = currentShaderPath.filename().string();
+        }
+    }
+
+    const std::string comboId = std::string("##shader_combo_") + (id != nullptr ? id : "slot");
+    const bool hasLabel = (label != nullptr && label[0] != '\0');
+
+    auto drawPickerControl = [&]() {
+        const float availWidth = ImGui::GetContentRegionAvail().x;
+        const bool hasShader = (inOutGuid != Asset::kInvalidAssetGuidUVE && !currentShaderPath.empty());
+        const float editBtnWidth = hasShader ? 48.0F : 0.0F;
+        const float spacing = hasShader ? 4.0F : 0.0F;
+        const float slotWidth = std::max(40.0F, availWidth - editBtnWidth - spacing);
+
+        ImGui::PushID(id != nullptr ? id : "shader_slot");
+
+        ImDrawList* const drawList = ImGui::GetWindowDrawList();
+        const ImVec2 frameMin = ImGui::GetCursorScreenPos();
+        const float frameHeight = ImGui::GetFrameHeight();
+        const ImVec2 frameMax{frameMin.x + slotWidth, frameMin.y + frameHeight};
+
+        ImGui::SetNextItemWidth(slotWidth);
+        const bool open = ImGui::BeginCombo(comboId.c_str(), "", ImGuiComboFlags_HeightLargest);
+
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const std::uintptr_t shaderIcon = m_uiAssets.GetContentTypeIconTextureIdUVE("Shader");
+        float textLeft = frameMin.x + style.FramePadding.x;
+
+        if (hasShader) {
+            if (shaderIcon != 0U) {
+                constexpr float kIconSize = 16.0F;
+                const float iconY = std::floor(frameMin.y + (frameHeight - kIconSize) * 0.5F);
+                drawList->AddImage(static_cast<ImTextureID>(shaderIcon),
+                                   ImVec2{textLeft, iconY},
+                                   ImVec2{textLeft + kIconSize, iconY + kIconSize});
+                textLeft += kIconSize + 5.0F;
+            }
+        }
+
+        const float textRight = frameMax.x - frameHeight;
+        const float maxTextWidth = std::max(0.0F, textRight - textLeft);
+
+        std::string displayLabel = shaderDisplayName;
+        if (maxTextWidth > 0.0F && ImGui::CalcTextSize(displayLabel.c_str()).x > maxTextWidth) {
+            constexpr const char* kEllipsis = "...";
+            const float ellWidth = ImGui::CalcTextSize(kEllipsis).x;
+            while (!displayLabel.empty() &&
+                   (ImGui::CalcTextSize(displayLabel.c_str()).x + ellWidth) > maxTextWidth) {
+                displayLabel.pop_back();
+            }
+            displayLabel += kEllipsis;
+        }
+
+        const ImU32 textColor = hasShader ? ImGui::GetColorU32(ImGuiCol_Text)
+                                          : ImGui::GetColorU32(ImGuiCol_TextDisabled);
+        const float textY = std::floor(frameMin.y + (frameHeight - ImGui::GetFontSize()) * 0.5F);
+        if (hasShader) {
+            drawList->AddText(ImVec2{textLeft, textY}, textColor, displayLabel.c_str());
+        } else {
+            const ImVec2 textSize = ImGui::CalcTextSize(displayLabel.c_str());
+            const float centerX = frameMin.x + std::max(style.FramePadding.x, (textRight - frameMin.x - textSize.x) * 0.5F);
+            drawList->AddText(ImVec2{centerX, textY}, textColor, displayLabel.c_str());
+        }
+
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* const payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
+                const char* const droppedPathStr = static_cast<const char*>(payload->Data);
+                if (droppedPathStr != nullptr) {
+                    std::filesystem::path droppedPath(droppedPathStr);
+                    if (droppedPath.is_relative()) {
+                        droppedPath = project.contentRoot / droppedPath;
+                    }
+                    const std::string ext = droppedPath.extension().string();
+                    if (ext == ".uvshader" || ext == ".glsl") {
+                        inOutGuid = database.RegisterUVE(droppedPath);
+                        edited = true;
+                    }
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+
+        if (ImGui::IsItemHovered() && !currentShaderPath.empty()) {
+            ImGui::SetTooltip("%s", currentShaderPath.string().c_str());
+        }
+
+        if (open) {
+            if (ImGui::Selectable("+ New Shader...")) {
+                OpenCreateShaderModalUVE(project.contentRoot / "Materials",
+                    [this, widgetId](const std::filesystem::path& created) {
+                        m_assetPickerPendingPicks[widgetId] = m_services->GetAssetDatabaseUVE().RegisterUVE(created);
+                    });
+            }
+
+            if (ImGui::Selectable("Browse...")) {
+                FilePickerRequestUVE request;
+                request.mode = FilePickerModeUVE::Open;
+                request.title = "Browse Shader";
+                request.extensions = std::vector<std::string>{".uvshader", ".glsl"};
+                request.startDirectory = PickerStartDirectoryUVE(project, inOutGuid);
+                request.onPick = [this, widgetId](const std::filesystem::path& absolute) {
+                    m_assetPickerPendingPicks[widgetId] = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+                    RefreshProjectFileIndexUVE();
+                };
+                OpenFilePickerUVE(std::move(request));
+            }
+
+            if (ImGui::Selectable("Quick Import...")) {
+                FilePickerRequestUVE request;
+                request.mode = FilePickerModeUVE::Open;
+                request.title = "Quick Import Shader";
+                request.extensions = std::vector<std::string>{".uvshader", ".glsl"};
+                request.startDirectory = project.contentRoot;
+                request.onPick = [this, widgetId](const std::filesystem::path& absolute) {
+                    const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(absolute);
+                    RefreshProjectFileIndexUVE();
+                    m_assetPickerPendingPicks[widgetId] = guid;
+                };
+                OpenFilePickerUVE(std::move(request));
+            }
+
+            if (hasShader) {
+                if (ImGui::Selectable("✕ Clear (Reset to Default)")) {
+                    inOutGuid = Asset::kInvalidAssetGuidUVE;
+                    edited = true;
+                }
+            }
+
+            ImGui::Separator();
+            ImGui::TextDisabled("PROJECT SHADERS");
+
+            static char s_shaderFilter[64] = {0};
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##filter_shaders", "Search shaders...", s_shaderFilter, sizeof(s_shaderFilter));
+
+            std::size_t foundShaders = 0U;
+            for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
+                const std::string ext = entry.relativePath.extension().string();
+                if (ext != ".uvshader" && ext != ".glsl") {
+                    continue;
+                }
+                const std::string relStr = entry.relativePath.generic_string();
+                if (s_shaderFilter[0] != '\0') {
+                    std::string filterLower = s_shaderFilter;
+                    std::string itemLower = relStr;
+                    std::transform(itemLower.begin(), itemLower.end(), itemLower.begin(), ::tolower);
+                    std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
+                    if (itemLower.find(filterLower) == std::string::npos) {
+                        continue;
+                    }
+                }
+
+                ++foundShaders;
+                const bool isCurrent = (currentShaderPath == (project.contentRoot / entry.relativePath));
+
+                if (shaderIcon != 0U) {
+                    ImGui::Image(static_cast<ImTextureID>(shaderIcon), ImVec2{16.0F, 16.0F});
+                    ImGui::SameLine(0.0F, 5.0F);
+                }
+                if (ImGui::Selectable(relStr.c_str(), isCurrent)) {
+                    const std::filesystem::path fullEntryPath = project.contentRoot / entry.relativePath;
+                    inOutGuid = entry.registeredAssetGuid.value_or(database.RegisterUVE(fullEntryPath));
+                    edited = true;
+                }
+            }
+
+            if (foundShaders == 0U) {
+                ImGui::TextDisabled("No shaders found in project.");
+            }
+
+            ImGui::EndCombo();
+        }
+
+        if (hasShader) {
+            ImGui::SameLine(0.0F, spacing);
+            if (ImGui::Button("Edit", ImVec2{editBtnWidth, 0.0F})) {
+                const std::filesystem::path rel = currentShaderPath.lexically_relative(project.contentRoot);
+                m_selectedProjectFile = Asset::ProjectFileEntryUVE{
+                    (rel.empty() || *rel.begin() == "..") ? currentShaderPath : rel,
+                    Asset::ProjectFileEntryKindUVE::File,
+                    inOutGuid
+                };
+                m_selectedAsset.reset();
+                m_activeRightPanelTab = EditorRightPanelTabUVE::Inspector;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Open this shader to view and edit its code in the Inspector");
+            }
+        }
+
+        ImGui::PopID();
+    };
+
+    if (hasLabel) {
+        if (BeginPropertyRowsUVE(id != nullptr ? id : "shader_row")) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            drawPickerControl();
+            ImGui::EndTable();
+        }
+    } else {
+        drawPickerControl();
+    }
+
     return edited;
 }
 

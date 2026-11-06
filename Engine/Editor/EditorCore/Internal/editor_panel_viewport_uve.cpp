@@ -176,12 +176,7 @@ void EditorUVE::RenderOverlayUVE() {
     DrawInputMapWindowUVE();
     DrawKeyboardShortcutsWindowUVE();
 
-    if (m_entityEditSession.has_value()) {
-        DrawEntityEditorPlaceholderUVE();
-        DrawEntityEditorWindowUVE();
-    } else if (m_retargetPreview.has_value()) {
-        DrawRetargetPlaceholderUVE();
-    } else if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
+    if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
         DrawScriptingWorkspaceUVE();
     } else {
         DrawHierarchyPanelUVE();
@@ -192,6 +187,12 @@ void EditorUVE::RenderOverlayUVE() {
         // Last, so the grips sit over the seam between two panels and the restore strips sit over
         // the edge a hidden panel left behind. Drawn first, they would be buried under both.
         DrawEditorChromeHandlesUVE();
+    }
+
+    if (m_entityEditSession.has_value()) {
+        DrawEntityEditorWindowUVE();
+    } else if (m_retargetPreview.has_value()) {
+        DrawRetargetPlaceholderUVE();
     }
     if (m_retargetWindow.has_value()) {
         DrawRetargetWindowUVE();
@@ -205,6 +206,9 @@ void EditorUVE::RenderOverlayUVE() {
     if (m_montage.has_value()) {
         DrawMontageUVE();
     }
+    DrawCreateScriptModalUVE();
+    DrawCreateShaderModalUVE();
+    DrawQuickImportModalUVE();
     // Last, so it floats over every panel.
     DrawCommandPaletteUVE();
     DrawImportProgressModalUVE();

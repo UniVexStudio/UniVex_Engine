@@ -59,8 +59,8 @@ constexpr Tree<1> kWorldPartition = kOne(Kind::WorldPartition3D);
 constexpr Tree<1> kNavigation = kOne(Kind::NavMeshVolume3D);
 constexpr Tree<1> kOccluder = kOne(Kind::Occluder3D);
 
-constexpr std::array<std::string_view, 9> kGroups{"Basic",     "Entity",    "Shapes",     "Lighting", "Camera",
-                                                  "Physics",   "Animation", "Audio, VFX & UI", "World"};
+constexpr std::array<std::string_view, 9> kGroups{"CREATE BASIC ASSET", "Entity", "Shapes", "Lighting", "Camera",
+                                                  "Physics", "Animation", "Audio, VFX & UI", "World"};
 
 // The Montage's bodies, in the order the window lists them: the two things a player is made of
 // first, then what a level is built from, then the two that mark a place or an area. Each is a
@@ -87,14 +87,17 @@ constexpr std::array<ContentCatalogueMontageEntryUVE, 6> kMontageEntries{{
      "to come back. Its transform is the whole object, so there is nothing to add to it."},
 }};
 
-constexpr std::array<ContentCatalogueItemUVE, 38> kItems{{
-    {"folder", "Folder", "Basic", "A new folder here in Content", Action::Folder, {}},
-    {"empty", "Empty Entity", "Basic", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty},
-    {"viewport_3d", "Viewport3D", "Basic",
-     "A new 3D level: a Viewport ready for objects, empty until you add one", Action::SceneAsset, kViewport3D},
-    {"viewport_2d", "Viewport2D", "Basic",
+constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
+    {"folder", "Folder", "CREATE BASIC ASSET", "A new folder here in Content", Action::Folder, {}, Scene::ViewportDimensionUVE::ThreeD, "Folder"},
+    {"basic_script", "New Script", "CREATE BASIC ASSET", "A new UVScript file (.uvs) ready to edit", Action::ScriptAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Script"},
+    {"viewport_3d", "Viewport 3D", "CREATE BASIC ASSET",
+     "A new 3D level: a Viewport ready for objects, empty until you add one", Action::SceneAsset, kViewport3D, Scene::ViewportDimensionUVE::ThreeD, "Viewport3D"},
+    {"viewport_2d", "Viewport 2D", "CREATE BASIC ASSET",
      "A new 2D scene: a Viewport authored flat on the XY plane, saved as 2D in the file",
-     Action::SceneAsset, kViewport2D, Scene::ViewportDimensionUVE::TwoD},
+     Action::SceneAsset, kViewport2D, Scene::ViewportDimensionUVE::TwoD, "Viewport2D"},
+    {"material", "Material", "CREATE BASIC ASSET", "A new standard PBR material asset", Action::MaterialAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "M_Standard"},
+    {"shader_script", "New Shader", "CREATE BASIC ASSET", "A new custom shader code asset", Action::ShaderAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "NewShader"},
+    {"empty", "Empty Entity 3D", "CREATE BASIC ASSET", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty, Scene::ViewportDimensionUVE::ThreeD, "Empty"},
 
     // First in the group: the Montage is the way in, and the six items under it are the shortcut
     // for when the author already knows which body they want.
@@ -102,71 +105,71 @@ constexpr std::array<ContentCatalogueItemUVE, 38> kItems{{
      "Pick the body an entity is built on - Player, Character, Prop, Physics Prop, Trigger or Spawner - "
      "and open it to build",
      Action::Montage, {}},
-    {"character", "Character", "Entity",
+    {"character", "Character 3D", "Entity",
      "A playable body: Character3D, empty until you add what it wears - a mesh, an animation, a "
      "collider",
      Action::EntityAsset,
-     kCharacter},
-    {"player", "Player", "Entity",
-     "The possessed body: a Player3D to build the view and the body on", Action::EntityAsset, kPlayer},
-    {"prop", "Prop", "Entity", "Something solid to place: a Static3D, empty until you add its shape",
-     Action::EntityAsset, kProp},
-    {"physics-prop", "Physics Prop", "Entity",
+     kCharacter, Scene::ViewportDimensionUVE::ThreeD, "Character"},
+    {"player", "Player 3D", "Entity",
+     "The possessed body: a Player3D to build the view and the body on", Action::EntityAsset, kPlayer, Scene::ViewportDimensionUVE::ThreeD, "Player"},
+    {"prop", "Static Prop 3D", "Entity", "Something solid to place: a Static3D, empty until you add its shape",
+     Action::EntityAsset, kProp, Scene::ViewportDimensionUVE::ThreeD, "Prop"},
+    {"physics-prop", "Physics Prop 3D", "Entity",
      "A prop that falls and gets pushed: a Rigid3D, empty until you add its shape", Action::EntityAsset,
-     kPhysicsProp},
-    {"trigger", "Trigger", "Entity", "An Area3D that reports what enters and leaves it - add the shape it watches",
-     Action::EntityAsset, kTrigger},
-    {"spawner", "Spawner", "Entity", "A SpawnPoint3D: where a player appears when the game starts",
-     Action::EntityAsset, kSpawner},
+     kPhysicsProp, Scene::ViewportDimensionUVE::ThreeD, "Physics Prop"},
+    {"trigger", "Trigger Area 3D", "Entity", "An Area3D that reports what enters and leaves it - add the shape it watches",
+     Action::EntityAsset, kTrigger, Scene::ViewportDimensionUVE::ThreeD, "Trigger"},
+    {"spawner", "Spawn Point 3D", "Entity", "A SpawnPoint3D: where a player appears when the game starts",
+     Action::EntityAsset, kSpawner, Scene::ViewportDimensionUVE::ThreeD, "Spawner"},
 
-    {"box", "Box", "Shapes", "A box mesh with its own collider", Action::EntityAsset, kBox},
-    {"sphere", "Sphere", "Shapes", "A sphere mesh with its own collider", Action::EntityAsset, kSphere},
-    {"plane", "Plane", "Shapes", "A flat plane mesh - a floor to start from", Action::EntityAsset, kPlane},
-    {"mesh", "Mesh", "Shapes", "A MeshInstance3D: pick any imported model as its source", Action::EntityAsset, kMesh},
+    {"box", "Box Mesh 3D", "Shapes", "A box mesh with its own collider", Action::EntityAsset, kBox, Scene::ViewportDimensionUVE::ThreeD, "Box"},
+    {"sphere", "Sphere Mesh 3D", "Shapes", "A sphere mesh with its own collider", Action::EntityAsset, kSphere, Scene::ViewportDimensionUVE::ThreeD, "Sphere"},
+    {"plane", "Plane Mesh 3D", "Shapes", "A flat plane mesh - a floor to start from", Action::EntityAsset, kPlane, Scene::ViewportDimensionUVE::ThreeD, "Plane"},
+    {"mesh", "Mesh Instance 3D", "Shapes", "A MeshInstance3D: pick any imported model as its source", Action::EntityAsset, kMesh, Scene::ViewportDimensionUVE::ThreeD, "Mesh"},
 
-    {"sun", "Sun", "Lighting", "A directional Light3D that lights the whole level", Action::EntityAsset, kLight},
-    {"light", "Light", "Lighting", "A Light3D: directional, point or spot", Action::EntityAsset, kLight},
-    {"environment", "World Environment", "Lighting", "Sky, ambient light, fog and tone mapping for the level",
-     Action::EntityAsset, kEnvironment},
-    {"reflection-probe", "Reflection Probe", "Lighting", "Captures reflections for the area around it",
-     Action::EntityAsset, kProbe},
-    {"fog", "Fog Volume", "Lighting", "Local fog inside a box or sphere", Action::EntityAsset, kFog},
-    {"decal", "Decal", "Lighting", "Projects a texture onto the surfaces it touches", Action::EntityAsset, kDecal},
+    {"sun", "Directional Light 3D", "Lighting", "A directional Light3D that lights the whole level", Action::EntityAsset, kLight, Scene::ViewportDimensionUVE::ThreeD, "Sun"},
+    {"light", "Light 3D", "Lighting", "A Light3D: directional, point or spot", Action::EntityAsset, kLight, Scene::ViewportDimensionUVE::ThreeD, "Light"},
+    {"environment", "World Environment 3D", "Lighting", "Sky, ambient light, fog and tone mapping for the level",
+     Action::EntityAsset, kEnvironment, Scene::ViewportDimensionUVE::ThreeD, "Environment"},
+    {"reflection-probe", "Reflection Probe 3D", "Lighting", "Captures reflections for the area around it",
+     Action::EntityAsset, kProbe, Scene::ViewportDimensionUVE::ThreeD, "Reflection Probe"},
+    {"fog", "Fog Volume 3D", "Lighting", "Local fog inside a box or sphere", Action::EntityAsset, kFog, Scene::ViewportDimensionUVE::ThreeD, "Fog"},
+    {"decal", "Decal 3D", "Lighting", "Projects a texture onto the surfaces it touches", Action::EntityAsset, kDecal, Scene::ViewportDimensionUVE::ThreeD, "Decal"},
 
-    {"camera", "Camera", "Camera", "A Camera3D", Action::EntityAsset, kCamera},
-    {"follow-camera", "Follow Camera", "Camera", "A SpringArm3D for a third-person view - add the camera it carries",
-     Action::EntityAsset, kFollowCamera},
+    {"camera", "Camera 3D", "Camera", "A Camera3D", Action::EntityAsset, kCamera, Scene::ViewportDimensionUVE::ThreeD, "Camera"},
+    {"follow-camera", "Spring Arm 3D", "Camera", "A SpringArm3D for a third-person view - add the camera it carries",
+     Action::EntityAsset, kFollowCamera, Scene::ViewportDimensionUVE::ThreeD, "Follow Camera"},
 
-    {"static-body", "Static3D", "Physics", "A Static3D: collides but never moves", Action::EntityAsset,
-     kStaticBody},
-    {"rigid-body", "Rigid3D", "Physics", "A Rigid3D: moved by gravity and forces", Action::EntityAsset,
-     kRigid3D},
-    {"collider", "Collider", "Physics", "A Collider3D shape for the body it is placed under", Action::EntityAsset,
-     kCollider},
-    {"area", "Area", "Physics", "An Area3D: detects overlaps without blocking", Action::EntityAsset, kArea},
-    {"raycast", "RayCast", "Physics", "A RayCast3D: reports the first thing along a line", Action::EntityAsset,
-     kRayCast},
+    {"static-body", "Static 3D", "Physics", "A Static3D: collides but never moves", Action::EntityAsset,
+     kStaticBody, Scene::ViewportDimensionUVE::ThreeD, "Static 3D"},
+    {"rigid-body", "Rigid 3D", "Physics", "A Rigid3D: moved by gravity and forces", Action::EntityAsset,
+     kRigid3D, Scene::ViewportDimensionUVE::ThreeD, "Rigid 3D"},
+    {"collider", "Collider 3D", "Physics", "A Collider3D shape for the body it is placed under", Action::EntityAsset,
+     kCollider, Scene::ViewportDimensionUVE::ThreeD, "Collider"},
+    {"area", "Area 3D", "Physics", "An Area3D: detects overlaps without blocking", Action::EntityAsset, kArea, Scene::ViewportDimensionUVE::ThreeD, "Area"},
+    {"raycast", "RayCast 3D", "Physics", "A RayCast3D: reports the first thing along a line", Action::EntityAsset,
+     kRayCast, Scene::ViewportDimensionUVE::ThreeD, "RayCast"},
 
-    {"animation-player", "AnimationSequencer", "Animation", "Plays animation clips on its parent", Action::EntityAsset,
-     kAnimationSequencer},
-    {"animation-tree", "AnimationGraph", "Animation", "Blends clips with a graph and a state machine",
-     Action::EntityAsset, kAnimationGraph},
+    {"animation-player", "Animation Sequencer", "Animation", "Plays animation clips on its parent", Action::EntityAsset,
+     kAnimationSequencer, Scene::ViewportDimensionUVE::ThreeD, "AnimationSequencer"},
+    {"animation-tree", "Animation Graph", "Animation", "Blends clips with a graph and a state machine",
+     Action::EntityAsset, kAnimationGraph, Scene::ViewportDimensionUVE::ThreeD, "AnimationGraph"},
     {"animation-library", "Animation Library", "Animation", "A named collection of animation clips that sequencers load from",
-     Action::LibraryAsset, {}},
+     Action::LibraryAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Animation Library"},
 
-    {"audio", "Audio Source", "Audio, VFX & UI", "An AudioSource3D that plays a clip in 3D", Action::EntityAsset,
-     kAudio},
-    {"particles", "Particles", "Audio, VFX & UI", "A ParticleEmitter3D", Action::EntityAsset, kParticles},
+    {"audio", "Audio Source 3D", "Audio, VFX & UI", "An AudioSource3D that plays a clip in 3D", Action::EntityAsset,
+     kAudio, Scene::ViewportDimensionUVE::ThreeD, "AudioSource"},
+    {"particles", "Particle Emitter 3D", "Audio, VFX & UI", "A ParticleEmitter3D", Action::EntityAsset, kParticles, Scene::ViewportDimensionUVE::ThreeD, "Particles"},
     {"canvas", "UI Canvas", "Audio, VFX & UI", "A Canvas to hold text, images and buttons", Action::EntityAsset,
-     kCanvas},
+     kCanvas, Scene::ViewportDimensionUVE::ThreeD, "Canvas"},
 
-    {"level-streamer", "Level Streamer", "World", "Loads and unloads a scene as the player gets near",
-     Action::EntityAsset, kLevelStreamer},
-    {"world-partition", "World Partition", "World", "Splits a large world into cells that stream in",
-     Action::EntityAsset, kWorldPartition},
-    {"navigation", "Navigation Region", "World", "The walkable area agents find paths on", Action::EntityAsset,
-     kNavigation},
-    {"occluder", "Occluder", "World", "Hides what is behind it from rendering", Action::EntityAsset, kOccluder},
+    {"level-streamer", "Level Streamer 3D", "World", "Loads and unloads a scene as the player gets near",
+     Action::EntityAsset, kLevelStreamer, Scene::ViewportDimensionUVE::ThreeD, "LevelStreamer"},
+    {"world-partition", "World Partition 3D", "World", "Splits a large world into cells that stream in",
+     Action::EntityAsset, kWorldPartition, Scene::ViewportDimensionUVE::ThreeD, "WorldPartition"},
+    {"navigation", "Nav Mesh Volume 3D", "World", "The walkable area agents find paths on", Action::EntityAsset,
+     kNavigation, Scene::ViewportDimensionUVE::ThreeD, "Navigation"},
+    {"occluder", "Occluder 3D", "World", "Hides what is behind it from rendering", Action::EntityAsset, kOccluder, Scene::ViewportDimensionUVE::ThreeD, "Occluder"},
 }};
 
 [[nodiscard]] char LowerUVE(const char character) noexcept {
@@ -254,7 +257,13 @@ Scene::Objects::SceneObjectKindUVE GetContentCatalogueIconKindUVE(const ContentC
         // A skeleton: every body the window offers is either already wearing bones or is about to.
         return Kind::Skeleton3D;
     }
-    if (item.action == ContentCatalogueActionUVE::Folder || item.objects.empty()) {
+    if (item.action == ContentCatalogueActionUVE::Folder) {
+        return Kind::Folder;
+    }
+    if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
+        return Kind::Script;
+    }
+    if (item.objects.empty()) {
         return Kind::Folder;
     }
     return item.objects.front().kind;

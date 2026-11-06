@@ -36,6 +36,12 @@ enum class ContentCatalogueActionUVE : std::uint8_t {
     /// be built on. Picking the item promises a choice, so it carries no objects and
     /// CreateContentCatalogueItemUVE refuses it - the body the author picks there is what gets made.
     Montage,
+    /// A `.uvs` script file.
+    ScriptAsset,
+    /// A `.uvmaterial` material file.
+    MaterialAsset,
+    /// A `.uvshader` custom shader file.
+    ShaderAsset,
 };
 
 /// An entry of the Content "+ Add" / right-click menu.
@@ -49,6 +55,9 @@ struct ContentCatalogueItemUVE final {
     /// Which kind of scene a SceneAsset writes, and the dimension it is saved with. Ignored by every
     /// other action, whose items leave it at the default.
     Scene::ViewportDimensionUVE sceneDimension = Scene::ViewportDimensionUVE::ThreeD;
+    /// The canonical file stem to name the new asset (e.g. "Character" for label "Character 3D").
+    /// Empty falls back to label.
+    std::string_view fileStem{};
 };
 
 /// One body the Montage offers: a catalogue item, plus the words the window says about it.

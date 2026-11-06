@@ -53,7 +53,10 @@ TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
         // anything, so none of their items carry objects.
         if (item.action == ContentCatalogueActionUVE::Folder ||
             item.action == ContentCatalogueActionUVE::LibraryAsset ||
-            item.action == ContentCatalogueActionUVE::Montage) {
+            item.action == ContentCatalogueActionUVE::Montage ||
+            item.action == ContentCatalogueActionUVE::ScriptAsset ||
+            item.action == ContentCatalogueActionUVE::MaterialAsset ||
+            item.action == ContentCatalogueActionUVE::ShaderAsset) {
             EXPECT_TRUE(item.objects.empty());
             continue;
         }
