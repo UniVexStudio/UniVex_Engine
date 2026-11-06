@@ -170,5 +170,13 @@ TEST_F(WindowManagerUVETest, RepeatedCreateDestroyCycles_LeaveEachInstanceIndepe
     EXPECT_TRUE(windowManager->IsValidUVE());
 }
 
+TEST_F(WindowManagerUVETest, FallbackOpenGLVersion_SucceedsWhenHighVersionRequested) {
+    WindowDescUVE desc = MakeTestWindowDescUVE();
+    desc.glVersionMajor = 4;
+    desc.glVersionMinor = 6;
+    WindowManagerUVE wm(eventSystem, desc);
+    EXPECT_TRUE(wm.IsValidUVE());
+}
+
 } // namespace
 } // namespace UVE::Window::Tests
