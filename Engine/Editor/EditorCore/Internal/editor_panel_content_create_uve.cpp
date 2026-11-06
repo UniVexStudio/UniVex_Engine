@@ -1091,7 +1091,7 @@ void EditorUVE::DrawCreateShaderModalUVE() {
         ImGui::TextUnformatted("Path");
         ImGui::TableSetColumnIndex(1);
 
-        const float pickerBtnWidth = 84.0F;
+        const float pickerBtnWidth = 54.0F;
         const float pathWidth = std::max(120.0F, ImGui::GetContentRegionAvail().x - pickerBtnWidth - 6.0F);
 
         char pathBuf[512];
@@ -1105,7 +1105,7 @@ void EditorUVE::DrawCreateShaderModalUVE() {
         }
 
         ImGui::SameLine(0.0F, 6.0F);
-        if (ImGui::Button("📁 Picker##shader_picker_btn", ImVec2{pickerBtnWidth, 0.0F})) {
+        if (ImGui::Button("Pick##shader_picker_btn", ImVec2{pickerBtnWidth, 0.0F})) {
             ImGui::OpenPopup("##shader_path_picker_popup");
         }
         if (ImGui::IsItemHovered()) {

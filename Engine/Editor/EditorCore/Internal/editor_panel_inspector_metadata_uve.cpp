@@ -2194,7 +2194,7 @@ bool EditorUVE::DrawStandardShaderSlotUVE(const char* const label, const char* c
             }
 
             if (hasShader) {
-                if (ImGui::Selectable("✕ Clear (Reset to Default)")) {
+                if (ImGui::Selectable("Clear (Reset to Default)")) {
                     inOutGuid = Asset::kInvalidAssetGuidUVE;
                     edited = true;
                 }

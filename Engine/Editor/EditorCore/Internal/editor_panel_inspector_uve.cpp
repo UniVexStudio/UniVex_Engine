@@ -315,7 +315,7 @@ void EditorUVE::DrawImportQueueMonitorUVE() {
     ImGui::Text("%zu job(s)", jobs.size());
     ImGui::BeginChild("##import-queue-monitor", ImVec2{0.0F, 0.0F}, true);
     for (const Asset::AssetImportJobUVE& job : jobs) {
-        const std::string header = "Job #" + std::to_string(job.id.value) + " — " +
+        const std::string header = "Job #" + std::to_string(job.id.value) + " - " +
                                    ImportJobStateLabelUVE(job.state) + "##import-job-" +
                                    std::to_string(job.id.value);
         if (ImGui::TreeNodeEx(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
