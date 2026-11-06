@@ -735,8 +735,11 @@ void EditorUVE::DrawEntityEditorPlaceholderUVE() {
 
 void EditorUVE::DrawEntityEditorWindowUVE() {
     EntityEditSessionUVE& session = *m_entityEditSession;
-    // Floating entity editor window: smooth dragging, resizable, fully responsive.
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    ImGuiWindowClass windowClass;
+    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
+    windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
+    ImGui::SetNextWindowClass(&windowClass);
     ImGui::SetNextWindowPos(ImVec2{mainViewport->Pos.x + 60.0F, mainViewport->Pos.y + 60.0F}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2{1180.0F, 720.0F}, ImGuiCond_FirstUseEver);
     const bool unsaved = HasEntityEditorUnsavedChangesUVE();
@@ -747,8 +750,7 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
         session.focusPending = false;
         ImGui::SetNextWindowFocus();
     }
-    bool open = true;
-    ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    ImGui::Begin(title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
 
     // Toolbar.
     if (ImGui::Button("Compile")) {
@@ -775,24 +777,6 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
         static_cast<void>(RevertEntityEditorUVE());
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Save & Back to Level")) {
-        static_cast<void>(CloseEntityEditorUVE(true));
-    }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Save and apply all entity changes to the main Level Editor");
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Back to Level (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-        if (unsaved) {
-            session.confirmClose = true;
-        } else {
-            static_cast<void>(CloseEntityEditorUVE(false));
-        }
-    }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Return to the main Level Editor (prompts to save if there are unsaved changes)");
-    }
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
@@ -904,8 +888,15 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
     DrawEntityEditorDockUVE(session);
     ImGui::EndChild();
 
-    // The X with unsaved changes asks first; without them it just closes.
-    if (!open) {
+    // The native OS window close button (X) or Escape triggers the close workflow.
+    ImGuiViewport* const currentViewport = ImGui::GetWindowViewport();
+    const bool osCloseRequested =
+        (currentViewport != nullptr && currentViewport != mainViewport && currentViewport->PlatformRequestClose);
+    const bool escapePressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
+    if (osCloseRequested || escapePressed) {
+        if (currentViewport != nullptr) {
+            currentViewport->PlatformRequestClose = false;
+        }
         if (unsaved) {
             session.confirmClose = true;
         } else {
