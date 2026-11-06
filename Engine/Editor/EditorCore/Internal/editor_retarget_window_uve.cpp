@@ -268,8 +268,7 @@ void EditorUVE::DrawRetargetWindowUVE() {
         window.focusPending = false;
         ImGui::SetNextWindowFocus();
     }
-    bool open = true;
-    ImGui::Begin("Retarget###retarget-window", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    ImGui::Begin("Retarget###retarget-window", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
 
     // ---- The character ---------------------------------------------------------------------------
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -478,10 +477,16 @@ void EditorUVE::DrawRetargetWindowUVE() {
         ImGui::TextDisabled("%zu of %zu animations will be conformed; %zu missing humanoid bones will be auto-generated.", plan.ReadyAnimationsUVE(),
                             plan.animations.size(), plan.CountUVE(Retarget::JointStatusUVE::Missing));
     }
-    ImGui::TextDisabled("Files change in place. Originals are saved in .retarget-backup beside the content folder.");
+    ImGuiViewport* const currentViewport = ImGui::GetWindowViewport();
+    const bool osCloseRequested =
+        (currentViewport != nullptr && currentViewport != mainViewport && currentViewport->PlatformRequestClose);
+    const bool escapePressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
+    if (osCloseRequested && currentViewport != nullptr) {
+        currentViewport->PlatformRequestClose = false;
+    }
     ImGui::End();
 
-    if (!open) {
+    if (osCloseRequested || escapePressed) {
         CloseRetargetWindowUVE();
     }
 }

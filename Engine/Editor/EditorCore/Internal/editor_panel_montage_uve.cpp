@@ -250,8 +250,7 @@ void EditorUVE::DrawMontageUVE() {
         montage.focusPending = false;
         ImGui::SetNextWindowFocus();
     }
-    bool open = true;
-    ImGui::Begin("3D Body Montage###body-montage", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    ImGui::Begin("3D Body Montage###body-montage", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
 
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     ImGui::TextWrapped("Pick the body this entity starts as. It opens in the Entity Editor, and everything it wears - "
@@ -422,12 +421,18 @@ void EditorUVE::DrawMontageUVE() {
                                     : (confirmed && pickedEntry != nullptr) ? std::string{pickedEntry->itemId}
                                                                            : std::string{};
 
+    ImGuiViewport* const currentViewport = ImGui::GetWindowViewport();
+    const bool osCloseRequested =
+        (currentViewport != nullptr && currentViewport != mainViewport && currentViewport->PlatformRequestClose);
+    if (osCloseRequested && currentViewport != nullptr) {
+        currentViewport->PlatformRequestClose = false;
+    }
     ImGui::End();
     if (!bodyToOpen.empty()) {
         static_cast<void>(OpenMontageBodyUVE(bodyToOpen));
         return;
     }
-    if (!open || cancelled || escaped) {
+    if (osCloseRequested || cancelled || escaped) {
         CloseMontageUVE();
     }
 }
