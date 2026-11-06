@@ -1,3 +1,13 @@
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <commdlg.h>
+#endif
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // The Content panel's making and managing of things: the "+ Add" catalogue (also opened by a
@@ -10,17 +20,22 @@
 #include <array>
 #include <cctype>
 #include <cfloat>
+#include <cstdio>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 #include "uve/asset/uve_file_envelope_uve.h"
+#include "uve/asset/shader_asset_uve.h"
 #include <imgui.h>
 
 #include "uve/component/name_component_uve.h"
@@ -30,6 +45,23 @@
 
 namespace UVE::Editor {
 namespace {
+
+#if defined(_WIN32)
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+#endif
+using GetOpenFileNameWFn = BOOL (WINAPI *)(LPOPENFILENAMEW);
+inline GetOpenFileNameWFn LoadGetOpenFileNameW(HMODULE comdlg) noexcept {
+    if (comdlg == nullptr) {
+        return nullptr;
+    }
+    return reinterpret_cast<GetOpenFileNameWFn>(GetProcAddress(comdlg, "GetOpenFileNameW"));
+}
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+#endif
 
 constexpr std::size_t kMaximumContentRecentUVE = 5U;
 constexpr std::size_t kMaximumContentNameBytesUVE = 96U;
@@ -334,12 +366,31 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
     }
     ImGui::Separator();
 
+    if (m_contentCreateFilter.empty()) {
+        if (ImGui::MenuItem("Import Assets... (Ctrl+I)")) {
+            PromptImportFilesUVE(contentRoot / directory);
+            ImGui::CloseCurrentPopup();
+            return;
+        }
+        ImGui::Separator();
+    }
+
     const bool allowed = IsAuthoringCommandAllowedUVE();
     const auto create = [&](const ContentCatalogueItemUVE& item) {
         if (item.action == ContentCatalogueActionUVE::Montage) {
             // The Montage asks which body first: nothing is written until its Open, so the menu's
             // own line closes and the window takes over.
             OpenMontageUVE(contentRoot / directory);
+            ImGui::CloseCurrentPopup();
+            return;
+        }
+        if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
+            OpenCreateScriptModalUVE(contentRoot / directory);
+            ImGui::CloseCurrentPopup();
+            return;
+        }
+        if (item.action == ContentCatalogueActionUVE::ShaderAsset) {
+            OpenCreateShaderModalUVE(contentRoot / directory);
             ImGui::CloseCurrentPopup();
             return;
         }
@@ -365,7 +416,29 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
     };
     const auto drawItem = [&](const ContentCatalogueItemUVE& item, const bool showGroup) {
         ImGui::PushID(item.id.data(), item.id.data() + item.id.size());
-        DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(item)));
+        std::uintptr_t iconId = 0U;
+        ImU32 indicatorColor = 0U;
+        if (item.action == ContentCatalogueActionUVE::MaterialAsset) {
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("Material");
+            indicatorColor = IM_COL32(16, 185, 129, 255);
+        } else if (item.action == ContentCatalogueActionUVE::ShaderAsset) {
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("Shader");
+            indicatorColor = IM_COL32(16, 185, 129, 255);
+        } else if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("Script");
+            indicatorColor = IM_COL32(56, 189, 248, 255);
+        } else if (item.action == ContentCatalogueActionUVE::Folder) {
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("folder");
+            indicatorColor = IM_COL32(245, 158, 11, 255);
+        } else if (item.action == ContentCatalogueActionUVE::LibraryAsset) {
+            iconId = m_uiAssets.GetContentTypeIconTextureIdUVE("AnimationLibrary");
+            indicatorColor = IM_COL32(168, 85, 247, 255);
+        } else {
+            const auto kind = GetContentCatalogueIconKindUVE(item);
+            iconId = m_uiAssets.GetObjectIconTextureIdUVE(kind);
+            indicatorColor = GetSceneObjectIndicatorColorUVE(kind);
+        }
+        DrawSlotIndicatorIconUVE(iconId, indicatorColor);
         const std::string label{item.label};
         const std::string group = showGroup ? std::string{item.group} : std::string{};
         ImGui::BeginDisabled(!allowed);
@@ -411,7 +484,7 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
             }
             ImGui::Separator();
         }
-        // "Basic" stays open at the top; every other group is a submenu with its first item's icon.
+        // "CREATE BASIC ASSET" stays open at the top; every other group is a submenu with its first item's icon.
         for (const std::string_view group : GetContentCatalogueGroupsUVE()) {
             const std::span<const ContentCatalogueItemUVE> items = GetContentCatalogueItemsUVE();
             const auto firstInGroup = std::find_if(items.begin(), items.end(),
@@ -419,7 +492,8 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
             if (firstInGroup == items.end()) {
                 continue;
             }
-            if (group == "Basic") {
+            if (group == "CREATE BASIC ASSET" || group == "Basic") {
+                ImGui::TextDisabled("CREATE BASIC ASSET");
                 for (const ContentCatalogueItemUVE& item : items) {
                     if (item.group == group) {
                         drawItem(item, false);
@@ -434,7 +508,8 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
                 }
                 continue;
             }
-            DrawObjectPickerIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(GetContentCatalogueIconKindUVE(*firstInGroup)));
+            const auto firstKind = GetContentCatalogueIconKindUVE(*firstInGroup);
+            DrawSlotIndicatorIconUVE(m_uiAssets.GetObjectIconTextureIdUVE(firstKind), GetCategoryIndicatorColorUVE(group));
             const std::string groupLabel{group};
             if (ImGui::BeginMenu(groupLabel.c_str())) {
                 for (const ContentCatalogueItemUVE& item : items) {
@@ -555,6 +630,29 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
                               "Game > Player).");
         }
     }
+    std::string extLower = contextEntry.relativePath.extension().string();
+    std::ranges::transform(extLower, extLower.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool isScript = extLower == ".uvs";
+    const bool isShader = extLower == ".uvshader";
+    if (isScript) {
+        ImGui::BeginDisabled(!allowed);
+        if (ImGui::MenuItem("Edit Script")) {
+            static_cast<void>(OpenUVScriptPathUVE(absolute));
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("Open this UVScript in the Script Editor (also: double-click)");
+        }
+    }
+    if (isShader) {
+        if (ImGui::MenuItem("Edit Shader")) {
+            m_selectedProjectFile = contextEntry;
+            m_selectedAsset.reset();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+            ImGui::SetTooltip("Inspect and edit shader source code in the Inspector (also: double-click)");
+        }
+    }
     if (directory && ImGui::MenuItem("Open")) {
         m_contentBrowserDirectory = contextEntry.relativePath;
         m_contentBrowserShelf.clear();
@@ -603,8 +701,6 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         }
         ImGui::EndDisabled();
     }
-    std::string extLower = contextEntry.relativePath.extension().string();
-    std::ranges::transform(extLower, extLower.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     const bool isUvanim = extLower == ".uvanim";
     const bool canRetargetItem = isUvanim || uvmodel || (sourceInfo != nullptr && (sourceInfo->rigged || sourceInfo->hasSkeleton));
     if (canRetargetItem) {
@@ -621,7 +717,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
             ImGui::SetTooltip("Conform skeleton and animations to the UniVex humanoid (auto-generating any missing bones).");
         }
     }
-    if (entityAsset || directory || modelReady || uvmodel || placeable || canRetargetItem) {
+    if (entityAsset || directory || modelReady || uvmodel || placeable || canRetargetItem || isScript || isShader) {
         ImGui::Separator();
     }
 
@@ -677,7 +773,7 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         m_selectedAsset.reset();
     }
     ImGui::Separator();
-    if (ImGui::MenuItem("Rename")) {
+    if (ImGui::MenuItem("Rename", "F2")) {
         BeginContentRenameUVE(contextEntry.relativePath);
     }
     if (ImGui::MenuItem("Duplicate")) {
@@ -710,6 +806,540 @@ void EditorUVE::DrawFilesystemContextPopupUVE() {
         ImGui::EndMenu();
     }
     ImGui::EndPopup();
+}
+
+bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirectory) {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_contentBrowserDirectory) : targetDirectory;
+
+#if defined(_WIN32)
+    HMODULE comdlg = LoadLibraryA("comdlg32.dll");
+    if (comdlg != nullptr) {
+        const GetOpenFileNameWFn pGetOpenFileNameW = LoadGetOpenFileNameW(comdlg);
+        if (pGetOpenFileNameW != nullptr) {
+            std::vector<wchar_t> buffer(65536, 0);
+            OPENFILENAMEW ofn;
+            std::memset(&ofn, 0, sizeof(ofn));
+            ofn.lStructSize = sizeof(ofn);
+            ofn.lpstrFile = buffer.data();
+            ofn.nMaxFile = static_cast<DWORD>(buffer.size());
+            ofn.lpstrTitle = L"Select Assets to Import";
+            ofn.lpstrFilter =
+                L"All Supported Assets\0*.fbx;*.gltf;*.glb;*.obj;*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.wav;*.ogg;*.mp3;*.uvs;*.uvshader;*.glsl\0"
+                L"3D Models (*.fbx;*.gltf;*.glb;*.obj)\0*.fbx;*.gltf;*.glb;*.obj\0"
+                L"Images & Textures (*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr)\0*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr\0"
+                L"Audio (*.wav;*.ogg;*.mp3)\0*.wav;*.ogg;*.mp3\0"
+                L"Scripts & Shaders (*.uvs;*.uvshader;*.glsl)\0*.uvs;*.uvshader;*.glsl\0"
+                L"All Files (*.*)\0*.*\0\0";
+            ofn.nFilterIndex = 1;
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
+
+            if (pGetOpenFileNameW(&ofn)) {
+                FreeLibrary(comdlg);
+                std::vector<std::filesystem::path> chosenFiles;
+                const wchar_t* ptr = buffer.data();
+                std::wstring firstString(ptr);
+                ptr += firstString.size() + 1U;
+                if (*ptr == L'\0') {
+                    // Single file selected
+                    chosenFiles.push_back(std::filesystem::path(firstString));
+                } else {
+                    // Multiple files: first string is directory, followed by null-separated filenames
+                    std::filesystem::path baseDir(firstString);
+                    while (*ptr != L'\0') {
+                        std::wstring filename(ptr);
+                        chosenFiles.push_back(baseDir / filename);
+                        ptr += filename.size() + 1U;
+                    }
+                }
+                return ImportExternalFilesUVE(chosenFiles, destDir);
+            }
+        }
+        FreeLibrary(comdlg);
+    }
+#endif
+
+    OpenQuickImportModalUVE(destDir);
+    return false;
+}
+
+bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>& sourceFiles,
+                                      const std::filesystem::path& targetDirectory) {
+    if (m_services == nullptr || sourceFiles.empty()) {
+        return false;
+    }
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_contentBrowserDirectory) : targetDirectory;
+    std::error_code ec;
+    std::filesystem::create_directories(destDir, ec);
+
+    std::size_t importedCount = 0;
+    for (const std::filesystem::path& src : sourceFiles) {
+        if (!std::filesystem::exists(src, ec)) {
+            continue;
+        }
+        const std::filesystem::path destFile = destDir / src.filename();
+        std::filesystem::copy_file(src, destFile, std::filesystem::copy_options::overwrite_existing, ec);
+        if (!ec) {
+            ++importedCount;
+            m_services->GetAssetDatabaseUVE().RegisterUVE(destFile);
+        }
+    }
+
+    if (importedCount > 0U) {
+        m_projectFileSnapshotInitialized = false;
+        RefreshProjectFileIndexUVE();
+        const Asset::ProjectFileSnapshotUVE freshSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        QueueModelAutoImportsUVE(freshSnapshot);
+        m_contentStatusMessage = "Imported " + std::to_string(importedCount) + " asset(s) into " +
+                                 (destDir.filename().empty() ? "Content" : destDir.filename().generic_string()) + ".";
+        return true;
+    }
+    return false;
+}
+
+void EditorUVE::OpenQuickImportModalUVE(const std::filesystem::path& targetDirectory) {
+    m_quickImportModal = QuickImportModalStateUVE{};
+    m_quickImportModal.openRequested = true;
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    m_quickImportModal.targetDirectory = targetDirectory.empty() ? (snapshot.contentRoot / m_contentBrowserDirectory) : targetDirectory;
+}
+
+void EditorUVE::DrawQuickImportModalUVE() {
+    constexpr const char* kModalId = "Quick Import Assets##uve_quick_import_modal";
+    if (m_quickImportModal.openRequested) {
+        ImGui::OpenPopup(kModalId);
+        m_quickImportModal.openRequested = false;
+    }
+
+    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(mainViewport->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5F, 0.5F});
+    ImGui::SetNextWindowSize(ImVec2{520.0F, 0.0F}, ImGuiCond_Appearing);
+
+    constexpr ImGuiWindowFlags modalFlags =
+        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
+    if (!ImGui::BeginPopupModal(kModalId, nullptr, modalFlags)) {
+        return;
+    }
+
+    QuickImportModalStateUVE& modal = m_quickImportModal;
+
+    ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Import Assets into Project");
+    ImGui::TextDisabled("Select or specify external 3D models, textures, audio, shaders or scripts.");
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path relDest = modal.targetDirectory.lexically_relative(snapshot.contentRoot);
+    const std::string displayDest = (relDest.empty() || *relDest.begin() == "..") ? "Content" : ("Content / " + relDest.generic_string());
+
+    ImGui::Text("Destination Folder: %s", displayDest.c_str());
+    ImGui::Spacing();
+
+    // Source path input
+    ImGui::TextUnformatted("Source File Path:");
+    std::array<char, 1024> pathBuffer{};
+    modal.sourcePath.copy(pathBuffer.data(), std::min(modal.sourcePath.size(), pathBuffer.size() - 1U));
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0F);
+    if (ImGui::InputText("##source_path_input", pathBuffer.data(), pathBuffer.size())) {
+        modal.sourcePath = pathBuffer.data();
+        modal.statusMessage.clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...")) {
+#if defined(_WIN32)
+        HMODULE comdlg = LoadLibraryA("comdlg32.dll");
+        if (comdlg != nullptr) {
+            const GetOpenFileNameWFn pGetOpenFileNameW = LoadGetOpenFileNameW(comdlg);
+            if (pGetOpenFileNameW != nullptr) {
+                wchar_t buf[2048] = {0};
+                OPENFILENAMEW ofn;
+                std::memset(&ofn, 0, sizeof(ofn));
+                ofn.lStructSize = sizeof(ofn);
+                ofn.lpstrFile = buf;
+                ofn.nMaxFile = sizeof(buf) / sizeof(wchar_t);
+                ofn.lpstrTitle = L"Select File to Import";
+                ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
+                if (pGetOpenFileNameW(&ofn)) {
+                    modal.sourcePath = std::filesystem::path(buf).string();
+                }
+            }
+            FreeLibrary(comdlg);
+        }
+#endif
+    }
+
+    if (!modal.statusMessage.empty()) {
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4{0.95F, 0.45F, 0.40F, 1.0F}, "%s", modal.statusMessage.c_str());
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    const bool cancel = ImGui::Button("Cancel", ImVec2{110.0F, 28.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape);
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 110.0F);
+
+    const bool canImport = !modal.sourcePath.empty();
+    ImGui::BeginDisabled(!canImport);
+    const bool doImport = ImGui::Button("Import", ImVec2{110.0F, 28.0F}) ||
+                          (canImport && ImGui::IsKeyPressed(ImGuiKey_Enter));
+    ImGui::EndDisabled();
+
+    if (doImport && canImport) {
+        std::error_code ec;
+        const std::filesystem::path src(modal.sourcePath);
+        if (std::filesystem::exists(src, ec) && std::filesystem::is_regular_file(src, ec)) {
+            ImportExternalFilesUVE({src}, modal.targetDirectory);
+            ImGui::CloseCurrentPopup();
+        } else {
+            modal.statusMessage = "File does not exist or is not a regular file.";
+        }
+    } else if (cancel) {
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+}
+
+
+void EditorUVE::OpenCreateShaderModalUVE(const std::filesystem::path& targetDirectory,
+                                        std::function<void(const std::filesystem::path&)> onCreated) {
+    m_createShaderModal = CreateShaderModalStateUVE{};
+    m_createShaderModal.isOpen = true;
+    m_createShaderModal.openRequested = true;
+    m_createShaderModal.targetDirectory = targetDirectory.empty() ? m_contentBrowserDirectory : targetDirectory;
+    m_createShaderModal.shaderTypeIndex = 0;
+    m_createShaderModal.onShaderCreated = std::move(onCreated);
+
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path contentRoot = snapshot.contentRoot;
+    std::filesystem::path fullDir = m_createShaderModal.targetDirectory;
+    if (fullDir.is_relative()) {
+        fullDir = contentRoot / fullDir;
+    }
+    const std::filesystem::path fullDefault = fullDir / "NewShader.uvshader";
+    const std::filesystem::path relDefault = fullDefault.lexically_relative(contentRoot);
+    m_createShaderModal.shaderPathText = (relDefault.empty() || *relDefault.begin() == "..") ? fullDefault.generic_string() : relDefault.generic_string();
+}
+
+void EditorUVE::DrawCreateShaderModalUVE() {
+    if (!m_createShaderModal.isOpen && !m_createShaderModal.openRequested) {
+        return;
+    }
+
+    if (m_createShaderModal.openRequested) {
+        m_createShaderModal.isOpen = true;
+        m_createShaderModal.openRequested = false;
+        const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(mainViewport->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5F, 0.5F});
+    }
+
+    ImGui::SetNextWindowSize(ImVec2{520.0F, 0.0F}, ImGuiCond_Appearing);
+
+    constexpr ImGuiWindowFlags windowFlags =
+        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse;
+    if (!ImGui::Begin("Create / Assign Shader##uve_shader_window", &m_createShaderModal.isOpen, windowFlags)) {
+        ImGui::End();
+        return;
+    }
+
+    CreateShaderModalStateUVE& modal = m_createShaderModal;
+
+    ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Create / Assign Shader");
+    ImGui::TextDisabled("Configure shader type, starting template and shader path.");
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path contentRoot = snapshot.contentRoot;
+
+    if (ImGui::BeginTable("##create_shader_table", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 100.0F);
+        ImGui::TableSetupColumn("##field", ImGuiTableColumnFlags_WidthStretch);
+
+        // 1. Language
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Language");
+        ImGui::TableSetColumnIndex(1);
+        ImGui::BeginDisabled();
+        ImGui::Button("UVShader / GLSL (.uvshader)", ImVec2{-FLT_MIN, 0.0F});
+        ImGui::EndDisabled();
+
+        // 2. Shader Type / Template
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Shader Type");
+        ImGui::TableSetColumnIndex(1);
+        constexpr const char* kShaderTypes[] = {
+            "Spatial / Standard PBR Surface",
+            "Unlit / Canvas / UI",
+            "Post-Process / Screen Effect",
+            "Custom Vertex / Fragment GLSL"
+        };
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::Combo("##shader_type_combo", &modal.shaderTypeIndex, kShaderTypes, 4);
+
+        // 3. Path & Rename (Directly editable path with Picker button)
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Path");
+        ImGui::TableSetColumnIndex(1);
+
+        const float pickerBtnWidth = 84.0F;
+        const float pathWidth = std::max(120.0F, ImGui::GetContentRegionAvail().x - pickerBtnWidth - 6.0F);
+
+        char pathBuf[512];
+        std::snprintf(pathBuf, sizeof(pathBuf), "%s", modal.shaderPathText.c_str());
+        ImGui::SetNextItemWidth(pathWidth);
+        if (ImGui::InputText("##path_input", pathBuf, sizeof(pathBuf))) {
+            modal.shaderPathText = pathBuf;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Edit the shader path and filename directly to rename it");
+        }
+
+        ImGui::SameLine(0.0F, 6.0F);
+        if (ImGui::Button("📁 Picker##shader_picker_btn", ImVec2{pickerBtnWidth, 0.0F})) {
+            ImGui::OpenPopup("##shader_path_picker_popup");
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Choose destination folder or select an existing shader from Content");
+        }
+
+        ImGui::SetNextWindowSizeConstraints(ImVec2{360.0F, 220.0F}, ImVec2{540.0F, 420.0F});
+        if (ImGui::BeginPopup("##shader_path_picker_popup")) {
+            ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Select Shader or Folder in Content");
+            ImGui::Separator();
+
+            static char s_shaderPickerFilter[64] = {0};
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##filter_shaders", "Filter content...", s_shaderPickerFilter, sizeof(s_shaderPickerFilter));
+
+            if (ImGui::BeginTabBar("##shader_picker_tabs")) {
+                if (ImGui::BeginTabItem("Shaders (.uvshader)")) {
+                    std::size_t shaderCount = 0U;
+                    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+                        const std::string ext = entry.relativePath.extension().string();
+                        if (ext != ".uvshader" && ext != ".glsl") {
+                            continue;
+                        }
+                        const std::string relStr = entry.relativePath.generic_string();
+                        if (s_shaderPickerFilter[0] != '\0') {
+                            std::string lowerFilter = s_shaderPickerFilter;
+                            std::string lowerItem = relStr;
+                            std::transform(lowerFilter.begin(), lowerFilter.end(), lowerFilter.begin(), ::tolower);
+                            std::transform(lowerItem.begin(), lowerItem.end(), lowerItem.begin(), ::tolower);
+                            if (lowerItem.find(lowerFilter) == std::string::npos) {
+                                continue;
+                            }
+                        }
+                        ++shaderCount;
+                        const bool selected = (modal.shaderPathText == relStr);
+                        if (ImGui::Selectable(relStr.c_str(), selected)) {
+                            modal.shaderPathText = relStr;
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    if (shaderCount == 0U) {
+                        ImGui::TextDisabled("No shaders found in project.");
+                    }
+                    ImGui::EndTabItem();
+                }
+
+                if (ImGui::BeginTabItem("Folders")) {
+                    std::filesystem::path currentInput(modal.shaderPathText);
+                    std::string currentFileName = currentInput.filename().generic_string();
+                    if (currentFileName.empty() || currentFileName == ".") {
+                        currentFileName = "NewShader.uvshader";
+                    } else if (!currentFileName.ends_with(".uvshader") && !currentFileName.ends_with(".glsl")) {
+                        currentFileName += ".uvshader";
+                    }
+
+                    if (ImGui::Selectable("Content (Root)", false)) {
+                        modal.shaderPathText = currentFileName;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+                        if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory) {
+                            continue;
+                        }
+                        const std::string relStr = entry.relativePath.generic_string();
+                        if (s_shaderPickerFilter[0] != '\0') {
+                            std::string lowerFilter = s_shaderPickerFilter;
+                            std::string lowerItem = relStr;
+                            std::transform(lowerFilter.begin(), lowerFilter.end(), lowerFilter.begin(), ::tolower);
+                            std::transform(lowerItem.begin(), lowerItem.end(), lowerItem.begin(), ::tolower);
+                            if (lowerItem.find(lowerFilter) == std::string::npos) {
+                                continue;
+                            }
+                        }
+                        if (ImGui::Selectable(relStr.c_str(), false)) {
+                            modal.shaderPathText = (entry.relativePath / currentFileName).generic_string();
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::EndTable();
+    }
+
+    // Resolve path & filename
+    std::string text = modal.shaderPathText;
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
+        text.erase(text.begin());
+    }
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
+        text.pop_back();
+    }
+
+    std::filesystem::path inputPath(text.empty() ? "NewShader.uvshader" : text);
+    if (!inputPath.filename().generic_string().ends_with(".uvshader") &&
+        !inputPath.filename().generic_string().ends_with(".glsl")) {
+        inputPath += ".uvshader";
+    }
+    const std::filesystem::path fullPath = inputPath.is_relative() ? (contentRoot / inputPath) : inputPath;
+    const std::string stem = fullPath.stem().string();
+
+    std::string problem;
+    bool isExistingFile = false;
+    if (stem.empty()) {
+        problem = "Shader name cannot be empty.";
+    } else {
+        std::error_code ec;
+        if (std::filesystem::exists(fullPath, ec) && std::filesystem::is_regular_file(fullPath, ec)) {
+            isExistingFile = true;
+        }
+    }
+
+    if (!problem.empty()) {
+        ImGui::TextColored(ImVec4{0.95F, 0.45F, 0.40F, 1.0F}, "%s", problem.c_str());
+    } else if (isExistingFile) {
+        ImGui::TextColored(ImVec4{0.45F, 0.75F, 0.95F, 1.0F}, "Existing shader found in Content. Ready to assign and open.");
+    } else {
+        ImGui::TextColored(ImVec4{0.45F, 0.80F, 0.55F, 1.0F}, "Ready to create.");
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Buttons: Cancel & Action
+    const bool cancel = ImGui::Button("Cancel", ImVec2{110.0F, 28.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape);
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 130.0F);
+
+    const char* actionLabel = isExistingFile ? "Assign / Open" : "Create";
+    ImGui::BeginDisabled(!problem.empty());
+    const bool doAction = ImGui::Button(actionLabel, ImVec2{130.0F, 28.0F}) ||
+                          (problem.empty() && ImGui::IsKeyPressed(ImGuiKey_Enter));
+    ImGui::EndDisabled();
+
+    if (doAction && problem.empty()) {
+        if (isExistingFile) {
+            const Asset::ProjectFileSnapshotUVE projSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+            const std::filesystem::path rel = fullPath.lexically_relative(projSnapshot.contentRoot);
+            m_selectedProjectFile = Asset::ProjectFileEntryUVE{rel, Asset::ProjectFileEntryKindUVE::File, std::nullopt};
+            m_selectedAsset.reset();
+            m_contentStatusMessage = "Selected shader " + fullPath.filename().string();
+
+            if (modal.onShaderCreated != nullptr) {
+                modal.onShaderCreated(fullPath);
+            }
+            modal.isOpen = false;
+        } else {
+            std::error_code ec;
+            std::filesystem::create_directories(fullPath.parent_path(), ec);
+
+            Asset::ShaderAssetUVE shader{};
+            shader.stage = Asset::ShaderStageKindUVE::Fragment;
+            shader.entryPointName = "main";
+
+            if (modal.shaderTypeIndex == 0) {
+                // Spatial PBR Surface
+                shader.sourceCode =
+                    "// UniVex Spatial PBR Surface Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec3 v_Position;\n"
+                    "layout(location = 1) in vec3 v_Normal;\n"
+                    "layout(location = 2) in vec2 v_TexCoord;\n\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "layout(binding = 0) uniform sampler2D u_AlbedoMap;\n"
+                    "layout(binding = 1) uniform sampler2D u_NormalMap;\n\n"
+                    "void main() {\n"
+                    "    vec4 albedo = texture(u_AlbedoMap, v_TexCoord);\n"
+                    "    vec3 N = normalize(v_Normal);\n"
+                    "    outColor = vec4(albedo.rgb, 1.0);\n"
+                    "}\n";
+            } else if (modal.shaderTypeIndex == 1) {
+                // Unlit Canvas / UI
+                shader.sourceCode =
+                    "// UniVex Unlit Canvas/UI Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec2 v_TexCoord;\n"
+                    "layout(location = 1) in vec4 v_Color;\n\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "layout(binding = 0) uniform sampler2D u_Texture;\n\n"
+                    "void main() {\n"
+                    "    outColor = texture(u_Texture, v_TexCoord) * v_Color;\n"
+                    "}\n";
+            } else if (modal.shaderTypeIndex == 2) {
+                // Post-Process / Screen Effect
+                shader.sourceCode =
+                    "// UniVex Post-Processing Quad Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec2 v_TexCoord;\n\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "layout(binding = 0) uniform sampler2D u_SceneColor;\n\n"
+                    "void main() {\n"
+                    "    vec3 scene = texture(u_SceneColor, v_TexCoord).rgb;\n"
+                    "    outColor = vec4(scene, 1.0);\n"
+                    "}\n";
+            } else {
+                // Custom GLSL
+                shader.sourceCode =
+                    "// UniVex Custom Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec2 v_TexCoord;\n\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "void main() {\n"
+                    "    outColor = vec4(1.0, 1.0, 1.0, 1.0);\n"
+                    "}\n";
+            }
+
+            if (Asset::SaveShaderAssetUVE(shader, fullPath)) {
+                m_services->GetAssetDatabaseUVE().RegisterUVE(fullPath);
+                m_projectFileSnapshotInitialized = false;
+                RefreshProjectFileIndexUVE();
+
+                const Asset::ProjectFileSnapshotUVE projSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const std::filesystem::path rel = fullPath.lexically_relative(projSnapshot.contentRoot);
+                m_selectedProjectFile = Asset::ProjectFileEntryUVE{rel, Asset::ProjectFileEntryKindUVE::File, std::nullopt};
+                m_selectedAsset.reset();
+                m_contentStatusMessage = "Created shader " + fullPath.filename().string();
+
+                if (modal.onShaderCreated != nullptr) {
+                    modal.onShaderCreated(fullPath);
+                }
+            } else {
+                m_contentStatusMessage = "Could not create shader file " + fullPath.filename().string();
+            }
+            modal.isOpen = false;
+        }
+    } else if (cancel) {
+        modal.isOpen = false;
+    }
+
+    ImGui::End();
 }
 
 } // namespace UVE::Editor

@@ -742,7 +742,7 @@ uve_set_warnings(uve_editor_tests)
 # so they are reached as "Support/<name>.h" from any subdirectory.
 target_include_directories(uve_editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-gtest_discover_tests(uve_editor_tests)
+gtest_discover_tests(uve_editor_tests DISCOVERY_TIMEOUT 60 DISCOVERY_MODE PRE_TEST)
 
 add_executable(univex_viewport_2d_tests
     ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/tests/Viewport2DTests.cpp

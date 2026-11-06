@@ -25,6 +25,8 @@
 #include <array>
 #include <cfloat>
 #include <cmath>
+#include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <filesystem>
 #include <system_error>
@@ -42,6 +44,8 @@
 #include "editor_object_icons_uve.h"
 
 #include "uve/asset/asset_import_queue_uve.h"
+#include "uve/asset/material_asset_uve.h"
+#include "uve/asset/shader_asset_uve.h"
 #include "uve/component/animation_sequencer_component_uve.h"
 #include "uve/component/audio_source_component_uve.h"
 #include "uve/component/camera_component_uve.h"
@@ -112,6 +116,118 @@ void DrawInspectorChainHeaderUVE(const std::string& label) {
     const float ruleY = start.y + ImGui::GetTextLineHeight() * 0.5F;
     ImGui::GetWindowDrawList()->AddLine(ImVec2(start.x + textWidth + 6.0F, ruleY), ImVec2(start.x + width, ruleY),
                                         IM_COL32(88, 104, 128, 160), 1.0F);
+}
+
+
+/// A counter-clockwise circular arrow glyph for resetting a property to its default value.
+void DrawResetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size, const ImU32 color) {
+    constexpr float kPi = std::numbers::pi_v<float>;
+    const float radius = size * 0.35F;
+    const float thickness = std::max(1.5F, size * 0.13F);
+    constexpr int kSegments = 16;
+    constexpr float kStartAngle = 0.40F * kPi;
+    constexpr float kEndAngle = 1.85F * kPi;
+    for (int i = 0; i < kSegments; ++i) {
+        const float a0 = kStartAngle + (static_cast<float>(i) * (kEndAngle - kStartAngle) / static_cast<float>(kSegments));
+        const float a1 = kStartAngle + (static_cast<float>(i + 1) * (kEndAngle - kStartAngle) / static_cast<float>(kSegments));
+        const ImVec2 p0{center.x + (radius * std::cos(a0)), center.y + (radius * std::sin(a0))};
+        const ImVec2 p1{center.x + (radius * std::cos(a1)), center.y + (radius * std::sin(a1))};
+        drawList.AddLine(p0, p1, color, thickness);
+    }
+    const ImVec2 tip{center.x + (radius * std::cos(kStartAngle)), center.y + (radius * std::sin(kStartAngle))};
+    const float arrowLen = size * 0.30F;
+    drawList.AddLine(tip, ImVec2{tip.x - (arrowLen * 0.85F), tip.y - (arrowLen * 0.15F)}, color, thickness);
+    drawList.AddLine(tip, ImVec2{tip.x + (arrowLen * 0.15F), tip.y - (arrowLen * 0.85F)}, color, thickness);
+}
+
+/// A horseshoe magnet glyph for proportional/uniform scaling toggle.
+void DrawMagnetGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float size, const bool active) {
+    constexpr float kPi = std::numbers::pi_v<float>;
+    const float halfWidth = size * 0.38F;
+    const float halfHeight = size * 0.42F;
+    const float thickness = std::max(1.8F, size * 0.20F);
+    const float topY = center.y - halfHeight;
+    const float leftX = center.x - halfWidth + (thickness * 0.5F);
+    const float rightX = center.x + halfWidth - (thickness * 0.5F);
+    const float bendY = center.y + (halfHeight * 0.12F);
+
+    const ImU32 bodyColor = active ? IM_COL32(235, 75, 75, 255) : IM_COL32(130, 130, 140, 200);
+    const ImU32 capColor = active ? IM_COL32(110, 195, 255, 255) : IM_COL32(170, 170, 180, 180);
+
+    const float capHeight = size * 0.26F;
+    drawList.AddLine(ImVec2{leftX, bendY}, ImVec2{leftX, topY + capHeight}, bodyColor, thickness);
+    drawList.AddLine(ImVec2{rightX, bendY}, ImVec2{rightX, topY + capHeight}, bodyColor, thickness);
+
+    const float arcRadius = (rightX - leftX) * 0.5F;
+    const ImVec2 arcCenter{(leftX + rightX) * 0.5F, bendY};
+    constexpr int kSegments = 10;
+    for (int i = 0; i < kSegments; ++i) {
+        const float a0 = static_cast<float>(i) * kPi / static_cast<float>(kSegments);
+        const float a1 = static_cast<float>(i + 1) * kPi / static_cast<float>(kSegments);
+        const ImVec2 p0{arcCenter.x - (arcRadius * std::cos(a0)), arcCenter.y + (arcRadius * std::sin(a0))};
+        const ImVec2 p1{arcCenter.x - (arcRadius * std::cos(a1)), arcCenter.y + (arcRadius * std::sin(a1))};
+        drawList.AddLine(p0, p1, bodyColor, thickness);
+    }
+
+    drawList.AddLine(ImVec2{leftX, topY + capHeight}, ImVec2{leftX, topY}, capColor, thickness);
+    drawList.AddLine(ImVec2{rightX, topY + capHeight}, ImVec2{rightX, topY}, capColor, thickness);
+
+    if (active) {
+        const float waveY = topY - 1.5F;
+        drawList.AddLine(ImVec2{leftX + (thickness * 0.3F), waveY},
+                         ImVec2{rightX - (thickness * 0.3F), waveY},
+                         IM_COL32(255, 215, 75, 220), 1.2F);
+    }
+}
+
+/// A compact reset icon button for inspector rows.
+bool DrawResetButtonUVE(const char* const id, const char* const tooltip) {
+    const float size = ImGui::GetFrameHeight();
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 42, 50, 180));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(65, 72, 90, 240));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(95, 105, 130, 255));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{0.0F, 0.0F});
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::Button(id, ImVec2{size, size});
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+    const bool hovered = ImGui::IsItemHovered();
+    ImDrawList& drawList = *ImGui::GetWindowDrawList();
+    const ImVec2 center{pos.x + (size * 0.5F), pos.y + (size * 0.5F)};
+    const ImU32 color = hovered ? IM_COL32(255, 215, 80, 255) : IM_COL32(185, 190, 205, 220);
+    DrawResetGlyphUVE(drawList, center, size * 0.65F, color);
+    if (hovered && tooltip != nullptr) {
+        ImGui::SetTooltip("%s", tooltip);
+    }
+    return pressed;
+}
+
+/// A compact magnet toggle button for proportional/uniform scaling.
+bool DrawMagnetButtonUVE(const char* const id, const bool active) {
+    const float size = ImGui::GetFrameHeight();
+    if (active) {
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(40, 80, 125, 230));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(60, 110, 165, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 130, 190, 255));
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 42, 50, 180));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(60, 65, 78, 220));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 85, 100, 255));
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{0.0F, 0.0F});
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::Button(id, ImVec2{size, size});
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+    const bool hovered = ImGui::IsItemHovered();
+    ImDrawList& drawList = *ImGui::GetWindowDrawList();
+    const ImVec2 center{pos.x + (size * 0.5F), pos.y + (size * 0.5F)};
+    DrawMagnetGlyphUVE(drawList, center, size * 0.65F, active);
+    if (hovered) {
+        ImGui::SetTooltip("%s", active ? "Uniform Scale Locked (Magnet ON)\nScaling any axis scales all axes together."
+                                       : "Uniform Scale Unlocked (Magnet OFF)\nEach axis scales independently.");
+    }
+    return pressed;
 }
 
 } // namespace
@@ -256,6 +372,10 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
     ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "%s", filename.c_str());
     ImGui::TextColored(ImVec4{0.4F, 0.75F, 0.95F, 1.0F}, "[ %s ]", typeLabel);
     ImGui::EndGroup();
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Rename (F2)")) {
+        BeginContentRenameUVE(entry.relativePath);
+    }
 
     ImGui::Separator();
     ImGui::Spacing();
@@ -317,6 +437,101 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
         ImGui::Spacing();
     }
 
+    if (type == ContentBrowserItemTypeUVE::Shader) {
+        if (!m_openShaderAsset.has_value() || m_openShaderAsset->path != fullPath) {
+            ShaderAssetEditStateUVE editState;
+            editState.path = fullPath;
+            if (!Asset::LoadShaderAssetUVE(fullPath, editState.shader)) {
+                editState.shader.stage = Asset::ShaderStageKindUVE::Fragment;
+                editState.shader.entryPointName = "main";
+                editState.shader.sourceCode =
+                    "// UniVex Custom Shader\n"
+                    "#version 450\n\n"
+                    "layout(location = 0) in vec2 v_TexCoord;\n"
+                    "layout(location = 0) out vec4 outColor;\n\n"
+                    "void main() {\n"
+                    "    outColor = vec4(1.0, 1.0, 1.0, 1.0);\n"
+                    "}\n";
+            }
+            editState.isDirty = false;
+            m_openShaderAsset = std::move(editState);
+        }
+
+        ShaderAssetEditStateUVE& edit = *m_openShaderAsset;
+        ImGui::TextDisabled("SHADER CONFIGURATION");
+
+        const char* const stages[] = {"Vertex", "Fragment", "Compute"};
+        int stageIndex = static_cast<int>(edit.shader.stage);
+        if (stageIndex < 0 || stageIndex > 2) stageIndex = 1;
+        if (ImGui::Combo("Stage", &stageIndex, stages, 3)) {
+            edit.shader.stage = static_cast<Asset::ShaderStageKindUVE>(stageIndex);
+            edit.isDirty = true;
+        }
+
+        char entryBuf[128];
+        std::snprintf(entryBuf, sizeof(entryBuf), "%s", edit.shader.entryPointName.c_str());
+        if (ImGui::InputText("Entry Point", entryBuf, sizeof(entryBuf))) {
+            edit.shader.entryPointName = entryBuf;
+            edit.isDirty = true;
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextDisabled("SHADER SOURCE CODE");
+        if (edit.isDirty) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4{0.95F, 0.75F, 0.25F, 1.0F}, "(Unsaved Changes)");
+        }
+
+        struct ShaderInputTextState final {
+            std::string* buffer = nullptr;
+        } state{&edit.shader.sourceCode};
+
+        const auto resizeCallback = [](ImGuiInputTextCallbackData* data) -> int {
+            if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+                auto* cbState = static_cast<ShaderInputTextState*>(data->UserData);
+                cbState->buffer->resize(static_cast<std::size_t>(data->BufTextLen));
+                data->Buf = cbState->buffer->data();
+            }
+            return 0;
+        };
+
+        const float boxHeight = std::clamp(ImGui::GetContentRegionAvail().y - 80.0F, 160.0F, 360.0F);
+        if (ImGui::InputTextMultiline("##shaderSourceText", edit.shader.sourceCode.data(),
+                                      edit.shader.sourceCode.capacity() + 1U,
+                                      ImVec2{-1.0F, boxHeight},
+                                      ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackResize,
+                                      resizeCallback, &state)) {
+            edit.isDirty = true;
+        }
+
+        const bool saveKey = ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S);
+        if (ImGui::Button("Save Shader Code", ImVec2{-1.0F, 28.0F}) || (saveKey && edit.isDirty)) {
+            if (Asset::SaveShaderAssetUVE(edit.shader, fullPath)) {
+                edit.isDirty = false;
+                m_services->GetAssetDatabaseUVE().RegisterUVE(fullPath);
+                m_contentStatusMessage = "Saved shader " + filename;
+            } else {
+                m_contentStatusMessage = "Failed to save shader " + filename;
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Save shader changes (Ctrl+S)");
+        }
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
+    if (type == ContentBrowserItemTypeUVE::Material) {
+        DrawMaterialPbrEditorInlineUVE(fullPath, "##card_mat_editor");
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
     // Action buttons
     ImGui::TextDisabled("ACTIONS");
     if (type == ContentBrowserItemTypeUVE::Entity || type == ContentBrowserItemTypeUVE::Prefab) {
@@ -332,6 +547,27 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
     } else if (type == ContentBrowserItemTypeUVE::Scene) {
         if (ImGui::Button("Open Scene", ImVec2{-1.0F, 28.0F})) {
             static_cast<void>(OpenSceneAssetUVE(fullPath));
+        }
+    } else if (type == ContentBrowserItemTypeUVE::Script) {
+        if (ImGui::Button("Edit Script", ImVec2{-1.0F, 28.0F})) {
+            static_cast<void>(OpenUVScriptPathUVE(fullPath));
+        }
+    } else if (type == ContentBrowserItemTypeUVE::Shader) {
+        if (ImGui::Button("Create Material with this Shader", ImVec2{-1.0F, 28.0F})) {
+            const std::filesystem::path matDir = fullPath.parent_path();
+            const std::filesystem::path matPath =
+                MakeUniqueContentPathUVE(matDir, "M_" + entry.relativePath.stem().string(), ".uvmaterial");
+            Asset::MaterialAssetUVE mat{};
+            mat.kind = Asset::MaterialKindUVE::Shader;
+            mat.useCustomShaderCode = true;
+            if (entry.registeredAssetGuid.has_value()) {
+                mat.customShader = *entry.registeredAssetGuid;
+            }
+            if (Asset::SaveMaterialAssetUVE(mat, matPath)) {
+                m_services->GetAssetDatabaseUVE().RegisterUVE(matPath);
+                RefreshProjectFileIndexUVE();
+                m_contentStatusMessage = "Created material " + matPath.filename().string();
+            }
         }
     }
 
@@ -394,8 +630,9 @@ void EditorUVE::DrawInspectorContentUVE() {
     }
 
     if (Scene::IsDocumentCameraEntityUVE(m_services->GetEntityManagerUVE(), m_selectedEntity)) {
+        const std::uintptr_t camIcon = m_uiAssets.GetComponentIconTextureIdUVE("camera");
         const bool previewOpen = DrawInspectorFoldUVE("Camera Preview###camera-preview-section",
-                                                      "section:camera-preview", true, true, 0);
+                                                      "section:camera-preview", true, true, 0, camIcon);
         if (previewOpen) {
             const ImVec2 available = ImGui::GetContentRegionAvail();
             const float previewWidth = std::max(160.0F, available.x);
@@ -493,7 +730,8 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
 
     Scene::TransformComponentUVE edited = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
     // A collapsible section like every other one; its open state is remembered across sessions.
-    const bool transformOpen = DrawInspectorFoldUVE("Transform##transform-section", "section:transform", true, true, 0);
+    const std::uintptr_t transIcon = m_uiAssets.GetComponentIconTextureIdUVE("transform");
+    const bool transformOpen = DrawInspectorFoldUVE("Transform##transform-section", "section:transform", true, true, 0, transIcon);
     DrawInspectorSectionMenuUVE(nullptr, "Transform");
     if (!transformOpen) {
         return;
@@ -512,41 +750,127 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
                              haveEuler ? eulerRadians.z * kRadiansToDegreesUVE : 0.0F};
     float scale[3]{edited.localScale.x, edited.localScale.y, edited.localScale.z};
 
-    // Label beside value, the layout every other Inspector row uses, with one axis-tagged field per
-    // component sharing the value column. Each field clips its own number, so a narrow panel shows
-    // fewer digits rather than digits spilling over the box.
     bool positionChanged = false;
     bool rotationChanged = false;
     bool scaleChanged = false;
     bool gestureEnded = false;
-    if (ImGui::BeginTable("##transform", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
-        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.26F);
-        ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.74F);
-        // Each row is dragged (double-click or Ctrl+click types). A drag is a transform gesture:
-        // it starts when a field is taken hold of and ends as one undo step when it is let go.
-        const auto row = [this, &gestureEnded](const char* const label, const char* const id, float* const values,
-                                               const float speed, const EditorToolSessionModeUVE mode) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(label);
-            ImGui::TableSetColumnIndex(1);
-            const bool changed = DrawAxisVectorInputUVE(id, values, 3, speed);
-            if (ImGui::IsItemActivated()) {
-                // Tabbing from one field to the next ends the first edit and starts another.
-                if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
-                    static_cast<void>(CommitTransformGestureUVE());
-                }
-                static_cast<void>(BeginTransformGestureUVE(mode));
+
+    const float resetBtnWidth = ImGui::GetFrameHeight();
+    if (ImGui::BeginTable("##transform", 3, ImGuiTableFlags_NoSavedSettings)) {
+        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 72.0F);
+        ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthFixed, resetBtnWidth);
+
+        // Position row: individual circular-arrow reset button resets position to (0, 0, 0)
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Position");
+        ImGui::TableSetColumnIndex(1);
+        const bool posInputChanged = DrawAxisVectorInputUVE("##local-position", position, 3, 0.01F);
+        if (ImGui::IsItemActivated()) {
+            if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                static_cast<void>(CommitTransformGestureUVE());
             }
-            gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
-            return changed;
-        };
-        positionChanged = row("Position", "##local-position", position, 0.01F, EditorToolSessionModeUVE::Translate);
-        rotationChanged = row("Rotation", "##local-rotation", rotationDegrees, 0.5F, EditorToolSessionModeUVE::Rotate);
-        scaleChanged = row("Scale", "##local-scale", scale, 0.01F, EditorToolSessionModeUVE::Scale);
+            static_cast<void>(BeginTransformGestureUVE(EditorToolSessionModeUVE::Translate));
+        }
+        gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
+        ImGui::TableSetColumnIndex(2);
+        bool posResetClicked = false;
+        if (DrawResetButtonUVE("##reset-position", "Reset Position to (0, 0, 0)")) {
+            position[0] = 0.0F;
+            position[1] = 0.0F;
+            position[2] = 0.0F;
+            posResetClicked = true;
+        }
+        positionChanged = posInputChanged || posResetClicked;
+
+        // Rotation row: individual circular-arrow reset button resets rotation to (0, 0, 0)
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Rotation");
+        ImGui::TableSetColumnIndex(1);
+        const bool rotInputChanged = DrawAxisVectorInputUVE("##local-rotation", rotationDegrees, 3, 0.5F);
+        if (ImGui::IsItemActivated()) {
+            if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                static_cast<void>(CommitTransformGestureUVE());
+            }
+            static_cast<void>(BeginTransformGestureUVE(EditorToolSessionModeUVE::Rotate));
+        }
+        gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
+        ImGui::TableSetColumnIndex(2);
+        bool rotResetClicked = false;
+        if (DrawResetButtonUVE("##reset-rotation", "Reset Rotation to (0, 0, 0)")) {
+            rotationDegrees[0] = 0.0F;
+            rotationDegrees[1] = 0.0F;
+            rotationDegrees[2] = 0.0F;
+            rotResetClicked = true;
+        }
+        rotationChanged = rotInputChanged || rotResetClicked;
+
+        // Scale row: magnet button toggles uniform scaling; circular-arrow reset button resets scale to (1, 1, 1)
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Scale");
+        ImGui::SameLine(0.0F, 3.0F);
+        if (DrawMagnetButtonUVE("##scale-magnet", m_uniformScaleLocked)) {
+            m_uniformScaleLocked = !m_uniformScaleLocked;
+        }
+        ImGui::TableSetColumnIndex(1);
+        const float oldScale[3]{scale[0], scale[1], scale[2]};
+        const bool scaleInputChanged = DrawAxisVectorInputUVE("##local-scale", scale, 3, 0.01F);
+        if (ImGui::IsItemActivated()) {
+            if (GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                static_cast<void>(CommitTransformGestureUVE());
+            }
+            static_cast<void>(BeginTransformGestureUVE(EditorToolSessionModeUVE::Scale));
+        }
+        gestureEnded = (ImGui::IsItemDeactivated() && !ImGui::IsItemActive()) || gestureEnded;
+
+        // When uniform scale / magnet is locked, adjust all axes in sync
+        if (scaleInputChanged && m_uniformScaleLocked) {
+            int changedAxis = -1;
+            for (int i = 0; i < 3; ++i) {
+                if (scale[i] != oldScale[i]) {
+                    changedAxis = i;
+                    break;
+                }
+            }
+            if (changedAxis >= 0) {
+                const float oldVal = oldScale[changedAxis];
+                const float newVal = scale[changedAxis];
+                if (std::abs(oldVal) > 1.0e-5F) {
+                    const float ratio = newVal / oldVal;
+                    for (int j = 0; j < 3; ++j) {
+                        if (j != changedAxis) {
+                            scale[j] = oldScale[j] * ratio;
+                        }
+                    }
+                } else {
+                    const float delta = newVal - oldVal;
+                    for (int j = 0; j < 3; ++j) {
+                        if (j != changedAxis) {
+                            scale[j] = (oldScale[j] == 0.0F) ? newVal : (oldScale[j] + delta);
+                        }
+                    }
+                }
+            }
+        }
+        ImGui::TableSetColumnIndex(2);
+        bool scaleResetClicked = false;
+        if (DrawResetButtonUVE("##reset-scale", "Reset Scale to (1, 1, 1)")) {
+            scale[0] = 1.0F;
+            scale[1] = 1.0F;
+            scale[2] = 1.0F;
+            scaleResetClicked = true;
+        }
+        scaleChanged = scaleInputChanged || scaleResetClicked;
+
         ImGui::EndTable();
     }
+
     if (positionChanged || rotationChanged || scaleChanged) {
         edited.localPosition = Math::Vector3UVE{position[0], position[1], position[2]};
         if (rotationChanged) {
@@ -556,6 +880,8 @@ void EditorUVE::DrawTransformInspectorDrawerUVE(const Scene::EntityUVE entity) {
                                            rotationDegrees[2] * kDegreesToRadiansUVE};
             if (Math::TryMakeEulerUVE(radians, newRotation)) {
                 edited.localRotation = newRotation;
+                edited.localEulerRadians = radians;
+                edited.rotationEditMode = Scene::RotationEditModeUVE::Euler;
             }
         }
         edited.localScale = Math::Vector3UVE{scale[0], scale[1], scale[2]};
@@ -627,13 +953,29 @@ bool EditorUVE::IsInspectorFoldOpenUVE(const std::string& key, const bool defaul
 }
 
 bool EditorUVE::DrawInspectorFoldUVE(const char* const label, const std::string& key, const bool defaultOpen,
-                                     const bool asHeader, const int flags) {
+                                     const bool asHeader, const int flags, const std::uintptr_t iconTextureId) {
     // The editor, not Dear ImGui's per-window storage, owns the state: that storage is lost on
     // exit, and the Inspector should reopen the way it was left.
     const bool open = IsInspectorFoldOpenUVE(key, defaultOpen);
     ImGui::SetNextItemOpen(open, ImGuiCond_Always);
     const auto treeFlags = static_cast<ImGuiTreeNodeFlags>(flags);
-    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(label, treeFlags) : ImGui::TreeNodeEx(label, treeFlags);
+    std::string displayLabel;
+    if (iconTextureId != 0U) {
+        displayLabel = "      " + std::string(label);
+    }
+    const char* const renderText = iconTextureId != 0U ? displayLabel.c_str() : label;
+    const bool nowOpen = asHeader ? ImGui::CollapsingHeader(renderText, treeFlags) : ImGui::TreeNodeEx(renderText, treeFlags);
+    if (iconTextureId != 0U) {
+        const ImVec2 rectMin = ImGui::GetItemRectMin();
+        const ImVec2 rectMax = ImGui::GetItemRectMax();
+        const float iconSize = 16.0F;
+        const float arrowOffset = ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.x + 4.0F;
+        const float iconX = rectMin.x + arrowOffset;
+        const float iconY = std::floor(rectMin.y + (rectMax.y - rectMin.y - iconSize) * 0.5F);
+        ImGui::GetWindowDrawList()->AddImage(static_cast<ImTextureID>(iconTextureId),
+                                             ImVec2{iconX, iconY},
+                                             ImVec2{iconX + iconSize, iconY + iconSize});
+    }
     if (nowOpen != open) {
         SetInspectorFoldOpenUVE(key, nowOpen);
     }

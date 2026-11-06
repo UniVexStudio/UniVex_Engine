@@ -653,9 +653,9 @@ void EditorUVE::DrawEntityEditorScriptingTabUVE() {
     ImGui::SetCursorPosX((area.x - 160.0F) * 0.5F);
     ImGui::BeginDisabled(!canCreate);
     if (ImGui::Button("New UVScript", ImVec2{160.0F, 0.0F})) {
-        if (CreateUVScriptForSelectedEntityUVE()) {
-            m_activeWorkspace = EditorWorkspaceUVE::Library;
-        }
+        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const std::filesystem::path scriptsDir = project.contentRoot / "Scripts";
+        OpenCreateScriptModalUVE(scriptsDir, entity);
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -739,11 +739,7 @@ void EditorUVE::DrawEntityEditorPlaceholderUVE() {
 
 void EditorUVE::DrawEntityEditorWindowUVE() {
     EntityEditSessionUVE& session = *m_entityEditSession;
-    // Its own OS window: never merged back into the main one, never docked.
-    ImGuiWindowClass windowClass;
-    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
-    windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
-    ImGui::SetNextWindowClass(&windowClass);
+    // Floating entity editor window: smooth dragging, resizable, fully responsive.
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2{mainViewport->Pos.x + 60.0F, mainViewport->Pos.y + 60.0F}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2{1180.0F, 720.0F}, ImGuiCond_FirstUseEver);
@@ -783,6 +779,10 @@ void EditorUVE::DrawEntityEditorWindowUVE() {
         static_cast<void>(RevertEntityEditorUVE());
     }
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Close / Back to Level (Esc)") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        static_cast<void>(CloseEntityEditorUVE(false));
+    }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
         ImGui::SetTooltip("Throw away the changes since the last save");
     }

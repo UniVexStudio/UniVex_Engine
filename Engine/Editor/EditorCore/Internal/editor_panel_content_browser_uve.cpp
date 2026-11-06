@@ -283,6 +283,21 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
 
     m_contentShownOrderPrevious.swap(m_contentShownOrder);
     m_contentShownOrder.clear();
+
+    // Keyboard shortcuts for Content Browser: F2 (Rename), Ctrl+I (Import)
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F2)) {
+            if (m_selectedProjectFile.has_value()) {
+                BeginContentRenameUVE(m_selectedProjectFile->relativePath);
+            } else if (!m_contentSelection.ItemsUVE().empty()) {
+                const std::string firstKey = *m_contentSelection.ItemsUVE().begin();
+                BeginContentRenameUVE(firstKey);
+            }
+        }
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_I)) {
+            PromptImportFilesUVE(snapshot.contentRoot / m_contentBrowserDirectory);
+        }
+    }
     if (m_selectedProjectFile.has_value()) {
         const auto selectedIt = std::find_if(
             snapshot.entries.begin(), snapshot.entries.end(), [this](const Asset::ProjectFileEntryUVE& entry) {
@@ -446,8 +461,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
         ImGui::SameLine(0.0F, 4.0F);
     }
     if (GlyphTextButtonUVE("##content-import", GlyphUVE::Import, "Import", false,
-                           "Rescan the content folder to pick up newly added files")) {
-        refreshNow();
+                           "Import assets from your computer into this folder (Ctrl+I)")) {
+        PromptImportFilesUVE(snapshot.contentRoot / m_contentBrowserDirectory);
     }
     ImGui::SameLine(0.0F, 4.0F);
     if (GlyphTextButtonUVE("##content-save-all", GlyphUVE::Save, "Save All", false,
@@ -1131,8 +1146,8 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                        look.type == ContentBrowserItemTypeUVE::Prefab) {
                 const std::optional<Scene::Objects::SceneObjectKindUVE> objectKind =
                     GetEntityAssetIconKindUVE(entry.relativePath);
-                look.icon = m_uiAssets.GetObjectIconTextureIdUVE(
-                    objectKind.value_or(Scene::Objects::SceneObjectKindUVE::Object3D));
+                const auto kind = objectKind.value_or(Scene::Objects::SceneObjectKindUVE::Object3D);
+                look.icon = m_uiAssets.GetObjectIconTextureIdUVE(kind);
             } else {
                 look.icon = m_uiAssets.GetContentTypeIconTextureIdUVE(look.typeLabel);
             }
@@ -1208,6 +1223,13 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                                !OpenAnimationLibraryUVE(snapshot.contentRoot / entry.relativePath)) {
                         m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() +
                                                  " as an animation library.";
+                    } else if (look.type == ContentBrowserItemTypeUVE::Script &&
+                               !OpenUVScriptPathUVE(snapshot.contentRoot / entry.relativePath)) {
+                        m_contentStatusMessage = "Could not open " + entry.relativePath.filename().string() +
+                                                 " in the Script Editor.";
+                    } else if (look.type == ContentBrowserItemTypeUVE::Shader) {
+                        m_selectedProjectFile = entry;
+                        m_selectedAsset.reset();
                     }
                 }
             }
@@ -1287,51 +1309,61 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             constexpr ImU32 thumbBg = IM_COL32(16, 17, 21, 255);
             drawList.AddRectFilled(thumbMin, thumbMax, thumbBg, rounding * 0.8F);
 
-            if (look.icon != 0U) {
-                const float iconX = std::floor(thumbMin.x + (thumbMax.x - thumbMin.x - iconSize) * 0.5F);
-                const float iconY = std::floor(thumbMin.y + (thumbMax.y - thumbMin.y - iconSize) * 0.5F);
-                drawList.AddImage(static_cast<ImTextureID>(look.icon), ImVec2{iconX, iconY},
-                                  ImVec2{iconX + iconSize, iconY + iconSize});
+            const std::uintptr_t tileTexture = look.icon;
+            if (tileTexture != 0U) {
+                const float drawSize = std::min(thumbMax.x - thumbMin.x - 4.0F, thumbMax.y - thumbMin.y - 4.0F);
+                const float iconX = std::floor(thumbMin.x + (thumbMax.x - thumbMin.x - drawSize) * 0.5F);
+                const float iconY = std::floor(thumbMin.y + (thumbMax.y - thumbMin.y - drawSize) * 0.5F);
+                drawList.AddImage(static_cast<ImTextureID>(tileTexture), ImVec2{iconX, iconY},
+                                  ImVec2{iconX + drawSize, iconY + drawSize});
             }
 
-            // 3. UE5-style accent color bar separating thumbnail from text
-            ImU32 accentColor = IM_COL32(100, 116, 139, 255);
+            // 3. Dynamic category indicator bar (matching UE5 / project palette)
+            ImU32 indicatorColor = IM_COL32(100, 116, 139, 255);
             switch (look.type) {
                 case ContentBrowserItemTypeUVE::Mesh:
                 case ContentBrowserItemTypeUVE::Model:
-                    accentColor = IM_COL32(0, 168, 255, 255);
+                    indicatorColor = IM_COL32(0, 168, 255, 255);
                     break;
                 case ContentBrowserItemTypeUVE::Texture:
-                    accentColor = IM_COL32(230, 81, 0, 255);
+                    indicatorColor = IM_COL32(249, 115, 22, 255);
                     break;
                 case ContentBrowserItemTypeUVE::Material:
                 case ContentBrowserItemTypeUVE::Shader:
-                    accentColor = IM_COL32(76, 175, 80, 255);
+                    indicatorColor = IM_COL32(16, 185, 129, 255);
                     break;
                 case ContentBrowserItemTypeUVE::Animation:
                 case ContentBrowserItemTypeUVE::AnimationLibrary:
-                    accentColor = IM_COL32(171, 71, 188, 255);
+                    indicatorColor = IM_COL32(168, 85, 247, 255);
                     break;
                 case ContentBrowserItemTypeUVE::Scene:
+                    indicatorColor = IM_COL32(245, 158, 11, 255);
+                    break;
                 case ContentBrowserItemTypeUVE::Prefab:
-                case ContentBrowserItemTypeUVE::Entity:
+                case ContentBrowserItemTypeUVE::Entity: {
+                    const std::optional<Scene::Objects::SceneObjectKindUVE> objectKind =
+                        GetEntityAssetIconKindUVE(entry.relativePath);
+                    indicatorColor = GetSceneObjectIndicatorColorUVE(
+                        objectKind.value_or(Scene::Objects::SceneObjectKindUVE::Object3D));
+                    break;
+                }
                 case ContentBrowserItemTypeUVE::Bundle:
-                    accentColor = IM_COL32(255, 179, 0, 255);
+                    indicatorColor = IM_COL32(245, 158, 11, 255);
                     break;
                 case ContentBrowserItemTypeUVE::Script:
-                    accentColor = IM_COL32(38, 198, 218, 255);
+                    indicatorColor = IM_COL32(56, 189, 248, 255);
                     break;
                 case ContentBrowserItemTypeUVE::Audio:
-                    accentColor = IM_COL32(239, 83, 80, 255);
+                    indicatorColor = IM_COL32(239, 68, 68, 255);
                     break;
                 case ContentBrowserItemTypeUVE::Folder:
-                    accentColor = IM_COL32(120, 144, 156, 255);
+                    indicatorColor = IM_COL32(245, 158, 11, 255);
                     break;
                 default:
                     break;
             }
             const float barY = thumbMax.y + 1.0F;
-            drawList.AddLine(ImVec2{cardMin.x + 2.0F, barY}, ImVec2{cardMax.x - 2.0F, barY}, accentColor, 2.0F);
+            drawList.AddLine(ImVec2{cardMin.x + 2.0F, barY}, ImVec2{cardMax.x - 2.0F, barY}, indicatorColor, 2.0F);
 
             // 4. Text labels: Name and Type
             const float textMax = cardSize.x - 8.0F;

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -187,6 +188,7 @@ bool EditorUiAssetsUVE::InitializeUVE() noexcept {
                 descriptor.kind == Scene::Objects::SceneObjectKindUVE::Folder
                     ? FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, "folder")
                     : FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Object, descriptor.typeId);
+
         }
     }
 
@@ -229,6 +231,10 @@ std::uintptr_t EditorUiAssetsUVE::GetObjectIconTextureIdUVE(const Scene::Objects
     return index < m_objectIconTextureIds.size() ? m_objectIconTextureIds[index] : 0U;
 }
 
+std::uintptr_t EditorUiAssetsUVE::GetObjectCardIconTextureIdUVE(const Scene::Objects::SceneObjectKindUVE kind) const noexcept {
+    return GetObjectIconTextureIdUVE(kind);
+}
+
 std::uintptr_t EditorUiAssetsUVE::GetObjectCategoryIconTextureIdUVE(const std::string_view category) const noexcept {
     return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ObjectCategory, category);
 }
@@ -240,6 +246,23 @@ std::uintptr_t EditorUiAssetsUVE::GetContentTypeIconTextureIdUVE(const std::stri
         return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, "viewport_3d");
     }
     return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, typeId);
+}
+
+std::uintptr_t EditorUiAssetsUVE::GetContentTypeCardIconTextureIdUVE(const std::string_view typeId) const noexcept {
+    return GetContentTypeIconTextureIdUVE(typeId);
+}
+
+std::uintptr_t EditorUiAssetsUVE::GetComponentIconTextureIdUVE(const std::string_view componentId) const noexcept {
+    std::string key{componentId};
+    std::replace(key.begin(), key.end(), '.', '_');
+    if (key.starts_with("component_")) {
+        return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Component, key);
+    }
+    const std::uintptr_t direct = FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Component, "component_" + key);
+    if (direct != 0U) {
+        return direct;
+    }
+    return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Component, key);
 }
 
 std::uintptr_t EditorUiAssetsUVE::UploadDynamicTextureUVE(const std::uint8_t* const pixels, const int width,

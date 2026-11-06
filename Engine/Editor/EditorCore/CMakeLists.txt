@@ -114,14 +114,14 @@ endforeach()
 file(GLOB _uve_editor_icon_pngs CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/objects/*.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/object_categories/*.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/content_types/*.png")
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/content_types/*.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/components/*.png")
 list(SORT _uve_editor_icon_pngs)
 add_custom_command(
     OUTPUT "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Engine/Tools/editor_icons/embed_editor_icons.py"
             "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons"
-            ${_uve_editor_icon_pngs}
     DEPENDS ${_uve_editor_icon_pngs}
             "${CMAKE_SOURCE_DIR}/Engine/Tools/editor_icons/embed_editor_icons.py"
     COMMENT "Embedding editor icons -> uve_editor_icon_set.inc"

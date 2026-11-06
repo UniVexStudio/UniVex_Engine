@@ -19,9 +19,10 @@ namespace UVE::Editor {
 
 /// One directory under assets/icons/ each.
 enum class EditorIconGroupUVE : std::uint8_t {
-    Object,         // objects/          - one per scene object type, by typeId ("box_mesh_3d")
-    ObjectCategory, // object_categories/ - one per object palette category ("physics")
-    ContentType,  // content_types/  - one per content browser type ("mesh", "folder_open")
+    Object,          // objects/          - one per scene object type, by typeId ("box_mesh_3d")
+    ObjectCategory,  // object_categories/ - one per object palette category ("physics")
+    ContentType,     // content_types/  - one per content browser type ("mesh", "folder_open")
+    Component,       // components/       - one per ECS component
 };
 
 struct EditorIconSourceUVE final {
