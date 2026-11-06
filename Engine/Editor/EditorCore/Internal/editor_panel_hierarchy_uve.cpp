@@ -241,9 +241,17 @@ void EditorUVE::DrawHierarchyBodyUVE() {
     const bool canCreateObject = IsAuthoringCommandAllowedUVE();
     ImGui::PushID("scene-add-object");
     ImGui::BeginDisabled(!canCreateObject);
-    if (ImGui::Button("+", ImVec2{addObjectButtonWidth, addObjectButtonWidth})) {
+    if (ImGui::Button("##scene-add-btn", ImVec2{addObjectButtonWidth, addObjectButtonWidth})) {
         m_objectPickerOpenRequested = true;
     }
+    const ImVec2 btnMin = ImGui::GetItemRectMin();
+    const ImVec2 btnMax = ImGui::GetItemRectMax();
+    const ImVec2 btnCenter{std::floor((btnMin.x + btnMax.x) * 0.5F), std::floor((btnMin.y + btnMax.y) * 0.5F)};
+    const float plusArm = std::floor(addObjectButtonWidth * 0.26F);
+    const ImU32 plusColor = ImGui::GetColorU32(canCreateObject ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+    drawList->AddLine(ImVec2{btnCenter.x - plusArm, btnCenter.y}, ImVec2{btnCenter.x + plusArm, btnCenter.y}, plusColor, 1.5F);
+    drawList->AddLine(ImVec2{btnCenter.x, btnCenter.y - plusArm}, ImVec2{btnCenter.x, btnCenter.y + plusArm}, plusColor, 1.5F);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
         ImGui::SetTooltip("Add Object");

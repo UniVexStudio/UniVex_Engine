@@ -46,8 +46,8 @@ constexpr const char* kIconStarUVE = "\xEE\xAC\xAE";
 constexpr const char* kIconFolderUVE = "\xEE\xAA\xAD";
 constexpr const char* kIconAdjustmentsUVE = "\xEE\xA8\x83";
 constexpr float kFilesystemLongPressThresholdSecondsUVE = 0.60F;
-constexpr ImVec4 kAccentUVE{0.357F, 0.478F, 0.600F, 1.0F};
-constexpr ImVec4 kAccentHoveredUVE{0.443F, 0.573F, 0.706F, 1.0F};
+constexpr ImVec4 kAccentUVE{0.055F, 0.440F, 0.890F, 1.0F};
+constexpr ImVec4 kAccentHoveredUVE{0.120F, 0.520F, 0.960F, 1.0F};
 
 [[nodiscard]] std::string LowerContentAssetStemUVE(const std::filesystem::path& path) {
     std::string stem = path.stem().generic_string();
@@ -169,7 +169,7 @@ bool GlyphButtonUVE(const char* id, const GlyphUVE glyph, const bool enabled, co
 bool GlyphTextButtonUVE(const char* id, const GlyphUVE glyph, const char* label, const bool accent, const char* tooltip) {
     const ImGuiStyle& style = ImGui::GetStyle();
     const float height = ImGui::GetFrameHeight();
-    const float glyphSize = height * 0.45F;
+    const float glyphSize = std::floor(height * 0.44F);
     const float width = style.FramePadding.x * 2.0F + glyphSize + 6.0F + ImGui::CalcTextSize(label).x;
     const bool pressed = ImGui::InvisibleButton(id, ImVec2{width, height});
     const bool hovered = ImGui::IsItemHovered();
@@ -183,9 +183,11 @@ bool GlyphTextButtonUVE(const char* id, const GlyphUVE glyph, const char* label,
                                                              : ImGuiCol_Button);
     drawList.AddRectFilled(min, max, fill, style.FrameRounding);
     const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
-    DrawGlyphUVE(drawList, glyph, ImVec2{min.x + style.FramePadding.x + glyphSize * 0.5F, (min.y + max.y) * 0.5F},
+    const float centerY = std::floor((min.y + max.y) * 0.5F);
+    DrawGlyphUVE(drawList, glyph, ImVec2{min.x + style.FramePadding.x + glyphSize * 0.5F, centerY},
                  glyphSize, text);
-    drawList.AddText(ImVec2{min.x + style.FramePadding.x + glyphSize + 6.0F, min.y + style.FramePadding.y}, text, label);
+    const float textY = std::floor(centerY - (ImGui::GetTextLineHeight() * 0.5F));
+    drawList.AddText(ImVec2{min.x + style.FramePadding.x + glyphSize + 6.0F, textY}, text, label);
     if (hovered && tooltip != nullptr) {
         ImGui::SetTooltip("%s", tooltip);
     }

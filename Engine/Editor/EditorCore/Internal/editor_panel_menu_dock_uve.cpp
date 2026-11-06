@@ -837,6 +837,14 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
                     m_bottomDockVisible = true;
                 }
             }
+            if (active) {
+                const ImVec2 tabMin = ImGui::GetItemRectMin();
+                const ImVec2 tabMax = ImGui::GetItemRectMax();
+                ImGui::GetWindowDrawList()->AddLine(
+                    ImVec2{tabMin.x + 2.0F, tabMin.y + 1.0F},
+                    ImVec2{tabMax.x - 2.0F, tabMin.y + 1.0F},
+                    IM_COL32(14, 112, 227, 255), 2.0F);
+            }
             ImGui::PopStyleColor(2);
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                 ImGui::SetTooltip("%s%s", tab.tooltip, active ? " Click again to hide the dock." : "");
