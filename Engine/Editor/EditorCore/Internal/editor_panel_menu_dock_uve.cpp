@@ -634,17 +634,24 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                // The grip is wider than the divider it stands on, so what lights up is the divider:
-                // a two-pixel line down the seam, in the same blue the rest of the editor uses for
-                // "this is live". Filling the whole grip would paint a ten-pixel band over both
-                // neighbours' edges and read as a bar rather than as the divider being grabbed.
-                const ImVec2 gripMin = ImGui::GetItemRectMin();
-                const ImVec2 gripMax = ImGui::GetItemRectMax();
-                const float seamX = (gripMin.x + gripMax.x) * 0.5F;
-                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.0F, gripMin.y},
-                                                          ImVec2{seamX + 1.0F, gripMax.y},
-                                                          IM_COL32(90, 150, 215, 220));
             }
+            const ImVec2 gripMin = ImGui::GetItemRectMin();
+            const ImVec2 gripMax = ImGui::GetItemRectMax();
+            const float seamX = (gripMin.x + gripMax.x) * 0.5F;
+            const ImU32 lineColor = hot
+                                        ? (ImGui::IsItemActive() ? IM_COL32(90, 160, 240, 255) : IM_COL32(75, 140, 225, 230))
+                                        : IM_COL32(48, 55, 64, 220);
+            const float halfThickness = hot ? 1.5F : 0.5F;
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - halfThickness, gripMin.y},
+                                                      ImVec2{seamX + halfThickness, gripMax.y},
+                                                      lineColor);
+            const float midY = (gripMin.y + gripMax.y) * 0.5F;
+            const ImU32 handleColor = hot
+                                          ? (ImGui::IsItemActive() ? IM_COL32(140, 195, 255, 255) : IM_COL32(110, 175, 245, 255))
+                                          : IM_COL32(70, 80, 94, 200);
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.5F, midY - 14.0F},
+                                                      ImVec2{seamX + 1.5F, midY + 14.0F},
+                                                      handleColor, 1.5F);
             if (ImGui::IsItemActive()) {
                 // The same shape the entity editor's column seams use: the width the author set is
                 // the starting point, the frame's movement is added to it, and the result is what
@@ -665,13 +672,24 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                const ImVec2 gripMin = ImGui::GetItemRectMin();
-                const ImVec2 gripMax = ImGui::GetItemRectMax();
-                const float seamX = (gripMin.x + gripMax.x) * 0.5F;
-                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.0F, gripMin.y},
-                                                          ImVec2{seamX + 1.0F, gripMax.y},
-                                                          IM_COL32(90, 150, 215, 220));
             }
+            const ImVec2 gripMin = ImGui::GetItemRectMin();
+            const ImVec2 gripMax = ImGui::GetItemRectMax();
+            const float seamX = (gripMin.x + gripMax.x) * 0.5F;
+            const ImU32 lineColor = hot
+                                        ? (ImGui::IsItemActive() ? IM_COL32(90, 160, 240, 255) : IM_COL32(75, 140, 225, 230))
+                                        : IM_COL32(48, 55, 64, 220);
+            const float halfThickness = hot ? 1.5F : 0.5F;
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - halfThickness, gripMin.y},
+                                                      ImVec2{seamX + halfThickness, gripMax.y},
+                                                      lineColor);
+            const float midY = (gripMin.y + gripMax.y) * 0.5F;
+            const ImU32 handleColor = hot
+                                          ? (ImGui::IsItemActive() ? IM_COL32(140, 195, 255, 255) : IM_COL32(110, 175, 245, 255))
+                                          : IM_COL32(70, 80, 94, 200);
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{seamX - 1.5F, midY - 14.0F},
+                                                      ImVec2{seamX + 1.5F, midY + 14.0F},
+                                                      handleColor, 1.5F);
             if (ImGui::IsItemActive()) {
                 if (io.MouseDelta.x != 0.0F) {
                     const float from =
@@ -688,22 +706,32 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
             if (hot) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                // Same as the side seams: the divider lights up, not the whole grip.
-                const ImVec2 gripMin = ImGui::GetItemRectMin();
-                const ImVec2 gripMax = ImGui::GetItemRectMax();
-                const float seamY = (gripMin.y + gripMax.y) * 0.5F;
-                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{gripMin.x, seamY - 1.0F},
-                                                          ImVec2{gripMax.x, seamY + 1.0F},
-                                                          IM_COL32(90, 150, 215, 220));
             }
+            const ImVec2 gripMin = ImGui::GetItemRectMin();
+            const ImVec2 gripMax = ImGui::GetItemRectMax();
+            const float seamY = (gripMin.y + gripMax.y) * 0.5F;
+            const ImU32 lineColor = hot
+                                        ? (ImGui::IsItemActive() ? IM_COL32(90, 160, 240, 255) : IM_COL32(75, 140, 225, 230))
+                                        : IM_COL32(48, 55, 64, 220);
+            const float halfThickness = hot ? 1.5F : 0.5F;
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{gripMin.x, seamY - halfThickness},
+                                                      ImVec2{gripMax.x, seamY + halfThickness},
+                                                      lineColor);
+            const float midX = (gripMin.x + gripMax.x) * 0.5F;
+            const ImU32 handleColor = hot
+                                          ? (ImGui::IsItemActive() ? IM_COL32(140, 195, 255, 255) : IM_COL32(110, 175, 245, 255))
+                                          : IM_COL32(70, 80, 94, 200);
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{midX - 20.0F, seamY - 1.5F},
+                                                      ImVec2{midX + 20.0F, seamY + 1.5F},
+                                                      handleColor, 1.5F);
             if (ImGui::IsItemActive()) {
                 // Dragging up grows the dock, so the mouse delta is subtracted from its height.
                 if (io.MouseDelta.y != 0.0F) {
-                    const float column = layout.viewportSize.y + layout.dockTabBarSize.y + layout.contentBrowserSize.y;
+                    const float availableHeight = mainViewport->WorkSize.y - kEditorTopChromeHeightUVE;
                     const float currentDockHeight = layout.dockTabBarSize.y + layout.contentBrowserSize.y;
                     const float from =
                         m_bottomDockHeight > 0.0F ? m_bottomDockHeight : currentDockHeight;
-                    m_bottomDockHeight = ClampBottomDockHeightUVE(column, from - io.MouseDelta.y);
+                    m_bottomDockHeight = ClampBottomDockHeightUVE(availableHeight, from - io.MouseDelta.y);
                 }
             }
         }
