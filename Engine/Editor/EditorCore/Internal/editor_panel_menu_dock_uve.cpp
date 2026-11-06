@@ -29,6 +29,7 @@
 #include <vector>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include "editor_chrome_layout_uve.h"
 #include "editor_color_field_uve.h"
@@ -612,15 +613,19 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
     constexpr ImGuiWindowFlags handleFlags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground |
-        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoDocking;
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDocking;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
     ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2{1.0F, 1.0F});
-    const auto beginHandle = [](const char* const id, const ImVec2 pos, const ImVec2 size) {
+    const auto beginHandle = [mainViewport](const char* const id, const ImVec2 pos, const ImVec2 size) {
+        ImGui::SetNextWindowViewport(mainViewport->ID);
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
         ImGui::SetNextWindowSize(size, ImGuiCond_Always);
         ImGui::SetNextWindowBgAlpha(0.0F);
-        return ImGui::Begin(id, nullptr, handleFlags);
+        const bool began = ImGui::Begin(id, nullptr, handleFlags);
+        if (began) {
+            ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+        }
+        return began;
     };
     const float totalWidth = mainViewport->WorkSize.x;
     const ImGuiIO& io = ImGui::GetIO();

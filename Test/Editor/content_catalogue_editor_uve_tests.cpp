@@ -465,6 +465,50 @@ TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSce
     engine.Shutdown();
 }
 
+TEST(ContentCatalogueEditorUVETest, EntityEditorClonedAssetSwitchAndSafeReturnToLevel) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_clone_switch");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        const Scene::EntityUVE placed = editor.PlaceEntityAssetUVE(*created);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.SaveSceneUVE());
+
+        // Clone/duplicate the entity file in Content
+        const std::optional<std::filesystem::path> clonePath = editor.DuplicateContentFileUVE(*created);
+        ASSERT_TRUE(clonePath.has_value());
+
+        // Open the original entity
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), *created);
+
+        // Switch to the clone directly while the entity editor is open
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*clonePath));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), *clonePath);
+
+        // Save & return to the main level editor safely
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(true));
+        EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
+
+        // Verify the level editor scene is alive and document roots are valid
+        EXPECT_NE(editor.GetDocumentSceneRootUVE(), Scene::kInvalidEntityUVE);
+        EXPECT_FALSE(editor.GetDocumentRootsUVE().empty());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
 TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGoesToProblems) {
     const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_editor_scripts");
     const std::filesystem::path content = root / "Content";
