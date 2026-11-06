@@ -203,7 +203,7 @@ bool DeveloperConsoleUVE::RegisterCVar(std::string name, std::string value, cons
 void DeveloperConsoleUVE::RegisterBuiltInsUVE() {
     (void)RegisterCommand("help", "List registered native commands.", [](DeveloperConsoleUVE& console, std::string_view) {
         for (const auto& [identifier, command] : console.m_commands) {
-            console.AppendUVE(DeveloperConsoleSeverityUVE::Info, identifier + " — " + command.help);
+            console.AppendUVE(DeveloperConsoleSeverityUVE::Info, identifier + " - " + command.help);
         }
     });
     (void)RegisterCommand("clear", "Clear console output while retaining command history.", [](DeveloperConsoleUVE& console, std::string_view) {
