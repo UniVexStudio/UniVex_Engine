@@ -6,6 +6,7 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -56,8 +57,14 @@ namespace {
 /// constructs one WindowManagerUVE at a time today — matches how a shared library-level resource
 /// should be initialized exactly once regardless of how many owners reference it.
 int g_glfwRefCount = 0;
+bool g_suppressGlfwErrors = false;
+std::string g_lastSuppressedGlfwError;
 
 void GlfwErrorCallbackUVE(int errorCode, const char* description) {
+    if (g_suppressGlfwErrors) {
+        g_lastSuppressedGlfwError = description != nullptr ? description : "(no description)";
+        return;
+    }
     UVE_ERROR("WindowManagerUVE: GLFW error {}: {}", errorCode,
               description != nullptr ? description : "(no description)");
 }
@@ -313,11 +320,15 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
                     Platform::GetWindowModeNameUVE(desc.mode));
     }
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, static_cast<int>(desc.glVersionMajor));
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, static_cast<int>(desc.glVersionMinor));
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    // GLFW_OPENGL_FORWARD_COMPAT is deliberately NOT set: it changes platform-specific context
+#if defined(__APPLE__)
+    // On macOS, GLFW requires forward-compatible contexts for OpenGL 3.2+ Core Profile.
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#else
+    // GLFW_OPENGL_FORWARD_COMPAT is deliberately NOT set on Linux/Windows: it changes platform-specific context
     // behavior and has previously broken X11 resize callback delivery on the Mesa test host.
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_FALSE);
+#endif
     glfwWindowHint(GLFW_RESIZABLE, desc.resizable ? GLFW_TRUE : GLFW_FALSE);
     const bool initiallyDecorated = ShouldDecorateWindowUVE(desc.borderless, effectiveMode);
     glfwWindowHint(GLFW_DECORATED, initiallyDecorated ? GLFW_TRUE : GLFW_FALSE);
@@ -341,10 +352,46 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
         createWidth = monitorMode->width;
         createHeight = monitorMode->height;
     }
-    m_impl->window = glfwCreateWindow(createWidth, createHeight, desc.title.c_str(), createMonitor, nullptr);
+
+    struct GlVersionCandidate {
+        std::uint32_t major;
+        std::uint32_t minor;
+    };
+    std::vector<GlVersionCandidate> candidates;
+    candidates.push_back({desc.glVersionMajor, desc.glVersionMinor});
+
+    constexpr std::array<GlVersionCandidate, 5> kFallbackList = {{
+        {4, 6}, {4, 5}, {4, 3}, {4, 1}, {3, 3}
+    }};
+    for (const auto& candidate : kFallbackList) {
+        if (candidate.major < desc.glVersionMajor ||
+            (candidate.major == desc.glVersionMajor && candidate.minor < desc.glVersionMinor)) {
+            candidates.push_back(candidate);
+        }
+    }
+
+    g_suppressGlfwErrors = true;
+    g_lastSuppressedGlfwError.clear();
+    for (const auto& candidate : candidates) {
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, static_cast<int>(candidate.major));
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, static_cast<int>(candidate.minor));
+        m_impl->window = glfwCreateWindow(createWidth, createHeight, desc.title.c_str(), createMonitor, nullptr);
+        if (m_impl->window != nullptr) {
+            if (candidate.major != desc.glVersionMajor || candidate.minor != desc.glVersionMinor) {
+                UVE_INFO("WindowManagerUVE: requested OpenGL {}.{} Core Profile unavailable; successfully fell back to {}.{}",
+                         desc.glVersionMajor, desc.glVersionMinor, candidate.major, candidate.minor);
+                m_impl->desc.glVersionMajor = candidate.major;
+                m_impl->desc.glVersionMinor = candidate.minor;
+            }
+            break;
+        }
+    }
+    g_suppressGlfwErrors = false;
+
     if (m_impl->window == nullptr) {
-        UVE_FATAL("WindowManagerUVE: glfwCreateWindow() failed requesting OpenGL {}.{} Core Profile",
-                  desc.glVersionMajor, desc.glVersionMinor);
+        UVE_FATAL("WindowManagerUVE: glfwCreateWindow() failed requesting OpenGL {}.{} Core Profile (and fallbacks down to 3.3): {}",
+                  desc.glVersionMajor, desc.glVersionMinor,
+                  g_lastSuppressedGlfwError.empty() ? "unknown GLFW error" : g_lastSuppressedGlfwError);
         --g_glfwRefCount;
         m_impl->ownsGlfwRefCount = false;
         if (g_glfwRefCount == 0) {
@@ -427,7 +474,7 @@ WindowManagerUVE::WindowManagerUVE(Events::IEventSystemUVE& eventSystem, const W
     SetDisplaySleepAllowedUVE(desc.allowDisplaySleep);
     UVE_INFO("WindowManagerUVE: created {}x{} window \"{}\" in mode {} using OpenGL {}.{} Core",
              createWidth, createHeight, desc.title, Platform::GetWindowModeNameUVE(m_impl->windowMode),
-             desc.glVersionMajor, desc.glVersionMinor);
+             m_impl->desc.glVersionMajor, m_impl->desc.glVersionMinor);
 }
 
 WindowManagerUVE::~WindowManagerUVE() {
