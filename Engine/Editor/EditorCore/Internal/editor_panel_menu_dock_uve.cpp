@@ -43,15 +43,15 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr const char* kMenuLabelFileUVE = "\xEE\xAA\xA4 File";
-constexpr const char* kMenuLabelEditUVE = "\xEE\xAA\x98 Edit";
-constexpr const char* kMenuLabelAssetsUVE = "\xEE\xA9\x85 Assets";
-constexpr const char* kMenuLabelGameObjectUVE = "\xEF\xAA\x97 GameObject";
-constexpr const char* kMenuLabelPluginUVE = "\xEE\xAF\x99 Plugin";
-constexpr const char* kMenuLabelWindowUVE = "\xEE\xB6\xBA Window";
+constexpr const char* kMenuLabelFileUVE = "File";
+constexpr const char* kMenuLabelEditUVE = "Edit";
+constexpr const char* kMenuLabelAssetsUVE = "Assets";
+constexpr const char* kMenuLabelGameObjectUVE = "GameObject";
+constexpr const char* kMenuLabelPluginUVE = "Plugin";
+constexpr const char* kMenuLabelWindowUVE = "Window";
 constexpr const char* kMenuLabelToolsUVE = "Tools";
 constexpr const char* kMenuLabelBuildUVE = "Build";
-constexpr const char* kMenuLabelHelpUVE = "\xEF\xA4\x9D Help";
+constexpr const char* kMenuLabelHelpUVE = "Help";
 
 } // namespace
 
@@ -512,25 +512,29 @@ void EditorUVE::DrawMenuBarUVE() {
     }
 
     // ---- Shared Engine Logo Box: spans Titlebar Row + Menu Row ----------------------------------
-    ImGui::SetNextWindowPos(stripLayout.logoPos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(stripLayout.logoSize, ImGuiCond_Always);
-    if (beginChromeWindow("##uve-logo", chromeFlags)) {
-        ImDrawList* const logoDrawList = ImGui::GetWindowDrawList();
-        const ImVec2 logoMin = ImGui::GetWindowPos();
-        const ImVec2 logoMax{logoMin.x + stripLayout.logoSize.x, logoMin.y + stripLayout.logoSize.y};
-        logoDrawList->AddRectFilled(logoMin, logoMax, kEditorHeaderStripColorUVE);
+    if (stripLayout.logoSize.x > 0.0F && stripLayout.logoSize.y > 0.0F) {
+        ImGui::SetNextWindowPos(stripLayout.logoPos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(stripLayout.logoSize, ImGuiCond_Always);
+        if (beginChromeWindow("##uve-logo", chromeFlags)) {
+            ImDrawList* const logoDrawList = ImGui::GetWindowDrawList();
+            const ImVec2 logoMin = ImGui::GetWindowPos();
+            const ImVec2 logoMax{logoMin.x + stripLayout.logoSize.x, logoMin.y + stripLayout.logoSize.y};
+            logoDrawList->AddRectFilled(logoMin, logoMax, kEditorHeaderStripColorUVE);
 
-        const ImVec2 markMin{logoMin.x + 5.0F, logoMin.y + 4.0F};
-        const ImVec2 markMax{logoMax.x - 5.0F, logoMax.y - 4.0F};
-        logoDrawList->AddRectFilled(markMin, markMax, IM_COL32(32, 112, 228, 255), 6.0F);
-        logoDrawList->AddRect(markMin, markMax, IM_COL32(82, 160, 255, 220), 6.0F, 0, 1.2F);
-        const float logoFontSize = ImGui::GetFontSize() * 1.50F;
-        const ImVec2 uSize = ImGui::GetFont()->CalcTextSizeA(logoFontSize, FLT_MAX, 0.0F, "U");
-        logoDrawList->AddText(ImGui::GetFont(), logoFontSize,
-                              ImVec2{(markMin.x + markMax.x - uSize.x) * 0.5F,
-                                     (markMin.y + markMax.y - uSize.y) * 0.5F},
-                              IM_COL32(255, 255, 255, 255), "U");
-        ImGui::End();
+            const float markDimension = std::min(stripLayout.logoSize.x, stripLayout.logoSize.y) - 8.0F;
+            const ImVec2 markCenter{(logoMin.x + logoMax.x) * 0.5F, (logoMin.y + logoMax.y) * 0.5F};
+            const ImVec2 markMin{markCenter.x - markDimension * 0.5F, markCenter.y - markDimension * 0.5F};
+            const ImVec2 markMax{markCenter.x + markDimension * 0.5F, markCenter.y + markDimension * 0.5F};
+            logoDrawList->AddRectFilled(markMin, markMax, IM_COL32(32, 112, 228, 255), 6.0F);
+            logoDrawList->AddRect(markMin, markMax, IM_COL32(82, 160, 255, 220), 6.0F, 0, 1.2F);
+            const float logoFontSize = ImGui::GetFontSize() * 1.50F;
+            const ImVec2 uSize = ImGui::GetFont()->CalcTextSizeA(logoFontSize, FLT_MAX, 0.0F, "U");
+            logoDrawList->AddText(ImGui::GetFont(), logoFontSize,
+                                  ImVec2{(markMin.x + markMax.x - uSize.x) * 0.5F,
+                                         (markMin.y + markMax.y - uSize.y) * 0.5F},
+                                  IM_COL32(255, 255, 255, 255), "U");
+            ImGui::End();
+        }
     }
 
     // ---- Row 3: Viewport Header & Dedicated Transport Row + Tool Strip --------------------------
@@ -1314,9 +1318,10 @@ void EditorUVE::DrawEditorChromeHandlesUVE() {
         }
         ImGui::End();
     } else if (!m_bottomDockVisible) {
-        // When bottom dock is collapsed, allow dragging up on the top edge of the tab bar to open it
-        const ImVec2 tabGripPos{mainViewport->WorkPos.x, layout.dockTabBarPos.y - (kPanelSplitterThicknessUVE * 0.5F)};
-        const ImVec2 tabGripSize{totalWidth, kPanelSplitterThicknessUVE};
+        // When bottom dock is collapsed, allow dragging up on the top edge of the tab bar in the center
+        // column under the Viewport to open it
+        const ImVec2 tabGripPos{layout.viewportPos.x, layout.dockTabBarPos.y - (kPanelSplitterThicknessUVE * 0.5F)};
+        const ImVec2 tabGripSize{layout.viewportSize.x, kPanelSplitterThicknessUVE};
         if (beginHandle("##bottom-dock-tab-open-grip", tabGripPos, tabGripSize)) {
             ImGui::InvisibleButton("##grip-dock-open", tabGripSize);
             const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
@@ -1453,27 +1458,6 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
             ImGui::SameLine(0.0F, 4.0F);
         }
 
-        // 3-dot options button for the currently active bottom dock
-        if (m_bottomDockVisible) {
-            const char* const dockName =
-                m_activeBottomDock == EditorBottomDockUVE::FileSystem ? "Content Browser" :
-                (m_activeBottomDock == EditorBottomDockUVE::Debugger ? "Output" :
-                (m_activeBottomDock == EditorBottomDockUVE::Console ? "Console" :
-                (m_activeBottomDock == EditorBottomDockUVE::Capture ? "Capture" :
-                (m_activeBottomDock == EditorBottomDockUVE::Profiler ? "Profiler" : "Audio"))));
-
-            constexpr float kDockDotsW = 20.0F;
-            const float dotsPosX = ImGui::GetCursorPosX() + 2.0F;
-            const ImVec2 dotsScreenPos{ImGui::GetWindowPos().x + dotsPosX,
-                                       ImGui::GetWindowPos().y + (layout.dockTabBarSize.y - kDockDotsW) * 0.5F};
-            if (DrawDockThreeDotsButtonUVE(*ImGui::GetWindowDrawList(), "##bottom-dock-dots", dotsScreenPos,
-                                          ImVec2{kDockDotsW, kDockDotsW})) {
-                ImGui::OpenPopup("##uve-bottom-dock-popup");
-            }
-            DrawVisualDockPositionSelectorUVE("##uve-bottom-dock-popup", dockName, EditorDockSlotUVE::Bottom,
-                                             &m_bottomDockVisible, layout, dotsScreenPos,
-                                             ImVec2{dotsScreenPos.x + kDockDotsW, dotsScreenPos.y + kDockDotsW});
-        }
 
         // Right end: the scene's save state, where the eye rests when looking for it.
         const char* const state = m_sceneDirty ? "unsaved changes" : "saved";
