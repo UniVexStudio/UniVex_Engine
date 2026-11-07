@@ -3,11 +3,59 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 
 #include <imgui.h>
 
+#include <cstdint>
+#include <cstdio>
+
 namespace UVE::Editor {
+
+
+inline constexpr float kViewportTabInsetX = 0.0F;
+
+/// Empty dark header background shared behind the titlebar, menu row, and tab strips so the
+/// rounded tabs sit directly on an empty dark row without boxed frames or border gaps.
+inline constexpr ImU32 kEditorHeaderStripColorUVE = IM_COL32(14, 17, 22, 255);
+
+/// The active tab look used by every tab strip: top-only rounded corners, a flat bottom that
+/// merges into the panel under it, and a thin blue rim that fades out within the first few pixels.
+/// `drawFill` is false where ImGui has already drawn the tab body and its label.
+inline void DrawActiveTopRoundedTabUVE(ImDrawList& drawList, const ImVec2 tabMin, const ImVec2 tabMax,
+                                       const ImU32 fillCol, const float topRounding = 6.0F,
+                                       const bool drawFill = true) {
+    if (drawFill) {
+        drawList.AddRectFilled(tabMin, tabMax, fillCol, topRounding, ImDrawFlags_RoundCornersTop);
+    }
+    const float tabHeight = std::max(1.0F, tabMax.y - tabMin.y);
+    const int fadeSteps = std::max(2, static_cast<int>(std::floor(std::min(8.0F, tabHeight * 0.4F))));
+    for (int step = 0; step < fadeSteps; ++step) {
+        const float y = static_cast<float>(step);
+        float inset = 0.0F;
+        if (y + 0.5F < topRounding) {
+            const float dy = topRounding - (y + 0.5F);
+            inset = topRounding - std::sqrt(std::max(0.0F, (topRounding * topRounding) - (dy * dy)));
+        }
+        int alpha = 0;
+        if (step == 0) {
+            alpha = 140;
+        } else {
+            const float t = static_cast<float>(step - 1) / static_cast<float>(std::max(1, fadeSteps - 1));
+            alpha = static_cast<int>(std::lround(40.0F * (1.0F - t) * (1.0F - t)));
+        }
+        if (alpha > 0 && (tabMin.x + inset) < (tabMax.x - inset)) {
+            drawList.AddRectFilled(ImVec2{tabMin.x + inset, tabMin.y + y},
+                                   ImVec2{tabMax.x - inset, tabMin.y + y + 1.0F}, IM_COL32(46, 136, 248, alpha));
+        }
+    }
+    if (drawFill) {
+        drawList.AddRect(tabMin, tabMax, IM_COL32(60, 70, 84, 175), topRounding, ImDrawFlags_RoundCornersTop, 1.0F);
+        drawList.AddLine(ImVec2{tabMin.x + 1.0F, tabMax.y - 1.0F}, ImVec2{tabMax.x - 1.0F, tabMax.y - 1.0F}, fillCol,
+                         1.0F);
+    }
+}
 
 /// Where each of the editor's structural panels sits this frame.
 ///
@@ -72,6 +120,7 @@ struct EditorChromeLayoutUVE final {
     ImVec2 inspectorRestoreSize;
 };
 
+
 /// Shared across the editor's panel translation units.
 ///
 /// These four were file-local constants while every panel lived in editor_uve.cpp. Each is used
@@ -112,8 +161,11 @@ constexpr float kMinimumViewportHeightUVE = 64.0F;
 constexpr float kAssetsPanelHeightUVE = 192.0F;
 constexpr float kMinimumBottomDockHeightUVE = 96.0F;
 constexpr float kDockTabBarHeightUVE = 24.0F;
-constexpr float kEditorTitleBarHeightUVE = 24.0F;
-constexpr float kEditorToolbarHeightUVE = 26.0F;
+constexpr float kEditorOsTitleBarRowHeightUVE = 30.0F;
+constexpr float kEditorMenuBarRowHeightUVE = 26.0F;
+constexpr float kEditorTitleBarHeightUVE = kEditorOsTitleBarRowHeightUVE + kEditorMenuBarRowHeightUVE;
+constexpr float kEditorTabRowHeightUVE = 26.0F;
+constexpr float kEditorToolbarHeightUVE = 52.0F;
 constexpr float kEditorTopChromeHeightUVE = kEditorTitleBarHeightUVE + kEditorToolbarHeightUVE;
 constexpr float kScenePanelWidthFractionUVE = 0.16F;
 constexpr float kScenePanelWidthMinUVE = 184.0F;
@@ -238,17 +290,30 @@ inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
     const float totalHeight = viewport.WorkSize.y;
 
     const float chromeHeight = kEditorTopChromeHeightUVE;
-    // The centre column, under the tool strip. The dock's tab row is reserved only while the dock
-    // is hidden, because that is the one state in which the row has to live at the bottom edge on
-    // its own. While the dock is showing, its tabs are the dock's header and cost the column
-    // nothing - which is why the panels reach the bottom of the frame instead of stopping 24px
-    // short above a band that belonged to no one.
-    const float columnHeight = std::max(
-        kMinimumViewportHeightUVE,
-        totalHeight - chromeHeight - (bottomDockVisible ? 0.0F : kDockTabBarHeightUVE));
-    // The side columns also take the tool strip's height: they start right under the title bar.
+    const float top = originY + chromeHeight;
     const float sideTop = originY + kEditorTitleBarHeightUVE;
-    const float sideHeight = columnHeight + kEditorToolbarHeightUVE;
+    const float sceneTop = originY + kEditorTitleBarHeightUVE + kEditorTabRowHeightUVE;
+
+    // The dock tab bar sits anchored at the very bottom edge across the full width of the editor
+    const float dockTabBarHeight = kDockTabBarHeightUVE;
+    const float dockTabBarY = originY + totalHeight - dockTabBarHeight;
+
+    // Outliner (Left) and Inspector (Right) extend from their respective tops all the way down
+    // to the top edge of the full-width bottom dock tab bar.
+    const float sceneHeight = std::max(kMinimumViewportHeightUVE, dockTabBarY - sceneTop);
+    const float sideHeight = std::max(kMinimumViewportHeightUVE + kEditorToolbarHeightUVE, dockTabBarY - sideTop);
+
+    // Center column: Viewport and open bottom dock body (Content Browser, Debugger, etc.)
+    // Clamped so the center viewport preserves its minimum height.
+    const float availableCenterHeight =
+        std::max(kMinimumViewportHeightUVE + kDockTabBarHeightUVE, totalHeight - chromeHeight);
+    const float dock = bottomDockVisible ? ClampBottomDockHeightUVE(availableCenterHeight, dockHeight) : 0.0F;
+    const float dockBodyHeight = bottomDockVisible ? std::max(0.0F, dock - dockTabBarHeight) : 0.0F;
+    const float dockBodyY = dockTabBarY - dockBodyHeight;
+
+    // Viewport sits above dockBodyY (or extends down to dockTabBarY when the bottom dock is collapsed/hidden)
+    const float viewportBottom = bottomDockVisible ? dockBodyY : dockTabBarY;
+    const float viewportHeight = std::max(kMinimumViewportHeightUVE, viewportBottom - top);
 
     const float defaultSceneWidth =
         std::clamp(totalWidth * kScenePanelWidthFractionUVE, kScenePanelWidthMinUVE, kScenePanelWidthMaxUVE);
@@ -264,54 +329,48 @@ inline constexpr ImGuiWindowFlags kLayoutOwnedPanelFlagsUVE =
                                             ? ClampInspectorPanelWidthUVE(totalWidth, inspectorWidthCustom)
                                             : defaultInspectorWidth);
     const float viewportWidth = std::max(kMinimumViewportWidthUVE, totalWidth - sceneWidth - inspectorWidth);
-    const float top = originY + chromeHeight;
-    const float dock = bottomDockVisible ? ClampBottomDockHeightUVE(columnHeight, dockHeight) : 0.0F;
 
     EditorChromeLayoutUVE layout{};
     layout.sceneVisible = sceneVisible;
     layout.inspectorVisible = inspectorVisible;
     layout.logoPos = ImVec2{originX, originY};
-    layout.logoSize = ImVec2{kEditorTopChromeHeightUVE, kEditorTopChromeHeightUVE};
-    layout.outlinerHeaderPos = ImVec2{originX + kEditorTopChromeHeightUVE, sideTop};
-    layout.outlinerHeaderSize =
-        ImVec2{std::max(0.0F, sceneWidth - kEditorTopChromeHeightUVE), kEditorToolbarHeightUVE};
-    layout.scenePos = ImVec2{originX, top};
-    layout.sceneSize = ImVec2{sceneWidth, columnHeight};
-    // The header row starts past the logo even when the Outliner is hidden, so the logo never
-    // paints over the viewport's own tab and transport.
-    layout.viewportHeaderPos = ImVec2{originX + std::max(sceneWidth, kEditorTopChromeHeightUVE), sideTop};
+    layout.logoSize = ImVec2{kEditorTitleBarHeightUVE, kEditorTitleBarHeightUVE};
+    layout.outlinerHeaderPos = ImVec2{originX, sideTop};
+    layout.outlinerHeaderSize = ImVec2{sceneWidth, kEditorTabRowHeightUVE};
+    layout.scenePos = ImVec2{originX, sceneTop};
+    layout.sceneSize = ImVec2{sceneWidth, sceneHeight};
+    layout.viewportHeaderPos = ImVec2{originX + sceneWidth, sideTop};
     layout.viewportHeaderSize = ImVec2{viewportWidth, kEditorToolbarHeightUVE};
     layout.viewportPos = ImVec2{originX + sceneWidth, top};
-    layout.viewportSize = ImVec2{viewportWidth, std::max(kMinimumViewportHeightUVE, columnHeight - dock)};
+    layout.viewportSize = ImVec2{viewportWidth, viewportHeight};
     layout.inspectorPos = ImVec2{originX + sceneWidth + viewportWidth, sideTop};
     layout.inspectorSize = ImVec2{inspectorWidth, sideHeight};
-    // The dock is the bottom half of the viewport column, not a band across the whole editor. Its
-    // tab row is the top of that block and shares its left and right edges, so the row reads as
-    // the dock's own header: one thing attached under the canvas. Drawn full-width at the bottom
-    // edge of the screen, the row looked like a second window that had landed there by accident,
-    // and nothing connected it to the panel it controlled. When the dock is hidden the row drops
-    // to the reserved strip row, still on the column's edges, because it is the way back.
-    const float dockStripY = bottomDockVisible ? top + layout.viewportSize.y : top + columnHeight;
-    layout.dockTabBarPos = ImVec2{originX + sceneWidth, dockStripY};
-    layout.dockTabBarSize = ImVec2{viewportWidth, kDockTabBarHeightUVE};
-    layout.contentBrowserPos = ImVec2{originX + sceneWidth, dockStripY + kDockTabBarHeightUVE};
-    layout.contentBrowserSize = ImVec2{viewportWidth, std::max(0.0F, dock - kDockTabBarHeightUVE)};
+
+    // Full-width dock tab bar along the very bottom edge (sagad left to right)
+    layout.dockTabBarPos = ImVec2{originX, dockTabBarY};
+    layout.dockTabBarSize = ImVec2{totalWidth, dockTabBarHeight};
+
+    // Open dock content body bounded in the center between Outliner and Inspector
+    layout.contentBrowserPos = ImVec2{originX + sceneWidth, dockBodyY};
+    layout.contentBrowserSize = ImVec2{viewportWidth, dockBodyHeight};
 
     // The grips straddle their seam, so a drag that started on the divider keeps tracking when the
     // pointer wanders a pixel or two onto either panel.
     constexpr float halfGrip = kPanelSplitterThicknessUVE * 0.5F;
-    layout.sceneSplitterPos = ImVec2{originX + sceneWidth - halfGrip, top};
-    layout.sceneSplitterSize = sceneVisible ? ImVec2{kPanelSplitterThicknessUVE, columnHeight} : ImVec2{0.0F, 0.0F};
+    layout.sceneSplitterPos = ImVec2{originX + sceneWidth - halfGrip, sideTop};
+    layout.sceneSplitterSize = sceneVisible ? ImVec2{kPanelSplitterThicknessUVE, sideHeight} : ImVec2{0.0F, 0.0F};
     layout.inspectorSplitterPos = ImVec2{originX + sceneWidth + viewportWidth - halfGrip, sideTop};
     layout.inspectorSplitterSize =
         inspectorVisible ? ImVec2{kPanelSplitterThicknessUVE, sideHeight} : ImVec2{0.0F, 0.0F};
-    layout.dockSplitterPos = ImVec2{originX + sceneWidth, top + layout.viewportSize.y - halfGrip};
+
+    // Dock splitter: spans the center viewport width above the open dock body
+    layout.dockSplitterPos = ImVec2{originX + sceneWidth, dockBodyY - halfGrip};
     layout.dockSplitterSize =
         bottomDockVisible ? ImVec2{viewportWidth, kPanelSplitterThicknessUVE} : ImVec2{0.0F, 0.0F};
 
     layout.outlinerRestorePos = ImVec2{originX, top};
     layout.outlinerRestoreSize =
-        sceneVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, columnHeight};
+        sceneVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, dockTabBarY - top};
     layout.inspectorRestorePos = ImVec2{originX + totalWidth - kPanelRestoreStripWidthUVE, sideTop};
     layout.inspectorRestoreSize =
         inspectorVisible ? ImVec2{0.0F, 0.0F} : ImVec2{kPanelRestoreStripWidthUVE, sideHeight};

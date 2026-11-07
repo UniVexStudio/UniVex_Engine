@@ -165,9 +165,8 @@ void EditorUVE::DrawAnimationLibraryWindowUVE() {
         window.focusPending = false;
         ImGui::SetNextWindowFocus();
     }
-    bool open = true;
     const std::string title = window.assetPath.filename().generic_string() + "###animation-library-window";
-    ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    ImGui::Begin(title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
 
     // Every edit below writes the file through here. A failed write rolls the window back to what
     // the file holds, so the list never shows entries that are not on disk.
@@ -334,8 +333,16 @@ void EditorUVE::DrawAnimationLibraryWindowUVE() {
         ImGui::EndDragDropTarget();
     }
 
+    ImGuiViewport* const currentViewport = ImGui::GetWindowViewport();
+    const bool osCloseRequested =
+        (currentViewport != nullptr && currentViewport != mainViewport && currentViewport->PlatformRequestClose);
+    const bool escapePressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
+    if (osCloseRequested && currentViewport != nullptr) {
+        currentViewport->PlatformRequestClose = false;
+    }
     ImGui::End();
-    if (!open) {
+
+    if (osCloseRequested || escapePressed) {
         CloseAnimationLibraryWindowUVE();
     }
 }

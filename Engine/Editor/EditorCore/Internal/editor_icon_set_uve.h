@@ -23,6 +23,7 @@ enum class EditorIconGroupUVE : std::uint8_t {
     ObjectCategory,  // object_categories/ - one per object palette category ("physics")
     ContentType,     // content_types/  - one per content browser type ("mesh", "folder_open")
     Component,       // components/       - one per ECS component
+    Toolbar,         // toolbar/          - transport and general toolbar icons ("play", "pause", "stop", "fast-forward")
 };
 
 struct EditorIconSourceUVE final {

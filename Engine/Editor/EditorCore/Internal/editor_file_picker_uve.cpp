@@ -139,9 +139,8 @@ void EditorUVE::DrawFilePickerUVE() {
         picker.focusPending = false;
         ImGui::SetNextWindowFocus();
     }
-    bool open = true;
     const std::string title = picker.request.title + "###file-picker";
-    ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    ImGui::Begin(title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
 
     // Breadcrumb: Content / Animations / ... - every crumb jumps there.
     if (ImGui::SmallButton("Content")) {
@@ -288,6 +287,12 @@ void EditorUVE::DrawFilePickerUVE() {
         confirmed = project.contentRoot / *picker.selectedFile;
     }
 
+    ImGuiViewport* const currentViewport = ImGui::GetWindowViewport();
+    const bool osCloseRequested =
+        (currentViewport != nullptr && currentViewport != mainViewport && currentViewport->PlatformRequestClose);
+    if (osCloseRequested && currentViewport != nullptr) {
+        currentViewport->PlatformRequestClose = false;
+    }
     ImGui::End();
     // The callback runs after End with the state already cleared, so whatever it opens (or
     // re-opens) never meets a half-closed picker.
@@ -300,7 +305,7 @@ void EditorUVE::DrawFilePickerUVE() {
         }
         return;
     }
-    if (!open || cancelPressed) {
+    if (osCloseRequested || cancelPressed) {
         CloseFilePickerUVE();
     }
 }

@@ -18,6 +18,8 @@ uve_*_tests*.uvescene
 uve_*_tests*.uveprefab
 *.log
 imgui.ini
+uve_editor_layout.ini
+*.ini
 .uvsettings
 *.ppm
 DerivedData/
