@@ -830,6 +830,11 @@ uniform int uSkyTextureEnabled;
 // three drew it. A source's own controls shape it; this is the only term that says "more" or
 // "less" without changing what the sky is.
 uniform float uSkyLuminance;
+uniform sampler2D uSkyGroundShadowMap;
+uniform mat4 uSkyGroundLightMatrix;
+uniform int uSkyGroundShadowEnabled;
+uniform float uSkyGroundShadowOpacity;
+uniform float uSkyGroundShadowBias;
 
 // The disc: a body of the light the scene is lit by, not a texture on the sky. Its size is the
 // light's own angular diameter, so a moon and a sun over the same sky differ in this term and
@@ -1388,6 +1393,34 @@ void main() {
         color = ProceduralSkyUVE(worldDir);
     } else {
         color = GradientSkyWithOverlaysUVE(worldDir, sunDir);
+    }
+    if (uSkyGroundShadowEnabled != 0 && worldDir.y < -0.001 && uCameraPosition.y > 0.001 && sunDir.y > 0.01) {
+        float groundDist = -uCameraPosition.y / worldDir.y;
+        if (groundDist > 0.0 && groundDist < 120.0) {
+            vec3 groundPos = uCameraPosition + worldDir * groundDist;
+            vec4 lightClip = uSkyGroundLightMatrix * vec4(groundPos, 1.0);
+            if (abs(lightClip.w) > 1.0e-5) {
+                vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+                if (proj.x > 0.002 && proj.x < 0.998 && proj.y > 0.002 && proj.y < 0.998 &&
+                    proj.z > 0.0 && proj.z < 1.0) {
+                    vec2 texelSize = 1.0 / vec2(textureSize(uSkyGroundShadowMap, 0));
+                    float shadow = 0.0;
+                    float bias = max(uSkyGroundShadowBias, 0.0008);
+                    for (int sx = -1; sx <= 1; ++sx) {
+                        for (int sy = -1; sy <= 1; ++sy) {
+                            float closestDepth =
+                                texture(uSkyGroundShadowMap, proj.xy + vec2(float(sx), float(sy)) * texelSize).r;
+                            shadow += (proj.z - bias > closestDepth) ? 1.0 : 0.0;
+                        }
+                    }
+                    shadow /= 9.0;
+                    float distFade = 1.0 - smoothstep(60.0, 120.0, groundDist);
+                    float shadowFactor =
+                        clamp(shadow * clamp(uSkyGroundShadowOpacity, 0.0, 1.0) * distFade, 0.0, 1.0);
+                    color *= mix(1.0, 0.38, shadowFactor);
+                }
+            }
+        }
     }
     // Clamped at zero and multiplied last, so a source can never come out negative and the dial
     // means the same thing for a panorama, a gradient and a scattering sky.
