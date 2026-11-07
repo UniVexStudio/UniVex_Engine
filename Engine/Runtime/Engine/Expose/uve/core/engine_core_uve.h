@@ -395,6 +395,8 @@ public:
     [[nodiscard]] bool SetTransientSimulationSessionActiveUVE(bool active) noexcept override;
     [[nodiscard]] bool IsTransientSimulationSessionActiveUVE() const noexcept override;
     [[nodiscard]] bool SetEditorPlaySceneNameUVE(std::string_view sceneName) noexcept override;
+    [[nodiscard]] bool SetSimulationSpeedScaleUVE(float speedScale) noexcept override;
+    [[nodiscard]] float GetSimulationSpeedScaleUVE() const noexcept override;
 
     /// Sets the entity Render() passes to Renderer3DUVE::RenderFrameUVE() as the camera to render
     /// from, starting with the next frame. Passing Scene::kInvalidEntityUVE (the default) reverts
@@ -830,6 +832,7 @@ private:
     SimulationExecutionModeUVE m_simulationExecutionMode = SimulationExecutionModeUVE::Running;
     bool m_singleSimulationStepPending = false;
     bool m_transientSimulationSessionActive = false;
+    float m_simulationSpeedScale = 1.0F;
     bool m_graphicsBackendLossLoggedUVE = false;
     bool m_adaptiveResizeFailureLoggedUVE = false;
     bool m_integerScaleFallbackLoggedUVE = false;

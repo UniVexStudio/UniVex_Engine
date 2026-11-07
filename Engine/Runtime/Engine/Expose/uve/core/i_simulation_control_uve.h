@@ -47,6 +47,15 @@ public:
         static_cast<void>(sceneName);
         return false;
     }
+
+    /// Sets or queries the simulation speed multiplier (1.0 = normal speed, >1.0 = fast-forward).
+    [[nodiscard]] virtual bool SetSimulationSpeedScaleUVE(float speedScale) noexcept {
+        static_cast<void>(speedScale);
+        return false;
+    }
+    [[nodiscard]] virtual float GetSimulationSpeedScaleUVE() const noexcept {
+        return 1.0F;
+    }
 };
 
 } // namespace UVE::Core

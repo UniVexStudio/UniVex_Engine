@@ -3329,6 +3329,11 @@ void EngineCoreUVE::Update() {
     Utilities::FixedStepResultUVE fixedStep{};
     if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
         fixedStep = m_timer->AdvanceFixedStepUVE();
+        if (m_simulationSpeedScale > 1.0F && fixedStep.stepsToRun > 0) {
+            fixedStep.stepsToRun = std::clamp(
+                static_cast<int>(std::lround(static_cast<float>(fixedStep.stepsToRun) * m_simulationSpeedScale)),
+                1, 32);
+        }
     } else {
         m_timer->DiscardFixedStepAccumulatorUVE();
         if (m_singleSimulationStepPending) {
@@ -3376,13 +3381,16 @@ void EngineCoreUVE::Update() {
     // the pose: an IK target could be dragged with no result, and a character being edited could
     // not be posed at all. It runs unconditionally now, on the frame clock, and the pose is the
     // one thing in this function that survives a pause.
-    SyncAnimationUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()), /*physicsStep=*/false);
+    const float frameSimScale =
+        (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) ? m_simulationSpeedScale : 1.0F;
+    SyncAnimationUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()) * frameSimScale, /*physicsStep=*/false);
 
     if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
-        SyncGameplayAttributesUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
-        SyncCinematicUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
-        SyncAiBrainsUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
-        SyncPerceptionUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
+        const float scaledFrameDelta = static_cast<float>(m_timer->GetDeltaTimeUVE()) * m_simulationSpeedScale;
+        SyncGameplayAttributesUVE(scaledFrameDelta);
+        SyncCinematicUVE(scaledFrameDelta);
+        SyncAiBrainsUVE(scaledFrameDelta);
+        SyncPerceptionUVE(scaledFrameDelta);
     }
     // Bone attachments follow the pose that was just evaluated, and do it before the graph
     // propagates world transforms: a weapon on a hand is on the hand in the same frame the hand
@@ -3746,6 +3754,7 @@ void EngineCoreUVE::Shutdown() {
     m_simulationExecutionMode = SimulationExecutionModeUVE::Running;
     m_singleSimulationStepPending = false;
     m_transientSimulationSessionActive = false;
+    m_simulationSpeedScale = 1.0F;
     UVE_INFO("EngineCoreUVE: shutting down");
 
     // Exact reverse of Init()'s construction order: CheckpointManager,
@@ -3919,6 +3928,18 @@ bool EngineCoreUVE::SetEditorPlaySceneNameUVE(const std::string_view sceneName) 
         m_config.editorPlayModeUVE = previousEditorPlayMode;
         return false;
     }
+}
+
+bool EngineCoreUVE::SetSimulationSpeedScaleUVE(const float speedScale) noexcept {
+    if (m_state != EngineStateUVE::Running || !std::isfinite(speedScale) || speedScale < 0.1F || speedScale > 32.0F) {
+        return false;
+    }
+    m_simulationSpeedScale = speedScale;
+    return true;
+}
+
+float EngineCoreUVE::GetSimulationSpeedScaleUVE() const noexcept {
+    return m_simulationSpeedScale;
 }
 
 void EngineCoreUVE::SetActiveCameraUVE(Scene::EntityUVE cameraEntity) noexcept {

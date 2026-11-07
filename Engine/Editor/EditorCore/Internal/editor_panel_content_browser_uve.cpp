@@ -46,8 +46,8 @@ constexpr const char* kIconStarUVE = "\xEE\xAC\xAE";
 constexpr const char* kIconFolderUVE = "\xEE\xAA\xAD";
 constexpr const char* kIconAdjustmentsUVE = "\xEE\xA8\x83";
 constexpr float kFilesystemLongPressThresholdSecondsUVE = 0.60F;
-constexpr ImVec4 kAccentUVE{0.357F, 0.478F, 0.600F, 1.0F};
-constexpr ImVec4 kAccentHoveredUVE{0.443F, 0.573F, 0.706F, 1.0F};
+constexpr ImVec4 kAccentUVE{0.055F, 0.440F, 0.890F, 1.0F};
+constexpr ImVec4 kAccentHoveredUVE{0.120F, 0.520F, 0.960F, 1.0F};
 
 [[nodiscard]] std::string LowerContentAssetStemUVE(const std::filesystem::path& path) {
     std::string stem = path.stem().generic_string();
@@ -169,7 +169,7 @@ bool GlyphButtonUVE(const char* id, const GlyphUVE glyph, const bool enabled, co
 bool GlyphTextButtonUVE(const char* id, const GlyphUVE glyph, const char* label, const bool accent, const char* tooltip) {
     const ImGuiStyle& style = ImGui::GetStyle();
     const float height = ImGui::GetFrameHeight();
-    const float glyphSize = height * 0.45F;
+    const float glyphSize = std::floor(height * 0.44F);
     const float width = style.FramePadding.x * 2.0F + glyphSize + 6.0F + ImGui::CalcTextSize(label).x;
     const bool pressed = ImGui::InvisibleButton(id, ImVec2{width, height});
     const bool hovered = ImGui::IsItemHovered();
@@ -183,9 +183,11 @@ bool GlyphTextButtonUVE(const char* id, const GlyphUVE glyph, const char* label,
                                                              : ImGuiCol_Button);
     drawList.AddRectFilled(min, max, fill, style.FrameRounding);
     const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
-    DrawGlyphUVE(drawList, glyph, ImVec2{min.x + style.FramePadding.x + glyphSize * 0.5F, (min.y + max.y) * 0.5F},
+    const float centerY = std::floor((min.y + max.y) * 0.5F);
+    DrawGlyphUVE(drawList, glyph, ImVec2{min.x + style.FramePadding.x + glyphSize * 0.5F, centerY},
                  glyphSize, text);
-    drawList.AddText(ImVec2{min.x + style.FramePadding.x + glyphSize + 6.0F, min.y + style.FramePadding.y}, text, label);
+    const float textY = std::floor(centerY - (ImGui::GetTextLineHeight() * 0.5F));
+    drawList.AddText(ImVec2{min.x + style.FramePadding.x + glyphSize + 6.0F, textY}, text, label);
     if (hovered && tooltip != nullptr) {
         ImGui::SetTooltip("%s", tooltip);
     }
@@ -482,6 +484,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
     // The path: each part goes there; the arrow after a part lists the folders inside it.
     const float settingsWidth = ImGui::CalcTextSize(kIconAdjustmentsUVE).x + ImGui::CalcTextSize(" Settings").x +
                                 ImGui::GetStyle().FramePadding.x * 2.0F;
+    const float totalControlsWidth = settingsWidth;
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("%s", kIconFolderUVE);
@@ -542,7 +545,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
     ImGui::PopStyleColor();
 
     ImGui::SameLine();
-    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - settingsWidth));
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - totalControlsWidth));
     if (ImGui::Button((std::string{kIconAdjustmentsUVE} + " Settings##content-settings").c_str())) {
         ImGui::OpenPopup("##content-settings-menu");
     }
@@ -974,23 +977,28 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
     };
     // Divider: drag to resize the sidebar, which sits left (Tiles) or right (Details).
     const auto drawSplitter = [&](const bool sidebarOnRight) {
-        constexpr float kSplitterHitWidthUVE = 8.0F;
+        constexpr float kSplitterHitWidthUVE = 10.0F;
         ImGui::InvisibleButton("##content-browser-splitter", ImVec2{kSplitterHitWidthUVE, bodyHeight});
+        const bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
+        if (hot) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            ImGui::SetTooltip("Drag to resize folder tree\nDouble-click to reset");
+        }
         if (ImGui::IsItemActive() && std::abs(ImGui::GetIO().MouseDelta.x) > 0.0F) {
             const float delta = sidebarOnRight ? -ImGui::GetIO().MouseDelta.x : ImGui::GetIO().MouseDelta.x;
-            m_contentBrowserSplitRatio = std::clamp((listWidth + delta) / bodyWidth, 0.12F, 0.6F);
+            m_contentBrowserSplitRatio = std::clamp((listWidth + delta) / bodyWidth, 0.12F, 0.60F);
         }
-        if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            m_contentBrowserSplitRatio = 0.22F;
         }
         const ImVec2 hitMin = ImGui::GetItemRectMin();
         const ImVec2 hitMax = ImGui::GetItemRectMax();
         const float barX = (hitMin.x + hitMax.x) * 0.5F;
-        ImGui::GetWindowDrawList()->AddLine(ImVec2{barX, hitMin.y}, ImVec2{barX, hitMax.y},
-                                            ImGui::IsItemActive() || ImGui::IsItemHovered()
-                                                ? ImGui::GetColorU32(kAccentUVE)
-                                                : IM_COL32(28, 32, 39, 255),
-                                            ImGui::IsItemActive() ? 2.0F : 1.0F);
+        const ImU32 lineColor = hot ? IM_COL32(14, 112, 227, 255) : IM_COL32(40, 44, 52, 220);
+        ImGui::GetWindowDrawList()->AddLine(ImVec2{barX, hitMin.y}, ImVec2{barX, hitMax.y}, lineColor, hot ? 2.0F : 1.0F);
+        const float midY = (hitMin.y + hitMax.y) * 0.5F;
+        const ImU32 handleColor = hot ? IM_COL32(255, 255, 255, 255) : IM_COL32(70, 80, 94, 200);
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{barX - 1.5F, midY - 14.0F}, ImVec2{barX + 1.5F, midY + 14.0F}, handleColor, 1.5F);
     };
     // Recent and Board have no folder tree (they already look through every folder below):
     // pinned paths and shelves ride along as one strip of chips; a chip takes drops too.

@@ -20,6 +20,7 @@ GROUPS = {
     "object_categories": "ObjectCategory",
     "content_types": "ContentType",
     "components": "Component",
+    "toolbar": "Toolbar",
 }
 BYTES_PER_LINE = 16
 

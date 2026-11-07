@@ -242,6 +242,7 @@ if(UVE_HAS_DESKTOP_GL)
         RHI/Vulkan/vulkan_render_device_uve_tests.cpp
         Window/window_manager_uve_tests.cpp
     )
+    target_link_libraries(uve_core_tests PRIVATE glfw)
 endif()
 target_link_libraries(uve_core_tests PRIVATE
     uve_object
@@ -651,6 +652,9 @@ target_link_libraries(uve_engine_tests PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
+if(UVE_HAS_DESKTOP_GL)
+    target_link_libraries(uve_engine_tests PRIVATE glfw OpenGL::GL)
+endif()
 target_compile_features(uve_engine_tests PRIVATE cxx_std_23)
 target_compile_definitions(uve_engine_tests PRIVATE UVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 uve_set_warnings(uve_engine_tests)

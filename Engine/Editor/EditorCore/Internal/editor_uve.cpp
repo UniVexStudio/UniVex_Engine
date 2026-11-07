@@ -110,7 +110,7 @@ constexpr float kMinimumLocalScaleUVE = 0.001F;
 // via ImGui::PushFont()/PopFont(), not blended into every string the main font already renders.
 #include "uve_mono_font_bytes.inc"
 
-constexpr float kUiFontSizePixelsUVE = 16.0F;
+constexpr float kUiFontSizePixelsUVE = 14.0F;
 
 
 constexpr ImWchar kIconFontGlyphRangesUVE[] = {
@@ -339,6 +339,9 @@ void EditorUVE::InitUVE() {
         // Same "static storage duration for the life of the process" reasoning as the icon font
         // below - the .inc byte array must outlive the atlas and must not be freed by it.
         uiFontConfig.FontDataOwnedByAtlas = false;
+        uiFontConfig.OversampleH = 3;
+        uiFontConfig.OversampleV = 1;
+        uiFontConfig.PixelSnapH = false;
         io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_ui_font_ttf_bytes.data()),
                                        static_cast<int>(uve_ui_font_ttf_bytes.size()),
                                        kUiFontSizePixelsUVE, &uiFontConfig);
@@ -356,6 +359,9 @@ void EditorUVE::InitUVE() {
         // Same "static storage duration for the life of the process" reasoning as the other two
         // fonts above - the .inc byte array must outlive the atlas and must not be freed by it.
         monoFontConfig.FontDataOwnedByAtlas = false;
+        monoFontConfig.OversampleH = 3;
+        monoFontConfig.OversampleV = 1;
+        monoFontConfig.PixelSnapH = false;
         g_monoFontUVE = io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_mono_font_ttf_bytes.data()),
                                                         static_cast<int>(uve_mono_font_ttf_bytes.size()),
                                                         kUiFontSizePixelsUVE, &monoFontConfig);
@@ -864,6 +870,8 @@ bool EditorUVE::StopPlayModeUVE() {
 
     m_playModeSession.reset();
     m_playModeState = EditorPlayModeStateUVE::Edit;
+    m_playFastForwardEnabled = false;
+    static_cast<void>(m_simulationControl->SetSimulationSpeedScaleUVE(1.0F));
     SetGameMouseCapturedUVE(false);
     static_cast<void>(m_simulationControl->SetEditorPlaySceneNameUVE({}));
     m_playBootSplashActive = false;
@@ -875,6 +883,23 @@ bool EditorUVE::StopPlayModeUVE() {
 
 EditorPlayModeStateUVE EditorUVE::GetPlayModeStateUVE() const noexcept {
     return m_playModeState;
+}
+
+bool EditorUVE::SetPlayFastForwardUVE(const bool enabled) noexcept {
+    if (m_simulationControl == nullptr) {
+        return false;
+    }
+    m_playFastForwardEnabled = enabled;
+    const float targetScale = enabled ? m_playFastForwardMultiplier : 1.0F;
+    static_cast<void>(m_simulationControl->SetSimulationSpeedScaleUVE(targetScale));
+    return true;
+}
+
+void EditorUVE::SetPlayFastForwardMultiplierUVE(const float multiplier) noexcept {
+    m_playFastForwardMultiplier = std::clamp(multiplier, 1.5F, 16.0F);
+    if (m_playFastForwardEnabled && m_simulationControl != nullptr) {
+        static_cast<void>(m_simulationControl->SetSimulationSpeedScaleUVE(m_playFastForwardMultiplier));
+    }
 }
 
 void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {

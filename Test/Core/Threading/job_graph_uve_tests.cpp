@@ -249,5 +249,25 @@ TEST(JobGraphUVETest, LargeWideAndDeepGraph_StressCompletesWithoutHangOrDoubleRu
     }
 }
 
+TEST(JobGraphUVETest, ThrowingJobDoesNotDeadlockWaitUVEAndUnblocksSuccessors) {
+    ThreadPoolUVE pool(4);
+    JobGraphUVE graph;
+    std::atomic<bool> successorRan{false};
+
+    const JobGraphObjectHandleUVE failing = graph.AddJobUVE([] {
+        throw std::runtime_error("Simulated job failure");
+    });
+    const JobGraphObjectHandleUVE successor = graph.AddJobUVE([&successorRan] {
+        successorRan.store(true, std::memory_order_release);
+    });
+
+    ASSERT_TRUE(graph.AddDependencyUVE(successor, failing));
+
+    graph.ExecuteUVE(pool);
+    graph.WaitUVE(); // Must complete without deadlocking
+
+    EXPECT_TRUE(successorRan.load(std::memory_order_acquire));
+}
+
 } // namespace
 } // namespace UVE::Threading::Tests

@@ -51,6 +51,7 @@
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/scene/i_scene_graph_uve.h"
 #include "uve/objects/3d/character_3d_uve.h"
+#include "uve/objects/3d/preview_lighting_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/scene/objects/scene_folder_uve.h"
 #include "uve/scene/objects/scene_object_registry_uve.h"
@@ -229,9 +230,13 @@ void EditorUVE::DrawHierarchyPanelUVE() {
     // hidden Outliner is brought back.
     // NoResize matters as much as NoTitleBar here: without it ImGui hands the panel's own border to
     // its resize grip, which fights the seam that straddles it - see kLayoutOwnedPanelFlagsUVE.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
     ImGui::Begin(kPanelLabelSceneUVE, nullptr, kLayoutOwnedPanelFlagsUVE);
     DrawHierarchyBodyUVE();
     ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
 }
 
 void EditorUVE::DrawHierarchyBodyUVE() {
@@ -241,9 +246,17 @@ void EditorUVE::DrawHierarchyBodyUVE() {
     const bool canCreateObject = IsAuthoringCommandAllowedUVE();
     ImGui::PushID("scene-add-object");
     ImGui::BeginDisabled(!canCreateObject);
-    if (ImGui::Button("+", ImVec2{addObjectButtonWidth, addObjectButtonWidth})) {
+    if (ImGui::Button("##scene-add-btn", ImVec2{addObjectButtonWidth, addObjectButtonWidth})) {
         m_objectPickerOpenRequested = true;
     }
+    const ImVec2 btnMin = ImGui::GetItemRectMin();
+    const ImVec2 btnMax = ImGui::GetItemRectMax();
+    const ImVec2 btnCenter{std::floor((btnMin.x + btnMax.x) * 0.5F), std::floor((btnMin.y + btnMax.y) * 0.5F)};
+    const float plusArm = std::floor(addObjectButtonWidth * 0.26F);
+    const ImU32 plusColor = ImGui::GetColorU32(canCreateObject ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+    ImDrawList* const drawList = ImGui::GetWindowDrawList();
+    drawList->AddLine(ImVec2{btnCenter.x - plusArm, btnCenter.y}, ImVec2{btnCenter.x + plusArm, btnCenter.y}, plusColor, 1.5F);
+    drawList->AddLine(ImVec2{btnCenter.x, btnCenter.y - plusArm}, ImVec2{btnCenter.x, btnCenter.y + plusArm}, plusColor, 1.5F);
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
         ImGui::SetTooltip("Add Object");
@@ -799,9 +812,26 @@ void EditorUVE::DrawObjectPickerUVE() {
         const bool hasSun = FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D) != Scene::kInvalidEntityUVE;
         const bool hasEnvironment =
             FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D) != Scene::kInvalidEntityUVE;
+        const auto createAndOrientPickerObject = [&](const Scene::Objects::SceneObjectKindUVE kind,
+                                                     const Scene::EntityUVE explicitParent = Scene::kInvalidEntityUVE) {
+            const Scene::EntityUVE created = CreateDocumentSceneObjectUVE(kind, explicitParent);
+            if (created != Scene::kInvalidEntityUVE &&
+                kind == Scene::Objects::SceneObjectKindUVE::DirectionalLight3D) {
+                Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                const std::optional<Math::QuaternionUVE> rotation =
+                    Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
+                                                        m_viewportOverlayState.previewSunAltitude);
+                if (rotation.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(created)) {
+                    auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(created);
+                    transform.localRotation = *rotation;
+                    m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, created, transform);
+                }
+            }
+            return created;
+        };
         if (!hasSun && item(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr,
                             "The sun: a light from far away that falls on the whole level and casts its shadows.")) {
-            static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D));
+            static_cast<void>(createAndOrientPickerObject(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D));
         }
         if (!hasEnvironment && item(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D, "WorldEnvironment", nullptr,
                                     "The sky, ambient light and fog of the level.")) {
@@ -856,7 +886,20 @@ void EditorUVE::DrawObjectPickerUVE() {
                     ContainsCaseInsensitiveUVE(entry.tooltip, query)) {
                     matched++;
                     if (item(entry.kind, entry.label, nullptr, entry.tooltip)) {
-                        static_cast<void>(CreateDocumentSceneObjectUVE(entry.kind, parent));
+                        const Scene::EntityUVE created = CreateDocumentSceneObjectUVE(entry.kind, parent);
+                        if (created != Scene::kInvalidEntityUVE &&
+                            entry.kind == Scene::Objects::SceneObjectKindUVE::DirectionalLight3D) {
+                            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                            const std::optional<Math::QuaternionUVE> rotation =
+                                Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
+                                                                    m_viewportOverlayState.previewSunAltitude);
+                            if (rotation.has_value() &&
+                                entityManager.HasComponentUVE<Scene::TransformComponentUVE>(created)) {
+                                auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(created);
+                                transform.localRotation = *rotation;
+                                m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, created, transform);
+                            }
+                        }
                     }
                 }
             }
@@ -923,7 +966,20 @@ void EditorUVE::DrawObjectPickerUVE() {
             }
             if (ImGui::BeginMenu("Lighting")) {
                 if (item(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, "DirectionalLight3D", nullptr, "A directional light source.")) {
-                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, parent));
+                    const Scene::EntityUVE created =
+                        CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D, parent);
+                    if (created != Scene::kInvalidEntityUVE) {
+                        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                        const std::optional<Math::QuaternionUVE> rotation =
+                            Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
+                                                                m_viewportOverlayState.previewSunAltitude);
+                        if (rotation.has_value() &&
+                            entityManager.HasComponentUVE<Scene::TransformComponentUVE>(created)) {
+                            auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(created);
+                            transform.localRotation = *rotation;
+                            m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, created, transform);
+                        }
+                    }
                 }
                 if (item(Scene::Objects::SceneObjectKindUVE::Light3D, "Light3D (Omni / Spot)", nullptr, "An omni or spot light.")) {
                     static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Light3D, parent));

@@ -65,6 +65,7 @@ struct EditorLaunchOptionsUVE final {
     std::optional<std::uint32_t> glMinor;
     bool headless = false;
     bool bridgeStdio = false;
+    bool decorated = false;
 };
 
 [[nodiscard]] bool ParseGlVersionUVE(const std::string_view value, std::uint32_t& major,
@@ -95,6 +96,10 @@ struct EditorLaunchOptionsUVE final {
         if (argument == "--bridge-stdio") {
             options.bridgeStdio = true;
             options.headless = true;
+            continue;
+        }
+        if (argument == "--decorated") {
+            options.decorated = true;
             continue;
         }
         if (argument == "--scene" && index + 1 < argc) {
@@ -150,6 +155,7 @@ int main(const int argc, char** argv) {
     config.logFilePath = "uve_editor.log";
     config.enableConsoleLogging = !options.bridgeStdio;
     config.headlessUVE = options.headless;
+    config.windowBorderlessUVE = !options.decorated;
     config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
     if (options.glMajor.has_value() && options.glMinor.has_value()) {
         config.windowGlVersionMajor = *options.glMajor;
