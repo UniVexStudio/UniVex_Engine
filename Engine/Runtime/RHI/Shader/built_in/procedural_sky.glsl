@@ -59,8 +59,13 @@ uniform int uSkyTextureEnabled;
 // three drew it. A source's own controls shape it; this is the only term that says "more" or
 // "less" without changing what the sky is.
 uniform float uSkyLuminance;
-uniform sampler2D uSkyGroundShadowMap;
-uniform mat4 uSkyGroundLightMatrix;
+uniform sampler2D uSkyGroundShadowMap0;
+uniform sampler2D uSkyGroundShadowMap1;
+uniform sampler2D uSkyGroundShadowMap2;
+uniform mat4 uSkyGroundLightMatrix0;
+uniform mat4 uSkyGroundLightMatrix1;
+uniform mat4 uSkyGroundLightMatrix2;
+uniform vec3 uSkyGroundCascadeSplits;
 uniform int uSkyGroundShadowEnabled;
 uniform float uSkyGroundShadowOpacity;
 uniform float uSkyGroundShadowBias;
@@ -600,6 +605,53 @@ vec2 SkyEquirectUvUVE(vec3 dir) {
                 latitude * (1.0 / 3.14159265358979323846) + 0.5);
 }
 
+// Ground-plane shadow (y = 0) through the same three directional cascades the lit pass uses. The
+// first cascade whose map contains the point wins, so a shadow far from the camera is no longer
+// dropped for lying outside the near cascade.
+float SkyGroundCascadeDepthUVE(int cascade, vec2 uv) {
+    if (cascade == 0) { return texture(uSkyGroundShadowMap0, uv).r; }
+    if (cascade == 1) { return texture(uSkyGroundShadowMap1, uv).r; }
+    return texture(uSkyGroundShadowMap2, uv).r;
+}
+
+vec2 SkyGroundCascadeTexelUVE(int cascade) {
+    ivec2 sz;
+    if (cascade == 0) { sz = textureSize(uSkyGroundShadowMap0, 0); }
+    else if (cascade == 1) { sz = textureSize(uSkyGroundShadowMap1, 0); }
+    else { sz = textureSize(uSkyGroundShadowMap2, 0); }
+    return 1.0 / max(vec2(sz), vec2(1.0));
+}
+
+float SkyGroundShadowUVE(vec3 groundPos, float viewDist) {
+    for (int cascade = 0; cascade < 3; ++cascade) {
+        float splitFar = cascade == 0 ? uSkyGroundCascadeSplits.x
+                       : (cascade == 1 ? uSkyGroundCascadeSplits.y : uSkyGroundCascadeSplits.z);
+        if (viewDist > splitFar && cascade < 2) {
+            continue;
+        }
+        mat4 m = cascade == 0 ? uSkyGroundLightMatrix0
+               : (cascade == 1 ? uSkyGroundLightMatrix1 : uSkyGroundLightMatrix2);
+        vec4 lightClip = m * vec4(groundPos, 1.0);
+        if (abs(lightClip.w) < 1.0e-5) { return 0.0; }
+        vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+        if (proj.x <= 0.002 || proj.x >= 0.998 || proj.y <= 0.002 || proj.y >= 0.998 ||
+            proj.z <= 0.0 || proj.z >= 1.0) {
+            return 0.0;
+        }
+        vec2 texel = SkyGroundCascadeTexelUVE(cascade);
+        float bias = max(uSkyGroundShadowBias, 0.0008);
+        float shadow = 0.0;
+        for (int sx = -1; sx <= 1; ++sx) {
+            for (int sy = -1; sy <= 1; ++sy) {
+                float closest = SkyGroundCascadeDepthUVE(cascade, proj.xy + vec2(float(sx), float(sy)) * texel);
+                shadow += (proj.z - bias > closest) ? 1.0 : 0.0;
+            }
+        }
+        return shadow / 9.0;
+    }
+    return 0.0;
+}
+
 void main() {
     if (texture(uSceneDepthTexture, vTexCoord).r < 1.0) {
         discard;
@@ -635,28 +687,11 @@ void main() {
         float groundDist = -uCameraPosition.y / worldDir.y;
         if (groundDist > 0.0 && groundDist < 120.0) {
             vec3 groundPos = uCameraPosition + worldDir * groundDist;
-            vec4 lightClip = uSkyGroundLightMatrix * vec4(groundPos, 1.0);
-            if (abs(lightClip.w) > 1.0e-5) {
-                vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
-                if (proj.x > 0.002 && proj.x < 0.998 && proj.y > 0.002 && proj.y < 0.998 &&
-                    proj.z > 0.0 && proj.z < 1.0) {
-                    vec2 texelSize = 1.0 / vec2(textureSize(uSkyGroundShadowMap, 0));
-                    float shadow = 0.0;
-                    float bias = max(uSkyGroundShadowBias, 0.0008);
-                    for (int sx = -1; sx <= 1; ++sx) {
-                        for (int sy = -1; sy <= 1; ++sy) {
-                            float closestDepth =
-                                texture(uSkyGroundShadowMap, proj.xy + vec2(float(sx), float(sy)) * texelSize).r;
-                            shadow += (proj.z - bias > closestDepth) ? 1.0 : 0.0;
-                        }
-                    }
-                    shadow /= 9.0;
-                    float distFade = 1.0 - smoothstep(60.0, 120.0, groundDist);
-                    float shadowFactor =
-                        clamp(shadow * clamp(uSkyGroundShadowOpacity, 0.0, 1.0) * distFade, 0.0, 1.0);
-                    color *= mix(1.0, 0.38, shadowFactor);
-                }
-            }
+            float shadow = SkyGroundShadowUVE(groundPos, groundDist);
+            float distFade = 1.0 - smoothstep(60.0, 120.0, groundDist);
+            float shadowFactor =
+                clamp(shadow * clamp(uSkyGroundShadowOpacity, 0.0, 1.0) * distFade, 0.0, 1.0);
+            color *= mix(1.0, 0.38, shadowFactor);
         }
     }
     // Clamped at zero and multiplied last, so a source can never come out negative and the dial
