@@ -57,66 +57,8 @@ namespace {
 // precedent and because it needs no asset-pipeline regeneration.
 constexpr float kViewportBubbleIconRadiusUVE = 10.0F;
 
-void DrawRotateIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    const float arcRadius = radius * 0.58F;
-    constexpr float kStartAngle = -0.35F * Math::kPiUVE;
-    constexpr float kEndAngle = 1.15F * Math::kPiUVE;
-    drawList.PathArcTo(center, arcRadius, kStartAngle, kEndAngle, 24);
-    drawList.PathStroke(color, ImDrawFlags_None, 1.5F);
-    const ImVec2 tip{center.x + std::cos(kEndAngle) * arcRadius, center.y + std::sin(kEndAngle) * arcRadius};
-    const ImVec2 tangent{-std::sin(kEndAngle), std::cos(kEndAngle)};
-    const float headSize = radius * 0.28F;
-    const ImVec2 outward{std::cos(kEndAngle), std::sin(kEndAngle)};
-    const ImVec2 baseA{tip.x - tangent.x * headSize + outward.x * headSize * 0.5F,
-                       tip.y - tangent.y * headSize + outward.y * headSize * 0.5F};
-    const ImVec2 baseB{tip.x + tangent.x * headSize + outward.x * headSize * 0.5F,
-                       tip.y + tangent.y * headSize + outward.y * headSize * 0.5F};
-    drawList.AddTriangleFilled(tip, baseA, baseB, color);
-}
 
-void DrawScaleIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    const float half = radius * 0.42F;
-    const ImVec2 topLeft{center.x - half, center.y - half};
-    const ImVec2 bottomRight{center.x + half, center.y + half};
-    drawList.AddRect(topLeft, bottomRight, color, 0.0F, 0, 1.4F);
-    const float handle = radius * 0.20F;
-    const std::array<ImVec2, 4> corners{topLeft, ImVec2{bottomRight.x, topLeft.y}, bottomRight,
-                                        ImVec2{topLeft.x, bottomRight.y}};
-    for (const ImVec2& corner : corners) {
-        drawList.AddRectFilled(ImVec2{corner.x - handle * 0.5F, corner.y - handle * 0.5F},
-                               ImVec2{corner.x + handle * 0.5F, corner.y + handle * 0.5F}, color);
-    }
-}
 
-void DrawUniversalIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    drawList.AddCircle(center, radius * 0.62F, color, 20, 1.3F);
-    const float half = radius * 0.22F;
-    drawList.AddRectFilled(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half},
-                           color);
-}
-
-/// The 2D/3D switch's mark: a square seen flat, with a horizon through it. Reads as a canvas
-/// rather than as a cube, because the button says which view you are IN.
-void DrawViewportModeIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    const float half = radius * 0.72F;
-    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
-                     1.5F, 0, 1.4F);
-    drawList.AddLine(ImVec2{center.x - half, center.y}, ImVec2{center.x + half, center.y}, color, 1.2F);
-}
-
-void DrawGridIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
-    const float half = radius * 0.5F;
-    const float third = half * 2.0F / 3.0F;
-    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
-                     0.0F, 0, 1.2F);
-    for (int index = 1; index < 3; ++index) {
-        const float offset = -half + third * static_cast<float>(index);
-        drawList.AddLine(ImVec2{center.x - half, center.y + offset}, ImVec2{center.x + half, center.y + offset},
-                         color, 1.0F);
-        drawList.AddLine(ImVec2{center.x + offset, center.y - half}, ImVec2{center.x + offset, center.y + half},
-                         color, 1.0F);
-    }
-}
 
 // Draws one circular toggle button (filled background, blue-highlighted when `active`) at the
 // cursor's current screen position and advances the cursor past it via ImGui::SameLine() - `drawIcon`
@@ -430,11 +372,13 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
             }
 
             // The projection/gizmo-mode overlay bubbles are editor-authoring chrome - hidden while
-            // the Game workspace tab is active, matching Unity's own Scene/Game split where the
-            // Game view previews what a player would see with no editor overlays on top.
+            // the Game workspace tab is active, where the Game view previews what a player would see with
+            // no editor overlays on top.
             if (!m_viewportOverlayState.gameWorkspaceActive && !m_viewportOverlayState.studioView) {
-                DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
-                                              Math::Vector2UVE{used.x, used.y});
+                if (context != ViewportContextUVE::Main) {
+                    DrawViewportOverlayBubblesUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
+                                                  Math::Vector2UVE{used.x, used.y});
+                }
                 DrawEntityContextToolbarUVE(Math::Vector2UVE{cursorBeforeImage.x, cursorBeforeImage.y},
                                             Math::Vector2UVE{used.x, used.y});
                 m_viewportOverlayState.pointerOverOverlay = ImGui::IsAnyItemHovered();
@@ -454,14 +398,13 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
 
 void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOriginUVE,
                                               const Math::Vector2UVE imageSizeUVE) {
-    // Floating "bubble" toolbars over the rendered image itself (Unreal's own modern viewport
-    // overlay style), not a docked panel underneath - both bottom-anchored per the requested
-    // layout. Drawn against the main window's draw list with SetCursorScreenPos rather than a
-    // child window, so clicks land correctly without a second window stealing input focus from
-    // the Viewport panel's own scroll/hover state. Takes plain Math::Vector2UVE (not ImVec2) at
-    // the boundary since this is a private method declared in the public header - ImVec2 there
-    // would force every consumer of editor_uve.h (including Test/Editor's own test executable,
-    // which never links uve_editor_imgui) to have ImGui's include path just to parse the class.
+    // Floating "bubble" toolbars over the rendered image itself, drawn against the main window's
+    // draw list with SetCursorScreenPos rather than a child window, so clicks land correctly without
+    // a second window stealing input focus from the Viewport panel's own scroll/hover state.
+    // Takes plain Math::Vector2UVE (not ImVec2) at the boundary since this is a private method
+    // declared in the public header - ImVec2 there would force every consumer of editor_uve.h
+    // (including Test/Editor's own test executable, which never links uve_editor_imgui) to have
+    // ImGui's include path just to parse the class.
     const ImVec2 imageOrigin{imageOriginUVE.x, imageOriginUVE.y};
     static_cast<void>(imageSizeUVE);
     constexpr float kBubbleMarginUVE = 10.0F;
@@ -469,8 +412,7 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     constexpr float kBubblePaddingYUVE = 4.0F;
     constexpr float kBubbleSpacingUVE = 3.0F;
     // Gap between the gizmo-mode bubble and the projection pill, now that both sit side by side
-    // at the top of the viewport (matching Godot's own top-left toolbar-strip placement) instead
-    // of scattered bottom-left/bottom-center - a single visual row reads as one toolbar, not two.
+    // at the top of the viewport instead of scattered - a single visual row reads as one toolbar.
     constexpr float kBubbleGapUVE = 8.0F;
     ImDrawList* const drawList = ImGui::GetWindowDrawList();
     const float rulerInset =

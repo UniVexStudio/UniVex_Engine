@@ -107,9 +107,16 @@ void JobGraphUVE::ExecuteUVE(IThreadPoolUVE& pool) {
 void JobGraphUVE::SubmitObjectUVE(IThreadPoolUVE& pool, const JobGraphObjectHandleUVE index) {
     pool.SubmitUVE([this, &pool, index] {
         ObjectUVE& object = *m_objects[index];
-        if (object.job) {
-            object.job();
+        try {
+            if (object.job) {
+                object.job();
+            }
+        } catch (const std::exception& exception) {
+            UVE_ERROR("JobGraphUVE: job {} threw an exception: {}", index, exception.what());
+        } catch (...) {
+            UVE_ERROR("JobGraphUVE: job {} threw an unknown, non-std::exception value", index);
         }
+
         for (const JobGraphObjectHandleUVE successor : object.successors) {
             // fetch_sub returns the pre-decrement value; the one thread that observes it drop
             // from 1 to 0 is the one whose dependency completion actually unblocks this successor

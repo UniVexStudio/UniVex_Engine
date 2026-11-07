@@ -1059,13 +1059,12 @@ struct Renderer3DUVE::ImplUVE {
     /// per frame would make the wind speed depend on the frame rate.
     float skyTimeSeconds = 0.0F;
     std::chrono::steady_clock::time_point skyClockLast{};
-    /// The disc the sky draws where `sunDirection` points. Seeded with the values the shader used
-    /// to hard-code, so a frame with no authored directional light - the preview sun included -
-    /// draws exactly the disc it drew before these were authorable.
-    float sunDiscAngularDiameterDegrees = 3.8F;
-    float sunDiscIntensity = 1.0F;
+    /// The disc the sky draws where `sunDirection` points. Owned by the active directional light
+    /// (DirectionalLight3D or Preview Sun), so a scene with only an environment and no sun draws no disc.
+    float sunDiscAngularDiameterDegrees = 0.0F;
+    float sunDiscIntensity = 0.0F;
     float sunDiscLimbDarkening = 0.0F;
-    float sunVolumetricFogEnergy = 1.0F;
+    float sunVolumetricFogEnergy = 0.0F;
     std::array<Scene::FogVolume3DFrameUVE, Scene::kMaximumFogVolumesPerFrameUVE> fogVolumes{};
     std::size_t fogVolumeCount = 0;
 
@@ -1397,7 +1396,16 @@ struct Renderer3DUVE::ImplUVE {
     };
     std::unordered_map<std::uint64_t, DecalGpuUVE> decalBuffers;
     std::uint64_t decalFrame = 0U;
+    struct ShadowPrimitiveDrawUVE final {
+        Math::Matrix4x4UVE worldMatrix = Math::Matrix4x4UVE::IdentityUVE();
+        Scene::PrimitiveMeshKindUVE kind = Scene::PrimitiveMeshKindUVE::Cube;
+        Asset::AssetGuidUVE meshGuid = Asset::kInvalidAssetGuidUVE;
+        const Asset::MeshAssetUVE* mesh = nullptr;
+        const MeshGpuResourcesUVE* skinned = nullptr;
+    };
     std::array<RenderQueueUVE, kShadowCascadeCountUVE> shadowQueues;
+    std::array<std::vector<ShadowPrimitiveDrawUVE>, kShadowCascadeCountUVE> shadowPrimitiveQueues;
+    std::array<std::vector<ShadowPrimitiveDrawUVE>, kMaxShadowTilesUVE> shadowAtlasPrimitiveQueues;
     std::vector<PrimitiveRenderItemUVE> primitiveItems;
 
     /// Last frame's primitive placement per entity, reused when nothing about that entity changed.
@@ -2160,7 +2168,9 @@ struct Renderer3DUVE::ImplUVE {
     /// cleared ONCE per frame by a dedicated full-attachment pass, because a Vulkan attachment
     /// clear ignores the scissor and a per-tile Clear would wipe every tile rendered before it.
     [[nodiscard]] std::size_t RecordShadowPassUVE(
-        const std::vector<RenderItemUVE>& items, const Math::Matrix4x4UVE& lightSpaceMatrix,
+        const std::vector<RenderItemUVE>& items,
+        const std::vector<ShadowPrimitiveDrawUVE>& primitiveDraws,
+        const Math::Matrix4x4UVE& lightSpaceMatrix,
         TextureHandleUVE shadowMapTarget, bool hasCaster, RenderBatchSetUVE& batchSet,
         ICommandBufferUVE& commandBuffer, const ShadowPassCountersUVE& counters,
         std::optional<ViewportRectUVE> viewportOverride = std::nullopt,
@@ -2181,6 +2191,7 @@ struct Renderer3DUVE::ImplUVE {
             // shadow. It also batches better than the main pass does, because a depth-only draw
             // does not care about the material: two objects sharing a mesh batch together even
             // with completely different materials.
+            bool meshItemsDrawnInstanced = false;
             const bool instancedShadows =
                 instancedShadowProgram != nullptr && instancedShadowProgram->IsValidUVE();
             if (instancedShadows) {
@@ -2219,26 +2230,48 @@ struct Renderer3DUVE::ImplUVE {
                         ++*counters.instancedDrawCalls;
                         ++drawCalls;
                     }
-                    commandBuffer.EndRenderPassUVE();
-                    return drawCalls;
+                    meshItemsDrawnInstanced = true;
                 }
             }
 
-            // Fallback: correct, just one draw per caster. Reached when the instanced program did
-            // not link, or a buffer step failed.
-            shadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
-            for (const RenderItemUVE& item : items) {
-                const MeshGpuResourcesUVE& meshResources = ResolveMeshGpuResourcesUVE(item);
-                if (!IsValidMeshGpuResourcesUVE(meshResources)) {
-                    continue;
+            if (!meshItemsDrawnInstanced) {
+                // Fallback: correct, just one draw per caster. Reached when the instanced program did
+                // not link, or a buffer step failed.
+                shadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
+                for (const RenderItemUVE& item : items) {
+                    const MeshGpuResourcesUVE& meshResources = ResolveMeshGpuResourcesUVE(item);
+                    if (!IsValidMeshGpuResourcesUVE(meshResources)) {
+                        continue;
+                    }
+                    shadowProgram->SetMatrix4x4UVE("uModel", item.worldMatrix);
+                    shadowProgram->ApplyToUVE(commandBuffer);
+                    commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
+                    commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+                    commandBuffer.DrawIndexedUVE(ResolveItemIndexCountUVE(item, meshResources), 1U,
+                                                 ResolveItemFirstIndexUVE(item));
+                    ++drawCalls;
                 }
-                shadowProgram->SetMatrix4x4UVE("uModel", item.worldMatrix);
-                shadowProgram->ApplyToUVE(commandBuffer);
-                commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
-                commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
-                commandBuffer.DrawIndexedUVE(ResolveItemIndexCountUVE(item, meshResources), 1U,
-                                             ResolveItemFirstIndexUVE(item));
-                ++drawCalls;
+            }
+
+            if (!primitiveDraws.empty()) {
+                if (meshItemsDrawnInstanced) {
+                    shadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
+                }
+                for (const ShadowPrimitiveDrawUVE& primDraw : primitiveDraws) {
+                    const MeshGpuResourcesUVE& meshResources =
+                        primDraw.skinned != nullptr ? *primDraw.skinned
+                        : primDraw.mesh != nullptr  ? ResolveMeshGpuResourcesUVE(primDraw.meshGuid, primDraw.mesh)
+                                                    : ResolvePrimitiveMeshGpuResourcesUVE(primDraw.kind);
+                    if (!IsValidMeshGpuResourcesUVE(meshResources)) {
+                        continue;
+                    }
+                    shadowProgram->SetMatrix4x4UVE("uModel", primDraw.worldMatrix);
+                    shadowProgram->ApplyToUVE(commandBuffer);
+                    commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
+                    commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+                    commandBuffer.DrawIndexedUVE(meshResources.indexCount, 1U, 0U);
+                    ++drawCalls;
+                }
             }
         }
 
@@ -2877,6 +2910,129 @@ struct Renderer3DUVE::ImplUVE {
         }
         outWorldBounds = geometry.localBounds.TransformUVE(outWorldMatrix);
         return IsOrderedFiniteAabbUVE(outWorldBounds);
+    }
+
+    /// Collects shadow-casting built-in primitives, unmaterialed MeshInstance3D objects, and skinned
+    /// meshes (Character3D / Player3D) for a shadow cascade or shadow atlas tile frustum without
+    /// perturbing main-view primitive placement cache or diagnostic counters.
+    void CollectShadowPrimitiveDrawsUVE(Scene::IEntityManagerUVE& entityManager,
+                                        const Math::FrustumUVE& lightFrustum,
+                                        std::vector<ShadowPrimitiveDrawUVE>& outDraws) {
+        outDraws.clear();
+        entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::PrimitiveMeshComponentUVE>(
+            [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
+                const Scene::PrimitiveMeshComponentUVE& primitive) {
+                if (worldTransform.dirty || !Scene::IsPrimitiveMeshComponentValidUVE(primitive) ||
+                    IsHiddenInHierarchyUVE(entityManager, entity) ||
+                    Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity) ||
+                    Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
+                    return;
+                }
+                const Scene::SurfaceInstanceComponentUVE* surface = nullptr;
+                if (entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
+                    const Scene::SurfaceInstanceComponentUVE& surfaceComponent =
+                        entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
+                    if (!Scene::IsSurfaceInstanceComponentValidUVE(surfaceComponent) ||
+                        !Scene::SurfaceInstance3DCastsShadowUVE(surfaceComponent) ||
+                        Scene::SurfaceInstance3DOpacityUVE(surfaceComponent) <= 0.0F) {
+                        return;
+                    }
+                    surface = &surfaceComponent;
+                }
+                Math::Matrix4x4UVE worldMatrix{};
+                Math::AabbUVE worldBounds{};
+                if (!TryComputePrimitivePlacementUVE(worldTransform, primitive, worldMatrix, worldBounds)) {
+                    return;
+                }
+                if (surface != nullptr) {
+                    Scene::ExpandSurfaceInstance3DCullBoundsUVE(*surface, worldBounds);
+                }
+                if (!lightFrustum.IntersectsUVE(worldBounds)) {
+                    return;
+                }
+                outDraws.push_back(ShadowPrimitiveDrawUVE{
+                    worldMatrix, primitive.kind, Asset::kInvalidAssetGuidUVE, nullptr, nullptr});
+            });
+
+        entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
+            [&](Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
+                const Scene::MeshComponentUVE& meshComponent) {
+                if (meshComponent.meshGuid == Asset::kInvalidAssetGuidUVE || worldTransform.dirty ||
+                    IsHiddenInHierarchyUVE(entityManager, entity) ||
+                    Scene::IsWorldPartition3DDrawHiddenUVE(entityManager, entity) ||
+                    Scene::IsVisibilityRegion3DDrawHiddenUVE(entityManager, entity)) {
+                    return;
+                }
+                const auto handleIt = unmaterialedMeshHandles.find(meshComponent.meshGuid);
+                if (handleIt == unmaterialedMeshHandles.end()) {
+                    return;
+                }
+                const Asset::MeshAssetUVE* const mesh = handleIt->second.TryGetUVE();
+                if (mesh == nullptr || mesh->indices.empty() || !IsOrderedFiniteAabbUVE(mesh->localBounds) ||
+                    !Math::IsFiniteUVE(worldTransform.worldPosition) || !Math::IsFiniteUVE(worldTransform.worldScale)) {
+                    return;
+                }
+                const bool isSkinned = mesh->IsSkinnedUVE();
+                if (!isSkinned) {
+                    if (meshComponent.materialGuid != Asset::kInvalidAssetGuidUVE) {
+                        return;
+                    }
+                    const Asset::AssetGuidUVE meshOwnMaterial = mesh->FirstSurfaceMaterialGuidUVE();
+                    if (meshOwnMaterial != Asset::kInvalidAssetGuidUVE &&
+                        !assetDatabase.ResolveUVE(meshOwnMaterial).empty()) {
+                        return;
+                    }
+                }
+                if (entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity)) {
+                    const Scene::SurfaceInstanceComponentUVE& surfaceComponent =
+                        entityManager.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(entity);
+                    if (!Scene::IsSurfaceInstanceComponentValidUVE(surfaceComponent) ||
+                        !Scene::SurfaceInstance3DCastsShadowUVE(surfaceComponent) ||
+                        Scene::SurfaceInstance3DOpacityUVE(surfaceComponent) <= 0.0F) {
+                        return;
+                    }
+                }
+                Math::QuaternionUVE rotation;
+                if (!Math::TryNormalizeUVE(worldTransform.worldRotation, rotation)) {
+                    return;
+                }
+                const Math::Matrix4x4UVE worldMatrix =
+                    Math::Matrix4x4UVE::ComposeTrsUVE(worldTransform.worldPosition, rotation, worldTransform.worldScale);
+                if (!IsFiniteMatrixUVE(worldMatrix)) {
+                    return;
+                }
+                Math::AabbUVE localBounds = mesh->localBounds;
+                const MeshGpuResourcesUVE* skinned = nullptr;
+                if (isSkinned) {
+                    const std::uint64_t key =
+                        (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index;
+                    const auto skinnedIt = skinnedMeshCache.find(key);
+                    if (skinnedIt != skinnedMeshCache.end() &&
+                        skinnedIt->second.resources.vertexBuffer.value != 0U &&
+                        skinnedIt->second.meshGuid == meshComponent.meshGuid) {
+                        skinned = &skinnedIt->second.resources;
+                        if (IsOrderedFiniteAabbUVE(skinnedIt->second.localBounds)) {
+                            localBounds.min = Math::Vector3UVE{
+                                std::min(skinnedIt->second.localBounds.min.x, mesh->localBounds.min.x),
+                                std::min(skinnedIt->second.localBounds.min.y, mesh->localBounds.min.y),
+                                std::min(skinnedIt->second.localBounds.min.z, mesh->localBounds.min.z)};
+                            localBounds.max = Math::Vector3UVE{
+                                std::max(skinnedIt->second.localBounds.max.x, mesh->localBounds.max.x),
+                                std::max(skinnedIt->second.localBounds.max.y, mesh->localBounds.max.y),
+                                std::max(skinnedIt->second.localBounds.max.z, mesh->localBounds.max.z)};
+                        }
+                    }
+                }
+                Math::AabbUVE worldBounds = localBounds.TransformUVE(worldMatrix);
+                if (!IsOrderedFiniteAabbUVE(worldBounds)) {
+                    worldBounds = mesh->localBounds.TransformUVE(worldMatrix);
+                }
+                if (!IsOrderedFiniteAabbUVE(worldBounds) || !lightFrustum.IntersectsUVE(worldBounds)) {
+                    return;
+                }
+                outDraws.push_back(ShadowPrimitiveDrawUVE{
+                    worldMatrix, Scene::PrimitiveMeshKindUVE::Cube, meshComponent.meshGuid, mesh, skinned});
+            });
     }
 
     /// transpose(inverse(model)), falling back to the model matrix itself when it is singular -
@@ -4425,12 +4581,12 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const LightListUVE lights =
         m_impl->lightSystem.ExtractActiveLightsForViewUVE(entityManager, viewPosition);
     m_impl->environmentCameraPosition = viewPosition;
-    m_impl->sunEnergy = 1.0F;
-    m_impl->sunVolumetricFogEnergy = 1.0F;
+    m_impl->sunEnergy = 0.0F;
+    m_impl->sunVolumetricFogEnergy = 0.0F;
     m_impl->sunDirection = Math::NormalizeUVE(Math::Vector3UVE{0.35F, 0.80F, 0.48F});
     m_impl->sunColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
-    m_impl->sunDiscAngularDiameterDegrees = 3.8F;
-    m_impl->sunDiscIntensity = 1.0F;
+    m_impl->sunDiscAngularDiameterDegrees = 0.0F;
+    m_impl->sunDiscIntensity = 0.0F;
     m_impl->sunDiscLimbDarkening = 0.0F;
     const LightDataUVE* fallbackInternalDirectional = nullptr;
     for (const LightDataUVE& light : lights) {
@@ -4461,9 +4617,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         const Math::Vector3UVE incoming = Math::Vector3UVE{-fallbackInternalDirectional->direction.x,
                                                           -fallbackInternalDirectional->direction.y,
                                                           -fallbackInternalDirectional->direction.z};
+        const bool previewSunDisc = fallbackInternalDirectional->castsShadows;
         m_impl->sunDirection = Math::NormalizeUVE(incoming);
         m_impl->sunColor = Math::ToVector3UVE(fallbackInternalDirectional->color);
         m_impl->sunEnergy = fallbackInternalDirectional->intensity;
+        m_impl->sunDiscAngularDiameterDegrees = previewSunDisc ? 3.8F : 0.0F;
+        m_impl->sunDiscIntensity = previewSunDisc ? 1.0F : 0.0F;
+        m_impl->sunDiscLimbDarkening = 0.0F;
         m_impl->sunVolumetricFogEnergy = fallbackInternalDirectional->volumetricFogEnergy;
     }
     Scene::ApplySunToWorldEnvironmentFrameUVE(m_impl->environmentFrame, m_impl->sunDirection, m_impl->sunColor,
@@ -4498,6 +4658,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.placementCacheMisses = m_impl->visibilitySet.placementCacheMisses;
     m_impl->lastFrameDiagnostics.visibilityClusters = m_impl->visibilitySet.clusters.size();
     m_impl->lastFrameDiagnostics.distanceCulledEntities = m_impl->visibilitySet.distanceCulledEntities;
+
+    m_impl->ExtractPrimitiveItemsUVE(entityManager, frustum, viewPosition, frustumCullingFrozen,
+                                     m_impl->primitiveItems);
+    m_impl->ExtractUnmaterialedMeshItemsUVE(entityManager, frustum, viewPosition, frustumCullingFrozen,
+                                            m_impl->primitiveItems);
+    m_impl->lastFrameDiagnostics.primitiveItemsExtracted = m_impl->primitiveItems.size();
+    m_impl->lastFrameDiagnostics.skinnedMeshesDrawn = m_impl->skinnedMeshesThisFrame;
 
     const LightDataUVE* const shadowCaster = FindShadowCasterUVE(lights);
     bool shadowsReady = !capturingProbe && shadowCaster != nullptr && m_impl->shadowProgram->IsValidUVE() &&
@@ -4568,6 +4735,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             // Mesh order, not depth order: this cascade renders depth only, and the shadow
             // batcher merges adjacent same-mesh items. See SortForDepthOnlyPassUVE.
             m_impl->shadowQueues[cascadeIndex].SortForDepthOnlyPassUVE();
+            m_impl->CollectShadowPrimitiveDrawsUVE(entityManager, lightFrustum,
+                                                   m_impl->shadowPrimitiveQueues[cascadeIndex]);
                 cascadeNearPlane = cascadeFarPlane;
             }
             if (shadowsReady) {
@@ -4645,7 +4814,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     m_impl->meshRenderer.CullVisibilitySetIntoUVE(m_impl->visibilitySet, lightFrustum,
                                                                   m_impl->shadowAtlasQueues[planSlot]);
                     m_impl->shadowAtlasQueues[planSlot].SortForDepthOnlyPassUVE();
-                    if (m_impl->shadowAtlasQueues[planSlot].opaqueItems.empty()) {
+                    m_impl->CollectShadowPrimitiveDrawsUVE(entityManager, lightFrustum,
+                                                           m_impl->shadowAtlasPrimitiveQueues[planSlot]);
+                    if (m_impl->shadowAtlasQueues[planSlot].opaqueItems.empty() &&
+                        m_impl->shadowAtlasPrimitiveQueues[planSlot].empty()) {
                         continue;
                     }
                     activeShadowTiles[activeShadowTileCount++] = planSlot;
@@ -4808,12 +4980,6 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.invalidAssetReferences = queue.invalidAssetReferences;
     m_impl->lastFrameDiagnostics.pendingAssetLoads = queue.pendingAssetLoads;
     m_impl->lastFrameDiagnostics.failedAssetLoads = queue.failedAssetLoads;
-    m_impl->ExtractPrimitiveItemsUVE(entityManager, frustum, viewPosition, frustumCullingFrozen,
-                                     m_impl->primitiveItems);
-    m_impl->ExtractUnmaterialedMeshItemsUVE(entityManager, frustum, viewPosition, frustumCullingFrozen,
-                                            m_impl->primitiveItems);
-    m_impl->lastFrameDiagnostics.primitiveItemsExtracted = m_impl->primitiveItems.size();
-    m_impl->lastFrameDiagnostics.skinnedMeshesDrawn = m_impl->skinnedMeshesThisFrame;
 
     RenderGraphUVE& renderGraph = m_impl->renderGraph;
     renderGraph.ClearUVE();
@@ -4848,7 +5014,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                         &m_impl->lastFrameDiagnostics.shadowBatchedItems,
                         &m_impl->lastFrameDiagnostics.shadowInstancedDrawCallsRecorded};
                     static_cast<void>(m_impl->RecordShadowPassUVE(
-                        m_impl->shadowQueues[cascadeIndex].opaqueItems, lightSpaceMatrices[cascadeIndex],
+                        m_impl->shadowQueues[cascadeIndex].opaqueItems,
+                        m_impl->shadowPrimitiveQueues[cascadeIndex],
+                        lightSpaceMatrices[cascadeIndex],
                         m_impl->shadowMapTargets[cascadeIndex], shadowCaster != nullptr,
                         m_impl->shadowBatches[cascadeIndex], commandBuffer, cascadeCounters));
                 });
@@ -4894,7 +5062,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                         &m_impl->lastFrameDiagnostics.shadowAtlasInstancedDrawCallsRecorded};
                     m_impl->lastFrameDiagnostics.shadowAtlasDrawCallsRecorded +=
                         m_impl->RecordShadowPassUVE(
-                            m_impl->shadowAtlasQueues[planSlot].opaqueItems, assignment.lightViewProjection,
+                            m_impl->shadowAtlasQueues[planSlot].opaqueItems,
+                            m_impl->shadowAtlasPrimitiveQueues[planSlot],
+                            assignment.lightViewProjection,
                             m_impl->shadowAtlas->GetAtlasTextureUVE(), true,
                             m_impl->shadowAtlasBatches[planSlot], commandBuffer, atlasCounters,
                             assignment.tile.pixelRect, LoadOpUVE::Load);
@@ -4975,15 +5145,20 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             commandBuffer.EndRenderPassUVE();
         });
 
-    const bool skyActive = m_impl->environmentFrame.hasEnvironment && m_impl->proceduralSkyProgram &&
-                           m_impl->proceduralSkyProgram->IsValidUVE();
+    const bool sunDiscActive = m_impl->sunEnergy > 0.0F &&
+                               m_impl->sunDiscAngularDiameterDegrees > 0.0F &&
+                               m_impl->sunDiscIntensity > 0.0F;
+    const bool skyActive = (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
+                           m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValidUVE();
     if (skyActive) {
-        const std::array<RenderGraphResourceUseUVE, 2U> skyResources{
+        const std::array<RenderGraphResourceUseUVE, 3U> skyResources{
             RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
-            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
+            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write},
+            RenderGraphResourceUseUVE{shadowResources[0], RenderGraphResourceAccessUVE::Read}};
+        const std::size_t skyResourceCount = shadowsReady ? 3U : 2U;
         renderGraph.AddPassUVE(
-            "ProceduralSky", skyResources,
-            [this](ICommandBufferUVE& commandBuffer) {
+            "ProceduralSky", std::span<const RenderGraphResourceUseUVE>{skyResources.data(), skyResourceCount},
+            [this, shadowsReady, &lightSpaceMatrices, shadowOpacity, shadowBias](ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->colorTarget;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -4995,9 +5170,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->proceduralSkyProgram->SetVector3UVE("uCameraForward", m_impl->skyCameraForward);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uTanHalfFov", m_impl->skyTanHalfFov);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uAspect", m_impl->environmentAspect);
+                m_impl->proceduralSkyProgram->SetIntUVE(
+                    "uHasEnvironment", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
                 m_impl->proceduralSkyProgram->SetVector3UVE("uSkyColor", m_impl->environmentFrame.skyColor);
                 m_impl->proceduralSkyProgram->SetVector3UVE("uHorizonColor", m_impl->environmentFrame.horizonColor);
-                m_impl->proceduralSkyProgram->SetVector3UVE("uGroundColor", m_impl->environmentFrame.groundColor);
+                m_impl->proceduralSkyProgram->SetVector3UVE(
+                    "uGroundColor", m_impl->environmentFrame.hasEnvironment
+                                        ? m_impl->environmentFrame.groundColor
+                                        : Math::Vector3UVE{m_impl->sceneClearColor[0], m_impl->sceneClearColor[1],
+                                                           m_impl->sceneClearColor[2]});
                 m_impl->proceduralSkyProgram->SetFloatUVE("uSkyCurve", m_impl->environmentFrame.skyCurve);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uGroundCurve", m_impl->environmentFrame.groundCurve);
                 m_impl->proceduralSkyProgram->SetVector3UVE("uSunDirection", m_impl->sunDirection);
@@ -5042,10 +5223,20 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->proceduralSkyProgram->SetFloatUVE("uSkyLuminance", m_impl->environmentFrame.skyLuminance);
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlotUVE));
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
+                m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowEnabled", shadowsReady ? 1 : 0);
+                if (shadowsReady) {
+                    m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowMap", 2);
+                    m_impl->proceduralSkyProgram->SetMatrix4x4UVE("uSkyGroundLightMatrix", lightSpaceMatrices[0]);
+                    m_impl->proceduralSkyProgram->SetFloatUVE("uSkyGroundShadowOpacity", shadowOpacity);
+                    m_impl->proceduralSkyProgram->SetFloatUVE("uSkyGroundShadowBias", shadowBias);
+                }
                 m_impl->proceduralSkyProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->depthTarget, 0U);
                 if (m_impl->skyTextureEnabled) {
                     commandBuffer.BindTextureUVE(m_impl->skyTextureHandle, kSkyTextureSlotUVE);
+                }
+                if (shadowsReady) {
+                    commandBuffer.BindTextureUVE(m_impl->shadowMapTargets[0], 2U);
                 }
                 commandBuffer.DrawUVE(3);
                 commandBuffer.EndRenderPassUVE();

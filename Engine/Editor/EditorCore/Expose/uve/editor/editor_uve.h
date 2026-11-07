@@ -456,6 +456,10 @@ public:
     [[nodiscard]] bool StepPlayModeUVE();
     [[nodiscard]] bool StopPlayModeUVE();
     [[nodiscard]] EditorPlayModeStateUVE GetPlayModeStateUVE() const noexcept;
+    [[nodiscard]] bool SetPlayFastForwardUVE(bool enabled) noexcept;
+    [[nodiscard]] bool IsPlayFastForwardEnabledUVE() const noexcept { return m_playFastForwardEnabled; }
+    void SetPlayFastForwardMultiplierUVE(float multiplier) noexcept;
+    [[nodiscard]] float GetPlayFastForwardMultiplierUVE() const noexcept { return m_playFastForwardMultiplier; }
     void SetGameMouseCapturedUVE(bool captured);
     [[nodiscard]] bool IsGameMouseCapturedUVE() const noexcept { return m_gameMouseCaptured; }
 
@@ -2550,6 +2554,8 @@ private:
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
     EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;
     bool m_gameMouseCaptured = false;
+    bool m_playFastForwardEnabled = false;
+    float m_playFastForwardMultiplier = 2.0F;
     // 0 = plain Play triangle, 1 = Pause bars; eased toward the target each frame in
     // DrawMenuBarUVE() so the icon animates instead of instantly swapping shape.
     float m_playButtonMorphProgress = 0.0F;

@@ -223,6 +223,10 @@ std::uintptr_t EditorUiAssetsUVE::GetLogoTextureIdUVE() const noexcept {
 }
 
 std::uintptr_t EditorUiAssetsUVE::GetGeneralIconTextureIdUVE(const std::string_view iconId) const noexcept {
+    const std::uintptr_t toolbarIcon = FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Toolbar, iconId);
+    if (toolbarIcon != 0U) {
+        return toolbarIcon;
+    }
     return FindTextureIdUVE(kGeneralIconSourcesUVE, m_generalIconTextureIds, iconId);
 }
 

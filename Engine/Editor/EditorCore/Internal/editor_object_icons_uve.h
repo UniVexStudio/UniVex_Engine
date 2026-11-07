@@ -15,11 +15,11 @@
 
 namespace UVE::Editor {
 
-/// Category indicator colors: Unreal-style color identity for object types and assets.
+/// Category indicator colors: Color identity for object types and assets.
 [[nodiscard]] inline ImU32 GetCategoryIndicatorColorUVE(const std::string_view categoryOrGroup) noexcept {
     if (categoryOrGroup == "3D" || categoryOrGroup == "Shapes" || categoryOrGroup == "Mesh" ||
         categoryOrGroup == "Model" || categoryOrGroup == "Geometry" || categoryOrGroup == "Entity") {
-        return IM_COL32(0, 168, 255, 255); // Cyan / Unreal Sky Blue
+        return IM_COL32(0, 168, 255, 255); // Cyan / Sky Blue
     }
     if (categoryOrGroup == "Lighting" || categoryOrGroup == "Lights") {
         return IM_COL32(245, 158, 11, 255); // Amber Gold
@@ -149,6 +149,73 @@ inline void DrawMoveIconUVE(ImDrawList& drawList, const ImVec2 center, const flo
                            tip.y - direction.y * headSize - perpendicular.y * headSize * 0.55F};
         drawList.AddTriangleFilled(tip, baseA, baseB, color);
     }
+}
+
+inline void DrawSelectIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const ImVec2 tip{center.x - radius * 0.45F, center.y - radius * 0.55F};
+    const ImVec2 bottom{center.x - radius * 0.45F, center.y + radius * 0.45F};
+    const ImVec2 right{center.x + radius * 0.45F, center.y + radius * 0.10F};
+    drawList.AddTriangleFilled(tip, bottom, right, color);
+}
+
+inline void DrawRotateIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float arcRadius = radius * 0.58F;
+    constexpr float kPi = 3.14159265358979323846F;
+    constexpr float kStartAngle = -0.35F * kPi;
+    constexpr float kEndAngle = 1.15F * kPi;
+    drawList.PathArcTo(center, arcRadius, kStartAngle, kEndAngle, 24);
+    drawList.PathStroke(color, ImDrawFlags_None, 1.5F);
+    const ImVec2 tip{center.x + std::cos(kEndAngle) * arcRadius, center.y + std::sin(kEndAngle) * arcRadius};
+    const ImVec2 tangent{-std::sin(kEndAngle), std::cos(kEndAngle)};
+    const float headSize = radius * 0.28F;
+    const ImVec2 outward{std::cos(kEndAngle), std::sin(kEndAngle)};
+    const ImVec2 baseA{tip.x - tangent.x * headSize + outward.x * headSize * 0.5F,
+                       tip.y - tangent.y * headSize + outward.y * headSize * 0.5F};
+    const ImVec2 baseB{tip.x + tangent.x * headSize + outward.x * headSize * 0.5F,
+                       tip.y + tangent.y * headSize + outward.y * headSize * 0.5F};
+    drawList.AddTriangleFilled(tip, baseA, baseB, color);
+}
+
+inline void DrawScaleIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float half = radius * 0.42F;
+    const ImVec2 topLeft{center.x - half, center.y - half};
+    const ImVec2 bottomRight{center.x + half, center.y + half};
+    drawList.AddRect(topLeft, bottomRight, color, 0.0F, 0, 1.4F);
+    const float handle = radius * 0.20F;
+    const std::array<ImVec2, 4> corners{topLeft, ImVec2{bottomRight.x, topLeft.y}, bottomRight,
+                                        ImVec2{topLeft.x, bottomRight.y}};
+    for (const ImVec2& corner : corners) {
+        drawList.AddRectFilled(ImVec2{corner.x - handle * 0.5F, corner.y - handle * 0.5F},
+                               ImVec2{corner.x + handle * 0.5F, corner.y + handle * 0.5F}, color);
+    }
+}
+
+inline void DrawUniversalIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    drawList.AddCircle(center, radius * 0.62F, color, 20, 1.3F);
+    const float half = radius * 0.22F;
+    drawList.AddRectFilled(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half},
+                           color);
+}
+
+inline void DrawGridIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float half = radius * 0.5F;
+    const float third = half * 2.0F / 3.0F;
+    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
+                     0.0F, 0, 1.2F);
+    for (int index = 1; index < 3; ++index) {
+        const float offset = -half + third * static_cast<float>(index);
+        drawList.AddLine(ImVec2{center.x - half, center.y + offset}, ImVec2{center.x + half, center.y + offset},
+                         color, 1.0F);
+        drawList.AddLine(ImVec2{center.x + offset, center.y - half}, ImVec2{center.x + offset, center.y + half},
+                         color, 1.0F);
+    }
+}
+
+inline void DrawViewportModeIconUVE(ImDrawList& drawList, const ImVec2 center, const float radius, const ImU32 color) {
+    const float half = radius * 0.72F;
+    drawList.AddRect(ImVec2{center.x - half, center.y - half}, ImVec2{center.x + half, center.y + half}, color,
+                     1.5F, 0, 1.4F);
+    drawList.AddLine(ImVec2{center.x - half, center.y}, ImVec2{center.x + half, center.y}, color, 1.2F);
 }
 
 /// An object icon at the start of a menu line, sized and centred like a Scene row's.

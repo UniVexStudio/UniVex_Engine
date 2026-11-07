@@ -115,7 +115,8 @@ file(GLOB _uve_editor_icon_pngs CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/objects/*.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/object_categories/*.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/content_types/*.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/components/*.png")
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/components/*.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/toolbar/*.png")
 list(SORT _uve_editor_icon_pngs)
 add_custom_command(
     OUTPUT "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"

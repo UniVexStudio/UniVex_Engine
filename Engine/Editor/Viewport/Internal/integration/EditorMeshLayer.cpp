@@ -56,6 +56,9 @@ UVE::Scene::EntityUVE EditorMeshLayerUVE::CreateHeadlightEntityUVE() {
     UVE::Scene::LightComponentUVE light{};
     light.intensity = 0.0F;
     entityManager.AddComponentUVE<UVE::Scene::LightComponentUVE>(entity, light);
+    UVE::Scene::LightEmitterComponentUVE emitter{};
+    emitter.shadowEnabled = false;
+    entityManager.AddComponentUVE<UVE::Scene::LightEmitterComponentUVE>(entity, emitter);
     entityManager.AddComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity);
     return entity;
 }
@@ -86,6 +89,11 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
     UVE::Scene::LightComponentUVE& headlight =
         entityManager.GetComponentUVE<UVE::Scene::LightComponentUVE>(headlightEntity_);
     headlight.type = UVE::Scene::LightTypeUVE::Directional;
+    if (!entityManager.HasComponentUVE<UVE::Scene::LightEmitterComponentUVE>(headlightEntity_)) {
+        entityManager.AddComponentUVE<UVE::Scene::LightEmitterComponentUVE>(headlightEntity_);
+    }
+    UVE::Scene::LightEmitterComponentUVE& headlightEmitter =
+        entityManager.GetComponentUVE<UVE::Scene::LightEmitterComponentUVE>(headlightEntity_);
 
     // The editor's preview sun (Godot's "Preview Sun"), when the host supplies one. Authored
     // lighting still wins here even though the resolver already accounted for it: this layer runs
@@ -93,6 +101,7 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
     if (previewLightingSet_) {
         const bool previewSun = previewLighting_.sunActive && !sceneHasItsOwnLight && previewLighting_.sunEnergy > 0.0F;
         headlight.intensity = previewSun ? previewLighting_.sunEnergy : 0.0F;
+        headlightEmitter.shadowEnabled = previewSun;
         if (!previewSun) {
             return false;
         }
@@ -106,6 +115,7 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
         return true;
     }
 
+    headlightEmitter.shadowEnabled = false;
     // Warm-white display tint, converted: the headlight is authored, not measured, so what the
     // author picked is a display shade and linear storage must hold its conversion.
     headlight.color = UVE::Math::ColorFromDisplayUVE(UVE::Math::Vector3UVE{1.0F, 0.98F, 0.94F});
