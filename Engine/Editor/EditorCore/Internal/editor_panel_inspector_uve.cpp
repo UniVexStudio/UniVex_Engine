@@ -313,23 +313,6 @@ void EditorUVE::DrawInspectorPanelUVE() {
     ImGui::PopStyleVar(2);
     m_drawnRightPanelTab = m_activeRightPanelTab;
 
-    // 3-dot (⋮) dock options button at the far right edge of the Inspector header
-    {
-        const ImVec2 winPos = ImGui::GetWindowPos();
-        constexpr float kInspDotsW = 20.0F;
-        const float dotsX = winPos.x + ImGui::GetWindowWidth() - kInspDotsW - 6.0F;
-        const float dotsY = winPos.y + (kEditorTabRowHeightUVE - kInspDotsW) * 0.5F;
-        if (DrawDockThreeDotsButtonUVE(*ImGui::GetWindowDrawList(), "##inspector-dock-dots",
-                                      ImVec2{dotsX, dotsY}, ImVec2{kInspDotsW, kInspDotsW})) {
-            ImGui::OpenPopup("##uve-inspector-dock-popup");
-        }
-        const char* const activeRightTabName =
-            (m_activeRightPanelTab == EditorRightPanelTabUVE::Inspector) ? "Inspector" :
-            ((m_activeRightPanelTab == EditorRightPanelTabUVE::Import) ? "Import" : "Events");
-        DrawVisualDockPositionSelectorUVE("##uve-inspector-dock-popup", activeRightTabName,
-                                         EditorDockSlotUVE::Right, &m_inspectorPanelVisible, layout,
-                                         ImVec2{dotsX, dotsY}, ImVec2{dotsX + kInspDotsW, dotsY + kInspDotsW});
-    }
 
     switch (m_activeRightPanelTab) {
         case EditorRightPanelTabUVE::Inspector:

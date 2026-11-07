@@ -31,9 +31,10 @@ TEST(EditorChromeLayoutUVETest, ThreeColumnsExactlyFillTheWidthWithNoGapOrOverla
     }
 }
 
-TEST(EditorChromeLayoutUVETest, FullWidthBottomDockSitsUnderUpperPanels) {
-    // Outliner, Viewport, and Inspector sit above the full-width bottom dock;
-    // the dock spans the full width at the bottom of the screen.
+TEST(EditorChromeLayoutUVETest, FullWidthBottomDockTabBarAndCenterBoundedContentBrowser) {
+    // Dock tab bar spans the entire width across the bottom;
+    // Outliner and Inspector extend all the way down to the dock tab bar;
+    // Content Browser sits centered between Outliner and Inspector under the Viewport.
     const EditorChromeLayoutUVE layout = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
 
     // Header row: the Outliner's name beside the logo, the viewport's header, the Inspector's tabs.
@@ -43,43 +44,47 @@ TEST(EditorChromeLayoutUVETest, FullWidthBottomDockSitsUnderUpperPanels) {
     EXPECT_FLOAT_EQ(layout.scenePos.y, kEditorTitleBarHeightUVE + kEditorTabRowHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportPos.y, kEditorTopChromeHeightUVE);
 
-    // Full-width bottom dock spans the entire width under Outliner, Viewport, and Inspector
-    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, 0.0F);
-    EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, 1920.0F);
+    // Full-width dock tab bar along the very bottom edge (sagad left to right)
     EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, 0.0F);
     EXPECT_FLOAT_EQ(layout.dockTabBarSize.x, 1920.0F);
-
-    // The dock tab bar sits anchored at the bottom edge
     EXPECT_FLOAT_EQ(layout.dockTabBarPos.y + layout.dockTabBarSize.y, 1080.0F);
+
+    // Content Browser is bounded in the center between Outliner and Inspector
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, layout.scenePos.x + layout.sceneSize.x);
+    EXPECT_FLOAT_EQ(layout.contentBrowserSize.x, layout.viewportSize.x);
     EXPECT_FLOAT_EQ(layout.contentBrowserPos.y + layout.contentBrowserSize.y, layout.dockTabBarPos.y);
 
-    // Upper panels reach down to the top of the dock
-    EXPECT_FLOAT_EQ(layout.scenePos.y + layout.sceneSize.y, layout.contentBrowserPos.y);
+    // Viewport sits directly above the Content Browser
     EXPECT_FLOAT_EQ(layout.viewportPos.y + layout.viewportSize.y, layout.contentBrowserPos.y);
-    EXPECT_FLOAT_EQ(layout.inspectorPos.y + layout.inspectorSize.y, layout.contentBrowserPos.y);
+
+    // Outliner and Inspector extend from their tops all the way down to the dock tab bar
+    EXPECT_FLOAT_EQ(layout.scenePos.y + layout.sceneSize.y, layout.dockTabBarPos.y);
+    EXPECT_FLOAT_EQ(layout.inspectorPos.y + layout.inspectorSize.y, layout.dockTabBarPos.y);
 
     // The viewport's header spans exactly its column; the logo sits in the title bar;
     // the outliner header spans the full width of the outliner panel.
     EXPECT_FLOAT_EQ(layout.viewportHeaderPos.x, layout.viewportPos.x);
     EXPECT_FLOAT_EQ(layout.viewportHeaderSize.x, layout.viewportSize.x);
-    EXPECT_FLOAT_EQ(layout.viewportHeaderSize.y, kEditorToolbarHeightUVE);
-    EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.logoSize.x, 0.0F);
+    EXPECT_FLOAT_EQ(layout.logoSize.y, 0.0F);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.scenePos.x);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderSize.y, kEditorTabRowHeightUVE);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x + layout.outlinerHeaderSize.x, layout.scenePos.x + layout.sceneSize.x);
 }
 
-TEST(EditorChromeLayoutUVETest, HidingTheBottomDockGivesItsHeightBackToTheUpperPanels) {
+TEST(EditorChromeLayoutUVETest, HidingTheBottomDockGivesItsHeightBackToTheCenterViewport) {
     const EditorChromeLayoutUVE shown = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), true);
     const EditorChromeLayoutUVE hidden = ComputeEditorChromeLayoutUVE(MakeViewportUVE(1920.0F, 1080.0F), false);
 
-    // The dock body's height goes back to the upper panels; the tab row stays at the bottom edge.
+    // The dock body's height goes back to the center viewport; the tab row stays at the bottom edge.
     EXPECT_FLOAT_EQ(hidden.contentBrowserSize.y, 0.0F);
     EXPECT_FLOAT_EQ(hidden.dockTabBarPos.y + hidden.dockTabBarSize.y, 1080.0F);
     EXPECT_FLOAT_EQ(shown.dockTabBarPos.y + shown.dockTabBarSize.y, 1080.0F);
     EXPECT_FLOAT_EQ(hidden.viewportSize.y - shown.viewportSize.y, shown.contentBrowserSize.y);
-    EXPECT_FLOAT_EQ(hidden.sceneSize.y - shown.sceneSize.y, shown.contentBrowserSize.y);
-    EXPECT_FLOAT_EQ(hidden.inspectorSize.y - shown.inspectorSize.y, shown.contentBrowserSize.y);
+
+    // Outliner and Inspector extend to the dock tab bar and do not change height when the dock body folds
+    EXPECT_FLOAT_EQ(hidden.sceneSize.y, shown.sceneSize.y);
+    EXPECT_FLOAT_EQ(hidden.inspectorSize.y, shown.inspectorSize.y);
 }
 
 TEST(EditorChromeLayoutUVETest, TheDockHeightIsDraggableWithinLimits) {
@@ -161,7 +166,8 @@ TEST(EditorChromeLayoutUVETest, SplitterGripsExistOnlyWhereThereIsASeam) {
     EXPECT_FLOAT_EQ(full.sceneSplitterSize.x, kPanelSplitterThicknessUVE);
     EXPECT_FLOAT_EQ(full.inspectorSplitterSize.x, kPanelSplitterThicknessUVE);
     EXPECT_FLOAT_EQ(full.dockSplitterSize.y, kPanelSplitterThicknessUVE);
-    EXPECT_FLOAT_EQ(full.dockSplitterSize.x, 1920.0F);
+    EXPECT_FLOAT_EQ(full.dockSplitterSize.x, full.viewportSize.x);
+    EXPECT_FLOAT_EQ(full.dockSplitterPos.x, full.viewportPos.x);
 
     // The Outliner | viewport seam still exists when the Outliner is showing, and is at the
     // Outliner's right edge.
@@ -246,9 +252,10 @@ TEST(EditorChromeLayoutUVETest, LayoutIsOffsetByTheViewportOrigin) {
     EXPECT_FLOAT_EQ(layout.scenePos.y, kOriginY + kEditorTitleBarHeightUVE + kEditorTabRowHeightUVE);
     EXPECT_FLOAT_EQ(layout.viewportPos.y, kOriginY + kEditorTopChromeHeightUVE);
     EXPECT_FLOAT_EQ(layout.logoPos.y, kOriginY);
-    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX);
+    EXPECT_FLOAT_EQ(layout.contentBrowserPos.x, kOriginX + layout.sceneSize.x);
     // The dock spans the entire bottom, so its tab row starts at the origin as well.
     EXPECT_FLOAT_EQ(layout.dockTabBarPos.x, kOriginX);
+    EXPECT_FLOAT_EQ(layout.dockTabBarSize.x, 1920.0F);
 }
 
 } // namespace
