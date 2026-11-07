@@ -4709,8 +4709,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             const CameraFrustumCornersUVE cascadeCorners =
                 ComputeCascadeFrustumCornersUVE(cameraCorners, nearRatio, farRatio);
             const Math::AabbUVE fittedBounds = ComputeLightSpaceCameraBoundsUVE(cascadeCorners, lightView);
-            const Math::AabbUVE stabilizedBounds = StabilizeLightSpaceShadowBoundsUVE(
+            Math::AabbUVE stabilizedBounds = StabilizeLightSpaceShadowBoundsUVE(
                 fittedBounds, m_impl->shadowFrustumPadding, m_impl->shadowMapResolution);
+            // A caster that stands outside THIS cascade's slice - nearer the sun, or in a farther
+            // cascade - can still throw its shadow into this slice (a box far from the camera
+            // shadowing the floor close to it). The fitted box only spans the slice itself, so
+            // that caster was clipped by the near plane and culled, and the receiver showed no
+            // shadow at all. Pull the near plane toward the light so those casters are drawn.
+            constexpr float kShadowCasterReachMetersUVE = 60.0F;
+            stabilizedBounds.max.z += kShadowCasterReachMetersUVE;
             const Math::Matrix4x4UVE lightProjection = Math::Matrix4x4UVE::OrthographicUVE(
                 stabilizedBounds.min.x, stabilizedBounds.max.x, stabilizedBounds.min.y, stabilizedBounds.max.y,
                 -stabilizedBounds.max.z, -stabilizedBounds.min.z);
