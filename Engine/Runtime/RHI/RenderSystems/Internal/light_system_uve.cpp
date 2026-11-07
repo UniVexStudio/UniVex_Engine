@@ -149,7 +149,27 @@ void ForEachLightDataUVE(Scene::IEntityManagerUVE& entityManager, const Visit& v
             if (TryBuildLightDataUVE(worldTransform, light, slot)) {
                 slot.isEditorInternal =
                     entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(entity);
-                if (slot.isEditorInternal) {
+                if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(entity)) {
+                    const Scene::LightEmitterComponentUVE& emitter =
+                        entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(entity);
+                    if (Scene::IsLightEmitterComponentValidUVE(emitter)) {
+                        if (emitter.cullMask == 0U) {
+                            return;
+                        }
+                        slot.castsShadows = emitter.shadowEnabled;
+                        slot.cullMask = emitter.cullMask;
+                        slot.specular = emitter.specular;
+                        slot.shadowBias = emitter.shadowBias >= 0.0F ? emitter.shadowBias * 0.025F : -1.0F;
+                        slot.shadowNormalBias = emitter.shadowNormalBias >= 0.0F ? emitter.shadowNormalBias : -1.0F;
+                        slot.shadowOpacity = emitter.shadowOpacity;
+                        slot.shadowBlur = emitter.shadowBlur;
+                        slot.volumetricFogEnergy = emitter.volumetricFogEnergy;
+                        slot.distanceFadeEnabled = emitter.distanceFadeEnabled;
+                        slot.distanceFadeBegin = emitter.distanceFadeBegin;
+                        slot.distanceFadeShadow = emitter.distanceFadeShadow;
+                        slot.distanceFadeLength = emitter.distanceFadeLength;
+                    }
+                } else if (slot.isEditorInternal) {
                     slot.castsShadows = false;
                 }
                 visit(slot);
