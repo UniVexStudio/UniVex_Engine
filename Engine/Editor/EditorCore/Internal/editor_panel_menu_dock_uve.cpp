@@ -190,6 +190,16 @@ void EditorUVE::DrawMenuBarUVE() {
     GLFWwindow* const nativeWindow = m_services != nullptr
         ? static_cast<GLFWwindow*>(m_services->GetWindowManagerUVE().GetNativeWindowHandleUVE())
         : nullptr;
+    const bool isMaximized =
+        nativeWindow != nullptr && glfwGetWindowAttrib(nativeWindow, GLFW_MAXIMIZED) == GLFW_TRUE;
+
+    // Outer perimeter 1px frame border with 3.0F rounded corners when windowed (AAA desktop aesthetic)
+    if (!isMaximized) {
+        ImDrawList* const fgDrawList = ImGui::GetForegroundDrawList(const_cast<ImGuiViewport*>(mainViewport));
+        const ImVec2 outerMin = mainViewport->WorkPos;
+        const ImVec2 outerMax{outerMin.x + mainViewport->WorkSize.x, outerMin.y + mainViewport->WorkSize.y};
+        fgDrawList->AddRect(outerMin, outerMax, IM_COL32(50, 58, 70, 255), 3.0F, 0, 1.0F);
+    }
 
     // ---- Row 1: Dedicated Engine OS Titlebar Row (x = logoSize.x..W) with Menus ------------------
     const ImVec2 osTitlePos{mainViewport->WorkPos.x + stripLayout.logoSize.x, mainViewport->WorkPos.y};
@@ -197,15 +207,17 @@ void EditorUVE::DrawMenuBarUVE() {
                              kEditorOsTitleBarRowHeightUVE};
     ImGui::SetNextWindowPos(osTitlePos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(osTitleSize, ImGuiCond_Always);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{6.0F, 2.5F});
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{8.0F, 5.0F});
     ImGui::PushStyleColor(ImGuiCol_MenuBarBg, ImVec4{14.0F / 255.0F, 17.0F / 255.0F, 22.0F / 255.0F, 1.0F});
     if (beginChromeWindow("##uve-os-titlebar", chromeFlags | ImGuiWindowFlags_MenuBar)) {
         ImDrawList* const osDrawList = ImGui::GetWindowDrawList();
         const ImVec2 osMin = ImGui::GetWindowPos();
         const ImVec2 osMax{osMin.x + ImGui::GetWindowWidth(), osMin.y + kEditorOsTitleBarRowHeightUVE};
-        osDrawList->AddRectFilled(osMin, osMax, kEditorHeaderStripColorUVE);
-        const bool isMaximized =
-            nativeWindow != nullptr && glfwGetWindowAttrib(nativeWindow, GLFW_MAXIMIZED) == GLFW_TRUE;
+        if (!isMaximized) {
+            osDrawList->AddRectFilled(osMin, osMax, kEditorHeaderStripColorUVE, 3.0F, ImDrawFlags_RoundCornersTopRight);
+        } else {
+            osDrawList->AddRectFilled(osMin, osMax, kEditorHeaderStripColorUVE);
+        }
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu(kMenuLabelFileUVE)) {
                 DrawCommandMenuItemUVE("file.saveScene");
@@ -292,22 +304,82 @@ void EditorUVE::DrawMenuBarUVE() {
                 ImGui::MenuItem("About UNIVEX Engine", nullptr, false, false);
                 ImGui::EndMenu();
             }
-            // Document Title in Titlebar center
+            constexpr float kMinBtnW = 42.0F;
+            constexpr float kMaxBtnW = 42.0F;
+            constexpr float kCloseBtnW = 46.0F;
+            constexpr float kOsButtonsTotalW = kMinBtnW + kMaxBtnW + kCloseBtnW;
+
+            // Dedicated AAA Titlebar Drag Region spanning from end of menus to OS buttons
+            const float dragZoneStartX = ImGui::GetCursorPosX();
+            const float dragZoneEndX = std::max(dragZoneStartX + 20.0F, ImGui::GetWindowWidth() - kOsButtonsTotalW);
+            const float dragZoneWidth = dragZoneEndX - dragZoneStartX;
+
+            ImGui::InvisibleButton("##uve-os-titlebar-drag", ImVec2{dragZoneWidth, kEditorOsTitleBarRowHeightUVE});
+            const bool dragHovered = ImGui::IsItemHovered();
+            const bool dragActive = ImGui::IsItemActive();
+            const bool dragActivated = ImGui::IsItemActivated();
+            const bool dragDeactivated = ImGui::IsItemDeactivated();
+
+            // Document Title rendered in center of Titlebar
             const std::string sceneFileName = m_activeScenePath.filename().string();
             const std::string windowTitleText =
                 "UniVex Engine  -  " + (sceneFileName.empty() ? std::string{"Viewport.uvscene"} : sceneFileName) +
                 (m_sceneDirty ? " *" : "");
-            const float titleTextWidth = ImGui::CalcTextSize(windowTitleText.c_str()).x;
-            constexpr float kMinBtnW = 36.0F;
-            constexpr float kMaxBtnW = 36.0F;
-            constexpr float kCloseBtnW = 40.0F;
-            constexpr float kOsButtonsTotalW = kMinBtnW + kMaxBtnW + kCloseBtnW;
+            const ImVec2 titleTextSize = ImGui::CalcTextSize(windowTitleText.c_str());
+            const float centerTargetX = (ImGui::GetWindowWidth() - titleTextSize.x) * 0.5F;
+            const float titleCenterY = osMin.y + (kEditorOsTitleBarRowHeightUVE - titleTextSize.y) * 0.5F;
+            if (centerTargetX > dragZoneStartX + 10.0F &&
+                centerTargetX + titleTextSize.x < dragZoneEndX - 10.0F) {
+                osDrawList->AddText(ImVec2{osMin.x + centerTargetX, titleCenterY},
+                                    IM_COL32(205, 215, 230, 230), windowTitleText.c_str());
+            }
 
-            const float centerTargetX = (ImGui::GetWindowWidth() - titleTextWidth) * 0.5F;
-            if (centerTargetX > ImGui::GetCursorPosX() + 15.0F &&
-                centerTargetX + titleTextWidth < ImGui::GetWindowWidth() - kOsButtonsTotalW - 15.0F) {
-                ImGui::SameLine(centerTargetX);
-                ImGui::TextColored(ImVec4{0.80F, 0.84F, 0.90F, 0.90F}, "%s", windowTitleText.c_str());
+            // Invariant GLFW Window Dragging & Double-Click Maximize/Restore
+            static double s_dragGrabOffsetX = 0.0;
+            static double s_dragGrabOffsetY = 0.0;
+            static bool s_isDraggingWindow = false;
+
+            if (nativeWindow != nullptr) {
+                if (dragHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    s_isDraggingWindow = false;
+                    if (isMaximized) {
+                        glfwRestoreWindow(nativeWindow);
+                    } else {
+                        glfwMaximizeWindow(nativeWindow);
+                    }
+                } else if (dragActivated) {
+                    double curX = 0.0;
+                    double curY = 0.0;
+                    glfwGetCursorPos(nativeWindow, &curX, &curY);
+                    if (isMaximized) {
+                        int winW = 0;
+                        int winH = 0;
+                        glfwGetWindowSize(nativeWindow, &winW, &winH);
+                        const double pctX = winW > 0 ? (curX / static_cast<double>(winW)) : 0.5;
+                        glfwRestoreWindow(nativeWindow);
+                        glfwGetWindowSize(nativeWindow, &winW, &winH);
+                        s_dragGrabOffsetX = static_cast<double>(winW) * pctX;
+                        s_dragGrabOffsetY = curY;
+                    } else {
+                        s_dragGrabOffsetX = curX;
+                        s_dragGrabOffsetY = curY;
+                    }
+                    s_isDraggingWindow = true;
+                } else if (dragActive && s_isDraggingWindow) {
+                    int winX = 0;
+                    int winY = 0;
+                    glfwGetWindowPos(nativeWindow, &winX, &winY);
+                    double curX = 0.0;
+                    double curY = 0.0;
+                    glfwGetCursorPos(nativeWindow, &curX, &curY);
+                    const int targetX = static_cast<int>(std::round(winX + curX - s_dragGrabOffsetX));
+                    const int targetY = static_cast<int>(std::round(winY + curY - s_dragGrabOffsetY));
+                    if (targetX != winX || targetY != winY) {
+                        glfwSetWindowPos(nativeWindow, targetX, targetY);
+                    }
+                } else if (dragDeactivated || !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    s_isDraggingWindow = false;
+                }
             }
 
             // OS Window Buttons on far right (─, □, ✕)
@@ -357,12 +429,12 @@ void EditorUVE::DrawMenuBarUVE() {
                                    maxBtnScreenPos.y + kEditorOsTitleBarRowHeightUVE * 0.5F};
             const ImU32 maxColor = maxHovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 192, 208, 220);
             if (isMaximized) {
-                osDrawList->AddRect(ImVec2{maxCenter.x - 3.0F, maxCenter.y - 5.0F},
-                                    ImVec2{maxCenter.x + 5.0F, maxCenter.y + 3.0F}, maxColor, 0.0F, 0, 1.0F);
-                osDrawList->AddRectFilled(ImVec2{maxCenter.x - 5.0F, maxCenter.y - 3.0F},
-                                          ImVec2{maxCenter.x + 3.0F, maxCenter.y + 5.0F}, kEditorHeaderStripColorUVE);
-                osDrawList->AddRect(ImVec2{maxCenter.x - 5.0F, maxCenter.y - 3.0F},
-                                    ImVec2{maxCenter.x + 3.0F, maxCenter.y + 5.0F}, maxColor, 0.0F, 0, 1.0F);
+                osDrawList->AddRect(ImVec2{maxCenter.x - 3.5F, maxCenter.y - 5.5F},
+                                    ImVec2{maxCenter.x + 5.5F, maxCenter.y + 3.5F}, maxColor, 0.0F, 0, 1.0F);
+                osDrawList->AddRectFilled(ImVec2{maxCenter.x - 5.5F, maxCenter.y - 3.5F},
+                                          ImVec2{maxCenter.x + 3.5F, maxCenter.y + 5.5F}, kEditorHeaderStripColorUVE);
+                osDrawList->AddRect(ImVec2{maxCenter.x - 5.5F, maxCenter.y - 3.5F},
+                                    ImVec2{maxCenter.x + 3.5F, maxCenter.y + 5.5F}, maxColor, 0.0F, 0, 1.0F);
             } else {
                 osDrawList->AddRect(ImVec2{maxCenter.x - 4.5F, maxCenter.y - 4.5F},
                                     ImVec2{maxCenter.x + 4.5F, maxCenter.y + 4.5F}, maxColor, 0.0F, 0, 1.2F);
@@ -379,10 +451,17 @@ void EditorUVE::DrawMenuBarUVE() {
             }
             const bool closeHovered = ImGui::IsItemHovered();
             if (closeHovered) {
-                osDrawList->AddRectFilled(
-                    closeBtnScreenPos,
-                    ImVec2{closeBtnScreenPos.x + kCloseBtnW, closeBtnScreenPos.y + kEditorOsTitleBarRowHeightUVE},
-                    IM_COL32(232, 17, 35, 255));
+                if (!isMaximized) {
+                    osDrawList->AddRectFilled(
+                        closeBtnScreenPos,
+                        ImVec2{closeBtnScreenPos.x + kCloseBtnW, closeBtnScreenPos.y + kEditorOsTitleBarRowHeightUVE},
+                        IM_COL32(232, 17, 35, 255), 3.0F, ImDrawFlags_RoundCornersTopRight);
+                } else {
+                    osDrawList->AddRectFilled(
+                        closeBtnScreenPos,
+                        ImVec2{closeBtnScreenPos.x + kCloseBtnW, closeBtnScreenPos.y + kEditorOsTitleBarRowHeightUVE},
+                        IM_COL32(232, 17, 35, 255));
+                }
             }
             const ImVec2 closeCenter{closeBtnScreenPos.x + kCloseBtnW * 0.5F,
                                      closeBtnScreenPos.y + kEditorOsTitleBarRowHeightUVE * 0.5F};
@@ -393,29 +472,6 @@ void EditorUVE::DrawMenuBarUVE() {
                                 ImVec2{closeCenter.x + 4.0F, closeCenter.y - 4.0F}, closeColor, 1.2F);
 
             ImGui::EndMenuBar();
-        }
-
-        // Dragging and double-click to maximize/restore on empty OS titlebar space
-        if (nativeWindow != nullptr && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() &&
-            !ImGui::IsAnyItemActive()) {
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                if (isMaximized) {
-                    glfwRestoreWindow(nativeWindow);
-                } else {
-                    glfwMaximizeWindow(nativeWindow);
-                }
-            } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0F)) {
-                if (!isMaximized) {
-                    const ImVec2 dragDelta = ImGui::GetIO().MouseDelta;
-                    if (dragDelta.x != 0.0F || dragDelta.y != 0.0F) {
-                        int winX = 0;
-                        int winY = 0;
-                        glfwGetWindowPos(nativeWindow, &winX, &winY);
-                        glfwSetWindowPos(nativeWindow, winX + static_cast<int>(dragDelta.x),
-                                         winY + static_cast<int>(dragDelta.y));
-                    }
-                }
-            }
         }
 
         ImGui::End();
@@ -519,7 +575,12 @@ void EditorUVE::DrawMenuBarUVE() {
             ImDrawList* const logoDrawList = ImGui::GetWindowDrawList();
             const ImVec2 logoMin = ImGui::GetWindowPos();
             const ImVec2 logoMax{logoMin.x + stripLayout.logoSize.x, logoMin.y + stripLayout.logoSize.y};
-            logoDrawList->AddRectFilled(logoMin, logoMax, kEditorHeaderStripColorUVE);
+            if (!isMaximized) {
+                logoDrawList->AddRectFilled(logoMin, logoMax, kEditorHeaderStripColorUVE, 3.0F,
+                                            ImDrawFlags_RoundCornersTopLeft);
+            } else {
+                logoDrawList->AddRectFilled(logoMin, logoMax, kEditorHeaderStripColorUVE);
+            }
 
             const float markDimension = std::min(stripLayout.logoSize.x, stripLayout.logoSize.y) - 8.0F;
             const ImVec2 markCenter{(logoMin.x + logoMax.x) * 0.5F, (logoMin.y + logoMax.y) * 0.5F};
@@ -527,7 +588,7 @@ void EditorUVE::DrawMenuBarUVE() {
             const ImVec2 markMax{markCenter.x + markDimension * 0.5F, markCenter.y + markDimension * 0.5F};
             logoDrawList->AddRectFilled(markMin, markMax, IM_COL32(32, 112, 228, 255), 6.0F);
             logoDrawList->AddRect(markMin, markMax, IM_COL32(82, 160, 255, 220), 6.0F, 0, 1.2F);
-            const float logoFontSize = ImGui::GetFontSize() * 1.50F;
+            const float logoFontSize = ImGui::GetFontSize() * 1.60F;
             const ImVec2 uSize = ImGui::GetFont()->CalcTextSizeA(logoFontSize, FLT_MAX, 0.0F, "U");
             logoDrawList->AddText(ImGui::GetFont(), logoFontSize,
                                   ImVec2{(markMin.x + markMax.x - uSize.x) * 0.5F,
@@ -618,32 +679,31 @@ void EditorUVE::DrawMenuBarUVE() {
         cursorX = mMax.x + 12.0F;
 
         // ---- Upper Sub-Row Center/Right: Expanded Transport Row (Play, Pause, Stop, Fast-Forward, ⋮)
-        constexpr float kTransportBtnW = 32.0F;
-        constexpr float kTransportBtnH = 22.0F;
+        constexpr float kTransportBtnW = 34.0F;
+        constexpr float kTransportBtnH = 24.0F;
         constexpr float kTransportDotsW = 22.0F;
-        constexpr float kTransportGap = 3.0F;
-        constexpr float kTransportPadX = 5.0F;
-        const float transportRowW =
-            (kTransportPadX * 2.0F) + (kTransportBtnW * 4.0F) + kTransportDotsW + (kTransportGap * 4.0F);
+        const float transportRowW = (kTransportBtnW * 4.0F) + kTransportDotsW;
         const float centerTargetX = toolbarMin.x + (ImGui::GetWindowWidth() - transportRowW) * 0.5F;
         const float transportBoxX = std::max(cursorX, centerTargetX);
         const float transportBoxY = toolbarMin.y + 1.0F;
         const ImVec2 transportBoxMin{transportBoxX, transportBoxY};
         const ImVec2 transportBoxMax{transportBoxX + transportRowW, toolbarMin.y + kRow1HeightUVE - 1.0F};
 
-        // Dedicated transport row container background & subtle border
-        toolbarDrawList->AddRectFilled(transportBoxMin, transportBoxMax, IM_COL32(22, 26, 33, 250), 5.0F,
-                                       ImDrawFlags_RoundCornersTop);
-        toolbarDrawList->AddRect(transportBoxMin, transportBoxMax, IM_COL32(56, 66, 80, 220), 5.0F,
-                                 ImDrawFlags_RoundCornersTop, 1.0F);
+        // Dedicated transport row container background & subtle border (square top, flush in sub-row)
+        toolbarDrawList->AddRectFilled(transportBoxMin, transportBoxMax, IM_COL32(20, 24, 30, 250), 3.0F,
+                                       ImDrawFlags_RoundCornersBottom);
+        toolbarDrawList->AddRect(transportBoxMin, transportBoxMax, IM_COL32(52, 62, 76, 220), 3.0F,
+                                 ImDrawFlags_RoundCornersBottom, 1.0F);
 
-        ImGui::SetCursorScreenPos(ImVec2{transportBoxMin.x + kTransportPadX,
+        ImGui::SetCursorScreenPos(ImVec2{transportBoxMin.x,
                                          toolbarMin.y + (kRow1HeightUVE - kTransportBtnH) * 0.5F});
 
         const auto drawTransportImageButton = [&](const char* const id, const std::uintptr_t texId,
                                                   const bool enabled, const bool active,
                                                   const ImU32 activeBgCol, const ImU32 iconTint,
-                                                  const char* const tooltip) {
+                                                  const char* const tooltip,
+                                                  const ImDrawFlags cornerFlags,
+                                                  const float cornerRadius) {
             ImGui::BeginDisabled(!enabled);
             ImGui::PushID(id);
             const bool pressed = ImGui::InvisibleButton("##tbtn", ImVec2{kTransportBtnW, kTransportBtnH});
@@ -652,11 +712,11 @@ void EditorUVE::DrawMenuBarUVE() {
             const ImVec2 bMax = ImGui::GetItemRectMax();
             const ImVec2 bCenter{(bMin.x + bMax.x) * 0.5F, (bMin.y + bMax.y) * 0.5F};
             if (active) {
-                toolbarDrawList->AddRectFilled(bMin, bMax, activeBgCol, 3.0F);
+                toolbarDrawList->AddRectFilled(bMin, bMax, activeBgCol, cornerRadius, cornerFlags);
             } else if (hovered && enabled) {
-                toolbarDrawList->AddRectFilled(bMin, bMax, IM_COL32(56, 66, 80, 220), 3.0F);
+                toolbarDrawList->AddRectFilled(bMin, bMax, IM_COL32(56, 66, 80, 220), cornerRadius, cornerFlags);
             }
-            constexpr float kHalfIcon = 8.0F;
+            constexpr float kHalfIcon = 9.5F;
             const ImU32 tint = enabled ? iconTint : IM_COL32(120, 128, 140, 110);
             if (texId != 0U) {
                 toolbarDrawList->AddImage(static_cast<ImTextureID>(texId),
@@ -682,11 +742,12 @@ void EditorUVE::DrawMenuBarUVE() {
         const bool isPaused = m_playModeState == EditorPlayModeStateUVE::Paused;
         const bool hasSimControl = m_simulationControl != nullptr;
 
-        // 1. Play Button (actual play.png texture)
+        // 1. Play Button (rounded bottom-left corner to match pill endcap)
         const bool playActive = isPlaying && !m_playFastForwardEnabled;
         if (drawTransportImageButton("##transport-play", playTexId, hasSimControl, playActive,
                                      IM_COL32(36, 115, 64, 230), IM_COL32(110, 230, 145, 255),
-                                     isEdit ? "Play Simulation" : "Play (Normal 1x Speed)")) {
+                                     isEdit ? "Play Simulation" : "Play (Normal 1x Speed)",
+                                     ImDrawFlags_RoundCornersBottomLeft, 3.0F)) {
             if (isEdit) {
                 static_cast<void>(SetPlayFastForwardUVE(false));
                 static_cast<void>(EnterPlayModeUVE());
@@ -697,34 +758,58 @@ void EditorUVE::DrawMenuBarUVE() {
                 static_cast<void>(SetPlayFastForwardUVE(false));
             }
         }
-        ImGui::SameLine(0.0F, kTransportGap);
+        // Hairline divider after Play
+        {
+            const ImVec2 pMax = ImGui::GetItemRectMax();
+            const ImVec2 pMin = ImGui::GetItemRectMin();
+            toolbarDrawList->AddLine(ImVec2{pMax.x, pMin.y + 2.0F}, ImVec2{pMax.x, pMax.y - 2.0F},
+                                     IM_COL32(46, 54, 68, 200), 1.0F);
+        }
+        ImGui::SameLine(0.0F, 0.0F);
 
-        // 2. Pause Button (actual pause.png texture)
+        // 2. Pause Button (square inner segment)
         if (drawTransportImageButton("##transport-pause", pauseTexId, !isEdit, isPaused,
                                      IM_COL32(180, 130, 36, 220), IM_COL32(235, 240, 248, 255),
-                                     isPaused ? "Resume Simulation" : "Pause Simulation")) {
+                                     isPaused ? "Resume Simulation" : "Pause Simulation",
+                                     0, 0.0F)) {
             if (isPlaying) {
                 static_cast<void>(PausePlayModeUVE());
             } else if (isPaused) {
                 static_cast<void>(ResumePlayModeUVE());
             }
         }
-        ImGui::SameLine(0.0F, kTransportGap);
+        // Hairline divider after Pause
+        {
+            const ImVec2 pMax = ImGui::GetItemRectMax();
+            const ImVec2 pMin = ImGui::GetItemRectMin();
+            toolbarDrawList->AddLine(ImVec2{pMax.x, pMin.y + 2.0F}, ImVec2{pMax.x, pMax.y - 2.0F},
+                                     IM_COL32(46, 54, 68, 200), 1.0F);
+        }
+        ImGui::SameLine(0.0F, 0.0F);
 
-        // 3. Stop Button (actual stop.png texture)
+        // 3. Stop Button (square inner segment)
         if (drawTransportImageButton("##transport-stop", stopTexId, !isEdit, false,
                                      IM_COL32(140, 44, 48, 220), IM_COL32(240, 110, 110, 255),
-                                     "Stop Simulation")) {
+                                     "Stop Simulation",
+                                     0, 0.0F)) {
             static_cast<void>(StopPlayModeUVE());
         }
-        ImGui::SameLine(0.0F, kTransportGap);
+        // Hairline divider after Stop
+        {
+            const ImVec2 pMax = ImGui::GetItemRectMax();
+            const ImVec2 pMin = ImGui::GetItemRectMin();
+            toolbarDrawList->AddLine(ImVec2{pMax.x, pMin.y + 2.0F}, ImVec2{pMax.x, pMax.y - 2.0F},
+                                     IM_COL32(46, 54, 68, 200), 1.0F);
+        }
+        ImGui::SameLine(0.0F, 0.0F);
 
-        // 4. Fast-Forward Button (actual fast-forward.png texture)
+        // 4. Fast-Forward Button (square inner segment)
         const bool ffActive = !isEdit && m_playFastForwardEnabled;
         if (drawTransportImageButton("##transport-ff", ffTexId, hasSimControl, ffActive,
                                      IM_COL32(36, 118, 230, 235), IM_COL32(150, 215, 255, 255),
                                      ffActive ? "Fast-Forward Active (Click for 1x Speed)"
-                                              : "Fast-Forward Simulation")) {
+                                              : "Fast-Forward Simulation",
+                                     0, 0.0F)) {
             if (isEdit) {
                 if (EnterPlayModeUVE()) {
                     static_cast<void>(SetPlayFastForwardUVE(true));
@@ -736,9 +821,16 @@ void EditorUVE::DrawMenuBarUVE() {
                 static_cast<void>(SetPlayFastForwardUVE(!m_playFastForwardEnabled));
             }
         }
-        ImGui::SameLine(0.0F, kTransportGap);
+        // Hairline divider after Fast-Forward
+        {
+            const ImVec2 pMax = ImGui::GetItemRectMax();
+            const ImVec2 pMin = ImGui::GetItemRectMin();
+            toolbarDrawList->AddLine(ImVec2{pMax.x, pMin.y + 2.0F}, ImVec2{pMax.x, pMax.y - 2.0F},
+                                     IM_COL32(46, 54, 68, 200), 1.0F);
+        }
+        ImGui::SameLine(0.0F, 0.0F);
 
-        // 5. 3-Dot (⋮) Transport Settings Button
+        // 5. 3-Dot (⋮) Transport Settings Button (rounded bottom-right corner to match pill endcap)
         ImGui::PushID("##transport-settings-dots");
         if (ImGui::InvisibleButton("##tdots", ImVec2{kTransportDotsW, kTransportBtnH})) {
             ImGui::OpenPopup("##transport-row-settings");
@@ -749,7 +841,8 @@ void EditorUVE::DrawMenuBarUVE() {
             const ImVec2 dMax = ImGui::GetItemRectMax();
             const ImVec2 dCenter{(dMin.x + dMax.x) * 0.5F, (dMin.y + dMax.y) * 0.5F};
             if (dotsHovered) {
-                toolbarDrawList->AddRectFilled(dMin, dMax, IM_COL32(56, 66, 80, 220), 3.0F);
+                toolbarDrawList->AddRectFilled(dMin, dMax, IM_COL32(56, 66, 80, 220), 3.0F,
+                                               ImDrawFlags_RoundCornersBottomRight);
                 ImGui::SetTooltip("Playback & Fast-Forward Settings");
             }
             const ImU32 dotCol = dotsHovered ? IM_COL32(245, 248, 255, 255) : IM_COL32(185, 196, 212, 230);
@@ -1408,31 +1501,104 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
     ImGui::SetNextWindowViewport(mainViewport->ID);
     ImGui::SetNextWindowPos(layout.dockTabBarPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(layout.dockTabBarSize, ImGuiCond_Always);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{6.0F, 2.0F});
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{2.0F, 0.0F});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{8.0F, 2.0F});
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{4.0F, 0.0F});
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0F);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{17.0F / 255.0F, 20.0F / 255.0F, 25.0F / 255.0F, 1.0F});
     if (ImGui::Begin(kPanelLabelDockTabsUVE, nullptr, stripFlags)) {
+        ImDrawList* const dockDrawList = ImGui::GetWindowDrawList();
+        const ImVec2 barPos = layout.dockTabBarPos;
+        const ImVec2 barSize = layout.dockTabBarSize;
+
+        // UE5 / Godot crisp top separator line
+        dockDrawList->AddLine(barPos, ImVec2{barPos.x + barSize.x, barPos.y},
+                              IM_COL32(38, 44, 54, 255), 1.0F);
+
+        constexpr float kDockBtnH = 20.0F;
+        const float barCenterY = barPos.y + (barSize.y - kDockBtnH) * 0.5F;
+
+        // 1. UE5-style "Content Drawer" Capsule Button on the far left (pure text, no icon)
+        {
+            const bool contentActive = m_bottomDockVisible && m_activeBottomDock == EditorBottomDockUVE::FileSystem;
+            const char* const drawerLabel = "Content Drawer";
+            const ImVec2 textSize = ImGui::CalcTextSize(drawerLabel);
+            const float drawerBtnW = textSize.x + 22.0F;
+
+            ImGui::SetCursorScreenPos(ImVec2{ImGui::GetCursorScreenPos().x, barCenterY});
+            if (ImGui::InvisibleButton("##uve-content-drawer", ImVec2{drawerBtnW, kDockBtnH})) {
+                if (contentActive) {
+                    m_bottomDockVisible = false;
+                } else {
+                    m_activeBottomDock = EditorBottomDockUVE::FileSystem;
+                    m_bottomDockVisible = true;
+                }
+            }
+            const bool drawerHovered = ImGui::IsItemHovered();
+            const ImVec2 bMin = ImGui::GetItemRectMin();
+            const ImVec2 bMax = ImGui::GetItemRectMax();
+            const float midY = (bMin.y + bMax.y) * 0.5F;
+
+            // Sleek capsule styling with pure typography
+            ImU32 textCol = IM_COL32(210, 220, 235, 240);
+            if (contentActive) {
+                dockDrawList->AddRectFilled(bMin, bMax, IM_COL32(30, 48, 74, 255), 3.0F);
+                dockDrawList->AddRect(bMin, bMax, IM_COL32(52, 132, 240, 220), 3.0F, 0, 1.0F);
+                dockDrawList->AddLine(ImVec2{bMin.x + 2.0F, bMin.y + 0.5F},
+                                      ImVec2{bMax.x - 2.0F, bMin.y + 0.5F},
+                                      IM_COL32(70, 155, 255, 255), 1.5F);
+                textCol = IM_COL32(255, 255, 255, 255);
+            } else if (drawerHovered) {
+                dockDrawList->AddRectFilled(bMin, bMax, IM_COL32(36, 46, 62, 255), 3.0F);
+                dockDrawList->AddRect(bMin, bMax, IM_COL32(65, 85, 115, 220), 3.0F, 0, 1.0F);
+                textCol = IM_COL32(245, 250, 255, 255);
+            } else {
+                dockDrawList->AddRectFilled(bMin, bMax, IM_COL32(24, 30, 40, 255), 3.0F);
+                dockDrawList->AddRect(bMin, bMax, IM_COL32(44, 52, 68, 200), 3.0F, 0, 1.0F);
+                textCol = IM_COL32(210, 220, 235, 240);
+            }
+
+            const float textX = bMin.x + (drawerBtnW - textSize.x) * 0.5F;
+            dockDrawList->AddText(ImVec2{textX, midY - textSize.y * 0.5F}, textCol, drawerLabel);
+
+            if (drawerHovered) {
+                ImGui::SetTooltip("The project's files and assets.%s",
+                                  contentActive ? " Click again to fold the dock." : " Click to open.");
+            }
+        }
+
+        // 1px Vertical Divider (UE5 / Godot separator)
+        ImGui::SameLine(0.0F, 6.0F);
+        {
+            const float sepX = ImGui::GetCursorScreenPos().x;
+            dockDrawList->AddLine(ImVec2{sepX, barCenterY + 2.0F},
+                                  ImVec2{sepX, barCenterY + kDockBtnH - 2.0F},
+                                  IM_COL32(46, 54, 68, 200), 1.0F);
+        }
+        ImGui::SameLine(0.0F, 7.0F);
+
+        // 2. Godot / UE5 Secondary Dock Tabs (pure text, no icons)
         struct TabUVE final {
             const char* label;
             EditorBottomDockUVE dock;
             const char* tooltip;
         };
-        constexpr std::array<TabUVE, 6> kTabs{{
-            {"Content", EditorBottomDockUVE::FileSystem, "The project's files and assets."},
-            {"Output", EditorBottomDockUVE::Debugger, "Frame statistics and editor state."},
-            {"Console", EditorBottomDockUVE::Console, "Engine messages and a command line."},
+        constexpr std::array<TabUVE, 5> kTabs{{
+            {"Output Log", EditorBottomDockUVE::Debugger, "Frame statistics, renderer diagnostics, and engine status."},
+            {"Console", EditorBottomDockUVE::Console, "Engine messages and an interactive command line."},
             {"Capture", EditorBottomDockUVE::Capture, "Tapped session datagrams and their decode."},
             {"Profiler", EditorBottomDockUVE::Profiler, "Capture spans, counters, and breadcrumbs."},
             {"Audio", EditorBottomDockUVE::Audio, "Mixer tree with live meters, and the selected source's falloff."},
         }};
-        const ImGuiStyle& style = ImGui::GetStyle();
+
         for (const TabUVE& tab : kTabs) {
             const bool active = m_bottomDockVisible && m_activeBottomDock == tab.dock;
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.0F, 0.0F, 0.0F, 0.0F});
-            ImGui::PushStyleColor(ImGuiCol_Text, active ? style.Colors[ImGuiCol_Text] : style.Colors[ImGuiCol_TextDisabled]);
-            if (ImGui::Button(tab.label, ImVec2{0.0F, layout.dockTabBarSize.y - 4.0F})) {
-                // Clicking the tab already showing folds the dock away; any other tab shows it.
+            const ImVec2 tSize = ImGui::CalcTextSize(tab.label);
+            const float tabW = tSize.x + 18.0F;
+
+            ImGui::SetCursorScreenPos(ImVec2{ImGui::GetCursorScreenPos().x, barCenterY});
+            ImGui::PushID(tab.label);
+            if (ImGui::InvisibleButton("##dock-tab", ImVec2{tabW, kDockBtnH})) {
                 if (active) {
                     m_bottomDockVisible = false;
                 } else {
@@ -1440,33 +1606,67 @@ void EditorUVE::DrawBottomDockTabBarUVE() {
                     m_bottomDockVisible = true;
                 }
             }
+            const bool hovered = ImGui::IsItemHovered();
+            const ImVec2 bMin = ImGui::GetItemRectMin();
+            const ImVec2 bMax = ImGui::GetItemRectMax();
+            const float midY = (bMin.y + bMax.y) * 0.5F;
+            const float tabTextX = bMin.x + (tabW - tSize.x) * 0.5F;
+
             if (active) {
-                ImDrawList* const dockDrawList = ImGui::GetWindowDrawList();
-                const ImVec2 tabMin = ImGui::GetItemRectMin();
-                const ImVec2 tabMax{ImGui::GetItemRectMax().x, ImGui::GetWindowPos().y + layout.dockTabBarSize.y};
-                DrawActiveTopRoundedTabUVE(*dockDrawList, tabMin, tabMax, IM_COL32(28, 33, 40, 255), 5.0F);
-                const ImVec2 labelSize = ImGui::CalcTextSize(tab.label);
-                dockDrawList->AddText(
-                    ImVec2{(tabMin.x + tabMax.x - labelSize.x) * 0.5F,
-                           (tabMin.y + ImGui::GetItemRectMax().y - labelSize.y) * 0.5F},
-                    ImGui::GetColorU32(ImGuiCol_Text), tab.label);
+                // Elevated card fill
+                dockDrawList->AddRectFilled(bMin, bMax, IM_COL32(30, 36, 46, 255), 3.0F);
+                dockDrawList->AddRect(bMin, bMax, IM_COL32(48, 60, 78, 220), 3.0F, 0, 1.0F);
+                // Godot / UE5 Top Accent line
+                dockDrawList->AddLine(ImVec2{bMin.x + 2.0F, bMin.y + 0.5F},
+                                      ImVec2{bMax.x - 2.0F, bMin.y + 0.5F},
+                                      IM_COL32(46, 136, 248, 255), 1.5F);
+                dockDrawList->AddText(ImVec2{tabTextX, midY - tSize.y * 0.5F},
+                                      IM_COL32(248, 250, 255, 255), tab.label);
+            } else if (hovered) {
+                dockDrawList->AddRectFilled(bMin, bMax, IM_COL32(255, 255, 255, 16), 3.0F);
+                dockDrawList->AddText(ImVec2{tabTextX, midY - tSize.y * 0.5F},
+                                      IM_COL32(225, 235, 250, 255), tab.label);
+            } else {
+                dockDrawList->AddText(ImVec2{tabTextX, midY - tSize.y * 0.5F},
+                                      IM_COL32(150, 162, 178, 220), tab.label);
             }
-            ImGui::PopStyleColor(2);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                ImGui::SetTooltip("%s%s", tab.tooltip, active ? " Click again to hide the dock." : "");
+
+            if (hovered) {
+                ImGui::SetTooltip("%s%s", tab.tooltip, active ? " Click again to hide the dock." : " Click to open.");
             }
-            ImGui::SameLine(0.0F, 4.0F);
+            ImGui::PopID();
+            ImGui::SameLine(0.0F, 3.0F);
         }
 
+        // 3. Right side: UE5-style status indicators (Save dot + label, Version badge)
+        const char* const saveLabel = m_sceneDirty ? "Unsaved Changes" : "Saved";
+        const float saveLabelWidth = ImGui::CalcTextSize(saveLabel).x;
+        const char* const versionBadge = "UniVex 0.1";
+        const float versionBadgeWidth = ImGui::CalcTextSize(versionBadge).x + 12.0F;
+        const float rightClusterWidth = saveLabelWidth + 18.0F + 12.0F + versionBadgeWidth + 8.0F;
 
-        // Right end: the scene's save state, where the eye rests when looking for it.
-        const char* const state = m_sceneDirty ? "unsaved changes" : "saved";
-        const float stateWidth = ImGui::CalcTextSize(state).x;
-        ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - stateWidth));
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("%s", state);
+        const float rightX = barPos.x + barSize.x - rightClusterWidth;
+        if (rightX > ImGui::GetCursorScreenPos().x + 20.0F) {
+            // Save status with dot
+            const ImVec2 dotCenter{rightX + 6.0F, barCenterY + kDockBtnH * 0.5F};
+            dockDrawList->AddCircleFilled(
+                dotCenter, 3.0F, m_sceneDirty ? IM_COL32(224, 177, 63, 255) : IM_COL32(95, 201, 138, 255));
+            dockDrawList->AddText(ImVec2{rightX + 14.0F, barCenterY + (kDockBtnH - ImGui::GetTextLineHeight()) * 0.5F},
+                                  IM_COL32(160, 172, 188, 220), saveLabel);
+
+            // Version capsule badge
+            const float badgeX = rightX + saveLabelWidth + 24.0F;
+            const ImVec2 badgeMin{badgeX, barCenterY + 1.0F};
+            const ImVec2 badgeMax{badgeX + versionBadgeWidth, barCenterY + kDockBtnH - 1.0F};
+            dockDrawList->AddRectFilled(badgeMin, badgeMax, IM_COL32(24, 28, 36, 200), 3.0F);
+            dockDrawList->AddRect(badgeMin, badgeMax, IM_COL32(44, 52, 66, 180), 3.0F, 0, 1.0F);
+            dockDrawList->AddText(
+                ImVec2{badgeX + 6.0F, barCenterY + (kDockBtnH - ImGui::GetTextLineHeight()) * 0.5F},
+                IM_COL32(140, 152, 168, 220), versionBadge);
+        }
     }
     ImGui::End();
+    ImGui::PopStyleColor();
     ImGui::PopStyleVar(4);
 }
 
