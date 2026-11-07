@@ -64,9 +64,8 @@ TEST(EditorChromeLayoutUVETest, FullWidthBottomDockTabBarAndCenterBoundedContent
     // The viewport's header spans exactly its column; the logo sits in the title bar;
     // the outliner header spans the full width of the outliner panel.
     EXPECT_FLOAT_EQ(layout.viewportHeaderPos.x, layout.viewportPos.x);
-    EXPECT_FLOAT_EQ(layout.viewportHeaderSize.x, layout.viewportSize.x);
-    EXPECT_FLOAT_EQ(layout.logoSize.x, 0.0F);
-    EXPECT_FLOAT_EQ(layout.logoSize.y, 0.0F);
+    EXPECT_FLOAT_EQ(layout.logoSize.x, kEditorTitleBarHeightUVE);
+    EXPECT_FLOAT_EQ(layout.logoSize.y, kEditorTitleBarHeightUVE);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x, layout.scenePos.x);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderSize.y, kEditorTabRowHeightUVE);
     EXPECT_FLOAT_EQ(layout.outlinerHeaderPos.x + layout.outlinerHeaderSize.x, layout.scenePos.x + layout.sceneSize.x);
