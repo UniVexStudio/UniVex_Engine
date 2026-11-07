@@ -804,6 +804,7 @@ uniform float uSunAngularDiameter;
 uniform float uSunDiscIntensity;
 uniform float uSunLimbDarkening;
 uniform int uAtmosphericSky;
+uniform int uHasEnvironment;
 uniform float uAtmosphereRayleigh;
 uniform float uAtmosphereMie;
 uniform float uAtmosphereOzone;
@@ -866,8 +867,8 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
     float mu = clamp(dot(dir, sun), -1.0, 1.0);
     float sunY = sun.y;
     float viewY = dir.y;
-    float day = smoothstep(-0.08, 0.18, sunY);
-    float sunset = exp(-pow(sunY * 6.0, 2.0)) * smoothstep(-0.15, 0.0, sunY);
+    float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sunY) : 1.0;
+    float sunset = uSunEnergy > 0.0 ? exp(-pow(sunY * 6.0, 2.0)) * smoothstep(-0.15, 0.0, sunY) : 0.0;
 
     vec3 noonZenith = max(uSkyColor, vec3(0.0));
     vec3 noonHorizon = max(uHorizonColor, vec3(0.0));
@@ -890,7 +891,7 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
     float g = mix(0.76, 0.93, sunset);
     float mieDen = 1.0 + g * g - 2.0 * g * mu;
     float mie = (1.0 - g * g) / max(pow(max(mieDen, 0.001), 1.5), 0.001);
-    vec3 sunCol = max(uSunColor, vec3(1.0)) * max(uSunEnergy, 1.0);
+    vec3 sunCol = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0);
     sky += sunCol * mie * mix(0.012, 0.09, sunset) * day;
 
     sky += sunCol * SunDiscUVE(mu, sunY) * mix(7.5, 16.0, sunset);
@@ -988,7 +989,7 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
     vec3 sun = length(sunDir) > 1.0e-5 ? normalize(sunDir) : vec3(0.0, 1.0, 0.0);
     vec3 eye = vec3(0.0, kPlanetRadiusUVE + kObserverHeightUVE, 0.0);
 
-    float day = smoothstep(-0.08, 0.18, sun.y);
+    float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
     vec3 ground = max(uGroundColor, vec3(0.0)) * mix(0.35, 1.0, day);
 
     float groundNear = 0.0;
@@ -1065,7 +1066,7 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
     float phaseMie = (3.0 / (8.0 * 3.14159265358979323846)) * ((1.0 - g2) * (1.0 + mu * mu)) /
                      ((2.0 + g2) * pow(max(1.0 + g2 - 2.0 * g * mu, 1.0e-4), 1.5));
 
-    float radiance = max(uAtmosphereIntensity, 0.0) * kSkySunRadianceUVE * max(uSunEnergy, 0.0);
+    float radiance = max(uAtmosphereIntensity, 0.0) * kSkySunRadianceUVE * (uSunEnergy > 0.0 ? uSunEnergy : 1.0);
     vec3 direct = radiance * (scatteredRayleigh * kRayleighScatterUVE * phaseRayleigh +
                               scatteredMie * (kMieScatterUVE * phaseMie));
 
@@ -1082,7 +1083,7 @@ vec3 PhysicalSkyUVE(vec3 viewDir, vec3 sunDir) {
     vec3 sky = direct + multiple;
     // The disc is added inside the atmosphere, not on top of it, so its own light is dimmed by the
     // same air the rest of the sky came through. At the horizon that is what reddens it.
-    sky += max(uSunColor, vec3(0.0)) * SunDiscUVE(mu, sun.y) * mix(7.5, 16.0, 1.0 - day);
+    sky += max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * SunDiscUVE(mu, sun.y) * mix(7.5, 16.0, 1.0 - day);
     vec3 nightSky = vec3(0.004, 0.006, 0.018);
     return max(sky * day + nightSky * (1.0 - day), vec3(0.0));
 }
@@ -1306,7 +1307,7 @@ vec4 CloudsUVE(vec3 dir, vec3 sun, float day) {
 // band are behind the air, cloud is in front of it. Called by both sky models, so a scene that
 // switches source keeps its stars and its weather.
 vec3 ApplySkyOverlaysUVE(vec3 base, vec3 dir, vec3 sun, float day) {
-    float night = 1.0 - smoothstep(-0.08, 0.18, sun.y);
+    float night = uSunEnergy > 0.0 ? (1.0 - smoothstep(-0.08, 0.18, sun.y)) : 0.0;
     if (uStarBrightness > 0.0 && night > 0.002) {
         // Slightly cool white: real starlight is not neutral, and a pure white field reads as
         // noise rather than as sky.
@@ -1325,11 +1326,10 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
     // A scene choosing Sky > Atmosphere gets the scattering model instead of the gradient. Both
     // read the same sun and the same ground colour, so switching between them in the Inspector
     // changes how the sky is built without changing what it is lit by.
+    float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
     if (uAtmosphericSky != 0) {
-        return ApplySkyOverlaysUVE(PhysicalSkyUVE(dir, sun), dir, sun, smoothstep(-0.08, 0.18, sun.y));
+        return ApplySkyOverlaysUVE(PhysicalSkyUVE(dir, sun), dir, sun, day);
     }
-
-    float day = smoothstep(-0.08, 0.18, sun.y);
     vec3 groundBase = max(uGroundColor, vec3(0.0));
     vec3 groundLit = groundBase * mix(0.40, 1.0, day);
     vec3 horizonLit = max(uHorizonColor, vec3(0.0)) * mix(0.35, 1.0, day);
@@ -1351,7 +1351,7 @@ vec3 ProceduralSkyUVE(vec3 viewDir) {
 /// The gradient sky with the night and cloud overlays on top. Separate from the body above so the
 /// ground branch below the horizon can return early without skipping them.
 vec3 GradientSkyWithOverlaysUVE(vec3 dir, vec3 sun) {
-    float day = smoothstep(-0.08, 0.18, sun.y);
+    float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sun.y) : 1.0;
     vec3 base = ProceduralSkyUVE(dir);
     // Below the horizon there is no sky to overlay: the ground band already stands in for the
     // terrain, and stars under it would be visible through the floor.
@@ -1382,12 +1382,21 @@ void main() {
     // Same guard the sky functions use internally: a zero direction has no normalize.
     vec3 sunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
     vec3 color;
-    if (uSkyTextureEnabled != 0) {
+    if (uHasEnvironment == 0) {
+        color = max(uGroundColor, vec3(0.0));
+        if (worldDir.y > -0.001 && uSunEnergy > 0.0) {
+            float mu = clamp(dot(worldDir, sunDir), -1.0, 1.0);
+            float sunset = exp(-pow(sunDir.y * 6.0, 2.0)) * smoothstep(-0.15, 0.0, sunDir.y);
+            vec3 sunCol = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0);
+            color += sunCol * SunDiscUVE(mu, sunDir.y) * mix(7.5, 16.0, sunset);
+        }
+    } else if (uSkyTextureEnabled != 0) {
         // A panorama replaces the sky, not the weather: cloud and stars still sit in front of and
         // behind it, so a photographed sky can have a moving deck over it.
         color = texture(uSkyTexture, SkyEquirectUvUVE(worldDir)).rgb;
         if (worldDir.y > -0.001) {
-            color = ApplySkyOverlaysUVE(color, worldDir, sunDir, smoothstep(-0.08, 0.18, sunDir.y));
+            float day = uSunEnergy > 0.0 ? smoothstep(-0.08, 0.18, sunDir.y) : 1.0;
+            color = ApplySkyOverlaysUVE(color, worldDir, sunDir, day);
         }
     } else if (uAtmosphericSky != 0) {
         color = ProceduralSkyUVE(worldDir);

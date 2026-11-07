@@ -1059,13 +1059,12 @@ struct Renderer3DUVE::ImplUVE {
     /// per frame would make the wind speed depend on the frame rate.
     float skyTimeSeconds = 0.0F;
     std::chrono::steady_clock::time_point skyClockLast{};
-    /// The disc the sky draws where `sunDirection` points. Seeded with the values the shader used
-    /// to hard-code, so a frame with no authored directional light - the preview sun included -
-    /// draws exactly the disc it drew before these were authorable.
-    float sunDiscAngularDiameterDegrees = 3.8F;
-    float sunDiscIntensity = 1.0F;
+    /// The disc the sky draws where `sunDirection` points. Owned by the active directional light
+    /// (DirectionalLight3D or Preview Sun), so a scene with only an environment and no sun draws no disc.
+    float sunDiscAngularDiameterDegrees = 0.0F;
+    float sunDiscIntensity = 0.0F;
     float sunDiscLimbDarkening = 0.0F;
-    float sunVolumetricFogEnergy = 1.0F;
+    float sunVolumetricFogEnergy = 0.0F;
     std::array<Scene::FogVolume3DFrameUVE, Scene::kMaximumFogVolumesPerFrameUVE> fogVolumes{};
     std::size_t fogVolumeCount = 0;
 
@@ -4582,12 +4581,12 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const LightListUVE lights =
         m_impl->lightSystem.ExtractActiveLightsForViewUVE(entityManager, viewPosition);
     m_impl->environmentCameraPosition = viewPosition;
-    m_impl->sunEnergy = 1.0F;
-    m_impl->sunVolumetricFogEnergy = 1.0F;
+    m_impl->sunEnergy = 0.0F;
+    m_impl->sunVolumetricFogEnergy = 0.0F;
     m_impl->sunDirection = Math::NormalizeUVE(Math::Vector3UVE{0.35F, 0.80F, 0.48F});
     m_impl->sunColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
-    m_impl->sunDiscAngularDiameterDegrees = 3.8F;
-    m_impl->sunDiscIntensity = 1.0F;
+    m_impl->sunDiscAngularDiameterDegrees = 0.0F;
+    m_impl->sunDiscIntensity = 0.0F;
     m_impl->sunDiscLimbDarkening = 0.0F;
     const LightDataUVE* fallbackInternalDirectional = nullptr;
     for (const LightDataUVE& light : lights) {
@@ -4618,9 +4617,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         const Math::Vector3UVE incoming = Math::Vector3UVE{-fallbackInternalDirectional->direction.x,
                                                           -fallbackInternalDirectional->direction.y,
                                                           -fallbackInternalDirectional->direction.z};
+        const bool previewSunDisc = fallbackInternalDirectional->castsShadows;
         m_impl->sunDirection = Math::NormalizeUVE(incoming);
         m_impl->sunColor = Math::ToVector3UVE(fallbackInternalDirectional->color);
         m_impl->sunEnergy = fallbackInternalDirectional->intensity;
+        m_impl->sunDiscAngularDiameterDegrees = previewSunDisc ? 3.8F : 0.0F;
+        m_impl->sunDiscIntensity = previewSunDisc ? 1.0F : 0.0F;
+        m_impl->sunDiscLimbDarkening = 0.0F;
         m_impl->sunVolumetricFogEnergy = fallbackInternalDirectional->volumetricFogEnergy;
     }
     Scene::ApplySunToWorldEnvironmentFrameUVE(m_impl->environmentFrame, m_impl->sunDirection, m_impl->sunColor,
@@ -5142,8 +5145,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             commandBuffer.EndRenderPassUVE();
         });
 
-    const bool skyActive = m_impl->environmentFrame.hasEnvironment && m_impl->proceduralSkyProgram &&
-                           m_impl->proceduralSkyProgram->IsValidUVE();
+    const bool sunDiscActive = m_impl->sunEnergy > 0.0F &&
+                               m_impl->sunDiscAngularDiameterDegrees > 0.0F &&
+                               m_impl->sunDiscIntensity > 0.0F;
+    const bool skyActive = (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
+                           m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValidUVE();
     if (skyActive) {
         const std::array<RenderGraphResourceUseUVE, 3U> skyResources{
             RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
@@ -5164,9 +5170,15 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->proceduralSkyProgram->SetVector3UVE("uCameraForward", m_impl->skyCameraForward);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uTanHalfFov", m_impl->skyTanHalfFov);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uAspect", m_impl->environmentAspect);
+                m_impl->proceduralSkyProgram->SetIntUVE(
+                    "uHasEnvironment", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
                 m_impl->proceduralSkyProgram->SetVector3UVE("uSkyColor", m_impl->environmentFrame.skyColor);
                 m_impl->proceduralSkyProgram->SetVector3UVE("uHorizonColor", m_impl->environmentFrame.horizonColor);
-                m_impl->proceduralSkyProgram->SetVector3UVE("uGroundColor", m_impl->environmentFrame.groundColor);
+                m_impl->proceduralSkyProgram->SetVector3UVE(
+                    "uGroundColor", m_impl->environmentFrame.hasEnvironment
+                                        ? m_impl->environmentFrame.groundColor
+                                        : Math::Vector3UVE{m_impl->sceneClearColor[0], m_impl->sceneClearColor[1],
+                                                           m_impl->sceneClearColor[2]});
                 m_impl->proceduralSkyProgram->SetFloatUVE("uSkyCurve", m_impl->environmentFrame.skyCurve);
                 m_impl->proceduralSkyProgram->SetFloatUVE("uGroundCurve", m_impl->environmentFrame.groundCurve);
                 m_impl->proceduralSkyProgram->SetVector3UVE("uSunDirection", m_impl->sunDirection);
