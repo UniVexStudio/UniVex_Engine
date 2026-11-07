@@ -5151,14 +5151,16 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const bool skyActive = (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
                            m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValidUVE();
     if (skyActive) {
-        const std::array<RenderGraphResourceUseUVE, 3U> skyResources{
+        const std::array<RenderGraphResourceUseUVE, 5U> skyResources{
             RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
             RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write},
-            RenderGraphResourceUseUVE{shadowResources[0], RenderGraphResourceAccessUVE::Read}};
-        const std::size_t skyResourceCount = shadowsReady ? 3U : 2U;
+            RenderGraphResourceUseUVE{shadowResources[0], RenderGraphResourceAccessUVE::Read},
+            RenderGraphResourceUseUVE{shadowResources[1], RenderGraphResourceAccessUVE::Read},
+            RenderGraphResourceUseUVE{shadowResources[2], RenderGraphResourceAccessUVE::Read}};
+        const std::size_t skyResourceCount = shadowsReady ? 5U : 2U;
         renderGraph.AddPassUVE(
             "ProceduralSky", std::span<const RenderGraphResourceUseUVE>{skyResources.data(), skyResourceCount},
-            [this, shadowsReady, &lightSpaceMatrices, shadowOpacity, shadowBias](ICommandBufferUVE& commandBuffer) {
+            [this, shadowsReady, &lightSpaceMatrices, &cascadeSplits, shadowOpacity, shadowBias](ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->colorTarget;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -5225,8 +5227,18 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowEnabled", shadowsReady ? 1 : 0);
                 if (shadowsReady) {
-                    m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowMap", 2);
-                    m_impl->proceduralSkyProgram->SetMatrix4x4UVE("uSkyGroundLightMatrix", lightSpaceMatrices[0]);
+                    m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowMap0",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlotUVE));
+                    m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowMap1",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlotUVE + 1U));
+                    m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowMap2",
+                                                            static_cast<std::int32_t>(kShadowCascadeFirstTextureSlotUVE + 2U));
+                    m_impl->proceduralSkyProgram->SetMatrix4x4UVE("uSkyGroundLightMatrix0", lightSpaceMatrices[0]);
+                    m_impl->proceduralSkyProgram->SetMatrix4x4UVE("uSkyGroundLightMatrix1", lightSpaceMatrices[1]);
+                    m_impl->proceduralSkyProgram->SetMatrix4x4UVE("uSkyGroundLightMatrix2", lightSpaceMatrices[2]);
+                    m_impl->proceduralSkyProgram->SetVector3UVE(
+                        "uSkyGroundCascadeSplits",
+                        Math::Vector3UVE{cascadeSplits[0], cascadeSplits[1], cascadeSplits[2]});
                     m_impl->proceduralSkyProgram->SetFloatUVE("uSkyGroundShadowOpacity", shadowOpacity);
                     m_impl->proceduralSkyProgram->SetFloatUVE("uSkyGroundShadowBias", shadowBias);
                 }
@@ -5236,7 +5248,14 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     commandBuffer.BindTextureUVE(m_impl->skyTextureHandle, kSkyTextureSlotUVE);
                 }
                 if (shadowsReady) {
-                    commandBuffer.BindTextureUVE(m_impl->shadowMapTargets[0], 2U);
+                    for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
+                        const std::uint32_t slot =
+                            kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex);
+                        commandBuffer.BindTextureUVE(m_impl->shadowMapTargets[cascadeIndex], slot);
+                        if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
+                            commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, slot);
+                        }
+                    }
                 }
                 commandBuffer.DrawUVE(3);
                 commandBuffer.EndRenderPassUVE();
