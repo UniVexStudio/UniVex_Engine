@@ -136,8 +136,8 @@ void EditorUVE::BuildColliderOverlayUVE(std::vector<ViewportColliderLineUVE>& ou
                     }
                 } else {
                     Scene::ColliderComponentUVE tempCollider;
-                    tempCollider.shape = (shapeType == Scene::RagdollShapeTypeUVE::Cylinder)
-                        ? Scene::ColliderShapeUVE::Cylinder : Scene::ColliderShapeUVE::Capsule;
+                    tempCollider.shapeType = (shapeType == Scene::RagdollShapeTypeUVE::Cylinder)
+                        ? Scene::ColliderShapeTypeUVE::Cylinder : Scene::ColliderShapeTypeUVE::Capsule;
                     tempCollider.radius = body.radius;
                     tempCollider.height = 2.0F * (body.halfHeight + body.radius);
 
