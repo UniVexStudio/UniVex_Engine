@@ -69,7 +69,8 @@ bool IsWorldEnvironment3DObjectComponentValidUVE(const WorldEnvironment3DCompone
            (value.motionBlurSampleCount == 4U || value.motionBlurSampleCount == 8U ||
             value.motionBlurSampleCount == 12U) && std::isfinite(value.fogHeight) &&
            std::isfinite(value.fogHeightFalloff) && value.fogHeightFalloff > 0.0F &&
-           std::isfinite(value.fogSunScatter) && value.fogSunScatter >= 0.0F && value.fogSunScatter <= 1.0F;
+           std::isfinite(value.fogSunScatter) && value.fogSunScatter >= 0.0F && value.fogSunScatter <= 1.0F &&
+           std::isfinite(value.lutContribution) && value.lutContribution >= 0.0F && value.lutContribution <= 1.0F;
 }
 
 WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& entityManager,
@@ -151,6 +152,9 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
             frame.motionBlurSampleCount = environment.motionBlurSampleCount;
             frame.colorFilter = environment.colorFilter;
             frame.backgroundColor = environment.horizonColor;
+            frame.lutEnabled = environment.lutEnabled;
+            frame.lutContribution = environment.lutContribution;
+            frame.lutAssetPath = environment.lutAssetPath;
             frame.hasEnvironment = true;
             frame.skyAssetPath = environment.skyAssetPath;
         });

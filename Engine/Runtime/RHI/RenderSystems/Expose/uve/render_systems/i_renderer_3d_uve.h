@@ -54,6 +54,13 @@ struct PostProcessSettingsUVE final {
     /// Ray samples per pixel; clamped to [1, 16] by SanitizeContactShadowSettingsUVE().
     std::uint32_t contactShadowStepCountUVE = 8U;
 
+    /// Screen-Space Reflections (SSR).
+    bool ssrEnabledUVE = false;
+    std::uint32_t ssrMaxStepsUVE = 32U;
+    float ssrDepthToleranceUVE = 0.2F;
+    float ssrFadeInUVE = 0.1F;
+    float ssrFadeOutUVE = 0.8F;
+
     bool fastApproximateAAEnabledUVE = false;
     std::uint32_t fastApproximateAAQualityUVE = 1U;
     bool nearestUpscalingEnabledUVE = false;
@@ -226,6 +233,12 @@ struct Renderer3DFrameDiagnosticsUVE final {
     /// programs were valid, the camera's projection was invertible this frame, and the sun direction
     /// was usable - not merely that the pass was requested.
     bool contactShadowPassRecorded = false;
+    /// True only when volumetric lighting / fog sampled active cascaded shadow maps this frame.
+    bool volumetricFogPassRecorded = false;
+    /// True only when screen-space reflections were enabled, targets valid, and passes recorded.
+    bool ssrPassRecorded = false;
+    /// Number of WorldSpace UI Canvases rendered into the 3D scene this frame.
+    std::size_t worldSpaceCanvasesRendered = 0U;
     /// True only when bloom was enabled by PostProcessSettingsUVE and the active WorldEnvironment,
     /// and the required targets/programs were valid this frame - not merely that bloom was requested.
     bool bloomPassRecorded = false;

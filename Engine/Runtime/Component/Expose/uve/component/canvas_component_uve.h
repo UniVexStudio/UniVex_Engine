@@ -4,20 +4,37 @@
 
 #include <cstdint>
 
+#include "uve/math/matrix4x4_uve.h"
+#include "uve/math/quaternion_uve.h"
+#include "uve/math/vector2_uve.h"
+#include "uve/math/vector3_uve.h"
+
 namespace UVE::Scene {
 
 inline constexpr std::int32_t kMinimumCanvasSortOrderUVE = -32768;
 inline constexpr std::int32_t kMaximumCanvasSortOrderUVE = 32767;
 
-/// Screen-space UI root. Widgets keep raw window-pixel coordinates; the canvas does not scale them.
-/// World-space canvases are out of scope. UIRuntimeUVE walks the hierarchy to this component:
-/// `visible` hides every descendant widget (and ancestor canvases AND together), `sortOrder`
-/// paints later (on top) when higher. A widget with no canvas ancestor still draws at sort 0.
-/// Thread-safety: value type; trivially safe to copy/move.
+/// Rendering domain for Canvas UI.
+enum class CanvasRenderModeUVE : std::uint8_t {
+    ScreenSpaceOverlay = 0U,
+    WorldSpace = 1U,
+};
+
+/// UI root component supporting both 2D Screen-space overlay and 3D World-space UI
+/// (such as diegetic in-game computer screens, floating health bars, or name tags).
 struct CanvasComponentUVE final {
     bool visible = true;
     /// Draw-order key when canvases overlap - higher draws later (on top).
     std::int32_t sortOrder = 0;
+    /// Rendering mode: ScreenSpaceOverlay (HUD) or WorldSpace (3D in-scene canvas).
+    CanvasRenderModeUVE renderMode = CanvasRenderModeUVE::ScreenSpaceOverlay;
+    /// Metric physical size in world space (meters) when in WorldSpace mode.
+    Math::Vector2UVE worldSize{1.0F, 1.0F};
+    /// Reference pixel resolution mapped across the world quad (e.g. 100 px = 1 meter).
+    Math::Vector2UVE referencePixels{100.0F, 100.0F};
+    /// When true in WorldSpace mode, automatically orients the canvas to face the camera.
+    bool billboard = false;
+
     [[nodiscard]] bool operator==(const CanvasComponentUVE&) const = default;
 };
 
@@ -48,5 +65,15 @@ struct CanvasComponentUVE final {
                                              std::uint32_t lhsTieBreak,
                                              const CanvasComponentUVE& rhs,
                                              std::uint32_t rhsTieBreak) noexcept;
+
+/// Computes the 3D world matrix that maps widget 2D pixel coordinates [0..referencePixels] to the 3D quad in world space.
+[[nodiscard]] Math::Matrix4x4UVE ComputeWorldSpaceCanvasTransformUVE(
+    const CanvasComponentUVE& canvas, const Math::Vector3UVE& worldPosition,
+    const Math::QuaternionUVE& worldRotation, const Math::Vector3UVE& worldScale) noexcept;
+
+/// Computes the 3D billboard world matrix that orients the canvas to face cameraPosition.
+[[nodiscard]] Math::Matrix4x4UVE ComputeWorldSpaceCanvasBillboardTransformUVE(
+    const CanvasComponentUVE& canvas, const Math::Vector3UVE& worldPosition,
+    const Math::Vector3UVE& cameraPosition, const Math::Vector3UVE& worldScale) noexcept;
 
 } // namespace UVE::Scene

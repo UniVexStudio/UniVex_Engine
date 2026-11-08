@@ -201,6 +201,13 @@ struct FogVolumeUVE {
     int shape;
 };
 uniform FogVolumeUVE uFogVolumes[8];
+uniform int uVolumetricShadowsEnabled;
+uniform mat4 uLightSpaceMatrices[3];
+uniform float uShadowCascadeSplits[3];
+uniform sampler2D uShadowMapTextures[3];
+uniform sampler2D uLutTexture;
+uniform int uLutEnabled;
+uniform float uLutContribution;
 
 const int kFogModeLinearUVE = 0; // WorldEnvironmentFogModeUVE::Linear
 const int kFogModeHeightUVE = 2; // Exponential is value 1; Height is value 2.
@@ -210,6 +217,51 @@ const vec2 kDepthOfFieldOffsetsUVE[12] = vec2[12](
     vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(-1.0, 0.0), vec2(0.0, -1.0),
     vec2(0.7071, 0.7071), vec2(-0.7071, 0.7071), vec2(0.7071, -0.7071), vec2(-0.7071, -0.7071),
     vec2(0.5, 0.8660), vec2(-0.5, 0.8660), vec2(0.5, -0.8660), vec2(-0.5, -0.8660));
+
+float SampleVolumetricShadowDepthUVE(int cascade, vec2 uv) {
+    if (cascade == 0) { return texture(uShadowMapTextures[0], uv).r; }
+    if (cascade == 1) { return texture(uShadowMapTextures[1], uv).r; }
+    return texture(uShadowMapTextures[2], uv).r;
+}
+
+float VolumetricShadowFactorUVE(vec3 samplePos, float distFromCam) {
+    if (uVolumetricShadowsEnabled == 0) {
+        return 1.0;
+    }
+    for (int cascade = 0; cascade < 3; ++cascade) {
+        if (distFromCam > uShadowCascadeSplits[cascade] && cascade < 2) {
+            continue;
+        }
+        vec4 lightClip = uLightSpaceMatrices[cascade] * vec4(samplePos, 1.0);
+        if (abs(lightClip.w) < 1.0e-5) {
+            return 1.0;
+        }
+        vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+        if (proj.x <= 0.002 || proj.x >= 0.998 || proj.y <= 0.002 || proj.y >= 0.998 ||
+            proj.z <= 0.0 || proj.z >= 1.0) {
+            return 1.0;
+        }
+        float shadowDepth = SampleVolumetricShadowDepthUVE(cascade, proj.xy);
+        return (proj.z - 0.0015 > shadowDepth) ? 0.0 : 1.0;
+    }
+    return 1.0;
+}
+
+vec3 SampleLutUVE(sampler2D lut, vec3 color) {
+    ivec2 lutSize = textureSize(lut, 0);
+    float size = float(lutSize.y);
+    float maxColor = size - 1.0;
+    vec3 c = clamp(color, 0.0, 1.0) * maxColor;
+    float cell = floor(c.z);
+    float fracZ = c.z - cell;
+    vec2 halfTexel = vec2(0.5) / vec2(lutSize);
+    vec2 cellOffset0 = vec2(cell * size, 0.0) / vec2(lutSize);
+    vec2 cellOffset1 = vec2(min(cell + 1.0, maxColor) * size, 0.0) / vec2(lutSize);
+    vec2 uv = c.xy / vec2(lutSize) + halfTexel;
+    vec3 s0 = texture(lut, cellOffset0 + uv).rgb;
+    vec3 s1 = texture(lut, cellOffset1 + uv).rgb;
+    return mix(s0, s1, fracZ);
+}
 
 vec3 AcesToneMapUVE(vec3 color) {
     const float a = 2.51;
@@ -632,8 +684,9 @@ void FogVolumeIntegrateUVE(FogVolumeUVE volume, vec3 rayOrigin, vec3 rayDirectio
             occupancy = FogVolumeOccupancyUVE(volume, FogVolumeShapeDistanceUVE(volume, localPoint));
         }
         if (occupancy > 0.0) {
+            float shadow = VolumetricShadowFactorUVE(point, t);
             float height = FogVolumeHeightTermUVE(volume, point, localPoint);
-            colorMass += (volume.albedo * max(volume.density, 0.0) * height + volume.emission) * (occupancy * step);
+            colorMass += (volume.albedo * max(volume.density, 0.0) * height * shadow + volume.emission) * (occupancy * step);
             occupancyMass += occupancy * step;
         }
     }
@@ -730,7 +783,33 @@ void main() {
         float posLocal = max(localTau, 0.0);
         float weight = posGlobal + posLocal;
         vec3 inscatter = weight > 0.0 ? (globalInscatter * posGlobal + volumeColor * posLocal) / weight : globalInscatter;
-        hdrColor = mix(hdrColor, inscatter * exposure, fogFactor);
+        vec3 volumetricSunInscatter = vec3(0.0);
+        if (uVolumetricShadowsEnabled != 0 && uLightVolumetricFogEnergy > 0.0 && length(uSunDirection) > 1.0e-5) {
+            float marchEnd = min(viewDistance, max(uShadowCascadeSplits[2], 10.0));
+            float marchStart = max(uCameraNear, 0.1);
+            if (marchEnd > marchStart) {
+                const int kGodRaySamples = 16;
+                float stepDist = (marchEnd - marchStart) / float(kGodRaySamples);
+                vec3 sunLightColor = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * max(uLightVolumetricFogEnergy, 0.0);
+                float phase = mix(0.15, 1.0, towardSun) * day;
+                float accumLight = 0.0;
+                for (int s = 0; s < kGodRaySamples; ++s) {
+                    float sampleDist = marchStart + stepDist * (float(s) + 0.5);
+                    vec3 samplePos = uCameraPosition + viewDir * sampleDist;
+                    float shadow = VolumetricShadowFactorUVE(samplePos, sampleDist);
+                    if (shadow > 0.0) {
+                        float density = max(uFogDensity, 0.01);
+                        if (uFogMode == kFogModeHeightUVE) {
+                            float h = exp(-max(samplePos.y - uFogHeight, 0.0) / max(uFogHeightFalloff, 0.01));
+                            density *= mix(1.0, h, 0.85);
+                        }
+                        accumLight += shadow * density;
+                    }
+                }
+                volumetricSunInscatter = sunLightColor * (accumLight * stepDist * 0.05 * phase);
+            }
+        }
+        hdrColor = mix(hdrColor, inscatter * exposure, fogFactor) + volumetricSunInscatter * exposure;
     }
     vec3 ldr = ApplyToneMappingUVE(hdrColor);
     if (uContrast > 0.0 || uSaturation > 0.0 || uBrightness != 0.0 || any(greaterThan(uColorFilter, vec3(0.0)))) {
@@ -742,6 +821,10 @@ void main() {
         ldr = mix(vec3(grey), ldr, saturation);
         ldr *= max(filterColor, vec3(0.0));
         ldr = clamp(ldr, 0.0, 1.0);
+    }
+    if (uLutEnabled != 0) {
+        vec3 graded = SampleLutUVE(uLutTexture, ldr);
+        ldr = mix(ldr, graded, clamp(uLutContribution, 0.0, 1.0));
     }
     float vignetteIntensity = clamp(uVignetteIntensity, 0.0, 1.0);
     if (vignetteIntensity > 0.0) {
@@ -3687,6 +3770,295 @@ void main() {
         visibility = 1.0 - clamp(uStrength, 0.0, 1.0) * (float(occludedSteps) / float(testedSteps));
     }
     FragColor = vec4(visibility, visibility, visibility, 1.0);
+}
+#endif
+)GLSLSRC";
+
+
+const std::string_view kSsrSource = R"GLSLSRC(#version 450 core
+
+#ifdef VERTEX_SHADER
+out vec2 vTexCoord;
+
+void main() {
+    vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    vTexCoord = position;
+    gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
+}
+#endif
+
+#ifdef FRAGMENT_SHADER
+in vec2 vTexCoord;
+out vec4 FragColor;
+
+uniform sampler2D uColorTexture;
+uniform sampler2D uDepthTexture;
+
+uniform mat4 uProjection;
+uniform mat4 uInverseProjection;
+uniform vec3 uCameraPosition;
+uniform float uCameraNear;
+uniform float uCameraFar;
+uniform int uMaxSteps;
+uniform float uDepthTolerance;
+uniform float uFadeIn;
+uniform float uFadeOut;
+
+vec3 ReconstructViewPosUVE(vec2 uv, float depth) {
+    vec4 clip = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    vec4 view = uInverseProjection * clip;
+    return view.xyz / max(abs(view.w), 1.0e-5);
+}
+
+void main() {
+    float depth = texture(uDepthTexture, vTexCoord).r;
+    if (depth >= 1.0) {
+        FragColor = vec4(0.0);
+        return;
+    }
+
+    vec3 viewPos = ReconstructViewPosUVE(vTexCoord, depth);
+    vec3 ddx = dFdx(viewPos);
+    vec3 ddy = dFdy(viewPos);
+    vec3 normal = normalize(cross(ddx, ddy));
+
+    vec3 viewDir = normalize(viewPos);
+    vec3 reflectDir = normalize(reflect(viewDir, normal));
+
+    if (reflectDir.z >= 0.0) {
+        FragColor = vec4(0.0);
+        return;
+    }
+
+    int steps = clamp(uMaxSteps, 8, 128);
+    float stepSize = 0.25;
+    float currentDist = 0.1;
+    vec3 hitColor = vec3(0.0);
+    float hitFactor = 0.0;
+
+    for (int i = 0; i < steps; ++i) {
+        currentDist += stepSize;
+        vec3 rayPos = viewPos + reflectDir * currentDist;
+        if (rayPos.z > -uCameraNear || rayPos.z < -uCameraFar) {
+            break;
+        }
+
+        vec4 proj = uProjection * vec4(rayPos, 1.0);
+        if (proj.w <= 0.0) {
+            break;
+        }
+        vec3 screenPos = proj.xyz / proj.w * 0.5 + 0.5;
+        if (screenPos.x < 0.0 || screenPos.x > 1.0 || screenPos.y < 0.0 || screenPos.y > 1.0) {
+            break;
+        }
+
+        float sampledDepth = texture(uDepthTexture, screenPos.xy).r;
+        if (sampledDepth >= 1.0) {
+            continue;
+        }
+
+        vec3 sampledViewPos = ReconstructViewPosUVE(screenPos.xy, sampledDepth);
+        float depthDiff = sampledViewPos.z - rayPos.z;
+
+        if (depthDiff >= 0.0 && depthDiff < max(uDepthTolerance, 0.05)) {
+            vec2 edgeDist = min(screenPos.xy, 1.0 - screenPos.xy);
+            float edgeFade = smoothstep(0.0, 0.1, min(edgeDist.x, edgeDist.y));
+            float fresnel = clamp(pow(1.0 + dot(viewDir, normal), 3.0), 0.1, 1.0);
+
+            hitColor = texture(uColorTexture, screenPos.xy).rgb;
+            hitFactor = edgeFade * fresnel;
+            break;
+        }
+    }
+
+    FragColor = vec4(hitColor * hitFactor, hitFactor);
+}
+#endif
+)GLSLSRC";
+
+
+const std::string_view kWaterSource = R"GLSLSRC(#version 450 core
+
+// Built-in Water Surface Shader for UVE.
+// Implements Gerstner wave displacement in the vertex stage, screen-space refraction,
+// depth-based Beer-Lambert water absorption, Shoreline foam, Schlick Fresnel, and
+// directional sun specular highlights.
+
+#ifdef VERTEX_SHADER
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aTexCoord;
+layout(location = 3) in vec4 aTangent;
+
+out vec3 vWorldPosition;
+out vec3 vWorldNormal;
+out vec2 vTexCoord;
+out vec4 vClipPosition;
+
+uniform mat4 uModel;
+uniform mat4 uNormalMatrix;
+uniform mat4 uViewProjection;
+
+uniform float uWaterTime;
+uniform float uWaveAmplitude;
+uniform float uWaveFrequency;
+uniform float uWaveSpeed;
+
+// Gerstner wave generator
+vec3 EvaluateGerstnerWave(vec2 xz, float steepness, float amplitude, float frequency, float speed, vec2 dir, float time, out vec3 normalOut) {
+    float k = frequency;
+    float c = speed;
+    float f = k * (dot(dir, xz) - c * time);
+    float cosF = cos(f);
+    float sinF = sin(f);
+    float qa = steepness * amplitude;
+
+    vec3 displaced;
+    displaced.x = qa * dir.x * cosF;
+    displaced.z = qa * dir.y * cosF;
+    displaced.y = amplitude * sinF;
+
+    float wa = frequency * amplitude;
+    normalOut = vec3(
+        -dir.x * wa * cosF,
+        1.0 - steepness * wa * sinF,
+        -dir.y * wa * cosF
+    );
+
+    return displaced;
+}
+
+void main() {
+    vec4 localPos = vec4(aPosition, 1.0);
+
+    // Sum of 3 Gerstner wave harmonics
+    vec3 wave1Normal;
+    vec3 wave2Normal;
+    vec3 wave3Normal;
+    float time = uWaterTime * max(uWaveSpeed, 0.01);
+    float amp = max(uWaveAmplitude, 0.0);
+    float freq = max(uWaveFrequency, 0.01);
+
+    vec3 d1 = EvaluateGerstnerWave(localPos.xz, 0.4, amp * 0.6, freq, 1.0, normalize(vec2(1.0, 0.3)), time, wave1Normal);
+    vec3 d2 = EvaluateGerstnerWave(localPos.xz, 0.3, amp * 0.3, freq * 1.8, 1.3, normalize(vec2(-0.7, 0.7)), time, wave2Normal);
+    vec3 d3 = EvaluateGerstnerWave(localPos.xz, 0.2, amp * 0.1, freq * 3.2, 1.7, normalize(vec2(0.2, -1.0)), time, wave3Normal);
+
+    vec3 totalDisplacement = d1 + d2 + d3;
+    vec3 totalNormal = normalize(vec3(
+        wave1Normal.x + wave2Normal.x + wave3Normal.x,
+        wave1Normal.y + wave2Normal.y + wave3Normal.y,
+        wave1Normal.z + wave2Normal.z + wave3Normal.z
+    ));
+
+    localPos.xyz += totalDisplacement;
+
+    vec4 worldPos = uModel * localPos;
+    vWorldPosition = worldPos.xyz;
+    vWorldNormal = normalize((uNormalMatrix * vec4(totalNormal, 0.0)).xyz);
+    vTexCoord = aTexCoord;
+
+    vClipPosition = uViewProjection * worldPos;
+    gl_Position = vClipPosition;
+}
+#endif
+
+#ifdef FRAGMENT_SHADER
+in vec3 vWorldPosition;
+in vec3 vWorldNormal;
+in vec2 vTexCoord;
+in vec4 vClipPosition;
+
+out vec4 FragColor;
+
+uniform vec3 uViewPosition;
+uniform vec3 uSunDirection;
+uniform vec3 uSunColor;
+uniform float uSunEnergy;
+
+uniform vec3 uDeepColor;
+uniform vec3 uShallowColor;
+uniform vec3 uFoamColor;
+
+uniform float uClarity;
+uniform float uRefractionStrength;
+uniform float uFoamDepth;
+uniform float uWaterTime;
+uniform float uCameraNear;
+uniform float uCameraFar;
+
+uniform sampler2D uSceneColorTexture;
+uniform sampler2D uSceneDepthTexture;
+
+float LinearizeDepth(float depth) {
+    float near = max(uCameraNear, 0.01);
+    float far = max(uCameraFar, 1.0);
+    return (2.0 * near * far) / (far + near - depth * (far - near));
+}
+
+void main() {
+    vec2 screenUv = (vClipPosition.xy / vClipPosition.w) * 0.5 + 0.5;
+    screenUv = clamp(screenUv, 0.001, 0.999);
+
+    vec3 viewDir = normalize(uViewPosition - vWorldPosition);
+    vec3 sunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
+
+    // Dynamic wave ripples for high-frequency surface normal modulation
+    vec2 rippleUv1 = vTexCoord * 8.0 + vec2(uWaterTime * 0.04, uWaterTime * 0.02);
+    vec2 rippleUv2 = vTexCoord * 16.0 - vec2(uWaterTime * 0.03, uWaterTime * 0.05);
+
+    vec3 rippleNormal = vec3(
+        sin(rippleUv1.x * 6.28) * 0.05 + sin(rippleUv2.y * 6.28) * 0.03,
+        1.0,
+        cos(rippleUv1.y * 6.28) * 0.05 + cos(rippleUv2.x * 6.28) * 0.03
+    );
+    vec3 surfaceNormal = normalize(vWorldNormal + rippleNormal - vec3(0.0, 1.0, 0.0));
+
+    // Underwater depth calculations
+    float rawSceneDepth = texture(uSceneDepthTexture, screenUv).r;
+    float sceneLinearDepth = LinearizeDepth(rawSceneDepth);
+    float waterLinearDepth = LinearizeDepth(gl_FragCoord.z);
+    float waterDepth = max(sceneLinearDepth - waterLinearDepth, 0.0);
+
+    // Screen-space refraction offset
+    vec2 refractOffset = surfaceNormal.xz * max(uRefractionStrength, 0.0) * clamp(waterDepth, 0.0, 1.0);
+    vec2 refractedScreenUv = clamp(screenUv + refractOffset, 0.001, 0.999);
+
+    // Check if the refracted sample is in front of the water (prevents distortion artifacts on foreground objects)
+    float rawRefractedDepth = texture(uSceneDepthTexture, refractedScreenUv).r;
+    float refractedLinearDepth = LinearizeDepth(rawRefractedDepth);
+    if (refractedLinearDepth < waterLinearDepth) {
+        refractedScreenUv = screenUv;
+    }
+
+    vec3 refractedColor = texture(uSceneColorTexture, refractedScreenUv).rgb;
+
+    // Beer-Lambert light absorption
+    float extinction = clamp(exp(-waterDepth / max(uClarity, 0.05)), 0.0, 1.0);
+    vec3 absorptionColor = mix(uDeepColor, uShallowColor, extinction);
+    vec3 waterBodyColor = mix(absorptionColor, refractedColor, extinction * 0.7);
+
+    // Shoreline and object contact foam
+    float foamDistance = max(uFoamDepth, 0.01);
+    float foamFactor = clamp(1.0 - (waterDepth / foamDistance), 0.0, 1.0);
+    float foamNoise = sin(vWorldPosition.x * 12.0 + uWaterTime * 2.5) * cos(vWorldPosition.z * 12.0 + uWaterTime * 2.0);
+    foamFactor = smoothstep(0.2, 0.8, foamFactor + foamNoise * 0.15 * foamFactor);
+    vec3 withFoam = mix(waterBodyColor, uFoamColor, foamFactor);
+
+    // Schlick Fresnel
+    float nDotV = max(dot(surfaceNormal, viewDir), 0.0);
+    float fresnel = 0.02 + 0.98 * pow(1.0 - nDotV, 5.0);
+
+    // Sun specular reflection (Blinn-Phong)
+    vec3 halfVec = normalize(viewDir + sunDir);
+    float nDotH = max(dot(surfaceNormal, halfVec), 0.0);
+    float specular = pow(nDotH, 128.0) * max(uSunEnergy, 0.0);
+    vec3 specularColor = uSunColor * specular;
+
+    // Sky reflection color approximation
+    vec3 reflectedSky = mix(uShallowColor * 1.5, vec3(0.7, 0.85, 1.0), fresnel);
+    vec3 finalColor = mix(withFoam, reflectedSky, fresnel * 0.6) + specularColor;
+
+    FragColor = vec4(finalColor, clamp(1.0 - extinction * 0.3 + foamFactor * 0.7, 0.6, 1.0));
 }
 #endif
 )GLSLSRC";

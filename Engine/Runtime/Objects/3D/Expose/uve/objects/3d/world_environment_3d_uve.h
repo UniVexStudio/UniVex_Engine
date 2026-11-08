@@ -103,6 +103,9 @@ struct WorldEnvironment3DComponentUVE final {
     float fogHeight = 0.0F;
     float fogHeightFalloff = 1000.0F;
     float fogSunScatter = 0.55F;
+    bool lutEnabled = false;
+    float lutContribution = 1.0F;
+    std::string lutAssetPath;
 };
 
 [[nodiscard]] bool IsWorldEnvironment3DObjectComponentValidUVE(const WorldEnvironment3DComponentUVE& value) noexcept;
@@ -157,6 +160,9 @@ struct WorldEnvironmentFrameUVE final {
     bool postProcessingEnabled = false;
     bool bloomEnabled = true;
     bool ssaoEnabled = true;
+    bool lutEnabled = false;
+    float lutContribution = 1.0F;
+    std::string lutAssetPath;
     bool hasEnvironment = false;
     std::string skyAssetPath;
 
