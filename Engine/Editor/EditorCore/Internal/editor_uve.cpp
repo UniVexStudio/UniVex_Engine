@@ -2648,7 +2648,7 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
                 if (rotation.has_value()) {
                     auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
                     transform.localRotation = *rotation;
-                    sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+                    m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, entity, transform);
                 }
             }
             break;
