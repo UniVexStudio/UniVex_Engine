@@ -116,6 +116,13 @@ uniform vec3 uSkyReflectionGround;
 uniform sampler2D uAmbientEnvironmentMap;
 uniform int uAmbientEnvironmentMapEnabled;
 uniform vec3 uViewPosition;
+#if UVE_MOBILE
+uniform int uOrthographic;
+uniform vec3 uCameraForward;
+#else
+uniform int uOrthographic = 0;
+uniform vec3 uCameraForward = vec3(0.0, 0.0, -1.0);
+#endif
 uniform vec3 uAlbedoColor;
 uniform float uMetallic;
 uniform float uRoughness;
@@ -502,7 +509,9 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
     }
 
-    float viewDepth = length(vWorldPosition - uViewPosition);
+    float viewDepth = uOrthographic != 0
+                          ? max(dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward)), 0.0)
+                          : length(vWorldPosition - uViewPosition);
     int finalCascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
     float finalCascadeFarDepth = uShadowCascadeSplits[finalCascadeIndex];
     // Beyond the last split the light casts no shadow; at the split the fade has reached fully lit.
@@ -797,7 +806,9 @@ void main() {
         return;
     }
 
-    vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
+    vec3 viewDirection = uOrthographic != 0
+                             ? SafeNormalizeUVE(-uCameraForward)
+                             : SafeNormalizeUVE(uViewPosition - vWorldPosition);
     // Meshes authored with the opposite winding/normal convention are still valid two-sided
     // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
     if (dot(normal, viewDirection) < 0.0) {

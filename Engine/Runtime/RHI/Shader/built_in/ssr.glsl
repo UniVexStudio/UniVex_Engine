@@ -19,6 +19,7 @@ uniform sampler2D uDepthTexture;
 
 uniform mat4 uProjection;
 uniform mat4 uInverseProjection;
+uniform int uOrthographic;
 uniform vec3 uCameraPosition;
 uniform float uCameraNear;
 uniform float uCameraFar;
@@ -45,7 +46,7 @@ void main() {
     vec3 ddy = dFdy(viewPos);
     vec3 normal = normalize(cross(ddx, ddy));
 
-    vec3 viewDir = normalize(viewPos);
+    vec3 viewDir = uOrthographic != 0 ? vec3(0.0, 0.0, -1.0) : normalize(viewPos);
     vec3 reflectDir = normalize(reflect(viewDir, normal));
 
     if (reflectDir.z >= 0.0) {

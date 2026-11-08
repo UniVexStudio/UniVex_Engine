@@ -781,9 +781,18 @@ if(NOT UVE_HAS_DESKTOP_GL)
         Editor/editor_input_map_uve_tests.cpp
         Editor/editor_hierarchy_view_uve_tests.cpp
         Editor/developer_console_uve_tests.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/Mat4.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/OrbitCamera.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/SceneLightRulesUVE.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/EntityPicker.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/SelectionOutlineGeometry.cpp
+        Editor/editor_mesh_layer_uve_tests.cpp
+        Editor/entity_picker_uve_tests.cpp
     )
     target_link_libraries(uve_engine_settings_integration_tests PRIVATE
+        nlohmann_json::nlohmann_json
         uve_core
+        uve_world
         uve_diagnostics
         uve_network
         uve_plugins
@@ -796,6 +805,8 @@ if(NOT UVE_HAS_DESKTOP_GL)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Expose
         ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Expose
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal
     )
     target_compile_features(uve_engine_settings_integration_tests PRIVATE cxx_std_23)
     target_compile_definitions(uve_engine_settings_integration_tests PRIVATE

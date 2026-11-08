@@ -118,7 +118,7 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
     horizon = mix(horizon, sunsetHorizon, towardSun * max(sunset, (1.0 - day) * 0.25));
 
     vec3 sky = mix(horizon, zenith, pow(clamp(viewY, 0.0, 1.0), max(uSkyCurve, 0.001)));
-    sky *= mix(1.0, 1.55, day * (1.0 - sunset));
+    sky *= mix(1.0, 1.55, (uSunEnergy > 0.0 ? day : 0.0) * (1.0 - sunset));
     sky = mix(sky, max(uGroundColor, vec3(0.0)) * (0.05 * day), pow(1.0 - clamp(viewY, 0.0, 1.0), 8.0) * 0.08);
 
     float g = mix(0.76, 0.93, sunset);

@@ -173,12 +173,16 @@ void OrbitCamera::Focus(const Vec3& point, float radius) {
     }
 }
 
+float OrbitCamera::OrthographicHalfDepth() const {
+    return std::max(distance_ * 4.f, FarPlane() * 0.5f);
+}
+
 Mat4 OrbitCamera::ProjectionMatrix(float aspect) const {
     if (orthographic_) {
-        // The ortho volume is centred on the pivot, so half the depth range
-        // has to sit behind the camera for anything nearer than the pivot to
+        // The ortho volume is centred on the eye, so half the depth range
+        // sits behind the eye for anything nearer than the eye/pivot to
         // survive clipping.
-        const float halfDepth = std::max(distance_ * 4.f, FarPlane() * 0.5f);
+        const float halfDepth = OrthographicHalfDepth();
         return Mat4::Orthographic(OrthographicHalfHeight(), aspect, -halfDepth, halfDepth);
     }
     return Mat4::Perspective(settings_.fovYRadians, aspect, NearPlane(), FarPlane());

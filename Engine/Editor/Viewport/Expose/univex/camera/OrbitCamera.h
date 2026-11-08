@@ -97,6 +97,10 @@ public:
     // the pivot's depth.
     [[nodiscard]] float OrthographicHalfHeight() const;
 
+    // Half the depth range of the symmetric [-halfDepth, +halfDepth]
+    // orthographic clip volume centered on Eye().
+    [[nodiscard]] float OrthographicHalfDepth() const;
+
     // ---- animated snap ---------------------------------------------------
     // Eases to the yaw/pitch that looks at the pivot from along
     // `worldDirection` — what a nav-gizmo click or a standard-view shortcut

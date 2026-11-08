@@ -92,6 +92,8 @@ in vec4 vClipPosition;
 out vec4 FragColor;
 
 uniform vec3 uViewPosition;
+uniform int uOrthographic;
+uniform vec3 uCameraForward;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uSunEnergy;
@@ -113,6 +115,9 @@ uniform sampler2D uSceneDepthTexture;
 float LinearizeDepth(float depth) {
     float near = max(uCameraNear, 0.01);
     float far = max(uCameraFar, 1.0);
+    if (uOrthographic != 0) {
+        return mix(near, far, clamp(depth, 0.0, 1.0));
+    }
     return (2.0 * near * far) / (far + near - depth * (far - near));
 }
 
@@ -120,7 +125,9 @@ void main() {
     vec2 screenUv = (vClipPosition.xy / vClipPosition.w) * 0.5 + 0.5;
     screenUv = clamp(screenUv, 0.001, 0.999);
 
-    vec3 viewDir = normalize(uViewPosition - vWorldPosition);
+    vec3 viewDir = uOrthographic != 0
+                       ? (length(uCameraForward) > 1.0e-5 ? normalize(-uCameraForward) : vec3(0.0, 0.0, 1.0))
+                       : normalize(uViewPosition - vWorldPosition);
     vec3 sunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
 
     // Dynamic wave ripples for high-frequency surface normal modulation

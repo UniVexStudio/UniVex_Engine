@@ -19,6 +19,7 @@
 #include "uve/objects/3d/abstract_objects_3d_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 #include "uve/objects/3d/light_3d_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/component/world_transform_component_uve.h"
 
 namespace UVE::Render {
@@ -139,12 +140,42 @@ void ApplyLightEmitter3DViewFadeUVE(LightDataUVE& light, const Math::Vector3UVE&
     }
 }
 
-/// Every light the frame can use, in entity order: Light3D and DirectionalLight3D alike.
+[[nodiscard]] bool IsLightEntityHiddenUVE(Scene::IEntityManagerUVE& entityManager,
+                                          const Scene::EntityUVE entity) noexcept {
+    if (!entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
+        return false;
+    }
+    const Scene::VisibilityComponentUVE& visibility =
+        entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
+    return !visibility.visible || !visibility.visibleInHierarchy;
+}
+
+/// Every light the frame can use, in entity order: DirectionalLight3D and Light3D alike.
 template <typename Visit>
 void ForEachLightDataUVE(Scene::IEntityManagerUVE& entityManager, const Visit& visit) {
+    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::DirectionalLight3DComponentUVE,
+                             Scene::LightEmitterComponentUVE>(
+        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
+            const Scene::DirectionalLight3DComponentUVE& directional, const Scene::LightEmitterComponentUVE& emitter) {
+            if (IsLightEntityHiddenUVE(entityManager, entity)) {
+                return;
+            }
+            LightDataUVE slot;
+            if (TryBuildDirectionalLightDataUVE(worldTransform, directional, emitter, slot)) {
+                slot.isEditorInternal =
+                    entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(entity);
+                if (slot.isEditorInternal) {
+                    slot.castsShadows = false;
+                }
+                visit(slot);
+            }
+        });
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::LightComponentUVE>(
         [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
             const Scene::LightComponentUVE& light) {
+            if (IsLightEntityHiddenUVE(entityManager, entity)) {
+                return;
+            }
             LightDataUVE slot;
             if (TryBuildLightDataUVE(worldTransform, light, slot)) {
                 slot.isEditorInternal =
@@ -170,20 +201,6 @@ void ForEachLightDataUVE(Scene::IEntityManagerUVE& entityManager, const Visit& v
                         slot.distanceFadeLength = emitter.distanceFadeLength;
                     }
                 } else if (slot.isEditorInternal) {
-                    slot.castsShadows = false;
-                }
-                visit(slot);
-            }
-        });
-    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::DirectionalLight3DComponentUVE,
-                             Scene::LightEmitterComponentUVE>(
-        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform,
-            const Scene::DirectionalLight3DComponentUVE& directional, const Scene::LightEmitterComponentUVE& emitter) {
-            LightDataUVE slot;
-            if (TryBuildDirectionalLightDataUVE(worldTransform, directional, emitter, slot)) {
-                slot.isEditorInternal =
-                    entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(entity);
-                if (slot.isEditorInternal) {
                     slot.castsShadows = false;
                 }
                 visit(slot);
@@ -223,18 +240,27 @@ LightListUVE LightSystemUVE::ExtractActiveLightsForViewUVE(Scene::IEntityManager
 
     ForEachLightDataUVE(entityManager, [&](LightDataUVE light) {
         ApplyLightEmitter3DViewFadeUVE(light, viewPosition);
-        candidates.push_back(RankedLightUVE{light, EstimateLightContributionUVE(light, viewPosition)});
+        if (light.intensity <= 0.0F) {
+            return;
+        }
+        const float contribution = EstimateLightContributionUVE(light, viewPosition);
+        if (contribution <= 0.0F) {
+            return;
+        }
+        candidates.push_back(RankedLightUVE{light, contribution});
     });
 
     // Partial sort: only the top kMaxLightsUVE matter, and a scene with hundreds of lights should
-    // not pay a full sort to discard almost all of them. Stable ordering among equal contributions
-    // is not guaranteed and does not need to be - equal contributions are interchangeable by
-    // definition.
+    // not pay a full sort to discard almost all of them. When contributions tie (e.g. directional
+    // lights), authored scene lights always outrank editor-internal fallback lights.
     const std::size_t keepCount = std::min(candidates.size(), kMaxLightsUVE);
     std::partial_sort(candidates.begin(), candidates.begin() + static_cast<std::ptrdiff_t>(keepCount),
                       candidates.end(),
                       [](const RankedLightUVE& lhs, const RankedLightUVE& rhs) {
-                          return lhs.contribution > rhs.contribution;
+                          if (lhs.contribution != rhs.contribution) {
+                              return lhs.contribution > rhs.contribution;
+                          }
+                          return !lhs.light.isEditorInternal && rhs.light.isEditorInternal;
                       });
 
     LightListUVE result;
