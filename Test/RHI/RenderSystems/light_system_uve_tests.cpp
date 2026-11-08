@@ -16,7 +16,9 @@
 #include "uve/component/world_transform_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/scene/scene_graph_uve.h"
+#include "uve/component/editor_internal_entity_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/objects/3d/directional_light_3d_uve.h"
 
 namespace UVE::Render::Tests {
@@ -520,6 +522,47 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_DistanceFadeScalesEnerg
         lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{30.0F, 0.0F, 0.0F});
     EXPECT_FLOAT_EQ(noShadow[0].intensity, 4.0F);
     EXPECT_FALSE(noShadow[0].castsShadows);
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_ZeroIntensityDirectionalHeadlightsNeverEvictAuthoredSun) {
+    for (int i = 0; i < 4; ++i) {
+        Scene::LightComponentUVE headlight{};
+        headlight.type = Scene::LightTypeUVE::Directional;
+        headlight.intensity = 0.0F;
+        const Scene::EntityUVE internalLight =
+            MakeLightEntityUVE(Math::Vector3UVE{}, Math::QuaternionUVE{}, headlight);
+        entityManager.AddComponentUVE<Scene::EditorInternalEntityComponentUVE>(
+            internalLight, Scene::EditorInternalEntityComponentUVE{});
+    }
+
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
+    Scene::DirectionalLight3DObjectDefinitionUVE definition{};
+    definition.emitter.energy = 2.5F;
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
+    sceneGraph.UpdateUVE(entityManager);
+
+    const LightListUVE selected =
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{});
+    ASSERT_EQ(selected.SizeUVE(), 1U);
+    EXPECT_EQ(selected[0].type, Scene::LightTypeUVE::Directional);
+    EXPECT_FLOAT_EQ(selected[0].intensity, 2.5F);
+    EXPECT_FALSE(selected[0].isEditorInternal);
+}
+
+TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_SkipsLightsHiddenViaVisibilityComponent) {
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, sun, Scene::TransformComponentUVE{});
+    Scene::DirectionalLight3DObjectDefinitionUVE definition{};
+    definition.emitter.energy = 3.0F;
+    Scene::ApplyDirectionalLight3DObjectDefinitionUVE(entityManager, sun, definition);
+    auto& visibility = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(sun);
+    visibility.visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_TRUE(lightSystem.ExtractActiveLightsUVE(entityManager).EmptyUVE());
+    EXPECT_TRUE(
+        lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{}).EmptyUVE());
 }
 
 } // namespace

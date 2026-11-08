@@ -52,6 +52,7 @@
 #include "uve/objects/3d/fog_volume_3d_uve.h"
 #include "uve/objects/3d/occluder_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
+#include "uve/objects/3d/sky_3d_uve.h"
 #include "uve/objects/3d/visibility_region_3d_uve.h"
 #include "uve/objects/3d/world_environment_3d_uve.h"
 #include "uve/objects/3d/world_partition_3d_uve.h"
@@ -115,16 +116,24 @@ void main() {
         [&hasEnvironment](UVE::Scene::EntityUVE, const UVE::Scene::WorldEnvironment3DComponentUVE& value) {
             hasEnvironment |= UVE::Scene::IsWorldEnvironment3DObjectComponentValidUVE(value);
         });
+    entityManager.ForEachUVE<UVE::Scene::Sky3DComponentUVE>(
+        [&hasEnvironment](UVE::Scene::EntityUVE, const UVE::Scene::Sky3DComponentUVE& sky) {
+            if (!sky.enabled || !UVE::Scene::IsSky3DObjectComponentValidUVE(sky)) {
+                return;
+            }
+            if (sky.source == UVE::Scene::SkySourceUVE::Panorama && sky.panoramaPath.empty()) {
+                return;
+            }
+            hasEnvironment = true;
+        });
     return hasEnvironment;
 }
 
-/// True when the DOCUMENT carries a real DirectionalLight3D - one the renderer will actually light
-/// with. Internal tooling entities (the mesh layer's own headlight) are excluded, and so is a sun
-/// the light system drops, so the preview can neither mistake its own stand-in for authored
-/// lighting nor stand down for a sun that lights nothing (which would leave the scene dark with no
-/// light at all - see HasContributingDirectionalLightUVE()'s own comment).
+/// True when the DOCUMENT carries an authored DirectionalLight3D entity (even if currently hidden
+/// or set to 0 energy), so turning an authored DirectionalLight3D off in the editor leaves the
+/// scene unlit rather than re-activating the editor's preview sun.
 [[nodiscard]] bool HasAuthoredDirectionalLightUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
-    return univex::integration::HasContributingDirectionalLightUVE(entityManager);
+    return univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager);
 }
 
 [[nodiscard]] univex::gizmo::GizmoMesh BuildCameraFrustumMeshUVE(
@@ -854,7 +863,7 @@ public:
         {
             const bool hasAuthoredSun = HasAuthoredDirectionalLightUVE(entityManager_);
             const bool hasAuthoredEnv = HasActiveWorldEnvironmentUVE(entityManager_);
-            const bool previewAllowed = !overlayState.gameWorkspaceActive || (!hasAuthoredSun && !hasAuthoredEnv);
+            const bool previewAllowed = !overlayState.gameWorkspaceActive;
             UVE::Scene::PreviewLightingSettingsUVE previewSettings{};
             previewSettings.sunEnabled = overlayState.previewSun && previewAllowed;
             previewSettings.environmentEnabled = overlayState.previewEnvironment && previewAllowed;
@@ -876,8 +885,7 @@ public:
             previewSettings.ambientEnergy = overlayState.previewAmbientEnergy;
 
             const UVE::Scene::PreviewLightingFrameUVE previewFrame = UVE::Scene::ResolvePreviewLightingUVE(
-                HasAuthoredDirectionalLightUVE(entityManager_), HasActiveWorldEnvironmentUVE(entityManager_),
-                previewSettings);
+                hasAuthoredSun, hasAuthoredEnv, previewSettings);
             meshLayer_.SetPreviewLightingUVE(previewFrame);
             engine_.GetServicesUVE().GetRenderer3DUVE().SetPreviewEnvironmentUVE(
                 previewFrame.environmentActive

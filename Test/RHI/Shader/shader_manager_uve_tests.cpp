@@ -502,6 +502,8 @@ INSTANTIATE_TEST_SUITE_P(
                        std::pair<std::string_view, std::string_view>{"ssao.glsl", BuiltIn::kSsaoSource},
                        std::pair<std::string_view, std::string_view>{"contact_shadow.glsl",
                                                                       BuiltIn::kContactShadowSource},
+                       std::pair<std::string_view, std::string_view>{"ssr.glsl", BuiltIn::kSsrSource},
+                        std::pair<std::string_view, std::string_view>{"water.glsl", BuiltIn::kWaterSource},
                        std::pair<std::string_view, std::string_view>{"ui_overlay.glsl",
                                                                       BuiltIn::kUIOverlaySource}));
 

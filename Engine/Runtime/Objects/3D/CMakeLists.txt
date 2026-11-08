@@ -88,6 +88,8 @@ add_library(uve_objects_3d STATIC
     Internal/box_mesh_3d_uve.cpp
     Internal/sphere_mesh_3d_uve.cpp
     Internal/plane_mesh_3d_uve.cpp
+    Internal/water_3d_uve.cpp
+    Internal/terrain_3d_uve.cpp
     Internal/audio_source_3d_uve.cpp
     Internal/particle_emitter_3d_uve.cpp
     Internal/script_uve.cpp

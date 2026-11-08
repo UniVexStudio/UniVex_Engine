@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "uve/component/visibility_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/memory/memory_manager_uve.h"
@@ -245,6 +246,20 @@ TEST_F(WorldEnvironmentUVETest, InvalidEnvironmentIsSkipped) {
     EXPECT_EQ(frame.ambientColor, authored.ambientColor);
     EXPECT_EQ(frame.backgroundColor, authored.horizonColor);
     EXPECT_FALSE(frame.fogEnabled);
+}
+
+TEST_F(WorldEnvironmentUVETest, HiddenEnvironmentIsSkipped) {
+    const EntityUVE hiddenEnv = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<WorldEnvironment3DComponentUVE>(
+        hiddenEnv, WorldEnvironment3DComponentUVE{});
+    VisibilityComponentUVE hidden{};
+    hidden.visible = false;
+    hidden.visibleInHierarchy = false;
+    entityManager.AddComponentUVE<VisibilityComponentUVE>(hiddenEnv, hidden);
+
+    const WorldEnvironmentFrameUVE frame =
+        ResolveWorldEnvironmentFrameUVE(entityManager, Math::Vector3UVE{0.1F, 0.2F, 0.3F});
+    EXPECT_FALSE(frame.hasEnvironment);
 }
 
 TEST(WorldEnvironmentValidationUVETest, RejectsBrokenSkyBloomAndGrade) {

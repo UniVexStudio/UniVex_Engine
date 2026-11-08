@@ -18,6 +18,7 @@
 #include "uve/component/light_component_uve.h"
 #include "uve/component/light_emitter_component_uve.h"
 #include "uve/component/transform_component_uve.h"
+#include "uve/component/visibility_component_uve.h"
 #include "uve/entity/entity_manager_uve.h"
 #include "uve/events/event_system_uve.h"
 #include "uve/math/color_uve.h"
@@ -159,6 +160,26 @@ TEST_F(SceneLightUVETest, AFixedSceneStopsCountingTheMomentItCanLight) {
     EXPECT_FALSE(LightsItselfUVE());
     EmitterUVE(sun).energy = 2.0F;
     EXPECT_TRUE(LightsItselfUVE());
+}
+
+TEST_F(SceneLightUVETest, TurningOffOrHidingAuthoredSunKeepsAuthoredNodePresentWithoutContributingLight) {
+    EXPECT_FALSE(univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager));
+    const Scene::EntityUVE sun = AddSunUVE();
+    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager));
+    EXPECT_TRUE(univex::integration::HasContributingDirectionalLightUVE(entityManager));
+
+    EmitterUVE(sun).energy = 0.0F;
+    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager))
+        << "the authored DirectionalLight3D node still exists, so the preview sun must not take over";
+    EXPECT_FALSE(univex::integration::HasContributingDirectionalLightUVE(entityManager));
+
+    EmitterUVE(sun).energy = 1.0F;
+    auto& visibility = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(sun);
+    visibility.visible = false;
+    sceneGraph.UpdateUVE(entityManager);
+    EXPECT_TRUE(univex::integration::HasAuthoredDirectionalLightNodeUVE(entityManager));
+    EXPECT_FALSE(univex::integration::HasContributingDirectionalLightUVE(entityManager));
+    EXPECT_FALSE(LightsItselfUVE());
 }
 
 } // namespace

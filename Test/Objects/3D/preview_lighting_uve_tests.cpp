@@ -46,7 +46,8 @@ TEST(PreviewLightingUVETest, AuthoredDirectionalLightSuppressesOnlyThePreviewSun
 
 TEST(PreviewLightingUVETest, AuthoredEnvironmentSuppressesOnlyThePreviewEnvironment) {
     const PreviewLightingFrameUVE frame = ResolvePreviewLightingUVE(false, true, DefaultSettingsUVE());
-    EXPECT_TRUE(frame.sunActive);
+    EXPECT_FALSE(frame.sunActive);
+    EXPECT_FLOAT_EQ(frame.sunEnergy, 0.0F);
     EXPECT_FALSE(frame.environmentActive);
     EXPECT_FALSE(frame.environment.hasEnvironment);
 }

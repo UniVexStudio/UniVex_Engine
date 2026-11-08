@@ -54,6 +54,8 @@ uniform float uCameraNear;
 uniform float uCameraFar;
 uniform float uFogSkyAffect;
 uniform int uSkyCovers;
+uniform int uOrthographic;
+uniform float uOrthoHalfHeight;
 uniform float uBrightness;
 uniform float uContrast;
 uniform float uSaturation;
@@ -83,6 +85,7 @@ uniform float uAspect;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uSunEnergy;
+uniform float uSunAngularDiameter;
 uniform float uFogHeight;
 uniform float uFogHeightFalloff;
 uniform float uFogSunScatter;
@@ -104,6 +107,13 @@ struct FogVolumeUVE {
     int shape;
 };
 uniform FogVolumeUVE uFogVolumes[8];
+uniform int uVolumetricShadowsEnabled;
+uniform mat4 uLightSpaceMatrices[3];
+uniform float uShadowCascadeSplits[3];
+uniform sampler2D uShadowMapTextures[3];
+uniform sampler2D uLutTexture;
+uniform int uLutEnabled;
+uniform float uLutContribution;
 
 const int kFogModeLinearUVE = 0; // WorldEnvironmentFogModeUVE::Linear
 const int kFogModeHeightUVE = 2; // Exponential is value 1; Height is value 2.
@@ -113,6 +123,51 @@ const vec2 kDepthOfFieldOffsetsUVE[12] = vec2[12](
     vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(-1.0, 0.0), vec2(0.0, -1.0),
     vec2(0.7071, 0.7071), vec2(-0.7071, 0.7071), vec2(0.7071, -0.7071), vec2(-0.7071, -0.7071),
     vec2(0.5, 0.8660), vec2(-0.5, 0.8660), vec2(0.5, -0.8660), vec2(-0.5, -0.8660));
+
+float SampleVolumetricShadowDepthUVE(int cascade, vec2 uv) {
+    if (cascade == 0) { return texture(uShadowMapTextures[0], uv).r; }
+    if (cascade == 1) { return texture(uShadowMapTextures[1], uv).r; }
+    return texture(uShadowMapTextures[2], uv).r;
+}
+
+float VolumetricShadowFactorUVE(vec3 samplePos, float distFromCam) {
+    if (uVolumetricShadowsEnabled == 0) {
+        return 1.0;
+    }
+    for (int cascade = 0; cascade < 3; ++cascade) {
+        if (distFromCam > uShadowCascadeSplits[cascade] && cascade < 2) {
+            continue;
+        }
+        vec4 lightClip = uLightSpaceMatrices[cascade] * vec4(samplePos, 1.0);
+        if (abs(lightClip.w) < 1.0e-5) {
+            return 1.0;
+        }
+        vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+        if (proj.x <= 0.002 || proj.x >= 0.998 || proj.y <= 0.002 || proj.y >= 0.998 ||
+            proj.z <= 0.0 || proj.z >= 1.0) {
+            return 1.0;
+        }
+        float shadowDepth = SampleVolumetricShadowDepthUVE(cascade, proj.xy);
+        return (proj.z - 0.0015 > shadowDepth) ? 0.0 : 1.0;
+    }
+    return 1.0;
+}
+
+vec3 SampleLutUVE(sampler2D lut, vec3 color) {
+    ivec2 lutSize = textureSize(lut, 0);
+    float size = float(lutSize.y);
+    float maxColor = size - 1.0;
+    vec3 c = clamp(color, 0.0, 1.0) * maxColor;
+    float cell = floor(c.z);
+    float fracZ = c.z - cell;
+    vec2 halfTexel = vec2(0.5) / vec2(lutSize);
+    vec2 cellOffset0 = vec2(cell * size, 0.0) / vec2(lutSize);
+    vec2 cellOffset1 = vec2(min(cell + 1.0, maxColor) * size, 0.0) / vec2(lutSize);
+    vec2 uv = c.xy / vec2(lutSize) + halfTexel;
+    vec3 s0 = texture(lut, cellOffset0 + uv).rgb;
+    vec3 s1 = texture(lut, cellOffset1 + uv).rgb;
+    return mix(s0, s1, fracZ);
+}
 
 vec3 AcesToneMapUVE(vec3 color) {
     const float a = 2.51;
@@ -275,12 +330,22 @@ float ScreenSpaceDitherNoiseUVE(vec2 pixel) {
 // undo that mapping before multiplying by the inverse projection. Distance is measured along the
 // pixel ray, not by linearly interpolating the non-linear perspective depth buffer.
 float ReconstructViewDistanceUVE(vec2 uv, float depthSample, float fallbackDistance) {
+    float safeNear = max(uCameraNear, 0.01);
+    // Under OpenGL's mapping of the engine's [0, 1] clip Z, the near plane is at depth 0.5.
+    // Fragments closer than or at the near plane stay locked to safeNear to prevent inversion singularities.
+    if (uOrthographic == 0 && depthSample <= 0.50005) {
+        return safeNear;
+    }
     vec3 ndc = vec3(uv * 2.0 - 1.0, 2.0 * clamp(depthSample, 0.0, 1.0) - 1.0);
     vec4 viewPosition = uInverseProjection * vec4(ndc, 1.0);
     if (abs(viewPosition.w) <= 1.0e-6) {
         return fallbackDistance;
     }
-    float viewDistance = length(viewPosition.xyz / viewPosition.w);
+    vec3 viewPos = viewPosition.xyz / viewPosition.w;
+    if (uOrthographic == 0 && viewPos.z >= -1.0e-4) {
+        return safeNear;
+    }
+    float viewDistance = uOrthographic != 0 ? max(-viewPos.z, 0.0) : length(viewPos);
     return (isnan(viewDistance) || isinf(viewDistance)) ? fallbackDistance : max(viewDistance, 0.0);
 }
 
@@ -535,8 +600,9 @@ void FogVolumeIntegrateUVE(FogVolumeUVE volume, vec3 rayOrigin, vec3 rayDirectio
             occupancy = FogVolumeOccupancyUVE(volume, FogVolumeShapeDistanceUVE(volume, localPoint));
         }
         if (occupancy > 0.0) {
+            float shadow = VolumetricShadowFactorUVE(point, t);
             float height = FogVolumeHeightTermUVE(volume, point, localPoint);
-            colorMass += (volume.albedo * max(volume.density, 0.0) * height + volume.emission) * (occupancy * step);
+            colorMass += (volume.albedo * max(volume.density, 0.0) * height * shadow + volume.emission) * (occupancy * step);
             occupancyMass += occupancy * step;
         }
     }
@@ -578,10 +644,21 @@ void main() {
     if (uFogEnabled != 0 || volumeCount > 0) {
         vec2 ndc = sourceUV * 2.0 - 1.0;
         vec3 view = vec3(ndc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), ndc.y * max(uTanHalfFov, 0.0), -1.0);
-        vec3 viewDir = normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
+        vec3 viewDir = uOrthographic != 0
+                           ? normalize(uCameraForward)
+                           : normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
+        vec3 rayOrigin =
+            uOrthographic != 0
+                ? (uCameraPosition +
+                   (uCameraRight * (ndc.x * max(uAspect, 0.0001)) + uCameraUp * ndc.y) * max(uOrthoHalfHeight, 0.0))
+                : uCameraPosition;
+        float safeNear = max(uCameraNear, 0.01);
+        float safeFar = max(uCameraFar, safeNear + 1.0);
         float fallbackDistance = depth < 1.0
-                                     ? mix(max(uCameraNear, 0.0), max(uCameraFar, 0.0), clamp(depth, 0.0, 1.0))
-                                     : max(uCameraFar, 0.0);
+                                     ? (depth <= 0.50005 && uOrthographic == 0
+                                            ? safeNear
+                                            : mix(safeNear, safeFar, clamp(depth, 0.0, 1.0)))
+                                     : safeFar;
         float viewDistance = depth < 1.0
                                  ? ReconstructViewDistanceUVE(sourceUV, depth, fallbackDistance)
                                  : fallbackDistance;
@@ -599,12 +676,16 @@ void main() {
                     float density = max(uFogDensity, 0.0);
                     if (uFogMode == kFogModeHeightUVE) {
                         // Preserve the existing height-fog profile as the default mode.
-                        vec3 worldPos = uCameraPosition + viewDir * viewDistance;
+                        vec3 worldPos = rayOrigin + viewDir * viewDistance;
                         float heightTerm = exp(-max(worldPos.y - uFogHeight, 0.0) /
                                                max(uFogHeightFalloff, 0.01));
                         density *= mix(1.0, heightTerm, 0.85);
                     }
                     globalTau = density * viewDistance;
+                }
+                float nearFogFade = smoothstep(safeNear, max(safeNear * 3.0, 0.35), viewDistance);
+                if (uOrthographic == 0) {
+                    globalTau *= nearFogFade;
                 }
             } else {
                 float sky = clamp(uFogSkyAffect, 0.0, 0.9999);
@@ -615,7 +696,7 @@ void main() {
         vec3 localColorMass = vec3(0.0);
         float localOccupancyMass = 0.0;
         for (int i = 0; i < volumeCount; ++i) {
-            FogVolumeIntegrateUVE(uFogVolumes[i], uCameraPosition, viewDir, max(viewDistance, 0.0), localTau,
+            FogVolumeIntegrateUVE(uFogVolumes[i], rayOrigin, viewDir, max(viewDistance, 0.0), localTau,
                                   localColorMass, localOccupancyMass);
         }
         float combinedTau = globalTau + localTau;
@@ -633,7 +714,34 @@ void main() {
         float posLocal = max(localTau, 0.0);
         float weight = posGlobal + posLocal;
         vec3 inscatter = weight > 0.0 ? (globalInscatter * posGlobal + volumeColor * posLocal) / weight : globalInscatter;
-        hdrColor = mix(hdrColor, inscatter * exposure, fogFactor);
+        vec3 volumetricSunInscatter = vec3(0.0);
+        if (uVolumetricShadowsEnabled != 0 && uLightVolumetricFogEnergy > 0.0 && uFogDensity > 0.0 && length(uSunDirection) > 1.0e-5) {
+            float marchEnd = min(viewDistance, max(uShadowCascadeSplits[2], 10.0));
+            float marchStart = max(uCameraNear, 0.1);
+            if (marchEnd > marchStart) {
+                const int kGodRaySamples = 16;
+                float stepDist = (marchEnd - marchStart) / float(kGodRaySamples);
+                vec3 sunLightColor = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * max(uLightVolumetricFogEnergy, 0.0);
+                float phase = mix(0.15, 1.0, towardSun) * day;
+                float accumLight = 0.0;
+                for (int s = 0; s < kGodRaySamples; ++s) {
+                    float sampleDist = marchStart + stepDist * (float(s) + 0.5);
+                    vec3 samplePos = rayOrigin + viewDir * sampleDist;
+                    float shadow = VolumetricShadowFactorUVE(samplePos, sampleDist);
+                    if (shadow > 0.0) {
+                        float density = uFogDensity;
+                        if (uFogMode == kFogModeHeightUVE) {
+                            float h = exp(-max(samplePos.y - uFogHeight, 0.0) / max(uFogHeightFalloff, 0.01));
+                            density *= mix(1.0, h, 0.85);
+                        }
+                        accumLight += shadow * density;
+                    }
+                }
+                float nearFogFade = smoothstep(safeNear, max(safeNear * 3.0, 0.35), viewDistance);
+                volumetricSunInscatter = sunLightColor * (accumLight * stepDist * 0.05 * phase * nearFogFade);
+            }
+        }
+        hdrColor = mix(hdrColor, inscatter * exposure, fogFactor) + volumetricSunInscatter * exposure;
     }
     vec3 ldr = ApplyToneMappingUVE(hdrColor);
     if (uContrast > 0.0 || uSaturation > 0.0 || uBrightness != 0.0 || any(greaterThan(uColorFilter, vec3(0.0)))) {
@@ -645,6 +753,10 @@ void main() {
         ldr = mix(vec3(grey), ldr, saturation);
         ldr *= max(filterColor, vec3(0.0));
         ldr = clamp(ldr, 0.0, 1.0);
+    }
+    if (uLutEnabled != 0) {
+        vec3 graded = SampleLutUVE(uLutTexture, ldr);
+        ldr = mix(ldr, graded, clamp(uLutContribution, 0.0, 1.0));
     }
     float vignetteIntensity = clamp(uVignetteIntensity, 0.0, 1.0);
     if (vignetteIntensity > 0.0) {
@@ -665,7 +777,17 @@ void main() {
         float dither = ScreenSpaceDitherNoiseUVE(floor(gl_FragCoord.xy)) / 255.0;
         ldr = clamp(ldr + vec3(dither), 0.0, 1.0);
     }
-    float covered = depth < 1.0 ? 1.0 : (uSkyCovers != 0 ? 0.75 : 0.0);
+    bool sunDiscCovers = false;
+    if (uSkyCovers == 0 && uSunEnergy > 0.0 && uSunAngularDiameter > 0.0) {
+        vec2 skyNdc = sourceUV * 2.0 - 1.0;
+        vec3 skyView =
+            vec3(skyNdc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), skyNdc.y * max(uTanHalfFov, 0.0), -1.0);
+        vec3 skyWorldDir = normalize(uCameraRight * skyView.x + uCameraUp * skyView.y + uCameraForward);
+        vec3 skySunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
+        float sunRadius = radians(max(uSunAngularDiameter, 0.0)) * 0.5;
+        sunDiscCovers = skyWorldDir.y > -0.001 && skySunDir.y > -0.02 && dot(skyWorldDir, skySunDir) >= cos(sunRadius);
+    }
+    float covered = depth < 1.0 ? 1.0 : ((uSkyCovers != 0 || sunDiscCovers) ? 0.75 : 0.0);
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
     FragColor = vec4(ldr, alpha);
 }

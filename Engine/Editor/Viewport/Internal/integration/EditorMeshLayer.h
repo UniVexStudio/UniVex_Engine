@@ -57,6 +57,11 @@ struct EditorMeshLayerResultUVE final {
 /// refuses, or the scene loses both lights at once.
 [[nodiscard]] bool HasContributingDirectionalLightUVE(UVE::Scene::IEntityManagerUVE& entityManager);
 
+/// True when the document carries a valid authored DirectionalLight3D entity (even if currently
+/// hidden via VisibilityComponentUVE or with energy set to 0), so deliberately turning an authored
+/// DirectionalLight3D off leaves the scene dark rather than re-enabling the editor preview sun.
+[[nodiscard]] bool HasAuthoredDirectionalLightNodeUVE(UVE::Scene::IEntityManagerUVE& entityManager);
+
 class EditorMeshLayerUVE final {
 public:
     explicit EditorMeshLayerUVE(UVE::Core::EngineServicesUVE& services);

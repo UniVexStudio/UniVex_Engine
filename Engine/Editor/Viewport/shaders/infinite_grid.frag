@@ -169,7 +169,9 @@ void main() {
         length(vec2(dFdx(worldPos.x), dFdy(worldPos.x))),
         length(vec2(dFdx(worldPos.z), dFdy(worldPos.z)))
     );
-    float pixelWorld = max(max(worldPerPixel.x, worldPerPixel.y), 1e-9);
+    float minPerPixel = max(min(worldPerPixel.x, worldPerPixel.y), 1e-9);
+    float maxPerPixel = max(max(worldPerPixel.x, worldPerPixel.y), 1e-9);
+    float pixelWorld = min(maxPerPixel, minPerPixel * 4.0);
 
     // ---- world axes, each as a line in space (see AxisLineCoverage) --------
     vec3 axisXClosestPoint;
@@ -246,7 +248,7 @@ void main() {
     if (axisZAlpha > strongest) { strongest = axisZAlpha; depthSourcePos = axisZClosestPoint; }
     if (axisYAlpha > strongest) { strongest = axisYAlpha; depthSourcePos = axisYClosestPoint; }
     vec4 clip = uViewProj * vec4(depthSourcePos, 1.0);
-    gl_FragDepth = (clip.z / clip.w) * 0.5 + 0.5;
+    gl_FragDepth = clamp((clip.z / clip.w) * 0.5 + 0.5, 0.0, 0.999999);
 
     fragColor = vec4(finalColor.rgb, finalAlpha);
 }

@@ -240,7 +240,9 @@ EntityPickResultUVE PickEntityAtPixelUVE(UVE::Scene::IEntityManagerUVE& entityMa
                                          const int viewportWidth, const int viewportHeight,
                                          const float pixelX, const float pixelY) {
     const RayUVE ray = BuildCursorRayUVE(camera, viewportWidth, viewportHeight, pixelX, pixelY);
-    return PickEntityAlongRayUVE(entityManager, ray, camera.FarPlane());
+    const float maxDistance =
+        camera.IsOrthographic() ? 2.0F * camera.OrthographicHalfDepth() : camera.FarPlane();
+    return PickEntityAlongRayUVE(entityManager, ray, maxDistance);
 }
 
 } // namespace univex::integration

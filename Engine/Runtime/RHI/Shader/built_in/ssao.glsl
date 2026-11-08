@@ -28,6 +28,7 @@ uniform sampler2D uDepthTexture;
 // than inverting uInverseProjection again per pixel).
 uniform mat4 uInverseProjection;
 uniform mat4 uProjection;
+uniform int uOrthographic;
 uniform float uRadius;
 uniform float uBias;
 uniform float uIntensity;
@@ -89,7 +90,8 @@ void main() {
         isinf(viewNormal.x) || isinf(viewNormal.y) || isinf(viewNormal.z)) {
         viewNormal = vec3(0.0, 0.0, 1.0);
     }
-    if (dot(viewNormal, -centerViewPos) < 0.0) {
+    vec3 towardEye = uOrthographic != 0 ? vec3(0.0, 0.0, 1.0) : -centerViewPos;
+    if (dot(viewNormal, towardEye) < 0.0) {
         viewNormal = -viewNormal;
     }
 
@@ -103,7 +105,7 @@ void main() {
     vec3 bitangent = cross(viewNormal, tangent);
     mat3 tbn = mat3(tangent, bitangent, viewNormal);
 
-    float normalViewDot = max(dot(viewNormal, normalize(-centerViewPos)), 0.15);
+    float normalViewDot = max(dot(viewNormal, normalize(towardEye)), 0.15);
     float angleBias = max(uBias, uBias / normalViewDot);
 
     float occlusion = 0.0;
