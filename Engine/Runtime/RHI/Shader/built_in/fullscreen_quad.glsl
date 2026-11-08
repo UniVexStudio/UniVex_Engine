@@ -104,6 +104,13 @@ struct FogVolumeUVE {
     int shape;
 };
 uniform FogVolumeUVE uFogVolumes[8];
+uniform int uVolumetricShadowsEnabled;
+uniform mat4 uLightSpaceMatrices[3];
+uniform float uShadowCascadeSplits[3];
+uniform sampler2D uShadowMapTextures[3];
+uniform sampler2D uLutTexture;
+uniform int uLutEnabled;
+uniform float uLutContribution;
 
 const int kFogModeLinearUVE = 0; // WorldEnvironmentFogModeUVE::Linear
 const int kFogModeHeightUVE = 2; // Exponential is value 1; Height is value 2.
@@ -113,6 +120,51 @@ const vec2 kDepthOfFieldOffsetsUVE[12] = vec2[12](
     vec2(1.0, 0.0), vec2(0.0, 1.0), vec2(-1.0, 0.0), vec2(0.0, -1.0),
     vec2(0.7071, 0.7071), vec2(-0.7071, 0.7071), vec2(0.7071, -0.7071), vec2(-0.7071, -0.7071),
     vec2(0.5, 0.8660), vec2(-0.5, 0.8660), vec2(0.5, -0.8660), vec2(-0.5, -0.8660));
+
+float SampleVolumetricShadowDepthUVE(int cascade, vec2 uv) {
+    if (cascade == 0) { return texture(uShadowMapTextures[0], uv).r; }
+    if (cascade == 1) { return texture(uShadowMapTextures[1], uv).r; }
+    return texture(uShadowMapTextures[2], uv).r;
+}
+
+float VolumetricShadowFactorUVE(vec3 samplePos, float distFromCam) {
+    if (uVolumetricShadowsEnabled == 0) {
+        return 1.0;
+    }
+    for (int cascade = 0; cascade < 3; ++cascade) {
+        if (distFromCam > uShadowCascadeSplits[cascade] && cascade < 2) {
+            continue;
+        }
+        vec4 lightClip = uLightSpaceMatrices[cascade] * vec4(samplePos, 1.0);
+        if (abs(lightClip.w) < 1.0e-5) {
+            return 1.0;
+        }
+        vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+        if (proj.x <= 0.002 || proj.x >= 0.998 || proj.y <= 0.002 || proj.y >= 0.998 ||
+            proj.z <= 0.0 || proj.z >= 1.0) {
+            return 1.0;
+        }
+        float shadowDepth = SampleVolumetricShadowDepthUVE(cascade, proj.xy);
+        return (proj.z - 0.0015 > shadowDepth) ? 0.0 : 1.0;
+    }
+    return 1.0;
+}
+
+vec3 SampleLutUVE(sampler2D lut, vec3 color) {
+    ivec2 lutSize = textureSize(lut, 0);
+    float size = float(lutSize.y);
+    float maxColor = size - 1.0;
+    vec3 c = clamp(color, 0.0, 1.0) * maxColor;
+    float cell = floor(c.z);
+    float fracZ = c.z - cell;
+    vec2 halfTexel = vec2(0.5) / vec2(lutSize);
+    vec2 cellOffset0 = vec2(cell * size, 0.0) / vec2(lutSize);
+    vec2 cellOffset1 = vec2(min(cell + 1.0, maxColor) * size, 0.0) / vec2(lutSize);
+    vec2 uv = c.xy / vec2(lutSize) + halfTexel;
+    vec3 s0 = texture(lut, cellOffset0 + uv).rgb;
+    vec3 s1 = texture(lut, cellOffset1 + uv).rgb;
+    return mix(s0, s1, fracZ);
+}
 
 vec3 AcesToneMapUVE(vec3 color) {
     const float a = 2.51;
@@ -535,8 +587,9 @@ void FogVolumeIntegrateUVE(FogVolumeUVE volume, vec3 rayOrigin, vec3 rayDirectio
             occupancy = FogVolumeOccupancyUVE(volume, FogVolumeShapeDistanceUVE(volume, localPoint));
         }
         if (occupancy > 0.0) {
+            float shadow = VolumetricShadowFactorUVE(point, t);
             float height = FogVolumeHeightTermUVE(volume, point, localPoint);
-            colorMass += (volume.albedo * max(volume.density, 0.0) * height + volume.emission) * (occupancy * step);
+            colorMass += (volume.albedo * max(volume.density, 0.0) * height * shadow + volume.emission) * (occupancy * step);
             occupancyMass += occupancy * step;
         }
     }
@@ -633,7 +686,33 @@ void main() {
         float posLocal = max(localTau, 0.0);
         float weight = posGlobal + posLocal;
         vec3 inscatter = weight > 0.0 ? (globalInscatter * posGlobal + volumeColor * posLocal) / weight : globalInscatter;
-        hdrColor = mix(hdrColor, inscatter * exposure, fogFactor);
+        vec3 volumetricSunInscatter = vec3(0.0);
+        if (uVolumetricShadowsEnabled != 0 && uLightVolumetricFogEnergy > 0.0 && length(uSunDirection) > 1.0e-5) {
+            float marchEnd = min(viewDistance, max(uShadowCascadeSplits[2], 10.0));
+            float marchStart = max(uCameraNear, 0.1);
+            if (marchEnd > marchStart) {
+                const int kGodRaySamples = 16;
+                float stepDist = (marchEnd - marchStart) / float(kGodRaySamples);
+                vec3 sunLightColor = max(uSunColor, vec3(0.0)) * max(uSunEnergy, 0.0) * max(uLightVolumetricFogEnergy, 0.0);
+                float phase = mix(0.15, 1.0, towardSun) * day;
+                float accumLight = 0.0;
+                for (int s = 0; s < kGodRaySamples; ++s) {
+                    float sampleDist = marchStart + stepDist * (float(s) + 0.5);
+                    vec3 samplePos = uCameraPosition + viewDir * sampleDist;
+                    float shadow = VolumetricShadowFactorUVE(samplePos, sampleDist);
+                    if (shadow > 0.0) {
+                        float density = max(uFogDensity, 0.01);
+                        if (uFogMode == kFogModeHeightUVE) {
+                            float h = exp(-max(samplePos.y - uFogHeight, 0.0) / max(uFogHeightFalloff, 0.01));
+                            density *= mix(1.0, h, 0.85);
+                        }
+                        accumLight += shadow * density;
+                    }
+                }
+                volumetricSunInscatter = sunLightColor * (accumLight * stepDist * 0.05 * phase);
+            }
+        }
+        hdrColor = mix(hdrColor, inscatter * exposure, fogFactor) + volumetricSunInscatter * exposure;
     }
     vec3 ldr = ApplyToneMappingUVE(hdrColor);
     if (uContrast > 0.0 || uSaturation > 0.0 || uBrightness != 0.0 || any(greaterThan(uColorFilter, vec3(0.0)))) {
@@ -645,6 +724,10 @@ void main() {
         ldr = mix(vec3(grey), ldr, saturation);
         ldr *= max(filterColor, vec3(0.0));
         ldr = clamp(ldr, 0.0, 1.0);
+    }
+    if (uLutEnabled != 0) {
+        vec3 graded = SampleLutUVE(uLutTexture, ldr);
+        ldr = mix(ldr, graded, clamp(uLutContribution, 0.0, 1.0));
     }
     float vignetteIntensity = clamp(uVignetteIntensity, 0.0, 1.0);
     if (vignetteIntensity > 0.0) {

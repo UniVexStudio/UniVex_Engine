@@ -799,6 +799,90 @@ TEST_F(Renderer3DUVETest, ContactShadowsDisabledRecordsNoPass) {
     EXPECT_FALSE(renderer3D->GetLastFrameDiagnosticsUVE().contactShadowPassRecorded);
 }
 
+TEST_F(Renderer3DUVETest, ScreenSpaceReflectionsSettingsReachPassAndDiagnostics) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.postProcessingEnabled = true;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+    WaitUntilShadowProgramReadyUVE();
+
+    PostProcessSettingsUVE settings;
+    settings.ssrEnabledUVE = true;
+    settings.ssrMaxStepsUVE = 48U;
+    settings.ssrDepthToleranceUVE = 0.25F;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().ssrPassRecorded);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto maxSteps = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& cmd) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(cmd) &&
+               std::get<SetUniformIntCommandUVE>(cmd).name == "uMaxSteps";
+    });
+    ASSERT_NE(maxSteps, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*maxSteps).value, 48);
+}
+
+TEST_F(Renderer3DUVETest, ScreenSpaceReflectionsDisabledRecordsNoPass) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    PostProcessSettingsUVE settings;
+    settings.ssrEnabledUVE = false;
+    renderer3D->SetPostProcessSettingsUVE(settings);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_FALSE(renderer3D->GetLastFrameDiagnosticsUVE().ssrPassRecorded);
+}
+
+TEST_F(Renderer3DUVETest, VolumetricFogUniformsReachToneMappingPass) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
+    Scene::WorldEnvironment3DComponentUVE environment{};
+    environment.fogEnabled = true;
+    environment.lutEnabled = true;
+    environment.lutContribution = 0.85F;
+    entityManager.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(environmentEntity, environment);
+    WaitUntilShadowProgramReadyUVE();
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto lutEnabled = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& cmd) {
+        return std::holds_alternative<SetUniformIntCommandUVE>(cmd) &&
+               std::get<SetUniformIntCommandUVE>(cmd).name == "uLutEnabled";
+    });
+    ASSERT_NE(lutEnabled, commands.cend());
+    EXPECT_EQ(std::get<SetUniformIntCommandUVE>(*lutEnabled).value, 1);
+
+    const auto lutContribution = std::find_if(commands.cbegin(), commands.cend(), [](const RecordedCommandUVE& cmd) {
+        return std::holds_alternative<SetUniformFloatCommandUVE>(cmd) &&
+               std::get<SetUniformFloatCommandUVE>(cmd).name == "uLutContribution";
+    });
+    ASSERT_NE(lutContribution, commands.cend());
+    EXPECT_FLOAT_EQ(std::get<SetUniformFloatCommandUVE>(*lutContribution).value, 0.85F);
+}
+
+TEST_F(Renderer3DUVETest, WorldSpaceCanvasesAreTrackedInDiagnosticsAndRendered) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE canvasEntity = entityManager.CreateEntityUVE();
+    Scene::CanvasComponentUVE canvas{};
+    canvas.visible = true;
+    canvas.renderMode = Scene::CanvasRenderModeUVE::WorldSpace;
+    canvas.worldSize = Math::Vector2UVE{2.0F, 1.5F};
+    canvas.billboard = true;
+    entityManager.AddComponentUVE<Scene::CanvasComponentUVE>(canvasEntity, canvas);
+
+    Scene::WorldTransformComponentUVE world{};
+    world.worldPosition = Math::Vector3UVE{0.0F, 1.0F, -5.0F};
+    world.worldScale = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+    entityManager.AddComponentUVE<Scene::WorldTransformComponentUVE>(canvasEntity, world);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_EQ(diagnostics.worldSpaceCanvasesRendered, 1U);
+}
+
 TEST_F(Renderer3DUVETest, WorldEnvironmentBloomSoftKneeReachesTheBrightPassShader) {
     const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
     const Scene::EntityUVE environmentEntity = entityManager.CreateEntityUVE();
@@ -4044,8 +4128,8 @@ TEST_F(Renderer3DUVETest, ResizeTargetsUVE_NewSize_AllocatesOnceAndThenIsFree) {
     const std::uint64_t afterFirst = renderDevice.GetTextureCreateAttemptCountUVE();
 
     // A genuinely new size does cost allocations - the cache removes repeat cost, it does not
-    // conjure targets. Seven of them: color, depth, bloom bright, two blur, SSAO, contact shadow.
-    EXPECT_EQ(afterFirst - beforeNewSize, 7U);
+    // conjure targets. Eight of them: color, depth, bloom bright, two blur, SSAO, contact shadow, SSR.
+    EXPECT_EQ(afterFirst - beforeNewSize, 8U);
 
     ASSERT_TRUE(renderer3D->ResizeTargetsUVE(800U, 600U));
     EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), afterFirst);
@@ -4060,7 +4144,7 @@ TEST_F(Renderer3DUVETest, ResizeTargetsUVE_ManyDistinctSizes_DoesNotGrowWithoutB
     }
     // Live resources are bounded by the cache limit rather than by the number of sizes seen. The
     // exact figure is not the point; that it is far below 24 sets is.
-    EXPECT_LT(renderDevice.GetLiveResourceCountUVE(), 24U * 7U);
+    EXPECT_LT(renderDevice.GetLiveResourceCountUVE(), 24U * 8U);
 }
 
 TEST_F(Renderer3DUVETest, ResizeTargetsUVE_AfterEviction_StillRendersCorrectly) {

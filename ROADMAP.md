@@ -164,13 +164,13 @@ status legend.
   cutoff produced an aliased cone edge that no MSAA could fix, because the edge was in the shading
   rather than the geometry.
 - [ ] Deferred or forward+/clustered lighting path for scenes with many dynamic lights
-- [ ] Screen-space reflections
+- [x] Screen-space reflections — implemented with view-space position/normal reconstruction from camera depth, linear ray-marching in screen space with configurable max steps, depth tolerance, screen-edge fading, and Schlick Fresnel attenuation. Evaluated in dedicated pass and additively composited; locked by Renderer3DUVETest and shader parity tests.
 - [ ] Real-time reflection probes (baked and/or dynamically updated cubemaps)
 - [ ] Global illumination (baked lightmaps at minimum; a real-time or hybrid GI solution
   as a long-term goal)
-- [ ] Volumetric fog / volumetric lighting
+- [x] Volumetric fog / volumetric lighting — volumetric shadow raymarching through directional light cascades with Henyey-Greenstein Mie forward scattering phase function; integrates inscattered sunlight modulated by cascaded shadow map occlusions in fullscreen_quad.glsl and modulates fog volume integration; locked by Renderer3DUVETest.
 - [ ] Temporal anti-aliasing (and/or a modern upscaling technique)
-- [ ] HDR display output and a real color-grading / LUT pipeline
+- [x] HDR display output and a real color-grading / LUT pipeline — 3D LUT sampling with 2D strip texture format (256x16, 1024x32) with trilinear slice interpolation in the tonemapping pass, configurable LUT contribution, and integration with WorldEnvironment3DComponentUVE; locked by Renderer3DUVETest.
 - [ ] Order-independent or improved transparency sorting
 - [x] Decal rendering — the `decal` scene-node kind is real end to end: the lifetime runtime counts
   down and reports the expiry, the projected-geometry pass clips the receiving surfaces against the
@@ -230,10 +230,9 @@ status legend.
   during Play.
 - [ ] A world-partition / large-world streaming system (the scene-node kind exists as a
   descriptor only; no streaming, no grid/cell system, no origin rebasing for large worlds)
-- [ ] A terrain system (heightfield or mesh-based, sculpting, texture splatting, LOD)
+- [x] A terrain system (heightfield or mesh-based, sculpting, texture splatting, LOD) — `Terrain3DUVE` with heightfield elevation grid, bilinear height/normal sampling, finite-difference normals, LOD mesh generation into `MeshAssetUVE`, circular brush sculpting/flattening, and 4-layer splat weighting; locked by `Terrain3DUVETest`.
 - [ ] A foliage/vegetation instancing and wind-animation system
-- [ ] A water rendering system (at minimum a stylized/simple ocean or lake shader with
-  reflection + refraction)
+- [x] A water rendering system (at minimum a stylized/simple ocean or lake shader with reflection + refraction) — `Water3DUVE` with Gerstner wave displacement, dual animated normal ripples, eye-depth reconstruction, screen-space refraction with occlusion gating, Beer-Lambert depth absorption, contact shoreline foam, Schlick Fresnel, and sun specular highlight; locked by `Water3DUVETest` and shader parity tests.
 
 ### 1.3 Renderer-adjacent modules that are currently empty placeholders
 - [ ] `Renderer` module (currently a one-line placeholder folder) — decide whether its
@@ -1168,9 +1167,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   widgets (buttons, checkboxes, sliders, dropdowns, text fields) in spatial reading order with wrapping,
   Enter activates buttons and opens/picks dropdown items, Space toggles checkboxes, arrow keys step sliders,
   Escape releases focus, and mouse-focused fields update the tab order start; locked by UIFocusNavigationUVETest
-- [ ] World-space UI (a Canvas rendered as a 3D object in the scene, e.g. floating health
-  bars or diegetic screens), distinct from the current screen-space-only Canvas
-  implementation
+- [x] World-space UI (a Canvas rendered as a 3D object in the scene, e.g. floating health bars or diegetic screens), distinct from the current screen-space-only Canvas implementation — `CanvasComponentUVE` supports `CanvasRenderModeUVE::WorldSpace` with configurable physical size (`worldSize`), reference pixels, planar and billboard orientations (`ComputeWorldSpaceCanvasTransformUVE`), rendered and tracked through `Renderer3DUVE` passes; locked by `Renderer3DUVETest`.
 - [ ] Localization support for UI text (string tables, right-to-left text layout, font
   fallback for non-Latin scripts — the current embedded UI font only covers a Latin-1
   subset)
