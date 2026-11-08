@@ -936,6 +936,11 @@ void EngineCoreUVE::Init() {
     postProcessSettings.contactShadowStrengthUVE = static_cast<float>(m_config.contactShadowsStrengthUVE);
     postProcessSettings.contactShadowStepCountUVE =
         static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.contactShadowsStepCountUVE, 0));
+    postProcessSettings.ssrEnabledUVE = m_config.ssrEnabledUVE;
+    postProcessSettings.ssrMaxStepsUVE = static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.ssrMaxStepsUVE, 1));
+    postProcessSettings.ssrDepthToleranceUVE = static_cast<float>(m_config.ssrDepthToleranceUVE);
+    postProcessSettings.ssrFadeInUVE = static_cast<float>(m_config.ssrFadeInUVE);
+    postProcessSettings.ssrFadeOutUVE = static_cast<float>(m_config.ssrFadeOutUVE);
     m_renderer3D->SetPostProcessSettingsUVE(postProcessSettings);
     m_renderer3D->SetShadowBiasDefaultsUVE(m_config.shadowBiasDefaultUVE, m_config.shadowNormalBiasDefaultUVE);
     // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use

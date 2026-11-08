@@ -116,6 +116,13 @@ uniform vec3 uSkyReflectionGround;
 uniform sampler2D uAmbientEnvironmentMap;
 uniform int uAmbientEnvironmentMapEnabled;
 uniform vec3 uViewPosition;
+#if UVE_MOBILE
+uniform int uOrthographic;
+uniform vec3 uCameraForward;
+#else
+uniform int uOrthographic = 0;
+uniform vec3 uCameraForward = vec3(0.0, 0.0, -1.0);
+#endif
 uniform vec3 uAlbedoColor;
 uniform float uMetallic;
 uniform float uRoughness;
@@ -502,7 +509,9 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
     }
 
-    float viewDepth = length(vWorldPosition - uViewPosition);
+    float viewDepth = uOrthographic != 0
+                          ? max(dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward)), 0.0)
+                          : length(vWorldPosition - uViewPosition);
     int finalCascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
     float finalCascadeFarDepth = uShadowCascadeSplits[finalCascadeIndex];
     // Beyond the last split the light casts no shadow; at the split the fade has reached fully lit.
@@ -797,10 +806,11 @@ void main() {
         return;
     }
 
-    vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
-    // Meshes authored with the opposite winding/normal convention are still valid two-sided
-    // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
-    if (dot(normal, viewDirection) < 0.0) {
+    vec3 viewDirection = uOrthographic != 0
+                             ? SafeNormalizeUVE(-uCameraForward)
+                             : SafeNormalizeUVE(uViewPosition - vWorldPosition);
+    // For two-sided geometry or backfaces, orient the normal outwards from the observed face.
+    if (!gl_FrontFacing) {
         normal = -normal;
     }
 
@@ -898,11 +908,9 @@ void main() {
             }
         }
 
-        // Treat the material as two-sided for direct lighting. Imported meshes and legacy RHI
-        // callers can disagree on winding; using the absolute cosine prevents a valid back-face
-        // normal from collapsing the entire BRDF to black while shadowing remains directional.
-        float normalDotLight = mix(abs(dot(normal, lightDirection)), 1.0, 0.18);
-        float normalDotView = max(abs(dot(normal, viewDirection)), 0.08);
+        // AAA PBR standard: Surfaces facing away from the light source receive zero direct light.
+        float normalDotLight = max(dot(normal, lightDirection), 0.0);
+        float normalDotView = max(dot(normal, viewDirection), 0.001);
         if (normalDotLight <= 0.0 || normalDotView <= 0.0 || attenuation <= 0.0) {
             continue;
         }
@@ -926,13 +934,13 @@ void main() {
             if (isnan(shadowFactor) || isinf(shadowFactor)) {
                 shadowFactor = 1.0;
             }
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+            directContribution *= clamp(shadowFactor, 0.0, 1.0);
         } else if (light.type == 1) {
             float shadowFactor = PointShadowFactorUVE(lightIndex, normal, light.position, light.range);
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+            directContribution *= clamp(shadowFactor, 0.0, 1.0);
         } else if (light.type == 2) {
             float shadowFactor = SpotShadowFactorUVE(lightIndex, normal, lightDirection);
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+            directContribution *= clamp(shadowFactor, 0.0, 1.0);
         }
         if (!isnan(directContribution.r) && !isinf(directContribution.r) &&
             !isnan(directContribution.g) && !isinf(directContribution.g) &&

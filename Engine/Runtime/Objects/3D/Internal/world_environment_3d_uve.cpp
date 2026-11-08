@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "uve/component/visibility_component_uve.h"
 #include "uve/entity/i_entity_manager_uve.h"
 #include "uve/math/scalar_uve.h"
 #include "uve/objects/3d/object_3d_uve.h"
@@ -12,6 +13,14 @@
 
 namespace UVE::Scene {
 namespace {
+
+[[nodiscard]] bool IsEnvironmentEntityHiddenUVE(IEntityManagerUVE& entityManager, const EntityUVE entity) noexcept {
+    if (!entityManager.HasComponentUVE<VisibilityComponentUVE>(entity)) {
+        return false;
+    }
+    const VisibilityComponentUVE& visibility = entityManager.GetComponentUVE<VisibilityComponentUVE>(entity);
+    return !visibility.visible || !visibility.visibleInHierarchy;
+}
 
 [[nodiscard]] bool IsNonNegativeColorUVE(const Math::Vector3UVE& value) noexcept {
     return IsFinite3DObjectVectorUVE(value) && value.x >= 0.0F && value.y >= 0.0F && value.z >= 0.0F;
@@ -69,7 +78,8 @@ bool IsWorldEnvironment3DObjectComponentValidUVE(const WorldEnvironment3DCompone
            (value.motionBlurSampleCount == 4U || value.motionBlurSampleCount == 8U ||
             value.motionBlurSampleCount == 12U) && std::isfinite(value.fogHeight) &&
            std::isfinite(value.fogHeightFalloff) && value.fogHeightFalloff > 0.0F &&
-           std::isfinite(value.fogSunScatter) && value.fogSunScatter >= 0.0F && value.fogSunScatter <= 1.0F;
+           std::isfinite(value.fogSunScatter) && value.fogSunScatter >= 0.0F && value.fogSunScatter <= 1.0F &&
+           std::isfinite(value.lutContribution) && value.lutContribution >= 0.0F && value.lutContribution <= 1.0F;
 }
 
 WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& entityManager,
@@ -81,8 +91,9 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
     frame.groundAmbient = fallback;
     frame.backgroundColor = fallback;
     entityManager.ForEachUVE<WorldEnvironment3DComponentUVE>(
-        [&frame](EntityUVE, const WorldEnvironment3DComponentUVE& environment) {
-            if (frame.hasEnvironment || !IsWorldEnvironment3DObjectComponentValidUVE(environment)) {
+        [&frame, &entityManager](const EntityUVE entity, const WorldEnvironment3DComponentUVE& environment) {
+            if (frame.hasEnvironment || IsEnvironmentEntityHiddenUVE(entityManager, entity) ||
+                !IsWorldEnvironment3DObjectComponentValidUVE(environment)) {
                 return;
             }
             const Math::Vector3UVE ambient{environment.ambientColor.x * environment.ambientEnergy,
@@ -151,6 +162,9 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
             frame.motionBlurSampleCount = environment.motionBlurSampleCount;
             frame.colorFilter = environment.colorFilter;
             frame.backgroundColor = environment.horizonColor;
+            frame.lutEnabled = environment.lutEnabled;
+            frame.lutContribution = environment.lutContribution;
+            frame.lutAssetPath = environment.lutAssetPath;
             frame.hasEnvironment = true;
             frame.skyAssetPath = environment.skyAssetPath;
         });
@@ -164,8 +178,10 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
     // same scene is not blended in, because two skies over one horizon has no meaning. A Sky with
     // no enabled state or a field out of range is skipped rather than half-applied.
     bool skyApplied = false;
-    entityManager.ForEachUVE<Sky3DComponentUVE>([&frame, &skyApplied](EntityUVE, const Sky3DComponentUVE& sky) {
-        if (skyApplied || !sky.enabled || !IsSky3DObjectComponentValidUVE(sky)) {
+    entityManager.ForEachUVE<Sky3DComponentUVE>([&frame, &skyApplied, &entityManager](const EntityUVE entity,
+                                                                                      const Sky3DComponentUVE& sky) {
+        if (skyApplied || !sky.enabled || IsEnvironmentEntityHiddenUVE(entityManager, entity) ||
+            !IsSky3DObjectComponentValidUVE(sky)) {
             return;
         }
         const SkySourceUVE source = sky.source;

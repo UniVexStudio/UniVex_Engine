@@ -1192,201 +1192,209 @@ void EditorUVE::DrawMenuBarUVE() {
                 ImGui::Dummy(ImVec2{badgeW, badgeH});
             };
 
-            // =========================================================================
-            // 1. PREVIEW SUN SECTION
-            // =========================================================================
-            ImGui::Checkbox("Preview Sun##toolbar-preview-sun", &m_viewportOverlayState.previewSun);
-            if (hasSceneSun) {
-                drawStatusBadge("SCENE SUN", IM_COL32(180, 128, 42, 75), IM_COL32(250, 204, 112, 245));
-            } else if (m_viewportOverlayState.previewSun) {
-                drawStatusBadge("ACTIVE", IM_COL32(46, 134, 96, 85), IM_COL32(132, 238, 184, 245));
+            if (hasSceneSun && hasSceneEnv) {
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.55F, 0.82F, 0.65F, 1.0F});
+                ImGui::TextUnformatted("Scene Sun & Environment Active");
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+                ImGui::TextDisabled("Both DirectionalLight3D and WorldEnvironment3D\nexist in the Outliner. Preview lighting is idle.");
+                ImGui::Spacing();
             } else {
-                drawStatusBadge("OFF", IM_COL32(64, 70, 82, 80), IM_COL32(160, 168, 182, 215));
-            }
-
-            ImGui::BeginDisabled(!m_viewportOverlayState.previewSun);
-            {
-                EditorColorUVE sunColor{m_viewportOverlayState.previewSunColor[0],
-                                        m_viewportOverlayState.previewSunColor[1],
-                                        m_viewportOverlayState.previewSunColor[2], 1.0F};
-                if (DrawColorFieldUVE("##toolbarPreviewSunColor", "Sun Color", sunColor, false,
-                                      m_colorPickerPreferences) != ColorFieldEventUVE::None) {
-                    m_viewportOverlayState.previewSunColor = {sunColor.r, sunColor.g, sunColor.b};
-                }
-
-                ImGui::SetNextItemWidth(sliderWidth);
-                ImGui::SliderFloat("Energy##toolbar-sun-energy", &m_viewportOverlayState.previewSunEnergy, 0.0F, 8.0F,
-                                   "%.2f");
-                ImGui::SetNextItemWidth(sliderWidth);
-                ImGui::SliderFloat("Azimuth##toolbar-sun-azimuth", &m_viewportOverlayState.previewSunAzimuth, -180.0F,
-                                   180.0F, "%.0f deg");
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                    ImGui::SetTooltip("Horizontal compass bearing around the world Y axis (-180 to 180 deg).");
-                }
-                ImGui::SetNextItemWidth(sliderWidth);
-                ImGui::SliderFloat("Altitude##toolbar-sun-altitude", &m_viewportOverlayState.previewSunAltitude, -90.0F,
-                                   90.0F, "%.0f deg");
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                    ImGui::SetTooltip("Elevation angle above the horizon. Higher values cast shorter shadows.");
-                }
-
-                // Quick solar angle presets row
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.15F, 0.17F, 0.21F, 1.0F});
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.22F, 0.26F, 0.33F, 1.0F});
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.26F, 0.32F, 0.42F, 1.0F});
-                const float presetW = (availWidth - 18.0F) * 0.25F;
-                if (ImGui::Button("Dawn", ImVec2{presetW, 22.0F})) {
-                    m_viewportOverlayState.previewSunAzimuth = -72.0F;
-                    m_viewportOverlayState.previewSunAltitude = 20.0F;
-                }
-                ImGui::SameLine(0.0F, 6.0F);
-                if (ImGui::Button("Default", ImVec2{presetW, 22.0F})) {
-                    m_viewportOverlayState.previewSunAzimuth = -45.0F;
-                    m_viewportOverlayState.previewSunAltitude = 45.0F;
-                }
-                ImGui::SameLine(0.0F, 6.0F);
-                if (ImGui::Button("Noon", ImVec2{presetW, 22.0F})) {
-                    m_viewportOverlayState.previewSunAzimuth = -25.0F;
-                    m_viewportOverlayState.previewSunAltitude = 72.0F;
-                }
-                ImGui::SameLine(0.0F, 6.0F);
-                if (ImGui::Button("Sunset", ImVec2{presetW, 22.0F})) {
-                    m_viewportOverlayState.previewSunAzimuth = 68.0F;
-                    m_viewportOverlayState.previewSunAltitude = 14.0F;
-                }
-                ImGui::PopStyleColor(3);
-            }
-            ImGui::EndDisabled();
-
-            ImGui::BeginDisabled(!canAuthor);
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.19F, 0.32F, 0.52F, 0.95F});
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.25F, 0.41F, 0.65F, 1.0F});
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.16F, 0.27F, 0.45F, 1.0F});
-            const char* const addSunLabel =
-                hasSceneSun ? "Sync Preview to Scene Sun##toolbar-add-sun" : "+ Add Sun to Scene##toolbar-add-sun";
-            if (ImGui::Button(addSunLabel, ImVec2{-1.0F, 28.0F})) {
-                Scene::EntityUVE sunEntity = existingSunEntity;
-                if (sunEntity == Scene::kInvalidEntityUVE) {
-                    sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
-                }
-                if (sunEntity != Scene::kInvalidEntityUVE) {
-                    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-                    const std::optional<Math::QuaternionUVE> rotation =
-                        Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
-                                                            m_viewportOverlayState.previewSunAltitude);
-                    if (rotation.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
-                        auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
-                        transform.localRotation = *rotation;
-                        m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, transform);
+                if (!hasSceneSun) {
+                    // =========================================================================
+                    // 1. PREVIEW SUN SECTION
+                    // =========================================================================
+                    ImGui::Checkbox("Preview Sun##toolbar-preview-sun", &m_viewportOverlayState.previewSun);
+                    if (m_viewportOverlayState.previewSun) {
+                        drawStatusBadge("ACTIVE", IM_COL32(46, 134, 96, 85), IM_COL32(132, 238, 184, 245));
+                    } else {
+                        drawStatusBadge("OFF", IM_COL32(64, 70, 82, 80), IM_COL32(160, 168, 182, 215));
                     }
-                    if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
-                        auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
-                        emitter.color = Math::ColorFromDisplayUVE(
-                            Math::Vector3UVE{m_viewportOverlayState.previewSunColor[0],
-                                             m_viewportOverlayState.previewSunColor[1],
-                                             m_viewportOverlayState.previewSunColor[2]});
-                        emitter.energy = m_viewportOverlayState.previewSunEnergy;
-                        emitter.shadowEnabled = true;
+
+                    ImGui::BeginDisabled(!m_viewportOverlayState.previewSun);
+                    {
+                        EditorColorUVE sunColor{m_viewportOverlayState.previewSunColor[0],
+                                                m_viewportOverlayState.previewSunColor[1],
+                                                m_viewportOverlayState.previewSunColor[2], 1.0F};
+                        if (DrawColorFieldUVE("##toolbarPreviewSunColor", "Sun Color", sunColor, false,
+                                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+                            m_viewportOverlayState.previewSunColor = {sunColor.r, sunColor.g, sunColor.b};
+                        }
+
+                        ImGui::SetNextItemWidth(sliderWidth);
+                        ImGui::SliderFloat("Energy##toolbar-sun-energy", &m_viewportOverlayState.previewSunEnergy, 0.0F, 8.0F,
+                                           "%.2f");
+                        ImGui::SetNextItemWidth(sliderWidth);
+                        ImGui::SliderFloat("Azimuth##toolbar-sun-azimuth", &m_viewportOverlayState.previewSunAzimuth, -180.0F,
+                                           180.0F, "%.0f deg");
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                            ImGui::SetTooltip("Horizontal compass bearing around the world Y axis (-180 to 180 deg).");
+                        }
+                        ImGui::SetNextItemWidth(sliderWidth);
+                        ImGui::SliderFloat("Altitude##toolbar-sun-altitude", &m_viewportOverlayState.previewSunAltitude, -90.0F,
+                                           90.0F, "%.0f deg");
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                            ImGui::SetTooltip("Elevation angle above the horizon. Higher values cast shorter shadows.");
+                        }
+
+                        // Quick solar angle presets row
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.15F, 0.17F, 0.21F, 1.0F});
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.22F, 0.26F, 0.33F, 1.0F});
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.26F, 0.32F, 0.42F, 1.0F});
+                        const float presetW = (availWidth - 18.0F) * 0.25F;
+                        if (ImGui::Button("Dawn", ImVec2{presetW, 22.0F})) {
+                            m_viewportOverlayState.previewSunAzimuth = -72.0F;
+                            m_viewportOverlayState.previewSunAltitude = 20.0F;
+                        }
+                        ImGui::SameLine(0.0F, 6.0F);
+                        if (ImGui::Button("Default", ImVec2{presetW, 22.0F})) {
+                            m_viewportOverlayState.previewSunAzimuth = -45.0F;
+                            m_viewportOverlayState.previewSunAltitude = 45.0F;
+                        }
+                        ImGui::SameLine(0.0F, 6.0F);
+                        if (ImGui::Button("Noon", ImVec2{presetW, 22.0F})) {
+                            m_viewportOverlayState.previewSunAzimuth = -25.0F;
+                            m_viewportOverlayState.previewSunAltitude = 72.0F;
+                        }
+                        ImGui::SameLine(0.0F, 6.0F);
+                        if (ImGui::Button("Sunset", ImVec2{presetW, 22.0F})) {
+                            m_viewportOverlayState.previewSunAzimuth = 68.0F;
+                            m_viewportOverlayState.previewSunAltitude = 14.0F;
+                        }
+                        ImGui::PopStyleColor(3);
                     }
-                    m_sceneDirty = true;
-                    SelectEntityUVE(sunEntity);
-                    m_contentStatusMessage = "Added DirectionalLight3D from Preview Sun (with real-time shadows).";
-                    ImGui::CloseCurrentPopup();
-                }
-            }
-            ImGui::PopStyleColor(3);
-            ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("Creates a DirectionalLight3D in the Outliner with these sun settings and shadows enabled.");
-            }
+                    ImGui::EndDisabled();
 
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            // =========================================================================
-            // 2. PREVIEW ENVIRONMENT SECTION
-            // =========================================================================
-            ImGui::Checkbox("Preview Environment##toolbar-preview-env", &m_viewportOverlayState.previewEnvironment);
-            if (hasSceneEnv) {
-                drawStatusBadge("SCENE ENV", IM_COL32(180, 128, 42, 75), IM_COL32(250, 204, 112, 245));
-            } else if (m_viewportOverlayState.previewEnvironment) {
-                drawStatusBadge("ACTIVE", IM_COL32(46, 134, 96, 85), IM_COL32(132, 238, 184, 245));
-            } else {
-                drawStatusBadge("OFF", IM_COL32(64, 70, 82, 80), IM_COL32(160, 168, 182, 215));
-            }
-
-            ImGui::BeginDisabled(!m_viewportOverlayState.previewEnvironment);
-            {
-                EditorColorUVE skyColor{m_viewportOverlayState.previewSkyColor[0],
-                                        m_viewportOverlayState.previewSkyColor[1],
-                                        m_viewportOverlayState.previewSkyColor[2], 1.0F};
-                if (DrawColorFieldUVE("##toolbarPreviewSkyColor", "Sky Top", skyColor, false,
-                                      m_colorPickerPreferences) != ColorFieldEventUVE::None) {
-                    m_viewportOverlayState.previewSkyColor = {skyColor.r, skyColor.g, skyColor.b};
-                }
-                EditorColorUVE horizonColor{m_viewportOverlayState.previewHorizonColor[0],
-                                            m_viewportOverlayState.previewHorizonColor[1],
-                                            m_viewportOverlayState.previewHorizonColor[2], 1.0F};
-                if (DrawColorFieldUVE("##toolbarPreviewHorizonColor", "Horizon", horizonColor, false,
-                                      m_colorPickerPreferences) != ColorFieldEventUVE::None) {
-                    m_viewportOverlayState.previewHorizonColor = {horizonColor.r, horizonColor.g, horizonColor.b};
-                }
-                EditorColorUVE groundColor{m_viewportOverlayState.previewGroundColor[0],
-                                           m_viewportOverlayState.previewGroundColor[1],
-                                           m_viewportOverlayState.previewGroundColor[2], 1.0F};
-                if (DrawColorFieldUVE("##toolbarPreviewGroundColor", "Ground", groundColor, false,
-                                      m_colorPickerPreferences) != ColorFieldEventUVE::None) {
-                    m_viewportOverlayState.previewGroundColor = {groundColor.r, groundColor.g, groundColor.b};
-                }
-                ImGui::SetNextItemWidth(sliderWidth);
-                ImGui::SliderFloat("Ambient##toolbar-env-ambient", &m_viewportOverlayState.previewAmbientEnergy, 0.0F,
-                                   4.0F, "%.2f");
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-                    ImGui::SetTooltip("Sky and ground ambient light intensity across the scene.");
-                }
-            }
-            ImGui::EndDisabled();
-
-            ImGui::BeginDisabled(!canAuthor);
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.18F, 0.36F, 0.34F, 0.95F});
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.23F, 0.46F, 0.43F, 1.0F});
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.15F, 0.30F, 0.28F, 1.0F});
-            const char* const addEnvLabel = hasSceneEnv
-                                                ? "Sync Preview to Scene Environment##toolbar-add-env"
-                                                : "+ Add Environment to Scene##toolbar-add-env";
-            if (ImGui::Button(addEnvLabel, ImVec2{-1.0F, 28.0F})) {
-                Scene::EntityUVE envEntity = existingEnvEntity;
-                if (envEntity == Scene::kInvalidEntityUVE) {
-                    envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
-                }
-                if (envEntity != Scene::kInvalidEntityUVE) {
-                    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-                    if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
-                        auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
-                        env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
-                        env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0],
-                                                        m_viewportOverlayState.previewSkyColor[1],
-                                                        m_viewportOverlayState.previewSkyColor[2]};
-                        env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
-                                                            m_viewportOverlayState.previewHorizonColor[1],
-                                                            m_viewportOverlayState.previewHorizonColor[2]};
-                        env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
-                                                           m_viewportOverlayState.previewGroundColor[1],
-                                                           m_viewportOverlayState.previewGroundColor[2]};
-                        env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
-                        env.postProcessingEnabled = false;
+                    ImGui::BeginDisabled(!canAuthor);
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.19F, 0.32F, 0.52F, 0.95F});
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.25F, 0.41F, 0.65F, 1.0F});
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.16F, 0.27F, 0.45F, 1.0F});
+                    if (ImGui::Button("+ Add Sun to Scene##toolbar-add-sun", ImVec2{-1.0F, 28.0F})) {
+                        Scene::EntityUVE sunEntity = existingSunEntity;
+                        if (sunEntity == Scene::kInvalidEntityUVE) {
+                            sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+                        }
+                        if (sunEntity != Scene::kInvalidEntityUVE) {
+                            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                            const std::optional<Math::QuaternionUVE> rotation =
+                                Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
+                                                                    m_viewportOverlayState.previewSunAltitude);
+                            if (rotation.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
+                                auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
+                                transform.localRotation = *rotation;
+                                m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, transform);
+                            }
+                            if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
+                                auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
+                                emitter.color = Math::ColorFromDisplayUVE(
+                                    Math::Vector3UVE{m_viewportOverlayState.previewSunColor[0],
+                                                     m_viewportOverlayState.previewSunColor[1],
+                                                     m_viewportOverlayState.previewSunColor[2]});
+                                emitter.energy = m_viewportOverlayState.previewSunEnergy;
+                                emitter.shadowEnabled = true;
+                            }
+                            m_sceneDirty = true;
+                            SelectEntityUVE(sunEntity);
+                            m_contentStatusMessage = "Added DirectionalLight3D from Preview Sun (with real-time shadows).";
+                            ImGui::CloseCurrentPopup();
+                        }
                     }
-                    m_sceneDirty = true;
-                    SelectEntityUVE(envEntity);
-                    m_contentStatusMessage = "Added WorldEnvironment3D from Preview Environment.";
-                    ImGui::CloseCurrentPopup();
+                    ImGui::PopStyleColor(3);
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("Creates a DirectionalLight3D in the Outliner with these sun settings and shadows enabled.");
+                    }
                 }
-            }
-            ImGui::PopStyleColor(3);
-            ImGui::EndDisabled();
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip("Creates a WorldEnvironment3D in the Outliner carrying these sky and ambient settings.");
+
+                if (!hasSceneSun && !hasSceneEnv) {
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                }
+
+                if (!hasSceneEnv) {
+                    // =========================================================================
+                    // 2. PREVIEW ENVIRONMENT SECTION
+                    // =========================================================================
+                    ImGui::Checkbox("Preview Environment##toolbar-preview-env", &m_viewportOverlayState.previewEnvironment);
+                    if (m_viewportOverlayState.previewEnvironment) {
+                        drawStatusBadge("ACTIVE", IM_COL32(46, 134, 96, 85), IM_COL32(132, 238, 184, 245));
+                    } else {
+                        drawStatusBadge("OFF", IM_COL32(64, 70, 82, 80), IM_COL32(160, 168, 182, 215));
+                    }
+
+                    ImGui::BeginDisabled(!m_viewportOverlayState.previewEnvironment);
+                    {
+                        EditorColorUVE skyColor{m_viewportOverlayState.previewSkyColor[0],
+                                                m_viewportOverlayState.previewSkyColor[1],
+                                                m_viewportOverlayState.previewSkyColor[2], 1.0F};
+                        if (DrawColorFieldUVE("##toolbarPreviewSkyColor", "Sky Top", skyColor, false,
+                                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+                            m_viewportOverlayState.previewSkyColor = {skyColor.r, skyColor.g, skyColor.b};
+                        }
+                        EditorColorUVE horizonColor{m_viewportOverlayState.previewHorizonColor[0],
+                                                    m_viewportOverlayState.previewHorizonColor[1],
+                                                    m_viewportOverlayState.previewHorizonColor[2], 1.0F};
+                        if (DrawColorFieldUVE("##toolbarPreviewHorizonColor", "Horizon", horizonColor, false,
+                                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+                            m_viewportOverlayState.previewHorizonColor = {horizonColor.r, horizonColor.g, horizonColor.b};
+                        }
+                        EditorColorUVE groundColor{m_viewportOverlayState.previewGroundColor[0],
+                                                   m_viewportOverlayState.previewGroundColor[1],
+                                                   m_viewportOverlayState.previewGroundColor[2], 1.0F};
+                        if (DrawColorFieldUVE("##toolbarPreviewGroundColor", "Ground", groundColor, false,
+                                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+                            m_viewportOverlayState.previewGroundColor = {groundColor.r, groundColor.g, groundColor.b};
+                        }
+                        ImGui::SetNextItemWidth(sliderWidth);
+                        ImGui::SliderFloat("Ambient##toolbar-env-ambient", &m_viewportOverlayState.previewAmbientEnergy, 0.0F,
+                                           4.0F, "%.2f");
+                        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                            ImGui::SetTooltip("Sky and ground ambient light intensity across the scene.");
+                        }
+                    }
+                    ImGui::EndDisabled();
+
+                    ImGui::BeginDisabled(!canAuthor);
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0.18F, 0.36F, 0.34F, 0.95F});
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.23F, 0.46F, 0.43F, 1.0F});
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.15F, 0.30F, 0.28F, 1.0F});
+                    if (ImGui::Button("+ Add Environment to Scene##toolbar-add-env", ImVec2{-1.0F, 28.0F})) {
+                        Scene::EntityUVE envEntity = existingEnvEntity;
+                        if (envEntity == Scene::kInvalidEntityUVE) {
+                            envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+                        }
+                        if (envEntity != Scene::kInvalidEntityUVE) {
+                            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                            if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
+                                auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
+                                env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
+                                env.ambientColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+                                env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0],
+                                                                m_viewportOverlayState.previewSkyColor[1],
+                                                                m_viewportOverlayState.previewSkyColor[2]};
+                                env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
+                                                                    m_viewportOverlayState.previewHorizonColor[1],
+                                                                    m_viewportOverlayState.previewHorizonColor[2]};
+                                env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
+                                                                   m_viewportOverlayState.previewGroundColor[1],
+                                                                   m_viewportOverlayState.previewGroundColor[2]};
+                                env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
+                                env.postProcessingEnabled = false;
+                            }
+                            m_sceneDirty = true;
+                            SelectEntityUVE(envEntity);
+                            m_contentStatusMessage = "Added WorldEnvironment3D from Preview Environment.";
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    ImGui::PopStyleColor(3);
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("Creates a WorldEnvironment3D in the Outliner carrying these sky and ambient settings.");
+                    }
+                }
             }
 
             ImGui::Spacing();

@@ -84,7 +84,11 @@ PreviewLightingFrameUVE ResolvePreviewLightingUVE(const bool sceneHasDirectional
         TryMakePreviewSunRotationUVE(settings.sunAzimuthDegrees, settings.sunAltitudeDegrees);
 
     // Authored lighting always wins: the preview exists for the gap, never as an extra layer.
-    frame.sunActive = settings.sunEnabled && !sceneHasDirectionalLight && sunRotation.has_value() && sunEnergy > 0.0F;
+    // Adding a WorldEnvironment3D also steps the preview sun down so an environment without a
+    // DirectionalLight3D remains environment-only (ambient/sky) rather than appearing to carry
+    // a directional sun of its own.
+    const bool authoredLighting = sceneHasDirectionalLight || sceneHasWorldEnvironment;
+    frame.sunActive = settings.sunEnabled && !authoredLighting && sunRotation.has_value() && sunEnergy > 0.0F;
     if (frame.sunActive) {
         frame.sunDirection = sunDirection;
         frame.sunColor = sunColor;

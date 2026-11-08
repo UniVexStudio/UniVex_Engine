@@ -204,6 +204,25 @@ TEST_F(EntityPickerUVETest, CursorRayThroughTheCentrePixelSelectsWhatTheCameraIs
     EXPECT_FALSE(univex::integration::PickEntityAtPixelUVE(EntitiesUVE(), camera, kWidth, kHeight, 2.0F, 2.0F).hit);
 }
 
+TEST_F(EntityPickerUVETest, OrthographicCursorRaySelectsDistantObjectsWithinSymmetricOrthoDepth) {
+    const Scene::EntityUVE distantCube =
+        SpawnPrimitiveUVE(ServicesUVE(), Scene::PrimitiveMeshKindUVE::Cube, Math::Vector3UVE{-120.0F, 0.0F, 0.0F}, 2.0F);
+
+    univex::camera::OrbitCamera camera;
+    camera.SetYawPitch(0.0F, 0.0F);
+    camera.SetDistance(12.0F);
+    camera.SetOrthographic(true);
+
+    constexpr int kWidth = 1280;
+    constexpr int kHeight = 800;
+    const EntityPickResultUVE centre = univex::integration::PickEntityAtPixelUVE(
+        EntitiesUVE(), camera, kWidth, kHeight, static_cast<float>(kWidth) * 0.5F,
+        static_cast<float>(kHeight) * 0.5F);
+
+    ASSERT_TRUE(centre.hit);
+    EXPECT_EQ(centre.entity, distantCube);
+}
+
 // ProjectWorldPointToPixelUVE is BuildCursorRayUVE's inverse: what the camera is framing (its own
 // orbit target) must project to the centre pixel, the same point CursorRayThroughTheCentrePixel...
 // above picks through.
