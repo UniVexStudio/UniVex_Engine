@@ -4230,6 +4230,7 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     defaultLitDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
     defaultLitDesc.depthTestEnabled = true;
     defaultLitDesc.depthWriteEnabled = true;
+    defaultLitDesc.cullMode = CullModeUVE::Back;
     defaultLitDesc.debugNameUVE = "BuiltInLit default material";
     m_impl->defaultLitMaterialResources.program =
         shaderManager.CreateProgramFromStagesUVE(defaultLitDesc);
