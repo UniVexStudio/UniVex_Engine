@@ -54,6 +54,8 @@ uniform float uCameraNear;
 uniform float uCameraFar;
 uniform float uFogSkyAffect;
 uniform int uSkyCovers;
+uniform int uOrthographic;
+uniform float uOrthoHalfHeight;
 uniform float uBrightness;
 uniform float uContrast;
 uniform float uSaturation;
@@ -83,6 +85,7 @@ uniform float uAspect;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uSunEnergy;
+uniform float uSunAngularDiameter;
 uniform float uFogHeight;
 uniform float uFogHeightFalloff;
 uniform float uFogSunScatter;
@@ -332,7 +335,8 @@ float ReconstructViewDistanceUVE(vec2 uv, float depthSample, float fallbackDista
     if (abs(viewPosition.w) <= 1.0e-6) {
         return fallbackDistance;
     }
-    float viewDistance = length(viewPosition.xyz / viewPosition.w);
+    vec3 viewPos = viewPosition.xyz / viewPosition.w;
+    float viewDistance = uOrthographic != 0 ? max(-viewPos.z, 0.0) : length(viewPos);
     return (isnan(viewDistance) || isinf(viewDistance)) ? fallbackDistance : max(viewDistance, 0.0);
 }
 
@@ -631,7 +635,14 @@ void main() {
     if (uFogEnabled != 0 || volumeCount > 0) {
         vec2 ndc = sourceUV * 2.0 - 1.0;
         vec3 view = vec3(ndc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), ndc.y * max(uTanHalfFov, 0.0), -1.0);
-        vec3 viewDir = normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
+        vec3 viewDir = uOrthographic != 0
+                           ? normalize(uCameraForward)
+                           : normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
+        vec3 rayOrigin =
+            uOrthographic != 0
+                ? (uCameraPosition +
+                   (uCameraRight * (ndc.x * max(uAspect, 0.0001)) + uCameraUp * ndc.y) * max(uOrthoHalfHeight, 0.0))
+                : uCameraPosition;
         float fallbackDistance = depth < 1.0
                                      ? mix(max(uCameraNear, 0.0), max(uCameraFar, 0.0), clamp(depth, 0.0, 1.0))
                                      : max(uCameraFar, 0.0);
@@ -652,7 +663,7 @@ void main() {
                     float density = max(uFogDensity, 0.0);
                     if (uFogMode == kFogModeHeightUVE) {
                         // Preserve the existing height-fog profile as the default mode.
-                        vec3 worldPos = uCameraPosition + viewDir * viewDistance;
+                        vec3 worldPos = rayOrigin + viewDir * viewDistance;
                         float heightTerm = exp(-max(worldPos.y - uFogHeight, 0.0) /
                                                max(uFogHeightFalloff, 0.01));
                         density *= mix(1.0, heightTerm, 0.85);
@@ -668,7 +679,7 @@ void main() {
         vec3 localColorMass = vec3(0.0);
         float localOccupancyMass = 0.0;
         for (int i = 0; i < volumeCount; ++i) {
-            FogVolumeIntegrateUVE(uFogVolumes[i], uCameraPosition, viewDir, max(viewDistance, 0.0), localTau,
+            FogVolumeIntegrateUVE(uFogVolumes[i], rayOrigin, viewDir, max(viewDistance, 0.0), localTau,
                                   localColorMass, localOccupancyMass);
         }
         float combinedTau = globalTau + localTau;
@@ -698,7 +709,7 @@ void main() {
                 float accumLight = 0.0;
                 for (int s = 0; s < kGodRaySamples; ++s) {
                     float sampleDist = marchStart + stepDist * (float(s) + 0.5);
-                    vec3 samplePos = uCameraPosition + viewDir * sampleDist;
+                    vec3 samplePos = rayOrigin + viewDir * sampleDist;
                     float shadow = VolumetricShadowFactorUVE(samplePos, sampleDist);
                     if (shadow > 0.0) {
                         float density = max(uFogDensity, 0.01);
@@ -748,7 +759,17 @@ void main() {
         float dither = ScreenSpaceDitherNoiseUVE(floor(gl_FragCoord.xy)) / 255.0;
         ldr = clamp(ldr + vec3(dither), 0.0, 1.0);
     }
-    float covered = depth < 1.0 ? 1.0 : (uSkyCovers != 0 ? 0.75 : 0.0);
+    bool sunDiscCovers = false;
+    if (uSkyCovers == 0 && uSunEnergy > 0.0 && uSunAngularDiameter > 0.0) {
+        vec2 skyNdc = sourceUV * 2.0 - 1.0;
+        vec3 skyView =
+            vec3(skyNdc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), skyNdc.y * max(uTanHalfFov, 0.0), -1.0);
+        vec3 skyWorldDir = normalize(uCameraRight * skyView.x + uCameraUp * skyView.y + uCameraForward);
+        vec3 skySunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
+        float sunRadius = radians(max(uSunAngularDiameter, 0.0)) * 0.5;
+        sunDiscCovers = skyWorldDir.y > -0.001 && skySunDir.y > -0.02 && dot(skyWorldDir, skySunDir) >= cos(sunRadius);
+    }
+    float covered = depth < 1.0 ? 1.0 : ((uSkyCovers != 0 || sunDiscCovers) ? 0.75 : 0.0);
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
     FragColor = vec4(ldr, alpha);
 }

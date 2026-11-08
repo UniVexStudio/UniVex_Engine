@@ -27,6 +27,7 @@ uniform sampler2D uDepthTexture;
 // transform needed is the one that produced the depth buffer and its undo.
 uniform mat4 uProjection;
 uniform mat4 uInverseProjection;
+uniform int uOrthographic;
 // Direction from the surface TOWARD the light, in view space, normalized on the CPU. The renderer
 // derives it from the same sun direction it hands the sky and the volumetric pass, so the contact
 // shadow is always aligned with the light that casts it.
@@ -64,7 +65,8 @@ vec3 ViewNormalUVE(vec3 viewPosition) {
         viewNormal = vec3(0.0, 0.0, 1.0);
     }
     // Face the camera; the sign of a derivative-derived normal is otherwise arbitrary.
-    if (dot(viewNormal, -viewPosition) < 0.0) {
+    vec3 towardEye = uOrthographic != 0 ? vec3(0.0, 0.0, 1.0) : -viewPosition;
+    if (dot(viewNormal, towardEye) < 0.0) {
         viewNormal = -viewNormal;
     }
     return viewNormal;

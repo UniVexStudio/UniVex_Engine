@@ -151,6 +151,8 @@ uniform float uCameraNear;
 uniform float uCameraFar;
 uniform float uFogSkyAffect;
 uniform int uSkyCovers;
+uniform int uOrthographic;
+uniform float uOrthoHalfHeight;
 uniform float uBrightness;
 uniform float uContrast;
 uniform float uSaturation;
@@ -180,6 +182,7 @@ uniform float uAspect;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uSunEnergy;
+uniform float uSunAngularDiameter;
 uniform float uFogHeight;
 uniform float uFogHeightFalloff;
 uniform float uFogSunScatter;
@@ -429,7 +432,8 @@ float ReconstructViewDistanceUVE(vec2 uv, float depthSample, float fallbackDista
     if (abs(viewPosition.w) <= 1.0e-6) {
         return fallbackDistance;
     }
-    float viewDistance = length(viewPosition.xyz / viewPosition.w);
+    vec3 viewPos = viewPosition.xyz / viewPosition.w;
+    float viewDistance = uOrthographic != 0 ? max(-viewPos.z, 0.0) : length(viewPos);
     return (isnan(viewDistance) || isinf(viewDistance)) ? fallbackDistance : max(viewDistance, 0.0);
 }
 
@@ -728,7 +732,14 @@ void main() {
     if (uFogEnabled != 0 || volumeCount > 0) {
         vec2 ndc = sourceUV * 2.0 - 1.0;
         vec3 view = vec3(ndc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), ndc.y * max(uTanHalfFov, 0.0), -1.0);
-        vec3 viewDir = normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
+        vec3 viewDir = uOrthographic != 0
+                           ? normalize(uCameraForward)
+                           : normalize(uCameraRight * view.x + uCameraUp * view.y + uCameraForward);
+        vec3 rayOrigin =
+            uOrthographic != 0
+                ? (uCameraPosition +
+                   (uCameraRight * (ndc.x * max(uAspect, 0.0001)) + uCameraUp * ndc.y) * max(uOrthoHalfHeight, 0.0))
+                : uCameraPosition;
         float fallbackDistance = depth < 1.0
                                      ? mix(max(uCameraNear, 0.0), max(uCameraFar, 0.0), clamp(depth, 0.0, 1.0))
                                      : max(uCameraFar, 0.0);
@@ -749,7 +760,7 @@ void main() {
                     float density = max(uFogDensity, 0.0);
                     if (uFogMode == kFogModeHeightUVE) {
                         // Preserve the existing height-fog profile as the default mode.
-                        vec3 worldPos = uCameraPosition + viewDir * viewDistance;
+                        vec3 worldPos = rayOrigin + viewDir * viewDistance;
                         float heightTerm = exp(-max(worldPos.y - uFogHeight, 0.0) /
                                                max(uFogHeightFalloff, 0.01));
                         density *= mix(1.0, heightTerm, 0.85);
@@ -765,7 +776,7 @@ void main() {
         vec3 localColorMass = vec3(0.0);
         float localOccupancyMass = 0.0;
         for (int i = 0; i < volumeCount; ++i) {
-            FogVolumeIntegrateUVE(uFogVolumes[i], uCameraPosition, viewDir, max(viewDistance, 0.0), localTau,
+            FogVolumeIntegrateUVE(uFogVolumes[i], rayOrigin, viewDir, max(viewDistance, 0.0), localTau,
                                   localColorMass, localOccupancyMass);
         }
         float combinedTau = globalTau + localTau;
@@ -795,7 +806,7 @@ void main() {
                 float accumLight = 0.0;
                 for (int s = 0; s < kGodRaySamples; ++s) {
                     float sampleDist = marchStart + stepDist * (float(s) + 0.5);
-                    vec3 samplePos = uCameraPosition + viewDir * sampleDist;
+                    vec3 samplePos = rayOrigin + viewDir * sampleDist;
                     float shadow = VolumetricShadowFactorUVE(samplePos, sampleDist);
                     if (shadow > 0.0) {
                         float density = max(uFogDensity, 0.01);
@@ -845,7 +856,17 @@ void main() {
         float dither = ScreenSpaceDitherNoiseUVE(floor(gl_FragCoord.xy)) / 255.0;
         ldr = clamp(ldr + vec3(dither), 0.0, 1.0);
     }
-    float covered = depth < 1.0 ? 1.0 : (uSkyCovers != 0 ? 0.75 : 0.0);
+    bool sunDiscCovers = false;
+    if (uSkyCovers == 0 && uSunEnergy > 0.0 && uSunAngularDiameter > 0.0) {
+        vec2 skyNdc = sourceUV * 2.0 - 1.0;
+        vec3 skyView =
+            vec3(skyNdc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), skyNdc.y * max(uTanHalfFov, 0.0), -1.0);
+        vec3 skyWorldDir = normalize(uCameraRight * skyView.x + uCameraUp * skyView.y + uCameraForward);
+        vec3 skySunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
+        float sunRadius = radians(max(uSunAngularDiameter, 0.0)) * 0.5;
+        sunDiscCovers = skyWorldDir.y > -0.001 && skySunDir.y > -0.02 && dot(skyWorldDir, skySunDir) >= cos(sunRadius);
+    }
+    float covered = depth < 1.0 ? 1.0 : ((uSkyCovers != 0 || sunDiscCovers) ? 0.75 : 0.0);
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
     FragColor = vec4(ldr, alpha);
 }
@@ -973,7 +994,7 @@ vec3 AtmosphereUpperUVE(vec3 dir, vec3 sun) {
     horizon = mix(horizon, sunsetHorizon, towardSun * max(sunset, (1.0 - day) * 0.25));
 
     vec3 sky = mix(horizon, zenith, pow(clamp(viewY, 0.0, 1.0), max(uSkyCurve, 0.001)));
-    sky *= mix(1.0, 1.55, day * (1.0 - sunset));
+    sky *= mix(1.0, 1.55, (uSunEnergy > 0.0 ? day : 0.0) * (1.0 - sunset));
     sky = mix(sky, max(uGroundColor, vec3(0.0)) * (0.05 * day), pow(1.0 - clamp(viewY, 0.0, 1.0), 8.0) * 0.08);
 
     float g = mix(0.76, 0.93, sunset);
@@ -1749,6 +1770,13 @@ uniform vec3 uSkyReflectionGround;
 uniform sampler2D uAmbientEnvironmentMap;
 uniform int uAmbientEnvironmentMapEnabled;
 uniform vec3 uViewPosition;
+#if UVE_MOBILE
+uniform int uOrthographic;
+uniform vec3 uCameraForward;
+#else
+uniform int uOrthographic = 0;
+uniform vec3 uCameraForward = vec3(0.0, 0.0, -1.0);
+#endif
 uniform vec3 uAlbedoColor;
 uniform float uMetallic;
 uniform float uRoughness;
@@ -2135,7 +2163,9 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
     }
 
-    float viewDepth = length(vWorldPosition - uViewPosition);
+    float viewDepth = uOrthographic != 0
+                          ? max(dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward)), 0.0)
+                          : length(vWorldPosition - uViewPosition);
     int finalCascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
     float finalCascadeFarDepth = uShadowCascadeSplits[finalCascadeIndex];
     // Beyond the last split the light casts no shadow; at the split the fade has reached fully lit.
@@ -2430,7 +2460,9 @@ void main() {
         return;
     }
 
-    vec3 viewDirection = SafeNormalizeUVE(uViewPosition - vWorldPosition);
+    vec3 viewDirection = uOrthographic != 0
+                             ? SafeNormalizeUVE(-uCameraForward)
+                             : SafeNormalizeUVE(uViewPosition - vWorldPosition);
     // Meshes authored with the opposite winding/normal convention are still valid two-sided
     // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
     if (dot(normal, viewDirection) < 0.0) {
@@ -3392,6 +3424,7 @@ uniform sampler2D uDepthTexture;
 // than inverting uInverseProjection again per pixel).
 uniform mat4 uInverseProjection;
 uniform mat4 uProjection;
+uniform int uOrthographic;
 uniform float uRadius;
 uniform float uBias;
 uniform float uIntensity;
@@ -3453,7 +3486,8 @@ void main() {
         isinf(viewNormal.x) || isinf(viewNormal.y) || isinf(viewNormal.z)) {
         viewNormal = vec3(0.0, 0.0, 1.0);
     }
-    if (dot(viewNormal, -centerViewPos) < 0.0) {
+    vec3 towardEye = uOrthographic != 0 ? vec3(0.0, 0.0, 1.0) : -centerViewPos;
+    if (dot(viewNormal, towardEye) < 0.0) {
         viewNormal = -viewNormal;
     }
 
@@ -3467,7 +3501,7 @@ void main() {
     vec3 bitangent = cross(viewNormal, tangent);
     mat3 tbn = mat3(tangent, bitangent, viewNormal);
 
-    float normalViewDot = max(dot(viewNormal, normalize(-centerViewPos)), 0.15);
+    float normalViewDot = max(dot(viewNormal, normalize(towardEye)), 0.15);
     float angleBias = max(uBias, uBias / normalViewDot);
 
     float occlusion = 0.0;
@@ -3660,6 +3694,7 @@ uniform sampler2D uDepthTexture;
 // transform needed is the one that produced the depth buffer and its undo.
 uniform mat4 uProjection;
 uniform mat4 uInverseProjection;
+uniform int uOrthographic;
 // Direction from the surface TOWARD the light, in view space, normalized on the CPU. The renderer
 // derives it from the same sun direction it hands the sky and the volumetric pass, so the contact
 // shadow is always aligned with the light that casts it.
@@ -3697,7 +3732,8 @@ vec3 ViewNormalUVE(vec3 viewPosition) {
         viewNormal = vec3(0.0, 0.0, 1.0);
     }
     // Face the camera; the sign of a derivative-derived normal is otherwise arbitrary.
-    if (dot(viewNormal, -viewPosition) < 0.0) {
+    vec3 towardEye = uOrthographic != 0 ? vec3(0.0, 0.0, 1.0) : -viewPosition;
+    if (dot(viewNormal, towardEye) < 0.0) {
         viewNormal = -viewNormal;
     }
     return viewNormal;
@@ -3796,6 +3832,7 @@ uniform sampler2D uDepthTexture;
 
 uniform mat4 uProjection;
 uniform mat4 uInverseProjection;
+uniform int uOrthographic;
 uniform vec3 uCameraPosition;
 uniform float uCameraNear;
 uniform float uCameraFar;
@@ -3822,7 +3859,7 @@ void main() {
     vec3 ddy = dFdy(viewPos);
     vec3 normal = normalize(cross(ddx, ddy));
 
-    vec3 viewDir = normalize(viewPos);
+    vec3 viewDir = uOrthographic != 0 ? vec3(0.0, 0.0, -1.0) : normalize(viewPos);
     vec3 reflectDir = normalize(reflect(viewDir, normal));
 
     if (reflectDir.z >= 0.0) {
@@ -3971,6 +4008,8 @@ in vec4 vClipPosition;
 out vec4 FragColor;
 
 uniform vec3 uViewPosition;
+uniform int uOrthographic;
+uniform vec3 uCameraForward;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uSunEnergy;
@@ -3992,6 +4031,9 @@ uniform sampler2D uSceneDepthTexture;
 float LinearizeDepth(float depth) {
     float near = max(uCameraNear, 0.01);
     float far = max(uCameraFar, 1.0);
+    if (uOrthographic != 0) {
+        return mix(near, far, clamp(depth, 0.0, 1.0));
+    }
     return (2.0 * near * far) / (far + near - depth * (far - near));
 }
 
@@ -3999,7 +4041,9 @@ void main() {
     vec2 screenUv = (vClipPosition.xy / vClipPosition.w) * 0.5 + 0.5;
     screenUv = clamp(screenUv, 0.001, 0.999);
 
-    vec3 viewDir = normalize(uViewPosition - vWorldPosition);
+    vec3 viewDir = uOrthographic != 0
+                       ? (length(uCameraForward) > 1.0e-5 ? normalize(-uCameraForward) : vec3(0.0, 0.0, 1.0))
+                       : normalize(uViewPosition - vWorldPosition);
     vec3 sunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
 
     // Dynamic wave ripples for high-frequency surface normal modulation

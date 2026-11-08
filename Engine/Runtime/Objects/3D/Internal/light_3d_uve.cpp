@@ -47,15 +47,17 @@ Math::Vector3UVE Light3DUVE::ResolveWorldDirectionUVE(
 float Light3DUVE::EstimateViewContributionUVE(
     const LightTypeUVE type, const Math::ColorUVE& color, const float intensity, const float range,
     const Math::Vector3UVE& lightPosition, const Math::Vector3UVE& viewPosition) noexcept {
-    if (type == LightTypeUVE::Directional) {
-        return std::numeric_limits<float>::infinity();
-    }
-    if (!std::isfinite(intensity) || intensity <= 0.0F || !Math::IsFiniteUVE(lightPosition) ||
-        !Math::IsFiniteUVE(viewPosition)) {
+    if (!std::isfinite(intensity) || intensity <= 0.0F) {
         return 0.0F;
     }
     const float emitted = intensity * ComputeRec709LuminanceUVE(color);
     if (emitted <= 0.0F) {
+        return 0.0F;
+    }
+    if (type == LightTypeUVE::Directional) {
+        return std::numeric_limits<float>::infinity();
+    }
+    if (!Math::IsFiniteUVE(lightPosition) || !Math::IsFiniteUVE(viewPosition)) {
         return 0.0F;
     }
     const Math::Vector3UVE toLight{lightPosition.x - viewPosition.x,

@@ -66,6 +66,7 @@
 #include "uve/component/collider_component_uve.h"
 #include "uve/objects/2d/all_objects_2d_uve.h"
 #include "uve/objects/3d/all_objects_3d_uve.h"
+#include "uve/objects/3d/preview_lighting_uve.h"
 #include "uve/objects/canvas/all_objects_canvas_uve.h"
 #include "uve/scene/objects/scene_object_type_uve.h"
 #include "uve/scene/spawn_point_query_uve.h"
@@ -2639,6 +2640,17 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::DirectionalLight3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::DirectionalLight3DObjectDefinitionUVE{},
                                                             Scene::ApplyDirectionalLight3DObjectDefinitionUVE);
+            if (entity != Scene::kInvalidEntityUVE &&
+                entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+                const std::optional<Math::QuaternionUVE> rotation =
+                    Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
+                                                        m_viewportOverlayState.previewSunAltitude);
+                if (rotation.has_value()) {
+                    auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+                    transform.localRotation = *rotation;
+                    sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+                }
+            }
             break;
         case Scene::Objects::SceneObjectKindUVE::ReflectionProbe3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::ReflectionProbe3DObjectDefinitionUVE{},

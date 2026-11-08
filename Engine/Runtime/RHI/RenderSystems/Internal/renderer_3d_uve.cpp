@@ -883,6 +883,8 @@ struct FrameUniformsUVE {
     Math::Vector3UVE skyReflectionSky{};
     Math::Vector3UVE skyReflectionHorizon{};
     Math::Vector3UVE skyReflectionGround{};
+    bool isOrthographic = false;
+    Math::Vector3UVE cameraForward{0.0F, 0.0F, -1.0F};
 };
 
 } // namespace
@@ -3170,6 +3172,8 @@ struct Renderer3DUVE::ImplUVE {
                                           const bool blendedVariant) {
         ApplyLightingUniformsUVE(program, frameUniforms);
         program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
+        program.SetIntUVE("uOrthographic", frameUniforms.isOrthographic ? 1 : 0);
+        program.SetVector3UVE("uCameraForward", frameUniforms.cameraForward);
         program.SetMatrix4x4UVE(uniformNames.legacyLightSpaceMatrix, frameUniforms.lightSpaceMatrices[0]);
         program.SetIntUVE("uShadowMapTexture", static_cast<std::int32_t>(kShadowMapTextureSlotUVE));
         program.SetIntUVE("uShadowCascadeCount", frameUniforms.cascadeCount);
@@ -4531,9 +4535,14 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     // Editor preview environment, applied strictly in the gap a real WorldEnvironment would fill.
     // The check is on the RESOLVED frame rather than on the injected value so a scene that gains a
     // WorldEnvironment mid-frame immediately takes priority, with no editor bookkeeping to reset.
-    if (!m_impl->environmentFrame.hasEnvironment && m_impl->previewEnvironment.has_value()) {
+    const bool usingPreviewEnvironment =
+        !m_impl->environmentFrame.hasEnvironment && m_impl->previewEnvironment.has_value();
+    if (usingPreviewEnvironment) {
         m_impl->environmentFrame = *m_impl->previewEnvironment;
     }
+    const bool isOrthographic =
+        !capturingProbe && camera.projection == Scene::CameraProjectionModeUVE::Orthographic;
+    const float orthoHalfHeight = isOrthographic ? camera.orthographicSize : 0.0F;
     const Asset::AssetGuidUVE previousSkyTextureGuid = m_impl->skyTextureGuid;
     m_impl->skyTextureGuid = Asset::kInvalidAssetGuidUVE;
     m_impl->skyTextureHandle = kInvalidTextureHandleUVE;
@@ -4661,8 +4670,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->sunDiscLimbDarkening = 0.0F;
         m_impl->sunVolumetricFogEnergy = fallbackInternalDirectional->volumetricFogEnergy;
     }
-    Scene::ApplySunToWorldEnvironmentFrameUVE(m_impl->environmentFrame, m_impl->sunDirection, m_impl->sunColor,
-                                              m_impl->sunEnergy);
+    if (!(usingPreviewEnvironment && fallbackInternalDirectional != nullptr)) {
+        Scene::ApplySunToWorldEnvironmentFrameUVE(m_impl->environmentFrame, m_impl->sunDirection, m_impl->sunColor,
+                                                  m_impl->sunEnergy);
+    }
     m_impl->fogVolumeCount =
         Scene::CollectFogVolume3DFramesUVE(entityManager, viewPosition, m_impl->fogVolumes);
     if (!capturingProbe) {
@@ -4711,11 +4722,16 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         // The caster may keep its shadow closer than the camera sees (a sharper shadow where it
         // matters) and choose how its cascades share that distance.
         const float minShadowFar = std::min(camera.nearPlane * 2.0F, camera.farPlane);
-        const float shadowFar = shadowCaster->shadowMaxDistance > 0.0F
-                                    ? std::clamp(shadowCaster->shadowMaxDistance, minShadowFar, camera.farPlane)
+        const float requestedShadowFar = isOrthographic && shadowCaster->shadowMaxDistance > 0.0F
+                                             ? std::max(shadowCaster->shadowMaxDistance, camera.orthographicSize * 8.0F)
+                                             : shadowCaster->shadowMaxDistance;
+        const float shadowFar = requestedShadowFar > 0.0F
+                                    ? std::clamp(requestedShadowFar, minShadowFar, camera.farPlane)
                                     : camera.farPlane;
-        const float splitLambda =
-            shadowCaster->shadowSplitBlend >= 0.0F ? shadowCaster->shadowSplitBlend : m_impl->shadowCascadeSplitLambda;
+        const float splitLambda = isOrthographic
+                                      ? 0.0F
+                                      : (shadowCaster->shadowSplitBlend >= 0.0F ? shadowCaster->shadowSplitBlend
+                                                                                 : m_impl->shadowCascadeSplitLambda);
         cascadeSplits = ComputeCascadeSplitsUVE(camera.nearPlane, shadowFar, splitLambda);
         const bool cascadeSplitsValid = AreCascadeSplitsValidUVE(cascadeSplits, camera.nearPlane, shadowFar);
         if (!cascadeSplitsValid) {
@@ -4911,6 +4927,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     frameUniforms.skyReflectionSky = m_impl->environmentFrame.reflectionSky;
     frameUniforms.skyReflectionHorizon = m_impl->environmentFrame.reflectionHorizon;
     frameUniforms.skyReflectionGround = m_impl->environmentFrame.reflectionGround;
+    frameUniforms.isOrthographic = isOrthographic;
+    frameUniforms.cameraForward = m_impl->skyCameraForward;
 
     // Indexed by uLights[] slot, which is exactly how the shader indexes its own arrays - a tile
     // for light 3 must land in slot 3 even when two other lights between them have none.
@@ -5346,7 +5364,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             RenderGraphResourceUseUVE{ssaoResource, RenderGraphResourceAccessUVE::Write}};
         renderGraph.AddPassUVE(
             "SSAO", ssaoPassResources,
-            [this, &projection, &inverseProjection](ICommandBufferUVE& commandBuffer) {
+            [this, &projection, &inverseProjection, isOrthographic](ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->ssaoTarget;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -5355,6 +5373,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->ssaoProgram->SetIntUVE("uDepthTexture", 0);
                 m_impl->ssaoProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
                 m_impl->ssaoProgram->SetMatrix4x4UVE("uProjection", projection);
+                m_impl->ssaoProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
                 const float ssaoRadius = m_impl->environmentFrame.hasEnvironment
                                              ? m_impl->environmentFrame.ssaoRadius
                                              : m_impl->postProcessSettings.ssaoRadiusUVE;
@@ -5433,7 +5452,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             RenderGraphResourceUseUVE{contactShadowResource, RenderGraphResourceAccessUVE::Write}};
         renderGraph.AddPassUVE(
             "ContactShadows", contactShadowPassResources,
-            [this, &projection, &inverseProjection, settingsInView](ICommandBufferUVE& commandBuffer) {
+            [this, &projection, &inverseProjection, settingsInView, isOrthographic](ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->contactShadowTarget;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -5442,6 +5461,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->contactShadowProgram->SetIntUVE("uDepthTexture", 0);
                 m_impl->contactShadowProgram->SetMatrix4x4UVE("uProjection", projection);
                 m_impl->contactShadowProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
+                m_impl->contactShadowProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
                 m_impl->contactShadowProgram->SetVector3UVE("uLightDirectionView", settingsInView.lightDirectionView);
                 m_impl->contactShadowProgram->SetFloatUVE("uLengthMeters", settingsInView.settings.lengthMetersUVE);
                 m_impl->contactShadowProgram->SetFloatUVE("uThicknessMeters", settingsInView.settings.thicknessMetersUVE);
@@ -5490,7 +5510,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             RenderGraphResourceUseUVE{ssrResource, RenderGraphResourceAccessUVE::Write}};
         renderGraph.AddPassUVE(
             "ScreenSpaceReflections", ssrPassResources,
-            [this, projection, inverseProjection](ICommandBufferUVE& commandBuffer) {
+            [this, projection, inverseProjection, isOrthographic](ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->ssrTarget;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -5501,6 +5521,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->ssrProgram->SetIntUVE("uDepthTexture", 1);
                 m_impl->ssrProgram->SetMatrix4x4UVE("uProjection", projection);
                 m_impl->ssrProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
+                m_impl->ssrProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
                 m_impl->ssrProgram->SetVector3UVE("uCameraPosition", m_impl->environmentCameraPosition);
                 m_impl->ssrProgram->SetFloatUVE("uCameraNear", m_impl->environmentCameraNear);
                 m_impl->ssrProgram->SetFloatUVE("uCameraFar", m_impl->environmentCameraFar);
@@ -5693,7 +5714,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     if (m_impl->toneMappingProgram->IsValidUVE()) renderGraph.AddPassUVE(
         "ToneMapping", toneMappingResources,
         [this, inverseProjection, previousMotionBlurViewProjection, motionBlurHistoryReady, shadowsReady,
-         &lightSpaceMatrices, &cascadeSplits](
+         isOrthographic, orthoHalfHeight, sunDiscActive, &lightSpaceMatrices, &cascadeSplits](
             ICommandBufferUVE& commandBuffer) {
             if (!m_impl->toneMappingProgram->IsValidUVE()) {
                 return;
@@ -5766,6 +5787,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uCameraFar", m_impl->environmentCameraFar);
             m_impl->toneMappingProgram->SetFloatUVE("uFogSkyAffect", m_impl->environmentFrame.fogSkyAffect);
             m_impl->toneMappingProgram->SetIntUVE("uSkyCovers", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
+            m_impl->toneMappingProgram->SetFloatUVE("uOrthoHalfHeight", orthoHalfHeight);
             m_impl->toneMappingProgram->SetFloatUVE("uBrightness", m_impl->environmentFrame.brightness);
             m_impl->toneMappingProgram->SetFloatUVE("uContrast", m_impl->environmentFrame.contrast);
             m_impl->toneMappingProgram->SetFloatUVE("uSaturation", m_impl->environmentFrame.saturation);
@@ -5824,6 +5847,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetVector3UVE("uSunDirection", m_impl->sunDirection);
             m_impl->toneMappingProgram->SetVector3UVE("uSunColor", m_impl->sunColor);
             m_impl->toneMappingProgram->SetFloatUVE("uSunEnergy", m_impl->sunEnergy);
+            m_impl->toneMappingProgram->SetFloatUVE(
+                "uSunAngularDiameter", sunDiscActive ? m_impl->sunDiscAngularDiameterDegrees : 0.0F);
             m_impl->toneMappingProgram->SetFloatUVE("uFogHeight", m_impl->environmentFrame.fogHeight);
             m_impl->toneMappingProgram->SetFloatUVE("uFogHeightFalloff", m_impl->environmentFrame.fogHeightFalloff);
             m_impl->toneMappingProgram->SetFloatUVE("uFogSunScatter", m_impl->environmentFrame.fogSunScatter);

@@ -99,7 +99,9 @@ bool EditorMeshLayerUVE::SyncHeadlightUVE(const univex::camera::OrbitCamera& cam
     // lighting still wins here even though the resolver already accounted for it: this layer runs
     // after the frame's settings were resolved, so a light added in between must not be overridden.
     if (previewLightingSet_) {
-        const bool previewSun = previewLighting_.sunActive && !sceneHasItsOwnLight && previewLighting_.sunEnergy > 0.0F;
+        const bool sceneHasDirectionalSun = HasAuthoredDirectionalLightNodeUVE(entityManager);
+        const bool previewSun =
+            previewLighting_.sunActive && !sceneHasDirectionalSun && previewLighting_.sunEnergy > 0.0F;
         headlight.intensity = previewSun ? previewLighting_.sunEnergy : 0.0F;
         headlightEmitter.shadowEnabled = previewSun;
         if (!previewSun) {
@@ -168,18 +170,35 @@ void EditorMeshLayerUVE::SyncCameraFromOrbitUVE(const univex::camera::OrbitCamer
 
     UVE::Scene::CameraComponentUVE& cameraComponent =
         entityManager.GetComponentUVE<UVE::Scene::CameraComponentUVE>(cameraEntity_);
+    const bool ortho = camera.IsOrthographic();
     const float fovDegrees = UVE::Math::RadToDegUVE(camera.Settings().fovYRadians);
+    cameraComponent.projection = ortho ? UVE::Scene::CameraProjectionModeUVE::Orthographic
+                                       : UVE::Scene::CameraProjectionModeUVE::Perspective;
     cameraComponent.fieldOfViewDegrees = fovDegrees;
-    cameraComponent.nearPlane = camera.NearPlane();
-    cameraComponent.farPlane = camera.FarPlane();
+    cameraComponent.orthographicSize = camera.OrthographicHalfHeight();
     cameraComponent.current = false;
 
     // CameraSystemUVE treats local -Z as forward (see camera_system_uve.cpp), so the rotation
     // must point local +Z along the eye-to-target "backward" vector for local -Z to land on the
     // real look direction - TryMakeLookAtUVE's own doc comment states the +Z convention directly.
-    const univex::math::Vec3 eye = camera.Eye();
+    univex::math::Vec3 eye = camera.Eye();
     const univex::math::Vec3 target = camera.Target();
     const univex::math::Vec3 backward{eye.x - target.x, eye.y - target.y, eye.z - target.z};
+    if (ortho) {
+        // CameraComponentUVE requires nearPlane > 0, whereas zooming in orthographic mode moves
+        // OrbitCamera::Eye() close to Target(). Backing the proxy camera up along the view axis
+        // keeps foreground geometry in front of nearPlane without pushing uViewPosition beyond
+        // directional shadow or light fade range.
+        const float orthoPullback =
+            std::max(camera.Distance() * 2.0F, camera.OrthographicHalfHeight() * 4.0F);
+        const univex::math::Vec3 backDir = univex::math::Normalize(backward);
+        eye = eye + backDir * orthoPullback;
+        cameraComponent.nearPlane = camera.NearPlane();
+        cameraComponent.farPlane = camera.FarPlane() + orthoPullback;
+    } else {
+        cameraComponent.nearPlane = camera.NearPlane();
+        cameraComponent.farPlane = camera.FarPlane();
+    }
     const univex::math::Vec3 cameraUp = camera.Up();
     UVE::Math::QuaternionUVE rotation{};
     if (!UVE::Math::TryMakeLookAtUVE(ToUveVector3UVE(backward), ToUveVector3UVE(cameraUp), rotation)) {
@@ -263,28 +282,27 @@ EditorMeshLayerResultUVE EditorMeshLayerUVE::RenderUVE(const univex::camera::Orb
     }
 
     UVE::Render::IRenderer3DUVE& renderer = services_.GetRenderer3DUVE();
+    const auto resetHeadlight = [&]() {
+        if (entityManager.IsAliveUVE(headlightEntity_) &&
+            entityManager.HasComponentUVE<UVE::Scene::LightComponentUVE>(headlightEntity_)) {
+            entityManager.GetComponentUVE<UVE::Scene::LightComponentUVE>(headlightEntity_).intensity = 0.0F;
+        }
+        if (entityManager.IsAliveUVE(headlightEntity_) &&
+            entityManager.HasComponentUVE<UVE::Scene::LightEmitterComponentUVE>(headlightEntity_)) {
+            entityManager.GetComponentUVE<UVE::Scene::LightEmitterComponentUVE>(headlightEntity_).shadowEnabled = false;
+        }
+    };
     // Keeps this call's own output correctly sized regardless of EngineCoreUVE's own, unrelated
     // per-frame resize of this same shared renderer to the real window's size (its own
     // presentation-surface path, never shown by this panel) - both calls are cheap no-ops when
     // the requested size already matches, and this one always runs immediately before the render
     // below, so this layer's own result is always correct even if the two occasionally race.
     if (!renderer.ResizeTargetsUVE(width, height)) {
+        resetHeadlight();
         return {};
     }
-    // Deliberately omits RenderFrameToTargetUVE's own width/height (UI-overlay) parameters: that
-    // path bakes UI directly into this mesh layer's own offscreen texture using depth to signal
-    // "something was drawn here" to a compositor, but authored UI never writes depth (by design -
-    // see uiOverlayProgramDesc's own comment, and real OpenGL depth-write requires depth TESTING to
-    // also be enabled, which a screen-space overlay correctly never wants), so a depth-based
-    // compositor could never see it there. The Viewport panel instead draws the same shared
-    // UI::UIRuntimeUVE batch directly via ImGui's own overlay draw list (see main.cpp's
-    // DrawUIOverlayUVE()) - the correct approach anyway, since UIQuadUVE positions are authored in
-    // real window pixel space (matching IInputSystemUVE::GetMousePositionUVE()'s own convention),
-    // not this panel's own local render-target space.
-    // Passing the size matters beyond the UI-overlay path this parameter was added for: it is also
-    // what tells the tone-mapping pass how large its destination is, so the frame fills the texture
-    // instead of being rasterised at presentation-surface size and captured as a corner crop.
     renderer.RenderFrameToTargetUVE(entityManager, renderCameraEntity, colorTarget_, depthTarget_, width, height);
+    resetHeadlight();
 
     auto* const glRenderDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
     if (glRenderDevice == nullptr) {
