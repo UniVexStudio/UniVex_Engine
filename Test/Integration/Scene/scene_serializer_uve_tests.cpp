@@ -818,6 +818,17 @@ TEST_F(SceneSerializerUVETest, Ragdoll3DRoundTripsWithSkeletonReferenceAndAuthor
     thighBone.twistMotion = Physics::RagdollMotionUVE::Limited;
     thighBone.twistLimitDegrees = 40.0F;
 
+    thighBone.shapeType = RagdollShapeTypeUVE::Box;
+    thighBone.boxExtents = Math::Vector3UVE{0.1F, 0.2F, 0.1F};
+
+    ragdoll.simulationMode = RagdollSimulationModeUVE::ActiveRagdoll;
+    ragdoll.drivesRootTransform = true;
+    ragdoll.enablePhysicsInEditor = true;
+    ragdoll.enableGravityInEditor = false;
+    ragdoll.enableGravityInGame = true;
+    ragdoll.enableTrajectory = true;
+    ragdoll.enableProceduralIdle = true;
+
     ragdoll.bones = {pelvisBone, thighBone};
     entityManager.AddComponentUVE<Ragdoll3DComponentUVE>(ragdollEntity, ragdoll);
 
@@ -847,13 +858,23 @@ TEST_F(SceneSerializerUVETest, Ragdoll3DRoundTripsWithSkeletonReferenceAndAuthor
     EXPECT_EQ(restored.gravity, ragdoll.gravity);
     EXPECT_EQ(restored.initialVelocity, ragdoll.initialVelocity);
     EXPECT_TRUE(restored.enabled);
+    EXPECT_EQ(restored.simulationMode, RagdollSimulationModeUVE::ActiveRagdoll);
+    EXPECT_TRUE(restored.drivesRootTransform);
+    EXPECT_TRUE(restored.enablePhysicsInEditor);
+    EXPECT_FALSE(restored.enableGravityInEditor);
+    EXPECT_TRUE(restored.enableGravityInGame);
+    EXPECT_TRUE(restored.enableTrajectory);
+    EXPECT_TRUE(restored.enableProceduralIdle);
     ASSERT_EQ(restored.bones.size(), 2U);
     EXPECT_EQ(restored.bones[0].boneName, "pelvis");
     EXPECT_EQ(restored.bones[0].mass, 12.0F);
+    EXPECT_EQ(restored.bones[0].shapeType, RagdollShapeTypeUVE::Capsule);
     EXPECT_EQ(restored.bones[1].boneName, "thigh_l");
     EXPECT_EQ(restored.bones[1].parentBoneName, "pelvis");
     EXPECT_EQ(restored.bones[1].mass, 9.0F);
     EXPECT_EQ(restored.bones[1].swing1LimitDegrees, 70.0F);
+    EXPECT_EQ(restored.bones[1].shapeType, RagdollShapeTypeUVE::Box);
+    EXPECT_EQ(restored.bones[1].boxExtents.x, 0.1F);
 }
 
 TEST_F(SceneSerializerUVETest, SpringArmAuthoredFieldsRoundTripAndRuntimeTruthIsReseeded) {

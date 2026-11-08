@@ -106,6 +106,92 @@ void EditorUVE::BuildColliderOverlayUVE(std::vector<ViewportColliderLineUVE>& ou
         outLines.push_back(ViewportColliderLineUVE{{line.from.x, line.from.y, line.from.z},
                                                    {line.to.x, line.to.y, line.to.z}, true});
     }
+
+    // ---- Ragdoll3D Bone Colliders & Floating Trajectory Viewport Gizmos ----
+    entities.ForEachUVE<Scene::Ragdoll3DComponentUVE>([this, selected, &entities, &outLines](
+        const Scene::EntityUVE ragdollEntity, Scene::Ragdoll3DComponentUVE& ragdoll) {
+        if (!ragdoll.enabled) return;
+        const bool isSelected = (selected == ragdollEntity || selected == ragdoll.skeleton);
+
+        // 1. Bone Colliders Wireframes
+        if (ragdoll.showBoneColliders || isSelected) {
+            const std::size_t bodyCount = ragdoll.solver.GetBodyCountUVE();
+            for (std::size_t i = 0; i < bodyCount; ++i) {
+                const Physics::RagdollBodyUVE& body = ragdoll.solver.GetBodyUVE(i);
+                Scene::RagdollShapeTypeUVE shapeType = Scene::RagdollShapeTypeUVE::Capsule;
+                Math::Vector3UVE boxExtents{body.radius, body.halfHeight + body.radius, body.radius};
+                if (i < ragdoll.bones.size()) {
+                    shapeType = ragdoll.bones[i].shapeType;
+                    boxExtents = ragdoll.bones[i].boxExtents;
+                }
+
+                if (shapeType == Scene::RagdollShapeTypeUVE::Box) {
+                    std::array<Physics::ColliderDebugLineUVE, 12U> boxLines{};
+                    Physics::ColliderDebugBuildResultUVE res{};
+                    Physics::BuildOrientedBoxDebugLinesUVE(body.position, boxExtents * 0.5F, body.rotation, boxLines, res);
+                    for (std::size_t b = 0; b < res.lineCount; ++b) {
+                        outLines.push_back(ViewportColliderLineUVE{
+                            {boxLines[b].from.x, boxLines[b].from.y, boxLines[b].from.z},
+                            {boxLines[b].to.x, boxLines[b].to.y, boxLines[b].to.z}, isSelected});
+                    }
+                } else {
+                    Scene::ColliderComponentUVE tempCollider;
+                    tempCollider.shape = (shapeType == Scene::RagdollShapeTypeUVE::Cylinder)
+                        ? Scene::ColliderShapeUVE::Cylinder : Scene::ColliderShapeUVE::Capsule;
+                    tempCollider.radius = body.radius;
+                    tempCollider.height = 2.0F * (body.halfHeight + body.radius);
+
+                    std::array<Physics::ColliderDebugLineUVE, 128U> shapeLines{};
+                    const Physics::ColliderDebugBuildResultUVE res = Physics::BuildColliderDebugLinesUVE(
+                        tempCollider, body.position, body.rotation, shapeLines);
+                    for (std::size_t s = 0; s < res.lineCount; ++s) {
+                        outLines.push_back(ViewportColliderLineUVE{
+                            {shapeLines[s].from.x, shapeLines[s].from.y, shapeLines[s].from.z},
+                            {shapeLines[s].to.x, shapeLines[s].to.y, shapeLines[s].to.z}, isSelected});
+                    }
+                }
+            }
+        }
+
+        // 2. Floating Trajectory Arc & Ground Landing Target
+        if (ragdoll.showTrajectoryGizmo && ragdoll.enableTrajectory) {
+            const auto& samples = ragdoll.trajectory.samples;
+            for (std::size_t s = 1; s < samples.size(); ++s) {
+                outLines.push_back(ViewportColliderLineUVE{
+                    {samples[s - 1].position.x, samples[s - 1].position.y, samples[s - 1].position.z},
+                    {samples[s].position.x, samples[s].position.y, samples[s].position.z}, true});
+            }
+            if (ragdoll.trajectory.hasPredictedLanding) {
+                const Math::Vector3UVE lp = ragdoll.trajectory.predictedLandingPosition;
+                // Circular ring on ground
+                constexpr int kRingSegments = 16;
+                constexpr float kRingRadius = 0.35F;
+                for (int r = 0; r < kRingSegments; ++r) {
+                    const float a1 = static_cast<float>(r) * (6.2831853F / static_cast<float>(kRingSegments));
+                    const float a2 = static_cast<float>(r + 1) * (6.2831853F / static_cast<float>(kRingSegments));
+                    outLines.push_back(ViewportColliderLineUVE{
+                        {lp.x + std::cos(a1) * kRingRadius, lp.y + 0.02F, lp.z + std::sin(a1) * kRingRadius},
+                        {lp.x + std::cos(a2) * kRingRadius, lp.y + 0.02F, lp.z + std::sin(a2) * kRingRadius}, true});
+                }
+                // Crosshair marker
+                outLines.push_back(ViewportColliderLineUVE{{lp.x - kRingRadius, lp.y + 0.02F, lp.z}, {lp.x + kRingRadius, lp.y + 0.02F, lp.z}, true});
+                outLines.push_back(ViewportColliderLineUVE{{lp.x, lp.y + 0.02F, lp.z - kRingRadius}, {lp.x, lp.y + 0.02F, lp.z + kRingRadius}, true});
+            }
+        }
+
+        // 3. Center of Mass & Balance Support Polygon
+        if (ragdoll.showCenterOfMass && ragdoll.balanceState.balanceState != Physics::BalanceStateUVE::UnrecoverableFall) {
+            const Math::Vector3UVE com = ragdoll.balanceState.centerOfMass;
+            constexpr float kCross = 0.08F;
+            outLines.push_back(ViewportColliderLineUVE{{com.x - kCross, com.y, com.z}, {com.x + kCross, com.y, com.z}, true});
+            outLines.push_back(ViewportColliderLineUVE{{com.x, com.y - kCross, com.z}, {com.x, com.y + kCross, com.z}, true});
+            outLines.push_back(ViewportColliderLineUVE{{com.x, com.y, com.z - kCross}, {com.x, com.y, com.z + kCross}, true});
+            // Plumb line to ground ZMP
+            outLines.push_back(ViewportColliderLineUVE{
+                {com.x, com.y, com.z},
+                {ragdoll.balanceState.extrapolatedCenterOfMass.x, 0.02F, ragdoll.balanceState.extrapolatedCenterOfMass.y}, false});
+        }
+    });
 }
 
 bool EditorUVE::SetViewportCollisionShapesUVE(const bool visible) {

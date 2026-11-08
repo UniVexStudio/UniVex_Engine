@@ -3888,6 +3888,83 @@ void EditorUVE::DrawRagdollBonesPropertyUVE(const Core::TypeMetadataEntryUVE& en
         }
     }
 
+    // ---- Global Batch Bone Tuning (Apply to All Bones at Once) ----
+    if (!bones.empty()) {
+        if (ImGui::TreeNodeEx("Batch Settings (All Bones)##batch_bones", ImGuiTreeNodeFlags_Framed)) {
+            ImGui::TextUnformatted("Scale All Radii:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("-10%##r_minus")) {
+                for (auto& b : bones) b.radius = std::max(0.005F, b.radius * 0.9F);
+                edited = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+10%##r_plus")) {
+                for (auto& b : bones) b.radius = std::min(1.0F, b.radius * 1.1F);
+                edited = true;
+            }
+
+            ImGui::SameLine();
+            ImGui::TextUnformatted("  Scale Length:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("-10%##h_minus")) {
+                for (auto& b : bones) b.halfHeight = std::max(0.005F, b.halfHeight * 0.9F);
+                edited = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+10%##h_plus")) {
+                for (auto& b : bones) b.halfHeight = std::min(2.0F, b.halfHeight * 1.1F);
+                edited = true;
+            }
+
+            ImGui::TextUnformatted("Set All Shapes:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Capsule##set_all_cap")) {
+                for (auto& b : bones) b.shapeType = Scene::RagdollShapeTypeUVE::Capsule;
+                edited = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Box##set_all_box")) {
+                for (auto& b : bones) b.shapeType = Scene::RagdollShapeTypeUVE::Box;
+                edited = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Cylinder##set_all_cyl")) {
+                for (auto& b : bones) b.shapeType = Scene::RagdollShapeTypeUVE::Cylinder;
+                edited = true;
+            }
+
+            ImGui::TextUnformatted("Test Reactions:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Leg Hit##btn_test_leg")) {
+                if (entityManager.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity)) {
+                    auto& r = entityManager.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity);
+                    r.activeReactionType = Physics::ProceduralReactionTypeUVE::LegFootHit;
+                    r.reactionTimer = 0.0F;
+                    r.reactionIntensity = 1.0F;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Flank Hit##btn_test_flank")) {
+                if (entityManager.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity)) {
+                    auto& r = entityManager.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity);
+                    r.activeReactionType = Physics::ProceduralReactionTypeUVE::FlankRightHit;
+                    r.reactionTimer = 0.0F;
+                    r.reactionIntensity = 1.0F;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Chest Hit##btn_test_chest")) {
+                if (entityManager.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity)) {
+                    auto& r = entityManager.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity);
+                    r.activeReactionType = Physics::ProceduralReactionTypeUVE::ChestGutHit;
+                    r.reactionTimer = 0.0F;
+                    r.reactionIntensity = 1.0F;
+                }
+            }
+            ImGui::TreePop();
+        }
+    }
+
     std::optional<std::size_t> removeIndex;
     for (std::size_t index = 0U; index < bones.size(); ++index) {
         Scene::RagdollBoneSetupUVE& bone = bones[index];
@@ -3901,6 +3978,31 @@ void EditorUVE::DrawRagdollBonesPropertyUVE(const Core::TypeMetadataEntryUVE& en
 
         if (nodeOpen) {
             if (BeginPropertyRowsUVE("##bone_props")) {
+                // Shape Type row
+                const auto shapeLabel = [](Scene::RagdollShapeTypeUVE st) {
+                    switch (st) {
+                        case Scene::RagdollShapeTypeUVE::Capsule: return "Capsule";
+                        case Scene::RagdollShapeTypeUVE::Box: return "Box";
+                        case Scene::RagdollShapeTypeUVE::Cylinder: return "Cylinder";
+                    }
+                    return "Capsule";
+                };
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted("Shape Type");
+                ImGui::TableSetColumnIndex(1);
+                if (BeginCenteredComboUVE("##shape_type_combo", shapeLabel(bone.shapeType))) {
+                    for (auto st : {Scene::RagdollShapeTypeUVE::Capsule, Scene::RagdollShapeTypeUVE::Box, Scene::RagdollShapeTypeUVE::Cylinder}) {
+                        if (ImGui::Selectable(shapeLabel(st), bone.shapeType == st)) {
+                            bone.shapeType = st;
+                            edited = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+
                 // Bone Name row
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);

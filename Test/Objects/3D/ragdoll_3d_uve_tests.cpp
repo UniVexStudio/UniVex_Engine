@@ -21,6 +21,7 @@
 #include "uve/memory/memory_manager_uve.h"
 #include "uve/objects/3d/ragdoll_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/physics/procedural_reaction_uve.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -388,6 +389,41 @@ TEST_F(Ragdoll3DUVETest, ApplyRagdollImpactUVE_RefusesAHitThatTouchesNothing) {
     for (std::size_t body = 0U; body < ragdoll.solver.GetBodyCountUVE(); ++body) {
         EXPECT_FLOAT_EQ(ragdoll.solver.GetBodyUVE(body).linearVelocity.x, 0.0F);
     }
+}
+
+TEST_F(Ragdoll3DUVETest, UpdateRagdoll3DObjectsUVE_RespectsEditorPhysicsAndGravityToggles) {
+    const EntityUVE ragdollEntity = MakeHumanoidRagdollUVE();
+    ASSERT_TRUE(InitializeRagdoll3DUVE(entityManager, ragdollEntity));
+    Ragdoll3DComponentUVE& ragdoll = entityManager.GetComponentUVE<Ragdoll3DComponentUVE>(ragdollEntity);
+
+    ragdoll.enablePhysicsInEditor = true;
+    ragdoll.enableGravityInEditor = false;
+    ragdoll.enableGravityInGame = true;
+
+    const float startY = ragdoll.solver.GetBodyUVE(0).position.y;
+
+    // In Edit mode (isPlayMode = false) with enableGravityInEditor = false, physics steps but gravity is zero
+    UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 30.0F, /*isPlayMode=*/false);
+    EXPECT_NEAR(ragdoll.solver.GetBodyUVE(0).position.y, startY, 1.0e-4F)
+        << "Ragdoll in Edit mode with enableGravityInEditor=false must not fall into the void";
+
+    // When enableGravityInEditor is toggled on, gravity acts in Edit mode
+    ragdoll.enableGravityInEditor = true;
+    for (int frame = 0; frame < 30; ++frame) {
+        UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F, /*isPlayMode=*/false);
+    }
+    EXPECT_LT(ragdoll.solver.GetBodyUVE(0).position.y, startY - 0.1F)
+        << "Ragdoll in Edit mode with enableGravityInEditor=true must fall under gravity";
+}
+
+TEST_F(Ragdoll3DUVETest, ProceduralReaction_SynthesizesDirectionalHitAndHermiteRecovery) {
+    const auto targets = Physics::SynthesizeHitReactionUVE(
+        Physics::ProceduralReactionTypeUVE::FlankLeftHit, 0.08F, 1.0F);
+    EXPECT_GT(targets.blendWeight, 0.9F);
+
+    const auto recoveredTargets = Physics::SynthesizeHitReactionUVE(
+        Physics::ProceduralReactionTypeUVE::FlankLeftHit, 1.3F, 1.0F);
+    EXPECT_NEAR(recoveredTargets.blendWeight, 0.0F, 1.0e-3F);
 }
 
 } // namespace

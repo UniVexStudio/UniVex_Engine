@@ -41,6 +41,7 @@ add_library(uve_physics STATIC
     Internal/landing_system_uve.cpp
     Internal/ragdoll_recovery_uve.cpp
     Internal/physics_debug_draw_uve.cpp
+    Internal/procedural_reaction_uve.cpp
     Internal/physics_query_system_uve.cpp
     Internal/physics_system_uve.cpp
     Internal/raycast_system_uve.cpp

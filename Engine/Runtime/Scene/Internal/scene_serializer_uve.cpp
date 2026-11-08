@@ -1367,6 +1367,8 @@ template <typename VectorT>
         {"twistAsymmetric", bone.twistAsymmetric},
         {"twistLowerLimitDegrees", bone.twistLowerLimitDegrees},
         {"twistUpperLimitDegrees", bone.twistUpperLimitDegrees},
+        {"shapeType", static_cast<std::uint8_t>(bone.shapeType)},
+        {"boxExtents", ToJsonUVE(bone.boxExtents)},
         {"jointAxisLocal", ToJsonUVE(bone.jointAxisLocal)},
     };
 }
@@ -1375,6 +1377,10 @@ template <typename VectorT>
     RagdollBoneSetupUVE bone;
     bone.boneName = json.value("boneName", std::string{});
     bone.parentBoneName = json.value("parentBoneName", std::string{});
+    bone.shapeType = static_cast<RagdollShapeTypeUVE>(json.value("shapeType", static_cast<std::uint8_t>(RagdollShapeTypeUVE::Capsule)));
+    if (json.contains("boxExtents")) {
+        bone.boxExtents = Vector3FromJsonUVE(json.at("boxExtents"));
+    }
     bone.mass = json.value("mass", 1.0F);
     bone.radius = json.value("radius", 0.05F);
     bone.halfHeight = json.value("halfHeight", 0.08F);
@@ -1405,6 +1411,21 @@ template <typename VectorT>
         {"enabled", value.enabled},
         {"gravity", ToJsonUVE(value.gravity)},
         {"initialVelocity", ToJsonUVE(value.initialVelocity)},
+        {"simulationMode", static_cast<std::uint8_t>(value.simulationMode)},
+        {"drivesRootTransform", value.drivesRootTransform},
+        {"enablePhysicsInEditor", value.enablePhysicsInEditor},
+        {"enableGravityInEditor", value.enableGravityInEditor},
+        {"enableGravityInGame", value.enableGravityInGame},
+        {"enableTrajectory", value.enableTrajectory},
+        {"trajectoryHorizonSeconds", value.trajectoryHorizonSeconds},
+        {"showTrajectoryGizmo", value.showTrajectoryGizmo},
+        {"showBoneColliders", value.showBoneColliders},
+        {"showCenterOfMass", value.showCenterOfMass},
+        {"showSupportPolygon", value.showSupportPolygon},
+        {"enableAirborneControl", value.enableAirborneControl},
+        {"enableLandingPreparation", value.enableLandingPreparation},
+        {"enableProceduralIdle", value.enableProceduralIdle},
+        {"proceduralIdleIntensity", value.proceduralIdleIntensity},
         {"bones", std::move(bonesArray)},
     };
 }
@@ -1418,6 +1439,23 @@ template <typename VectorT>
     if (json.contains("initialVelocity")) {
         value.initialVelocity = Vector3FromJsonUVE(json.at("initialVelocity"));
     }
+    value.simulationMode = static_cast<RagdollSimulationModeUVE>(
+        json.value("simulationMode", static_cast<std::uint8_t>(RagdollSimulationModeUVE::ActiveRagdoll)));
+    value.drivesRootTransform = json.value("drivesRootTransform", true);
+    value.enablePhysicsInEditor = json.value("enablePhysicsInEditor", true);
+    value.enableGravityInEditor = json.value("enableGravityInEditor", false);
+    value.enableGravityInGame = json.value("enableGravityInGame", true);
+    value.enableTrajectory = json.value("enableTrajectory", true);
+    value.trajectoryHorizonSeconds = json.value("trajectoryHorizonSeconds", 2.0F);
+    value.showTrajectoryGizmo = json.value("showTrajectoryGizmo", true);
+    value.showBoneColliders = json.value("showBoneColliders", true);
+    value.showCenterOfMass = json.value("showCenterOfMass", true);
+    value.showSupportPolygon = json.value("showSupportPolygon", true);
+    value.enableAirborneControl = json.value("enableAirborneControl", true);
+    value.enableLandingPreparation = json.value("enableLandingPreparation", true);
+    value.enableProceduralIdle = json.value("enableProceduralIdle", true);
+    value.proceduralIdleIntensity = json.value("proceduralIdleIntensity", 1.0F);
+
     if (json.contains("bones") && json.at("bones").is_array()) {
         const auto& array = json.at("bones");
         value.bones.reserve(array.size());

@@ -2091,8 +2091,9 @@ void EngineCoreUVE::SyncRagdoll3DObjectsUVE() {
     // What this seam is for is the ORDER: after the animation pass that composed the skeleton's
     // pose, and before the graph propagates world transforms, so the ragdoll wins the pose and the
     // mesh follows it in the same frame.
+    const bool isPlayMode = (m_simulationExecutionMode == SimulationExecutionModeUVE::Running);
     static_cast<void>(Scene::UpdateRagdoll3DObjectsUVE(
-        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds), isPlayMode));
 }
 
 void EngineCoreUVE::SyncCameraFollowUVE() {

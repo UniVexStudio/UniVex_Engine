@@ -517,15 +517,16 @@ bool ApplyRagdollImpactUVE(IEntityManagerUVE& entityManager, const EntityUVE ent
     return true;
 }
 
-std::size_t UpdateRagdoll3DObjectsUVE(IEntityManagerUVE& entityManager, const float deltaTimeSeconds) {
+std::size_t UpdateRagdoll3DObjectsUVE(IEntityManagerUVE& entityManager, const float deltaTimeSeconds, const bool isPlayMode) {
     if (!std::isfinite(deltaTimeSeconds) || !(deltaTimeSeconds > 0.0F)) return 0U;
 
-    // One pass to find the work, so the collider snapshot below is built once for the whole scene
-    // rather than once per corpse.
     std::vector<EntityUVE> ragdollEntities;
-    entityManager.ForEachUVE<Ragdoll3DComponentUVE>([&ragdollEntities](const EntityUVE entity,
-                                                                      Ragdoll3DComponentUVE& ragdoll) {
-        if (ragdoll.enabled && ragdollEntities.size() < kMaximumRagdollEntitiesPerUpdateUVE) {
+    entityManager.ForEachUVE<Ragdoll3DComponentUVE>([&ragdollEntities, isPlayMode](const EntityUVE entity,
+                                                                                  Ragdoll3DComponentUVE& ragdoll) {
+        if (!ragdoll.enabled) return;
+        if (ragdoll.simulationMode == RagdollSimulationModeUVE::Disabled) return;
+        if (!isPlayMode && !ragdoll.enablePhysicsInEditor) return;
+        if (ragdollEntities.size() < kMaximumRagdollEntitiesPerUpdateUVE) {
             ragdollEntities.push_back(entity);
         }
     });
@@ -552,42 +553,151 @@ std::size_t UpdateRagdoll3DObjectsUVE(IEntityManagerUVE& entityManager, const fl
         ObjectWorldFrameUVE skeletonFrame;
         if (!ResolveSkeletonWorldFrameUVE(entityManager, ragdoll.skeleton, skeletonFrame)) continue;
 
+        // Remember initial root world position on first run for relative displacement
+        if (!Math::IsFiniteUVE(ragdoll.initialRootWorldPosition) ||
+            Math::LengthSquaredUVE(ragdoll.initialRootWorldPosition) <= 1.0e-7F) {
+            ragdoll.initialRootWorldPosition = skeletonFrame.position;
+        }
+
+        // ---- Calculate Effective Ragdoll-Specific Gravity ----
+        Math::Vector3UVE effectiveGravity{0.0F, 0.0F, 0.0F};
+        if (isPlayMode) {
+            if (ragdoll.enableGravityInGame) {
+                effectiveGravity = ragdoll.gravity;
+            }
+        } else {
+            if (ragdoll.enableGravityInEditor) {
+                effectiveGravity = ragdoll.gravity;
+            }
+        }
+
         std::array<Physics::RagdollContactUVE, Physics::kMaximumRagdollContactsUVE> contacts{};
         Physics::RagdollCollisionFilterUVE filter = ragdoll.filter;
         if (filter.ignoreEntity == kInvalidEntityUVE) filter.ignoreEntity = ragdoll.skeleton;
         const Physics::RagdollContactStatsUVE stats = Physics::BuildRagdollContactsUVE(
             ragdoll.solver, colliders, filter, std::span<Physics::RagdollContactUVE>{contacts});
 
-        // A body that has come to rest is woken by anything touching it - which is what makes a
-        // corpse react when something lands on it, rather than staying frozen.
-        if (stats.generatedContactCount > 0U && ragdoll.solver.IsSleepingUVE()) ragdoll.solver.WakeUVE();
+        // Waking bodies on contact or when gravity is active
+        if (ragdoll.solver.IsSleepingUVE()) {
+            if (stats.generatedContactCount > 0U || Math::LengthSquaredUVE(effectiveGravity) > 1.0e-4F) {
+                ragdoll.solver.WakeUVE();
+            }
+        }
 
+        // Automatic hit reaction classification when struck by external mesh contact
+        if (stats.generatedContactCount > 0U && ragdoll.activeReactionType == Physics::ProceduralReactionTypeUVE::None) {
+            const Physics::RagdollContactUVE& firstContact = contacts[0];
+            const Math::Vector3UVE contactImpulse = firstContact.normal * (firstContact.depth * 300.0F);
+            ragdoll.activeReactionType = Physics::ClassifyImpactReactionUVE(
+                firstContact.point, contactImpulse, skeletonFrame);
+            ragdoll.reactionTimer = 0.0F;
+            ragdoll.reactionIntensity = 1.0F;
+        }
+
+        // ---- Procedural Idle & Hit Reaction Synthesis ----
+        ragdoll.accumulatedIdleTime += deltaTimeSeconds;
+        if (ragdoll.enableProceduralIdle && skeleton.pose.size() == skeleton.bones.size()) {
+            Physics::GenerateProceduralIdlePoseUVE(
+                ragdoll.accumulatedIdleTime, ragdoll.proceduralIdleIntensity, skeleton.bones, skeleton.pose);
+        }
+
+        Physics::ProceduralReactionTargetsUVE reactionTargets{};
+        if (ragdoll.activeReactionType != Physics::ProceduralReactionTypeUVE::None) {
+            ragdoll.reactionTimer += deltaTimeSeconds;
+            reactionTargets = Physics::SynthesizeHitReactionUVE(
+                ragdoll.activeReactionType, ragdoll.reactionTimer, ragdoll.reactionIntensity);
+            if (reactionTargets.blendWeight <= 0.001F && ragdoll.reactionTimer > 0.15F) {
+                ragdoll.activeReactionType = Physics::ProceduralReactionTypeUVE::None;
+                ragdoll.reactionTimer = 0.0F;
+            }
+        }
+
+        // ---- Active Ragdoll Balance Controller & Airborne Trajectory ----
+        const std::span<const Physics::RagdollContactUVE> activeContacts{
+            contacts.data(), stats.generatedContactCount};
+
+        if (ragdoll.simulationMode == RagdollSimulationModeUVE::ActiveRagdoll) {
+            Physics::ActiveRagdollControllerUVE balanceController(ragdoll.balanceConfig);
+            balanceController.UpdateBalanceAndPostureUVE(
+                ragdoll.solver, activeContacts, skeletonFrame.rotation, deltaTimeSeconds);
+            ragdoll.balanceState = balanceController.GetStateUVE();
+        }
+
+        if (ragdoll.enableTrajectory) {
+            Physics::TrajectoryInputUVE trajInput{};
+            if (ragdoll.solver.GetBodyCountUVE() > 0U) {
+                const auto& rootBody = ragdoll.solver.GetBodyUVE(0);
+                trajInput.position = rootBody.position;
+                trajInput.linearVelocity = rootBody.linearVelocity;
+                trajInput.angularVelocity = rootBody.angularVelocity;
+                trajInput.orientation = rootBody.rotation;
+            }
+            trajInput.gravity = effectiveGravity;
+            trajInput.horizonSeconds = ragdoll.trajectoryHorizonSeconds;
+            trajInput.stepSeconds = 0.05F;
+            trajInput.isGrounded = (stats.generatedContactCount > 0U);
+            ragdoll.trajectory = Physics::PredictMotionTrajectoryUVE(trajInput, colliders);
+
+            // Airborne articulation in freefall
+            if (ragdoll.enableAirborneControl && stats.generatedContactCount == 0U && isPlayMode) {
+                const Math::Vector3UVE rootLinVel = ragdoll.solver.GetBodyCountUVE() > 0U
+                    ? ragdoll.solver.GetBodyUVE(0).linearVelocity : Math::Vector3UVE{};
+                const Math::Vector3UVE rootAngVel = ragdoll.solver.GetBodyCountUVE() > 0U
+                    ? ragdoll.solver.GetBodyUVE(0).angularVelocity : Math::Vector3UVE{};
+                static_cast<void>(Physics::EvaluateAirbornePostureUVE(
+                    rootLinVel, rootAngVel, skeletonFrame.rotation, ragdoll.trajectory,
+                    Physics::ImpactDirectionUVE::Forward, ragdoll.accumulatedIdleTime));
+            }
+
+            // Landing shock absorption
+            if (ragdoll.enableLandingPreparation && isPlayMode) {
+                const Math::Vector3UVE rootLinVel = ragdoll.solver.GetBodyCountUVE() > 0U
+                    ? ragdoll.solver.GetBodyUVE(0).linearVelocity : Math::Vector3UVE{};
+                const Math::Vector3UVE rootAngVel = ragdoll.solver.GetBodyCountUVE() > 0U
+                    ? ragdoll.solver.GetBodyUVE(0).angularVelocity : Math::Vector3UVE{};
+                const Physics::LandingAnalysisReportUVE landing = Physics::AnalyzeImpendingLandingUVE(
+                    ragdoll.trajectory, skeletonFrame.rotation, rootLinVel, rootAngVel);
+                if (landing.requiresRagdoll) {
+                    ragdoll.simulationMode = RagdollSimulationModeUVE::FullRagdoll;
+                }
+            }
+        }
+
+        // ---- Physical Stepping ----
         ragdoll.pendingSeconds += deltaTimeSeconds;
         std::size_t substeps = 0U;
         const float stepSeconds = Physics::kRagdollFixedStepSecondsUVE;
         while (ragdoll.pendingSeconds >= stepSeconds && substeps < Physics::kMaximumRagdollSubstepsUVE) {
-            ragdoll.lastReport = ragdoll.solver.StepUVE(ragdoll.gravity, stepSeconds, contacts, ragdoll.stepSettings);
+            ragdoll.lastReport = ragdoll.solver.StepUVE(effectiveGravity, stepSeconds, activeContacts, ragdoll.stepSettings);
             ragdoll.pendingSeconds -= stepSeconds;
             ++substeps;
         }
         if (substeps > 0U) ++advancedCount;
-        // A hitch is not replayed as a burst: the accumulator is clamped instead, so the simulation
-        // runs slow for one frame rather than paying an unbounded cost in an already-late one.
         ragdoll.pendingSeconds = std::min(ragdoll.pendingSeconds,
                                           stepSeconds * static_cast<float>(Physics::kMaximumRagdollSubstepsUVE));
 
-        // ---- Write the simulation back into the skeleton's runtime pose, root first ----
+        // ---- Pose & Root Motion Writeback ----
         std::vector<RagdollBoneBindingUVE> ordered = ragdoll.bindings;
         std::sort(ordered.begin(), ordered.end(),
                   [](const RagdollBoneBindingUVE& lhs, const RagdollBoneBindingUVE& rhs) {
                       if (lhs.depth != rhs.depth) return lhs.depth < rhs.depth;
                       return lhs.boneIndex < rhs.boneIndex;
                   });
+
+        std::uint32_t rootBoneIndex = kInvalidSkeletonBoneIndexUVE;
+        std::uint32_t rootBodyIndex = 0U;
+
         for (const RagdollBoneBindingUVE& binding : ordered) {
             if (binding.boneIndex >= skeleton.bones.size()) continue;
             if (binding.bodyIndex >= ragdoll.solver.GetBodyCountUVE()) continue;
             const Physics::RagdollBodyUVE& body = ragdoll.solver.GetBodyUVE(binding.bodyIndex);
             if (!Math::IsFiniteUVE(body.rotation)) continue;
+
+            if (binding.parentBoneIndex == kInvalidSkeletonBoneIndexUVE &&
+                rootBoneIndex == kInvalidSkeletonBoneIndexUVE) {
+                rootBoneIndex = binding.boneIndex;
+                rootBodyIndex = binding.bodyIndex;
+            }
 
             const Math::QuaternionUVE boneWorldRotation = Math::MultiplyUVE(body.rotation, binding.boneOffset);
             Math::QuaternionUVE parentWorldRotation = skeletonFrame.rotation;
@@ -604,9 +714,44 @@ std::size_t UpdateRagdoll3DObjectsUVE(IEntityManagerUVE& entityManager, const fl
             if (!Math::TryNormalizeUVE(Math::MultiplyUVE(inverseParent, boneWorldRotation), localRotation)) {
                 continue;
             }
-            // Rotation only. The bone's length and position still come from the skeleton, so the
-            // mesh cannot stretch no matter what the solver does.
+
+            // Apply procedural hit reaction joint offsets if active
+            if (reactionTargets.blendWeight > 0.001F) {
+                const std::string_view bName = skeleton.bones[binding.boneIndex].name;
+                if (bName.find("spine") != std::string_view::npos) {
+                    localRotation = Math::MultiplyUVE(localRotation, reactionTargets.spineOffset);
+                } else if (bName.find("chest") != std::string_view::npos) {
+                    localRotation = Math::MultiplyUVE(localRotation, reactionTargets.chestOffset);
+                } else if (bName.find("neck") != std::string_view::npos) {
+                    localRotation = Math::MultiplyUVE(localRotation, reactionTargets.neckOffset);
+                } else if (bName.find("head") != std::string_view::npos) {
+                    localRotation = Math::MultiplyUVE(localRotation, reactionTargets.headOffset);
+                } else if (bName.find("arm_l") != std::string_view::npos || bName.find("leftarm") != std::string_view::npos) {
+                    localRotation = Math::MultiplyUVE(localRotation, reactionTargets.leftArmOffset);
+                } else if (bName.find("arm_r") != std::string_view::npos || bName.find("rightarm") != std::string_view::npos) {
+                    localRotation = Math::MultiplyUVE(localRotation, reactionTargets.rightArmOffset);
+                }
+            }
+
             skeleton.pose[binding.boneIndex].rotation = localRotation;
+        }
+
+        // ---- Root Motion Translation Writeback ----
+        if (ragdoll.drivesRootTransform && rootBoneIndex != kInvalidSkeletonBoneIndexUVE &&
+            rootBodyIndex < ragdoll.solver.GetBodyCountUVE()) {
+            const Physics::RagdollBodyUVE& rootBody = ragdoll.solver.GetBodyUVE(rootBodyIndex);
+            if (Math::IsFiniteUVE(rootBody.position)) {
+                const Math::Vector3UVE rootDelta = rootBody.position - ragdoll.initialRootWorldPosition;
+                // Move character transform in world space
+                if (entityManager.HasComponentUVE<TransformComponentUVE>(ragdoll.skeleton)) {
+                    TransformComponentUVE& xform = entityManager.GetComponentUVE<TransformComponentUVE>(ragdoll.skeleton);
+                    xform.localPosition = xform.localPosition + rootDelta * 0.5F;
+                }
+                if (rootBoneIndex < skeleton.pose.size()) {
+                    skeleton.pose[rootBoneIndex].position = skeleton.pose[rootBoneIndex].position + rootDelta * 0.5F;
+                }
+                ragdoll.initialRootWorldPosition = rootBody.position;
+            }
         }
     }
     return advancedCount;

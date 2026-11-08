@@ -13,6 +13,11 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/object_3d_common_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
+#include "uve/physics/active_ragdoll_uve.h"
+#include "uve/physics/airborne_body_control_uve.h"
+#include "uve/physics/landing_system_uve.h"
+#include "uve/physics/motion_trajectory_uve.h"
+#include "uve/physics/procedural_reaction_uve.h"
 #include "uve/physics/ragdoll_solver_uve.h"
 #include "uve/physics/ragdoll_world_uve.h"
 
@@ -22,19 +27,29 @@ class IEntityManagerUVE;
 
 inline constexpr std::uint32_t kMaximumRagdollBonesUVE = static_cast<std::uint32_t>(Physics::kMaximumRagdollBodiesUVE);
 
+/// Supported physical collision shapes for ragdoll bone colliders.
+enum class RagdollShapeTypeUVE : std::uint8_t {
+    Capsule = 0,
+    Box,
+    Cylinder,
+};
+
+/// High-level ragdoll simulation mode.
+enum class RagdollSimulationModeUVE : std::uint8_t {
+    ActiveRagdoll = 0, // Hybrid balance, procedural stepping, adaptive joint drives
+    FullRagdoll,       // Pure physics passive ragdoll
+    Kinematic,         // Driven by animation, colliders act as kinematic hitboxes
+    Disabled,          // Solver inactive
+};
+
 /// One simulated bone, as authored.
-///
-/// The shape is a capsule along the bone's own axis, and its LENGTH is taken from the rig at build
-/// time rather than from this struct: a physics asset that hard-coded a thigh length would be wrong
-/// for every character that was not the one it was authored on. `radius` is authored because a
-/// capsule's thickness is a modelling choice; `halfHeight` is only used for leaf bones, which have no
-/// child to measure toward.
 struct RagdollBoneSetupUVE final {
     /// Exact, case-sensitive bone name. Resolution failure drops the bone rather than guessing.
     std::string boneName;
-    /// The bone this one is jointed to. Empty means "nearest simulated ancestor in the skeleton",
-    /// which is what a rig wants in almost every case and what the generator fills in.
+    /// The bone this one is jointed to. Empty means "nearest simulated ancestor in the skeleton".
     std::string parentBoneName;
+    RagdollShapeTypeUVE shapeType = RagdollShapeTypeUVE::Capsule;
+    Math::Vector3UVE boxExtents{0.08F, 0.16F, 0.08F};
     float mass = 1.0F;
     float radius = 0.05F;
     /// Half the cylindrical part, used only when the bone has no child to measure toward.
@@ -42,8 +57,7 @@ struct RagdollBoneSetupUVE final {
     float linearDamping = 0.05F;
     /// Distal limbs want more of this than proximal ones; see the humanoid profile below.
     float angularDamping = 0.5F;
-    /// How much of the step's motion is bled off before the solver sees it. A ragdoll that has just
-    /// been hit wants a little, or every limb rings like a bell.
+    /// How much of the step's motion is bled off before the solver sees it.
     float friction = 0.8F;
 
     Physics::RagdollMotionUVE swing1Motion = Physics::RagdollMotionUVE::Limited;
@@ -52,15 +66,12 @@ struct RagdollBoneSetupUVE final {
     float swing1LimitDegrees = 40.0F;
     float swing2LimitDegrees = 40.0F;
     float twistLimitDegrees = 25.0F;
-    /// One-way ranges for the two joints that only bend one way. See RagdollJointUVE's own note on
-    /// the sign convention; these are in degrees and only used when `twistAsymmetric` is set.
+    /// One-way ranges for the two joints that only bend one way.
     bool twistAsymmetric = false;
     float twistLowerLimitDegrees = -45.0F;
     float twistUpperLimitDegrees = 45.0F;
 
-    /// The joint frame's X axis, in the PARENT body's local space. Left zero, the builder derives it:
-    /// along the bone for a cone joint (twist follows the limb), and along the character's lateral
-    /// axis for a hinge (a knee bends sideways across the body, not around the shin).
+    /// The joint frame's X axis, in the PARENT body's local space.
     Math::Vector3UVE jointAxisLocal{0.0F, 0.0F, 0.0F};
 
     [[nodiscard]] bool operator==(const RagdollBoneSetupUVE&) const noexcept = default;
@@ -71,73 +82,80 @@ struct RagdollBoneBindingUVE final {
     std::uint32_t bodyIndex = 0U;
     std::uint32_t boneIndex = kInvalidSkeletonBoneIndexUVE;
     std::uint32_t parentBoneIndex = kInvalidSkeletonBoneIndexUVE;
-    /// `conjugate(bodyBindRotation) * boneBindWorldRotation` - the capsule's fixed orientation
-    /// relative to the bone it stands for. Writing a pose back is then one quaternion multiply,
-    /// which is why the write-back cannot accumulate error the way a per-frame inverse would.
     Math::QuaternionUVE boneOffset{};
-    /// Distance from the root along the drawn hierarchy. Bodies are written back in ascending depth
-    /// so a child always reads a parent that has already been posed this frame.
     std::uint32_t depth = 0U;
 };
 
 /// A ragdoll: the simulated body a skeleton becomes when animation stops driving it.
-///
-/// This is the passive half of what Unreal calls a Physics Asset plus the ragdoll mode of its skeletal
-/// mesh component, and it makes the same three choices that decide whether the result reads as a
-/// body or as a bag of sticks:
-///
-///  * Capsules sized from the rig, not from a table. A thigh capsule that spans the actual bone is
-///    the difference between a leg and a leg-shaped object that sinks to the knee.
-///  * Angular limits authored per joint, measured from the bind pose. A shoulder is a cone with a
-///    twist; a knee and an elbow are hinges. Getting this wrong is the single most visible ragdoll
-///    bug, because a joint without limits looks like a broken puppet rather than a character.
-///  * Rotation-only write-back. The simulated capsule decides how the bone TURNS; the bone's length
-///    and position still come from the skeleton. A skeleton whose bones move would stretch the mesh,
-///    and no amount of good joint solving hides that.
 struct Ragdoll3DComponentUVE final {
     EntityUVE skeleton = kInvalidEntityUVE;
-    /// Empty means "generate the standard humanoid profile from the skeleton's bone names". A
-    /// non-empty list is used verbatim, so a rig with unusual naming is a data problem, not a code
-    /// change.
     std::vector<RagdollBoneSetupUVE> bones;
     Math::Vector3UVE gravity{0.0F, -9.81F, 0.0F};
-    /// Which collider layers the ragdoll body may hit, and what it must ignore.
     Physics::RagdollCollisionFilterUVE filter{};
     Physics::RagdollStepSettingsUVE stepSettings{};
     Physics::RagdollSolverUVE solver{};
-    /// Velocity the body inherits at the moment it starts simulating - a corpse keeps running, and
-    /// without this a sprinting character's ragdoll drops straight down, which reads as a glitch.
     Math::Vector3UVE initialVelocity{};
     bool enabled = true;
 
-    // ---- Runtime, never persisted ----
+    // ---- Ragdoll-Specific Physics & Gravity Modes ----
+    RagdollSimulationModeUVE simulationMode = RagdollSimulationModeUVE::ActiveRagdoll;
+    bool drivesRootTransform = true;
+    bool enablePhysicsInEditor = true;
+    bool enableGravityInEditor = false; // Default OFF in editor so floating bodies don't fall into void
+    bool enableGravityInGame = true;    // Full gravity in game/play mode
+
+    // ---- Trajectory & Viewport Gizmo Settings ----
+    bool enableTrajectory = true;
+    float trajectoryHorizonSeconds = 2.0F;
+    bool showTrajectoryGizmo = true;
+    bool showBoneColliders = true;
+    bool showCenterOfMass = true;
+    bool showSupportPolygon = true;
+
+    // ---- Active Balance & Airborne Controls ----
+    bool enableAirborneControl = true;
+    bool enableLandingPreparation = true;
+    Physics::ActiveRagdollConfigUVE balanceConfig{};
+
+    // ---- Procedural Idle & Hit Reactions ----
+    bool enableProceduralIdle = true;
+    float proceduralIdleIntensity = 1.0F;
+
+    // ---- Runtime State, never persisted ----
     bool initialized = false;
     std::vector<RagdollBoneBindingUVE> bindings;
-    /// Fixed-step accumulator: the fraction of a frame that did not fill a whole step stays here.
     float pendingSeconds = 0.0F;
     Physics::RagdollStepReportUVE lastReport{};
+    Physics::ActiveRagdollStateUVE balanceState{};
+    Physics::MotionTrajectoryPredictionUVE trajectory{};
+    float accumulatedIdleTime = 0.0F;
+    Physics::ProceduralReactionTypeUVE activeReactionType = Physics::ProceduralReactionTypeUVE::None;
+    float reactionTimer = 0.0F;
+    float reactionIntensity = 1.0F;
+    Math::Vector3UVE initialRootWorldPosition{};
 
     /// Compares authored fields only: a running ragdoll is not a different ragdoll.
     [[nodiscard]] bool operator==(const Ragdoll3DComponentUVE& other) const noexcept {
         if (skeleton != other.skeleton || gravity != other.gravity || enabled != other.enabled ||
-            initialVelocity != other.initialVelocity || bones.size() != other.bones.size()) {
+            initialVelocity != other.initialVelocity || bones.size() != other.bones.size() ||
+            simulationMode != other.simulationMode || drivesRootTransform != other.drivesRootTransform ||
+            enablePhysicsInEditor != other.enablePhysicsInEditor ||
+            enableGravityInEditor != other.enableGravityInEditor ||
+            enableGravityInGame != other.enableGravityInGame ||
+            enableTrajectory != other.enableTrajectory ||
+            showTrajectoryGizmo != other.showTrajectoryGizmo ||
+            showBoneColliders != other.showBoneColliders ||
+            showCenterOfMass != other.showCenterOfMass ||
+            showSupportPolygon != other.showSupportPolygon ||
+            enableAirborneControl != other.enableAirborneControl ||
+            enableLandingPreparation != other.enableLandingPreparation ||
+            enableProceduralIdle != other.enableProceduralIdle ||
+            trajectoryHorizonSeconds != other.trajectoryHorizonSeconds ||
+            proceduralIdleIntensity != other.proceduralIdleIntensity) {
             return false;
         }
         for (std::size_t index = 0U; index < bones.size(); ++index) {
-            const RagdollBoneSetupUVE& lhs = bones[index];
-            const RagdollBoneSetupUVE& rhs = other.bones[index];
-            if (lhs.boneName != rhs.boneName || lhs.parentBoneName != rhs.parentBoneName ||
-                lhs.mass != rhs.mass || lhs.radius != rhs.radius || lhs.halfHeight != rhs.halfHeight ||
-                lhs.linearDamping != rhs.linearDamping || lhs.angularDamping != rhs.angularDamping ||
-                lhs.friction != rhs.friction || lhs.swing1Motion != rhs.swing1Motion ||
-                lhs.swing2Motion != rhs.swing2Motion || lhs.twistMotion != rhs.twistMotion ||
-                lhs.swing1LimitDegrees != rhs.swing1LimitDegrees ||
-                lhs.swing2LimitDegrees != rhs.swing2LimitDegrees ||
-                lhs.twistLimitDegrees != rhs.twistLimitDegrees || lhs.twistAsymmetric != rhs.twistAsymmetric ||
-                lhs.twistLowerLimitDegrees != rhs.twistLowerLimitDegrees ||
-                lhs.twistUpperLimitDegrees != rhs.twistUpperLimitDegrees || lhs.jointAxisLocal != rhs.jointAxisLocal) {
-                return false;
-            }
+            if (bones[index] != other.bones[index]) return false;
         }
         return true;
     }
@@ -228,6 +246,6 @@ struct HumanoidRagdollProfileEntryUVE final {
 /// already come to rest and is then stepped on.
 ///
 /// Returns the number of ragdolls whose simulation advanced this call.
-std::size_t UpdateRagdoll3DObjectsUVE(IEntityManagerUVE& entityManager, float deltaTimeSeconds);
+std::size_t UpdateRagdoll3DObjectsUVE(IEntityManagerUVE& entityManager, float deltaTimeSeconds, bool isPlayMode = true);
 
 } // namespace UVE::Scene

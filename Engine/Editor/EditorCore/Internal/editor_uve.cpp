@@ -441,6 +441,14 @@ void EditorUVE::TickUVE() {
             static_cast<void>(SaveSceneUVE());
         }
     }
+
+    // Live Edit-mode Physics & Collision for Ragdoll3D (independent of global game simulation)
+    if (m_playModeState == EditorPlayModeStateUVE::Edit && m_services != nullptr) {
+        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        constexpr float kEditorPhysicsDeltaTimeSeconds = 1.0F / 60.0F;
+        static_cast<void>(Scene::UpdateRagdoll3DObjectsUVE(
+            entityManager, kEditorPhysicsDeltaTimeSeconds, /*isPlayMode=*/false));
+    }
 }
 
 bool EditorUVE::EnterPlayModeUVE() {
