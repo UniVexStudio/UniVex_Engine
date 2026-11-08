@@ -809,9 +809,8 @@ void main() {
     vec3 viewDirection = uOrthographic != 0
                              ? SafeNormalizeUVE(-uCameraForward)
                              : SafeNormalizeUVE(uViewPosition - vWorldPosition);
-    // Meshes authored with the opposite winding/normal convention are still valid two-sided
-    // surfaces. Orient the final mapped normal toward the viewer before evaluating the BRDF.
-    if (dot(normal, viewDirection) < 0.0) {
+    // For two-sided geometry or backfaces, orient the normal outwards from the observed face.
+    if (!gl_FrontFacing) {
         normal = -normal;
     }
 
@@ -909,11 +908,9 @@ void main() {
             }
         }
 
-        // Treat the material as two-sided for direct lighting. Imported meshes and legacy RHI
-        // callers can disagree on winding; using the absolute cosine prevents a valid back-face
-        // normal from collapsing the entire BRDF to black while shadowing remains directional.
-        float normalDotLight = mix(abs(dot(normal, lightDirection)), 1.0, 0.18);
-        float normalDotView = max(abs(dot(normal, viewDirection)), 0.08);
+        // AAA PBR standard: Surfaces facing away from the light source receive zero direct light.
+        float normalDotLight = max(dot(normal, lightDirection), 0.0);
+        float normalDotView = max(dot(normal, viewDirection), 0.001);
         if (normalDotLight <= 0.0 || normalDotView <= 0.0 || attenuation <= 0.0) {
             continue;
         }
@@ -937,13 +934,13 @@ void main() {
             if (isnan(shadowFactor) || isinf(shadowFactor)) {
                 shadowFactor = 1.0;
             }
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+            directContribution *= clamp(shadowFactor, 0.0, 1.0);
         } else if (light.type == 1) {
             float shadowFactor = PointShadowFactorUVE(lightIndex, normal, light.position, light.range);
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+            directContribution *= clamp(shadowFactor, 0.0, 1.0);
         } else if (light.type == 2) {
             float shadowFactor = SpotShadowFactorUVE(lightIndex, normal, lightDirection);
-            directContribution *= mix(0.28, 1.0, clamp(shadowFactor, 0.0, 1.0));
+            directContribution *= clamp(shadowFactor, 0.0, 1.0);
         }
         if (!isnan(directContribution.r) && !isinf(directContribution.r) &&
             !isnan(directContribution.g) && !isinf(directContribution.g) &&
