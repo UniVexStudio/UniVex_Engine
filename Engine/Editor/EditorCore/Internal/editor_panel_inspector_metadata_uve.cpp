@@ -71,6 +71,7 @@
 #include "uve/math/vector3_uve.h"
 #include "uve/objects/3d/bone_attachment_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
+#include "uve/objects/3d/ragdoll_3d_uve.h"
 #include "uve/objects/3d/sky_3d_uve.h"
 #include "uve/objects/3d/skeleton_3d_uve.h"
 #include "uve/objects/3d/two_bone_ik_3d_uve.h"
@@ -185,7 +186,7 @@ void DrawTooltipUVE(const TypeMetadataPropertyUVE& property) {
 /// Custom drawers that lay out their own rows - a multi-line box, a slot with an action strip, a
 /// list with an add button - rather than filling a value cell. Any other id falls back to the
 /// generic editor for its value type, which is where the rotation and entity-picker ids still go.
-constexpr std::array<std::string_view, 12> kBlockPropertyDrawerIdsUVE{
+constexpr std::array<std::string_view, 13> kBlockPropertyDrawerIdsUVE{
     "animation-parameters",
     "animation-graph",
     "multiline-text",
@@ -196,6 +197,7 @@ constexpr std::array<std::string_view, 12> kBlockPropertyDrawerIdsUVE{
     "skeleton-bones",
     "entity-reference-list",
     "full-body-effectors",
+    "ragdoll-bones",
     "lod-group-thresholds",
     "lod-group-meshes",
 };
@@ -819,6 +821,8 @@ void EditorUVE::DrawMetadataPropertyRowUVE(const TypeMetadataEntryUVE& entry,
                 skeletonEntity = entityManager.GetComponentUVE<Scene::TwoBoneIK3DComponentUVE>(m_selectedEntity).skeleton;
             } else if (entityManager.HasComponentUVE<Scene::FullBodyIK3DComponentUVE>(m_selectedEntity)) {
                 skeletonEntity = entityManager.GetComponentUVE<Scene::FullBodyIK3DComponentUVE>(m_selectedEntity).skeleton;
+            } else if (entityManager.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity)) {
+                skeletonEntity = entityManager.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity).skeleton;
             }
             if (skeletonEntity == Scene::kInvalidEntityUVE || !entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)) {
                 Scene::EntityUVE current = m_selectedEntity;
@@ -3029,6 +3033,10 @@ bool EditorUVE::DrawCustomPropertyUVE(const TypeMetadataEntryUVE& entry, const T
         DrawFullBodyEffectorsPropertyUVE(entry, property, instance);
         return true;
     }
+    if (property.customDrawerId == "ragdoll-bones") {
+        DrawRagdollBonesPropertyUVE(entry, property, instance);
+        return true;
+    }
     if (property.customDrawerId == "morph-target-weights") {
         DrawMorphTargetWeightsPropertyUVE(entry, property, instance);
         return true;
@@ -3812,6 +3820,331 @@ void EditorUVE::DrawFullBodyEffectorsPropertyUVE(const Core::TypeMetadataEntryUV
         effectors.erase(effectors.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
     }
     static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, &effectors));
+}
+
+void EditorUVE::DrawRagdollBonesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                            const Core::TypeMetadataPropertyUVE& property,
+                                            const void* const instance) {
+    if (property.typeId != Strings::StringIdUVE{"RagdollBones"} || property.getValue == nullptr ||
+        property.setValue == nullptr || instance == nullptr) {
+        return;
+    }
+
+    std::vector<Scene::RagdollBoneSetupUVE> bones;
+    property.getValue(instance, &bones);
+
+    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
+    bool edited = false;
+
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::EntityUVE skeletonEntity = Scene::kInvalidEntityUVE;
+    if (entityManager.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity)) {
+        skeletonEntity = entityManager.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(m_selectedEntity).skeleton;
+    }
+    if (skeletonEntity == Scene::kInvalidEntityUVE || !entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity)) {
+        Scene::EntityUVE current = m_selectedEntity;
+        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+        while (TryGetDocumentParentUVE(current, parent) && parent != Scene::kInvalidEntityUVE) {
+            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(parent)) {
+                skeletonEntity = parent;
+                break;
+            }
+            current = parent;
+        }
+    }
+    const bool hasSkeleton = (skeletonEntity != Scene::kInvalidEntityUVE &&
+                              entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity));
+    const Scene::Skeleton3DComponentUVE* const skeletonComp =
+        hasSkeleton ? &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity) : nullptr;
+
+    ImGui::BeginDisabled(!writable);
+    {
+        const std::string header = "Simulated Bones (" + std::to_string(bones.size()) + ")##ragdoll-bones";
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(header.c_str());
+        if (ImGui::IsItemHovered()) {
+            DrawTooltipUVE(property);
+        }
+
+        if (hasSkeleton && skeletonComp != nullptr && !skeletonComp->bones.empty()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Auto-Detect from Skeleton")) {
+                bones = Scene::BuildHumanoidRagdollBonesUVE(skeletonComp->bones);
+                edited = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Populate humanoid bone colliders and joint limits automatically from the skeleton rig.");
+            }
+        }
+
+        if (bones.size() < Scene::kMaximumRagdollBonesUVE) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Add Bone")) {
+                Scene::RagdollBoneSetupUVE newBone;
+                newBone.boneName = "bone_" + std::to_string(bones.size());
+                bones.push_back(std::move(newBone));
+                edited = true;
+            }
+        }
+    }
+
+    std::optional<std::size_t> removeIndex;
+    for (std::size_t index = 0U; index < bones.size(); ++index) {
+        Scene::RagdollBoneSetupUVE& bone = bones[index];
+        ImGui::PushID(static_cast<int>(index));
+        const std::string nodeLabel = (bone.boneName.empty() ? "(Unnamed)" : bone.boneName) + "##node_" + std::to_string(index);
+        const bool nodeOpen = ImGui::TreeNodeEx(nodeLabel.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Framed);
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 45.0F);
+        if (ImGui::SmallButton("Delete")) {
+            removeIndex = index;
+        }
+
+        if (nodeOpen) {
+            if (BeginPropertyRowsUVE("##bone_props")) {
+                // Bone Name row
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted("Bone Name");
+                ImGui::TableSetColumnIndex(1);
+                if (skeletonComp != nullptr && !skeletonComp->bones.empty()) {
+                    const std::string preview = bone.boneName.empty() ? "(None)" : bone.boneName;
+                    if (BeginCenteredComboUVE("##bone_name_combo", preview.c_str())) {
+                        for (const auto& skelBone : skeletonComp->bones) {
+                            const bool selected = (skelBone.name == bone.boneName);
+                            if (ImGui::Selectable(skelBone.name.c_str(), selected)) {
+                                bone.boneName = skelBone.name;
+                                edited = true;
+                            }
+                            if (selected) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+                } else {
+                    std::array<char, 128> nameBuf{};
+                    const std::size_t copyLen = std::min(bone.boneName.size(), nameBuf.size() - 1U);
+                    std::memcpy(nameBuf.data(), bone.boneName.data(), copyLen);
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    if (ImGui::InputText("##bone_name_in", nameBuf.data(), nameBuf.size())) {
+                        bone.boneName = nameBuf.data();
+                        edited = true;
+                    }
+                }
+
+                // Parent Bone row
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted("Parent Bone");
+                ImGui::TableSetColumnIndex(1);
+                if (skeletonComp != nullptr && !skeletonComp->bones.empty()) {
+                    const std::string preview = bone.parentBoneName.empty() ? "(Nearest Ancestor)" : bone.parentBoneName;
+                    if (BeginCenteredComboUVE("##parent_bone_combo", preview.c_str())) {
+                        if (ImGui::Selectable("(Nearest Ancestor)", bone.parentBoneName.empty())) {
+                            bone.parentBoneName.clear();
+                            edited = true;
+                        }
+                        for (const auto& skelBone : skeletonComp->bones) {
+                            const bool selected = (skelBone.name == bone.parentBoneName);
+                            if (ImGui::Selectable(skelBone.name.c_str(), selected)) {
+                                bone.parentBoneName = skelBone.name;
+                                edited = true;
+                            }
+                            if (selected) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+                } else {
+                    std::array<char, 128> pBuf{};
+                    const std::size_t copyLen = std::min(bone.parentBoneName.size(), pBuf.size() - 1U);
+                    std::memcpy(pBuf.data(), bone.parentBoneName.data(), copyLen);
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    if (ImGui::InputText("##parent_bone_in", pBuf.data(), pBuf.size())) {
+                        bone.parentBoneName = pBuf.data();
+                        edited = true;
+                    }
+                }
+
+                // Mass row
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Mass (kg)");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::DragFloat("##mass", &bone.mass, 0.1F, 0.01F, 100.0F, "%.2f")) {
+                    bone.mass = std::max(0.01F, bone.mass);
+                    edited = true;
+                }
+
+                // Radius & HalfHeight row
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Radius (m)");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::DragFloat("##radius", &bone.radius, 0.005F, 0.005F, 2.0F, "%.3f")) {
+                    bone.radius = std::max(0.005F, bone.radius);
+                    edited = true;
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Half Height (m)");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::DragFloat("##halfHeight", &bone.halfHeight, 0.005F, 0.005F, 2.0F, "%.3f")) {
+                    bone.halfHeight = std::max(0.005F, bone.halfHeight);
+                    edited = true;
+                }
+
+                // Damping & Friction
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Linear Damping");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::DragFloat("##linDamping", &bone.linearDamping, 0.01F, 0.0F, 10.0F, "%.2f")) {
+                    edited = true;
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Angular Damping");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::DragFloat("##angDamping", &bone.angularDamping, 0.05F, 0.0F, 10.0F, "%.2f")) {
+                    edited = true;
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Friction");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                if (ImGui::DragFloat("##friction", &bone.friction, 0.02F, 0.0F, 1.0F, "%.2f")) {
+                    bone.friction = std::clamp(bone.friction, 0.0F, 1.0F);
+                    edited = true;
+                }
+
+                // Joint motion and limits
+                const auto motionLabel = [](Physics::RagdollMotionUVE m) {
+                    switch (m) {
+                        case Physics::RagdollMotionUVE::Free: return "Free";
+                        case Physics::RagdollMotionUVE::Limited: return "Limited";
+                        case Physics::RagdollMotionUVE::Locked: return "Locked";
+                    }
+                    return "Free";
+                };
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Twist Motion");
+                ImGui::TableSetColumnIndex(1);
+                if (BeginCenteredComboUVE("##twistMotion", motionLabel(bone.twistMotion))) {
+                    for (auto m : {Physics::RagdollMotionUVE::Free, Physics::RagdollMotionUVE::Limited, Physics::RagdollMotionUVE::Locked}) {
+                        if (ImGui::Selectable(motionLabel(m), bone.twistMotion == m)) {
+                            bone.twistMotion = m;
+                            edited = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+
+                if (bone.twistMotion == Physics::RagdollMotionUVE::Limited) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted("Twist Asymmetric");
+                    ImGui::TableSetColumnIndex(1);
+                    if (ImGui::Checkbox("##twistAsym", &bone.twistAsymmetric)) {
+                        edited = true;
+                    }
+                    if (bone.twistAsymmetric) {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextUnformatted("Twist Lower / Upper");
+                        ImGui::TableSetColumnIndex(1);
+                        float limits[2] = {bone.twistLowerLimitDegrees, bone.twistUpperLimitDegrees};
+                        if (ImGui::DragFloat2("##twistLimits", limits, 1.0F, -180.0F, 180.0F, "%.0f°")) {
+                            bone.twistLowerLimitDegrees = limits[0];
+                            bone.twistUpperLimitDegrees = limits[1];
+                            edited = true;
+                        }
+                    } else {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextUnformatted("Twist Limit (±)");
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        if (ImGui::DragFloat("##twistLimitDeg", &bone.twistLimitDegrees, 1.0F, 0.0F, 180.0F, "%.0f°")) {
+                            edited = true;
+                        }
+                    }
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Swing1 Motion");
+                ImGui::TableSetColumnIndex(1);
+                if (BeginCenteredComboUVE("##swing1Motion", motionLabel(bone.swing1Motion))) {
+                    for (auto m : {Physics::RagdollMotionUVE::Free, Physics::RagdollMotionUVE::Limited, Physics::RagdollMotionUVE::Locked}) {
+                        if (ImGui::Selectable(motionLabel(m), bone.swing1Motion == m)) {
+                            bone.swing1Motion = m;
+                            edited = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                if (bone.swing1Motion == Physics::RagdollMotionUVE::Limited) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted("Swing1 Limit (±)");
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    if (ImGui::DragFloat("##swing1Deg", &bone.swing1LimitDegrees, 1.0F, 0.0F, 180.0F, "%.0f°")) {
+                        edited = true;
+                    }
+                }
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextUnformatted("Swing2 Motion");
+                ImGui::TableSetColumnIndex(1);
+                if (BeginCenteredComboUVE("##swing2Motion", motionLabel(bone.swing2Motion))) {
+                    for (auto m : {Physics::RagdollMotionUVE::Free, Physics::RagdollMotionUVE::Limited, Physics::RagdollMotionUVE::Locked}) {
+                        if (ImGui::Selectable(motionLabel(m), bone.swing2Motion == m)) {
+                            bone.swing2Motion = m;
+                            edited = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                if (bone.swing2Motion == Physics::RagdollMotionUVE::Limited) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted("Swing2 Limit (±)");
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    if (ImGui::DragFloat("##swing2Deg", &bone.swing2LimitDegrees, 1.0F, 0.0F, 180.0F, "%.0f°")) {
+                        edited = true;
+                    }
+                }
+
+                ImGui::EndTable();
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+
+    if (removeIndex.has_value() && *removeIndex < bones.size()) {
+        bones.erase(bones.begin() + static_cast<std::ptrdiff_t>(*removeIndex));
+        edited = true;
+    }
+
+    if (edited) {
+        static_cast<void>(SetSelectedComponentPropertyUVE(entry, property, &bones));
+    }
+    ImGui::EndDisabled();
 }
 
 void EditorUVE::DrawMorphTargetWeightsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,

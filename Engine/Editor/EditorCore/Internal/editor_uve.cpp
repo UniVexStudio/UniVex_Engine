@@ -2605,6 +2605,10 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::FullBodyIK3DObjectDefinitionUVE{},
                                                             Scene::ApplyFullBodyIK3DObjectDefinitionUVE);
             break;
+        case Scene::Objects::SceneObjectKindUVE::Ragdoll3D:
+            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Ragdoll3DObjectDefinitionUVE{},
+                                                            Scene::ApplyRagdoll3DObjectDefinitionUVE);
+            break;
         // SpringArm3D carries its own component like its neighbours, but its recipe
         // (Object3D baseline plus seeding currentLength to the authored armLength the same way the
         // deserializer seeds it) is a definition's worth of behaviour, so it reads like the rest.
@@ -2815,6 +2819,16 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
                 solve.rootBoneIndex = Scene::kInvalidSkeletonBoneIndexUVE;
                 solve.rootBoneName.clear();
                 entityManager.GetComponentUVE<Scene::FullBodyIK3DComponentUVE>(entity) = solve;
+            } else if (kind == Scene::Objects::SceneObjectKindUVE::Ragdoll3D &&
+                       entityManager.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(entity)) {
+                Scene::Ragdoll3DComponentUVE ragdoll =
+                    entityManager.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(entity);
+                ragdoll.skeleton = foundSkeleton;
+                const auto& skel = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(foundSkeleton);
+                if (!skel.bones.empty() && ragdoll.bones.empty()) {
+                    ragdoll.bones = Scene::BuildHumanoidRagdollBonesUVE(skel.bones);
+                }
+                entityManager.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(entity) = ragdoll;
             }
         }
     }

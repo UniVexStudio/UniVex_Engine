@@ -2254,6 +2254,9 @@ private:
     /// is one undo step and the component's validator is the last word before the write lands.
     void DrawFullBodyEffectorsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                           const Core::TypeMetadataPropertyUVE& property, const void* instance);
+    /// Ragdoll3D's bone list: collision shapes, joint limits, auto-detect from skeleton rig.
+    void DrawRagdollBonesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
+                                     const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// MorphTargetComponentUVE's named blend-shape list: one shape-name/weight row per entry that is
     /// off its default, plus add and remove. Shape names are typed rather than picked from an
     /// asset, so the drawer performs no asset I/O - the component's resolver is what reports a name

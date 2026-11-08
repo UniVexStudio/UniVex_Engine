@@ -14,6 +14,7 @@
 #include "uve/objects/3d/joint_3d_uve.h"
 #include "uve/objects/3d/physical_bone_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
+#include "uve/objects/3d/ragdoll_3d_uve.h"
 #include "uve/objects/3d/ray_cast_3d_uve.h"
 #include "uve/objects/3d/rigid_3d_uve.h"
 #include "uve/objects/3d/shape_cast_3d_uve.h"

@@ -1348,7 +1348,95 @@ template <typename VectorT>
     return value;
 }
 
+[[nodiscard]] nlohmann::json ToJsonUVE(const RagdollBoneSetupUVE& bone) {
+    return {
+        {"boneName", bone.boneName},
+        {"parentBoneName", bone.parentBoneName},
+        {"mass", bone.mass},
+        {"radius", bone.radius},
+        {"halfHeight", bone.halfHeight},
+        {"linearDamping", bone.linearDamping},
+        {"angularDamping", bone.angularDamping},
+        {"friction", bone.friction},
+        {"swing1Motion", static_cast<std::uint8_t>(bone.swing1Motion)},
+        {"swing2Motion", static_cast<std::uint8_t>(bone.swing2Motion)},
+        {"twistMotion", static_cast<std::uint8_t>(bone.twistMotion)},
+        {"swing1LimitDegrees", bone.swing1LimitDegrees},
+        {"swing2LimitDegrees", bone.swing2LimitDegrees},
+        {"twistLimitDegrees", bone.twistLimitDegrees},
+        {"twistAsymmetric", bone.twistAsymmetric},
+        {"twistLowerLimitDegrees", bone.twistLowerLimitDegrees},
+        {"twistUpperLimitDegrees", bone.twistUpperLimitDegrees},
+        {"jointAxisLocal", ToJsonUVE(bone.jointAxisLocal)},
+    };
+}
 
+[[nodiscard]] RagdollBoneSetupUVE RagdollBoneSetupFromJsonUVE(const nlohmann::json& json) {
+    RagdollBoneSetupUVE bone;
+    bone.boneName = json.value("boneName", std::string{});
+    bone.parentBoneName = json.value("parentBoneName", std::string{});
+    bone.mass = json.value("mass", 1.0F);
+    bone.radius = json.value("radius", 0.05F);
+    bone.halfHeight = json.value("halfHeight", 0.08F);
+    bone.linearDamping = json.value("linearDamping", 0.05F);
+    bone.angularDamping = json.value("angularDamping", 0.5F);
+    bone.friction = json.value("friction", 0.8F);
+    bone.swing1Motion = static_cast<Physics::RagdollMotionUVE>(json.value("swing1Motion", static_cast<std::uint8_t>(Physics::RagdollMotionUVE::Limited)));
+    bone.swing2Motion = static_cast<Physics::RagdollMotionUVE>(json.value("swing2Motion", static_cast<std::uint8_t>(Physics::RagdollMotionUVE::Limited)));
+    bone.twistMotion = static_cast<Physics::RagdollMotionUVE>(json.value("twistMotion", static_cast<std::uint8_t>(Physics::RagdollMotionUVE::Limited)));
+    bone.swing1LimitDegrees = json.value("swing1LimitDegrees", 40.0F);
+    bone.swing2LimitDegrees = json.value("swing2LimitDegrees", 40.0F);
+    bone.twistLimitDegrees = json.value("twistLimitDegrees", 25.0F);
+    bone.twistAsymmetric = json.value("twistAsymmetric", false);
+    bone.twistLowerLimitDegrees = json.value("twistLowerLimitDegrees", -45.0F);
+    bone.twistUpperLimitDegrees = json.value("twistUpperLimitDegrees", 45.0F);
+    if (json.contains("jointAxisLocal")) {
+        bone.jointAxisLocal = Vector3FromJsonUVE(json.at("jointAxisLocal"));
+    }
+    return bone;
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const Ragdoll3DComponentUVE& value) {
+    nlohmann::json bonesArray = nlohmann::json::array();
+    for (const auto& bone : value.bones) {
+        bonesArray.push_back(ToJsonUVE(bone));
+    }
+    return {
+        {"enabled", value.enabled},
+        {"gravity", ToJsonUVE(value.gravity)},
+        {"initialVelocity", ToJsonUVE(value.initialVelocity)},
+        {"bones", std::move(bonesArray)},
+    };
+}
+
+[[nodiscard]] Ragdoll3DComponentUVE Ragdoll3DObjectFromJsonUVE(const nlohmann::json& json) {
+    Ragdoll3DComponentUVE value;
+    value.enabled = json.value("enabled", true);
+    if (json.contains("gravity")) {
+        value.gravity = Vector3FromJsonUVE(json.at("gravity"));
+    }
+    if (json.contains("initialVelocity")) {
+        value.initialVelocity = Vector3FromJsonUVE(json.at("initialVelocity"));
+    }
+    if (json.contains("bones") && json.at("bones").is_array()) {
+        const auto& array = json.at("bones");
+        value.bones.reserve(array.size());
+        for (const auto& boneJson : array) {
+            value.bones.push_back(RagdollBoneSetupFromJsonUVE(boneJson));
+        }
+    }
+    return value;
+}
+
+[[nodiscard]] Ragdoll3DComponentUVE Ragdoll3DComponentWithResolvedSkeletonUVE(
+    const nlohmann::json& json, const std::unordered_map<std::uint32_t, EntityUVE>& localIdToEntity) {
+    Ragdoll3DComponentUVE value = Ragdoll3DObjectFromJsonUVE(json);
+    const std::uint32_t skeletonLocalId =
+        json.value("skeletonLocalId", std::numeric_limits<std::uint32_t>::max());
+    const auto skeletonIt = localIdToEntity.find(skeletonLocalId);
+    value.skeleton = skeletonIt != localIdToEntity.end() ? skeletonIt->second : kInvalidEntityUVE;
+    return value;
+}
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const Marker3DComponentUVE& value) {
     return {{"markerName", value.markerName},
@@ -2624,6 +2712,17 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                 }
                 return value;
             }, IsFullBodyIK3DObjectComponentValidUVE));
+        table.emplace("Ragdoll3DComponentUVE", MakeRegistrationUVE<Ragdoll3DComponentUVE>(
+            [](const nlohmann::json& json) {
+                const Ragdoll3DComponentUVE value = Ragdoll3DObjectFromJsonUVE(json);
+                if (!IsFinite3DObjectVectorUVE(value.gravity) || !IsFinite3DObjectVectorUVE(value.initialVelocity)) {
+                    throw std::runtime_error("Invalid Ragdoll3DComponentUVE payload");
+                }
+                return value;
+            },
+            [](const Ragdoll3DComponentUVE& value) noexcept {
+                return IsFinite3DObjectVectorUVE(value.gravity) && IsFinite3DObjectVectorUVE(value.initialVelocity);
+            }));
         table.emplace("SpringArm3DComponentUVE", MakeRegistrationUVE<SpringArm3DComponentUVE>(
             [](const nlohmann::json& json) {
                 const SpringArm3DComponentUVE value = SpringArm3DObjectFromJsonUVE(json);
@@ -3197,6 +3296,18 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                     }
                 }
             }
+            if (type == std::type_index(typeid(Ragdoll3DComponentUVE))) {
+                const EntityUVE skeleton =
+                    entityManager.GetComponentUVE<Ragdoll3DComponentUVE>(entity).skeleton;
+                std::uint32_t skeletonLocalId = std::numeric_limits<std::uint32_t>::max();
+                if (skeleton != kInvalidEntityUVE) {
+                    const auto skeletonIt = entityToLocalId.find(skeleton);
+                    if (skeletonIt != entityToLocalId.end()) {
+                        skeletonLocalId = skeletonIt->second;
+                    }
+                }
+                componentsJson[*name]["skeletonLocalId"] = skeletonLocalId;
+            }
             if (type == std::type_index(typeid(RayCast3DComponentUVE))) {
                 // The ray's exclusions are entity references too: written as file-local ids, with
                 // targets outside the saved set dropped exactly like an animation target. The
@@ -3634,6 +3745,11 @@ void RollbackRestoredEntitiesUVE(IEntityManagerUVE& entityManager, std::vector<E
                 if (CanonicalComponentNameUVE(componentName) == "FullBodyIK3DComponentUVE") {
                     entityManager.AddComponentUVE<FullBodyIK3DComponentUVE>(
                         entity, FullBodyIK3DComponentWithResolvedReferencesUVE(componentJson, localIdToEntity));
+                    continue;
+                }
+                if (CanonicalComponentNameUVE(componentName) == "Ragdoll3DComponentUVE") {
+                    entityManager.AddComponentUVE<Ragdoll3DComponentUVE>(
+                        entity, Ragdoll3DComponentWithResolvedSkeletonUVE(componentJson, localIdToEntity));
                     continue;
                 }
                 if (CanonicalComponentNameUVE(componentName) == "CinematicComponentUVE") {

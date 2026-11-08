@@ -94,6 +94,7 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
 
     Kind kind = Kind::Object3D;
     if (TryOwnComponentUVE(entityManager, entity, kind,
+                           OwnComponentUVE<Ragdoll3DComponentUVE>{Kind::Ragdoll3D},
                            OwnComponentUVE<Kinematic3DComponentUVE>{Kind::Kinematic3D},
                            OwnComponentUVE<RayCast3DComponentUVE>{Kind::RayCast3D},
                            OwnComponentUVE<NavMeshVolume3DComponentUVE>{Kind::NavMeshVolume3D},

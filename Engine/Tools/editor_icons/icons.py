@@ -912,6 +912,23 @@ def physical_bone_3d(ic):
     ic.add('<ellipse cx="32" cy="32" rx="18" ry="9" transform="rotate(-41 32 32)" fill="none" stroke="#F4F4F5" stroke-width="1.6" stroke-dasharray="4 2.5"/>')
 
 
+@scene_object("ragdoll_3d", "Ragdoll3D", "Physics")
+def ragdoll_3d(ic):
+    # Dynamic articulated ragdoll figure in physical tumble/fall pose:
+    # Head, tilted torso capsule, limb capsules with joint constraint nodes & velocity arcs
+    ic.add('<circle cx="36" cy="14" r="5.5" fill="url(#uv_head_lit)" stroke="#71717A" stroke-width="1.2"/>')
+    ic.add('<path d="M 33 20 L 26 34" stroke="url(#uv_bright)" stroke-width="6.5" stroke-linecap="round"/>')
+    ic.add('<path d="M 33 20 L 26 34" stroke="#52525B" stroke-width="1.0" fill="none"/>')
+    ic.add('<path d="M 33 21 L 43 25 L 49 19" fill="none" stroke="url(#uv_bright)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>')
+    ic.add('<path d="M 31 22 L 20 23 L 14 30" fill="none" stroke="url(#uv_bright)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>')
+    ic.add('<path d="M 26 34 L 33 43 L 42 48" fill="none" stroke="url(#uv_bright)" stroke-width="4.0" stroke-linecap="round" stroke-linejoin="round"/>')
+    ic.add('<path d="M 26 34 L 17 41 L 11 51" fill="none" stroke="url(#uv_bright)" stroke-width="4.0" stroke-linecap="round" stroke-linejoin="round"/>')
+    for cx, cy in [(33, 21), (31, 22), (26, 34), (43, 25), (20, 23), (33, 43), (17, 41)]:
+        ic.add(f'<circle cx="{cx}" cy="{cy}" r="2.0" fill="#27272A" stroke="#F4F4F5" stroke-width="1.0"/>')
+    ic.add('<path d="M 46 32 L 51 35 L 47 40" fill="none" stroke="#71717A" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>')
+    ic.add('<path d="M 50 27 L 55 30 L 51 35" fill="none" stroke="#A1A1AA" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>')
+
+
 @scene_object("vehicle_body_3d", "VehicleBody3D", "Physics")
 def vehicle_body_3d(ic):
     ic.add('<path d="M 10 38 L 16 24 H 42 L 50 34 H 55 A 3 3 0 0 1 58 37 V 44 H 6 V 38 Z" fill="url(#uv_bright)" stroke="#3F3F46" stroke-width="1.3" stroke-linejoin="round"/>')
@@ -1126,6 +1143,12 @@ def comp_prefab(ic):
 @component_icon("component_health", "Health Component")
 def comp_health(ic):
     hurtbox_3d(ic)
+
+
+@component_icon("component_ragdoll_3d", "Ragdoll3D Component")
+def comp_ragdoll_3d(ic):
+    ragdoll_3d(ic)
+
 
 
 # =============================================================================================

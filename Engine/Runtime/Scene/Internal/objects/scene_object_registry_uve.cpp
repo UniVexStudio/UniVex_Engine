@@ -54,8 +54,9 @@ constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponent
 constexpr std::array<std::string_view, 1U> kSprite2DContracts{"Sprite2DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kCamera2DContracts{"Camera2DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kSkyContracts{"Sky3DComponentUVE"};
+constexpr std::array<std::string_view, 1U> kRagdollContracts{"Ragdoll3DComponentUVE"};
 
-constexpr std::array<SceneObjectDescriptorUVE, 53U> kDescriptors{
+constexpr std::array<SceneObjectDescriptorUVE, 54U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Object library - libraryCreatable is false.
     SceneObjectDescriptorUVE{SceneObjectKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootObjectDefinitionUVE", kNoContracts, false},
@@ -116,6 +117,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 53U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Player3D, "player_3d", "Player3D", "Gameplay", "Scene/Player3DObjectDefinitionUVE", kPlayerContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Sprite2D, "sprite_2d", "Sprite2D", "2D", "Render/Sprite2D", kSprite2DContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Camera2D, "camera_2d", "Camera2D", "Rendering", "Render/CameraSystemUVE", kCamera2DContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::Ragdoll3D, "ragdoll_3d", "Ragdoll3D", "Physics", "Scene/Ragdoll3DComponentUVE", kRagdollContracts, true},
 };
 
 } // namespace
@@ -194,6 +196,7 @@ SceneObjectPlacementUVE GetSceneObjectPlacementUVE(const SceneObjectKindUVE kind
         case SceneObjectKindUVE::Hitbox3D:
         case SceneObjectKindUVE::Hurtbox3D:
         case SceneObjectKindUVE::Projectile3D:
+        case SceneObjectKindUVE::Ragdoll3D:
             return SceneObjectPlacementUVE::Entity;
         default:
             return SceneObjectPlacementUVE::World;

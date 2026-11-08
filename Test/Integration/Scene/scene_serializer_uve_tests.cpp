@@ -785,6 +785,77 @@ TEST_F(SceneSerializerUVETest, LoadUVE_ATwoBoneIKChainBindsTheIdsTheFileHas) {
     std::filesystem::remove(path);
 }
 
+TEST_F(SceneSerializerUVETest, Ragdoll3DRoundTripsWithSkeletonReferenceAndAuthoredBones) {
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "Character.fbx";
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+
+    const EntityUVE ragdollEntity = entityManager.CreateEntityUVE();
+    Ragdoll3DComponentUVE ragdoll;
+    ragdoll.skeleton = skeletonEntity;
+    ragdoll.gravity = Math::Vector3UVE{0.0F, -9.81F, 0.0F};
+    ragdoll.initialVelocity = Math::Vector3UVE{1.5F, 0.0F, 0.0F};
+    ragdoll.enabled = true;
+
+    RagdollBoneSetupUVE pelvisBone;
+    pelvisBone.boneName = "pelvis";
+    pelvisBone.mass = 12.0F;
+    pelvisBone.radius = 0.1F;
+    pelvisBone.halfHeight = 0.08F;
+    pelvisBone.linearDamping = 0.05F;
+    pelvisBone.angularDamping = 0.5F;
+    pelvisBone.friction = 0.8F;
+
+    RagdollBoneSetupUVE thighBone;
+    thighBone.boneName = "thigh_l";
+    thighBone.parentBoneName = "pelvis";
+    thighBone.mass = 9.0F;
+    thighBone.radius = 0.08F;
+    thighBone.halfHeight = 0.16F;
+    thighBone.swing1Motion = Physics::RagdollMotionUVE::Limited;
+    thighBone.swing1LimitDegrees = 70.0F;
+    thighBone.twistMotion = Physics::RagdollMotionUVE::Limited;
+    thighBone.twistLimitDegrees = 40.0F;
+
+    ragdoll.bones = {pelvisBone, thighBone};
+    entityManager.AddComponentUVE<Ragdoll3DComponentUVE>(ragdollEntity, ragdoll);
+
+    const std::optional<SceneSnapshotUVE> snapshot = serializer.CaptureUVE(
+        entityManager, {skeletonEntity, ragdollEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 2U);
+
+    EntityUVE restoredSkeleton = kInvalidEntityUVE;
+    EntityUVE restoredRagdoll = kInvalidEntityUVE;
+    for (const EntityUVE entity : restoredRoots) {
+        if (fresh.HasComponentUVE<Skeleton3DComponentUVE>(entity)) {
+            restoredSkeleton = entity;
+        } else if (fresh.HasComponentUVE<Ragdoll3DComponentUVE>(entity)) {
+            restoredRagdoll = entity;
+        }
+    }
+
+    ASSERT_NE(restoredSkeleton, kInvalidEntityUVE);
+    ASSERT_NE(restoredRagdoll, kInvalidEntityUVE);
+
+    const Ragdoll3DComponentUVE restored = fresh.GetComponentUVE<Ragdoll3DComponentUVE>(restoredRagdoll);
+    EXPECT_EQ(restored.skeleton, restoredSkeleton) << "file-local id resolves to the restored skeleton";
+    EXPECT_EQ(restored.gravity, ragdoll.gravity);
+    EXPECT_EQ(restored.initialVelocity, ragdoll.initialVelocity);
+    EXPECT_TRUE(restored.enabled);
+    ASSERT_EQ(restored.bones.size(), 2U);
+    EXPECT_EQ(restored.bones[0].boneName, "pelvis");
+    EXPECT_EQ(restored.bones[0].mass, 12.0F);
+    EXPECT_EQ(restored.bones[1].boneName, "thigh_l");
+    EXPECT_EQ(restored.bones[1].parentBoneName, "pelvis");
+    EXPECT_EQ(restored.bones[1].mass, 9.0F);
+    EXPECT_EQ(restored.bones[1].swing1LimitDegrees, 70.0F);
+}
+
 TEST_F(SceneSerializerUVETest, SpringArmAuthoredFieldsRoundTripAndRuntimeTruthIsReseeded) {
     // The arm's authored half is saved; its runtime half is not, and must not be: where the boom
     // happens to be pointing right now is a fact about the frame that saved the scene, not about

@@ -67,6 +67,7 @@
 #include "uve/objects/3d/kinematic_3d_uve.h"
 #include "uve/objects/3d/lod_group_3d_uve.h"
 #include "uve/objects/3d/projectile_3d_uve.h"
+#include "uve/objects/3d/ragdoll_3d_uve.h"
 #include "uve/objects/3d/reflection_probe_3d_uve.h"
 #include "uve/objects/3d/sky_3d_uve.h"
 #include "uve/objects/3d/hitbox_3d_uve.h"
@@ -3585,6 +3586,39 @@ void DeclareFullBodyIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
+[[nodiscard]] bool IsRagdoll3DMetadataComponentValidUVE(const Ragdoll3DComponentUVE& value) noexcept {
+    return IsFinite3DObjectVectorUVE(value.gravity) && IsFinite3DObjectVectorUVE(value.initialVelocity);
+}
+
+/// Ragdoll3D: an articulated physical body driven by joint constraints and capsule colliders.
+void DeclareRagdoll3DUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using A = Ragdoll3DComponentUVE;
+    const auto entityReference = [](TypeMetadataPropertyUVE property) {
+        property.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+        return property;
+    };
+    AddValidatedUVE<Ragdoll3DComponentUVE, &IsRagdoll3DMetadataComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.ragdoll_3d", "Ragdoll3DComponentUVE", "Ragdoll3D", kSectionOrderTypeSpecificUVE,
+            {
+                entityReference(WithTooltipUVE(DeclareUVE<&A::skeleton>("skeleton", "Skeleton",
+                                                                       kPropertyTypeEntityUVE),
+                                               "The object whose skeleton this ragdoll simulates. Auto-detected from "
+                                               "parent or nearby rig if present.")),
+                WithTooltipUVE(DeclareUVE<&A::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Whether ragdoll simulation is active."),
+                WithTooltipUVE(DeclareUVE<&A::gravity>("gravity", "Gravity", kPropertyTypeVector3UVE),
+                               "Gravity acceleration applied to ragdoll bodies in world space."),
+                WithTooltipUVE(DeclareUVE<&A::initialVelocity>("initialVelocity", "Initial Velocity",
+                                                              kPropertyTypeVector3UVE),
+                               "Linear velocity inherited at the moment ragdoll simulation starts."),
+                WithCustomDrawerUVE(
+                    WithTooltipUVE(DeclareUVE<&A::bones>("bones", "Bones", "RagdollBones"),
+                                   "Articulated ragdoll bone collision shapes and angular joint limits."),
+                    "ragdoll-bones"),
+            }));
+}
+
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -3979,6 +4013,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareBoneAttachmentUVE(entries);
     DeclareTwoBoneIKUVE(entries);
     DeclareFullBodyIKUVE(entries);
+    DeclareRagdoll3DUVE(entries);
     DeclareObjectCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;

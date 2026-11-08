@@ -844,7 +844,7 @@ void EditorUVE::DrawObjectPickerUVE() {
             const char* category;
             const char* tooltip;
         };
-        static constexpr std::array<PickerEntryUVE, 30> kPickerEntries{{
+        static constexpr std::array<PickerEntryUVE, 31> kPickerEntries{{
             {Scene::Objects::SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", "3D Visuals & Geometry", "A 3D mesh instance."},
             {Scene::Objects::SceneObjectKindUVE::BoxMesh3D, "BoxMesh3D", "3D Visuals & Geometry", "A 3D box primitive."},
             {Scene::Objects::SceneObjectKindUVE::SphereMesh3D, "SphereMesh3D", "3D Visuals & Geometry", "A 3D sphere primitive."},
@@ -872,6 +872,7 @@ void EditorUVE::DrawObjectPickerUVE() {
             {Scene::Objects::SceneObjectKindUVE::RayCast3D, "RayCast3D", "Physics & Collision", "Raycast query."},
             {Scene::Objects::SceneObjectKindUVE::Hitbox3D, "Hitbox3D", "Physics & Collision", "A combat attack hitbox."},
             {Scene::Objects::SceneObjectKindUVE::Hurtbox3D, "Hurtbox3D", "Physics & Collision", "A combat damage receiver."},
+            {Scene::Objects::SceneObjectKindUVE::Ragdoll3D, "Ragdoll3D", "Physics & Collision", "Simulated active ragdoll body with joint constraints."},
             {Scene::Objects::SceneObjectKindUVE::AudioSource3D, "AudioSource3D", "Audio & Effects", "Spatial 3D audio emitter."},
             {Scene::Objects::SceneObjectKindUVE::ParticleEmitter3D, "ParticleEmitter3D", "Audio & Effects", "3D particle effect system."},
             {Scene::Objects::SceneObjectKindUVE::Decal3D, "Decal3D", "Audio & Effects", "Projects a texture onto geometry."}
@@ -1016,6 +1017,9 @@ void EditorUVE::DrawObjectPickerUVE() {
                 }
                 if (item(Scene::Objects::SceneObjectKindUVE::Hurtbox3D, "Hurtbox3D", nullptr, "A combat damage receiver.")) {
                     static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Hurtbox3D, parent));
+                }
+                if (item(Scene::Objects::SceneObjectKindUVE::Ragdoll3D, "Ragdoll3D", nullptr, "Simulated active ragdoll body with joint constraints.")) {
+                    static_cast<void>(CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Ragdoll3D, parent));
                 }
                 ImGui::EndMenu();
             }

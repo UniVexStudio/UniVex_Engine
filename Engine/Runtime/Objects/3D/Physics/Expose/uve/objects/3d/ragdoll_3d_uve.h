@@ -62,6 +62,8 @@ struct RagdollBoneSetupUVE final {
     /// along the bone for a cone joint (twist follows the limb), and along the character's lateral
     /// axis for a hinge (a knee bends sideways across the body, not around the shin).
     Math::Vector3UVE jointAxisLocal{0.0F, 0.0F, 0.0F};
+
+    [[nodiscard]] bool operator==(const RagdollBoneSetupUVE&) const noexcept = default;
 };
 
 /// The runtime half of one simulated bone. Never persisted.

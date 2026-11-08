@@ -14,8 +14,8 @@ namespace {
 
 TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
     const std::span<const SceneObjectDescriptorUVE> descriptors = GetSceneObjectDescriptorsUVE();
-    // 53 kinds: the 51 an object list offers plus the document's own two structural rows.
-    ASSERT_EQ(descriptors.size(), 53U);
+    // 54 kinds: the 52 an object list offers plus the document's own two structural rows.
+    ASSERT_EQ(descriptors.size(), 54U);
 
     std::unordered_set<std::string_view> ids;
     for (const SceneObjectDescriptorUVE& descriptor : descriptors) {
@@ -60,6 +60,7 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<Hitbox3DComponentUVE>);                  // Hitbox3D
     static_assert(std::is_class_v<Hurtbox3DComponentUVE>);                 // Hurtbox3D
     static_assert(std::is_class_v<Projectile3DComponentUVE>);              // Projectile3D
+    static_assert(std::is_class_v<Ragdoll3DComponentUVE>);                 // Ragdoll3D
     static_assert(std::is_class_v<InteractionArea3DComponentUVE>);         // InteractionArea3D
     static_assert(std::is_class_v<WorldEnvironment3DComponentUVE>);        // WorldEnvironment3D
     static_assert(std::is_class_v<ReflectionProbe3DComponentUVE>);         // ReflectionProbe3D
