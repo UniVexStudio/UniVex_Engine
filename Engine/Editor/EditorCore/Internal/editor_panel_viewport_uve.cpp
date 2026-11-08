@@ -796,146 +796,168 @@ void EditorUVE::DrawViewportOverlayBubblesUVE(const Math::Vector2UVE imageOrigin
     }
     if (ImGui::BeginPopup("##preview-sun-env-popup")) {
         const float fieldWidth = ImGui::GetFontSize() * 11.0F;
+        const bool hasSceneSun =
+            (FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D) != Scene::kInvalidEntityUVE);
+        const bool hasSceneEnv =
+            (FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D) != Scene::kInvalidEntityUVE);
 
-        ImGui::TextDisabled("PREVIEW SUN");
-        ImGui::Checkbox("Enable preview sun##preview-sun", &m_viewportOverlayState.previewSun);
-        ImGui::BeginDisabled(!m_viewportOverlayState.previewSun);
-        // The preview colours are the author's colours too, so they open the same picker as every
-        // other colour row instead of the plain ImGui one.
-        EditorColorUVE sunColor{m_viewportOverlayState.previewSunColor[0],
-                                m_viewportOverlayState.previewSunColor[1],
-                                m_viewportOverlayState.previewSunColor[2], 1.0F};
-        if (DrawColorFieldUVE("##previewSunColor", "Color", sunColor, false, m_colorPickerPreferences) !=
-            ColorFieldEventUVE::None) {
-            m_viewportOverlayState.previewSunColor = {sunColor.r, sunColor.g, sunColor.b};
-        }
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::SliderFloat("Energy##preview-sun-energy", &m_viewportOverlayState.previewSunEnergy, 0.0F, 8.0F,
-                           "%.2f");
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::SliderFloat("Azimuth##preview-sun-azimuth", &m_viewportOverlayState.previewSunAzimuth, -180.0F,
-                           180.0F, "%.0f deg");
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("Bearing around the world Y axis. Negative is west, positive is east.");
-        }
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::SliderFloat("Altitude##preview-sun-altitude", &m_viewportOverlayState.previewSunAltitude, -90.0F,
-                           90.0F, "%.0f deg");
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("Elevation above the horizon. 90 lights the scene from straight above.");
-        }
-        ImGui::EndDisabled();
-
-        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
-        if (ImGui::Button("Add Sun to Scene", ImVec2{-1.0F, 0.0F})) {
-            Scene::EntityUVE sunEntity =
-                FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
-            if (sunEntity == Scene::kInvalidEntityUVE) {
-                sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
-            }
-            if (sunEntity != Scene::kInvalidEntityUVE) {
-                Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-                // The preview's own solar math, so the node that lands in the scene points exactly
-                // where the light the author was looking at pointed.
-                const std::optional<Math::QuaternionUVE> rotation =
-                    Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
-                                                        m_viewportOverlayState.previewSunAltitude);
-                if (rotation.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
-                    auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
-                    transform.localRotation = *rotation;
-                    m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, transform);
+        if (hasSceneSun && hasSceneEnv) {
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.55F, 0.82F, 0.65F, 1.0F});
+            ImGui::TextUnformatted("Scene Sun & Environment Active");
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+            ImGui::TextDisabled("Both DirectionalLight3D and WorldEnvironment3D\nexist in the Outliner. Preview lighting is idle.");
+            ImGui::Spacing();
+        } else {
+            if (!hasSceneSun) {
+                ImGui::TextDisabled("PREVIEW SUN");
+                ImGui::Checkbox("Enable preview sun##preview-sun", &m_viewportOverlayState.previewSun);
+                ImGui::BeginDisabled(!m_viewportOverlayState.previewSun);
+                // The preview colours are the author's colours too, so they open the same picker as every
+                // other colour row instead of the plain ImGui one.
+                EditorColorUVE sunColor{m_viewportOverlayState.previewSunColor[0],
+                                        m_viewportOverlayState.previewSunColor[1],
+                                        m_viewportOverlayState.previewSunColor[2], 1.0F};
+                if (DrawColorFieldUVE("##previewSunColor", "Color", sunColor, false, m_colorPickerPreferences) !=
+                    ColorFieldEventUVE::None) {
+                    m_viewportOverlayState.previewSunColor = {sunColor.r, sunColor.g, sunColor.b};
                 }
-                if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
-                    auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
-                    // Display-authored swatch, converted on the way into linear storage - the same
-                    // rule the preview light itself follows, so copying it into the scene is lossless.
-                    emitter.color = Math::ColorFromDisplayUVE(
-                        Math::Vector3UVE{m_viewportOverlayState.previewSunColor[0],
-                                         m_viewportOverlayState.previewSunColor[1],
-                                         m_viewportOverlayState.previewSunColor[2]});
-                    emitter.energy = m_viewportOverlayState.previewSunEnergy;
-                    emitter.shadowEnabled = true;
+                ImGui::SetNextItemWidth(fieldWidth);
+                ImGui::SliderFloat("Energy##preview-sun-energy", &m_viewportOverlayState.previewSunEnergy, 0.0F, 8.0F,
+                                   "%.2f");
+                ImGui::SetNextItemWidth(fieldWidth);
+                ImGui::SliderFloat("Azimuth##preview-sun-azimuth", &m_viewportOverlayState.previewSunAzimuth, -180.0F,
+                                   180.0F, "%.0f deg");
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Bearing around the world Y axis. Negative is west, positive is east.");
                 }
-                m_sceneDirty = true;
-                SelectEntityUVE(sunEntity);
-                m_contentStatusMessage = "Added a DirectionalLight3D from the preview sun.";
-                ImGui::CloseCurrentPopup();
-            }
-        }
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("Creates a real DirectionalLight3D carrying these values. The preview then steps aside.");
-        }
-
-        ImGui::Separator();
-        ImGui::TextDisabled("PREVIEW ENVIRONMENT");
-        ImGui::Checkbox("Enable preview environment##preview-env", &m_viewportOverlayState.previewEnvironment);
-        ImGui::BeginDisabled(!m_viewportOverlayState.previewEnvironment);
-        EditorColorUVE skyColor{m_viewportOverlayState.previewSkyColor[0],
-                                m_viewportOverlayState.previewSkyColor[1],
-                                m_viewportOverlayState.previewSkyColor[2], 1.0F};
-        if (DrawColorFieldUVE("##previewSkyColor", "Sky", skyColor, false, m_colorPickerPreferences) !=
-            ColorFieldEventUVE::None) {
-            m_viewportOverlayState.previewSkyColor = {skyColor.r, skyColor.g, skyColor.b};
-        }
-        EditorColorUVE horizonColor{m_viewportOverlayState.previewHorizonColor[0],
-                                    m_viewportOverlayState.previewHorizonColor[1],
-                                    m_viewportOverlayState.previewHorizonColor[2], 1.0F};
-        if (DrawColorFieldUVE("##previewHorizonColor", "Horizon", horizonColor, false,
-                              m_colorPickerPreferences) != ColorFieldEventUVE::None) {
-            m_viewportOverlayState.previewHorizonColor = {horizonColor.r, horizonColor.g, horizonColor.b};
-        }
-        EditorColorUVE groundColor{m_viewportOverlayState.previewGroundColor[0],
-                                   m_viewportOverlayState.previewGroundColor[1],
-                                   m_viewportOverlayState.previewGroundColor[2], 1.0F};
-        if (DrawColorFieldUVE("##previewGroundColor", "Ground", groundColor, false, m_colorPickerPreferences) !=
-            ColorFieldEventUVE::None) {
-            m_viewportOverlayState.previewGroundColor = {groundColor.r, groundColor.g, groundColor.b};
-        }
-        ImGui::SetNextItemWidth(fieldWidth);
-        ImGui::SliderFloat("Ambient##preview-env-ambient", &m_viewportOverlayState.previewAmbientEnergy, 0.0F,
-                           4.0F, "%.2f");
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-            ImGui::SetTooltip("How much of the sky and ground band lights the scene. Zero is a black sky.");
-        }
-        ImGui::EndDisabled();
-
-        ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
-        if (ImGui::Button("Add Environment to Scene", ImVec2{-1.0F, 0.0F})) {
-            Scene::EntityUVE envEntity =
-                FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
-            if (envEntity == Scene::kInvalidEntityUVE) {
-                envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
-            }
-            if (envEntity != Scene::kInvalidEntityUVE) {
-                Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-                if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
-                    auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
-                    env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
-                    env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0],
-                                                    m_viewportOverlayState.previewSkyColor[1],
-                                                    m_viewportOverlayState.previewSkyColor[2]};
-                    env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
-                                                        m_viewportOverlayState.previewHorizonColor[1],
-                                                        m_viewportOverlayState.previewHorizonColor[2]};
-                    env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
-                                                       m_viewportOverlayState.previewGroundColor[1],
-                                                       m_viewportOverlayState.previewGroundColor[2]};
-                    env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
-                    // Exactly what the author was looking at. The preview draws no effects stack,
-                    // so an environment that switched them on here would change the picture at the
-                    // moment of adding - the one thing "Add Environment to Scene" must not do.
-                    env.postProcessingEnabled = false;
+                ImGui::SetNextItemWidth(fieldWidth);
+                ImGui::SliderFloat("Altitude##preview-sun-altitude", &m_viewportOverlayState.previewSunAltitude, -90.0F,
+                                   90.0F, "%.0f deg");
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("Elevation above the horizon. 90 lights the scene from straight above.");
                 }
-                m_sceneDirty = true;
-                SelectEntityUVE(envEntity);
-                m_contentStatusMessage = "Added a WorldEnvironment3D from the preview environment.";
-                ImGui::CloseCurrentPopup();
+                ImGui::EndDisabled();
+
+                ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
+                if (ImGui::Button("Add Sun to Scene", ImVec2{-1.0F, 0.0F})) {
+                    Scene::EntityUVE sunEntity =
+                        FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+                    if (sunEntity == Scene::kInvalidEntityUVE) {
+                        sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+                    }
+                    if (sunEntity != Scene::kInvalidEntityUVE) {
+                        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                        // The preview's own solar math, so the node that lands in the scene points exactly
+                        // where the light the author was looking at pointed.
+                        const std::optional<Math::QuaternionUVE> rotation =
+                            Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
+                                                                m_viewportOverlayState.previewSunAltitude);
+                        if (rotation.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
+                            auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
+                            transform.localRotation = *rotation;
+                            m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, transform);
+                        }
+                        if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
+                            auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
+                            // Display-authored swatch, converted on the way into linear storage - the same
+                            // rule the preview light itself follows, so copying it into the scene is lossless.
+                            emitter.color = Math::ColorFromDisplayUVE(
+                                Math::Vector3UVE{m_viewportOverlayState.previewSunColor[0],
+                                                 m_viewportOverlayState.previewSunColor[1],
+                                                 m_viewportOverlayState.previewSunColor[2]});
+                            emitter.energy = m_viewportOverlayState.previewSunEnergy;
+                            emitter.shadowEnabled = true;
+                        }
+                        m_sceneDirty = true;
+                        SelectEntityUVE(sunEntity);
+                        m_contentStatusMessage = "Added a DirectionalLight3D from the preview sun.";
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("Creates a real DirectionalLight3D carrying these values. The preview then steps aside.");
+                }
             }
-        }
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("Creates a real WorldEnvironment3D carrying these values. The preview then steps aside.");
+
+            if (!hasSceneSun && !hasSceneEnv) {
+                ImGui::Separator();
+            }
+
+            if (!hasSceneEnv) {
+                ImGui::TextDisabled("PREVIEW ENVIRONMENT");
+                ImGui::Checkbox("Enable preview environment##preview-env", &m_viewportOverlayState.previewEnvironment);
+                ImGui::BeginDisabled(!m_viewportOverlayState.previewEnvironment);
+                EditorColorUVE skyColor{m_viewportOverlayState.previewSkyColor[0],
+                                        m_viewportOverlayState.previewSkyColor[1],
+                                        m_viewportOverlayState.previewSkyColor[2], 1.0F};
+                if (DrawColorFieldUVE("##previewSkyColor", "Sky", skyColor, false, m_colorPickerPreferences) !=
+                    ColorFieldEventUVE::None) {
+                    m_viewportOverlayState.previewSkyColor = {skyColor.r, skyColor.g, skyColor.b};
+                }
+                EditorColorUVE horizonColor{m_viewportOverlayState.previewHorizonColor[0],
+                                            m_viewportOverlayState.previewHorizonColor[1],
+                                            m_viewportOverlayState.previewHorizonColor[2], 1.0F};
+                if (DrawColorFieldUVE("##previewHorizonColor", "Horizon", horizonColor, false,
+                                      m_colorPickerPreferences) != ColorFieldEventUVE::None) {
+                    m_viewportOverlayState.previewHorizonColor = {horizonColor.r, horizonColor.g, horizonColor.b};
+                }
+                EditorColorUVE groundColor{m_viewportOverlayState.previewGroundColor[0],
+                                           m_viewportOverlayState.previewGroundColor[1],
+                                           m_viewportOverlayState.previewGroundColor[2], 1.0F};
+                if (DrawColorFieldUVE("##previewGroundColor", "Ground", groundColor, false, m_colorPickerPreferences) !=
+                    ColorFieldEventUVE::None) {
+                    m_viewportOverlayState.previewGroundColor = {groundColor.r, groundColor.g, groundColor.b};
+                }
+                ImGui::SetNextItemWidth(fieldWidth);
+                ImGui::SliderFloat("Ambient##preview-env-ambient", &m_viewportOverlayState.previewAmbientEnergy, 0.0F,
+                                   4.0F, "%.2f");
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                    ImGui::SetTooltip("How much of the sky and ground band lights the scene. Zero is a black sky.");
+                }
+                ImGui::EndDisabled();
+
+                ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
+                if (ImGui::Button("Add Environment to Scene", ImVec2{-1.0F, 0.0F})) {
+                    Scene::EntityUVE envEntity =
+                        FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+                    if (envEntity == Scene::kInvalidEntityUVE) {
+                        envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+                    }
+                    if (envEntity != Scene::kInvalidEntityUVE) {
+                        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+                        if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
+                            auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
+                            env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
+                            env.ambientColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+                            env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0],
+                                                            m_viewportOverlayState.previewSkyColor[1],
+                                                            m_viewportOverlayState.previewSkyColor[2]};
+                            env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
+                                                                m_viewportOverlayState.previewHorizonColor[1],
+                                                                m_viewportOverlayState.previewHorizonColor[2]};
+                            env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
+                                                               m_viewportOverlayState.previewGroundColor[1],
+                                                               m_viewportOverlayState.previewGroundColor[2]};
+                            env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
+                            // Exactly what the author was looking at. The preview draws no effects stack,
+                            // so an environment that switched them on here would change the picture at the
+                            // moment of adding - the one thing "Add Environment to Scene" must not do.
+                            env.postProcessingEnabled = false;
+                        }
+                        m_sceneDirty = true;
+                        SelectEntityUVE(envEntity);
+                        m_contentStatusMessage = "Added a WorldEnvironment3D from the preview environment.";
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("Creates a real WorldEnvironment3D carrying these values. The preview then steps aside.");
+                }
+            }
         }
 
         ImGui::Separator();

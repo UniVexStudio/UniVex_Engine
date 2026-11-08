@@ -330,12 +330,21 @@ float ScreenSpaceDitherNoiseUVE(vec2 pixel) {
 // undo that mapping before multiplying by the inverse projection. Distance is measured along the
 // pixel ray, not by linearly interpolating the non-linear perspective depth buffer.
 float ReconstructViewDistanceUVE(vec2 uv, float depthSample, float fallbackDistance) {
+    float safeNear = max(uCameraNear, 0.01);
+    // Under OpenGL's mapping of the engine's [0, 1] clip Z, the near plane is at depth 0.5.
+    // Fragments closer than or at the near plane stay locked to safeNear to prevent inversion singularities.
+    if (uOrthographic == 0 && depthSample <= 0.50005) {
+        return safeNear;
+    }
     vec3 ndc = vec3(uv * 2.0 - 1.0, 2.0 * clamp(depthSample, 0.0, 1.0) - 1.0);
     vec4 viewPosition = uInverseProjection * vec4(ndc, 1.0);
     if (abs(viewPosition.w) <= 1.0e-6) {
         return fallbackDistance;
     }
     vec3 viewPos = viewPosition.xyz / viewPosition.w;
+    if (uOrthographic == 0 && viewPos.z >= -1.0e-4) {
+        return safeNear;
+    }
     float viewDistance = uOrthographic != 0 ? max(-viewPos.z, 0.0) : length(viewPos);
     return (isnan(viewDistance) || isinf(viewDistance)) ? fallbackDistance : max(viewDistance, 0.0);
 }
@@ -643,9 +652,13 @@ void main() {
                 ? (uCameraPosition +
                    (uCameraRight * (ndc.x * max(uAspect, 0.0001)) + uCameraUp * ndc.y) * max(uOrthoHalfHeight, 0.0))
                 : uCameraPosition;
+        float safeNear = max(uCameraNear, 0.01);
+        float safeFar = max(uCameraFar, safeNear + 1.0);
         float fallbackDistance = depth < 1.0
-                                     ? mix(max(uCameraNear, 0.0), max(uCameraFar, 0.0), clamp(depth, 0.0, 1.0))
-                                     : max(uCameraFar, 0.0);
+                                     ? (depth <= 0.50005 && uOrthographic == 0
+                                            ? safeNear
+                                            : mix(safeNear, safeFar, clamp(depth, 0.0, 1.0)))
+                                     : safeFar;
         float viewDistance = depth < 1.0
                                  ? ReconstructViewDistanceUVE(sourceUV, depth, fallbackDistance)
                                  : fallbackDistance;
@@ -669,6 +682,10 @@ void main() {
                         density *= mix(1.0, heightTerm, 0.85);
                     }
                     globalTau = density * viewDistance;
+                }
+                float nearFogFade = smoothstep(safeNear, max(safeNear * 3.0, 0.35), viewDistance);
+                if (uOrthographic == 0) {
+                    globalTau *= nearFogFade;
                 }
             } else {
                 float sky = clamp(uFogSkyAffect, 0.0, 0.9999);
@@ -698,7 +715,7 @@ void main() {
         float weight = posGlobal + posLocal;
         vec3 inscatter = weight > 0.0 ? (globalInscatter * posGlobal + volumeColor * posLocal) / weight : globalInscatter;
         vec3 volumetricSunInscatter = vec3(0.0);
-        if (uVolumetricShadowsEnabled != 0 && uLightVolumetricFogEnergy > 0.0 && length(uSunDirection) > 1.0e-5) {
+        if (uVolumetricShadowsEnabled != 0 && uLightVolumetricFogEnergy > 0.0 && uFogDensity > 0.0 && length(uSunDirection) > 1.0e-5) {
             float marchEnd = min(viewDistance, max(uShadowCascadeSplits[2], 10.0));
             float marchStart = max(uCameraNear, 0.1);
             if (marchEnd > marchStart) {
@@ -712,7 +729,7 @@ void main() {
                     vec3 samplePos = rayOrigin + viewDir * sampleDist;
                     float shadow = VolumetricShadowFactorUVE(samplePos, sampleDist);
                     if (shadow > 0.0) {
-                        float density = max(uFogDensity, 0.01);
+                        float density = uFogDensity;
                         if (uFogMode == kFogModeHeightUVE) {
                             float h = exp(-max(samplePos.y - uFogHeight, 0.0) / max(uFogHeightFalloff, 0.01));
                             density *= mix(1.0, h, 0.85);
@@ -720,7 +737,8 @@ void main() {
                         accumLight += shadow * density;
                     }
                 }
-                volumetricSunInscatter = sunLightColor * (accumLight * stepDist * 0.05 * phase);
+                float nearFogFade = smoothstep(safeNear, max(safeNear * 3.0, 0.35), viewDistance);
+                volumetricSunInscatter = sunLightColor * (accumLight * stepDist * 0.05 * phase * nearFogFade);
             }
         }
         hdrColor = mix(hdrColor, inscatter * exposure, fogFactor) + volumetricSunInscatter * exposure;
