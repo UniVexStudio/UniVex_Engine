@@ -154,6 +154,18 @@ struct RagdollJointUVE final {
     /// because projecting a joint that is being pushed apart by a collision fights the collision.
     bool projectionEnabled = true;
 
+    // ---- Joint Motors / Drives (Active Ragdoll) ----
+    /// True when active PD joint drive motor is enabled.
+    bool driveEnabled = false;
+    /// Target relative rotation between the first and second joint frames.
+    Math::QuaternionUVE targetRotation{};
+    /// Proportional gain Kp (N*m/rad).
+    float springStiffness = 500.0F;
+    /// Derivative gain Kd (N*m*s/rad).
+    float damping = 50.0F;
+    /// Maximum motor torque saturation (N*m).
+    float maxTorque = 300.0F;
+
     [[nodiscard]] bool operator==(const RagdollJointUVE&) const noexcept = default;
 };
 
@@ -240,6 +252,12 @@ public:
     [[nodiscard]] const RagdollBodyUVE& GetBodyUVE(std::size_t index) const noexcept;
     [[nodiscard]] RagdollBodyUVE& GetBodyUVE(std::size_t index) noexcept;
     [[nodiscard]] const RagdollJointUVE& GetJointUVE(std::size_t index) const noexcept;
+    [[nodiscard]] RagdollJointUVE& GetJointUVE(std::size_t index) noexcept;
+
+    /// Computes the total mass-weighted center of mass in world space.
+    [[nodiscard]] Math::Vector3UVE ComputeCenterOfMassUVE() const noexcept;
+    /// Computes the total mass-weighted velocity of the center of mass in world space.
+    [[nodiscard]] Math::Vector3UVE ComputeCenterOfMassVelocityUVE() const noexcept;
 
     /// Recomputes `inverseMass` and `inverseInertiaLocal` from the authored mass and capsule. Call it
     /// after changing those fields; `ResetUVE` and `AddJointUVE` do not do it for you, because a
@@ -283,6 +301,7 @@ private:
     void IntegrateVelocitiesUVE(const Math::Vector3UVE& gravity, float deltaTimeSeconds) noexcept;
     void SolveJointVelocityUVE(const RagdollJointUVE& joint) noexcept;
     void SolveJointLimitsUVE(const RagdollJointUVE& joint) noexcept;
+    void SolveJointDrivesUVE(const RagdollJointUVE& joint) noexcept;
     void SolveContactVelocityUVE(const RagdollContactUVE& contact) noexcept;
     void IntegratePositionsUVE(float deltaTimeSeconds) noexcept;
     void ProjectJointsUVE() noexcept;

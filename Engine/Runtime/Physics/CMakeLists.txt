@@ -34,6 +34,13 @@ add_library(uve_physics STATIC
     Internal/collider_debug_geometry_uve.cpp
     Internal/ragdoll_solver_uve.cpp
     Internal/ragdoll_world_uve.cpp
+    Internal/advanced_collision_analysis_uve.cpp
+    Internal/motion_trajectory_uve.cpp
+    Internal/active_ragdoll_uve.cpp
+    Internal/airborne_body_control_uve.cpp
+    Internal/landing_system_uve.cpp
+    Internal/ragdoll_recovery_uve.cpp
+    Internal/physics_debug_draw_uve.cpp
     Internal/physics_query_system_uve.cpp
     Internal/physics_system_uve.cpp
     Internal/raycast_system_uve.cpp

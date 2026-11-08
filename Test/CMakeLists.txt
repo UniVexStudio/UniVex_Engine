@@ -459,6 +459,7 @@ add_executable(uve_integration_tests
     Physics/raycast_system_uve_tests.cpp
     Physics/rigid_3d_uve_tests.cpp
     Physics/ragdoll_solver_uve_tests.cpp
+    Physics/active_ragdoll_uve_tests.cpp
     Physics/collider_debug_geometry_uve_tests.cpp
     Physics/projectile_3d_step_uve_tests.cpp
     Physics/shape_cast_system_uve_tests.cpp

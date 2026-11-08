@@ -347,6 +347,36 @@ const RagdollJointUVE& RagdollSolverUVE::GetJointUVE(const std::size_t index) co
     return m_joints[std::min(index, kMaximumRagdollJointsUVE - 1U)];
 }
 
+RagdollJointUVE& RagdollSolverUVE::GetJointUVE(const std::size_t index) noexcept {
+    return m_joints[std::min(index, kMaximumRagdollJointsUVE - 1U)];
+}
+
+Math::Vector3UVE RagdollSolverUVE::ComputeCenterOfMassUVE() const noexcept {
+    Math::Vector3UVE weighted{};
+    float total = 0.0F;
+    for (std::size_t i = 0U; i < m_bodyCount; ++i) {
+        const float m = m_bodies[i].mass;
+        if (std::isfinite(m) && m > 0.0F) {
+            weighted += m_bodies[i].position * m;
+            total += m;
+        }
+    }
+    return total > 0.0F ? weighted * (1.0F / total) : Math::Vector3UVE{};
+}
+
+Math::Vector3UVE RagdollSolverUVE::ComputeCenterOfMassVelocityUVE() const noexcept {
+    Math::Vector3UVE weighted{};
+    float total = 0.0F;
+    for (std::size_t i = 0U; i < m_bodyCount; ++i) {
+        const float m = m_bodies[i].mass;
+        if (std::isfinite(m) && m > 0.0F) {
+            weighted += m_bodies[i].linearVelocity * m;
+            total += m;
+        }
+    }
+    return total > 0.0F ? weighted * (1.0F / total) : Math::Vector3UVE{};
+}
+
 void RagdollSolverUVE::RebuildInertiaUVE() noexcept {
     for (std::size_t index = 0U; index < m_bodyCount; ++index) {
         RagdollBodyUVE& body = m_bodies[index];
@@ -532,6 +562,58 @@ void RagdollSolverUVE::SolveJointLimitsUVE(const RagdollJointUVE& joint) noexcep
         first.angularVelocity -= TransformInverseInertiaUVE(joint.firstBody, angularImpulse);
         second.angularVelocity += TransformInverseInertiaUVE(joint.secondBody, angularImpulse);
     }
+}
+
+void RagdollSolverUVE::SolveJointDrivesUVE(const RagdollJointUVE& joint) noexcept {
+    if (!joint.driveEnabled || joint.firstBody >= m_bodyCount || joint.secondBody >= m_bodyCount) {
+        return;
+    }
+    RagdollBodyUVE& first = m_bodies[joint.firstBody];
+    RagdollBodyUVE& second = m_bodies[joint.secondBody];
+
+    const Math::QuaternionUVE firstFrame = Math::MultiplyUVE(first.rotation, joint.firstFrame);
+    const Math::QuaternionUVE secondFrame = Math::MultiplyUVE(second.rotation, joint.secondFrame);
+    Math::QuaternionUVE invFirstFrame;
+    if (!Math::TryInverseUVE(firstFrame, invFirstFrame)) return;
+
+    const Math::QuaternionUVE currentRel = Math::MultiplyUVE(invFirstFrame, secondFrame);
+    Math::QuaternionUVE invCurrent;
+    if (!Math::TryInverseUVE(currentRel, invCurrent)) return;
+    const Math::QuaternionUVE errQ = Math::MultiplyUVE(joint.targetRotation, invCurrent);
+
+    const float errW = std::clamp(errQ.w, -1.0F, 1.0F);
+    const float angle = 2.0F * std::acos(std::clamp(std::abs(errW), 0.0F, 1.0F));
+    if (!(angle > 1.0e-4F)) return;
+
+    const float sinHalf = std::sqrt(std::max(0.0F, 1.0F - errW * errW));
+    Math::Vector3UVE axisInFirstFrame{1.0F, 0.0F, 0.0F};
+    if (sinHalf > 1.0e-5F) {
+        const float sign = errW < 0.0F ? -1.0F : 1.0F;
+        axisInFirstFrame = Math::Vector3UVE{errQ.x, errQ.y, errQ.z} * (sign / sinHalf);
+    }
+    const Math::Vector3UVE worldAxis = Math::RotateVectorUVE(firstFrame, axisInFirstFrame);
+    const float worldAxisLenSq = Math::LengthSquaredUVE(worldAxis);
+    if (!(worldAxisLenSq > kDirectionEpsilonUVE)) return;
+    const Math::Vector3UVE normWorldAxis = worldAxis * (1.0F / std::sqrt(worldAxisLenSq));
+
+    const float effA = Math::DotUVE(normWorldAxis, TransformInverseInertiaUVE(joint.firstBody, normWorldAxis));
+    const float effB = Math::DotUVE(normWorldAxis, TransformInverseInertiaUVE(joint.secondBody, normWorldAxis));
+    const float effectiveMass = effA + effB;
+    if (!(effectiveMass > kDirectionEpsilonUVE)) return;
+
+    const float relAngularVel = Math::DotUVE(second.angularVelocity - first.angularVelocity, normWorldAxis);
+
+    const float springTorque = joint.springStiffness * angle;
+    const float dampTorque = -joint.damping * relAngularVel;
+    float desiredTorque = springTorque + dampTorque;
+    desiredTorque = std::clamp(desiredTorque, -joint.maxTorque, joint.maxTorque);
+
+    const float impulse = desiredTorque * m_lastStepSeconds / effectiveMass;
+    if (!std::isfinite(impulse)) return;
+
+    const Math::Vector3UVE angularImpulse = normWorldAxis * impulse;
+    first.angularVelocity -= TransformInverseInertiaUVE(joint.firstBody, angularImpulse);
+    second.angularVelocity += TransformInverseInertiaUVE(joint.secondBody, angularImpulse);
 }
 
 float RagdollSolverUVE::ComputeContactEffectiveMassUVE(const std::size_t bodyIndex,
@@ -760,6 +842,9 @@ RagdollStepReportUVE RagdollSolverUVE::StepUVE(const Math::Vector3UVE& gravity, 
             const RagdollJointUVE& joint = m_joints[jointIndex];
             SolveJointVelocityUVE(joint);
             SolveJointLimitsUVE(joint);
+            if (joint.driveEnabled) {
+                SolveJointDrivesUVE(joint);
+            }
         }
         for (const RagdollContactUVE& contact : contacts) {
             SolveContactVelocityUVE(contact);
