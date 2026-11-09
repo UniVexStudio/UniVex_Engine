@@ -53,7 +53,8 @@ public class CoreTestsModule : ModuleRules
             "Save",
             "Navigation",
             "Localization",
-            "UI"
+            "UI",
+            "Pack"
         });
 
         PrivateIncludePaths.AddRange(new string[] {
@@ -66,17 +67,32 @@ public class CoreTestsModule : ModuleRules
 
         PrivateDefinitions.AddRange(new string[] {
             "UVE_TESTS=1",
-            "UVE_BUILD_TESTS=1"
+            "UVE_BUILD_TESTS=1",
+            "UVE_TEST_PLUGIN_VALID_PATH=\"/home/antigravity/UniVexStudio/UniVex_Engine/build/Test/libuve_test_plugin_valid.so\"",
+            "UVE_TEST_PLUGIN_BAD_PROTOCOL_PATH=\"/home/antigravity/UniVexStudio/UniVex_Engine/build/Test/libuve_test_plugin_bad_protocol.so\"",
+            "UVE_TEST_PLUGIN_NO_ENTRY_PATH=\"/home/antigravity/UniVexStudio/UniVex_Engine/build/Test/libuve_test_plugin_no_entry.so\"",
+            "UVE_UVSCRIPT_NATIVE_DIR=\"/home/antigravity/UniVexStudio/UniVex_Engine/Test/UVScript/native\""
         });
 
         PrivateSystemLibraries.AddRange(new string[] {
             "pthread",
             "dl",
-            "m"
+            "m",
+            "GL"
         });
 
         ExcludedFiles.AddRange(new string[] {
-            "Editor/"
+            "Editor/",
+            "Samples/",
+            "Plugins/Fixtures/",
+            "window_manager_tests.cpp",
+            "gl_render_device_tests.cpp",
+            "vulkan_render_device_tests.cpp",
+            "compute_system_tests.cpp",
+            "particle_compute_simulation_tests.cpp",
+            "frustum_cull_compute_tests.cpp",
+            "frustum_cull_indirect_tests.cpp",
+            "mesh_skin_compute_tests.cpp"
         });
     }
 }

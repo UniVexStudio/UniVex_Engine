@@ -74,14 +74,14 @@ class CSharpParser:
 
         mod = ModuleInfo(mod_name, mod_dir, mod_type)
 
-        # Helper to extract string arrays from C# code
         def extract_strings(field_name):
             pattern = re.compile(rf"{field_name}\s*\.\s*(?:AddRange|Add)\s*\(\s*(?:new\s*(?:string\[\]|List<string>)\s*\{{)?([^}};\)]+)", re.DOTALL)
             m = pattern.search(text)
             if not m:
                 return []
             content = m.group(1)
-            return [s.strip().strip('"').strip("'") for s in re.findall(r'"([^"]+)"', content)]
+            raw_matches = re.findall(r'"((?:\\.|[^"\\])*)"', content)
+            return [s.replace('\\"', '"').replace('\\\\', '\\') for s in raw_matches]
 
         mod.public_deps = extract_strings("PublicDependencyModuleNames")
         mod.private_deps = extract_strings("PrivateDependencyModuleNames")
@@ -179,13 +179,6 @@ class BuildCache:
 
     def is_action_up_to_date(self, obj_file: Path, source_file: Path, dep_file: Path, cmd_str: str) -> bool:
         if not obj_file.exists():
-            return False
-        
-        cached_entry = self.data.get(str(obj_file))
-        if not cached_entry:
-            return False
-            
-        if cached_entry.get("cmd") != cmd_str:
             return False
             
         # Check source file mtime vs object file mtime
@@ -536,7 +529,13 @@ class EngineBuilder:
                 unique_sys.append(s)
 
         link_cmd = [cxx] + base_cflags + ["-o", str(target_exe)]
-        link_cmd += ["-Wl,--start-group"] + all_libs + ["-Wl,--end-group"]
+        if target.target_type == "Test":
+            root_test_libs = [str(module_libs[m]) for m in target.extra_modules if m in module_libs]
+            other_libs = [l for l in all_libs if l not in root_test_libs]
+            link_cmd += ["-Wl,--whole-archive"] + root_test_libs + ["-Wl,--no-whole-archive"]
+            link_cmd += ["-Wl,--start-group"] + other_libs + ["-Wl,--end-group"]
+        else:
+            link_cmd += ["-Wl,--start-group"] + all_libs + ["-Wl,--end-group"]
         link_cmd += [f"-l{s}" for s in unique_sys]
 
         link_res = subprocess.run(link_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
