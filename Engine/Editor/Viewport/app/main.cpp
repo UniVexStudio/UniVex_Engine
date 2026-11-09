@@ -20,11 +20,11 @@
 #include <cstdio>
 #include <string>
 
-#include "ViewportRenderPass.h"
-#include "univex/camera/OrbitCamera.h"
-#include "univex/gizmo/NavGizmo.h"
-#include "univex/render/GlApi.h"
-#include "univex/viewport/ViewportSettings.h"
+#include "viewport_render_pass.h"
+#include "univex/camera/orbit_camera.h"
+#include "univex/gizmo/nav_gizmo.h"
+#include "univex/render/gl_api.h"
+#include "univex/viewport/viewport_settings.h"
 
 #include <GLFW/glfw3.h>
 

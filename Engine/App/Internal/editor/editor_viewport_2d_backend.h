@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 
-#include "univex/render/GlApi.h"
+#include "univex/render/gl_api.h"
 
 #include <algorithm>
 #include <array>
@@ -18,10 +18,10 @@
 
 #include <imgui.h>
 
-#include "Viewport2D/DrawUtil.h"
-#include "Viewport2D/IViewportRenderer.h"
-#include "Viewport2D/Viewport2D.h"
-#include "univex/render/ShaderProgram.h"
+#include "viewport_2d/draw_util.h"
+#include "viewport_2d/i_viewport_renderer.h"
+#include "viewport_2d/viewport_2d.h"
+#include "univex/render/shader_program.h"
 
 #include "asset_guid.h"
 #include "bmp_metadata.h"

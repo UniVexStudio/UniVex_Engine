@@ -14,7 +14,7 @@
 #include "integration/EntityPicker.h"
 #include "integration/SelectionOutlineGeometry.h"
 
-#include "univex/camera/OrbitCamera.h"
+#include "univex/camera/orbit_camera.h"
 
 #include "editor_internal_entity_component.h"
 #include "primitive_mesh_component.h"

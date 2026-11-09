@@ -702,15 +702,15 @@ add_executable(uve_editor_tests
     Editor/data_table_registry_bridge_tests.cpp
     Editor/prefab_maturity_editor_tests.cpp
     Editor/content_catalogue_editor_tests.cpp
-    Editor/uvscript_highlight_tests.cpp
-    Editor/content_browser_model_tests.cpp
+    Editor/editor_uvscript_highlight_tests.cpp
+    Editor/editor_content_browser_model_tests.cpp
     Editor/model_source_placement_tests.cpp
-    Editor/retarget_plan_tests.cpp
+    Editor/editor_retarget_plan_tests.cpp
     Editor/animation_clip_editing_tests.cpp
     Editor/animation_graph_editing_tests.cpp
     Editor/editor_timeline_tracks_tests.cpp
     Editor/scene_component_authoring_tests.cpp
-    Editor/file_picker_tests.cpp
+    Editor/editor_file_picker_tests.cpp
     Editor/scene_object_editor_tests.cpp
 )
 target_link_libraries(uve_editor_tests PRIVATE
@@ -751,7 +751,7 @@ target_include_directories(uve_editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 gtest_discover_tests(uve_editor_tests DISCOVERY_TIMEOUT 60 DISCOVERY_MODE PRE_TEST)
 
 add_executable(univex_viewport_2d_tests
-    ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/tests/Viewport2DTests.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/tests/viewport_2d_tests.cpp
 )
 target_link_libraries(univex_viewport_2d_tests PRIVATE univex_viewport_core GTest::gtest_main)
 target_include_directories(univex_viewport_2d_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Expose)
@@ -781,11 +781,11 @@ if(NOT UVE_HAS_DESKTOP_GL)
         Editor/editor_input_map_tests.cpp
         Editor/editor_hierarchy_view_tests.cpp
         Editor/developer_console_tests.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/Mat4.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/OrbitCamera.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/SceneLightRulesUVE.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/EntityPicker.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/SelectionOutlineGeometry.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/mat4.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/orbit_camera.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/scene_light_rules.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/entity_picker.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/selection_outline_geometry.cpp
         Editor/editor_mesh_layer_tests.cpp
         Editor/entity_picker_tests.cpp
     )
