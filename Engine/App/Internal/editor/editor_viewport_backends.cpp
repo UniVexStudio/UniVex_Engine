@@ -19,13 +19,13 @@
 #include <imgui.h>
 
 #include "viewport_render_pass.h"
-#include "integration/EditorMeshLayer.h"
-#include "integration/SelectionOutlineGeometry.h"
-#include "integration/EntityPicker.h"
+#include "integration/editor_mesh_layer.h"
+#include "integration/selection_outline_geometry.h"
+#include "integration/entity_picker.h"
 #include "univex/camera/viewport_metrics.h"
 #include "univex/gizmo/gizmo_drag.h"
 #include "univex/gizmo/gizmo_picking.h"
-#include "integration/MathConversions.h"
+#include "integration/math_conversions.h"
 #include "univex/camera/orbit_camera.h"
 #include "univex/render/shader_program.h"
 #include "univex/render/studio_backdrop_renderer.h"

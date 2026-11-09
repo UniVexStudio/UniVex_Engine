@@ -1,9 +1,9 @@
-#include "integration/EntityPicker.h"
+#include "integration/entity_picker.h"
 
 #include <cmath>
 #include <limits>
 
-#include "integration/MathConversions.h"
+#include "integration/math_conversions.h"
 
 #include "univex/camera/orbit_camera.h"
 #include "univex/math/mat4.h"

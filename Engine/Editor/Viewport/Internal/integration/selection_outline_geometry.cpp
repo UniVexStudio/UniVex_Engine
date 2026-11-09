@@ -1,10 +1,10 @@
-#include "integration/SelectionOutlineGeometry.h"
+#include "integration/selection_outline_geometry.h"
 
 #include <algorithm>
 #include <unordered_map>
 #include <utility>
 
-#include "integration/EntityPicker.h"
+#include "integration/entity_picker.h"
 
 #include "editor_internal_entity_component.h"
 #include "hierarchy_component.h"

@@ -1,4 +1,4 @@
-#include "integration/OverlayRasterStateToPipeline.h"
+#include "integration/overlay_raster_state_to_pipeline.h"
 
 namespace univex::integration {
 

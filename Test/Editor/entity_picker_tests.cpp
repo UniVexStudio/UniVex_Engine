@@ -11,8 +11,8 @@
 
 #include "Support/test_scratch.h"
 
-#include "integration/EntityPicker.h"
-#include "integration/SelectionOutlineGeometry.h"
+#include "integration/entity_picker.h"
+#include "integration/selection_outline_geometry.h"
 
 #include "univex/camera/orbit_camera.h"
 
