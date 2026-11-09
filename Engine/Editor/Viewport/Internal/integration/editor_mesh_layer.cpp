@@ -1,8 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "integration/EditorMeshLayer.h"
+#include "integration/editor_mesh_layer.h"
 
-#include "integration/MathConversions.h"
+#include "integration/math_conversions.h"
 #include "univex/camera/orbit_camera.h"
 
 #include "color.h"

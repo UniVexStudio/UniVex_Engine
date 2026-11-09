@@ -12,7 +12,7 @@
 
 #include <gtest/gtest.h>
 
-#include "integration/EditorMeshLayer.h"
+#include "integration/editor_mesh_layer.h"
 
 #include "editor_internal_entity_component.h"
 #include "light_component.h"

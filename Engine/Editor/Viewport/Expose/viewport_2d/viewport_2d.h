@@ -1,5 +1,5 @@
 #pragma once
-#include "camera_2d.h"
+#include "viewport_2d_camera.h"
 #include "grid_ruler.h"
 #include "snapping.h"
 #include "transform_gizmo.h"

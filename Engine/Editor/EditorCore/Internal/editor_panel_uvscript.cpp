@@ -12,8 +12,10 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>

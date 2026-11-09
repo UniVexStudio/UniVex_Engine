@@ -7,7 +7,7 @@
 //
 // Its own translation unit, and deliberately free of any OpenGL: this is pure scene logic that a
 // test can hold without a renderer, an ImGui context or a window.
-#include "integration/EditorMeshLayer.h"
+#include "integration/editor_mesh_layer.h"
 
 #include <cstddef>
 

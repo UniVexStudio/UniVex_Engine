@@ -69,7 +69,7 @@ add_library(univex_viewport_core STATIC
     Internal/viewport_metrics.cpp
     Internal/gizmo_drag.cpp
     Internal/bone_shape.cpp
-    Internal/viewport_2d/camera_2d.cpp
+    Internal/viewport_2d/viewport_2d_camera.cpp
     Internal/viewport_2d/grid_ruler.cpp
     Internal/viewport_2d/snapping.cpp
     Internal/viewport_2d/transform_gizmo.cpp
