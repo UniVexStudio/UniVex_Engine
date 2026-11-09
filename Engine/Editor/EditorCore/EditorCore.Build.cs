@@ -9,8 +9,25 @@ public class EditorCoreModule : ModuleRules
         Type = ModuleType.StaticLibrary;
 
         PublicDependencyModuleNames.AddRange(new string[] {
-            "Platform",
+            "Engine",
+            "World",
             "Scene",
+            "Entity",
+            "Component",
+            "Platform",
+            "Diagnostics",
+            "Network",
+            "Plugins",
+            "Retarget",
+            "ImGui",
+            "Math",
+            "Strings",
+            "Logging"
+        });
+
+        PublicDefinitions.AddRange(new string[] {
+            "GLEW_STATIC",
+            "GLEW_NO_GLU"
         });
     }
 }

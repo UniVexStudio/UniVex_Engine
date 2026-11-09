@@ -7,7 +7,7 @@ public class UniVexEditorTarget : TargetRules
     public UniVexEditorTarget(TargetInfo Target) : base(Target)
     {
         Type = TargetType.Editor;
-        OutputName = "uve_editor_app";
+        OutputName = "uve_editor";
 
         ExtraModuleNames.AddRange(new string[] {
             "EditorApp"
