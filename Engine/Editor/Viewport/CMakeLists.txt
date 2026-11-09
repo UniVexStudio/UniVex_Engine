@@ -4,7 +4,7 @@
 # Ported from a standalone C++20/OpenGL viewport module: infinite grid, orbit camera, the four
 # transform gizmos and the orientation gizmo. It draws the editor's own furniture - backdrop,
 # grid, gizmos - while scene entities are rendered by the host engine's Renderer3DUVE and
-# composited against this pass by the editor (see Internal/integration/EditorMeshLayer.h).
+# composited against this pass by the editor (see Internal/integration/editor_mesh_layer.h).
 #
 # The library splits in four deliberately. univex_viewport_core is pure CPU (math, camera, LOD,
 # gizmo geometry and picking) and links nothing; univex_viewport_gl adds the GL renderer;
@@ -22,8 +22,8 @@ option(UNIVEX_VIEWPORT_BUILD_TESTS "Build the CPU-side test suite" ON)
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/infinite_grid.vert UNIVEX_GRID_VERT_SOURCE)
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/infinite_grid.frag UNIVEX_GRID_FRAG_SOURCE)
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GridShaderSources.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/generated/univex/render/GridShaderSources.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/grid_shader_sources.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/univex/render/grid_shader_sources.h
     @ONLY)
 
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_line.vert  UNIVEX_GIZMO_LINE_VERT)
@@ -31,8 +31,8 @@ file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_line.frag  UNIVEX_GIZMO_LINE
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_solid.vert UNIVEX_GIZMO_SOLID_VERT)
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_solid.frag UNIVEX_GIZMO_SOLID_FRAG)
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GizmoShaderSources.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/generated/univex/render/GizmoShaderSources.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gizmo_shader_sources.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/univex/render/gizmo_shader_sources.h
     @ONLY)
 
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_mask.vert     UNIVEX_SELECTION_MASK_VERT)
@@ -40,8 +40,8 @@ file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_mask.frag     UNIVEX_SEL
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline.vert  UNIVEX_SELECTION_OUTLINE_VERT)
 file(READ ${CMAKE_CURRENT_SOURCE_DIR}/shaders/selection_outline.frag  UNIVEX_SELECTION_OUTLINE_FRAG)
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/SelectionOutlineShaderSources.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/generated/univex/render/SelectionOutlineShaderSources.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/selection_outline_shader_sources.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/univex/render/selection_outline_shader_sources.h
     @ONLY)
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -61,19 +61,19 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 # dependency on the host UniVex engine.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_core STATIC
-    Internal/Mat4.cpp
-    Internal/OrbitCamera.cpp
-    Internal/GizmoGeometry.cpp
-    Internal/NavGizmo.cpp
-    Internal/GizmoPicking.cpp
-    Internal/ViewportMetrics.cpp
-    Internal/GizmoDrag.cpp
-    Internal/BoneShape.cpp
-    Internal/Viewport2D/Camera2D.cpp
-    Internal/Viewport2D/GridRuler.cpp
-    Internal/Viewport2D/Snapping.cpp
-    Internal/Viewport2D/TransformGizmo.cpp
-    Internal/Viewport2D/Viewport2D.cpp)
+    Internal/mat4.cpp
+    Internal/orbit_camera.cpp
+    Internal/gizmo_geometry.cpp
+    Internal/nav_gizmo.cpp
+    Internal/gizmo_picking.cpp
+    Internal/viewport_metrics.cpp
+    Internal/gizmo_drag.cpp
+    Internal/bone_shape.cpp
+    Internal/viewport_2d/camera_2d.cpp
+    Internal/viewport_2d/grid_ruler.cpp
+    Internal/viewport_2d/snapping.cpp
+    Internal/viewport_2d/transform_gizmo.cpp
+    Internal/viewport_2d/viewport_2d.cpp)
 target_include_directories(univex_viewport_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Expose)
 target_compile_options(univex_viewport_core PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -84,12 +84,12 @@ find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 
 add_library(univex_viewport_gl STATIC
-    Internal/ShaderProgram.cpp
-    Internal/OverlayRasterStateGl.cpp
-    Internal/InfiniteGridRenderer.cpp
-    Internal/GizmoRenderer.cpp
-    Internal/SelectionOutlineRenderer.cpp
-    Internal/StudioBackdropRenderer.cpp)
+    Internal/shader_program.cpp
+    Internal/overlay_raster_state_gl.cpp
+    Internal/infinite_grid_renderer.cpp
+    Internal/gizmo_renderer.cpp
+    Internal/selection_outline_renderer.cpp
+    Internal/studio_backdrop_renderer.cpp)
 target_include_directories(univex_viewport_gl PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Expose
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
@@ -101,7 +101,7 @@ target_compile_options(univex_viewport_gl PRIVATE -Wall -Wextra -Wpedantic)
 # only on univex_viewport_gl. Scene entities are the host renderer's job.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_app_support STATIC
-    app/ViewportRenderPass.cpp)
+    app/viewport_render_pass.cpp)
 target_include_directories(univex_viewport_app_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/app)
 target_link_libraries(univex_viewport_app_support PUBLIC univex_viewport_gl)
 target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedantic)
@@ -110,11 +110,11 @@ target_compile_options(univex_viewport_app_support PRIVATE -Wall -Wextra -Wpedan
 # Engine bridge: the only target here that depends on the host UniVex engine.
 # ---------------------------------------------------------------------------
 add_library(univex_viewport_engine_bridge STATIC
-    Internal/integration/EditorMeshLayer.cpp
-    Internal/integration/SceneLightRulesUVE.cpp
-    Internal/integration/OverlayRasterStateToPipeline.cpp
-    Internal/integration/EntityPicker.cpp
-    Internal/integration/SelectionOutlineGeometry.cpp)
+    Internal/integration/editor_mesh_layer.cpp
+    Internal/integration/scene_light_rules.cpp
+    Internal/integration/overlay_raster_state_to_pipeline.cpp
+    Internal/integration/entity_picker.cpp
+    Internal/integration/selection_outline_geometry.cpp)
 target_include_directories(univex_viewport_engine_bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/Internal)
 # uve_core brings in EngineServicesUVE/Renderer3DUVE/GlRenderDeviceUVE/Scene for
 # EditorMeshLayerUVE, which renders the live scene's real mesh/material entities into the
@@ -143,7 +143,7 @@ if(UNIVEX_VIEWPORT_BUILD_TOOLS)
 endif()
 
 if(UNIVEX_VIEWPORT_BUILD_TESTS)
-    add_executable(univex_viewport_tests tests/ViewportTests.cpp)
+    add_executable(univex_viewport_tests tests/viewport_tests.cpp)
     target_link_libraries(univex_viewport_tests PRIVATE univex_viewport_core)
     target_include_directories(univex_viewport_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Expose)
     target_compile_options(univex_viewport_tests PRIVATE -Wall -Wextra -Wpedantic)

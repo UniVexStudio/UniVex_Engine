@@ -8,7 +8,7 @@
 #include <gtest/gtest.h>
 
 #include "integration/OverlayRasterStateToPipeline.h"
-#include "univex/render/OverlayRasterState.h"
+#include "univex/render/overlay_raster_state.h"
 
 namespace UVE::Render::Tests {
 namespace {

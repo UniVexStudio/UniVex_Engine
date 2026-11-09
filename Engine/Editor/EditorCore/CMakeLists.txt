@@ -153,7 +153,7 @@ add_library(uve_editor STATIC
     Internal/editor_hierarchy_view.cpp
     Internal/editor_content_browser_model.cpp
     Internal/editor_content_catalogue.cpp
-    Internal/editor_entity_editor.cpp
+    Internal/editor_entity_window.cpp
     Internal/editor_retarget_plan.cpp
     Internal/editor_retarget_preview.cpp
     Internal/editor_retarget_window.cpp
@@ -166,7 +166,7 @@ add_library(uve_editor STATIC
     Internal/editor_panel_inspector_animation_graph.cpp
     Internal/editor_panel_inspector_object_metadata.cpp
     Internal/editor_script_slot.cpp
-    Internal/editor_uvscript_editor.cpp
+    Internal/editor_panel_uvscript.cpp
     Internal/editor_uvscript_highlight.cpp
     Internal/editor_script_exports.cpp
     Internal/editor_panel_inspector_skeleton.cpp

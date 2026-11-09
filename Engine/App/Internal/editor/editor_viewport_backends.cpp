@@ -4,7 +4,7 @@
 // <GLFW/glfw3.h>, or GLFW's own bundled GL header conflicts with GLEW's - see GlApi.h's own
 // comment. Nothing else in this file currently drags in GLFW, but this ordering is cheap
 // insurance and matches every other translation unit in Engine/Editor/Viewport that mixes the two.
-#include "univex/render/GlApi.h"
+#include "univex/render/gl_api.h"
 
 #include <algorithm>
 #include <array>
@@ -18,17 +18,17 @@
 
 #include <imgui.h>
 
-#include "ViewportRenderPass.h"
+#include "viewport_render_pass.h"
 #include "integration/EditorMeshLayer.h"
 #include "integration/SelectionOutlineGeometry.h"
 #include "integration/EntityPicker.h"
-#include "univex/camera/ViewportMetrics.h"
-#include "univex/gizmo/GizmoDrag.h"
-#include "univex/gizmo/GizmoPicking.h"
+#include "univex/camera/viewport_metrics.h"
+#include "univex/gizmo/gizmo_drag.h"
+#include "univex/gizmo/gizmo_picking.h"
 #include "integration/MathConversions.h"
-#include "univex/camera/OrbitCamera.h"
-#include "univex/render/ShaderProgram.h"
-#include "univex/render/StudioBackdropRenderer.h"
+#include "univex/camera/orbit_camera.h"
+#include "univex/render/shader_program.h"
+#include "univex/render/studio_backdrop_renderer.h"
 
 #include "engine_core.h"
 #include "logging_macros.h"
@@ -58,7 +58,7 @@
 #include "world_partition_3d.h"
 #include "camera_system.h"
 #include "i_scene_graph.h"
-#include "univex/gizmo/GizmoGeometry.h"
+#include "univex/gizmo/gizmo_geometry.h"
 
 #include "editor_viewport_backends.h"
 #include "editor_viewport_2d_backend.h"
