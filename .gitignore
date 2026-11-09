@@ -2,6 +2,7 @@ build/
 build-*/
 .uvbt/
 .venv/
+ThirdParty/
 *.o
 *.obj
 compile_commands.json

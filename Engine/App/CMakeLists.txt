@@ -41,7 +41,7 @@ if(UVE_HAS_DESKTOP_GL)
         Internal/editor/editor_viewport_2d_backend.h
     )
     set_target_properties(uve_editor_app PROPERTIES OUTPUT_NAME uve_editor)
-    target_link_libraries(uve_editor_app PRIVATE uve_editor univex_viewport_engine_bridge uve_editor_imgui)
+    target_link_libraries(uve_editor_app PRIVATE uve_editor univex_viewport_engine_bridge uve_editor_imgui OpenGL::GL GL)
     target_compile_features(uve_editor_app PRIVATE cxx_std_23)
     uve_set_warnings(uve_editor_app)
 endif()
