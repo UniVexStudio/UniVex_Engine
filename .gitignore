@@ -40,3 +40,4 @@ obj/
 
 # Python bytecode from the repo tools
 __pycache__/
+refactor_strip_uve_suffixes.bundle
