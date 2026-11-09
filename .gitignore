@@ -1,5 +1,6 @@
 build/
 build-*/
+.uvbt/
 .venv/
 *.o
 *.obj
