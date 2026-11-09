@@ -289,7 +289,47 @@ class EngineBuilder:
             if src.exists() and (not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime):
                 subprocess.run([sys.executable, str(embed_script), str(src), str(dst), sym], check=True)
 
-        return [gen_dir, retarget_gen, ui_gen, editor_gen]
+        # 4. Editor icons
+        editor_icons_inc = editor_gen / "uve_editor_icon_set.inc"
+        embed_icons_script = self.repo_root / "Engine" / "Tools" / "editor_icons" / "embed_editor_icons.py"
+        icons_dir = self.repo_root / "Engine" / "Editor" / "EditorCore" / "assets" / "icons"
+        if embed_icons_script.exists() and icons_dir.is_dir() and not editor_icons_inc.exists():
+            subprocess.run([sys.executable, str(embed_icons_script), str(editor_icons_inc), str(icons_dir)], check=True)
+
+        # 5. Viewport Shaders
+        vp_render_gen = gen_dir / "univex" / "render"
+        vp_render_gen.mkdir(parents=True, exist_ok=True)
+        vp_shaders = self.repo_root / "Engine" / "Editor" / "Viewport" / "shaders"
+
+        grid_in = vp_shaders / "grid_shader_sources.h.in"
+        grid_out = vp_render_gen / "grid_shader_sources.h"
+        if grid_in.exists() and vp_shaders.is_dir() and not grid_out.exists():
+            text = grid_in.read_text(encoding="utf-8")
+            text = text.replace("@UNIVEX_GRID_VERT_SOURCE@", (vp_shaders / "infinite_grid.vert").read_text(encoding="utf-8"))
+            text = text.replace("@UNIVEX_GRID_FRAG_SOURCE@", (vp_shaders / "infinite_grid.frag").read_text(encoding="utf-8"))
+            grid_out.write_text(text, encoding="utf-8")
+
+        gizmo_in = vp_shaders / "gizmo_shader_sources.h.in"
+        gizmo_out = vp_render_gen / "gizmo_shader_sources.h"
+        if gizmo_in.exists() and vp_shaders.is_dir() and not gizmo_out.exists():
+            text = gizmo_in.read_text(encoding="utf-8")
+            text = text.replace("@UNIVEX_GIZMO_LINE_VERT@", (vp_shaders / "gizmo_line.vert").read_text(encoding="utf-8"))
+            text = text.replace("@UNIVEX_GIZMO_LINE_FRAG@", (vp_shaders / "gizmo_line.frag").read_text(encoding="utf-8"))
+            text = text.replace("@UNIVEX_GIZMO_SOLID_VERT@", (vp_shaders / "gizmo_solid.vert").read_text(encoding="utf-8"))
+            text = text.replace("@UNIVEX_GIZMO_SOLID_FRAG@", (vp_shaders / "gizmo_solid.frag").read_text(encoding="utf-8"))
+            gizmo_out.write_text(text, encoding="utf-8")
+
+        sel_in = vp_shaders / "selection_outline_shader_sources.h.in"
+        sel_out = vp_render_gen / "selection_outline_shader_sources.h"
+        if sel_in.exists() and vp_shaders.is_dir() and not sel_out.exists():
+            text = sel_in.read_text(encoding="utf-8")
+            text = text.replace("@UNIVEX_SELECTION_MASK_VERT@", (vp_shaders / "selection_mask.vert").read_text(encoding="utf-8"))
+            text = text.replace("@UNIVEX_SELECTION_MASK_FRAG@", (vp_shaders / "selection_mask.frag").read_text(encoding="utf-8"))
+            text = text.replace("@UNIVEX_SELECTION_OUTLINE_VERT@", (vp_shaders / "selection_outline.vert").read_text(encoding="utf-8"))
+            text = text.replace("@UNIVEX_SELECTION_OUTLINE_FRAG@", (vp_shaders / "selection_outline.frag").read_text(encoding="utf-8"))
+            sel_out.write_text(text, encoding="utf-8")
+
+        return [gen_dir, retarget_gen, ui_gen, editor_gen, vp_render_gen.parent, vp_render_gen]
 
     def build_target(self, target_name: str, platform: str = "Linux", configuration: str = "Debug", jobs: int = 4):
         target = self.targets.get(target_name)
@@ -326,19 +366,23 @@ class EngineBuilder:
             self.repo_root / "Engine" / "Source",
         ] + generated_includes
         
-        # Third-party / fetched deps if available
+        # Third-party / vendored deps in ThirdParty/
         third_party_dirs = [
-            self.repo_root / "build" / "_deps" / "googletest-src" / "googletest" / "include",
-            self.repo_root / "build" / "_deps" / "googletest-src" / "googlemock" / "include",
-            self.repo_root / "build" / "_deps" / "nlohmann_json-src" / "include",
-            self.repo_root / "build" / "_deps" / "uve_fmt-src" / "include",
-            self.repo_root / "build" / "_deps" / "spirvreflect-src",
-            self.repo_root / "build" / "_deps" / "vulkanheaders-src" / "include",
-            self.repo_root / "build" / "_deps" / "uve_ufbx-src",
-            self.repo_root / "build" / "_deps" / "uve_miniaudio-src",
-            self.repo_root / "build" / "_deps" / "uve_basis_universal-src" / "transcoder",
-            self.repo_root / "build" / "_deps" / "uve_basis_universal-src" / "encoder",
-            self.repo_root / "build" / "_deps" / "uve_basis_universal-src",
+            self.repo_root / "ThirdParty" / "googletest" / "googletest" / "include",
+            self.repo_root / "ThirdParty" / "googletest" / "googlemock" / "include",
+            self.repo_root / "ThirdParty" / "nlohmann_json" / "include",
+            self.repo_root / "ThirdParty" / "fmt" / "include",
+            self.repo_root / "ThirdParty" / "spirv-reflect",
+            self.repo_root / "ThirdParty" / "vulkan-headers" / "include",
+            self.repo_root / "ThirdParty" / "ufbx",
+            self.repo_root / "ThirdParty" / "miniaudio",
+            self.repo_root / "ThirdParty" / "basis_universal" / "transcoder",
+            self.repo_root / "ThirdParty" / "basis_universal" / "encoder",
+            self.repo_root / "ThirdParty" / "basis_universal",
+            self.repo_root / "ThirdParty" / "glfw" / "include",
+            self.repo_root / "ThirdParty" / "glew" / "include",
+            self.repo_root / "ThirdParty" / "imgui",
+            self.repo_root / "ThirdParty" / "imgui" / "backends",
         ]
         for tp in third_party_dirs:
             if tp.is_dir():
@@ -498,8 +542,8 @@ class EngineBuilder:
         # If testing, add gtest libraries
         if target.target_type == "Test":
             gtest_libs = [
-                self.repo_root / "build" / "lib" / "libgtest.a",
-                self.repo_root / "build" / "lib" / "libgtest_main.a",
+                self.repo_root / "ThirdParty" / "lib" / "libgtest.a",
+                self.repo_root / "ThirdParty" / "lib" / "libgtest_main.a",
             ]
             for glib in gtest_libs:
                 if glib.exists():
@@ -507,10 +551,12 @@ class EngineBuilder:
 
         # Third-party libraries
         third_party_libs = [
-            self.repo_root / "build" / "Engine" / "Runtime" / "Asset" / "libuve_ufbx.a",
-            self.repo_root / "build" / "Engine" / "Runtime" / "Asset" / "libuve_basisu_encoder.a",
-            self.repo_root / "build" / "Engine" / "Runtime" / "Asset" / "libuve_basisu_transcoder.a",
-            self.repo_root / "build" / "_deps" / "spirvreflect-build" / "libspirv-reflect-static.a",
+            self.repo_root / "ThirdParty" / "lib" / "libuve_ufbx.a",
+            self.repo_root / "ThirdParty" / "lib" / "libuve_basisu_encoder.a",
+            self.repo_root / "ThirdParty" / "lib" / "libuve_basisu_transcoder.a",
+            self.repo_root / "ThirdParty" / "lib" / "libspirv-reflect-static.a",
+            self.repo_root / "ThirdParty" / "glew" / "lib" / "libGLEW.a",
+            self.repo_root / "ThirdParty" / "glfw" / "lib" / "libglfw3.a",
         ]
         for tlib in third_party_libs:
             if tlib.exists():

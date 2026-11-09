@@ -9,11 +9,29 @@ public class ViewportModule : ModuleRules
         Type = ModuleType.StaticLibrary;
 
         PublicDependencyModuleNames.AddRange(new string[] {
-
+            "Engine",
+            "World",
+            "Scene",
+            "Math",
+            "Platform",
+            "Logging"
         });
 
-        PrivateDependencyModuleNames.AddRange(new string[] {
+        PublicIncludePaths.AddRange(new string[] {
+            "app",
+            "Expose",
+            "Internal"
+        });
 
+        PublicDefinitions.AddRange(new string[] {
+            "GLEW_STATIC",
+            "GLEW_NO_GLU"
+        });
+
+        PublicSystemLibraries.AddRange(new string[] {
+            "GL",
+            "GLX",
+            "X11"
         });
     }
 }
