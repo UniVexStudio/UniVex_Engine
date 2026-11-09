@@ -16,10 +16,10 @@
 #include <cstdint>
 #include <optional>
 
-#include "uve/core/engine_services_uve.h"
-#include "uve/rhi/texture_handle_uve.h"
-#include "uve/component/entity_uve.h"
-#include "uve/objects/3d/preview_lighting_uve.h"
+#include "engine_services.h"
+#include "texture_handle.h"
+#include "entity.h"
+#include "preview_lighting.h"
 
 namespace univex::camera {
 class OrbitCamera;

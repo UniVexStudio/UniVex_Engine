@@ -9,9 +9,9 @@
 # its behavior the moment one exists).
 #
 # The three machinery headers intentionally keep NO .cpp because they cannot have one:
-#   - component_uve.h is a concept (template),
-#   - component_type_info_uve.h's MakeComponentTypeInfoUVE() is a template,
-#   - entity_uve.h's EntityUVE is the data-only entity handle (value semantics + std::hash),
+#   - component.h is a concept (template),
+#   - component_type_info.h's MakeComponentTypeInfoUVE() is a template,
+#   - entity.h's EntityUVE is the data-only entity handle (value semantics + std::hash),
 #     not a component.
 #
 # Still depends only on Core-level modules (math, asset for PrefabInstanceComponentUVE's asset
@@ -19,59 +19,59 @@
 # depend on this module without a cycle.
 
 add_library(uve_component STATIC
-    Internal/animation_driver_component_uve.cpp
-    Internal/animation_sequencer_component_uve.cpp
-    Internal/animation_graph_component_uve.cpp
-    Internal/area_component_uve.cpp
-    Internal/audio_source_component_uve.cpp
-    Internal/camera_2d_component_uve.cpp
-    Internal/camera_component_uve.cpp
-    Internal/camera_follow_component_uve.cpp
-    Internal/ui_layout_container_component_uve.cpp
-    Internal/ui_anchor_component_uve.cpp
-    Internal/ui_scrollbar_component_uve.cpp
-    Internal/ui_slider_component_uve.cpp
-    Internal/ui_progress_bar_component_uve.cpp
-    Internal/ui_dropdown_component_uve.cpp
-    Internal/ui_text_input_component_uve.cpp
-    Internal/ui_scroll_container_component_uve.cpp
-    Internal/ui_checkbox_component_uve.cpp
-    Internal/ui_tooltip_component_uve.cpp
-    Internal/ui_tween_component_uve.cpp
-    Internal/canvas_component_uve.cpp
-    Internal/character_controller_component_uve.cpp
-    Internal/collider_component_uve.cpp
-    Internal/disabled_component_uve.cpp
-    Internal/editor_internal_entity_component_uve.cpp
-    Internal/hierarchy_component_uve.cpp
-    Internal/light_component_uve.cpp
-    Internal/mesh_component_uve.cpp
-    Internal/editor_description_component_uve.cpp
-    Internal/name_component_uve.cpp
-    Internal/particle_emitter_component_uve.cpp
-    Internal/physics_interpolation_component_uve.cpp
-    Internal/prefab_instance_component_uve.cpp
-    Internal/primitive_mesh_component_uve.cpp
-    Internal/rigid_3d_component_uve.cpp
-    Internal/script_component_uve.cpp
-    Internal/auto_translate_component_uve.cpp
-    Internal/bone_modifier_component_uve.cpp
-    Internal/physics_object_component_uve.cpp
-    Internal/render_instance_component_uve.cpp
-    Internal/surface_instance_component_uve.cpp
-    Internal/light_emitter_component_uve.cpp
-    Internal/object_metadata_component_uve.cpp
-    Internal/process_component_uve.cpp
-    Internal/thread_group_component_uve.cpp
-    Internal/transform_component_uve.cpp
-    Internal/visibility_component_uve.cpp
-    Internal/sprite_2d_component_uve.cpp
-    Internal/ui_button_component_uve.cpp
-    Internal/ui_image_component_uve.cpp
-    Internal/ui_text_component_uve.cpp
-    Internal/skin_component_uve.cpp
-    Internal/morph_target_component_uve.cpp
-    Internal/world_transform_component_uve.cpp
+    Internal/animation_driver_component.cpp
+    Internal/animation_sequencer_component.cpp
+    Internal/animation_graph_component.cpp
+    Internal/area_component.cpp
+    Internal/audio_source_component.cpp
+    Internal/camera_2d_component.cpp
+    Internal/camera_component.cpp
+    Internal/camera_follow_component.cpp
+    Internal/ui_layout_container_component.cpp
+    Internal/ui_anchor_component.cpp
+    Internal/ui_scrollbar_component.cpp
+    Internal/ui_slider_component.cpp
+    Internal/ui_progress_bar_component.cpp
+    Internal/ui_dropdown_component.cpp
+    Internal/ui_text_input_component.cpp
+    Internal/ui_scroll_container_component.cpp
+    Internal/ui_checkbox_component.cpp
+    Internal/ui_tooltip_component.cpp
+    Internal/ui_tween_component.cpp
+    Internal/canvas_component.cpp
+    Internal/character_controller_component.cpp
+    Internal/collider_component.cpp
+    Internal/disabled_component.cpp
+    Internal/editor_internal_entity_component.cpp
+    Internal/hierarchy_component.cpp
+    Internal/light_component.cpp
+    Internal/mesh_component.cpp
+    Internal/editor_description_component.cpp
+    Internal/name_component.cpp
+    Internal/particle_emitter_component.cpp
+    Internal/physics_interpolation_component.cpp
+    Internal/prefab_instance_component.cpp
+    Internal/primitive_mesh_component.cpp
+    Internal/rigid_3d_component.cpp
+    Internal/script_component.cpp
+    Internal/auto_translate_component.cpp
+    Internal/bone_modifier_component.cpp
+    Internal/physics_object_component.cpp
+    Internal/render_instance_component.cpp
+    Internal/surface_instance_component.cpp
+    Internal/light_emitter_component.cpp
+    Internal/object_metadata_component.cpp
+    Internal/process_component.cpp
+    Internal/thread_group_component.cpp
+    Internal/transform_component.cpp
+    Internal/visibility_component.cpp
+    Internal/sprite_2d_component.cpp
+    Internal/ui_button_component.cpp
+    Internal/ui_image_component.cpp
+    Internal/ui_text_component.cpp
+    Internal/skin_component.cpp
+    Internal/morph_target_component.cpp
+    Internal/world_transform_component.cpp
 )
 target_include_directories(uve_component PUBLIC Expose)
 target_link_libraries(uve_component PUBLIC uve_math uve_asset uve_object)

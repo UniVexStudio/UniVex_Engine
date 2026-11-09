@@ -3,13 +3,13 @@
 # UVScript: the text scripting language for entity nodes (see README.md). Standard library only.
 
 add_library(uve_uvscript STATIC
-    Internal/uvscript_parser_uve.cpp
-    Internal/uvscript_value_uve.cpp
-    Internal/uvscript_compiler_uve.cpp
-    Internal/uvscript_instance_uve.cpp
-    Internal/uvscript_native_uve.cpp
-    Internal/uvscript_codegen_uve.cpp
-    Internal/uvscript_host_description_uve.cpp
+    Internal/uvscript_parser.cpp
+    Internal/uvscript_value.cpp
+    Internal/uvscript_compiler.cpp
+    Internal/uvscript_instance.cpp
+    Internal/uvscript_native.cpp
+    Internal/uvscript_codegen.cpp
+    Internal/uvscript_host_description.cpp
 )
 target_include_directories(uve_uvscript PUBLIC Expose)
 target_compile_features(uve_uvscript PUBLIC cxx_std_23)

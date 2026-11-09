@@ -16,9 +16,9 @@
 
 find_package(Threads REQUIRED)
 add_library(uve_rhi STATIC
-    Internal/shader_data_type_uve.cpp
-    Internal/bind_group_uve.cpp
-    Internal/render_resource_lifetime_uve.cpp
+    Internal/shader_data_type.cpp
+    Internal/bind_group.cpp
+    Internal/render_resource_lifetime.cpp
 )
 target_include_directories(uve_rhi PUBLIC Expose)
 target_link_libraries(uve_rhi PUBLIC uve_math uve_logging PRIVATE Threads::Threads)

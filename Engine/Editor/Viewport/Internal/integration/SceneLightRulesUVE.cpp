@@ -11,11 +11,11 @@
 
 #include <cstddef>
 
-#include "uve/component/editor_internal_entity_component_uve.h"
-#include "uve/component/visibility_component_uve.h"
-#include "uve/objects/3d/directional_light_3d_uve.h"
-#include "uve/objects/3d/light_3d_uve.h"
-#include "uve/render_systems/light_system_uve.h"
+#include "editor_internal_entity_component.h"
+#include "visibility_component.h"
+#include "directional_light_3d.h"
+#include "light_3d.h"
+#include "light_system.h"
 
 namespace univex::integration {
 

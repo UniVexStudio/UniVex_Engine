@@ -21,7 +21,7 @@
 # CPU-only configurations. EngineCore is also built there, using its Null window/render backends
 # so the real headless startup path and settings integration can be exercised without a display.
 add_library(uve_engine_settings STATIC
-    Internal/engine_project_settings_uve.cpp
+    Internal/engine_project_settings.cpp
 )
 target_include_directories(uve_engine_settings PUBLIC Expose)
 target_link_libraries(uve_engine_settings PUBLIC uve_config uve_math uve_commandline uve_platform)
@@ -29,12 +29,12 @@ target_compile_features(uve_engine_settings PUBLIC cxx_std_23)
 uve_set_warnings(uve_engine_settings)
 
 add_library(uve_core STATIC
-    Internal/version_uve.cpp
-    Internal/engine_services_uve.cpp
-    Internal/engine_core_uve.cpp
-    Internal/raycast_audio_occlusion_uve.cpp
-    Internal/input_map_document_uve.cpp
-    Internal/uvscript_object_host_uve.cpp
+    Internal/version.cpp
+    Internal/engine_services.cpp
+    Internal/engine_core.cpp
+    Internal/raycast_audio_occlusion.cpp
+    Internal/input_map_document.cpp
+    Internal/uvscript_object_host.cpp
 )
 target_include_directories(uve_core PUBLIC Expose)
 target_link_libraries(uve_core

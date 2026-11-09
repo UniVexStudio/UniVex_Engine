@@ -1,10 +1,10 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 add_library(uve_platform STATIC
-    Internal/application_runtime_uve.cpp
-    Internal/application_window_settings_uve.cpp
-    Internal/crash_reporter_uve.cpp
-    Internal/editor_project_package_uve.cpp
+    Internal/application_runtime.cpp
+    Internal/application_window_settings.cpp
+    Internal/crash_reporter.cpp
+    Internal/editor_project_package.cpp
 )
 target_include_directories(uve_platform PUBLIC Expose)
 target_link_libraries(uve_platform PRIVATE nlohmann_json::nlohmann_json)

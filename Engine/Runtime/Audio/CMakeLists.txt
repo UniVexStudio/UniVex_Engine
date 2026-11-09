@@ -15,7 +15,7 @@
 # miniaudio (vendored via FetchContent, pinned tag): single-header audio backend used by
 # MiniaudioAudioDeviceUVE - the engine's first real IAudioDeviceUVE implementation. Pulled in as
 # source only (no library target of its own): one engine TU compiles it with
-# MINIAUDIO_IMPLEMENTATION (see Internal/miniaudio_implementation_uve.cpp). The include dir is
+# MINIAUDIO_IMPLEMENTATION (see Internal/miniaudio_implementation.cpp). The include dir is
 # SYSTEM so the vendored header is exempt from this codebase's -Wall/-Wextra/-Wpedantic/-Werror
 # policy - engine headers deliberately never see miniaudio symbols (confinement discipline).
 include(FetchContent)
@@ -31,21 +31,21 @@ target_include_directories(uve_miniaudio_interface SYSTEM INTERFACE "${uve_minia
 find_package(Threads REQUIRED)
 
 add_library(uve_audio STATIC
-    Internal/wav_pcm16_decoder_uve.cpp
-    Internal/pcm_gain_effect_uve.cpp
-    Internal/audio_mixer_group_uve.cpp
-    Internal/audio_dsp_uve.cpp
-    Internal/null_audio_device_uve.cpp
-    Internal/miniaudio_audio_device_uve.cpp
-    Internal/miniaudio_implementation_uve.cpp
-    Internal/audio_system_uve.cpp
-    Internal/audio_stream_uve.cpp
-    Internal/ambisonic_stream_source_uve.cpp
-    Internal/audio_listener_orientation_validation_uve.cpp
-    Internal/audio_source_system_uve.cpp
-    Internal/wav_metadata_uve.cpp
-    Internal/wav_importer_uve.cpp
-    Internal/compressed_audio_importer_uve.cpp
+    Internal/wav_pcm16_decoder.cpp
+    Internal/pcm_gain_effect.cpp
+    Internal/audio_mixer_group.cpp
+    Internal/audio_dsp.cpp
+    Internal/null_audio_device.cpp
+    Internal/miniaudio_audio_device.cpp
+    Internal/miniaudio_implementation.cpp
+    Internal/audio_system.cpp
+    Internal/audio_stream.cpp
+    Internal/ambisonic_stream_source.cpp
+    Internal/audio_listener_orientation_validation.cpp
+    Internal/audio_source_system.cpp
+    Internal/wav_metadata.cpp
+    Internal/wav_importer.cpp
+    Internal/compressed_audio_importer.cpp
 )
 target_include_directories(uve_audio PUBLIC Expose)
 target_link_libraries(uve_audio

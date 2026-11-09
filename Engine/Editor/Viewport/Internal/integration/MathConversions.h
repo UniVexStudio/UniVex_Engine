@@ -28,9 +28,9 @@
 #include "univex/math/Mat4.h"
 #include "univex/math/Vec.h"
 
-#include "uve/math/matrix4x4_uve.h"
-#include "uve/math/vector2_uve.h"
-#include "uve/math/vector3_uve.h"
+#include "matrix4x4.h"
+#include "vector2.h"
+#include "vector3.h"
 
 namespace univex::integration {
 

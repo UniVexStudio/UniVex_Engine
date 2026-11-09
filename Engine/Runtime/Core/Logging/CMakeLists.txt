@@ -2,8 +2,8 @@
 
 
 add_library(uve_logging STATIC
-    Internal/log_sink_uve.cpp
-    Internal/logger_uve.cpp
+    Internal/log_sink.cpp
+    Internal/logger.cpp
 )
 target_include_directories(uve_logging PUBLIC Expose)
 target_link_libraries(uve_logging PUBLIC uve_platform)

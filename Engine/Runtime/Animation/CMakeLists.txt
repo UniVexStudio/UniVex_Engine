@@ -9,7 +9,7 @@
 # THAT FACADE WAS NEVER BUILT. An earlier revision of this comment named it "PoseGraphObject3D";
 # no such type exists in the tree. What exists instead is a separate, richer authored graph -
 # Scene::AnimationGraphComponentUVE (uve_component), drawn by the editor and evaluated by
-# Engine/Runtime/Objects/Animation/Internal/animation_graph_uve.cpp. The two are not the same
+# Engine/Runtime/Objects/Animation/Internal/animation_graph.cpp. The two are not the same
 # thing and neither uses the other: this module addresses clips by string id with fixed inputA/
 # inputB, while the authored graph uses asset GUIDs, N inputs, editor positions and blend spaces.
 #
@@ -27,10 +27,10 @@
 # knowledge.
 
 add_library(uve_animation STATIC
-    Internal/time_pose_contract_uve.cpp
-    Internal/animation_clip_uve.cpp
-    Internal/pose_graph_uve.cpp
-    Internal/animation_state_machine_uve.cpp
+    Internal/time_pose_contract.cpp
+    Internal/animation_clip.cpp
+    Internal/pose_graph.cpp
+    Internal/animation_state_machine.cpp
 )
 target_include_directories(uve_animation PUBLIC Expose)
 target_link_libraries(uve_animation PUBLIC uve_math PRIVATE nlohmann_json::nlohmann_json uve_utilities)

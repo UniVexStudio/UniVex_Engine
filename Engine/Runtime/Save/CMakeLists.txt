@@ -1,7 +1,7 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #
-# nlohmann_json is linked PRIVATE (confined to save_game_system_uve.cpp, exactly like
+# nlohmann_json is linked PRIVATE (confined to save_game_system.cpp, exactly like
 # SceneSerializerUVE's/ConfigManagerUVE's own PIMPL-confinement pattern).
 #
 # uve_scene: ISceneSerializerUVE/IEntityManagerUVE (mirrors uve_physics's own uve_scene
@@ -9,11 +9,11 @@
 # the .uvsave envelope.
 
 add_library(uve_save STATIC
-    Internal/save_game_system_uve.cpp
-    Internal/save_payload_migration_uve.cpp
-    Internal/save_payload_compression_uve.cpp
-    Internal/save_revision_policy_uve.cpp
-    Internal/checkpoint_manager_uve.cpp
+    Internal/save_game_system.cpp
+    Internal/save_payload_migration.cpp
+    Internal/save_payload_compression.cpp
+    Internal/save_revision_policy.cpp
+    Internal/checkpoint_manager.cpp
 )
 target_include_directories(uve_save PUBLIC Expose)
 target_link_libraries(uve_save

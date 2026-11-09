@@ -3,7 +3,7 @@
 # The Vulkan M1 "bootstrap" backend for uve_rhi's IRenderDeviceUVE:
 # instance -> physical/logical device -> window surface -> swapchain -> per-frame clear-color
 # present, with every resource-bearing interface method honestly reporting "later milestone"
-# (see vulkan_render_device_uve.h for the full milestone contract).
+# (see vulkan_render_device.h for the full milestone contract).
 #
 # Two deliberate dependency choices, both in this module's audit-confinement tradition (the GL
 # header confinement of audit #37 and GlFunctionsUVE's minimal-hand-rolled-loader precedent):
@@ -44,8 +44,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(SPIRVReflect)
 
 add_library(uve_rhi_vulkan STATIC
-    Internal/vk_functions_uve.cpp
-    Internal/vulkan_render_device_uve.cpp
+    Internal/vk_functions.cpp
+    Internal/vulkan_render_device.cpp
 )
 target_include_directories(uve_rhi_vulkan PUBLIC Expose)
 # The Vulkan-Headers include dir is added SYSTEM (silence upstream's old-style-cast-heavy

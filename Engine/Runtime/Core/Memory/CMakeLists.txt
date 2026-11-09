@@ -2,10 +2,10 @@
 
 
 add_library(uve_memory STATIC
-    Internal/heap_allocator_uve.cpp
-    Internal/pool_allocator_uve.cpp
-    Internal/stack_allocator_uve.cpp
-    Internal/memory_manager_uve.cpp
+    Internal/heap_allocator.cpp
+    Internal/pool_allocator.cpp
+    Internal/stack_allocator.cpp
+    Internal/memory_manager.cpp
 )
 target_include_directories(uve_memory PUBLIC Expose)
 target_link_libraries(uve_memory PUBLIC uve_platform uve_logging)

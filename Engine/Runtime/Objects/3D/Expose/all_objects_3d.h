@@ -1,0 +1,53 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#pragma once
+
+// General 3D authored data outside the Animation, AI, and physics subdomains:
+#include "abstract_objects_3d.h"
+#include "audio_listener_3d.h"
+#include "csg_shape_3d.h"
+#include "decal_3d.h"
+#include "directional_light_3d.h"
+#include "fog_volume_3d.h"
+#include "full_body_ik_3d.h"
+#include "gi_probes_3d.h"
+#include "grid_map_3d.h"
+#include "label_3d.h"
+#include "level_streamer_3d.h"
+#include "lod_group_3d.h"
+#include "marker_3d.h"
+#include "multi_mesh_instance_3d.h"
+#include "occluder_3d.h"
+#include "path_3d.h"
+#include "path_follow_3d.h"
+#include "reflection_probe_3d.h"
+#include "remote_transform_3d.h"
+#include "sky_3d.h"
+#include "spawn_point_3d.h"
+#include "sprite_3d.h"
+#include "terrain_3d.h"
+#include "health.h"
+#include "player_3d.h"
+#include "visibility_region_3d.h"
+#include "visible_on_screen_notifier_3d.h"
+#include "water_3d.h"
+#include "world_environment_3d.h"
+#include "world_partition_3d.h"
+#include "xr_objects_3d.h"
+
+// Animation, AI/navigation, and physics objects are grouped by their domain.
+#include "all_animation_objects_3d.h"
+#include "all_ai_objects_3d.h"
+#include "all_physics_objects_3d.h"
+
+// Remaining creation recipes for kinds whose authored state lives in shared components:
+#include "object_3d.h"
+#include "camera_3d.h"
+#include "mesh_instance_3d.h"
+#include "box_mesh_3d.h"
+#include "sphere_mesh_3d.h"
+#include "plane_mesh_3d.h"
+#include "light_3d.h"
+#include "audio_source_3d.h"
+#include "particle_emitter_3d.h"
+#include "script.h"

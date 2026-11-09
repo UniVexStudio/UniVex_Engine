@@ -1,0 +1,109 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+#include "i_entity_manager.h"
+#include "vector3.h"
+#include "i_scene_graph.h"
+
+#include "continuous_collision.h"
+#include "deterministic_physics.h"
+
+namespace UVE::Physics {
+
+/// Whether the step resolves collision pairs island-by-island on a worker pool.
+///
+/// This is a scheduling decision, not a simulation one: islands share no bodies, so solving them
+/// concurrently produces bit-identical state to solving them in sequence. What changes is only how
+/// long the step takes - which means the setting can be turned on per platform without touching
+/// determinism, replay, or netcode.
+struct ParallelStepSettingsUVE final {
+    /// Off by default. A caller that has not looked at its own scene should not pay dispatch and a
+    /// snapshot for a handful of contacts, and a small scene is the common case in tests and tools.
+    bool enabled = false;
+
+    /// Below this many resolvable collision pairs the step stays on the calling thread. Splitting
+    /// work has a fixed cost - a snapshot of every participating body, N job submissions and a
+    /// wait - so the break-even point is a property of the machine, not of the scene. 64 is
+    /// deliberately conservative: it is the point where the pair loop stops being noise.
+    std::uint32_t minimumPairCount = 64U;
+};
+
+/// Runtime solver, damping, sleeping, and contact-resolution parameters consumed by PhysicsSystemUVE.
+struct PhysicsSimulationSettingsUVE final {
+    float defaultLinearDamping = 0.0F;
+    float defaultAngularDamping = 0.0F;
+    float sleepThreshold = 0.0F;
+    bool allowSleeping = false;
+    std::size_t solverIterations = 8U;
+    float penetrationSlop = 0.0F;
+    float maxDepenetrationVelocity = 0.0F;
+    /// Opt-in swept motion for bodies that would otherwise pass through thin geometry between two
+    /// fixed steps. Off by default: the discrete path is exact for everything moving less than its
+    /// own extent per step, and a sweep costs several times an integration.
+    ContinuousCollisionSettingsUVE continuousCollision{};
+    /// Opt-in reproducible stepping: canonical collision-pair order plus a per-step state digest
+    /// two peers can compare. See DeterministicStepSettingsUVE for exactly what is and is not
+    /// guaranteed.
+    DeterministicStepSettingsUVE deterministic{};
+    /// Opt-in island-parallel contact resolution. Independent of `deterministic`: islands do not
+    /// change the result, so the two settings can be combined freely.
+    ParallelStepSettingsUVE parallelStepping{};
+};
+
+/// IPhysicsSystemUVE is the spec's `PhysicsSystemUVE` (Part 7.5): dynamics integration +
+/// collision resolution, driven once per fixed simulation step by `EngineCoreUVE::Update()`
+/// (via `Utilities::FixedStepResultUVE`, already computed every frame but previously unconsumed).
+/// A from-scratch CPU implementation this increment (see docs/CODING_STANDARDS.md and the
+/// Increment 15 plan for why a real Jolt/Bullet backend is deferred) — deliberately interfaced
+/// so a future backend-wrapping implementation can replace `PhysicsSystemUVE` without any ECS or
+/// call-site change, the same seam `IRenderDeviceUVE` provides for graphics.
+/// Thread-safety: not thread-safe — `StepUVE()` must be called only from the main engine thread,
+/// once per fixed step, matching `SceneGraphUVE::UpdateUVE()`'s contract (and must run before it
+/// each frame, so world transforms this step just wrote are picked up by the same frame's
+/// propagation pass).
+class IPhysicsSystemUVE {
+public:
+    virtual ~IPhysicsSystemUVE() = default;
+
+    /// Runs exactly one fixed-size simulation step: integrates every non-kinematic
+    /// `Rigid3DComponentUVE` (gravity * gravityScale, semi-implicit Euler, linear drag),
+    /// calls `sceneGraph.UpdateUVE()` so `WorldTransformComponentUVE` reflects this step's new
+    /// positions, detects collisions among every `ColliderComponentUVE` entity, resolves
+    /// overlaps with mass-weighted positional correction and into-surface-only velocity removal
+    /// (preserves sliding), optionally solves a caller-attached bounded positional constraint
+    /// system, then calls `sceneGraph.UpdateUVE()` again so the resolved positions are immediately
+    /// visible too. Every position write goes through
+    /// `ISceneGraphUVE::SetLocalTransformUVE()` — never `GetComponentUVE()` directly, so
+    /// dirty-flag propagation stays correct throughout.
+    virtual void StepUVE(Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+                          float fixedDeltaTimeSeconds) = 0;
+
+    /// Digest of the world state after the most recent step, when DeterministicStepSettingsUVE is
+    /// enabled; 0 otherwise (and 0 on an implementation that does not compute one). Two peers whose
+    /// simulations agree produce the same digest for the same step number, which is what a rollback
+    /// or replay verifier compares.
+    [[nodiscard]] virtual std::uint64_t GetLastStepDigestUVE() const noexcept { return 0U; }
+
+    virtual void SetGravityUVE(Math::Vector3UVE gravity) noexcept {
+        static_cast<void>(gravity);
+    }
+
+    [[nodiscard]] virtual Math::Vector3UVE GetGravityUVE() const noexcept {
+        return Math::Vector3UVE{0.0F, -9.81F, 0.0F};
+    }
+
+    virtual void SetSimulationSettingsUVE(const PhysicsSimulationSettingsUVE& settings) noexcept {
+        static_cast<void>(settings);
+    }
+
+    [[nodiscard]] virtual PhysicsSimulationSettingsUVE GetSimulationSettingsUVE() const noexcept {
+        return PhysicsSimulationSettingsUVE{};
+    }
+};
+
+} // namespace UVE::Physics

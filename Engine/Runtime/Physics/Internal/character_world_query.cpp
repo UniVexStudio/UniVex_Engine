@@ -1,0 +1,554 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "character_world_query.h"
+#include "character_3d.h"
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
+#include "character_controller_component.h"
+#include "collider_component.h"
+#include "predicted_character_component.h"
+#include "rigid_3d_component.h"
+#include "solid_body_component.h"
+#include "transform_component.h"
+#include "world_transform_component.h"
+#include "i_entity_manager.h"
+#include "aabb.h"
+#include "abstract_physics_objects_3d.h"
+#include "kinematic_3d.h"
+#include "i_collision_system.h"
+#include "i_scene_graph.h"
+
+namespace UVE::Physics {
+namespace {
+
+/// Below this a motion has no direction to sweep along.
+constexpr float kMinimumSweepLengthUVE = 1.0e-6F;
+
+[[nodiscard]] bool IsUsableUVE(const Math::Vector3UVE& value) noexcept {
+    return Math::IsFiniteUVE(value);
+}
+
+[[nodiscard]] bool IsUsableUveEntityTransformUVE(const Scene::WorldTransformComponentUVE& world) noexcept {
+    return IsUsableUVE(world.worldPosition);
+}
+
+/// Axis-aligned, so the world half extents are the local ones. Spelled out rather than assumed
+/// because a rotated character with a box collider is a real thing a game does, and the day that
+/// rotation matters this is the one function that has to learn about it.
+[[nodiscard]] Math::Vector3UVE WorldHalfExtentsUVE(const Scene::ColliderComponentUVE& collider) noexcept {
+    const Math::Vector3UVE local = Scene::GetColliderLocalHalfExtentsUVE(collider);
+    return Math::Vector3UVE{std::abs(local.x), std::abs(local.y), std::abs(local.z)};
+}
+
+} // namespace
+
+CharacterWorldQueryUVE::CharacterWorldQueryUVE(Scene::IEntityManagerUVE& entityManager,
+                                               ICollisionSystemUVE& collisionSystem,
+                                               const Scene::EntityUVE entity,
+                                               const Scene::EntityUVE shapeEntity)
+    : m_entityManager(&entityManager), m_collisionSystem(&collisionSystem), m_entity(entity) {
+    // The body is the entity that moves; the shape is the entity that carries the collider. They
+    // are the same object unless the author gave the character its own Collider3D, in which case
+    // the shape sits under the body in the tree.
+    const Scene::EntityUVE shape =
+        shapeEntity != Scene::kInvalidEntityUVE ? shapeEntity : entity;
+    if (shape != entity) {
+        // A body must never collide with the shape it is built from: its own child would stop it
+        // dead on the first sweep, which reads as a character frozen in place the moment a
+        // collider is added.
+        m_ignoredEntity = shape;
+    }
+    if (!entityManager.IsAliveUVE(entity) ||
+        !entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(shape) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+        return;
+    }
+    if (entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity) &&
+        !entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity).isKinematic) {
+        return;
+    }
+    const Scene::WorldTransformComponentUVE& world =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+    if (!IsUsableUveEntityTransformUVE(world)) {
+        return;
+    }
+    // The shape's numbers AND the shape's place. Everything about the body - size, layer and mask -
+    // is the collider's, and so is where it is: a Collider3D authored under a character sits
+    // wherever the author put it, and reading its centre off the body instead drew the shape in one
+    // place and collided in another. That is a capsule hovering over an invisible box, and it is
+    // what an author sees when they move the shape to where the body should stand.
+    const Scene::ColliderComponentUVE& collider =
+        entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(shape);
+    // The shape carries the body's size at whatever scale its branch of the tree is drawn at; a
+    // child already has its parents' scale folded into its world transform, so this is the whole
+    // chain and not just the Collider3D's own local scale.
+    Math::Vector3UVE shapeScale{1.0F, 1.0F, 1.0F};
+    m_center = world.worldPosition;
+    if (entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(shape)) {
+        const Scene::WorldTransformComponentUVE& shapeWorld =
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(shape);
+        shapeScale = shapeWorld.worldScale;
+        if (IsUsableUveEntityTransformUVE(shapeWorld)) {
+            m_center = shapeWorld.worldPosition;
+        }
+    }
+    m_halfExtents = WorldHalfExtentsUVE(Scene::ScaleColliderUVE(collider, shapeScale));
+    m_layer = collider.collisionLayer;
+    m_mask = collider.collisionMask;
+    m_isMovable = IsUsableUVE(m_halfExtents);
+}
+
+void CharacterWorldQueryUVE::SetIgnoredEntityUVE(const Scene::EntityUVE entity) noexcept {
+    m_ignoredEntity = entity;
+}
+
+Scene::EntityUVE CharacterWorldQueryUVE::GetEntityUVE() const noexcept {
+    return m_entity;
+}
+
+bool CharacterWorldQueryUVE::IsMovableCharacterUVE() const noexcept {
+    return m_isMovable;
+}
+
+Math::Vector3UVE CharacterWorldQueryUVE::GetCenterUVE() const {
+    if (!m_isMovable) {
+        // "I cannot describe this body" told as a position, because that is the only channel this
+        // seam has: a mover asked to move a body through a world that cannot say where it is refuses
+        // the move outright (InvalidWorld) instead of moving it from the origin.
+        return Math::Vector3UVE{std::numeric_limits<float>::quiet_NaN(),
+                                std::numeric_limits<float>::quiet_NaN(),
+                                std::numeric_limits<float>::quiet_NaN()};
+    }
+    return m_center;
+}
+
+Math::Vector3UVE CharacterWorldQueryUVE::GetHalfExtentsUVE() const noexcept {
+    return m_halfExtents;
+}
+
+bool CharacterWorldQueryUVE::IsCollidableUVE(const Detail::ColliderWorldAabbUVE& collider) const noexcept {
+    if (collider.entity == m_entity || collider.entity == m_ignoredEntity) {
+        return false;
+    }
+    // Both directions, exactly as the collision system filters pairs: the character has to accept
+    // the target's layer *and* the target has to accept the character's.
+    return (collider.collisionLayer & m_mask) != 0U && (collider.collisionMask & m_layer) != 0U;
+}
+
+std::vector<Scene::CharacterSlideCollisionUVE> CharacterWorldQueryUVE::GetOverlapsAtUVE(
+    const Math::Vector3UVE& center) const {
+    std::vector<Scene::CharacterSlideCollisionUVE> overlaps;
+    if (!m_isMovable || m_collisionSystem == nullptr || !IsUsableUVE(center)) {
+        return overlaps;
+    }
+    if (!m_colliders.has_value()) {
+        m_colliders = Detail::BuildColliderWorldAabbCacheUVE(*m_entityManager);
+    }
+    // Same shape the sweep uses: a recovery and a sweep cannot disagree about whether this pose
+    // is free. The normal points from the surface back at the body, which is -axis of the MTV
+    // (ComputePenetrationUVE's axis points from the moving box toward the target).
+    const Math::AabbUVE body = Math::AabbUVE::FromCenterExtentsUVE(center, m_halfExtents);
+    for (const Detail::ColliderWorldAabbUVE& collider : *m_colliders) {
+        if (!IsCollidableUVE(collider)) {
+            continue;
+        }
+        const std::optional<Math::PenetrationUVE> penetration =
+            Math::ComputePenetrationUVE(body, collider.worldAabb);
+        if (!penetration.has_value() || !std::isfinite(penetration->depth) ||
+            penetration->depth <= 0.0F || !IsUsableUVE(penetration->axis) ||
+            Math::LengthSquaredUVE(penetration->axis) <= 0.0F) {
+            continue;
+        }
+        Scene::CharacterSlideCollisionUVE overlap;
+        overlap.entity = collider.entity;
+        overlap.normal = penetration->axis * -1.0F;
+        overlap.position = center;
+        overlap.depth = penetration->depth;
+        overlap.travel = 0.0F;
+        overlaps.push_back(overlap);
+    }
+    return overlaps;
+}
+
+std::optional<Scene::CharacterSlideCollisionUVE> CharacterWorldQueryUVE::SweepUVE(
+    const Math::Vector3UVE& center, const Math::Vector3UVE& motion, const float margin) const {
+    if (!m_isMovable || !IsUsableUVE(center) || !IsUsableUVE(motion) || !std::isfinite(margin) ||
+        margin < 0.0F) {
+        return std::nullopt;
+    }
+    const float motionLength = std::sqrt(Math::LengthSquaredUVE(motion));
+    if (!std::isfinite(motionLength) || motionLength <= kMinimumSweepLengthUVE) {
+        return std::nullopt;
+    }
+    if (!m_colliders.has_value()) {
+        m_colliders = Detail::BuildColliderWorldAabbCacheUVE(*m_entityManager);
+    }
+
+    // The moving body is swept as its world AABB: exact for a box character against an unrotated
+    // box target, and conservative for everything else - it can stop early, never tunnel.
+    const Math::AabbUVE movingAabb = Math::AabbUVE::FromCenterExtentsUVE(center, m_halfExtents);
+    const float sweepDistance = std::max(0.0F, motionLength - margin);
+    if (motionLength <= kMinimumSweepLengthUVE) {
+        return std::nullopt;
+    }
+
+    std::optional<Scene::CharacterSlideCollisionUVE> closest;
+    float closestDistance = 0.0F;
+    for (const Detail::ColliderWorldAabbUVE& collider : *m_colliders) {
+        if (!IsCollidableUVE(collider)) {
+            continue;
+        }
+        // The moving body's own AABB against the target's AABB, which is the convention the
+        // existing kinematic move already resolves against: the boxes meet exactly where the
+        // bodies would, and a body resting against a surface is *touching*, not overlapping
+        // (AabbUVE::IntersectsUVE is strict), so resting contact stays sweepable.
+        const std::optional<Math::SweptAabbHitUVE> swept =
+            Math::SweepAabbUVE(movingAabb, motion, collider.worldAabb);
+        if (!swept.has_value()) {
+            continue;
+        }
+        const float distance = swept->time * motionLength;
+        if (distance > sweepDistance + margin) {
+            // The hit is past the budget: the body stops at the budget, so this contact is not
+            // this sweep's answer.
+            continue;
+        }
+        const bool closer = !closest.has_value() || distance < closestDistance;
+        const bool tied =
+            closest.has_value() && distance == closestDistance && collider.entity.index < closest->entity.index;
+        if (!closer && !tied) {
+            continue;
+        }
+        Scene::CharacterSlideCollisionUVE hit;
+        hit.entity = collider.entity;
+        // Math::SweepAabbUVE reports the direction the body was moving when it met the face - the
+        // component to remove from the remaining motion. The mover wants the surface normal, which
+        // points back at the body, so the two are exact opposites and the sign lives here alone.
+        hit.normal = -swept->normal;
+        hit.position = center + motion * swept->time;
+        // The skin: motion stops this far short of the surface, which is what keeps the body's
+        // next query well-posed instead of exactly touching.
+        hit.travel = std::max(0.0F, distance - margin);
+        hit.depth = 0.0F;
+        closest = hit;
+        closestDistance = distance;
+    }
+    return closest;
+}
+
+Math::Vector3UVE CharacterWorldQueryUVE::GetSurfaceVelocityUVE(const Scene::EntityUVE entity) const {
+    if (!m_entityManager->IsAliveUVE(entity) || entity == m_entity) {
+        return Math::Vector3UVE{};
+    }
+    // Whatever is moving underfoot: a rigid body's own velocity, or a kinematic body's target -
+    // the two ways a body can be moving without the character being told about it.
+    if (m_entityManager->HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
+        const Math::Vector3UVE velocity =
+            m_entityManager->GetComponentUVE<Scene::Rigid3DComponentUVE>(entity).velocity;
+        if (IsUsableUVE(velocity)) {
+            return velocity;
+        }
+    }
+    if (m_entityManager->HasComponentUVE<Scene::Kinematic3DComponentUVE>(entity)) {
+        const Scene::Kinematic3DComponentUVE& kinematic =
+            m_entityManager->GetComponentUVE<Scene::Kinematic3DComponentUVE>(entity);
+        if (kinematic.active && IsUsableUVE(kinematic.targetVelocity)) {
+            return kinematic.targetVelocity;
+        }
+    }
+    return Math::Vector3UVE{};
+}
+
+std::optional<Math::Vector3UVE> CharacterWorldQueryUVE::TryGetEntityCenterUVE(
+    const Scene::EntityUVE entity) const {
+    if (!m_entityManager->IsAliveUVE(entity) ||
+        !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+        return std::nullopt;
+    }
+    const Math::Vector3UVE position =
+        m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition;
+    if (!IsUsableUVE(position)) {
+        return std::nullopt;
+    }
+    return position;
+}
+
+// =================================================================================================
+// One step of a character that has no shape.
+// =================================================================================================
+
+namespace {
+
+/// Moves a body that has nothing to collide with.
+///
+/// A controller is not a collider. A Character3D with no Collider3D of its own and none under it
+/// has no shape, and having no shape is not the same as being held up: the body falls - gravity
+/// and its own velocity, applied straight to the transform, no contacts - so it drops through the
+/// level until the author gives it a shape. Standing still instead was read, correctly, as an
+/// invisible collider the character had been born with.
+[[nodiscard]] Character3DStepResultUVE StepShapelessCharacterUVE(
+    Scene::IEntityManagerUVE& entityManager, Scene::ISceneGraphUVE& sceneGraph,
+    const Scene::EntityUVE entity, const CharacterMotionInputUVE& input, const float gravityY,
+    const float deltaTimeSeconds) {
+    Character3DStepResultUVE report;
+    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        report.code = Character3DStepCodeUVE::MissingTransform;
+        return report;
+    }
+    Scene::CharacterControllerComponentUVE controller =
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    // There is no floor to stand on: a body that was on one a moment ago is in the air now, and
+    // the intent step has to see that or it would cancel the gravity that is about to move it.
+    controller.grounded = false;
+    controller.isOnCeiling = false;
+    report.jumped = StepCharacterIntentUVE(controller, input, gravityY, deltaTimeSeconds);
+    // SolidBody3D's motion locks, the same way the shaped step applies them.
+    if (entityManager.HasComponentUVE<Scene::SolidBodyComponentUVE>(entity)) {
+        const Scene::SolidBodyComponentUVE& locks =
+            entityManager.GetComponentUVE<Scene::SolidBodyComponentUVE>(entity);
+        controller.velocity.x = locks.lockMotionX ? 0.0F : controller.velocity.x;
+        controller.velocity.y = locks.lockMotionY ? 0.0F : controller.velocity.y;
+        controller.velocity.z = locks.lockMotionZ ? 0.0F : controller.velocity.z;
+    }
+
+    report.motion.code = Scene::CharacterMoveCodeUVE::Moved;
+    report.motion.requestedMotion = controller.velocity * deltaTimeSeconds;
+    // Nothing is in the way, so everything that was asked for is what happens.
+    report.motion.appliedMotion = report.motion.requestedMotion;
+    report.motion.slideMotion = report.motion.appliedMotion;
+    report.motion.finalCenter =
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition +
+        report.motion.appliedMotion;
+    if (IsUsableUVE(report.motion.appliedMotion) && report.motion.appliedMotion != Math::Vector3UVE{}) {
+        Scene::TransformComponentUVE transform =
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+        transform.localPosition += report.motion.appliedMotion;
+        // Through the graph, so the world transform the next step reads is recomputed rather than
+        // stale - the same reason the shaped move writes its motion back this way.
+        sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+        sceneGraph.UpdateUVE(entityManager);
+    }
+
+    Scene::CharacterMotionStateUVE state = Scene::MakeCharacterMotionStateUVE(controller);
+    state.grounded = false;
+    state.onWall = false;
+    state.onCeiling = false;
+    state.lastMotion = report.motion.appliedMotion;
+    Scene::StoreCharacterMotionStateUVE(controller, state);
+    FinishCharacterStepUVE(controller,
+                           Physics::CharacterMoveOutcomeUVE{false, controller.upDirection, false},
+                           report.jumped, deltaTimeSeconds);
+    entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity) = controller;
+    report.stepped = true;
+    report.code = Character3DStepCodeUVE::NoShape;
+    return report;
+}
+
+} // namespace
+
+// =================================================================================================
+// One step of one character.
+// =================================================================================================
+
+Character3DStepResultUVE StepCharacter3DUVE(Scene::IEntityManagerUVE& entityManager,
+                                            Scene::ISceneGraphUVE& sceneGraph,
+                                            ICollisionSystemUVE& collisionSystem,
+                                            const Scene::EntityUVE entity,
+                                            const CharacterMotionInputUVE& input, const float gravityY,
+                                            const float deltaTimeSeconds) {
+    Character3DStepResultUVE report;
+    if (!std::isfinite(deltaTimeSeconds) || deltaTimeSeconds <= 0.0F || !std::isfinite(gravityY)) {
+        report.code = Character3DStepCodeUVE::InvalidDeltaTime;
+        return report;
+    }
+    if (!entityManager.IsAliveUVE(entity)) {
+        report.code = Character3DStepCodeUVE::UnknownEntity;
+        return report;
+    }
+    if (!entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity)) {
+        report.code = Character3DStepCodeUVE::NotAController;
+        return report;
+    }
+    if (entityManager.HasComponentUVE<Scene::PredictedCharacterComponentUVE>(entity)) {
+        report.code = Character3DStepCodeUVE::PredictedElsewhere;
+        return report;
+    }
+    // The shape can be a Collider3D of the character's own under it, which is how an author gives
+    // a body a collider they can select and see. Resolved once here so every question below is
+    // asked about the right entity.
+    const Scene::EntityUVE shapeEntity =
+        Scene::ResolveCharacterShapeEntityUVE(entityManager, sceneGraph, entity);
+    if (shapeEntity == Scene::kInvalidEntityUVE) {
+        return StepShapelessCharacterUVE(entityManager, sceneGraph, entity, input, gravityY,
+                                         deltaTimeSeconds);
+    }
+    if (!entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+        report.code = Character3DStepCodeUVE::MissingTransform;
+        return report;
+    }
+    if (entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(entity) &&
+        !entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(entity).isKinematic) {
+        report.code = Character3DStepCodeUVE::NonKinematicBody;
+        return report;
+    }
+
+    // The world this step moves through is the world as of now: the mover reads transforms, so the
+    // graph has to have written them before the first query.
+    sceneGraph.UpdateUVE(entityManager);
+
+    // Copied, worked on, and written back: the move can add components elsewhere (a push, a
+    // callback), which can move this one in storage.
+    Scene::CharacterControllerComponentUVE controller =
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+    const bool wasOnFloor = controller.grounded;
+
+    report.jumped = StepCharacterIntentUVE(controller, input, gravityY, deltaTimeSeconds);
+
+    // SolidBody3D's motion locks: along a locked axis the body neither moves nor keeps speed.
+    if (entityManager.HasComponentUVE<Scene::SolidBodyComponentUVE>(entity)) {
+        const Scene::SolidBodyComponentUVE& locks =
+            entityManager.GetComponentUVE<Scene::SolidBodyComponentUVE>(entity);
+        controller.velocity.x = locks.lockMotionX ? 0.0F : controller.velocity.x;
+        controller.velocity.y = locks.lockMotionY ? 0.0F : controller.velocity.y;
+        controller.velocity.z = locks.lockMotionZ ? 0.0F : controller.velocity.z;
+    }
+
+    CharacterWorldQueryUVE world(entityManager, collisionSystem, entity, shapeEntity);
+    if (!world.IsMovableCharacterUVE()) {
+        report.code = Character3DStepCodeUVE::InvalidWorld;
+        return report;
+    }
+
+    Scene::CharacterMotionStateUVE state = Scene::MakeCharacterMotionStateUVE(controller);
+    // The intent step decides a jump by clearing `grounded`; the mover must still know it was
+    // standing when the step began, or it would refuse a step-up and the platform that was left.
+    state.grounded = wasOnFloor;
+
+    Scene::CharacterMotionConfigUVE config = Scene::MakeCharacterMotionConfigUVE(controller);
+    config.jumpedThisStep = report.jumped;
+
+    const Math::Vector3UVE desiredMotion = controller.velocity * deltaTimeSeconds;
+    report.motion = Scene::Character3DUVE::MoveAndSlideUVE(world, config, state, desiredMotion, deltaTimeSeconds);
+    report.stepped = true;
+
+    if (report.motion.code == Scene::CharacterMoveCodeUVE::Moved) {
+        // Only a finished move is written to the world. A refused move (invalid state or world)
+        // leaves the body exactly where it was, so a caller can retry or teleport it deliberately
+        // instead of finding it half-moved.
+        const Math::Vector3UVE applied = report.motion.appliedMotion;
+        if (IsUsableUVE(applied) && applied != Math::Vector3UVE{}) {
+            Scene::TransformComponentUVE transform =
+                entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+            transform.localPosition += applied;
+            // Through the graph, not around it: the world transform has to be marked dirty and
+            // recomputed, or the next step's queries would be answered about where the body used
+            // to be. This is the one call that makes the move visible to the rest of the frame.
+            sceneGraph.SetLocalTransformUVE(entityManager, entity, transform);
+            sceneGraph.UpdateUVE(entityManager);
+        }
+        Scene::StoreCharacterMotionStateUVE(controller, state);
+        FinishCharacterStepUVE(controller,
+                               Physics::CharacterMoveOutcomeUVE{report.motion.onFloor, report.motion.floorNormal,
+                                                                report.motion.onCeiling},
+                               report.jumped, deltaTimeSeconds);
+        entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity) = controller;
+        report.code = report.motion.blocked ? Character3DStepCodeUVE::Blocked : Character3DStepCodeUVE::Stepped;
+        return report;
+    }
+
+    // The mover refused: the component keeps its authored values and untouched velocity, but the
+    // intent step already advanced the coyote and buffer clocks, so those are written back.
+    entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity) = controller;
+    report.code = Character3DStepCodeUVE::InvalidWorld;
+    return report;
+}
+
+namespace {
+
+/// The speed a push falls back to when the authored one is missing or meaningless. Spelling the
+/// fallback out here rather than trusting the caller keeps a script from turning a shove into a
+/// launch by writing zero.
+constexpr float kDefaultDynamicPushSpeedUVE = 5.0F;
+
+} // namespace
+
+std::size_t PushBodiesFromCharacterMoveUVE(
+    Scene::IEntityManagerUVE& entityManager,
+    const std::vector<Scene::CharacterSlideCollisionUVE>& contacts,
+    const CharacterDynamicPushPolicyUVE& policy) {
+    if (!policy.enabled || !std::isfinite(policy.strength) || policy.strength <= 0.0F ||
+        !std::isfinite(policy.deltaTimeSeconds) || policy.deltaTimeSeconds <= 0.0F) {
+        return 0U;
+    }
+    const float maximumSpeed =
+        std::isfinite(policy.maximumSpeed) && policy.maximumSpeed > 0.0F
+            ? policy.maximumSpeed
+            : kDefaultDynamicPushSpeedUVE;
+
+    std::size_t pushedCount = 0U;
+    std::vector<Scene::EntityUVE> alreadyPushed;
+    alreadyPushed.reserve(contacts.size());
+    for (const Scene::CharacterSlideCollisionUVE& contact : contacts) {
+        const float normalLengthSquared = Math::LengthSquaredUVE(contact.normal);
+        if (!std::isfinite(normalLengthSquared) || normalLengthSquared <= 0.0F) {
+            continue;
+        }
+        // The mover's contact normal points from the surface back at the character, so the push
+        // goes the other way: into the surface, which is away from the character and into the body
+        // that was in its path.
+        const Math::Vector3UVE pushDirection =
+            contact.normal * (-1.0F / std::sqrt(normalLengthSquared));
+        // The part of the motion the surface removed: what the character was actually pressing
+        // into the body with. A contact the character merely brushed past pushes nothing.
+        const float intoTarget = Math::DotUVE(contact.motion, pushDirection);
+        if (!std::isfinite(intoTarget) || intoTarget <= 0.0F || !Math::IsFiniteUVE(contact.motion)) {
+            continue;
+        }
+        if (std::find(alreadyPushed.begin(), alreadyPushed.end(), contact.entity) != alreadyPushed.end()) {
+            continue;
+        }
+        if (!entityManager.IsAliveUVE(contact.entity) ||
+            !entityManager.HasComponentUVE<Scene::Rigid3DComponentUVE>(contact.entity)) {
+            continue;
+        }
+        // A body the simulation is not moving - a PhysicsObject3D kept as a static obstacle, or
+        // one taken out of the world - is not something a walk into it can push, however it came
+        // to be in the contact list.
+        if (!Scene::IsPhysicsObjectSimulatedUVE(entityManager, contact.entity)) {
+            continue;
+        }
+        Scene::Rigid3DComponentUVE& rigidBody =
+            entityManager.GetComponentUVE<Scene::Rigid3DComponentUVE>(contact.entity);
+        if (!Scene::IsRigid3DComponentValidUVE(rigidBody) || rigidBody.isKinematic ||
+            rigidBody.mass <= 0.0F) {
+            continue;
+        }
+        const float desiredNormalSpeed =
+            std::min(maximumSpeed, intoTarget * policy.strength / policy.deltaTimeSeconds);
+        if (!std::isfinite(desiredNormalSpeed) || desiredNormalSpeed <= 0.0F) {
+            continue;
+        }
+        const float currentNormalSpeed = Math::DotUVE(rigidBody.velocity, pushDirection);
+        if (!std::isfinite(currentNormalSpeed)) {
+            continue;
+        }
+        const float speedDelta = desiredNormalSpeed - currentNormalSpeed;
+        if (!std::isfinite(speedDelta) || speedDelta <= 0.0F) {
+            continue;
+        }
+        const Math::Vector3UVE proposed = rigidBody.velocity + pushDirection * speedDelta;
+        if (!Math::IsFiniteUVE(proposed)) {
+            continue;
+        }
+        rigidBody.velocity = proposed;
+        alreadyPushed.push_back(contact.entity);
+        ++pushedCount;
+    }
+    return pushedCount;
+}
+
+} // namespace UVE::Physics

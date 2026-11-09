@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uve/render_systems/mesh_renderer_uve.h"
+#include "mesh_renderer.h"
 
 #include <algorithm>
 #include <array>
@@ -12,25 +12,25 @@
 
 #include <gtest/gtest.h>
 
-#include "uve/asset/asset_database_uve.h"
-#include "uve/asset/asset_manager_uve.h"
-#include "uve/asset/material_asset_uve.h"
-#include "uve/asset/mesh_asset_uve.h"
-#include "uve/component/mesh_component_uve.h"
-#include "uve/component/render_instance_component_uve.h"
-#include "uve/component/transform_component_uve.h"
-#include "uve/component/visibility_component_uve.h"
-#include "uve/component/world_transform_component_uve.h"
-#include "uve/entity/entity_manager_uve.h"
-#include "uve/events/event_system_uve.h"
-#include "uve/math/matrix4x4_uve.h"
-#include "uve/math/quaternion_uve.h"
-#include "uve/math/vector3_uve.h"
-#include "uve/memory/memory_manager_uve.h"
-#include "uve/render_systems/dynamic_mesh_bvh_uve.h"
-#include "uve/render_systems/mesh_visibility_set_uve.h"
-#include "uve/scene/scene_graph_uve.h"
-#include "uve/threading/thread_pool_uve.h"
+#include "asset_database.h"
+#include "asset_manager.h"
+#include "material_asset.h"
+#include "mesh_asset.h"
+#include "mesh_component.h"
+#include "render_instance_component.h"
+#include "transform_component.h"
+#include "visibility_component.h"
+#include "world_transform_component.h"
+#include "entity_manager.h"
+#include "event_system.h"
+#include "matrix4x4.h"
+#include "quaternion.h"
+#include "vector3.h"
+#include "memory_manager.h"
+#include "dynamic_mesh_bvh.h"
+#include "mesh_visibility_set.h"
+#include "scene_graph.h"
+#include "thread_pool.h"
 
 namespace UVE::Render::Tests {
 namespace {

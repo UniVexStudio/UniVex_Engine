@@ -6,13 +6,13 @@
 
 #include "integration/EntityPicker.h"
 
-#include "uve/component/editor_internal_entity_component_uve.h"
-#include "uve/component/hierarchy_component_uve.h"
-#include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/visibility_component_uve.h"
-#include "uve/component/world_transform_component_uve.h"
-#include "uve/math/matrix4x4_uve.h"
-#include "uve/render_systems/primitive_geometry_uve.h"
+#include "editor_internal_entity_component.h"
+#include "hierarchy_component.h"
+#include "primitive_mesh_component.h"
+#include "visibility_component.h"
+#include "world_transform_component.h"
+#include "matrix4x4.h"
+#include "primitive_geometry.h"
 
 namespace univex::integration {
 

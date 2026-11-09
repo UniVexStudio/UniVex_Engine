@@ -14,13 +14,13 @@
 
 add_library(uve_ui STATIC
     Internal/stb_truetype_impl.cpp
-    Internal/ui_font_atlas_uve.cpp
-    Internal/ui_embedded_font_uve.cpp
-    Internal/canvas_ancestry_uve.cpp
-    Internal/ui_layout_uve.cpp
-    Internal/ui_anchors_uve.cpp
-    Internal/ui_tween_uve.cpp
-    Internal/ui_runtime_uve.cpp
+    Internal/ui_font_atlas.cpp
+    Internal/ui_embedded_font.cpp
+    Internal/canvas_ancestry.cpp
+    Internal/ui_layout.cpp
+    Internal/ui_anchors.cpp
+    Internal/ui_tween.cpp
+    Internal/ui_runtime.cpp
 )
 
 # ui_font_ttf_bytes.inc is generated at build time from the module's own canonical

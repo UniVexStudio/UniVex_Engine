@@ -6,19 +6,19 @@
 #include <optional>
 #include <thread>
 #include <nlohmann/json.hpp>
-#include "uve/asset/asset_database_uve.h"
-#include "uve/asset/asset_manager_uve.h"
-#include "uve/asset/asset_handle_uve.h"
-#include "uve/asset/asset_resident_size_uve.h"
-#include "uve/core/engine_core_uve.h"
-#include "uve/component/camera_component_uve.h"
-#include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/transform_component_uve.h"
-#include "uve/scene/scene_serializer_uve.h"
-#include "uve/scene/i_scene_graph_uve.h"
-#include "uve/platform/editor_project_package_uve.h"
-#include "uve/events/event_system_uve.h"
-#include "uve/threading/thread_pool_uve.h"
+#include "asset_database.h"
+#include "asset_manager.h"
+#include "asset_handle.h"
+#include "asset_resident_size.h"
+#include "engine_core.h"
+#include "camera_component.h"
+#include "primitive_mesh_component.h"
+#include "transform_component.h"
+#include "scene_serializer.h"
+#include "i_scene_graph.h"
+#include "editor_project_package.h"
+#include "event_system.h"
+#include "thread_pool.h"
 namespace {
 void Require(bool success) {if(!success) throw std::runtime_error("Asset workload operation failed");}
 void Fixture(const std::filesystem::path& directory, bool small) {

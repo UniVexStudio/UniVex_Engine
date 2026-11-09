@@ -28,13 +28,13 @@
 # This now covers every file in the reference engine/asset/ module - the full ~12,098-line
 # system is ported.
 #
-# audio_asset_uve.cpp (LoadAudioAssetUVE/SaveAudioAssetUVE) moved here from Audio's own local
+# audio_asset.cpp (LoadAudioAssetUVE/SaveAudioAssetUVE) moved here from Audio's own local
 # Expose/uve/asset/ tree while porting EngineCoreUVE - Audio previously only needed the header
 # (the AudioAssetUVE value type) for WavImporterUVE::RegisterWavImporterUVE(), but EngineCoreUVE's
 # own asset-loader registration path calls LoadAudioAssetUVE/SaveAudioAssetUVE directly, which
 # were never actually defined anywhere in this repo until now - a genuine missing-definition
 # link error, not a design choice, caught by the linker rather than by dependency-closure review.
-# audio_asset_uve.h's own reference include path was always uve/asset/, matching every other
+# audio_asset.h's own reference include path was always uve/asset/, matching every other
 # asset model here (MeshAssetUVE, TextureAssetUVE, ShaderAssetUVE) - Audio still gets it through
 # its existing uve_asset PUBLIC link, unchanged.
 
@@ -43,7 +43,7 @@
 
 # ufbx (vendored via FetchContent, pinned tag): the FBX parser behind ConvertFbxMeshUVE. One C
 # file and its header, compiled as its own small library with its own warning profile; it is linked
-# PRIVATE and included by exactly one engine source (fbx_mesh_converter_uve.cpp), so no engine
+# PRIVATE and included by exactly one engine source (fbx_mesh_converter.cpp), so no engine
 # header or consumer ever sees an FBX type.
 enable_language(C)
 include(FetchContent)
@@ -67,81 +67,81 @@ if(UNIX)
 endif()
 
 add_library(uve_asset STATIC
-    Internal/asset_guid_uve.cpp
-    Internal/asset_import_sidecar_uve.cpp
-    Internal/audio_asset_uve.cpp
-    Internal/font_asset_uve.cpp
-    Internal/uve_file_envelope_uve.cpp
-    Internal/asset_database_uve.cpp
-    Internal/legacy_extension_migration_uve.cpp
-    Internal/asset_content_fingerprint_uve.cpp
-    Internal/asset_manager_uve.cpp
-    Internal/asset_bundle_uve.cpp
-    Internal/file_system_uve.cpp
-    Internal/mesh_asset_uve.cpp
-    Internal/mesh_skinning_uve.cpp
-    Internal/texture_asset_uve.cpp
-    Internal/texture_import_settings_uve.cpp
-    Internal/texture_mipmap_uve.cpp
-    Internal/texture_compression_uve.cpp
-    Internal/texture_compression_basis_init_uve.cpp
-    Internal/shader_asset_uve.cpp
-    Internal/material_asset_uve.cpp
-    Internal/asset_importer_uve.cpp
-    Internal/import_helpers_uve.cpp
-    Internal/project_tree_helpers_uve.cpp
-    Internal/bmp_importer_uve.cpp
-    Internal/bmp_metadata_uve.cpp
-    Internal/tga_importer_uve.cpp
-    Internal/tga_metadata_uve.cpp
-    Internal/ttf_importer_uve.cpp
-    Internal/png_importer_uve.cpp
-    Internal/png_metadata_uve.cpp
-    Internal/jpeg_importer_uve.cpp
-    Internal/jpeg_metadata_uve.cpp
-    Internal/obj_importer_uve.cpp
-    Internal/obj_material_import_uve.cpp
-    Internal/obj_mesh_converter_uve.cpp
-    Internal/obj_metadata_uve.cpp
-    Internal/fbx_importer_uve.cpp
-    Internal/fbx_mesh_converter_uve.cpp
-    Internal/gltf_importer_uve.cpp
-    Internal/gltf_material_import_uve.cpp
-    Internal/model_texture_import_uve.cpp
-    Internal/gltf_mesh_converter_uve.cpp
-    Internal/gltf_metadata_uve.cpp
-    Internal/gltf_skeleton_uve.cpp
-    Internal/gltf_skin_converter_uve.cpp
-    Internal/gltf_animation_converter_uve.cpp
-    Internal/mtl_importer_uve.cpp
-    Internal/mtl_material_converter_uve.cpp
-    Internal/mtl_metadata_uve.cpp
-    Internal/shader_source_importer_uve.cpp
-    Internal/hot_reload_uve.cpp
-    Internal/native_file_watcher_uve.cpp
-    Internal/asset_import_queue_uve.cpp
-    Internal/project_change_watcher_uve.cpp
-    Internal/project_file_index_uve.cpp
-    Internal/derived_artifact_cache_uve.cpp
-    Internal/resource_dependency_graph_uve.cpp
-    Internal/animation_clip_asset_uve.cpp
-    Internal/animation_clip_compression_uve.cpp
-    Internal/skeleton_asset_uve.cpp
-    Internal/animation_library_asset_uve.cpp
-    Internal/data_table_uve.cpp
-    Internal/data_table_asset_uve.cpp
-    Internal/data_table_asset_manager_uve.cpp
-    Internal/data_table_asset_registration_uve.cpp
-    Internal/data_table_importer_uve.cpp
-    Internal/data_table_pipeline_uve.cpp
-    Internal/data_table_registry_uve.cpp
+    Internal/asset_guid.cpp
+    Internal/asset_import_sidecar.cpp
+    Internal/audio_asset.cpp
+    Internal/font_asset.cpp
+    Internal/uve_file_envelope.cpp
+    Internal/asset_database.cpp
+    Internal/legacy_extension_migration.cpp
+    Internal/asset_content_fingerprint.cpp
+    Internal/asset_manager.cpp
+    Internal/asset_bundle.cpp
+    Internal/file_system.cpp
+    Internal/mesh_asset.cpp
+    Internal/mesh_skinning.cpp
+    Internal/texture_asset.cpp
+    Internal/texture_import_settings.cpp
+    Internal/texture_mipmap.cpp
+    Internal/texture_compression.cpp
+    Internal/texture_compression_basis_init.cpp
+    Internal/shader_asset.cpp
+    Internal/material_asset.cpp
+    Internal/asset_importer.cpp
+    Internal/import_helpers.cpp
+    Internal/project_tree_helpers.cpp
+    Internal/bmp_importer.cpp
+    Internal/bmp_metadata.cpp
+    Internal/tga_importer.cpp
+    Internal/tga_metadata.cpp
+    Internal/ttf_importer.cpp
+    Internal/png_importer.cpp
+    Internal/png_metadata.cpp
+    Internal/jpeg_importer.cpp
+    Internal/jpeg_metadata.cpp
+    Internal/obj_importer.cpp
+    Internal/obj_material_import.cpp
+    Internal/obj_mesh_converter.cpp
+    Internal/obj_metadata.cpp
+    Internal/fbx_importer.cpp
+    Internal/fbx_mesh_converter.cpp
+    Internal/gltf_importer.cpp
+    Internal/gltf_material_import.cpp
+    Internal/model_texture_import.cpp
+    Internal/gltf_mesh_converter.cpp
+    Internal/gltf_metadata.cpp
+    Internal/gltf_skeleton.cpp
+    Internal/gltf_skin_converter.cpp
+    Internal/gltf_animation_converter.cpp
+    Internal/mtl_importer.cpp
+    Internal/mtl_material_converter.cpp
+    Internal/mtl_metadata.cpp
+    Internal/shader_source_importer.cpp
+    Internal/hot_reload.cpp
+    Internal/native_file_watcher.cpp
+    Internal/asset_import_queue.cpp
+    Internal/project_change_watcher.cpp
+    Internal/project_file_index.cpp
+    Internal/derived_artifact_cache.cpp
+    Internal/resource_dependency_graph.cpp
+    Internal/animation_clip_asset.cpp
+    Internal/animation_clip_compression.cpp
+    Internal/skeleton_asset.cpp
+    Internal/animation_library_asset.cpp
+    Internal/data_table.cpp
+    Internal/data_table_asset.cpp
+    Internal/data_table_asset_manager.cpp
+    Internal/data_table_asset_registration.cpp
+    Internal/data_table_importer.cpp
+    Internal/data_table_pipeline.cpp
+    Internal/data_table_registry.cpp
 )
 if(UVE_BASIS_ENCODER_AVAILABLE)
-    target_sources(uve_asset PRIVATE Internal/texture_compression_encode_uve.cpp)
+    target_sources(uve_asset PRIVATE Internal/texture_compression_encode.cpp)
     target_link_libraries(uve_asset PRIVATE uve_basisu_encoder)
     target_compile_definitions(uve_asset PUBLIC UVE_HAS_BASIS_ENCODER=1)
 else()
-    target_sources(uve_asset PRIVATE Internal/texture_compression_encode_stub_uve.cpp)
+    target_sources(uve_asset PRIVATE Internal/texture_compression_encode_stub.cpp)
     target_compile_definitions(uve_asset PUBLIC UVE_HAS_BASIS_ENCODER=0)
 endif()
 target_include_directories(uve_asset PUBLIC Expose)

@@ -12,9 +12,9 @@
 # tested without desktop GL.
 
 add_library(uve_pack_lib STATIC
-    Internal/asset_cooker_uve.cpp
-    Internal/project_packager_uve.cpp
-    Internal/project_launcher_uve.cpp
+    Internal/asset_cooker.cpp
+    Internal/project_packager.cpp
+    Internal/project_launcher.cpp
 )
 target_include_directories(uve_pack_lib PUBLIC Expose)
 target_link_libraries(uve_pack_lib PUBLIC uve_core PRIVATE nlohmann_json::nlohmann_json)

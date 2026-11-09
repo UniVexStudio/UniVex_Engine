@@ -2,7 +2,7 @@
 
 
 add_library(uve_events STATIC
-    Internal/event_system_uve.cpp
+    Internal/event_system.cpp
 )
 target_include_directories(uve_events PUBLIC Expose)
 target_link_libraries(uve_events PUBLIC uve_platform)

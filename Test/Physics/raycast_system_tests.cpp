@@ -1,0 +1,310 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+
+#include "raycast_system.h"
+
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <optional>
+#include <span>
+
+#include <gtest/gtest.h>
+
+#include "event_system.h"
+#include "memory_manager.h"
+#include "collider_component.h"
+#include "transform_component.h"
+#include "entity_manager.h"
+#include "scene_graph.h"
+
+namespace UVE::Physics::Tests {
+namespace {
+
+constexpr float kEpsilon = 1e-3F;
+
+class RaycastSystemUVETest : public ::testing::Test {
+protected:
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    Scene::SceneGraphUVE sceneGraph;
+    RaycastSystemUVE raycastSystem;
+
+    Scene::EntityUVE MakeColliderEntityUVE(Math::Vector3UVE position, Math::Vector3UVE halfExtents,
+                                            std::uint32_t collisionLayer = 1, float friction = 0.0F,
+                                            float restitution = 0.0F, float density = 1.0F) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE local;
+        local.localPosition = position;
+        sceneGraph.AttachTransformUVE(entityManager, entity, local);
+        sceneGraph.UpdateUVE(entityManager);
+        Scene::ColliderComponentUVE collider{halfExtents};
+        collider.collisionLayer = collisionLayer;
+        collider.friction = friction;
+        collider.restitution = restitution;
+        collider.density = density;
+        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, collider);
+        return entity;
+    }
+
+    Scene::EntityUVE MakeTypedColliderEntityUVE(Math::Vector3UVE position,
+                                                 const Scene::ColliderComponentUVE& collider,
+                                                 Math::QuaternionUVE rotation = {}) {
+        const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE local;
+        local.localPosition = position;
+        local.localRotation = rotation;
+        sceneGraph.AttachTransformUVE(entityManager, entity, local);
+        sceneGraph.UpdateUVE(entityManager);
+        entityManager.AddComponentUVE<Scene::ColliderComponentUVE>(entity, collider);
+        return entity;
+    }
+
+    [[nodiscard]] static RaycastQueryUVE MakeXAxisQueryUVE(float originX = -10.0F, float maxDistance = 100.0F) {
+        RaycastQueryUVE query;
+        query.ray = Math::RayUVE{Math::Vector3UVE{originX, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 0.0F, 0.0F}};
+        query.maxDistance = maxDistance;
+        return query;
+    }
+};
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_SingleCollider_ReturnsHit) {
+    const Scene::EntityUVE entity = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
+    EXPECT_NEAR(hit->distance, 4.0F, kEpsilon);
+    EXPECT_NEAR(hit->point.x, -1.0F, kEpsilon);
+    EXPECT_NEAR(hit->normal.x, -1.0F, kEpsilon);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_UsesExactSphereTargetGeometry) {
+    Scene::ColliderComponentUVE sphere;
+    sphere.shapeType = Scene::ColliderShapeTypeUVE::Sphere;
+    sphere.radius = 1.0F;
+    const Scene::EntityUVE entity = MakeTypedColliderEntityUVE({0.0F, 0.9F, 0.0F}, sphere);
+
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, MakeXAxisQueryUVE(-5.0F));
+
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
+    EXPECT_NEAR(hit->distance, 5.0F - std::sqrt(0.19F), kEpsilon);
+    EXPECT_NEAR(hit->point.x, -std::sqrt(0.19F), kEpsilon);
+    EXPECT_NEAR(hit->point.y, 0.0F, kEpsilon);
+    EXPECT_NEAR(hit->normal.x, -std::sqrt(0.19F), kEpsilon);
+    EXPECT_NEAR(hit->normal.y, -0.9F, kEpsilon);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_UsesExactCapsuleTargetGeometry) {
+    Scene::ColliderComponentUVE capsule;
+    capsule.shapeType = Scene::ColliderShapeTypeUVE::Capsule;
+    capsule.radius = 0.5F;
+    capsule.height = 4.0F;
+    const Scene::EntityUVE entity = MakeTypedColliderEntityUVE({0.0F, 0.0F, 0.0F}, capsule);
+
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+    query.ray.origin.y = 1.9F;
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
+    EXPECT_NEAR(hit->distance, 4.7F, kEpsilon);
+    EXPECT_NEAR(hit->normal.x, -0.6F, kEpsilon);
+    EXPECT_NEAR(hit->normal.y, 0.8F, kEpsilon);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_UsesExactRotatedBoxTargetGeometry) {
+    Scene::ColliderComponentUVE box;
+    box.shapeType = Scene::ColliderShapeTypeUVE::Box;
+    box.halfExtents = {0.25F, 1.0F, 0.25F};
+    const float halfAngle = 0.3826834324F;
+    const float quarterTurnZ = 0.9238795325F;
+    const Scene::EntityUVE entity = MakeTypedColliderEntityUVE(
+        {}, box, Math::QuaternionUVE{0.0F, 0.0F, halfAngle, quarterTurnZ});
+
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+    query.ray.origin.y = 0.5F;
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
+    EXPECT_NEAR(hit->distance, 5.0F - (0.25F * std::sqrt(2.0F) + 0.5F), kEpsilon);
+    EXPECT_NEAR(hit->normal.x, -std::sqrt(0.5F), kEpsilon);
+    EXPECT_NEAR(hit->normal.y, -std::sqrt(0.5F), kEpsilon);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_NoColliders_ReturnsNullopt) {
+    EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, MakeXAxisQueryUVE()).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_MultipleCollidersAlongRay_ReturnsClosest) {
+    MakeColliderEntityUVE(Math::Vector3UVE{5.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE closer = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, MakeXAxisQueryUVE());
+
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, closer);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_EntityMissingColliderComponent_IsExcluded) {
+    const Scene::EntityUVE entity = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, entity, Scene::TransformComponentUVE{});
+    sceneGraph.UpdateUVE(entityManager);
+
+    EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, MakeXAxisQueryUVE()).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_LayerMaskExcludesNonMatchingCollider) {
+    MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, /*collisionLayer=*/2U);
+    RaycastQueryUVE query = MakeXAxisQueryUVE();
+    query.layerMask = 1U; // (2 & 1) == 0 — collider's layer isn't in the query's mask.
+
+    EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_IgnoreEntity_ExcludesSpecificCollider) {
+    const Scene::EntityUVE entity = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    RaycastQueryUVE query = MakeXAxisQueryUVE();
+    query.ignoreEntity = entity;
+
+    EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_ExcludedEntities_SkipEveryNamedCollider) {
+    // Three colliders on the ray, nearest first: -8, -4, then 0. Every exclusion is a real entity
+    // reference, so each call must land on the next collider the list did not name.
+    const Scene::EntityUVE nearest =
+        MakeColliderEntityUVE(Math::Vector3UVE{-8.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE middle =
+        MakeColliderEntityUVE(Math::Vector3UVE{-4.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE farthest =
+        MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    const std::array<Scene::EntityUVE, 1U> skipNearest{nearest};
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-10.0F);
+    query.excludedEntities = skipNearest;
+    std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, middle);
+
+    const std::array<Scene::EntityUVE, 2U> skipFirstTwo{nearest, middle};
+    query.excludedEntities = skipFirstTwo;
+    hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, farthest);
+
+    const std::array<Scene::EntityUVE, 3U> skipAll{nearest, middle, farthest};
+    query.excludedEntities = skipAll;
+    EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_AnExclusionIsNotAMask_ItSkipsEvenWhereTheMaskWouldAccept) {
+    // The collider is on layer 2 and the query's mask accepts layer 2, so the mask alone would let
+    // it through - the exclusion is what has to stop it. Skipping is decided before the mask, so no
+    // layer can bring an excluded object back.
+    const Scene::EntityUVE entity = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+                                                          Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 2U);
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+    query.layerMask = 0x2U;
+    ASSERT_TRUE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+
+    const std::array<Scene::EntityUVE, 1U> skip{entity};
+    query.excludedEntities = skip;
+    EXPECT_FALSE(raycastSystem.RaycastUVE(entityManager, query).has_value());
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_IgnoreEntityAndExclusionsAreBothHonoured) {
+    const Scene::EntityUVE origin =
+        MakeColliderEntityUVE(Math::Vector3UVE{-9.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE second =
+        MakeColliderEntityUVE(Math::Vector3UVE{-6.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const Scene::EntityUVE third =
+        MakeColliderEntityUVE(Math::Vector3UVE{-2.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+
+    // The ray's own entity comes in through `ignoreEntity`; the authored exclusions through the
+    // span. A query that carries both must skip both, and still see the one nobody named.
+    const std::array<Scene::EntityUVE, 1U> skipSecond{second};
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-10.0F);
+    query.ignoreEntity = origin;
+    query.excludedEntities = skipSecond;
+    std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, third);
+
+    query.ignoreEntity = Scene::kInvalidEntityUVE;
+    hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, origin);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_AnEmptyExclusionListIsTheUnchangedQuery) {
+    const Scene::EntityUVE entity =
+        MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+
+    ASSERT_EQ(query.excludedEntities.size(), 0U);
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
+    EXPECT_NEAR(hit->distance, 4.0F, kEpsilon);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_AnEmptySpanSlotMatchesNoEntity) {
+    // The engine hands over the authored prefix of a fixed-capacity array, so a caller that passes
+    // the whole array with its tail still empty must not accidentally exclude anything: an empty
+    // slot is kInvalidEntityUVE, which no live entity ever compares equal to.
+    const Scene::EntityUVE entity =
+        MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    const std::array<Scene::EntityUVE, 4U> slots{Scene::kInvalidEntityUVE, Scene::kInvalidEntityUVE,
+                                                Scene::kInvalidEntityUVE, Scene::kInvalidEntityUVE};
+    RaycastQueryUVE query = MakeXAxisQueryUVE(-5.0F);
+    query.excludedEntities = std::span<const Scene::EntityUVE>(slots);
+
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, query);
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_EqualDistanceHits_ResolveDeterministically) {
+    const Scene::EntityUVE first = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+    MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}); // identical duplicate
+    const RaycastQueryUVE query = MakeXAxisQueryUVE();
+
+    const std::optional<RaycastHitUVE> firstCall = raycastSystem.RaycastUVE(entityManager, query);
+    const std::optional<RaycastHitUVE> secondCall = raycastSystem.RaycastUVE(entityManager, query);
+
+    ASSERT_TRUE(firstCall.has_value());
+    ASSERT_TRUE(secondCall.has_value());
+    EXPECT_EQ(firstCall->entity, first);
+    EXPECT_EQ(secondCall->entity, first);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_HitMaterial_MatchesColliderFields) {
+    const Scene::EntityUVE entity = MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F},
+                                                            1U, 0.4F, 0.9F, 3.0F);
+
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, MakeXAxisQueryUVE());
+
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_EQ(hit->entity, entity);
+    EXPECT_NEAR(hit->material.friction, 0.4F, kEpsilon);
+    EXPECT_NEAR(hit->material.restitution, 0.9F, kEpsilon);
+    EXPECT_NEAR(hit->material.density, 3.0F, kEpsilon);
+}
+
+TEST_F(RaycastSystemUVETest, RaycastUVE_HitMaterial_ClampsOutOfRangeRestitution) {
+    MakeColliderEntityUVE(Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::Vector3UVE{1.0F, 1.0F, 1.0F}, 1U, 0.0F, 5.0F, 1.0F);
+
+    const std::optional<RaycastHitUVE> hit = raycastSystem.RaycastUVE(entityManager, MakeXAxisQueryUVE());
+
+    ASSERT_TRUE(hit.has_value());
+    EXPECT_NEAR(hit->material.restitution, 1.0F, kEpsilon);
+}
+
+} // namespace
+} // namespace UVE::Physics::Tests

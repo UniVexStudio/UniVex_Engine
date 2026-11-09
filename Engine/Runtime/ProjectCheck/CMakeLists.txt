@@ -1,7 +1,7 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 add_library(uve_project_check_lib STATIC
-    Internal/project_checker_uve.cpp
+    Internal/project_checker.cpp
 )
 target_include_directories(uve_project_check_lib PUBLIC Expose)
 target_link_libraries(uve_project_check_lib PUBLIC uve_asset)
