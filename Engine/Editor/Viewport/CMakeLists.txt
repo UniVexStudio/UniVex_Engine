@@ -94,6 +94,11 @@ target_include_directories(univex_viewport_gl PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Expose
     ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_link_libraries(univex_viewport_gl PUBLIC univex_viewport_core OpenGL::GL GLEW::GLEW)
+if(TARGET OpenGL::GLX)
+    target_link_libraries(univex_viewport_gl PUBLIC OpenGL::GLX)
+elseif(UNIX AND NOT APPLE)
+    target_link_libraries(univex_viewport_gl PUBLIC GL)
+endif()
 target_compile_options(univex_viewport_gl PRIVATE -Wall -Wextra -Wpedantic)
 
 # ---------------------------------------------------------------------------

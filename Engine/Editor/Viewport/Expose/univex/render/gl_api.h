@@ -17,5 +17,11 @@
 #if defined(UNIVEX_GL_LOADER_HEADER)
 #include UNIVEX_GL_LOADER_HEADER
 #else
+#ifndef GLEW_NO_GLU
+#define GLEW_NO_GLU
+#endif
+#ifndef GLEW_STATIC
+#define GLEW_STATIC
+#endif
 #include <GL/glew.h>
 #endif
