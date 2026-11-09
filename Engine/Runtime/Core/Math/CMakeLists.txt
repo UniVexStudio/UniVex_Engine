@@ -2,23 +2,23 @@
 
 
 add_library(uve_math STATIC
-    Internal/vector2_uve.cpp
-    Internal/vector3_uve.cpp
-    Internal/vector4_uve.cpp
-    Internal/quaternion_uve.cpp
-    Internal/matrix4x4_uve.cpp
-    Internal/point_transform_batch_uve.cpp
-    Internal/matrix3x3_uve.cpp
-    Internal/trs_uve.cpp
-    Internal/color_uve.cpp
-    Internal/vector2i_uve.cpp
-    Internal/vector3i_uve.cpp
-    Internal/rect_uve.cpp
-    Internal/rect_int_uve.cpp
-    Internal/aabb_uve.cpp
-    Internal/sphere_uve.cpp
-    Internal/oriented_box_uve.cpp
-    Internal/frustum_uve.cpp
+    Internal/vector2.cpp
+    Internal/vector3.cpp
+    Internal/vector4.cpp
+    Internal/quaternion.cpp
+    Internal/matrix4x4.cpp
+    Internal/point_transform_batch.cpp
+    Internal/matrix3x3.cpp
+    Internal/trs.cpp
+    Internal/color.cpp
+    Internal/vector2i.cpp
+    Internal/vector3i.cpp
+    Internal/rect.cpp
+    Internal/rect_int.cpp
+    Internal/aabb.cpp
+    Internal/sphere.cpp
+    Internal/oriented_box.cpp
+    Internal/frustum.cpp
 )
 target_include_directories(uve_math PUBLIC Expose)
 target_link_libraries(uve_math PUBLIC uve_platform)

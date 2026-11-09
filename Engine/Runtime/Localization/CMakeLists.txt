@@ -11,7 +11,7 @@
 # same one. nlohmann_json is linked PRIVATE, confined to parsing a string-table file.
 
 add_library(uve_localization STATIC
-    Internal/localization_uve.cpp
+    Internal/localization.cpp
 )
 target_include_directories(uve_localization PUBLIC Expose)
 target_link_libraries(uve_localization PRIVATE nlohmann_json::nlohmann_json)

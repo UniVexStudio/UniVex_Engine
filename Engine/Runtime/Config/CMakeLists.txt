@@ -2,15 +2,15 @@
 
 #
 # ConfigManagerUVE uses the root-owned pinned nlohmann::json dependency and confines it behind
-# ConfigManagerUVE's PIMPL (config_manager_uve.cpp is the only file here that includes
+# ConfigManagerUVE's PIMPL (config_manager.cpp is the only file here that includes
 # <nlohmann/json.hpp>) - linked PRIVATE so it never leaks into consumers' include paths.
 
 add_library(uve_config STATIC
-    Internal/config_manager_uve.cpp
-    Internal/settings_registry_uve.cpp
-    Internal/settings_observer_uve.cpp
-    Internal/settings_document_uve.cpp
-    Internal/settings_stack_uve.cpp
+    Internal/config_manager.cpp
+    Internal/settings_registry.cpp
+    Internal/settings_observer.cpp
+    Internal/settings_document.cpp
+    Internal/settings_stack.cpp
 )
 target_include_directories(uve_config PUBLIC Expose)
 target_link_libraries(uve_config

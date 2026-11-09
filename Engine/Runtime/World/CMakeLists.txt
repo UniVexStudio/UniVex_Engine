@@ -1,12 +1,12 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #
-# New (not ported) - see world_uve.h's doc comment for why. Owns one EntityManagerUVE and drives
+# New (not ported) - see world.h's doc comment for why. Owns one EntityManagerUVE and drives
 # its per-frame update via SceneGraphUVE, so Scene stays non-ticking.
 
 add_library(uve_world STATIC
-    Internal/world_uve.cpp
-    Internal/scene_uve.cpp
+    Internal/world.cpp
+    Internal/scene.cpp
 )
 target_include_directories(uve_world PUBLIC Expose)
 target_link_libraries(uve_world PUBLIC uve_scene uve_entity uve_memory uve_events uve_logging uve_object

@@ -7,14 +7,14 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 add_library(uve_retarget STATIC
-    Internal/retarget_names_uve.cpp
-    Internal/retarget_skeleton_uve.cpp
-    Internal/retarget_humanoid_uve.cpp
-    Internal/retarget_match_uve.cpp
-    Internal/retarget_pose_uve.cpp
-    Internal/retarget_conform_uve.cpp
-    Internal/retarget_files_uve.cpp
-    Internal/retarget_playback_uve.cpp
+    Internal/retarget_names.cpp
+    Internal/retarget_skeleton.cpp
+    Internal/retarget_humanoid.cpp
+    Internal/retarget_match.cpp
+    Internal/retarget_pose.cpp
+    Internal/retarget_conform.cpp
+    Internal/retarget_files.cpp
+    Internal/retarget_playback.cpp
 )
 
 set(_uve_retarget_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")

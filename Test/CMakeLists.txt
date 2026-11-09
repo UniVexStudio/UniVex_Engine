@@ -17,230 +17,230 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 add_executable(uve_core_tests
-    Support/test_scratch_uve.cpp
-    Core/Platform/editor_project_package_uve_tests.cpp
-    Core/Platform/application_runtime_uve_tests.cpp
-    Core/Platform/build_variant_uve_tests.cpp
-    Core/Platform/crash_reporter_uve_tests.cpp
-    Core/Logging/logger_uve_tests.cpp
-    Core/Logging/log_format_uve_tests.cpp
-    Core/Memory/heap_allocator_uve_tests.cpp
-    Core/Memory/pool_allocator_uve_tests.cpp
-    Core/Memory/stack_allocator_uve_tests.cpp
-    Core/Memory/memory_manager_uve_tests.cpp
-    Core/Memory/allocator_utils_uve_tests.cpp
-    Core/Memory/memory_alignment_uve_tests.cpp
-    Core/Memory/std_allocator_uve_tests.cpp
-    Core/Memory/linear_arena_uve_tests.cpp
-    Core/Memory/unique_ptr_uve_tests.cpp
-    Core/Memory/intrusive_ptr_uve_tests.cpp
-    Core/Memory/thread_safe_allocator_uve_tests.cpp
-    Core/Threading/job_counter_uve_tests.cpp
-    Core/Threading/job_graph_uve_tests.cpp
-    Core/Threading/thread_pool_uve_tests.cpp
-    Core/Threading/parallel_for_uve_tests.cpp
-    Core/Threading/spin_lock_uve_tests.cpp
-    Core/Threading/rw_lock_uve_tests.cpp
-    Core/Threading/semaphore_uve_tests.cpp
-    Core/Threading/thread_id_uve_tests.cpp
-    Core/Threading/thread_naming_uve_tests.cpp
-    Core/Threading/thread_control_uve_tests.cpp
-    Core/Utilities/timer_uve_tests.cpp
-    Core/Utilities/hash_uve_tests.cpp
-    Core/Utilities/topological_order_uve_tests.cpp
-    Core/Utilities/binary_buffer_uve_tests.cpp
-    Core/Utilities/uuid_uve_tests.cpp
-    Core/Utilities/scope_guard_uve_tests.cpp
-    Core/Utilities/non_copyable_uve_tests.cpp
-    Core/Utilities/flags_uve_tests.cpp
-    Core/Containers/fixed_array_uve_tests.cpp
-    Core/Containers/small_vector_uve_tests.cpp
-    Core/Containers/handle_table_uve_tests.cpp
-    Core/Containers/handle_table_lifetime_uve_tests.cpp
-    Core/Object/object_registry_uve_tests.cpp
-    Core/Containers/sparse_set_uve_tests.cpp
-    Core/Containers/ring_buffer_uve_tests.cpp
-    Core/Containers/bit_set_uve_tests.cpp
-    Core/Strings/string_id_uve_tests.cpp
-    Core/Strings/string_utils_uve_tests.cpp
-    Core/Scheduling/frame_scheduler_uve_tests.cpp
-    Core/Scheduling/frame_serial_uve_tests.cpp
-    Core/Diagnostics/profiler_diagnostics_uve_tests.cpp
-    Core/Events/event_system_uve_tests.cpp
-    Core/Asset/uve_file_envelope_uve_tests.cpp
-    Core/Asset/asset_database_uve_tests.cpp
-    Core/Asset/legacy_extension_migration_uve_tests.cpp
-    UVScript/uvscript_parser_uve_tests.cpp
-    UVScript/uvscript_vm_uve_tests.cpp
-    UVScript/uvscript_debugger_uve_tests.cpp
-    UVScript/uvscript_collections_uve_tests.cpp
-    Core/Asset/asset_manager_uve_tests.cpp
-    Core/Asset/file_system_uve_tests.cpp
-    Core/Asset/mesh_asset_uve_tests.cpp
-    Core/Asset/mesh_skinning_uve_tests.cpp
-    Core/Asset/texture_asset_uve_tests.cpp
-    Core/Asset/shader_asset_uve_tests.cpp
-    Core/Asset/font_asset_uve_tests.cpp
-    Core/Asset/ttf_importer_uve_tests.cpp
-    Core/Asset/material_asset_uve_tests.cpp
-    Core/Asset/asset_importer_uve_tests.cpp
-    Core/Asset/bmp_importer_uve_tests.cpp
-    Core/Asset/bmp_metadata_uve_tests.cpp
-    Core/Asset/tga_importer_uve_tests.cpp
-    Core/Asset/tga_metadata_uve_tests.cpp
-    Core/Asset/png_importer_uve_tests.cpp
-    Core/Asset/png_metadata_uve_tests.cpp
-    Core/Asset/jpeg_importer_uve_tests.cpp
-    Core/Asset/jpeg_metadata_uve_tests.cpp
-    Core/Asset/obj_importer_uve_tests.cpp
-    Core/Asset/fbx_mesh_converter_uve_tests.cpp
-    Core/Asset/fbx_material_converter_uve_tests.cpp
-    Core/Asset/embedded_texture_import_uve_tests.cpp
-    Core/Asset/fbx_importer_uve_tests.cpp
-    Core/Asset/obj_mesh_converter_uve_tests.cpp
-    Core/Asset/obj_metadata_uve_tests.cpp
-    Core/Asset/gltf_importer_uve_tests.cpp
-    Core/Asset/gltf_mesh_converter_uve_tests.cpp
-    Core/Asset/gltf_metadata_uve_tests.cpp
-    Core/Asset/gltf_skeleton_uve_tests.cpp
-    Core/Asset/skeleton_asset_uve_tests.cpp
-    Core/Asset/animation_library_asset_uve_tests.cpp
-    Core/Asset/gltf_skin_converter_uve_tests.cpp
-    Core/Asset/gltf_animation_converter_uve_tests.cpp
-    Core/Asset/mtl_importer_uve_tests.cpp
-    Core/Asset/mtl_material_converter_uve_tests.cpp
-    Core/Asset/mtl_metadata_uve_tests.cpp
-    Core/Asset/hot_reload_uve_tests.cpp
-    Core/Asset/hot_reload_backend_uve_tests.cpp
-    Core/Asset/asset_import_queue_uve_tests.cpp
-    Core/Asset/project_change_watcher_uve_tests.cpp
-    Core/Asset/project_file_index_uve_tests.cpp
-    Core/Asset/resource_dependency_graph_uve_tests.cpp
-    Core/Asset/animation_clip_asset_uve_tests.cpp
-    Core/Asset/animation_clip_compression_uve_tests.cpp
-    Core/Asset/data_table_uve_tests.cpp
-    Core/Asset/data_table_asset_uve_tests.cpp
-    Core/Asset/data_table_asset_manager_uve_tests.cpp
-    Core/Asset/data_table_asset_registration_uve_tests.cpp
-    Core/Asset/data_table_importer_uve_tests.cpp
-    Core/Asset/data_table_pipeline_uve_tests.cpp
-    Core/Asset/data_table_registry_uve_tests.cpp
-    Commandline/command_line_uve_tests.cpp
-    Config/config_manager_uve_tests.cpp
-    Config/settings_registry_uve_tests.cpp
-    Engine/engine_settings_layering_uve_tests.cpp
-    Engine/frame_pacing_uve_tests.cpp
-    Engine/dynamic_render_resolution_uve_tests.cpp
-    Engine/shader_cache_path_policy_uve_tests.cpp
-    Engine/render_backend_selection_uve_tests.cpp
-    Network/reliable_packet_window_uve_tests.cpp
-    Network/network_transport_uve_tests.cpp
-    Network/network_udp_uve_tests.cpp
-    Network/network_udp_listener_uve_tests.cpp
-    Network/network_session_uve_tests.cpp
-    Network/network_conditions_uve_tests.cpp
-    Network/network_replication_uve_tests.cpp
-    Network/network_rpc_uve_tests.cpp
-    Network/network_prediction_uve_tests.cpp
-    Network/network_inspector_uve_tests.cpp
-    Network/network_packet_capture_uve_tests.cpp
-    Network/network_packet_tap_uve_tests.cpp
-    Network/network_profiler_uve_tests.cpp
-    Network/network_shot_uve_tests.cpp
-    Network/network_interest_uve_tests.cpp
-    Network/network_interest_fanout_uve_tests.cpp
-    Network/network_value_codec_uve_tests.cpp
-    Network/network_multiplex_uve_tests.cpp
-    Network/network_relay_uve_tests.cpp
-    Network/network_lobby_uve_tests.cpp
-    Network/network_relay_rooms_uve_tests.cpp
-    Network/network_relay_interest_uve_tests.cpp
-    Network/network_crowd_uve_tests.cpp
-    Plugins/plugin_registry_uve_tests.cpp
-    Plugins/native_plugin_host_uve_tests.cpp
-    ProjectCheck/project_checker_uve_tests.cpp
-    Input/input_system_uve_tests.cpp
-    Gameplay/gameplay_input_uve_tests.cpp
-    Gameplay/gameplay_attributes_uve_tests.cpp
-    Gameplay/gameplay_tags_uve_tests.cpp
-    Gameplay/status_effects_uve_tests.cpp
-    Gameplay/trigger_volume_uve_tests.cpp
-    Gameplay/pawn_uve_tests.cpp
-    Gameplay/cinematic_uve_tests.cpp
-    Gameplay/camera_follow_uve_tests.cpp
-    AI/utility_ai_uve_tests.cpp
-    AI/perception_uve_tests.cpp
-    Input/input_names_uve_tests.cpp
-    Input/android_touch_router_uve_tests.cpp
-    Input/mobile_input_system_uve_tests.cpp
-    Input/mobile_gesture_system_uve_tests.cpp
-    Input/mobile_gesture_recognizer_uve_tests.cpp
-    RHI/null_render_device_uve_tests.cpp
-    RHI/device_operations_uve_tests.cpp
-    RHI/stencil_state_uve_tests.cpp
-    RHI/timeline_semaphore_uve_tests.cpp
-    RHI/geometry_pipeline_uve_tests.cpp
-    RHI/render_resource_lifetime_uve_tests.cpp
-    RHI/bind_group_uve_tests.cpp
-    RHI/Vulkan/vulkan_composite_alpha_policy_uve_tests.cpp
-    RHI/Vulkan/vulkan_present_mode_policy_uve_tests.cpp
-    RHI/Vulkan/vulkan_validation_policy_uve_tests.cpp
-    RHI/Shader/shader_binary_cache_uve_tests.cpp
-    RHI/Shader/shader_diagnostics_parser_uve_tests.cpp
-    RHI/Shader/shader_manager_uve_tests.cpp
-    RHI/Shader/shader_preprocessor_uve_tests.cpp
-    RHI/Shader/shader_program_uve_tests.cpp
-    Window/adaptive_render_resolution_uve_tests.cpp
-    Window/content_scale_policy_uve_tests.cpp
-    Window/cursor_policy_uve_tests.cpp
-    Window/display_mode_validation_uve_tests.cpp
-    Window/framebuffer_size_validation_uve_tests.cpp
-    Window/monitor_info_validation_uve_tests.cpp
-    Window/monitor_selection_policy_uve_tests.cpp
-    Window/null_window_manager_uve_tests.cpp
-    Window/presentation_layout_uve_tests.cpp
-    Window/vsync_policy_uve_tests.cpp
-    Window/window_desc_validation_uve_tests.cpp
-    Window/window_size_policy_uve_tests.cpp
-    Window/window_style_policy_uve_tests.cpp
-    Math/vector2_uve_tests.cpp
-    Math/vector3_uve_tests.cpp
-    Math/vector4_uve_tests.cpp
-    Math/quaternion_uve_tests.cpp
-    Math/matrix4x4_uve_tests.cpp
-    Math/point_transform_batch_uve_tests.cpp
-    Math/matrix3x3_uve_tests.cpp
-    Math/trs_uve_tests.cpp
-    Math/color_uve_tests.cpp
-    Math/vector2i_uve_tests.cpp
-    Math/vector3i_uve_tests.cpp
-    Math/rect_uve_tests.cpp
-    Math/rect_int_uve_tests.cpp
-    Math/aabb_uve_tests.cpp
-    Math/plane_uve_tests.cpp
-    Math/frustum_uve_tests.cpp
-    Math/scalar_uve_tests.cpp
-    Math/sphere_uve_tests.cpp
-    Math/oriented_box_uve_tests.cpp
-    Math/random_uve_tests.cpp
-    Math/easing_uve_tests.cpp
-    Math/noise_uve_tests.cpp
-    Math/curves_uve_tests.cpp
-    Retarget/retarget_names_uve_tests.cpp
-    Retarget/retarget_humanoid_uve_tests.cpp
-    Retarget/retarget_match_uve_tests.cpp
-    Retarget/retarget_conform_uve_tests.cpp
-    Retarget/retarget_files_uve_tests.cpp
+    Support/test_scratch.cpp
+    Core/Platform/editor_project_package_tests.cpp
+    Core/Platform/application_runtime_tests.cpp
+    Core/Platform/build_variant_tests.cpp
+    Core/Platform/crash_reporter_tests.cpp
+    Core/Logging/logger_tests.cpp
+    Core/Logging/log_format_tests.cpp
+    Core/Memory/heap_allocator_tests.cpp
+    Core/Memory/pool_allocator_tests.cpp
+    Core/Memory/stack_allocator_tests.cpp
+    Core/Memory/memory_manager_tests.cpp
+    Core/Memory/allocator_utils_tests.cpp
+    Core/Memory/memory_alignment_tests.cpp
+    Core/Memory/std_allocator_tests.cpp
+    Core/Memory/linear_arena_tests.cpp
+    Core/Memory/unique_ptr_tests.cpp
+    Core/Memory/intrusive_ptr_tests.cpp
+    Core/Memory/thread_safe_allocator_tests.cpp
+    Core/Threading/job_counter_tests.cpp
+    Core/Threading/job_graph_tests.cpp
+    Core/Threading/thread_pool_tests.cpp
+    Core/Threading/parallel_for_tests.cpp
+    Core/Threading/spin_lock_tests.cpp
+    Core/Threading/rw_lock_tests.cpp
+    Core/Threading/semaphore_tests.cpp
+    Core/Threading/thread_id_tests.cpp
+    Core/Threading/thread_naming_tests.cpp
+    Core/Threading/thread_control_tests.cpp
+    Core/Utilities/timer_tests.cpp
+    Core/Utilities/hash_tests.cpp
+    Core/Utilities/topological_order_tests.cpp
+    Core/Utilities/binary_buffer_tests.cpp
+    Core/Utilities/uuid_tests.cpp
+    Core/Utilities/scope_guard_tests.cpp
+    Core/Utilities/non_copyable_tests.cpp
+    Core/Utilities/flags_tests.cpp
+    Core/Containers/fixed_array_tests.cpp
+    Core/Containers/small_vector_tests.cpp
+    Core/Containers/handle_table_tests.cpp
+    Core/Containers/handle_table_lifetime_tests.cpp
+    Core/Object/object_registry_tests.cpp
+    Core/Containers/sparse_set_tests.cpp
+    Core/Containers/ring_buffer_tests.cpp
+    Core/Containers/bit_set_tests.cpp
+    Core/Strings/string_id_tests.cpp
+    Core/Strings/string_utils_tests.cpp
+    Core/Scheduling/frame_scheduler_tests.cpp
+    Core/Scheduling/frame_serial_tests.cpp
+    Core/Diagnostics/profiler_diagnostics_tests.cpp
+    Core/Events/event_system_tests.cpp
+    Core/Asset/uve_file_envelope_tests.cpp
+    Core/Asset/asset_database_tests.cpp
+    Core/Asset/legacy_extension_migration_tests.cpp
+    UVScript/uvscript_parser_tests.cpp
+    UVScript/uvscript_vm_tests.cpp
+    UVScript/uvscript_debugger_tests.cpp
+    UVScript/uvscript_collections_tests.cpp
+    Core/Asset/asset_manager_tests.cpp
+    Core/Asset/file_system_tests.cpp
+    Core/Asset/mesh_asset_tests.cpp
+    Core/Asset/mesh_skinning_tests.cpp
+    Core/Asset/texture_asset_tests.cpp
+    Core/Asset/shader_asset_tests.cpp
+    Core/Asset/font_asset_tests.cpp
+    Core/Asset/ttf_importer_tests.cpp
+    Core/Asset/material_asset_tests.cpp
+    Core/Asset/asset_importer_tests.cpp
+    Core/Asset/bmp_importer_tests.cpp
+    Core/Asset/bmp_metadata_tests.cpp
+    Core/Asset/tga_importer_tests.cpp
+    Core/Asset/tga_metadata_tests.cpp
+    Core/Asset/png_importer_tests.cpp
+    Core/Asset/png_metadata_tests.cpp
+    Core/Asset/jpeg_importer_tests.cpp
+    Core/Asset/jpeg_metadata_tests.cpp
+    Core/Asset/obj_importer_tests.cpp
+    Core/Asset/fbx_mesh_converter_tests.cpp
+    Core/Asset/fbx_material_converter_tests.cpp
+    Core/Asset/embedded_texture_import_tests.cpp
+    Core/Asset/fbx_importer_tests.cpp
+    Core/Asset/obj_mesh_converter_tests.cpp
+    Core/Asset/obj_metadata_tests.cpp
+    Core/Asset/gltf_importer_tests.cpp
+    Core/Asset/gltf_mesh_converter_tests.cpp
+    Core/Asset/gltf_metadata_tests.cpp
+    Core/Asset/gltf_skeleton_tests.cpp
+    Core/Asset/skeleton_asset_tests.cpp
+    Core/Asset/animation_library_asset_tests.cpp
+    Core/Asset/gltf_skin_converter_tests.cpp
+    Core/Asset/gltf_animation_converter_tests.cpp
+    Core/Asset/mtl_importer_tests.cpp
+    Core/Asset/mtl_material_converter_tests.cpp
+    Core/Asset/mtl_metadata_tests.cpp
+    Core/Asset/hot_reload_tests.cpp
+    Core/Asset/hot_reload_backend_tests.cpp
+    Core/Asset/asset_import_queue_tests.cpp
+    Core/Asset/project_change_watcher_tests.cpp
+    Core/Asset/project_file_index_tests.cpp
+    Core/Asset/resource_dependency_graph_tests.cpp
+    Core/Asset/animation_clip_asset_tests.cpp
+    Core/Asset/animation_clip_compression_tests.cpp
+    Core/Asset/data_table_tests.cpp
+    Core/Asset/data_table_asset_tests.cpp
+    Core/Asset/data_table_asset_manager_tests.cpp
+    Core/Asset/data_table_asset_registration_tests.cpp
+    Core/Asset/data_table_importer_tests.cpp
+    Core/Asset/data_table_pipeline_tests.cpp
+    Core/Asset/data_table_registry_tests.cpp
+    Commandline/command_line_tests.cpp
+    Config/config_manager_tests.cpp
+    Config/settings_registry_tests.cpp
+    Engine/engine_settings_layering_tests.cpp
+    Engine/frame_pacing_tests.cpp
+    Engine/dynamic_render_resolution_tests.cpp
+    Engine/shader_cache_path_policy_tests.cpp
+    Engine/render_backend_selection_tests.cpp
+    Network/reliable_packet_window_tests.cpp
+    Network/network_transport_tests.cpp
+    Network/network_udp_tests.cpp
+    Network/network_udp_listener_tests.cpp
+    Network/network_session_tests.cpp
+    Network/network_conditions_tests.cpp
+    Network/network_replication_tests.cpp
+    Network/network_rpc_tests.cpp
+    Network/network_prediction_tests.cpp
+    Network/network_inspector_tests.cpp
+    Network/network_packet_capture_tests.cpp
+    Network/network_packet_tap_tests.cpp
+    Network/network_profiler_tests.cpp
+    Network/network_shot_tests.cpp
+    Network/network_interest_tests.cpp
+    Network/network_interest_fanout_tests.cpp
+    Network/network_value_codec_tests.cpp
+    Network/network_multiplex_tests.cpp
+    Network/network_relay_tests.cpp
+    Network/network_lobby_tests.cpp
+    Network/network_relay_rooms_tests.cpp
+    Network/network_relay_interest_tests.cpp
+    Network/network_crowd_tests.cpp
+    Plugins/plugin_registry_tests.cpp
+    Plugins/native_plugin_host_tests.cpp
+    ProjectCheck/project_checker_tests.cpp
+    Input/input_system_tests.cpp
+    Gameplay/gameplay_input_tests.cpp
+    Gameplay/gameplay_attributes_tests.cpp
+    Gameplay/gameplay_tags_tests.cpp
+    Gameplay/status_effects_tests.cpp
+    Gameplay/trigger_volume_tests.cpp
+    Gameplay/pawn_tests.cpp
+    Gameplay/cinematic_tests.cpp
+    Gameplay/camera_follow_tests.cpp
+    AI/utility_ai_tests.cpp
+    AI/perception_tests.cpp
+    Input/input_names_tests.cpp
+    Input/android_touch_router_tests.cpp
+    Input/mobile_input_system_tests.cpp
+    Input/mobile_gesture_system_tests.cpp
+    Input/mobile_gesture_recognizer_tests.cpp
+    RHI/null_render_device_tests.cpp
+    RHI/device_operations_tests.cpp
+    RHI/stencil_state_tests.cpp
+    RHI/timeline_semaphore_tests.cpp
+    RHI/geometry_pipeline_tests.cpp
+    RHI/render_resource_lifetime_tests.cpp
+    RHI/bind_group_tests.cpp
+    RHI/Vulkan/vulkan_composite_alpha_policy_tests.cpp
+    RHI/Vulkan/vulkan_present_mode_policy_tests.cpp
+    RHI/Vulkan/vulkan_validation_policy_tests.cpp
+    RHI/Shader/shader_binary_cache_tests.cpp
+    RHI/Shader/shader_diagnostics_parser_tests.cpp
+    RHI/Shader/shader_manager_tests.cpp
+    RHI/Shader/shader_preprocessor_tests.cpp
+    RHI/Shader/shader_program_tests.cpp
+    Window/adaptive_render_resolution_tests.cpp
+    Window/content_scale_policy_tests.cpp
+    Window/cursor_policy_tests.cpp
+    Window/display_mode_validation_tests.cpp
+    Window/framebuffer_size_validation_tests.cpp
+    Window/monitor_info_validation_tests.cpp
+    Window/monitor_selection_policy_tests.cpp
+    Window/null_window_manager_tests.cpp
+    Window/presentation_layout_tests.cpp
+    Window/vsync_policy_tests.cpp
+    Window/window_desc_validation_tests.cpp
+    Window/window_size_policy_tests.cpp
+    Window/window_style_policy_tests.cpp
+    Math/vector2_tests.cpp
+    Math/vector3_tests.cpp
+    Math/vector4_tests.cpp
+    Math/quaternion_tests.cpp
+    Math/matrix4x4_tests.cpp
+    Math/point_transform_batch_tests.cpp
+    Math/matrix3x3_tests.cpp
+    Math/trs_tests.cpp
+    Math/color_tests.cpp
+    Math/vector2i_tests.cpp
+    Math/vector3i_tests.cpp
+    Math/rect_tests.cpp
+    Math/rect_int_tests.cpp
+    Math/aabb_tests.cpp
+    Math/plane_tests.cpp
+    Math/frustum_tests.cpp
+    Math/scalar_tests.cpp
+    Math/sphere_tests.cpp
+    Math/oriented_box_tests.cpp
+    Math/random_tests.cpp
+    Math/easing_tests.cpp
+    Math/noise_tests.cpp
+    Math/curves_tests.cpp
+    Retarget/retarget_names_tests.cpp
+    Retarget/retarget_humanoid_tests.cpp
+    Retarget/retarget_match_tests.cpp
+    Retarget/retarget_conform_tests.cpp
+    Retarget/retarget_files_tests.cpp
 )
 if(UVE_HAS_DESKTOP_GL)
     if(NOT WIN32)
         target_sources(uve_core_tests PRIVATE
-            RHI/OpenGL/gl_render_device_uve_tests.cpp
+            RHI/OpenGL/gl_render_device_tests.cpp
         )
     endif()
     target_sources(uve_core_tests PRIVATE
-        RHI/Vulkan/vulkan_render_device_uve_tests.cpp
-        Window/window_manager_uve_tests.cpp
+        RHI/Vulkan/vulkan_render_device_tests.cpp
+        Window/window_manager_tests.cpp
     )
     target_link_libraries(uve_core_tests PRIVATE glfw)
 endif()
@@ -273,7 +273,7 @@ target_link_libraries(uve_core_tests PRIVATE
     uve_engine_settings
     uve_network
     uve_plugins
-    # network_prediction_uve_tests.cpp steps the production character predictor
+    # network_prediction_tests.cpp steps the production character predictor
     # (uve_objects_3d) as its mover - proof the layering holds with production movement code.
     uve_objects_3d
     uve_physics
@@ -316,8 +316,8 @@ target_include_directories(uve_core_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # editor's chrome-layout tests reach EditorCore/Internal.
 target_include_directories(uve_core_tests PRIVATE ${CMAKE_SOURCE_DIR}/Engine/Runtime/Asset/Internal)
 
-# shader_binary_cache_uve_tests.cpp/shader_diagnostics_parser_uve_tests.cpp/
-# shader_preprocessor_uve_tests.cpp unit-test uve_rhi_shader's module-private classes directly -
+# shader_binary_cache_tests.cpp/shader_diagnostics_parser_tests.cpp/
+# shader_preprocessor_tests.cpp unit-test uve_rhi_shader's module-private classes directly -
 # this include path exposes only those module-private headers, never anything from
 # Engine/Runtime/RHI/Shader/Internal as part of uve_rhi_shader's own public interface (matching
 # uve_integration_tests' identical need for Engine/Runtime/Entity/Internal below).
@@ -345,203 +345,203 @@ set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
 # ticking + serialization).
 
 add_executable(uve_integration_tests
-    Support/test_scratch_uve.cpp
-    Objects/3D/objects_3d_uve_tests.cpp
-    Objects/3D/object_definitions_3d_uve_tests.cpp
-    Objects/3D/player_3d_uve_tests.cpp
-    Objects/3D/character_motion_uve_tests.cpp
-    Objects/3D/character_prediction_uve_tests.cpp
-    Objects/3D/replicated_entity_uve_tests.cpp
-    Objects/3D/interest_relevancy_uve_tests.cpp
-    Objects/3D/hitbox_lag_wiring_uve_tests.cpp
-    Objects/3D/ragdoll_3d_uve_tests.cpp
-    Objects/3D/collider_debug_scene_uve_tests.cpp
-    Samples/dedicated_server_sample_uve_tests.cpp
-    Samples/lag_comp_server_sample_uve_tests.cpp
-    Samples/packet_capture_sample_uve_tests.cpp
-    Samples/interest_fanout_sample_uve_tests.cpp
-    Objects/3D/health_uve_tests.cpp
-    Objects/3D/world_environment_uve_tests.cpp
-    Objects/3D/preview_lighting_uve_tests.cpp
-    Objects/3D/sky_lighting_uve_tests.cpp
-    Objects/3D/directional_light_3d_uve_tests.cpp
-    Objects/3D/fog_volume_3d_uve_tests.cpp
-    Objects/3D/water_3d_uve_tests.cpp
-    Objects/3D/terrain_3d_uve_tests.cpp
-    Objects/3D/world_partition_3d_uve_tests.cpp
-    Objects/3D/visibility_region_3d_uve_tests.cpp
-    Objects/3D/occluder_3d_uve_tests.cpp
-    Objects/3D/reflection_probe_3d_uve_tests.cpp
-    Objects/3D/animation_objects_uve_tests.cpp
-    Objects/3D/conformed_playback_uve_tests.cpp
-    Objects/3D/two_bone_ik_3d_uve_tests.cpp
-    Objects/3D/skin_component_uve_tests.cpp
-    Objects/3D/morph_target_component_uve_tests.cpp
-    Objects/3D/full_body_ik_3d_uve_tests.cpp
-    Objects/UI/object_definitions_canvas_uve_tests.cpp
-    Objects/2D/sprite_2d_uve_tests.cpp
-    Objects/2D/camera_2d_uve_tests.cpp
-    Integration/Entity/archetype_uve_tests.cpp
-    Integration/Entity/archetype_chunk_uve_tests.cpp
-    Integration/Entity/entity_manager_uve_tests.cpp
-    Integration/Entity/entity_enabled_uve_tests.cpp
-    Integration/Entity/entity_command_buffer_uve_tests.cpp
-    Integration/Entity/entity_view_uve_tests.cpp
-    Integration/Localization/localization_uve_tests.cpp
-    Integration/Scene/scene_graph_uve_tests.cpp
-    Integration/Scene/derived_pose_contract_uve_tests.cpp
-    Integration/Scene/children_index_uve_tests.cpp
-    Integration/Script/contact_script_events_uve_tests.cpp
-    Integration/Scene/bone_attachment_pass_uve_tests.cpp
-    Integration/Scene/two_bone_ik_pass_uve_tests.cpp
-    Integration/Scene/full_body_ik_pass_uve_tests.cpp
-    Integration/Scene/object_common_components_uve_tests.cpp
-    Integration/Scene/scene_component_metadata_uve_tests.cpp
-    Integration/Scene/scene_serializer_uve_tests.cpp
-    Integration/Scene/gameplay_serialization_uve_tests.cpp
-    Integration/Scene/ai_serialization_uve_tests.cpp
-    Integration/Scene/scene_object_type_uve_tests.cpp
-    Integration/Scene/prefab_system_uve_tests.cpp
-    Integration/Scene/prefab_maturity_uve_tests.cpp
-    Integration/Scene/prefab_revision_policy_uve_tests.cpp
-    Integration/Scene/particle_runtime_uve_tests.cpp
-    Integration/Scene/scene_object_registry_uve_tests.cpp
-    Integration/Scene/spawn_point_query_uve_tests.cpp
-    Integration/Scene/marker_3d_query_uve_tests.cpp
-    Integration/Animation/time_pose_contract_uve_tests.cpp
-    Integration/Animation/animation_clip_uve_tests.cpp
-    Integration/Animation/pose_graph_uve_tests.cpp
-    Integration/Animation/animation_state_machine_uve_tests.cpp
-    Integration/World/world_uve_tests.cpp
-    Integration/World/world_lifecycle_uve_tests.cpp
-    Integration/Object/type_metadata_uve_tests.cpp
-    Integration/Object/property_accessor_uve_tests.cpp
-    Integration/Object/type_metadata_bridge_uve_tests.cpp
-    Integration/Object/variant_uve_tests.cpp
-    Physics/angular_dynamics_uve_tests.cpp
-    Physics/area_3d_uve_tests.cpp
-    Physics/area_overlap_lifecycle_tracker_uve_tests.cpp
-    Physics/area_overlap_system_uve_tests.cpp
-    Physics/character_controller_uve_tests.cpp
-    Physics/character_body_motion_uve_tests.cpp
-    Physics/character_3d_uve_tests.cpp
-    Physics/uvscript_physics_forces_uve_tests.cpp
-    Script/uvscript_node_state_uve_tests.cpp
-    Script/uvscript_cross_node_uve_tests.cpp
-    Audio/uvscript_audio_bindings_uve_tests.cpp
-    Gameplay/uvscript_gameplay_bindings_uve_tests.cpp
-    Gameplay/uvscript_rpc_bindings_uve_tests.cpp
-    Gameplay/uvscript_lobby_bindings_uve_tests.cpp
-    Gameplay/uvscript_relay_bindings_uve_tests.cpp
-    Physics/collider_3d_uve_tests.cpp
-    Physics/collider_shape_uve_tests.cpp
-    Physics/collision_lifecycle_tracker_uve_tests.cpp
-    Physics/collision_system_uve_tests.cpp
-    Physics/continuous_collision_uve_tests.cpp
-    Physics/deterministic_physics_uve_tests.cpp
-    Physics/hinge_motor_limit_uve_tests.cpp
-    Physics/hitbox_3d_uve_tests.cpp
-    Physics/hitbox_lag_compensation_uve_tests.cpp
-    Physics/hitbox_strike_uve_tests.cpp
-    Physics/hurtbox_3d_uve_tests.cpp
-    Physics/interaction_area_3d_uve_tests.cpp
-    Physics/interaction_area_uve_tests.cpp
-    Physics/kinematic_3d_uve_tests.cpp
-    Physics/kinematic_body_uve_tests.cpp
-    Physics/projectile_3d_uve_tests.cpp
-    Physics/physics_constraint_system_uve_tests.cpp
-    Physics/physics_islands_uve_tests.cpp
-    Physics/physics_material_uve_tests.cpp
-    Physics/physics_query_system_uve_tests.cpp
-    Physics/physics_system_uve_tests.cpp
-    Physics/ray_cast_3d_uve_tests.cpp
-    Physics/ray_cast_3d_step_uve_tests.cpp
-    Physics/raycast_system_uve_tests.cpp
-    Physics/rigid_3d_uve_tests.cpp
-    Physics/ragdoll_solver_uve_tests.cpp
-    Physics/collider_debug_geometry_uve_tests.cpp
-    Physics/projectile_3d_step_uve_tests.cpp
-    Physics/shape_cast_system_uve_tests.cpp
-    Physics/spring_arm_3d_uve_tests.cpp
-    Physics/spring_arm_uve_tests.cpp
-    Physics/static_3d_uve_tests.cpp
-    Navigation/navmesh_uve_tests.cpp
-    Navigation/navmesh_bake_uve_tests.cpp
-    Navigation/nav_path_uve_tests.cpp
-    Navigation/nav_path_quality_uve_tests.cpp
-    Navigation/navmesh_agent_uve_tests.cpp
-    Navigation/navigation_runtime_uve_tests.cpp
-    Save/checkpoint_manager_uve_tests.cpp
-    Save/save_game_system_uve_tests.cpp
-    Save/save_payload_compression_uve_tests.cpp
-    Save/save_revision_policy_uve_tests.cpp
-    Audio/audio_attenuation_model_uve_tests.cpp
-    Audio/audio_listener_orientation_validation_uve_tests.cpp
-    Audio/audio_mixer_group_uve_tests.cpp
-    Audio/audio_dsp_uve_tests.cpp
-    Audio/audio_spatialization_uve_tests.cpp
-    Audio/audio_meter_uve_tests.cpp
-    Audio/audio_occlusion_uve_tests.cpp
-    Audio/audio_stream_uve_tests.cpp
-    Audio/audio_ambisonics_uve_tests.cpp
-    Audio/ambisonic_stream_source_uve_tests.cpp
-    Audio/audio_source_system_uve_tests.cpp
-    Audio/audio_system_uve_tests.cpp
-    Audio/null_audio_device_uve_tests.cpp
-    Audio/miniaudio_audio_device_uve_tests.cpp
-    Audio/pcm_gain_effect_uve_tests.cpp
-    Audio/wav_metadata_uve_tests.cpp
-    Audio/wav_pcm16_decoder_uve_tests.cpp
-    Audio/wav_importer_uve_tests.cpp
-    Audio/compressed_audio_importer_uve_tests.cpp
-    RHI/RenderSystems/camera_2d_system_uve_tests.cpp
-    RHI/RenderSystems/camera_system_uve_tests.cpp
-    RHI/RenderSystems/material_pipeline_state_uve_tests.cpp
-    RHI/RenderSystems/render_batch_uve_tests.cpp
-    RHI/RenderSystems/compute_kernel_portability_uve_tests.cpp
-    RHI/RenderSystems/compute_workloads_vulkan_uve_tests.cpp
-    RHI/RenderSystems/light_system_uve_tests.cpp
-    RHI/RenderSystems/decal_renderer_uve_tests.cpp
-    RHI/RenderSystems/debug_renderer_uve_tests.cpp
-    RHI/RenderSystems/mesh_renderer_uve_tests.cpp
-    RHI/RenderSystems/mesh_render_eligibility_uve_tests.cpp
-    RHI/RenderSystems/primitive_geometry_uve_tests.cpp
-    RHI/RenderSystems/render_graph_uve_tests.cpp
-    RHI/RenderSystems/render_graph_compiler_uve_tests.cpp
-    RHI/RenderSystems/render_queue_uve_tests.cpp
-    RHI/RenderSystems/render_system_uve_tests.cpp
-    RHI/RenderSystems/renderer_2d_uve_tests.cpp
-    RHI/RenderSystems/renderer_3d_uve_tests.cpp
-    RHI/RenderSystems/viewport_manager_uve_tests.cpp
-    RHI/RenderSystems/particle_render_bridge_uve_tests.cpp
-    RHI/RenderSystems/particle_draw_command_uve_tests.cpp
-    RHI/RenderSystems/dynamic_mesh_bvh_uve_tests.cpp
-    RHI/RenderSystems/shadow_atlas_manager_uve_tests.cpp
-    RHI/RenderSystems/light_shadow_planner_uve_tests.cpp
-    RHI/RenderSystems/contact_shadows_uve_tests.cpp
+    Support/test_scratch.cpp
+    Objects/3D/objects_3d_tests.cpp
+    Objects/3D/object_definitions_3d_tests.cpp
+    Objects/3D/player_3d_tests.cpp
+    Objects/3D/character_motion_tests.cpp
+    Objects/3D/character_prediction_tests.cpp
+    Objects/3D/replicated_entity_tests.cpp
+    Objects/3D/interest_relevancy_tests.cpp
+    Objects/3D/hitbox_lag_wiring_tests.cpp
+    Objects/3D/ragdoll_3d_tests.cpp
+    Objects/3D/collider_debug_scene_tests.cpp
+    Samples/dedicated_server_sample_tests.cpp
+    Samples/lag_comp_server_sample_tests.cpp
+    Samples/packet_capture_sample_tests.cpp
+    Samples/interest_fanout_sample_tests.cpp
+    Objects/3D/health_tests.cpp
+    Objects/3D/world_environment_tests.cpp
+    Objects/3D/preview_lighting_tests.cpp
+    Objects/3D/sky_lighting_tests.cpp
+    Objects/3D/directional_light_3d_tests.cpp
+    Objects/3D/fog_volume_3d_tests.cpp
+    Objects/3D/water_3d_tests.cpp
+    Objects/3D/terrain_3d_tests.cpp
+    Objects/3D/world_partition_3d_tests.cpp
+    Objects/3D/visibility_region_3d_tests.cpp
+    Objects/3D/occluder_3d_tests.cpp
+    Objects/3D/reflection_probe_3d_tests.cpp
+    Objects/3D/animation_objects_tests.cpp
+    Objects/3D/conformed_playback_tests.cpp
+    Objects/3D/two_bone_ik_3d_tests.cpp
+    Objects/3D/skin_component_tests.cpp
+    Objects/3D/morph_target_component_tests.cpp
+    Objects/3D/full_body_ik_3d_tests.cpp
+    Objects/UI/object_definitions_canvas_tests.cpp
+    Objects/2D/sprite_2d_tests.cpp
+    Objects/2D/camera_2d_tests.cpp
+    Integration/Entity/archetype_tests.cpp
+    Integration/Entity/archetype_chunk_tests.cpp
+    Integration/Entity/entity_manager_tests.cpp
+    Integration/Entity/entity_enabled_tests.cpp
+    Integration/Entity/entity_command_buffer_tests.cpp
+    Integration/Entity/entity_view_tests.cpp
+    Integration/Localization/localization_tests.cpp
+    Integration/Scene/scene_graph_tests.cpp
+    Integration/Scene/derived_pose_contract_tests.cpp
+    Integration/Scene/children_index_tests.cpp
+    Integration/Script/contact_script_events_tests.cpp
+    Integration/Scene/bone_attachment_pass_tests.cpp
+    Integration/Scene/two_bone_ik_pass_tests.cpp
+    Integration/Scene/full_body_ik_pass_tests.cpp
+    Integration/Scene/object_common_components_tests.cpp
+    Integration/Scene/scene_component_metadata_tests.cpp
+    Integration/Scene/scene_serializer_tests.cpp
+    Integration/Scene/gameplay_serialization_tests.cpp
+    Integration/Scene/ai_serialization_tests.cpp
+    Integration/Scene/scene_object_type_tests.cpp
+    Integration/Scene/prefab_system_tests.cpp
+    Integration/Scene/prefab_maturity_tests.cpp
+    Integration/Scene/prefab_revision_policy_tests.cpp
+    Integration/Scene/particle_runtime_tests.cpp
+    Integration/Scene/scene_object_registry_tests.cpp
+    Integration/Scene/spawn_point_query_tests.cpp
+    Integration/Scene/marker_3d_query_tests.cpp
+    Integration/Animation/time_pose_contract_tests.cpp
+    Integration/Animation/animation_clip_tests.cpp
+    Integration/Animation/pose_graph_tests.cpp
+    Integration/Animation/animation_state_machine_tests.cpp
+    Integration/World/world_tests.cpp
+    Integration/World/world_lifecycle_tests.cpp
+    Integration/Object/type_metadata_tests.cpp
+    Integration/Object/property_accessor_tests.cpp
+    Integration/Object/type_metadata_bridge_tests.cpp
+    Integration/Object/variant_tests.cpp
+    Physics/angular_dynamics_tests.cpp
+    Physics/area_3d_tests.cpp
+    Physics/area_overlap_lifecycle_tracker_tests.cpp
+    Physics/area_overlap_system_tests.cpp
+    Physics/character_controller_tests.cpp
+    Physics/character_body_motion_tests.cpp
+    Physics/character_3d_tests.cpp
+    Physics/uvscript_physics_forces_tests.cpp
+    Script/uvscript_node_state_tests.cpp
+    Script/uvscript_cross_node_tests.cpp
+    Audio/uvscript_audio_bindings_tests.cpp
+    Gameplay/uvscript_gameplay_bindings_tests.cpp
+    Gameplay/uvscript_rpc_bindings_tests.cpp
+    Gameplay/uvscript_lobby_bindings_tests.cpp
+    Gameplay/uvscript_relay_bindings_tests.cpp
+    Physics/collider_3d_tests.cpp
+    Physics/collider_shape_tests.cpp
+    Physics/collision_lifecycle_tracker_tests.cpp
+    Physics/collision_system_tests.cpp
+    Physics/continuous_collision_tests.cpp
+    Physics/deterministic_physics_tests.cpp
+    Physics/hinge_motor_limit_tests.cpp
+    Physics/hitbox_3d_tests.cpp
+    Physics/hitbox_lag_compensation_tests.cpp
+    Physics/hitbox_strike_tests.cpp
+    Physics/hurtbox_3d_tests.cpp
+    Physics/interaction_area_3d_tests.cpp
+    Physics/interaction_area_tests.cpp
+    Physics/kinematic_3d_tests.cpp
+    Physics/kinematic_body_tests.cpp
+    Physics/projectile_3d_tests.cpp
+    Physics/physics_constraint_system_tests.cpp
+    Physics/physics_islands_tests.cpp
+    Physics/physics_material_tests.cpp
+    Physics/physics_query_system_tests.cpp
+    Physics/physics_system_tests.cpp
+    Physics/ray_cast_3d_tests.cpp
+    Physics/ray_cast_3d_step_tests.cpp
+    Physics/raycast_system_tests.cpp
+    Physics/rigid_3d_tests.cpp
+    Physics/ragdoll_solver_tests.cpp
+    Physics/collider_debug_geometry_tests.cpp
+    Physics/projectile_3d_step_tests.cpp
+    Physics/shape_cast_system_tests.cpp
+    Physics/spring_arm_3d_tests.cpp
+    Physics/spring_arm_tests.cpp
+    Physics/static_3d_tests.cpp
+    Navigation/navmesh_tests.cpp
+    Navigation/navmesh_bake_tests.cpp
+    Navigation/nav_path_tests.cpp
+    Navigation/nav_path_quality_tests.cpp
+    Navigation/navmesh_agent_tests.cpp
+    Navigation/navigation_runtime_tests.cpp
+    Save/checkpoint_manager_tests.cpp
+    Save/save_game_system_tests.cpp
+    Save/save_payload_compression_tests.cpp
+    Save/save_revision_policy_tests.cpp
+    Audio/audio_attenuation_model_tests.cpp
+    Audio/audio_listener_orientation_validation_tests.cpp
+    Audio/audio_mixer_group_tests.cpp
+    Audio/audio_dsp_tests.cpp
+    Audio/audio_spatialization_tests.cpp
+    Audio/audio_meter_tests.cpp
+    Audio/audio_occlusion_tests.cpp
+    Audio/audio_stream_tests.cpp
+    Audio/audio_ambisonics_tests.cpp
+    Audio/ambisonic_stream_source_tests.cpp
+    Audio/audio_source_system_tests.cpp
+    Audio/audio_system_tests.cpp
+    Audio/null_audio_device_tests.cpp
+    Audio/miniaudio_audio_device_tests.cpp
+    Audio/pcm_gain_effect_tests.cpp
+    Audio/wav_metadata_tests.cpp
+    Audio/wav_pcm16_decoder_tests.cpp
+    Audio/wav_importer_tests.cpp
+    Audio/compressed_audio_importer_tests.cpp
+    RHI/RenderSystems/camera_2d_system_tests.cpp
+    RHI/RenderSystems/camera_system_tests.cpp
+    RHI/RenderSystems/material_pipeline_state_tests.cpp
+    RHI/RenderSystems/render_batch_tests.cpp
+    RHI/RenderSystems/compute_kernel_portability_tests.cpp
+    RHI/RenderSystems/compute_workloads_vulkan_tests.cpp
+    RHI/RenderSystems/light_system_tests.cpp
+    RHI/RenderSystems/decal_renderer_tests.cpp
+    RHI/RenderSystems/debug_renderer_tests.cpp
+    RHI/RenderSystems/mesh_renderer_tests.cpp
+    RHI/RenderSystems/mesh_render_eligibility_tests.cpp
+    RHI/RenderSystems/primitive_geometry_tests.cpp
+    RHI/RenderSystems/render_graph_tests.cpp
+    RHI/RenderSystems/render_graph_compiler_tests.cpp
+    RHI/RenderSystems/render_queue_tests.cpp
+    RHI/RenderSystems/render_system_tests.cpp
+    RHI/RenderSystems/renderer_2d_tests.cpp
+    RHI/RenderSystems/renderer_3d_tests.cpp
+    RHI/RenderSystems/viewport_manager_tests.cpp
+    RHI/RenderSystems/particle_render_bridge_tests.cpp
+    RHI/RenderSystems/particle_draw_command_tests.cpp
+    RHI/RenderSystems/dynamic_mesh_bvh_tests.cpp
+    RHI/RenderSystems/shadow_atlas_manager_tests.cpp
+    RHI/RenderSystems/light_shadow_planner_tests.cpp
+    RHI/RenderSystems/contact_shadows_tests.cpp
     RHI/RenderSystems/mesh_renderer_spatial_bvh_tests.cpp
     RHI/RenderSystems/renderer_3d_indirect_instancing_tests.cpp
-    UI/ui_font_atlas_uve_tests.cpp
-    UI/ui_runtime_uve_tests.cpp
-    UI/canvas_ancestry_uve_tests.cpp
-    UI/ui_layout_uve_tests.cpp
-    UI/ui_anchors_uve_tests.cpp
-    UI/ui_value_widgets_uve_tests.cpp
-    UI/ui_tween_uve_tests.cpp
-    UI/ui_nine_slice_uve_tests.cpp
-    UI/ui_checkbox_tooltip_uve_tests.cpp
-    UI/ui_dropdown_uve_tests.cpp
-    UI/ui_text_input_uve_tests.cpp
-    UI/ui_focus_navigation_uve_tests.cpp
-    UI/ui_scroll_uve_tests.cpp
+    UI/ui_font_atlas_tests.cpp
+    UI/ui_runtime_tests.cpp
+    UI/canvas_ancestry_tests.cpp
+    UI/ui_layout_tests.cpp
+    UI/ui_anchors_tests.cpp
+    UI/ui_value_widgets_tests.cpp
+    UI/ui_tween_tests.cpp
+    UI/ui_nine_slice_tests.cpp
+    UI/ui_checkbox_tooltip_tests.cpp
+    UI/ui_dropdown_tests.cpp
+    UI/ui_text_input_tests.cpp
+    UI/ui_focus_navigation_tests.cpp
+    UI/ui_scroll_tests.cpp
 )
 if(UVE_HAS_DESKTOP_GL)
     target_sources(uve_integration_tests PRIVATE
-        RHI/RenderSystems/compute_system_uve_tests.cpp
-        RHI/RenderSystems/particle_compute_simulation_uve_tests.cpp
-        RHI/RenderSystems/frustum_cull_compute_uve_tests.cpp
-        RHI/RenderSystems/frustum_cull_indirect_uve_tests.cpp
-        RHI/RenderSystems/mesh_skin_compute_uve_tests.cpp
+        RHI/RenderSystems/compute_system_tests.cpp
+        RHI/RenderSystems/particle_compute_simulation_tests.cpp
+        RHI/RenderSystems/frustum_cull_compute_tests.cpp
+        RHI/RenderSystems/frustum_cull_indirect_tests.cpp
+        RHI/RenderSystems/mesh_skin_compute_tests.cpp
     )
 endif()
 target_link_libraries(uve_integration_tests PRIVATE
@@ -566,14 +566,14 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_audio
     uve_render_systems
     uve_rhi_null
-    # compute_system_uve_tests.cpp proves ComputeSystemUVE against a REAL GL device (program
+    # compute_system_tests.cpp proves ComputeSystemUVE against a REAL GL device (program
     # compilation plus a byte-verified SSBO readback after a queued dispatch), skipping cleanly
     # when no display is available - so this executable needs the GL backend and the window
     # manager that brings up its context, exactly like uve_core_tests does for its own GL tests.
-    # The raw <GL/gl.h> calls in that file resolve the same way engine_core_uve_tests.cpp's do:
+    # The raw <GL/gl.h> calls in that file resolve the same way engine_core_tests.cpp's do:
     # OpenGL::GL and glfw propagate through the static-library dependency chain.
     uve_rhi_opengl
-    # compute_workloads_vulkan_uve_tests.cpp runs CS4's particle simulation and CS5's culling
+    # compute_workloads_vulkan_tests.cpp runs CS4's particle simulation and CS5's culling
     # against a REAL Vulkan device (headless over VK_EXT_headless_surface), which is what proves
     # those workloads are backend-independent rather than GL-only - so this executable needs the
     # Vulkan backend too, alongside the GL one its other compute tests use.
@@ -583,14 +583,14 @@ target_link_libraries(uve_integration_tests PRIVATE
     uve_ui
     uve_gameplay
     uve_ai
-    # uvscript_physics_forces_uve_tests.cpp drives the real UVScriptObjectHostUVE (uve_core)
+    # uvscript_physics_forces_tests.cpp drives the real UVScriptObjectHostUVE (uve_core)
     # and script values (uve_uvscript) - the first runnable coverage of Engine's script host.
     uve_core
     uve_uvscript
-    # uvscript_rpc_bindings_uve_tests.cpp drives RPC peers plus the object host together -
+    # uvscript_rpc_bindings_tests.cpp drives RPC peers plus the object host together -
     # script-initiated calls over loopback sessions, responses back into running scripts.
     uve_network
-    # character_prediction_uve_tests.cpp drives the predicted-pawn adapter (uve_objects_3d)
+    # character_prediction_tests.cpp drives the predicted-pawn adapter (uve_objects_3d)
     # against loopback predictors - components to states and back, plus live reconciles.
     uve_objects_3d
     uve_objects_2d
@@ -605,7 +605,7 @@ uve_set_warnings(uve_integration_tests)
 # so they are reached as "Support/<name>.h" from any subdirectory.
 target_include_directories(uve_integration_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# archetype_uve_tests.cpp and archetype_chunk_uve_tests.cpp unit-test the module-private
+# archetype_tests.cpp and archetype_chunk_tests.cpp unit-test the module-private
 # ArchetypeUVE/ArchetypeChunkUVE Detail:: classes directly - this include path exposes only those
 # module-private headers, never anything from Engine/Runtime/Entity/Internal as part of uve_entity's
 # own public interface.
@@ -626,25 +626,25 @@ if(UVE_HAS_DESKTOP_GL)
 # uve_physics, uve_input, uve_audio, uve_save, uve_window, uve_rhi, uve_rhi_shader,
 # uve_rhi_opengl, uve_rhi_null, uve_render_systems), so all of those propagate transitively.
 #
-# engine_core_uve_tests.cpp includes <GL/gl.h> directly and calls raw glFinish/glReadBuffer/
+# engine_core_tests.cpp includes <GL/gl.h> directly and calls raw glFinish/glReadBuffer/
 # glReadPixels/glGetError in the handful of tests that exercise the real (non-headless) GL
-# rendering path - this resolves the same way window_manager_uve_tests.cpp's own direct
+# rendering path - this resolves the same way window_manager_tests.cpp's own direct
 # <GLFW/glfw3.h> use already does elsewhere in this file with no explicit glfw/OpenGL entry here:
 # the actual link requirement (OpenGL::GL, glfw) propagates through the static-library dependency
 # chain regardless of PRIVATE/PUBLIC (CMake still needs it to link the final executable), and the
 # system GL/GLFW headers are already on the default compiler include path.
 add_executable(uve_engine_tests
-    Support/test_scratch_uve.cpp
-    Engine/engine_state_uve_tests.cpp
-    Engine/version_uve_tests.cpp
-    Engine/engine_services_uve_tests.cpp
-    Engine/engine_core_uve_tests.cpp
-    Engine/engine_core_settings_layering_uve_tests.cpp
-    Engine/raycast_audio_occlusion_uve_tests.cpp
-    Engine/input_map_document_uve_tests.cpp
-    Pack/project_launcher_uve_tests.cpp
-    Pack/asset_cooker_uve_tests.cpp
-    Pack/project_packager_uve_tests.cpp
+    Support/test_scratch.cpp
+    Engine/engine_state_tests.cpp
+    Engine/version_tests.cpp
+    Engine/engine_services_tests.cpp
+    Engine/engine_core_tests.cpp
+    Engine/engine_core_settings_layering_tests.cpp
+    Engine/raycast_audio_occlusion_tests.cpp
+    Engine/input_map_document_tests.cpp
+    Pack/project_launcher_tests.cpp
+    Pack/asset_cooker_tests.cpp
+    Pack/project_packager_tests.cpp
 )
 target_link_libraries(uve_engine_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -675,43 +675,43 @@ gtest_discover_tests(uve_engine_tests)
 # isn't valid) or tests a standalone class with no EngineCoreUVE dependency at all
 # (DeveloperConsoleUVE/EditorToolSessionUVE/InspectorDrawerRegistryUVE), so
 # this doesn't need Xvfb or any GL/GLFW link wiring the way uve_engine_tests and
-# gl_render_device_uve_tests.cpp do. Linking uve_editor is sufficient for every dependency - it
+# gl_render_device_tests.cpp do. Linking uve_editor is sufficient for every dependency - it
 # PUBLIC-links uve_core and uve_plugins, which propagate transitively.
 add_executable(uve_editor_tests
-    Support/test_scratch_uve.cpp
-    Editor/editor_bridge_stdio_uve_tests.cpp
-    Editor/editor_bridge_uve_tests.cpp
-    Editor/developer_console_uve_tests.cpp
-    Editor/developer_console_bridge_uve_tests.cpp
-    Editor/editor_tool_session_uve_tests.cpp
-    Editor/editor_render_stats_uve_tests.cpp
-    Editor/editor_audio_mixer_uve_tests.cpp
-    Editor/editor_chrome_layout_uve_tests.cpp
-    Editor/editor_icon_set_uve_tests.cpp
-    Editor/editor_uve_tests.cpp
-    Editor/editor_color_uve_tests.cpp
-    Editor/editor_settings_uve_tests.cpp
-    Editor/editor_layer_mask_uve_tests.cpp
-    Editor/editor_input_map_uve_tests.cpp
-    Editor/editor_commands_uve_tests.cpp
-    Editor/editor_hierarchy_view_uve_tests.cpp
-    Editor/entity_picker_uve_tests.cpp
-    Editor/editor_mesh_layer_uve_tests.cpp
-    Editor/overlay_raster_state_uve_tests.cpp
-    Editor/inspector_drawer_registry_uve_tests.cpp
-    Editor/data_table_registry_bridge_uve_tests.cpp
-    Editor/prefab_maturity_editor_uve_tests.cpp
-    Editor/content_catalogue_editor_uve_tests.cpp
-    Editor/uvscript_highlight_uve_tests.cpp
-    Editor/content_browser_model_uve_tests.cpp
-    Editor/model_source_placement_uve_tests.cpp
-    Editor/retarget_plan_uve_tests.cpp
-    Editor/animation_clip_editing_uve_tests.cpp
-    Editor/animation_graph_editing_uve_tests.cpp
-    Editor/editor_timeline_tracks_uve_tests.cpp
-    Editor/scene_component_authoring_uve_tests.cpp
-    Editor/file_picker_uve_tests.cpp
-    Editor/scene_object_editor_uve_tests.cpp
+    Support/test_scratch.cpp
+    Editor/editor_bridge_stdio_tests.cpp
+    Editor/editor_bridge_tests.cpp
+    Editor/developer_console_tests.cpp
+    Editor/developer_console_bridge_tests.cpp
+    Editor/editor_tool_session_tests.cpp
+    Editor/editor_render_stats_tests.cpp
+    Editor/editor_audio_mixer_tests.cpp
+    Editor/editor_chrome_layout_tests.cpp
+    Editor/editor_icon_set_tests.cpp
+    Editor/editor_tests.cpp
+    Editor/editor_color_tests.cpp
+    Editor/editor_settings_tests.cpp
+    Editor/editor_layer_mask_tests.cpp
+    Editor/editor_input_map_tests.cpp
+    Editor/editor_commands_tests.cpp
+    Editor/editor_hierarchy_view_tests.cpp
+    Editor/entity_picker_tests.cpp
+    Editor/editor_mesh_layer_tests.cpp
+    Editor/overlay_raster_state_tests.cpp
+    Editor/inspector_drawer_registry_tests.cpp
+    Editor/data_table_registry_bridge_tests.cpp
+    Editor/prefab_maturity_editor_tests.cpp
+    Editor/content_catalogue_editor_tests.cpp
+    Editor/uvscript_highlight_tests.cpp
+    Editor/content_browser_model_tests.cpp
+    Editor/model_source_placement_tests.cpp
+    Editor/retarget_plan_tests.cpp
+    Editor/animation_clip_editing_tests.cpp
+    Editor/animation_graph_editing_tests.cpp
+    Editor/editor_timeline_tracks_tests.cpp
+    Editor/scene_component_authoring_tests.cpp
+    Editor/file_picker_tests.cpp
+    Editor/scene_object_editor_tests.cpp
 )
 target_link_libraries(uve_editor_tests PRIVATE
     nlohmann_json::nlohmann_json
@@ -765,29 +765,29 @@ if(NOT UVE_HAS_DESKTOP_GL)
     # engine test source includes raw GL calls; this focused suite covers the same settings path
     # without requiring those desktop-only tests or their runtime dependencies.
     add_executable(uve_engine_settings_integration_tests
-        Support/test_scratch_uve.cpp
-        Engine/engine_core_settings_layering_uve_tests.cpp
-        Pack/asset_cooker_uve_tests.cpp
-    Pack/project_packager_uve_tests.cpp
-        Pack/project_launcher_uve_tests.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_color_uve.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_settings_uve.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_layer_mask_uve.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_input_map_uve.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_hierarchy_view_uve.cpp
-        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/developer_console_uve.cpp
-        Editor/editor_color_uve_tests.cpp
-        Editor/editor_layer_mask_uve_tests.cpp
-        Editor/editor_input_map_uve_tests.cpp
-        Editor/editor_hierarchy_view_uve_tests.cpp
-        Editor/developer_console_uve_tests.cpp
+        Support/test_scratch.cpp
+        Engine/engine_core_settings_layering_tests.cpp
+        Pack/asset_cooker_tests.cpp
+    Pack/project_packager_tests.cpp
+        Pack/project_launcher_tests.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_color.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_settings.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_layer_mask.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_input_map.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/editor_hierarchy_view.cpp
+        ${CMAKE_SOURCE_DIR}/Engine/Editor/EditorCore/Internal/developer_console.cpp
+        Editor/editor_color_tests.cpp
+        Editor/editor_layer_mask_tests.cpp
+        Editor/editor_input_map_tests.cpp
+        Editor/editor_hierarchy_view_tests.cpp
+        Editor/developer_console_tests.cpp
         ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/Mat4.cpp
         ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/OrbitCamera.cpp
         ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/SceneLightRulesUVE.cpp
         ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/EntityPicker.cpp
         ${CMAKE_SOURCE_DIR}/Engine/Editor/Viewport/Internal/integration/SelectionOutlineGeometry.cpp
-        Editor/editor_mesh_layer_uve_tests.cpp
-        Editor/entity_picker_uve_tests.cpp
+        Editor/editor_mesh_layer_tests.cpp
+        Editor/entity_picker_tests.cpp
     )
     target_link_libraries(uve_engine_settings_integration_tests PRIVATE
         nlohmann_json::nlohmann_json

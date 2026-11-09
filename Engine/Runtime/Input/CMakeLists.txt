@@ -14,14 +14,14 @@
 # system is ported.
 
 add_library(uve_input STATIC
-    Internal/input_system_uve.cpp
-    Internal/input_names_uve.cpp
-    Internal/gamepad_input_system_uve.cpp
-    Internal/android_touch_router_uve.cpp
-    Internal/mobile_input_system_uve.cpp
-    Internal/mobile_gesture_system_uve.cpp
-    Internal/mobile_gesture_recognizer_uve.cpp
-    Internal/touch_coordinate_transform_uve.cpp
+    Internal/input_system.cpp
+    Internal/input_names.cpp
+    Internal/gamepad_input_system.cpp
+    Internal/android_touch_router.cpp
+    Internal/mobile_input_system.cpp
+    Internal/mobile_gesture_system.cpp
+    Internal/mobile_gesture_recognizer.cpp
+    Internal/touch_coordinate_transform.cpp
 )
 target_include_directories(uve_input PUBLIC Expose)
 target_link_libraries(uve_input PUBLIC uve_math uve_events)
@@ -29,6 +29,6 @@ target_compile_features(uve_input PUBLIC cxx_std_23)
 uve_set_warnings(uve_input)
 
 if(ANDROID)
-    target_sources(uve_input PRIVATE Internal/android_motion_event_uve.cpp)
+    target_sources(uve_input PRIVATE Internal/android_motion_event.cpp)
     target_link_libraries(uve_input PRIVATE android)
 endif()

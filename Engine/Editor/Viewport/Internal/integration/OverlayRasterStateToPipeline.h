@@ -9,7 +9,7 @@
 
 #include "univex/render/OverlayRasterState.h"
 
-#include "uve/rhi/render_resource_descs_uve.h"
+#include "render_resource_descs.h"
 
 namespace univex::integration {
 

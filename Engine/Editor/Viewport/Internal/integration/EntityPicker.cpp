@@ -9,14 +9,14 @@
 #include "univex/math/Mat4.h"
 #include "univex/math/Vec.h"
 
-#include "uve/asset/mesh_asset_uve.h"
-#include "uve/component/editor_internal_entity_component_uve.h"
-#include "uve/component/mesh_component_uve.h"
-#include "uve/component/primitive_mesh_component_uve.h"
-#include "uve/component/world_transform_component_uve.h"
-#include "uve/math/aabb_uve.h"
-#include "uve/math/matrix4x4_uve.h"
-#include "uve/render_systems/primitive_geometry_uve.h"
+#include "mesh_asset.h"
+#include "editor_internal_entity_component.h"
+#include "mesh_component.h"
+#include "primitive_mesh_component.h"
+#include "world_transform_component.h"
+#include "aabb.h"
+#include "matrix4x4.h"
+#include "primitive_geometry.h"
 
 namespace univex::integration {
 

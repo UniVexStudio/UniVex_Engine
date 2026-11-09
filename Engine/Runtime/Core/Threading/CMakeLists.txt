@@ -8,11 +8,11 @@
 find_package(Threads REQUIRED)
 
 add_library(uve_threading STATIC
-    Internal/job_counter_uve.cpp
-    Internal/job_graph_uve.cpp
-    Internal/thread_naming_uve.cpp
-    Internal/thread_control_uve.cpp
-    Internal/thread_pool_uve.cpp
+    Internal/job_counter.cpp
+    Internal/job_graph.cpp
+    Internal/thread_naming.cpp
+    Internal/thread_control.cpp
+    Internal/thread_pool.cpp
 )
 # pthread_setname_np/getname_np are glibc extensions: visible only with _GNU_SOURCE.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

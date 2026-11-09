@@ -8,7 +8,7 @@
 #
 
 add_library(uve_packet_capture_sample STATIC
-    packet_capture_sample_uve.cpp
+    packet_capture_sample.cpp
 )
 target_include_directories(uve_packet_capture_sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(uve_packet_capture_sample PRIVATE

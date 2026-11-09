@@ -19,11 +19,11 @@
 // -----------------------------------------------------------------------
 #pragma once
 
-#include "uve/component/entity_uve.h"
-#include "uve/math/matrix4x4_uve.h"
-#include "uve/math/ray_uve.h"
-#include "uve/component/world_transform_component_uve.h"
-#include "uve/entity/i_entity_manager_uve.h"
+#include "entity.h"
+#include "matrix4x4.h"
+#include "ray.h"
+#include "world_transform_component.h"
+#include "i_entity_manager.h"
 
 namespace univex::camera {
 class OrbitCamera;

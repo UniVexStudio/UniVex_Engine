@@ -13,10 +13,10 @@ if(NOT ANDROID)
 endif()
 
 add_library(uve_rhi_opengl STATIC
-    Internal/gl_functions_uve.cpp
-    Internal/gl_error_check_uve.cpp
-    Internal/gl_command_buffer_uve.cpp
-    Internal/gl_render_device_uve.cpp
+    Internal/gl_functions.cpp
+    Internal/gl_error_check.cpp
+    Internal/gl_command_buffer.cpp
+    Internal/gl_render_device.cpp
 )
 target_include_directories(uve_rhi_opengl PUBLIC Expose)
 target_link_libraries(uve_rhi_opengl

@@ -1,0 +1,101 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+#include "entity.h"
+
+namespace UVE::Scene {
+
+/// Which clock advances an animation.
+enum class AnimationProcessCallbackUVE : std::uint8_t {
+    /// Every rendered frame: smoothest for anything the camera looks at.
+    Frame = 0,
+    /// Every physics step, in step with the physics bodies it moves.
+    Physics,
+};
+
+/// What a skeletal clip's travel (its root bone moving across the ground) does.
+enum class AnimationRootMotionModeUVE : std::uint8_t {
+    /// The root bone moves as authored: a run cycle runs away from its object.
+    Off = 0,
+    /// The root bone's ground travel is taken out of the pose; nothing moves the object.
+    InPlace,
+    /// Taken out of the pose and added to the target instead, so the object goes where the feet go.
+    /// A Character3D target gets it as velocity, so collisions still stop it.
+    ApplyToTarget,
+};
+
+/// How a clip that starts takes over from the pose that was there (over the player's Blend In).
+enum class AnimationTransitionModeUVE : std::uint8_t {
+    /// The new clip plays at full weight at once; the difference from the old pose is carried
+    /// along and fades out smoothly (zero speed at both ends). No cost of evaluating two clips,
+    /// no sliding feet halfway through, and it keeps the new motion's timing from the first frame.
+    Inertialize = 0,
+    /// The old pose and the new clip are mixed, the mix moving to the new clip over the blend.
+    Crossfade,
+};
+
+/// AnimationDriver: the abstract base AnimationSequencer and AnimationGraph share - what they move, which
+/// channels, on which clock and how fast. Not an object of its own; the section both show between
+/// their own and the Object section.
+struct AnimationDriverComponentUVE final {
+    /// Off, nothing is evaluated or written: the target is left alone.
+    bool active = true;
+    /// The object that is moved. Invalid means the driver's parent.
+    EntityUVE target = kInvalidEntityUVE;
+    /// Multiplies every clock under this driver: 0.5 is slow motion, 0 freezes.
+    float speedScale = 1.0F;
+    AnimationProcessCallbackUVE processCallback = AnimationProcessCallbackUVE::Frame;
+    /// Per-channel masks: rotation alone can be animated while physics or a script owns position.
+    bool animatePosition = true;
+    bool animateRotation = true;
+    bool animateScale = true;
+    /// How a newly started clip takes over, over the player's Blend In.
+    AnimationTransitionModeUVE transition = AnimationTransitionModeUVE::Inertialize;
+    /// Root motion, for skeletal clips.
+    AnimationRootMotionModeUVE rootMotion = AnimationRootMotionModeUVE::Off;
+    /// The bone whose ground travel is root motion. Empty picks it: the first bone, parents first,
+    /// whose track travels across the ground (usually the root or the hips).
+    std::string rootMotionBone;
+
+    [[nodiscard]] bool operator==(const AnimationDriverComponentUVE&) const = default;
+};
+
+/// True when `callback` is `Frame` or `Physics`.
+[[nodiscard]] bool IsAnimationProcessCallbackValidUVE(
+    AnimationProcessCallbackUVE callback) noexcept;
+
+/// True when `mode` is `Off`, `InPlace`, or `ApplyToTarget`.
+[[nodiscard]] bool IsAnimationRootMotionModeValidUVE(AnimationRootMotionModeUVE mode) noexcept;
+
+/// True when `mode` is `Inertialize` or `Crossfade`.
+[[nodiscard]] bool IsAnimationTransitionModeValidUVE(AnimationTransitionModeUVE mode) noexcept;
+
+/// A finite, non-negative speed scale and a known clock.
+[[nodiscard]] bool IsAnimationDriverComponentValidUVE(
+    const AnimationDriverComponentUVE& component) noexcept;
+
+/// True when at least one transform channel (`animatePosition`, `animateRotation`, `animateScale`) is enabled.
+[[nodiscard]] bool HasAnyAnimatedTransformChannelUVE(
+    const AnimationDriverComponentUVE& component) noexcept;
+
+/// True when `component` is active and configured to step on `clock`.
+[[nodiscard]] bool ShouldStepAnimationDriverOnClockUVE(
+    const AnimationDriverComponentUVE& component, AnimationProcessCallbackUVE clock) noexcept;
+
+/// Resolves the target entity (`component.target` when valid, or `fallbackParentEntity`).
+[[nodiscard]] EntityUVE ResolveAnimationDriverTargetEntityUVE(
+    const AnimationDriverComponentUVE& component, EntityUVE fallbackParentEntity) noexcept;
+
+/// Multiplies a non-negative `deltaSeconds` by `component.speedScale` when active (`0.0F` otherwise).
+[[nodiscard]] float ComputeScaledAnimationDeltaTimeUVE(
+    const AnimationDriverComponentUVE& component, float deltaSeconds) noexcept;
+
+/// Clamps negative/non-finite `speedScale` and resets invalid enum values to defaults.
+[[nodiscard]] AnimationDriverComponentUVE SanitizeAnimationDriverComponentUVE(
+    const AnimationDriverComponentUVE& component);
+
+} // namespace UVE::Scene

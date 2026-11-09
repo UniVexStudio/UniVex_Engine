@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <string>
 
-#include "dedicated_server_sample_uve.h"
+#include "dedicated_server_sample.h"
 
 int main() {
     UVE::Samples::DedicatedServerSampleConfigUVE config;

@@ -1,0 +1,113 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+
+#pragma once
+
+#include <cstddef>
+#include <optional>
+#include <vector>
+
+#include "auto_translate_component.h"
+#include "process_component.h"
+#include "thread_group_component.h"
+#include "transform_component.h"
+#include "entity.h"
+#include "i_entity_manager.h"
+
+namespace UVE::Scene {
+
+/// The three inherited object modes as resolved for one entity by the most recent UpdateUVE().
+/// Always fully resolved - never Inherit - so a consumer uses the value as-is.
+struct ResolvedObjectModesUVE final {
+    TickModeUVE process = TickModeUVE::Running;
+    ThreadGroupModeUVE threadGroup = ThreadGroupModeUVE::MainThread;
+    LocalizeModeUVE autoTranslate = LocalizeModeUVE::Localized;
+
+    [[nodiscard]] bool operator==(const ResolvedObjectModesUVE&) const = default;
+};
+
+/// ISceneGraphUVE is the hierarchical-transform-tree interface: parent/child relationships and
+/// dirty-flag-propagated world-space transforms, built on top of IEntityManagerUVE's
+/// TransformComponentUVE/HierarchyComponentUVE/WorldTransformComponentUVE rather than a
+/// separate tree structure (see docs — "Object3D is a thin handle over ECS data"). Stateless:
+/// every method takes the IEntityManagerUVE it operates on explicitly, so a conforming
+/// implementation has no ordering dependency on any specific manager instance's construction.
+/// Thread-safety: not thread-safe — every method must be called only from the main/scene
+/// thread, matching IEntityManagerUVE's own contract.
+class ISceneGraphUVE {
+public:
+    virtual ~ISceneGraphUVE() = default;
+
+    /// Makes `entity` a scene-graph object: adds TransformComponentUVE (set to `localTransform`),
+    /// WorldTransformComponentUVE (dirty), and HierarchyComponentUVE (parent = invalid) in one
+    /// call, so callers never have to remember all three individually. Debug builds assert that
+    /// `entity` is alive, has no scene-graph components, and receives a valid transform; release
+    /// builds return without mutation when any precondition is invalid.
+    virtual void AttachTransformUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                     const TransformComponentUVE& localTransform) = 0;
+
+    /// Overwrites `entity`'s authored local transform and marks its WorldTransformComponentUVE
+    /// dirty. Debug builds assert that the entity and transform are valid; release builds return
+    /// without mutation when the preconditions fail.
+    virtual void SetLocalTransformUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                       const TransformComponentUVE& localTransform) = 0;
+
+    /// Validated discontinuous local placement. Unlike ordinary motion, resets interpolation
+    /// for this entity and descendants, so the next Update seeds at the new authoritative pose.
+    /// Invalid entity/component/transform input returns false without changing authored data.
+    [[nodiscard]] bool TryTeleportLocalTransformUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                                    const TransformComponentUVE& localTransform);
+    /// Discards smoothing history for a live subtree without changing transforms or authored
+    /// modes. Uses a temporary current children index; does not invalidate cached index borrows.
+    /// The next valid Update seeds both poses even when the transform itself stayed unchanged.
+    [[nodiscard]] bool ResetInterpolationSubtreeUVE(IEntityManagerUVE& entityManager, EntityUVE root);
+
+    /// Reparents `child` under `newParent` (or makes it a root if `newParent ==
+    /// kInvalidEntityUVE`), marking `child` dirty. A child that changes parent goes after its new
+    /// siblings; one given the parent it already has keeps its place. Debug builds assert valid entities/components and
+    /// a cycle-free parent chain; release builds return without mutation for invalid input rather
+    /// than silently corrupting the hierarchy.
+    virtual void SetParentUVE(IEntityManagerUVE& entityManager, EntityUVE child, EntityUVE newParent) = 0;
+
+    /// The dirty-flag-propagation pass: recomputes every scene-graph entity's
+    /// WorldTransformComponentUVE from its parent chain, root-first. A processed parent's
+    /// recomputation unconditionally forces every direct child to recompute too, even if the
+    /// child's own dirty flag was false — the correct semantics for propagation, not just
+    /// per-entity dirty tracking. Called once per frame by EngineCoreUVE::Update().
+    virtual void UpdateUVE(IEntityManagerUVE& entityManager) = 0;
+
+    /// Returns every entity whose HierarchyComponentUVE::parent equals `parent`, in sibling order
+    /// (HierarchyComponentUVE::siblingOrder; the entity handle breaks a tie). O(n) over every
+    /// scene-graph entity — acceptable per the coding standards' "profile before optimizing"
+    /// rule; a cached parent→children index is a documented future optimization.
+    [[nodiscard]] virtual std::vector<EntityUVE> GetChildrenUVE(IEntityManagerUVE& entityManager,
+                                                                 EntityUVE parent) = 0;
+
+    /// `entity`'s position among its parent's children (or among the roots), or nothing for an
+    /// entity outside the scene graph.
+    [[nodiscard]] virtual std::optional<std::size_t> GetSiblingIndexUVE(IEntityManagerUVE& entityManager,
+                                                                         EntityUVE entity) = 0;
+
+    /// Moves `entity` to position `index` among its siblings, the others keeping their order
+    /// around it; an index past the end means last. Returns false, changing nothing, for an
+    /// entity outside the scene graph.
+    [[nodiscard]] virtual bool SetSiblingIndexUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
+                                                  std::size_t index) = 0;
+
+    /// The inherited object modes UpdateUVE() resolved for `entity`, or nothing when the entity was
+    /// not part of the last update (not a scene-graph object, or created since).
+    ///
+    /// WHY CONSUMERS ASK HERE RATHER THAN READING THE COMPONENT. The resolved answer is written
+    /// onto a ProcessComponentUVE / AutoTranslateComponentUVE only when the entity carries one.
+    /// An entity without the component still HAS an answer - inherited from its ancestors - and a
+    /// consumer that read only the component would ignore it: a label with no Auto Translate
+    /// component under a Disabled menu would still be translated, which is exactly the
+    /// inheritance the mode promises. This returns the answer for every object, carrier or not.
+    [[nodiscard]] virtual std::optional<ResolvedObjectModesUVE> TryGetResolvedObjectModesUVE(
+        EntityUVE entity) const = 0;
+
+protected:
+    [[nodiscard]] static SceneGraphWriteAccessUVE GetCacheWriteAccessUVE() noexcept { return {}; }
+};
+
+} // namespace UVE::Scene

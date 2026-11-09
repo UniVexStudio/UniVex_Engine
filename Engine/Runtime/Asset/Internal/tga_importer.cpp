@@ -1,0 +1,68 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "tga_importer.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "import_helpers.h"
+
+#include "tga_metadata.h"
+#include "texture_asset.h"
+#include "texture_import_settings.h"
+#include "texture_mipmap.h"
+#include "logging_macros.h"
+
+namespace UVE::Asset {
+namespace {
+
+constexpr const char* kTgaImporterNameUVE = "TgaImporterUVE";
+constexpr std::uint64_t kMaximumTgaImporterSourceBytesUVE = 64ULL * 1024ULL * 1024ULL;
+constexpr std::string_view kTgaTemporarySuffixUVE = ".uve_tga_tmp";
+
+[[nodiscard]] bool ImportTgaSourceUVE(const std::filesystem::path& sourcePath,
+                                      const std::filesystem::path& destinationPath,
+                                      const AssetImportSettingsUVE& settings) {
+    if (destinationPath.extension() != ".uvtex") {
+        UVE_ERROR("TgaImporterUVE: destination \"{}\" must use the .uvtex extension", destinationPath.string());
+        return false;
+    }
+    std::vector<std::byte> sourceBytes;
+    if (!Detail::ReadBoundedSourceBytesUVE(sourcePath, kTgaImporterNameUVE, kMaximumTgaImporterSourceBytesUVE,
+                                           sourceBytes)) {
+        return false;
+    }
+    TgaRgba8ImageUVE decoded;
+    if (!DecodeTgaRgba8ImageUVE(sourceBytes, decoded)) {
+        UVE_ERROR("TgaImporterUVE: source \"{}\" failed bounded TGA RGBA8 decoding", sourcePath.string());
+        return false;
+    }
+    TextureAssetUVE texture;
+    texture.width = decoded.width;
+    texture.height = decoded.height;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    const TextureImportSettingsUVE importSettings = ResolveTextureImportSettingsUVE(settings);
+    texture.colorSpace = importSettings.colorSpace;
+    texture.usage = importSettings.usage;
+    texture.pixels = std::move(decoded.pixels);
+    if (!Detail::PrepareTextureForImportUVE(texture, importSettings)) {
+        UVE_ERROR("TgaImporterUVE: failed to prepare mip chain or compress texture for \"{}\"",
+                  sourcePath.string());
+        return false;
+    }
+    return Detail::PublishAssetAtomicallyUVE(
+        destinationPath, kTgaImporterNameUVE, kTgaTemporarySuffixUVE,
+        [&texture](const std::filesystem::path& temporaryPath) { return SaveTextureAssetUVE(texture, temporaryPath); });
+}
+
+} // namespace
+
+void RegisterTgaImporterUVE(IAssetImporterUVE& importer) {
+    importer.RegisterImporterUVE("tga", &ImportTgaSourceUVE);
+}
+
+} // namespace UVE::Asset

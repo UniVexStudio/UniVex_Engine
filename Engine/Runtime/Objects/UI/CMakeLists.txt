@@ -9,12 +9,12 @@
 # component structs + EntityUVE, uve_entity supplies IEntityManagerUVE for the Apply functions.
 
 add_library(uve_objects_canvas STATIC
-    Internal/canvas_uve.cpp
-    Internal/ui_extended_containers_uve.cpp
-    Internal/ui_extended_controls_uve.cpp
-    Internal/ui_text_uve.cpp
-    Internal/ui_image_uve.cpp
-    Internal/ui_button_uve.cpp
+    Internal/canvas.cpp
+    Internal/ui_extended_containers.cpp
+    Internal/ui_extended_controls.cpp
+    Internal/ui_text.cpp
+    Internal/ui_image.cpp
+    Internal/ui_button.cpp
 )
 target_include_directories(uve_objects_canvas PUBLIC Expose)
 target_link_libraries(uve_objects_canvas PUBLIC uve_math uve_component uve_entity)

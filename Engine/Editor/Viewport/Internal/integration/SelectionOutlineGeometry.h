@@ -11,8 +11,8 @@
 
 #include <vector>
 
-#include "uve/component/entity_uve.h"
-#include "uve/entity/i_entity_manager_uve.h"
+#include "entity.h"
+#include "i_entity_manager.h"
 #include "univex/render/SelectionOutline.h"
 
 namespace univex::integration {

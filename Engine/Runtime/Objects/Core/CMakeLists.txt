@@ -10,13 +10,13 @@
 # actually read or write one.
 
 add_library(uve_object STATIC
-    Internal/object_registry_uve.cpp
-    Internal/type_metadata_uve.cpp
-    Internal/variant_uve.cpp
+    Internal/object_registry.cpp
+    Internal/type_metadata.cpp
+    Internal/variant.cpp
 )
 target_include_directories(uve_object PUBLIC Expose)
-# PUBLIC: variant_uve.h stores Math vector and quaternion types by value.
-# PUBLIC: type_metadata_uve.h stores StringIdUVE type ids by value.
+# PUBLIC: variant.h stores Math vector and quaternion types by value.
+# PUBLIC: type_metadata.h stores StringIdUVE type ids by value.
 target_link_libraries(uve_object PUBLIC uve_math uve_strings uve_utilities PRIVATE uve_containers)
 target_compile_features(uve_object PUBLIC cxx_std_23)
 uve_set_warnings(uve_object)

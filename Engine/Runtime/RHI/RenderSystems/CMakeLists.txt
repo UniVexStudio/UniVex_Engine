@@ -17,35 +17,35 @@
 # Scene::ParticleRuntimeUVE above - same optional-render-input pattern, different module.
 
 add_library(uve_render_systems STATIC
-    Internal/render_system_uve.cpp
-    Internal/render_graph_uve.cpp
-    Internal/camera_2d_system_uve.cpp
-    Internal/camera_system_uve.cpp
-    Internal/compute_system_uve.cpp
-    Internal/particle_compute_simulation_uve.cpp
-    Internal/frustum_cull_compute_uve.cpp
-    Internal/frustum_cull_indirect_uve.cpp
-    Internal/mesh_skin_compute_uve.cpp
-    Internal/render_batch_uve.cpp
-    Internal/render_queue_uve.cpp
-    Internal/particle_render_bridge_uve.cpp
-    Internal/particle_draw_command_uve.cpp
-    Internal/mesh_visibility_set_uve.cpp
-    Internal/decal_draw_data_uve.cpp
-    Internal/decal_draw_command_uve.cpp
-    Internal/decal_renderer_uve.cpp
-    Internal/debug_renderer_uve.cpp
-    Internal/mesh_renderer_uve.cpp
-    Internal/mesh_render_eligibility_uve.cpp
-    Internal/primitive_geometry_uve.cpp
-    Internal/light_system_uve.cpp
-    Internal/renderer_2d_uve.cpp
-    Internal/renderer_3d_uve.cpp
-    Internal/viewport_manager_uve.cpp
-    Internal/dynamic_mesh_bvh_uve.cpp
-    Internal/shadow_atlas_manager_uve.cpp
-    Internal/light_shadow_planner_uve.cpp
-    Internal/contact_shadows_uve.cpp
+    Internal/render_system.cpp
+    Internal/render_graph.cpp
+    Internal/camera_2d_system.cpp
+    Internal/camera_system.cpp
+    Internal/compute_system.cpp
+    Internal/particle_compute_simulation.cpp
+    Internal/frustum_cull_compute.cpp
+    Internal/frustum_cull_indirect.cpp
+    Internal/mesh_skin_compute.cpp
+    Internal/render_batch.cpp
+    Internal/render_queue.cpp
+    Internal/particle_render_bridge.cpp
+    Internal/particle_draw_command.cpp
+    Internal/mesh_visibility_set.cpp
+    Internal/decal_draw_data.cpp
+    Internal/decal_draw_command.cpp
+    Internal/decal_renderer.cpp
+    Internal/debug_renderer.cpp
+    Internal/mesh_renderer.cpp
+    Internal/mesh_render_eligibility.cpp
+    Internal/primitive_geometry.cpp
+    Internal/light_system.cpp
+    Internal/renderer_2d.cpp
+    Internal/renderer_3d.cpp
+    Internal/viewport_manager.cpp
+    Internal/dynamic_mesh_bvh.cpp
+    Internal/shadow_atlas_manager.cpp
+    Internal/light_shadow_planner.cpp
+    Internal/contact_shadows.cpp
 )
 target_include_directories(uve_render_systems PUBLIC Expose)
 target_link_libraries(uve_render_systems PUBLIC uve_platform uve_logging uve_containers uve_math uve_scene uve_objects_2d uve_asset uve_rhi uve_rhi_shader uve_ui)

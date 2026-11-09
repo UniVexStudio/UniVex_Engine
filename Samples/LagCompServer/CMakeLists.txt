@@ -8,7 +8,7 @@
 #
 
 add_library(uve_lag_comp_server_sample STATIC
-    lag_comp_server_sample_uve.cpp
+    lag_comp_server_sample.cpp
 )
 target_include_directories(uve_lag_comp_server_sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(uve_lag_comp_server_sample PRIVATE

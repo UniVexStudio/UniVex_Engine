@@ -1,0 +1,55 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#pragma once
+
+#include <cmath>
+
+#include "asset_guid.h"
+#include "rect.h"
+#include "vector2.h"
+#include "vector3.h"
+
+namespace UVE::Scene {
+
+inline constexpr float kMinimumSprite2DSizePixelsUVE = 0.0F;
+inline constexpr float kMaximumSprite2DSizePixelsUVE = 8192.0F;
+
+/// A 2D textured quad in world space: the first 2D scene node. `textureAssetGuid` names
+/// an imported texture the same way MeshComponentUVE::materialGuid names a material - a
+/// zero/invalid guid is a valid authored state (renders as a flat `modulate` quad with no
+/// texture sampled), matching UIImageComponentUVE rather than being rejected.
+///
+/// `sourceRect` is the pixel region drawn: a zero-area rect draws the WHOLE texture (no
+/// region authored), anything else draws that region. The quad is centered on `offset`
+/// (local pixels from the node origin) at the region's pixel size; flips mirror the
+/// sampled UVs, never the corners. v fractions run top-down (v 0 is the texture's top
+/// row), matching the UI overlay's own glyph convention.
+/// Thread-safety: value type; trivially safe to copy/move.
+struct Sprite2DComponentUVE final {
+    Asset::AssetGuidUVE textureAssetGuid{};
+    Math::RectUVE sourceRect{};
+    bool flipH = false;
+    bool flipV = false;
+    Math::Vector3UVE modulate{1.0F, 1.0F, 1.0F};
+    float alpha = 1.0F;
+    Math::Vector2UVE offset{};
+};
+
+[[nodiscard]] bool IsSprite2DComponentValidUVE(const Sprite2DComponentUVE& component) noexcept;
+
+/// Sanitizes `component` so `sourceRect`, `modulate`, `alpha`, and `offset` pass `IsSprite2DComponentValidUVE`.
+[[nodiscard]] Sprite2DComponentUVE SanitizeSprite2DComponentUVE(
+    const Sprite2DComponentUVE& component) noexcept;
+
+/// True when `component.textureAssetGuid != Asset::kInvalidAssetGuidUVE`.
+[[nodiscard]] bool HasAssignedSprite2DTextureUVE(const Sprite2DComponentUVE& component) noexcept;
+
+/// True when `component.sourceRect` has positive width and height (uses a sub-rectangle of the texture).
+[[nodiscard]] bool HasCustomSprite2DSourceRegionUVE(
+    const Sprite2DComponentUVE& component) noexcept;
+
+/// Computes the local-space quad rectangle centered on `component.offset` for `drawSizePixels`.
+[[nodiscard]] Math::RectUVE ResolveSprite2DLocalQuadRectUVE(
+    const Sprite2DComponentUVE& component, const Math::Vector2UVE& fallbackSizePixels) noexcept;
+
+} // namespace UVE::Scene

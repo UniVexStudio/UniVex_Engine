@@ -7,8 +7,8 @@
 # dependency at all.
 
 add_library(uve_rhi_null STATIC
-    Internal/null_command_buffer_uve.cpp
-    Internal/null_render_device_uve.cpp
+    Internal/null_command_buffer.cpp
+    Internal/null_render_device.cpp
 )
 target_include_directories(uve_rhi_null PUBLIC Expose)
 target_link_libraries(uve_rhi_null PUBLIC uve_rhi uve_logging)

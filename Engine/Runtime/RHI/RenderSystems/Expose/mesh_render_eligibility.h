@@ -1,0 +1,131 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+
+#pragma once
+
+#include <cstdint>
+
+#include "mesh_asset.h"
+#include "aabb.h"
+#include "frustum.h"
+#include "matrix4x4.h"
+#include "mesh_component.h"
+#include "world_transform_component.h"
+
+namespace UVE::Render {
+
+enum class MeshRenderEligibilityReasonUVE : std::uint8_t {
+    Eligible = 0,
+    InvalidAssetReferences,
+    InvalidWorldTransform,
+    InvalidLocalBounds,
+    OutsideFrustum,
+};
+
+/// The frustum-INDEPENDENT half of eligibility: where a mesh is in the world and how big it is.
+///
+/// This is split out because it is the expensive half and the reusable half at once. Computing it
+/// costs a quaternion normalization, a full TRS compose and an AABB transform, and NONE of that
+/// depends on which frustum is asking - so a frame that culls against four frusta (three shadow
+/// cascades plus the main view) can compute it once and test it four times instead of redoing
+/// identical arithmetic per frustum.
+///
+/// It is also the shape every future culling stage needs. Occlusion culling and LOD selection both
+/// want world bounds detached from any particular frustum; while bounds were computed inside the
+/// frustum test there was nowhere for either to hook in.
+///
+/// ON OCCLUSION CULLING, since this is where someone will come looking for it.
+/// Occluder3DComponentUVE is consumed by MeshRendererUVE's visibility build, which asks
+/// ResolveOccluder3DFullyHiddenUVE() against every occluder for every candidate and counts what it
+/// hides in `occlusionCulledEntities` (four integration tests cover that wiring, including a
+/// disabled occluder and the no-state camera-move case). Before that wiring landed, a conservative
+/// screen-space box rejection was costed here against the cull as it stands - clustered, roughly
+/// 1100 candidates surviving cluster rejection per view:
+///
+///    1 occluder     4.0 us/view   removes   9/1100  ( 1%)
+///    4 occluders    6.2 us/view   removes 310/1100  (28%)
+///   16 occluders   16.2 us/view   removes 625/1100  (57%)
+///   64 occluders   54.1 us/view   removes 655/1100  (60%)
+///
+/// The entire frustum-test budget it would be saving from is about 17 us/view. At 16 occluders
+/// the test costs as much as the work it skips; at 64 it costs three times the whole cull. Adding
+/// it to save CPU culling time would be a straight loss.
+///
+/// What that table measures is the CPU cull's own budget, and it is why occluder count is still a
+/// deliberate authoring decision (the table flattens hard after about 16). It is NOT an argument
+/// that occlusion culling is worthless - the shipped wiring's real payoff is the draw calls and GPU
+/// work never submitted, which is a different budget entirely and usually the larger one, and it is
+/// the budget a null-RHI test run cannot show. A GPU timing path is what would let anyone tune the
+/// occluder count against the number that matters; until then the wiring stays deliberately simple
+/// (any strict cover hides the candidate, first hit wins) and the counters above report what it did.
+///
+/// The hook point is this struct: worldBounds is already frustum-independent and already computed
+/// once per frame, which is exactly what a rejection stage needs.
+struct MeshRenderPlacementUVE final {
+    MeshRenderEligibilityReasonUVE reason = MeshRenderEligibilityReasonUVE::InvalidAssetReferences;
+    Math::Matrix4x4UVE worldMatrix{};
+    Math::AabbUVE worldBounds{};
+
+    /// True when the placement is usable - it says nothing about visibility, which needs a frustum.
+    [[nodiscard]] bool IsPlacedUVE() const noexcept {
+        return reason == MeshRenderEligibilityReasonUVE::Eligible;
+    }
+};
+
+struct MeshRenderEligibilityUVE final {
+    MeshRenderEligibilityReasonUVE reason = MeshRenderEligibilityReasonUVE::InvalidAssetReferences;
+    Math::Matrix4x4UVE worldMatrix{};
+    Math::AabbUVE worldBounds{};
+    float sortDepth = 0.0F;
+
+    [[nodiscard]] bool IsEligibleUVE() const noexcept {
+        return reason == MeshRenderEligibilityReasonUVE::Eligible;
+    }
+};
+
+/// The two steps above, composed, for callers that cull against exactly one frustum and have no
+/// reason to keep the placement. Defined IN TERMS of them rather than duplicating their logic, so
+/// the one-frustum and many-frustum paths can never drift apart.
+///
+/// Evaluates one loaded scene MeshComponentUVE for render-queue handoff. The contract validates
+/// asset GUID coherence, finite world transform/quaternion normalization, finite ordered mesh bounds,
+/// transformed bounds, frustum visibility, and finite sort depth, then publishes copied matrix/bounds
+/// facts. It performs no asset loading, GPU allocation, command submission, or ownership transfer.
+/// Computes the frustum-independent placement: asset coherence, finite transform, normalized
+/// rotation, finite ordered local bounds, the composed world matrix and the transformed world
+/// bounds. Every validity rule that does not mention a frustum lives here, so the two entry points
+/// cannot disagree about which meshes are well-formed.
+[[nodiscard]] bool EvaluateMeshRenderPlacementUVE(
+    const Scene::MeshComponentUVE& meshComponent,
+    const Scene::WorldTransformComponentUVE& worldTransform,
+    const Asset::MeshAssetUVE& mesh,
+    MeshRenderPlacementUVE& outPlacement) noexcept;
+
+/// Tests an already-computed placement against one frustum and derives its sort depth.
+///
+/// Cheap by construction - a plane test and a dot product - which is the entire point of the
+/// split: this is the part that must run per frustum, so it is the part kept small.
+///
+/// An unplaced input is rejected rather than trusted. A caller that skipped the placement step, or
+/// whose placement failed, must not silently get a queue entry built on a default matrix.
+///
+/// `frustumTestsDisabled` is the frustum-culling debug freeze (see CullingSettingsUVE and
+/// MeshVisibilitySetUVE::frustumTestsDisabled): the plane test is skipped, so a placed mesh outside
+/// the frustum is still eligible. The sort depth is NOT skipped - it is measured against this same
+/// frustum's near plane, which is what keeps a frozen frame's queue order meaningful instead of
+/// leaving every off-screen item at depth zero. Placement validity is never skipped either: a
+/// freeze draws everything that exists, not everything that was malformed.
+[[nodiscard]] bool TestMeshRenderVisibilityUVE(
+    const MeshRenderPlacementUVE& placement,
+    const Math::FrustumUVE& cullFrustum,
+    MeshRenderEligibilityUVE& outEligibility,
+    bool frustumTestsDisabled = false) noexcept;
+
+[[nodiscard]] bool EvaluateMeshRenderEligibilityUVE(
+    const Scene::MeshComponentUVE& meshComponent,
+    const Scene::WorldTransformComponentUVE& worldTransform,
+    const Asset::MeshAssetUVE& mesh,
+    const Math::FrustumUVE& cullFrustum,
+    MeshRenderEligibilityUVE& outEligibility) noexcept;
+
+} // namespace UVE::Render

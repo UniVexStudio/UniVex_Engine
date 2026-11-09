@@ -8,7 +8,7 @@
 #
 
 add_library(uve_interest_fanout_sample STATIC
-    interest_fanout_sample_uve.cpp
+    interest_fanout_sample.cpp
 )
 target_include_directories(uve_interest_fanout_sample PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(uve_interest_fanout_sample PRIVATE

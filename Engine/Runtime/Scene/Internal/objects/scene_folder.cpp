@@ -1,0 +1,43 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "scene_folder.h"
+
+#include "i_entity_manager.h"
+#include "object_3d.h"
+
+namespace UVE::Scene {
+
+void ApplyFolderObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                  const FolderObjectDefinitionUVE& value) {
+    static_cast<void>(value);
+    EnsureObjectBaselineUVE(entityManager, entity, FolderObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<FolderComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<FolderComponentUVE>(entity, FolderComponentUVE{});
+    }
+}
+
+void ApplyViewport3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                    const Viewport3DObjectDefinitionUVE& value) {
+    static_cast<void>(value);
+    EnsureObjectBaselineUVE(entityManager, entity, Viewport3DObjectDefinitionUVE::defaultName);
+    if (entityManager.IsAliveUVE(entity) && !entityManager.HasComponentUVE<OutlinerViewport3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<OutlinerViewport3DComponentUVE>(entity, OutlinerViewport3DComponentUVE{});
+    }
+}
+
+void ApplyViewport2DObjectDefinitionUVE(IEntityManagerUVE& entityManager, const EntityUVE entity,
+                                    const Viewport2DObjectDefinitionUVE& value) {
+    static_cast<void>(value);
+    EnsureObjectBaselineUVE(entityManager, entity, Viewport2DObjectDefinitionUVE::defaultName);
+    if (!entityManager.IsAliveUVE(entity)) {
+        return;
+    }
+    const OutlinerViewport3DComponentUVE viewport{ViewportDimensionUVE::TwoD};
+    if (entityManager.HasComponentUVE<OutlinerViewport3DComponentUVE>(entity)) {
+        entityManager.GetComponentUVE<OutlinerViewport3DComponentUVE>(entity) = viewport;
+        return;
+    }
+    entityManager.AddComponentUVE<OutlinerViewport3DComponentUVE>(entity, viewport);
+}
+
+} // namespace UVE::Scene

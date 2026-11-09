@@ -16,12 +16,12 @@
 # directly.
 
 add_library(uve_rhi_shader STATIC
-    Internal/built_in_shaders_uve.cpp
-    Internal/shader_binary_cache_uve.cpp
-    Internal/shader_diagnostics_parser_uve.cpp
-    Internal/shader_manager_uve.cpp
-    Internal/shader_preprocessor_uve.cpp
-    Internal/shader_program_uve.cpp
+    Internal/built_in_shaders.cpp
+    Internal/shader_binary_cache.cpp
+    Internal/shader_diagnostics_parser.cpp
+    Internal/shader_manager.cpp
+    Internal/shader_preprocessor.cpp
+    Internal/shader_program.cpp
 )
 target_include_directories(uve_rhi_shader PUBLIC Expose)
 target_link_libraries(uve_rhi_shader PUBLIC uve_rhi uve_logging uve_math uve_asset uve_threading uve_events)

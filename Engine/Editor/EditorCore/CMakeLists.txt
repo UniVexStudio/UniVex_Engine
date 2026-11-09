@@ -23,7 +23,7 @@
 # installed at window-creation time rather than replacing it (ImGui's own backend saves the
 # previous callback pointer and calls it after its own logic). Since EditorUVE only initializes
 # ImGui after receiving an already-constructed, already-valid Window::IWindowManagerUVE&
-# (confirmed in editor_uve.cpp: it checks IsValidUVE()/GetNativeWindowHandleUVE() != nullptr
+# (confirmed in editor.cpp: it checks IsValidUVE()/GetNativeWindowHandleUVE() != nullptr
 # first), WindowManagerUVE's own callbacks are always installed first - no conflict, no extra
 # wiring needed. This resolves the ImGui/GLFW callback-ordering question flagged earlier this
 # session as unresolved.
@@ -73,7 +73,7 @@ target_compile_options(uve_editor_imgui PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-# The three font .inc files editor_uve.cpp includes are generated at build time by
+# The three font .inc files editor.cpp includes are generated at build time by
 # Engine/Tools/embed_file.py from single canonical .ttf sources, instead of being committed
 # byte-array snapshots (the sans font alone existed four
 # times in the tree: 2x .ttf + 2x identical .inc). Sources:
@@ -85,7 +85,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 # assets/icons/<group>/, which Engine/Tools/editor_icons/build_editor_icons.py renders from the SVGs
 # beside them. Rasterizing needs a browser, so the PNGs are committed and only the embedding runs
 # here. The two remaining hand-produced .inc files (uve_general_icon_bytes.inc,
-# univex_logo_uve_display_bytes.inc) predate that tool and stay committed as they are.
+# univex_logo_display_bytes.inc) predate that tool and stay committed as they are.
 set(_uve_editor_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(_uve_editor_font_incs)
 foreach(_font_pair IN ITEMS
@@ -130,62 +130,62 @@ add_custom_command(
 )
 
 add_library(uve_editor STATIC
-    Internal/editor_bridge_stdio_uve.cpp
-    Internal/editor_bridge_uve.cpp
-    Internal/developer_console_uve.cpp
-    Internal/editor_tool_session_uve.cpp
-    Internal/editor_render_stats_uve.cpp
-    Internal/editor_audio_mixer_uve.cpp
-    Internal/editor_panel_audio_mixer_uve.cpp
-    Internal/editor_theme_uve.cpp
-    Internal/editor_ui_assets_uve.cpp
-    Internal/editor_icon_set_uve.cpp
-    Internal/mesh_thumbnail_renderer_uve.cpp
-    Internal/material_thumbnail_renderer_uve.cpp
-    Internal/editor_uve.cpp
-    Internal/editor_settings_uve.cpp
-    Internal/editor_color_uve.cpp
-    Internal/editor_color_field_uve.cpp
-    Internal/editor_layer_mask_uve.cpp
-    Internal/editor_input_map_uve.cpp
-    Internal/editor_command_helpers_uve.cpp
-    Internal/editor_commands_uve.cpp
-    Internal/editor_hierarchy_view_uve.cpp
-    Internal/editor_content_browser_model_uve.cpp
-    Internal/editor_content_catalogue_uve.cpp
-    Internal/editor_entity_editor_uve.cpp
-    Internal/editor_retarget_plan_uve.cpp
-    Internal/editor_retarget_preview_uve.cpp
-    Internal/editor_retarget_window_uve.cpp
-    Internal/editor_animation_library_window_uve.cpp
-    Internal/editor_file_picker_uve.cpp
-    Internal/editor_panel_montage_uve.cpp
-    Internal/editor_panel_hierarchy_uve.cpp
-    Internal/editor_panel_inspector_metadata_uve.cpp
-    Internal/editor_panel_inspector_uve.cpp
-    Internal/editor_panel_inspector_animation_graph_uve.cpp
-    Internal/editor_panel_inspector_object_metadata_uve.cpp
-    Internal/editor_script_slot_uve.cpp
-    Internal/editor_uvscript_editor_uve.cpp
-    Internal/editor_uvscript_highlight_uve.cpp
-    Internal/editor_script_exports_uve.cpp
-    Internal/editor_panel_inspector_skeleton_uve.cpp
-    Internal/editor_panel_timeline_uve.cpp
-    Internal/editor_timeline_tracks_uve.cpp
-    Internal/editor_panel_timeline_library_uve.cpp
-    Internal/animation_clip_editing_uve.cpp
-    Internal/animation_graph_editing_uve.cpp
-    Internal/editor_panel_anim_graph_uve.cpp
-    Internal/editor_animation_graph_widgets_uve.cpp
-    Internal/editor_panel_anim_states_uve.cpp
-    Internal/editor_panel_content_browser_uve.cpp
-    Internal/editor_panel_content_create_uve.cpp
-    Internal/editor_panel_viewport_uve.cpp
-    Internal/editor_collider_overlay_uve.cpp
-    Internal/editor_panel_menu_dock_uve.cpp
-    Internal/editor_panel_preferences_uve.cpp
-    Internal/editor_panel_input_map_uve.cpp
-    Internal/inspector_drawer_registry_uve.cpp
+    Internal/editor_bridge_stdio.cpp
+    Internal/editor_bridge.cpp
+    Internal/developer_console.cpp
+    Internal/editor_tool_session.cpp
+    Internal/editor_render_stats.cpp
+    Internal/editor_audio_mixer.cpp
+    Internal/editor_panel_audio_mixer.cpp
+    Internal/editor_theme.cpp
+    Internal/editor_ui_assets.cpp
+    Internal/editor_icon_set.cpp
+    Internal/mesh_thumbnail_renderer.cpp
+    Internal/material_thumbnail_renderer.cpp
+    Internal/editor.cpp
+    Internal/editor_settings.cpp
+    Internal/editor_color.cpp
+    Internal/editor_color_field.cpp
+    Internal/editor_layer_mask.cpp
+    Internal/editor_input_map.cpp
+    Internal/editor_command_helpers.cpp
+    Internal/editor_commands.cpp
+    Internal/editor_hierarchy_view.cpp
+    Internal/editor_content_browser_model.cpp
+    Internal/editor_content_catalogue.cpp
+    Internal/editor_entity_editor.cpp
+    Internal/editor_retarget_plan.cpp
+    Internal/editor_retarget_preview.cpp
+    Internal/editor_retarget_window.cpp
+    Internal/editor_animation_library_window.cpp
+    Internal/editor_file_picker.cpp
+    Internal/editor_panel_montage.cpp
+    Internal/editor_panel_hierarchy.cpp
+    Internal/editor_panel_inspector_metadata.cpp
+    Internal/editor_panel_inspector.cpp
+    Internal/editor_panel_inspector_animation_graph.cpp
+    Internal/editor_panel_inspector_object_metadata.cpp
+    Internal/editor_script_slot.cpp
+    Internal/editor_uvscript_editor.cpp
+    Internal/editor_uvscript_highlight.cpp
+    Internal/editor_script_exports.cpp
+    Internal/editor_panel_inspector_skeleton.cpp
+    Internal/editor_panel_timeline.cpp
+    Internal/editor_timeline_tracks.cpp
+    Internal/editor_panel_timeline_library.cpp
+    Internal/animation_clip_editing.cpp
+    Internal/animation_graph_editing.cpp
+    Internal/editor_panel_anim_graph.cpp
+    Internal/editor_animation_graph_widgets.cpp
+    Internal/editor_panel_anim_states.cpp
+    Internal/editor_panel_content_browser.cpp
+    Internal/editor_panel_content_create.cpp
+    Internal/editor_panel_viewport.cpp
+    Internal/editor_collider_overlay.cpp
+    Internal/editor_panel_menu_dock.cpp
+    Internal/editor_panel_preferences.cpp
+    Internal/editor_panel_input_map.cpp
+    Internal/inspector_drawer_registry.cpp
     ${_uve_editor_font_incs}
     "${_uve_editor_generated_dir}/uve_editor_icon_set.inc"
 )

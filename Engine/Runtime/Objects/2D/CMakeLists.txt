@@ -10,17 +10,17 @@
 #
 
 add_library(uve_objects_2d STATIC
-    Internal/audio_anim_nav_input_2d_uve.cpp
-    Internal/camera_2d_uve.cpp
-    Internal/line_2d_uve.cpp
-    Internal/marker_2d_uve.cpp
-    Internal/path_2d_uve.cpp
-    Internal/physics_2d_uve.cpp
-    Internal/remote_transform_2d_uve.cpp
-    Internal/rendering_lighting_2d_uve.cpp
-    Internal/sprite_2d_uve.cpp
-    Internal/tile_parallax_sprite_2d_uve.cpp
-    Internal/visible_on_screen_notifier_2d_uve.cpp
+    Internal/audio_anim_nav_input_2d.cpp
+    Internal/camera_2d.cpp
+    Internal/line_2d.cpp
+    Internal/marker_2d.cpp
+    Internal/path_2d.cpp
+    Internal/physics_2d.cpp
+    Internal/remote_transform_2d.cpp
+    Internal/rendering_lighting_2d.cpp
+    Internal/sprite_2d.cpp
+    Internal/tile_parallax_sprite_2d.cpp
+    Internal/visible_on_screen_notifier_2d.cpp
 )
 target_include_directories(uve_objects_2d PUBLIC Expose)
 target_link_libraries(uve_objects_2d PUBLIC uve_math uve_component uve_entity)

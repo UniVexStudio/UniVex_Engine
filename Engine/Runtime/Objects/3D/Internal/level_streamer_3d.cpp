@@ -1,0 +1,129 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "level_streamer_3d.h"
+
+#include "i_entity_manager.h"
+
+namespace UVE::Scene {
+
+bool IsLevelStreamer3DObjectComponentValidUVE(const LevelStreamer3DComponentUVE& value) noexcept {
+    if (!IsBounded3DObjectStringUVE(value.levelPath) || !std::isfinite(value.loadDistance) ||
+        value.loadDistance <= 0.0F || !std::isfinite(value.unloadDistance) ||
+        value.unloadDistance <= value.loadDistance) {
+        return false;
+    }
+    if (value.levelPath.empty()) {
+        return !value.enabled && !value.loaded && !value.loadRequested;
+    }
+    return true;
+}
+
+bool IsLevelStreamer3DObjectDefinitionValidUVE(
+    const LevelStreamer3DObjectDefinitionUVE& value) noexcept {
+    return IsLevelStreamer3DObjectComponentValidUVE(value.streamer);
+}
+
+void ApplyLevelStreamer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
+                                             const EntityUVE entity,
+                                             const LevelStreamer3DObjectDefinitionUVE& value) {
+    if (!entityManager.IsAliveUVE(entity)) {
+        return;
+    }
+    EnsureObject3DBaselineUVE(entityManager, entity,
+                              LevelStreamer3DObjectDefinitionUVE::defaultName);
+    LevelStreamer3DComponentUVE seeded = value.streamer;
+    seeded.loaded = false;
+    seeded.loadRequested = false;
+    if (entityManager.HasComponentUVE<LevelStreamer3DComponentUVE>(entity)) {
+        entityManager.GetComponentUVE<LevelStreamer3DComponentUVE>(entity) = seeded;
+    } else {
+        entityManager.AddComponentUVE<LevelStreamer3DComponentUVE>(entity, seeded);
+    }
+}
+
+std::optional<float> ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE(
+    const Math::Vector3UVE& streamerWorldPosition,
+    const std::span<const Math::Vector3UVE> viewerPositions) noexcept {
+    if (!std::isfinite(streamerWorldPosition.x) || !std::isfinite(streamerWorldPosition.y) ||
+        !std::isfinite(streamerWorldPosition.z)) {
+        return std::nullopt;
+    }
+    std::optional<float> nearest;
+    for (const Math::Vector3UVE& viewer : viewerPositions) {
+        if (!std::isfinite(viewer.x) || !std::isfinite(viewer.y) || !std::isfinite(viewer.z)) {
+            continue;
+        }
+        const float dx = viewer.x - streamerWorldPosition.x;
+        const float dy = viewer.y - streamerWorldPosition.y;
+        const float dz = viewer.z - streamerWorldPosition.z;
+        const float distanceSquared = dx * dx + dy * dy + dz * dz;
+        if (!nearest.has_value() || distanceSquared < *nearest) {
+            nearest = distanceSquared;
+        }
+    }
+    return nearest;
+}
+
+LevelStreamer3DActionUVE ResolveLevelStreamer3DStreamingActionUVE(
+    const LevelStreamer3DStreamingFrameUVE& frame) noexcept {
+    // Fail-closed: an invalid authored configuration decides nothing, ever.
+    if (!std::isfinite(frame.loadDistance) || frame.loadDistance <= 0.0F ||
+        !std::isfinite(frame.unloadDistance) || frame.unloadDistance <= frame.loadDistance ||
+        (frame.hasViewer && !std::isfinite(frame.nearestViewerDistanceSquared))) {
+        return LevelStreamer3DActionUVE::None;
+    }
+    if (!frame.enabled) {
+        // Disabling a loaded streamer ALWAYS unloads it - matching the Unreal convention where a
+        // disabled streaming volume stops holding its level - no matter where the viewer stands.
+        return frame.loaded ? LevelStreamer3DActionUVE::RequestUnload : LevelStreamer3DActionUVE::None;
+    }
+    const float loadDistanceSquared = frame.loadDistance * frame.loadDistance;
+    const float unloadDistanceSquared = frame.unloadDistance * frame.unloadDistance;
+    if (!frame.loaded && !frame.loadRequested && frame.hasViewer &&
+        frame.nearestViewerDistanceSquared <= loadDistanceSquared) {
+        return LevelStreamer3DActionUVE::RequestLoad;
+    }
+    if (frame.loaded && frame.hasViewer &&
+        frame.nearestViewerDistanceSquared >= unloadDistanceSquared) {
+        return LevelStreamer3DActionUVE::RequestUnload;
+    }
+    return LevelStreamer3DActionUVE::None;
+}
+
+LevelStreamer3DStreamingFrameUVE LevelStreamer3DUVE::BuildStreamingFrameUVE(
+    const LevelStreamer3DComponentUVE& streamer, const Math::Vector3UVE& streamerWorldPosition,
+    const std::span<const Math::Vector3UVE> viewerPositions) noexcept {
+    LevelStreamer3DStreamingFrameUVE frame{};
+    frame.enabled = streamer.enabled;
+    frame.loaded = streamer.loaded;
+    frame.loadRequested = streamer.loadRequested;
+    frame.loadDistance = streamer.loadDistance;
+    frame.unloadDistance = streamer.unloadDistance;
+    if (const std::optional<float> nearest = ResolveLevelStreamer3DNearestViewerDistanceSquaredUVE(
+            streamerWorldPosition, viewerPositions);
+        nearest.has_value()) {
+        frame.hasViewer = true;
+        frame.nearestViewerDistanceSquared = *nearest;
+    }
+    return frame;
+}
+
+LevelStreamer3DActionUVE LevelStreamer3DUVE::EvaluateActionUVE(
+    const LevelStreamer3DComponentUVE& streamer, const Math::Vector3UVE& streamerWorldPosition,
+    const std::span<const Math::Vector3UVE> viewerPositions) noexcept {
+    if (!IsLevelStreamer3DObjectComponentValidUVE(streamer)) {
+        return LevelStreamer3DActionUVE::None;
+    }
+    return ResolveLevelStreamer3DStreamingActionUVE(
+        BuildStreamingFrameUVE(streamer, streamerWorldPosition, viewerPositions));
+}
+
+float LevelStreamer3DUVE::HysteresisBandWidthUVE(
+    const LevelStreamer3DComponentUVE& streamer) noexcept {
+    if (!IsLevelStreamer3DObjectComponentValidUVE(streamer)) {
+        return 0.0F;
+    }
+    return streamer.unloadDistance - streamer.loadDistance;
+}
+
+} // namespace UVE::Scene

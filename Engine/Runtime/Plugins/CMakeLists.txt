@@ -8,9 +8,9 @@
 # uve_core itself (EngineCoreUVE, the whole-engine bootstrap class) remains unported.
 
 add_library(uve_plugins STATIC
-    Internal/plugin_manifest_validation_uve.cpp
-    Internal/plugin_registry_uve.cpp
-    Internal/native_plugin_host_uve.cpp
+    Internal/plugin_manifest_validation.cpp
+    Internal/plugin_registry.cpp
+    Internal/native_plugin_host.cpp
 )
 target_include_directories(uve_plugins PUBLIC Expose)
 target_link_libraries(uve_plugins PUBLIC uve_asset PRIVATE nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})

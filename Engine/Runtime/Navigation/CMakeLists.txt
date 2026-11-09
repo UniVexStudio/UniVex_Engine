@@ -10,11 +10,11 @@
 # disagree with the first.
 
 add_library(uve_navigation STATIC
-    Internal/navmesh_uve.cpp
-    Internal/navmesh_bake_uve.cpp
-    Internal/nav_path_uve.cpp
-    Internal/navmesh_agent_uve.cpp
-    Internal/navigation_runtime_uve.cpp
+    Internal/navmesh.cpp
+    Internal/navmesh_bake.cpp
+    Internal/nav_path.cpp
+    Internal/navmesh_agent.cpp
+    Internal/navigation_runtime.cpp
 )
 target_include_directories(uve_navigation PUBLIC Expose)
 target_link_libraries(uve_navigation PUBLIC uve_platform uve_logging uve_math uve_scene uve_physics uve_objects_3d)
