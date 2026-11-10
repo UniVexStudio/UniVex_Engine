@@ -2,6 +2,7 @@
 #pragma once
 
 #include "editor_prism_content_browser.h"
+#include "editor_prism_details.h"
 #include "editor_prism_host.h"
 #include "editor_prism_icons.h"
 
@@ -91,6 +92,7 @@ private:
     EditorUVE& m_editor;
     EditorPrismHostUVE m_host;
     EditorPrismContentBrowserUVE m_contentBrowser;
+    EditorPrismDetailsUVE m_details2;
     EditorPrismIconsUVE m_icons;
 
     // Widgets the frame updates.

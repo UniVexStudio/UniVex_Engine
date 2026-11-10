@@ -177,7 +177,7 @@ jobs:
           mkdir -p /tmp/uve-prism-shell
           cd /tmp/uve-prism-shell
           LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1600x900x24" \
-            "$GITHUB_WORKSPACE/.uvbt/bin/Linux/${{ matrix.mode }}/uve_editor" --prism-ui --frames 10 \
+            "$GITHUB_WORKSPACE/.uvbt/bin/Linux/${{ matrix.mode }}/uve_editor" --prism-ui --prism-demo-object --frames 10 \
             --prism-screenshot /tmp/uve-prism-shell/prism_level_editor.png
           test -s /tmp/uve-prism-shell/prism_level_editor.png
 

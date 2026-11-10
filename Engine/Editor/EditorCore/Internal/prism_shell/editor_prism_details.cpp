@@ -1,0 +1,840 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#include "editor_prism_details.h"
+
+#include "color.h"
+#include "engine_project_settings.h"
+#include "scene_component_metadata.h"
+#include "scene_object_type.h"
+#include "transform_component.h"
+#include "vector2.h"
+#include "vector3.h"
+#include "asset_guid.h"
+#include "i_project_file_index.h"
+
+#include "prism/Application.h"
+#include "prism/Containers.h"
+#include "prism/Controls.h"
+#include "prism/Menu.h"
+#include "prism/TextInput.h"
+#include "prism/Theme.h"
+#include "prism/Views.h"
+
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+namespace UVE::Editor {
+namespace {
+
+using TypeFlagsUVE = Core::TypeMetadataPropertyFlagsUVE;
+
+constexpr float kRadToDegUVE = 57.29577951F;
+constexpr float kDegToRadUVE = 0.01745329252F;
+
+/// The component types whose authoring is not a field write (see the Inspector's own list): the
+/// name routes through SetSelectedEntityNameUVE, the transform through the gesture API, and the
+/// parent through reparenting in the Outliner.
+constexpr std::array<std::string_view, 3> kCustomDrawnUVE{"component.name", "component.transform",
+                                                          "component.hierarchy"};
+
+[[nodiscard]] bool IsCustomDrawnUVE(const std::string_view typeId) {
+    return std::find(kCustomDrawnUVE.begin(), kCustomDrawnUVE.end(), typeId) != kCustomDrawnUVE.end();
+}
+
+[[nodiscard]] std::string LowerUVE(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+void HashUVE(std::uint64_t& h, const std::uint64_t v) {
+    h ^= v + 0x9E3779B97F4A7C15ULL + (h << 6) + (h >> 2);
+}
+
+void HashUVE(std::uint64_t& h, const std::string_view s) {
+    for (const char c : s) {
+        HashUVE(h, static_cast<std::uint64_t>(static_cast<unsigned char>(c)));
+    }
+}
+
+[[nodiscard]] float StepUVE(const Core::TypeMetadataPropertyUVE& property, const float fallback) {
+    return property.range.enabled && property.range.step > 0.0 ? static_cast<float>(property.range.step) : fallback;
+}
+
+[[nodiscard]] prism::Color ToPrismColorUVE(const float r, const float g, const float b) {
+    const auto c = [](const float v) { return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0F, 1.0F) * 255.0F)); };
+    return prism::Color(c(r), c(g), c(b), 255);
+}
+
+[[nodiscard]] Math::Vector3UVE FromPrismColorUVE(const prism::Color c) {
+    return Math::Vector3UVE{static_cast<float>(c.r) / 255.0F, static_cast<float>(c.g) / 255.0F,
+                            static_cast<float>(c.b) / 255.0F};
+}
+
+/// Two NumberFields side by side for a Vector2.
+class Vec2FieldUVE final : public prism::Widget {
+public:
+    Vec2FieldUVE(const float step, const int decimals) {
+        for (auto& field : m_fields) {
+            field = prism::make<prism::NumberField>(0.0F, step, decimals);
+            addChild(field);
+        }
+    }
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain({120.0F, prism::theme().controlH}); }
+    void arrange(prism::Rect r) override {
+        prism::Widget::arrange(r);
+        const float w = std::floor((r.w - 4.0F) * 0.5F);
+        m_fields[0]->arrange(prism::Rect{r.x, r.y, w, r.h});
+        m_fields[1]->arrange(prism::Rect{r.x + w + 4.0F, r.y, r.w - w - 4.0F, r.h});
+    }
+    bool hitSelf() const override { return false; }
+    std::array<std::shared_ptr<prism::NumberField>, 2> m_fields;
+};
+
+} // namespace
+
+EditorPrismDetailsUVE::EditorPrismDetailsUVE(EditorUVE& editor) : m_editor(editor) {}
+
+EditorPrismDetailsUVE::~EditorPrismDetailsUVE() = default;
+
+prism::Ref<prism::Widget> EditorPrismDetailsUVE::BuildUVE() {
+    auto page = prism::vbox(4.0F);
+    page->setPadding(prism::Margin(4.0F));
+    m_search = prism::make<prism::TextInput>("", "Search details");
+    m_search->onChanged = [this](const std::string& text) {
+        m_filter = LowerUVE(text);
+        m_signature = 0;
+    };
+    page->add(m_search);
+    m_title = prism::make<prism::Label>("Nothing selected", prism::FontRole::Semibold);
+    page->add(m_title);
+    m_subtitle = prism::make<prism::Label>("Select an object in the Outliner or the Viewport.", prism::FontRole::Small);
+    m_subtitle->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    page->add(m_subtitle);
+    m_grid = prism::make<prism::PropertyGrid>();
+    auto scroll = prism::make<prism::ScrollView>();
+    scroll->setContent(m_grid);
+    page->add(scroll, prism::Slot{1.0F});
+    return page;
+}
+
+bool EditorPrismDetailsUVE::MatchesFilterUVE(const std::string& text) const {
+    return m_filter.empty() || LowerUVE(text).find(m_filter) != std::string::npos;
+}
+
+std::uint64_t EditorPrismDetailsUVE::StructureSignatureUVE(const Scene::EntityUVE entity) const {
+    std::uint64_t h = 1469598103934665603ULL;
+    HashUVE(h, (static_cast<std::uint64_t>(entity.index) << 32U) | entity.generation);
+    HashUVE(h, m_filter);
+    HashUVE(h, static_cast<std::uint64_t>(m_editor.m_selectedEntities.size()));
+    HashUVE(h, static_cast<std::uint64_t>(m_editor.m_playModeState));
+    HashUVE(h, m_editor.IsAuthoringCommandAllowedUVE() ? 1U : 0U);
+    if (!m_editor.IsDocumentEntityUVE(entity)) {
+        return h;
+    }
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    for (const EntryUVE& snapshot : Scene::GetSceneComponentMetadataRegistryUVE().GetSnapshotUVE().entries) {
+        if (!em.HasComponentUVE(entity, snapshot.typeIndex)) {
+            continue;
+        }
+        HashUVE(h, snapshot.typeId.ToStringUVE());
+        // Visibility rules read values (a field shown only for one mode): a change re-lays the rows.
+        const void* const instance = em.GetComponentPointerUVE(entity, snapshot.typeIndex);
+        for (const PropertyUVE& property : snapshot.properties) {
+            const bool visible = !property.flags.HasUVE(TypeFlagsUVE::Hidden) &&
+                                 (property.isVisible == nullptr || property.isVisible(instance));
+            HashUVE(h, visible ? 1U : 0U);
+        }
+    }
+    return h;
+}
+
+bool EditorPrismDetailsUVE::IsBeingEditedUVE(const RowUVE& row) const {
+    if (row.editing) {
+        return true;
+    }
+    if (row.editor == nullptr || !prism::Application::exists()) {
+        return false;
+    }
+    const prism::Widget* const focus = prism::Application::get().focus();
+    return focus != nullptr && focus->isDescendantOf(row.editor);
+}
+
+void EditorPrismDetailsUVE::RefreshUVE() {
+    if (!m_grid) {
+        return;
+    }
+    const Scene::EntityUVE entity = m_editor.GetSelectedEntityUVE();
+    const std::uint64_t signature = StructureSignatureUVE(entity);
+    if (signature != m_signature || entity != m_entity) {
+        m_signature = signature;
+        m_entity = entity;
+        RebuildUVE(entity);
+        return;
+    }
+    if (!m_editor.IsDocumentEntityUVE(entity)) {
+        return;
+    }
+    // Same rows: show the values as they are now (a gizmo drag, an undo, a script), except the one
+    // the author is editing.
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    for (const std::shared_ptr<RowUVE>& row : m_rows) {
+        if (!row->sync || IsBeingEditedUVE(*row)) {
+            continue;
+        }
+        const void* instance = nullptr;
+        if (row->entry != nullptr) {
+            if (!em.HasComponentUVE(entity, row->entry->typeIndex)) {
+                continue;
+            }
+            instance = em.GetComponentPointerUVE(entity, row->entry->typeIndex);
+        }
+        row->sync(instance);
+    }
+}
+
+void EditorPrismDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
+    m_grid->clear();
+    m_rows.clear();
+    if (m_editor.m_selectedEntities.empty() || !m_editor.IsDocumentEntityUVE(entity)) {
+        if (m_editor.m_selectedProjectFile.has_value() && !m_editor.m_selectedProjectFile->relativePath.empty()) {
+            const auto& file = *m_editor.m_selectedProjectFile;
+            m_title->setText(file.relativePath.filename().string());
+            m_subtitle->setText(EditorUVE::GetContentBrowserItemTypeLabelUVE(EditorUVE::ClassifyContentBrowserEntryUVE(file)));
+            const int section = m_grid->addCategory("Asset");
+            m_grid->addRow(section, "Path", prism::make<prism::Label>(file.relativePath.generic_string()));
+            m_grid->addRow(section, "Registered",
+                           prism::make<prism::Label>(file.registeredAssetGuid.has_value() ? "Yes" : "No"));
+            return;
+        }
+        m_title->setText("Nothing selected");
+        m_subtitle->setText("Select an object in the Outliner or the Viewport.");
+        return;
+    }
+    if (!m_editor.HasSingleDocumentSelectionUVE()) {
+        m_title->setText(std::to_string(m_editor.m_selectedEntities.size()) + " objects selected");
+        m_subtitle->setText("Active: " + m_editor.GetEntityDisplayLabelUVE(entity) +
+                            " - editing applies to a single object.");
+        return;
+    }
+
+    m_title->setText(m_editor.GetEntityDisplayLabelUVE(entity));
+    m_subtitle->setText(std::string(m_editor.GetObjectTypeNameUVE(entity)));
+    const bool authoring = m_editor.IsAuthoringCommandAllowedUVE();
+    const bool simulating = m_editor.m_playModeState != EditorPlayModeStateUVE::Edit;
+
+    // The object's own row: its name (renaming owns uniqueness and its own history entry).
+    if (MatchesFilterUVE("Name")) {
+        const int object = m_grid->addCategory("Object");
+        auto name = prism::make<prism::TextInput>(m_editor.GetEntityDisplayLabelUVE(entity));
+        name->setEnabled(authoring);
+        name->onCommit = [this](const std::string& text) { static_cast<void>(m_editor.SetSelectedEntityNameUVE(text)); };
+        auto row = std::make_shared<RowUVE>();
+        row->editor = name.get();
+        std::weak_ptr<prism::TextInput> weak = name;
+        row->sync = [this, weak](const void*) {
+            if (auto field = weak.lock()) {
+                const std::string label = m_editor.GetEntityDisplayLabelUVE(m_editor.GetSelectedEntityUVE());
+                if (field->text() != label) {
+                    field->setText(label);
+                }
+            }
+        };
+        m_rows.push_back(row);
+        m_grid->addRow(object, "Name", name);
+    }
+
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    // Sections in the Inspector's order: by declared section order, then type id.
+    const Core::TypeMetadataRegistryUVE& registry = Scene::GetSceneComponentMetadataRegistryUVE();
+    std::vector<const EntryUVE*> entries;
+    for (const EntryUVE& snapshot : registry.GetSnapshotUVE().entries) {
+        const EntryUVE* const stable = registry.FindTypeUVE(snapshot.typeId);
+        if (stable != nullptr && em.HasComponentUVE(entity, stable->typeIndex)) {
+            entries.push_back(stable);
+        }
+    }
+    std::stable_sort(entries.begin(), entries.end(), [](const EntryUVE* a, const EntryUVE* b) {
+        return a->order != b->order ? a->order < b->order : a->typeId.ToStringUVE() < b->typeId.ToStringUVE();
+    });
+    // A nested type is drawn under the first of its hosts the entity carries (as the Inspector
+    // does), and in its own place when it carries none.
+    const auto hostOf = [&](const EntryUVE* child) -> const EntryUVE* {
+        for (const auto& hostId : child->nestedUnderTypeIds) {
+            for (const EntryUVE* candidate : entries) {
+                if (candidate->typeId == hostId && !IsCustomDrawnUVE(candidate->typeId.ToStringUVE())) {
+                    return candidate;
+                }
+            }
+        }
+        return nullptr;
+    };
+    std::vector<const EntryUVE*> ordered;
+    for (const EntryUVE* entry : entries) {
+        if (hostOf(entry) != nullptr) {
+            continue;
+        }
+        ordered.push_back(entry);
+        for (const EntryUVE* child : entries) {
+            if (hostOf(child) == entry) {
+                ordered.push_back(child);
+            }
+        }
+    }
+    entries = std::move(ordered);
+
+    bool transformDone = false;
+    const bool hasTransform = em.HasComponentUVE<Scene::TransformComponentUVE>(entity);
+    for (const EntryUVE* const entry : entries) {
+        const std::string_view typeId = entry->typeId.ToStringUVE();
+        if (!transformDone && hasTransform && entry->order > Scene::kSectionOrderTransformUVE) {
+            AddTransformUVE(-1, entity);
+            transformDone = true;
+        }
+        if (IsCustomDrawnUVE(typeId)) {
+            continue;
+        }
+        const void* const instance = em.GetComponentPointerUVE(entity, entry->typeIndex);
+        const std::string title = entry->sectionTitle != nullptr ? std::string(entry->sectionTitle(instance)) : entry->displayName;
+        const bool sectionMatches = MatchesFilterUVE(title);
+        int category = -1;
+        std::string group;
+        for (const PropertyUVE& property : entry->properties) {
+            const bool visible = !property.flags.HasUVE(TypeFlagsUVE::Hidden) &&
+                                 (property.isVisible == nullptr || property.isVisible(instance));
+            if (!visible || (property.flags.HasUVE(TypeFlagsUVE::RuntimeState) && !simulating)) {
+                continue;
+            }
+            const bool companion = std::any_of(entry->properties.begin(), entry->properties.end(),
+                                               [&](const PropertyUVE& other) { return other.resolvedByProperty == property.name; });
+            if (companion) {
+                continue;
+            }
+            const std::string label = property.displayName.empty() ? property.name : property.displayName;
+            if (!sectionMatches && !MatchesFilterUVE(label) && !MatchesFilterUVE(property.section)) {
+                continue;
+            }
+            if (category < 0 || property.section != group) {
+                group = property.section;
+                category = m_grid->addCategory(group.empty() ? title : title + " / " + group, true);
+            }
+            AddPropertyUVE(category, *entry, property, instance, authoring && property.IsAuthoringWritableUVE());
+        }
+    }
+    if (!transformDone && hasTransform) {
+        AddTransformUVE(-1, entity);
+    }
+}
+
+void EditorPrismDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE entity) {
+    if (!MatchesFilterUVE("Transform") && !MatchesFilterUVE("Location") && !MatchesFilterUVE("Rotation") &&
+        !MatchesFilterUVE("Scale")) {
+        return;
+    }
+    if (category < 0) {
+        category = m_grid->addCategory("Transform", true);
+    }
+    const bool authoring = m_editor.IsAuthoringCommandAllowedUVE();
+    static_cast<void>(entity);
+    struct AxisUVE final {
+        const char* label;
+        EditorToolSessionModeUVE mode;
+        float step;
+    };
+    static constexpr std::array<AxisUVE, 3> kRowsUVE{{
+        {"Location", EditorToolSessionModeUVE::Translate, 0.01F},
+        {"Rotation", EditorToolSessionModeUVE::Rotate, 0.5F},
+        {"Scale", EditorToolSessionModeUVE::Scale, 0.01F},
+    }};
+    for (std::size_t which = 0; which < kRowsUVE.size(); ++which) {
+        auto field = prism::make<prism::Vec3Field>(kRowsUVE[which].step, which == 1 ? 2 : 3);
+        if (which == 1) {
+            field->setSuffix("\xC2\xB0");
+        }
+        field->setEnabled(authoring);
+        auto row = std::make_shared<RowUVE>();
+        row->editor = field.get();
+        std::weak_ptr<RowUVE> weakRow = row;
+        std::weak_ptr<prism::Vec3Field> weakField = field;
+        const auto current = [this](Scene::TransformComponentUVE& out) {
+            const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+            const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
+            if (!m_editor.IsDocumentEntityUVE(selected) || !em.HasComponentUVE<Scene::TransformComponentUVE>(selected)) {
+                return false;
+            }
+            out = em.GetComponentUVE<Scene::TransformComponentUVE>(selected);
+            return true;
+        };
+        field->onBegin = [this, weakRow, mode = kRowsUVE[which].mode] {
+            if (auto r = weakRow.lock()) {
+                r->editing = true;
+            }
+            if (m_editor.GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                static_cast<void>(m_editor.CommitTransformGestureUVE());
+            }
+            static_cast<void>(m_editor.BeginTransformGestureUVE(mode));
+        };
+        field->onChange = [this, current, which](const int axis, const float value) {
+            Scene::TransformComponentUVE t{};
+            if (!current(t)) {
+                return;
+            }
+            if (which == 0) {
+                (axis == 0 ? t.localPosition.x : axis == 1 ? t.localPosition.y : t.localPosition.z) = value;
+            } else if (which == 2) {
+                (axis == 0 ? t.localScale.x : axis == 1 ? t.localScale.y : t.localScale.z) = value;
+            } else {
+                // The authored Euler angles are the edited view of the rotation (see
+                // TransformComponentUVE::localEulerRadians); both are written together.
+                Math::Vector3UVE e = t.localEulerRadians;
+                (axis == 0 ? e.x : axis == 1 ? e.y : e.z) = value * kDegToRadUVE;
+                Math::QuaternionUVE q{};
+                if (!Math::TryMakeEulerUVE(e, q)) {
+                    return;
+                }
+                t.localEulerRadians = e;
+                t.localRotation = q;
+            }
+            if (m_editor.GetToolSessionPhaseUVE() != EditorToolSessionPhaseUVE::Previewing ||
+                !m_editor.PreviewTransformGestureValueUVE(t)) {
+                static_cast<void>(m_editor.SetSelectedLocalTransformUVE(t));
+            }
+        };
+        field->onCommit = [this, weakRow] {
+            if (m_editor.GetToolSessionPhaseUVE() == EditorToolSessionPhaseUVE::Previewing) {
+                static_cast<void>(m_editor.CommitTransformGestureUVE());
+            }
+            if (auto r = weakRow.lock()) {
+                r->editing = false;
+            }
+        };
+        row->sync = [current, weakField, which](const void*) {
+            Scene::TransformComponentUVE t{};
+            auto f = weakField.lock();
+            if (!f || !current(t)) {
+                return;
+            }
+            Math::Vector3UVE v = which == 0 ? t.localPosition : which == 2 ? t.localScale : t.localEulerRadians;
+            if (which == 1) {
+                v = Math::Vector3UVE{v.x * kRadToDegUVE, v.y * kRadToDegUVE, v.z * kRadToDegUVE};
+            }
+            if (std::abs(f->get(0) - v.x) > 1e-5F || std::abs(f->get(1) - v.y) > 1e-5F || std::abs(f->get(2) - v.z) > 1e-5F) {
+                f->setValue(v.x, v.y, v.z);
+            }
+        };
+        row->sync(nullptr);
+        m_rows.push_back(row);
+        m_grid->addRow(category, kRowsUVE[which].label, field);
+    }
+}
+
+void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry, const PropertyUVE& property,
+                                           const void* const instance, const bool writable) {
+    const std::string label = property.displayName.empty() ? property.name : property.displayName;
+    auto row = std::make_shared<RowUVE>();
+    row->entry = &entry;
+    std::weak_ptr<RowUVE> weakRow = row;
+    const EntryUVE* const e = &entry;
+    const PropertyUVE* const p = &property;
+    prism::Ref<prism::Widget> editor;
+
+    // Continuous edits (drags): previewed live, recorded as one undo step when the gesture ends.
+    const auto begin = [weakRow] {
+        if (auto r = weakRow.lock()) {
+            r->editing = true;
+        }
+    };
+    const auto commit = [this, e, p, weakRow] {
+        static_cast<void>(m_editor.CommitComponentPropertyPreviewForUVE(*e, *p));
+        if (auto r = weakRow.lock()) {
+            r->editing = false;
+        }
+    };
+
+    if (!property.enumEntries.empty()) {
+        std::vector<std::string> labels;
+        for (const auto& option : property.enumEntries) {
+            labels.push_back(option.label);
+        }
+        auto combo = prism::make<prism::ComboBox>(labels, 0);
+        std::weak_ptr<prism::ComboBox> weak = combo;
+        row->sync = [p, weak](const void* inst) {
+            auto c = weak.lock();
+            if (!c || inst == nullptr) {
+                return;
+            }
+            std::int64_t current = 0;
+            p->getValue(inst, &current);
+            for (std::size_t i = 0; i < p->enumEntries.size(); ++i) {
+                if (p->enumEntries[i].value == current && c->selected() != static_cast<int>(i)) {
+                    c->setSelected(static_cast<int>(i));
+                }
+            }
+        };
+        combo->onChange = [this, e, p](const int index) {
+            if (index >= 0 && static_cast<std::size_t>(index) < p->enumEntries.size()) {
+                const std::int64_t chosen = p->enumEntries[static_cast<std::size_t>(index)].value;
+                static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &chosen));
+            }
+        };
+        editor = combo;
+    } else if (property.typeId == Scene::kPropertyTypeBoolUVE) {
+        auto check = prism::make<prism::CheckBox>("", false);
+        std::weak_ptr<prism::CheckBox> weak = check;
+        row->sync = [p, weak](const void* inst) {
+            auto c = weak.lock();
+            bool v = false;
+            if (c && inst != nullptr) {
+                p->getValue(inst, &v);
+                if (c->checked() != v) {
+                    c->setChecked(v);
+                }
+            }
+        };
+        check->onChange = [this, e, p](const bool v) { static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &v)); };
+        editor = check;
+    } else if (property.typeId == Scene::kPropertyTypeFloatUVE || property.typeId == Scene::kPropertyTypeInt32UVE ||
+               property.typeId == Scene::kPropertyTypeUInt32UVE || property.typeId == Scene::kPropertyTypeUInt8UVE) {
+        const bool isFloat = property.typeId == Scene::kPropertyTypeFloatUVE;
+        auto number = prism::make<prism::NumberField>(0.0F, StepUVE(property, isFloat ? 0.01F : 1.0F), isFloat ? 3 : 0);
+        if (property.range.enabled) {
+            number->setRange(static_cast<float>(property.range.minimum), static_cast<float>(property.range.maximum));
+        } else if (!isFloat && property.typeId != Scene::kPropertyTypeInt32UVE) {
+            number->setRange(0.0F, property.typeId == Scene::kPropertyTypeUInt8UVE ? 255.0F : 4.0e9F);
+        }
+        std::weak_ptr<prism::NumberField> weak = number;
+        const Strings::StringIdUVE type = property.typeId;
+        const auto read = [p, type](const void* inst) -> float {
+            if (type == Scene::kPropertyTypeFloatUVE) { float v = 0; p->getValue(inst, &v); return v; }
+            if (type == Scene::kPropertyTypeInt32UVE) { std::int32_t v = 0; p->getValue(inst, &v); return static_cast<float>(v); }
+            if (type == Scene::kPropertyTypeUInt32UVE) { std::uint32_t v = 0; p->getValue(inst, &v); return static_cast<float>(v); }
+            std::uint8_t v = 0; p->getValue(inst, &v); return static_cast<float>(v);
+        };
+        const auto write = [this, e, p, type](const float value, const bool preview) {
+            const auto apply = [&](const void* v) {
+                static_cast<void>(preview ? m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, v)
+                                          : m_editor.SetSelectedComponentPropertyUVE(*e, *p, v));
+            };
+            if (type == Scene::kPropertyTypeFloatUVE) { const float v = value; apply(&v); }
+            else if (type == Scene::kPropertyTypeInt32UVE) { const auto v = static_cast<std::int32_t>(std::lround(value)); apply(&v); }
+            else if (type == Scene::kPropertyTypeUInt32UVE) { const auto v = static_cast<std::uint32_t>(std::max(0L, std::lround(value))); apply(&v); }
+            else { const auto v = static_cast<std::uint8_t>(std::clamp(std::lround(value), 0L, 255L)); apply(&v); }
+        };
+        row->sync = [read, weak](const void* inst) {
+            auto n = weak.lock();
+            if (n && inst != nullptr) {
+                const float v = read(inst);
+                if (std::abs(n->value() - v) > 1e-6F) {
+                    n->setValue(v);
+                }
+            }
+        };
+        number->onBegin = begin;
+        number->onChange = [write](const float v) { write(v, true); };
+        number->onCommit = [write, commit](const float v) {
+            write(v, true);
+            commit();
+        };
+        editor = number;
+    } else if (property.typeId == Scene::kPropertyTypeVector3UVE || property.typeId == Scene::kPropertyTypeQuaternionUVE) {
+        const bool quaternion = property.typeId == Scene::kPropertyTypeQuaternionUVE;
+        auto field = prism::make<prism::Vec3Field>(StepUVE(property, quaternion ? 0.5F : 0.01F), quaternion ? 2 : 3);
+        if (quaternion) {
+            field->setSuffix("\xC2\xB0");
+        }
+        std::weak_ptr<prism::Vec3Field> weak = field;
+        const auto read = [p, quaternion](const void* inst) {
+            if (!quaternion) {
+                Math::Vector3UVE v{};
+                p->getValue(inst, &v);
+                return v;
+            }
+            Math::QuaternionUVE q{};
+            p->getValue(inst, &q);
+            Math::Vector3UVE r{};
+            static_cast<void>(Math::TryToEulerUVE(q, r));
+            return Math::Vector3UVE{r.x * kRadToDegUVE, r.y * kRadToDegUVE, r.z * kRadToDegUVE};
+        };
+        row->sync = [read, weak](const void* inst) {
+            auto f = weak.lock();
+            if (f && inst != nullptr) {
+                const Math::Vector3UVE v = read(inst);
+                if (std::abs(f->get(0) - v.x) > 1e-5F || std::abs(f->get(1) - v.y) > 1e-5F || std::abs(f->get(2) - v.z) > 1e-5F) {
+                    f->setValue(v.x, v.y, v.z);
+                }
+            }
+        };
+        field->onBegin = begin;
+        field->onChange = [this, e, p, weak, quaternion](int, float) {
+            auto f = weak.lock();
+            if (!f) {
+                return;
+            }
+            const Math::Vector3UVE v{f->get(0), f->get(1), f->get(2)};
+            if (!quaternion) {
+                static_cast<void>(m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, &v));
+                return;
+            }
+            Math::QuaternionUVE q{};
+            if (Math::TryMakeEulerUVE(Math::Vector3UVE{v.x * kDegToRadUVE, v.y * kDegToRadUVE, v.z * kDegToRadUVE}, q)) {
+                static_cast<void>(m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, &q));
+            }
+        };
+        field->onCommit = commit;
+        editor = field;
+    } else if (property.typeId == Scene::kPropertyTypeVector2UVE) {
+        auto field = prism::make<Vec2FieldUVE>(StepUVE(property, 0.01F), 3);
+        std::weak_ptr<Vec2FieldUVE> weak = field;
+        row->sync = [p, weak](const void* inst) {
+            auto f = weak.lock();
+            if (f && inst != nullptr) {
+                Math::Vector2UVE v{};
+                p->getValue(inst, &v);
+                if (std::abs(f->m_fields[0]->value() - v.x) > 1e-5F) { f->m_fields[0]->setValue(v.x); }
+                if (std::abs(f->m_fields[1]->value() - v.y) > 1e-5F) { f->m_fields[1]->setValue(v.y); }
+            }
+        };
+        for (auto& n : field->m_fields) {
+            n->onBegin = begin;
+            n->onChange = [this, e, p, weak](float) {
+                if (auto f = weak.lock()) {
+                    const Math::Vector2UVE v{f->m_fields[0]->value(), f->m_fields[1]->value()};
+                    static_cast<void>(m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, &v));
+                }
+            };
+            n->onCommit = [commit](float) { commit(); };
+        }
+        editor = field;
+    } else if (property.typeId == Scene::kPropertyTypeColorUVE || property.typeId == Scene::kPropertyTypeLinearColorUVE) {
+        const bool linear = property.typeId == Scene::kPropertyTypeLinearColorUVE;
+        auto color = prism::make<prism::ColorField>();
+        std::weak_ptr<prism::ColorField> weak = color;
+        const auto read = [p, linear](const void* inst) {
+            if (!linear) {
+                Math::Vector3UVE v{};
+                p->getValue(inst, &v);
+                return ToPrismColorUVE(v.x, v.y, v.z);
+            }
+            Math::ColorUVE c{};
+            p->getValue(inst, &c);
+            const Math::Vector3UVE shown = Math::DisplayFromColorUVE(c);
+            return ToPrismColorUVE(shown.x, shown.y, shown.z);
+        };
+        row->sync = [read, weak](const void* inst) {
+            auto f = weak.lock();
+            if (f && inst != nullptr) {
+                const prism::Color c = read(inst);
+                const prism::Color now = f->color();
+                if (c.r != now.r || c.g != now.g || c.b != now.b) {
+                    f->setColor(c);
+                }
+            }
+        };
+        color->onChange = [this, e, p, linear, weakRow](const prism::Color c) {
+            if (auto r = weakRow.lock()) {
+                r->editing = true;
+            }
+            const Math::Vector3UVE picked = FromPrismColorUVE(c);
+            if (linear) {
+                const Math::ColorUVE value = Math::ColorFromDisplayUVE(picked);
+                static_cast<void>(m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, &value));
+            } else {
+                static_cast<void>(m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, &picked));
+            }
+        };
+        color->onCommit = [this, weakRow] {
+            static_cast<void>(m_editor.CommitComponentPropertyPreviewUVE());
+            if (auto r = weakRow.lock()) {
+                r->editing = false;
+            }
+        };
+        editor = color;
+    } else if (property.typeId == Scene::kPropertyTypeStringUVE) {
+        auto text = prism::make<prism::TextInput>("");
+        std::weak_ptr<prism::TextInput> weak = text;
+        row->sync = [p, weak](const void* inst) {
+            auto t = weak.lock();
+            if (t && inst != nullptr) {
+                std::string v;
+                p->getValue(inst, &v);
+                if (t->text() != v) {
+                    t->setText(v);
+                }
+            }
+        };
+        text->onCommit = [this, e, p](const std::string& v) { static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &v)); };
+        editor = text;
+    } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
+        auto button = prism::make<prism::Button>("", prism::Icon::Layers, prism::ButtonStyle::Default);
+        std::weak_ptr<prism::Button> weak = button;
+        const bool physics = property.customDrawerId == Scene::kLayerMaskDrawerPhysicsUVE;
+        const bool layers = physics || property.customDrawerId == Scene::kLayerMaskDrawerRenderUVE;
+        row->sync = [p, weak](const void* inst) {
+            auto b = weak.lock();
+            if (b && inst != nullptr) {
+                std::uint32_t v = 0U;
+                p->getValue(inst, &v);
+                int count = 0;
+                for (int bit = 0; bit < 32; ++bit) {
+                    count += (v >> bit) & 1U;
+                }
+                const std::string text = v == 0U ? "Nothing" : v == 0xFFFFFFFFU ? "Everything" : std::to_string(count) + " layers";
+                if (b->text() != text) {
+                    b->setText(text);
+                }
+            }
+        };
+        button->onClick = [this, e, p, weak, physics, layers] {
+            const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+            const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
+            if (!em.HasComponentUVE(selected, e->typeIndex)) {
+                return;
+            }
+            std::uint32_t mask = 0U;
+            p->getValue(em.GetComponentPointerUVE(selected, e->typeIndex), &mask);
+            std::vector<prism::MenuItem> items;
+            const Config::SettingsDocumentUVE& project = m_editor.m_services->GetProjectSettingsUVE();
+            for (std::size_t bit = 0; bit < 32U; ++bit) {
+                std::string name = layers ? Core::GetLayerNameUVE(project, physics ? Core::LayerSetUVE::Physics : Core::LayerSetUVE::Render, bit)
+                                          : std::string{};
+                if (name.empty()) {
+                    name = "Layer " + std::to_string(bit + 1U);
+                }
+                items.push_back(prism::MenuItem::Check(name, ((mask >> bit) & 1U) != 0U, [this, e, p, mask, bit] {
+                    const std::uint32_t next = mask ^ (1U << bit);
+                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &next));
+                }));
+            }
+            if (auto b = weak.lock()) {
+                prism::showMenu(std::move(items), b->rect(), prism::PopupPlacement::Below);
+            }
+        };
+        editor = button;
+    } else if (property.typeId == Scene::kPropertyTypeAssetGuidUVE) {
+        // Picking, never typing (as the Inspector): the registered assets of the kind the property
+        // declares - a material slot takes materials, "asset:<ext>" that extension.
+        const auto lower = [](std::string v) { return LowerUVE(std::move(v)); };
+        const bool material = property.customDrawerId == "file:uvmat" || property.customDrawerId == "file:uvmaterial" ||
+                              property.customDrawerId == "asset:uvmat" || property.customDrawerId == "asset:uvmaterial" ||
+                              lower(property.name).find("material") != std::string::npos ||
+                              lower(property.displayName).find("material") != std::string::npos;
+        std::vector<std::string> extensions;
+        if (material) {
+            extensions = {".uvmat", ".uvmaterial"};
+        } else if (property.customDrawerId.rfind("asset:", 0U) == 0U) {
+            extensions = {"." + property.customDrawerId.substr(6U)};
+        }
+        auto button = prism::make<prism::Button>("(None)", material ? prism::Icon::Material : prism::Icon::File,
+                                                 prism::ButtonStyle::Default);
+        std::weak_ptr<prism::Button> weak = button;
+        row->sync = [this, p, weak](const void* inst) {
+            auto b = weak.lock();
+            if (!b || inst == nullptr) {
+                return;
+            }
+            Asset::AssetGuidUVE value{};
+            p->getValue(inst, &value);
+            std::string text = "(None)";
+            if (value != Asset::AssetGuidUVE{}) {
+                text = "(missing asset)";
+                for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
+                    if (file.registeredAssetGuid.has_value() && *file.registeredAssetGuid == value) {
+                        text = file.relativePath.filename().string();
+                        break;
+                    }
+                }
+            }
+            if (b->text() != text) {
+                b->setText(text);
+            }
+        };
+        if (extensions.empty()) {
+            button->setEnabled(false); // a property that declares no kind is read-only
+        }
+        button->onClick = [this, e, p, weak, extensions] {
+            std::vector<prism::MenuItem> items;
+            items.push_back(prism::MenuItem::Item("(None)", [this, e, p] {
+                const Asset::AssetGuidUVE none{};
+                static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
+            }));
+            items.push_back(prism::MenuItem::Sep());
+            for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
+                if (!file.registeredAssetGuid.has_value()) {
+                    continue;
+                }
+                const std::string ext = LowerUVE(file.relativePath.extension().string());
+                if (std::find(extensions.begin(), extensions.end(), ext) == extensions.end()) {
+                    continue;
+                }
+                const Asset::AssetGuidUVE guid = *file.registeredAssetGuid;
+                items.push_back(prism::MenuItem::Item(file.relativePath.generic_string(), [this, e, p, guid] {
+                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &guid));
+                }));
+            }
+            if (items.size() == 2U) {
+                items.push_back(prism::MenuItem::Item("No matching assets in this project", {}).disabled());
+            }
+            if (auto b = weak.lock()) {
+                prism::showMenu(std::move(items), b->rect(), prism::PopupPlacement::Below);
+            }
+        };
+        editor = button;
+    } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
+        auto button = prism::make<prism::Button>("(default)", prism::Icon::Cube, prism::ButtonStyle::Default);
+        std::weak_ptr<prism::Button> weak = button;
+        row->sync = [this, p, weak](const void* inst) {
+            auto b = weak.lock();
+            if (!b || inst == nullptr) {
+                return;
+            }
+            Scene::EntityUVE value = Scene::kInvalidEntityUVE;
+            p->getValue(inst, &value);
+            const std::string text = value == Scene::kInvalidEntityUVE        ? std::string{"(default)"}
+                                     : !m_editor.IsDocumentEntityUVE(value) ? std::string{"(missing object)"}
+                                                                            : m_editor.GetEntityDisplayLabelUVE(value);
+            if (b->text() != text) {
+                b->setText(text);
+            }
+        };
+        button->onClick = [this, e, p, weak] {
+            std::vector<prism::MenuItem> items;
+            items.push_back(prism::MenuItem::Item("(default)", [this, e, p] {
+                const Scene::EntityUVE none = Scene::kInvalidEntityUVE;
+                static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
+            }));
+            items.push_back(prism::MenuItem::Sep());
+            for (const Scene::EntityUVE candidate : m_editor.GetEntityReferenceCandidatesUVE()) {
+                items.push_back(prism::MenuItem::Item(m_editor.GetEntityDisplayLabelUVE(candidate), [this, e, p, candidate] {
+                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &candidate));
+                }));
+            }
+            if (auto b = weak.lock()) {
+                prism::showMenu(std::move(items), b->rect(), prism::PopupPlacement::Below);
+            }
+        };
+        editor = button;
+    } else {
+        // Lists and block drawers (scripts, animation graphs, LOD tables...) get their PRISM editors
+        // next; until then the value type is shown, never silently dropped.
+        auto value = prism::make<prism::Label>(std::string(property.typeId.ToStringUVE()), prism::FontRole::Small);
+        value->setColor(prism::ThemeColor(&prism::Theme::textDim));
+        editor = value;
+    }
+
+    editor->setEnabled(writable);
+    editor->setTooltip(property.tooltip);
+    row->editor = editor.get();
+    if (row->sync) {
+        row->sync(instance);
+    }
+    m_rows.push_back(row);
+    m_grid->addRow(category, label, editor, property.tooltip);
+}
+
+} // namespace UVE::Editor

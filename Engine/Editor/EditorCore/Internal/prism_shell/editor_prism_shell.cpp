@@ -96,7 +96,8 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 
 } // namespace
 
-EditorPrismShellUVE::EditorPrismShellUVE(EditorUVE& editor) : m_editor(editor), m_contentBrowser(editor) {}
+EditorPrismShellUVE::EditorPrismShellUVE(EditorUVE& editor)
+    : m_editor(editor), m_contentBrowser(editor), m_details2(editor) {}
 
 EditorPrismShellUVE::~EditorPrismShellUVE() {
     ShutdownUVE();
@@ -143,7 +144,7 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildLayoutUVE() {
     m_detailsColumn = BuildDetailsUVE();
     columns->add(m_outlinerColumn, prism::Splitter::Pane{250.0F, 170.0F, 700.0F, false});
     columns->add(centre, prism::Splitter::Pane{800.0F, 320.0F, 1e9F, true});
-    columns->add(m_detailsColumn, prism::Splitter::Pane{300.0F, 210.0F, 800.0F, false});
+    columns->add(m_detailsColumn, prism::Splitter::Pane{330.0F, 220.0F, 800.0F, false});
     window->add(columns, prism::Slot{1.0F});
 
     window->add(BuildDockBarUVE());
@@ -619,24 +620,10 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildViewportUVE() {
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDetailsUVE() {
-    // #17 tab, #18 search, #20 details (#21 scroll).
-    auto page = prism::vbox(4.0F);
-    page->setPadding(prism::Margin(4.0F));
-    m_detailsSearch = prism::make<prism::TextInput>("", "Search details");
-    m_detailsSearch->onChanged = [this](const std::string& text) {
-        m_detailsFilter = text;
-        m_detailsSignature = 0; // rebuild
-    };
-    page->add(m_detailsSearch);
-    m_detailsTitle = prism::make<prism::Label>("Nothing selected", prism::FontRole::Semibold);
-    page->add(m_detailsTitle);
-    m_details = prism::make<prism::PropertyGrid>();
-    auto scroll = prism::make<prism::ScrollView>();
-    scroll->setContent(m_details);
-    page->add(scroll, prism::Slot{1.0F});
-
+    // #17 tab, #18 search, #20 the selected object's components (#21 scroll), drawn from the
+    // engine's component metadata (EditorPrismDetailsUVE).
     auto tabs = prism::make<prism::TabView>();
-    tabs->addTab("Details", prism::Icon::Properties, PanelUVE(page));
+    tabs->addTab("Details", prism::Icon::Properties, PanelUVE(m_details2.BuildUVE()));
     return tabs;
 }
 
@@ -834,111 +821,7 @@ void EditorPrismShellUVE::RefreshOutlinerUVE() {
 }
 
 void EditorPrismShellUVE::RefreshDetailsUVE() {
-    if (!m_details) {
-        return;
-    }
-    const Scene::EntityUVE entity = m_editor.GetSelectedEntityUVE();
-    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    const bool alive = entity != Scene::kInvalidEntityUVE && em.IsAliveUVE(entity);
-    std::uint64_t signature = 7U;
-    if (alive) {
-        HashUVE(signature, (static_cast<std::uint64_t>(entity.index) << 32U) | entity.generation);
-        HashUVE(signature, m_editor.GetEntityDisplayLabelUVE(entity));
-        HashUVE(signature, m_detailsFilter);
-        if (em.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
-            const auto& t = em.GetComponentUVE<Scene::TransformComponentUVE>(entity);
-            HashUVE(signature, FormatFloatUVE(t.localPosition.x) + FormatFloatUVE(t.localPosition.y) +
-                                   FormatFloatUVE(t.localPosition.z) + FormatFloatUVE(t.localScale.x) +
-                                   FormatFloatUVE(t.localScale.y) + FormatFloatUVE(t.localScale.z));
-        }
-    }
-    if (signature == m_detailsSignature) {
-        return;
-    }
-    m_detailsSignature = signature;
-    m_detailsEntity = entity;
-    m_details->clear();
-    if (!alive) {
-        m_detailsTitle->setText("Nothing selected");
-        return;
-    }
-    m_detailsTitle->setText(m_editor.GetEntityDisplayLabelUVE(entity));
-    const auto matches = [this](const std::string& label) {
-        if (m_detailsFilter.empty()) {
-            return true;
-        }
-        std::string a = label;
-        std::string b = m_detailsFilter;
-        std::transform(a.begin(), a.end(), a.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        std::transform(b.begin(), b.end(), b.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return a.find(b) != std::string::npos;
-    };
-
-    const int object = m_details->addCategory("Object");
-    if (matches("Name")) {
-        auto name = prism::make<prism::TextInput>(m_editor.GetEntityDisplayLabelUVE(entity));
-        name->onCommit = [this](const std::string& text) { static_cast<void>(m_editor.SetSelectedEntityNameUVE(text)); };
-        m_details->addRow(object, "Name", name);
-    }
-    if (matches("Type")) {
-        m_details->addRow(object, "Type", prism::make<prism::Label>(std::string(m_editor.GetObjectTypeNameUVE(entity))));
-    }
-
-    if (em.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
-        const Scene::TransformComponentUVE transform = em.GetComponentUVE<Scene::TransformComponentUVE>(entity);
-        const int section = m_details->addCategory("Transform");
-        const auto applyAxis = [this](const int which, const int axis, const float value) {
-            Scene::IEntityManagerUVE& entityManager = m_editor.m_services->GetEntityManagerUVE();
-            const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
-            if (selected == Scene::kInvalidEntityUVE ||
-                !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(selected)) {
-                return;
-            }
-            Scene::TransformComponentUVE t = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(selected);
-            Math::Vector3UVE& v = which == 0 ? t.localPosition : t.localScale;
-            (axis == 0 ? v.x : axis == 1 ? v.y : v.z) = value;
-            static_cast<void>(m_editor.SetSelectedLocalTransformUVE(t));
-        };
-        if (matches("Location")) {
-            auto location = prism::make<prism::Vec3Field>(0.1F, 3);
-            location->setValue(transform.localPosition.x, transform.localPosition.y, transform.localPosition.z);
-            location->onChange = [applyAxis](const int axis, const float v) { applyAxis(0, axis, v); };
-            m_details->addRow(section, "Location", location);
-        }
-        if (matches("Rotation")) {
-            Math::Vector3UVE euler{};
-            static_cast<void>(Math::TryToEulerUVE(transform.localRotation, euler));
-            constexpr float kRadToDeg = 57.2957795F;
-            auto rotation = prism::make<prism::Vec3Field>(1.0F, 2);
-            rotation->setValue(euler.x * kRadToDeg, euler.y * kRadToDeg, euler.z * kRadToDeg);
-            rotation->setSuffix("\xC2\xB0");
-            rotation->onChange = [this](const int axis, const float degrees) {
-                Scene::IEntityManagerUVE& entityManager = m_editor.m_services->GetEntityManagerUVE();
-                const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
-                if (selected == Scene::kInvalidEntityUVE ||
-                    !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(selected)) {
-                    return;
-                }
-                Scene::TransformComponentUVE t = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(selected);
-                Math::Vector3UVE e{};
-                static_cast<void>(Math::TryToEulerUVE(t.localRotation, e));
-                constexpr float kDegToRad = 0.0174532925F;
-                (axis == 0 ? e.x : axis == 1 ? e.y : e.z) = degrees * kDegToRad;
-                Math::QuaternionUVE q{};
-                if (Math::TryMakeEulerUVE(e, q)) {
-                    t.localRotation = q;
-                    static_cast<void>(m_editor.SetSelectedLocalTransformUVE(t));
-                }
-            };
-            m_details->addRow(section, "Rotation", rotation);
-        }
-        if (matches("Scale")) {
-            auto scale = prism::make<prism::Vec3Field>(0.05F, 3);
-            scale->setValue(transform.localScale.x, transform.localScale.y, transform.localScale.z);
-            scale->onChange = [applyAxis](const int axis, const float v) { applyAxis(1, axis, v); };
-            m_details->addRow(section, "Scale", scale);
-        }
-    }
+    m_details2.RefreshUVE();
 }
 
 void EditorPrismShellUVE::RefreshToolbarUVE() {

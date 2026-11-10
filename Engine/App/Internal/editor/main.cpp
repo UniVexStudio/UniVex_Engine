@@ -71,6 +71,8 @@ struct EditorLaunchOptionsUVE final {
     bool prismUi = false;
     /// After the last frame (--frames), save the PRISM editor frame as PNG here.
     std::filesystem::path prismScreenshot;
+    /// Screenshot aid: put a box in the level and select it, so the Details panel has content.
+    bool prismDemoObject = false;
 };
 
 [[nodiscard]] bool ParseGlVersionUVE(const std::string_view value, std::uint32_t& major,
@@ -105,6 +107,10 @@ struct EditorLaunchOptionsUVE final {
         }
         if (argument == "--prism-ui") {
             options.prismUi = true;
+            continue;
+        }
+        if (argument == "--prism-demo-object") {
+            options.prismDemoObject = true;
             continue;
         }
         if (argument == "--prism-screenshot" && index + 1 < argc) {
@@ -218,6 +224,10 @@ int main(const int argc, char** argv) {
             static_cast<void>(editor.LoadSceneUVE());
         } else if (createDefaultViewport) {
             static_cast<void>(editor.SaveSceneUVE()); // the default Viewport asset exists from the start
+        }
+        if (options.prismDemoObject) {
+            static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Folder));
+            static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::BoxMesh3D));
         }
 
         if (options.bridgeStdio) {

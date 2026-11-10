@@ -428,12 +428,14 @@ struct FilePickerListingUVE final {
 
 class EditorPrismShellUVE;
 class EditorPrismContentBrowserUVE;
+class EditorPrismDetailsUVE;
 
 class EditorUVE final {
     friend struct Tests::EditorUVEAccessUVE;
     friend class EditorBridgeUVE;
     friend class EditorPrismShellUVE;
     friend class EditorPrismContentBrowserUVE;
+    friend class EditorPrismDetailsUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
