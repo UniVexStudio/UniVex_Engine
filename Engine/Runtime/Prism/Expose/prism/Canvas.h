@@ -59,6 +59,8 @@ public:
   virtual void blit(const uint32_t* src, int sw, int sh, Vec2 dst);
   // Nearest-neighbour scaled copy of an ARGB image (row stride in pixels) into dst, honouring the clip.
   virtual void blitScaled(const uint32_t* src, int sw, int sh, int stride, Rect dst);
+  // Like blitScaled, but composites the straight-alpha source over what is there (icons, cut-out thumbnails).
+  virtual void blitBlend(const uint32_t* src, int sw, int sh, int stride, Rect dst);
   // Writes `argb` directly (no blending). With alpha 0 this punches a transparent hole for host-drawn content.
   virtual void fillRaw(Rect r, uint32_t argb);
   bool savePng(const std::string& path) const;

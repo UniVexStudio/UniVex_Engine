@@ -14,7 +14,7 @@ enum class DrawOp : uint8_t {
   Clear, PushClip, PopClip,
   FillRect, FillRoundRect, StrokeRoundRect, FillCircle, StrokeCircle, Line, FillPolygon,
   GradientV, GradientH, NineSlice,
-  Text, Blit, BlitScaled, FillRaw, GlyphRun,
+  Text, Blit, BlitScaled, FillRaw, GlyphRun, BlitBlend,
 };
 
 struct DrawCmd {
@@ -77,6 +77,7 @@ public:
   void glyphRun(const Font& f, Vec2 p, std::span<const GlyphPos> glyphs, Color c) override;
   void blit(const uint32_t* src, int sw, int sh, Vec2 dst) override;
   void blitScaled(const uint32_t* src, int sw, int sh, int stride, Rect dst) override;
+  void blitBlend(const uint32_t* src, int sw, int sh, int stride, Rect dst) override;
   void fillRaw(Rect r, uint32_t argb) override;
 
 private:

@@ -422,8 +422,8 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     GLuint indexBuffer = 0U;
     if (succeeded) {
         glViewport(0, 0, width, height);
-        // Sleek dark slate charcoal studio background
-        glClearColor(0.12F, 0.13F, 0.16F, 1.0F);
+        // Transparent background: the preview is the mesh alone, composited over whatever tile shows it.
+        glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         SetGlCapabilityUVE(GL_DEPTH_TEST, GL_TRUE);
         glDepthMask(GL_TRUE);
         SetGlCapabilityUVE(GL_CULL_FACE, GL_FALSE);

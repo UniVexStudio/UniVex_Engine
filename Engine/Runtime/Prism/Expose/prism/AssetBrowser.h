@@ -25,6 +25,11 @@ struct AssetRecord {
   std::string folder = "Content";
   std::string badgeText = "SM";
   bool isModified = false;
+  // Host-provided preview (0xAARRGGBB, straight alpha, top row first). When set the tile shows it on a
+  // plain well - no studio backdrop, no built-in stand-in - fitted and centred, alpha-composited.
+  const uint32_t* thumbnail = nullptr;
+  int thumbnailW = 0, thumbnailH = 0;
+  float thumbnailScale = 1.0f;   // < 1 shrinks small previews such as type icons inside the well
 };
 
 // Draws `asset`'s thumbnail (PBR previews for meshes / materials, texture, shader, font and level cards,
