@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace prism {
@@ -47,6 +48,10 @@ private:
     using FocusUVE = EditorUVE::ContentBrowserTypeFocusUVE;
     [[nodiscard]] static prism::Icon IconForUVE(ItemTypeUVE type);
     [[nodiscard]] static prism::Color TintForUVE(ItemTypeUVE type);
+    [[nodiscard]] static std::pair<std::string, std::string> DescribeUVE(ItemTypeUVE type);
+    [[nodiscard]] static prism::Ref<prism::Widget> SectionHeaderUVE(const std::string& title, bool open,
+                                                                    std::shared_ptr<prism::Widget> body,
+                                                                    std::shared_ptr<prism::Widget> extra);
 
     void RebuildFoldersUVE();
     void RebuildTilesUVE();
@@ -60,6 +65,8 @@ private:
 
     std::shared_ptr<prism::TextInput> m_folderSearch;
     std::shared_ptr<prism::TreeView> m_folders;
+    std::shared_ptr<prism::TreeView> m_shelves;
+    std::vector<std::string> m_shelfNames;
     std::shared_ptr<prism::Button> m_addButton;
     std::shared_ptr<prism::Button> m_filterButton;
     std::shared_ptr<prism::TextInput> m_itemSearch;

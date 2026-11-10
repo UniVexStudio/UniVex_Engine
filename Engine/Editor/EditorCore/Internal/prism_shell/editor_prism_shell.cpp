@@ -10,6 +10,7 @@
 #include "prism/Menu.h"
 #include "prism/Tabs.h"
 #include "prism/TextInput.h"
+#include "prism/Layouts.h"
 #include "prism/Theme.h"
 #include "prism/Views.h"
 
@@ -119,30 +120,33 @@ void EditorPrismShellUVE::ShutdownUVE() {
 // --------------------------------------------------------------------------------------- layout
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildLayoutUVE() {
-    auto content = prism::vbox();
-    content->add(BuildToolbarRowUVE());
+    // Editor design sheet, top to bottom:
+    //   [#1 logo] [#15 title bar: menus | drag strip | - [] x]
+    //   [       ] [#2 viewport / level name tab               ]
+    //   sub row 1: #4 #5 #3 | #14 | transport
+    //   sub row 2: gizmo / snap / view settings (full width)
+    //   [#6 Outliner | #25 viewport over the dock panel | #17 Details]
+    //   #16 dock bar: Content Browser, Output Log, Console, Profiler ...
+    auto window = prism::vbox();
+    window->add(BuildTitleBarUVE());
+    window->add(BuildToolbarRowUVE());
+    window->add(BuildSubRow2UVE());
 
-    // Outliner | centre (viewport over the dock area) | Details. The splitter gaps are the panel
-    // resize handles (#13, #22).
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
-    centre->add(BuildViewportUVE(), prism::Splitter::Pane{400.0F, 200.0F, 1e9F, true});
+    centre->add(BuildViewportUVE(), prism::Splitter::Pane{400.0F, 160.0F, 1e9F, true});
     m_dockArea = BuildDockUVE();
-    centre->add(m_dockArea, prism::Splitter::Pane{260.0F, 120.0F, 900.0F, false});
+    centre->add(m_dockArea, prism::Splitter::Pane{250.0F, 110.0F, 900.0F, false});
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     m_outlinerColumn = BuildOutlinerUVE();
     m_detailsColumn = BuildDetailsUVE();
-    columns->add(m_outlinerColumn, prism::Splitter::Pane{280.0F, 180.0F, 700.0F, false});
+    columns->add(m_outlinerColumn, prism::Splitter::Pane{250.0F, 170.0F, 700.0F, false});
     columns->add(centre, prism::Splitter::Pane{800.0F, 320.0F, 1e9F, true});
-    columns->add(m_detailsColumn, prism::Splitter::Pane{340.0F, 220.0F, 800.0F, false});
-    content->add(columns, prism::Slot{1.0F});
+    columns->add(m_detailsColumn, prism::Splitter::Pane{300.0F, 210.0F, 800.0F, false});
+    window->add(columns, prism::Slot{1.0F});
 
-    content->add(BuildDockBarUVE());
+    window->add(BuildDockBarUVE());
 
-    // #1 logo + #15 title bar with the editor menus, over everything else; 1px window frame.
-    auto window = prism::vbox();
-    window->add(BuildTitleBarUVE());
-    window->add(content, prism::Slot{1.0F});
     auto frame = prism::make<prism::Border>();
     frame->setBackground(prism::ThemeColor(&prism::Theme::window));
     frame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
@@ -217,21 +221,63 @@ bool EditorPrismShellUVE::DispatchShortcutUVE(const prism::Key key, const std::u
 
 namespace {
 
-/// #1: the engine's logo tab at the left end of the title bar.
-class LogoTabUVE final : public prism::Widget {
+/// #1: the engine logo box. It spans the title bar row and the viewport-name tab row, the same
+/// mark the editor has always shown there (a rounded blue square with the U).
+class LogoBoxUVE final : public prism::Widget {
 public:
-    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(118.0F, 32.0F)); }
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(62.0F, 62.0F)); }
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
         const prism::Rect r = rect();
-        const prism::Vec2 poly[4] = {prism::Vec2(r.x, r.y), prism::Vec2(r.right() - 10.0F, r.y),
-                                     prism::Vec2(r.right(), r.bottom()), prism::Vec2(r.x, r.bottom())};
-        c.fillPolygon(std::span<const prism::Vec2>(poly, 4), t.accent.alpha(0.22F), false);
-        c.fillRect(prism::Rect{r.x, r.bottom() - 2.0F, r.w - 3.0F, 2.0F}, t.accent);
-        prism::drawIcon(c, prism::Icon::Layers, prism::Rect{r.x + 10.0F, r.y + 8.0F, 16.0F, 16.0F}, t.accentHover);
-        c.textIn(*t.semibold, prism::Rect{r.x + 32.0F, r.y, r.w - 40.0F, r.h}, "UniVex", t.textBright,
-                 prism::HAlign::Left, false);
+        c.fillRect(r, t.header);
+        const float side = std::min(r.w, r.h) - 18.0F;
+        const prism::Rect mark{r.x + (r.w - side) * 0.5F, r.y + (r.h - side) * 0.5F, side, side};
+        c.fillRoundRect(mark, 7.0F, prism::Color(32, 112, 228));
+        c.strokeRoundRect(mark, 7.0F, prism::Color(82, 160, 255, 220), 1);
+        // The U, drawn: two stems joined by a rounded bowl.
+        const float uw = side * 0.46F;
+        const float uh = side * 0.52F;
+        const float th = std::max(3.0F, side * 0.12F);
+        const float ux = mark.x + (mark.w - uw) * 0.5F;
+        const float uy = mark.y + (mark.h - uh) * 0.5F;
+        const prism::Color white(255, 255, 255);
+        c.fillRect(prism::Rect{ux, uy, th, uh - uw * 0.5F}, white);
+        c.fillRect(prism::Rect{ux + uw - th, uy, th, uh - uw * 0.5F}, white);
+        const prism::Vec2 bowl{ux + uw * 0.5F, uy + uh - uw * 0.5F};
+        c.fillCircle(bowl, uw * 0.5F, white);
+        c.fillCircle(bowl, uw * 0.5F - th, prism::Color(32, 112, 228));
+        c.fillRect(prism::Rect{ux + th, uy, uw - 2.0F * th, uh - uw * 0.5F}, prism::Color(32, 112, 228));
+        c.fillRect(prism::Rect{r.right() - 1.0F, r.y, 1.0F, r.h}, t.border);
     }
+};
+
+/// #2: the tab that names what the viewport shows (the open level / scene).
+class ViewportNameTabUVE final : public prism::Widget {
+public:
+    prism::Vec2 measure(prism::Vec2) override {
+        const float w = std::max(170.0F, std::ceil(prism::theme().ui->width(m_name)) + 60.0F);
+        return m_desired = constrain(prism::Vec2(w, 30.0F));
+    }
+    void setName(std::string name) {
+        if (name != m_name) {
+            m_name = std::move(name);
+            relayout();
+        }
+    }
+    void paint(prism::Canvas& c) override {
+        const prism::Theme& t = prism::theme();
+        const prism::Rect r = rect();
+        const prism::Rect tab{r.x + 6.0F, r.y + 3.0F, r.w - 6.0F, r.h - 3.0F};
+        c.fillRoundRect(tab, 5.0F, t.panel);
+        c.fillRect(prism::Rect{tab.x, tab.bottom() - 5.0F, tab.w, 5.0F}, t.panel);
+        c.fillRect(prism::Rect{tab.x, tab.y, tab.w, 2.0F}, t.accent);
+        prism::drawIcon(c, prism::Icon::Globe, prism::Rect{tab.x + 10.0F, tab.y + 6.0F, 16.0F, 16.0F}, t.accentHover);
+        c.textIn(*t.ui, prism::Rect{tab.x + 32.0F, tab.y, tab.w - 40.0F, tab.h}, m_name, t.textBright, prism::HAlign::Left,
+                 true);
+    }
+
+private:
+    std::string m_name = "Viewport3D";
 };
 
 /// #15: the drag strip. Reports itself as the window caption (the host moves the window from it);
@@ -268,8 +314,6 @@ public:
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
     auto row = prism::hbox();
-    row->add(prism::make<LogoTabUVE>());
-
     auto menus = prism::make<prism::MenuBar>();
     menus->setShowLogo(false);
     menus->addMenu("File", [this] {
@@ -294,17 +338,13 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
             if (m_detailsColumn) { m_detailsColumn->setVisible(m_editor.m_inspectorPanelVisible); }
         }));
         items.push_back(prism::MenuItem::Check("Content Browser + Dock", m_dockVisible, [this] {
-            m_dockVisible = !m_dockVisible;
-            if (m_dockArea) { m_dockArea->setVisible(m_dockVisible); }
+            ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, false);
         }));
         return items;
     });
     menus->addMenu("Tools", [this] {
         std::vector<prism::MenuItem> items;
-        items.push_back(prism::MenuItem::Item("Project Browser", [this] {
-            m_dockVisible = true;
-            if (m_dockArea) { m_dockArea->setVisible(true); }
-        }));
+        items.push_back(prism::MenuItem::Item("Project Browser", [this] { ShowDockPanelUVE(0, true); }));
         items.push_back(prism::MenuItem::Item("Import Queue", {}).disabled());
         items.push_back(prism::MenuItem::Sep());
         for (prism::MenuItem& item : CommandItemsUVE({"file.projectSettings", "file.preferences", "file.commandPalette"})) {
@@ -343,49 +383,52 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
     row->add(maximize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(close, prism::Slot{0.0F, prism::Margin(0.0F, 0.0F, 4.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
 
+    // [#1 logo] [ #15 title row      ]
+    //           [ #2 viewport name tab ]
+    auto tabRow = prism::hbox();
+    m_viewportNameTab = prism::make<ViewportNameTabUVE>();
+    tabRow->add(m_viewportNameTab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
+    tabRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    auto right = prism::vbox();
+    right->add(row);
+    right->add(tabRow);
+    auto top = prism::hbox();
+    top->add(prism::make<LogoBoxUVE>());
+    top->add(right, prism::Slot{1.0F});
+
     auto bar = prism::make<prism::Border>();
     bar->setBackground(prism::ThemeColor(&prism::Theme::header));
     bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    bar->setChild(row);
+    bar->setChild(top);
     return bar;
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
-    // Sub row 1: #4 open folder, #5 save, #3 selection mode, #14 blueprint (beta) | transport.
+    // Sub row 1: #4 open folder, #5 save, #3 selection mode | #14 blueprint (beta) | transport.
     auto row = prism::hbox(4.0F);
-    row->setPadding(prism::Margin(6.0F, 4.0F, 6.0F, 4.0F));
+    row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
 
-    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Content)");
-    openFolder->onClick = [this] {
-        m_dockVisible = true;
-        if (m_dockArea) {
-            m_dockArea->setVisible(true);
-        }
-    };
+    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Content Browser)");
+    openFolder->onClick = [this] { ShowDockPanelUVE(0, true); };
     row->add(openFolder, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-
-    auto save = ToolButtonUVE(prism::Icon::Save, "Save all (Ctrl+S)");
-    save->onClick = [this] {
-        const std::size_t saved = m_editor.SaveAllUVE();
-        if (prism::Application::exists()) {
-            prism::Application::get().notify(saved > 0 ? "Saved" : "Nothing to save", prism::ToastLevel::Info);
-        }
-    };
+    auto save = ToolButtonUVE(prism::Icon::Save, "Save all (Ctrl+Shift+S)");
+    save->onClick = [this] { static_cast<void>(m_editor.RunEditorCommandUVE("file.saveAll")); };
     row->add(save, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    row->add(HSeparatorUVE());
 
-    m_selectionMode = prism::make<prism::ComboBox>(
-        std::vector<std::string>{"Universal", "Move", "Rotate", "Scale"}, 0);
+    m_selectionMode = prism::make<prism::ComboBox>(std::vector<std::string>{"Universal", "Move", "Rotate", "Scale"}, 0);
     m_selectionMode->setTooltip("Selection mode");
     m_selectionMode->onChange = [this](const int index) {
         using Mode = EditorUVE::ViewportGizmoModeUVE;
         static constexpr std::array<Mode, 4> kModes{Mode::Universal, Mode::Move, Mode::Rotate, Mode::Scale};
         m_editor.m_viewportOverlayState.gizmoMode = kModes[static_cast<std::size_t>(std::clamp(index, 0, 3))];
     };
-    row->add(m_selectionMode, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    auto modeBox = prism::make<prism::SizeBox>();
+    modeBox->setWidthOverride(150.0F);
+    modeBox->setContent(m_selectionMode);
+    row->add(modeBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(HSeparatorUVE());
 
-    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Blueprint editor (beta)", "Blueprint");
+    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Blueprint editor (beta)");
     blueprint->onClick = [] {
         if (prism::Application::exists()) {
             prism::Application::get().notify("Blueprint editor (beta) - coming in the blueprint milestone",
@@ -393,8 +436,8 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
         }
     };
     row->add(blueprint, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    row->add(HSeparatorUVE());
 
-    // Transport, centred.
     row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     m_playButton = ToolButtonUVE(prism::Icon::Play, "Play");
     m_playButton->onClick = [this] {
@@ -412,12 +455,55 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
     row->add(m_pauseButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(m_stopButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    m_statusLabel = prism::make<prism::Label>("", prism::FontRole::Small);
+    m_statusLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    row->add(m_statusLabel, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
 
     auto border = prism::make<prism::Border>();
     border->setBackground(prism::ThemeColor(&prism::Theme::header));
     border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
     border->setChild(row);
     return border;
+}
+
+prism::Ref<prism::Widget> EditorPrismShellUVE::BuildSubRow2UVE() {
+    // Sub row 2 (full width): gizmo mode, snapping, grid, projection - the viewport settings row.
+    auto settings = prism::hbox(4.0F);
+    settings->setPadding(prism::Margin(6.0F, 2.0F, 6.0F, 2.0F));
+    m_gizmoModes = prism::make<prism::Segmented>();
+    m_gizmoModes->add("", prism::Icon::Select, "Universal")
+        .add("", prism::Icon::Move, "Move")
+        .add("", prism::Icon::Rotate, "Rotate")
+        .add("", prism::Icon::Scale, "Scale");
+    m_gizmoModes->onSelect = [this](const int index) {
+        using Mode = EditorUVE::ViewportGizmoModeUVE;
+        static constexpr std::array<Mode, 4> kModes{Mode::Universal, Mode::Move, Mode::Rotate, Mode::Scale};
+        m_editor.m_viewportOverlayState.gizmoMode = kModes[static_cast<std::size_t>(std::clamp(index, 0, 3))];
+    };
+    settings->add(m_gizmoModes, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    settings->add(HSeparatorUVE());
+    m_snapButton = ToolButtonUVE(prism::Icon::Magnet, "Snap to grid");
+    m_snapButton->setCheckable(true);
+    m_snapButton->onToggle = [this](const bool on) {
+        EditorTransformSnappingSettingsUVE snap = m_editor.m_transformSnappingSettings;
+        snap.enabled = on;
+        static_cast<void>(m_editor.SetTransformSnappingSettingsUVE(snap));
+    };
+    m_gridButton = ToolButtonUVE(prism::Icon::Grid, "Show grid");
+    m_gridButton->setCheckable(true);
+    m_gridButton->onToggle = [this](const bool on) { m_editor.m_viewportOverlayState.gridVisible = on; };
+    m_orthoButton = ToolButtonUVE(prism::Icon::Frame, "Orthographic");
+    m_orthoButton->setCheckable(true);
+    m_orthoButton->onToggle = [this](const bool on) { m_editor.m_viewportOverlayState.orthographic = on; };
+    settings->add(m_snapButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    settings->add(m_gridButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    settings->add(m_orthoButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    settings->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    auto bar = prism::make<prism::Border>();
+    bar->setBackground(prism::ThemeColor(&prism::Theme::panel));
+    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+    bar->setChild(settings);
+    return bar;
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildOutlinerUVE() {
@@ -491,55 +577,13 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildOutlinerUVE() {
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildViewportUVE() {
-    // #2 viewport tab over sub row 2 (gizmo / view settings) and #25 the viewport itself.
-    auto page = prism::vbox();
-
-    auto settings = prism::hbox(4.0F);
-    settings->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
-    m_gizmoModes = prism::make<prism::Segmented>();
-    m_gizmoModes->add("", prism::Icon::Select, "Universal")
-        .add("", prism::Icon::Move, "Move")
-        .add("", prism::Icon::Rotate, "Rotate")
-        .add("", prism::Icon::Scale, "Scale");
-    m_gizmoModes->onSelect = [this](const int index) {
-        using Mode = EditorUVE::ViewportGizmoModeUVE;
-        static constexpr std::array<Mode, 4> kModes{Mode::Universal, Mode::Move, Mode::Rotate, Mode::Scale};
-        m_editor.m_viewportOverlayState.gizmoMode = kModes[static_cast<std::size_t>(std::clamp(index, 0, 3))];
-    };
-    settings->add(m_gizmoModes, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    settings->add(HSeparatorUVE());
-    m_snapButton = ToolButtonUVE(prism::Icon::Magnet, "Snap to grid");
-    m_snapButton->setCheckable(true);
-    m_snapButton->onToggle = [this](const bool on) {
-        EditorTransformSnappingSettingsUVE snap = m_editor.m_transformSnappingSettings;
-        snap.enabled = on;
-        static_cast<void>(m_editor.SetTransformSnappingSettingsUVE(snap));
-    };
-    m_gridButton = ToolButtonUVE(prism::Icon::Grid, "Show grid");
-    m_gridButton->setCheckable(true);
-    m_gridButton->onToggle = [this](const bool on) { m_editor.m_viewportOverlayState.gridVisible = on; };
-    m_orthoButton = ToolButtonUVE(prism::Icon::Frame, "Orthographic");
-    m_orthoButton->setCheckable(true);
-    m_orthoButton->onToggle = [this](const bool on) { m_editor.m_viewportOverlayState.orthographic = on; };
-    settings->add(m_snapButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    settings->add(m_gridButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    settings->add(m_orthoButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    settings->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
-    auto settingsBar = prism::make<prism::Border>();
-    settingsBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    settingsBar->setChild(settings);
-    page->add(settingsBar);
-
+    // #25: the viewport itself (its name is tab #2 under the title bar).
     m_viewport = prism::make<prism::EngineView>();
     m_viewport->mode = prism::EngineView::Mode::Hole;
     // Input reaches the viewport through the host's raw state (CaptureViewInputUVE); onInput only
     // makes the view focusable so clicking it takes keyboard focus away from text fields.
     m_viewport->onInput = [](const prism::EngineInput&) {};
-    page->add(m_viewport, prism::Slot{1.0F});
-
-    auto tabs = prism::make<prism::TabView>();
-    tabs->addTab("Viewport", prism::Icon::Camera, page);
-    return tabs;
+    return m_viewport;
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDetailsUVE() {
@@ -565,34 +609,66 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDetailsUVE() {
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDockUVE() {
-    // #16 dock area: the panels docked under the viewport.
-    auto tabs = prism::make<prism::TabView>();
-    tabs->dockGroup = "level-editor";
-    tabs->addTab("Content Browser", prism::Icon::Folder, PanelUVE(m_contentBrowser.BuildUVE()));
+    // The dock panel (above the #16 dock bar): one page per dock tab.
+    m_dockPages = prism::make<prism::StackSwitcher>();
+    m_dockPages->addPage(PanelUVE(m_contentBrowser.BuildUVE()));
     auto log = prism::make<prism::LogView>();
     log->add(prism::LogLevel::Info, "PRISM editor shell ready", "Editor");
-    tabs->addTab("Output Log", prism::Icon::Terminal, PanelUVE(log));
-    return tabs;
+    m_dockPages->addPage(PanelUVE(log));
+    auto console = prism::make<prism::LogView>();
+    console->add(prism::LogLevel::Command, "Console", "Console");
+    m_dockPages->addPage(PanelUVE(console));
+    auto profiler = prism::make<prism::Label>("Profiler", prism::FontRole::Regular);
+    profiler->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    profiler->setPadding(prism::Margin(12.0F));
+    m_dockPages->addPage(PanelUVE(profiler));
+    return m_dockPages;
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDockBarUVE() {
-    auto bar = prism::hbox(6.0F);
-    bar->setPadding(prism::Margin(8.0F, 2.0F, 8.0F, 2.0F));
-    auto toggle = ToolButtonUVE(prism::Icon::Layers, "Show / hide the dock", "Dock");
-    toggle->onClick = [this] {
-        m_dockVisible = !m_dockVisible;
-        if (m_dockArea) {
-            m_dockArea->setVisible(m_dockVisible);
-        }
-    };
-    bar->add(toggle, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    m_statusLabel = prism::make<prism::Label>("", prism::FontRole::Small);
-    m_statusLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    bar->add(m_statusLabel, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    // #16: the dock bar along the bottom; each tab shows its panel, the active one hides it.
+    auto bar = prism::hbox(2.0F);
+    bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
+    struct DockTabUVE { const char* label; prism::Icon icon; };
+    static constexpr std::array<DockTabUVE, 4> kTabs{{
+        {"Content Browser", prism::Icon::Folder},
+        {"Output Log", prism::Icon::Info},
+        {"Console", prism::Icon::Terminal},
+        {"Profiler", prism::Icon::Refresh},
+    }};
+    for (std::size_t i = 0; i < kTabs.size(); ++i) {
+        auto tab = prism::make<prism::Button>(kTabs[i].label, kTabs[i].icon, prism::ButtonStyle::Toolbar);
+        tab->setCheckable(true);
+        tab->setChecked(i == 0);
+        tab->onClick = [this, index = static_cast<int>(i)] { ShowDockPanelUVE(index, false); };
+        m_dockTabs.push_back(tab);
+        bar->add(tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    }
+    bar->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto border = prism::make<prism::Border>();
     border->setBackground(prism::ThemeColor(&prism::Theme::statusBar));
+    border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 0.0F));
     border->setChild(bar);
     return border;
+}
+
+void EditorPrismShellUVE::ShowDockPanelUVE(const int index, const bool forceVisible) {
+    if (!m_dockPages) {
+        return;
+    }
+    const bool sameTab = m_dockPages->activeIndex() == index;
+    if (sameTab && m_dockVisible && !forceVisible) {
+        m_dockVisible = false;
+    } else {
+        m_dockVisible = true;
+        m_dockPages->setActiveIndex(index);
+    }
+    if (m_dockArea) {
+        m_dockArea->setVisible(m_dockVisible);
+    }
+    for (std::size_t i = 0; i < m_dockTabs.size(); ++i) {
+        m_dockTabs[i]->setChecked(m_dockVisible && static_cast<int>(i) == m_dockPages->activeIndex());
+    }
 }
 
 // ---------------------------------------------------------------------------------- add / filter
@@ -850,12 +926,18 @@ void EditorPrismShellUVE::RefreshToolbarUVE() {
     if (m_selectionMode && m_selectionMode->selected() != mode) {
         m_selectionMode->setSelected(mode);
     }
+    if (m_viewportNameTab) {
+        const std::string stem = m_editor.m_activeScenePath.stem().string();
+        static_cast<ViewportNameTabUVE*>(m_viewportNameTab.get())->setName(stem.empty() ? "Viewport3D" : stem);
+    }
     if (m_statusLabel) {
         const char* const state = play == EditorPlayModeStateUVE::Edit      ? "Editing"
                                   : play == EditorPlayModeStateUVE::Playing ? "Playing"
                                                                             : "Paused";
-        std::string text = state;
-        text += m_editor.m_sceneDirty ? "  \xE2\x80\xA2  unsaved changes" : "";
+        std::string text = m_editor.m_sceneDirty ? "unsaved" : "saved";
+        text += " | " + std::to_string(m_editor.m_selectedEntities.size()) + " selected | ";
+        text += state;
+        text += "    UVE Editor 0.1";
         if (m_statusLabel->text() != text) {
             m_statusLabel->setText(text);
         }
