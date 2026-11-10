@@ -165,6 +165,75 @@ void EditorUVE::DrawViewportAxisColorPickerUVE() {
     }
 }
 
+Scene::EntityUVE EditorUVE::AddPreviewSunToSceneUVE() {
+    // The scene's sun, made from (or updated to) the preview sun: direction, colour, energy, and
+    // real-time shadows on.
+    if (!IsAuthoringCommandAllowedUVE()) {
+        return Scene::kInvalidEntityUVE;
+    }
+    Scene::EntityUVE sunEntity = FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+    if (sunEntity == Scene::kInvalidEntityUVE) {
+        sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+    }
+    if (sunEntity == Scene::kInvalidEntityUVE) {
+        return sunEntity;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const std::optional<Math::QuaternionUVE> rotation = Scene::TryMakePreviewSunRotationUVE(
+        m_viewportOverlayState.previewSunAzimuth, m_viewportOverlayState.previewSunAltitude);
+    if (rotation.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
+        auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
+        transform.localRotation = *rotation;
+        m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, transform);
+    }
+    if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
+        auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
+        emitter.color = Math::ColorFromDisplayUVE(Math::Vector3UVE{m_viewportOverlayState.previewSunColor[0],
+                                                                    m_viewportOverlayState.previewSunColor[1],
+                                                                    m_viewportOverlayState.previewSunColor[2]});
+        emitter.energy = m_viewportOverlayState.previewSunEnergy;
+        emitter.shadowEnabled = true;
+    }
+    m_sceneDirty = true;
+    SelectEntityUVE(sunEntity);
+    m_contentStatusMessage = "Added DirectionalLight3D from Preview Sun (with real-time shadows).";
+    return sunEntity;
+}
+
+Scene::EntityUVE EditorUVE::AddPreviewEnvironmentToSceneUVE() {
+    // The scene's WorldEnvironment3D, made from (or updated to) the preview sky and ambient.
+    if (!IsAuthoringCommandAllowedUVE()) {
+        return Scene::kInvalidEntityUVE;
+    }
+    Scene::EntityUVE envEntity = FindTopLevelObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+    if (envEntity == Scene::kInvalidEntityUVE) {
+        envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
+    }
+    if (envEntity == Scene::kInvalidEntityUVE) {
+        return envEntity;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
+        auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
+        env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
+        env.ambientColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+        env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0], m_viewportOverlayState.previewSkyColor[1],
+                                        m_viewportOverlayState.previewSkyColor[2]};
+        env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
+                                            m_viewportOverlayState.previewHorizonColor[1],
+                                            m_viewportOverlayState.previewHorizonColor[2]};
+        env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
+                                           m_viewportOverlayState.previewGroundColor[1],
+                                           m_viewportOverlayState.previewGroundColor[2]};
+        env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
+        env.postProcessingEnabled = false;
+    }
+    m_sceneDirty = true;
+    SelectEntityUVE(envEntity);
+    m_contentStatusMessage = "Added WorldEnvironment3D from Preview Environment.";
+    return envEntity;
+}
+
 void EditorUVE::DrawMenuBarUVE() {
     const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
     // Every keyboard shortcut is a command's (editor_commands_uve.cpp), rebindable in Keyboard
@@ -1271,32 +1340,7 @@ void EditorUVE::DrawMenuBarUVE() {
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.25F, 0.41F, 0.65F, 1.0F});
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.16F, 0.27F, 0.45F, 1.0F});
                     if (ImGui::Button("+ Add Sun to Scene##toolbar-add-sun", ImVec2{-1.0F, 28.0F})) {
-                        Scene::EntityUVE sunEntity = existingSunEntity;
-                        if (sunEntity == Scene::kInvalidEntityUVE) {
-                            sunEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
-                        }
-                        if (sunEntity != Scene::kInvalidEntityUVE) {
-                            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-                            const std::optional<Math::QuaternionUVE> rotation =
-                                Scene::TryMakePreviewSunRotationUVE(m_viewportOverlayState.previewSunAzimuth,
-                                                                    m_viewportOverlayState.previewSunAltitude);
-                            if (rotation.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(sunEntity)) {
-                                auto transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(sunEntity);
-                                transform.localRotation = *rotation;
-                                m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, sunEntity, transform);
-                            }
-                            if (entityManager.HasComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity)) {
-                                auto& emitter = entityManager.GetComponentUVE<Scene::LightEmitterComponentUVE>(sunEntity);
-                                emitter.color = Math::ColorFromDisplayUVE(
-                                    Math::Vector3UVE{m_viewportOverlayState.previewSunColor[0],
-                                                     m_viewportOverlayState.previewSunColor[1],
-                                                     m_viewportOverlayState.previewSunColor[2]});
-                                emitter.energy = m_viewportOverlayState.previewSunEnergy;
-                                emitter.shadowEnabled = true;
-                            }
-                            m_sceneDirty = true;
-                            SelectEntityUVE(sunEntity);
-                            m_contentStatusMessage = "Added DirectionalLight3D from Preview Sun (with real-time shadows).";
+                        if (AddPreviewSunToSceneUVE() != Scene::kInvalidEntityUVE) {
                             ImGui::CloseCurrentPopup();
                         }
                     }
@@ -1361,31 +1405,7 @@ void EditorUVE::DrawMenuBarUVE() {
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{0.23F, 0.46F, 0.43F, 1.0F});
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{0.15F, 0.30F, 0.28F, 1.0F});
                     if (ImGui::Button("+ Add Environment to Scene##toolbar-add-env", ImVec2{-1.0F, 28.0F})) {
-                        Scene::EntityUVE envEntity = existingEnvEntity;
-                        if (envEntity == Scene::kInvalidEntityUVE) {
-                            envEntity = CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::WorldEnvironment3D);
-                        }
-                        if (envEntity != Scene::kInvalidEntityUVE) {
-                            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-                            if (entityManager.HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity)) {
-                                auto& env = entityManager.GetComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity);
-                                env.ambientSource = Scene::WorldEnvironmentAmbientSourceUVE::Sky;
-                                env.ambientColor = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
-                                env.skyColor = Math::Vector3UVE{m_viewportOverlayState.previewSkyColor[0],
-                                                                m_viewportOverlayState.previewSkyColor[1],
-                                                                m_viewportOverlayState.previewSkyColor[2]};
-                                env.horizonColor = Math::Vector3UVE{m_viewportOverlayState.previewHorizonColor[0],
-                                                                    m_viewportOverlayState.previewHorizonColor[1],
-                                                                    m_viewportOverlayState.previewHorizonColor[2]};
-                                env.groundColor = Math::Vector3UVE{m_viewportOverlayState.previewGroundColor[0],
-                                                                   m_viewportOverlayState.previewGroundColor[1],
-                                                                   m_viewportOverlayState.previewGroundColor[2]};
-                                env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
-                                env.postProcessingEnabled = false;
-                            }
-                            m_sceneDirty = true;
-                            SelectEntityUVE(envEntity);
-                            m_contentStatusMessage = "Added WorldEnvironment3D from Preview Environment.";
+                        if (AddPreviewEnvironmentToSceneUVE() != Scene::kInvalidEntityUVE) {
                             ImGui::CloseCurrentPopup();
                         }
                     }

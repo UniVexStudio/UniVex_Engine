@@ -2009,6 +2009,11 @@ private:
     [[nodiscard]] bool SaveSessionSettingsUVE();
     void ApplyLayoutPresetUVE(EditorLayoutPresetUVE preset) noexcept;
     void DrawMenuBarUVE();
+    /// Turns the viewport's preview sun / preview sky into the scene's own DirectionalLight3D /
+    /// WorldEnvironment3D (creating it, or updating the one there), selects it and returns it.
+    /// Invalid when authoring is not allowed.
+    Scene::EntityUVE AddPreviewSunToSceneUVE();
+    Scene::EntityUVE AddPreviewEnvironmentToSceneUVE();
     void DrawViewportPanelUVE();
     /// The rendered scene and its overlay, filling the rest of the current window (the main
     /// Viewport panel and the Entity Editor both use it).
