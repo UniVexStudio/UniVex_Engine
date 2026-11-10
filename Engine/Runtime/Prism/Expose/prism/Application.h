@@ -84,7 +84,7 @@ public:
   PixelView render();                 // lays out if needed, paints, returns the frame (valid until next render/resize)
   PixelView frame() const;            // last rendered frame without re-rendering
   // Routing helpers so the host can decide who gets an input event:
-  bool wantsPointerAt(Vec2 p);        // true if a UI widget (not an EngineView hole / empty space) is under p
+  bool wantsPointerAt(Vec2 p);        // true if a UI widget (not an EngineView hole / empty space) is under p, or holds the mouse
   bool wantsKeyboard() const;         // true while a text field has focus or a popup is open
   Platform& platform() { return *m_platform; }
   void setRoot(Ref<Widget> root);
