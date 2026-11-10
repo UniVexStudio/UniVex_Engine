@@ -1,0 +1,148 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+#include "Support/test_scratch.h"
+
+#include "uve_file_envelope.h"
+#include "project_checker.h"
+
+namespace UVE::ProjectCheck::Tests {
+namespace {
+
+class ProjectCheckerUVETest : public ::testing::Test {
+protected:
+    void SetUp() override { m_root = ::UVE::Tests::MakeTestCaseDirectoryUVE(); }
+
+    void TearDown() override { std::filesystem::remove_all(m_root); }
+
+    [[nodiscard]] std::filesystem::path WriteEnvelopeUVE(const std::string& name, const Asset::AssetKindUVE kind) const {
+        const std::filesystem::path path = m_root / name;
+        EXPECT_TRUE(Asset::WriteUveFileUVE(path, kind, {}));
+        return path;
+    }
+
+    std::filesystem::path m_root;
+};
+
+TEST_F(ProjectCheckerUVETest, RunUVE_IsReadOnlyAndRendersStableTextAndJson) {
+    const std::filesystem::path scene = WriteEnvelopeUVE("valid.uvscene", Asset::AssetKindUVE::Scene);
+    const std::string before = [] (const std::filesystem::path& path) {
+        std::ifstream input(path, std::ios::binary);
+        return std::string{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    }(scene);
+
+    const ProjectCheckReportUVE first = ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, {}});
+    const ProjectCheckReportUVE second = ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, {}});
+    EXPECT_FALSE(first.HasErrorsUVE());
+    EXPECT_EQ(RenderProjectCheckTextUVE(first), RenderProjectCheckTextUVE(second));
+    const std::string json = RenderProjectCheckJsonUVE(first);
+    EXPECT_EQ(json, RenderProjectCheckJsonUVE(second));
+    EXPECT_NE(json.find("\"hasErrors\":false,\"diagnostics\":["), std::string::npos);
+
+    std::ifstream input(scene, std::ios::binary);
+    const std::string after{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    EXPECT_EQ(before, after);
+    EXPECT_FALSE(std::filesystem::exists(m_root / ".uvassetdb"));
+}
+
+TEST_F(ProjectCheckerUVETest, RunUVE_ResolvesRelativeAssetDatabasePathFromProjectRoot) {
+    const std::filesystem::path databaseDirectory = m_root / "registry";
+    ASSERT_TRUE(std::filesystem::create_directories(databaseDirectory));
+    const std::filesystem::path databasePath = databaseDirectory / "custom.uvassetdb";
+    {
+        std::ofstream databaseFile(databasePath);
+        databaseFile << "malformed registry";
+    }
+
+    const ProjectCheckReportUVE report =
+        ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, "registry/custom.uvassetdb"});
+    const auto iterator = std::find_if(report.diagnostics.begin(), report.diagnostics.end(),
+                                       [&databasePath](const ProjectCheckDiagnosticUVE& diagnostic) {
+                                           return diagnostic.code == "registry.load.failed" &&
+                                                  diagnostic.path == databasePath.lexically_normal();
+                                       });
+    EXPECT_NE(iterator, report.diagnostics.end());
+}
+
+TEST_F(ProjectCheckerUVETest, RunUVE_IsolatesCorruptFilesAndAggregatesIndependentDiagnostics) {
+    static_cast<void>(WriteEnvelopeUVE("good.uvscene", Asset::AssetKindUVE::Scene));
+    static_cast<void>(WriteEnvelopeUVE("wrong.uvmodel", Asset::AssetKindUVE::Blob));
+    {
+        std::ofstream corrupt(m_root / "broken.uvmodel", std::ios::binary);
+        corrupt << "not-a-uve-envelope";
+    }
+
+    const ProjectCheckReportUVE report = ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, {}});
+    ASSERT_TRUE(report.HasErrorsUVE());
+    bool foundDecodeFailure = false;
+    bool foundKindMismatch = false;
+    bool foundWrongUnregistered = false;
+    bool foundGoodUnregistered = false;
+    for (const ProjectCheckDiagnosticUVE& diagnostic : report.diagnostics) {
+        foundDecodeFailure |= diagnostic.code == "envelope.decode.failed" && diagnostic.path.filename() == "broken.uvmodel";
+        foundKindMismatch |= diagnostic.code == "envelope.kind.mismatch" && diagnostic.path.filename() == "wrong.uvmodel";
+        foundWrongUnregistered |= diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "wrong.uvmodel";
+        foundGoodUnregistered |= diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "good.uvscene";
+    }
+    EXPECT_TRUE(foundDecodeFailure);
+    EXPECT_TRUE(foundKindMismatch);
+    EXPECT_TRUE(foundWrongUnregistered);
+    EXPECT_TRUE(foundGoodUnregistered);
+    EXPECT_TRUE(std::is_sorted(report.diagnostics.begin(), report.diagnostics.end(), [](const ProjectCheckDiagnosticUVE& lhs,
+                                                                                          const ProjectCheckDiagnosticUVE& rhs) {
+        if (lhs.path.generic_string() != rhs.path.generic_string()) return lhs.path.generic_string() < rhs.path.generic_string();
+        return lhs.code < rhs.code;
+    }));
+}
+
+// The Inspector's "New Standard / ORM / Shader Material" writes `.uvmaterial`, which is as much a
+// material as an importer's `.uvmat`. Not knowing the extension meant the check skipped every
+// material an author created by hand - never decoding it, never reporting it unregistered - so a
+// corrupt one went unnoticed until something tried to draw with it.
+TEST_F(ProjectCheckerUVETest, RunUVE_ChecksMaterialsWrittenByTheInspectorAsWellAsImportedOnes) {
+    static_cast<void>(WriteEnvelopeUVE("authored.uvmaterial", Asset::AssetKindUVE::Material));
+    static_cast<void>(WriteEnvelopeUVE("imported.uvmat", Asset::AssetKindUVE::Material));
+    static_cast<void>(WriteEnvelopeUVE("wrongkind.uvmaterial", Asset::AssetKindUVE::Blob));
+    {
+        std::ofstream corrupt(m_root / "corrupt.uvmaterial", std::ios::binary);
+        corrupt << "not-a-uve-envelope";
+    }
+
+    const ProjectCheckReportUVE report = ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, {}});
+    ASSERT_TRUE(report.HasErrorsUVE());
+    bool foundAuthoredUnregistered = false;
+    bool foundImportedUnregistered = false;
+    bool foundKindMismatch = false;
+    bool foundDecodeFailure = false;
+    for (const ProjectCheckDiagnosticUVE& diagnostic : report.diagnostics) {
+        const bool wellFormedMaterial = diagnostic.path.filename() == "authored.uvmaterial" ||
+                                        diagnostic.path.filename() == "imported.uvmat";
+        if (wellFormedMaterial) {
+            // A material envelope of the right kind is accepted under either spelling, which is
+            // what "the check knows this extension" means.
+            EXPECT_NE(diagnostic.code, "envelope.kind.mismatch") << diagnostic.path.filename();
+            EXPECT_NE(diagnostic.code, "envelope.decode.failed") << diagnostic.path.filename();
+        }
+        foundAuthoredUnregistered |=
+            diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "authored.uvmaterial";
+        foundImportedUnregistered |=
+            diagnostic.code == "registry.file.unregistered" && diagnostic.path.filename() == "imported.uvmat";
+        foundKindMismatch |=
+            diagnostic.code == "envelope.kind.mismatch" && diagnostic.path.filename() == "wrongkind.uvmaterial";
+        foundDecodeFailure |=
+            diagnostic.code == "envelope.decode.failed" && diagnostic.path.filename() == "corrupt.uvmaterial";
+    }
+    EXPECT_TRUE(foundAuthoredUnregistered) << "the authored material is a supported asset, so it is reported";
+    EXPECT_TRUE(foundImportedUnregistered);
+    EXPECT_TRUE(foundKindMismatch);
+    EXPECT_TRUE(foundDecodeFailure);
+}
+
+} // namespace
+} // namespace UVE::ProjectCheck::Tests

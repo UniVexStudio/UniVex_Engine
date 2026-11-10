@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <string>
 
-#include "lag_comp_server_sample_uve.h"
+#include "lag_comp_server_sample.h"
 
 int main() {
     UVE::Samples::LagCompServerSampleConfigUVE config;

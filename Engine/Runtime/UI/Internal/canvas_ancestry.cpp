@@ -1,0 +1,83 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "canvas_ancestry.h"
+
+#include "canvas_component.h"
+#include "hierarchy_component.h"
+#include "visibility_component.h"
+#include "i_entity_manager.h"
+#include "canvas.h"
+
+namespace UVE::UI {
+
+CanvasAncestryUVE ResolveCanvasAncestryUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE entity) {
+    CanvasAncestryUVE ancestry{};
+    if (!entityManager.IsAliveUVE(entity)) {
+        ancestry.visible = false;
+        return ancestry;
+    }
+    Scene::EntityUVE current = entity;
+    for (std::size_t depth = 0; depth < kMaximumCanvasAncestorWalkUVE && current != Scene::kInvalidEntityUVE;
+         ++depth) {
+        if (!entityManager.IsAliveUVE(current)) {
+            break;
+        }
+        if (entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(current)) {
+            const Scene::CanvasComponentUVE& canvas =
+                entityManager.GetComponentUVE<Scene::CanvasComponentUVE>(current);
+            if (!Scene::CanvasUVE::IsEntityCanvasVisibleUVE(entityManager, current)) {
+                ancestry.visible = false;
+            }
+            if (!ancestry.hasCanvas) {
+                ancestry.hasCanvas = true;
+                ancestry.canvas = current;
+                ancestry.sortOrder = Scene::CanvasUVE::EffectiveSortOrderUVE(canvas);
+            }
+        }
+        if (!entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(current)) {
+            break;
+        }
+        const Scene::EntityUVE parent = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(current).parent;
+        if (parent == current) {
+            break;
+        }
+        current = parent;
+    }
+    return ancestry;
+}
+
+bool ShouldDrawUiWidgetUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity) {
+    if (!entityManager.IsAliveUVE(entity)) {
+        return false;
+    }
+    const Scene::VisibilityComponentUVE* const visibility =
+        entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)
+            ? &entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity)
+            : nullptr;
+    if (!Scene::IsEffectivelyVisibleUVE(visibility)) {
+        return false;
+    }
+    return ResolveCanvasAncestryUVE(entityManager, entity).visible;
+}
+
+std::size_t UIHierarchyDepthUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE entity) {
+    std::size_t depth = 0U;
+    Scene::EntityUVE cursor = entity;
+    // The ancestry cap, reused: a cycle bottoms out at the cap instead of hanging the frame.
+    for (std::size_t walk = 0U; walk < kMaximumCanvasAncestorWalkUVE; ++walk) {
+        if (!entityManager.IsAliveUVE(cursor) ||
+            !entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)) {
+            return depth;
+        }
+        const Scene::EntityUVE parent =
+            entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(cursor).parent;
+        if (parent == Scene::kInvalidEntityUVE || parent == cursor) {
+            return depth;
+        }
+        cursor = parent;
+        ++depth;
+    }
+    return depth;
+}
+
+} // namespace UVE::UI

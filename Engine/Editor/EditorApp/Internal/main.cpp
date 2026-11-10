@@ -38,19 +38,19 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "ViewportRenderPass.h"
-#include "univex/camera/OrbitCamera.h"
-#include "univex/render/GlApi.h"
-#include "univex/viewport/ViewportSettings.h"
+#include "viewport_render_pass.h"
+#include "univex/camera/orbit_camera.h"
+#include "univex/render/gl_api.h"
+#include "univex/viewport/viewport_settings.h"
 
-#include "uve/events/event_system_uve.h"
-#include "uve/input/input_system_uve.h"
-#include "uve/memory/heap_allocator_uve.h"
-#include "uve/component/transform_component_uve.h"
-#include "uve/scene/scene_graph_uve.h"
-#include "uve/window/window_desc_uve.h"
-#include "uve/window/window_manager_uve.h"
-#include "uve/world/world_uve.h"
+#include "event_system.h"
+#include "input_system.h"
+#include "heap_allocator.h"
+#include "transform_component.h"
+#include "scene_graph.h"
+#include "window_desc.h"
+#include "window_manager.h"
+#include "world.h"
 
 namespace {
 

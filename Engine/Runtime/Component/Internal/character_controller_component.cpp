@@ -1,0 +1,42 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "character_controller_component.h"
+
+#include <cmath>
+
+namespace UVE::Scene {
+namespace {
+
+[[nodiscard]] bool IsNonNegativeUVE(const float value) noexcept {
+    return std::isfinite(value) && value >= 0.0F;
+}
+
+[[nodiscard]] bool IsFiniteVectorUVE(const Math::Vector3UVE& value) noexcept {
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+}
+
+} // namespace
+
+bool IsCharacterControllerComponentValidUVE(const CharacterControllerComponentUVE& characterController) noexcept {
+    const CharacterControllerComponentUVE& c = characterController;
+    return c.motionMode <= CharacterMotionModeUVE::Floating && IsFiniteVectorUVE(c.upDirection) &&
+           (c.upDirection.x * c.upDirection.x + c.upDirection.y * c.upDirection.y +
+                c.upDirection.z * c.upDirection.z >
+            0.0F) &&
+           IsNonNegativeUVE(c.gravityScale) &&
+           IsNonNegativeUVE(c.moveSpeed) && IsNonNegativeUVE(c.jumpHeight) && IsNonNegativeUVE(c.airControl) &&
+           c.airControl <= 1.0F && IsNonNegativeUVE(c.coyoteTimeSeconds) && IsNonNegativeUVE(c.jumpBufferSeconds) &&
+           IsNonNegativeUVE(c.floorSnapLength) && IsNonNegativeUVE(c.maxStepHeight) &&
+           IsNonNegativeUVE(c.minStepWidth) && c.minStepWidth <= 1.0F &&
+           IsNonNegativeUVE(c.floorMaxAngleDegrees) && c.floorMaxAngleDegrees <= 90.0F &&
+           IsNonNegativeUVE(c.wallMinSlideAngleDegrees) && c.wallMinSlideAngleDegrees <= 90.0F &&
+           IsNonNegativeUVE(c.safeMargin) && c.safeMargin <= 0.25F &&
+           IsNonNegativeUVE(c.maximumPlatformSpeed) &&
+           c.platformOnLeave <= CharacterPlatformLeaveModeUVE::AddUpwardVelocity &&
+           c.maximumContacts >= 1U && c.maximumContacts <= 64U &&
+           IsNonNegativeUVE(c.pushStrength) && IsNonNegativeUVE(c.maxPushSpeed) && c.maxSlides >= 1U &&
+           c.maxSlides <= 32U && IsFiniteVectorUVE(c.velocity) && IsFiniteVectorUVE(c.floorNormal) &&
+           IsNonNegativeUVE(c.timeSinceOnFloor) && IsNonNegativeUVE(c.jumpBufferRemaining);
+}
+
+} // namespace UVE::Scene

@@ -1,0 +1,254 @@
+#include "univex/gizmo/nav_gizmo.h"
+
+#include <algorithm>
+#include <cmath>
+#include <numbers>
+#include <vector>
+
+namespace univex::gizmo {
+
+using univex::math::Cross;
+using univex::math::Dot;
+using univex::math::Normalize;
+
+namespace {
+
+constexpr float kPi = std::numbers::pi_v<float>;
+
+void PerpBasis(const Vec3& axis, Vec3& outU, Vec3& outV) {
+    const Vec3 a = Normalize(axis);
+    const Vec3 helper = (std::fabs(a.y) < 0.98f) ? Vec3{0.f, 1.f, 0.f} : Vec3{1.f, 0.f, 0.f};
+    outU = Normalize(Cross(helper, a));
+    outV = Normalize(Cross(a, outU));
+}
+
+// A disc that always faces the camera, built from real triangles. No rim
+// stroke here - an earlier version added one as a per-segment GizmoLine
+// around the circumference, but that is exactly the "gear teeth" failure
+// AddFacingAnnulus's own comment below already warns about (a stroke built
+// from independent per-segment quads leaves visible spikes/gaps at each
+// vertex joint whenever the chord is short relative to the stroke width,
+// which a small nav-gizmo ball always is) - it read as a "hairy" fringe
+// around every ball instead of a clean rim. Callers that want a defined
+// edge use the same seamless double-disc technique AddFacingAnnulus already
+// relies on (see AddFacingDiscWithRim below) instead of a stroke.
+void AddFacingDisc(GizmoMesh& mesh, const Vec3& center, float radius,
+                   const Vec3& viewDirection, const Vec3& color, float alpha, int segments) {
+    Vec3 u, v;
+    PerpBasis(viewDirection, u, v);
+    Vec3 previous = center + u * radius;
+    for (int i = 1; i <= segments; ++i) {
+        const float t = (2.f * kPi * static_cast<float>(i)) / static_cast<float>(segments);
+        const Vec3 current = center + u * (std::cos(t) * radius) + v * (std::sin(t) * radius);
+        mesh.triangles.push_back(GizmoTriangle{center, previous, current, color, alpha});
+        previous = current;
+    }
+}
+
+// A ring band between two radii, built as one closed strip of quads.
+//
+// This exists so a rim can be drawn WITHOUT laying a second disc on top of the first. Stacking two
+// coplanar discs and separating them by a hair of depth (the previous approach, and the reason this
+// helper is new) is a z-fight: at the ~9 px radius a nav ball is drawn at, each of the 48 fan
+// triangles is barely a pixel wide, and which of the two coplanar surfaces wins alternates from
+// triangle to triangle. The result is a radial starburst of the rim colour cutting through the
+// ball's face instead of a ring around its edge. A band shares no surface at all, so there is no
+// tie to break - and the depth nudge that used to paper over it is gone with it.
+void AddFacingBand(GizmoMesh& mesh, const Vec3& center, float innerRadius, float outerRadius,
+                   const Vec3& viewDirection, const Vec3& color, float alpha, int segments) {
+    Vec3 u, v;
+    PerpBasis(viewDirection, u, v);
+    const auto point = [&](int i, float radius) {
+        const float t = (2.f * kPi * static_cast<float>(i)) / static_cast<float>(segments);
+        return center + u * (std::cos(t) * radius) + v * (std::sin(t) * radius);
+    };
+    for (int i = 0; i < segments; ++i) {
+        const Vec3 innerCurrent = point(i, innerRadius);
+        const Vec3 innerNext = point(i + 1, innerRadius);
+        const Vec3 outerCurrent = point(i, outerRadius);
+        const Vec3 outerNext = point(i + 1, outerRadius);
+        mesh.triangles.push_back(GizmoTriangle{innerCurrent, outerCurrent, outerNext, color, alpha});
+        mesh.triangles.push_back(GizmoTriangle{innerCurrent, outerNext, innerNext, color, alpha});
+    }
+}
+
+// A filled disc with a clean dark rim: a band from (1 - rimFraction) to the
+// full radius, plus an interior disc that stops exactly where the band starts.
+// Used for the positive (filled) nav balls.
+void AddFacingDiscWithRim(GizmoMesh& mesh, const Vec3& center, float radius,
+                          const Vec3& viewDirection, const Vec3& color, int segments,
+                          float rimFraction = 0.12f) {
+    const float inner = radius * (1.f - rimFraction);
+    AddFacingDisc(mesh, center, inner, viewDirection, color, 1.f, segments);
+    AddFacingBand(mesh, center, inner, radius, viewDirection, color * 0.45f, 1.f, segments);
+}
+
+// A hollow ball: a ring band with the dark core filling the hole. Stroking a
+// small circle from independent per-segment quads leaves gear teeth wherever
+// the chord is shorter than the stroke is wide; a band plus a disc is seamless
+// at any size, and - unlike two stacked discs - shares no surface, so it cannot
+// z-fight with itself.
+void AddFacingAnnulus(GizmoMesh& mesh, const Vec3& center, float outerRadius, float innerRadius,
+                      const Vec3& viewDirection, const Vec3& ringColor, const Vec3& holeColor,
+                      int segments) {
+    AddFacingDisc(mesh, center, innerRadius, viewDirection, holeColor, 1.f, segments);
+    AddFacingBand(mesh, center, innerRadius, outerRadius, viewDirection, ringColor, 1.f, segments);
+}
+
+// X, Y and Z drawn as vector strokes rather than from a font. Three glyphs is
+// not worth a texture atlas or a font dependency, and going through the line
+// pass means the letters inherit its analytic anti-aliasing for free.
+//
+// Each glyph is defined in a unit box centred on the origin, then placed on
+// the screen-facing basis (right, up) so it always reads upright.
+void AddAxisLabel(GizmoMesh& mesh, const Vec3& center, const Vec3& right, const Vec3& up,
+                  char letter, float halfSize, const Vec3& color, float widthPx) {
+    const auto place = [&](float x, float y) {
+        return center + right * (x * halfSize) + up * (y * halfSize);
+    };
+    const auto stroke = [&](float x0, float y0, float x1, float y1) {
+        mesh.lines.push_back(GizmoLine{place(x0, y0), place(x1, y1), color, widthPx});
+    };
+
+    switch (letter) {
+        // Proportions matter at this size: too narrow and the Y's arms close up against its stem,
+        // too wide and the X's crossing thickens into a blob. These are conventional letterform
+        // ratios - a little over half as wide as tall, with the Y's arms meeting above centre so
+        // its stem stays a clearly separate stroke.
+        case 'X':
+            stroke(-0.58f,  1.f,   0.58f, -1.f);
+            stroke(-0.58f, -1.f,   0.58f,  1.f);
+            break;
+        case 'Y':
+            // The arms meet well above centre. Bringing the junction down towards the middle makes
+            // the two arms and the stem converge at a shallow angle, and three stroke quads
+            // overlapping at a shallow angle read as a blot rather than as a join.
+            stroke(-0.58f,  1.f,   0.f,    0.28f);
+            stroke( 0.58f,  1.f,   0.f,    0.28f);
+            stroke( 0.f,    0.28f, 0.f,   -1.f);
+            break;
+        case 'Z':
+            stroke(-0.58f,  1.f,   0.58f,  1.f);
+            stroke( 0.58f,  1.f,  -0.58f, -1.f);
+            stroke(-0.58f, -1.f,   0.58f, -1.f);
+            break;
+        default:
+            break;
+    }
+}
+
+// Screen-aligned basis for the nav gizmo's own camera, so labels stay upright
+// however the view is orbited.
+void ScreenBasis(const Vec3& viewDirection, Vec3& outRight, Vec3& outUp) {
+    const Vec3 forward = Normalize(viewDirection);
+    Vec3 worldUp{0.f, 1.f, 0.f};
+    // Looking straight up or down, world-up is parallel to forward and the
+    // cross product collapses; pick a different reference in that case.
+    if (std::fabs(Dot(forward, worldUp)) > 0.999f) worldUp = Vec3{0.f, 0.f, 1.f};
+    outRight = Normalize(Cross(forward, worldUp));
+    outUp = Normalize(Cross(outRight, forward));
+}
+
+} // namespace
+
+std::array<NavHandle, 6> NavHandles(const GizmoStyle& style) {
+    return {{
+        {{ 1.f, 0.f, 0.f}, style.axisColorX, true,  'X'},
+        {{-1.f, 0.f, 0.f}, style.axisColorX, false, 'X'},
+        {{ 0.f, 1.f, 0.f}, style.axisColorY, true,  'Y'},
+        {{ 0.f,-1.f, 0.f}, style.axisColorY, false, 'Y'},
+        {{ 0.f, 0.f, 1.f}, style.axisColorZ, true,  'Z'},
+        {{ 0.f, 0.f,-1.f}, style.axisColorZ, false, 'Z'},
+    }};
+}
+
+float NavViewHalfExtent(const GizmoStyle& style) {
+    // One unit out to each ball centre, plus its radius, plus a little air.
+    return 1.f + style.navBallRadius + 0.10f;
+}
+
+NavGizmoMeshes BuildNavGizmoMeshes(const GizmoStyle& style, const Vec3& viewDirection) {
+    NavGizmoMeshes meshes;
+    GizmoMesh& mesh = meshes.overlay;
+    const Vec3 view = Normalize(viewDirection);
+    const auto handles = NavHandles(style);
+
+    // Axis stubs go in the underlay, so the balls sit on top of them.
+    // A faint plate behind the widget, so the axes read against any scene behind the corner.
+    AddFacingDisc(meshes.underlay, view * 0.5f, NavViewHalfExtent(style) * 0.96f, view,
+                  Vec3{0.055f, 0.063f, 0.082f}, 0.55f, style.navBallSegments);
+    for (const NavHandle& handle : handles) {
+        if (!handle.positive) continue; // one stub per axis, drawn full length both ways
+        // Outlined stroke: a darker, wider copy underneath, as the transform gizmo's shafts do.
+        meshes.underlay.lines.push_back(GizmoLine{handle.direction * -1.f, handle.direction,
+                                                  handle.color * 0.28f, style.navAxisLineWidthPx + 2.f});
+        meshes.underlay.lines.push_back(GizmoLine{handle.direction * -1.f, handle.direction,
+                                                  handle.color * 0.8f, style.navAxisLineWidthPx});
+    }
+
+    std::vector<const NavHandle*> sorted;
+    sorted.reserve(handles.size());
+    for (const NavHandle& handle : handles) sorted.push_back(&handle);
+    std::sort(sorted.begin(), sorted.end(), [&](const NavHandle* a, const NavHandle* b) {
+        return Dot(a->direction, view) > Dot(b->direction, view); // most negative dot == nearest, drawn last
+    });
+
+    Vec3 right, up;
+    ScreenBasis(view, right, up);
+
+    for (const NavHandle* handle : sorted) {
+        const Vec3 center = handle->direction;
+        if (handle->positive) {
+            // A clean ball: dark rim and flat body. No highlight - a highlight sitting under the
+            // letter broke its outline into light and dark patches and made it hard to read.
+            AddFacingDiscWithRim(mesh, center, style.navBallRadius, view, handle->color,
+                                 style.navBallSegments);
+            AddAxisLabel(mesh, center + view * -0.01f, right, up, handle->axisLabel,
+                         style.navBallRadius * style.navLabelScale,
+                         style.navLabelColor, style.navLabelWidthPx);
+        } else {
+            // The negative end: a ring in the axis colour around a dark core - same family,
+            // clearly the back of the axis.
+            AddFacingAnnulus(mesh, center, style.navBallRadius * 0.82f, style.navBallRadius * 0.52f,
+                             view, handle->color * 0.85f, Vec3{0.078f, 0.090f, 0.125f},
+                             style.navBallSegments);
+        }
+    }
+    return meshes;
+}
+
+NavPickResult PickNavGizmo(const GizmoStyle& style,
+                           const Mat4& viewRotation,
+                           float localX,
+                           float localY,
+                           float viewportSizePx) {
+    NavPickResult result;
+    if (viewportSizePx <= 0.f) return result;
+
+    const float halfExtent = NavViewHalfExtent(style);
+    const float pixelsPerUnit = (viewportSizePx * 0.5f) / halfExtent;
+    const float centerPx = viewportSizePx * 0.5f;
+    const float ballRadiusPx = style.navBallRadius * pixelsPerUnit;
+
+    float bestDepth = -1e30f;
+    for (const NavHandle& handle : NavHandles(style)) {
+        const Vec3 viewSpace = viewRotation.TransformDirection(handle.direction);
+        const float screenX = centerPx + viewSpace.x * pixelsPerUnit;
+        const float screenY = centerPx - viewSpace.y * pixelsPerUnit;
+        const float dx = localX - screenX;
+        const float dy = localY - screenY;
+        if (dx * dx + dy * dy > ballRadiusPx * ballRadiusPx) continue;
+
+        // Camera looks down -Z in view space, so the largest z is nearest.
+        if (viewSpace.z > bestDepth) {
+            bestDepth = viewSpace.z;
+            result.hit = true;
+            result.direction = handle.direction;
+            result.axisLabel = handle.axisLabel;
+            result.positive = handle.positive;
+        }
+    }
+    return result;
+}
+
+} // namespace univex::gizmo

@@ -1,0 +1,972 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <set>
+#include <string>
+#include <vector>
+
+#include <gtest/gtest.h>
+
+#include "Support/test_scratch.h"
+
+#include "animation_clip_asset.h"
+#include "animation_library_asset.h"
+#include "name_component.h"
+#include "skeleton_3d.h"
+#include "animation_sequencer_component.h"
+#include "prefab_instance_component.h"
+#include "transform_component.h"
+#include "hierarchy_component.h"
+#include "engine_core.h"
+#include "engine_project_settings.h"
+#include "editor_content_catalogue.h"
+#include "editor.h"
+#include "i_scene_graph.h"
+#include "scene_folder.h"
+#include "scene_object_registry.h"
+#include "scene_object_type.h"
+
+namespace UVE::Editor::Tests {
+namespace {
+
+using Kind = Scene::Objects::SceneObjectKindUVE;
+
+TEST(ContentCatalogueUVETest, EveryItemIsCreatableAndGroupsAreInOrder) {
+    const auto items = GetContentCatalogueItemsUVE();
+    const auto groups = GetContentCatalogueGroupsUVE();
+    ASSERT_FALSE(items.empty());
+    std::set<std::string_view> ids;
+    std::size_t groupIndex = 0U;
+    for (const ContentCatalogueItemUVE& item : items) {
+        EXPECT_TRUE(ids.insert(item.id).second) << item.id;
+        EXPECT_FALSE(item.label.empty());
+        EXPECT_FALSE(item.tooltip.empty()) << item.id;
+        // Items of one group are adjacent and the groups come in their listed order.
+        while (groupIndex < groups.size() && groups[groupIndex] != item.group) {
+            ++groupIndex;
+        }
+        ASSERT_LT(groupIndex, groups.size()) << item.id << " is out of group order";
+        // Folder and LibraryAsset make a file, not entities, and the Montage asks before it makes
+        // anything, so none of their items carry objects.
+        if (item.action == ContentCatalogueActionUVE::Folder ||
+            item.action == ContentCatalogueActionUVE::LibraryAsset ||
+            item.action == ContentCatalogueActionUVE::Montage ||
+            item.action == ContentCatalogueActionUVE::ScriptAsset ||
+            item.action == ContentCatalogueActionUVE::MaterialAsset ||
+            item.action == ContentCatalogueActionUVE::ShaderAsset) {
+            EXPECT_TRUE(item.objects.empty());
+            continue;
+        }
+        ASSERT_FALSE(item.objects.empty()) << item.id;
+        for (std::size_t index = 0U; index < item.objects.size(); ++index) {
+            const ContentCatalogueObjectUVE& object = item.objects[index];
+            EXPECT_EQ(index == 0U, object.parent < 0) << item.id;
+            EXPECT_LT(object.parent, static_cast<std::int32_t>(index)) << item.id;
+            const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+                Scene::Objects::FindSceneObjectDescriptorUVE(object.kind);
+            ASSERT_NE(descriptor, nullptr) << item.id;
+            // Structural objects such as a scene's Viewport are valid scene-asset roots but are
+            // intentionally not standalone library objects.
+            EXPECT_TRUE(descriptor->libraryCreatable ||
+                        (item.action == ContentCatalogueActionUVE::SceneAsset &&
+                         object.kind == Scene::Objects::SceneObjectKindUVE::Viewport3D))
+                << item.id;
+        }
+    }
+    for (const std::string_view group : groups) {
+        EXPECT_TRUE(std::any_of(items.begin(), items.end(),
+                                [group](const ContentCatalogueItemUVE& item) { return item.group == group; }))
+            << group << " is empty";
+    }
+}
+
+TEST(ContentCatalogueUVETest, MontageListsBodiesTheMenuAlreadyHas) {
+    const auto entries = GetContentCatalogueMontageEntriesUVE();
+    ASSERT_FALSE(entries.empty());
+    std::set<std::string_view> ids;
+    for (const ContentCatalogueMontageEntryUVE& entry : entries) {
+        EXPECT_TRUE(ids.insert(entry.itemId).second) << entry.itemId;
+        const ContentCatalogueItemUVE* const item = FindContentCatalogueItemUVE(entry.itemId);
+        ASSERT_NE(item, nullptr) << entry.itemId;
+        EXPECT_EQ(item->group, "Entity") << entry.itemId;
+        EXPECT_EQ(item->action, ContentCatalogueActionUVE::EntityAsset) << entry.itemId;
+        // A body is one object: the window promises what the item makes, and nothing rides along.
+        EXPECT_EQ(item->objects.size(), 1U) << entry.itemId;
+        EXPECT_FALSE(entry.summary.empty()) << entry.itemId;
+        EXPECT_FALSE(entry.detail.empty()) << entry.itemId;
+        EXPECT_TRUE(IsContentCatalogueMontageBodyUVE(entry.itemId)) << entry.itemId;
+    }
+    EXPECT_FALSE(IsContentCatalogueMontageBodyUVE(""));
+    EXPECT_FALSE(IsContentCatalogueMontageBodyUVE("folder")) << "a folder is not a body";
+    EXPECT_FALSE(IsContentCatalogueMontageBodyUVE("body-montage")) << "the Montage offers bodies, it is not one";
+
+    // The Montage is the way into the group: its own action, no objects, and it comes first.
+    const ContentCatalogueItemUVE* const montage = FindContentCatalogueItemUVE("body-montage");
+    ASSERT_NE(montage, nullptr);
+    EXPECT_EQ(montage->action, ContentCatalogueActionUVE::Montage);
+    EXPECT_EQ(montage->group, "Entity");
+    EXPECT_TRUE(montage->objects.empty());
+    EXPECT_EQ(GetContentCatalogueIconKindUVE(*montage), Kind::Skeleton3D);
+    const auto items = GetContentCatalogueItemsUVE();
+    const auto montageAt = std::find_if(items.begin(), items.end(), [](const ContentCatalogueItemUVE& item) {
+        return item.id == "body-montage";
+    });
+    const auto characterAt = std::find_if(items.begin(), items.end(), [](const ContentCatalogueItemUVE& item) {
+        return item.id == "character";
+    });
+    ASSERT_NE(characterAt, items.end()) << "the Character item stays: the Montage does not replace it";
+    EXPECT_LT(montageAt, characterAt) << "the Montage opens the group, the bodies follow";
+}
+
+TEST(ContentCatalogueUVETest, SearchMatchesEveryWordAnywhere) {
+    const ContentCatalogueItemUVE* const character = FindContentCatalogueItemUVE("character");
+    ASSERT_NE(character, nullptr);
+    EXPECT_TRUE(DoesContentCatalogueItemMatchUVE(*character, ""));
+    EXPECT_TRUE(DoesContentCatalogueItemMatchUVE(*character, "CHAR"));
+    EXPECT_TRUE(DoesContentCatalogueItemMatchUVE(*character, "entity anim")); // group + tooltip
+    EXPECT_FALSE(DoesContentCatalogueItemMatchUVE(*character, "char light"));
+    EXPECT_EQ(GetContentCatalogueIconKindUVE(*character), Kind::Character3D);
+    EXPECT_EQ(GetContentCatalogueIconKindUVE(*FindContentCatalogueItemUVE("folder")), Kind::Folder);
+    EXPECT_EQ(FindContentCatalogueItemUVE("nope"), nullptr);
+    // Names beat descriptions: "li" puts Light above Collider, which only has it in its tooltip.
+    EXPECT_EQ(RankContentCatalogueItemUVE(*FindContentCatalogueItemUVE("light"), "li"), 3);
+    EXPECT_EQ(RankContentCatalogueItemUVE(*FindContentCatalogueItemUVE("collider"), "li"), 2);
+    EXPECT_EQ(RankContentCatalogueItemUVE(*FindContentCatalogueItemUVE("static-body"), "never moves"), 1);
+    EXPECT_EQ(RankContentCatalogueItemUVE(*character, "xyz"), 0);
+}
+
+TEST(ContentCatalogueUVETest, RecentKeepsFiveNewestFirstWithoutRepeats) {
+    std::vector<std::string> recent;
+    for (const char* const id : {"a", "b", "c", "d", "e", "f", "c"}) {
+        EditorUVE::PushContentCreateRecentUVE(recent, id);
+    }
+    EXPECT_EQ(recent, (std::vector<std::string>{"c", "f", "e", "d", "b"}));
+}
+
+TEST(ContentCatalogueUVETest, ContentFileNamesNeverCollide) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_names");
+    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "Hero", ".uventity"), root / "Hero.uventity");
+    std::ofstream(root / "Hero.uventity") << "x";
+    std::ofstream(root / "Hero 2.uventity") << "x";
+    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "Hero", ".uventity"), root / "Hero 3.uventity");
+    // Folders take the same helper with an empty extension: the picker's + Folder.
+    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "New Folder", ""), root / "New Folder");
+    std::filesystem::create_directories(root / "New Folder");
+    EXPECT_EQ(EditorUVE::MakeUniqueContentPathUVE(root, "New Folder", ""), root / "New Folder 2");
+
+    const auto renamed = EditorUVE::RenameContentFileUVE(root / "Hero.uventity", "Player");
+    ASSERT_TRUE(renamed.has_value());
+    EXPECT_EQ(*renamed, root / "Player.uventity");
+    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uventity", "Hero 2").has_value()); // taken
+    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uventity", "a/b").has_value());
+    EXPECT_FALSE(EditorUVE::RenameContentFileUVE(root / "Player.uventity", "").has_value());
+
+    const auto copy = EditorUVE::DuplicateContentFileUVE(root / "Player.uventity");
+    ASSERT_TRUE(copy.has_value());
+    EXPECT_EQ(*copy, root / "Player 2.uventity");
+    EXPECT_TRUE(std::filesystem::is_regular_file(root / "Player.uventity"));
+}
+
+[[nodiscard]] Core::EngineConfigUVE MakeCatalogueEditorConfigUVE(const std::filesystem::path& root) {
+    Core::EngineConfigUVE config{};
+    config.headlessUVE = true;
+    config.logFilePath = root / "log.txt";
+    config.settingsFilePath = root / "settings.json";
+    config.assetDatabaseFilePath = root / "assets.json";
+    config.projectSettingsFilePath = root / "project.uvsettings";
+    config.saveDirectoryPath = root / "saves";
+    config.shaderCachePath = root / "shader_cache";
+    config.shaderSourceRealDirectoryUVE = ::UVE::Tests::RepositoryRootUVE() / "Engine/Runtime/RHI/Shader/built_in";
+    config.shaderSourceMountPrefixUVE = "shaders";
+    return config;
+}
+
+[[nodiscard]] std::vector<Kind> ChildKindsUVE(Core::EngineServicesUVE& services, const Scene::EntityUVE parent) {
+    std::vector<Kind> kinds;
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    for (const Scene::EntityUVE child : services.GetSceneGraphUVE().GetChildrenUVE(entityManager, parent)) {
+        kinds.push_back(Scene::ResolveSceneObjectKindUVE(entityManager, child));
+    }
+    return kinds;
+}
+
+TEST(ContentCatalogueEditorUVETest, CharacterAssetPlacesAsItsWholeTreeWithOneUndoStep) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_catalogue_editor");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        const std::size_t rootsBefore = editor.GetDocumentRootsUVE().size();
+        const bool dirtyBefore = editor.IsSceneDirtyUVE();
+
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        EXPECT_EQ(*created, content / "Character.uventity");
+        EXPECT_TRUE(std::filesystem::is_regular_file(*created));
+        // Making the asset leaves the open scene alone.
+        EXPECT_EQ(editor.GetDocumentRootsUVE().size(), rootsBefore);
+        EXPECT_EQ(editor.IsSceneDirtyUVE(), dirtyBefore);
+        EXPECT_FALSE(editor.UndoUVE());
+
+        const auto second = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(*second, content / "Character 2.uventity");
+        const auto folder = editor.CreateContentCatalogueItemUVE("folder", content);
+        ASSERT_TRUE(folder.has_value());
+        EXPECT_TRUE(std::filesystem::is_directory(*folder));
+        EXPECT_FALSE(editor.CreateContentCatalogueItemUVE("missing", content).has_value());
+
+        const Scene::EntityUVE placed = editor.PlaceEntityAssetUVE(*created);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), placed);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, placed), Kind::Character3D);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(placed).name, "Character");
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(placed));
+        // Nothing inside it: an entity asset is the object the author picked and no more. A
+        // Character that arrives with a Mesh is a child to look at, judge and delete before the
+        // body is theirs - the same rule that keeps a new entity out of the way of its own editor.
+        EXPECT_TRUE(ChildKindsUVE(services, placed).empty());
+        EXPECT_TRUE(editor.IsSceneDirtyUVE());
+
+        // A second placement is named apart from the first.
+        const Scene::EntityUVE again = editor.PlaceEntityAssetUVE(*created);
+        ASSERT_NE(again, Scene::kInvalidEntityUVE);
+        EXPECT_NE(entityManager.GetComponentUVE<Scene::NameComponentUVE>(again).name, "Character");
+
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FALSE(entityManager.IsAliveUVE(again));
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FALSE(entityManager.IsAliveUVE(placed));
+        ASSERT_TRUE(editor.RedoUVE());
+        const Scene::EntityUVE redone = editor.GetSelectedEntityUVE();
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, redone), Kind::Character3D);
+        EXPECT_EQ(ChildKindsUVE(services, redone).size(), 0U);
+
+        EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "nothing.uventity"), Scene::kInvalidEntityUVE);
+        EXPECT_EQ(editor.PlaceEntityAssetUVE(root / "log.txt"), Scene::kInvalidEntityUVE);
+
+        EXPECT_TRUE(editor.GetDefaultPlayerEntityUVE().empty());
+        ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE("Character.uventity"));
+        EXPECT_EQ(editor.GetDefaultPlayerEntityUVE(), "Character.uventity");
+        EXPECT_EQ(std::get<std::string>(*services.GetProjectSettingsUVE().GetValueUVE(
+                      Core::EngineProjectSettingIdUVE::kDefaultPlayerEntityUVE)),
+                  "Character.uventity");
+        ASSERT_TRUE(editor.SetDefaultPlayerEntityUVE({}));
+        EXPECT_TRUE(editor.GetDefaultPlayerEntityUVE().empty());
+
+        // Nothing is made while the game runs.
+        ASSERT_TRUE(editor.EnterPlayModeUVE());
+        EXPECT_FALSE(editor.CreateContentCatalogueItemUVE("prop", content).has_value());
+        EXPECT_EQ(editor.PlaceEntityAssetUVE(*created), Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.StopPlayModeUVE());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, LibraryAssetCreatesAnEmptyAnimationLibrary) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_catalogue_library");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const auto created = editor.CreateContentCatalogueItemUVE("animation-library", content);
+        ASSERT_TRUE(created.has_value());
+        EXPECT_EQ(*created, content / "Animation Library.uvanimlib");
+        Asset::AnimationLibraryAssetUVE library;
+        EXPECT_TRUE(Asset::LoadAnimationLibraryAssetUVE(*created, library));
+        EXPECT_TRUE(library.entries.empty());
+        const auto second = editor.CreateContentCatalogueItemUVE("animation-library", content);
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(*second, content / "Animation Library 2.uvanimlib");
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, MontageMakesOnlyTheBodyYouPick) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("montage");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+
+        // Opening the Montage writes nothing: it asks first.
+        editor.OpenMontageUVE(content);
+        ASSERT_TRUE(editor.IsMontageOpenUVE());
+        EXPECT_EQ(std::distance(std::filesystem::directory_iterator(content), std::filesystem::directory_iterator{}),
+                  0)
+            << "the window costs the project nothing until Open";
+
+        // Only the window's own bodies: the menu's other entries are not choices it can make.
+        EXPECT_FALSE(editor.OpenMontageBodyUVE("folder"));
+        EXPECT_FALSE(editor.OpenMontageBodyUVE("body-montage"));
+        EXPECT_FALSE(editor.OpenMontageBodyUVE("nothing"));
+        EXPECT_TRUE(editor.IsMontageOpenUVE()) << "a refusal leaves the question standing";
+
+        ASSERT_TRUE(editor.OpenMontageBodyUVE("character"));
+        EXPECT_FALSE(editor.IsMontageOpenUVE());
+        const std::filesystem::path created = content / "Character.uventity";
+        ASSERT_TRUE(std::filesystem::is_regular_file(created));
+        // Made and opened in one step: the body is a file in Content and the document in the editor.
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), created);
+        const Scene::EntityUVE body = editor.GetEntityEditorRootUVE();
+        ASSERT_NE(body, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, body), Kind::Character3D);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(body).name, "Character");
+        // The rule every "+ Add" follows, the Montage included: nothing inside the body it did not
+        // ask for.
+        EXPECT_TRUE(ChildKindsUVE(services, body).empty());
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, EntityEditorEditsTheAssetAloneAndGivesTheSceneBack) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_editor");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        const Scene::EntityUVE placed = editor.PlaceEntityAssetUVE(*created);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.SaveSceneUVE());
+        ASSERT_FALSE(editor.IsSceneDirtyUVE());
+
+        const auto positionY = [&entityManager](const Scene::EntityUVE entity) {
+            return entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition.y;
+        };
+        const auto moveTo = [&editor](const Scene::EntityUVE entity, const float y) {
+            editor.SelectEntityUVE(entity);
+            Scene::TransformComponentUVE moved{};
+            moved.localPosition = Math::Vector3UVE{0.0F, y, 0.0F};
+            return editor.SetSelectedLocalTransformUVE(moved);
+        };
+
+        EXPECT_FALSE(editor.OpenEntityEditorUVE(root / "nothing.uventity"));
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), *created);
+        // The entity is the document now; the scene is put aside and undo starts fresh.
+        EXPECT_FALSE(entityManager.IsAliveUVE(placed));
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        EXPECT_FALSE(editor.UndoUVE());
+        const Scene::EntityUVE entityRoot = editor.GetEntityEditorRootUVE();
+        ASSERT_NE(entityRoot, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, entityRoot), Kind::Character3D);
+        EXPECT_FALSE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(entityRoot))
+            << "edited as itself, not as an instance of itself";
+        EXPECT_EQ(ChildKindsUVE(services, entityRoot).size(), 0U);
+        EXPECT_FALSE(editor.EnterPlayModeUVE()) << "the scene plays, not an open entity";
+        EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Paused)
+            << "an entity is edited as authored, not simulated";
+        EXPECT_FALSE(editor.OpenEntityEditorUVE(content / "Other.uventity"));
+
+        // The entity is the top of the tree: new objects go under it, and it cannot be removed.
+        editor.ClearSelectionUVE();
+        const Scene::EntityUVE added = editor.CreateDocumentSceneObjectUVE(Kind::Object3D);
+        ASSERT_NE(added, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(added).parent, entityRoot);
+        EXPECT_EQ(editor.GetEntityEditorRootUVE(), entityRoot) << "still one root";
+        editor.SelectEntityUVE(entityRoot);
+        EXPECT_FALSE(editor.DeleteSelectedEntityUVE());
+        EXPECT_EQ(editor.DuplicateSelectedEntityUVE(), Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.RevertEntityEditorUVE());
+        const Scene::EntityUVE root2 = editor.GetEntityEditorRootUVE(); // Revert makes fresh entities
+
+        // Save (Ctrl+S saves the entity while it is open), then change it again and revert.
+        ASSERT_TRUE(moveTo(root2, 2.0F));
+        EXPECT_TRUE(editor.IsSceneDirtyUVE());
+        ASSERT_TRUE(editor.SaveSceneUVE());
+        EXPECT_FALSE(editor.IsSceneDirtyUVE());
+        ASSERT_TRUE(moveTo(root2, 5.0F));
+        ASSERT_TRUE(editor.RevertEntityEditorUVE());
+        EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 2.0F);
+        EXPECT_FALSE(editor.UndoUVE());
+
+        // One root only: an object beside the root is refused on save.
+        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        const Scene::EntityUVE stray = entityManager.CreateEntityUVE();
+        entityManager.AddComponentUVE<Scene::TransformComponentUVE>(stray, Scene::TransformComponentUVE{});
+        entityManager.AddComponentUVE<Scene::HierarchyComponentUVE>(stray, Scene::HierarchyComponentUVE{});
+        services.GetSceneGraphUVE().SetParentUVE(entityManager, stray, sceneRoot);
+        EXPECT_EQ(editor.GetEntityEditorRootUVE(), Scene::kInvalidEntityUVE);
+        EXPECT_FALSE(editor.SaveEntityEditorUVE());
+        ASSERT_TRUE(editor.RevertEntityEditorUVE());
+
+        // An unsaved change closed without saving is not written.
+        ASSERT_TRUE(moveTo(editor.GetEntityEditorRootUVE(), 9.0F));
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(false));
+        EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
+        // Closing the entity gives the mode back as Paused, not Running. An editor does not
+        // simulate: the clock stays off until Play turns it on, so the mode an entity is closed
+        // into is the same frozen one it was opened from. This used to expect Running, because the
+        // editor used to open with the simulation already going.
+        EXPECT_EQ(engine.GetSimulationExecutionModeUVE(), Core::SimulationExecutionModeUVE::Paused)
+            << "closing an entity leaves the editor frozen, not simulating";
+
+        // The scene is back, with its placed Character in the level's object folder.
+        Scene::EntityUVE character = Scene::kInvalidEntityUVE;
+        entityManager.ForEachUVE<Scene::NameComponentUVE>(
+            [&character](const Scene::EntityUVE entity, const Scene::NameComponentUVE& name) {
+                if (name.name == "Character") {
+                    character = entity;
+                }
+            });
+        ASSERT_NE(character, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::PrefabInstanceComponentUVE>(character));
+        const Scene::EntityUVE folder = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(character).parent;
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(folder));
+
+        // What was saved is in the file.
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 2.0F);
+        // Closing with save writes an unsaved change.
+        ASSERT_TRUE(moveTo(editor.GetEntityEditorRootUVE(), 3.0F));
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(true));
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_FLOAT_EQ(positionY(editor.GetEntityEditorRootUVE()), 3.0F);
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(false));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, EntityEditorClonedAssetSwitchAndSafeReturnToLevel) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_clone_switch");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        const Scene::EntityUVE placed = editor.PlaceEntityAssetUVE(*created);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+        ASSERT_TRUE(editor.SaveSceneUVE());
+
+        // Clone/duplicate the entity file in Content
+        const std::optional<std::filesystem::path> clonePath = editor.DuplicateContentFileUVE(*created);
+        ASSERT_TRUE(clonePath.has_value());
+
+        // Open the original entity
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), *created);
+
+        // Switch to the clone directly while the entity editor is open
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*clonePath));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        EXPECT_EQ(editor.GetEntityEditorAssetPathUVE(), *clonePath);
+
+        // Save & return to the main level editor safely
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(true));
+        EXPECT_FALSE(editor.IsEntityEditorOpenUVE());
+
+        // Verify the level editor scene is alive and document roots are valid
+        EXPECT_NE(editor.GetDocumentSceneRootUVE(), Scene::kInvalidEntityUVE);
+        EXPECT_FALSE(editor.GetDocumentRootsUVE().empty());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, EntityEditorCompilesScriptsListsSignalsAndGoesToProblems) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("entity_editor_scripts");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        EXPECT_FALSE(editor.HasEntityEditorCompiledUVE());
+        EXPECT_EQ(editor.CompileEntityEditorUVE(), 0U) << "nothing open, nothing to compile";
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_EQ(editor.GetEntityEditorTabUVE(), EditorUVE::EntityEditorTabUVE::Viewport);
+
+        // A body arrives empty - +Add makes one object and puts nothing inside it - so the mesh
+        // that hangs under it is authored here, the way an author spends their first minute with a
+        // new character. Everything below is unchanged by that.
+        const Scene::EntityUVE child = editor.CreateDocumentSceneObjectUVE(Kind::MeshInstance3D);
+        ASSERT_NE(child, Scene::kInvalidEntityUVE);
+
+        // A fresh Character has no scripts: it compiles clean and answers to nothing.
+        EXPECT_EQ(editor.CompileEntityEditorUVE(), 0U);
+        EXPECT_TRUE(editor.HasEntityEditorCompiledUVE());
+        EXPECT_TRUE(editor.GetEntityEditorSignalsUVE().empty());
+
+        // New UVScript on the root: its handlers are the entity's signals.
+        const Scene::EntityUVE entityRoot = editor.GetEntityEditorRootUVE();
+        editor.SelectEntityUVE(entityRoot);
+        ASSERT_TRUE(editor.CreateUVScriptForSelectedEntityUVE());
+        ASSERT_TRUE(editor.GetOpenUVScriptUVE().has_value());
+        std::vector<EditorUVE::EntitySignalRowUVE> signals = editor.GetEntityEditorSignalsUVE();
+        ASSERT_EQ(signals.size(), 2U);
+        EXPECT_EQ(signals[0].event, "ready");
+        EXPECT_EQ(signals[1].event, "tick");
+        EXPECT_EQ(signals[1].params, "(dt)");
+        EXPECT_EQ(signals[1].entity, entityRoot);
+        EXPECT_GT(signals[1].line, signals[0].line);
+
+        // Unsaved text is what Compile checks: a mistake on line 3 is found there.
+        editor.SetOpenUVScriptTextUVE("on ready:\n    pass\n\non tick(dt):\n    nope += 1\n");
+        EXPECT_TRUE(editor.HasEntityEditorUnsavedChangesUVE());
+        ASSERT_GE(editor.CompileEntityEditorUVE(), 1U);
+        const EditorUVE::EntityCompileProblemUVE problem = editor.GetEntityEditorProblemsUVE().front();
+        EXPECT_EQ(problem.entity, entityRoot);
+        EXPECT_EQ(problem.at.line, 5U);
+        EXPECT_FALSE(problem.scriptPath.empty());
+
+        // Going to a problem selects the object and shows its script.
+        editor.ClearSelectionUVE();
+        ASSERT_TRUE(editor.GoToEntityScriptUVE(problem.entity, problem.at.line));
+        EXPECT_EQ(editor.GetSelectedEntityUVE(), entityRoot);
+        EXPECT_EQ(editor.GetEntityEditorTabUVE(), EditorUVE::EntityEditorTabUVE::Scripting);
+
+        // A script file that is gone is a problem, not a crash.
+        engine.GetServicesUVE().GetEntityManagerUVE().GetComponentUVE<Scene::ScriptComponentUVE>(child).scriptAssetPath =
+            "scripts/missing.uvs";
+        editor.SetOpenUVScriptTextUVE("on ready:\n    pass\n");
+        ASSERT_EQ(editor.CompileEntityEditorUVE(), 1U);
+        EXPECT_EQ(editor.GetEntityEditorProblemsUVE().front().entity, child);
+        EXPECT_EQ(editor.GetEntityEditorProblemsUVE().front().at.line, 0U);
+
+        // Save writes the script with the entity; Revert clears Compile's list.
+        ASSERT_TRUE(editor.SaveEntityEditorUVE());
+        EXPECT_FALSE(editor.HasEntityEditorUnsavedChangesUVE());
+        ASSERT_TRUE(editor.RevertEntityEditorUVE());
+        EXPECT_FALSE(editor.HasEntityEditorCompiledUVE());
+        EXPECT_TRUE(editor.GetEntityEditorProblemsUVE().empty());
+        ASSERT_TRUE(editor.CloseEntityEditorUVE(false));
+        EXPECT_FALSE(editor.GetOpenUVScriptUVE().has_value()) << "the script went with the entity";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, AnFbxsTakesAreImportedAsClipsBesideIt) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("fbx_takes");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content / "Anims");
+    // One bone and one take, "Armature|Idle", a second long (ASCII FBX 7.4).
+    const std::string fbx = R"(; FBX 7.4.0 project file
+FBXHeaderExtension:  {
+	FBXVersion: 7400
+}
+Objects:  {
+	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Armature|Idle", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+}
+Connections:  {
+	C: "OO",3100,3000
+	C: "OO",3000,0
+	C: "OO",5100,5000
+}
+)";
+    const std::filesystem::path source = content / "Anims" / "Hero.fbx";
+    {
+        std::ofstream out(source, std::ios::binary);
+        out << fbx;
+    }
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const std::vector<std::filesystem::path> written = editor.ImportModelAnimationsUVE(source);
+        ASSERT_EQ(written.size(), 1U);
+        // One take: the animation is named after its file, not the DCC tool's take label.
+        EXPECT_EQ(written[0], content / "Anims" / "Hero.uvanim");
+        Asset::AnimationClipAssetUVE clip;
+        ASSERT_TRUE(Asset::LoadAnimationClipAssetUVE(written[0], clip));
+        EXPECT_EQ(clip.clipId, "Hero");
+        EXPECT_TRUE(clip.IsSkeletalUVE());
+        ASSERT_EQ(clip.bones.size(), 1U);
+        EXPECT_EQ(clip.bones[0].bone, "Hips");
+        EXPECT_TRUE(editor.ImportModelAnimationsUVE(source).empty()) << "up to date: nothing written again";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, PlacingAnAnimationFbxBuildsItsSkeletonAndPlayer) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("place_model");
+    const std::string fbx = R"(; FBX 7.4.0 project file
+FBXHeaderExtension:  {
+	FBXVersion: 7400
+}
+Objects:  {
+	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Armature|Run", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+}
+Connections:  {
+	C: "OO",3100,3000
+	C: "OO",3000,0
+	C: "OO",5100,5000
+}
+)";
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    // Written where this project's Content Browser looks.
+    const std::filesystem::path content = engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+    std::filesystem::create_directories(content / "Anims");
+    {
+        std::ofstream out(content / "Anims" / "Hero.FBX", std::ios::binary);
+        out << fbx;
+    }
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        // Deliberately the plain index refresh, not the editor's, which also fills the model-source
+        // cache. Placing must work without that cache: it is an optimisation for panels that draw
+        // many entries, and when it was the only source of truth this placement saw "no information",
+        // read a bones-only file as a model whose mesh was still converting, and built nothing.
+        ASSERT_TRUE(services.GetProjectFileIndexUVE().RefreshUVE(services.GetAssetDatabaseUVE()));
+        const Scene::EntityUVE placed = editor.PlaceModelSourceUVE("Anims/Hero.FBX");
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+
+        // Hero (Object3D) > { Armature (Object3D) > Skeleton3D, AnimationSequencer }
+        const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
+            return entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
+        };
+        EXPECT_EQ(nameOf(placed), "Hero");
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, placed), Kind::Object3D);
+        const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, placed);
+        ASSERT_EQ(children.size(), 2U);
+        EXPECT_EQ(nameOf(children[0]), "Armature");
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, children[0]), Kind::Object3D);
+        const std::vector<Scene::EntityUVE> skeletons = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, children[0]);
+        ASSERT_EQ(skeletons.size(), 1U);
+        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletons[0]));
+        const Scene::Skeleton3DComponentUVE& skeleton =
+            entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletons[0]);
+        EXPECT_EQ(skeleton.skeletonAssetPath, "Anims/Hero.FBX");
+        ASSERT_EQ(skeleton.bones.size(), 1U);
+        EXPECT_EQ(skeleton.bones[0].name, "Hips");
+        EXPECT_TRUE(services.GetSceneGraphUVE().GetChildrenUVE(entityManager, skeletons[0]).empty())
+            << "an animation file has no mesh";
+        ASSERT_TRUE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]));
+        const Scene::AnimationSequencerComponentUVE& player =
+            entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]);
+        EXPECT_NE(player.clip, Asset::kInvalidAssetGuidUVE);
+        EXPECT_EQ(player.loopMode, Scene::AnimationLoopModeUVE::Loop);
+        EXPECT_TRUE(std::filesystem::exists(content / "Anims" / "Hero.uvanim")) << "one take: named after its file";
+        Asset::AnimationClipAssetUVE imported;
+        ASSERT_TRUE(Asset::LoadAnimationClipAssetUVE(content / "Anims" / "Hero.uvanim", imported));
+        EXPECT_EQ(imported.clipId, "Hero") << "not the DCC tool's take label";
+        EXPECT_EQ(player.library, std::vector<Asset::AssetGuidUVE>{player.clip}) << "every take is on the player";
+
+        // Another clip from the project joins the player's list and plays; one undo takes it back.
+        Asset::AnimationClipAssetUVE walk;
+        walk.clipId = "Walk";
+        walk.durationSeconds = 1.0;
+        walk.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {Asset::AnimationAssetSampleUVE{}}}};
+        ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(walk, content / "Anims" / "Walk.uvanim"));
+        const Asset::AssetGuidUVE run = player.clip;
+        ASSERT_TRUE(editor.AddClipToAnimationSequencerUVE(children[1], content / "Anims" / "Walk.uvanim"));
+        ASSERT_EQ(player.library.size(), 2U);
+        EXPECT_EQ(player.library[0], run);
+        EXPECT_EQ(player.clip, player.library[1]) << "the added clip plays";
+        EXPECT_FALSE(editor.AddClipToAnimationSequencerUVE(children[1], content / "Anims" / "Hero.FBX"))
+            << "only an animation can join";
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]).library.size(), 1U);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]).clip, run);
+
+        // One undo removes the whole placement.
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_FALSE(entityManager.IsAliveUVE(placed));
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+}
+
+TEST(ContentCatalogueEditorUVETest, EntityEditorPlacingModelSourceBuildsCompleteModelContainerUnderEntityRoot) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("place_model_entity_editor");
+    const std::string fbx = R"(; FBX 7.4.0 project file
+FBXHeaderExtension:  {
+	FBXVersion: 7400
+}
+Objects:  {
+	Model: 3000, "Model::Hips", "LimbNode" {
+		Version: 232
+	}
+	NodeAttribute: 3100, "NodeAttribute::Hips", "LimbNode" {
+		TypeFlags: "Skeleton"
+	}
+	AnimationStack: 5000, "AnimStack::Armature|Run", "" {
+		Properties70:  {
+			P: "LocalStart", "KTime", "Time", "",0
+			P: "LocalStop", "KTime", "Time", "",46186158000
+		}
+	}
+	AnimationLayer: 5100, "AnimLayer::Base", "" {
+	}
+}
+Connections:  {
+	C: "OO",3100,3000
+	C: "OO",3000,0
+	C: "OO",5100,5000
+}
+)";
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    const std::filesystem::path content = engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+    std::filesystem::create_directories(content / "Anims");
+    {
+        std::ofstream out(content / "Anims" / "Hero.FBX", std::ios::binary);
+        out << fbx;
+    }
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Core::EngineServicesUVE& services = engine.GetServicesUVE();
+        Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+        ASSERT_TRUE(services.GetProjectFileIndexUVE().RefreshUVE(services.GetAssetDatabaseUVE()));
+
+        const auto created = editor.CreateContentCatalogueItemUVE("character", content);
+        ASSERT_TRUE(created.has_value());
+        ASSERT_TRUE(editor.OpenEntityEditorUVE(*created));
+        EXPECT_TRUE(editor.IsEntityEditorOpenUVE());
+        const Scene::EntityUVE entityRoot = editor.GetEntityEditorRootUVE();
+        ASSERT_NE(entityRoot, Scene::kInvalidEntityUVE);
+
+        const Scene::EntityUVE placed = editor.PlaceModelSourceUVE("Anims/Hero.FBX", entityRoot);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+
+        const auto nameOf = [&entityManager](const Scene::EntityUVE entity) {
+            return entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
+        };
+        EXPECT_EQ(nameOf(placed), "Hero");
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, placed), Kind::Object3D);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(placed).parent, entityRoot);
+
+        const std::vector<Scene::EntityUVE> children = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, placed);
+        ASSERT_EQ(children.size(), 2U);
+        EXPECT_EQ(nameOf(children[0]), "Armature");
+        EXPECT_EQ(Scene::ResolveSceneObjectKindUVE(entityManager, children[0]), Kind::Object3D);
+        const std::vector<Scene::EntityUVE> skeletons = services.GetSceneGraphUVE().GetChildrenUVE(entityManager, children[0]);
+        ASSERT_EQ(skeletons.size(), 1U);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(skeletons[0]));
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(children[1]));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
+TEST(ContentCatalogueEditorUVETest, OutlinerFolderLockToggle) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("folder_lock");
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        const Scene::EntityUVE folder =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Folder);
+        ASSERT_NE(folder, Scene::kInvalidEntityUVE);
+
+        EXPECT_FALSE(editor.IsEntityLockedUVE(folder));
+        editor.ToggleEntityLockUVE(folder);
+        EXPECT_TRUE(editor.IsEntityLockedUVE(folder));
+        editor.ToggleEntityLockUVE(folder);
+        EXPECT_FALSE(editor.IsEntityLockedUVE(folder));
+
+        editor.SetEntityLockedUVE(folder, true);
+        EXPECT_TRUE(editor.IsEntityLockedUVE(folder));
+        editor.SetEntityLockedUVE(folder, false);
+        EXPECT_FALSE(editor.IsEntityLockedUVE(folder));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
+
+TEST(ContentCatalogueEditorUVETest, ANewSceneIsItsViewportAndTheWorldFolderWaitsForSomethingToHold) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_catalogue_scene_empty");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+
+        const auto created = editor.CreateContentCatalogueItemUVE("viewport_3d", content);
+        ASSERT_TRUE(created.has_value());
+        EXPECT_EQ(created->extension(), ".uvscene");
+        ASSERT_TRUE(editor.OpenSceneAssetUVE(*created));
+
+        // Root and Viewport, and nothing else: the empty "World" folder the old creation path made is
+        // gone, so a brand-new level does not open with a folder holding nothing.
+        const Scene::EntityUVE sceneRoot = editor.GetDocumentSceneRootUVE();
+        ASSERT_NE(sceneRoot, Scene::kInvalidEntityUVE);
+        const std::vector<Scene::EntityUVE> rootChildren = sceneGraph.GetChildrenUVE(entityManager, sceneRoot);
+        ASSERT_EQ(rootChildren.size(), 1U);
+        const Scene::EntityUVE viewport = editor.GetDocumentViewportUVE();
+        EXPECT_EQ(rootChildren[0], viewport);
+        EXPECT_TRUE(sceneGraph.GetChildrenUVE(entityManager, viewport).empty());
+
+        // The folder appears when it has something to hold, and only then.
+        const Scene::EntityUVE placed =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Object3D);
+        ASSERT_NE(placed, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE folder = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(placed).parent;
+        ASSERT_NE(folder, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::FolderComponentUVE>(folder));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::NameComponentUVE>(folder).name, "World");
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(folder).parent, viewport);
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
+TEST(ContentCatalogueEditorUVETest, ASceneSaysWhetherItIs2DAndItsNameNoLongerDecides) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("content_catalogue_scene_2d");
+    const std::filesystem::path content = root / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), root / "main.uvscene", 100U, &engine);
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+
+        const Scene::EntityUVE openViewport = editor.GetDocumentViewportUVE();
+        ASSERT_NE(openViewport, Scene::kInvalidEntityUVE);
+        const auto flat = editor.CreateContentCatalogueItemUVE("viewport_2d", content);
+        ASSERT_TRUE(flat.has_value());
+        EXPECT_EQ(flat->filename().string(), "Viewport2D.uvscene");
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(openViewport).dimension,
+                  Scene::ViewportDimensionUVE::ThreeD)
+            << "making the asset does not retype the document that is already open";
+
+        std::ifstream flatFile(*flat);
+        ASSERT_TRUE(flatFile.is_open());
+        const std::string flatText(std::istreambuf_iterator<char>(flatFile), {});
+        EXPECT_NE(flatText.find("\"dimension\""), std::string::npos) << "the dimension is in the file";
+        EXPECT_NE(flatText.find("\"2d\""), std::string::npos);
+
+        // Every add is its own file: nothing is shared, appended to or overwritten.
+        const auto second = editor.CreateContentCatalogueItemUVE("viewport_2d", content);
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(second->filename().string(), "Viewport2D 2.uvscene");
+        EXPECT_TRUE(std::filesystem::is_regular_file(*second));
+
+        ASSERT_TRUE(editor.OpenSceneAssetUVE(*flat));
+        const Scene::EntityUVE flatViewport = editor.GetDocumentViewportUVE();
+        ASSERT_NE(flatViewport, Scene::kInvalidEntityUVE);
+        EXPECT_TRUE(entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(flatViewport));
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(flatViewport).dimension,
+                  Scene::ViewportDimensionUVE::TwoD);
+
+        // A 3D level whose file name says "2D" is still 3D. The name used to be the only thing that
+        // was read, so this exact case used to open on the 2D canvas.
+        const auto solid = editor.CreateContentCatalogueItemUVE("viewport_3d", content);
+        ASSERT_TRUE(solid.has_value());
+        const std::filesystem::path lying = content / "Level2D.uvscene";
+        std::filesystem::rename(*solid, lying);
+        std::ifstream solidFile(lying);
+        ASSERT_TRUE(solidFile.is_open());
+        const std::string solidText(std::istreambuf_iterator<char>(solidFile), {});
+        EXPECT_EQ(solidText.find("\"dimension\""), std::string::npos)
+            << "a 3D level writes nothing, so every existing .uvscene keeps its bytes";
+
+        ASSERT_TRUE(editor.OpenSceneAssetUVE(lying));
+        const Scene::EntityUVE solidViewport = editor.GetDocumentViewportUVE();
+        ASSERT_NE(solidViewport, Scene::kInvalidEntityUVE);
+        EXPECT_EQ(entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(solidViewport).dimension,
+                  Scene::ViewportDimensionUVE::ThreeD)
+            << "the file decides, not the name";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(root);
+}
+
+} // namespace
+} // namespace UVE::Editor::Tests

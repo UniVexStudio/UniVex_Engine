@@ -1,0 +1,144 @@
+#include "univex/render/infinite_grid_renderer.h"
+#include "univex/render/overlay_raster_state_gl.h"
+
+#include "univex/camera/viewport_metrics.h"
+
+#include <array>
+#include <cmath>
+#include <utility>
+
+#include "univex/render/grid_shader_sources.h"
+
+namespace univex::render {
+
+namespace {
+
+// A single triangle that covers the whole clip-space square. Bigger than
+// the viewport on purpose: one triangle rasterises with no diagonal seam
+// and no redundant fragments along a quad's shared edge.
+constexpr std::array<float, 6> kFullscreenTriangle = {
+    -1.f, -1.f,
+     3.f, -1.f,
+    -1.f,  3.f,
+};
+
+} // namespace
+
+InfiniteGridRenderer::~InfiniteGridRenderer() { Destroy(); }
+
+InfiniteGridRenderer::InfiniteGridRenderer(InfiniteGridRenderer&& other) noexcept
+    : program_(std::move(other.program_)),
+      vao_(std::exchange(other.vao_, 0)),
+      vbo_(std::exchange(other.vbo_, 0)),
+      settings_(other.settings_) {}
+
+InfiniteGridRenderer& InfiniteGridRenderer::operator=(InfiniteGridRenderer&& other) noexcept {
+    if (this != &other) {
+        Destroy();
+        program_ = std::move(other.program_);
+        vao_ = std::exchange(other.vao_, 0);
+        vbo_ = std::exchange(other.vbo_, 0);
+        settings_ = other.settings_;
+    }
+    return *this;
+}
+
+void InfiniteGridRenderer::Destroy() noexcept {
+    if (vbo_ != 0) { glDeleteBuffers(1, &vbo_); vbo_ = 0; }
+    if (vao_ != 0) { glDeleteVertexArrays(1, &vao_); vao_ = 0; }
+}
+
+std::optional<InfiniteGridRenderer> InfiniteGridRenderer::Create(std::string_view vertexSource,
+                                                                 std::string_view fragmentSource,
+                                                                 std::string& outError) {
+    auto program = ShaderProgram::Build(vertexSource, fragmentSource, outError);
+    if (!program.has_value()) return std::nullopt;
+
+    InfiniteGridRenderer renderer;
+    renderer.program_ = std::move(*program);
+
+    glGenVertexArrays(1, &renderer.vao_);
+    glBindVertexArray(renderer.vao_);
+
+    glGenBuffers(1, &renderer.vbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, renderer.vbo_);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(kFullscreenTriangle.size() * sizeof(float)),
+                 kFullscreenTriangle.data(),
+                 GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), nullptr);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    return renderer;
+}
+
+std::optional<InfiniteGridRenderer> InfiniteGridRenderer::CreateWithBuiltinShaders(std::string& outError) {
+    return Create(shaders::kInfiniteGridVertexSource, shaders::kInfiniteGridFragmentSource, outError);
+}
+
+void InfiniteGridRenderer::Draw(const GridFrameParams& frame) const {
+    if (!Valid()) return;
+
+    // ---- remember the state we are about to change ------------------------
+    const SavedOverlayRasterState savedState = SaveOverlayRasterState();
+    // Foundation WP6: test against the scene, never occlude it - as data, applied table-driven.
+    ApplyOverlayRasterState(kInfiniteGridState);
+
+    program_.Use();
+    program_.SetMat4("uViewProj", frame.viewProjection.Data());
+    program_.SetMat4("uInvViewProj", frame.inverseViewProjection.Data());
+    program_.SetVec3("uCameraPos", frame.cameraPosition.x, frame.cameraPosition.y, frame.cameraPosition.z);
+
+    program_.SetFloat("uBaseSpacing", settings_.baseSpacing);
+    program_.SetFloat("uTargetCellPixels", settings_.targetCellPixels);
+    program_.SetFloat("uLineWidthPixels", settings_.lineWidthPixels);
+    program_.SetFloat("uAxisWidthPixels", settings_.axisWidthPixels);
+
+    program_.SetVec3("uThinColor", settings_.thinColor.r, settings_.thinColor.g, settings_.thinColor.b);
+    program_.SetVec3("uMidColor", settings_.midColor.r, settings_.midColor.g, settings_.midColor.b);
+    program_.SetVec3("uThickColor", settings_.thickColor.r, settings_.thickColor.g, settings_.thickColor.b);
+    program_.SetFloat("uThinIntensity", settings_.thinIntensity);
+    program_.SetFloat("uMidIntensity", settings_.midIntensity);
+    program_.SetFloat("uThickIntensity", settings_.thickIntensity);
+
+    program_.SetVec3("uAxisColorX", settings_.axisColorX.r, settings_.axisColorX.g, settings_.axisColorX.b);
+    program_.SetVec3("uAxisColorY", settings_.axisColorY.r, settings_.axisColorY.g, settings_.axisColorY.b);
+    program_.SetVec3("uAxisColorZ", settings_.axisColorZ.r, settings_.axisColorZ.g, settings_.axisColorZ.b);
+
+    const float reference = frame.referenceDistance > 1e-4f ? frame.referenceDistance : 1e-4f;
+    program_.SetFloat("uFadeStart", reference * settings_.fadeStartDistanceScale);
+    program_.SetFloat("uFadeEnd", reference * settings_.fadeEndDistanceScale);
+    program_.SetFloat("uOpacity", settings_.opacity);
+    program_.SetFloat("uGridPlane", static_cast<float>(settings_.plane));
+
+    glBindVertexArray(vao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+
+    // ---- put it back ------------------------------------------------------
+    RestoreOverlayRasterState(savedState);
+}
+
+void InfiniteGridRenderer::Draw(const univex::camera::OrbitCamera& camera,
+                                int framebufferWidth,
+                                int framebufferHeight) const {
+    if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
+    const float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
+
+    GridFrameParams frame;
+    frame.viewProjection = camera.ViewProjection(aspect);
+    frame.inverseViewProjection = camera.InverseViewProjection(aspect);
+    frame.cameraPosition = camera.Eye();
+    frame.referenceDistance = camera.Distance();
+    Draw(frame);
+}
+
+float WorldPerPixelAtPivot(const univex::camera::OrbitCamera& camera, int framebufferHeight) {
+    return univex::camera::WorldPerPixelAtOrbitTargetUVE(camera, framebufferHeight);
+}
+
+} // namespace univex::render

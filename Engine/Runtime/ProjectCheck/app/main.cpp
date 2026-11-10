@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-#include "uve/project_check/project_checker_uve.h"
+#include "project_checker.h"
 
 namespace {
 

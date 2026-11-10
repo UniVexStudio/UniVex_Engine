@@ -1,0 +1,47 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "entity.h"
+#include "i_entity_manager.h"
+
+namespace UVE::Physics {
+
+inline constexpr std::size_t kMaximumAreaOverlapResultsUVE = 4096U;
+inline constexpr std::size_t kMaximumAreaOverlapQueryAreasUVE = 4096U;
+
+enum class AreaOverlapParticipationUVE : std::uint8_t {
+    MonitoringAreas = 0,
+    AllValidAreas = 1,
+};
+
+struct AreaOverlapPairUVE final {
+    Scene::EntityUVE area;
+    Scene::EntityUVE other;
+    float penetrationDepth = 0.0F;
+
+    [[nodiscard]] bool operator==(const AreaOverlapPairUVE&) const noexcept = default;
+};
+
+struct AreaOverlapQueryResultUVE final {
+    std::size_t inspectedAreas = 0U;
+    std::size_t inspectedColliders = 0U;
+    bool truncated = false;
+    std::vector<AreaOverlapPairUVE> overlaps;
+
+    [[nodiscard]] bool IsTruncatedUVE() const noexcept { return truncated; }
+};
+
+class AreaOverlapSystemUVE final {
+public:
+    [[nodiscard]] static AreaOverlapQueryResultUVE QueryUVE(
+        Scene::IEntityManagerUVE& entityManager,
+        std::size_t maximumResults = kMaximumAreaOverlapResultsUVE,
+        AreaOverlapParticipationUVE participation = AreaOverlapParticipationUVE::MonitoringAreas);
+};
+
+} // namespace UVE::Physics

@@ -15,8 +15,8 @@
 #include <string>
 #include <string_view>
 
-#include "uve/uvscript/uvscript_codegen_uve.h"
-#include "uve/uvscript/uvscript_host_description_uve.h"
+#include "uvscript_codegen.h"
+#include "uvscript_host_description.h"
 
 namespace {
 
