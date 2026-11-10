@@ -174,13 +174,19 @@ void MenuBar::setRightContent(Ref<Widget> w) {
 
 Vec2 MenuBar::measure(Vec2 avail) {
   if (m_right) m_right->measure(avail);
-  return m_desired = constrain({0, theme().menuBarH});
+  float w = 0;
+  if (!m_showLogo) {
+    const Font& f = *theme().ui;
+    w = 8;
+    for (const auto& m : m_menus) w += std::ceil(f.width(m.title)) + 21;
+  }
+  return m_desired = constrain({w, theme().menuBarH});
 }
 
 void MenuBar::arrange(Rect r) {
   m_rect = r;
   const Font& f = *theme().ui;
-  float x = r.x + 10 + 18 + 10;
+  float x = m_showLogo ? r.x + 10 + 18 + 10 : r.x + 4;
   for (auto& m : m_menus) {
     float w = std::ceil(f.width(m.title)) + 20;
     m.rect = {x, r.y + 3, w, r.h - 6};
@@ -230,7 +236,7 @@ void MenuBar::paint(Canvas& c) {
   const Theme& t = theme();
   c.fillRect(m_rect, t.header);
   c.fillRect({m_rect.x, m_rect.bottom() - 1, m_rect.w, 1}, t.border);
-  drawLogo(c, {m_rect.x + 10, m_rect.y + (m_rect.h - 17) * 0.5f, 18, 17});
+  if (m_showLogo) drawLogo(c, {m_rect.x + 10, m_rect.y + (m_rect.h - 17) * 0.5f, 18, 17});
   for (int i = 0; i < int(m_menus.size()); i++) {
     const M& m = m_menus[size_t(i)];
     bool on = i == m_open, hot = i == m_hot;

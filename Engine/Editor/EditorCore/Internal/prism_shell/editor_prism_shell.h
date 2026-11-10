@@ -1,14 +1,17 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 
+#include "editor_prism_content_browser.h"
 #include "editor_prism_host.h"
 
 #include "entity.h"
 
+#include "prism/Menu.h"
 #include "prism/Widget.h"
 
 #include <cstdint>
 #include <filesystem>
+#include <initializer_list>
 #include <memory>
 #include <set>
 #include <string>
@@ -61,6 +64,9 @@ public:
 
 private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildLayoutUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildTitleBarUVE();
+    [[nodiscard]] std::vector<prism::MenuItem> CommandItemsUVE(std::initializer_list<const char*> ids);
+    [[nodiscard]] bool DispatchShortcutUVE(prism::Key key, std::uint8_t mods);
     [[nodiscard]] prism::Ref<prism::Widget> BuildToolbarRowUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildOutlinerUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildViewportUVE();
@@ -79,6 +85,7 @@ private:
 
     EditorUVE& m_editor;
     EditorPrismHostUVE m_host;
+    EditorPrismContentBrowserUVE m_contentBrowser;
 
     // Widgets the frame updates.
     std::shared_ptr<prism::TreeView> m_outliner;
@@ -99,6 +106,8 @@ private:
     std::shared_ptr<prism::Label> m_detailsTitle;
     std::shared_ptr<prism::Label> m_statusLabel;
     std::shared_ptr<prism::Widget> m_dockArea;
+    std::shared_ptr<prism::Widget> m_outlinerColumn;
+    std::shared_ptr<prism::Widget> m_detailsColumn;
 
     // Outliner tree id <-> entity (TreeView ids are ints; 0 means "no id").
     std::vector<Scene::EntityUVE> m_treeEntities;
