@@ -70,7 +70,8 @@ struct EditorLaunchOptionsUVE final {
     bool bridgeStdio = false;
     bool decorated = false;
     /// The PRISM editor shell instead of the previous UI backend.
-    bool prismUi = false;
+    // The editor's UI is PRISM; "--prism-ui" is still accepted (it was the opt-in while both existed).
+    bool prismUi = true;
     /// After the last frame (--frames), save the PRISM editor frame as PNG here.
     std::filesystem::path prismScreenshot;
     /// Screenshot aid: put a folder, a sun, a camera and a box in the level and select the box, so the

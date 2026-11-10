@@ -91,7 +91,23 @@ void EditorUVE::RenderOverlayUVE() {
         return;
     }
     if (m_prismShell != nullptr) {
+        // The level editor is PRISM's; the windows not yet built with it draw over it through ImGui.
         m_prismShell->FrameUVE();
+        if (ImGui::GetCurrentContext() == nullptr) {
+            return;
+        }
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        DrawOverlayWindowsUVE();
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        if ((ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) != 0) {
+            GLFWwindow* const mainContext = glfwGetCurrentContext();
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+            glfwMakeContextCurrent(mainContext);
+        }
         return;
     }
 
@@ -171,6 +187,36 @@ void EditorUVE::RenderOverlayUVE() {
         ImGui::RenderPlatformWindowsDefault();
         glfwMakeContextCurrent(mainContext);
     }
+}
+
+void EditorUVE::DrawOverlayWindowsUVE() {
+    DrawPluginWindowUVE();
+    DrawEditorPreferencesWindowUVE();
+    DrawProjectSettingsWindowUVE();
+    DrawInputMapWindowUVE();
+    DrawKeyboardShortcutsWindowUVE();
+    if (m_entityEditSession.has_value()) {
+        DrawEntityEditorWindowUVE();
+    } else if (m_retargetPreview.has_value()) {
+        DrawRetargetPlaceholderUVE();
+    }
+    if (m_retargetWindow.has_value()) {
+        DrawRetargetWindowUVE();
+    }
+    if (m_animationLibraryWindow.has_value()) {
+        DrawAnimationLibraryWindowUVE();
+    }
+    if (m_filePicker.has_value()) {
+        DrawFilePickerUVE();
+    }
+    if (m_montage.has_value()) {
+        DrawMontageUVE();
+    }
+    DrawCreateScriptModalUVE();
+    DrawCreateShaderModalUVE();
+    DrawQuickImportModalUVE();
+    DrawCommandPaletteUVE();
+    DrawImportProgressModalUVE();
 }
 
 void EditorUVE::DrawImportProgressModalUVE() {

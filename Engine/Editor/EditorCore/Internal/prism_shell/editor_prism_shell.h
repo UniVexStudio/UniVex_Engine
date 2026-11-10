@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <set>
@@ -67,6 +68,9 @@ public:
     void FrameUVE();
 
     bool SaveScreenshotUVE(const std::filesystem::path& path) { return m_host.SaveScreenshotUVE(path); }
+    void SetForeignInputUVE(std::function<bool()> wantsMouse, std::function<bool()> wantsKeyboard) {
+        m_host.SetForeignInputUVE(std::move(wantsMouse), std::move(wantsKeyboard));
+    }
 
 private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildLayoutUVE();

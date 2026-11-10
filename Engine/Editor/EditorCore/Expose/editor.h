@@ -1673,6 +1673,8 @@ private:
     void DrawEntityEditorWindowUVE();
     void DrawRetargetWindowUVE();
     void DrawAnimationLibraryWindowUVE();
+    /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).
+    void DrawOverlayWindowsUVE();
     void DrawImportProgressModalUVE();
     void FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::RetargetFilesResultUVE result);
     /// Gives every Skeleton3D bound to `modelFile`'s source the bones of the conformed model; the

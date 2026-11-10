@@ -683,8 +683,24 @@ bool EditorPrismHostUVE::SaveScreenshotUVE(const std::filesystem::path& path) {
 
 // ----------------------------------------------------------------------------------------- input
 
+void EditorPrismHostUVE::SetForeignInputUVE(std::function<bool()> wantsMouse, std::function<bool()> wantsKeyboard) {
+    m_foreignMouse = std::move(wantsMouse);
+    m_foreignKeyboard = std::move(wantsKeyboard);
+}
+
 void EditorPrismHostUVE::OnCursorPosUVE(const double x, const double y) {
     m_mouse = ToUiUVE(x, y);
+    const bool anyDown = std::any_of(m_down.begin(), m_down.end(), [](const bool d) { return d; });
+    if (!anyDown && m_dragMode == DragModeUVE::None && m_foreignMouse && m_foreignMouse()) {
+        // Over a window of the other UI: PRISM and the viewport see the pointer leave.
+        if (!m_foreignHover) {
+            m_foreignHover = true;
+            m_app->hostMouseLeave();
+        }
+        m_mouseInside = false;
+        return;
+    }
+    m_foreignHover = false;
     m_mouseInside = true;
     for (std::size_t i = 0; i < m_down.size(); ++i) {
         if (m_down[i]) {
@@ -714,6 +730,15 @@ void EditorPrismHostUVE::OnCursorPosUVE(const double x, const double y) {
 }
 
 void EditorPrismHostUVE::OnMouseButtonUVE(const int button, const int action, const int mods) {
+    const std::uint32_t bit = (button >= 0 && button < 32) ? (1U << static_cast<unsigned>(button)) : 0U;
+    if (action == GLFW_PRESS && m_foreignMouse && m_foreignMouse()) {
+        m_foreignPresses |= bit;   // the other UI's click, and its release, are not ours
+        return;
+    }
+    if (action == GLFW_RELEASE && (m_foreignPresses & bit) != 0U) {
+        m_foreignPresses &= ~bit;
+        return;
+    }
     m_mods = ToPrismModsUVE(mods);
     m_app->hostSetModifiers(m_mods);
     const int slot = ToViewButtonUVE(button);
@@ -819,11 +844,17 @@ void EditorPrismHostUVE::UpdateWindowDragUVE() {
 }
 
 void EditorPrismHostUVE::OnScrollUVE(const double dx, const double dy) {
+    if (m_foreignHover) {
+        return;
+    }
     m_wheel += static_cast<float>(dy);
     m_app->hostMouseWheel(m_mouse, prism::Vec2{static_cast<float>(dx), static_cast<float>(dy)});
 }
 
 void EditorPrismHostUVE::OnKeyUVE(const int key, const int /*scancode*/, const int action, const int mods) {
+    if (action != GLFW_RELEASE && m_foreignKeyboard && m_foreignKeyboard()) {
+        return;   // typing into the other UI; releases still pass so no key stays held
+    }
     m_mods = ToPrismModsUVE(mods);
     m_app->hostSetModifiers(m_mods);
     const ViewKeyUVE viewKey = ToViewKeyUVE(key);
@@ -848,6 +879,9 @@ void EditorPrismHostUVE::OnKeyUVE(const int key, const int /*scancode*/, const i
 }
 
 void EditorPrismHostUVE::OnCharUVE(const unsigned int codepoint) {
+    if (m_foreignKeyboard && m_foreignKeyboard()) {
+        return;
+    }
     std::string utf8;
     AppendUtf8UVE(utf8, static_cast<char32_t>(codepoint));
     m_app->hostText(utf8);
