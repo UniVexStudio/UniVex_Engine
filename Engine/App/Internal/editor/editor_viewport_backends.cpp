@@ -719,6 +719,11 @@ void AppendOccluderGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::Oc
 // silhouettes) and the same resize-on-demand shape app/main.cpp's interactive demo already uses
 // for its own window-sized framebuffer, just driven by the ImGui panel's reported size instead of
 // a GLFW framebuffer-resize callback.
+using VpInputUVE = UVE::Editor::EditorViewportInputUVE;
+using VpBtnUVE = VpInputUVE::ButtonUVE;
+using VpKeyUVE = VpInputUVE::KeyUVE;
+using VpCursorUVE = VpInputUVE::CursorUVE;
+
 class ViewportPanelBackendUVE final {
 public:
     ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineCoreUVE& engine,
@@ -741,9 +746,17 @@ public:
     ViewportPanelBackendUVE(const ViewportPanelBackendUVE&) = delete;
     ViewportPanelBackendUVE& operator=(const ViewportPanelBackendUVE&) = delete;
 
+    /// This frame's input for the view (see EditorViewportInputUVE); empty outside RenderUVE.
+    [[nodiscard]] const VpInputUVE& In() const noexcept {
+        static const VpInputUVE kNoInputUVE{};
+        return input_ != nullptr ? *input_ : kNoInputUVE;
+    }
+    const VpInputUVE* input_ = nullptr;
+
     [[nodiscard]] std::uint64_t RenderUVE(const UVE::Math::Vector2UVE& availableSize,
                                           UVE::Math::Vector2UVE& outUsedSize,
                                           const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+        input_ = &overlayState.input;
         if (!EnsureGlewInitializedUVE() || !EnsureRenderPassUVE()) {
             return 0U;
         }
@@ -808,8 +821,8 @@ public:
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
             renderPass_->Settings().viewTransformGizmo = false;
             renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
-            if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0F) {
-                camera_.Dolly(ImGui::GetIO().MouseWheel);
+            if (In().hovered && In().wheel != 0.0F) {
+                camera_.Dolly(In().wheel);
             }
         } else {
             UpdateSelectionGizmoUVE();
@@ -832,7 +845,7 @@ public:
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
         // "animating" and then never actually move, since nothing else ticks it forward. Mirrors
         // app/main.cpp's own per-frame state.camera.Update(deltaSeconds) call in the standalone demo.
-        camera_.Update(ImGui::GetIO().DeltaTime);
+        camera_.Update(In().deltaTime);
         // Where a new object appears when its placement follows the view.
         const univex::math::Vec3 cameraFocus = camera_.Target();
         editor_.SetViewportCameraFocusUVE(UVE::Math::Vector3UVE{cameraFocus.x, cameraFocus.y, cameraFocus.z});
@@ -901,7 +914,7 @@ public:
             const UVE::Scene::EntityUVE lookThrough = lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE);
             const std::size_t entityCount = entityManager_.GetEntityCountUVE();
 
-            overlayRefreshTimerSeconds_ += ImGui::GetIO().DeltaTime;
+            overlayRefreshTimerSeconds_ += In().deltaTime;
             const bool timerElapsed = overlayRefreshTimerSeconds_ >= 0.10F;
             const bool stateChanged = !cachedOverlayActive_ ||
                                       std::fabs(aspect - cachedOverlayAspect_) > 0.001F ||
@@ -1201,7 +1214,7 @@ private:
     // limitation, not a silent gap.
     void DrawUIOverlayUVE() {
         const UVE::UI::UIDrawBatchUVE& batch = engine_.GetUIRuntimeUVE().GetDrawBatchUVE();
-        if (batch.quads.empty()) {
+        if (batch.quads.empty() || ImGui::GetCurrentContext() == nullptr) {
             return;
         }
         EnsureUIFontAtlasTextureUVE(engine_.GetUIRuntimeUVE().GetFontAtlasUVE());
@@ -1503,7 +1516,7 @@ private:
             renderPass_->SetHighlightedGizmoHandleUVE(dragHandle_);
             return;
         }
-        if (navGizmoOwnsGesture || pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
+        if (navGizmoOwnsGesture || pointerOverOverlay_ || !In().hovered) {
             renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
             return;
         }
@@ -1512,11 +1525,11 @@ private:
             renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
             return;
         }
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const ImGuiIO& io = ImGui::GetIO();
+        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
+        const UVE::Editor::EditorViewportInputUVE& io = In();
         univex::math::Vec3 rayOrigin{};
         univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
                      rayOrigin, rayDirection);
         const univex::gizmo::GizmoPickResultUVE pick = univex::gizmo::PickGizmoHandleUVE(
             renderPass_->Mode(), renderPass_->Style(), rayOrigin, rayDirection, placement->pivot,
@@ -1559,8 +1572,8 @@ private:
     }
 
     [[nodiscard]] bool TryBeginGizmoDragUVE(const int width, const int height) {
-        if (pointerOverOverlay_ || !ImGui::IsWindowHovered() ||
-            !ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (pointerOverOverlay_ || !In().hovered ||
+            !In().IsClickedUVE(VpBtnUVE::Left)) {
             return false;
         }
         const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
@@ -1573,11 +1586,11 @@ private:
             return false;
         }
 
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const ImGuiIO& io = ImGui::GetIO();
+        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
+        const UVE::Editor::EditorViewportInputUVE& io = In();
         univex::math::Vec3 rayOrigin{};
         univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
                      rayOrigin, rayDirection);
 
         const univex::gizmo::GizmoPickResultUVE pick = univex::gizmo::PickGizmoHandleUVE(
@@ -1738,12 +1751,12 @@ private:
 
     [[nodiscard]] bool ContinueGizmoDragUVE(const int width, const int height) {
         // Esc abandons the drag and puts the object back, the universal convention.
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+        if (In().IsKeyPressedUVE(VpKeyUVE::Escape)) {
             static_cast<void>(editor_.CancelTransformGestureUVE());
             EndGizmoDragUVE();
             return true;
         }
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (In().IsReleasedUVE(VpBtnUVE::Left)) {
             static_cast<void>(editor_.CommitTransformGestureUVE());
             EndGizmoDragUVE();
             return true;
@@ -1756,11 +1769,11 @@ private:
             return true;
         }
 
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const ImGuiIO& io = ImGui::GetIO();
+        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
+        const UVE::Editor::EditorViewportInputUVE& io = In();
         univex::math::Vec3 rayOrigin{};
         univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
                      rayOrigin, rayDirection);
 
         // The pivot is frozen at the press: it moves with the object during a translate, and
@@ -1850,21 +1863,21 @@ private:
             return;
         }
 
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!pointerOverOverlay_ && ImGui::IsWindowHovered() &&
-            ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!pointerOverOverlay_ && In().hovered &&
+            In().IsClickedUVE(VpBtnUVE::Left)) {
+            const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
             selectionPressActive_ = true;
-            selectionPressX_ = io.MousePos.x - imageOrigin.x;
-            selectionPressY_ = io.MousePos.y - imageOrigin.y;
+            selectionPressX_ = io.mousePos.x - imageOrigin.x;
+            selectionPressY_ = io.mousePos.y - imageOrigin.y;
         }
 
-        if (!selectionPressActive_ || !ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (!selectionPressActive_ || !In().IsReleasedUVE(VpBtnUVE::Left)) {
             return;
         }
         selectionPressActive_ = false;
 
-        const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
+        const UVE::Math::Vector2UVE dragDelta = In().DragDeltaUVE(VpBtnUVE::Left);
         if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
             return; // that was an orbit, not a click
         }
@@ -1876,7 +1889,7 @@ private:
         // a plain click replaces it, and a plain click on nothing clears it. Ctrl-clicking empty
         // space deliberately does nothing rather than clearing, so a mis-aimed extend does not
         // throw away a selection the user spent time building.
-        const bool extend = io.KeyCtrl;
+        const bool extend = io.ctrl;
         if (!pick.hit) {
             if (!extend) {
                 editor_.ClearSelectionUVE();
@@ -1906,21 +1919,21 @@ private:
             return;
         }
 
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!pointerOverOverlay_ && ImGui::IsWindowHovered() &&
-            ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!pointerOverOverlay_ && In().hovered &&
+            In().IsClickedUVE(VpBtnUVE::Right)) {
+            const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
             contextToolbarPressActive_ = true;
-            contextToolbarPressX_ = io.MousePos.x - imageOrigin.x;
-            contextToolbarPressY_ = io.MousePos.y - imageOrigin.y;
+            contextToolbarPressX_ = io.mousePos.x - imageOrigin.x;
+            contextToolbarPressY_ = io.mousePos.y - imageOrigin.y;
         }
 
-        if (!contextToolbarPressActive_ || !ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+        if (!contextToolbarPressActive_ || !In().IsReleasedUVE(VpBtnUVE::Right)) {
             return;
         }
         contextToolbarPressActive_ = false;
 
-        const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right, 0.0F);
+        const UVE::Math::Vector2UVE dragDelta = In().DragDeltaUVE(VpBtnUVE::Right);
         if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
             return; // that was a pan, not a click - leave any existing toolbar state alone
         }
@@ -1954,7 +1967,7 @@ private:
     // drag pans, wheel dollies) but sourced from ImGui's IO instead of GLFW callbacks, since input
     // flows through ImGui while the viewport is docked. Called from inside EditorUVE's own
     // ImGui::Begin("Viewport")/End() block (via the render callback this class provides to
-    // SetViewportPanelRendererUVE), so ImGui::IsWindowHovered() here correctly reports hover over
+    // SetViewportPanelRendererUVE), so In().hovered here correctly reports hover over
     // the Viewport panel specifically. Known simplification versus the GLFW demo: a drag that
     // began inside the panel stops orbiting the moment the cursor leaves it, rather than
     // continuing to track a global drag - acceptable for this integration slice.
@@ -1969,13 +1982,13 @@ private:
         const bool isMouseCaptured = editor_.IsGameMouseCapturedUVE();
 
         if (isGamePlaying && isMouseCaptured) {
-            const ImGuiIO& io = ImGui::GetIO();
+            const UVE::Editor::EditorViewportInputUVE& io = In();
             const auto& prefs = editor_.GetExtendedPreferencesUVE();
             const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
 
             // Smooth free-look from mouse delta when captured in game mode
-            if (std::abs(io.MouseDelta.x) > 0.0F || std::abs(io.MouseDelta.y) > 0.0F) {
-                camera_.Orbit(io.MouseDelta.x * orbitSens, io.MouseDelta.y * orbitSens);
+            if (std::abs(io.mouseDelta.x) > 0.0F || std::abs(io.mouseDelta.y) > 0.0F) {
+                camera_.Orbit(io.mouseDelta.x * orbitSens, io.mouseDelta.y * orbitSens);
                 editor_.NotifyViewportOrbitedUVE();
             }
 
@@ -1999,17 +2012,17 @@ private:
                 univex::math::Vec3 right = univex::math::Normalize(univex::math::Cross(forward, up));
 
                 univex::math::Vec3 moveDir{0.0F, 0.0F, 0.0F};
-                if (ImGui::IsKeyDown(ImGuiKey_W)) { moveDir = moveDir + forward; }
-                if (ImGui::IsKeyDown(ImGuiKey_S)) { moveDir = moveDir - forward; }
-                if (ImGui::IsKeyDown(ImGuiKey_D)) { moveDir = moveDir + right; }
-                if (ImGui::IsKeyDown(ImGuiKey_A)) { moveDir = moveDir - right; }
-                if (ImGui::IsKeyDown(ImGuiKey_Space)) { moveDir = moveDir + up; }
-                if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_C)) { moveDir = moveDir - up; }
+                if (In().IsKeyDownUVE(VpKeyUVE::W)) { moveDir = moveDir + forward; }
+                if (In().IsKeyDownUVE(VpKeyUVE::S)) { moveDir = moveDir - forward; }
+                if (In().IsKeyDownUVE(VpKeyUVE::D)) { moveDir = moveDir + right; }
+                if (In().IsKeyDownUVE(VpKeyUVE::A)) { moveDir = moveDir - right; }
+                if (In().IsKeyDownUVE(VpKeyUVE::Space)) { moveDir = moveDir + up; }
+                if (In().IsKeyDownUVE(VpKeyUVE::LeftCtrl) || In().IsKeyDownUVE(VpKeyUVE::C)) { moveDir = moveDir - up; }
 
                 const float moveLen = univex::math::Length(moveDir);
                 if (moveLen > 0.001F) {
                     const float flySpeed =
-                        (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 22.0F : 8.0F) * std::max(0.001F, io.DeltaTime);
+                        (In().IsKeyDownUVE(VpKeyUVE::LeftShift) ? 22.0F : 8.0F) * std::max(0.001F, io.deltaTime);
                     moveDir = moveDir * (flySpeed / moveLen);
                     camera_.SetTarget(camera_.Target() + moveDir);
                 }
@@ -2019,7 +2032,7 @@ private:
 
         // Same overlay guard as selection and the handle drag: pressing a toolbar bubble must not
         // also start orbiting the scene behind it.
-        if (pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
+        if (pointerOverOverlay_ || !In().hovered) {
             return;
         }
         const auto& prefs = editor_.GetExtendedPreferencesUVE();
@@ -2027,16 +2040,16 @@ private:
         const float panSens = static_cast<float>(std::clamp(prefs.panSensitivity, 0.05, 10.0));
         const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
 
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!suppressOrbit && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
-            camera_.Orbit(io.MouseDelta.x * orbitSens, io.MouseDelta.y * orbitSens);
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!suppressOrbit && In().IsDraggingUVE(VpBtnUVE::Left, 0.0F)) {
+            camera_.Orbit(io.mouseDelta.x * orbitSens, io.mouseDelta.y * orbitSens);
             editor_.NotifyViewportOrbitedUVE();
-        } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0F) ||
-                   ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0F)) {
-            camera_.Pan(io.MouseDelta.x * panSens, io.MouseDelta.y * panSens, framebufferHeight);
+        } else if (In().IsDraggingUVE(VpBtnUVE::Middle, 0.0F) ||
+                   In().IsDraggingUVE(VpBtnUVE::Right, 0.0F)) {
+            camera_.Pan(io.mouseDelta.x * panSens, io.mouseDelta.y * panSens, framebufferHeight);
         }
-        if (io.MouseWheel != 0.0F) {
-            camera_.Dolly(io.MouseWheel * zoomSens);
+        if (io.wheel != 0.0F) {
+            camera_.Dolly(io.wheel * zoomSens);
         }
     }
 
@@ -2051,24 +2064,24 @@ private:
     // have no keypad. Alt keeps them clear of the bookmarks, which own plain and Ctrl+digit.
     // Same hovered-panel and text-input routing as the bookmarks.
     void UpdateViewportViewHotkeysUVE() {
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!ImGui::IsWindowHovered() || io.WantTextInput) {
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!In().hovered || io.wantTextInput) {
             return;
         }
         struct DigitKeysUVE {
             int digit;
-            ImGuiKey keypad;
-            ImGuiKey row;
+            VpKeyUVE keypad;
+            VpKeyUVE row;
         };
         static constexpr DigitKeysUVE kKeysUVE[] = {
-            {1, ImGuiKey_Keypad1, ImGuiKey_1},
-            {3, ImGuiKey_Keypad3, ImGuiKey_3},
-            {5, ImGuiKey_Keypad5, ImGuiKey_5},
-            {7, ImGuiKey_Keypad7, ImGuiKey_7},
+            {1, VpKeyUVE::Keypad1, VpKeyUVE::Num1},
+            {3, VpKeyUVE::Keypad3, VpKeyUVE::Num3},
+            {5, VpKeyUVE::Keypad5, VpKeyUVE::Num5},
+            {7, VpKeyUVE::Keypad7, VpKeyUVE::Num7},
         };
         for (const DigitKeysUVE& keys : kKeysUVE) {
-            const bool pressed = ImGui::IsKeyPressed(keys.keypad, false) ||
-                                 (io.KeyAlt && ImGui::IsKeyPressed(keys.row, false));
+            const bool pressed = In().IsKeyPressedUVE(keys.keypad) ||
+                                 (io.alt && In().IsKeyPressedUVE(keys.row));
             if (!pressed) {
                 continue;
             }
@@ -2076,28 +2089,28 @@ private:
                 editor_.SetViewportOrthographicUVE(!editor_.IsViewportOrthographicUVE());
                 continue;
             }
-            if (const auto view = UVE::Editor::EditorUVE::GetViewportViewForKeypadDigitUVE(keys.digit, io.KeyCtrl)) {
+            if (const auto view = UVE::Editor::EditorUVE::GetViewportViewForKeypadDigitUVE(keys.digit, io.ctrl)) {
                 editor_.RequestViewportViewUVE(*view);
             }
         }
     }
 
     void UpdateViewportBookmarkHotkeysUVE() {
-        const ImGuiIO& io = ImGui::GetIO();
+        const UVE::Editor::EditorViewportInputUVE& io = In();
         // Alt+digit belongs to the named views (UpdateViewportViewHotkeysUVE).
-        if (!ImGui::IsWindowHovered() || io.WantTextInput || io.KeyAlt) {
+        if (!In().hovered || io.wantTextInput || io.alt) {
             return;
         }
-        static constexpr ImGuiKey kDigitKeysUVE[] = {
-            ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5,
-            ImGuiKey_6, ImGuiKey_7, ImGuiKey_8, ImGuiKey_9, ImGuiKey_0,
+        static constexpr VpKeyUVE kDigitKeysUVE[] = {
+            VpKeyUVE::Num1, VpKeyUVE::Num2, VpKeyUVE::Num3, VpKeyUVE::Num4, VpKeyUVE::Num5,
+            VpKeyUVE::Num6, VpKeyUVE::Num7, VpKeyUVE::Num8, VpKeyUVE::Num9, VpKeyUVE::Num0,
         };
         for (std::size_t order = 0U; order < 10U; ++order) {
             const std::size_t slot = (order + 1U) % 10U; // 1..9,0 like a real keyboard row
-            if (!ImGui::IsKeyPressed(kDigitKeysUVE[order], false)) {
+            if (!In().IsKeyPressedUVE(kDigitKeysUVE[order])) {
                 continue;
             }
-            if (io.KeyCtrl) {
+            if (io.ctrl) {
                 const univex::math::Vec3 target = camera_.Target();
                 const bool stored = editor_.SetViewportBookmarkUVE(
                     slot, UVE::Editor::EditorViewportBookmarkUVE{
@@ -2122,7 +2135,7 @@ private:
         }
         // Goes through the editor like the hierarchy's Focus in Viewport, so both share
         // FocusCameraOnEntityUVE() and the key does nothing for an object that cannot be focused.
-        if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl) {
+        if (In().IsKeyPressedUVE(VpKeyUVE::F) && !io.ctrl) {
             static_cast<void>(editor_.RequestViewportFocusUVE(editor_.GetSelectedEntityUVE()));
         }
     }
@@ -2179,16 +2192,16 @@ private:
     // frame IO instead of GLFW press/release/move callbacks. Returns true while this gesture owns
     // the left mouse button, so UpdateCameraFromMouseUVE() knows to suppress its own generic orbit.
     [[nodiscard]] bool UpdateNavGizmoInteractionUVE(const int width, const int height) {
-        if (!ImGui::IsWindowHovered() && !navDragging_) {
+        if (!In().hovered && !navDragging_) {
             return false;
         }
-        const ImGuiIO& io = ImGui::GetIO();
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const float fbX = io.MousePos.x - imageOrigin.x;
-        const float fbY = io.MousePos.y - imageOrigin.y;
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
+        const float fbX = io.mousePos.x - imageOrigin.x;
+        const float fbY = io.mousePos.y - imageOrigin.y;
 
         if (!navDragging_) {
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            if (In().IsClickedUVE(VpBtnUVE::Left)) {
                 float localX = 0.0F;
                 float localY = 0.0F;
                 if (CursorOverNavGizmoUVE(width, height, fbX, fbY, localX, localY)) {
@@ -2207,17 +2220,17 @@ private:
         // matching the demo's own "press-relative slop" check exactly (not per-frame delta, which
         // would never exceed the threshold for a series of tiny frame-to-frame movements).
         if (!navDragMoved_) {
-            const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
+            const UVE::Math::Vector2UVE dragDelta = In().DragDeltaUVE(VpBtnUVE::Left);
             if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
                 navDragMoved_ = true;
             }
         }
         if (navDragMoved_) {
-            camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
+            camera_.Orbit(io.mouseDelta.x, io.mouseDelta.y);
             editor_.NotifyViewportOrbitedUVE();
         }
 
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (In().IsReleasedUVE(VpBtnUVE::Left)) {
             if (!navDragMoved_) {
                 const univex::gizmo::NavPickResult pick = univex::gizmo::PickNavGizmo(
                     renderPass_->Style(), univex::app::ViewportRenderPass::NavViewMatrix(camera_),

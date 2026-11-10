@@ -18,6 +18,7 @@
 // editor_uve.cpp; anything here worth improving was already here and belongs in its own commit
 // where it reads as a change rather than hiding inside a move.
 
+#include "editor_viewport_input_imgui.h"
 #include "editor.h"
 #include "camera_3d.h"
 
@@ -667,6 +668,7 @@ void EditorUVE::DrawInspectorContentUVE() {
             const float previewWidth = std::max(160.0F, available.x);
             const Math::Vector2UVE previewSize{previewWidth, previewWidth * (9.0F / 16.0F)};
             Math::Vector2UVE usedSize{};
+            m_viewportOverlayState.input = CaptureImGuiViewportInputUVE();
             const std::uint64_t textureId = m_viewportPanelRenderer
                                                  ? m_viewportPanelRenderer(
                                                        ViewportContextUVE::InspectorCameraPreview, previewSize,
