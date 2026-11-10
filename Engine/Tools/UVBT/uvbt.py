@@ -284,6 +284,33 @@ public class ImGuiModule : ModuleRules
 """
             imgui_bcs.write_text(content, encoding="utf-8")
 
+    def _freetype_include_dirs(self):
+        dirs = []
+        try:
+            out = subprocess.run(["pkg-config", "--cflags-only-I", "freetype2"], stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True, check=False).stdout
+            dirs += [Path(tok[2:]) for tok in out.split() if tok.startswith("-I")]
+        except OSError:
+            pass
+        candidates = [Path("/usr/include/freetype2"), Path("/usr/local/include/freetype2")]
+        gxx = shutil.which(os.environ.get("CXX", "g++"))
+        if gxx:
+            candidates.append(Path(gxx).resolve().parent.parent / "include" / "freetype2")
+        for cand in candidates:
+            if cand.is_dir() and cand not in dirs:
+                dirs.append(cand)
+        return [d for d in dirs if d.is_dir()]
+
+    def _ensure_uiautomation_import_lib(self, lib_dir: Path):
+        implib = lib_dir / "libuiautomationcore.a"
+        def_file = self.repo_root / "Engine" / "Runtime" / "Prism" / "Internal" / "windows" / "uiautomationcore.def"
+        if implib.exists() or not def_file.exists():
+            return
+        dlltool = shutil.which("dlltool") or shutil.which("x86_64-w64-mingw32-dlltool")
+        if not dlltool:
+            raise RuntimeError("[UVBT] dlltool not found: needed to build libuiautomationcore.a for PRISM on MinGW")
+        subprocess.run([dlltool, "-d", str(def_file), "-l", str(implib)], check=True)
+
     def discover(self):
         self._ensure_imgui_module_rules()
         # Scan for *.Build.cs
@@ -626,6 +653,12 @@ public class ImGuiModule : ModuleRules
             if tp.is_dir():
                 global_includes.append(tp)
 
+        # System FreeType (PRISM text rendering). pkg-config first, then the usual install prefixes
+        # (Debian/Ubuntu /usr/include/freetype2, MSYS2 <prefix>/include/freetype2 next to g++).
+        for ft_inc in self._freetype_include_dirs():
+            if ft_inc not in global_includes:
+                global_includes.append(ft_inc)
+
         # Base compiler flags
         cxx = os.environ.get("CXX", "g++")
         ar = os.environ.get("AR", "ar")
@@ -821,7 +854,17 @@ public class ImGuiModule : ModuleRules
                 all_sys_libs.append("GLEW")
 
         for mod in ordered_modules:
-            all_sys_libs.extend(mod.public_sys_libs + mod.private_sys_libs)
+            for sys_lib in mod.public_sys_libs + mod.private_sys_libs:
+                # "win:<lib>" / "linux:<lib>" restrict a system library to one platform.
+                if sys_lib.startswith("win:"):
+                    if platform == "Windows":
+                        all_sys_libs.append(sys_lib[4:])
+                    continue
+                if sys_lib.startswith("linux:"):
+                    if platform == "Linux":
+                        all_sys_libs.append(sys_lib[6:])
+                    continue
+                all_sys_libs.append(sys_lib)
             lib_p = module_libs.get(mod.name)
             if lib_p and lib_p.exists():
                 all_libs.append(str(lib_p))
@@ -835,6 +878,10 @@ public class ImGuiModule : ModuleRules
                 unique_sys.append(s)
 
         link_cmd = [cxx] + base_cflags + ["-o", str(target_exe)]
+        if platform == "Windows" and "uiautomationcore" in unique_sys:
+            # MinGW ships no UIAutomationCore import library: build one from the exported names PRISM uses.
+            self._ensure_uiautomation_import_lib(lib_dir)
+            link_cmd.append(f"-L{lib_dir}")
         sys_flags = [f"-l{s}" for s in unique_sys]
         if target.target_type == "Test":
             root_test_libs = [str(module_libs[m]) for m in target.extra_modules if m in module_libs]
@@ -858,6 +905,12 @@ public class ImGuiModule : ModuleRules
             print(link_res.stdout)
             print(link_res.stderr)
             raise RuntimeError("[UVBT] Link failed.")
+
+        if any(m.name == "Prism" for m in ordered_modules):
+            # PRISM loads fonts / themes / locales from disk: ship them next to the binary.
+            prism_assets = self.repo_root / "Engine" / "Runtime" / "Prism" / "assets"
+            if prism_assets.is_dir():
+                shutil.copytree(prism_assets, bin_dir / "prism_assets", dirs_exist_ok=True)
 
         print(f"\033[92m[UVBT] BUILD SUCCESSFUL!\033[0m")
         print(f"[UVBT] Output Binary: {target_exe}")
