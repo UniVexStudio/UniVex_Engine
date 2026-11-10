@@ -231,23 +231,33 @@ bool EditorPrismShellUVE::DispatchShortcutUVE(const prism::Key key, const std::u
 
 namespace {
 
+// Title bar (#15) and viewport-name tab (#2) row heights, and the logo box (#1) spanning both.
+constexpr float kTitleRowUVE = 28.0F;
+constexpr float kTabRowUVE = 25.0F;
+constexpr float kLogoBoxUVE = 50.0F;
+// Sub row 2: the viewport settings strip.
+constexpr float kSubRow2UVE = 27.0F;
+
 /// #1: the engine logo box. It spans the title bar row and the viewport-name tab row, the same
-/// mark the editor has always shown there (a rounded blue square with the U).
+/// mark the editor has always shown there (a rounded blue square with the U), kept small like a
+/// desktop editor's app mark so the title bar stays thin.
 class LogoBoxUVE final : public prism::Widget {
 public:
-    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(62.0F, 62.0F)); }
+    prism::Vec2 measure(prism::Vec2) override {
+        return m_desired = constrain(prism::Vec2(kLogoBoxUVE, kTitleRowUVE + kTabRowUVE));
+    }
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
         const prism::Rect r = rect();
         c.fillRect(r, t.header);
-        const float side = std::min(r.w, r.h) - 18.0F;
+        const float side = std::floor(std::min(r.w, r.h) * 0.56F);
         const prism::Rect mark{r.x + (r.w - side) * 0.5F, r.y + (r.h - side) * 0.5F, side, side};
-        c.fillRoundRect(mark, 7.0F, prism::Color(32, 112, 228));
-        c.strokeRoundRect(mark, 7.0F, prism::Color(82, 160, 255, 220), 1);
+        c.fillRoundRect(mark, 5.0F, prism::Color(32, 112, 228));
+        c.strokeRoundRect(mark, 5.0F, prism::Color(82, 160, 255, 220), 1);
         // The U, drawn: two stems joined by a rounded bowl.
         const float uw = side * 0.46F;
         const float uh = side * 0.52F;
-        const float th = std::max(3.0F, side * 0.12F);
+        const float th = std::max(2.0F, std::round(side * 0.12F));
         const float ux = mark.x + (mark.w - uw) * 0.5F;
         const float uy = mark.y + (mark.h - uh) * 0.5F;
         const prism::Color white(255, 255, 255);
@@ -282,7 +292,7 @@ public:
     }
     prism::Vec2 measure(prism::Vec2) override {
         const float w = std::max(170.0F, std::ceil(prism::theme().ui->width(m_name)) + 60.0F);
-        return m_desired = constrain(prism::Vec2(w, 30.0F));
+        return m_desired = constrain(prism::Vec2(w, kTabRowUVE));
     }
     void setName(std::string name) {
         if (name != m_name) {
@@ -293,7 +303,7 @@ public:
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
         const prism::Rect r = rect();
-        const prism::Rect tab{r.x + 6.0F, r.y + 3.0F, r.w - 6.0F, r.h - 3.0F};
+        const prism::Rect tab{r.x + 6.0F, r.y + 2.0F, r.w - 6.0F, r.h - 2.0F};
         c.fillRoundRect(tab, 5.0F, t.panel);
         c.fillRect(prism::Rect{tab.x, tab.bottom() - 5.0F, tab.w, 5.0F}, t.panel);
         c.fillRect(prism::Rect{tab.x, tab.y, tab.w, 2.0F}, t.accent);
@@ -317,7 +327,7 @@ private:
 /// a double click toggles maximize.
 class DragStripUVE final : public prism::Widget {
 public:
-    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(40.0F, 32.0F)); }
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(40.0F, kTitleRowUVE)); }
     void arrange(prism::Rect r) override {
         prism::Widget::arrange(r);
         if (prism::Application::exists()) {
@@ -326,7 +336,7 @@ public:
     }
     void paint(prism::Canvas& c) override {
         const prism::Rect r = rect();
-        const prism::Rect hatch{r.x + 12.0F, r.y + 9.0F, std::max(0.0F, r.w - 24.0F), r.h - 18.0F};
+        const prism::Rect hatch{r.x + 12.0F, r.y + 7.0F, std::max(0.0F, r.w - 24.0F), r.h - 14.0F};
         if (hatch.w > 4.0F) {
             c.pushClip(hatch);
             for (float x = hatch.x - hatch.h; x < hatch.right(); x += 6.0F) {
@@ -429,9 +439,15 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
     m_viewportNameTab = viewportTab;
     tabRow->add(m_viewportNameTab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
     tabRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    auto titleRow = prism::make<prism::SizeBox>();
+    titleRow->setHeightOverride(kTitleRowUVE);
+    titleRow->setContent(row);
+    auto tabRowBox = prism::make<prism::SizeBox>();
+    tabRowBox->setHeightOverride(kTabRowUVE);
+    tabRowBox->setContent(tabRow);
     auto right = prism::vbox();
-    right->add(row);
-    right->add(tabRow);
+    right->add(titleRow);
+    right->add(tabRowBox);
     auto top = prism::hbox();
     top->add(prism::make<LogoBoxUVE>());
     top->add(right, prism::Slot{1.0F});
@@ -509,7 +525,7 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildSubRow2UVE() {
     // Sub row 2 (full width): gizmo mode, snapping, grid, projection - the viewport settings row.
     auto settings = prism::hbox(4.0F);
-    settings->setPadding(prism::Margin(6.0F, 2.0F, 6.0F, 2.0F));
+    settings->setPadding(prism::Margin(6.0F, 1.0F, 6.0F, 1.0F));
     m_gizmoModes = prism::make<prism::Segmented>();
     m_gizmoModes->add("", prism::Icon::Select, "Universal")
         .add("", prism::Icon::Move, "Move")
@@ -598,7 +614,10 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildSubRow2UVE() {
     auto bar = prism::make<prism::Border>();
     bar->setBackground(prism::ThemeColor(&prism::Theme::panel));
     bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    bar->setChild(settings);
+    auto sized = prism::make<prism::SizeBox>();
+    sized->setHeightOverride(kSubRow2UVE);
+    sized->setContent(settings);
+    bar->setChild(sized);
     return bar;
 }
 
