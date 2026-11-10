@@ -222,7 +222,70 @@ class EngineBuilder:
         self.modules = {}
         self.targets = {}
 
+    def _ensure_imgui_module_rules(self):
+        imgui_dir = self.repo_root / "ThirdParty" / "imgui"
+        imgui_bcs = imgui_dir / "ImGui.Build.cs"
+        if not imgui_bcs.exists():
+            imgui_dir.mkdir(parents=True, exist_ok=True)
+            content = """// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+using UniVexBuildTool;
+
+public class ImGuiModule : ModuleRules
+{
+    public ImGuiModule(ReadOnlyTargetRules Target) : base(Target)
+    {
+        Type = ModuleType.StaticLibrary;
+
+        PublicIncludePaths.AddRange(new string[] {
+            ".",
+            "backends"
+        });
+
+        ExtraSourceDirectories.AddRange(new string[] {
+            "backends"
+        });
+
+        ExcludedFiles.AddRange(new string[] {
+            "examples/",
+            "docs/",
+            "misc/",
+            "imgui_demo.cpp",
+            "imgui_impl_android.cpp",
+            "imgui_impl_dx9.cpp",
+            "imgui_impl_dx10.cpp",
+            "imgui_impl_dx11.cpp",
+            "imgui_impl_dx12.cpp",
+            "imgui_impl_metal.mm",
+            "imgui_impl_metal.cpp",
+            "imgui_impl_vulkan.cpp",
+            "imgui_impl_wgpu.cpp",
+            "imgui_impl_win32.cpp",
+            "imgui_impl_sdl2.cpp",
+            "imgui_impl_sdl3.cpp",
+            "imgui_impl_sdlrenderer2.cpp",
+            "imgui_impl_sdlrenderer3.cpp",
+            "imgui_impl_osx.mm",
+            "imgui_impl_allegro5.cpp",
+            "imgui_impl_glut.cpp",
+            "imgui_impl_null.cpp",
+            "imgui_impl_opengl2.cpp",
+            "imgui_impl_qnx.cpp",
+            "imgui_impl_sdlgpu3.cpp"
+        });
+
+        PublicSystemLibraries.AddRange(new string[] {
+            "GL",
+            "GLX",
+            "X11"
+        });
+    }
+}
+"""
+            imgui_bcs.write_text(content, encoding="utf-8")
+
     def discover(self):
+        self._ensure_imgui_module_rules()
         # Scan for *.Build.cs
         for root_dir, _, files in os.walk(self.repo_root):
             rpath = Path(root_dir)
@@ -394,10 +457,21 @@ class EngineBuilder:
             dest = tp_dir / name
             if not (dest / check_file).exists():
                 print(f"[UVBT] Fetching ThirdParty dependency '{name}' ({tag})...", flush=True)
-                if dest.exists() and not (dest / ".git").exists():
-                    shutil.rmtree(dest, ignore_errors=True)
+                saved_bcs = {}
+                if dest.exists():
+                    for bcs in dest.glob("*.Build.cs"):
+                        try:
+                            saved_bcs[bcs.name] = bcs.read_text(encoding="utf-8")
+                        except Exception:
+                            pass
+                    if not (dest / ".git").exists():
+                        shutil.rmtree(dest, ignore_errors=True)
                 if not dest.exists():
                     subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(dest)], check=True)
+                for bcs_name, content in saved_bcs.items():
+                    (dest / bcs_name).write_text(content, encoding="utf-8")
+
+        self._ensure_imgui_module_rules()
 
         tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / platform
         tp_lib_dir.mkdir(parents=True, exist_ok=True)
