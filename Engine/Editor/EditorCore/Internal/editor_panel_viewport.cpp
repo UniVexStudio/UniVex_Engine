@@ -11,6 +11,7 @@
 //
 // Moved verbatim. Not one line of the three functions differs from what was in editor_uve.cpp.
 
+#include "editor_viewport_input_imgui.h"
 #include "editor_color_field.h"
 #include "editor.h"
 #include "scalar.h"
@@ -324,8 +325,10 @@ void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
             }
             std::swap(*state, m_viewportOverlayState);
         }
+        m_viewportOverlayState.input = CaptureImGuiViewportInputUVE();
         const std::uint64_t textureId =
             m_viewportPanelRenderer(context, available, used, m_viewportOverlayState);
+        ApplyImGuiViewportCursorUVE(m_viewportOverlayState.input);
         if (textureId != 0U && used.x > 0.0F && used.y > 0.0F) {
             const ImVec2 cursorBeforeImage = ImGui::GetCursorScreenPos();
             // The viewport renderer's framebuffer texture is a normal OpenGL render target

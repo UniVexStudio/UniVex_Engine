@@ -38,6 +38,7 @@
 #include "editor_commands.h"
 #include "editor_audio_mixer.h"
 #include "editor_settings.h"
+#include "editor_viewport_input.h"
 #include "animation_library_asset.h"
 #include "shader_asset.h"
 #include "gltf_skeleton.h"
@@ -651,6 +652,9 @@ public:
         /// How much of the preview sky and ground bands light the scene, matching
         /// WorldEnvironment3DComponentUVE::ambientEnergy so "Add Environment to Scene" copies it.
         float previewAmbientEnergy = 1.0F;
+        /// This frame's pointer/keyboard input for the view being rendered, filled by the editor
+        /// shell right before it calls the viewport renderer (see editor_viewport_input.h).
+        EditorViewportInputUVE input;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
