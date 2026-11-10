@@ -42,6 +42,7 @@
 #include "editor.h"
 #include "vector2.h"
 #include "camera_component.h"
+#include "transform_component.h"
 #include "world_transform_component.h"
 #include "i_entity_manager.h"
 #include "camera_3d.h"
@@ -74,6 +75,7 @@ struct EditorLaunchOptionsUVE final {
     /// Screenshot aid: put a folder, a sun, a camera and a box in the level and select the box, so the
     /// panels and the viewport gizmos have content.
     bool prismDemoObject = false;
+    bool prismDemoGizmos = false;
 };
 
 [[nodiscard]] bool ParseGlVersionUVE(const std::string_view value, std::uint32_t& major,
@@ -112,6 +114,11 @@ struct EditorLaunchOptionsUVE final {
         }
         if (argument == "--prism-demo-object") {
             options.prismDemoObject = true;
+            continue;
+        }
+        if (argument == "--prism-demo-gizmos") {
+            options.prismDemoObject = true;
+            options.prismDemoGizmos = true;
             continue;
         }
         if (argument == "--prism-screenshot" && index + 1 < argc) {
@@ -230,6 +237,25 @@ int main(const int argc, char** argv) {
             static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Folder));
             static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::DirectionalLight3D));
             static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Camera3D));
+            if (options.prismDemoGizmos) {
+                // One of each object with a gizmo of its own, spread out along X.
+                using KindUVE = UVE::Scene::Objects::SceneObjectKindUVE;
+                const std::array<KindUVE, 7> kinds{KindUVE::Light3D, KindUVE::Decal3D, KindUVE::Marker3D,
+                                                   KindUVE::SpawnPoint3D, KindUVE::RayCast3D, KindUVE::SpringArm3D,
+                                                   KindUVE::NavMeshVolume3D};
+                UVE::Scene::IEntityManagerUVE& entities = engine.GetServicesUVE().GetEntityManagerUVE();
+                float x = -6.0F;
+                for (const KindUVE kind : kinds) {
+                    const UVE::Scene::EntityUVE entity =
+                        editor.CreateDocumentSceneObjectUVE(kind, editor.GetDocumentViewportUVE());
+                    if (entity != UVE::Scene::kInvalidEntityUVE &&
+                        entities.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
+                        entities.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity).localPosition =
+                            UVE::Math::Vector3UVE{x, 1.0F, -3.0F};
+                    }
+                    x += 2.0F;
+                }
+            }
             static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::BoxMesh3D));
         }
 

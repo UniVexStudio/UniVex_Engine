@@ -14,6 +14,7 @@
 #include "Canvas.h"
 #include "Math3D.h"
 #include <string>
+#include <vector>
 
 namespace prism {
 
@@ -144,5 +145,56 @@ private:
 // Segments are clipped at the near plane; a triangle with a corner behind it is skipped.
 void drawWorldLine(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, float width = 1.5f);
 void drawWorldTriangle(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Vec3 cc, Color col);
+
+// ------------------------------------------------------------------ scene depth
+// The host's scene depth, so world-space drawing hides behind (or shows faintly through) the scene's geometry.
+// `data` is linear view depth - the distance along the camera's fwd axis - one float per texel, row 0 at the top,
+// covering `area` in canvas pixels. Texels with nothing drawn hold +infinity (or anything >= farDepth).
+struct GizmoDepth {
+  const float* data = nullptr;
+  int width = 0, height = 0;
+  Rect area;
+  float bias = 0.004f;          // relative tolerance: a point this fraction behind the surface still counts as on it
+  float minTolerance = 0.02f;   // and at least this far (world units)
+  float farDepth = 1e30f;
+  float zOffset = 0.f;          // subtracted from a tested depth (the drawing camera's eye sits this far behind the host's)
+  bool valid() const { return data != nullptr && width > 0 && height > 0 && area.w > 0 && area.h > 0; }
+  float sample(Vec2 p) const;   // depth under canvas point p (+inf outside the buffer)
+  // True when a point at canvas p and view depth z is in front of the scene there.
+  bool visible(Vec2 p, float z) const;
+};
+
+// A world segment, depth-tested: the parts behind the scene are drawn at `hiddenAlpha` of the colour's alpha
+// (0 hides them). `depth` may be null (no test). Long segments are tested every few pixels.
+void drawWorldLine(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, float width, const GizmoDepth* depth,
+                   float hiddenAlpha);
+// A world triangle, tested at its centroid.
+void drawWorldTriangle(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Vec3 cc, Color col, const GizmoDepth* depth,
+                       float hiddenAlpha);
+
+// ------------------------------------------------------------------ world grid
+// The editor's ground grid drawn as projected lines: three decades of lines (thin / mid / thick) whose spacing
+// follows the zoom, the axis lines through the origin, and a fade with distance. Hidden behind the scene's depth.
+struct WorldGrid {
+  enum class Plane { XZ, XY, ZY };
+  Plane plane = Plane::XZ;
+  float baseSpacing = 1.f;
+  float targetCellPixels = 24.f;   // a thin cell is about this many pixels at the focus
+  float lineWidth = 1.25f, axisWidth = 1.6f;
+  Color thin = Color(92, 102, 125), mid = Color(140, 153, 179), thick = Color(184, 196, 222);
+  float thinIntensity = 0.45f, midIntensity = 0.70f, thickIntensity = 0.95f;
+  Color axis[3] = {Color(176, 60, 60), Color(84, 152, 54), Color(54, 107, 179)};
+  float fadeStart = 12.f, fadeEnd = 45.f;   // multiples of the camera's height above the plane
+  float opacity = 1.f;
+};
+void drawWorldGrid(Canvas& c, const GizmoCamera& cam, const WorldGrid& grid, const GizmoDepth* depth);
+
+// ------------------------------------------------------------------ selection outline
+// A band `radius` pixels wide just outside every silhouette of a selection mask (one byte of weight per pixel,
+// row 0 at the top; 0 = not selected). The colour is scaled by the strongest weight found, like the engine's own
+// outline: the active object full strength, the rest of a multi-selection dimmer. Writes straight-alpha ARGB into
+// `out` covering `outRect` (pixels of the mask), ready for Canvas::blitBlend; returns false when there is nothing.
+bool buildSelectionOutline(const uint8_t* mask, int width, int height, int radius, Color color,
+                           std::vector<uint32_t>& out, int outRect[4]);
 
 } // namespace prism

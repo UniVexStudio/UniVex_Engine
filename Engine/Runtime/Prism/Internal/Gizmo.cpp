@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
+#include <span>
 #include <vector>
 
 namespace prism {
@@ -643,7 +645,8 @@ void NavGizmo::draw(Canvas& c) const {
 // ------------------------------------------------------------------ world-space drawing
 void drawWorldLine(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, float width) {
   float za = (a - cam.eye).dot(cam.fwd), zb = (b - cam.eye).dot(cam.fwd);
-  const float n = cam.nearPlane;
+  // Clip a little in front of the near plane: a point placed exactly on it can round to just behind it.
+  const float n = cam.nearPlane * 1.02f + 1e-5f;
   if (za < n && zb < n) return;
   if (za < n) { const float t = (n - za) / (zb - za); a = a + (b - a) * t; }
   else if (zb < n) { const float t = (n - zb) / (za - zb); b = b + (a - b) * t; }
@@ -656,6 +659,252 @@ void drawWorldTriangle(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Vec3 c
   Vec2 p[3];
   if (!cam.project(a, p[0]) || !cam.project(b, p[1]) || !cam.project(cc, p[2])) return;
   c.fillPolygon(std::span<const Vec2>(p, 3), col, true);
+}
+
+// ------------------------------------------------------------------ scene depth
+float GizmoDepth::sample(Vec2 p) const {
+  if (!valid()) return std::numeric_limits<float>::infinity();
+  const float u = (p.x - area.x) / area.w, v = (p.y - area.y) / area.h;
+  if (u < 0 || v < 0 || u >= 1 || v >= 1) return std::numeric_limits<float>::infinity();
+  const int x = std::min(width - 1, int(u * float(width)));
+  const int y = std::min(height - 1, int(v * float(height)));
+  return data[size_t(y) * size_t(width) + size_t(x)];
+}
+
+bool GizmoDepth::visible(Vec2 p, float z) const {
+  const float d = sample(p);
+  if (!(d < farDepth)) return true;
+  z -= zOffset;
+  return z <= d + std::max(minTolerance, std::fabs(d) * bias);
+}
+
+namespace {
+// Clips a segment to the near plane; false when it lies wholly behind it.
+bool clipNear(const GizmoCamera& cam, Vec3& a, Vec3& b) {
+  const float za = (a - cam.eye).dot(cam.fwd), zb = (b - cam.eye).dot(cam.fwd);
+  const float n = cam.nearPlane * 1.02f + 1e-5f;   // see drawWorldLine
+  if (za < n && zb < n) return false;
+  if (za < n) { const float t = (n - za) / (zb - za); a = a + (b - a) * t; }
+  else if (zb < n) { const float t = (n - zb) / (za - zb); b = b + (a - b) * t; }
+  return true;
+}
+
+// Draws a world segment in pieces a few pixels long. `alphaAt(point)` scales the alpha at a world point; pieces
+// behind the scene take `hiddenAlpha` more. Runs of equal look are joined into one line.
+template <class AlphaFn>
+void drawPieces(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, float width, const GizmoDepth* depth,
+                float hiddenAlpha, AlphaFn alphaAt, float pixelsPerPiece) {
+  if (!clipNear(cam, a, b)) return;
+  Vec2 pa, pb;
+  if (!cam.project(a, pa) || !cam.project(b, pb)) return;
+  const bool test = depth != nullptr && depth->valid();
+  const float len = (pb - pa).length();
+  const int n = std::clamp(int(len / pixelsPerPiece) + 1, 1, 96);
+  std::vector<Vec2> run;
+  int runAlpha = -1;
+  const auto flush = [&]() {
+    if (run.size() >= 2 && runAlpha > 0) {
+      Color k = col;
+      k.a = uint8_t(runAlpha);
+      // A straight world segment projects to a straight screen segment, so a run is one line.
+      c.line(run.front(), run.back(), k, width);
+    }
+    run.clear();
+  };
+  Vec2 prev = pa;
+  for (int i = 0; i < n; ++i) {
+    const float t0 = float(i) / float(n), t1 = float(i + 1) / float(n), tm = (t0 + t1) * 0.5f;
+    Vec2 q;
+    if (!cam.project(a + (b - a) * t1, q)) break;
+    float k = alphaAt(a + (b - a) * tm);
+    if (test) {
+      Vec2 mid;
+      float z = 0;
+      if (cam.project(a + (b - a) * tm, mid, &z) && !depth->visible(mid, z)) k *= hiddenAlpha;
+    }
+    const int al = std::clamp(int(std::lround(float(col.a) * std::clamp(k, 0.f, 1.f) / 8.f)) * 8, 0, 255);
+    if (al != runAlpha) {
+      flush();
+      runAlpha = al;
+      run.push_back(prev);
+    }
+    run.push_back(q);
+    prev = q;
+  }
+  flush();
+}
+} // namespace
+
+void drawWorldLine(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, float width, const GizmoDepth* depth,
+                   float hiddenAlpha) {
+  if (depth == nullptr || !depth->valid()) { drawWorldLine(c, cam, a, b, col, width); return; }
+  drawPieces(c, cam, a, b, col, width, depth, hiddenAlpha, [](Vec3) { return 1.f; }, 6.f);
+}
+
+void drawWorldTriangle(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Vec3 cc, Color col, const GizmoDepth* depth,
+                       float hiddenAlpha) {
+  if (depth != nullptr && depth->valid()) {
+    Vec2 m;
+    float z = 0;
+    if (cam.project((a + b + cc) * (1.f / 3.f), m, &z) && !depth->visible(m, z)) {
+      col.a = uint8_t(std::clamp(float(col.a) * hiddenAlpha, 0.f, 255.f));
+      if (col.a == 0) return;
+    }
+  }
+  drawWorldTriangle(c, cam, a, b, cc, col);
+}
+
+// ------------------------------------------------------------------ world grid
+void drawWorldGrid(Canvas& c, const GizmoCamera& cam, const WorldGrid& g, const GizmoDepth* depth) {
+  if (g.opacity <= 0 || g.baseSpacing <= 0) return;
+  // Plane basis: u, v in the plane, nrm its normal; axis ids of u and v for the axis lines.
+  Vec3 u{1, 0, 0}, v{0, 0, 1}, nrm{0, 1, 0};
+  int uAxis = 0, vAxis = 2, nAxis = 1;
+  if (g.plane == WorldGrid::Plane::XY) { u = {1, 0, 0}; v = {0, 1, 0}; nrm = {0, 0, 1}; uAxis = 0; vAxis = 1; nAxis = 2; }
+  else if (g.plane == WorldGrid::Plane::ZY) { u = {0, 0, 1}; v = {0, 1, 0}; nrm = {1, 0, 0}; uAxis = 2; vAxis = 1; nAxis = 0; }
+
+  // Focus: where the view centre meets the plane (or the eye's foot when the view runs along it).
+  const Vec2 centre{cam.cx, cam.cy};
+  Vec3 focus;
+  if (!cam.rayPlane(centre, Vec3{0, 0, 0}, nrm, focus)) focus = cam.eye - nrm * cam.eye.dot(nrm);
+  const float height = std::max(std::fabs(cam.eye.dot(nrm)), 1e-3f);
+  float worldPerPixel;
+  float reach;
+  if (cam.ortho) {
+    worldPerPixel = 1.f / std::max(cam.orthoScale, 1e-6f);
+    reach = std::hypot(cam.cx, cam.cy) * 2.f * worldPerPixel + 1.f;
+    reach *= 1.5f;
+  } else {
+    const float dist = std::max((focus - cam.eye).length(), cam.nearPlane);
+    worldPerPixel = dist / std::max(cam.focal, 1e-3f);
+    reach = std::max(height * g.fadeEnd, dist * 2.f);
+  }
+  const float ratio = std::max(worldPerPixel * g.targetCellPixels / g.baseSpacing, 1e-9f);
+  const float level = std::max(0.f, std::log10(ratio));
+  const float fade = level - std::floor(level);
+  const float s0 = g.baseSpacing * std::pow(10.f, std::floor(level));
+
+  // Distance fade: by the camera's height above the plane (perspective), none in orthographic.
+  const float fadeA = cam.ortho ? 1e30f : height * g.fadeStart;
+  const float fadeB = cam.ortho ? 2e30f : std::max(height * g.fadeEnd, fadeA + 1e-3f);
+  const Vec3 eyeFoot = cam.eye - nrm * cam.eye.dot(nrm);
+  const auto distAlpha = [&](Vec3 p) {
+    if (cam.ortho) return 1.f;
+    const float d = (p - eyeFoot).length();
+    if (d <= fadeA) return 1.f;
+    if (d >= fadeB) return 0.f;
+    const float t = (d - fadeA) / (fadeB - fadeA);
+    return 1.f - t * t * (3.f - 2.f * t);
+  };
+  const auto mix = [](Color a, float k) {
+    a.a = uint8_t(std::clamp(k, 0.f, 1.f) * 255.f);
+    return a;
+  };
+
+  const float fu = focus.dot(u), fv = focus.dot(v);
+  // One decade of lines: every `spacing`, skipping multiples of `skipEvery * spacing` (drawn by a coarser decade).
+  const auto decade = [&](float spacing, Color col, float alpha, long skipEvery) {
+    if (alpha <= 0.01f) return;
+    const float r = std::min({reach, spacing * 150.f, cam.ortho ? 1e30f : spacing * cam.focal / 5.f});
+    const long i0 = long(std::floor((fu - r) / spacing)), i1 = long(std::ceil((fu + r) / spacing));
+    const long j0 = long(std::floor((fv - r) / spacing)), j1 = long(std::ceil((fv + r) / spacing));
+    const Color k = mix(col, alpha * g.opacity);
+    // A decade fades out where its cells shrink below a few pixels, like the engine grid's level of detail, so
+    // distant lines never pile up into a bright band at the horizon.
+    const float lodFar = cam.ortho ? 1e30f : spacing * cam.focal / 5.f;
+    const auto lodAlpha = [&](Vec3 at) {
+      float k2 = distAlpha(at);
+      if (!cam.ortho) {
+        const float d = (at - cam.eye).length();
+        const float t = std::clamp((d - lodFar * 0.45f) / (lodFar * 0.55f), 0.f, 1.f);
+        k2 *= 1.f - t * t * (3.f - 2.f * t);
+      }
+      return k2;
+    };
+    for (int dir = 0; dir < 2; ++dir) {
+      const long a0 = dir == 0 ? i0 : j0, a1 = dir == 0 ? i1 : j1;
+      for (long i = a0; i <= a1; ++i) {
+        if (i == 0) continue;                                   // the axis line is drawn on its own
+        if (skipEvery > 0 && i % skipEvery == 0) continue;
+        const float w = float(i) * spacing;
+        Vec3 p, q;
+        if (dir == 0) { p = u * w + v * (fv - r); q = u * w + v * (fv + r); }
+        else { p = v * w + u * (fu - r); q = v * w + u * (fu + r); }
+        drawPieces(c, cam, p, q, k, g.lineWidth, depth, 0.f, lodAlpha, 14.f);
+      }
+    }
+  };
+  decade(s0, g.thin, g.thinIntensity * (1.f - fade), 10);
+  decade(s0 * 10.f, g.mid, g.midIntensity, 10);
+  decade(s0 * 100.f, g.thick, g.thickIntensity, 0);
+
+  // Axis lines through the origin: the plane's two axes, and the normal axis as a vertical guide on the ground.
+  const float r = reach;
+  const auto axisLine = [&](Vec3 dir, int axisId, float along) {
+    const Vec3 p = dir * (along - r), q = dir * (along + r);
+    drawPieces(c, cam, p, q, mix(g.axis[axisId], g.opacity), g.axisWidth, depth, 0.f, distAlpha, 14.f);
+  };
+  axisLine(u, uAxis, fu);
+  axisLine(v, vAxis, fv);
+  if (g.plane == WorldGrid::Plane::XZ) {
+    const Vec3 p = nrm * (-r), q = nrm * r;
+    drawPieces(c, cam, p, q, mix(g.axis[nAxis], g.opacity * 0.8f), g.axisWidth, depth, 0.f,
+               [&](Vec3 at) { const float d = std::min(1.f, std::fabs(at.dot(nrm)) / r); return 1.f - d * d; }, 14.f);
+  }
+}
+
+// ------------------------------------------------------------------ selection outline
+bool buildSelectionOutline(const uint8_t* mask, int w, int h, int radius, Color color, std::vector<uint32_t>& out,
+                           int rect[4]) {
+  out.clear();
+  if (mask == nullptr || w <= 0 || h <= 0) return false;
+  radius = std::clamp(radius, 1, 8);
+  int x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (int y = 0; y < h; ++y) {
+    const uint8_t* row = mask + size_t(y) * size_t(w);
+    for (int x = 0; x < w; ++x)
+      if (row[x]) { x0 = std::min(x0, x); x1 = std::max(x1, x); y0 = std::min(y0, y); y1 = std::max(y1, y); }
+  }
+  if (x1 < 0) return false;
+  x0 = std::max(0, x0 - radius - 1); y0 = std::max(0, y0 - radius - 1);
+  x1 = std::min(w - 1, x1 + radius + 1); y1 = std::min(h - 1, y1 + radius + 1);
+  const int bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  out.assign(size_t(bw) * size_t(bh), 0u);
+  // The disc of offsets, nearest first, so each pixel stops at its first hit.
+  struct Off { int dx, dy; float d; };
+  std::vector<Off> offs;
+  for (int dy = -radius; dy <= radius; ++dy)
+    for (int dx = -radius; dx <= radius; ++dx) {
+      const float d = std::sqrt(float(dx * dx + dy * dy));
+      if (d <= float(radius) + 0.5f && (dx != 0 || dy != 0)) offs.push_back({dx, dy, d});
+    }
+  std::sort(offs.begin(), offs.end(), [](const Off& a, const Off& b) { return a.d < b.d; });
+  for (int y = y0; y <= y1; ++y) {
+    for (int x = x0; x <= x1; ++x) {
+      if (mask[size_t(y) * size_t(w) + size_t(x)]) continue;     // the band sits outside the object
+      float nearest = 1e9f;
+      int strongest = 0;
+      for (const Off& o : offs) {
+        if (o.d > nearest + 1.0f) break;
+        const int px = x + o.dx, py = y + o.dy;
+        if (px < 0 || py < 0 || px >= w || py >= h) continue;
+        const int m = mask[size_t(py) * size_t(w) + size_t(px)];
+        if (m) { nearest = std::min(nearest, o.d); strongest = std::max(strongest, m); }
+      }
+      if (strongest == 0) continue;
+      const float coverage = std::clamp(float(radius) + 0.5f - nearest, 0.f, 1.f);
+      if (coverage <= 0) continue;
+      const float k = float(strongest) / 255.f;
+      const float shade = 0.7f + 0.3f * k;
+      const uint32_t a = uint32_t(std::clamp(k * coverage, 0.f, 1.f) * 255.f + 0.5f);
+      const uint32_t r = uint32_t(std::clamp(float(color.r) * shade, 0.f, 255.f));
+      const uint32_t gg = uint32_t(std::clamp(float(color.g) * shade, 0.f, 255.f));
+      const uint32_t b = uint32_t(std::clamp(float(color.b) * shade, 0.f, 255.f));
+      out[size_t(y - y0) * size_t(bw) + size_t(x - x0)] = (a << 24) | (r << 16) | (gg << 8) | b;
+    }
+  }
+  rect[0] = x0; rect[1] = y0; rect[2] = bw; rect[3] = bh;
+  return true;
 }
 
 } // namespace prism

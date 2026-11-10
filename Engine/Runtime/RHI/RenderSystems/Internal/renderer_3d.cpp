@@ -1043,6 +1043,8 @@ struct Renderer3DUVE::ImplUVE {
     Asset::AssetGuidUVE skyTextureGuid{};
     TextureHandleUVE skyTextureHandle = kInvalidTextureHandleUVE;
     bool skyTextureEnabled = false;
+    /// See IRenderer3DUVE::GetLastSceneDepthUVE().
+    SceneDepthExportUVE lastSceneDepth{};
     float environmentCameraNear = 0.1F;
     float environmentCameraFar = 250.0F;
     float environmentAspect = 1.0F;
@@ -4586,6 +4588,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->environmentCameraFar = camera.farPlane;
         viewProjection = m_impl->cameraSystem.ComputeViewProjectionUVE(entityManager, cameraEntity, aspectRatio);
         viewPosition = m_impl->cameraSystem.GetWorldPositionUVE(entityManager, cameraEntity);
+        m_impl->lastSceneDepth = SceneDepthExportUVE{};
+        if (Math::TryInverseUVE(viewProjection, m_impl->lastSceneDepth.inverseViewProjection)) {
+            m_impl->lastSceneDepth.valid = m_impl->depthTarget != kInvalidTextureHandleUVE;
+            m_impl->lastSceneDepth.depthTexture = m_impl->depthTarget;
+            m_impl->lastSceneDepth.width = m_impl->targetWidth;
+            m_impl->lastSceneDepth.height = m_impl->targetHeight;
+        }
         const float skyFovY = camera.projection == Scene::CameraProjectionModeUVE::Orthographic
                                   ? 60.0F
                                   : Scene::VerticalFieldOfViewDegreesUVE(camera, aspectRatio);
@@ -6201,6 +6210,10 @@ void Renderer3DUVE::SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept 
     // drawing, and a non-finite value would otherwise reach a matrix compose.
     const float sanitized = std::isfinite(alpha) ? (alpha < 0.0F ? 0.0F : (alpha > 1.0F ? 1.0F : alpha)) : 0.0F;
     m_impl->visibilitySet.physicsInterpolationAlpha = sanitized;
+}
+
+SceneDepthExportUVE Renderer3DUVE::GetLastSceneDepthUVE() const noexcept {
+    return m_impl->lastSceneDepth;
 }
 
 Renderer3DFrameDiagnosticsUVE Renderer3DUVE::GetLastFrameDiagnosticsUVE() const noexcept {

@@ -284,6 +284,18 @@ struct Renderer3DFrameDiagnosticsUVE final {
 /// engine thread only, after SceneGraphUVE::UpdateUVE() has run for this frame (it needs current
 /// WorldTransformComponentUVE data), matching EngineCoreUVE's single-threaded Update -> Render
 /// frame-loop contract.
+/// The scene depth of the last frame rendered, for an editor that draws its own overlays (grid, gizmos) and
+/// needs them hidden behind the scene's geometry. `depthTexture` is the renderer's own depth target (OpenGL
+/// convention: window depth 0..1, 1 where nothing was drawn); `inverseViewProjection` turns a pixel's NDC
+/// position and depth back into world space. Valid until the next frame is rendered or the targets resize.
+struct SceneDepthExportUVE final {
+    bool valid = false;
+    TextureHandleUVE depthTexture = kInvalidTextureHandleUVE;
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    Math::Matrix4x4UVE inverseViewProjection{};
+};
+
 class IRenderer3DUVE {
 public:
     virtual ~IRenderer3DUVE() = default;
@@ -443,6 +455,9 @@ public:
     /// the behaviour it had, and nothing is required to opt in.
     virtual void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept = 0;
     [[nodiscard]] virtual Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept = 0;
+    /// The scene depth of the last camera frame (see SceneDepthExportUVE). Renderers that keep no depth
+    /// target, and test doubles, report none.
+    [[nodiscard]] virtual SceneDepthExportUVE GetLastSceneDepthUVE() const noexcept { return {}; }
 };
 
 } // namespace UVE::Render

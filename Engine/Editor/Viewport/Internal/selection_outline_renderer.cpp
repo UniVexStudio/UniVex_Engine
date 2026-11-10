@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstdint>
 #include "univex/render/selection_outline_renderer.h"
 
 #include <array>
@@ -121,6 +123,75 @@ bool SelectionOutlineRenderer::EnsureMask(const int width, const int height) {
     return complete;
 }
 
+void SelectionOutlineRenderer::DrawMaskPass(const univex::math::Mat4& viewProjection, const int width,
+                                            const int height, const std::vector<SelectionOutlineVertex>& triangles) {
+    // ---- pass 1: the silhouette mask ----------------------------------
+    // No depth and no culling: the whole selected shape counts, front or back. Overlapping
+    // selections keep the stronger weight.
+    glBindFramebuffer(GL_FRAMEBUFFER, maskFbo_);
+    glViewport(0, 0, width, height);
+    glClearColor(0.f, 0.f, 0.f, 0.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ApplyOverlayRasterState(WithCullMode(kScreenSpaceCompositeState, OverlayCullMode::None));
+    glBlendEquation(GL_MAX);
+    glBlendFunc(GL_ONE, GL_ONE);
+    maskProgram_.Use();
+    maskProgram_.SetMat4("uViewProj", viewProjection.Data());
+    glBindVertexArray(triangleVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, triangleVbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(triangles.size() * sizeof(SelectionOutlineVertex)),
+                 triangles.data(), GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(triangles.size() - (triangles.size() % 3U)));
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBlendEquation(GL_FUNC_ADD);
+}
+
+bool SelectionOutlineRenderer::ReadMask(const univex::math::Mat4& viewProjection, const int width, const int height,
+                                        const std::vector<SelectionOutlineVertex>& triangles,
+                                        std::vector<std::uint8_t>& outMask) {
+    outMask.clear();
+    if (!Valid() || triangles.size() < 3U || width <= 0 || height <= 0) {
+        return false;
+    }
+    GLint drawFbo = 0;
+    GLint readFbo = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFbo);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFbo);
+    std::array<GLint, 4> viewport{};
+    glGetIntegerv(GL_VIEWPORT, viewport.data());
+    std::array<GLfloat, 4> clearColor{};
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor.data());
+    const SavedOverlayRasterState savedRasterState = SaveOverlayRasterState();
+    GLint packAlignment = 4;
+    glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
+
+    bool ok = false;
+    if (EnsureMask(width, height)) {
+        DrawMaskPass(viewProjection, width, height, triangles);
+        glBindVertexArray(0);
+        std::vector<std::uint8_t> rows(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, maskFbo_);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, width, height, GL_RED, GL_UNSIGNED_BYTE, rows.data());
+        // GL rows run bottom-up; the mask is handed over top-down.
+        outMask.resize(rows.size());
+        const std::size_t stride = static_cast<std::size_t>(width);
+        for (int y = 0; y < height; ++y) {
+            std::copy_n(rows.data() + static_cast<std::size_t>(height - 1 - y) * stride, stride,
+                        outMask.data() + static_cast<std::size_t>(y) * stride);
+        }
+        ok = true;
+    }
+
+    glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(drawFbo));
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(readFbo));
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+    RestoreOverlayRasterState(savedRasterState);
+    return ok;
+}
+
 void SelectionOutlineRenderer::Draw(const univex::math::Mat4& viewProjection, const int width, const int height,
                                     const std::vector<SelectionOutlineVertex>& triangles,
                                     const SelectionOutlineSettings& requested) {
@@ -143,24 +214,7 @@ void SelectionOutlineRenderer::Draw(const univex::math::Mat4& viewProjection, co
     glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture);
 
     if (EnsureMask(width, height)) {
-        // ---- pass 1: the silhouette mask ----------------------------------
-        // No depth and no culling: the whole selected shape counts, front or back. Overlapping
-        // selections keep the stronger weight.
-        glBindFramebuffer(GL_FRAMEBUFFER, maskFbo_);
-        glViewport(0, 0, width, height);
-        glClearColor(0.f, 0.f, 0.f, 0.f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ApplyOverlayRasterState(WithCullMode(kScreenSpaceCompositeState, OverlayCullMode::None));
-        glBlendEquation(GL_MAX);
-        glBlendFunc(GL_ONE, GL_ONE);
-        maskProgram_.Use();
-        maskProgram_.SetMat4("uViewProj", viewProjection.Data());
-        glBindVertexArray(triangleVao_);
-        glBindBuffer(GL_ARRAY_BUFFER, triangleVbo_);
-        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(triangles.size() * sizeof(SelectionOutlineVertex)),
-                     triangles.data(), GL_STREAM_DRAW);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(triangles.size() - (triangles.size() % 3U)));
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        DrawMaskPass(viewProjection, width, height, triangles);
 
         // ---- pass 2: the band, into the caller's framebuffer --------------
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(drawFbo));

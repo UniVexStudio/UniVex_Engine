@@ -18,10 +18,12 @@ namespace {
 using ViewUVE = EditorUVE::ViewportViewUVE;
 using KindUVE = Scene::Objects::SceneObjectKindUVE;
 
-constexpr float kNavSizeUVE = 92.0F;
+constexpr float kNavSizeUVE = 89.0F;
 constexpr float kNavMarginUVE = 12.0F;
 constexpr float kBillboardSizeUVE = 24.0F;
 constexpr float kNavDragThresholdUVE = 3.0F;
+/// How strongly an object gizmo shows through the geometry in front of it (0 hides it).
+constexpr float kHiddenGizmoAlphaUVE = 0.22F;
 
 [[nodiscard]] prism::Vec3 V3UVE(const std::array<float, 3>& v) { return prism::Vec3{v[0], v[1], v[2]}; }
 
@@ -122,6 +124,62 @@ void EditorPrismViewportGizmosUVE::SyncUVE() {
     }
     m_nav.setCamera(m_camera);
     const prism::Rect r = rect();
+    const auto& cam = state.viewCamera;
+
+    // Occlusion: the renderer's scene depth over the whole view.
+    m_depth = prism::GizmoDepth{};
+    if (!state.sceneDepth.empty() && state.sceneDepthWidth > 0 && state.sceneDepthHeight > 0 &&
+        state.sceneDepth.size() >= static_cast<std::size_t>(state.sceneDepthWidth) * static_cast<std::size_t>(state.sceneDepthHeight)) {
+        m_depth.data = state.sceneDepth.data();
+        m_depth.width = state.sceneDepthWidth;
+        m_depth.height = state.sceneDepthHeight;
+        m_depth.area = prism::Rect{r.x, r.y, cam.width, cam.height};
+        m_depth.zOffset = m_camera.ortho ? 1000.0F : 0.0F;
+        // An orthographic eye sits far back, so a tolerance relative to its distance would swallow
+        // whole objects; there the tolerance is absolute.
+        m_depth.bias = m_camera.ortho ? 0.0F : 0.004F;
+        m_depth.minTolerance = m_camera.ortho ? 0.03F : 0.02F;
+    }
+
+    // The ground grid, with the renderer's own settings.
+    const auto& grid = state.hostGrid;
+    m_gridVisible = grid.visible && !state.gameWorkspaceActive;
+    if (m_gridVisible) {
+        m_grid.plane = grid.plane == 1 ? prism::WorldGrid::Plane::XY
+                       : grid.plane == 2 ? prism::WorldGrid::Plane::ZY
+                                         : prism::WorldGrid::Plane::XZ;
+        m_grid.baseSpacing = grid.baseSpacing;
+        m_grid.targetCellPixels = grid.targetCellPixels;
+        m_grid.lineWidth = grid.lineWidth;
+        m_grid.axisWidth = grid.axisWidth;
+        m_grid.thin = ColorUVE(grid.thin);
+        m_grid.mid = ColorUVE(grid.mid);
+        m_grid.thick = ColorUVE(grid.thick);
+        m_grid.thinIntensity = grid.thinIntensity;
+        m_grid.midIntensity = grid.midIntensity;
+        m_grid.thickIntensity = grid.thickIntensity;
+        for (int i = 0; i < 3; ++i) {
+            m_grid.axis[i] = ColorUVE(grid.axis[static_cast<std::size_t>(i)]);
+        }
+        m_grid.fadeStart = grid.fadeStart;
+        m_grid.fadeEnd = grid.fadeEnd;
+        m_grid.opacity = grid.opacity;
+    }
+
+    // The selection outline band around the renderer's silhouette mask.
+    m_outlinePixels.clear();
+    if (!state.selectionMask.empty() && state.selectionMaskWidth > 0 && state.selectionMaskHeight > 0) {
+        int box[4] = {0, 0, 0, 0};
+        if (prism::buildSelectionOutline(state.selectionMask.data(), state.selectionMaskWidth, state.selectionMaskHeight,
+                                         state.selectionOutlineRadius, ColorUVE(state.selectionOutlineRgb),
+                                         m_outlinePixels, box)) {
+            const float sx = cam.width / static_cast<float>(state.selectionMaskWidth);
+            const float sy = cam.height / static_cast<float>(state.selectionMaskHeight);
+            m_outlineRect = prism::Rect{r.x + static_cast<float>(box[0]) * sx, r.y + static_cast<float>(box[1]) * sy,
+                                        static_cast<float>(box[2]) * sx, static_cast<float>(box[3]) * sy};
+            m_outlineSize = {box[2], box[3]};
+        }
+    }
     m_nav.setArea(prism::Rect{r.x + r.w - kNavSizeUVE - kNavMarginUVE, r.y + kNavMarginUVE, kNavSizeUVE, kNavSizeUVE});
 
     // Billboards for objects with no surface of their own, at their world position.
@@ -319,19 +377,32 @@ void EditorPrismViewportGizmosUVE::paint(prism::Canvas& c) {
     const prism::Rect r = rect();
     c.pushClip(r);
     const auto& state = m_editor.m_viewportOverlayState;
-    // Object gizmos: the engine's own geometry for this view.
+    const prism::GizmoDepth* const depth = m_depth.valid() ? &m_depth : nullptr;
+    // The ground grid, hidden behind the scene.
+    if (m_gridVisible) {
+        prism::drawWorldGrid(c, m_camera, m_grid, depth);
+    }
+    // The selection outline, over the scene and the grid.
+    if (!m_outlinePixels.empty()) {
+        c.blitBlend(m_outlinePixels.data(), m_outlineSize[0], m_outlineSize[1], m_outlineSize[0], m_outlineRect);
+    }
+    // Object gizmos: the engine's own geometry for this view, faint where the scene is in front.
     for (const auto& tri : state.gizmoTriangles) {
-        prism::drawWorldTriangle(c, m_camera, V3UVE(tri.a), V3UVE(tri.b), V3UVE(tri.c), ColorUVE(tri.color, tri.alpha));
+        prism::drawWorldTriangle(c, m_camera, V3UVE(tri.a), V3UVE(tri.b), V3UVE(tri.c), ColorUVE(tri.color, tri.alpha),
+                                 depth, kHiddenGizmoAlphaUVE);
     }
     for (const auto& line : state.gizmoLines) {
-        prism::drawWorldLine(c, m_camera, V3UVE(line.a), V3UVE(line.b), ColorUVE(line.color), std::max(1.0F, line.widthPx));
+        prism::drawWorldLine(c, m_camera, V3UVE(line.a), V3UVE(line.b), ColorUVE(line.color),
+                             std::max(1.0F, line.widthPx), depth, kHiddenGizmoAlphaUVE);
     }
     // Billboards, selected one ringed.
     for (const BillboardUVE& b : m_billboards) {
         prism::Vec2 s;
-        if (!m_camera.project(b.position, s)) {
+        float z = 0.0F;
+        if (!m_camera.project(b.position, s, &z)) {
             continue;
         }
+        const bool hidden = depth != nullptr && !depth->visible(s, z);
         const prism::Rect box{std::floor(s.x - kBillboardSizeUVE * 0.5F), std::floor(s.y - kBillboardSizeUVE * 0.5F),
                               kBillboardSizeUVE, kBillboardSizeUVE};
         const bool selected = m_editor.IsEntitySelectedUVE(b.entity);
@@ -341,6 +412,10 @@ void EditorPrismViewportGizmosUVE::paint(prism::Canvas& c) {
         }
         if (b.icon) {
             c.blitBlend(b.icon.pixels, b.icon.size, b.icon.size, b.icon.size, box);
+        }
+        if (hidden && !selected) {
+            // Behind the scene: shown dimmed, so it can still be found and clicked.
+            c.fillCircle(s, kBillboardSizeUVE * 0.62F, prism::Color(14, 16, 22, 150));
         }
     }
     // The selection's transform handles.

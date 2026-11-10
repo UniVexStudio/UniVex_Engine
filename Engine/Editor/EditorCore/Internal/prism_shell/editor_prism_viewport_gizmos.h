@@ -8,6 +8,7 @@
 #include "prism/Widget.h"
 
 #include <array>
+#include <cstdint>
 #include <vector>
 
 namespace UVE::Editor {
@@ -23,7 +24,10 @@ namespace UVE::Editor {
 ///     editor's own;
 ///   * the navigation gizmo snaps the view with RequestViewportViewUVE and orbits by handing the
 ///     renderer pixel deltas (orbitRequestX/Y);
-///   * light and camera billboards use the engine's object icons and select their object.
+///   * light and camera billboards use the engine's object icons and select their object;
+///   * the ground grid (the renderer's grid settings) and the selection outline (the renderer's
+///     silhouette mask) are drawn here too, and everything but the transform and navigation
+///     gizmos hides behind the scene through the renderer's exported scene depth.
 ///
 /// The widget claims the pointer only over a handle, so the camera and picking keep every other
 /// click (consumesHostInput).
@@ -72,6 +76,13 @@ private:
     bool m_navMoved = false;
     int m_navPressedBall = -1;
     std::array<float, 2> m_orbitRequest{0.0F, 0.0F};
+    // Scene depth (occlusion), the ground grid and the selection outline band for this view.
+    prism::GizmoDepth m_depth;
+    prism::WorldGrid m_grid;
+    bool m_gridVisible = false;
+    std::vector<std::uint32_t> m_outlinePixels;
+    prism::Rect m_outlineRect{};
+    std::array<int, 2> m_outlineSize{0, 0};
     Math::Vector3UVE m_baselineScale{1.0F, 1.0F, 1.0F};
 };
 
