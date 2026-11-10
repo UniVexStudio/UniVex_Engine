@@ -23,7 +23,12 @@ struct GizmoCamera {
   float cx = 0, cy = 0;                                    // viewport centre in canvas pixels
   float viewH = 600;                                       // viewport height in pixels (sizes the gizmo)
   float nearPlane = 0.1f;
+  // Orthographic projection: screen offset = world offset * orthoScale (pixels per world unit) along right / up;
+  // every ray runs along fwd. `eye` still sets depth (keep it behind what is drawn).
+  bool ortho = false;
+  float orthoScale = 50;
   bool project(Vec3 p, Vec2& out, float* depth = nullptr) const;
+  Vec3 rayOrigin(Vec2 p) const;   // eye, or the point on the view plane under p when orthographic
   Vec3 rayDir(Vec2 p) const;
   bool rayPlane(Vec2 p, Vec3 p0, Vec3 n, Vec3& out) const;
 };
@@ -108,5 +113,36 @@ private:
   Drag m_drag;
   std::string m_label;
 };
+
+// ------------------------------------------------------------------ navigation gizmo
+// The corner orientation widget: one ball per world axis direction, laid out by the camera's basis and drawn back
+// to front. Positive axes are full balls with their letter; negative ones are rings. hit() names the facing under
+// the pointer (0 +X, 1 -X, 2 +Y, 3 -Y, 4 +Z, 5 -Z) or -1; the host snaps the view to it, and orbits on a drag.
+class NavGizmo {
+public:
+  Color axisColor[3] = {Color(230, 78, 78), Color(110, 200, 70), Color(70, 140, 235)};
+  void setCamera(const GizmoCamera& c) { m_cam = c; }
+  void setArea(Rect r) { m_area = r; }          // the square the widget occupies (canvas pixels)
+  Rect area() const { return m_area; }
+  int hit(Vec2 p) const;
+  bool contains(Vec2 p) const;                  // inside the widget's disc
+  void setHover(int id) { m_hover = id; }
+  void setActive(bool on) { m_active = on; }    // being dragged: the backing disc stays lit
+  void draw(Canvas& c) const;
+  static Vec3 facingDirection(int id);          // the world axis direction of a ball
+private:
+  Vec2 ballCentre(int id) const;
+  float ballRadius(int id) const;
+  GizmoCamera m_cam;
+  Rect m_area{0, 0, 96, 96};
+  int m_hover = -1;
+  bool m_active = false;
+};
+
+// ------------------------------------------------------------------ world-space drawing
+// Host gizmo geometry (frustums, light rays, volumes, bones ...) projected through a GizmoCamera onto a Canvas.
+// Segments are clipped at the near plane; a triangle with a corner behind it is skipped.
+void drawWorldLine(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, float width = 1.5f);
+void drawWorldTriangle(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Vec3 cc, Color col);
 
 } // namespace prism

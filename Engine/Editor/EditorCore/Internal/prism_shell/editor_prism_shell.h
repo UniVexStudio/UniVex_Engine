@@ -5,6 +5,7 @@
 #include "editor_prism_details.h"
 #include "editor_prism_host.h"
 #include "editor_prism_icons.h"
+#include "editor_prism_viewport_gizmos.h"
 
 #include "entity.h"
 
@@ -102,6 +103,7 @@ private:
     std::shared_ptr<prism::Button> m_addButton;
     std::shared_ptr<prism::Button> m_filterButton;
     std::shared_ptr<prism::EngineView> m_viewport;
+    std::shared_ptr<EditorPrismViewportGizmosUVE> m_gizmos;
     std::shared_ptr<prism::Segmented> m_gizmoModes;
     std::shared_ptr<prism::ComboBox> m_selectionMode;
     std::shared_ptr<prism::Button> m_playButton;

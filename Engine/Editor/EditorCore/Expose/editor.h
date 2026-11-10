@@ -429,6 +429,7 @@ struct FilePickerListingUVE final {
 class EditorPrismShellUVE;
 class EditorPrismContentBrowserUVE;
 class EditorPrismDetailsUVE;
+class EditorPrismViewportGizmosUVE;
 
 class EditorUVE final {
     friend struct Tests::EditorUVEAccessUVE;
@@ -436,6 +437,7 @@ class EditorUVE final {
     friend class EditorPrismShellUVE;
     friend class EditorPrismContentBrowserUVE;
     friend class EditorPrismDetailsUVE;
+    friend class EditorPrismViewportGizmosUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -669,6 +671,55 @@ public:
         /// This frame's pointer/keyboard input for the view being rendered, filled by the editor
         /// shell right before it calls the viewport renderer (see editor_viewport_input.h).
         EditorViewportInputUVE input;
+
+        // ---- Gizmos drawn by the editor shell (PRISM) ------------------------------------------
+        /// Set by a shell that draws the viewport's gizmos itself: the renderer then draws none of
+        /// its own (corner navigation, transform handles, object gizmos, bones, colliders) and
+        /// leaves their pointer handling to the shell. It still renders the scene, grid and
+        /// selection outline, and still reports the camera and gizmo data below.
+        bool hostDrawsGizmos = false;
+        /// Orbit the view by this many pixels (the same units as a mouse orbit drag); the renderer
+        /// applies it once and clears it. Used by the shell's navigation gizmo.
+        float orbitRequestX = 0.0F;
+        float orbitRequestY = 0.0F;
+
+        /// Output: the camera the view was rendered with, in world space. The output fields are
+        /// written by the renderer through the const state it is handed (hence mutable).
+        struct ViewCameraUVE final {
+            bool valid = false;
+            std::array<float, 3> eye{};
+            std::array<float, 3> right{1.0F, 0.0F, 0.0F};
+            std::array<float, 3> up{0.0F, 1.0F, 0.0F};
+            std::array<float, 3> forward{0.0F, 0.0F, -1.0F};
+            float fovYRadians = 0.87F;
+            float nearPlane = 0.1F;
+            bool orthographic = false;
+            float orthographicHalfHeight = 5.0F;
+            float width = 0.0F;
+            float height = 0.0F;
+        };
+        mutable ViewCameraUVE viewCamera;
+        /// Output: where the selection's transform gizmo sits (world space), when there is one.
+        mutable bool gizmoPivotValid = false;
+        mutable std::array<float, 3> gizmoPivot{};
+        /// Output: the object gizmos the renderer built for this view (camera frustums, light
+        /// directions, fog volumes, probes, partitions, visibility regions, occluders, colliders,
+        /// bones), as world-space lines and triangles for the shell to draw.
+        struct GizmoLineUVE final {
+            std::array<float, 3> a{};
+            std::array<float, 3> b{};
+            std::array<float, 3> color{};
+            float widthPx = 2.0F;
+        };
+        struct GizmoTriangleUVE final {
+            std::array<float, 3> a{};
+            std::array<float, 3> b{};
+            std::array<float, 3> c{};
+            std::array<float, 3> color{};
+            float alpha = 1.0F;
+        };
+        mutable std::vector<GizmoLineUVE> gizmoLines;
+        mutable std::vector<GizmoTriangleUVE> gizmoTriangles;
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available

@@ -43,18 +43,28 @@ bool GizmoCamera::project(Vec3 p, Vec2& out, float* depth) const {
   Vec3 d = p - eye;
   float z = d.dot(fwd);
   if (z < nearPlane) return false;
-  out = {cx + d.dot(right) / z * focal, cy - d.dot(up) / z * focal};
+  if (ortho) out = {cx + d.dot(right) * orthoScale, cy - d.dot(up) * orthoScale};
+  else out = {cx + d.dot(right) / z * focal, cy - d.dot(up) / z * focal};
   if (depth) *depth = z;
   return true;
 }
-Vec3 GizmoCamera::rayDir(Vec2 p) const { return (fwd + right * ((p.x - cx) / focal) - up * ((p.y - cy) / focal)).normalized(); }
+Vec3 GizmoCamera::rayDir(Vec2 p) const {
+  if (ortho) return fwd;
+  return (fwd + right * ((p.x - cx) / focal) - up * ((p.y - cy) / focal)).normalized();
+}
+Vec3 GizmoCamera::rayOrigin(Vec2 p) const {
+  if (!ortho) return eye;
+  const float s = orthoScale > 0 ? orthoScale : 1.f;
+  return eye + right * ((p.x - cx) / s) - up * ((p.y - cy) / s);
+}
 bool GizmoCamera::rayPlane(Vec2 p, Vec3 p0, Vec3 n, Vec3& out) const {
   Vec3 d = rayDir(p);
   float den = d.dot(n);
   if (std::fabs(den) < 1e-4f) return false;
-  float t = (p0 - eye).dot(n) / den;
+  const Vec3 o = rayOrigin(p);
+  float t = (p0 - o).dot(n) / den;
   if (t < 0) return false;
-  out = eye + d * t;
+  out = o + d * t;
   return true;
 }
 
@@ -73,6 +83,7 @@ Vec3 TransformGizmo::origin() const {
 float TransformGizmo::length() const {
   float z = std::max(0.5f, (origin() - m_cam.eye).dot(m_cam.fwd));
   float k = mode == GizmoMode::Dots ? 0.8f : mode == GizmoMode::Universal ? 1.3f : 1.f;
+  if (m_cam.ortho) return 0.162f * m_cam.viewH / std::max(1e-3f, m_cam.orthoScale) * k * size;
   return z * 0.162f * m_cam.viewH / std::max(1.f, m_cam.focal) * k * size;   // ~16% of the viewport height on screen
 }
 
@@ -557,6 +568,94 @@ void TransformGizmo::draw(Canvas& c) const {
     c.strokeRoundRect(pill, 4, hotColor.alpha(0.8f), 1.f);
     c.textIn(*theme().small, pill, m_label, Color(255, 246, 214), HAlign::Center);
   }
+}
+
+// ------------------------------------------------------------------ navigation gizmo
+Vec3 NavGizmo::facingDirection(int id) {
+  const float s = (id % 2 == 0) ? 1.f : -1.f;
+  const int a = id / 2;
+  return {a == 0 ? s : 0.f, a == 1 ? s : 0.f, a == 2 ? s : 0.f};
+}
+
+Vec2 NavGizmo::ballCentre(int id) const {
+  const Vec3 d = facingDirection(id);
+  const float r = std::min(m_area.w, m_area.h) * 0.5f;
+  const Vec2 c = m_area.center();
+  return {c.x + d.dot(m_cam.right) * r * 0.70f, c.y - d.dot(m_cam.up) * r * 0.70f};
+}
+
+float NavGizmo::ballRadius(int id) const {
+  const float r = std::min(m_area.w, m_area.h) * 0.5f;
+  return (id % 2 == 0 ? 0.20f : 0.15f) * r;
+}
+
+bool NavGizmo::contains(Vec2 p) const {
+  const Vec2 c = m_area.center();
+  const float r = std::min(m_area.w, m_area.h) * 0.5f;
+  const float dx = p.x - c.x, dy = p.y - c.y;
+  return dx * dx + dy * dy <= r * r;
+}
+
+int NavGizmo::hit(Vec2 p) const {
+  // Front-most first: the ball nearest the camera wins where two overlap.
+  int best = -1;
+  float bestDepth = 1e9f;
+  for (int id = 0; id < 6; id++) {
+    const Vec2 b = ballCentre(id);
+    const float rr = ballRadius(id) + 2.f;
+    const float dx = p.x - b.x, dy = p.y - b.y;
+    if (dx * dx + dy * dy > rr * rr) continue;
+    const float depth = facingDirection(id).dot(m_cam.fwd);
+    if (depth < bestDepth) { bestDepth = depth; best = id; }
+  }
+  return best;
+}
+
+void NavGizmo::draw(Canvas& c) const {
+  const Vec2 centre = m_area.center();
+  const float r = std::min(m_area.w, m_area.h) * 0.5f;
+  if (m_active || m_hover >= 0 || m_hover == -2) c.fillCircle(centre, r, Color(255, 255, 255, m_active ? 34 : 22));
+  int order[6] = {0, 1, 2, 3, 4, 5};
+  // Back to front: furthest along the view direction first.
+  std::sort(order, order + 6, [&](int a, int b) { return facingDirection(a).dot(m_cam.fwd) > facingDirection(b).dot(m_cam.fwd); });
+  static const char* const kLetters[3] = {"X", "Y", "Z"};
+  const Theme& t = theme();
+  for (int k = 0; k < 6; k++) {
+    const int id = order[k];
+    const int axis = id / 2;
+    const bool positive = id % 2 == 0;
+    const Vec2 b = ballCentre(id);
+    const float br = ballRadius(id);
+    Color col = axisColor[axis];
+    const bool hot = id == m_hover;
+    if (hot) col = col.lighten(0.35f);
+    if (positive) {
+      c.line(centre, b, col.alpha(0.9f), 2.0f);
+      c.fillCircle(b, br, col);
+      c.textIn(*t.small, Rect{b.x - br, b.y - br, br * 2, br * 2}, kLetters[axis], Color(20, 22, 28), HAlign::Center, false);
+    } else {
+      c.fillCircle(b, br, col.darken(0.55f).alpha(0.85f));
+      c.strokeCircle(b, br, col, 1.5f);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ world-space drawing
+void drawWorldLine(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, float width) {
+  float za = (a - cam.eye).dot(cam.fwd), zb = (b - cam.eye).dot(cam.fwd);
+  const float n = cam.nearPlane;
+  if (za < n && zb < n) return;
+  if (za < n) { const float t = (n - za) / (zb - za); a = a + (b - a) * t; }
+  else if (zb < n) { const float t = (n - zb) / (za - zb); b = b + (a - b) * t; }
+  Vec2 pa, pb;
+  if (!cam.project(a, pa) || !cam.project(b, pb)) return;
+  c.line(pa, pb, col, width);
+}
+
+void drawWorldTriangle(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Vec3 cc, Color col) {
+  Vec2 p[3];
+  if (!cam.project(a, p[0]) || !cam.project(b, p[1]) || !cam.project(cc, p[2])) return;
+  c.fillPolygon(std::span<const Vec2>(p, 3), col, true);
 }
 
 } // namespace prism
