@@ -384,7 +384,11 @@ void LogView::add(LogLevel lv, std::string text, std::string category) {
   char buf[16];
   std::time_t tt = std::time(nullptr);
   std::tm tmv{};
+#if defined(_WIN32)
+  localtime_s(&tmv, &tt);
+#else
   localtime_r(&tt, &tmv);
+#endif
   std::strftime(buf, sizeof buf, "%H:%M:%S", &tmv);
   m_entries.push_back({lv, buf, std::move(text), std::move(category)});
   m_counts[int(lv)]++;

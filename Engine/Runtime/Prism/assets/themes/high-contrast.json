@@ -1,0 +1,23 @@
+{
+  "name": "High Contrast",
+  "base": "dark",
+  "window": "#000000",
+  "panel": "#0a0a0a",
+  "header": "#141414",
+  "control": "#1e1e1e",
+  "controlHover": "#303030",
+  "field": "#000000",
+  "border": "#000000",
+  "borderSoft": "#4a4a4a",
+  "borderStrong": "#9a9a9a",
+  "text": "#ffffff",
+  "textDim": "#c8c8c8",
+  "textDisabled": "#7a7a7a",
+  "accent": "#ffd400",
+  "accentHover": "#ffe35a",
+  "accentDim": "#6b5a00",
+  "accentText": "#000000",
+  "rowSelected": "#6b5a00",
+  "logBg": "#000000",
+  "statusBar": "#000000"
+}

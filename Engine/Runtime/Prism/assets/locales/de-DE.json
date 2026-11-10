@@ -1,0 +1,22 @@
+{
+  "menu.file": "Datei",
+  "menu.edit": "Bearbeiten",
+  "menu.create": "Erstellen",
+  "menu.view": "Ansicht",
+  "menu.tools": "Werkzeuge",
+  "menu.help": "Hilfe",
+  "tab.hierarchy": "Hierarchie",
+  "tab.details": "Details",
+  "tab.console": "Konsole",
+  "tab.viewport": "Ansichtsfenster",
+  "tab.assets": "Ressourcen",
+  "tab.world": "Welt",
+  "tab.components": "PRISM-Komponenten",
+  "tab.statistics": "Statistiken",
+  "tab.output": "Ausgabe",
+  "tab.curve_editor": "Kurven-Editor",
+  "btn.play": "Wiedergabe",
+  "btn.stop": "Stopp",
+  "btn.clear": "Löschen",
+  "status.ready": "Bereit"
+}

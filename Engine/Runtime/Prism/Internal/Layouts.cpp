@@ -553,7 +553,7 @@ bool ScrollBox::onMouseMove(const MouseEvent& e) {
   return false;
 }
 
-bool ScrollBox::onMouseUp(const MouseEvent& e) {
+bool ScrollBox::onMouseUp(const MouseEvent& /*e*/) {
   if (m_vbar.dragging) {
     m_vbar.mouseUp();
     return true;

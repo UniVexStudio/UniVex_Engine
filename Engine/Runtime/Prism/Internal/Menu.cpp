@@ -60,7 +60,7 @@ public:
     if (i >= 0 && !m_items[size_t(i)].separator && i != m_hover) hoverRow(i);
     return true;
   }
-  bool onMouseDown(const MouseEvent& e) override { return true; }
+  bool onMouseDown(const MouseEvent& /*e*/) override { return true; }
   bool onMouseUp(const MouseEvent& e) override {
     if (e.button != MouseButton::Left) return true;
     int i = rowAt(e.pos);
