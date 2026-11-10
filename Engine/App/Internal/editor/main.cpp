@@ -42,6 +42,7 @@
 #include "editor.h"
 #include "vector2.h"
 #include "camera_component.h"
+#include "light_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
 #include "i_entity_manager.h"
@@ -235,9 +236,21 @@ int main(const int argc, char** argv) {
         }
         if (options.prismDemoObject) {
             static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Folder));
-            static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::DirectionalLight3D));
-            static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Camera3D));
+            const UVE::Scene::EntityUVE sun =
+                editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+            const UVE::Scene::EntityUVE camera =
+                editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Camera3D);
             if (options.prismDemoGizmos) {
+                // The sun and the camera beside the box rather than inside it.
+                UVE::Scene::IEntityManagerUVE& placed = engine.GetServicesUVE().GetEntityManagerUVE();
+                const auto place = [&placed](const UVE::Scene::EntityUVE entity, const UVE::Math::Vector3UVE at) {
+                    if (entity != UVE::Scene::kInvalidEntityUVE &&
+                        placed.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
+                        placed.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity).localPosition = at;
+                    }
+                };
+                place(sun, UVE::Math::Vector3UVE{2.5F, 2.0F, 2.5F});
+                place(camera, UVE::Math::Vector3UVE{-2.5F, 1.0F, 2.0F});
                 // One of each object with a gizmo of its own, spread out along X.
                 using KindUVE = UVE::Scene::Objects::SceneObjectKindUVE;
                 const std::array<KindUVE, 7> kinds{KindUVE::Light3D, KindUVE::Decal3D, KindUVE::Marker3D,
@@ -252,6 +265,13 @@ int main(const int argc, char** argv) {
                         entities.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
                         entities.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity).localPosition =
                             UVE::Math::Vector3UVE{x, 1.0F, -3.0F};
+                    }
+                    // The light as a spot, so its cone shows.
+                    if (kind == KindUVE::Light3D && entities.HasComponentUVE<UVE::Scene::LightComponentUVE>(entity)) {
+                        auto& light = entities.GetComponentUVE<UVE::Scene::LightComponentUVE>(entity);
+                        light.type = UVE::Scene::LightTypeUVE::Spot;
+                        light.range = 4.0F;
+                        light.spotAngleDegrees = 30.0F;
                     }
                     x += 2.0F;
                 }

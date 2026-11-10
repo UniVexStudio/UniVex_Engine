@@ -2,6 +2,10 @@
 #include "editor_prism_viewport_gizmos.h"
 
 #include "scene_object_type.h"
+#include "quaternion.h"
+#include "light_component.h"
+#include "directional_light_3d.h"
+#include "camera_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
 
@@ -19,11 +23,16 @@ using ViewUVE = EditorUVE::ViewportViewUVE;
 using KindUVE = Scene::Objects::SceneObjectKindUVE;
 
 constexpr float kNavSizeUVE = 89.0F;
-constexpr float kNavMarginUVE = 12.0F;
+constexpr float kNavMarginUVE = 6.0F;
 constexpr float kBillboardSizeUVE = 24.0F;
 constexpr float kNavDragThresholdUVE = 3.0F;
 /// How strongly an object gizmo shows through the geometry in front of it (0 hides it).
 constexpr float kHiddenGizmoAlphaUVE = 0.22F;
+/// A click this close to a camera or light glyph's line picks its object.
+constexpr float kGlyphPickPixelsUVE = 5.0F;
+/// Camera and light glyph sizes in world units: about the size of a 1-unit box.
+constexpr float kCameraGlyphWorldUVE = 1.1F;
+constexpr float kLightGlyphWorldUVE = 0.9F;
 
 [[nodiscard]] prism::Vec3 V3UVE(const std::array<float, 3>& v) { return prism::Vec3{v[0], v[1], v[2]}; }
 
@@ -189,9 +198,38 @@ void EditorPrismViewportGizmosUVE::SyncUVE() {
         const KindUVE kind = Scene::ResolveSceneObjectKindUVE(em, e);
         if (HasBillboardUVE(kind) && em.HasComponentUVE<Scene::WorldTransformComponentUVE>(e)) {
             const auto& world = em.GetComponentUVE<Scene::WorldTransformComponentUVE>(e);
-            m_billboards.push_back(BillboardUVE{
-                e, prism::Vec3{world.worldPosition.x, world.worldPosition.y, world.worldPosition.z},
-                m_icons.ObjectUVE(kind, 32)});
+            BillboardUVE board;
+            board.entity = e;
+            board.position = prism::Vec3{world.worldPosition.x, world.worldPosition.y, world.worldPosition.z};
+            board.icon = m_icons.ObjectUVE(kind, 32);
+            // Cameras and lights look along their local -Z (the engine's camera and light convention).
+            const Math::Vector3UVE forward = Math::RotateVectorUVE(world.worldRotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+            const Math::Vector3UVE up = Math::RotateVectorUVE(world.worldRotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+            board.forward = prism::Vec3{forward.x, forward.y, forward.z};
+            board.up = prism::Vec3{up.x, up.y, up.z};
+            if (em.HasComponentUVE<Scene::CameraComponentUVE>(e)) {
+                const auto& camera = em.GetComponentUVE<Scene::CameraComponentUVE>(e);
+                board.glyph = GlyphUVE::Camera;
+                board.fovYDegrees = camera.fieldOfViewDegrees;
+                board.orthographic = camera.projection == Scene::CameraProjectionModeUVE::Orthographic;
+                board.range = std::clamp(camera.farPlane, 0.5F, 6.0F);
+            } else if (em.HasComponentUVE<Scene::DirectionalLight3DComponentUVE>(e)) {
+                board.glyph = GlyphUVE::DirectionalLight;
+            } else if (em.HasComponentUVE<Scene::LightComponentUVE>(e)) {
+                const auto& light = em.GetComponentUVE<Scene::LightComponentUVE>(e);
+                board.glyph = light.type == Scene::LightTypeUVE::Spot          ? GlyphUVE::SpotLight
+                              : light.type == Scene::LightTypeUVE::Directional ? GlyphUVE::DirectionalLight
+                                                                              : GlyphUVE::Icon;
+                board.spotHalfAngleDegrees = light.spotAngleDegrees;
+                board.range = light.range;
+                board.tint = prism::Color(static_cast<std::uint8_t>(std::clamp(light.color.r * 0.5F + 0.5F, 0.0F, 1.0F) * 255.0F),
+                                          static_cast<std::uint8_t>(std::clamp(light.color.g * 0.5F + 0.5F, 0.0F, 1.0F) * 255.0F),
+                                          static_cast<std::uint8_t>(std::clamp(light.color.b * 0.5F + 0.5F, 0.0F, 1.0F) * 255.0F));
+            }
+            if (board.glyph == GlyphUVE::DirectionalLight) {
+                board.tint = prism::Color(255, 222, 140);
+            }
+            m_billboards.push_back(std::move(board));
         }
         for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, e)) {
             visit(child);
@@ -211,11 +249,22 @@ int EditorPrismViewportGizmosUVE::BillboardAtUVE(const prism::Vec2 p) const {
         if (!m_camera.project(m_billboards[i].position, s)) {
             continue;
         }
-        if (std::abs(p.x - s.x) <= kBillboardSizeUVE * 0.5F && std::abs(p.y - s.y) <= kBillboardSizeUVE * 0.5F) {
+        const bool iconShown = m_billboards[i].glyph != GlyphUVE::Camera;
+        if (iconShown && std::abs(p.x - s.x) <= kBillboardSizeUVE * 0.5F && std::abs(p.y - s.y) <= kBillboardSizeUVE * 0.5F) {
             return static_cast<int>(i);
         }
     }
-    return -1;
+    // Then the glyphs themselves: a click on any of their lines picks the object.
+    int best = -1;
+    float bestDistance = kGlyphPickPixelsUVE;
+    for (std::size_t i = 0; i < m_billboards.size(); ++i) {
+        const float d = prism::pickDistance(p, m_billboards[i].segments);
+        if (d <= bestDistance) {
+            bestDistance = d;
+            best = static_cast<int>(i);
+        }
+    }
+    return best;
 }
 
 void EditorPrismViewportGizmosUVE::UpdateHoverUVE(const prism::Vec2 p) {
@@ -395,8 +444,45 @@ void EditorPrismViewportGizmosUVE::paint(prism::Canvas& c) {
         prism::drawWorldLine(c, m_camera, V3UVE(line.a), V3UVE(line.b), ColorUVE(line.color),
                              std::max(1.0F, line.widthPx), depth, kHiddenGizmoAlphaUVE);
     }
-    // Billboards, selected one ringed.
+    // Camera and light glyphs (PRISM's own), then the billboards, selected one ringed.
+    for (BillboardUVE& b : m_billboards) {
+        b.segments.clear();
+        if (b.glyph == GlyphUVE::Icon) {
+            continue;
+        }
+        const bool selected = m_editor.IsEntitySelectedUVE(b.entity);
+        prism::ObjectGizmoStyle style;
+        style.color = selected ? prism::Color(255, 168, 64) : b.tint;
+        style.width = selected ? 2.0F : 1.5F;
+        style.depth = depth;
+        style.hiddenAlpha = kHiddenGizmoAlphaUVE;
+        style.outSegments = &b.segments;
+        switch (b.glyph) {
+            case GlyphUVE::Camera:
+                // World sized, about as big as a 1-unit box; the frustum (selected) a little further out.
+                style.worldSize = kCameraGlyphWorldUVE;
+                prism::drawCameraGizmo(c, m_camera, b.position, b.forward, b.up, b.fovYDegrees,
+                                       state.viewCamera.height > 0.0F ? state.viewCamera.width / state.viewCamera.height : 1.6F,
+                                       b.orthographic, selected, std::min(b.range, kCameraGlyphWorldUVE * 1.6F), style);
+                break;
+            case GlyphUVE::DirectionalLight:
+                style.worldSize = kLightGlyphWorldUVE;
+                prism::drawDirectionalLightGizmo(c, m_camera, b.position, b.forward, style);
+                break;
+            case GlyphUVE::SpotLight:
+                // The whole cone when selected; a short one otherwise, so a long range does not clutter the view.
+                style.worldSize = kLightGlyphWorldUVE;
+                prism::drawSpotLightGizmo(c, m_camera, b.position, b.forward, b.spotHalfAngleDegrees,
+                                          selected ? b.range : std::min(b.range, kLightGlyphWorldUVE * 1.2F), style);
+                break;
+            case GlyphUVE::Icon:
+                break;
+        }
+    }
     for (const BillboardUVE& b : m_billboards) {
+        if (b.glyph == GlyphUVE::Camera) {
+            continue; // the camera glyph is its own icon
+        }
         prism::Vec2 s;
         float z = 0.0F;
         if (!m_camera.project(b.position, s, &z)) {

@@ -14,6 +14,7 @@
 #include "Canvas.h"
 #include "Math3D.h"
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace prism {
@@ -188,6 +189,33 @@ struct WorldGrid {
   float opacity = 1.f;
 };
 void drawWorldGrid(Canvas& c, const GizmoCamera& cam, const WorldGrid& grid, const GizmoDepth* depth);
+
+// ------------------------------------------------------------------ object gizmos
+// Glyphs for objects with no surface of their own, sized on screen (about `pixels` across wherever they are) or in
+// the world (`worldSize` units, like a mesh of that size),
+// oriented by the object. Each records the screen segments it drew in `outSegments` (when given) so the host
+// can pick it: pickDistance() is the pointer's distance to the nearest one.
+struct ObjectGizmoStyle {
+  Color color = Color(230, 232, 240);
+  float width = 1.5f;
+  float pixels = 44.f;
+  float worldSize = 0.f;        // > 0: a fixed size in world units instead (the glyph scales with the scene)
+  const GizmoDepth* depth = nullptr;
+  float hiddenAlpha = 0.22f;
+  std::vector<std::pair<Vec2, Vec2>>* outSegments = nullptr;
+};
+// World size that covers style.pixels at `at` (perspective: by depth; orthographic: by orthoScale).
+float gizmoWorldSize(const GizmoCamera& cam, Vec3 at, float pixels);
+// A film camera: body, two reels on top and the lens opening along `fwd` by the field of view (orthographic:
+// a straight box). With `showFrustum`, the view frustum continues out to `frustumLength` world units.
+void drawCameraGizmo(Canvas& c, const GizmoCamera& cam, Vec3 pos, Vec3 fwd, Vec3 up, float fovYDeg, float aspect,
+                     bool ortho, bool showFrustum, float frustumLength, const ObjectGizmoStyle& style);
+// A directional light: a ring facing the light and three parallel rays with arrow heads along `dir`.
+void drawDirectionalLightGizmo(Canvas& c, const GizmoCamera& cam, Vec3 pos, Vec3 dir, const ObjectGizmoStyle& style);
+// A spot light: its cone along `dir` with the cone's half angle, `length` world units long, and the rim.
+void drawSpotLightGizmo(Canvas& c, const GizmoCamera& cam, Vec3 pos, Vec3 dir, float halfAngleDeg, float length,
+                        const ObjectGizmoStyle& style);
+float pickDistance(Vec2 p, const std::vector<std::pair<Vec2, Vec2>>& segments);
 
 // ------------------------------------------------------------------ selection outline
 // A band `radius` pixels wide just outside every silhouette of a selection mask (one byte of weight per pixel,
