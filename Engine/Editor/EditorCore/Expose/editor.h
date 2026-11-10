@@ -1675,6 +1675,10 @@ private:
     void DrawAnimationLibraryWindowUVE();
     /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).
     void DrawOverlayWindowsUVE();
+    /// Window > Network Capture / Audio Mixer: the previous bottom dock's sections, as windows of
+    /// their own until they are built with PRISM.
+    bool m_showCaptureWindow = false;
+    bool m_showAudioMixerWindow = false;
     void DrawImportProgressModalUVE();
     void FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::RetargetFilesResultUVE result);
     /// Gives every Skeleton3D bound to `modelFile`'s source the bones of the conformed model; the
@@ -2101,20 +2105,16 @@ private:
     void LoadSessionSettingsUVE();
     [[nodiscard]] bool SaveSessionSettingsUVE();
     void ApplyLayoutPresetUVE(EditorLayoutPresetUVE preset) noexcept;
-    void DrawMenuBarUVE();
     /// Turns the viewport's preview sun / preview sky into the scene's own DirectionalLight3D /
     /// WorldEnvironment3D (creating it, or updating the one there), selects it and returns it.
     /// Invalid when authoring is not allowed.
     Scene::EntityUVE AddPreviewSunToSceneUVE();
     Scene::EntityUVE AddPreviewEnvironmentToSceneUVE();
-    void DrawViewportPanelUVE();
-    /// The rendered scene and its overlay, filling the rest of the current window (the main
-    /// Viewport panel and the Entity Editor both use it).
+    /// The rendered scene and its overlay, filling the rest of the current ImGui window (the Entity
+    /// Editor and the Retarget preview use it; the level editor's viewport is the PRISM shell's).
     void DrawViewportImageUVE(ViewportContextUVE context);
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
-    void DrawViewportAxisColorPickerUVE();
-    void DrawViewportSelectionOutlineMenuUVE();
     void DrawPluginWindowUVE();
     // One settings window's view state (Editor Preferences, Project Settings). Session-only.
     struct SettingsWindowStateUVE final {
@@ -2185,27 +2185,13 @@ private:
     void DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const SettingsWindowSourceUVE& source);
     void DrawSettingRowUVE(SettingsWindowStateUVE& state, const Config::SettingDescriptorUVE& descriptor,
                            bool modified, const SettingsWindowSourceUVE& source);
-    /// The bottom dock's body: ONE window whose contents follow the active tab. Every section below
-    /// draws into it rather than opening a window of its own.
-    void DrawBottomDockContentUVE();
-    /// The strip of dock tabs along the bottom edge - Content, Output, Console, Capture, Profiler,
-    /// Audio - and the dock toggle. It is drawn even while the dock is hidden, because it is how the
-    /// dock comes back.
-    void DrawBottomDockTabBarUVE();
-    /// The drag grips between Outliner, viewport, Inspector and the dock, and the strips left behind
-    /// by a hidden side panel. Drawn last, over the panels, since the grips straddle their seams.
-    void DrawEditorChromeHandlesUVE();
-    /// The Console section: the developer console's output and its command line.
-    void DrawConsoleBodyUVE();
     /// The Capture section: filter toolbar, packet list, and the selected decode.
     void DrawCaptureBodyUVE();
-    void DrawProfilerBodyUVE();
     /// The audio authoring section. The model is built by editor_audio_mixer_uve.h; these only draw.
     void DrawAudioMixerBodyUVE();
     void DrawAudioMixerBusTableUVE(Audio::IAudioSystemUVE& audioSystem,
                                    const EditorAudioMixerSnapshotUVE& snapshot);
     void DrawAudioAttenuationEditorUVE();
-    void DrawHierarchyPanelUVE();
     /// The Scene tree with its "+" and search, filling the rest of the current window.
     void DrawHierarchyBodyUVE();
     void DrawHierarchyObjectContextMenuUVE(Scene::EntityUVE entity);
