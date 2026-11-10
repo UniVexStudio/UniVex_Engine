@@ -772,7 +772,7 @@ public class ImGuiModule : ModuleRules
         # Link executable if TargetType is Test or Program
         if platform == "Windows":
             exe_name = target.output_name if target.output_name.endswith(".exe") else f"{target.output_name}.exe"
-            all_sys_libs = ["pthread", "opengl32", "gdi32", "glfw3", "glew32", "z", "jpeg"]
+            all_sys_libs = ["pthread", "opengl32", "gdi32", "glfw3", "glew32", "z", "jpeg", "dbghelp", "ws2_32", "winmm", "ole32"]
         else:
             exe_name = target.output_name
             all_sys_libs = ["pthread", "dl", "m", "GL", "GLX", "X11"]
