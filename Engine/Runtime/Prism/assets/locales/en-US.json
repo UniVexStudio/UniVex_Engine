@@ -1,0 +1,22 @@
+{
+  "menu.file": "File",
+  "menu.edit": "Edit",
+  "menu.create": "Create",
+  "menu.view": "View",
+  "menu.tools": "Tools",
+  "menu.help": "Help",
+  "tab.hierarchy": "Hierarchy",
+  "tab.details": "Details",
+  "tab.console": "Console",
+  "tab.viewport": "Viewport",
+  "tab.assets": "Assets",
+  "tab.world": "World",
+  "tab.components": "PRISM Components",
+  "tab.statistics": "Statistics",
+  "tab.output": "Output",
+  "tab.curve_editor": "Curve Editor",
+  "btn.play": "Play",
+  "btn.stop": "Stop",
+  "btn.clear": "Clear",
+  "status.ready": "Ready"
+}

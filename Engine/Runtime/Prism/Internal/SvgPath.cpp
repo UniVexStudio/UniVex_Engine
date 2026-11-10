@@ -52,7 +52,7 @@ void subdivideQuad(Vec2 p0, Vec2 p1, Vec2 p2, std::vector<Vec2>& out, int depth 
 
 } // namespace
 
-std::vector<std::vector<Vec2>> SvgPath::flatten(float tolerance) const {
+std::vector<std::vector<Vec2>> SvgPath::flatten(float /*tolerance*/) const {
   std::vector<std::vector<Vec2>> contours;
   std::vector<Vec2> current;
   Vec2 curPos{0, 0};

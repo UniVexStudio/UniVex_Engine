@@ -81,8 +81,9 @@ private:
   std::string m_title;
   Icon m_icon;
   bool m_shadeable;
-  std::function<void()> m_close, m_shade;
+  std::function<void()> m_close;
   std::function<void(Vec2)> m_move;
+  std::function<void()> m_shade;
   bool m_dragging = false;
   int m_hover = 0;
   Vec2 m_grab;

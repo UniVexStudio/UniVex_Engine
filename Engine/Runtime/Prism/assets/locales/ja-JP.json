@@ -1,0 +1,22 @@
+{
+  "menu.file": "ファイル",
+  "menu.edit": "編集",
+  "menu.create": "作成",
+  "menu.view": "表示",
+  "menu.tools": "ツール",
+  "menu.help": "ヘルプ",
+  "tab.hierarchy": "階層",
+  "tab.details": "詳細",
+  "tab.console": "コンソール",
+  "tab.viewport": "ビューポート",
+  "tab.assets": "アセット",
+  "tab.world": "ワールド",
+  "tab.components": "PRISMコンポーネント",
+  "tab.statistics": "統計",
+  "tab.output": "出力",
+  "tab.curve_editor": "カーブエディタ",
+  "btn.play": "再生",
+  "btn.stop": "停止",
+  "btn.clear": "クリア",
+  "status.ready": "準備完了"
+}

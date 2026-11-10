@@ -29,6 +29,8 @@ DerivedData/
 assets/
 !Engine/Editor/EditorCore/assets/
 !Engine/Editor/EditorCore/assets/**
+!Engine/Runtime/Prism/assets/
+!Engine/Runtime/Prism/assets/**
 .uvassetdb
 
 # .NET build output (Engine/Editor/EditorCoreCs and any future C# project) - dotnet publish's own
