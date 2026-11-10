@@ -28,6 +28,7 @@ class Segmented;
 class TabView;
 class TextInput;
 class TreeView;
+class StackSwitcher;
 class ComboBox;
 class Widget;
 } // namespace prism
@@ -73,6 +74,8 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildDetailsUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildDockUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildDockBarUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildSubRow2UVE();
+    void ShowDockPanelUVE(int index, bool forceVisible);
 
     void ShowAddMenuUVE();
     void ShowAddFilterMenuUVE();
@@ -106,6 +109,9 @@ private:
     std::shared_ptr<prism::Label> m_detailsTitle;
     std::shared_ptr<prism::Label> m_statusLabel;
     std::shared_ptr<prism::Widget> m_dockArea;
+    std::shared_ptr<prism::StackSwitcher> m_dockPages;
+    std::vector<std::shared_ptr<prism::Button>> m_dockTabs;
+    std::shared_ptr<prism::Widget> m_viewportNameTab;
     std::shared_ptr<prism::Widget> m_outlinerColumn;
     std::shared_ptr<prism::Widget> m_detailsColumn;
 

@@ -27,6 +27,13 @@ struct AssetRecord {
   bool isModified = false;
 };
 
+// Draws `asset`'s thumbnail (PBR previews for meshes / materials, texture, shader, font and level cards,
+// otherwise its icon) into `thumbRect`.
+void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumbRect);
+// Paints one content tile (thumbnail, type tab, name, type, selection frame) into `tile`
+// (PRISM's tile size is 108 x 136).
+void paintAssetTile(Canvas& c, Rect tile, const AssetRecord& asset, bool selected, bool hovered);
+
 struct FolderItem {
   std::string name;
   std::string path;
@@ -91,7 +98,6 @@ private:
   Vec2 m_pressPos;
   bool m_dragging = false;
 
-  void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumbRect);
 
   float m_sourcesW = 145.0f;
   float m_tileW = 108.0f;

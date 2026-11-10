@@ -237,12 +237,15 @@ static void drawThumbBackdrop(Canvas& c, Rect thumb, Color tint) {
   c.popClip();
 }
 
-void AssetBrowser::drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
+void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
   int tw = int(thumb.w);
   int th = int(thumb.h);
 
   if (asset.type.find("Material") != std::string::npos || asset.type.find("Mesh") != std::string::npos) {
-    const uint32_t* px = PbrRenderer::getCachedThumbnail(asset.name, tw, th);
+    // The preview is chosen by the asset's type, not its file extension: hosts name files their own way.
+    const bool material = asset.type.find("Material") != std::string::npos;
+    const std::string key = asset.name + "|" + std::to_string(tw) + "x" + std::to_string(th) + (material ? ".mat" : ".mesh");
+    const uint32_t* px = PbrRenderer::getCachedThumbnail(key, tw, th);
     if (px) {
       c.blit(px, tw, th, Vec2(thumb.x, thumb.y));
       return;
@@ -351,6 +354,63 @@ void AssetBrowser::drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect 
   }
 }
 
+// One content tile: thumbnail well, chamfered type tab + type underline, name + type footer, accent
+// frame with corner brackets when selected. Shared by AssetBrowser and host content browsers.
+void paintAssetTile(Canvas& c, Rect tr, const AssetRecord& asset, bool isSel, bool isHov) {
+  const Theme& t = theme();
+  const Color accent = t.accent;
+  Color cardBg = isSel ? accent.alpha(0.16f).mix(Color(20, 24, 33), 0.0f) : (isHov ? Color(26, 32, 44) : Color(19, 22, 30));
+  if (isSel) cardBg = Color(20, 24, 33).mix(accent, 0.14f);
+  c.fillRoundRect(tr, 4.0f, cardBg);
+
+  // Thumbnail well (86px)
+  Rect thumbRect{tr.x + 3.0f, tr.y + 3.0f, tr.w - 6.0f, 86.0f};
+  c.pushClip(thumbRect);
+  drawAssetThumbnail(c, asset, thumbRect);
+  if (isHov && !isSel) c.fillRect(thumbRect, Color(255, 255, 255, 10));
+  c.popClip();
+  c.strokeRect(thumbRect, Color(0, 0, 0, 90));
+
+  // Type underline + chamfered type tab (PRISM facet marker: coloured, cut on the right)
+  c.fillRect(Rect{thumbRect.x, thumbRect.bottom() - 2.0f, thumbRect.w, 2.0f}, asset.badgeColor.alpha(0.55f));
+  float tabW = 34.0f, tabH = 15.0f, cut = 6.0f;
+  Vec2 tab[4] = { Vec2(thumbRect.x, thumbRect.bottom() - tabH), Vec2(thumbRect.x + tabW, thumbRect.bottom() - tabH),
+                  Vec2(thumbRect.x + tabW + cut, thumbRect.bottom()), Vec2(thumbRect.x, thumbRect.bottom()) };
+  c.fillPolygon(std::span<const Vec2>(tab, 4), asset.badgeColor);
+  Color tabText = asset.badgeColor.luminance() > 0.55f ? Color(14, 16, 22) : Color(255, 255, 255);
+  c.textIn(*t.small, Rect{thumbRect.x, thumbRect.bottom() - tabH - 1.0f, tabW, tabH}, asset.badgeText, tabText, HAlign::Center);
+
+  // Unsaved marker (top-right)
+  if (asset.isModified) {
+    Vec2 dc{thumbRect.right() - 9.0f, thumbRect.y + 9.0f};
+    c.fillCircle(dc, 5.0f, Color(12, 14, 20, 220));
+    c.fillCircle(dc, 3.2f, Color(245, 180, 60));
+  }
+
+  // Footer: left-aligned name + muted type
+  Rect footerRect{tr.x + 3.0f, thumbRect.bottom() + 3.0f, tr.w - 6.0f, tr.bottom() - thumbRect.bottom() - 6.0f};
+  Rect nameBox{footerRect.x + 2.0f, footerRect.y, footerRect.w - 4.0f, 16.0f};
+  c.pushClip(nameBox);
+  c.textIn(*t.medium, nameBox, cleanAssetName(asset.name), isSel ? Color(255, 255, 255) : Color(232, 237, 246), HAlign::Left);
+  c.popClip();
+  Rect typeBox{footerRect.x + 2.0f, footerRect.y + 17.0f, footerRect.w - 4.0f, 14.0f};
+  c.pushClip(typeBox);
+  c.textIn(*t.small, typeBox, asset.type, Color(128, 139, 156), HAlign::Left);
+  c.popClip();
+
+  // Frame: soft border; selection gets an accent frame with corner brackets
+  c.strokeRoundRect(tr, 4.0f, isSel ? accent : (isHov ? Color(70, 86, 112) : Color(34, 40, 54)), isSel ? 1.5f : 1.0f);
+  if (isSel) {
+    float L = 9.0f;
+    Color br = accent.lighten(0.25f);
+    Rect q = tr.inflated(-1.0f);
+    c.line(Vec2(q.x, q.y + L), Vec2(q.x, q.y), br, 2.0f);   c.line(Vec2(q.x, q.y), Vec2(q.x + L, q.y), br, 2.0f);
+    c.line(Vec2(q.right() - L, q.y), Vec2(q.right(), q.y), br, 2.0f); c.line(Vec2(q.right(), q.y), Vec2(q.right(), q.y + L), br, 2.0f);
+    c.line(Vec2(q.x, q.bottom() - L), Vec2(q.x, q.bottom()), br, 2.0f); c.line(Vec2(q.x, q.bottom()), Vec2(q.x + L, q.bottom()), br, 2.0f);
+    c.line(Vec2(q.right() - L, q.bottom()), Vec2(q.right(), q.bottom()), br, 2.0f); c.line(Vec2(q.right(), q.bottom() - L), Vec2(q.right(), q.bottom()), br, 2.0f);
+  }
+}
+
 void AssetBrowser::paint(Canvas& c) {
   const Theme& t = theme();
 
@@ -454,57 +514,7 @@ void AssetBrowser::paint(Canvas& c) {
     bool isSel = (int(i) == m_selectedIdx);
     bool isHov = (int(i) == m_hoverIdx);
 
-    const Color accent = t.accent;
-    Color cardBg = isSel ? accent.alpha(0.16f).mix(Color(20, 24, 33), 0.0f) : (isHov ? Color(26, 32, 44) : Color(19, 22, 30));
-    if (isSel) cardBg = Color(20, 24, 33).mix(accent, 0.14f);
-    c.fillRoundRect(tr, 4.0f, cardBg);
-
-    // Thumbnail well (86px)
-    Rect thumbRect{tr.x + 3.0f, tr.y + 3.0f, tr.w - 6.0f, 86.0f};
-    c.pushClip(thumbRect);
-    drawAssetThumbnail(c, asset, thumbRect);
-    if (isHov && !isSel) c.fillRect(thumbRect, Color(255, 255, 255, 10));
-    c.popClip();
-    c.strokeRect(thumbRect, Color(0, 0, 0, 90));
-
-    // Type underline + chamfered type tab (PRISM facet marker: coloured, cut on the right)
-    c.fillRect(Rect{thumbRect.x, thumbRect.bottom() - 2.0f, thumbRect.w, 2.0f}, asset.badgeColor.alpha(0.55f));
-    float tabW = 34.0f, tabH = 15.0f, cut = 6.0f;
-    Vec2 tab[4] = { Vec2(thumbRect.x, thumbRect.bottom() - tabH), Vec2(thumbRect.x + tabW, thumbRect.bottom() - tabH),
-                    Vec2(thumbRect.x + tabW + cut, thumbRect.bottom()), Vec2(thumbRect.x, thumbRect.bottom()) };
-    c.fillPolygon(std::span<const Vec2>(tab, 4), asset.badgeColor);
-    Color tabText = asset.badgeColor.luminance() > 0.55f ? Color(14, 16, 22) : Color(255, 255, 255);
-    c.textIn(*t.small, Rect{thumbRect.x, thumbRect.bottom() - tabH - 1.0f, tabW, tabH}, asset.badgeText, tabText, HAlign::Center);
-
-    // Unsaved marker (top-right)
-    if (asset.isModified) {
-      Vec2 dc{thumbRect.right() - 9.0f, thumbRect.y + 9.0f};
-      c.fillCircle(dc, 5.0f, Color(12, 14, 20, 220));
-      c.fillCircle(dc, 3.2f, Color(245, 180, 60));
-    }
-
-    // Footer: left-aligned name + muted type
-    Rect footerRect{tr.x + 3.0f, thumbRect.bottom() + 3.0f, tr.w - 6.0f, tr.bottom() - thumbRect.bottom() - 6.0f};
-    Rect nameBox{footerRect.x + 2.0f, footerRect.y, footerRect.w - 4.0f, 16.0f};
-    c.pushClip(nameBox);
-    c.textIn(*t.medium, nameBox, cleanAssetName(asset.name), isSel ? Color(255, 255, 255) : Color(232, 237, 246), HAlign::Left);
-    c.popClip();
-    Rect typeBox{footerRect.x + 2.0f, footerRect.y + 17.0f, footerRect.w - 4.0f, 14.0f};
-    c.pushClip(typeBox);
-    c.textIn(*t.small, typeBox, asset.type, Color(128, 139, 156), HAlign::Left);
-    c.popClip();
-
-    // Frame: soft border; selection gets an accent frame with corner brackets
-    c.strokeRoundRect(tr, 4.0f, isSel ? accent : (isHov ? Color(70, 86, 112) : Color(34, 40, 54)), isSel ? 1.5f : 1.0f);
-    if (isSel) {
-      float L = 9.0f;
-      Color br = accent.lighten(0.25f);
-      Rect q = tr.inflated(-1.0f);
-      c.line(Vec2(q.x, q.y + L), Vec2(q.x, q.y), br, 2.0f);   c.line(Vec2(q.x, q.y), Vec2(q.x + L, q.y), br, 2.0f);
-      c.line(Vec2(q.right() - L, q.y), Vec2(q.right(), q.y), br, 2.0f); c.line(Vec2(q.right(), q.y), Vec2(q.right(), q.y + L), br, 2.0f);
-      c.line(Vec2(q.x, q.bottom() - L), Vec2(q.x, q.bottom()), br, 2.0f); c.line(Vec2(q.x, q.bottom()), Vec2(q.x + L, q.bottom()), br, 2.0f);
-      c.line(Vec2(q.right() - L, q.bottom()), Vec2(q.right(), q.bottom()), br, 2.0f); c.line(Vec2(q.right(), q.bottom() - L), Vec2(q.right(), q.bottom()), br, 2.0f);
-    }
+    paintAssetTile(c, tr, asset, isSel, isHov);
   }
 
   if (m_filteredIndices.empty()) {

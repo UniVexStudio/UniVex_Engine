@@ -9,6 +9,7 @@
 #include "prism/Containers.h"
 #include "prism/Controls.h"
 #include "prism/Icons.h"
+#include "prism/AssetBrowser.h"
 #include "prism/Layouts.h"
 #include "prism/Menu.h"
 #include "prism/TextInput.h"
@@ -62,6 +63,29 @@ prism::Icon EditorPrismContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
     return prism::Icon::File;
 }
 
+std::pair<std::string, std::string> EditorPrismContentBrowserUVE::DescribeUVE(const ItemTypeUVE type) {
+    switch (type) {
+        case ItemTypeUVE::Folder: return {"Folder", "DIR"};
+        case ItemTypeUVE::Scene: return {"World Level", "LVL"};
+        case ItemTypeUVE::Prefab: return {"Prefab", "PFB"};
+        case ItemTypeUVE::Entity: return {"Entity", "ENT"};
+        case ItemTypeUVE::Bundle: return {"Bundle", "BND"};
+        case ItemTypeUVE::Mesh: return {"Static Mesh", "SM"};
+        case ItemTypeUVE::Model: return {"Skeletal Mesh", "SK"};
+        case ItemTypeUVE::Texture: return {"Texture 2D", "T2D"};
+        case ItemTypeUVE::Shader: return {"Shader", "SH"};
+        case ItemTypeUVE::Material: return {"Material", "MAT"};
+        case ItemTypeUVE::Save: return {"Save", "SAV"};
+        case ItemTypeUVE::Animation: return {"Animation", "ANM"};
+        case ItemTypeUVE::AnimationLibrary: return {"Animation Library", "LIB"};
+        case ItemTypeUVE::Script: return {"Script", "UVS"};
+        case ItemTypeUVE::Audio: return {"Audio", "AUD"};
+        case ItemTypeUVE::Font: return {"Font", "FNT"};
+        case ItemTypeUVE::File: return {"File", "FILE"};
+    }
+    return {"File", "FILE"};
+}
+
 prism::Color EditorPrismContentBrowserUVE::TintForUVE(const ItemTypeUVE type) {
     switch (type) {
         case ItemTypeUVE::Folder: return prism::Color(214, 176, 92);
@@ -89,25 +113,20 @@ public:
             const bool selected)
         : m_owner(owner), m_entryIndex(entryIndex), m_name(std::move(name)), m_type(type), m_selected(selected) {}
 
-    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(92.0F, 104.0F)); }
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(108.0F, 136.0F)); }
 
     void paint(prism::Canvas& c) override {
-        const prism::Theme& t = prism::theme();
-        const prism::Rect r = rect();
-        if (m_selected) {
-            c.fillRoundRect(r, 4.0F, t.rowSelected);
-            c.strokeRoundRect(r, 4.0F, t.accent, 1);
-        } else if (m_hot) {
-            c.fillRoundRect(r, 4.0F, t.rowHover);
-        }
-        const prism::Rect well{r.x + 10.0F, r.y + 8.0F, r.w - 20.0F, r.w - 20.0F};
-        c.fillRoundRect(well, 3.0F, t.field);
-        const prism::Color tint = TintForUVE(m_type);
-        c.fillRect(prism::Rect{well.x, well.bottom() - 2.0F, well.w, 2.0F}, tint);
-        prism::drawIcon(c, IconForUVE(m_type), prism::Rect{well.x + 14.0F, well.y + 12.0F, well.w - 28.0F, well.h - 28.0F},
-                        tint, 1.6F);
-        c.textIn(*t.small, prism::Rect{r.x + 4.0F, well.bottom() + 4.0F, r.w - 8.0F, 18.0F}, m_name,
-                 m_selected ? t.textBright : t.text, prism::HAlign::Center, true);
+        // PRISM's content tile and thumbnail (PBR previews for meshes / materials, texture, shader,
+        // font and level cards), fed with the engine's own classification of the file.
+        prism::AssetRecord record{};
+        record.name = m_name;
+        record.path = m_name;
+        record.icon = IconForUVE(m_type);
+        record.badgeColor = TintForUVE(m_type);
+        const auto [typeName, badge] = DescribeUVE(m_type);
+        record.type = typeName;
+        record.badgeText = badge;
+        prism::paintAssetTile(c, rect(), record, m_selected, m_hot);
     }
 
     bool onMouseDown(const prism::MouseEvent& e) override {
@@ -145,16 +164,73 @@ EditorPrismContentBrowserUVE::EditorPrismContentBrowserUVE(EditorUVE& editor) : 
 
 EditorPrismContentBrowserUVE::~EditorPrismContentBrowserUVE() = default;
 
+prism::Ref<prism::Widget> EditorPrismContentBrowserUVE::SectionHeaderUVE(const std::string& title, const bool open,
+                                                                      std::shared_ptr<prism::Widget> body,
+                                                                      std::shared_ptr<prism::Widget> extra) {
+    auto row = prism::hbox(2.0F);
+    row->setPadding(prism::Margin(2.0F, 1.0F, 4.0F, 1.0F));
+    auto toggle = prism::make<prism::Button>(title, open ? prism::Icon::TriDown : prism::Icon::TriRight,
+                                             prism::ButtonStyle::Flat);
+    std::weak_ptr<prism::Button> weakToggle = toggle;
+    std::weak_ptr<prism::Widget> weakBody = body;
+    toggle->onClick = [weakToggle, weakBody] {
+        auto t = weakToggle.lock();
+        auto b = weakBody.lock();
+        if (!t || !b) {
+            return;
+        }
+        b->setVisible(!b->visible());
+        t->setIcon(b->visible() ? prism::Icon::TriDown : prism::Icon::TriRight);
+    };
+    row->add(toggle, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    if (extra) {
+        row->add(extra, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
+    }
+    auto bar = prism::make<prism::Border>();
+    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
+    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+    bar->setChild(row);
+    return bar;
+}
+
 prism::Ref<prism::Widget> EditorPrismContentBrowserUVE::BuildUVE() {
-    // Left: folder search, folder tree, '+'.
-    auto left = prism::vbox(4.0F);
-    left->setPadding(prism::Margin(4.0F));
+    // Left, as drawn: a collapsed "Shelves" section, the open "Content" section (its search behind
+    // the magnifier, then the folder tree), and the create row with '+' at the bottom.
+    auto left = prism::vbox(0.0F);
+
+    m_shelves = prism::make<prism::TreeView>();
+    m_shelves->onSelect = [this](const std::vector<prism::TreeNode*>& nodes) {
+        if (m_syncingFolders || nodes.empty()) {
+            return;
+        }
+        const int id = nodes.front()->id;
+        if (id > 0 && static_cast<std::size_t>(id) <= m_shelfNames.size()) {
+            m_editor.m_contentBrowserShelf = m_shelfNames[static_cast<std::size_t>(id - 1)];
+            m_editor.m_contentSelection.ClearUVE();
+            m_tileSignature = 0;
+        }
+    };
+    m_shelves->setVisible(false);
+    left->add(SectionHeaderUVE("Shelves", false, m_shelves, nullptr));
+    left->add(m_shelves, prism::Slot{0.0F});
+
     m_folderSearch = prism::make<prism::TextInput>("", "Search folders");
     m_folderSearch->onChanged = [this](const std::string& text) {
         m_editor.m_contentTreeFilter = text;
         m_folderSignature = 0;
     };
-    left->add(m_folderSearch);
+    m_folderSearch->setVisible(false);
+    auto searchToggle = prism::make<prism::Button>("", prism::Icon::Search, prism::ButtonStyle::Flat);
+    searchToggle->setTooltip("Search folders");
+    searchToggle->onClick = [this] {
+        m_folderSearch->setVisible(!m_folderSearch->visible());
+        if (!m_folderSearch->visible()) {
+            m_folderSearch->setText("", true);
+        } else if (prism::Application::exists()) {
+            prism::Application::get().setFocus(m_folderSearch.get());
+        }
+    };
     m_folders = prism::make<prism::TreeView>();
     m_folders->onSelect = [this](const std::vector<prism::TreeNode*>& nodes) {
         if (m_syncingFolders || nodes.empty()) {
@@ -165,11 +241,25 @@ prism::Ref<prism::Widget> EditorPrismContentBrowserUVE::BuildUVE() {
             GoToFolderUVE(std::filesystem::path(m_folderIds[static_cast<std::size_t>(id - 1)]));
         }
     };
+    left->add(SectionHeaderUVE("Content", true, m_folders, searchToggle));
+    left->add(m_folderSearch, prism::Slot{0.0F, prism::Margin(4.0F, 2.0F, 4.0F, 2.0F)});
     left->add(m_folders, prism::Slot{1.0F});
-    m_addButton = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Primary);
-    m_addButton->setTooltip("Create in this folder");
+
+    m_addButton = prism::make<prism::Button>("", prism::Icon::Plus, prism::ButtonStyle::Flat);
+    m_addButton->setTooltip("Create or import in this folder");
     m_addButton->onClick = [this] { ShowAddMenuUVE(); };
-    left->add(m_addButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    auto createRow = prism::hbox(2.0F);
+    createRow->setPadding(prism::Margin(4.0F, 1.0F, 4.0F, 1.0F));
+    auto createChevron = prism::make<prism::Button>("Create / Import", prism::Icon::TriRight, prism::ButtonStyle::Flat);
+    createChevron->onClick = [this] { ShowAddMenuUVE(); };
+    createRow->add(createChevron, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    createRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    createRow->add(m_addButton, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
+    auto createBar = prism::make<prism::Border>();
+    createBar->setBackground(prism::ThemeColor(&prism::Theme::header));
+    createBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 0.0F));
+    createBar->setChild(createRow);
+    left->add(createBar);
 
     // Right: Filter | item search, path, tiles, status.
     auto right = prism::vbox(4.0F);
@@ -229,6 +319,20 @@ void EditorPrismContentBrowserUVE::RebuildFoldersUVE() {
     }
     m_folderSignature = h;
     m_syncingFolders = true;
+    if (m_shelves) {
+        m_shelves->clear();
+        m_shelfNames.clear();
+        for (const ContentShelfUVE& shelf : m_editor.m_contentShelves.GetAllUVE()) {
+            m_shelfNames.push_back(shelf.name);
+            m_shelves->addNode(nullptr, shelf.name, prism::Icon::Layers, static_cast<int>(m_shelfNames.size()))->toggles =
+                false;
+        }
+        if (m_shelfNames.empty()) {
+            m_shelfNames.emplace_back();
+            m_shelves->addNode(nullptr, "No shelves yet", prism::Icon::Info, 1)->toggles = false;
+        }
+        m_shelves->refresh();
+    }
     m_folders->clear();
     m_folderIds.clear();
     std::vector<std::string> folders = CollectVisibleContentFoldersUVE(snapshot.entries, m_editor.m_contentTreeFilter);
@@ -269,6 +373,7 @@ void EditorPrismContentBrowserUVE::RebuildTilesUVE() {
     std::uint64_t h = snapshot.refreshGeneration;
     HashUVE(h, m_editor.m_contentBrowserDirectory.generic_string());
     HashUVE(h, m_editor.m_assetFilter);
+    HashUVE(h, m_editor.m_contentBrowserShelf);
     HashUVE(h, static_cast<std::uint64_t>(m_editor.m_contentBrowserTypeFocus));
     for (const std::string& item : m_editor.m_contentSelection.ItemsUVE()) {
         HashUVE(h, item);
@@ -282,7 +387,11 @@ void EditorPrismContentBrowserUVE::RebuildTilesUVE() {
     m_tileSignature = h;
 
     const std::filesystem::path directory = m_editor.m_contentBrowserDirectory;
-    std::vector<std::size_t> listed = ListContentFolderUVE(snapshot.entries, directory, m_editor.m_assetFilter);
+    const ContentShelfUVE* const shelf =
+        m_editor.m_contentBrowserShelf.empty() ? nullptr : m_editor.m_contentShelves.FindUVE(m_editor.m_contentBrowserShelf);
+    std::vector<std::size_t> listed = shelf != nullptr
+                                          ? ListContentShelfUVE(snapshot.entries, *shelf, m_editor.m_assetFilter)
+                                          : ListContentFolderUVE(snapshot.entries, directory, m_editor.m_assetFilter);
     m_shown.clear();
     std::vector<std::string> order;
     for (const std::size_t i : listed) {
@@ -309,7 +418,9 @@ void EditorPrismContentBrowserUVE::RebuildTilesUVE() {
         m_tiles->add(tile);
     }
     if (m_path) {
-        m_path->setText(directory.empty() ? std::string("Content") : "Content / " + directory.generic_string());
+        m_path->setText(shelf != nullptr ? "Shelf / " + shelf->name
+                         : directory.empty() ? std::string("Content")
+                                             : "Content / " + directory.generic_string());
     }
     if (m_shown.empty() && m_status && m_editor.m_contentStatusMessage.empty()) {
         m_status->setText(snapshot.contentRootExists ? "This folder is empty." : "No Content folder in this project.");
