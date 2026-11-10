@@ -1,4 +1,5 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#include <cstdlib>
 #include <prism/Application.h>
 #include <prism/Commands.h>
 #include <prism/Containers.h>
@@ -2601,6 +2602,75 @@ static void testHostGizmos() {
   bool anyRed = false;
   for (int i = 0; i < 200 * 200; i++) anyRed |= ((c.pixels()[i] >> 16) & 255) > 200 && ((c.pixels()[i] >> 8) & 255) < 50;
   CHECK(!anyRed);
+
+  // Scene depth: a point in front of the surface shows, one behind it does not; no data means no test.
+  std::vector<float> depthTexels(4 * 4, 1e30f);
+  depthTexels[1 * 4 + 1] = 10.f;
+  GizmoDepth depth;
+  depth.data = depthTexels.data(); depth.width = 4; depth.height = 4; depth.area = Rect{0, 0, 200, 200};
+  CHECK(depth.visible(Vec2{60, 60}, 9.f) && !depth.visible(Vec2{60, 60}, 12.f));
+  CHECK(depth.visible(Vec2{160, 160}, 500.f));                  // nothing drawn there
+  depth.zOffset = 5.f;
+  CHECK(depth.visible(Vec2{60, 60}, 14.f));                      // the drawing eye sits 5 behind the host's
+  depth.zOffset = 0.f;
+  // A depth-tested line hides where the surface is in front of it.
+  Canvas dc;
+  dc.resize(200, 200);
+  dc.clear(Color(0, 0, 0));
+  GizmoCamera front;
+  front.eye = {0, 0, 20}; front.fwd = {0, 0, -1}; front.right = {1, 0, 0}; front.up = {0, 1, 0};
+  front.cx = 100; front.cy = 100; front.focal = 100; front.viewH = 200;
+  std::vector<float> wall(20 * 20, 1e30f);
+  for (int y = 0; y < 20; ++y) for (int x = 0; x < 10; ++x) wall[size_t(y * 20 + x)] = 5.f;   // left half: a wall 5 away
+  GizmoDepth wallDepth;
+  wallDepth.data = wall.data(); wallDepth.width = 20; wallDepth.height = 20; wallDepth.area = Rect{0, 0, 200, 200};
+  drawWorldLine(dc, front, Vec3{-8, 0, 0}, Vec3{8, 0, 0}, Color(255, 255, 255), 2.f, &wallDepth, 0.f);
+  const auto lit = [&](int x, int y) { return ((dc.pixels()[size_t(y * 200 + x)] >> 8) & 255) > 128; };
+  CHECK(!lit(80, 100) && lit(120, 100));
+
+  // The grid shows its axis lines through the origin (X red, Z blue) in a perspective view looking at it.
+  Canvas gc;
+  gc.resize(320, 200);
+  gc.clear(Color(0, 0, 0));
+  GizmoCamera view;
+  view.eye = {7.36f, 4.96f, -6.93f};
+  view.fwd = (Vec3{0, 0, 0} - view.eye).normalized();
+  view.right = view.fwd.cross(Vec3{0, 1, 0}).normalized();
+  view.up = view.right.cross(view.fwd).normalized();
+  view.cx = 160; view.cy = 100; view.viewH = 200; view.focal = 200;
+  WorldGrid grid;
+  drawWorldGrid(gc, view, grid, nullptr);
+  int red = 0, blue = 0, any = 0;
+  for (int i = 0; i < 320 * 200; ++i) {
+    const uint32_t px = gc.pixels()[size_t(i)];
+    const int r = int((px >> 16) & 255), gg = int((px >> 8) & 255), b = int(px & 255);
+    red += (r > 100 && r > gg + 40 && r > b + 40);
+    blue += (b > 100 && b > r + 40);
+    any += (r + gg + b) > 30;
+  }
+  if (std::getenv("PRISM_GRID_PNG")) gc.savePng(std::getenv("PRISM_GRID_PNG"));
+  // A segment crossing the eye plane still draws its visible part (its clipped end must not round behind it).
+  {
+    Canvas t;
+    t.resize(320, 200);
+    t.clear(Color(0, 0, 0));
+    drawWorldLine(t, view, Vec3{-50, 0, 0}, Vec3{50, 0, 0}, Color(255, 0, 0), 2.f);
+    int lit = 0;
+    for (int i = 0; i < 320 * 200; ++i) lit += ((t.pixels()[size_t(i)] >> 16) & 255) > 100;
+    CHECK(lit > 100);
+  }
+  CHECK(red > 50 && blue > 50 && any > 2000);
+
+  // Selection outline: a band around a filled square, never over it.
+  std::vector<uint8_t> mask(40 * 40, 0);
+  for (int y = 15; y < 25; ++y) for (int x = 15; x < 25; ++x) mask[size_t(y * 40 + x)] = 255;
+  std::vector<uint32_t> band;
+  int box[4] = {0, 0, 0, 0};
+  CHECK(buildSelectionOutline(mask.data(), 40, 40, 2, Color(255, 160, 40), band, box));
+  const auto at = [&](int x, int y) { return band[size_t((y - box[1]) * box[2] + (x - box[0]))]; };
+  CHECK((at(20, 20) >> 24) == 0 && (at(14, 20) >> 24) > 200 && (at(12, 20) >> 24) == 0);
+  std::vector<uint8_t> empty(16, 0);
+  CHECK(!buildSelectionOutline(empty.data(), 4, 4, 2, Color(255, 160, 40), band, box));
 }
 
 int main(int argc, char** argv) {

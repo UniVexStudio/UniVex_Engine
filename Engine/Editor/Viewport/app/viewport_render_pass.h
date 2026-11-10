@@ -20,6 +20,7 @@
 
 #include <optional>
 #include <utility>
+#include <cstdint>
 #include <vector>
 #include <string>
 
@@ -115,6 +116,14 @@ public:
     /// the grid, before RenderOverlayUVE, so the gizmos stay on top.
     void RenderSelectionOutlineUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight,
                                    const std::vector<univex::render::SelectionOutlineVertex>& triangles);
+    /// The selection silhouette mask only, read back (top-down, one byte per pixel), for a host
+    /// that draws the outline band itself. False when there is nothing to outline.
+    [[nodiscard]] bool ReadSelectionMaskUVE(const OrbitCamera& camera, int framebufferWidth, int framebufferHeight,
+                                            const std::vector<univex::render::SelectionOutlineVertex>& triangles,
+                                            std::vector<std::uint8_t>& outMask);
+    [[nodiscard]] const univex::render::SelectionOutlineSettings& SelectionOutlineSettingsUVE() const {
+        return selectionOutlineSettings_;
+    }
     [[nodiscard]] univex::viewport::AxisPaletteUVE GetAxisPaletteUVE() const;
 
     void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }

@@ -674,9 +674,9 @@ public:
 
         // ---- Gizmos drawn by the editor shell (PRISM) ------------------------------------------
         /// Set by a shell that draws the viewport's gizmos itself: the renderer then draws none of
-        /// its own (corner navigation, transform handles, object gizmos, bones, colliders) and
-        /// leaves their pointer handling to the shell. It still renders the scene, grid and
-        /// selection outline, and still reports the camera and gizmo data below.
+        /// its own (corner navigation, transform handles, object gizmos, bones, colliders), nor the
+        /// grid or the selection outline, and leaves their pointer handling to the shell. It still
+        /// renders the scene, and reports the camera, gizmo, grid, depth and selection data below.
         bool hostDrawsGizmos = false;
         /// Orbit the view by this many pixels (the same units as a mouse orbit drag); the renderer
         /// applies it once and clears it. Used by the shell's navigation gizmo.
@@ -720,6 +720,40 @@ public:
         };
         mutable std::vector<GizmoLineUVE> gizmoLines;
         mutable std::vector<GizmoTriangleUVE> gizmoTriangles;
+        /// Output: the scene's depth under the view, as the distance along viewCamera.forward from
+        /// viewCamera.eye, one float per texel, row 0 at the top (+1e30 where nothing was drawn).
+        /// The buffer may be smaller than the view; it always covers all of it. Empty when the
+        /// renderer had none this frame (the shell then draws without occlusion).
+        mutable std::vector<float> sceneDepth;
+        mutable int sceneDepthWidth = 0;
+        mutable int sceneDepthHeight = 0;
+        /// Output: the ground grid the shell draws, with the renderer's own settings.
+        struct HostGridUVE final {
+            bool visible = false;
+            int plane = 0; // 0 XZ, 1 XY, 2 ZY
+            float baseSpacing = 1.0F;
+            float targetCellPixels = 24.0F;
+            float lineWidth = 1.25F;
+            float axisWidth = 1.6F;
+            std::array<float, 3> thin{};
+            std::array<float, 3> mid{};
+            std::array<float, 3> thick{};
+            float thinIntensity = 0.45F;
+            float midIntensity = 0.70F;
+            float thickIntensity = 0.95F;
+            std::array<std::array<float, 3>, 3> axis{};
+            float fadeStart = 12.0F;
+            float fadeEnd = 45.0F;
+            float opacity = 1.0F;
+        };
+        mutable HostGridUVE hostGrid;
+        /// Output: the selection silhouette mask (one byte of weight per pixel, row 0 at the top,
+        /// view sized), and the outline the shell draws around it.
+        mutable std::vector<std::uint8_t> selectionMask;
+        mutable int selectionMaskWidth = 0;
+        mutable int selectionMaskHeight = 0;
+        mutable int selectionOutlineRadius = 0;
+        mutable std::array<float, 3> selectionOutlineRgb{};
     };
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available

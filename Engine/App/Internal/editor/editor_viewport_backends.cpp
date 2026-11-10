@@ -31,6 +31,7 @@
 #include "univex/render/studio_backdrop_renderer.h"
 
 #include "engine_core.h"
+#include "gl_render_device.h"
 #include "logging_macros.h"
 #include "editor_bridge_stdio.h"
 #include "ui_draw_batch.h"
@@ -56,6 +57,19 @@
 #include "visibility_region_3d.h"
 #include "world_environment_3d.h"
 #include "world_partition_3d.h"
+#include "audio_listener_3d.h"
+#include "decal_3d.h"
+#include "gi_probes_3d.h"
+#include "light_component.h"
+#include "marker_3d.h"
+#include "nav_mesh_volume_3d.h"
+#include "path_3d.h"
+#include "ray_cast_3d.h"
+#include "shape_cast_3d.h"
+#include "spawn_point_3d.h"
+#include "spring_arm_3d.h"
+#include "visibility_component.h"
+#include "visible_on_screen_notifier_3d.h"
 #include "camera_system.h"
 #include "i_scene_graph.h"
 #include "univex/gizmo/gizmo_geometry.h"
@@ -102,6 +116,44 @@ void main() {
     }
     FragColor = vec4(meshColor.rgb, 1.0);
     gl_FragDepth = (meshColor.a > 0.875) ? 0.0 : 0.999999;
+}
+)";
+
+// Scene depth for the PRISM shell's overlays: each output texel is the nearest surface of a 2x2
+// block of the renderer's depth target, as the distance along the editor view's forward axis from
+// its eye (world units), or 1e30 where nothing was drawn.
+constexpr std::string_view kHostDepthFragmentShaderUVE = R"(#version 330 core
+uniform sampler2D uDepth;
+uniform mat4 uInvViewProj;
+uniform vec3 uEye;
+uniform vec3 uForward;
+uniform vec2 uOutSize;
+out vec4 FragColor;
+void main() {
+    ivec2 size = textureSize(uDepth, 0);
+    vec2 uv = gl_FragCoord.xy / uOutSize;
+    ivec2 base = ivec2(uv * vec2(size));
+    float d = 1.0;
+    float u = 0.0;
+    float v = 0.0;
+    for (int y = -1; y <= 0; ++y) {
+        for (int x = -1; x <= 0; ++x) {
+            ivec2 p = clamp(base + ivec2(x, y), ivec2(0), size - 1);
+            float s = texelFetch(uDepth, p, 0).r;
+            if (s < d) {
+                d = s;
+                u = (float(p.x) + 0.5) / float(size.x);
+                v = (float(p.y) + 0.5) / float(size.y);
+            }
+        }
+    }
+    if (d >= 0.999999) {
+        FragColor = vec4(1.0e30);
+        return;
+    }
+    vec4 world = uInvViewProj * vec4(u * 2.0 - 1.0, v * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    world /= world.w;
+    FragColor = vec4(dot(world.xyz - uEye, uForward));
 }
 )";
 
@@ -708,6 +760,283 @@ void AppendOccluderGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::Oc
     return mesh;
 }
 
+// Gizmos for the remaining spatial objects, from their own components: point light range spheres
+// and spot light cones, decal and GI volumes, navigation mesh bounds, on-screen notifier boxes,
+// ray / shape casts, spring arms, markers, spawn points, audio listeners and paths. Shown only for
+// objects visible in the hierarchy, never for the editor's own internal entities.
+class ObjectGizmoBuilderUVE final {
+public:
+    using Vec3 = univex::math::Vec3;
+
+    explicit ObjectGizmoBuilderUVE(univex::gizmo::GizmoMesh& mesh) : mesh_(mesh) {}
+
+    void Line(const Vec3& a, const Vec3& b, const Vec3& color, const float width = 1.4F) {
+        mesh_.lines.push_back(univex::gizmo::GizmoLine{a, b, color, width});
+    }
+
+    // `local` placed by the object's world transform (scale, then rotation, then position).
+    [[nodiscard]] static Vec3 Place(const UVE::Scene::WorldTransformComponentUVE& world, const Vec3& local) {
+        const UVE::Math::Vector3UVE scaled{local.x * world.worldScale.x, local.y * world.worldScale.y,
+                                           local.z * world.worldScale.z};
+        const UVE::Math::Vector3UVE rotated = UVE::Math::RotateVectorUVE(world.worldRotation, scaled);
+        return Vec3{world.worldPosition.x + rotated.x, world.worldPosition.y + rotated.y,
+                    world.worldPosition.z + rotated.z};
+    }
+    // A direction rotated (not scaled) into world space.
+    [[nodiscard]] static Vec3 Turn(const UVE::Scene::WorldTransformComponentUVE& world, const Vec3& local) {
+        const UVE::Math::Vector3UVE rotated =
+            UVE::Math::RotateVectorUVE(world.worldRotation, UVE::Math::Vector3UVE{local.x, local.y, local.z});
+        return Vec3{rotated.x, rotated.y, rotated.z};
+    }
+
+    void Box(const UVE::Scene::WorldTransformComponentUVE& world, const Vec3& centre, const Vec3& half,
+             const Vec3& color, const float width = 1.4F) {
+        const auto corner = [&](const float sx, const float sy, const float sz) {
+            return Place(world, Vec3{centre.x + sx * half.x, centre.y + sy * half.y, centre.z + sz * half.z});
+        };
+        const float s[2] = {-1.0F, 1.0F};
+        for (const float y : s) {
+            for (const float z : s) {
+                Line(corner(-1.0F, y, z), corner(1.0F, y, z), color, width);
+            }
+        }
+        for (const float x : s) {
+            for (const float z : s) {
+                Line(corner(x, -1.0F, z), corner(x, 1.0F, z), color, width);
+            }
+        }
+        for (const float x : s) {
+            for (const float y : s) {
+                Line(corner(x, y, -1.0F), corner(x, y, 1.0F), color, width);
+            }
+        }
+    }
+
+    // A world-space circle around `centre` in the plane spanned by `u` and `v` (unit vectors).
+    void Circle(const Vec3& centre, const Vec3& u, const Vec3& v, const float radius, const Vec3& color,
+                const float width = 1.4F) {
+        constexpr int kSegments = 40;
+        Vec3 previous = centre + u * radius;
+        for (int i = 1; i <= kSegments; ++i) {
+            const float a = static_cast<float>(i) * (6.2831853F / static_cast<float>(kSegments));
+            const Vec3 point = centre + u * (std::cos(a) * radius) + v * (std::sin(a) * radius);
+            Line(previous, point, color, width);
+            previous = point;
+        }
+    }
+
+    void Sphere(const Vec3& centre, const float radius, const Vec3& color) {
+        Circle(centre, Vec3{1.0F, 0.0F, 0.0F}, Vec3{0.0F, 1.0F, 0.0F}, radius, color, 1.2F);
+        Circle(centre, Vec3{1.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, 1.0F}, radius, color, 1.2F);
+        Circle(centre, Vec3{0.0F, 1.0F, 0.0F}, Vec3{0.0F, 0.0F, 1.0F}, radius, color, 1.2F);
+    }
+
+    void Arrow(const Vec3& from, const Vec3& to, const Vec3& color, const float width = 1.6F) {
+        Line(from, to, color, width);
+        const Vec3 d = to - from;
+        const float length = univex::math::Length(d);
+        if (length < 1e-4F) {
+            return;
+        }
+        const Vec3 dir = d * (1.0F / length);
+        const Vec3 side = std::fabs(dir.y) < 0.9F ? univex::math::Normalize(univex::math::Cross(dir, Vec3{0.0F, 1.0F, 0.0F}))
+                                                  : univex::math::Normalize(univex::math::Cross(dir, Vec3{1.0F, 0.0F, 0.0F}));
+        const Vec3 up = univex::math::Cross(side, dir);
+        const float head = std::min(0.25F, length * 0.3F);
+        const Vec3 base = to - dir * head;
+        Line(to, base + side * (head * 0.45F), color, width);
+        Line(to, base - side * (head * 0.45F), color, width);
+        Line(to, base + up * (head * 0.45F), color, width);
+        Line(to, base - up * (head * 0.45F), color, width);
+    }
+
+private:
+    univex::gizmo::GizmoMesh& mesh_;
+};
+
+[[nodiscard]] bool ShowsObjectGizmoUVE(UVE::Scene::IEntityManagerUVE& entityManager, const UVE::Scene::EntityUVE entity) {
+    if (entityManager.HasComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity)) {
+        return false;
+    }
+    return !entityManager.HasComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity) ||
+           entityManager.GetComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity).visibleInHierarchy;
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildMoreObjectGizmosMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+    using univex::math::Vec3;
+    using WorldUVE = UVE::Scene::WorldTransformComponentUVE;
+    univex::gizmo::GizmoMesh mesh;
+    ObjectGizmoBuilderUVE g(mesh);
+    const Vec3 zero{0.0F, 0.0F, 0.0F};
+    const auto origin = [](const WorldUVE& w) { return Vec3{w.worldPosition.x, w.worldPosition.y, w.worldPosition.z}; };
+
+    // Point lights: their range as three rings; spot lights: their cone out to the range.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::LightComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::LightComponentUVE& light) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || light.type == UVE::Scene::LightTypeUVE::Directional ||
+                !(light.range > 0.0F) || !std::isfinite(light.range)) {
+                return;
+            }
+            const Vec3 color{0.5F + 0.5F * std::clamp(light.color.r, 0.0F, 1.0F),
+                             0.5F + 0.5F * std::clamp(light.color.g, 0.0F, 1.0F),
+                             0.5F + 0.5F * std::clamp(light.color.b, 0.0F, 1.0F)};
+            if (light.type == UVE::Scene::LightTypeUVE::Point) {
+                g.Sphere(origin(w), light.range, color);
+                return;
+            }
+            const Vec3 apex = origin(w);
+            const Vec3 forward = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F});
+            const Vec3 right = ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F});
+            const Vec3 up = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 1.0F, 0.0F});
+            const float angle = std::clamp(light.spotAngleDegrees, 0.5F, 89.5F) * 0.0174532925F;
+            const float radius = light.range * std::tan(angle);
+            const Vec3 end = apex + forward * light.range;
+            g.Circle(end, right, up, radius, color);
+            g.Line(apex, end + right * radius, color);
+            g.Line(apex, end - right * radius, color);
+            g.Line(apex, end + up * radius, color);
+            g.Line(apex, end - up * radius, color);
+        });
+
+    // Decals: the projection box and the direction they project along (-Y).
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::Decal3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::Decal3DComponentUVE& decal) {
+            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+                return;
+            }
+            const Vec3 color{0.95F, 0.78F, 0.40F};
+            const Vec3 half{decal.size.x * 0.5F, decal.size.y * 0.5F, decal.size.z * 0.5F};
+            g.Box(w, zero, half, color);
+            g.Arrow(ObjectGizmoBuilderUVE::Place(w, zero), ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, -half.y, 0.0F}),
+                    color);
+        });
+
+    // Global illumination volumes and navigation mesh bounds.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::VoxelGI3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::VoxelGI3DComponentUVE& gi) {
+            if (ShowsObjectGizmoUVE(entityManager, e)) {
+                g.Box(w, zero, Vec3{gi.halfExtents.x, gi.halfExtents.y, gi.halfExtents.z}, Vec3{0.55F, 0.85F, 1.0F});
+            }
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::LightmapGI3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::LightmapGI3DComponentUVE& gi) {
+            if (ShowsObjectGizmoUVE(entityManager, e)) {
+                g.Box(w, zero, Vec3{gi.halfExtents.x, gi.halfExtents.y, gi.halfExtents.z}, Vec3{1.0F, 0.85F, 0.45F});
+            }
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::NavMeshVolume3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::NavMeshVolume3DComponentUVE& nav) {
+            if (ShowsObjectGizmoUVE(entityManager, e)) {
+                g.Box(w, zero, Vec3{nav.boundsHalfExtents.x, nav.boundsHalfExtents.y, nav.boundsHalfExtents.z},
+                      Vec3{0.35F, 0.90F, 0.50F});
+            }
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::VisibleOnScreenNotifier3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::VisibleOnScreenNotifier3DComponentUVE& n) {
+            if (ShowsObjectGizmoUVE(entityManager, e)) {
+                g.Box(w, Vec3{n.aabbCenterOffset.x, n.aabbCenterOffset.y, n.aabbCenterOffset.z},
+                      Vec3{n.aabbHalfExtents.x, n.aabbHalfExtents.y, n.aabbHalfExtents.z}, Vec3{0.95F, 0.60F, 0.95F});
+            }
+        });
+
+    // Ray and shape casts: the cast, with the swept shape's end where it stops.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::RayCast3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::RayCast3DComponentUVE& ray) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || !(ray.length > 0.0F) || !std::isfinite(ray.length)) {
+                return;
+            }
+            const Vec3 dir = univex::math::Normalize(
+                ObjectGizmoBuilderUVE::Turn(w, Vec3{ray.direction.x, ray.direction.y, ray.direction.z}));
+            g.Arrow(origin(w), origin(w) + dir * ray.length,
+                    ray.hit ? Vec3{1.0F, 0.35F, 0.30F} : Vec3{1.0F, 0.62F, 0.22F});
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::ShapeCast3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::ShapeCast3DComponentUVE& cast) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || !(cast.maxDistance > 0.0F) || !std::isfinite(cast.maxDistance)) {
+                return;
+            }
+            const Vec3 color = cast.hit ? Vec3{1.0F, 0.35F, 0.30F} : Vec3{1.0F, 0.62F, 0.22F};
+            const Vec3 dir = univex::math::Normalize(
+                ObjectGizmoBuilderUVE::Turn(w, Vec3{cast.direction.x, cast.direction.y, cast.direction.z}));
+            const float reach = cast.hit ? cast.hitDistance : cast.maxDistance;
+            g.Line(origin(w), origin(w) + dir * reach, color);
+            g.Sphere(origin(w), std::max(0.01F, cast.radius), color);
+            g.Sphere(origin(w) + dir * reach, std::max(0.01F, cast.radius), color);
+        });
+
+    // Spring arms extend along local +Z; the current length is the solid part.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::SpringArm3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::SpringArm3DComponentUVE& arm) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || !(arm.armLength > 0.0F) || !std::isfinite(arm.armLength)) {
+                return;
+            }
+            const Vec3 dir = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, 1.0F});
+            const float current = std::clamp(arm.currentLength, 0.0F, arm.armLength);
+            g.Line(origin(w), origin(w) + dir * current, Vec3{0.92F, 0.90F, 0.40F}, 2.0F);
+            g.Line(origin(w) + dir * current, origin(w) + dir * arm.armLength, Vec3{0.55F, 0.54F, 0.30F}, 1.2F);
+            g.Sphere(origin(w) + dir * current, 0.08F, Vec3{0.92F, 0.90F, 0.40F});
+        });
+
+    // Markers: a small axis cross. Spawn points: a ring and the facing arrow. Listeners: a ring.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::Marker3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::Marker3DComponentUVE&) {
+            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+                return;
+            }
+            const float s = 0.5F;
+            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{-s, 0.0F, 0.0F}), ObjectGizmoBuilderUVE::Place(w, Vec3{s, 0.0F, 0.0F}),
+                   Vec3{0.90F, 0.32F, 0.32F});
+            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, -s, 0.0F}), ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, s, 0.0F}),
+                   Vec3{0.45F, 0.80F, 0.30F});
+            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, 0.0F, -s}), ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, 0.0F, s}),
+                   Vec3{0.30F, 0.55F, 0.92F});
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::SpawnPoint3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::SpawnPoint3DComponentUVE&) {
+            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+                return;
+            }
+            const Vec3 color{0.40F, 0.80F, 1.0F};
+            g.Circle(origin(w), ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F}),
+                     ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, 1.0F}), 0.5F, color);
+            g.Arrow(origin(w), origin(w) + ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F}) * 0.9F, color);
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::AudioListener3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::AudioListener3DComponentUVE&) {
+            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+                return;
+            }
+            const Vec3 color{0.82F, 0.82F, 0.86F};
+            g.Circle(origin(w), ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F}),
+                     ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 1.0F, 0.0F}), 0.35F, color);
+            g.Arrow(origin(w), origin(w) + ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F}) * 0.7F, color);
+        });
+
+    // Paths: the curve through their points (local space), closed when they loop.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::Path3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::Path3DComponentUVE& path) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || path.points.size() < 2U) {
+                return;
+            }
+            const Vec3 color{0.42F, 0.72F, 1.0F};
+            const std::size_t count = std::min(path.points.size(), UVE::Scene::kMaximumPath3DPointsUVE);
+            const auto at = [&](const std::size_t i) {
+                const UVE::Math::Vector3UVE& p = path.points[i];
+                return ObjectGizmoBuilderUVE::Place(w, Vec3{p.x, p.y, p.z});
+            };
+            for (std::size_t i = 1; i < count; ++i) {
+                g.Line(at(i - 1), at(i), color, 2.0F);
+            }
+            if (path.closed && count > 2U) {
+                g.Line(at(count - 1), at(0), color, 2.0F);
+            }
+            for (std::size_t i = 0; i < count; ++i) {
+                g.Sphere(at(i), 0.06F, color);
+            }
+        });
+    return mesh;
+}
+
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
 // gizmos + one proxy cube per live scene entity) into EditorUVE's generic, viewport-agnostic
 // "Viewport" panel hook (EditorUVE::SetViewportPanelRendererUVE) - see that method's own doc
@@ -960,6 +1289,8 @@ public:
                 univex::gizmo::GizmoMesh occluders = BuildOccluderMeshUVE(entityManager_);
                 overlay.lines.insert(overlay.lines.end(), occluders.lines.begin(), occluders.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), occluders.triangles.begin(), occluders.triangles.end());
+                univex::gizmo::GizmoMesh more = BuildMoreObjectGizmosMeshUVE(entityManager_);
+                overlay.lines.insert(overlay.lines.end(), more.lines.begin(), more.lines.end());
                 univex::gizmo::GizmoMesh colliders = BuildColliderMeshUVE(entityManager_);
                 overlay.lines.insert(overlay.lines.end(), colliders.lines.begin(), colliders.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), colliders.triangles.begin(), colliders.triangles.end());
@@ -1002,7 +1333,18 @@ public:
         if (studio != nullptr) {
             studio->DrawFloor(camera_, width, height);
         }
-        if (!previewing_) {
+        // The PRISM shell draws the grid and the selection outline itself (depth-tested against
+        // the scene depth exported below), from the settings and the mask this pass hands it.
+        overlayState.selectionMask.clear();
+        overlayState.selectionMaskWidth = overlayState.selectionMaskHeight = 0;
+        ExportGridForHostUVE(overlayState, hostGizmos && !previewing_ && !studioView_);
+        if (hostGizmos && !lookThroughCamera.has_value()) {
+            ExportSceneDepthForHostUVE(overlayState, width, height);
+        } else {
+            overlayState.sceneDepth.clear();
+            overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
+        }
+        if (!previewing_ && !hostGizmos) {
             renderPass_->RenderGridUVE(camera_, width, height);
         }
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
@@ -1042,7 +1384,22 @@ public:
                 }
             }
             if (!cachedSelectionTriangles_.empty()) {
-                renderPass_->RenderSelectionOutlineUVE(camera_, width, height, cachedSelectionTriangles_);
+                if (hostGizmos) {
+                    const univex::render::SelectionOutlineSettings& outline = renderPass_->SelectionOutlineSettingsUVE();
+                    if (renderPass_->ReadSelectionMaskUVE(camera_, width, height, cachedSelectionTriangles_,
+                                                          overlayState.selectionMask)) {
+                        overlayState.selectionMaskWidth = width;
+                        overlayState.selectionMaskHeight = height;
+                        overlayState.selectionOutlineRadius =
+                            static_cast<int>(std::lround(outline.thicknessPixels));
+                        overlayState.selectionOutlineRgb = {outline.r, outline.g, outline.b};
+                    }
+                    // ReadMask leaves its own framebuffer bound for reading; draw on into ours.
+                    glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+                    glViewport(0, 0, width, height);
+                } else {
+                    renderPass_->RenderSelectionOutlineUVE(camera_, width, height, cachedSelectionTriangles_);
+                }
             }
         }
         renderPass_->RenderOverlayUVE(camera_, width, height);
@@ -2383,6 +2740,141 @@ private:
             overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx});
         }
     }
+    void ExportGridForHostUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState, const bool want) {
+        auto& out = overlayState.hostGrid;
+        const univex::render::GridSettings& grid = renderPass_->Grid().Settings();
+        out.visible = want && renderPass_->Settings().viewGrid;
+        out.plane = static_cast<int>(grid.plane);
+        out.baseSpacing = grid.baseSpacing;
+        out.targetCellPixels = grid.targetCellPixels;
+        out.lineWidth = grid.lineWidthPixels;
+        out.axisWidth = grid.axisWidthPixels;
+        const auto rgb = [](const univex::render::GridColor& c) { return std::array<float, 3>{c.r, c.g, c.b}; };
+        out.thin = rgb(grid.thinColor);
+        out.mid = rgb(grid.midColor);
+        out.thick = rgb(grid.thickColor);
+        out.thinIntensity = grid.thinIntensity;
+        out.midIntensity = grid.midIntensity;
+        out.thickIntensity = grid.thickIntensity;
+        out.axis = {rgb(grid.axisColorX), rgb(grid.axisColorY), rgb(grid.axisColorZ)};
+        out.fadeStart = grid.fadeStartDistanceScale;
+        out.fadeEnd = grid.fadeEndDistanceScale;
+        out.opacity = grid.opacity;
+    }
+
+    // The renderer's scene depth turned into what the shell tests against: the distance along the
+    // view's forward axis from the editor camera's eye, at half resolution (the nearest of each 2x2
+    // block, so thin geometry still hides what is behind it), read back top-down.
+    void ExportSceneDepthForHostUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+                                    const int width, const int height) {
+        overlayState.sceneDepth.clear();
+        overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
+        const UVE::Render::SceneDepthExportUVE depth =
+            engine_.GetServicesUVE().GetRenderer3DUVE().GetLastSceneDepthUVE();
+        auto* const glDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&engine_.GetServicesUVE().GetRenderDeviceUVE());
+        if (!depth.valid || glDevice == nullptr || depth.width == 0U || depth.height == 0U || !EnsureHostDepthUVE(width, height)) {
+            return;
+        }
+        const GLuint depthTexture = static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture));
+        if (depthTexture == 0U) {
+            return;
+        }
+        GLint previousDrawFbo = 0;
+        GLint previousReadFbo = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDrawFbo);
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFbo);
+        std::array<GLint, 4> previousViewport{};
+        glGetIntegerv(GL_VIEWPORT, previousViewport.data());
+        const GLboolean depthTest = glIsEnabled(GL_DEPTH_TEST);
+        const GLboolean blend = glIsEnabled(GL_BLEND);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, hostDepthFbo_);
+        glViewport(0, 0, hostDepthWidth_, hostDepthHeight_);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        hostDepthProgram_->Use();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, depthTexture);
+        glUniform1i(hostDepthProgram_->UniformLocation("uDepth"), 0);
+        glUniformMatrix4fv(hostDepthProgram_->UniformLocation("uInvViewProj"), 1, GL_TRUE,
+                           &depth.inverseViewProjection.m[0][0]);
+        const univex::math::Vec3 eye = camera_.Eye();
+        const univex::math::Vec3 forward = univex::math::Normalize(camera_.Target() - eye);
+        glUniform3f(hostDepthProgram_->UniformLocation("uEye"), eye.x, eye.y, eye.z);
+        glUniform3f(hostDepthProgram_->UniformLocation("uForward"), forward.x, forward.y, forward.z);
+        glUniform2f(hostDepthProgram_->UniformLocation("uOutSize"), static_cast<float>(hostDepthWidth_),
+                    static_cast<float>(hostDepthHeight_));
+        glBindVertexArray(meshBlitVao_);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        std::vector<float> rows(static_cast<std::size_t>(hostDepthWidth_) * static_cast<std::size_t>(hostDepthHeight_));
+        GLint packAlignment = 4;
+        glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
+        glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, hostDepthFbo_);
+        glReadPixels(0, 0, hostDepthWidth_, hostDepthHeight_, GL_RED, GL_FLOAT, rows.data());
+        glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
+        overlayState.sceneDepth.resize(rows.size());
+        const std::size_t stride = static_cast<std::size_t>(hostDepthWidth_);
+        for (int y = 0; y < hostDepthHeight_; ++y) {
+            std::copy_n(rows.data() + static_cast<std::size_t>(hostDepthHeight_ - 1 - y) * stride, stride,
+                        overlayState.sceneDepth.data() + static_cast<std::size_t>(y) * stride);
+        }
+        overlayState.sceneDepthWidth = hostDepthWidth_;
+        overlayState.sceneDepthHeight = hostDepthHeight_;
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFbo));
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFbo));
+        glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+        if (depthTest == GL_TRUE) glEnable(GL_DEPTH_TEST);
+        if (blend == GL_TRUE) glEnable(GL_BLEND);
+    }
+
+    [[nodiscard]] bool EnsureHostDepthUVE(const int width, const int height) {
+        if (!hostDepthProgram_.has_value()) {
+            std::string error;
+            hostDepthProgram_ = univex::render::ShaderProgram::Build(kMeshBlitVertexShaderUVE,
+                                                                     kHostDepthFragmentShaderUVE, error);
+            if (!hostDepthProgram_.has_value()) {
+                UVE_ERROR("uve_editor_app: viewport depth export shader build failed: {}", error);
+                hostDepthFailed_ = true;
+            }
+        }
+        if (hostDepthFailed_ || !hostDepthProgram_.has_value() || meshBlitVao_ == 0U) {
+            return false;
+        }
+        const int w = std::max(1, (width + 1) / 2);
+        const int h = std::max(1, (height + 1) / 2);
+        if (hostDepthFbo_ != 0U && w == hostDepthWidth_ && h == hostDepthHeight_) {
+            return true;
+        }
+        if (hostDepthTexture_ == 0U) glGenTextures(1, &hostDepthTexture_);
+        if (hostDepthFbo_ == 0U) glGenFramebuffers(1, &hostDepthFbo_);
+        glBindTexture(GL_TEXTURE_2D, hostDepthTexture_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, w, h, 0, GL_RED, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        GLint previousFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, hostDepthFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hostDepthTexture_, 0);
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
+        hostDepthWidth_ = complete ? w : 0;
+        hostDepthHeight_ = complete ? h : 0;
+        return complete;
+    }
+
+    std::optional<univex::render::ShaderProgram> hostDepthProgram_;
+    bool hostDepthFailed_ = false;
+    GLuint hostDepthFbo_ = 0U;
+    GLuint hostDepthTexture_ = 0U;
+    int hostDepthWidth_ = 0;
+    int hostDepthHeight_ = 0;
+
     univex::gizmo::GizmoHandleUVE dragHandle_ = univex::gizmo::GizmoHandleUVE::None;
     univex::gizmo::GizmoMode dragMode_ = univex::gizmo::GizmoMode::Move;
     univex::math::Vec3 dragPivot_{};

@@ -79,6 +79,7 @@ public:
     void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept override;
 
     [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;
+    [[nodiscard]] SceneDepthExportUVE GetLastSceneDepthUVE() const noexcept override;
 
 private:
     void CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity);
