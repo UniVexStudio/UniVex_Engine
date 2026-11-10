@@ -452,33 +452,35 @@ class EngineBuilder:
                 subprocess.run([cc, "-O2", "-fPIC", f"-I{tp_dir / 'ufbx'}", "-c", str(ufbx_src), "-o", str(obj)], check=True)
                 subprocess.run([ar, "rcs", str(ufbx_lib), str(obj)], check=True)
 
+        basis_defs = [
+            "-DBASISD_USE_UNALIGNED_WORD_READS=0",
+            "-DBASISD_SUPPORT_KTX2=1",
+            "-DBASISD_SUPPORT_KTX2_ZSTD=0",
+            "-DBASISU_SUPPORT_OPENCL=0",
+            "-DBASISU_SUPPORT_SSE=0",
+            "-DBASISU_SUPPORT_ASTCENC=0",
+            "-DBASISU_DISABLE_ANDROID_ASTC_DECOMP=1",
+        ]
+
         # 4. libuve_basisu_transcoder.a
         bu_tc_lib = tp_lib_dir / "libuve_basisu_transcoder.a"
         bu_tc_src = tp_dir / "basis_universal" / "transcoder" / "basisu_transcoder.cpp"
-        if not bu_tc_lib.exists():
-            fallback = tp_dir / "lib" / "libuve_basisu_transcoder.a"
-            if fallback.exists() and platform == "Linux":
-                shutil.copy2(fallback, bu_tc_lib)
-            elif bu_tc_src.exists():
-                obj = tp_lib_dir / "basisu_transcoder.o"
-                subprocess.run([cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing", f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{tp_dir / 'basis_universal' / 'encoder'}", "-c", str(bu_tc_src), "-o", str(obj)], check=True)
-                subprocess.run([ar, "rcs", str(bu_tc_lib), str(obj)], check=True)
+        if bu_tc_src.exists() and (not bu_tc_lib.exists() or bu_tc_src.stat().st_mtime > bu_tc_lib.stat().st_mtime):
+            obj = tp_lib_dir / "basisu_transcoder.o"
+            subprocess.run([cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing"] + basis_defs + [f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{tp_dir / 'basis_universal' / 'encoder'}", "-c", str(bu_tc_src), "-o", str(obj)], check=True)
+            subprocess.run([ar, "rcs", str(bu_tc_lib), str(obj)], check=True)
 
         # 5. libuve_basisu_encoder.a
         bu_enc_lib = tp_lib_dir / "libuve_basisu_encoder.a"
         bu_enc_dir = tp_dir / "basis_universal" / "encoder"
-        if not bu_enc_lib.exists():
-            fallback = tp_dir / "lib" / "libuve_basisu_encoder.a"
-            if fallback.exists() and platform == "Linux":
-                shutil.copy2(fallback, bu_enc_lib)
-            elif bu_enc_dir.is_dir():
-                enc_cpps = list(bu_enc_dir.glob("*.cpp"))
-                enc_objs = []
-                for ec in enc_cpps:
-                    obj = tp_lib_dir / f"{ec.stem}.o"
-                    subprocess.run([cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing", f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{bu_enc_dir}", "-c", str(ec), "-o", str(obj)], check=True)
-                    enc_objs.append(str(obj))
-                subprocess.run([ar, "rcs", str(bu_enc_lib)] + enc_objs, check=True)
+        if bu_enc_dir.is_dir() and not bu_enc_lib.exists():
+            enc_cpps = list(bu_enc_dir.glob("*.cpp"))
+            enc_objs = []
+            for ec in enc_cpps:
+                obj = tp_lib_dir / f"{ec.stem}.o"
+                subprocess.run([cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing"] + basis_defs + [f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{bu_enc_dir}", "-c", str(ec), "-o", str(obj)], check=True)
+                enc_objs.append(str(obj))
+            subprocess.run([ar, "rcs", str(bu_enc_lib)] + enc_objs, check=True)
 
     def build_target(self, target_name: str, platform: str = "Linux", configuration: str = "Debug", jobs: int = 4):
         target = self.targets.get(target_name)
@@ -720,15 +722,29 @@ class EngineBuilder:
         # Third-party libraries
         for tlib_name in ["libuve_ufbx.a", "libuve_basisu_encoder.a", "libuve_basisu_transcoder.a", "libspirv-reflect-static.a"]:
             tlib = tp_lib_dir / tlib_name
-            if not tlib.exists():
+            if not tlib.exists() and platform == "Linux":
                 tlib = self.repo_root / "ThirdParty" / "lib" / tlib_name
             if tlib.exists():
                 all_libs.append(str(tlib))
 
         if platform == "Linux":
-            for gl_lib in [self.repo_root / "ThirdParty" / "glew" / "lib" / "libGLEW.a", self.repo_root / "ThirdParty" / "glfw" / "lib" / "libglfw3.a"]:
-                if gl_lib.exists():
-                    all_libs.append(str(gl_lib))
+            has_glfw = False
+            for gl_cand in [tp_lib_dir / "libglfw3.a", self.repo_root / "ThirdParty" / "glfw" / "lib" / "libglfw3.a"]:
+                if gl_cand.exists():
+                    all_libs.append(str(gl_cand))
+                    has_glfw = True
+                    break
+            if not has_glfw:
+                all_sys_libs.append("glfw")
+
+            has_glew = False
+            for glew_cand in [tp_lib_dir / "libGLEW.a", self.repo_root / "ThirdParty" / "glew" / "lib" / "libGLEW.a"]:
+                if glew_cand.exists():
+                    all_libs.append(str(glew_cand))
+                    has_glew = True
+                    break
+            if not has_glew:
+                all_sys_libs.append("GLEW")
 
         for mod in ordered_modules:
             all_sys_libs.extend(mod.public_sys_libs + mod.private_sys_libs)
@@ -736,21 +752,23 @@ class EngineBuilder:
             if lib_p and lib_p.exists():
                 all_libs.append(str(lib_p))
 
-        # Deduplicate sys libs
+        # Deduplicate sys libs and filter out platform-incompatible libraries
         unique_sys = []
         for s in all_sys_libs:
+            if platform == "Windows" and s in ("dl", "X11", "GL", "GLX", "m"):
+                continue
             if s not in unique_sys:
                 unique_sys.append(s)
 
         link_cmd = [cxx] + base_cflags + ["-o", str(target_exe)]
+        sys_flags = [f"-l{s}" for s in unique_sys]
         if target.target_type == "Test":
             root_test_libs = [str(module_libs[m]) for m in target.extra_modules if m in module_libs]
             other_libs = [l for l in all_libs if l not in root_test_libs]
             link_cmd += ["-Wl,--whole-archive"] + root_test_libs + ["-Wl,--no-whole-archive"]
-            link_cmd += ["-Wl,--start-group"] + other_libs + ["-Wl,--end-group"]
+            link_cmd += ["-Wl,--start-group"] + other_libs + sys_flags + ["-Wl,--end-group"]
         else:
-            link_cmd += ["-Wl,--start-group"] + all_libs + ["-Wl,--end-group"]
-        link_cmd += [f"-l{s}" for s in unique_sys]
+            link_cmd += ["-Wl,--start-group"] + all_libs + sys_flags + ["-Wl,--end-group"]
 
         link_res = subprocess.run(link_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if link_res.returncode != 0:
