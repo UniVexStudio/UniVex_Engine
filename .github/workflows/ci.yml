@@ -85,6 +85,7 @@ jobs:
             libglu1-mesa-dev \
             zlib1g-dev \
             libjpeg-dev \
+            libfreetype-dev \
             xvfb \
             libvulkan1 \
             mesa-vulkan-drivers
@@ -111,6 +112,7 @@ jobs:
           ./uvbt build UniVexPack Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexAssetWorkload Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexEditor Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
+          ./uvbt build UniVexPrismTests Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
 
       - name: Cooked project and asset residency workload
         run: |
@@ -153,6 +155,10 @@ jobs:
           fi
           python3 Engine/Tools/ci/annotate_ctest_failures.py test-output.txt
           exit "$status"
+
+      - name: PRISM UI tests
+        # PRISM's own harness: unit checks, fuzzing and golden visual regression (tests/golden).
+        run: ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_prism_tests Engine/Runtime/Prism/assets
 
       - name: Verify the Vulkan device tests actually ran
         run: |
@@ -246,6 +252,7 @@ jobs:
             mingw-w64-ucrt-x86_64-glew
             mingw-w64-ucrt-x86_64-zlib
             mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-freetype
       - name: Build editor with UVBT
         shell: msys2 {0}
         run: |
@@ -253,6 +260,7 @@ jobs:
           ./uvbt build UniVexRuntime Windows Release -j4
           ./uvbt build UniVexPack Windows Release -j4
           ./uvbt build UniVexAssetWorkload Windows Release -j4
+          ./uvbt build UniVexPrismTests Windows Release -j4
       - name: Package editor and runtime DLLs
         shell: msys2 {0}
         run: |
@@ -262,6 +270,7 @@ jobs:
           cp .uvbt/bin/Windows/Release/uve_runtime.exe package/UniVex-Editor/
           cp .uvbt/bin/Windows/Release/uve_pack.exe package/UniVex-Editor/
           cp .uvbt/bin/Windows/Release/uve_asset_workload.exe package/UniVex-Editor/
+          cp -r .uvbt/bin/Windows/Release/prism_assets package/UniVex-Editor/
           python - <<'PY'
           import pathlib
           import re
@@ -284,6 +293,9 @@ jobs:
                   pending.append(target)
           PY
           printf '@echo off\r\ncd /d "%%~dp0"\r\nuve_editor.exe\r\n' > package/UniVex-Editor/Start-Editor.bat
+      - name: PRISM UI tests
+        shell: msys2 {0}
+        run: ./.uvbt/bin/Windows/Release/uve_prism_tests.exe Engine/Runtime/Prism/assets
       - name: Verify executable starts
         shell: msys2 {0}
         run: |
