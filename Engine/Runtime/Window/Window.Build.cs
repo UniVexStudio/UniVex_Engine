@@ -16,8 +16,13 @@ public class WindowModule : ModuleRules
         });
 
         ExcludedFiles.AddRange(new string[] {
-            "android_window_manager.cpp",
-            "window_manager.cpp"
+            "android_window_manager.cpp"
+        });
+
+        PublicSystemLibraries.AddRange(new string[] {
+            "X11",
+            "GL",
+            "GLX"
         });
     }
 }
