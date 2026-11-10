@@ -52,6 +52,9 @@ struct TreeNode {
   Color tint;
   bool hasTint = false;
   bool expanded = true, visible = true, locked = false, toggles = true;
+  // Host-owned icon image (square, 0xAARRGGBB, straight alpha) drawn instead of `icon` when set.
+  const uint32_t* image = nullptr;
+  int imageSize = 0;
   TreeNode* parent = nullptr;
   std::vector<std::unique_ptr<TreeNode>> kids;
 };
@@ -68,6 +71,8 @@ public:
   void setFilter(std::string f);
   void beginRename(TreeNode* n);
   void refresh() { m_dirty = true; invalidate(); }
+  // Guide lines joining each object to its parent (a vertical line per open level, an elbow per row).
+  void setShowGuides(bool on) { m_guides = on; invalidate(); }
 
   Callback<const std::vector<TreeNode*>&> onSelect;
   Callback<TreeNode*> onVisibilityToggle, onLockToggle, onActivate, onDelete;
@@ -97,6 +102,7 @@ private:
   mutable std::vector<Row> m_rows;
   Ref<TextInput> m_edit;
   TreeNode* m_renaming = nullptr;
+  bool m_guides = false;
 };
 
 // ------------------------------------------------------------------ LogView

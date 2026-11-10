@@ -273,12 +273,12 @@ struct Builder {
     }
   }
 
-  void image(const DrawCmd& d, Rect dst) {
+  void image(const DrawCmd& d, Rect dst, bool replace = true) {
     int x0 = int(std::lround(dst.x)), y0 = int(std::lround(dst.y)), x1 = int(std::lround(dst.x + dst.w)), y1 = int(std::lround(dst.y + dst.h));
     if (x1 <= x0 || y1 <= y0) return;
     int idx = int(out.images.size());
     out.images.push_back({d.w, d.h, list.pixels.data() + d.i0});
-    GpuBatch& b = batchFor(GpuBatch::Texture::Image, idx, true);
+    GpuBatch& b = batchFor(GpuBatch::Texture::Image, idx, replace);
     Color w(255, 255, 255, 255);
     quad(b, mk(float(x0), float(y0), w, GpuMode::Image, 0, 0), mk(float(x1), float(y0), w, GpuMode::Image, 1, 0),
          mk(float(x1), float(y1), w, GpuMode::Image, 1, 1), mk(float(x0), float(y1), w, GpuMode::Image, 0, 1));
@@ -402,6 +402,7 @@ struct Builder {
       case DrawOp::Text: text(d); break;
       case DrawOp::Blit: image(d, Rect(d.a.x, d.a.y, float(d.w), float(d.h))); break;
       case DrawOp::BlitScaled: image(d, d.r); break;
+      case DrawOp::BlitBlend: image(d, d.r, false); break;
       case DrawOp::FillRaw: raw(d.r, d.raw); break;
       case DrawOp::GlyphRun: glyphRun(d); break;
       }

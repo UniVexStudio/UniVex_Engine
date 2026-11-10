@@ -2,12 +2,14 @@
 #pragma once
 
 #include "editor.h"
+#include "editor_prism_icons.h"
 
 #include "prism/Icons.h"
 #include "prism/Widget.h"
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -55,7 +57,7 @@ private:
 
     void RebuildFoldersUVE();
     void RebuildTilesUVE();
-    void ShowAddMenuUVE();
+    void ShowAddMenuUVE(prism::Widget* anchor);
     void ShowFilterMenuUVE();
     void OpenEntryUVE(std::size_t entryIndex);
     void SelectEntryUVE(std::size_t entryIndex, bool additive, bool range);
@@ -75,6 +77,18 @@ private:
     std::shared_ptr<prism::Label> m_path;
     std::shared_ptr<prism::Label> m_status;
 
+    /// A preview read back from the engine's thumbnail texture (kept while the texture id is the same).
+    struct PreviewUVE final {
+        std::uintptr_t texture = 0U;
+        std::vector<std::uint32_t> pixels;
+        int width = 0;
+        int height = 0;
+    };
+    [[nodiscard]] const PreviewUVE* PreviewForUVE(const Asset::ProjectFileEntryUVE& entry, ItemTypeUVE type);
+
+    EditorPrismIconsUVE m_icons;
+    std::map<std::string, PreviewUVE> m_previews;
+    std::shared_ptr<prism::Button> m_addAssetButton;
     std::vector<std::string> m_folderIds; // tree id - 1 -> folder (generic path)
     std::uint64_t m_folderSignature = 0;
     std::uint64_t m_tileSignature = 0;

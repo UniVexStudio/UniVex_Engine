@@ -3,6 +3,7 @@
 
 #include "editor_prism_content_browser.h"
 #include "editor_prism_host.h"
+#include "editor_prism_icons.h"
 
 #include "entity.h"
 
@@ -84,11 +85,13 @@ private:
     void RefreshToolbarUVE();
     [[nodiscard]] std::uint64_t OutlinerSignatureUVE();
     [[nodiscard]] int TreeIdForUVE(Scene::EntityUVE entity);
+    [[nodiscard]] std::vector<Scene::EntityUVE> OutlinerRootsUVE();
     [[nodiscard]] Scene::EntityUVE EntityForTreeIdUVE(int id) const;
 
     EditorUVE& m_editor;
     EditorPrismHostUVE m_host;
     EditorPrismContentBrowserUVE m_contentBrowser;
+    EditorPrismIconsUVE m_icons;
 
     // Widgets the frame updates.
     std::shared_ptr<prism::TreeView> m_outliner;

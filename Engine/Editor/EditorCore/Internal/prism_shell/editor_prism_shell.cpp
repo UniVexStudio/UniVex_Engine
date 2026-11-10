@@ -3,6 +3,7 @@
 
 #include "editor.h"
 #include "scene_object_registry.h"
+#include "scene_object_type.h"
 
 #include "prism/Containers.h"
 #include "prism/Controls.h"
@@ -528,6 +529,7 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildOutlinerUVE() {
     page->add(bar);
 
     m_outliner = prism::make<prism::TreeView>();
+    m_outliner->setShowGuides(true);
     m_outliner->onSelect = [this](const std::vector<prism::TreeNode*>& nodes) {
         if (m_syncingSelection) {
             return;
@@ -713,6 +715,20 @@ void EditorPrismShellUVE::ShowAddFilterMenuUVE() {
 
 // ---------------------------------------------------------------------------------------- refresh
 
+std::vector<Scene::EntityUVE> EditorPrismShellUVE::OutlinerRootsUVE() {
+    // The scene root is structural and stays out of the Outliner, as it always has: when the
+    // document has its Viewport, the rows start at the scene root's children (the Viewport and
+    // anything beside it); a document without one lists its roots.
+    if (m_editor.GetDocumentViewportUVE() != Scene::kInvalidEntityUVE) {
+        const Scene::EntityUVE sceneRoot = m_editor.GetDocumentSceneRootUVE();
+        if (sceneRoot != Scene::kInvalidEntityUVE) {
+            return m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(m_editor.m_services->GetEntityManagerUVE(),
+                                                                         sceneRoot);
+        }
+    }
+    return m_editor.GetDocumentRootsUVE();
+}
+
 int EditorPrismShellUVE::TreeIdForUVE(const Scene::EntityUVE entity) {
     m_treeEntities.push_back(entity);
     return static_cast<int>(m_treeEntities.size());
@@ -737,7 +753,7 @@ std::uint64_t EditorPrismShellUVE::OutlinerSignatureUVE() {
             visit(child, depth + 1);
         }
     };
-    for (const Scene::EntityUVE root : m_editor.GetDocumentRootsUVE()) {
+    for (const Scene::EntityUVE root : OutlinerRootsUVE()) {
         visit(root, 0);
     }
     return h;
@@ -761,13 +777,13 @@ void EditorPrismShellUVE::RefreshOutlinerUVE() {
                                                                            const Scene::EntityUVE e) {
         const int id = TreeIdForUVE(e);
         const std::string_view typeName = m_editor.GetObjectTypeNameUVE(e);
-        prism::Icon icon = prism::Icon::Dot;
-        if (typeName.find("Light") != std::string_view::npos) { icon = prism::Icon::Light; }
-        else if (typeName.find("Camera") != std::string_view::npos) { icon = prism::Icon::Camera; }
-        else if (typeName.find("Mesh") != std::string_view::npos) { icon = prism::Icon::Cube; }
-        else if (typeName.find("Folder") != std::string_view::npos) { icon = prism::Icon::Folder; }
-        else if (typeName.find("Environment") != std::string_view::npos) { icon = prism::Icon::Globe; }
-        prism::TreeNode* node = m_outliner->addNode(parent, m_editor.GetEntityDisplayLabelUVE(e), icon, id);
+        prism::TreeNode* node = m_outliner->addNode(parent, m_editor.GetEntityDisplayLabelUVE(e), prism::Icon::Dot, id);
+        // The engine's own icon for the object type (a folder in golden dark brown).
+        if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(Scene::ResolveSceneObjectKindUVE(em, e), 16);
+            icon) {
+            node->image = icon.pixels;
+            node->imageSize = icon.size;
+        }
         node->badge = std::string(typeName);
         if (m_editor.IsEntitySelectedUVE(e)) {
             selected.push_back(id);
@@ -776,7 +792,7 @@ void EditorPrismShellUVE::RefreshOutlinerUVE() {
             add(node, child);
         }
     };
-    for (const Scene::EntityUVE root : m_editor.GetDocumentRootsUVE()) {
+    for (const Scene::EntityUVE root : OutlinerRootsUVE()) {
         add(nullptr, root);
     }
     m_outliner->setSelection(selected);

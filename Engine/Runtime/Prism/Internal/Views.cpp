@@ -276,12 +276,34 @@ void TreeView::paintRow(Canvas& c, int row, Rect r, bool hover) {
   }
   float x = r.x + 8 + float(rw.depth) * 14;
   bool filt = !m_filter.empty();
+  if (m_guides && rw.depth > 0) {
+    // Column of level j: the centre of the expander arrow of the object at depth j - 1.
+    const auto col = [&](int depth) { return std::floor(r.x + 8 + float(depth - 1) * 14 + 6) + 0.5f; };
+    const auto isLast = [](const TreeNode* node) {
+      const TreeNode* p = node->parent;
+      return p == nullptr || p->kids.empty() || p->kids.back().get() == node;
+    };
+    const Color guide = t.border.lighten(0.25f);
+    const float mid = std::floor(r.y + r.h * 0.5f) + 0.5f;
+    // This row's elbow.
+    const float cx = col(rw.depth);
+    c.line({cx, r.y}, {cx, isLast(n) ? mid : r.bottom()}, guide, 1.0f);
+    c.line({cx, mid}, {x + (n->kids.empty() ? 12.0f : -2.0f), mid}, guide, 1.0f);
+    // Continuing lines of the ancestors that still have siblings below.
+    const TreeNode* a = n->parent;
+    for (int d = rw.depth - 1; d >= 1 && a != nullptr; --d, a = a->parent) {
+      if (!isLast(a)) c.line({col(d), r.y}, {col(d), r.bottom()}, guide, 1.0f);
+    }
+  }
   if (!n->kids.empty())
     drawIcon(c, n->expanded || filt ? Icon::TriDown : Icon::TriRight, {x - 1, r.y + (r.h - 14) * 0.5f, 14, 14}, hover ? t.text : t.textDim);
   x += 16;
   Color ic = n->hasTint ? n->tint : t.textDim;
   if (!n->visible) ic = ic.alpha(0.4f);
-  drawIcon(c, n->icon, {x, r.y + (r.h - 16) * 0.5f, 16, 16}, ic);
+  if (n->image != nullptr && n->imageSize > 0)
+    c.blitBlend(n->image, n->imageSize, n->imageSize, n->imageSize, {x, std::floor(r.y + (r.h - 16) * 0.5f), 16, 16});
+  else
+    drawIcon(c, n->icon, {x, r.y + (r.h - 16) * 0.5f, 16, 16}, ic);
   x += 22;
   float rightEdge = r.right() - 6;
   if (n->toggles) {

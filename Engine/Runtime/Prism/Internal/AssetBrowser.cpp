@@ -241,6 +241,15 @@ void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
   int tw = int(thumb.w);
   int th = int(thumb.h);
 
+  if (asset.thumbnail != nullptr && asset.thumbnailW > 0 && asset.thumbnailH > 0) {
+    c.fillRect(thumb, Color(17, 20, 27));
+    const float fit = std::min(thumb.w / float(asset.thumbnailW), thumb.h / float(asset.thumbnailH)) * asset.thumbnailScale;
+    const float w = std::floor(float(asset.thumbnailW) * fit), h = std::floor(float(asset.thumbnailH) * fit);
+    c.blitBlend(asset.thumbnail, asset.thumbnailW, asset.thumbnailH, asset.thumbnailW,
+                Rect{std::floor(thumb.x + (thumb.w - w) * 0.5f), std::floor(thumb.y + (thumb.h - h) * 0.5f), w, h});
+    return;
+  }
+
   if (asset.type.find("Material") != std::string::npos || asset.type.find("Mesh") != std::string::npos) {
     // The preview is chosen by the asset's type, not its file extension: hosts name files their own way.
     const bool material = asset.type.find("Material") != std::string::npos;

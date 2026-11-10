@@ -23,6 +23,7 @@ void DrawList::replay(Canvas& c) const {
     case DrawOp::Text: c.text(*d.font, d.a, std::string_view(text.data() + d.i0, size_t(d.i1)), d.c); break;
     case DrawOp::Blit: c.blit(pixels.data() + d.i0, d.w, d.h, d.a); break;
     case DrawOp::BlitScaled: c.blitScaled(pixels.data() + d.i0, d.w, d.h, d.stride, d.r); break;
+    case DrawOp::BlitBlend: c.blitBlend(pixels.data() + d.i0, d.w, d.h, d.stride, d.r); break;
     case DrawOp::FillRaw: c.fillRaw(d.r, d.raw); break;
     case DrawOp::GlyphRun: c.glyphRun(*d.font, d.a, std::span<const Canvas::GlyphPos>(glyphs.data() + d.i0, size_t(d.i1)), d.c); break;
     }
@@ -165,6 +166,15 @@ void RecordingCanvas::blitScaled(const uint32_t* src, int sw, int sh, int stride
   m_list.pixels.reserve(m_list.pixels.size() + size_t(sw) * size_t(sh));
   for (int y = 0; y < sh; y++) m_list.pixels.insert(m_list.pixels.end(), src + size_t(y) * size_t(stride), src + size_t(y) * size_t(stride) + size_t(sw));
   DrawCmd& d = push(DrawOp::BlitScaled);
+  d.i0 = off; d.w = sw; d.h = sh; d.stride = sw; d.r = dst;
+}
+
+void RecordingCanvas::blitBlend(const uint32_t* src, int sw, int sh, int stride, Rect dst) {
+  if (!src || sw <= 0 || sh <= 0) return;
+  int off = int(m_list.pixels.size());
+  m_list.pixels.reserve(m_list.pixels.size() + size_t(sw) * size_t(sh));
+  for (int y = 0; y < sh; y++) m_list.pixels.insert(m_list.pixels.end(), src + size_t(y) * size_t(stride), src + size_t(y) * size_t(stride) + size_t(sw));
+  DrawCmd& d = push(DrawOp::BlitBlend);
   d.i0 = off; d.w = sw; d.h = sh; d.stride = sw; d.r = dst;
 }
 

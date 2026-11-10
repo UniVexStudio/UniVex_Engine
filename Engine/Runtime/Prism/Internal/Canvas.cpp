@@ -396,6 +396,31 @@ void Canvas::blit(const uint32_t* src, int sw, int sh, Vec2 dst) {
   }
 }
 
+void Canvas::blitBlend(const uint32_t* src, int sw, int sh, int stride, Rect dst) {
+  if (!src || sw <= 0 || sh <= 0 || dst.w < 1 || dst.h < 1) return;
+  int dx0 = int(std::lround(dst.x)), dy0 = int(std::lround(dst.y));
+  int dw = int(std::lround(dst.w)), dh = int(std::lround(dst.h));
+  int y0 = std::max(dy0, m_cy0), y1 = std::min(dy0 + dh, m_cy1);
+  int x0 = std::max(dx0, m_cx0), x1 = std::min(dx0 + dw, m_cx1);
+  for (int y = y0; y < y1; y++) {
+    const uint32_t* row = src + size_t(std::min(sh - 1, (y - dy0) * sh / dh)) * size_t(stride);
+    uint32_t* out = &m_px[size_t(y) * m_w];
+    for (int x = x0; x < x1; x++) {
+      const uint32_t s = row[std::min(sw - 1, (x - dx0) * sw / dw)];
+      const uint32_t a = s >> 24;
+      if (a == 0) continue;
+      if (a == 255) { out[x] = s; continue; }
+      const uint32_t d = out[x];
+      const uint32_t ia = 255 - a;
+      const uint32_t r = (((s >> 16) & 255) * a + ((d >> 16) & 255) * ia) / 255;
+      const uint32_t g = (((s >> 8) & 255) * a + ((d >> 8) & 255) * ia) / 255;
+      const uint32_t b = ((s & 255) * a + (d & 255) * ia) / 255;
+      const uint32_t oa = std::min<uint32_t>(255, a + ((d >> 24) * ia) / 255);
+      out[x] = (oa << 24) | (r << 16) | (g << 8) | b;
+    }
+  }
+}
+
 void Canvas::blitScaled(const uint32_t* src, int sw, int sh, int stride, Rect dst) {
   if (!src || sw <= 0 || sh <= 0 || dst.w < 1 || dst.h < 1) return;
   int dx0 = int(std::lround(dst.x)), dy0 = int(std::lround(dst.y));
