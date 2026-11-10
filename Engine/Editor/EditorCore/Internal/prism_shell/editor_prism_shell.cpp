@@ -252,9 +252,25 @@ public:
     }
 };
 
-/// #2: the tab that names what the viewport shows (the open level / scene).
+/// #2: the document's Viewport - the same object the Outliner starts at (it holds the scene), with
+/// the same name and the same icon. Clicking it selects that Viewport.
 class ViewportNameTabUVE final : public prism::Widget {
 public:
+    void setIcon(const std::uint32_t* pixels, const int size) {
+        if (pixels != m_icon) {
+            m_icon = pixels;
+            m_iconSize = size;
+            invalidate();
+        }
+    }
+    std::function<void()> onClick;
+    bool onMouseDown(const prism::MouseEvent& e) override {
+        if (e.button == prism::MouseButton::Left && onClick) {
+            onClick();
+            return true;
+        }
+        return false;
+    }
     prism::Vec2 measure(prism::Vec2) override {
         const float w = std::max(170.0F, std::ceil(prism::theme().ui->width(m_name)) + 60.0F);
         return m_desired = constrain(prism::Vec2(w, 30.0F));
@@ -272,13 +288,20 @@ public:
         c.fillRoundRect(tab, 5.0F, t.panel);
         c.fillRect(prism::Rect{tab.x, tab.bottom() - 5.0F, tab.w, 5.0F}, t.panel);
         c.fillRect(prism::Rect{tab.x, tab.y, tab.w, 2.0F}, t.accent);
-        prism::drawIcon(c, prism::Icon::Globe, prism::Rect{tab.x + 10.0F, tab.y + 6.0F, 16.0F, 16.0F}, t.accentHover);
+        const prism::Rect iconBox{tab.x + 10.0F, std::floor(tab.y + (tab.h - 16.0F) * 0.5F), 16.0F, 16.0F};
+        if (m_icon != nullptr && m_iconSize > 0) {
+            c.blitBlend(m_icon, m_iconSize, m_iconSize, m_iconSize, iconBox);
+        } else {
+            prism::drawIcon(c, prism::Icon::Globe, iconBox, t.accentHover);
+        }
         c.textIn(*t.ui, prism::Rect{tab.x + 32.0F, tab.y, tab.w - 40.0F, tab.h}, m_name, t.textBright, prism::HAlign::Left,
                  true);
     }
 
 private:
-    std::string m_name = "Viewport3D";
+    std::string m_name = "Viewport";
+    const std::uint32_t* m_icon = nullptr;
+    int m_iconSize = 0;
 };
 
 /// #15: the drag strip. Reports itself as the window caption (the host moves the window from it);
@@ -387,7 +410,14 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
     // [#1 logo] [ #15 title row      ]
     //           [ #2 viewport name tab ]
     auto tabRow = prism::hbox();
-    m_viewportNameTab = prism::make<ViewportNameTabUVE>();
+    auto viewportTab = prism::make<ViewportNameTabUVE>();
+    viewportTab->onClick = [this] {
+        const Scene::EntityUVE viewport = m_editor.GetDocumentViewportUVE();
+        if (viewport != Scene::kInvalidEntityUVE) {
+            m_editor.SelectEntityUVE(viewport);
+        }
+    };
+    m_viewportNameTab = viewportTab;
     tabRow->add(m_viewportNameTab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
     tabRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto right = prism::vbox();
@@ -943,8 +973,19 @@ void EditorPrismShellUVE::RefreshToolbarUVE() {
         m_selectionMode->setSelected(mode);
     }
     if (m_viewportNameTab) {
-        const std::string stem = m_editor.m_activeScenePath.stem().string();
-        static_cast<ViewportNameTabUVE*>(m_viewportNameTab.get())->setName(stem.empty() ? "Viewport3D" : stem);
+        // The same Viewport object the Outliner shows: its own name and its own icon.
+        auto* tab = static_cast<ViewportNameTabUVE*>(m_viewportNameTab.get());
+        const Scene::EntityUVE viewport = m_editor.GetDocumentViewportUVE();
+        if (viewport != Scene::kInvalidEntityUVE) {
+            tab->setName(m_editor.GetEntityDisplayLabelUVE(viewport));
+            const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(
+                Scene::ResolveSceneObjectKindUVE(m_editor.m_services->GetEntityManagerUVE(), viewport), 16);
+            tab->setIcon(icon.pixels, icon.size);
+        } else {
+            const std::string stem = m_editor.m_activeScenePath.stem().string();
+            tab->setName(stem.empty() ? "Viewport" : stem);
+            tab->setIcon(nullptr, 0);
+        }
     }
     if (m_statusLabel) {
         const char* const state = play == EditorPlayModeStateUVE::Edit      ? "Editing"
