@@ -131,4 +131,15 @@ std::vector<EditorRenderStatRowUVE> BuildEditorRenderStatRowsUVE(
     return rows;
 }
 
+std::string FormatProfilerRuntimeLineUVE(const Core::DiagnosticRuntimeSnapshotUVE& runtime) {
+    return "frame " + std::to_string(runtime.frameNumber) + ", " + std::to_string(runtime.activeAllocationCount) +
+           " allocations (" + std::to_string(runtime.activeBytes) + " bytes, peak " +
+           std::to_string(runtime.peakBytes) + "), " + std::to_string(runtime.workerCount) + " workers (" +
+           std::to_string(runtime.activeWorkerCount) + " active, " + std::to_string(runtime.pendingTaskCount) +
+           " pending, " + std::to_string(runtime.stolenJobCount) + " stolen), animation " +
+           std::to_string(runtime.animationEvaluationCount) + ", ecs " + std::to_string(runtime.ecsSystemCount) +
+           ", vm " + std::to_string(runtime.vmInstructionCount) + ", render passes " +
+           std::to_string(runtime.renderPassCount);
+}
+
 } // namespace UVE::Editor

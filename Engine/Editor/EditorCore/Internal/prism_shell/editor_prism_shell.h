@@ -3,6 +3,7 @@
 
 #include "editor_prism_content_browser.h"
 #include "editor_prism_details.h"
+#include "editor_prism_dock_panels.h"
 #include "editor_prism_host.h"
 #include "editor_prism_icons.h"
 #include "editor_prism_viewport_gizmos.h"
@@ -95,6 +96,7 @@ private:
     EditorPrismHostUVE m_host;
     EditorPrismContentBrowserUVE m_contentBrowser;
     EditorPrismDetailsUVE m_details2;
+    EditorPrismDockPanelsUVE m_dockPanels;
     EditorPrismIconsUVE m_icons;
 
     // Widgets the frame updates.
