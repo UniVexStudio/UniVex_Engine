@@ -463,11 +463,14 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
-    // Sub row 1: #5 save, #3 selection mode | #4 open folder, #14 blueprint (beta) | transport.
+    // Sub row 1: #4 open folder, #5 save, #3 selection mode | #14 blueprint (beta) | transport.
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
 
-    // #5 save, beside #3 selection mode.
+    // #4 open folder, then #5 save beside #3 selection mode.
+    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Content Browser)");
+    openFolder->onClick = [this] { ShowDockPanelUVE(0, true); };
+    row->add(openFolder, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     auto save = ToolButtonUVE(prism::Icon::Save, "Save all (Ctrl+Shift+S)");
     save->onClick = [this] { static_cast<void>(m_editor.RunEditorCommandUVE("file.saveAll")); };
     row->add(save, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -485,10 +488,6 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
     row->add(modeBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(HSeparatorUVE());
 
-    // #4 open folder, beside #14 blueprint.
-    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Content Browser)");
-    openFolder->onClick = [this] { ShowDockPanelUVE(0, true); };
-    row->add(openFolder, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
 
     auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Blueprint editor (beta)");
     blueprint->onClick = [] {
