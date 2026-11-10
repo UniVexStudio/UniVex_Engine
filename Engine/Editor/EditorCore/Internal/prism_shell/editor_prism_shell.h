@@ -25,6 +25,7 @@ struct GLFWwindow;
 
 namespace prism {
 class Button;
+class DockSpace;
 class EngineView;
 class Label;
 class PropertyGrid;
@@ -80,6 +81,11 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildDockBarUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildSubRow2UVE();
     void ShowDockPanelUVE(int index, bool forceVisible);
+    /// Shows a side column only while it holds a panel (a panel can be docked elsewhere) and the
+    /// Window menu has not hidden it.
+    void UpdateDockColumnsUVE();
+    /// Puts the Outliner and Details back in their own columns and closes split / floating areas.
+    void ResetPanelLayoutUVE();
 
     void ShowAddMenuUVE();
     void ShowPreviewSettingsUVE(prism::Rect anchor);
@@ -93,6 +99,8 @@ private:
     [[nodiscard]] Scene::EntityUVE EntityForTreeIdUVE(int id) const;
 
     EditorUVE& m_editor;
+    // Outlives the host's widget tree (declared first, destroyed last): the TabViews it wires call back into it.
+    std::unique_ptr<prism::DockSpace> m_dockSpace;
     EditorPrismHostUVE m_host;
     EditorPrismContentBrowserUVE m_contentBrowser;
     EditorPrismDetailsUVE m_details2;
@@ -127,6 +135,9 @@ private:
     std::shared_ptr<prism::Widget> m_viewportNameTab;
     std::shared_ptr<prism::Widget> m_outlinerColumn;
     std::shared_ptr<prism::Widget> m_detailsColumn;
+    // The two permanent dock areas; panels can be dragged between them, split off or floated.
+    std::shared_ptr<prism::TabView> m_outlinerTabs;
+    std::shared_ptr<prism::TabView> m_detailsTabs;
 
     // Outliner tree id <-> entity (TreeView ids are ints; 0 means "no id").
     std::vector<Scene::EntityUVE> m_treeEntities;

@@ -649,6 +649,8 @@ PixelView Application::frame() const {
 
 bool Application::wantsPointerAt(Vec2 p) {
   layoutIfNeeded();
+  // A widget holding the mouse (a tab or splitter being dragged, a slider ...) keeps it wherever the pointer goes.
+  if (auto held = m_capture.lock(); held && held.get() != m_root.get() && held->consumesHostInput()) return true;
   Widget* t = hitTestAll(p);
   return t != nullptr && t != m_root.get() && t->consumesHostInput();
 }

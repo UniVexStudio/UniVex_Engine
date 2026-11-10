@@ -11,6 +11,7 @@
 #include "prism/Menu.h"
 #include "prism/Tabs.h"
 #include "prism/TextInput.h"
+#include "prism/Docking.h"
 #include "prism/Layouts.h"
 #include "prism/Theme.h"
 #include "prism/Views.h"
@@ -155,6 +156,14 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildLayoutUVE() {
     columns->add(centre, prism::Splitter::Pane{800.0F, 320.0F, 1e9F, true});
     columns->add(m_detailsColumn, prism::Splitter::Pane{330.0F, 220.0F, 800.0F, false});
     window->add(columns, prism::Slot{1.0F});
+
+    // Docking: drag a panel's tab onto another panel's edge to split it there (the Details under
+    // or beside the Outliner, say), onto its tab strip to share the area, or anywhere else to float
+    // it in a window of its own. Every divider resizes.
+    m_dockSpace = std::make_unique<prism::DockSpace>("level-editor");
+    m_dockSpace->attach(*m_outlinerTabs);
+    m_dockSpace->attach(*m_detailsTabs);
+    m_dockSpace->onChanged = [this] { UpdateDockColumnsUVE(); };
 
     window->add(BuildDockBarUVE());
 
@@ -377,12 +386,13 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Check("Outliner", m_editor.m_scenePanelVisible, [this] {
             m_editor.m_scenePanelVisible = !m_editor.m_scenePanelVisible;
-            if (m_outlinerColumn) { m_outlinerColumn->setVisible(m_editor.m_scenePanelVisible); }
+            UpdateDockColumnsUVE();
         }));
         items.push_back(prism::MenuItem::Check("Details", m_editor.m_inspectorPanelVisible, [this] {
             m_editor.m_inspectorPanelVisible = !m_editor.m_inspectorPanelVisible;
-            if (m_detailsColumn) { m_detailsColumn->setVisible(m_editor.m_inspectorPanelVisible); }
+            UpdateDockColumnsUVE();
         }));
+        items.push_back(prism::MenuItem::Item("Reset Panel Layout", [this] { ResetPanelLayoutUVE(); }));
         items.push_back(prism::MenuItem::Check("Content Browser + Dock", m_dockVisible, [this] {
             ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, false);
         }));
@@ -692,9 +702,9 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildOutlinerUVE() {
     };
     page->add(m_outliner, prism::Slot{1.0F});
 
-    auto tabs = prism::make<prism::TabView>();
-    tabs->addTab("Outliner", prism::Icon::Layers, PanelUVE(page));
-    return tabs;
+    m_outlinerTabs = prism::make<prism::TabView>();
+    m_outlinerTabs->addTab("Outliner", prism::Icon::Layers, PanelUVE(page));
+    return m_outlinerTabs;
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildViewportUVE() {
@@ -716,9 +726,9 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildViewportUVE() {
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDetailsUVE() {
     // #17 tab, #18 search, #20 the selected object's components (#21 scroll), drawn from the
     // engine's component metadata (EditorPrismDetailsUVE).
-    auto tabs = prism::make<prism::TabView>();
-    tabs->addTab("Details", prism::Icon::Properties, PanelUVE(m_details2.BuildUVE()));
-    return tabs;
+    m_detailsTabs = prism::make<prism::TabView>();
+    m_detailsTabs->addTab("Details", prism::Icon::Properties, PanelUVE(m_details2.BuildUVE()));
+    return m_detailsTabs;
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDockUVE() {
@@ -756,6 +766,39 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDockBarUVE() {
     border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 0.0F));
     border->setChild(bar);
     return border;
+}
+
+void EditorPrismShellUVE::UpdateDockColumnsUVE() {
+    if (m_outlinerColumn && m_outlinerTabs) {
+        m_outlinerColumn->setVisible(m_editor.m_scenePanelVisible && m_outlinerTabs->count() > 0);
+    }
+    if (m_detailsColumn && m_detailsTabs) {
+        m_detailsColumn->setVisible(m_editor.m_inspectorPanelVisible && m_detailsTabs->count() > 0);
+    }
+    if (prism::Application::exists()) {
+        prism::Application::get().invalidateLayout();
+    }
+}
+
+void EditorPrismShellUVE::ResetPanelLayoutUVE() {
+    if (!m_dockSpace || !m_outlinerTabs || !m_detailsTabs) {
+        return;
+    }
+    // Every split-off or floating panel back into the Details area first, then each panel to its own.
+    m_dockSpace->dissolve(*m_detailsTabs);
+    const auto moveTo = [](prism::TabView& from, prism::TabView& to, const std::string& title) {
+        const int index = from.indexOf(title);
+        if (index >= 0) {
+            to.insertTab(to.count(), from.takeTab(index));
+        }
+    };
+    moveTo(*m_detailsTabs, *m_outlinerTabs, "Outliner");
+    moveTo(*m_outlinerTabs, *m_detailsTabs, "Details");
+    m_outlinerTabs->setCurrent(0);
+    m_detailsTabs->setCurrent(0);
+    m_editor.m_scenePanelVisible = true;
+    m_editor.m_inspectorPanelVisible = true;
+    UpdateDockColumnsUVE();
 }
 
 void EditorPrismShellUVE::ShowDockPanelUVE(const int index, const bool forceVisible) {
