@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "prism_shell/editor_prism_shell.h"
+#include "logging_macros.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
 #include "fbx_mesh_converter.h"
@@ -321,16 +322,19 @@ void EditorUVE::InitUVE() {
 
     Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
     if (m_prismUiRequested && windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
+        // The level editor is PRISM's. Its GLFW callbacks go in first, so the overlay below chains
+        // in front of them (and is shut down first).
         auto shell = std::make_unique<EditorPrismShellUVE>(*this);
         if (shell->InitializeUVE(static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()),
                                  m_prismAssetDir)) {
-            static_cast<void>(m_uiAssets.InitializeUVE());
-            m_meshThumbnailRenderer.InitializeUVE();
-            m_materialThumbnailRenderer.InitializeUVE();
             m_prismShell = std::move(shell);
-            m_uiInitialized = true;
+        } else {
+            UVE_ERROR("EditorUVE: the PRISM editor UI could not start (assets: {})", m_prismAssetDir.string());
         }
-    } else if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
+    }
+    // ImGui: the windows not yet built with PRISM (Preferences, Input Map, the Entity Editor,
+    // Retarget, ...) draw over the PRISM level editor through it.
+    if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         // Viewports (multi-window), but deliberately NOT docking. A window may live in its own OS
@@ -399,6 +403,12 @@ void EditorUVE::InitUVE() {
             m_meshThumbnailRenderer.InitializeUVE();
             m_materialThumbnailRenderer.InitializeUVE();
             m_uiInitialized = true;
+            if (m_prismShell != nullptr) {
+                // While an overlay window has the pointer or the keyboard, the level editor does not.
+                m_prismShell->SetForeignInputUVE(
+                    [] { return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse; },
+                    [] { return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard; });
+            }
         } else {
             if (glfwInitialized) {
                 ImGui_ImplGlfw_Shutdown();
@@ -4677,19 +4687,19 @@ void EditorUVE::ShutdownUVE() {
         m_meshThumbnailRenderer.ShutdownUVE();
         m_materialThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
-        if (m_prismShell != nullptr) {
-            m_prismShell->ShutdownUVE();
-            m_prismShell.reset();
-        } else if (ImGui::GetCurrentContext() != nullptr) {
+        // The overlay first: its GLFW callbacks were chained in front of the PRISM shell's.
+        if (ImGui::GetCurrentContext() != nullptr) {
             const char* const iniFilename = ImGui::GetIO().IniFilename;
             if (iniFilename != nullptr && iniFilename[0] != '\0') {
                 ImGui::SaveIniSettingsToDisk(iniFilename);
             }
-        }
-        if (ImGui::GetCurrentContext() != nullptr) {
             ImGui_ImplOpenGL3_Shutdown();
             ImGui_ImplGlfw_Shutdown();
             ImGui::DestroyContext();
+        }
+        if (m_prismShell != nullptr) {
+            m_prismShell->ShutdownUVE();
+            m_prismShell.reset();
         }
         m_uiInitialized = false;
     }

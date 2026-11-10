@@ -10,6 +10,7 @@
 #include <bitset>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <span>
 
@@ -71,6 +72,9 @@ public:
 
     /// Saves the current UI frame as PNG (CPU readback of the GL backend).
     bool SaveScreenshotUVE(const std::filesystem::path& path);
+    /// Another UI drawn over this one (windows not yet built with PRISM) says when it wants the
+    /// pointer or the keyboard; while it does, neither PRISM nor the viewport receives that input.
+    void SetForeignInputUVE(std::function<bool()> wantsMouse, std::function<bool()> wantsKeyboard);
 
     // GLFW callback entry points (static trampolines route here).
     void OnCursorPosUVE(double x, double y);
@@ -103,6 +107,10 @@ private:
     prism::Vec2 m_mouse{0.0F, 0.0F};
     prism::Vec2 m_frameStartMouse{0.0F, 0.0F};
     bool m_mouseInside = true;
+    std::function<bool()> m_foreignMouse;
+    std::function<bool()> m_foreignKeyboard;
+    bool m_foreignHover = false;           // the pointer is over the other UI (PRISM was told it left)
+    std::uint32_t m_foreignPresses = 0U;   // buttons pressed while the other UI had the pointer
     float m_wheel = 0.0F;
     std::uint8_t m_mods = 0;
     std::array<bool, EditorViewportInputUVE::kButtonCountUVE> m_down{};
