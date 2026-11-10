@@ -680,7 +680,13 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildViewportUVE() {
     // Input reaches the viewport through the host's raw state (CaptureViewInputUVE); onInput only
     // makes the view focusable so clicking it takes keyboard focus away from text fields.
     m_viewport->onInput = [](const prism::EngineInput&) {};
-    return m_viewport;
+    // Every gizmo (navigation, transform, object gizmos and billboards) is PRISM's, drawn over the
+    // engine's image of the scene; the renderer draws none of its own (hostDrawsGizmos).
+    m_gizmos = prism::make<EditorPrismViewportGizmosUVE>(m_editor);
+    auto stack = prism::make<prism::Overlay>();
+    stack->add(m_viewport);
+    stack->add(m_gizmos);
+    return stack;
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDetailsUVE() {
@@ -1102,12 +1108,23 @@ void EditorPrismShellUVE::FrameUVE() {
                 m_editor.BuildColliderOverlayUVE(state.colliderLines);
             }
             state.pointerOverOverlay = false;
+            state.hostDrawsGizmos = true;
+            if (m_gizmos) {
+                const std::array<float, 2> orbit = m_gizmos->TakeOrbitRequestUVE();
+                state.orbitRequestX = orbit[0];
+                state.orbitRequestY = orbit[1];
+            }
             state.input = m_host.CaptureViewInputUVE(rect);
             Math::Vector2UVE used{0.0F, 0.0F};
             const std::uint64_t texture = m_editor.m_viewportPanelRenderer(
                 EditorUVE::ViewportContextUVE::Main, Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used,
                 state);
             m_host.ApplyViewCursorUVE(state.input);
+            state.orbitRequestX = 0.0F;
+            state.orbitRequestY = 0.0F;
+            if (m_gizmos) {
+                m_gizmos->SyncUVE();
+            }
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
                 EditorPrismHostUVE::ViewImageUVE view{};
                 view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x, used.y};

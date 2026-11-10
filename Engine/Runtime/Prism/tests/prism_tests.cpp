@@ -2559,6 +2559,50 @@ static void testColorPickerWindow(Application& app) {
   CHECK(cancelled && live == Color(10, 20, 30) && applied == Color());
 }
 
+static void testHostGizmos() {
+  SECTION("host_gizmos");
+  // Orthographic projection: offsets scale by orthoScale, rays run along the view direction.
+  GizmoCamera cam;
+  cam.eye = {0, 0, 10};
+  cam.right = {1, 0, 0}; cam.up = {0, 1, 0}; cam.fwd = {0, 0, -1};
+  cam.cx = 100; cam.cy = 100; cam.viewH = 200;
+  cam.ortho = true; cam.orthoScale = 20;
+  Vec2 p;
+  CHECK(cam.project(Vec3{1, 2, 0}, p) && std::fabs(p.x - 120) < 0.01f && std::fabs(p.y - 60) < 0.01f);
+  CHECK(cam.project(Vec3{1, 2, -50}, p) && std::fabs(p.x - 120) < 0.01f);          // depth does not shrink it
+  Vec3 hitPoint;
+  CHECK(cam.rayPlane(Vec2{140, 100}, Vec3{0, 0, 0}, Vec3{0, 0, 1}, hitPoint) && std::fabs(hitPoint.x - 2) < 0.01f);
+  // A transform gizmo keeps a fixed on-screen size in orthographic views.
+  TransformGizmo g;
+  g.setCamera(cam);
+  const float l1 = g.length();
+  g.setTarget(Mat4::translation(Vec3{0, 0, -30}));
+  CHECK(std::fabs(g.length() - l1) < 1e-4f);
+
+  // Navigation gizmo: looking down -Z, the +X ball sits to the right of the centre and +Y above it.
+  NavGizmo nav;
+  GizmoCamera persp = cam;
+  persp.ortho = false;
+  nav.setCamera(persp);
+  nav.setArea(Rect{0, 0, 100, 100});
+  CHECK(nav.hit(Vec2{85, 50}) == 0);
+  CHECK(nav.hit(Vec2{50, 15}) == 2);
+  CHECK(nav.hit(Vec2{15, 50}) == 1);
+  CHECK(nav.contains(Vec2{50, 50}) && !nav.contains(Vec2{0, 0}));
+  CHECK(NavGizmo::facingDirection(5).z == -1.f);
+
+  // World lines clip at the near plane rather than wrapping behind the camera.
+  Canvas c;
+  c.resize(200, 200);
+  c.clear(Color(0, 0, 0));
+  persp.focal = 100;
+  drawWorldLine(c, persp, Vec3{0, 0, 0}, Vec3{0, 0, 20}, Color(255, 255, 255), 2.f);   // crosses the eye plane
+  drawWorldLine(c, persp, Vec3{0, 0, 30}, Vec3{1, 0, 30}, Color(255, 0, 0), 2.f);     // fully behind: nothing
+  bool anyRed = false;
+  for (int i = 0; i < 200 * 200; i++) anyRed |= ((c.pixels()[i] >> 16) & 255) > 200 && ((c.pixels()[i] >> 8) & 255) < 50;
+  CHECK(!anyRed);
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -2607,6 +2651,7 @@ int main(int argc, char** argv) {
   testLogView(app);
   testBlueprintVM(app);
   testGizmo(app);
+  testHostGizmos();
   testTextLayout(app);
   testIconAtlas(app);
   testAccessibility(app);

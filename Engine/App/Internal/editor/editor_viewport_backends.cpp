@@ -815,8 +815,9 @@ public:
             }
             previewing_ = false;
         }
-        renderPass_->Settings().viewGizmos = !studioView_ && !gameWorkspaceActive_ && !previewing_;
-        renderPass_->Settings().viewTransformGizmo = !studioView_ && !gameWorkspaceActive_ && !previewing_;
+        const bool hostGizmos = overlayState.hostDrawsGizmos;
+        renderPass_->Settings().viewGizmos = !hostGizmos && !studioView_ && !gameWorkspaceActive_ && !previewing_;
+        renderPass_->Settings().viewTransformGizmo = !hostGizmos && !studioView_ && !gameWorkspaceActive_ && !previewing_;
         if (studioView_) {
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
             renderPass_->Settings().viewTransformGizmo = false;
@@ -826,12 +827,23 @@ public:
             }
         } else {
             UpdateSelectionGizmoUVE();
+            if (hostGizmos) {
+                // The shell draws and drives the gizmos; it hands the navigation gizmo's orbit
+                // drags over as pixels, the same units a mouse orbit uses.
+                renderPass_->Settings().viewTransformGizmo = false;
+                if (overlayState.orbitRequestX != 0.0F || overlayState.orbitRequestY != 0.0F) {
+                    camera_.Orbit(overlayState.orbitRequestX, overlayState.orbitRequestY);
+                    editor_.NotifyViewportOrbitedUVE();
+                }
+            }
             const bool navGizmoOwnsGesture =
-                previewing_ ? false : UpdateNavGizmoInteractionUVE(width, height);
+                (previewing_ || hostGizmos) ? false : UpdateNavGizmoInteractionUVE(width, height);
             // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
             // release, register as a click that selects whatever is behind the gizmo.
-            const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
-            UpdateGizmoHoverHighlightUVE(width, height, navGizmoOwnsGesture);
+            const bool gizmoOwnsGesture = !hostGizmos && !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
+            if (!hostGizmos) {
+                UpdateGizmoHoverHighlightUVE(width, height, navGizmoOwnsGesture);
+            }
             const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
             UpdateSelectionFromMouseUVE(width, height, pointerTaken);
             UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
@@ -951,14 +963,22 @@ public:
                 univex::gizmo::GizmoMesh colliders = BuildColliderMeshUVE(entityManager_);
                 overlay.lines.insert(overlay.lines.end(), colliders.lines.begin(), colliders.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), colliders.triangles.begin(), colliders.triangles.end());
-                renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
+                if (hostGizmos) {
+                    hostOverlayMesh_ = std::move(overlay);
+                    renderPass_->SetCameraFrustumMeshUVE({});
+                } else {
+                    hostOverlayMesh_.Clear();
+                    renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
+                }
             }
         } else {
+            hostOverlayMesh_.Clear();
             if (cachedOverlayActive_) {
                 renderPass_->SetCameraFrustumMeshUVE({});
                 cachedOverlayActive_ = false;
             }
         }
+        ExportViewForHostUVE(overlayState, width, height, wantOverlay);
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
 
         // One framebuffer, one depth buffer, drawn back to front: backdrop, then the engine's
@@ -1346,7 +1366,15 @@ private:
                                                           bone.hasLink, toVec3(bone.linkFrom), bone.skeletonSelected,
                                                           bone.boneSelected, bone.hasColour, toVec3(bone.colour)});
         }
-        renderPass_->SetBonesUVE(std::move(bones));
+        if (overlayState.hostDrawsGizmos) {
+            // The shell draws them: keep the same bone shapes, built for the current view.
+            const univex::math::Vec3 view = univex::math::Normalize(camera_.Target() - camera_.Eye());
+            hostBonesMesh_ = univex::gizmo::BuildBoneMeshUVE(bones, view);
+            renderPass_->SetBonesUVE({});
+        } else {
+            hostBonesMesh_.Clear();
+            renderPass_->SetBonesUVE(std::move(bones));
+        }
         // Collision wireframes. One colour for every shape: the point of the overlay is WHERE the
         // collider is, and a per-shape palette would make two boxes on different entities read as
         // two different kinds of thing. The blue-green is deliberately not the selection orange, so
@@ -1372,7 +1400,13 @@ private:
                                              line.highlighted ? kColliderHighlightWidthPixelsUVE
                                                               : kColliderWireWidthPixelsUVE});
             }
-            renderPass_->SetColliderWireframesUVE(std::move(colliderLines));
+            if (overlayState.hostDrawsGizmos) {
+                hostColliderLines_ = std::move(colliderLines);
+                renderPass_->SetColliderWireframesUVE({});
+            } else {
+                hostColliderLines_.clear();
+                renderPass_->SetColliderWireframesUVE(std::move(colliderLines));
+            }
         }
         using UVE::Editor::EditorUVE;
         switch (overlayState.gizmoMode) {
@@ -2300,6 +2334,55 @@ private:
     // frozen at the press: the object moves during the drag, and re-reading them each frame would
     // make the gesture chase its own result.
     std::optional<univex::math::Vec3> gizmoPivot_;
+    // Gizmo geometry kept for a shell that draws the gizmos itself (overlayState.hostDrawsGizmos).
+    univex::gizmo::GizmoMesh hostOverlayMesh_;
+    univex::gizmo::GizmoMesh hostBonesMesh_;
+    std::vector<univex::gizmo::GizmoLine> hostColliderLines_;
+
+    // Reports the view's camera, the selection gizmo pivot and the object gizmo geometry through the
+    // overlay state's output fields, so a shell can draw the gizmos over the image.
+    void ExportViewForHostUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState, const int width,
+                              const int height, const bool wantOverlay) {
+        auto& cam = overlayState.viewCamera;
+        const univex::math::Vec3 eye = camera_.Eye();
+        const univex::math::Vec3 forward = univex::math::Normalize(camera_.Target() - eye);
+        univex::math::Vec3 right = univex::math::Normalize(univex::math::Cross(forward, camera_.Up()));
+        const univex::math::Vec3 up = univex::math::Normalize(univex::math::Cross(right, forward));
+        cam.valid = true;
+        cam.eye = {eye.x, eye.y, eye.z};
+        cam.forward = {forward.x, forward.y, forward.z};
+        cam.right = {right.x, right.y, right.z};
+        cam.up = {up.x, up.y, up.z};
+        cam.fovYRadians = camera_.Settings().fovYRadians;
+        cam.nearPlane = camera_.NearPlane();
+        cam.orthographic = camera_.IsOrthographic();
+        cam.orthographicHalfHeight = camera_.OrthographicHalfHeight();
+        cam.width = static_cast<float>(width);
+        cam.height = static_cast<float>(height);
+        overlayState.gizmoPivotValid = gizmoPivot_.has_value();
+        if (gizmoPivot_.has_value()) {
+            overlayState.gizmoPivot = {gizmoPivot_->x, gizmoPivot_->y, gizmoPivot_->z};
+        }
+        overlayState.gizmoLines.clear();
+        overlayState.gizmoTriangles.clear();
+        if (!overlayState.hostDrawsGizmos || !wantOverlay) {
+            return;
+        }
+        const auto a3 = [](const univex::math::Vec3& v) { return std::array<float, 3>{v.x, v.y, v.z}; };
+        const auto append = [&](const univex::gizmo::GizmoMesh& mesh) {
+            for (const univex::gizmo::GizmoLine& line : mesh.lines) {
+                overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx});
+            }
+            for (const univex::gizmo::GizmoTriangle& tri : mesh.triangles) {
+                overlayState.gizmoTriangles.push_back({a3(tri.a), a3(tri.b), a3(tri.c), a3(tri.color), tri.alpha});
+            }
+        };
+        append(hostOverlayMesh_);
+        append(hostBonesMesh_);
+        for (const univex::gizmo::GizmoLine& line : hostColliderLines_) {
+            overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx});
+        }
+    }
     univex::gizmo::GizmoHandleUVE dragHandle_ = univex::gizmo::GizmoHandleUVE::None;
     univex::gizmo::GizmoMode dragMode_ = univex::gizmo::GizmoMode::Move;
     univex::math::Vec3 dragPivot_{};
