@@ -255,7 +255,9 @@ jobs:
   windows-editor:
     name: Windows / Editor
     runs-on: windows-latest
-    timeout-minutes: 60
+    # A full MinGW build of five targets on the 4-core runner takes about an hour on its own
+    # (master's runs were cut off at 60 minutes too), so the job gets room to finish.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
