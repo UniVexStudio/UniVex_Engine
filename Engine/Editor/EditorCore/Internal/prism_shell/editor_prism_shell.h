@@ -80,6 +80,7 @@ private:
     void ShowDockPanelUVE(int index, bool forceVisible);
 
     void ShowAddMenuUVE();
+    void ShowPreviewSettingsUVE(prism::Rect anchor);
     void ShowAddFilterMenuUVE();
     void RefreshOutlinerUVE();
     void RefreshDetailsUVE();
@@ -108,7 +109,10 @@ private:
     std::shared_ptr<prism::Button> m_stopButton;
     std::shared_ptr<prism::Button> m_snapButton;
     std::shared_ptr<prism::Button> m_gridButton;
-    std::shared_ptr<prism::Button> m_orthoButton;
+    std::shared_ptr<prism::Button> m_projectionButton;
+    std::shared_ptr<prism::Button> m_shadingButton;
+    std::shared_ptr<prism::Button> m_sunButton;
+    std::shared_ptr<prism::Button> m_skyButton;
     std::shared_ptr<prism::PropertyGrid> m_details;
     std::shared_ptr<prism::TextInput> m_detailsSearch;
     std::shared_ptr<prism::Label> m_detailsTitle;
