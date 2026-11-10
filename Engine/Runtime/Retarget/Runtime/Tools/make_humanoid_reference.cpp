@@ -20,8 +20,8 @@
 #include <string_view>
 #include <vector>
 
-#include "uve/asset/fbx_mesh_converter_uve.h"
-#include "uve/retarget/retarget_humanoid_uve.h"
+#include "fbx_mesh_converter.h"
+#include "retarget_humanoid.h"
 
 namespace {
 

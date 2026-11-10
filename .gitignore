@@ -1,6 +1,9 @@
 build/
 build-*/
+.uvbt/
 .venv/
+ThirdParty/
+!ThirdParty/imgui/ImGui.Build.cs
 *.o
 *.obj
 compile_commands.json
@@ -37,3 +40,5 @@ obj/
 
 # Python bytecode from the repo tools
 __pycache__/
+refactor_strip_uve_suffixes.bundle
+Test/UVScript/native/generated/

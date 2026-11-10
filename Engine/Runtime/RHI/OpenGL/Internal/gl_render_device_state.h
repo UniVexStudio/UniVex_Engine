@@ -1,0 +1,215 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+#include "gl_functions.h"
+#include "render_resource_descs.h"
+#include "device_operations.h"
+#include "shader_data_type.h"
+#include "i_window_manager.h"
+
+namespace UVE::Render::Detail {
+
+struct TransparentStringHashUVE {
+    using is_transparent = void;
+
+    [[nodiscard]] std::size_t operator()(std::string_view value) const noexcept {
+        return std::hash<std::string_view>{}(value);
+    }
+    [[nodiscard]] std::size_t operator()(const std::string& value) const noexcept {
+        return std::hash<std::string_view>{}(value);
+    }
+};
+
+struct TransparentStringEqualUVE {
+    using is_transparent = void;
+
+    [[nodiscard]] bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
+};
+
+/// The GL resource maps and function table shared between GlRenderDeviceUVE and
+/// GlCommandBufferUVE (module-private — never under include/). GlRenderDeviceUVE owns exactly one
+/// of these; every GlCommandBufferUVE it hands out (via CreateCommandBufferUVE()) holds a
+/// reference to it for the lifetime of one frame's recording, resolving UVE resource handles
+/// (which are opaque synthetic uint32_t counters, exactly like NullRenderDeviceUVE's own handles)
+/// to the real GL object names they map to.
+struct GlDeviceStateUVE {
+    Window::IWindowManagerUVE* windowManager;
+    GlFunctionsUVE gl;
+    std::unordered_map<std::uint32_t, GLsync> fences;
+    std::uint32_t nextFence = 1U;
+    struct QueryRecordUVE {
+        GLuint native = 0U;
+        RenderQueryKindUVE kind = RenderQueryKindUVE::Timestamp;
+        bool issued = false;
+    };
+    std::unordered_map<std::uint32_t, QueryRecordUVE> queries;
+    std::uint32_t nextQuery = 1U, activeOcclusion = 0U;
+    GLint maxCombinedTextureImageUnits = 0;
+    GLint maxUniformBufferBindings = 0;
+    GLint maxVertexAttribs = 0;
+    // GL_COMPRESSED_TEXTURE_FORMATS is the driver-authoritative list for compressed image
+    // allocation. Keep the queried internal-format tokens so Basis target selection never
+    // requests a format the active context cannot sample/upload.
+    std::vector<GLint> compressedTextureFormats;
+
+    /// GL_SHADER_STORAGE_BUFFER_BINDINGS, queried only when supportsComputeShadersUVE (SSBOs
+    /// share compute's GL 4.3 core floor; M2f binds them from GRAPHICS-stage shaders). Stays 0
+    /// on older/GLES contexts — BindStorageBufferUVE then refuses loudly instead of calling
+    /// into an enum the context doesn't know.
+    GLint maxShaderStorageBindings = 0;
+
+    /// True only once the negotiated context is queried and found to be desktop OpenGL 4.3+
+    /// (GL_COMPUTE_SHADER's minimum core version) - GLES contexts (compute needs ES 3.1, this
+    /// engine's Android baseline is a fixed ES 3.0) are never true. Phase 2a capability gate:
+    /// requesting a desktop GL context version (e.g. via --gl-version) is no guarantee the driver
+    /// grants it or that it clears the compute-shader threshold, so CreateShaderUVE() must check
+    /// this cached fact rather than assume "not Android" means compute is always available.
+    bool supportsComputeShadersUVE = false;
+
+    struct BufferRecordUVE {
+        GLuint glBuffer = 0;
+        GLenum target = 0;
+        std::uint64_t sizeBytes = 0;
+        /// CS7: kept because `target` can no longer identify the usage on its own - an
+        /// IndirectStorage buffer's home target is GL_SHADER_STORAGE_BUFFER, exactly like a plain
+        /// Storage buffer's, and DrawIndexedIndirectUVE must be able to tell them apart.
+        BufferUsageUVE usage = BufferUsageUVE::Vertex;
+        /// The placement/update hints as requested (GL folds them into the glBufferData token;
+        /// GetBufferDescUVE reports them back unchanged).
+        BufferMemoryUVE memory = BufferMemoryUVE::Auto;
+        BufferUpdateFrequencyUVE updateFrequency = BufferUpdateFrequencyUVE::Static;
+    };
+    std::unordered_map<std::uint32_t, BufferRecordUVE> buffers;
+    std::uint32_t nextBufferHandle = 1;
+
+    struct TextureRecordUVE {
+        GLuint glTexture = 0;
+        TextureDescUVE desc;
+    };
+    std::unordered_map<std::uint32_t, TextureRecordUVE> textures;
+    std::uint32_t nextTextureHandle = 1;
+
+    struct SamplerRecordUVE {
+        GLuint glSampler = 0;
+        SamplerDescUVE desc;
+    };
+    std::unordered_map<std::uint32_t, SamplerRecordUVE> samplers;
+    std::uint32_t nextSamplerHandle = 1;
+
+    /// Tier 2.2 anisotropy capability, probed once at init from the extension string.
+    bool samplerAnisotropySupported = false;
+    float maxSamplerAnisotropy = 1.0F;
+    /// Warn-once latch for anisotropy clamps (this backend has no VK-style bitmask infra).
+    bool warnedSamplerAnisotropyClamped = false;
+
+    /// Cached FBO names keyed by the pair of UVE texture handles attached to them. The render
+    /// device invalidates entries when a dependent texture is destroyed; the cache itself owns no
+    /// texture lifetime and is released while the GL context is still current.
+    // Tier 2.3: FBOs are keyed by the attachment pair AND the rendered layers (one cached
+    // FBO per layer — a layer is baked into the attachment at glFramebufferTextureLayer).
+    struct FramebufferKeyUVE {
+        std::uint32_t color = 0U;
+        std::uint32_t depth = 0U;
+        std::uint32_t colorLayer = 0U;
+        std::uint32_t depthLayer = 0U;
+        // Tier 2.4: locations 1..3 ride the key (handles AND layers — one cached FBO per
+        // attachment set, same as the 2.3 layer rule; unused slots stay 0).
+        std::array<std::uint32_t, kExtraColorAttachmentCountUVE> extraColors{};
+        std::array<std::uint32_t, kExtraColorAttachmentCountUVE> extraColorLayers{};
+        bool operator==(const FramebufferKeyUVE& other) const noexcept {
+            return color == other.color && depth == other.depth &&
+                   colorLayer == other.colorLayer && depthLayer == other.depthLayer &&
+                   extraColors == other.extraColors && extraColorLayers == other.extraColorLayers;
+        }
+    };
+    struct FramebufferKeyHashUVE {
+        std::size_t operator()(const FramebufferKeyUVE& key) const noexcept {
+            std::size_t hash = std::hash<std::uint32_t>{}(key.color);
+            hash = hash * 31U + std::hash<std::uint32_t>{}(key.depth);
+            hash = hash * 31U + std::hash<std::uint32_t>{}(key.colorLayer);
+            hash = hash * 31U + std::hash<std::uint32_t>{}(key.depthLayer);
+            for (const std::uint32_t extra : key.extraColors) {
+                hash = hash * 31U + std::hash<std::uint32_t>{}(extra);
+            }
+            for (const std::uint32_t extraLayer : key.extraColorLayers) {
+                hash = hash * 31U + std::hash<std::uint32_t>{}(extraLayer);
+            }
+            return hash;
+        }
+    };
+    std::unordered_map<FramebufferKeyUVE, GLuint, FramebufferKeyHashUVE> framebufferCache;
+
+    struct ShaderRecordUVE {
+        GLuint glShader = 0;
+        ShaderStageUVE stage = ShaderStageUVE::Vertex; // M5a: CreateComputePipelineUVE validates it
+    };
+    std::unordered_map<std::uint32_t, ShaderRecordUVE> shaders;
+    std::uint32_t nextShaderHandle = 1;
+
+    struct PipelineRecordUVE {
+        GLuint glProgram = 0;
+        GLuint glVao = 0; // One VAO per pipeline; vertex attrib pointers are configured against
+                           // it lazily, when BindVertexBufferUVE() runs (GL ties
+                           // glVertexAttribPointer to whichever buffer is bound at the time it's
+                           // called, which this RHI's Bind-then-Draw command buffer flow only
+                           // knows once BindVertexBufferUVE() actually executes).
+        std::vector<VertexAttributeUVE> vertexLayout;
+        std::uint32_t vertexStride = 0;
+        bool depthTestEnabled = true;
+        bool depthWriteEnabled = true;
+        PipelineBlendModeUVE blendMode = PipelineBlendModeUVE::Opaque;
+
+        // Tier 2.1: rasterizer tail mirroring PipelineDescUVE — defaults reproduce the pre-2.1
+        // effective state (no culling, CCW front, fill, no polygon offset, LESS compare).
+        CullModeUVE cullMode = CullModeUVE::None;
+        FrontFaceUVE frontFace = FrontFaceUVE::CounterClockwise;
+        FillModeUVE fillMode = FillModeUVE::Fill;
+        bool depthBiasEnabled = false;
+        float depthBiasConstantFactor = 0.0F;
+        float depthBiasSlopeFactor = 0.0F;
+        DepthCompareUVE depthCompare = DepthCompareUVE::Less;
+        StencilStateUVE stencil;
+
+        /// Tier 2.8: the draw mode, read by Draw*UVE at record time — GL takes topology as a
+        /// draw-call parameter rather than pipeline state, so the record carries what Vulkan
+        /// bakes into the pipeline object.
+        PrimitiveTopologyUVE topology = PrimitiveTopologyUVE::Triangles;
+
+        /// M5a: true for programs linked from CreateComputePipelineUVE(). Such records carry no
+        /// VAO/vertex layout and no render state — GlCommandBufferUVE skips the graphics-side
+        /// setup for them and DispatchUVE() requires one to be the currently bound pipeline.
+        bool isCompute = false;
+
+        /// Every uniform reflected right after this pipeline's program successfully linked
+        /// (Increment 21) — GlCommandBufferUVE's SetUniform*UVE calls look a name up here instead
+        /// of calling glGetUniformLocation per draw. Empty for a pipeline created via
+        /// CreatePipelineFromBinaryUVE() before its own post-load reflection pass runs.
+        struct UniformRecordUVE {
+            ShaderDataTypeUVE type = ShaderDataTypeUVE::Float;
+            GLint location = -1;
+            std::uint32_t arraySize = 1;
+            // M5b: true for GL_IMAGE_2D uniforms (imageLoad/imageStore). Reported as Int like
+            // samplers (the value is the image-unit index, settable through SetUniformIntUVE);
+            // BindTextureUVE double-binds image-using programs through glBindImageTexture.
+            bool isImageUniform = false;
+        };
+        std::unordered_map<std::string, UniformRecordUVE, TransparentStringHashUVE, TransparentStringEqualUVE> uniforms;
+        // Indexed aliases stay separate so public reflection still reports one array record.
+        decltype(uniforms) uniformElements;
+    };
+    std::unordered_map<std::uint32_t, PipelineRecordUVE> pipelines;
+    std::uint32_t nextPipelineHandle = 1;
+};
+
+} // namespace UVE::Render::Detail

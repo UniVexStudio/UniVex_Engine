@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <string>
 
-#include "interest_fanout_sample_uve.h"
+#include "interest_fanout_sample.h"
 
 int main() {
     UVE::Samples::InterestFanoutSampleConfigUVE config;

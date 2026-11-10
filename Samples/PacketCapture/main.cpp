@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <string>
 
-#include "packet_capture_sample_uve.h"
+#include "packet_capture_sample.h"
 
 int main() {
     UVE::Samples::PacketCaptureSampleConfigUVE config;

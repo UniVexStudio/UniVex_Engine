@@ -3,7 +3,7 @@
 // Load-bearing fixture for native_plugin_host_uve_tests: a real shared library exporting the
 // protocol-1 entry point with a manifest the host accepts.
 
-#include "uve/plugins/native_plugin_host_uve.h"
+#include "native_plugin_host.h"
 
 namespace {
 

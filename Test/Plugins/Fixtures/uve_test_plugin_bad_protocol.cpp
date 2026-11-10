@@ -4,7 +4,7 @@
 // shape is fine but whose engine protocol the host does not speak. Loading it must fail ABI
 // negotiation, not descriptor validation.
 
-#include "uve/plugins/native_plugin_host_uve.h"
+#include "native_plugin_host.h"
 
 namespace {
 
