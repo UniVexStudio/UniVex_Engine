@@ -20,6 +20,7 @@ public class EditorCoreModule : ModuleRules
             "Plugins",
             "Retarget",
             "ImGui",
+            "Prism",
             "Math",
             "Strings",
             "Logging"

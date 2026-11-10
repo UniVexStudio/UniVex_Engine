@@ -426,9 +426,12 @@ struct FilePickerListingUVE final {
     std::vector<std::filesystem::path> files;
 };
 
+class EditorPrismShellUVE;
+
 class EditorUVE final {
     friend struct Tests::EditorUVEAccessUVE;
     friend class EditorBridgeUVE;
+    friend class EditorPrismShellUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -444,6 +447,13 @@ public:
     /// native window is available. Safe in headless mode: hierarchy, inspector, picking helpers,
     /// transform editing, and persistence logic remain usable while UI rendering is disabled.
     void InitUVE();
+
+    /// Selects the PRISM editor shell instead of the previous UI backend. Must be called before
+    /// InitUVE(); `assetDir` holds PRISM's fonts, themes and locale tables.
+    void SetPrismUiEnabledUVE(bool enabled, std::filesystem::path assetDir = {});
+    [[nodiscard]] bool IsPrismUiActiveUVE() const noexcept { return m_prismShell != nullptr; }
+    /// Saves the current PRISM editor frame as PNG (false when the PRISM shell is not active).
+    bool SavePrismScreenshotUVE(const std::filesystem::path& path);
 
     /// Validates a possibly deleted selection, cancels an invalid gizmo drag, and performs
     /// non-rendering per-frame maintenance.
@@ -3114,6 +3124,9 @@ private:
     std::array<char, 512> m_consoleInput{};
     bool m_consoleScrollToBottom = false;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
+    bool m_prismUiRequested = false;
+    std::filesystem::path m_prismAssetDir;
+    std::unique_ptr<EditorPrismShellUVE> m_prismShell;
     // UI/render state is isolated just like the three backend cameras and render targets. Main
     // remains the canonical settings-backed state; tool-window state is session-local.
     ViewportOverlayStateUVE m_viewportOverlayState;

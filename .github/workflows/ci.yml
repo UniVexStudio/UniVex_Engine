@@ -170,6 +170,26 @@ jobs:
             exit 1
           fi
 
+      - name: PRISM editor shell starts
+        # The PRISM Level Editor (uve_editor --prism-ui) renders a few frames on software GL and
+        # saves its composited frame; the screenshot is uploaded for review.
+        run: |
+          mkdir -p /tmp/uve-prism-shell
+          cd /tmp/uve-prism-shell
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1600x900x24" \
+            "$GITHUB_WORKSPACE/.uvbt/bin/Linux/${{ matrix.mode }}/uve_editor" --prism-ui --frames 10 \
+            --prism-screenshot /tmp/uve-prism-shell/prism_level_editor.png
+          test -s /tmp/uve-prism-shell/prism_level_editor.png
+
+      - name: Upload PRISM editor screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prism-level-editor-${{ matrix.mode }}
+          path: /tmp/uve-prism-shell/prism_level_editor.png
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Verify software OpenGL device tests actually ran
         run: |
           set -o pipefail

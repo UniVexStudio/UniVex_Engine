@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -66,6 +67,10 @@ struct EditorLaunchOptionsUVE final {
     bool headless = false;
     bool bridgeStdio = false;
     bool decorated = false;
+    /// The PRISM editor shell instead of the previous UI backend.
+    bool prismUi = false;
+    /// After the last frame (--frames), save the PRISM editor frame as PNG here.
+    std::filesystem::path prismScreenshot;
 };
 
 [[nodiscard]] bool ParseGlVersionUVE(const std::string_view value, std::uint32_t& major,
@@ -96,6 +101,14 @@ struct EditorLaunchOptionsUVE final {
         if (argument == "--bridge-stdio") {
             options.bridgeStdio = true;
             options.headless = true;
+            continue;
+        }
+        if (argument == "--prism-ui") {
+            options.prismUi = true;
+            continue;
+        }
+        if (argument == "--prism-screenshot" && index + 1 < argc) {
+            options.prismScreenshot = argv[++index];
             continue;
         }
         if (argument == "--decorated") {
@@ -189,6 +202,16 @@ int main(const int argc, char** argv) {
         }
 
         UVE::Editor::EditorUVE editor(engine.GetServicesUVE(), options.scenePath, 100U, &engine);
+        if (options.prismUi && !options.headless) {
+            // PRISM's fonts / themes / locales ship next to the executable (UVBT copies them).
+            std::error_code assetError;
+            std::filesystem::path assetDir =
+                std::filesystem::absolute(std::filesystem::path(argv[0]), assetError).parent_path() / "prism_assets";
+            if (!std::filesystem::is_directory(assetDir, assetError)) {
+                assetDir = "prism_assets";
+            }
+            editor.SetPrismUiEnabledUVE(true, assetDir);
+        }
         editor.InitUVE();
 
         if (std::filesystem::exists(options.scenePath)) {
@@ -238,6 +261,9 @@ int main(const int argc, char** argv) {
             ++framesRun;
         }
 
+        if (!options.prismScreenshot.empty() && !editor.SavePrismScreenshotUVE(options.prismScreenshot)) {
+            std::fprintf(stderr, "uve_editor: could not save the PRISM screenshot\n");
+        }
         engine.SetPostRenderCallbackUVE({});
         editor.SetViewportPanelRendererUVE({});
         // Destroyed here, before engine.Shutdown() tears down the window/GL context below - its

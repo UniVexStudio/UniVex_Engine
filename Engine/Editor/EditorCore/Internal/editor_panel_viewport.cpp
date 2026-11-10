@@ -12,6 +12,7 @@
 // Moved verbatim. Not one line of the three functions differs from what was in editor_uve.cpp.
 
 #include "editor_viewport_input_imgui.h"
+#include "prism_shell/editor_prism_shell.h"
 #include "editor_color_field.h"
 #include "editor.h"
 #include "scalar.h"
@@ -87,6 +88,10 @@ template <typename DrawIconUVE>
 
 void EditorUVE::RenderOverlayUVE() {
     if (m_state != EditorStateUVE::Running || !m_uiInitialized) {
+        return;
+    }
+    if (m_prismShell != nullptr) {
+        m_prismShell->FrameUVE();
         return;
     }
 

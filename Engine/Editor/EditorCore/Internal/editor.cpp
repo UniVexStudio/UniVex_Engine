@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "prism_shell/editor_prism_shell.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
 #include "fbx_mesh_converter.h"
@@ -304,13 +305,32 @@ EditorUVE::~EditorUVE() {
     ShutdownUVE();
 }
 
+void EditorUVE::SetPrismUiEnabledUVE(const bool enabled, std::filesystem::path assetDir) {
+    m_prismUiRequested = enabled;
+    m_prismAssetDir = std::move(assetDir);
+}
+
+bool EditorUVE::SavePrismScreenshotUVE(const std::filesystem::path& path) {
+    return m_prismShell != nullptr && m_prismShell->SaveScreenshotUVE(path);
+}
+
 void EditorUVE::InitUVE() {
     if (m_state != EditorStateUVE::Uninitialized) {
         return;
     }
 
     Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
-    if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
+    if (m_prismUiRequested && windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
+        auto shell = std::make_unique<EditorPrismShellUVE>(*this);
+        if (shell->InitializeUVE(static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()),
+                                 m_prismAssetDir)) {
+            static_cast<void>(m_uiAssets.InitializeUVE());
+            m_meshThumbnailRenderer.InitializeUVE();
+            m_materialThumbnailRenderer.InitializeUVE();
+            m_prismShell = std::move(shell);
+            m_uiInitialized = true;
+        }
+    } else if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         // Viewports (multi-window), but deliberately NOT docking. A window may live in its own OS
@@ -4657,15 +4677,20 @@ void EditorUVE::ShutdownUVE() {
         m_meshThumbnailRenderer.ShutdownUVE();
         m_materialThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
-        if (ImGui::GetCurrentContext() != nullptr) {
+        if (m_prismShell != nullptr) {
+            m_prismShell->ShutdownUVE();
+            m_prismShell.reset();
+        } else if (ImGui::GetCurrentContext() != nullptr) {
             const char* const iniFilename = ImGui::GetIO().IniFilename;
             if (iniFilename != nullptr && iniFilename[0] != '\0') {
                 ImGui::SaveIniSettingsToDisk(iniFilename);
             }
         }
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
+        if (ImGui::GetCurrentContext() != nullptr) {
+            ImGui_ImplOpenGL3_Shutdown();
+            ImGui_ImplGlfw_Shutdown();
+            ImGui::DestroyContext();
+        }
         m_uiInitialized = false;
     }
 
