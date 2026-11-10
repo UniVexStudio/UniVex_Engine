@@ -55,7 +55,7 @@ public:
   void paint(Canvas& c) override;
   bool onMouseDown(const MouseEvent& e) override;
   bool onMouseMove(const MouseEvent& e) override;
-  bool onMouseUp(const MouseEvent& e) override { m_dragSel = false; return true; }
+  bool onMouseUp(const MouseEvent& /*e*/) override { m_dragSel = false; return true; }
   bool onKeyDown(const KeyEvent& e) override;
   bool onTextInput(const std::string& s) override;
   void onFocusChanged(bool f) override;

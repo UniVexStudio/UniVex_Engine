@@ -68,6 +68,9 @@ public:
   void addMenu(std::string title, MenuFactory factory);
   void syncExtensions();                    // add top-level menus that plugins registered (call after plugins load)
   void setRightContent(Ref<Widget> w);
+  // Host title bars draw their own mark: no PRISM logo, and the bar measures just its menus so it can
+  // sit inline in a row (logo tab | menus | drag strip | window buttons).
+  void setShowLogo(bool on) { m_showLogo = on; relayout(); }
   void openMenu(int index);
   int menuCount() const { return int(m_menus.size()); }
   Vec2 measure(Vec2 avail) override;
@@ -82,6 +85,7 @@ private:
   std::vector<M> m_menus;
   Ref<Widget> m_right;
   int m_open = -1, m_hot = -1, m_last = -1;
+  bool m_showLogo = true;
 };
 
 } // namespace prism

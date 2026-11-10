@@ -32,7 +32,7 @@ public:
 protected:
   virtual int rowCount() const = 0;
   virtual void paintRow(Canvas& c, int row, Rect r, bool hover) = 0;
-  virtual bool onRowDown(int row, const MouseEvent& e, Rect r) { return false; }
+  virtual bool onRowDown(int /*row*/, const MouseEvent& /*e*/, Rect /*r*/) { return false; }
   virtual void paintOverlay(Canvas&) {}
   float contentH() const { return float(rowCount()) * m_rowH; }
   Rect rowRect(int i) const { return {m_rect.x, m_rect.y + float(i) * m_rowH - m_scroll, rowWidth(), m_rowH}; }
@@ -162,7 +162,7 @@ public:
   void paint(Canvas& c) override;
   bool onMouseDown(const MouseEvent& e) override;
   bool onMouseMove(const MouseEvent& e) override;
-  bool onMouseUp(const MouseEvent& e) override { m_dragDiv = false; return true; }
+  bool onMouseUp(const MouseEvent& /*e*/) override { m_dragDiv = false; return true; }
   Cursor cursor() const override;
   const std::string& tooltipAt(Vec2 p) const override;
 private:

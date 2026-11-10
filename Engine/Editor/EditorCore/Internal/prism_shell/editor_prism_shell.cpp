@@ -12,7 +12,6 @@
 #include "prism/TextInput.h"
 #include "prism/Theme.h"
 #include "prism/Views.h"
-#include "prism/WindowChrome.h"
 
 #include <GLFW/glfw3.h>
 
@@ -22,6 +21,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <functional>
+#include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -93,7 +94,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 
 } // namespace
 
-EditorPrismShellUVE::EditorPrismShellUVE(EditorUVE& editor) : m_editor(editor) {}
+EditorPrismShellUVE::EditorPrismShellUVE(EditorUVE& editor) : m_editor(editor), m_contentBrowser(editor) {}
 
 EditorPrismShellUVE::~EditorPrismShellUVE() {
     ShutdownUVE();
@@ -104,6 +105,10 @@ bool EditorPrismShellUVE::InitializeUVE(GLFWwindow* const window, const std::fil
         return false;
     }
     m_host.SetRootUVE(BuildLayoutUVE());
+    // Every keyboard shortcut is an editor command's (the same registry the menus use).
+    m_host.AppUVE().setShortcutHandler([this](const prism::Key key, const std::uint8_t mods) {
+        return DispatchShortcutUVE(key, mods);
+    });
     return true;
 }
 
@@ -125,18 +130,224 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildLayoutUVE() {
     centre->add(m_dockArea, prism::Splitter::Pane{260.0F, 120.0F, 900.0F, false});
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
-    columns->add(BuildOutlinerUVE(), prism::Splitter::Pane{280.0F, 180.0F, 700.0F, false});
+    m_outlinerColumn = BuildOutlinerUVE();
+    m_detailsColumn = BuildDetailsUVE();
+    columns->add(m_outlinerColumn, prism::Splitter::Pane{280.0F, 180.0F, 700.0F, false});
     columns->add(centre, prism::Splitter::Pane{800.0F, 320.0F, 1e9F, true});
-    columns->add(BuildDetailsUVE(), prism::Splitter::Pane{340.0F, 220.0F, 800.0F, false});
+    columns->add(m_detailsColumn, prism::Splitter::Pane{340.0F, 220.0F, 800.0F, false});
     content->add(columns, prism::Slot{1.0F});
 
     content->add(BuildDockBarUVE());
 
-    // #1 logo + #15 title bar (drag strip, minimize / maximize-restore / close).
-    prism::WindowChromeOptions chrome{};
-    chrome.title = "UniVex Engine";
-    chrome.icon = prism::Icon::Layers;
-    return prism::wrapWithWindowChrome(content, 0, chrome);
+    // #1 logo + #15 title bar with the editor menus, over everything else; 1px window frame.
+    auto window = prism::vbox();
+    window->add(BuildTitleBarUVE());
+    window->add(content, prism::Slot{1.0F});
+    auto frame = prism::make<prism::Border>();
+    frame->setBackground(prism::ThemeColor(&prism::Theme::window));
+    frame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
+    frame->setChild(window);
+    return frame;
+}
+
+std::vector<prism::MenuItem> EditorPrismShellUVE::CommandItemsUVE(const std::initializer_list<const char*> ids) {
+    std::vector<prism::MenuItem> items;
+    for (const char* const id : ids) {
+        if (id == nullptr) {
+            items.push_back(prism::MenuItem::Sep());
+            continue;
+        }
+        EditorCommandUVE* const command = m_editor.FindEditorCommandUVE(id);
+        if (command == nullptr) {
+            continue;
+        }
+        prism::MenuItem item = prism::MenuItem::Item(
+            command->label, [this, commandId = std::string(id)] { static_cast<void>(m_editor.RunEditorCommandUVE(commandId)); },
+            DisplayEditorShortcutUVE(command->shortcuts[0]));
+        item.enabled = !command->isEnabled || command->isEnabled();
+        items.push_back(std::move(item));
+    }
+    return items;
+}
+
+bool EditorPrismShellUVE::DispatchShortcutUVE(const prism::Key key, const std::uint8_t mods) {
+    // PRISM key + modifiers -> the editor's stable shortcut name ("Ctrl+S") -> its command.
+    std::string name;
+    const int k = static_cast<int>(key);
+    if (key >= prism::Key::A && key <= prism::Key::Z) {
+        name = std::string(1, static_cast<char>('A' + (k - static_cast<int>(prism::Key::A))));
+    } else if (key >= prism::Key::N0 && key <= prism::Key::N9) {
+        name = std::string(1, static_cast<char>('0' + (k - static_cast<int>(prism::Key::N0))));
+    } else if (key >= prism::Key::F1 && key <= prism::Key::F12) {
+        name = "F" + std::to_string(1 + (k - static_cast<int>(prism::Key::F1)));
+    } else {
+        switch (key) {
+            case prism::Key::Delete: name = "Delete"; break;
+            case prism::Key::Backspace: name = "Backspace"; break;
+            case prism::Key::Home: name = "Home"; break;
+            case prism::Key::End: name = "End"; break;
+            case prism::Key::PageUp: name = "PageUp"; break;
+            case prism::Key::PageDown: name = "PageDown"; break;
+            case prism::Key::Space: name = "Space"; break;
+            case prism::Key::Enter: name = "Enter"; break;
+            case prism::Key::Tab: name = "Tab"; break;
+            case prism::Key::Left: name = "Left"; break;
+            case prism::Key::Right: name = "Right"; break;
+            case prism::Key::Up: name = "Up"; break;
+            case prism::Key::Down: name = "Down"; break;
+            default: return false;
+        }
+    }
+    std::string text;
+    text += (mods & prism::ModCtrl) != 0 ? "Ctrl+" : "";
+    text += (mods & prism::ModShift) != 0 ? "Shift+" : "";
+    text += (mods & prism::ModAlt) != 0 ? "Alt+" : "";
+    text += name;
+    const std::optional<EditorShortcutUVE> pressed = ParseEditorShortcutUVE(text);
+    if (!pressed.has_value()) {
+        return false;
+    }
+    for (const EditorCommandUVE& command : m_editor.GetEditorCommandsUVE()) {
+        if (command.shortcuts[0] == *pressed || command.shortcuts[1] == *pressed) {
+            return m_editor.RunEditorCommandUVE(command.id);
+        }
+    }
+    return false;
+}
+
+namespace {
+
+/// #1: the engine's logo tab at the left end of the title bar.
+class LogoTabUVE final : public prism::Widget {
+public:
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(118.0F, 32.0F)); }
+    void paint(prism::Canvas& c) override {
+        const prism::Theme& t = prism::theme();
+        const prism::Rect r = rect();
+        const prism::Vec2 poly[4] = {prism::Vec2(r.x, r.y), prism::Vec2(r.right() - 10.0F, r.y),
+                                     prism::Vec2(r.right(), r.bottom()), prism::Vec2(r.x, r.bottom())};
+        c.fillPolygon(std::span<const prism::Vec2>(poly, 4), t.accent.alpha(0.22F), false);
+        c.fillRect(prism::Rect{r.x, r.bottom() - 2.0F, r.w - 3.0F, 2.0F}, t.accent);
+        prism::drawIcon(c, prism::Icon::Layers, prism::Rect{r.x + 10.0F, r.y + 8.0F, 16.0F, 16.0F}, t.accentHover);
+        c.textIn(*t.semibold, prism::Rect{r.x + 32.0F, r.y, r.w - 40.0F, r.h}, "UniVex", t.textBright,
+                 prism::HAlign::Left, false);
+    }
+};
+
+/// #15: the drag strip. Reports itself as the window caption (the host moves the window from it);
+/// a double click toggles maximize.
+class DragStripUVE final : public prism::Widget {
+public:
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(40.0F, 32.0F)); }
+    void arrange(prism::Rect r) override {
+        prism::Widget::arrange(r);
+        if (prism::Application::exists()) {
+            prism::Application::get().platform().setWindowCaption(0, r);
+        }
+    }
+    void paint(prism::Canvas& c) override {
+        const prism::Rect r = rect();
+        const prism::Rect hatch{r.x + 12.0F, r.y + 9.0F, std::max(0.0F, r.w - 24.0F), r.h - 18.0F};
+        if (hatch.w > 4.0F) {
+            c.pushClip(hatch);
+            for (float x = hatch.x - hatch.h; x < hatch.right(); x += 6.0F) {
+                c.line(prism::Vec2(x, hatch.bottom()), prism::Vec2(x + hatch.h, hatch.y), prism::Color(255, 255, 255, 12), 1.0F);
+            }
+            c.popClip();
+        }
+    }
+    bool onMouseDown(const prism::MouseEvent& e) override {
+        if (e.button == prism::MouseButton::Left && e.clicks >= 2 && prism::Application::exists()) {
+            prism::Application::get().platform().toggleMaximizeWindow(0);
+        }
+        return e.button == prism::MouseButton::Left;
+    }
+};
+
+} // namespace
+
+prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
+    auto row = prism::hbox();
+    row->add(prism::make<LogoTabUVE>());
+
+    auto menus = prism::make<prism::MenuBar>();
+    menus->setShowLogo(false);
+    menus->addMenu("File", [this] {
+        std::vector<prism::MenuItem> items = CommandItemsUVE({"file.saveScene", "file.saveAll", "file.loadScene", nullptr,
+                                                              "file.projectSettings", "file.inputMap", "file.preferences",
+                                                              "file.keyboardShortcuts", "file.commandPalette"});
+        items.push_back(prism::MenuItem::Item("Save Editor Preferences",
+                                              [this] { static_cast<void>(m_editor.SaveSessionSettingsUVE()); }));
+        return items;
+    });
+    menus->addMenu("Edit", [this] {
+        return CommandItemsUVE({"edit.undo", "edit.redo", nullptr, "edit.duplicate", "edit.delete"});
+    });
+    menus->addMenu("Window", [this] {
+        std::vector<prism::MenuItem> items;
+        items.push_back(prism::MenuItem::Check("Outliner", m_editor.m_scenePanelVisible, [this] {
+            m_editor.m_scenePanelVisible = !m_editor.m_scenePanelVisible;
+            if (m_outlinerColumn) { m_outlinerColumn->setVisible(m_editor.m_scenePanelVisible); }
+        }));
+        items.push_back(prism::MenuItem::Check("Details", m_editor.m_inspectorPanelVisible, [this] {
+            m_editor.m_inspectorPanelVisible = !m_editor.m_inspectorPanelVisible;
+            if (m_detailsColumn) { m_detailsColumn->setVisible(m_editor.m_inspectorPanelVisible); }
+        }));
+        items.push_back(prism::MenuItem::Check("Content Browser + Dock", m_dockVisible, [this] {
+            m_dockVisible = !m_dockVisible;
+            if (m_dockArea) { m_dockArea->setVisible(m_dockVisible); }
+        }));
+        return items;
+    });
+    menus->addMenu("Tools", [this] {
+        std::vector<prism::MenuItem> items;
+        items.push_back(prism::MenuItem::Item("Project Browser", [this] {
+            m_dockVisible = true;
+            if (m_dockArea) { m_dockArea->setVisible(true); }
+        }));
+        items.push_back(prism::MenuItem::Item("Import Queue", {}).disabled());
+        items.push_back(prism::MenuItem::Sep());
+        for (prism::MenuItem& item : CommandItemsUVE({"file.projectSettings", "file.preferences", "file.commandPalette"})) {
+            items.push_back(std::move(item));
+        }
+        return items;
+    });
+    menus->addMenu("Build", [] {
+        return std::vector<prism::MenuItem>{
+            prism::MenuItem::Item("Build All Levels", {}).disabled(),
+            prism::MenuItem::Item("Build Geometry", {}).disabled(),
+            prism::MenuItem::Item("Build Lighting Only", {}).disabled(),
+            prism::MenuItem::Item("Cook Content for Project", {}).disabled(),
+        };
+    });
+    menus->addMenu("Help", [] {
+        return std::vector<prism::MenuItem>{
+            prism::MenuItem::Item("UVE Editor Reference", {}).disabled(),
+            prism::MenuItem::Item("About UNIVEX Engine", {}).disabled(),
+        };
+    });
+    row->add(menus, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
+
+    // - [] x
+    auto minimize = prism::make<prism::Button>("", prism::Icon::Minus, prism::ButtonStyle::Flat);
+    minimize->setTooltip("Minimize");
+    minimize->onClick = [] { prism::Application::get().platform().minimizeWindow(0); };
+    auto maximize = prism::make<prism::Button>("", prism::Icon::Frame, prism::ButtonStyle::Flat);
+    maximize->setTooltip("Maximize / Restore");
+    maximize->onClick = [] { prism::Application::get().platform().toggleMaximizeWindow(0); };
+    auto close = prism::make<prism::Button>("", prism::Icon::Close, prism::ButtonStyle::Flat);
+    close->setTooltip("Close");
+    close->onClick = [] { prism::Application::get().quit(); };
+    row->add(minimize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    row->add(maximize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    row->add(close, prism::Slot{0.0F, prism::Margin(0.0F, 0.0F, 4.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
+
+    auto bar = prism::make<prism::Border>();
+    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
+    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+    bar->setChild(row);
+    return bar;
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
@@ -357,10 +568,7 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDockUVE() {
     // #16 dock area: the panels docked under the viewport.
     auto tabs = prism::make<prism::TabView>();
     tabs->dockGroup = "level-editor";
-    auto content = prism::make<prism::Label>("Content Browser", prism::FontRole::Regular);
-    content->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    content->setPadding(prism::Margin(12.0F));
-    tabs->addTab("Content Browser", prism::Icon::Folder, PanelUVE(content));
+    tabs->addTab("Content Browser", prism::Icon::Folder, PanelUVE(m_contentBrowser.BuildUVE()));
     auto log = prism::make<prism::LogView>();
     log->add(prism::LogLevel::Info, "PRISM editor shell ready", "Editor");
     tabs->addTab("Output Log", prism::Icon::Terminal, PanelUVE(log));
@@ -663,6 +871,7 @@ void EditorPrismShellUVE::FrameUVE() {
     RefreshOutlinerUVE();
     RefreshDetailsUVE();
     RefreshToolbarUVE();
+    m_contentBrowser.RefreshUVE();
     m_host.BeginFrameUVE();
 
     std::vector<EditorPrismHostUVE::ViewImageUVE> views;

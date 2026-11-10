@@ -715,6 +715,7 @@ void EditorPrismHostUVE::OnCursorPosUVE(const double x, const double y) {
 
 void EditorPrismHostUVE::OnMouseButtonUVE(const int button, const int action, const int mods) {
     m_mods = ToPrismModsUVE(mods);
+    m_app->hostSetModifiers(m_mods);
     const int slot = ToViewButtonUVE(button);
     const prism::MouseButton prismButton = ToPrismButtonUVE(button);
     if (action == GLFW_PRESS) {
