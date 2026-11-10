@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "i_renderer_3d.h"
+#include "profiler_diagnostics.h"
 
 namespace UVE::Editor {
 
@@ -46,6 +47,10 @@ struct EditorRenderStatRowUVE final {
 /// Percentage helper shared by the rows, exposed because it has one edge case worth pinning: a
 /// zero total returns 0, not a division by zero, and that case is reached constantly (an empty
 /// scene, a frame before the first cull) rather than being a theoretical concern.
+/// One line summarising a capture's runtime snapshot (frame, allocations, workers, animation,
+/// ECS, VM and render pass counts), shared by every Profiler panel.
+[[nodiscard]] std::string FormatProfilerRuntimeLineUVE(const Core::DiagnosticRuntimeSnapshotUVE& runtime);
+
 [[nodiscard]] float ComputeEditorStatPercentageUVE(std::size_t part, std::size_t total) noexcept;
 
 } // namespace UVE::Editor

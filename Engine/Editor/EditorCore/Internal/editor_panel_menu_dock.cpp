@@ -2153,26 +2153,37 @@ static std::uint64_t ProfilerNowNsUVE() {
     return static_cast<std::uint64_t>(now.count());
 }
 
+void EditorUVE::BeginProfilerCaptureUVE() {
+    if (m_profilerCapture.IsActiveUVE()) {
+        return;
+    }
+    ++m_profilerSession;
+    const std::string session = "editor-" + std::to_string(m_profilerSession);
+    const Core::DiagnosticCaptureResultUVE begun = m_profilerCapture.BeginUVE(session, ProfilerNowNsUVE());
+    m_profilerStatus = begun.IsAcceptedUVE() ? "Capturing " + session + "." : begun.message;
+}
+
+void EditorUVE::EndProfilerCaptureUVE() {
+    if (!m_profilerCapture.IsActiveUVE()) {
+        return;
+    }
+    Core::DiagnosticCaptureStopResultUVE ended = m_profilerCapture.EndUVE(ProfilerNowNsUVE());
+    if (ended.IsAcceptedUVE()) {
+        m_profilerBundle = std::move(ended.bundle);
+        m_profilerHasBundle = true;
+        m_profilerStatus = "Ended " + m_profilerBundle.sessionId + ".";
+    } else {
+        m_profilerStatus = ended.message;
+    }
+}
+
 void EditorUVE::DrawProfilerBodyUVE() {
     const bool active = m_profilerCapture.IsActiveUVE();
     if (!active && ImGui::Button("Begin capture")) {
-        ++m_profilerSession;
-        const std::string session = "editor-" + std::to_string(m_profilerSession);
-        const Core::DiagnosticCaptureResultUVE begun =
-            m_profilerCapture.BeginUVE(session, ProfilerNowNsUVE());
-        m_profilerStatus =
-            begun.IsAcceptedUVE() ? "Capturing " + session + "." : begun.message;
+        BeginProfilerCaptureUVE();
     }
     if (active && ImGui::Button("End capture")) {
-        Core::DiagnosticCaptureStopResultUVE ended =
-            m_profilerCapture.EndUVE(ProfilerNowNsUVE());
-        if (ended.IsAcceptedUVE()) {
-            m_profilerBundle = std::move(ended.bundle);
-            m_profilerHasBundle = true;
-            m_profilerStatus = "Ended " + m_profilerBundle.sessionId + ".";
-        } else {
-            m_profilerStatus = ended.message;
-        }
+        EndProfilerCaptureUVE();
     }
     ImGui::SameLine();
     ImGui::TextDisabled("%s", m_profilerStatus.c_str());
@@ -2254,18 +2265,7 @@ void EditorUVE::DrawProfilerBodyUVE() {
         }
         ImGui::TextUnformatted("Runtime");
         const Core::DiagnosticRuntimeSnapshotUVE& runtime = shown.runtimeSnapshot;
-        const std::string runtimeLine =
-            "frame " + std::to_string(runtime.frameNumber) + ", " +
-            std::to_string(runtime.activeAllocationCount) + " allocations (" +
-            std::to_string(runtime.activeBytes) + " bytes, peak " +
-            std::to_string(runtime.peakBytes) + "), " + std::to_string(runtime.workerCount) +
-            " workers (" + std::to_string(runtime.activeWorkerCount) + " active, " +
-            std::to_string(runtime.pendingTaskCount) + " pending, " +
-            std::to_string(runtime.stolenJobCount) + " stolen), animation " +
-            std::to_string(runtime.animationEvaluationCount) + ", ecs " +
-            std::to_string(runtime.ecsSystemCount) + ", vm " +
-            std::to_string(runtime.vmInstructionCount) + ", render passes " +
-            std::to_string(runtime.renderPassCount);
+        const std::string runtimeLine = FormatProfilerRuntimeLineUVE(runtime);
         ImGui::TextDisabled("%s", runtimeLine.c_str());
     }
     ImGui::EndChild();

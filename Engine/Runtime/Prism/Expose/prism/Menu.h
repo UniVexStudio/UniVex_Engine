@@ -71,6 +71,8 @@ public:
   // Host title bars draw their own mark: no PRISM logo, and the bar measures just its menus so it can
   // sit inline in a row (logo tab | menus | drag strip | window buttons).
   void setShowLogo(bool on) { m_showLogo = on; relayout(); }
+  // Horizontal padding around each menu title (both sides together); 20 by default.
+  void setItemPadding(float px) { m_itemPad = px < 0 ? 0 : px; relayout(); }
   void openMenu(int index);
   int menuCount() const { return int(m_menus.size()); }
   Vec2 measure(Vec2 avail) override;
@@ -86,6 +88,7 @@ private:
   Ref<Widget> m_right;
   int m_open = -1, m_hot = -1, m_last = -1;
   bool m_showLogo = true;
+  float m_itemPad = 20;
 };
 
 } // namespace prism

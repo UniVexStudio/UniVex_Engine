@@ -178,7 +178,7 @@ Vec2 MenuBar::measure(Vec2 avail) {
   if (!m_showLogo) {
     const Font& f = *theme().ui;
     w = 8;
-    for (const auto& m : m_menus) w += std::ceil(f.width(m.title)) + 21;
+    for (const auto& m : m_menus) w += std::ceil(f.width(m.title)) + m_itemPad + 1;
   }
   return m_desired = constrain({w, theme().menuBarH});
 }
@@ -188,7 +188,7 @@ void MenuBar::arrange(Rect r) {
   const Font& f = *theme().ui;
   float x = m_showLogo ? r.x + 10 + 18 + 10 : r.x + 4;
   for (auto& m : m_menus) {
-    float w = std::ceil(f.width(m.title)) + 20;
+    float w = std::ceil(f.width(m.title)) + m_itemPad;
     m.rect = {x, r.y + 3, w, r.h - 6};
     x += w + 1;
   }

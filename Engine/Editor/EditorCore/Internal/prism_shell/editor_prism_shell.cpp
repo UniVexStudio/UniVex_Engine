@@ -105,7 +105,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 EditorPrismShellUVE::EditorPrismShellUVE(EditorUVE& editor)
-    : m_editor(editor), m_contentBrowser(editor), m_details2(editor) {}
+    : m_editor(editor), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor) {}
 
 EditorPrismShellUVE::~EditorPrismShellUVE() {
     ShutdownUVE();
@@ -115,6 +115,7 @@ bool EditorPrismShellUVE::InitializeUVE(GLFWwindow* const window, const std::fil
     if (!m_host.InitializeUVE(window, assetDir)) {
         return false;
     }
+    m_dockPanels.AttachLogUVE();
     m_host.SetRootUVE(BuildLayoutUVE());
     // Every keyboard shortcut is an editor command's (the same registry the menus use).
     m_host.AppUVE().setShortcutHandler([this](const prism::Key key, const std::uint8_t mods) {
@@ -232,9 +233,9 @@ bool EditorPrismShellUVE::DispatchShortcutUVE(const prism::Key key, const std::u
 namespace {
 
 // Title bar (#15) and viewport-name tab (#2) row heights, and the logo box (#1) spanning both.
-constexpr float kTitleRowUVE = 28.0F;
-constexpr float kTabRowUVE = 25.0F;
-constexpr float kLogoBoxUVE = 50.0F;
+constexpr float kTitleRowUVE = 24.0F;
+constexpr float kTabRowUVE = 24.0F;
+constexpr float kLogoBoxUVE = kTitleRowUVE + kTabRowUVE; // square: as wide as the two rows are tall
 // Sub row 2: the viewport settings strip.
 constexpr float kSubRow2UVE = 27.0F;
 
@@ -250,7 +251,8 @@ public:
         const prism::Theme& t = prism::theme();
         const prism::Rect r = rect();
         c.fillRect(r, t.header);
-        const float side = std::floor(std::min(r.w, r.h) * 0.56F);
+        // The slot hugs the mark: a few pixels of the bar around it, no more.
+        const float side = std::floor(std::min(r.w, r.h) - 8.0F);
         const prism::Rect mark{r.x + (r.w - side) * 0.5F, r.y + (r.h - side) * 0.5F, side, side};
         c.fillRoundRect(mark, 5.0F, prism::Color(32, 112, 228));
         c.strokeRoundRect(mark, 5.0F, prism::Color(82, 160, 255, 220), 1);
@@ -359,6 +361,7 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
     auto row = prism::hbox();
     auto menus = prism::make<prism::MenuBar>();
     menus->setShowLogo(false);
+    menus->setItemPadding(12.0F);
     menus->addMenu("File", [this] {
         std::vector<prism::MenuItem> items = CommandItemsUVE({"file.saveScene", "file.saveAll", "file.loadScene", nullptr,
                                                               "file.projectSettings", "file.inputMap", "file.preferences",
@@ -460,13 +463,11 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
 }
 
 prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
-    // Sub row 1: #4 open folder, #5 save, #3 selection mode | #14 blueprint (beta) | transport.
+    // Sub row 1: #5 save, #3 selection mode | #4 open folder, #14 blueprint (beta) | transport.
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
 
-    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Content Browser)");
-    openFolder->onClick = [this] { ShowDockPanelUVE(0, true); };
-    row->add(openFolder, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    // #5 save, beside #3 selection mode.
     auto save = ToolButtonUVE(prism::Icon::Save, "Save all (Ctrl+Shift+S)");
     save->onClick = [this] { static_cast<void>(m_editor.RunEditorCommandUVE("file.saveAll")); };
     row->add(save, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -483,6 +484,11 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildToolbarRowUVE() {
     modeBox->setContent(m_selectionMode);
     row->add(modeBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(HSeparatorUVE());
+
+    // #4 open folder, beside #14 blueprint.
+    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Content Browser)");
+    openFolder->onClick = [this] { ShowDockPanelUVE(0, true); };
+    row->add(openFolder, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
 
     auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Blueprint editor (beta)");
     blueprint->onClick = [] {
@@ -720,16 +726,9 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDockUVE() {
     // The dock panel (above the #16 dock bar): one page per dock tab.
     m_dockPages = prism::make<prism::StackSwitcher>();
     m_dockPages->addPage(PanelUVE(m_contentBrowser.BuildUVE()));
-    auto log = prism::make<prism::LogView>();
-    log->add(prism::LogLevel::Info, "PRISM editor shell ready", "Editor");
-    m_dockPages->addPage(PanelUVE(log));
-    auto console = prism::make<prism::LogView>();
-    console->add(prism::LogLevel::Command, "Console", "Console");
-    m_dockPages->addPage(PanelUVE(console));
-    auto profiler = prism::make<prism::Label>("Profiler", prism::FontRole::Regular);
-    profiler->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    profiler->setPadding(prism::Margin(12.0F));
-    m_dockPages->addPage(PanelUVE(profiler));
+    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildOutputLogUVE()));
+    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildConsoleUVE()));
+    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildProfilerUVE()));
     return m_dockPages;
 }
 
@@ -1110,6 +1109,10 @@ void EditorPrismShellUVE::FrameUVE() {
     RefreshDetailsUVE();
     RefreshToolbarUVE();
     m_contentBrowser.RefreshUVE();
+    {
+        const int page = m_dockPages ? m_dockPages->activeIndex() : 0;
+        m_dockPanels.RefreshUVE(m_dockVisible && page == 2, m_dockVisible && page == 3);
+    }
     m_host.BeginFrameUVE();
 
     std::vector<EditorPrismHostUVE::ViewImageUVE> views;

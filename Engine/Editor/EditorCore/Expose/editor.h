@@ -438,6 +438,7 @@ class EditorUVE final {
     friend class EditorPrismContentBrowserUVE;
     friend class EditorPrismDetailsUVE;
     friend class EditorPrismViewportGizmosUVE;
+    friend class EditorPrismDockPanelsUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -1567,6 +1568,11 @@ public:
     Core::ProfilerCaptureUVE& ProfilerUVE() noexcept;
     /// The last completed capture (empty session id when none ended yet).
     [[nodiscard]] const Core::DiagnosticCaptureBundleUVE& ProfilerBundleUVE() const noexcept;
+    /// The Profiler dock's Begin / End buttons: starts a new numbered session, or ends the active
+    /// one and keeps its bundle. Either way ProfilerStatusUVE() says what happened.
+    void BeginProfilerCaptureUVE();
+    void EndProfilerCaptureUVE();
+    [[nodiscard]] const std::string& ProfilerStatusUVE() const noexcept { return m_profilerStatus; }
     /// Releases editor-private UI resources and destroys the editor camera while the services are
     /// still alive. Idempotent after the first successful shutdown.
     void ShutdownUVE();
