@@ -352,9 +352,9 @@ void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke) {
   case Icon::Settings: {
     for (int i = 0; i < 8; i++) {
       float a = i * 3.14159265f / 4.f, ca = std::cos(a), sa = std::sin(a);
-      p.line(8 + 5.2f * ca, 8 + 5.2f * sa, 8 + 6.6f * ca, 8 + 6.6f * sa);
+      p.line(8 + 4.6f * ca, 8 + 4.6f * sa, 8 + 5.8f * ca, 8 + 5.8f * sa);
     }
-    p.circle(8, 8, 4.4f); p.circle(8, 8, 1.8f); break;
+    p.circle(8, 8, 3.9f); p.circle(8, 8, 1.6f); break;
   }
   case Icon::Trash:
     p.line(2.8f, 4.5f, 13.2f, 4.5f); p.poly({{6.3f, 4.5f}, {6.3f, 2.8f}, {9.7f, 2.8f}, {9.7f, 4.5f}});
