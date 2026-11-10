@@ -180,7 +180,7 @@ class BuildCache:
     def is_action_up_to_date(self, obj_file: Path, source_file: Path, dep_file: Path, cmd_str: str) -> bool:
         if not obj_file.exists():
             return False
-            
+
         # Check source file mtime vs object file mtime
         obj_mtime = obj_file.stat().st_mtime
         if not source_file.exists() or source_file.stat().st_mtime > obj_mtime:
@@ -256,10 +256,11 @@ class EngineBuilder:
             dfs(name)
         return resolved
 
-    def generate_prebuild_artifacts(self, uvbt_root: Path):
+    def generate_prebuild_artifacts(self, uvbt_root: Path, bin_dir: Path = None):
         gen_dir = uvbt_root / "generated"
         gen_dir.mkdir(parents=True, exist_ok=True)
         embed_script = self.repo_root / "Engine" / "Tools" / "embed_file.py"
+        cxx = os.environ.get("CXX", "g++")
 
         # 1. Retarget humanoid reference
         retarget_gen = gen_dir / "Retarget"
@@ -329,22 +330,160 @@ class EngineBuilder:
             text = text.replace("@UNIVEX_SELECTION_OUTLINE_FRAG@", (vp_shaders / "selection_outline.frag").read_text(encoding="utf-8"))
             sel_out.write_text(text, encoding="utf-8")
 
+        # 6. Test artifacts if Test/ exists
+        test_dir = self.repo_root / "Test"
+        if test_dir.is_dir() and bin_dir is not None:
+            # Build test plugins
+            plugin_fixtures = [
+                (test_dir / "Plugins" / "Fixtures" / "uve_test_plugin_valid.cpp", bin_dir / "libuve_test_plugin_valid.so"),
+                (test_dir / "Plugins" / "Fixtures" / "uve_test_plugin_bad_protocol.cpp", bin_dir / "libuve_test_plugin_bad_protocol.so"),
+                (test_dir / "Plugins" / "Fixtures" / "uve_test_plugin_no_entry.cpp", bin_dir / "libuve_test_plugin_no_entry.so"),
+            ]
+            plugin_inc = self.repo_root / "Engine" / "Runtime" / "Plugins" / "Expose"
+            for src, dst in plugin_fixtures:
+                if src.exists() and (not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime):
+                    cmd = [cxx, "-std=c++23", "-fPIC", "-shared", f"-I{plugin_inc}", str(src), "-o", str(dst)]
+                    subprocess.run(cmd, check=True)
+
+            # Build uvsc compiler tool
+            uvsc_exe = bin_dir / "uvsc"
+            uvsc_main = self.repo_root / "Engine" / "Runtime" / "UVScript" / "Tool" / "uvsc_main.cpp"
+            uvscript_dir = self.repo_root / "Engine" / "Runtime" / "UVScript"
+            uvscript_srcs = list((uvscript_dir / "Internal").glob("*.cpp"))
+
+            rebuild_uvsc = not uvsc_exe.exists()
+            if not rebuild_uvsc:
+                uvsc_mtime = uvsc_exe.stat().st_mtime
+                if uvsc_main.stat().st_mtime > uvsc_mtime or any(s.stat().st_mtime > uvsc_mtime for s in uvscript_srcs):
+                    rebuild_uvsc = True
+
+            if rebuild_uvsc and uvsc_main.exists():
+                cmd = [cxx, "-std=c++23", "-O2", f"-I{gen_dir}", f"-I{uvscript_dir / 'Expose'}"] + [str(s) for s in uvscript_srcs] + [str(uvsc_main), "-o", str(uvsc_exe)]
+                subprocess.run(cmd, check=True)
+
+            # Generate native script sources
+            host_file = test_dir / "UVScript" / "native" / "fake_object.uvhost"
+            script_names = ["player.uvs", "math.uvs", "waits.uvs", "errors.uvs", "methods.uvs", "collections.uvs"]
+            gen_script_dir = test_dir / "UVScript" / "native" / "generated"
+            gen_script_dir.mkdir(parents=True, exist_ok=True)
+            for sname in script_names:
+                ssrc = test_dir / "UVScript" / "native" / sname
+                sdst = gen_script_dir / f"{sname}.cpp"
+                if uvsc_exe.exists() and host_file.exists() and ssrc.exists() and (not sdst.exists() or ssrc.stat().st_mtime > sdst.stat().st_mtime or host_file.stat().st_mtime > sdst.stat().st_mtime):
+                    subprocess.run([str(uvsc_exe), "--host", str(host_file), "--out", str(sdst), str(ssrc)], check=True)
+
         return [gen_dir, retarget_gen, ui_gen, editor_gen, vp_render_gen.parent, vp_render_gen]
+
+    def ensure_third_party(self, platform: str):
+        tp_dir = self.repo_root / "ThirdParty"
+        tp_dir.mkdir(parents=True, exist_ok=True)
+        
+        deps = [
+            ("googletest", "https://github.com/google/googletest.git", "v1.15.2", "googletest/include/gtest/gtest.h"),
+            ("nlohmann_json", "https://github.com/nlohmann/json.git", "v3.11.3", "include/nlohmann/json.hpp"),
+            ("fmt", "https://github.com/fmtlib/fmt.git", "11.0.2", "include/fmt/format.h"),
+            ("spirv-reflect", "https://github.com/KhronosGroup/SPIRV-Reflect.git", "vulkan-sdk-1.4.321.0", "spirv_reflect.h"),
+            ("vulkan-headers", "https://github.com/KhronosGroup/Vulkan-Headers.git", "vulkan-sdk-1.4.357.0", "include/vulkan/vulkan.h"),
+            ("ufbx", "https://github.com/ufbx/ufbx.git", "v0.23.0", "ufbx.h"),
+            ("miniaudio", "https://github.com/mackron/miniaudio.git", "0.11.25", "miniaudio.h"),
+            ("basis_universal", "https://github.com/BinomialLLC/basis_universal.git", "v2_50", "transcoder/basisu_transcoder.h"),
+            ("imgui", "https://github.com/ocornut/imgui.git", "docking", "imgui.h"),
+        ]
+        
+        for name, url, tag, check_file in deps:
+            dest = tp_dir / name
+            if not (dest / check_file).exists():
+                print(f"[UVBT] Fetching ThirdParty dependency '{name}' ({tag})...", flush=True)
+                if dest.exists() and not (dest / ".git").exists():
+                    shutil.rmtree(dest, ignore_errors=True)
+                if not dest.exists():
+                    subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(dest)], check=True)
+
+        tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / platform
+        tp_lib_dir.mkdir(parents=True, exist_ok=True)
+
+        cxx = os.environ.get("CXX", "g++")
+        cc = os.environ.get("CC", "gcc")
+        ar = os.environ.get("AR", "ar")
+
+        # 1. libgtest.a & libgtest_main.a
+        gt_lib = tp_lib_dir / "libgtest.a"
+        gt_main_lib = tp_lib_dir / "libgtest_main.a"
+        gt_src = tp_dir / "googletest" / "googletest"
+        if not gt_lib.exists():
+            fallback = tp_dir / "lib" / "libgtest.a"
+            if fallback.exists() and platform == "Linux":
+                shutil.copy2(fallback, gt_lib)
+            elif (gt_src / "src" / "gtest-all.cc").exists():
+                obj = tp_lib_dir / "gtest-all.o"
+                subprocess.run([cxx, "-std=c++17", "-O2", f"-I{gt_src / 'include'}", f"-I{gt_src}", "-c", str(gt_src / "src" / "gtest-all.cc"), "-o", str(obj)], check=True)
+                subprocess.run([ar, "rcs", str(gt_lib), str(obj)], check=True)
+
+        if not gt_main_lib.exists():
+            fallback = tp_dir / "lib" / "libgtest_main.a"
+            if fallback.exists() and platform == "Linux":
+                shutil.copy2(fallback, gt_main_lib)
+            elif (gt_src / "src" / "gtest_main.cc").exists():
+                obj = tp_lib_dir / "gtest_main.o"
+                subprocess.run([cxx, "-std=c++17", "-O2", f"-I{gt_src / 'include'}", "-c", str(gt_src / "src" / "gtest_main.cc"), "-o", str(obj)], check=True)
+                subprocess.run([ar, "rcs", str(gt_main_lib), str(obj)], check=True)
+
+        # 2. libspirv-reflect-static.a
+        spv_lib = tp_lib_dir / "libspirv-reflect-static.a"
+        spv_src = tp_dir / "spirv-reflect" / "spirv_reflect.c"
+        if not spv_lib.exists():
+            fallback = tp_dir / "lib" / "libspirv-reflect-static.a"
+            if fallback.exists() and platform == "Linux":
+                shutil.copy2(fallback, spv_lib)
+            elif spv_src.exists():
+                obj = tp_lib_dir / "spirv_reflect.o"
+                subprocess.run([cc, "-O2", "-fPIC", "-c", str(spv_src), "-o", str(obj)], check=True)
+                subprocess.run([ar, "rcs", str(spv_lib), str(obj)], check=True)
+
+        # 3. libuve_ufbx.a
+        ufbx_lib = tp_lib_dir / "libuve_ufbx.a"
+        ufbx_src = tp_dir / "ufbx" / "ufbx.c"
+        if not ufbx_lib.exists():
+            fallback = tp_dir / "lib" / "libuve_ufbx.a"
+            if fallback.exists() and platform == "Linux":
+                shutil.copy2(fallback, ufbx_lib)
+            elif ufbx_src.exists():
+                obj = tp_lib_dir / "ufbx.o"
+                subprocess.run([cc, "-O2", "-fPIC", f"-I{tp_dir / 'ufbx'}", "-c", str(ufbx_src), "-o", str(obj)], check=True)
+                subprocess.run([ar, "rcs", str(ufbx_lib), str(obj)], check=True)
+
+        # 4. libuve_basisu_transcoder.a
+        bu_tc_lib = tp_lib_dir / "libuve_basisu_transcoder.a"
+        bu_tc_src = tp_dir / "basis_universal" / "transcoder" / "basisu_transcoder.cpp"
+        if not bu_tc_lib.exists():
+            fallback = tp_dir / "lib" / "libuve_basisu_transcoder.a"
+            if fallback.exists() and platform == "Linux":
+                shutil.copy2(fallback, bu_tc_lib)
+            elif bu_tc_src.exists():
+                obj = tp_lib_dir / "basisu_transcoder.o"
+                subprocess.run([cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing", f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{tp_dir / 'basis_universal' / 'encoder'}", "-c", str(bu_tc_src), "-o", str(obj)], check=True)
+                subprocess.run([ar, "rcs", str(bu_tc_lib), str(obj)], check=True)
+
+        # 5. libuve_basisu_encoder.a
+        bu_enc_lib = tp_lib_dir / "libuve_basisu_encoder.a"
+        bu_enc_dir = tp_dir / "basis_universal" / "encoder"
+        if not bu_enc_lib.exists():
+            fallback = tp_dir / "lib" / "libuve_basisu_encoder.a"
+            if fallback.exists() and platform == "Linux":
+                shutil.copy2(fallback, bu_enc_lib)
+            elif bu_enc_dir.is_dir():
+                enc_cpps = list(bu_enc_dir.glob("*.cpp"))
+                enc_objs = []
+                for ec in enc_cpps:
+                    obj = tp_lib_dir / f"{ec.stem}.o"
+                    subprocess.run([cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing", f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{bu_enc_dir}", "-c", str(ec), "-o", str(obj)], check=True)
+                    enc_objs.append(str(obj))
+                subprocess.run([ar, "rcs", str(bu_enc_lib)] + enc_objs, check=True)
 
     def build_target(self, target_name: str, platform: str = "Linux", configuration: str = "Debug", jobs: int = 4):
         target = self.targets.get(target_name)
         if not target:
             raise ValueError(f"Target '{target_name}' not found. Registered targets: {list(self.targets.keys())}")
-
-        print(f"\n[UVBT] ================================================================")
-        print(f"[UVBT] Building Target: {target.name} | {platform} | {configuration}")
-        print(f"[UVBT] Root Modules: {', '.join(target.extra_modules)}")
-        print(f"[UVBT] ================================================================\n")
-
-        ordered_modules = self.resolve_dependencies(target.extra_modules)
-        print(f"[UVBT] Resolved {len(ordered_modules)} modules in dependency order:")
-        for m in ordered_modules:
-            print(f"  -> {m.name} ({len(m.source_files)} source files)")
 
         # Prepare output directories
         uvbt_root = self.repo_root / ".uvbt"
@@ -356,8 +495,31 @@ class EngineBuilder:
         for d in (obj_dir, lib_dir, bin_dir):
             d.mkdir(parents=True, exist_ok=True)
 
-        generated_includes = self.generate_prebuild_artifacts(uvbt_root)
+        self.ensure_third_party(platform)
+        generated_includes = self.generate_prebuild_artifacts(uvbt_root, bin_dir)
         cache = BuildCache(cache_file)
+
+        # Refresh discovery in case new sources were generated
+        self.discover()
+        target = self.targets.get(target_name)
+
+        if "CoreTests" in self.modules:
+            self.modules["CoreTests"].private_defs.extend([
+                f'UVE_TEST_PLUGIN_VALID_PATH="{bin_dir / "libuve_test_plugin_valid.so"}"',
+                f'UVE_TEST_PLUGIN_BAD_PROTOCOL_PATH="{bin_dir / "libuve_test_plugin_bad_protocol.so"}"',
+                f'UVE_TEST_PLUGIN_NO_ENTRY_PATH="{bin_dir / "libuve_test_plugin_no_entry.so"}"',
+                f'UVE_UVSCRIPT_NATIVE_DIR="{self.repo_root / "Test" / "UVScript" / "native"}"',
+            ])
+
+        print(f"\n[UVBT] ================================================================")
+        print(f"[UVBT] Building Target: {target.name} | {platform} | {configuration}")
+        print(f"[UVBT] Root Modules: {', '.join(target.extra_modules)}")
+        print(f"[UVBT] ================================================================\n")
+
+        ordered_modules = self.resolve_dependencies(target.extra_modules)
+        print(f"[UVBT] Resolved {len(ordered_modules)} modules in dependency order:")
+        for m in ordered_modules:
+            print(f"  -> {m.name} ({len(m.source_files)} source files)")
 
         # Collect global include paths
         global_includes = [
@@ -532,35 +694,41 @@ class EngineBuilder:
                     subprocess.run(ar_cmd, check=True)
 
         # Link executable if TargetType is Test or Program
-        target_exe = bin_dir / target.output_name
+        if platform == "Windows":
+            exe_name = target.output_name if target.output_name.endswith(".exe") else f"{target.output_name}.exe"
+            all_sys_libs = ["pthread", "opengl32", "gdi32", "glfw3", "glew32", "z", "jpeg"]
+        else:
+            exe_name = target.output_name
+            all_sys_libs = ["pthread", "dl", "m", "GL", "GLX", "X11"]
+        target_exe = bin_dir / exe_name
         print(f"\n[UVBT] Linking executable: {target_exe}")
 
         all_objs = []
         all_libs = []
-        all_sys_libs = ["pthread", "dl", "m"]
+
+        tp_lib_dir = uvbt_root / "tp_lib" / platform
 
         # If testing, add gtest libraries
         if target.target_type == "Test":
-            gtest_libs = [
-                self.repo_root / "ThirdParty" / "lib" / "libgtest.a",
-                self.repo_root / "ThirdParty" / "lib" / "libgtest_main.a",
-            ]
-            for glib in gtest_libs:
+            for glib_name in ["libgtest.a", "libgtest_main.a"]:
+                glib = tp_lib_dir / glib_name
+                if not glib.exists():
+                    glib = self.repo_root / "ThirdParty" / "lib" / glib_name
                 if glib.exists():
                     all_libs.append(str(glib))
 
         # Third-party libraries
-        third_party_libs = [
-            self.repo_root / "ThirdParty" / "lib" / "libuve_ufbx.a",
-            self.repo_root / "ThirdParty" / "lib" / "libuve_basisu_encoder.a",
-            self.repo_root / "ThirdParty" / "lib" / "libuve_basisu_transcoder.a",
-            self.repo_root / "ThirdParty" / "lib" / "libspirv-reflect-static.a",
-            self.repo_root / "ThirdParty" / "glew" / "lib" / "libGLEW.a",
-            self.repo_root / "ThirdParty" / "glfw" / "lib" / "libglfw3.a",
-        ]
-        for tlib in third_party_libs:
+        for tlib_name in ["libuve_ufbx.a", "libuve_basisu_encoder.a", "libuve_basisu_transcoder.a", "libspirv-reflect-static.a"]:
+            tlib = tp_lib_dir / tlib_name
+            if not tlib.exists():
+                tlib = self.repo_root / "ThirdParty" / "lib" / tlib_name
             if tlib.exists():
                 all_libs.append(str(tlib))
+
+        if platform == "Linux":
+            for gl_lib in [self.repo_root / "ThirdParty" / "glew" / "lib" / "libGLEW.a", self.repo_root / "ThirdParty" / "glfw" / "lib" / "libglfw3.a"]:
+                if gl_lib.exists():
+                    all_libs.append(str(gl_lib))
 
         for mod in ordered_modules:
             all_sys_libs.extend(mod.public_sys_libs + mod.private_sys_libs)
@@ -607,7 +775,13 @@ def main():
     parser.add_argument("--list-targets", action="store_true", help="List registered targets")
 
     args = parser.parse_args()
-    repo_root = Path(__file__).resolve().parents[3]
+    cur = Path(__file__).resolve().parent
+    repo_root = cur.parents[2]
+    while cur != cur.parent:
+        if (cur / "Engine").is_dir() and ((cur / ".git").is_dir() or (cur / "ThirdParty").is_dir()):
+            repo_root = cur
+            break
+        cur = cur.parent
     builder = EngineBuilder(repo_root)
     builder.discover()
 

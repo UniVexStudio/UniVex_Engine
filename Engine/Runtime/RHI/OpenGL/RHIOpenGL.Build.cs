@@ -6,8 +6,7 @@ public class RHIOpenGLModule : ModuleRules
 {
     public RHIOpenGLModule(ReadOnlyTargetRules Target) : base(Target)
     {
-        // When desktop GL is disabled (headless Linux build), RHIOpenGL is header-only
-        Type = ModuleType.HeaderOnly;
+        Type = ModuleType.StaticLibrary;
 
         PublicDependencyModuleNames.AddRange(new string[] {
             "RHI",
