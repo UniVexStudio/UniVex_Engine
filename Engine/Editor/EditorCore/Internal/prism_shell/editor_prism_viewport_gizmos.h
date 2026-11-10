@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace UVE::Editor {
@@ -50,10 +51,22 @@ public:
 
 private:
     enum class DragUVE : std::uint8_t { None, Transform, Nav };
+    /// The PRISM glyph an object is drawn with, from its own components.
+    enum class GlyphUVE : std::uint8_t { Icon, Camera, DirectionalLight, SpotLight };
     struct BillboardUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
         prism::Vec3 position;
         EditorPrismIconsUVE::ImageUVE icon;
+        GlyphUVE glyph = GlyphUVE::Icon;
+        prism::Vec3 forward{0.0F, 0.0F, -1.0F};
+        prism::Vec3 up{0.0F, 1.0F, 0.0F};
+        float fovYDegrees = 60.0F;
+        bool orthographic = false;
+        float spotHalfAngleDegrees = 45.0F;
+        float range = 10.0F;
+        prism::Color tint{230, 232, 240};
+        /// Screen segments the glyph was last drawn with (picking).
+        std::vector<std::pair<prism::Vec2, prism::Vec2>> segments;
     };
 
     [[nodiscard]] bool UpdateCameraUVE();

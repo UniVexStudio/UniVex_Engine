@@ -853,6 +853,137 @@ void drawWorldGrid(Canvas& c, const GizmoCamera& cam, const WorldGrid& g, const 
   }
 }
 
+// ------------------------------------------------------------------ object gizmos
+float gizmoWorldSize(const GizmoCamera& cam, Vec3 at, float pixels) {
+  if (cam.ortho) return pixels / std::max(cam.orthoScale, 1e-6f);
+  const float z = std::max((at - cam.eye).dot(cam.fwd), cam.nearPlane);
+  return pixels * z / std::max(cam.focal, 1e-3f);
+}
+
+namespace {
+// Orthonormal basis around `fwd` with `up` as the hint.
+void basisFor(Vec3 fwd, Vec3 upHint, Vec3& f, Vec3& r, Vec3& u) {
+  f = fwd.normalized();
+  if (std::fabs(f.dot(upHint.normalized())) > 0.98f) upHint = std::fabs(f.y) < 0.9f ? Vec3{0, 1, 0} : Vec3{1, 0, 0};
+  r = f.cross(upHint).normalized();
+  u = r.cross(f).normalized();
+}
+
+void glyphLine(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, const ObjectGizmoStyle& st, float widthScale = 1.f) {
+  drawWorldLine(c, cam, a, b, st.color, st.width * widthScale, st.depth, st.hiddenAlpha);
+  if (st.outSegments) {
+    Vec3 ca = a, cb = b;
+    if (!clipNear(cam, ca, cb)) return;
+    Vec2 pa, pb;
+    if (cam.project(ca, pa) && cam.project(cb, pb)) st.outSegments->push_back({pa, pb});
+  }
+}
+
+void glyphCircle(Canvas& c, const GizmoCamera& cam, Vec3 centre, Vec3 u, Vec3 v, float radius,
+                 const ObjectGizmoStyle& st, int segments = 20) {
+  Vec3 prev = centre + u * radius;
+  for (int i = 1; i <= segments; ++i) {
+    const float a = float(i) * 6.2831853f / float(segments);
+    const Vec3 p = centre + u * (std::cos(a) * radius) + v * (std::sin(a) * radius);
+    glyphLine(c, cam, prev, p, st);
+    prev = p;
+  }
+}
+
+void glyphArrow(Canvas& c, const GizmoCamera& cam, Vec3 from, Vec3 to, Vec3 side, float head, const ObjectGizmoStyle& st) {
+  glyphLine(c, cam, from, to, st);
+  const Vec3 d = (to - from).normalized();
+  const Vec3 base = to - d * head;
+  glyphLine(c, cam, to, base + side * (head * 0.5f), st);
+  glyphLine(c, cam, to, base - side * (head * 0.5f), st);
+}
+} // namespace
+
+void drawCameraGizmo(Canvas& c, const GizmoCamera& cam, Vec3 pos, Vec3 fwdIn, Vec3 upIn, float fovYDeg, float aspect,
+                     bool ortho, bool showFrustum, float frustumLength, const ObjectGizmoStyle& st) {
+  Vec3 f, r, u;
+  basisFor(fwdIn, upIn, f, r, u);
+  const float s = st.worldSize > 0 ? st.worldSize : gizmoWorldSize(cam, pos, st.pixels);
+  aspect = std::clamp(aspect, 0.2f, 5.f);
+  // Body: a box behind the lens.
+  const float bw = s * 0.26f, bh = s * 0.20f, bd = s * 0.55f;
+  const Vec3 back = pos - f * bd;
+  const Vec3 corners[8] = {
+      pos + r * bw + u * bh, pos - r * bw + u * bh, pos - r * bw - u * bh, pos + r * bw - u * bh,
+      back + r * bw + u * bh, back - r * bw + u * bh, back - r * bw - u * bh, back + r * bw - u * bh};
+  for (int i = 0; i < 4; ++i) {
+    glyphLine(c, cam, corners[i], corners[(i + 1) % 4], st);
+    glyphLine(c, cam, corners[4 + i], corners[4 + (i + 1) % 4], st);
+    glyphLine(c, cam, corners[i], corners[4 + i], st);
+  }
+  // Two film reels on top.
+  const float reel = s * 0.15f;
+  glyphCircle(c, cam, pos - f * (bd * 0.28f) + u * (bh + reel), f, u, reel, st, 16);
+  glyphCircle(c, cam, pos - f * (bd * 0.74f) + u * (bh + reel), f, u, reel, st, 16);
+  // Lens: opens along the view by the field of view (a straight hood when orthographic).
+  const float lensLen = s * 0.32f;
+  const float tanY = ortho ? 0.f : std::tan(std::clamp(fovYDeg, 1.f, 170.f) * 0.5f * 0.0174532925f);
+  const float lh0 = bh * 0.7f, lw0 = lh0 * aspect;
+  const float lh1 = ortho ? lh0 : lh0 + lensLen * tanY, lw1 = lh1 * aspect;
+  const Vec3 lensEnd = pos + f * lensLen;
+  const Vec3 a0[4] = {pos + r * lw0 + u * lh0, pos - r * lw0 + u * lh0, pos - r * lw0 - u * lh0, pos + r * lw0 - u * lh0};
+  const Vec3 a1[4] = {lensEnd + r * lw1 + u * lh1, lensEnd - r * lw1 + u * lh1, lensEnd - r * lw1 - u * lh1,
+                      lensEnd + r * lw1 - u * lh1};
+  for (int i = 0; i < 4; ++i) {
+    glyphLine(c, cam, a0[i], a1[i], st);
+    glyphLine(c, cam, a1[i], a1[(i + 1) % 4], st);
+  }
+  // Which way is up: a small triangle over the lens opening.
+  glyphLine(c, cam, lensEnd + u * (lh1 * 1.25f) - r * (lw1 * 0.35f), lensEnd + u * (lh1 * 1.75f), st);
+  glyphLine(c, cam, lensEnd + u * (lh1 * 1.75f), lensEnd + u * (lh1 * 1.25f) + r * (lw1 * 0.35f), st);
+  if (showFrustum && frustumLength > lensLen) {
+    ObjectGizmoStyle thin = st;
+    thin.width = std::max(1.f, st.width * 0.7f);
+    thin.outSegments = nullptr;
+    const float h = ortho ? lh0 : frustumLength * tanY, w = h * aspect;
+    const Vec3 e = pos + f * frustumLength;
+    const Vec3 far4[4] = {e + r * w + u * h, e - r * w + u * h, e - r * w - u * h, e + r * w - u * h};
+    for (int i = 0; i < 4; ++i) {
+      glyphLine(c, cam, ortho ? a0[i] : pos, far4[i], thin);
+      glyphLine(c, cam, far4[i], far4[(i + 1) % 4], thin);
+    }
+  }
+}
+
+void drawDirectionalLightGizmo(Canvas& c, const GizmoCamera& cam, Vec3 pos, Vec3 dir, const ObjectGizmoStyle& st) {
+  Vec3 f, r, u;
+  basisFor(dir, Vec3{0, 1, 0}, f, r, u);
+  const float s = st.worldSize > 0 ? st.worldSize : gizmoWorldSize(cam, pos, st.pixels);
+  glyphCircle(c, cam, pos, r, u, s * 0.30f, st, 24);
+  const float len = s * 1.1f, head = s * 0.22f;
+  const Vec3 offsets[3] = {u * (s * 0.30f), r * (s * 0.26f) - u * (s * 0.15f), r * (-s * 0.26f) - u * (s * 0.15f)};
+  for (const Vec3& o : offsets) glyphArrow(c, cam, pos + o + f * (s * 0.1f), pos + o + f * len, o.normalized(), head, st);
+}
+
+void drawSpotLightGizmo(Canvas& c, const GizmoCamera& cam, Vec3 pos, Vec3 dir, float halfAngleDeg, float length,
+                        const ObjectGizmoStyle& st) {
+  Vec3 f, r, u;
+  basisFor(dir, Vec3{0, 1, 0}, f, r, u);
+  const float radius = length * std::tan(std::clamp(halfAngleDeg, 0.5f, 89.f) * 0.0174532925f);
+  const Vec3 end = pos + f * length;
+  glyphCircle(c, cam, end, r, u, radius, st, 28);
+  for (const Vec3 side : {r, r * -1.f, u, u * -1.f}) glyphLine(c, cam, pos, end + side * radius, st);
+  // The housing: a small ring at the apex.
+  glyphCircle(c, cam, pos, r, u, (st.worldSize > 0 ? st.worldSize : gizmoWorldSize(cam, pos, st.pixels)) * 0.12f, st, 14);
+}
+
+float pickDistance(Vec2 p, const std::vector<std::pair<Vec2, Vec2>>& segments) {
+  float best = 1e30f;
+  for (const auto& [a, b] : segments) {
+    const Vec2 ab = b - a;
+    const float l2 = ab.x * ab.x + ab.y * ab.y;
+    float t = l2 > 1e-6f ? ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / l2 : 0.f;
+    t = std::clamp(t, 0.f, 1.f);
+    best = std::min(best, (p - (a + ab * t)).length());
+  }
+  return best;
+}
+
 // ------------------------------------------------------------------ selection outline
 bool buildSelectionOutline(const uint8_t* mask, int w, int h, int radius, Color color, std::vector<uint32_t>& out,
                            int rect[4]) {

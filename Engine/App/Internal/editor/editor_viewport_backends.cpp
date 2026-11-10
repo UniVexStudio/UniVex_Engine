@@ -761,7 +761,7 @@ void AppendOccluderGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::Oc
 }
 
 // Gizmos for the remaining spatial objects, from their own components: point light range spheres
-// and spot light cones, decal and GI volumes, navigation mesh bounds, on-screen notifier boxes,
+// and spot light cones (unless the host draws spot lights itself), decal and GI volumes, navigation mesh bounds, on-screen notifier boxes,
 // ray / shape casts, spring arms, markers, spawn points, audio listeners and paths. Shown only for
 // objects visible in the hierarchy, never for the editor's own internal entities.
 class ObjectGizmoBuilderUVE final {
@@ -862,7 +862,8 @@ private:
            entityManager.GetComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity).visibleInHierarchy;
 }
 
-[[nodiscard]] univex::gizmo::GizmoMesh BuildMoreObjectGizmosMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager) {
+[[nodiscard]] univex::gizmo::GizmoMesh BuildMoreObjectGizmosMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager,
+                                                                   const bool includeSpotCones) {
     using univex::math::Vec3;
     using WorldUVE = UVE::Scene::WorldTransformComponentUVE;
     univex::gizmo::GizmoMesh mesh;
@@ -882,6 +883,9 @@ private:
                              0.5F + 0.5F * std::clamp(light.color.b, 0.0F, 1.0F)};
             if (light.type == UVE::Scene::LightTypeUVE::Point) {
                 g.Sphere(origin(w), light.range, color);
+                return;
+            }
+            if (!includeSpotCones) {
                 return;
             }
             const Vec3 apex = origin(w);
@@ -1269,9 +1273,11 @@ public:
                 cachedLookThroughCamera_ = lookThrough;
                 cachedOverlayEntityCount_ = entityCount;
 
-                univex::gizmo::GizmoMesh overlay = BuildCameraFrustumMeshUVE(
-                    entityManager_, lookThrough, aspect);
-                univex::gizmo::GizmoMesh lights = BuildLightDirectionMeshUVE(entityManager_);
+                // The PRISM shell draws cameras and directional / spot lights with its own glyphs.
+                univex::gizmo::GizmoMesh overlay =
+                    hostGizmos ? univex::gizmo::GizmoMesh{} : BuildCameraFrustumMeshUVE(entityManager_, lookThrough, aspect);
+                univex::gizmo::GizmoMesh lights =
+                    hostGizmos ? univex::gizmo::GizmoMesh{} : BuildLightDirectionMeshUVE(entityManager_);
                 overlay.lines.insert(overlay.lines.end(), lights.lines.begin(), lights.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), lights.triangles.begin(), lights.triangles.end());
                 univex::gizmo::GizmoMesh fog = BuildFogVolumeMeshUVE(entityManager_);
@@ -1289,7 +1295,7 @@ public:
                 univex::gizmo::GizmoMesh occluders = BuildOccluderMeshUVE(entityManager_);
                 overlay.lines.insert(overlay.lines.end(), occluders.lines.begin(), occluders.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), occluders.triangles.begin(), occluders.triangles.end());
-                univex::gizmo::GizmoMesh more = BuildMoreObjectGizmosMeshUVE(entityManager_);
+                univex::gizmo::GizmoMesh more = BuildMoreObjectGizmosMeshUVE(entityManager_, !hostGizmos);
                 overlay.lines.insert(overlay.lines.end(), more.lines.begin(), more.lines.end());
                 univex::gizmo::GizmoMesh colliders = BuildColliderMeshUVE(entityManager_);
                 overlay.lines.insert(overlay.lines.end(), colliders.lines.begin(), colliders.lines.end());
