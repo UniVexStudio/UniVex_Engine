@@ -207,38 +207,6 @@ void DrawScriptGlyphUVE(ImDrawList& drawList, const ImVec2 center, const float s
 
 } // namespace
 
-void EditorUVE::DrawHierarchyPanelUVE() {
-    if (!m_scenePanelVisible) {
-        return;
-    }
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
-                                     m_inspectorPanelWidth, m_scenePanelVisible,
-                                     m_inspectorPanelVisible);
-    // Always: the rect comes from the chrome layout every frame. Dragging happens on the seam in
-    // DrawEditorChromeHandlesUVE(), which writes m_scenePanelWidth - not on the window's edges.
-    ImGui::SetNextWindowViewport(mainViewport->ID);
-    ImGui::SetNextWindowPos(layout.scenePos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(layout.sceneSize, ImGuiCond_Always);
-    // No title row and no close button, the same shape the Inspector panel already has: the
-    // Outliner's header row above this panel already says "Outliner" beside the logo, so a second
-    // "Outliner" with an X of its own directly under it named the panel twice and made the column
-    // start with a row that carried nothing but that repetition. Passing nullptr instead of
-    // &m_scenePanelVisible is what removes the X - ImGui only draws a close button when it is given
-    // a visibility flag to write back to. Hiding the panel is Window > Outliner, which is also how a
-    // hidden Outliner is brought back.
-    // NoResize matters as much as NoTitleBar here: without it ImGui hands the panel's own border to
-    // its resize grip, which fights the seam that straddles it - see kLayoutOwnedPanelFlagsUVE.
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{0.106F, 0.118F, 0.129F, 1.0F});
-    ImGui::Begin(kPanelLabelSceneUVE, nullptr, kLayoutOwnedPanelFlagsUVE);
-    DrawHierarchyBodyUVE();
-    ImGui::End();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
-}
-
 void EditorUVE::DrawHierarchyBodyUVE() {
     std::array<char, 256> filterBuffer{};
     m_hierarchyFilter.copy(filterBuffer.data(), filterBuffer.size() - 1U);

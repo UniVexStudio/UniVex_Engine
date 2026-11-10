@@ -393,7 +393,12 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
             UpdateDockColumnsUVE();
         }));
         items.push_back(prism::MenuItem::Item("Reset Panel Layout", [this] { ResetPanelLayoutUVE(); }));
-        items.push_back(prism::MenuItem::Check("Content Browser + Dock", m_dockVisible, [this] {
+        items.push_back(prism::MenuItem::Sep());
+        items.push_back(prism::MenuItem::Check("Network Capture", m_editor.m_showCaptureWindow,
+                                               [this] { m_editor.m_showCaptureWindow = !m_editor.m_showCaptureWindow; }));
+        items.push_back(prism::MenuItem::Check("Audio Mixer", m_editor.m_showAudioMixerWindow,
+                                               [this] { m_editor.m_showAudioMixerWindow = !m_editor.m_showAudioMixerWindow; }));
+        items.push_back(prism::MenuItem::Check("Bottom Dock", m_dockVisible, [this] {
             ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, false);
         }));
         return items;

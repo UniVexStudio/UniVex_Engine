@@ -90,93 +90,17 @@ void EditorUVE::RenderOverlayUVE() {
     if (m_state != EditorStateUVE::Running || !m_uiInitialized) {
         return;
     }
+    // The level editor is PRISM's; the windows not yet built with it draw over it through ImGui.
     if (m_prismShell != nullptr) {
-        // The level editor is PRISM's; the windows not yet built with it draw over it through ImGui.
         m_prismShell->FrameUVE();
-        if (ImGui::GetCurrentContext() == nullptr) {
-            return;
-        }
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        DrawOverlayWindowsUVE();
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        if ((ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) != 0) {
-            GLFWwindow* const mainContext = glfwGetCurrentContext();
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-            glfwMakeContextCurrent(mainContext);
-        }
+    }
+    if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
-
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-
-    // No dockspace. Every panel below computes its rect from ComputeEditorChromeLayoutUVE() and
-    // pins itself there with ImGuiCond_Always; there is deliberately no second layout authority that
-    // could disagree with it. The editor frame - top bar, Outliner, viewport, Inspector, dock - is
-    // fixed, and the only things that move are the seams and the two hidable side panels.
-    // While playing, the panels lean toward the tint colour: what is edited now is lost at Stop.
-    int tintedColors = 0;
-    if (m_playModeState != EditorPlayModeStateUVE::Edit && m_playTintEnabled) {
-        const ImGuiStyle& style = ImGui::GetStyle();
-        for (const ImGuiCol slot : {ImGuiCol_WindowBg, ImGuiCol_ChildBg, ImGuiCol_MenuBarBg, ImGuiCol_TitleBg,
-                                    ImGuiCol_TitleBgActive, ImGuiCol_PopupBg}) {
-            const ImVec4 base = style.Colors[slot];
-            const float t = m_playTintStrength;
-            ImGui::PushStyleColor(slot, ImVec4{base.x + ((m_playTintColor.r - base.x) * t),
-                                               base.y + ((m_playTintColor.g - base.y) * t),
-                                               base.z + ((m_playTintColor.b - base.z) * t), base.w});
-            ++tintedColors;
-        }
-    }
-    DrawMenuBarUVE();
-    DrawPluginWindowUVE();
-    DrawEditorPreferencesWindowUVE();
-    DrawProjectSettingsWindowUVE();
-    DrawInputMapWindowUVE();
-    DrawKeyboardShortcutsWindowUVE();
-
-    if (m_activeWorkspace == EditorWorkspaceUVE::Scripting) {
-        DrawScriptingWorkspaceUVE();
-    } else {
-        DrawHierarchyPanelUVE();
-        DrawViewportPanelUVE();
-        DrawInspectorPanelUVE();
-        DrawBottomDockContentUVE();
-        DrawBottomDockTabBarUVE();
-        // Last, so the grips sit over the seam between two panels and the restore strips sit over
-        // the edge a hidden panel left behind. Drawn first, they would be buried under both.
-        DrawEditorChromeHandlesUVE();
-    }
-
-    if (m_entityEditSession.has_value()) {
-        DrawEntityEditorWindowUVE();
-    } else if (m_retargetPreview.has_value()) {
-        DrawRetargetPlaceholderUVE();
-    }
-    if (m_retargetWindow.has_value()) {
-        DrawRetargetWindowUVE();
-    }
-    if (m_animationLibraryWindow.has_value()) {
-        DrawAnimationLibraryWindowUVE();
-    }
-    if (m_filePicker.has_value()) {
-        DrawFilePickerUVE();
-    }
-    if (m_montage.has_value()) {
-        DrawMontageUVE();
-    }
-    DrawCreateScriptModalUVE();
-    DrawCreateShaderModalUVE();
-    DrawQuickImportModalUVE();
-    // Last, so it floats over every panel.
-    DrawCommandPaletteUVE();
-    DrawImportProgressModalUVE();
-    ImGui::PopStyleColor(tintedColors);
+    DrawOverlayWindowsUVE();
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     // Windows that live in their own OS window (the Entity Editor) are drawn and presented here;
@@ -191,6 +115,18 @@ void EditorUVE::RenderOverlayUVE() {
 
 void EditorUVE::DrawOverlayWindowsUVE() {
     DrawPluginWindowUVE();
+    const auto sectionWindow = [](const char* const title, bool& open, auto&& body) {
+        if (!open) {
+            return;
+        }
+        ImGui::SetNextWindowSize(ImVec2{720.0F, 420.0F}, ImGuiCond_FirstUseEver);
+        if (ImGui::Begin(title, &open, ImGuiWindowFlags_NoCollapse)) {
+            body();
+        }
+        ImGui::End();
+    };
+    sectionWindow("Network Capture", m_showCaptureWindow, [this] { DrawCaptureBodyUVE(); });
+    sectionWindow("Audio Mixer", m_showAudioMixerWindow, [this] { DrawAudioMixerBodyUVE(); });
     DrawEditorPreferencesWindowUVE();
     DrawProjectSettingsWindowUVE();
     DrawInputMapWindowUVE();
@@ -300,41 +236,6 @@ void EditorUVE::DrawImportProgressModalUVE() {
 
 void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
     m_viewportPanelRenderer = std::move(renderer);
-}
-
-void EditorUVE::DrawViewportPanelUVE() {
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    const EditorChromeLayoutUVE layout =
-        ComputeEditorChromeLayoutUVE(*mainViewport, m_bottomDockVisible, m_bottomDockHeight, m_scenePanelWidth,
-                                     m_inspectorPanelWidth, m_scenePanelVisible, m_inspectorPanelVisible);
-    // Always: this rect is recomputed from the chrome layout every frame and the viewport never
-    // floats, so there is nothing for ImGui to remember and nothing a stale imgui.ini may override.
-    ImGui::SetNextWindowViewport(mainViewport->ID);
-    ImGui::SetNextWindowPos(layout.viewportPos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(layout.viewportSize, ImGuiCond_Always);
-    // Zero interior padding for the viewport window so the rendered 3D image fills the panel
-    // edge-to-edge (the reference has the grid reaching all four edges with the toolbar floating on
-    // top); with the theme's default WindowPadding the GL image is inset ~8px all around, leaving an
-    // empty border band. Only this window opts out - the overlay bubbles still float on top since
-    // they anchor off the image origin, which now sits flush in the panel corner.
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
-    // No title row and no close button. The viewport is the canvas: the header strip above already
-    // names it and carries the transport, so a second title row cost a line of image and - worse -
-    // put a close X directly under the top bar, where it read as an X on the top bar itself. The
-    // viewport is fixed, not hidable; there is no state in which hiding the canvas is useful.
-    // Prohibit scrollbars and mouse-wheel scrolling on the panel window: mouse wheel and touch swipe
-    // are consumed by camera dolly/orbit gestures on the 3D canvas. Allowing ImGui to scroll the
-    // window would cause content-region fluctuations that destroy and recreate GPU framebuffers.
-    constexpr ImGuiWindowFlags kViewportPanelFlags =
-        kLayoutOwnedPanelFlagsUVE | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-    if (!ImGui::Begin(kPanelLabelViewportUVE, nullptr, kViewportPanelFlags)) {
-        ImGui::End();
-        ImGui::PopStyleVar();
-        return;
-    }
-    DrawViewportImageUVE(ViewportContextUVE::Main);
-    ImGui::End();
-    ImGui::PopStyleVar();
 }
 
 void EditorUVE::DrawViewportImageUVE(const ViewportContextUVE context) {
