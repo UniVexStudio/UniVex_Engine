@@ -842,7 +842,15 @@ public class ImGuiModule : ModuleRules
             link_cmd += ["-Wl,--whole-archive"] + root_test_libs + ["-Wl,--no-whole-archive"]
             link_cmd += ["-Wl,--start-group"] + other_libs + sys_flags + ["-Wl,--end-group"]
         else:
-            link_cmd += ["-Wl,--start-group"] + all_libs + sys_flags + ["-Wl,--end-group"]
+            # The target's own root modules are linked as plain object files ahead of every archive.
+            # Archives are scanned in dependency order, so a dependency that carries its own
+            # main() (e.g. the Viewport demo app) would otherwise win symbol resolution over the
+            # real entry point of the root module and the wrong program would be produced.
+            root_objs = [str(o) for m in target.extra_modules for o in module_objects.get(m, [])]
+            root_libs = {str(module_libs[m]) for m in target.extra_modules if m in module_libs}
+            other_libs = [l for l in all_libs if l not in root_libs]
+            link_cmd += root_objs
+            link_cmd += ["-Wl,--start-group"] + other_libs + sys_flags + ["-Wl,--end-group"]
 
         link_res = subprocess.run(link_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if link_res.returncode != 0:
