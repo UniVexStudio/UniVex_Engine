@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_prism_entity_editor.h"
+#include "editor_prism_object_menu.h"
 
 #include "editor.h"
 #include "editor_prism_chrome.h"
@@ -220,6 +221,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildTitleBarUVE() {
     });
     menus->addMenu("Edit", [command] {
         return std::vector<prism::MenuItem>{command("edit.undo"), command("edit.redo"), prism::MenuItem::Sep(),
+                                            command("edit.cut"), command("edit.copy"), command("edit.paste"),
                                             command("edit.duplicate"), command("edit.delete")};
     });
     menus->addMenu("Window", [this] {
@@ -435,6 +437,13 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildComponentsUVE() {
             m_editor.SelectEntityUVE(entity);
             static_cast<void>(m_editor.DeleteSelectedEntityUVE());
         }
+    };
+    m_components->onContext = [this](prism::TreeNode* node, const prism::Vec2 at) {
+        const Scene::EntityUVE entity = node != nullptr ? EntityForTreeIdUVE(node->id) : Scene::kInvalidEntityUVE;
+        EditorPrismObjectMenuUVE::HooksUVE hooks;
+        hooks.tree = m_components.get();
+        hooks.addChild = [this] { ShowAddMenuUVE(); };
+        EditorPrismObjectMenuUVE::ShowUVE(m_editor, entity, node, at, hooks);
     };
     page->add(m_components, prism::Slot{1.0F});
 

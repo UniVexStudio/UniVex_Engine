@@ -450,6 +450,7 @@ class EditorUVE final {
     friend class EditorPrismEntityEditorUVE;
     friend class EditorPrismFileDialogUVE;
     friend class AssetThumbnailUVE;
+    friend class EditorPrismObjectMenuUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -1342,6 +1343,20 @@ public:
     /// selection is cleared. Returns false without mutation for the same invalid/safety states as
     /// DuplicateSelectedEntityUVE().
     [[nodiscard]] bool DeleteSelectedEntityUVE();
+
+    /// Copies the selected object and everything under it (the Outliner's Copy; it works across
+    /// documents, so a level object can be pasted into an open entity). False when nothing copyable
+    /// is selected: the reason is ObjectActionBlockReasonUVE().
+    [[nodiscard]] bool CopySelectedObjectUVE();
+    /// Copy, then Delete (one undo step each).
+    [[nodiscard]] bool CutSelectedObjectUVE();
+    [[nodiscard]] bool CanPasteObjectUVE() const noexcept;
+    /// Pastes the copied object just below the selection (asChild: inside it, last), or where a new
+    /// object would go when nothing is selected; selects it and records one Undo/Redo entry.
+    [[nodiscard]] Scene::EntityUVE PasteObjectUVE(bool asChild);
+    /// Why `entity` cannot be duplicated, copied or deleted, in a sentence for a menu tooltip; empty
+    /// when it can.
+    [[nodiscard]] std::string ObjectActionBlockReasonUVE(Scene::EntityUVE entity);
 
     /// Reparents the selected document subtree under newParent, or makes it a document root when
     /// newParent is invalid. Keep Local retains authored local Transform; optional Keep World
@@ -2787,6 +2802,8 @@ private:
         Core::TypeInstanceUVE value;
     };
     std::optional<ComponentClipboardUVE> m_componentClipboard;
+    /// The Outliner's object clipboard (CopySelectedObjectUVE / PasteObjectUVE).
+    std::optional<Scene::SceneSnapshotUVE> m_objectClipboard;
     std::optional<Scene::TransformComponentUVE> m_transformClipboard;
     /// Whether scale axes are linked/proportional (Uniform Scaling / Magnet mode). Defaults to true.
     bool m_uniformScaleLocked = true;

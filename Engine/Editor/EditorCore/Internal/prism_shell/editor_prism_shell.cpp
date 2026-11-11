@@ -1,5 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_prism_shell.h"
+#include "editor_prism_object_menu.h"
+#include "i_asset_database.h"
+#include "prefab_instance_component.h"
 
 #include "editor_prism_chrome.h"
 
@@ -31,6 +34,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 
 namespace UVE::Editor {
@@ -290,7 +294,7 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
         return items;
     });
     menus->addMenu("Edit", [this] {
-        return CommandItemsUVE({"edit.undo", "edit.redo", nullptr, "edit.duplicate", "edit.delete"});
+        return CommandItemsUVE({"edit.undo", "edit.redo", nullptr, "edit.cut", "edit.copy", "edit.paste", "edit.duplicate", "edit.delete"});
     });
     menus->addMenu("Window", [this] {
         std::vector<prism::MenuItem> items;
@@ -511,6 +515,26 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildOutlinerUVE() {
         if (entity != Scene::kInvalidEntityUVE) {
             m_editor.SelectEntityUVE(entity);
             static_cast<void>(m_editor.DeleteSelectedEntityUVE());
+        }
+    };
+    m_outliner->onContext = [this](prism::TreeNode* node, const prism::Vec2 at) {
+        const Scene::EntityUVE entity = node != nullptr ? EntityForTreeIdUVE(node->id) : Scene::kInvalidEntityUVE;
+        EditorPrismObjectMenuUVE::HooksUVE hooks;
+        hooks.tree = m_outliner.get();
+        hooks.addChild = [this] { ShowAddMenuUVE(); };
+        EditorPrismObjectMenuUVE::ShowUVE(m_editor, entity, node, at, hooks);
+    };
+    // Double-click a placed entity: it opens in the Entity Editor (its inside is edited there).
+    m_outliner->onActivate = [this](prism::TreeNode* node) {
+        const Scene::EntityUVE entity = node != nullptr ? EntityForTreeIdUVE(node->id) : Scene::kInvalidEntityUVE;
+        if (!m_editor.IsSealedHierarchyRowUVE(entity)) {
+            return;
+        }
+        const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+        const Asset::AssetGuidUVE guid = em.GetComponentUVE<Scene::PrefabInstanceComponentUVE>(entity).sourcePrefabGuid;
+        const std::filesystem::path source = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(guid);
+        if (!source.empty()) {
+            static_cast<void>(m_editor.OpenEntityEditorUVE(source));
         }
     };
     // Content dragged from the Content Browser lands here, under the row it is dropped on.
@@ -785,12 +809,18 @@ std::uint64_t EditorPrismShellUVE::OutlinerSignatureUVE() {
         HashUVE(h, static_cast<std::uint64_t>(depth));
         HashUVE(h, m_editor.GetEntityDisplayLabelUVE(e));
         HashUVE(h, m_editor.IsEntitySelectedUVE(e) ? 1U : 0U);
+        if (m_editor.IsSealedHierarchyRowUVE(e)) {
+            return; // a placed entity is one row: its inside is the Entity Editor's
+        }
         for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, e)) {
             visit(child, depth + 1);
         }
     };
     for (const Scene::EntityUVE root : OutlinerRootsUVE()) {
         visit(root, 0);
+    }
+    for (const Scene::EntityUVE e : m_editor.GetSelectedEntitiesUVE()) {
+        HashUVE(h, (static_cast<std::uint64_t>(e.index) << 32U) | e.generation);
     }
     return h;
 }
@@ -809,6 +839,7 @@ void EditorPrismShellUVE::RefreshOutlinerUVE() {
     m_treeEntities.clear();
     Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     std::vector<int> selected;
+    std::unordered_map<std::uint64_t, int> rowOf;
     const std::function<void(prism::TreeNode*, Scene::EntityUVE)> add = [&](prism::TreeNode* parent,
                                                                            const Scene::EntityUVE e) {
         const int id = TreeIdForUVE(e);
@@ -821,8 +852,11 @@ void EditorPrismShellUVE::RefreshOutlinerUVE() {
             node->imageSize = icon.size;
         }
         node->badge = std::string(typeName);
-        if (m_editor.IsEntitySelectedUVE(e)) {
-            selected.push_back(id);
+        rowOf[(static_cast<std::uint64_t>(e.index) << 32U) | e.generation] = id;
+        // A placed entity is one row, like a mesh is one object: what is inside it belongs to the
+        // Entity Editor (double-click or Open Entity), not to the level's tree.
+        if (m_editor.IsSealedHierarchyRowUVE(e)) {
+            return;
         }
         for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, e)) {
             add(node, child);
@@ -830,6 +864,14 @@ void EditorPrismShellUVE::RefreshOutlinerUVE() {
     };
     for (const Scene::EntityUVE root : OutlinerRootsUVE()) {
         add(nullptr, root);
+    }
+    // Something selected inside a placed entity shows as its entity's row.
+    for (const Scene::EntityUVE e : m_editor.GetSelectedEntitiesUVE()) {
+        const Scene::EntityUVE owner = m_editor.ResolveHierarchyRowOwnerUVE(e);
+        const auto row = rowOf.find((static_cast<std::uint64_t>(owner.index) << 32U) | owner.generation);
+        if (row != rowOf.end() && std::find(selected.begin(), selected.end(), row->second) == selected.end()) {
+            selected.push_back(row->second);
+        }
     }
     m_outliner->setSelection(selected);
     if (m_outlinerSearch) {

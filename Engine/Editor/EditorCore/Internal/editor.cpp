@@ -3051,6 +3051,110 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
     return true;
 }
 
+std::string EditorUVE::ObjectActionBlockReasonUVE(const Scene::EntityUVE entity) {
+    if (!IsAuthoringCommandAllowedUVE()) {
+        return "Stop Play first: the scene is edited only while it is not running.";
+    }
+    if (!IsDocumentEntityUVE(entity)) {
+        return "This object is gone.";
+    }
+    if (IsSceneRootEntityUVE(entity)) {
+        return "The scene root holds the whole scene.";
+    }
+    if (entity == GetDocumentViewportUVE()) {
+        return "The Viewport is the level itself: every object lives in it.";
+    }
+    if (m_entityDocumentActive && entity == GetEntityEditorRootUVE()) {
+        return "This is the entity itself: it is the top of its own tree.";
+    }
+    if (ResolveHierarchyRowOwnerUVE(entity) != entity) {
+        return "It is inside a placed entity: open the entity to change what is inside it.";
+    }
+    if (!IsDocumentSubtreeUVE(entity)) {
+        return "Something under it is not part of this document.";
+    }
+    return {};
+}
+
+bool EditorUVE::CopySelectedObjectUVE() {
+    if (!IsLifecycleCommandAllowedUVE() || !ObjectActionBlockReasonUVE(m_selectedEntity).empty()) {
+        return false;
+    }
+    std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(m_selectedEntity);
+    if (!snapshot.has_value()) {
+        return false;
+    }
+    m_objectClipboard = std::move(*snapshot);
+    return true;
+}
+
+bool EditorUVE::CutSelectedObjectUVE() {
+    return CopySelectedObjectUVE() && DeleteSelectedEntityUVE();
+}
+
+bool EditorUVE::CanPasteObjectUVE() const noexcept {
+    return m_objectClipboard.has_value() && IsAuthoringCommandAllowedUVE();
+}
+
+Scene::EntityUVE EditorUVE::PasteObjectUVE(const bool asChild) {
+    if (!CanPasteObjectUVE()) {
+        return Scene::kInvalidEntityUVE;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const Scene::EntityUVE anchor = HasSingleDocumentSelectionUVE() && IsDocumentEntityUVE(m_selectedEntity)
+                                        ? m_selectedEntity
+                                        : Scene::kInvalidEntityUVE;
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    std::optional<std::size_t> index;
+    if (anchor == Scene::kInvalidEntityUVE) {
+        parent = m_entityDocumentActive ? GetEntityEditorRootUVE() : ResolveNewObjectParentUVE();
+    } else if (asChild || IsStructuralRootUVE(anchor)) {
+        // Into the row itself; a placed entity takes nothing in from the level.
+        if (IsSealedHierarchyRowUVE(anchor) || ResolveHierarchyRowOwnerUVE(anchor) != anchor) {
+            return Scene::kInvalidEntityUVE;
+        }
+        parent = anchor;
+    } else {
+        if (ResolveHierarchyRowOwnerUVE(anchor) != anchor || !TryGetDocumentParentUVE(anchor, parent)) {
+            return Scene::kInvalidEntityUVE;
+        }
+        index = sceneGraph.GetSiblingIndexUVE(entityManager, anchor).value_or(0U) + 1U;
+    }
+    if (parent != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(parent)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const Scene::EntityUVE pasted = RestoreSubtreeUnderParentUVE(*m_objectClipboard, parent);
+    if (pasted == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const std::size_t siblingIndex = index.has_value() ? *index : sceneGraph.GetSiblingIndexUVE(entityManager, pasted).value_or(0U);
+    if (index.has_value()) {
+        static_cast<void>(sceneGraph.SetSiblingIndexUVE(entityManager, pasted, siblingIndex));
+    }
+    std::optional<std::string> pastedName;
+    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(pasted)) {
+        const std::string sourceName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(pasted).name;
+        if (IsEntityNameValidUVE(sourceName)) {
+            // The copy itself already holds the name; a fresh one is free of both.
+            static_cast<void>(ApplyEntityNameStateUVE(pasted, std::nullopt));
+            pastedName = MakeUniqueDocumentEntityNameUVE(sourceName);
+            if (!ApplyEntityNameStateUVE(pasted, pastedName)) {
+                DestroyDocumentSubtreeUVE(pasted);
+                return Scene::kInvalidEntityUVE;
+            }
+        }
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    SelectEntityUVE(pasted);
+    m_sceneDirty = true;
+    InvalidateHierarchyFilterCacheUVE();
+    RecordHistoryUVE(DuplicationHistoryEntryUVE{*m_objectClipboard, parent, pasted, std::move(pastedName), selectionBefore,
+                                                CaptureSelectionSnapshotUVE(), dirtyBefore, true, siblingIndex});
+    return pasted;
+}
+
 bool EditorUVE::ReparentSelectedEntityUVE(const Scene::EntityUVE newParent) {
     return ReparentDocumentEntityUVE(m_selectedEntity, newParent);
 }
