@@ -152,6 +152,7 @@ struct EditorPrismHostUVE::WindowUVE final {
     int fbHeight = 1;
     std::map<int, prism::Rect> captions;
     bool closeRequested = false;
+    int dragOverWindow = -1;  ///< the other window a PRISM drag from this one is over (-1: none)
 
     // A secondary window's own UI renderer (its texture lives in the main context) and the
     // vertex array the compositor draws with in that window's context (not shared).
@@ -817,6 +818,49 @@ prism::Vec2 EditorPrismHostUVE::ToUiUVE(const WindowUVE& w, const double x, cons
     return prism::Vec2{static_cast<float>(x) * sx, static_cast<float>(y) * sy};
 }
 
+bool EditorPrismHostUVE::InTargetScopeUVE(const WindowUVE& source, const WindowUVE& target, const std::function<void()>& fn) {
+    // Input of `source` runs inside its scope already; `fn` must run in `target`'s. A scope cannot be
+    // left from inside, so a drag out of a scoped window into an unscoped one is not delivered.
+    if (target.scope && !source.scope) {
+        target.scope(fn);
+        return true;
+    }
+    if (source.scope && !target.scope) {
+        return false;
+    }
+    fn();
+    return true;
+}
+
+EditorPrismHostUVE::WindowUVE* EditorPrismHostUVE::DragTargetUVE(const WindowUVE& source, prism::Vec2& local) const {
+    // A PRISM drag (a Content Browser item, say) can end over another of the editor's windows. The
+    // OS keeps sending the pointer to the window the press started in; GLFW_HOVERED asks the OS which
+    // window is really under the pointer (its own stacking, not PRISM's order).
+    if (!m_app || !m_app->isDragging() || source.window == nullptr || glfwGetWindowAttrib(source.window, GLFW_HOVERED) != 0) {
+        return nullptr;
+    }
+    const auto hovered = [&](WindowUVE* const target) -> WindowUVE* {
+        if (target == nullptr || target == &source || target->window == nullptr ||
+            glfwGetWindowAttrib(target->window, GLFW_HOVERED) == 0) {
+            return nullptr;
+        }
+        double cx = 0.0;
+        double cy = 0.0;
+        glfwGetCursorPos(target->window, &cx, &cy);
+        local = ToUiUVE(*target, cx, cy);
+        return target;
+    };
+    if (WindowUVE* const target = hovered(m_main.get())) {
+        return target;
+    }
+    for (const auto& [id, window] : m_windows) {
+        if (WindowUVE* const target = hovered(window.get())) {
+            return target;
+        }
+    }
+    return nullptr;
+}
+
 void EditorPrismHostUVE::SyncSizeUVE(WindowUVE& w) {
     int width = 0;
     int height = 0;
@@ -1086,6 +1130,23 @@ void EditorPrismHostUVE::OnCursorPosUVE(WindowUVE& w, const double x, const doub
         if (w.mouse.y < kResizeBorderUVE) { edges |= 4; }
         if (w.mouse.y >= height - kResizeBorderUVE) { edges |= 8; }
     }
+    prism::Vec2 dragLocal{};
+    if (WindowUVE* const target = DragTargetUVE(w, dragLocal)) {
+        // Dragging over another window: that window's widgets see the drag; this one sees it leave.
+        if (w.dragOverWindow != target->id) {
+            m_app->windowMouseLeave(w.id);
+            w.dragOverWindow = target->id;
+        }
+        target->mouse = dragLocal;
+        static_cast<void>(InTargetScopeUVE(w, *target, [this, target, dragLocal] { m_app->windowMouseMove(target->id, dragLocal); }));
+        return;
+    }
+    if (w.dragOverWindow >= 0) {
+        if (WindowUVE* const previous = FindUVE(w.dragOverWindow)) {
+            m_app->windowMouseLeave(previous->id);
+        }
+        w.dragOverWindow = -1;
+    }
     m_app->windowMouseMove(w.id, w.mouse);
     if (edges != 0) {
         m_platform->SetResizeCursorUVE(w.id, edges);
@@ -1208,6 +1269,17 @@ void EditorPrismHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const 
             w.dragMode = WindowUVE::DragModeUVE::None;
         }
         if (!wasResize && prismButton != prism::MouseButton::None) {
+            prism::Vec2 dragLocal{};
+            if (WindowUVE* const target = DragTargetUVE(w, dragLocal)) {
+                // The drop lands in the window under the pointer; the press's own window then sees
+                // its release (outside its widgets) so its capture ends.
+                const int clicks = w.clickCount;
+                static_cast<void>(InTargetScopeUVE(w, *target, [this, target, dragLocal, prismButton, clicks] {
+                    m_app->windowMouseButton(target->id, dragLocal, prismButton, false, clicks);
+                }));
+                m_app->cancelDragDrop();
+            }
+            w.dragOverWindow = -1;
             m_app->windowMouseButton(w.id, w.mouse, prismButton, false, w.clickCount);
         }
     }
