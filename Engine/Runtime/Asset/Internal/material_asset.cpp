@@ -66,6 +66,8 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
            std::isfinite(material.uvOffset.x) && std::isfinite(material.uvOffset.y) &&
            std::isfinite(material.uv2Scale.x) && std::isfinite(material.uv2Scale.y) &&
            std::isfinite(material.uv2Offset.x) && std::isfinite(material.uv2Offset.y) &&
+           std::isfinite(material.triplanarBlendSharpness) && material.triplanarBlendSharpness >= 0.0F &&
+           std::isfinite(material.uv2TriplanarSharpness) && material.uv2TriplanarSharpness >= 0.0F &&
            IsFiniteUnitIntervalUVE(material.alphaCutoff) &&
            IsFiniteUnitIntervalUVE(material.dielectricSpecular) &&
            std::isfinite(material.heightScale) && material.heightScale >= 0.0F &&
@@ -158,6 +160,30 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         if (payload.contains("uvOffset")) {
             material.uvOffset = JsonToVector2UVE(payload.at("uvOffset"));
         }
+        if (payload.contains("uv2Scale")) {
+            material.uv2Scale = JsonToVector2UVE(payload.at("uv2Scale"));
+        }
+        if (payload.contains("uv2Offset")) {
+            material.uv2Offset = JsonToVector2UVE(payload.at("uv2Offset"));
+        }
+        const auto readBool = [&payload](const char* key, bool& out) {
+            if (payload.contains(key)) {
+                out = payload.at(key).get<bool>();
+            }
+        };
+        const auto readFloat = [&payload](const char* key, float& out) {
+            if (payload.contains(key)) {
+                out = payload.at(key).get<float>();
+            }
+        };
+        readBool("uv1Triplanar", material.triplanarEnabled);
+        readBool("uv1WorldTriplanar", material.worldSpaceTriplanar);
+        readFloat("uv1TriplanarSharpness", material.triplanarBlendSharpness);
+        readBool("uv2Triplanar", material.uv2Triplanar);
+        readBool("uv2WorldTriplanar", material.uv2WorldTriplanar);
+        readFloat("uv2TriplanarSharpness", material.uv2TriplanarSharpness);
+        readBool("aoOnUv2", material.aoOnUv2);
+        readBool("emissionOnUv2", material.emissionOnUv2);
         if (payload.contains("unshaded")) {
             material.unshaded = payload.at("unshaded").get<bool>();
         }
@@ -263,6 +289,31 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     payload["occlusionStrength"] = material.occlusionStrength;
     payload["uvScale"] = Vector2ToJsonUVE(material.uvScale);
     payload["uvOffset"] = Vector2ToJsonUVE(material.uvOffset);
+    // UV2 and triplanar only when set, so materials that never use them keep their files as they were.
+    if (material.uv2Scale.x != 1.0F || material.uv2Scale.y != 1.0F) {
+        payload["uv2Scale"] = Vector2ToJsonUVE(material.uv2Scale);
+    }
+    if (material.uv2Offset.x != 0.0F || material.uv2Offset.y != 0.0F) {
+        payload["uv2Offset"] = Vector2ToJsonUVE(material.uv2Offset);
+    }
+    const auto writeBool = [&payload](const char* key, const bool value) {
+        if (value) {
+            payload[key] = true;
+        }
+    };
+    const auto writeSharpness = [&payload](const char* key, const float value) {
+        if (value != 1.0F) {
+            payload[key] = value;
+        }
+    };
+    writeBool("uv1Triplanar", material.triplanarEnabled);
+    writeBool("uv1WorldTriplanar", material.worldSpaceTriplanar);
+    writeSharpness("uv1TriplanarSharpness", material.triplanarBlendSharpness);
+    writeBool("uv2Triplanar", material.uv2Triplanar);
+    writeBool("uv2WorldTriplanar", material.uv2WorldTriplanar);
+    writeSharpness("uv2TriplanarSharpness", material.uv2TriplanarSharpness);
+    writeBool("aoOnUv2", material.aoOnUv2);
+    writeBool("emissionOnUv2", material.emissionOnUv2);
     payload["unshaded"] = material.unshaded;
     payload["alphaCutoff"] = material.alphaCutoff;
     if (material.albedoAlpha != 1.0F) {

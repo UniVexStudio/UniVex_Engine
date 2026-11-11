@@ -252,9 +252,24 @@ void EditorPrismDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& a
         add("Render Priority", n, "Draw order among transparent materials.");
     }
 
-    section("UV");
+    // Godot's two UV sets. UV1 drives every map; UV2 is the same coordinates with their own
+    // transform, read by AO and Emission when they are "On UV2". Either can be triplanar instead:
+    // projected along the object's (or with World Triplanar, the world's) three axes.
+    section("UV1");
     vec2("Scale", &MaterialUVE::uvScale, 0.05F);
     vec2("Offset", &MaterialUVE::uvOffset, 0.01F);
+    check("Triplanar", &MaterialUVE::triplanarEnabled, "Project the maps along the object's three axes instead of the mesh UVs.");
+    check("World Triplanar", &MaterialUVE::worldSpaceTriplanar, "Project along the world's axes: the pattern stays put as the object moves.");
+    slider("Sharpness", &MaterialUVE::triplanarBlendSharpness, 0.0F, 16.0F, "How hard the three projections meet at the edges.");
+
+    section("UV2");
+    vec2("Scale", &MaterialUVE::uv2Scale, 0.05F);
+    vec2("Offset", &MaterialUVE::uv2Offset, 0.01F);
+    check("Triplanar", &MaterialUVE::uv2Triplanar, "Project the UV2 maps along the object's three axes.");
+    check("World Triplanar", &MaterialUVE::uv2WorldTriplanar, "Project along the world's axes.");
+    slider("Sharpness", &MaterialUVE::uv2TriplanarSharpness, 0.0F, 16.0F, "How hard the three projections meet at the edges.");
+    check("AO On UV2", &MaterialUVE::aoOnUv2, "The occlusion map reads UV2.");
+    check("Emission On UV2", &MaterialUVE::emissionOnUv2, "The emission map reads UV2.");
 
     section("Advanced");
     slider("Rim", &MaterialUVE::rimAmount, 0.0F, 1.0F);
