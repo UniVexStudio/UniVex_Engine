@@ -9,6 +9,7 @@
 
 #include "area_component.h"
 #include "animation_sequencer_component.h"
+#include "montage_player_component.h"
 #include "animation_graph_component.h"
 #include "auto_translate_component.h"
 #include "audio_source_component.h"
@@ -2211,6 +2212,29 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                          kPropertyTypeFloatUVE),
                            "State"),
                 InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
+            }));
+
+    // MontagePlayer: the montages its script can play, by file name.
+    using MP = MontagePlayerComponentUVE;
+    const auto montageSlot = [](auto property, const char* tip) {
+        return WithTooltipUVE(WithCustomDrawerUVE(std::move(property), "asset:uvmontage"), tip);
+    };
+    constexpr const char* kMontageTipUVE =
+        "An Animation Montage this object can play. Its script plays it by the file's name: "
+        "montage.play(\"Attack\") plays Attack.uvmontage.";
+    AddValidatedUVE<MontagePlayerComponentUVE, +[](const MontagePlayerComponentUVE&) noexcept { return true; }>(
+        entries,
+        MakeEntryUVE("component.montage_player", "MontagePlayerComponentUVE", "MontagePlayer", kSectionOrderTypeSpecificUVE,
+            {
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage1>("montage1", "Montage 1", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage2>("montage2", "Montage 2", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage3>("montage3", "Montage 3", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage4>("montage4", "Montage 4", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage5>("montage5", "Montage 5", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage6>("montage6", "Montage 6", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage7>("montage7", "Montage 7", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage8>("montage8", "Montage 8", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(DeclareRuntimeStateUVE<&MP::playingName>("playingName", "Playing", kPropertyTypeStringUVE), "State"),
             }));
 
     using T = AnimationGraphComponentUVE;

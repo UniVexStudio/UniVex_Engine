@@ -40,7 +40,7 @@ struct AddEntryUVE final {
 };
 
 /// What the Components '+' adds under the selected object (or the entity's root).
-constexpr std::array<AddEntryUVE, 11> kAddEntriesUVE{{
+constexpr std::array<AddEntryUVE, 16> kAddEntriesUVE{{
     {SceneObjectKindUVE::Object3D, "Object3D", prism::Icon::Dot},
     {SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", prism::Icon::Cube},
     {SceneObjectKindUVE::BoxMesh3D, "Box", prism::Icon::Cube},
@@ -52,6 +52,11 @@ constexpr std::array<AddEntryUVE, 11> kAddEntriesUVE{{
     {SceneObjectKindUVE::Rigid3D, "Rigid3D", prism::Icon::Cube},
     {SceneObjectKindUVE::Static3D, "Static3D", prism::Icon::Cube},
     {SceneObjectKindUVE::Collider3D, "Collider3D", prism::Icon::Wireframe},
+    {SceneObjectKindUVE::Skeleton3D, "Skeleton3D", prism::Icon::Dot},
+    {SceneObjectKindUVE::AnimationSequencer, "AnimationSequencer", prism::Icon::Play},
+    {SceneObjectKindUVE::AnimationGraph, "AnimationGraph", prism::Icon::Play},
+    {SceneObjectKindUVE::MontagePlayer, "MontagePlayer (attacks)", prism::Icon::Play},
+    {SceneObjectKindUVE::BoneAttachment3D, "BoneAttachment3D", prism::Icon::Dot},
 }};
 
 constexpr int kWindowWidthUVE = 1240;

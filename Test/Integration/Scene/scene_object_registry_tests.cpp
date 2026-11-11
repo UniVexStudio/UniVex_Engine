@@ -14,8 +14,8 @@ namespace {
 
 TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
     const std::span<const SceneObjectDescriptorUVE> descriptors = GetSceneObjectDescriptorsUVE();
-    // 53 kinds: the 51 an object list offers plus the document's own two structural rows.
-    ASSERT_EQ(descriptors.size(), 53U);
+    // 54 kinds: the 52 an object list offers plus the document's own two structural rows.
+    ASSERT_EQ(descriptors.size(), 54U);
 
     std::unordered_set<std::string_view> ids;
     for (const SceneObjectDescriptorUVE& descriptor : descriptors) {
