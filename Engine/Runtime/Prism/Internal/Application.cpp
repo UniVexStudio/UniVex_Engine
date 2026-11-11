@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "prism/Application.h"
 #include "prism/WindowChrome.h"
+#include <algorithm>
 #include <type_traits>
 #include "prism/AccessibilityBridge.h"
 #include <chrono>
@@ -44,10 +45,18 @@ template <class F> auto Application::inWindow(int id, F&& fn) {
   if (cur) swapState(*cur);
   swapState(*w);
   m_ctxWindow = id;
+  // fn may open windows (m_windows grows and moves): the restore finds both windows again by id.
+  // Closing one is deferred while any secondary window is current (closeWindow), so both still exist.
   struct Restore {
-    Application& a; WinState* w; WinState* cur; int prev;
-    ~Restore() { a.hideTooltip(); a.swapState(*w); if (cur) a.swapState(*cur); a.m_ctxWindow = prev; }
-  } restore{*this, w, cur, prev};
+    Application& a; int id; int prev;
+    ~Restore() {
+      a.hideTooltip();
+      if (WinState* w = a.findWindow(id)) a.swapState(*w);
+      if (WinState* cur = prev ? a.findWindow(prev) : nullptr) a.swapState(*cur);
+      a.m_ctxWindow = prev;
+      if (prev == 0) a.flushPendingCloses();
+    }
+  } restore{*this, id, prev};
   return fn();
 }
 
@@ -696,6 +705,12 @@ void Application::closeWindow(int id) {
   if (id == 0) return;
   WinState* w = findWindow(id);
   if (!w) return;
+  if (m_ctxWindow != 0) {
+    // A secondary window is current: its slot (or the window it swapped with) holds window 0's
+    // state, so erasing now would lose it. Close once the context is back on window 0.
+    if (std::find(m_pendingCloses.begin(), m_pendingCloses.end(), id) == m_pendingCloses.end()) m_pendingCloses.push_back(id);
+    return;
+  }
   inWindow(id, [&] { closeAllPopups(); });
   for (size_t i = 0; i < m_windows.size(); i++) if (m_windows[i].id == id) { m_windows.erase(m_windows.begin() + long(i)); break; }
   m_zOrder.erase(std::remove(m_zOrder.begin(), m_zOrder.end(), id), m_zOrder.end());
@@ -703,6 +718,12 @@ void Application::closeWindow(int id) {
   if (m_platform) m_platform->destroyNativeWindow(id);
   if (onWindowClosed) onWindowClosed(id);
   invalidate();
+}
+
+void Application::flushPendingCloses() {
+  std::vector<int> ids;
+  ids.swap(m_pendingCloses);
+  for (int id : ids) closeWindow(id);
 }
 
 bool Application::hasWindow(int id) const { return id == 0 || findWindow(id) != nullptr; }

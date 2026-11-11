@@ -8,7 +8,7 @@
 //   ── Shapes ──           a MeshInstance3D's mesh only: Box, Sphere, Capsule, Cylinder, Plane
 //   ──
 //   Load...                the file window, on the slot's kinds (anywhere on disk)
-//   Quick Import...        the same, copied into a Content folder first
+//   Import...        the same, copied into a Content folder first
 //   Show in Content Browser
 #include "editor_prism_details.h"
 
@@ -215,10 +215,10 @@ void EditorPrismDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActio
         };
         m_editor.OpenFilePickerUVE(std::move(request));
     }));
-    items.push_back(prism::MenuItem::Item("Quick Import...", [this, spec, shared, onTarget] {
+    items.push_back(prism::MenuItem::Item("Import...", [this, spec, shared, onTarget] {
         FilePickerRequestUVE request;
         request.mode = FilePickerModeUVE::Open;
-        request.title = "Quick Import " + spec.title;
+        request.title = "Import " + spec.title;
         request.extensions = spec.loadable;
         request.quickImport = true;
         // Importing usually starts from outside the project: the person's own folders.

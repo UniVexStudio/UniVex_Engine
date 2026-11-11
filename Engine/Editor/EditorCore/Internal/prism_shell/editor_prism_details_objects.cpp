@@ -141,7 +141,7 @@ void EditorPrismDetailsUVE::AddSkeletonSourceUVE(const int category, const Entry
     button->setTooltip(property.tooltip);
     std::weak_ptr<prism::Button> weak = button;
     button->onClick = [this, weak, current] {
-        // Empty, the project's rigged models, then the usual Load / Quick Import, and Reload Bones.
+        // Empty, the project's rigged models, then the usual Load / Import, and Reload Bones.
         const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         const auto bind = [this](const std::filesystem::path& relative) {
             if (!m_editor.BindSelectedSkeletonSourceUVE(relative) && !m_editor.m_skeletonSourceStatus.empty()) {
@@ -152,7 +152,7 @@ void EditorPrismDetailsUVE::AddSkeletonSourceUVE(const int category, const Entry
             const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
             const std::filesystem::path relative = absolute.lexically_relative(root);
             if (relative.empty() || *relative.begin() == "..") {
-                m_editor.m_contentStatusMessage = "A skeleton's model must be in the project: use Quick Import to bring it in.";
+                m_editor.m_contentStatusMessage = "A skeleton's model must be in the project: use Import to bring it in.";
                 return;
             }
             m_editor.RefreshProjectFileIndexUVE();
@@ -183,9 +183,9 @@ void EditorPrismDetailsUVE::AddSkeletonSourceUVE(const int category, const Entry
             request.onPick = bindAbsolute;
             m_editor.OpenFilePickerUVE(std::move(request));
         }));
-        items.push_back(prism::MenuItem::Item("Quick Import...", [this, kinds, bindAbsolute] {
+        items.push_back(prism::MenuItem::Item("Import...", [this, kinds, bindAbsolute] {
             FilePickerRequestUVE request;
-            request.title = "Quick Import Skeleton Source";
+            request.title = "Import Skeleton Source";
             request.extensions = kinds;
             request.quickImport = true;
             request.onPick = bindAbsolute;

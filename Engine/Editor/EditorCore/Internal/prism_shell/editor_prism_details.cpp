@@ -742,7 +742,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         text->onCommit = [this, e, p](const std::string& v) { static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &v)); };
         editor = text;
         // A "file:ext,..." row names a file: the path stays editable, and the picker beside it offers
-        // the project's files of those kinds, Load... and Quick Import....
+        // the project's files of those kinds, Load... and Import....
         constexpr std::string_view kFilePrefix = "file:";
         if (property.customDrawerId.rfind(kFilePrefix, 0U) == 0U) {
             std::vector<std::string> extensions;

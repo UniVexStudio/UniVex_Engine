@@ -63,7 +63,7 @@ private:
     struct PickerSpecUVE final {
         std::string title;                    ///< "Mesh", "Material", "Texture" ...
         std::vector<std::string> listed;      ///< project files shown, by extension
-        std::vector<std::string> loadable;    ///< what Load... / Quick Import... accept
+        std::vector<std::string> loadable;    ///< what Load... / Import... accept
         bool shapes = false;                  ///< built-in shapes (a MeshInstance3D's mesh)
         bool newMaterial = false;
     };

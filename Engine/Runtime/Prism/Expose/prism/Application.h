@@ -232,6 +232,8 @@ private:
   WinState* findWindow(int id);
   const WinState* findWindow(int id) const;
   std::vector<WinState> m_windows;      // secondary windows (state stored while not current)
+  std::vector<int> m_pendingCloses;     // closeWindow calls made while a secondary window was current
+  void flushPendingCloses();
   std::vector<int> m_zOrder{0};
   int m_activeWindow = 0, m_ctxWindow = 0, m_nextWindowId = 1;
   uint64_t m_paintGen = 0;

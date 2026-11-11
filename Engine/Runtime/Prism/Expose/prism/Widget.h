@@ -40,7 +40,8 @@ struct Slot {
 class Widget : public std::enable_shared_from_this<Widget> {
 public:
   Widget() = default;
-  virtual ~Widget() = default;
+  // A child that outlives this widget (held elsewhere) forgets it, so its parent chain never dangles.
+  virtual ~Widget();
   Widget(const Widget&) = delete;
   Widget& operator=(const Widget&) = delete;
 
