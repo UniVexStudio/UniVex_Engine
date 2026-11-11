@@ -43,6 +43,12 @@ void Widget::addChild(Ref<Widget> c) {
   relayout();
 }
 
+Widget::~Widget() {
+  for (auto& c : m_children) {
+    if (c && c->m_parent == this) c->m_parent = nullptr;
+  }
+}
+
 void Widget::removeChild(const Widget* c) {
   for (auto it = m_children.begin(); it != m_children.end(); ++it)
     if (it->get() == c) {

@@ -164,6 +164,15 @@ void EditorPrismFileDialogUVE::FrameUVE() {
         m_window = 0;
         m_closePending = false;
         m_request = FilePickerRequestUVE{};
+        // The window's widgets go with it.
+        m_pathInput.reset();
+        m_search.reset();
+        m_table.reset();
+        m_fileName.reset();
+        m_kind.reset();
+        m_importTarget.reset();
+        m_status.reset();
+        m_entries.clear();
         return;
     }
     m_host.RenderWindowUVE(m_window, {});
@@ -332,23 +341,22 @@ prism::Ref<prism::Widget> EditorPrismFileDialogUVE::BuildUVE() {
     for (const std::string& extension : m_request.extensions) {
         kinds += (kinds.empty() ? "*" : ", *") + extension;
     }
+    // A slot's pick shows only what the slot takes; an open-ended pick can show everything.
     std::vector<std::string> filters;
     if (!kinds.empty()) {
-        filters.push_back("Supported (" + kinds + ")");
+        filters.push_back(kinds);
+    } else {
+        filters.emplace_back("All files (*.*)");
     }
-    filters.emplace_back("All files (*.*)");
     m_kind = prism::make<prism::ComboBox>(filters, 0);
-    m_kind->onChange = [this](const int index) {
-        m_allKinds = m_request.extensions.empty() || index == 1;
-        RebuildListUVE();
-    };
+    m_kind->onChange = [this](const int) { RebuildListUVE(); };
     auto kindBox = prism::make<prism::SizeBox>();
     kindBox->setWidthOverride(260.0F);
     kindBox->setContent(m_kind);
     fileRow->add(kindBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     window->add(fileRow);
 
-    // Quick Import's settings: where in Content the file goes.
+    // Import settings: where in Content the file goes.
     if (import) {
         auto importRow = prism::hbox(6.0F);
         importRow->setPadding(prism::Margin(8.0F, 2.0F, 8.0F, 2.0F));
@@ -401,6 +409,34 @@ prism::Ref<prism::Widget> EditorPrismFileDialogUVE::BuildUVE() {
 
 // ------------------------------------------------------------------------------------ navigation
 
+bool EditorPrismFileDialogUVE::FolderHasKindUVE(const std::filesystem::path& folder) const {
+    if (m_allKinds || m_request.extensions.empty()) {
+        return true;
+    }
+    // Bounded: a folder this deep or this large is shown rather than searched to the end.
+    std::error_code error;
+    std::size_t visited = 0U;
+    for (auto it = std::filesystem::recursive_directory_iterator(
+             folder, std::filesystem::directory_options::skip_permission_denied, error);
+         !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
+        if (++visited > 4000U || it.depth() > 8) {
+            return true;
+        }
+        const std::string name = it->path().filename().string();
+        if (!name.empty() && name.front() == '.') {
+            if (it->is_directory(error)) {
+                it.disable_recursion_pending();
+            }
+            continue;
+        }
+        std::error_code statError;
+        if (it->is_regular_file(statError) && MatchesKindUVE(it->path())) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool EditorPrismFileDialogUVE::MatchesKindUVE(const std::filesystem::path& file) const {
     if (m_allKinds || m_request.extensions.empty()) {
         return true;
@@ -442,6 +478,10 @@ void EditorPrismFileDialogUVE::RebuildListUVE() {
             ++hidden;
             continue;
         }
+        // A folder is worth opening only when something of the asked kinds is inside it.
+        if (directory && !FolderHasKindUVE(path)) {
+            continue;
+        }
         if (!needle.empty() && LowerUVE(name).find(needle) == std::string::npos) {
             continue;
         }
@@ -468,9 +508,10 @@ void EditorPrismFileDialogUVE::RebuildListUVE() {
         for (const EntryUVE& entry : m_entries) {
             files += entry.directory ? 0U : 1U;
         }
-        std::string text = std::to_string(m_entries.size() - files) + " folders, " + std::to_string(files) + " files";
+        std::string text = std::to_string(files) + (files == 1U ? " file" : " files") + " here, " +
+                           std::to_string(m_entries.size() - files) + " folders with more";
         if (hidden > 0U) {
-            text += " (" + std::to_string(hidden) + " of other kinds hidden)";
+            text += " (other kinds hidden)";
         }
         if (error) {
             text = "This folder cannot be read.";

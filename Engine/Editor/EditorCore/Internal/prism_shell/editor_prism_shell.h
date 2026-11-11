@@ -123,7 +123,7 @@ private:
     EditorPrismHostUVE m_host;
     // The Entity Editor's window (opened while an entity is open); shares the host.
     EditorPrismEntityEditorUVE m_entityEditor;
-    // The file window every Load / Quick Import opens.
+    // The file window every Load / Import opens.
     EditorPrismFileDialogUVE m_fileDialog;
     EditorPrismContentBrowserUVE m_contentBrowser;
     EditorPrismDetailsUVE m_details2;

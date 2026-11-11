@@ -23,7 +23,7 @@ namespace UVE::Editor {
 class EditorPrismHostUVE;
 
 /// The editor's file window, drawn with PRISM in a window of its own: every Load... / Browse... /
-/// Quick Import... of the editor (EditorUVE::OpenFilePickerUVE) opens here.
+/// Import... of the editor (EditorUVE::OpenFilePickerUVE) opens here.
 ///
 ///   [title                                               - [] x]
 ///   [ up | path                                      | search  ]
@@ -32,11 +32,11 @@ class EditorPrismHostUVE;
 ///   [  Project       | kinds asked for                         ]
 ///   [  Home ...      |                                         ]
 ///   [ File: name                      | kind filter            ]
-///   [ Quick Import: Import into <Content folder>               ]
+///   [ Import: Import into <Content folder>                     ]
 ///   [                                       [Load] [Cancel]    ]
 ///
 /// Load picks a file where it is (anywhere on disk; the editor brings it into the project when it
-/// must). Quick Import copies the file into the chosen Content folder first and picks the copy.
+/// must). Import copies the file into the chosen Content folder first and picks the copy.
 class EditorPrismFileDialogUVE final {
 public:
     EditorPrismFileDialogUVE(EditorUVE& editor, EditorPrismHostUVE& host);
@@ -66,6 +66,7 @@ private:
     void CancelUVE();
     void ShowImportTargetMenuUVE();
     [[nodiscard]] bool MatchesKindUVE(const std::filesystem::path& file) const;
+    [[nodiscard]] bool FolderHasKindUVE(const std::filesystem::path& folder) const;
     [[nodiscard]] std::filesystem::path ContentRootUVE() const;
 
     EditorUVE& m_editor;
@@ -76,7 +77,7 @@ private:
 
     std::filesystem::path m_directory;
     std::vector<EntryUVE> m_entries;
-    std::filesystem::path m_importInto;   ///< Content-relative folder Quick Import copies into
+    std::filesystem::path m_importInto;   ///< Content-relative folder Import copies into
     bool m_allKinds = false;
 
     std::shared_ptr<prism::TextInput> m_pathInput;
