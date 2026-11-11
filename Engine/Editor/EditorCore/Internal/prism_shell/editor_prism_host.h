@@ -79,6 +79,10 @@ public:
     void ClearCloseRequestUVE(int id);
     /// Raises window `id` and gives it the keyboard.
     void FocusWindowUVE(int id);
+    /// Wraps everything window `id`'s input runs (its widgets' handlers and shortcuts): the
+    /// editor makes that window's document the active one around it.
+    using WindowScopeUVE = std::function<void(const std::function<void()>&)>;
+    void SetWindowScopeUVE(int id, WindowScopeUVE scope);
 
     /// Timers + layout of every window for this frame (call before reading EngineView rects).
     void BeginFrameUVE();

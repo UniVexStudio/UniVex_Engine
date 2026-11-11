@@ -184,6 +184,8 @@ public:
   // Hosts that draw every window through their own GPU backend (one per OS window): lays out window `id`, records
   // its frame and submits it to `backend` instead of painting it on the CPU canvas.
   void layoutWindow(int id);
+  // Runs `fn` as window `id`'s own code: popups, dialogs and focus it opens belong to that window.
+  void runInWindow(int id, const std::function<void()>& fn);
   void renderWindowTo(int id, RenderBackend& backend);
   // The same questions as wantsPointerAt / hasBlockingPopup / wantsKeyboard, asked of window `id`.
   bool windowWantsPointerAt(int id, Vec2 p);

@@ -131,10 +131,8 @@ void EditorUVE::DrawOverlayWindowsUVE() {
     DrawProjectSettingsWindowUVE();
     DrawInputMapWindowUVE();
     DrawKeyboardShortcutsWindowUVE();
-    if (m_entityEditSession.has_value()) {
-        const EntityDocumentScopeUVE entityScope(*this);
-        DrawEntityEditorWindowUVE();
-    } else if (m_retargetPreview.has_value()) {
+    // The Entity Editor is a PRISM window of its own (EditorPrismEntityEditorUVE).
+    if (m_retargetPreview.has_value()) {
         DrawRetargetPlaceholderUVE();
     }
     if (m_retargetWindow.has_value()) {

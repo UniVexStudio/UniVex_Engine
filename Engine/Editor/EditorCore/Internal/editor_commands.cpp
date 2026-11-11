@@ -69,8 +69,9 @@ void EditorUVE::RegisterEditorCommandsUVE() {
         return IsLifecycleCommandAllowedUVE() && IsDocumentEntityUVE(m_selectedEntity);
     };
 
+    // Saves the active document: the level, or the open entity inside its window.
     add("file.saveScene", "Save Scene", "File", {KeyUVE(ImGuiKey_S, true)},
-        [this] { return IsAuthoringCommandAllowedUVE() && !m_activeScenePath.empty(); },
+        [this] { return IsAuthoringCommandAllowedUVE() && (!m_activeScenePath.empty() || m_entityDocumentActive); },
         [this] { static_cast<void>(SaveSceneUVE()); }, true);
     add("file.saveAll", "Save All", "File", {KeyUVE(ImGuiKey_S, true, true)},
         [this] { return IsAuthoringCommandAllowedUVE(); }, [this] { static_cast<void>(SaveAllUVE()); }, true);
@@ -82,6 +83,9 @@ void EditorUVE::RegisterEditorCommandsUVE() {
     add("file.keyboardShortcuts", "Keyboard Shortcuts", "File", {}, always, [this] { OpenKeyboardShortcutsUVE(); });
     add("file.commandPalette", "Command Palette", "File", {KeyUVE(ImGuiKey_P, true, true)}, always,
         [this] { OpenCommandPaletteUVE(); }, true);
+
+    add("entity.compile", "Compile", "Entity", {KeyUVE(ImGuiKey_F7)}, [this] { return m_entityDocumentActive; },
+        [this] { static_cast<void>(CompileEntityEditorUVE()); });
 
     add("edit.undo", "Undo", "Edit", {KeyUVE(ImGuiKey_Z, true)}, [this] { return CanUndoUVE(); },
         [this] { static_cast<void>(UndoUVE()); });

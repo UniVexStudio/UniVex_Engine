@@ -157,6 +157,7 @@ struct EditorPrismHostUVE::WindowUVE final {
     // vertex array the compositor draws with in that window's context (not shared).
     std::shared_ptr<prism::GlBackend> backend;
     GLuint vao = 0;
+    EditorPrismHostUVE::WindowScopeUVE scope;
 
     prism::Vec2 mouse{0.0F, 0.0F};
     prism::Vec2 frameStartMouse{0.0F, 0.0F};
@@ -521,23 +522,36 @@ using HostWindowUVE = EditorPrismHostUVE::WindowUVE;
 [[nodiscard]] HostWindowUVE* OwnerUVE(GLFWwindow* w) {
     return static_cast<HostWindowUVE*>(glfwGetWindowUserPointer(w));
 }
+/// Runs `fn` inside the window's scope, when it has one.
+template <typename F>
+void ScopedUVE(HostWindowUVE& o, F&& fn) {
+    if (o.scope) {
+        o.scope(std::function<void()>(std::forward<F>(fn)));
+    } else {
+        fn();
+    }
+}
 void SecondaryCursorPosUVE(GLFWwindow* w, const double x, const double y) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { o->host->OnCursorPosUVE(*o, x, y); }
+    if (HostWindowUVE* o = OwnerUVE(w)) { ScopedUVE(*o, [o, x, y] { o->host->OnCursorPosUVE(*o, x, y); }); }
 }
 void SecondaryMouseButtonUVE(GLFWwindow* w, const int button, const int action, const int mods) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { o->host->OnMouseButtonUVE(*o, button, action, mods); }
+    if (HostWindowUVE* o = OwnerUVE(w)) {
+        ScopedUVE(*o, [o, button, action, mods] { o->host->OnMouseButtonUVE(*o, button, action, mods); });
+    }
 }
 void SecondaryScrollUVE(GLFWwindow* w, const double dx, const double dy) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { o->host->OnScrollUVE(*o, dx, dy); }
+    if (HostWindowUVE* o = OwnerUVE(w)) { ScopedUVE(*o, [o, dx, dy] { o->host->OnScrollUVE(*o, dx, dy); }); }
 }
 void SecondaryKeyUVE(GLFWwindow* w, const int key, const int scancode, const int action, const int mods) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { o->host->OnKeyUVE(*o, key, scancode, action, mods); }
+    if (HostWindowUVE* o = OwnerUVE(w)) {
+        ScopedUVE(*o, [o, key, scancode, action, mods] { o->host->OnKeyUVE(*o, key, scancode, action, mods); });
+    }
 }
 void SecondaryCharUVE(GLFWwindow* w, const unsigned int codepoint) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { o->host->OnCharUVE(*o, codepoint); }
+    if (HostWindowUVE* o = OwnerUVE(w)) { ScopedUVE(*o, [o, codepoint] { o->host->OnCharUVE(*o, codepoint); }); }
 }
 void SecondaryCursorEnterUVE(GLFWwindow* w, const int entered) {
-    if (HostWindowUVE* o = OwnerUVE(w)) { o->host->OnCursorEnterUVE(*o, entered); }
+    if (HostWindowUVE* o = OwnerUVE(w)) { ScopedUVE(*o, [o, entered] { o->host->OnCursorEnterUVE(*o, entered); }); }
 }
 void SecondaryCloseUVE(GLFWwindow* w) {
     // The editor decides (unsaved changes ask first); the window stays until it closes it.
@@ -759,6 +773,12 @@ void EditorPrismHostUVE::CloseWindowUVE(const int id) {
     glfwSetWindowUserPointer(w->window, nullptr);
     glfwDestroyWindow(w->window);
     glfwMakeContextCurrent(m_main->window);
+}
+
+void EditorPrismHostUVE::SetWindowScopeUVE(const int id, WindowScopeUVE scope) {
+    if (WindowUVE* w = id != kMainWindowUVE ? FindUVE(id) : nullptr) {
+        w->scope = std::move(scope);
+    }
 }
 
 bool EditorPrismHostUVE::HasWindowUVE(const int id) const {

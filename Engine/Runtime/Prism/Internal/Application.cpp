@@ -769,6 +769,7 @@ PixelView Application::renderWindow(int id) {
 }
 Widget* Application::windowFocus(int id) { return inWindow(id, [&] { return focus(); }); }
 void Application::layoutWindow(int id) { inWindow(id, [&] { layoutIfNeeded(); }); }
+void Application::runInWindow(int id, const std::function<void()>& fn) { if (fn) inWindow(id, [&] { fn(); }); }
 void Application::renderWindowTo(int id, RenderBackend& backend) {
   inWindow(id, [&] {
     layoutIfNeeded();
