@@ -135,7 +135,7 @@ void EditorPrismDetailsUVE::AddSkeletonSourceUVE(const int category, const Entry
                                                  const void* instance, const bool writable) {
     const auto* skeleton = static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
     const std::string current = skeleton != nullptr ? skeleton->skeletonAssetPath : std::string();
-    auto button = prism::make<prism::Button>(current.empty() ? std::string("(Empty)")
+    auto button = prism::make<prism::Button>(current.empty() ? std::string("Empty")
                                                              : std::filesystem::path{current}.filename().string(),
                                              prism::Icon::None, prism::ButtonStyle::Default);
     button->setTooltip(property.tooltip);
@@ -257,7 +257,7 @@ void EditorPrismDetailsUVE::AddSkeletonBonesUVE(const int category, const void* 
         }
         const Scene::SkeletonBoneUVE& bone = bones[static_cast<std::size_t>(selected.front()->id - 1)];
         parent->setText(bone.parentIndex < 0 || static_cast<std::size_t>(bone.parentIndex) >= bones.size()
-                            ? std::string("(root)")
+                            ? std::string("Root")
                             : bones[static_cast<std::size_t>(bone.parentIndex)].name);
         position->setText(Vector3TextUVE(bone.localPosition));
         Math::Vector3UVE euler{};
@@ -277,7 +277,7 @@ void EditorPrismDetailsUVE::AddSkeletonBonesUVE(const int category, const void* 
 void EditorPrismDetailsUVE::AddBonePickerUVE(const int category, const EntryUVE& entry, const PropertyUVE& property,
                                              const void* instance, const bool writable) {
     const auto* attachment = static_cast<const Scene::BoneAttachment3DComponentUVE*>(instance);
-    auto button = prism::make<prism::Button>("(Empty)", prism::Icon::None, prism::ButtonStyle::Default);
+    auto button = prism::make<prism::Button>("Empty", prism::Icon::None, prism::ButtonStyle::Default);
     button->setTooltip(property.tooltip);
     std::weak_ptr<prism::Button> weak = button;
     auto row = std::make_shared<RowUVE>();
@@ -288,7 +288,7 @@ void EditorPrismDetailsUVE::AddBonePickerUVE(const int category, const EntryUVE&
         if (b && inst != nullptr) {
             std::string v;
             p->getValue(inst, &v);
-            const std::string text = v.empty() ? std::string("(Empty)") : v;
+            const std::string text = v.empty() ? std::string("Empty") : v;
             if (b->text() != text) {
                 b->setText(text);
             }
