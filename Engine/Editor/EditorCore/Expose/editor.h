@@ -41,6 +41,8 @@
 #include "editor_settings.h"
 #include "editor_viewport_input.h"
 #include "animation_library_asset.h"
+#include "animation_montage_asset.h"
+#include "montage_player_component.h"
 #include "shader_asset.h"
 #include "gltf_skeleton.h"
 #include "editor_content_browser_model.h"
@@ -452,6 +454,7 @@ class EditorUVE final {
     friend class AssetThumbnailUVE;
     friend class EditorPrismObjectMenuUVE;
     friend class EditorPrismEntityClassWindowUVE;
+    friend class EditorPrismMontageEditorUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -790,6 +793,8 @@ public:
         EntityEditor,
         Retarget,
         InspectorCameraPreview,
+        /// The Montage Editor's preview of its character.
+        MontageEditor,
         Count
     };
 
@@ -930,6 +935,62 @@ public:
     /// main window stops drawing. Undo starts empty and is cleared again on close: entity handles
     /// are fresh on both sides. Refused in Play or while another entity is open.
     bool OpenEntityEditorUVE(const std::filesystem::path& assetPath);
+
+    // ---- Montage Editor ---------------------------------------------------------------------------
+    /// An open Animation Montage (`.uvmontage`): the asset being edited, its undo, the preview's
+    /// playhead and playback, and the preview character in a scene of its own.
+    struct MontageEditSessionUVE final {
+        std::filesystem::path path;
+        Asset::AssetGuidUVE guid;
+        Asset::AnimationMontageAssetUVE montage;
+        Asset::AnimationMontageAssetUVE saved;
+        std::vector<Asset::AnimationMontageAssetUVE> undo;
+        std::vector<Asset::AnimationMontageAssetUVE> redo;
+        double playhead = 0.0;
+        bool playing = false;
+        bool loop = true;
+        double speed = 1.0;
+        Scene::MontagePlaybackUVE playback;
+        /// The section Play starts from (empty: the first).
+        std::string previewSection;
+        Scene::EntityUVE previewRoot = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE previewSkeleton = Scene::kInvalidEntityUVE;
+        ViewportOverlayStateUVE overlay;
+        std::string status;
+        /// The notify / state / curve key the preview last passed, for the status line.
+        std::string lastEvent;
+        bool focusPending = true;
+    };
+    /// Opens `path` in the Montage Editor (replacing a montage already open, which must be saved or
+    /// discarded first: false while it has unsaved changes).
+    bool OpenMontageEditorUVE(const std::filesystem::path& path);
+    [[nodiscard]] bool IsMontageEditorOpenUVE() const noexcept { return m_montageEdit.has_value(); }
+    [[nodiscard]] bool IsMontageEditorDirtyUVE() const noexcept {
+        return m_montageEdit.has_value() && !(m_montageEdit->montage == m_montageEdit->saved);
+    }
+    bool SaveMontageEditorUVE();
+    void CloseMontageEditorUVE();
+    /// Changes the open montage through `edit` as one undo step (nothing when it changes nothing).
+    void EditMontageUVE(const std::function<void(Asset::AnimationMontageAssetUVE&)>& edit);
+    bool UndoMontageEditUVE();
+    bool RedoMontageEditUVE();
+    /// Puts the preview on the entity asset `guid` (invalid: the skeleton of the first clip).
+    void SetMontagePreviewEntityUVE(Asset::AssetGuidUVE guid);
+    /// Play from `section` (empty: the playhead's section), pause, or stop back at the start.
+    void PlayMontagePreviewUVE(std::string_view section = {});
+    void PauseMontagePreviewUVE();
+    void StopMontagePreviewUVE();
+    void SetMontagePlayheadUVE(double time);
+    /// Advances the preview and poses its character. Called once a frame.
+    void TickMontageEditorUVE(double deltaSeconds);
+    /// Draws the preview into the Montage Editor's view (ViewportContextUVE::MontageEditor).
+    [[nodiscard]] std::uint64_t RenderMontagePreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
+                                                        const EditorViewportInputUVE& input);
+    /// The open montage's clip `guid`, loaded once (nullptr when it is not a readable skeletal clip).
+    [[nodiscard]] const Asset::AnimationClipAssetUVE* MontageClipUVE(Asset::AssetGuidUVE guid);
+    [[nodiscard]] MontageEditSessionUVE* MontageEditSessionPtrUVE() noexcept {
+        return m_montageEdit.has_value() ? &*m_montageEdit : nullptr;
+    }
     [[nodiscard]] bool IsEntityEditorOpenUVE() const noexcept;
 
     /// Opens the Retarget window for `animations` (absolute `.uvanim` paths). `target` is the
@@ -1872,6 +1933,8 @@ private:
         Animation,
         /// A named, ordered collection of animation clips (`.uvanimlib`) that sequencers load from.
         AnimationLibrary,
+        /// An Animation Montage (`.uvmontage`): opens in the Montage Editor.
+        AnimationMontage,
         Script,
         Audio,
         Font,
@@ -3281,6 +3344,11 @@ private:
     DocumentSceneClosingUVE m_documentSceneClosing;
     FilePickerHostUVE m_filePickerHost;
     std::unique_ptr<Core::DocumentSceneUVE> m_entityScene;
+    std::optional<MontageEditSessionUVE> m_montageEdit;
+    /// The Montage Editor's preview scene (its character), beside the level and the entity.
+    std::unique_ptr<Core::DocumentSceneUVE> m_montageScene;
+    std::map<std::uint64_t, std::optional<Asset::AnimationClipAssetUVE>> m_montageClips;
+    void RebuildMontagePreviewUVE();
     DocumentStateUVE m_otherDocument;
     bool m_entityDocumentActive = false;
     /// Close was asked from inside the entity's own scope: finished when that scope ends.

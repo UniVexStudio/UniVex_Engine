@@ -189,6 +189,7 @@ prism::Icon EditorPrismContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::Save: return prism::Icon::Save;
         case ItemTypeUVE::Animation: return prism::Icon::AnimGraph;
         case ItemTypeUVE::AnimationLibrary: return prism::Icon::NodeClip;
+        case ItemTypeUVE::AnimationMontage: return prism::Icon::AnimGraph;
         case ItemTypeUVE::Script: return prism::Icon::Script;
         case ItemTypeUVE::Audio: return prism::Icon::NodeSound;
         case ItemTypeUVE::Font: return prism::Icon::NodeText;
@@ -212,6 +213,7 @@ std::pair<std::string, std::string> EditorPrismContentBrowserUVE::DescribeUVE(co
         case ItemTypeUVE::Save: return {"Save", "SAV"};
         case ItemTypeUVE::Animation: return {"Animation", "ANM"};
         case ItemTypeUVE::AnimationLibrary: return {"Animation Library", "LIB"};
+        case ItemTypeUVE::AnimationMontage: return {"Animation Montage", "MONT"};
         case ItemTypeUVE::Script: return {"Script", "UVS"};
         case ItemTypeUVE::Audio: return {"Audio", "AUD"};
         case ItemTypeUVE::Font: return {"Font", "FNT"};
@@ -233,7 +235,8 @@ prism::Color EditorPrismContentBrowserUVE::TintForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::Script:
         case ItemTypeUVE::Shader: return prism::Color(170, 150, 230);
         case ItemTypeUVE::Animation:
-        case ItemTypeUVE::AnimationLibrary: return prism::Color(90, 200, 200);
+        case ItemTypeUVE::AnimationLibrary:
+        case ItemTypeUVE::AnimationMontage: return prism::Color(90, 200, 200);
         case ItemTypeUVE::Audio: return prism::Color(230, 190, 90);
         default: return prism::Color(170, 176, 186);
     }
@@ -707,6 +710,9 @@ std::string EditorPrismContentBrowserUVE::DisplayNameUVE(const Asset::ProjectFil
 }
 
 EditorPrismIconsUVE::ImageUVE EditorPrismContentBrowserUVE::TypeIconUVE(const ItemTypeUVE type, const int size) {
+    if (type == ItemTypeUVE::AnimationMontage) {
+        return m_icons.ContentTypeUVE("Animation", size);   // a montage is animation, played as one piece
+    }
     return m_icons.ContentTypeUVE(EditorUVE::GetContentBrowserItemTypeLabelUVE(type), size);
 }
 
@@ -1773,6 +1779,11 @@ void EditorPrismContentBrowserUVE::OpenEntryUVE(const std::size_t entryIndex) {
         case ItemTypeUVE::Scene:
             if (!m_editor.OpenSceneAssetUVE(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " as a scene.";
+            }
+            break;
+        case ItemTypeUVE::AnimationMontage:
+            if (!m_editor.OpenMontageEditorUVE(full)) {
+                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Montage Editor.";
             }
             break;
         case ItemTypeUVE::AnimationLibrary:

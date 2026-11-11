@@ -1141,6 +1141,16 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         return saved ? std::optional<std::filesystem::path>{path} : std::nullopt;
     }
 
+    if (item->action == ContentCatalogueActionUVE::MontageAsset) {
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvmontage");
+        if (!Asset::SaveAnimationMontageAssetUVE(Asset::AnimationMontageAssetUVE{}, path)) {
+            return std::nullopt;
+        }
+        static_cast<void>(m_services->GetAssetDatabaseUVE().RegisterUVE(path));
+        return path;
+    }
+
     if (item->action == ContentCatalogueActionUVE::LibraryAsset) {
         const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
         const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvanimlib");
@@ -4866,6 +4876,7 @@ void EditorUVE::ShutdownUVE() {
         static_cast<void>(CloseEntityEditorUVE(false));
     }
     CloseRetargetWindowUVE();
+    CloseMontageEditorUVE();
 
     // An interactive session keeps its editor preferences (panels, snapping, grid, Inspector folds,
     // favourites) without the author having to remember "Save Editor Preferences" first. Headless
@@ -5588,6 +5599,9 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvanimlib") {
         return ContentBrowserItemTypeUVE::AnimationLibrary;
     }
+    if (extension == ".uvmontage") {
+        return ContentBrowserItemTypeUVE::AnimationMontage;
+    }
     // The envelope the audio importer writes, and every source format an importer can turn into
     // one: WAV, plus the compressed Ogg/Vorbis, MP3 and FLAC streams RegisterCompressedAudioImportersUVE
     // reads (compressed_audio_importer_uve.h). A container with no registered importer - .m4a, .aac,
@@ -5631,6 +5645,8 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Animation";
         case ContentBrowserItemTypeUVE::AnimationLibrary:
             return "Animation Library";
+        case ContentBrowserItemTypeUVE::AnimationMontage:
+            return "Animation Montage";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:
