@@ -13,6 +13,7 @@
 #include "editor_prism_details.h"
 
 #include "editor.h"
+#include "material_asset.h"
 
 #include "prism/Application.h"
 #include "prism/Menu.h"
@@ -122,22 +123,40 @@ void EditorPrismDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActio
         if (shared->empty) {
             shared->empty();
         }
-    }), "", prism::Icon::Close));
+    })));
     if (spec.newMaterial) {
-        items.push_back(prism::MenuItem::Item("New Material", onTarget([this, shared] {
-            const std::optional<std::filesystem::path> created =
-                m_editor.CreateContentCatalogueItemUVE("material",
-                                                       m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot /
-                                                           m_editor.m_contentBrowserDirectory);
-            if (!created.has_value()) {
-                m_editor.m_contentStatusMessage = "Could not create a material here.";
-                return;
-            }
-            m_editor.RefreshProjectFileIndexUVE();
-            if (shared->file) {
-                shared->file(*created);
-            }
-        }), "", prism::Icon::Plus));
+        // A new material in the Content Browser's folder, of the kind asked for, assigned at once.
+        struct KindUVE final { const char* label; const char* stem; Asset::MaterialKindUVE kind; };
+        static constexpr KindUVE kKinds[] = {
+            {"New Standard Material", "M_Standard", Asset::MaterialKindUVE::Standard},
+            {"New ORM Material", "M_ORM", Asset::MaterialKindUVE::Orm},
+            {"New Shader Material", "M_Shader", Asset::MaterialKindUVE::Shader},
+        };
+        for (const KindUVE& kind : kKinds) {
+            items.push_back(prism::MenuItem::Item(kind.label, onTarget([this, shared, kind] {
+                const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const std::filesystem::path folder = now.contentRoot / m_editor.m_contentBrowserDirectory;
+                std::error_code error;
+                std::filesystem::create_directories(folder, error);
+                const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, kind.stem, ".uvmaterial");
+                Asset::MaterialAssetUVE material{};
+                material.kind = kind.kind;
+                if (kind.kind == Asset::MaterialKindUVE::Orm) {
+                    material.metallic = 1.0F;
+                    material.occlusionStrength = 1.0F;
+                } else if (kind.kind == Asset::MaterialKindUVE::Shader) {
+                    material.useCustomShaderCode = true;
+                }
+                if (!Asset::SaveMaterialAssetUVE(material, path)) {
+                    m_editor.m_contentStatusMessage = "Could not create a material here.";
+                    return;
+                }
+                m_editor.RefreshProjectFileIndexUVE();
+                if (shared->file) {
+                    shared->file(path);
+                }
+            })));
+        }
     }
 
     // The project's files of this kind.
@@ -163,25 +182,23 @@ void EditorPrismDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActio
             items.push_back(std::move(item));
         }
     } else {
-        items.push_back(prism::MenuItem::Sub("In this project (" + std::to_string(project.size()) + ")", std::move(project),
-                                             spec.icon));
+        items.push_back(prism::MenuItem::Sub("In this project (" + std::to_string(project.size()) + ")", std::move(project)));
     }
 
     if (spec.shapes && shared->shape) {
         items.push_back(prism::MenuItem::Sep());
-        struct ShapeUVE final { const char* label; Scene::PrimitiveMeshKindUVE kind; prism::Icon icon; };
+        struct ShapeUVE final { const char* label; Scene::PrimitiveMeshKindUVE kind; };
         static constexpr ShapeUVE kShapes[] = {
-            {"Box", Scene::PrimitiveMeshKindUVE::Cube, prism::Icon::Cube},
-            {"Sphere", Scene::PrimitiveMeshKindUVE::UVSphere, prism::Icon::Sphere},
-            {"Capsule", Scene::PrimitiveMeshKindUVE::Capsule, prism::Icon::Cylinder},
-            {"Cylinder", Scene::PrimitiveMeshKindUVE::Cylinder, prism::Icon::Cylinder},
-            {"Plane", Scene::PrimitiveMeshKindUVE::Plane, prism::Icon::Plane},
+            {"Box", Scene::PrimitiveMeshKindUVE::Cube},
+            {"Sphere", Scene::PrimitiveMeshKindUVE::UVSphere},
+            {"Capsule", Scene::PrimitiveMeshKindUVE::Capsule},
+            {"Cylinder", Scene::PrimitiveMeshKindUVE::Cylinder},
+            {"Plane", Scene::PrimitiveMeshKindUVE::Plane},
         };
         for (const ShapeUVE& shape : kShapes) {
             const bool isCurrent = shared->currentShape.has_value() && *shared->currentShape == shape.kind;
             prism::MenuItem item = prism::MenuItem::Check(std::string(shape.label) + " (shape)", isCurrent,
                                                           onTarget([shared, kind = shape.kind] { shared->shape(kind); }));
-            item.icon = shape.icon;
             items.push_back(std::move(item));
         }
     }
@@ -202,7 +219,7 @@ void EditorPrismDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActio
             })();
         };
         m_editor.OpenFilePickerUVE(std::move(request));
-    }, "", prism::Icon::FolderOpen));
+    }));
     items.push_back(prism::MenuItem::Item("Quick Import...", [this, spec, shared, onTarget] {
         FilePickerRequestUVE request;
         request.mode = FilePickerModeUVE::Open;
@@ -224,7 +241,7 @@ void EditorPrismDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActio
             })();
         };
         m_editor.OpenFilePickerUVE(std::move(request));
-    }, "", prism::Icon::Open));
+    }));
     prism::MenuItem show = prism::MenuItem::Item("Show in Content Browser", [this, shared] {
         const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         std::error_code error;
@@ -238,7 +255,7 @@ void EditorPrismDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActio
                 break;
             }
         }
-    }, "", prism::Icon::Browse);
+    });
     show.enabled = !shared->current.empty();
     items.push_back(std::move(show));
     prism::showMenu(std::move(items), anchor, prism::PopupPlacement::Below);

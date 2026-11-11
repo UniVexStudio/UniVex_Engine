@@ -13,6 +13,9 @@
 #include "i_asset_database.h"
 #include "mesh_asset.h"
 #include "mesh_component.h"
+#include "skeleton_3d.h"
+#include "camera_component.h"
+#include "bone_attachment_3d.h"
 
 #include "prism/Application.h"
 #include "prism/Containers.h"
@@ -161,6 +164,12 @@ std::uint64_t EditorPrismDetailsUVE::StructureSignatureUVE(const Scene::EntityUV
                 Asset::AssetGuidUVE value{};
                 property.getValue(instance, &value);
                 HashUVE(h, value.value);
+            }
+            // A skeleton's bones are drawn as a tree: a new source re-lays it.
+            if (property.customDrawerId == "skeleton-source" && instance != nullptr) {
+                const auto& skeleton = *static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
+                HashUVE(h, skeleton.skeletonAssetPath);
+                HashUVE(h, static_cast<std::uint64_t>(skeleton.bones.size()));
             }
         }
     }
@@ -342,6 +351,9 @@ void EditorPrismDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
             AddMaterialSectionUVE(path, slot);
         }
         m_pendingMaterials.clear();
+        if (entry->typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
+            AddCameraPreviewUVE(entity);
+        }
     }
     // A model's own materials (one per surface), edited in place like a slot's.
     if (em.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
@@ -463,6 +475,19 @@ void EditorPrismDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE
 
 void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry, const PropertyUVE& property,
                                            const void* const instance, const bool writable) {
+    // Rows some objects draw their own way.
+    if (property.customDrawerId == "skeleton-source") {
+        AddSkeletonSourceUVE(category, entry, property, instance, writable);
+        return;
+    }
+    if (property.customDrawerId == "skeleton-bones") {
+        AddSkeletonBonesUVE(category, instance);
+        return;
+    }
+    if (entry.typeIndex == std::type_index(typeid(Scene::BoneAttachment3DComponentUVE)) && property.name == "boneName") {
+        AddBonePickerUVE(category, entry, property, instance, writable);
+        return;
+    }
     const std::string label = property.displayName.empty() ? property.name : property.displayName;
     auto row = std::make_shared<RowUVE>();
     row->entry = &entry;
@@ -714,9 +739,23 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 }
                 start = comma + 1U;
             }
-            auto pick = prism::make<prism::Button>("", prism::Icon::Dots, prism::ButtonStyle::Default);
-            pick->setTooltip("Pick, load or quick import a file");
+            // One button, like an asset slot: the file's name, or (Empty); the menu has Empty too.
+            const bool isMaterialFile = std::find(extensions.begin(), extensions.end(), ".uvmat") != extensions.end();
+            auto pick = prism::make<prism::Button>("(Empty)", isMaterialFile ? prism::Icon::Material : prism::Icon::File,
+                                                   prism::ButtonStyle::Default);
+            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or quick import a file") : property.tooltip);
             std::weak_ptr<prism::Button> weakPick = pick;
+            row->sync = [p, weakPick](const void* inst) {
+                auto b = weakPick.lock();
+                if (b && inst != nullptr) {
+                    std::string v;
+                    p->getValue(inst, &v);
+                    const std::string text = v.empty() ? std::string("(Empty)") : std::filesystem::path{v}.filename().string();
+                    if (b->text() != text) {
+                        b->setText(text);
+                    }
+                }
+            };
             pick->onClick = [this, e, p, weakPick, extensions] {
                 const PickerSpecUVE spec = PickerSpecForUVE(extensions);
                 PickerActionsUVE actions;
@@ -747,10 +786,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                     ShowPickerUVE(spec, std::move(actions), b->rect());
                 }
             };
-            auto box = prism::hbox(4.0F);
-            box->add(text, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-            box->add(pick, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-            editor = box;
+            editor = pick;
         }
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
         auto button = prism::make<prism::Button>("", prism::Icon::Layers, prism::ButtonStyle::Default);

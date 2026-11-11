@@ -110,6 +110,7 @@ private:
     std::shared_ptr<prism::TextInput> m_componentsSearch;
     std::shared_ptr<prism::EngineView> m_viewport;
     std::shared_ptr<EditorPrismViewportGizmosUVE> m_gizmos;
+    std::shared_ptr<class CameraScreenUVE> m_cameraScreen;
     std::shared_ptr<prism::Widget> m_problemsPanel;
     std::shared_ptr<prism::TabView> m_results;
     std::shared_ptr<prism::TableView> m_problems;

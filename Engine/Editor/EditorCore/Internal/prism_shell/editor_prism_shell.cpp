@@ -533,9 +533,12 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildViewportUVE() {
     // Every gizmo (navigation, transform, object gizmos and billboards) is PRISM's, drawn over the
     // engine's image of the scene; the renderer draws none of its own (hostDrawsGizmos).
     m_gizmos = prism::make<EditorPrismViewportGizmosUVE>(m_editor);
+    m_cameraScreen = prism::make<CameraScreenUVE>();
+    m_cameraScreen->setVisible(false);
     auto stack = prism::make<prism::Overlay>();
     stack->add(m_viewport);
     stack->add(m_gizmos);
+    stack->add(m_cameraScreen);
     return stack;
 }
 
@@ -891,6 +894,51 @@ void EditorPrismShellUVE::RefreshToolbarUVE() {
 
 // ------------------------------------------------------------------------------------------ frame
 
+void EditorPrismShellUVE::AppendCameraScreenUVE(EditorUVE& editor, const EditorPrismDetailsUVE& details,
+                                                CameraScreenUVE* screen,
+                                                std::vector<EditorPrismHostUVE::ViewImageUVE>& views) {
+    // A selected Camera3D's view in the viewport's corner, while the view itself stays the editor's
+    // (not while the viewport already looks through that camera).
+    if (screen == nullptr) {
+        return;
+    }
+    const Scene::EntityUVE selected = editor.GetSelectedEntityUVE();
+    const bool show = details.CameraScreenOpenUVE() && editor.m_viewportPanelRenderer && editor.m_selectedEntities.size() == 1U &&
+                      Scene::IsDocumentCameraEntityUVE(editor.m_services->GetEntityManagerUVE(), selected) &&
+                      editor.GetPreviewCameraUVE() != selected;
+    if (screen->visible() != show) {
+        screen->setVisible(show);
+    }
+    if (!show) {
+        return;
+    }
+    screen->setTitle("Camera3D: " + editor.GetEntityDisplayLabelUVE(selected));
+    const prism::Rect rect = screen->viewRect();
+    if (rect.w < 8.0F || rect.h < 8.0F) {
+        return;
+    }
+    static EditorUVE::ViewportOverlayStateUVE state{};
+    state.hostDrawsGizmos = true;
+    state.gameWorkspaceActive = false;
+    state.studioView = false;
+    state.entityAuthoringView = editor.IsEntityDocumentActiveUVE();
+    state.input = EditorViewportInputUVE{};
+    Math::Vector2UVE used{0.0F, 0.0F};
+    const std::uint64_t texture = editor.m_viewportPanelRenderer(EditorUVE::ViewportContextUVE::InspectorCameraPreview,
+                                                                 Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)},
+                                                                 used, state);
+    if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
+        EditorPrismHostUVE::ViewImageUVE view{};
+        view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x, used.y};
+        view.texture = static_cast<std::uint32_t>(texture);
+        view.usedWidth = used.x;
+        view.usedHeight = used.y;
+        view.textureWidth = used.x;
+        view.textureHeight = used.y;
+        views.push_back(view);
+    }
+}
+
 void EditorPrismShellUVE::FrameUVE() {
     if (!m_host.IsReadyUVE()) {
         return;
@@ -955,6 +1003,7 @@ void EditorPrismShellUVE::FrameUVE() {
             }
         }
     }
+    AppendCameraScreenUVE(m_editor, m_details2, m_cameraScreen.get(), views);
     m_host.RenderUVE(views);
     {
         const EditorUVE::EntityDocumentScopeUVE scope(m_editor);

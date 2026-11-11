@@ -4,6 +4,7 @@
 #include "editor.h"
 #include "editor_prism_chrome.h"
 #include "editor_prism_host.h"
+#include "editor_prism_shell.h"
 #include "scene_object_type.h"
 
 #include "prism/Application.h"
@@ -447,9 +448,12 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildCentreUVE() {
     m_viewport->mode = prism::EngineView::Mode::Hole;
     m_viewport->onInput = [](const prism::EngineInput&) {};
     m_gizmos = prism::make<EditorPrismViewportGizmosUVE>(m_editor);
+    m_cameraScreen = prism::make<CameraScreenUVE>();
+    m_cameraScreen->setVisible(false);
     auto view = prism::make<prism::Overlay>();
     view->add(m_viewport);
     view->add(m_gizmos);
+    view->add(m_cameraScreen);
 
     // Compile's results: object, line, message; picking one selects its object.
     m_problems = prism::make<prism::TableView>();
@@ -869,6 +873,7 @@ void EditorPrismEntityEditorUVE::RenderUVE() {
             }
         }
     }
+    EditorPrismShellUVE::AppendCameraScreenUVE(m_editor, m_details, m_cameraScreen.get(), views);
     m_host.RenderWindowUVE(m_window, views);
 }
 

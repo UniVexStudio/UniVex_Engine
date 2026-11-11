@@ -79,6 +79,26 @@ private:
     bool m_extra = false;
 };
 
+/// A viewport's camera screen: a small frame in the view's lower right corner showing what a
+/// Camera3D sees while the view itself stays the editor's. It takes only its own corner of the
+/// view (input elsewhere reaches the viewport); the shell renders into view().
+class CameraScreenUVE final : public prism::Widget {
+public:
+    CameraScreenUVE();
+    void setTitle(std::string title);
+    [[nodiscard]] prism::Widget* view() const noexcept { return m_view.get(); }
+    [[nodiscard]] prism::Rect viewRect() const noexcept { return m_viewRect; }
+    prism::Vec2 measure(prism::Vec2 available) override;
+    void arrange(prism::Rect r) override;
+    void paint(prism::Canvas& c) override;
+    bool onMouseDown(const prism::MouseEvent& e) override;
+
+private:
+    prism::Ref<prism::Widget> m_view;
+    prism::Rect m_viewRect{};
+    std::string m_title;
+};
+
 /// Appends minimize / maximize-restore / close for the window the buttons are in. `onClose`
 /// runs for the close button (the level editor quits; an asset editor asks to close its document).
 void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose);
