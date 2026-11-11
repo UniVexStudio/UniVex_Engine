@@ -1,6 +1,7 @@
 build/
 build-*/
 .uvbt/
+.ccache/
 .venv/
 ThirdParty/
 !ThirdParty/imgui/ImGui.Build.cs

@@ -699,6 +699,18 @@ public class ImGuiModule : ModuleRules
         if configuration == "Sanitizers":
             base_cflags += ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
 
+        # Optional compiler launcher for the per-source compiles (UVBT_COMPILER_LAUNCHER=ccache):
+        # a content-hashed cache turns an unchanged file in a fresh checkout into a cache hit.
+        launcher = []
+        launcher_name = os.environ.get("UVBT_COMPILER_LAUNCHER", "").strip()
+        if launcher_name:
+            launcher_path = shutil.which(launcher_name)
+            if launcher_path:
+                launcher = [launcher_path]
+                print(f"[UVBT] Compiler launcher: {launcher_path}")
+            else:
+                print(f"[UVBT] Compiler launcher '{launcher_name}' not found; compiling without it")
+
         # Compile tasks
         compile_tasks = []
         module_objects = {}
@@ -736,7 +748,7 @@ public class ImGuiModule : ModuleRules
                 out_dep = mod_obj_dir / (src.stem + ".d")
                 module_objects[mod.name].append(out_obj)
 
-                cmd = [cxx] + base_cflags + inc_flags + def_flags + [
+                cmd = launcher + [cxx] + base_cflags + inc_flags + def_flags + [
                     "-MMD", "-MF", str(out_dep),
                     "-c", str(src),
                     "-o", str(out_obj)
