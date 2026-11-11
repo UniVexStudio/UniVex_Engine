@@ -62,10 +62,10 @@ constexpr Tree<1> kOccluder = kOne(Kind::Occluder3D);
 constexpr std::array<std::string_view, 9> kGroups{"CREATE BASIC ASSET", "Entity", "Shapes", "Lighting", "Camera",
                                                   "Physics", "Animation", "Audio, VFX & UI", "World"};
 
-// The Montage's bodies, in the order the window lists them: the two things a player is made of
+// The entity classes, in the order the Entity Class window lists them: the two things a player is made of
 // first, then what a level is built from, then the two that mark a place or an area. Each is a
 // catalogue item, so the window reads its name and icon from the menu rather than restating them.
-constexpr std::array<ContentCatalogueMontageEntryUVE, 6> kMontageEntries{{
+constexpr std::array<ContentCatalogueEntityClassUVE, 6> kEntityClasses{{
     {"player", "The body the game gives its input to.",
      "A Player3D is the object play begins from: input drives it, and the view the player sees looks "
      "out from whatever you attach to it. Add the mesh it wears, the spring arm that holds the "
@@ -87,7 +87,7 @@ constexpr std::array<ContentCatalogueMontageEntryUVE, 6> kMontageEntries{{
      "to come back. Its transform is the whole object, so there is nothing to add to it."},
 }};
 
-constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
+constexpr std::array<ContentCatalogueItemUVE, 40> kItems{{
     {"folder", "Folder", "CREATE BASIC ASSET", "A new folder here in Content", Action::Folder, {}, Scene::ViewportDimensionUVE::ThreeD, "Folder"},
     {"basic_script", "New Script", "CREATE BASIC ASSET", "A new UVScript file (.uvs) ready to edit", Action::ScriptAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Script"},
     {"viewport_3d", "Viewport 3D", "CREATE BASIC ASSET",
@@ -99,12 +99,6 @@ constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
     {"shader_script", "New Shader", "CREATE BASIC ASSET", "A new custom shader code asset", Action::ShaderAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "NewShader"},
     {"empty", "Empty Entity 3D", "CREATE BASIC ASSET", "A bare Object3D to build your own tree on", Action::EntityAsset, kEmpty, Scene::ViewportDimensionUVE::ThreeD, "Empty"},
 
-    // First in the group: the Montage is the way in, and the six items under it are the shortcut
-    // for when the author already knows which body they want.
-    {"body-montage", "3D Montage", "Entity",
-     "Pick the body an entity is built on - Player, Character, Prop, Physics Prop, Trigger or Spawner - "
-     "and open it to build",
-     Action::Montage, {}},
     {"character", "Character 3D", "Entity",
      "A playable body: Character3D, empty until you add what it wears - a mesh, an animation, a "
      "collider",
@@ -202,12 +196,12 @@ std::span<const std::string_view> GetContentCatalogueGroupsUVE() noexcept {
     return kGroups;
 }
 
-std::span<const ContentCatalogueMontageEntryUVE> GetContentCatalogueMontageEntriesUVE() noexcept {
-    return kMontageEntries;
+std::span<const ContentCatalogueEntityClassUVE> GetContentCatalogueEntityClassesUVE() noexcept {
+    return kEntityClasses;
 }
 
-bool IsContentCatalogueMontageBodyUVE(const std::string_view itemId) noexcept {
-    return std::ranges::any_of(kMontageEntries, [itemId](const ContentCatalogueMontageEntryUVE& entry) {
+bool IsContentCatalogueEntityClassUVE(const std::string_view itemId) noexcept {
+    return std::ranges::any_of(kEntityClasses, [itemId](const ContentCatalogueEntityClassUVE& entry) {
         return entry.itemId == itemId;
     });
 }
@@ -253,10 +247,6 @@ int RankContentCatalogueItemUVE(const ContentCatalogueItemUVE& item, const std::
 }
 
 Scene::Objects::SceneObjectKindUVE GetContentCatalogueIconKindUVE(const ContentCatalogueItemUVE& item) noexcept {
-    if (item.action == ContentCatalogueActionUVE::Montage) {
-        // A skeleton: every body the window offers is either already wearing bones or is about to.
-        return Kind::Skeleton3D;
-    }
     if (item.action == ContentCatalogueActionUVE::Folder) {
         return Kind::Folder;
     }

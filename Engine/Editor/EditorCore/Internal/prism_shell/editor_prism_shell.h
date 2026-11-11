@@ -6,6 +6,7 @@
 #include "editor_prism_details.h"
 #include "editor_prism_dock_panels.h"
 #include "editor_prism_entity_editor.h"
+#include "editor_prism_entity_class_window.h"
 #include "editor_prism_file_dialog.h"
 #include "editor_prism_host.h"
 #include "editor_prism_icons.h"
@@ -125,6 +126,8 @@ private:
     EditorPrismEntityEditorUVE m_entityEditor;
     // The file window every Load / Import opens.
     EditorPrismFileDialogUVE m_fileDialog;
+    // "+ Add > Entity > Entity Class...": the window that picks a new entity's class.
+    EditorPrismEntityClassWindowUVE m_entityClassWindow;
     EditorPrismContentBrowserUVE m_contentBrowser;
     EditorPrismDetailsUVE m_details2;
     EditorPrismDockPanelsUVE m_dockPanels;

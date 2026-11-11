@@ -377,13 +377,6 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
 
     const bool allowed = IsAuthoringCommandAllowedUVE();
     const auto create = [&](const ContentCatalogueItemUVE& item) {
-        if (item.action == ContentCatalogueActionUVE::Montage) {
-            // The Montage asks which body first: nothing is written until its Open, so the menu's
-            // own line closes and the window takes over.
-            OpenMontageUVE(contentRoot / directory);
-            ImGui::CloseCurrentPopup();
-            return;
-        }
         if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
             OpenCreateScriptModalUVE(contentRoot / directory);
             ImGui::CloseCurrentPopup();
@@ -500,12 +493,6 @@ void EditorUVE::DrawContentCreateMenuUVE(const std::filesystem::path& contentRoo
                     }
                 }
                 ImGui::Separator();
-                continue;
-            }
-            if (group == "Entity") {
-                if (const ContentCatalogueItemUVE* const montageItem = FindContentCatalogueItemUVE("body-montage")) {
-                    drawItem(*montageItem, false);
-                }
                 continue;
             }
             const auto firstKind = GetContentCatalogueIconKindUVE(*firstInGroup);

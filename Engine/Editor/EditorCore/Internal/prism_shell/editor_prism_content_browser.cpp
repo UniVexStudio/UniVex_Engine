@@ -1377,6 +1377,14 @@ std::vector<prism::MenuItem> EditorPrismContentBrowserUVE::CatalogueMenuUVE() {
     for (const std::string_view group : GetContentCatalogueGroupsUVE()) {
         std::vector<prism::MenuItem> sub;
         EditorPrismIconsUVE::ImageUVE groupIcon{};
+        if (group == "Entity") {
+            // Unreal's Pick Parent Class: one window that explains every class before making one.
+            sub.push_back(prism::MenuItem::Item("Entity Class...", [this] {
+                const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                m_editor.OpenEntityClassPickerUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
+            }, "", prism::Icon::Search));
+            sub.push_back(prism::MenuItem::Sep());
+        }
         for (const ContentCatalogueItemUVE& item : GetContentCatalogueItemsUVE()) {
             if (item.group != group) {
                 continue;

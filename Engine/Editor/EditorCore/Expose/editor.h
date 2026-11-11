@@ -411,9 +411,9 @@ struct FilePickerStateUVE final {
     bool focusPending = true;
 };
 
-/// The Montage's live state: where its body goes, what it has picked so far, and the last line it
-/// said. The list itself is not kept here - it is the catalogue's, read every frame.
-struct MontageStateUVE final {
+/// The Entity Class picker's state: where the body goes, what is picked, and the last line it said.
+/// The list itself is the catalogue's.
+struct EntityClassPickerStateUVE final {
     /// Absolute: where the body's `.uventity` will be written.
     std::filesystem::path directory;
     std::string search;
@@ -451,6 +451,7 @@ class EditorUVE final {
     friend class EditorPrismFileDialogUVE;
     friend class AssetThumbnailUVE;
     friend class EditorPrismObjectMenuUVE;
+    friend class EditorPrismEntityClassWindowUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -894,16 +895,15 @@ public:
     void CloseFilePickerUVE();
     void DrawFilePickerUVE();
 
-    /// Opens the Montage over `directory` (absolute): the one window that offers the bodies an entity
-    /// can start as. Opening it writes nothing - it only asks.
-    void OpenMontageUVE(std::filesystem::path directory);
-    [[nodiscard]] bool IsMontageOpenUVE() const noexcept { return m_montage.has_value(); }
-    void CloseMontageUVE();
-    void DrawMontageUVE();
-    /// Makes the Montage body `itemId` in the open Montage's directory, selects it in Content and
-    /// opens it in the Entity Editor, as one step. Returns false - with the window saying why - for
-    /// anything that is not one of the Montage's bodies, and while authoring is not allowed.
-    [[nodiscard]] bool OpenMontageBodyUVE(std::string_view itemId);
+    /// Opens Entity Class over `directory` (absolute): the window that offers the bodies an entity can
+    /// start as (Content "+ Add" -> Entity -> "Entity Class..."). Opening it writes nothing.
+    void OpenEntityClassPickerUVE(std::filesystem::path directory);
+    [[nodiscard]] bool IsEntityClassPickerOpenUVE() const noexcept { return m_entityClassPicker.has_value(); }
+    void CloseEntityClassPickerUVE();
+    /// Makes the entity class `itemId` in the open picker's directory, selects it in Content and opens
+    /// it in the Entity Editor, as one step. Returns false - with the window saying why - for anything
+    /// that is not an entity class, and while authoring is not allowed.
+    [[nodiscard]] bool CreateEntityClassUVE(std::string_view itemId);
     /// The picker's listing for `directory` (content-relative, empty is Content): its subfolders
     /// plus its files whose extension is one of `extensions` (empty matches every file) and whose
     /// stems contain `search` (case-insensitive). Sorted.
@@ -2727,7 +2727,7 @@ private:
     std::optional<RetargetWindowStateUVE> m_retargetWindow;
     std::optional<AnimationLibraryWindowStateUVE> m_animationLibraryWindow;
     std::optional<FilePickerStateUVE> m_filePicker;
-    std::optional<MontageStateUVE> m_montage;
+    std::optional<EntityClassPickerStateUVE> m_entityClassPicker;
     /// Browse picks waiting for their widget: widget id (ImGui::GetID, kept as uint32_t like
     /// m_inspectorTextEdits) to the pick. Asset combos take GUIDs, file rows take paths; each is
     /// consumed by its own drawer on the next frame.

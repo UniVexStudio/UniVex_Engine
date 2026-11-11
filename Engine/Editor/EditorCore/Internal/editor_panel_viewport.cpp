@@ -144,9 +144,6 @@ void EditorUVE::DrawOverlayWindowsUVE() {
     if (m_filePicker.has_value()) {
         DrawFilePickerUVE();
     }
-    if (m_montage.has_value()) {
-        DrawMontageUVE();
-    }
     DrawCreateScriptModalUVE();
     DrawCreateShaderModalUVE();
     DrawQuickImportModalUVE();
