@@ -32,10 +32,6 @@ enum class ContentCatalogueActionUVE : std::uint8_t {
     /// A `.uvanimlib` asset: an empty animation library. Like Folder, it makes a file and no
     /// entities, so its item carries no objects.
     LibraryAsset,
-    /// Nothing on its own: opens the Montage, the one window that offers the bodies an entity can
-    /// be built on. Picking the item promises a choice, so it carries no objects and
-    /// CreateContentCatalogueItemUVE refuses it - the body the author picks there is what gets made.
-    Montage,
     /// A `.uvs` script file.
     ScriptAsset,
     /// A `.uvmaterial` material file.
@@ -60,8 +56,8 @@ struct ContentCatalogueItemUVE final {
     std::string_view fileStem{};
 };
 
-/// One body the Montage offers: a catalogue item, plus the words the window says about it.
-struct ContentCatalogueMontageEntryUVE final {
+/// One entity class the Entity Class window offers: a catalogue item, plus the words the window says about it.
+struct ContentCatalogueEntityClassUVE final {
     /// The catalogue item that makes this body (`player`, `character`, ...). Its label names the
     /// body, its kind picks the icon, and its tooltip is the menu's.
     std::string_view itemId;
@@ -89,15 +85,14 @@ struct ContentCatalogueMontageEntryUVE final {
 /// group or tooltip, 2 its label contains the first word, 3 its label starts with it.
 [[nodiscard]] int RankContentCatalogueItemUVE(const ContentCatalogueItemUVE& item, std::string_view query) noexcept;
 
-/// The bodies the Montage offers, in window order. Each names a catalogue item, so a body added to
+/// The entity classes the Entity Class window offers, in window order. Each names a catalogue item, so a body added to
 /// the menu is listed there without a second description of what it is.
-[[nodiscard]] std::span<const ContentCatalogueMontageEntryUVE> GetContentCatalogueMontageEntriesUVE() noexcept;
+[[nodiscard]] std::span<const ContentCatalogueEntityClassUVE> GetContentCatalogueEntityClassesUVE() noexcept;
 
-/// True when `itemId` is one of the Montage's bodies - the only ids the Montage will make.
-[[nodiscard]] bool IsContentCatalogueMontageBodyUVE(std::string_view itemId) noexcept;
+/// True when `itemId` is one of the entity classes - the only ids the Entity Class window makes.
+[[nodiscard]] bool IsContentCatalogueEntityClassUVE(std::string_view itemId) noexcept;
 
-/// The object kind whose icon stands for `item` (its root; Folder for a folder, Skeleton3D for the
-/// Montage, which stands for the bodies inside it).
+/// The object kind whose icon stands for `item` (its root; Folder for a folder).
 [[nodiscard]] Scene::Objects::SceneObjectKindUVE GetContentCatalogueIconKindUVE(
     const ContentCatalogueItemUVE& item) noexcept;
 

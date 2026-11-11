@@ -81,7 +81,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 EditorPrismShellUVE::EditorPrismShellUVE(EditorUVE& editor)
-    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
+    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_entityClassWindow(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
         ShowDockPanelUVE(0, true);
@@ -120,6 +120,9 @@ void EditorPrismShellUVE::ShutdownUVE() {
     }
     if (m_host.IsReadyUVE() && m_entityEditor.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_entityEditor.WindowIdUVE());
+    }
+    if (m_host.IsReadyUVE() && m_entityClassWindow.WindowIdUVE() != 0) {
+        m_host.CloseWindowUVE(m_entityClassWindow.WindowIdUVE());
     }
     m_host.ShutdownUVE();
 }
@@ -1052,6 +1055,7 @@ void EditorPrismShellUVE::FrameUVE() {
         m_entityEditor.RenderUVE();
     }
     m_fileDialog.FrameUVE();
+    m_entityClassWindow.FrameUVE();
 }
 
 } // namespace UVE::Editor
