@@ -124,7 +124,7 @@ void EditorPrismDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& a
     // A texture slot: picked from the project's registered images, never typed.
     const auto texture = [&](const char* label, Asset::AssetGuidUVE MaterialUVE::*field, const char* tip = "") {
         const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        std::string text = "None";
+        std::string text = "Empty";
         if (loaded.*field != Asset::AssetGuidUVE{}) {
             text = "Missing texture";
             for (const Asset::ProjectFileEntryUVE& file : snapshot.entries) {
@@ -142,7 +142,7 @@ void EditorPrismDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& a
             actions.empty = [edit, field, weak] {
                 edit([&](MaterialUVE& m) { m.*field = Asset::AssetGuidUVE{}; });
                 if (auto button = weak.lock()) {
-                    button->setText("None");
+                    button->setText("Empty");
                 }
             };
             actions.file = [this, edit, field, weak](const std::filesystem::path& absolute) {

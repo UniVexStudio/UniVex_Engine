@@ -1858,6 +1858,28 @@ static void testMultiWindow(Application& app) {
   app.closeWindow(w);
   CHECK(!app.hasWindow(w) && closed == w && app.windowOrder().size() == 2 && app.renderWindow(w).data == nullptr);
   app.closeWindow(w2);
+  // a click in a secondary window that opens many windows (m_windows grows and moves) and closes its
+  // own window: the window state swapped back afterwards is still the right one, focus included
+  {
+    auto opener = make<Button>("Open");
+    int self = 0;
+    std::vector<int> opened;
+    opener->onClick = [&] {
+      for (int i = 0; i < 12; i++) opened.push_back(app.openWindow(make<Label>("More"), OsWindowDesc{}));
+      app.closeWindow(self);
+    };
+    auto col = vbox();
+    col->add(opener, {.pad = Margin(10)});
+    self = app.openWindow(col, OsWindowDesc{});
+    app.layoutWindow(self);
+    Rect orc = opener->rect();
+    app.windowMouseButton(0, er.center(), MouseButton::Left, true); app.windowMouseButton(0, er.center(), MouseButton::Left, false);
+    app.windowMouseButton(self, orc.center(), MouseButton::Left, true); app.windowMouseButton(self, orc.center(), MouseButton::Left, false);
+    CHECK(opened.size() == 12 && !app.hasWindow(self));               // closed once the click returned to window 0
+    CHECK(app.root() == mainCol.get() && app.focus() == mainEdit.get());   // window 0's own state came back
+    for (int id : opened) CHECK(app.hasWindow(id) && app.windowRoot(id) != nullptr);
+    for (int id : opened) app.closeWindow(id);
+  }
   // PRISM chrome: a borderless window with our own title bar (minimize / maximize-restore / close)
   {
     auto* hp = dynamic_cast<HeadlessPlatform*>(&app.platform());

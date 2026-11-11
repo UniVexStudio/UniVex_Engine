@@ -129,6 +129,12 @@ private:
 
     [[nodiscard]] WindowUVE* FindUVE(int id) const;
     [[nodiscard]] prism::Vec2 ToUiUVE(const WindowUVE& w, double x, double y) const;
+    /// Runs `fn` (an input event routed from `source` to `target`) in `target`'s scope; false when it
+    /// cannot (`source` is scoped and `target` is not).
+    static bool InTargetScopeUVE(const WindowUVE& source, const WindowUVE& target, const std::function<void()>& fn);
+    /// While a PRISM drag is in flight: the other window under the pointer, if any, and the pointer
+    /// in its UI coordinates.
+    [[nodiscard]] WindowUVE* DragTargetUVE(const WindowUVE& source, prism::Vec2& local) const;
     void SyncSizeUVE(WindowUVE& w);
     void UpdateWindowDragUVE(WindowUVE& w);
     void CompositeUVE(WindowUVE& w, std::uint32_t uiTexture, std::uint32_t vao, std::span<const ViewImageUVE> views);

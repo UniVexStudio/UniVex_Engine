@@ -2,6 +2,7 @@
 #include "editor_prism_details.h"
 
 #include "editor_prism_asset_thumbnail.h"
+#include "editor_prism_content_browser.h"
 
 #include "color.h"
 #include "engine_project_settings.h"
@@ -60,6 +61,70 @@ constexpr std::array<std::string_view, 3> kCustomDrawnUVE{"component.name", "com
 }
 
 /// The preview a slot of these file kinds shows beside its picker, if any.
+/// An asset slot's drop target: a Content Browser item of the slot's kinds dropped on it is used
+/// as if it were picked (in the document of the window it is dropped in).
+class AssetSlotDropUVE final : public prism::Border {
+public:
+    AssetSlotDropUVE(std::function<std::filesystem::path()> contentRoot, std::vector<std::string> kinds,
+                     std::function<void(const std::filesystem::path&)> use)
+        : m_contentRoot(std::move(contentRoot)), m_kinds(std::move(kinds)), m_use(std::move(use)) {}
+    bool onDragEnter(const prism::DragDropEvent& e) override { return HotUVE(AcceptsUVE(e).has_value()); }
+    bool onDragOver(const prism::DragDropEvent& e) override { return HotUVE(AcceptsUVE(e).has_value()); }
+    void onDragLeave() override { static_cast<void>(HotUVE(false)); }
+    bool onDrop(const prism::DragDropEvent& e) override {
+        static_cast<void>(HotUVE(false));
+        const std::optional<std::filesystem::path> path = AcceptsUVE(e);
+        if (!path.has_value() || !m_use) {
+            return false;
+        }
+        m_use(*path);
+        return true;
+    }
+    void paint(prism::Canvas& c) override {
+        prism::Border::paint(c);
+        if (m_hot) {
+            c.strokeRoundRect(rect(), 3.0F, prism::theme().accent, 2);
+        }
+    }
+
+private:
+    [[nodiscard]] bool HotUVE(const bool hot) {
+        if (hot != m_hot) {
+            m_hot = hot;
+            invalidate();
+        }
+        return hot;
+    }
+    [[nodiscard]] std::optional<std::filesystem::path> AcceptsUVE(const prism::DragDropEvent& e) const {
+        if (!e.operation || e.operation->tag() != EditorPrismContentBrowserUVE::kDragTagUVE) {
+            return std::nullopt;
+        }
+        const std::string* relative = e.operation->getPayload<std::string>();
+        if (relative == nullptr || relative->empty()) {
+            return std::nullopt;
+        }
+        std::string extension = std::filesystem::path{*relative}.extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       [](const unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        if (std::find(m_kinds.begin(), m_kinds.end(), extension) == m_kinds.end()) {
+            return std::nullopt;
+        }
+        return (m_contentRoot ? m_contentRoot() : std::filesystem::path{}) / std::filesystem::path{*relative};
+    }
+    std::function<std::filesystem::path()> m_contentRoot;
+    std::vector<std::string> m_kinds;
+    std::function<void(const std::filesystem::path&)> m_use;
+    bool m_hot = false;
+};
+
+[[nodiscard]] prism::Ref<prism::Widget> WithAssetDropUVE(std::function<std::filesystem::path()> contentRoot, prism::Ref<prism::Widget> slot,
+                                                         std::vector<std::string> kinds,
+                                                         std::function<void(const std::filesystem::path&)> use) {
+    auto drop = prism::make<AssetSlotDropUVE>(std::move(contentRoot), std::move(kinds), std::move(use));
+    drop->setChild(std::move(slot));
+    return drop;
+}
+
 [[nodiscard]] std::optional<AssetThumbnailUVE::KindUVE> ThumbnailKindForUVE(const std::vector<std::string>& extensions) {
     const auto has = [&](const char* kind) {
         return std::find(extensions.begin(), extensions.end(), std::string(kind)) != extensions.end();
@@ -761,7 +826,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
             // One button, like an asset slot: the file's name, or (Empty); the menu has Empty too.
             auto pick = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                    prism::ButtonStyle::Default);
-            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or quick import a file") : property.tooltip);
+            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Content Browser") : property.tooltip);
             std::weak_ptr<prism::Button> weakPick = pick;
             row->sync = [p, weakPick](const void* inst) {
                 auto b = weakPick.lock();
@@ -774,7 +839,15 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                     }
                 }
             };
-            pick->onClick = [this, e, p, weakPick, extensions] {
+            // Content-relative, as these rows have always stored it; a file outside Content keeps its full path.
+            const std::function<void(const std::filesystem::path&)> useFile = [this, e, p](const std::filesystem::path& absolute) {
+                const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+                const std::filesystem::path relative = absolute.lexically_relative(root);
+                const std::string value = (relative.empty() || *relative.begin() == "..") ? absolute.generic_string()
+                                                                                            : relative.generic_string();
+                static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &value));
+            };
+            pick->onClick = [this, e, p, weakPick, extensions, useFile] {
                 const PickerSpecUVE spec = PickerSpecForUVE(extensions);
                 PickerActionsUVE actions;
                 const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -792,14 +865,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                     const std::string none;
                     static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
                 };
-                actions.file = [this, e, p](const std::filesystem::path& absolute) {
-                    // Content-relative, as these rows have always stored it; a file outside Content keeps its full path.
-                    const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-                    const std::filesystem::path relative = absolute.lexically_relative(root);
-                    const std::string value = (relative.empty() || *relative.begin() == "..") ? absolute.generic_string()
-                                                                                                : relative.generic_string();
-                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &value));
-                };
+                actions.file = useFile;
                 if (auto b = weakPick.lock()) {
                     ShowPickerUVE(spec, std::move(actions), b->rect());
                 }
@@ -829,6 +895,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
             } else {
                 editor = pick;
             }
+            editor = WithAssetDropUVE([this] { return m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot; }, editor, PickerSpecForUVE(extensions).loadable, useFile);
         }
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
         auto button = prism::make<prism::Button>("", prism::Icon::None, prism::ButtonStyle::Default);
@@ -890,7 +957,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         } else if (property.customDrawerId.rfind("asset:", 0U) == 0U) {
             extensions = {"." + property.customDrawerId.substr(6U)};
         }
-        auto button = prism::make<prism::Button>("None", prism::Icon::None,
+        auto button = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                  prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
         row->sync = [this, p, weak](const void* inst) {
@@ -900,7 +967,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
             }
             Asset::AssetGuidUVE value{};
             p->getValue(inst, &value);
-            std::string text = "None";
+            std::string text = "Empty";
             if (value != Asset::AssetGuidUVE{}) {
                 text = "Missing asset";
                 for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
@@ -953,7 +1020,28 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 }
             };
         }
-        button->onClick = [this, e, p, weak, extensions, meshSource] {
+        // What a picked, loaded or dropped file does to this slot.
+        std::function<void(const std::filesystem::path&)> useFile;
+        if (meshSource) {
+            useFile = [this](const std::filesystem::path& absolute) {
+                const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
+                if (guid == Asset::AssetGuidUVE{}) {
+                    m_editor.m_contentStatusMessage = "Could not read " + absolute.filename().string() + " as a model.";
+                    return;
+                }
+                static_cast<void>(m_editor.SetSelectedMeshSourceUVE(guid, std::nullopt));
+            };
+        } else {
+            useFile = [this, e, p](const std::filesystem::path& absolute) {
+                const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
+                if (guid == Asset::AssetGuidUVE{}) {
+                    m_editor.m_contentStatusMessage = "Could not use " + absolute.filename().string() + ".";
+                    return;
+                }
+                static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &guid));
+            };
+        }
+        button->onClick = [this, e, p, weak, extensions, meshSource, useFile] {
             PickerSpecUVE spec = PickerSpecForUVE(extensions);
             spec.shapes = meshSource;
             PickerActionsUVE actions;
@@ -969,14 +1057,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                     actions.currentShape = em.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected).kind;
                 }
                 actions.empty = [this] { static_cast<void>(m_editor.SetSelectedMeshSourceUVE(Asset::AssetGuidUVE{}, std::nullopt)); };
-                actions.file = [this](const std::filesystem::path& absolute) {
-                    const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
-                    if (guid == Asset::AssetGuidUVE{}) {
-                        m_editor.m_contentStatusMessage = "Could not read " + absolute.filename().string() + " as a model.";
-                        return;
-                    }
-                    static_cast<void>(m_editor.SetSelectedMeshSourceUVE(guid, std::nullopt));
-                };
+                actions.file = useFile;
                 actions.shape = [this](const Scene::PrimitiveMeshKindUVE kind) {
                     static_cast<void>(m_editor.SetSelectedMeshSourceUVE(Asset::AssetGuidUVE{}, kind));
                 };
@@ -985,14 +1066,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                     const Asset::AssetGuidUVE none{};
                     static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
                 };
-                actions.file = [this, e, p](const std::filesystem::path& absolute) {
-                    const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
-                    if (guid == Asset::AssetGuidUVE{}) {
-                        m_editor.m_contentStatusMessage = "Could not use " + absolute.filename().string() + ".";
-                        return;
-                    }
-                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &guid));
-                };
+                actions.file = useFile;
             }
             if (auto b = weak.lock()) {
                 ShowPickerUVE(spec, std::move(actions), b->rect());
@@ -1020,6 +1094,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         } else {
             editor = button;
         }
+        editor = WithAssetDropUVE([this] { return m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot; }, editor, PickerSpecForUVE(extensions).loadable, useFile);
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
         auto button = prism::make<prism::Button>("Default", prism::Icon::None, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
