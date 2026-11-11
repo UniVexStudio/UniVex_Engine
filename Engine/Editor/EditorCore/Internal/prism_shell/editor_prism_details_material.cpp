@@ -38,13 +38,6 @@ using MaterialUVE = Asset::MaterialAssetUVE;
     return e;
 }
 
-[[nodiscard]] bool IsTextureFileUVE(const std::filesystem::path& path) {
-    static constexpr std::array<const char*, 9> kExtensions{".png", ".jpg", ".jpeg", ".tga", ".bmp",
-                                                            ".hdr", ".exr", ".ktx2", ".uvtex"};
-    const std::string e = LowerExtensionUVE(path);
-    return std::any_of(kExtensions.begin(), kExtensions.end(), [&](const char* x) { return e == x; });
-}
-
 [[nodiscard]] prism::Color ToColorUVE(const Math::ColorUVE& c, const float alpha = 1.0F) {
     const auto b = [](const float v) { return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0F, 1.0F) * 255.0F)); };
     return prism::Color(b(c.r), b(c.g), b(c.b), b(alpha));
@@ -141,34 +134,29 @@ void EditorPrismDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& a
         }
         auto b = prism::make<prism::Button>(text, prism::Icon::NodeTexture, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = b;
-        b->onClick = [this, edit, field, weak] {
-            const Asset::ProjectFileSnapshotUVE snap = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            std::vector<prism::MenuItem> items;
-            items.push_back(prism::MenuItem::Item("(None)", [edit, field, weak] {
+        b->onClick = [this, edit, field, weak, current = loaded.*field] {
+            PickerActionsUVE actions;
+            actions.current = PathOfGuidUVE(current);
+            actions.empty = [edit, field, weak] {
                 edit([&](MaterialUVE& m) { m.*field = Asset::AssetGuidUVE{}; });
                 if (auto button = weak.lock()) {
                     button->setText("(None)");
                 }
-            }));
-            items.push_back(prism::MenuItem::Sep());
-            for (const Asset::ProjectFileEntryUVE& file : snap.entries) {
-                if (!file.registeredAssetGuid.has_value() || !IsTextureFileUVE(file.relativePath)) {
-                    continue;
+            };
+            actions.file = [this, edit, field, weak](const std::filesystem::path& absolute) {
+                const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
+                if (guid == Asset::AssetGuidUVE{}) {
+                    m_editor.m_contentStatusMessage = "Could not read " + absolute.filename().string() + " as a texture.";
+                    return;
                 }
-                const Asset::AssetGuidUVE guid = *file.registeredAssetGuid;
-                const std::string name = file.relativePath.filename().string();
-                items.push_back(prism::MenuItem::Item(file.relativePath.generic_string(), [edit, field, guid, weak, name] {
-                    edit([&](MaterialUVE& m) { m.*field = guid; });
-                    if (auto button = weak.lock()) {
-                        button->setText(name);
-                    }
-                }, "", prism::Icon::NodeTexture));
-            }
-            if (items.size() == 2U) {
-                items.push_back(prism::MenuItem::Item("No textures in this project yet (import some)", {}).disabled());
-            }
+                edit([&](MaterialUVE& m) { m.*field = guid; });
+                if (auto button = weak.lock()) {
+                    const std::filesystem::path path = PathOfGuidUVE(guid);
+                    button->setText(path.empty() ? absolute.filename().string() : path.filename().string());
+                }
+            };
             if (auto button = weak.lock()) {
-                prism::showMenu(std::move(items), button->rect(), prism::PopupPlacement::Below);
+                ShowPickerUVE(PickerSpecForUVE({".uvtex"}), std::move(actions), button->rect());
             }
         };
         add(label, b, tip);

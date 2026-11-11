@@ -77,7 +77,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 EditorPrismShellUVE::EditorPrismShellUVE(EditorUVE& editor)
-    : m_editor(editor), m_entityEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
+    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
         ShowDockPanelUVE(0, true);
@@ -100,6 +100,7 @@ bool EditorPrismShellUVE::InitializeUVE(GLFWwindow* const window, const std::fil
         return false;
     }
     m_dockPanels.AttachLogUVE();
+    m_editor.SetFilePickerHostUVE([this](FilePickerRequestUVE request) { m_fileDialog.OpenUVE(std::move(request)); });
     m_host.SetRootUVE(BuildLayoutUVE());
     // Every keyboard shortcut is an editor command's (the same registry the menus use).
     m_host.AppUVE().setShortcutHandler([this](const prism::Key key, const std::uint8_t mods) {
@@ -109,6 +110,10 @@ bool EditorPrismShellUVE::InitializeUVE(GLFWwindow* const window, const std::fil
 }
 
 void EditorPrismShellUVE::ShutdownUVE() {
+    m_editor.SetFilePickerHostUVE({});
+    if (m_host.IsReadyUVE() && m_fileDialog.WindowIdUVE() != 0) {
+        m_host.CloseWindowUVE(m_fileDialog.WindowIdUVE());
+    }
     if (m_host.IsReadyUVE() && m_entityEditor.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_entityEditor.WindowIdUVE());
     }
@@ -955,6 +960,7 @@ void EditorPrismShellUVE::FrameUVE() {
         const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
         m_entityEditor.RenderUVE();
     }
+    m_fileDialog.FrameUVE();
 }
 
 } // namespace UVE::Editor

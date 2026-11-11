@@ -3,6 +3,8 @@
 
 #include "editor.h"
 #include "editor_prism_icons.h"
+#include "primitive_mesh_component.h"
+#include "prism/Icons.h"
 
 #include "prism/Widget.h"
 
@@ -10,6 +12,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -52,6 +55,29 @@ private:
         prism::Widget* editor = nullptr;
         bool editing = false;                      // a gesture is held: do not overwrite its value
     };
+
+    /// What a slot's picker offers (editor_prism_details_pickers.cpp).
+    struct PickerSpecUVE final {
+        std::string title;                    ///< "Mesh", "Material", "Texture" ...
+        std::vector<std::string> listed;      ///< project files shown, by extension
+        std::vector<std::string> loadable;    ///< what Load... / Quick Import... accept
+        prism::Icon icon = prism::Icon::File;
+        bool shapes = false;                  ///< built-in shapes (a MeshInstance3D's mesh)
+        bool newMaterial = false;
+    };
+    /// What picking does: the slot's own setters.
+    struct PickerActionsUVE final {
+        std::function<void()> empty;
+        std::function<void(const std::filesystem::path& absolute)> file;
+        std::function<void(Scene::PrimitiveMeshKindUVE)> shape;
+        std::filesystem::path current;        ///< the file in the slot now (absolute), if any
+        std::optional<Scene::PrimitiveMeshKindUVE> currentShape;
+    };
+    [[nodiscard]] static PickerSpecUVE PickerSpecForUVE(const std::vector<std::string>& extensions);
+    void ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE actions, prism::Rect anchor);
+    /// The asset a picked file becomes for a slot: a model source its .uvmodel, an image its .uvtex.
+    [[nodiscard]] Asset::AssetGuidUVE PublishPickedUVE(const std::filesystem::path& absolute);
+    [[nodiscard]] std::filesystem::path PathOfGuidUVE(Asset::AssetGuidUVE guid) const;
 
     void RebuildUVE(Scene::EntityUVE entity);
     void AddTransformUVE(int category, Scene::EntityUVE entity);
