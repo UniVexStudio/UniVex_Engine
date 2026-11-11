@@ -2312,7 +2312,7 @@ static void testIconAtlas(Application& app) {
   uint32_t mid = cv.pixels()[12 * 40 + 12];
   CHECK(((mid >> 16) & 0xFF) > 200 && (mid & 0xFF) < 40);                    // red, not white
   CHECK(at.draw(cv, "plus", {20, 20, 20, 20}, Color(0, 255, 0)) && !at.draw(cv, "missing", {0, 0, 8, 8}, Color(1, 1, 1)));
-  CHECK(at.savePng("/tmp/prism_atlas_test.png"));
+  CHECK(at.savePng((std::filesystem::temp_directory_path() / "prism_atlas_test.png").string()));
   (void)app;
 }
 
