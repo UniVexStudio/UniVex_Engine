@@ -122,6 +122,12 @@ public:
   void movePopup(const Widget* w, Vec2 topLeft);   // reposition a popup (floating windows); clamped on screen
   void closeAllPopups();
   bool hasPopup() const { return !m_popups.empty(); }
+  // A popup that takes the whole window's input while it is open: a modal one, or one that closes on an outside
+  // click (menus, dropdowns). A floating window is neither, so the rest of the window keeps working beside it.
+  bool hasBlockingPopup() const {
+    for (const auto& p : m_popups) if (p.opt.modal || p.opt.dismissOnOutside) return true;
+    return false;
+  }
   bool popupJustDismissed() const { return m_dismissedThisEvent; } // an outside click closed popups during this event
   Widget* topPopup() const { return m_popups.empty() ? nullptr : m_popups.back().widget.get(); }
 

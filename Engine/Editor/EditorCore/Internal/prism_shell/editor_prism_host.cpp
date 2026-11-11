@@ -7,6 +7,11 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <GLFW/glfw3.h>
+#if defined(_WIN32)
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <windows.h>
+#include <GLFW/glfw3native.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -173,9 +178,11 @@ public:
     float dpiScale() const override { return 1.0F; }
     void requestQuit() override { glfwSetWindowShouldClose(m_window, GLFW_TRUE); }
     void* nativeWindowHandle() const override { return m_window; }
+    /// The main window's drag areas: id 0 is the title bar's strip; ids from kExtraCaptionIdUVE up are
+    /// further empty title-bar space that moves the window too.
     void setWindowCaption(const int id, const prism::Rect dragArea) override {
-        if (id == 0) {
-            m_caption = dragArea;
+        if (id == 0 || id >= kExtraCaptionIdUVE) {
+            m_captions[id] = dragArea;
         }
     }
     void minimizeWindow(const int id) override {
@@ -197,7 +204,14 @@ public:
         return id == 0 && glfwGetWindowAttrib(m_window, GLFW_MAXIMIZED) != 0;
     }
 
-    [[nodiscard]] const prism::Rect& CaptionUVE() const noexcept { return m_caption; }
+    [[nodiscard]] bool CaptionContainsUVE(const prism::Vec2 p) const noexcept {
+        for (const auto& [id, r] : m_captions) {
+            if (r.w > 0.0F && p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h) {
+                return true;
+            }
+        }
+        return false;
+    }
     [[nodiscard]] bool TextInputActiveUVE() const noexcept { return m_textInput; }
 
     void SetViewCursorUVE(const ViewCursorUVE cursor) {
@@ -236,7 +250,7 @@ private:
     std::array<GLFWcursor*, 6> m_cursors{};
     GLFWcursor* m_applied = nullptr;
     prism::Cursor m_uiCursor = prism::Cursor::Arrow;
-    prism::Rect m_caption{};
+    std::map<int, prism::Rect> m_captions;
     bool m_textInput = false;
 };
 
@@ -573,7 +587,8 @@ EditorViewportInputUVE EditorPrismHostUVE::CaptureViewInputUVE(const prism::Rect
     EditorViewportInputUVE input{};
     const bool inside = m_mouseInside && m_mouse.x >= rect.x && m_mouse.y >= rect.y &&
                         m_mouse.x < rect.x + rect.w && m_mouse.y < rect.y + rect.h;
-    input.hovered = inside && m_dragMode == DragModeUVE::None && !m_app->hasPopup() &&
+    // A floating panel (Details torn off, ...) leaves the viewport usable; a menu or a modal does not.
+    input.hovered = inside && m_dragMode == DragModeUVE::None && !m_app->hasBlockingPopup() &&
                     !m_app->wantsPointerAt(m_mouse);
     input.imageOrigin = Math::Vector2UVE{rect.x, rect.y};
     input.mousePos = Math::Vector2UVE{m_mouse.x, m_mouse.y};
@@ -777,10 +792,46 @@ void EditorPrismHostUVE::OnMouseButtonUVE(const int button, const int action, co
                 if (m_mouse.y < kResizeBorderUVE) { edges |= 4; }
                 if (m_mouse.y >= h - kResizeBorderUVE) { edges |= 8; }
             }
-            const prism::Rect& cap = m_platform->CaptionUVE();
-            const bool inCaption = m_mouse.x >= cap.x && m_mouse.y >= cap.y && m_mouse.x < cap.x + cap.w &&
-                                   m_mouse.y < cap.y + cap.h;
-            if (edges != 0 || (inCaption && m_clickCount == 1 && !maximized)) {
+            const bool inCaption = m_platform->CaptionContainsUVE(m_mouse);
+#if defined(_WIN32)
+            // Windows moves and sizes the window itself from here: the native drag snaps to the screen
+            // edges, restores a maximized window as it is dragged off, and keeps following the cursor
+            // however fast it moves. The call returns once the button is released.
+            if (edges != 0 || (inCaption && m_clickCount == 1)) {
+                static constexpr std::array<WPARAM, 16> kHitUVE{
+                    HTCAPTION, HTLEFT, HTRIGHT, HTCAPTION, HTTOP, HTTOPLEFT, HTTOPRIGHT, HTCAPTION,
+                    HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCAPTION, HTCAPTION, HTCAPTION, HTCAPTION};
+                HWND hwnd = glfwGetWin32Window(m_window);
+                if (slot >= 0) {
+                    m_down[static_cast<std::size_t>(slot)] = false;
+                }
+                ReleaseCapture();
+                SendMessageW(hwnd, WM_NCLBUTTONDOWN, kHitUVE[static_cast<std::size_t>(edges & 15)], 0);
+                return;
+            }
+#endif
+            if (inCaption && m_clickCount == 1 && maximized) {
+                // Dragging a maximized window off its title bar restores it first (as the OS does),
+                // keeping the cursor over the same spot of the bar.
+                int fullW = 0;
+                int fullH = 0;
+                glfwGetWindowSize(m_window, &fullW, &fullH);
+                const float along = fullW > 0 ? m_mouse.x / static_cast<float>(fullW) : 0.5F;
+                double sx = 0.0;
+                double sy = 0.0;
+                glfwGetCursorPos(m_window, &sx, &sy);
+                int wx = 0;
+                int wy = 0;
+                glfwGetWindowPos(m_window, &wx, &wy);
+                glfwRestoreWindow(m_window);
+                int restoredW = 0;
+                int restoredH = 0;
+                glfwGetWindowSize(m_window, &restoredW, &restoredH);
+                const int newX = static_cast<int>(wx + sx - along * static_cast<float>(restoredW));
+                const int newY = static_cast<int>(wy + sy - m_mouse.y);
+                glfwSetWindowPos(m_window, newX, newY);
+            }
+            if (edges != 0 || (inCaption && m_clickCount == 1)) {
                 double cx = 0.0;
                 double cy = 0.0;
                 glfwGetCursorPos(m_window, &cx, &cy);

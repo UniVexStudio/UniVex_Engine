@@ -32,6 +32,9 @@ namespace UVE::Editor {
 ///   * Rendering: PRISM records a DrawList each frame and the OpenGL backend renders it into its
 ///     own texture; the host then draws each engine view texture into its EngineView hole and
 ///     blends the UI texture over the whole window.
+/// Platform caption ids from this one up name extra drag areas of the main window's title bar.
+inline constexpr int kExtraCaptionIdUVE = 100;
+
 class EditorPrismHostUVE final {
 public:
     /// One engine render target to place under an EngineView hole this frame.

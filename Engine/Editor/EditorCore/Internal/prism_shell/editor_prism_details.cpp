@@ -10,6 +10,9 @@
 #include "vector3.h"
 #include "asset_guid.h"
 #include "i_project_file_index.h"
+#include "i_asset_database.h"
+#include "mesh_asset.h"
+#include "mesh_component.h"
 
 #include "prism/Application.h"
 #include "prism/Containers.h"
@@ -24,6 +27,9 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <functional>
+#include <optional>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -150,6 +156,12 @@ std::uint64_t EditorPrismDetailsUVE::StructureSignatureUVE(const Scene::EntityUV
             const bool visible = !property.flags.HasUVE(TypeFlagsUVE::Hidden) &&
                                  (property.isVisible == nullptr || property.isVisible(instance));
             HashUVE(h, visible ? 1U : 0U);
+            // An asset slot's value decides which material section follows it.
+            if (property.typeId == Scene::kPropertyTypeAssetGuidUVE && instance != nullptr) {
+                Asset::AssetGuidUVE value{};
+                property.getValue(instance, &value);
+                HashUVE(h, value.value);
+            }
         }
     }
     return h;
@@ -325,6 +337,21 @@ void EditorPrismDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
                 category = m_grid->addCategory(group.empty() ? title : title + " / " + group, true);
             }
             AddPropertyUVE(category, *entry, property, instance, authoring && property.IsAuthoringWritableUVE());
+        }
+        for (const auto& [path, slot] : m_pendingMaterials) {
+            AddMaterialSectionUVE(path, slot);
+        }
+        m_pendingMaterials.clear();
+    }
+    // A model's own materials (one per surface), edited in place like a slot's.
+    if (em.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+        if (const std::optional<Asset::MeshAssetUVE> mesh = m_editor.LoadEntityMeshAssetUVE(entity); mesh.has_value()) {
+            for (std::size_t i = 0; i < mesh->materialGuids.size(); ++i) {
+                const std::filesystem::path path = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(mesh->materialGuids[i]);
+                if (!path.empty()) {
+                    AddMaterialSectionUVE(path, "Surface " + std::to_string(i));
+                }
+            }
         }
     }
     if (!transformDone && hasTransform) {
@@ -757,12 +784,57 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         if (extensions.empty()) {
             button->setEnabled(false); // a property that declares no kind is read-only
         }
+        if (material && instance != nullptr) {
+            Asset::AssetGuidUVE current{};
+            p->getValue(instance, &current);
+            if (current != Asset::AssetGuidUVE{}) {
+                const std::filesystem::path path = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(current);
+                if (!path.empty()) {
+                    m_pendingMaterials.emplace_back(path, property.displayName.empty() ? property.name : property.displayName);
+                }
+            }
+        }
         button->onClick = [this, e, p, weak, extensions] {
             std::vector<prism::MenuItem> items;
             items.push_back(prism::MenuItem::Item("(None)", [this, e, p] {
                 const Asset::AssetGuidUVE none{};
                 static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
             }));
+            const bool isMaterial = std::find(extensions.begin(), extensions.end(), ".uvmat") != extensions.end();
+            if (isMaterial) {
+                // A new material in the Content Browser's folder, assigned at once.
+                items.push_back(prism::MenuItem::Item("New Material", [this, e, p] {
+                    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                    const std::optional<std::filesystem::path> created =
+                        m_editor.CreateContentCatalogueItemUVE("material", snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
+                    if (!created.has_value()) {
+                        m_editor.m_contentStatusMessage = "Could not create a material here.";
+                        return;
+                    }
+                    m_editor.RefreshProjectFileIndexUVE();
+                    const Asset::AssetGuidUVE guid = m_editor.m_services->GetAssetDatabaseUVE().RegisterUVE(*created);
+                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &guid));
+                }, "", prism::Icon::Plus));
+                Asset::AssetGuidUVE current{};
+                const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+                const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
+                if (em.HasComponentUVE(selected, e->typeIndex)) {
+                    p->getValue(em.GetComponentPointerUVE(selected, e->typeIndex), &current);
+                }
+                if (current != Asset::AssetGuidUVE{}) {
+                    items.push_back(prism::MenuItem::Item("Show in Content Browser", [this, current] {
+                        for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
+                            if (file.registeredAssetGuid.has_value() && *file.registeredAssetGuid == current) {
+                                m_editor.m_contentBrowserDirectory = file.relativePath.parent_path();
+                                m_editor.m_contentBrowserShelf.clear();
+                                m_editor.m_contentSelection.ClearUVE();
+                                m_editor.m_selectedProjectFile = file;
+                                break;
+                            }
+                        }
+                    }, "", prism::Icon::FolderOpen));
+                }
+            }
             items.push_back(prism::MenuItem::Sep());
             for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
                 if (!file.registeredAssetGuid.has_value()) {
@@ -777,7 +849,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                     static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &guid));
                 }));
             }
-            if (items.size() == 2U) {
+            if (items.back().separator) {
                 items.push_back(prism::MenuItem::Item("No matching assets in this project", {}).disabled());
             }
             if (auto b = weak.lock()) {

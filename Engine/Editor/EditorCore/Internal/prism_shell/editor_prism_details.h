@@ -7,6 +7,7 @@
 #include "prism/Widget.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -54,6 +55,8 @@ private:
 
     void RebuildUVE(Scene::EntityUVE entity);
     void AddTransformUVE(int category, Scene::EntityUVE entity);
+    /// The material file at `absolutePath`, edited in place (editor_prism_details_material.cpp).
+    void AddMaterialSectionUVE(const std::filesystem::path& absolutePath, const std::string& slotLabel);
     void AddPropertyUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
                         bool writable);
     [[nodiscard]] std::uint64_t StructureSignatureUVE(Scene::EntityUVE entity) const;
@@ -70,6 +73,8 @@ private:
     Scene::EntityUVE m_entity = Scene::kInvalidEntityUVE;
     std::uint64_t m_signature = 0;
     std::string m_filter;
+    // Materials the rows just added use, shown as their own sections after the component's rows.
+    std::vector<std::pair<std::filesystem::path, std::string>> m_pendingMaterials;
 };
 
 } // namespace UVE::Editor

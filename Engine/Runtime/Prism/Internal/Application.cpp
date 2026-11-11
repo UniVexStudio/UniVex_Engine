@@ -659,7 +659,7 @@ bool Application::wantsPointerAt(Vec2 p) {
 }
 
 bool Application::wantsKeyboard() const {
-  if (!m_popups.empty()) return true;
+  if (hasBlockingPopup()) return true;   // a floating window takes the keyboard only through what has focus in it
   Widget* f = focus();
   return f && f->capturesTyping();
 }

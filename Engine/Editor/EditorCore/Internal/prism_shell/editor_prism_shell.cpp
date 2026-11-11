@@ -380,14 +380,23 @@ private:
 /// a double click toggles maximize.
 class DragStripUVE final : public prism::Widget {
 public:
-    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain(prism::Vec2(40.0F, kTitleRowUVE)); }
+    /// `captionId` 0 is the title bar's own strip (drawn hatched); kExtraCaptionIdUVE and up are
+    /// further empty title-bar space (the rest of the viewport-tab row) that moves the window too.
+    explicit DragStripUVE(const int captionId = 0, const bool hatched = true)
+        : m_captionId(captionId), m_hatched(hatched) {}
+    prism::Vec2 measure(prism::Vec2) override {
+        return m_desired = constrain(prism::Vec2(m_hatched ? 40.0F : 0.0F, m_hatched ? kTitleRowUVE : 0.0F));
+    }
     void arrange(prism::Rect r) override {
         prism::Widget::arrange(r);
         if (prism::Application::exists()) {
-            prism::Application::get().platform().setWindowCaption(0, r);
+            prism::Application::get().platform().setWindowCaption(m_captionId, visible() ? r : prism::Rect{});
         }
     }
     void paint(prism::Canvas& c) override {
+        if (!m_hatched) {
+            return;
+        }
         const prism::Rect r = rect();
         const prism::Rect hatch{r.x + 12.0F, r.y + 7.0F, std::max(0.0F, r.w - 24.0F), r.h - 14.0F};
         if (hatch.w > 4.0F) {
@@ -404,6 +413,10 @@ public:
         }
         return e.button == prism::MouseButton::Left;
     }
+
+private:
+    int m_captionId = 0;
+    bool m_hatched = true;
 };
 
 } // namespace
@@ -504,7 +517,8 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
     };
     m_viewportNameTab = viewportTab;
     tabRow->add(m_viewportNameTab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
-    tabRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    // The rest of the tab row is title bar too: it moves the window.
+    tabRow->add(prism::make<DragStripUVE>(kExtraCaptionIdUVE, false), prism::Slot{1.0F});
     auto titleRow = prism::make<prism::SizeBox>();
     titleRow->setHeightOverride(kTitleRowUVE);
     titleRow->setContent(row);
