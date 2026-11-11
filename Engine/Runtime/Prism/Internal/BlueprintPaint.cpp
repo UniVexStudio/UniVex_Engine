@@ -41,9 +41,37 @@ bool parseColor(const std::string& s, Color& out) {
 
 // Each node gets its own glyph, chosen from its name (title / subtitle), so the tile says what the node does.
 Icon nodeIconFor(const BlueprintNode& n) {
+  if (n.icon != Icon::None) return n.icon;
   std::string t = n.title;
   for (char& ch : t) ch = char(std::tolower(static_cast<unsigned char>(ch)));
   auto has = [&](const char* k) { return t.find(k) != std::string::npos; };
+  // a whole word: "ik" names IK, not the middle of "pick"
+  auto word = [&](const char* k) {
+    const std::string key(k);
+    for (size_t at = t.find(key); at != std::string::npos; at = t.find(key, at + 1)) {
+      const bool startOk = at == 0 || !std::isalnum(static_cast<unsigned char>(t[at - 1]));
+      const size_t end = at + key.size();
+      if (startOk && (end >= t.size() || !std::isalnum(static_cast<unsigned char>(t[end])))) return true;
+    }
+    return false;
+  };
+  // the animation graph's own spellings first
+  if (n.category == BlueprintNodeCategory::Animation) {
+    if (has("sequence player") || t == "clip" || word("clip")) return Icon::NodeClip;
+    if (has("blend space") || has("blendspace")) return Icon::NodeBlendSpace;
+    if (has("layered blend")) return Icon::Layers;
+    if (has("blend poses by bool") || has("by bool")) return Icon::NodeToggle;
+    if (has("blend") || has("blend2")) return Icon::NodeBlend;
+    if (has("additive")) return Icon::NodeMixer;
+    if (has("one shot") || has("oneshot")) return Icon::NodeFlag;
+    if (has("time scale") || has("timescale")) return Icon::NodeTimer;
+    if (has("time seek") || has("timeseek")) return Icon::NodeClock;
+    if (word("select")) return Icon::NodeSelector;
+    if (word("ik") || has("two bone") || has("bone")) return Icon::NodeBone;
+    if (word("slot") || has("slot ")) return Icon::NodeSlot;
+    if (has("output")) return Icon::NodeOutput;
+    if (has("state machine") || has("statemachine")) return Icon::StateGraph;
+  }
   // events
   if (has("overlap")) return Icon::NodeOverlap;
   if (has("event hit")) return Icon::NodeImpact;
@@ -57,7 +85,7 @@ Icon nodeIconFor(const BlueprintNode& n) {
   // flow / utility
   if (has("branch")) return Icon::NodeBranch;
   if (has("sequence") && n.category == BlueprintNodeCategory::Flow) return Icon::NodeSequence;
-  if (has("for loop") || has("loop")) return Icon::NodeLoop;
+  if (has("for loop") || word("loop")) return Icon::NodeLoop;
   if (has("timer")) return Icon::NodeTimer;
   if (has("delay")) return Icon::NodeClock;
   if (has("do once")) return Icon::NodeGate;
@@ -86,7 +114,7 @@ Icon nodeIconFor(const BlueprintNode& n) {
   if (has("sequence player")) return Icon::NodeClip;
   if (has("blend space")) return Icon::NodeBlendSpace;
   if (has("layered blend") || has("blend poses")) return Icon::NodeBlend;
-  if (has("ik") || has("bone")) return Icon::NodeBone;
+  if (word("ik") || has("bone")) return Icon::NodeBone;
   if (has("slot")) return Icon::NodeSlot;
   if (has("output pose")) return Icon::NodeOutput;
   if (has("state machine")) return Icon::StateGraph;
@@ -366,7 +394,7 @@ void BlueprintGraph::paint(Canvas& c) {
   c.pushClip(m_rect);
   paintGrid(c, m_graphRect);
   c.pushClip(m_graphRect);
-  paintWatermark(c);
+  if (m_features.watermark) paintWatermark(c);
   updateRelated();
   const bool dimOn = m_hideUnrelated && !m_related.empty();
 
@@ -462,11 +490,26 @@ void BlueprintGraph::paint(Canvas& c) {
     c.fillRect(m, Color(80, 140, 255, 34));
     c.strokeRect(m, Color(120, 176, 255, 210), 1);
   }
+  // host-owned node bodies: the settings inside each node, laid out where the node is now
+  for (auto& [id, body] : m_bodies) {
+    const BlueprintNode* n = findNode(id);
+    if (!n || n->bodyH <= 0) { body->setVisible(false); continue; }
+    Rect br = bodyScreenRect(*n);
+    const bool fits = s >= 0.7f && br.w > 20 && br.h > 6 && m_graphRect.contains(br.pos()) && m_graphRect.contains({br.right(), br.bottom()});
+    body->setVisible(fits);
+    if (fits) {
+      body->arrange(br);
+      body->paint(c);
+    } else if (br.intersects(m_graphRect) && !n->bodySummary.empty() && s >= 0.35f) {
+      c.textIn(font(kLabelPx, Weight::Regular, s), br, n->bodySummary, Color(196, 204, 216), HAlign::Left, true);
+    }
+  }
   c.popClip();
 
   paintDebugMarks(c);
-  if (m_showMinimap) paintMinimap(c);
-  paintToolbar(c);
+  if (m_features.minimap && m_showMinimap) paintMinimap(c);
+  if (m_features.toolbar) paintToolbar(c);
+  else if (m_features.crumbs) paintCrumbs(c);
   c.popClip();
 }
 

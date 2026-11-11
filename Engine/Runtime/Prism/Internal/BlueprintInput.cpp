@@ -24,7 +24,8 @@ class Palette : public Widget {
 public:
   struct Row { bool header = false; std::string text, category; int spec = -1; };
 
-  Palette(BlueprintPinFilter f, std::function<void(const BlueprintNodeSpec&)> pick) : m_filter(f), m_pick(std::move(pick)) {
+  Palette(BlueprintPinFilter f, std::function<void(const BlueprintNodeSpec&)> pick, const std::vector<BlueprintNodeSpec>& lib)
+      : m_filter(f), m_pick(std::move(pick)), m_lib(lib) {
     m_input = make<TextInput>("", "Search nodes...");
     m_input->setLeadingIcon(Icon::Search);
     m_input->setClearable(true);
@@ -65,7 +66,7 @@ public:
       }
       bool sel = int(i) == m_sel;
       if (sel) c.fillRoundRect(rr.deflated(Margin(4, 1)), 4, t.accent.alpha(0.85f));
-      const BlueprintNodeSpec& sp = blueprintNodeLibrary()[size_t(r.spec)];
+      const BlueprintNodeSpec& sp = m_lib[size_t(r.spec)];
       BlueprintNode probe = sp.make();
       Color cc = chromeFor(probe.category).left;
       c.fillRoundRect({rr.x + 12, rr.y + 8, 4, rr.h - 16}, 2, cc);
@@ -136,7 +137,8 @@ private:
     int spec = m_rows[size_t(m_sel)].spec;
     auto pick = m_pick;
     Application::get().closePopup(this);
-    if (pick) pick(blueprintNodeLibrary()[size_t(spec)]);
+    const BlueprintNodeSpec chosen = m_lib[size_t(spec)];
+    if (pick) pick(chosen);
   }
   bool allowed(const BlueprintNodeSpec& s) const {
     if (!m_filter.active) return true;
@@ -148,7 +150,7 @@ private:
   }
   void rebuild() {
     m_rows.clear();
-    auto& lib = blueprintNodeLibrary();
+    auto& lib = m_lib;
     std::vector<std::string> toks;
     {
       std::string cur;
@@ -194,6 +196,7 @@ private:
 
   BlueprintPinFilter m_filter;
   std::function<void(const BlueprintNodeSpec&)> m_pick;
+  const std::vector<BlueprintNodeSpec>& m_lib;
   Ref<TextInput> m_input;
   std::string m_query;
   std::vector<Row> m_rows;
@@ -241,7 +244,7 @@ bool validValue(PT t, const std::string& v) {
 
 void BlueprintGraph::openPalette(Vec2 screenPos, const BlueprintPinFilter& filter, int fromNode, int fromPin) {
   Vec2 world = screenToWorld(screenPos);
-  auto pal = make<Palette>(filter, [this, world, filter, fromNode, fromPin](const BlueprintNodeSpec& spec) { finishSpawn(spec, world, filter, fromNode, fromPin); });
+  auto pal = make<Palette>(filter, [this, world, filter, fromNode, fromPin](const BlueprintNodeSpec& spec) { finishSpawn(spec, world, filter, fromNode, fromPin); }, nodeLibrary());
   PopupOptions o;
   o.placement = PopupPlacement::AtPoint;
   o.anchor = {screenPos.x, screenPos.y, 0, 0};
@@ -252,7 +255,8 @@ void BlueprintGraph::openPalette(Vec2 screenPos, const BlueprintPinFilter& filte
 
 void BlueprintGraph::finishSpawn(const BlueprintNodeSpec& spec, Vec2 world, const BlueprintPinFilter& f, int fromNode, int fromPin) {
   if (m_snap) world = {std::round(world.x / 8) * 8, std::round(world.y / 8) * 8};
-  int id = spawnNode(spec, world);
+  int id = onSpawn ? onSpawn(spec, world) : spawnNode(spec, world);
+  if (id < 0) return;
   BlueprintNode* n = nodeById(id);
   if (n && f.active && findNode(fromNode)) {
     // wire to the first compatible pin, preferring an exact type match
@@ -577,7 +581,7 @@ bool BlueprintGraph::onMouseDown(const MouseEvent& e) {
   m_rightDown = false;
   if (e.pos.y < m_graphRect.y) return e.button == MouseButton::Left ? toolbarClick(e.pos) || true : true;
 
-  if (m_showMinimap && m_minimapRect.w > 0 && m_minimapRect.contains(e.pos) && e.button == MouseButton::Left) {
+  if (m_features.minimap && m_showMinimap && m_minimapRect.w > 0 && m_minimapRect.contains(e.pos) && e.button == MouseButton::Left) {
     m_drag = Drag::Minimap;
     return onMouseMove(e), true;
   }
@@ -599,6 +603,7 @@ bool BlueprintGraph::onMouseDown(const MouseEvent& e) {
 
   if (const BlueprintNode* hit = nodeAt(e.pos)) {
     int id = hit->id;
+    if (e.clicks == 2 && onNodeDoubleClicked) { select(id); onNodeDoubleClicked(id); return true; }
     BlueprintNode* n = nodeById(id);
     if (additive) n->selected = !n->selected;
     else if (!n->selected) { clearSelection(); n->selected = true; }
@@ -751,7 +756,7 @@ bool BlueprintGraph::onMouseMove(const MouseEvent& e) {
   return true;
 }
 
-bool BlueprintGraph::onMouseUp(const MouseEvent& e) {
+bool BlueprintGraph::onMouseUpInner(const MouseEvent& e) {
   Drag d = m_drag;
   if (d == Drag::Wire) { m_dragMoved = m_dragMoved || (e.pos - m_dragStartScreen).length() > 3; finishWire(e.pos); invalidate(); return true; }
   m_drag = Drag::None;
@@ -772,6 +777,12 @@ bool BlueprintGraph::onMouseUp(const MouseEvent& e) {
   m_pendingSelect = -1;
   invalidate();
   return true;
+}
+
+bool BlueprintGraph::onMouseUp(const MouseEvent& e) {
+  const bool handled = onMouseUpInner(e);
+  notifySelection();
+  return handled;
 }
 
 void BlueprintGraph::onMouseLeave() {
@@ -818,6 +829,12 @@ Cursor BlueprintGraph::cursor() const {
 // ============================================================================ keyboard
 bool BlueprintGraph::onKeyDown(const KeyEvent& e) {
   const bool ctrl = (e.mods & ModCtrl) != 0, shift = (e.mods & ModShift) != 0;
+  if (!m_features.shortcuts) {
+    // An embedded graph: the host owns copy / paste / undo / save; only selection and view keys here.
+    const bool own = e.key == Key::Escape || e.key == Key::Delete || e.key == Key::Backspace || (e.key == Key::A && ctrl) ||
+                     (e.key == Key::F && !ctrl) || e.key == Key::Home;
+    if (!own) return false;
+  }
   Vec2 mouse = Application::get().mousePos();
   Vec2 pasteAt = m_graphRect.contains(mouse) ? screenToWorld(mouse) : screenToWorld(m_graphRect.center());
   switch (e.key) {

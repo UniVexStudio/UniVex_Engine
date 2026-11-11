@@ -444,6 +444,7 @@ void BlueprintGraph::setPreset(BlueprintGraphPreset preset) {
 }
 
 void BlueprintGraph::clear() {
+  clearNodeBodies();
   m_nodes.clear(); m_wires.clear(); m_comments.clear(); m_vars.clear(); m_subs.clear(); m_breaks.clear();
   stopRun();
   touch();
@@ -515,6 +516,11 @@ PT BlueprintGraph::resolvedType(int nodeId, int pinIndex, bool isInput) const {
 }
 
 bool BlueprintGraph::canConnect(int fromNode, int fromPin, int toNode, int toPin, std::string* why) const {
+  if (!canConnectBase(fromNode, fromPin, toNode, toPin, why)) return false;
+  return !canConnectHook || canConnectHook(fromNode, fromPin, toNode, toPin, why);
+}
+
+bool BlueprintGraph::canConnectBase(int fromNode, int fromPin, int toNode, int toPin, std::string* why) const {
   auto fail = [&](const char* m) { if (why) *why = m; return false; };
   const BlueprintNode* a = findNode(fromNode);
   const BlueprintNode* b = findNode(toNode);
@@ -562,6 +568,7 @@ bool BlueprintGraph::disconnectPin(int nodeId, int pinIndex, bool isInput) {
 }
 
 void BlueprintGraph::removeNode(int id) {
+  if (auto it = m_bodies.find(id); it != m_bodies.end()) { removeChild(it->second.get()); m_bodies.erase(it); }
   std::erase_if(m_wires, [&](const BlueprintWire& w) { return w.fromNodeId == id || w.toNodeId == id; });
   std::erase_if(m_nodes, [&](const BlueprintNode& n) { return n.id == id; });
   touch();
@@ -569,15 +576,42 @@ void BlueprintGraph::removeNode(int id) {
 
 // ---- selection
 void BlueprintGraph::select(int id, bool additive) {
-  if (!additive) clearSelection();
+  if (!additive) for (auto& n : m_nodes) n.selected = false;
   if (BlueprintNode* n = nodeById(id)) n->selected = true;
   invalidate();
+  notifySelection();
 }
-void BlueprintGraph::selectAll() { for (auto& n : m_nodes) n.selected = true; invalidate(); }
+void BlueprintGraph::selectAll() { for (auto& n : m_nodes) n.selected = true; invalidate(); notifySelection(); }
 void BlueprintGraph::clearSelection() {
   for (auto& n : m_nodes) n.selected = false;
   for (auto& c : m_comments) c.selected = false;
   invalidate();
+  notifySelection();
+}
+void BlueprintGraph::notifySelection() {
+  std::vector<int> now = selectedIds();
+  if (now == m_lastSelection) return;
+  m_lastSelection = now;
+  if (onSelectionChanged) onSelectionChanged(now);
+}
+void BlueprintGraph::setFeatures(const Features& f) { m_features = f; relayout(); invalidate(); }
+const std::vector<BlueprintNodeSpec>& BlueprintGraph::nodeLibrary() const { return m_library.empty() ? blueprintNodeLibrary() : m_library; }
+void BlueprintGraph::setNodeBody(int nodeId, Ref<Widget> body) {
+  if (auto it = m_bodies.find(nodeId); it != m_bodies.end()) { removeChild(it->second.get()); m_bodies.erase(it); }
+  if (!body) { invalidate(); return; }
+  addChild(body);
+  m_bodies[nodeId] = std::move(body);
+  invalidate();
+}
+void BlueprintGraph::clearNodeBodies() {
+  for (auto& [id, body] : m_bodies) removeChild(body.get());
+  m_bodies.clear();
+  invalidate();
+}
+Rect BlueprintGraph::bodyScreenRect(const BlueprintNode& n) const {
+  Rect r = nodeScreenRect(n);
+  float h = n.bodyH * m_zoom;
+  return {r.x + 8 * m_zoom, r.bottom() - h, r.w - 16 * m_zoom, h - 6 * m_zoom};
 }
 int BlueprintGraph::selectedCount() const { return int(std::count_if(m_nodes.begin(), m_nodes.end(), [](auto& n) { return n.selected; })); }
 std::vector<int> BlueprintGraph::selectedIds() const {
@@ -621,7 +655,8 @@ void BlueprintGraph::layoutNode(BlueprintNode& n) const {
     w = std::max(leftW + big + rightW + 28.f, 72.f);
   }
   int rows = int(std::max(n.inputs.size(), n.outputs.size()));
-  n.size = {std::ceil(w), std::ceil(headerH + kBodyPad * 2 + std::max(1, rows) * kRowH)};
+  w = std::max(w, n.bodyW);
+  n.size = {std::ceil(w), std::ceil(headerH + kBodyPad * 2 + std::max(1, rows) * kRowH + n.bodyH)};
   n.colL = leftW;
   n.colR = rightW;
 }
@@ -659,6 +694,8 @@ Vec2 BlueprintGraph::measure(Vec2 avail) { return m_desired = constrain(avail); 
 
 void BlueprintGraph::arrange(Rect r) {
   m_rect = r;
+  m_toolbarH = m_features.toolbar ? 36.f : 0.f;
+  m_crumbH = m_features.crumbs ? 30.f : 0.f;
   m_graphRect = {r.x, r.y + m_toolbarH + m_crumbH, r.w, std::max(0.f, r.h - m_toolbarH - m_crumbH)};
   layoutAll();
   if (m_needFrame && m_graphRect.w > 50) { m_needFrame = false; frameAll(); }
@@ -955,10 +992,11 @@ void BlueprintGraph::commit(const std::string& name) {
   auto strip = [](const std::string& s) { size_t a = s.find("V\t"); size_t b = a == std::string::npos ? a : s.find('\n', a); return a == std::string::npos ? s : s.substr(0, a) + s.substr(b + 1); };
   if (strip(after) == strip(m_lastSnapshot)) { m_lastSnapshot = after; return; }
   std::string before = m_lastSnapshot;
-  m_history.push(name, [this, after] { restore(after); }, [this, before] { restore(before); });
+  if (m_features.history) m_history.push(name, [this, after] { restore(after); }, [this, before] { restore(before); });
   m_lastSnapshot = after;
   m_compiled = false;
   if (onChanged) onChanged();
+  if (onCommit) onCommit(name);
   invalidate();
 }
 
