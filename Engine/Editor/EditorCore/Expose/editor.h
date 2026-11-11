@@ -449,6 +449,7 @@ class EditorUVE final {
     friend class EditorPrismViewToolbarUVE;
     friend class EditorPrismEntityEditorUVE;
     friend class EditorPrismFileDialogUVE;
+    friend class AssetThumbnailUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
