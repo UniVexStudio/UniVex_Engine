@@ -256,7 +256,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         parent != Scene::kInvalidEntityUVE &&
         (Scene::ResolveSceneObjectKindUVE(entityManager, parent) == Scene::Objects::SceneObjectKindUVE::Character3D ||
          Scene::ResolveSceneObjectKindUVE(entityManager, parent) == Scene::Objects::SceneObjectKindUVE::Player3D ||
-         (m_entityEditSession.has_value() && parent == GetEntityEditorRootUVE()));
+         (m_entityDocumentActive && parent == GetEntityEditorRootUVE()));
 
     Scene::EntityUVE root = Scene::kInvalidEntityUVE;
     if (!skeleton.has_value()) {
@@ -412,7 +412,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         return Scene::kInvalidEntityUVE;
     }
     InvalidateHierarchyFilterCacheUVE();
-    if (!m_entityEditSession.has_value()) {
+    if (!m_entityDocumentActive) {
         PlaceNewDocumentObjectUVE(root);
     }
     const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(root);

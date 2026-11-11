@@ -906,51 +906,7 @@ void EngineCoreUVE::Init() {
     // independent of WindowManagerUVE/the real window size — Renderer3DUVE never renders into the
     // window itself (see docs/CODING_STANDARDS.md's rendering-evolution roadmap for how these two
     // eventually connect).
-    m_renderer3D = std::make_unique<Render::Renderer3DUVE>(
-        *m_renderDevice, *m_renderSystem, *m_meshRenderer, *m_cameraSystem, *m_lightSystem, *m_shaderManager,
-        *m_assetManager, *m_assetDatabase, *m_eventSystem, m_config.renderTargetWidth, m_config.renderTargetHeight,
-        m_config.ambientColor, m_config.shadowMapResolution, m_config.shadowMapHalfExtent,
-        m_config.shadowMapNearPlane, m_config.shadowMapFarPlane, m_config.shadowFrustumPadding,
-        m_config.shadowCascadeSplitLambda, m_config.shadowCascadeBlendRatio, m_config.shadowPcfKernelRadius);
-    m_renderer3D->SetSceneClearColorUVE(m_config.backgroundColorUVE);
-    Render::PostProcessSettingsUVE postProcessSettings;
-    postProcessSettings.nearestUpscalingEnabledUVE =
-        m_config.spatialUpscalingMethodUVE == SpatialUpscalingMethodUVE::NearestUVE;
-    postProcessSettings.acesToneMappingEnabledUVE = m_config.toneMappingMethodUVE == ToneMappingMethodUVE::AcesUVE;
-    postProcessSettings.sharpeningAmountUVE = m_config.sharpeningAmountUVE;
-    postProcessSettings.ditheringEnabledUVE = m_config.ditheringEnabledUVE;
-    postProcessSettings.fastApproximateAAEnabledUVE =
-        m_config.postProcessAAMethodUVE == PostProcessAAMethodUVE::FastApproximateUVE;
-    postProcessSettings.fastApproximateAAQualityUVE = m_config.screenSpaceAAQualityUVE;
-    postProcessSettings.ssaoEnabledUVE = m_config.ssaoEnabledUVE;
-    postProcessSettings.ssaoRadiusUVE = m_config.ssaoRadiusUVE;
-    postProcessSettings.ssaoIntensityUVE = m_config.ssaoIntensityUVE;
-    postProcessSettings.ssaoPowerUVE = m_config.ssaoPowerUVE;
-    postProcessSettings.ssaoQualityUVE = m_config.ssaoQualityUVE;
-    postProcessSettings.ssaoBlurEnabledUVE = m_config.ssaoBlurEnabledUVE;
-    // Contact shadows: the enable/length/steps settings predate the pass that consumes them, so
-    // this is where they finally reach a renderer.
-    postProcessSettings.contactShadowsEnabledUVE = m_config.contactShadowsEnabledUVE;
-    postProcessSettings.contactShadowLengthMetersUVE = static_cast<float>(m_config.contactShadowsLengthUVE);
-    postProcessSettings.contactShadowThicknessMetersUVE = static_cast<float>(m_config.contactShadowsThicknessUVE);
-    postProcessSettings.contactShadowStrengthUVE = static_cast<float>(m_config.contactShadowsStrengthUVE);
-    postProcessSettings.contactShadowStepCountUVE =
-        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.contactShadowsStepCountUVE, 0));
-    postProcessSettings.ssrEnabledUVE = m_config.ssrEnabledUVE;
-    postProcessSettings.ssrMaxStepsUVE = static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.ssrMaxStepsUVE, 1));
-    postProcessSettings.ssrDepthToleranceUVE = static_cast<float>(m_config.ssrDepthToleranceUVE);
-    postProcessSettings.ssrFadeInUVE = static_cast<float>(m_config.ssrFadeInUVE);
-    postProcessSettings.ssrFadeOutUVE = static_cast<float>(m_config.ssrFadeOutUVE);
-    m_renderer3D->SetPostProcessSettingsUVE(postProcessSettings);
-    m_renderer3D->SetShadowBiasDefaultsUVE(m_config.shadowBiasDefaultUVE, m_config.shadowNormalBiasDefaultUVE);
-    // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use
-    // it as the tile size; point lights will use the same number for their six faces once their
-    // atlas path exists, so one authored setting keeps meaning one thing.
-    m_renderer3D->SetShadowAtlasTileResolutionUVE(
-        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.pointSpotShadowResolutionUVE, 0)));
-    Render::CullingSettingsUVE cullingSettings;
-    cullingSettings.frustumCullingEnabledUVE = m_config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
-    m_renderer3D->SetCullingSettingsUVE(cullingSettings);
+    m_renderer3D = MakeRenderer3DUVE(*m_meshRenderer, *m_cameraSystem, *m_lightSystem, *m_eventSystem);
 
     // CollisionSystem twenty-fifth: stateless, no dependencies of its own.
     m_collisionSystem = std::make_unique<Physics::CollisionSystemUVE>();
@@ -3977,6 +3933,109 @@ EngineServicesUVE& EngineCoreUVE::GetServicesUVE() {
 
 VersionUVE EngineCoreUVE::GetEngineVersionUVE() noexcept {
     return VersionUVE{0, 1, 0, 1};
+}
+
+
+std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render::IMeshRendererUVE& meshRenderer,
+                                                                  Render::ICameraSystemUVE& cameraSystem,
+                                                                  Render::ILightSystemUVE& lightSystem,
+                                                                  Events::IEventSystemUVE& eventSystem) {
+    std::unique_ptr<Render::IRenderer3DUVE> renderer = std::make_unique<Render::Renderer3DUVE>(
+        *m_renderDevice, *m_renderSystem, meshRenderer, cameraSystem, lightSystem, *m_shaderManager,
+        *m_assetManager, *m_assetDatabase, eventSystem, m_config.renderTargetWidth, m_config.renderTargetHeight,
+        m_config.ambientColor, m_config.shadowMapResolution, m_config.shadowMapHalfExtent,
+        m_config.shadowMapNearPlane, m_config.shadowMapFarPlane, m_config.shadowFrustumPadding,
+        m_config.shadowCascadeSplitLambda, m_config.shadowCascadeBlendRatio, m_config.shadowPcfKernelRadius);
+    renderer->SetSceneClearColorUVE(m_config.backgroundColorUVE);
+    Render::PostProcessSettingsUVE postProcessSettings;
+    postProcessSettings.nearestUpscalingEnabledUVE =
+        m_config.spatialUpscalingMethodUVE == SpatialUpscalingMethodUVE::NearestUVE;
+    postProcessSettings.acesToneMappingEnabledUVE = m_config.toneMappingMethodUVE == ToneMappingMethodUVE::AcesUVE;
+    postProcessSettings.sharpeningAmountUVE = m_config.sharpeningAmountUVE;
+    postProcessSettings.ditheringEnabledUVE = m_config.ditheringEnabledUVE;
+    postProcessSettings.fastApproximateAAEnabledUVE =
+        m_config.postProcessAAMethodUVE == PostProcessAAMethodUVE::FastApproximateUVE;
+    postProcessSettings.fastApproximateAAQualityUVE = m_config.screenSpaceAAQualityUVE;
+    postProcessSettings.ssaoEnabledUVE = m_config.ssaoEnabledUVE;
+    postProcessSettings.ssaoRadiusUVE = m_config.ssaoRadiusUVE;
+    postProcessSettings.ssaoIntensityUVE = m_config.ssaoIntensityUVE;
+    postProcessSettings.ssaoPowerUVE = m_config.ssaoPowerUVE;
+    postProcessSettings.ssaoQualityUVE = m_config.ssaoQualityUVE;
+    postProcessSettings.ssaoBlurEnabledUVE = m_config.ssaoBlurEnabledUVE;
+    // Contact shadows: the enable/length/steps settings predate the pass that consumes them, so
+    // this is where they finally reach a renderer.
+    postProcessSettings.contactShadowsEnabledUVE = m_config.contactShadowsEnabledUVE;
+    postProcessSettings.contactShadowLengthMetersUVE = static_cast<float>(m_config.contactShadowsLengthUVE);
+    postProcessSettings.contactShadowThicknessMetersUVE = static_cast<float>(m_config.contactShadowsThicknessUVE);
+    postProcessSettings.contactShadowStrengthUVE = static_cast<float>(m_config.contactShadowsStrengthUVE);
+    postProcessSettings.contactShadowStepCountUVE =
+        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.contactShadowsStepCountUVE, 0));
+    postProcessSettings.ssrEnabledUVE = m_config.ssrEnabledUVE;
+    postProcessSettings.ssrMaxStepsUVE = static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.ssrMaxStepsUVE, 1));
+    postProcessSettings.ssrDepthToleranceUVE = static_cast<float>(m_config.ssrDepthToleranceUVE);
+    postProcessSettings.ssrFadeInUVE = static_cast<float>(m_config.ssrFadeInUVE);
+    postProcessSettings.ssrFadeOutUVE = static_cast<float>(m_config.ssrFadeOutUVE);
+    renderer->SetPostProcessSettingsUVE(postProcessSettings);
+    renderer->SetShadowBiasDefaultsUVE(m_config.shadowBiasDefaultUVE, m_config.shadowNormalBiasDefaultUVE);
+    // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use
+    // it as the tile size; point lights will use the same number for their six faces once their
+    // atlas path exists, so one authored setting keeps meaning one thing.
+    renderer->SetShadowAtlasTileResolutionUVE(
+        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.pointSpotShadowResolutionUVE, 0)));
+    Render::CullingSettingsUVE cullingSettings;
+    cullingSettings.frustumCullingEnabledUVE = m_config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
+    renderer->SetCullingSettingsUVE(cullingSettings);
+    return renderer;
+}
+
+
+namespace {
+
+/// The engine's DocumentSceneUVE: owns the scene half, borrows the rest from the engine.
+class OwnedDocumentSceneUVE final : public DocumentSceneUVE {
+public:
+    OwnedDocumentSceneUVE(Memory::IAllocatorUVE& allocator, std::unique_ptr<Events::EventSystemUVE> events)
+        : m_events(std::move(events)), m_entities(allocator, *m_events) {}
+
+    void BindUVE(const EngineServicesUVE& engineServices, std::unique_ptr<Render::IRenderer3DUVE> renderer) {
+        m_renderer = std::move(renderer);
+        m_services.emplace(engineServices.WithSceneUVE(m_entities, m_graph, m_cameraSystem, m_meshRenderer,
+                                                       m_lightSystem, *m_renderer));
+    }
+    [[nodiscard]] Render::IMeshRendererUVE& MeshRendererUVE() noexcept { return m_meshRenderer; }
+    [[nodiscard]] Render::ICameraSystemUVE& CameraSystemUVE() noexcept { return m_cameraSystem; }
+    [[nodiscard]] Render::ILightSystemUVE& LightSystemUVE() noexcept { return m_lightSystem; }
+    [[nodiscard]] Events::IEventSystemUVE& EventsUVE() noexcept { return *m_events; }
+
+    ~OwnedDocumentSceneUVE() override {
+        m_services.reset();
+        m_renderer.reset();
+    }
+
+    [[nodiscard]] EngineServicesUVE& GetServicesUVE() noexcept override { return *m_services; }
+
+private:
+    std::unique_ptr<Events::EventSystemUVE> m_events;
+    Scene::EntityManagerUVE m_entities;
+    Scene::SceneGraphUVE m_graph;
+    Render::MeshRendererUVE m_meshRenderer;
+    Render::CameraSystemUVE m_cameraSystem;
+    Render::LightSystemUVE m_lightSystem;
+    std::unique_ptr<Render::IRenderer3DUVE> m_renderer;
+    std::optional<EngineServicesUVE> m_services;
+};
+
+} // namespace
+
+std::unique_ptr<DocumentSceneUVE> EngineCoreUVE::CreateDocumentSceneUVE() {
+    if (!m_services.has_value()) {
+        return nullptr;
+    }
+    auto scene = std::make_unique<OwnedDocumentSceneUVE>(m_memoryManager->GetDefaultAllocatorUVE(),
+                                                         std::make_unique<Events::EventSystemUVE>());
+    scene->BindUVE(*m_services, MakeRenderer3DUVE(scene->MeshRendererUVE(), scene->CameraSystemUVE(),
+                                                  scene->LightSystemUVE(), scene->EventsUVE()));
+    return scene;
 }
 
 } // namespace UVE::Core

@@ -189,7 +189,7 @@ bool EditorUVE::OpenMontageBodyUVE(const std::string_view itemId) {
     }
     // An entity is edited alone: making one only to find the editor busy would leave a file behind
     // with nothing open on it, so the refusal comes before the file.
-    if (m_entityEditSession.has_value()) {
+    if (m_entityDocumentActive) {
         montage.status = "Close " + m_entityEditSession->assetPath.filename().string() +
                          " first: an entity is edited on its own.";
         montage.statusIsError = true;

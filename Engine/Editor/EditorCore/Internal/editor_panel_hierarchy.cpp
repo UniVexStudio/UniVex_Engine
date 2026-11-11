@@ -260,7 +260,7 @@ void EditorUVE::DrawHierarchyBodyUVE() {
         ImGui::BeginDisabled(!IsAuthoringCommandAllowedUVE());
         ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, m_hierarchyView.indentWidth);
         // In the Entity Editor the entity is the top of the tree; the scene root is not shown.
-        if (m_entityEditSession.has_value()) {
+        if (m_entityDocumentActive) {
             Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
             const Scene::EntityUVE entityRoot = (m_entityEditSession->rootEntity != Scene::kInvalidEntityUVE &&
                                                  em.IsAliveUVE(m_entityEditSession->rootEntity))
@@ -295,7 +295,7 @@ void EditorUVE::DrawHierarchyBodyUVE() {
                                         : m_services->GetSceneGraphUVE()
                                               .GetChildrenUVE(m_services->GetEntityManagerUVE(), sceneRoot)
                                               .empty();
-            if (sceneEmpty && !m_entityEditSession.has_value()) {
+            if (sceneEmpty && !m_entityDocumentActive) {
                 ImGui::Separator();
                 ImGui::TextDisabled("Drop entity here to make it a root");
             } else {
@@ -752,7 +752,7 @@ void EditorUVE::DrawObjectPickerUVE() {
     } else {
         ImGui::TextDisabled("%s", parent != Scene::kInvalidEntityUVE
                                       ? ("Add to " + GetEntityDisplayLabelUVE(parent)).c_str()
-                                      : (m_entityEditSession.has_value() ? "Add to Entity" : "Add to the scene"));
+                                      : (m_entityDocumentActive ? "Add to Entity" : "Add to the scene"));
         ImGui::SetNextItemWidth(220.0F);
         if (ImGui::IsWindowAppearing()) {
             ImGui::SetKeyboardFocusHere();

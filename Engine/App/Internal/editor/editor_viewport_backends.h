@@ -33,6 +33,9 @@ public:
         Math::Vector2UVE& outUsedSize,
         const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
 
+    /// Drops every view drawing the scene `services` hold, before that scene goes away.
+    void ForgetServicesUVE(const Core::EngineServicesUVE& services);
+
 private:
     struct ImplUVE;
     std::unique_ptr<ImplUVE> m_impl;

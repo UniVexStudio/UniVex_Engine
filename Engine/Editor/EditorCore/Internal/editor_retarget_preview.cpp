@@ -64,7 +64,7 @@ bool EditorUVE::BeginRetargetPreviewUVE() {
     if (m_retargetPreview.has_value()) {
         return true;
     }
-    if (!IsAuthoringCommandAllowedUVE() || m_entityEditSession.has_value()) {
+    if (!IsAuthoringCommandAllowedUVE() || m_entityDocumentActive) {
         return false;
     }
     if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()) {
