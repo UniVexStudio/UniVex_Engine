@@ -2669,6 +2669,18 @@ static void testHostGizmos() {
   CHECK(buildSelectionOutline(mask.data(), 40, 40, 2, Color(255, 160, 40), band, box));
   const auto at = [&](int x, int y) { return band[size_t((y - box[1]) * box[2] + (x - box[0]))]; };
   CHECK((at(20, 20) >> 24) == 0 && (at(14, 20) >> 24) > 200 && (at(12, 20) >> 24) == 0);
+  // A tree reports the node on the row under a point (drops, context menus).
+  TreeView tree;
+  TreeNode* first = tree.addNode(nullptr, "First", Icon::Cube, 1);
+  tree.addNode(first, "Child", Icon::Cube, 2);
+  tree.arrange(Rect{0, 0, 200, 200});
+  CHECK(tree.nodeAt(Vec2{20, 5}) != nullptr && tree.nodeAt(Vec2{20, 5})->id == 1);
+  CHECK(tree.nodeAt(Vec2{20, 5 + tree.rowHeight()}) != nullptr && tree.nodeAt(Vec2{20, 5 + tree.rowHeight()})->id == 2);
+  CHECK(tree.nodeAt(Vec2{20, 190}) == nullptr);
+  // A menu item can carry the host's own icon image.
+  static const uint32_t kIconPixels[4] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+  const MenuItem withImage = MenuItem::Item("Add", [] {}).withImage(kIconPixels, 2);
+  CHECK(withImage.image == kIconPixels && withImage.imageSize == 2);
   std::vector<uint8_t> empty(16, 0);
   CHECK(!buildSelectionOutline(empty.data(), 4, 4, 2, Color(255, 160, 40), band, box));
 }

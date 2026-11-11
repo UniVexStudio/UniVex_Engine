@@ -9,6 +9,9 @@ namespace prism {
 struct MenuItem {
   std::string label, shortcut;
   Icon icon = Icon::None;
+  // Host-owned icon image (square, 0xAARRGGBB, straight alpha) drawn instead of `icon` when set.
+  const uint32_t* image = nullptr;
+  int imageSize = 0;
   bool separator = false, checkable = false, checked = false, enabled = true;
   std::vector<MenuItem> sub;
   std::function<void()> action;
@@ -24,6 +27,7 @@ struct MenuItem {
     MenuItem m; m.label = std::move(label); m.sub = std::move(items); m.icon = icon; return m;
   }
   MenuItem& disabled() { enabled = false; return *this; }
+  MenuItem& withImage(const uint32_t* pixels, int size) { image = pixels; imageSize = size; return *this; }
 };
 
 using MenuFactory = std::function<std::vector<MenuItem>()>;

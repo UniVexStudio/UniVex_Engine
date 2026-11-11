@@ -31,7 +31,7 @@ private:
   Margin m_pad;
 };
 
-enum class ButtonStyle { Default, Primary, Flat, Toolbar };
+enum class ButtonStyle { Default, Primary, Flat, Toolbar, Success };   // Success: a green call to action ("+ Add")
 
 class Button : public Widget {
 public:

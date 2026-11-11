@@ -73,6 +73,12 @@ public:
   void refresh() { m_dirty = true; invalidate(); }
   // Guide lines joining each object to its parent (a vertical line per open level, an elbow per row).
   void setShowGuides(bool on) { m_guides = on; invalidate(); }
+  // The node on the row under canvas point p (drops, context menus), or null.
+  TreeNode* nodeAt(Vec2 p) const {
+    const int r = rowAt(p);
+    const auto& rs = rows();
+    return r >= 0 && r < int(rs.size()) ? rs[size_t(r)].n : nullptr;
+  }
 
   Callback<const std::vector<TreeNode*>&> onSelect;
   Callback<TreeNode*> onVisibilityToggle, onLockToggle, onActivate, onDelete;
