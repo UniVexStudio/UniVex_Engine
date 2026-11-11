@@ -740,7 +740,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 start = comma + 1U;
             }
             // One button, like an asset slot: the file's name, or (Empty); the menu has Empty too.
-            auto pick = prism::make<prism::Button>("(Empty)", prism::Icon::None,
+            auto pick = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                    prism::ButtonStyle::Default);
             pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or quick import a file") : property.tooltip);
             std::weak_ptr<prism::Button> weakPick = pick;
@@ -749,7 +749,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 if (b && inst != nullptr) {
                     std::string v;
                     p->getValue(inst, &v);
-                    const std::string text = v.empty() ? std::string("(Empty)") : std::filesystem::path{v}.filename().string();
+                    const std::string text = v.empty() ? std::string("Empty") : std::filesystem::path{v}.filename().string();
                     if (b->text() != text) {
                         b->setText(text);
                     }
@@ -847,7 +847,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         } else if (property.customDrawerId.rfind("asset:", 0U) == 0U) {
             extensions = {"." + property.customDrawerId.substr(6U)};
         }
-        auto button = prism::make<prism::Button>("(None)", prism::Icon::None,
+        auto button = prism::make<prism::Button>("None", prism::Icon::None,
                                                  prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
         row->sync = [this, p, weak](const void* inst) {
@@ -857,9 +857,9 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
             }
             Asset::AssetGuidUVE value{};
             p->getValue(inst, &value);
-            std::string text = "(None)";
+            std::string text = "None";
             if (value != Asset::AssetGuidUVE{}) {
-                text = "(missing asset)";
+                text = "Missing asset";
                 for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
                     if (file.registeredAssetGuid.has_value() && *file.registeredAssetGuid == value) {
                         text = file.relativePath.filename().string();
@@ -896,10 +896,10 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 p->getValue(inst, &value);
                 const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
                 const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
-                std::string text = "(Empty)";
+                std::string text = "Empty";
                 if (value != Asset::AssetGuidUVE{}) {
                     const std::filesystem::path path = PathOfGuidUVE(value);
-                    text = path.empty() ? std::string("(missing model)") : path.filename().string();
+                    text = path.empty() ? std::string("Missing model") : path.filename().string();
                 } else if (em.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected)) {
                     static constexpr const char* kNames[] = {"Box", "Sphere", "Plane", "Capsule", "Cylinder"};
                     const auto kind = static_cast<std::size_t>(em.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected).kind);
@@ -957,7 +957,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         };
         editor = button;
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
-        auto button = prism::make<prism::Button>("(default)", prism::Icon::None, prism::ButtonStyle::Default);
+        auto button = prism::make<prism::Button>("Default", prism::Icon::None, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
         row->sync = [this, p, weak](const void* inst) {
             auto b = weak.lock();
@@ -966,8 +966,8 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
             }
             Scene::EntityUVE value = Scene::kInvalidEntityUVE;
             p->getValue(inst, &value);
-            const std::string text = value == Scene::kInvalidEntityUVE        ? std::string{"(default)"}
-                                     : !m_editor.IsDocumentEntityUVE(value) ? std::string{"(missing object)"}
+            const std::string text = value == Scene::kInvalidEntityUVE        ? std::string{"Default"}
+                                     : !m_editor.IsDocumentEntityUVE(value) ? std::string{"Missing object"}
                                                                             : m_editor.GetEntityDisplayLabelUVE(value);
             if (b->text() != text) {
                 b->setText(text);
@@ -975,7 +975,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         };
         button->onClick = [this, e, p, weak] {
             std::vector<prism::MenuItem> items;
-            items.push_back(prism::MenuItem::Item("(default)", [this, e, p] {
+            items.push_back(prism::MenuItem::Item("Default", [this, e, p] {
                 const Scene::EntityUVE none = Scene::kInvalidEntityUVE;
                 static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
             }));
