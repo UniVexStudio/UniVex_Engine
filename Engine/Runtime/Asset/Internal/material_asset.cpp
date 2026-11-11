@@ -184,6 +184,40 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         readFloat("uv2TriplanarSharpness", material.uv2TriplanarSharpness);
         readBool("aoOnUv2", material.aoOnUv2);
         readBool("emissionOnUv2", material.emissionOnUv2);
+        // The rest of what the material Details edits (each written only when it differs from its
+        // default, so older files read exactly as before).
+        readFloat("dielectricSpecular", material.dielectricSpecular);
+        readBool("normalFlipGreen", material.normalFlipGreen);
+        readBool("useVertexColorAsAlbedo", material.useVertexColorAsAlbedo);
+        readBool("vertexColorIsSrgb", material.vertexColorIsSrgb);
+        readBool("disableAmbientLight", material.disableAmbientLight);
+        readBool("disableFog", material.disableFog);
+        readBool("aoAffectsDirectLight", material.aoAffectsDirectLight);
+        readBool("receiveShadows", material.receiveShadows);
+        readFloat("rimAmount", material.rimAmount);
+        if (payload.contains("rimTint")) {
+            material.rimTint = JsonToColorUVE(payload.at("rimTint"));
+        }
+        readFloat("clearcoatRoughness", material.clearcoatRoughness);
+        readFloat("anisotropyAmount", material.anisotropyAmount);
+        readFloat("subsurfaceStrength", material.subsurfaceStrength);
+        readFloat("refractionAmount", material.refractionAmount);
+        readFloat("heightScale", material.heightScale);
+        if (payload.contains("heightTexture")) {
+            material.heightTexture = AssetGuidUVE{payload.at("heightTexture").get<std::uint64_t>()};
+        }
+        if (payload.contains("parallaxMinLayers")) {
+            material.parallaxMinLayers = payload.at("parallaxMinLayers").get<std::uint8_t>();
+        }
+        if (payload.contains("parallaxMaxLayers")) {
+            material.parallaxMaxLayers = payload.at("parallaxMaxLayers").get<std::uint8_t>();
+        }
+        readFloat("proximityFadeDistance", material.proximityFadeDistance);
+        readFloat("distanceFadeNear", material.distanceFadeNear);
+        readFloat("distanceFadeFar", material.distanceFadeFar);
+        if (payload.contains("renderLayerMask")) {
+            material.renderLayerMask = payload.at("renderLayerMask").get<std::uint32_t>();
+        }
         if (payload.contains("unshaded")) {
             material.unshaded = payload.at("unshaded").get<bool>();
         }
@@ -314,6 +348,50 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     writeSharpness("uv2TriplanarSharpness", material.uv2TriplanarSharpness);
     writeBool("aoOnUv2", material.aoOnUv2);
     writeBool("emissionOnUv2", material.emissionOnUv2);
+    const MaterialAssetUVE defaults{};
+    const auto writeFloat = [&payload](const char* key, const float value, const float fallback) {
+        if (value != fallback) {
+            payload[key] = value;
+        }
+    };
+    const auto writeFlag = [&payload](const char* key, const bool value, const bool fallback) {
+        if (value != fallback) {
+            payload[key] = value;
+        }
+    };
+    writeFloat("dielectricSpecular", material.dielectricSpecular, defaults.dielectricSpecular);
+    writeFlag("normalFlipGreen", material.normalFlipGreen, defaults.normalFlipGreen);
+    writeFlag("useVertexColorAsAlbedo", material.useVertexColorAsAlbedo, defaults.useVertexColorAsAlbedo);
+    writeFlag("vertexColorIsSrgb", material.vertexColorIsSrgb, defaults.vertexColorIsSrgb);
+    writeFlag("disableAmbientLight", material.disableAmbientLight, defaults.disableAmbientLight);
+    writeFlag("disableFog", material.disableFog, defaults.disableFog);
+    writeFlag("aoAffectsDirectLight", material.aoAffectsDirectLight, defaults.aoAffectsDirectLight);
+    writeFlag("receiveShadows", material.receiveShadows, defaults.receiveShadows);
+    writeFloat("rimAmount", material.rimAmount, defaults.rimAmount);
+    if (material.rimTint.r != defaults.rimTint.r || material.rimTint.g != defaults.rimTint.g ||
+        material.rimTint.b != defaults.rimTint.b) {
+        payload["rimTint"] = ColorToJsonUVE(material.rimTint);
+    }
+    writeFloat("clearcoatRoughness", material.clearcoatRoughness, defaults.clearcoatRoughness);
+    writeFloat("anisotropyAmount", material.anisotropyAmount, defaults.anisotropyAmount);
+    writeFloat("subsurfaceStrength", material.subsurfaceStrength, defaults.subsurfaceStrength);
+    writeFloat("refractionAmount", material.refractionAmount, defaults.refractionAmount);
+    writeFloat("heightScale", material.heightScale, defaults.heightScale);
+    if (material.heightTexture != kInvalidAssetGuidUVE) {
+        payload["heightTexture"] = material.heightTexture.value;
+    }
+    if (material.parallaxMinLayers != defaults.parallaxMinLayers) {
+        payload["parallaxMinLayers"] = material.parallaxMinLayers;
+    }
+    if (material.parallaxMaxLayers != defaults.parallaxMaxLayers) {
+        payload["parallaxMaxLayers"] = material.parallaxMaxLayers;
+    }
+    writeFloat("proximityFadeDistance", material.proximityFadeDistance, defaults.proximityFadeDistance);
+    writeFloat("distanceFadeNear", material.distanceFadeNear, defaults.distanceFadeNear);
+    writeFloat("distanceFadeFar", material.distanceFadeFar, defaults.distanceFadeFar);
+    if (material.renderLayerMask != defaults.renderLayerMask) {
+        payload["renderLayerMask"] = material.renderLayerMask;
+    }
     payload["unshaded"] = material.unshaded;
     payload["alphaCutoff"] = material.alphaCutoff;
     if (material.albedoAlpha != 1.0F) {

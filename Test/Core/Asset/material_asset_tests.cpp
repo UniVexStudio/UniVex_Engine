@@ -162,6 +162,66 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsTheRenderingStateFields) {
     std::filesystem::remove(path);
 }
 
+TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsUvSetsAndTheDetailsSurfaceFields) {
+    const std::filesystem::path path = "uve_material_asset_tests_round_trip_uv_sets.uvmat";
+    std::filesystem::remove(path);
+
+    MaterialAssetUVE original = MakeTestMaterialUVE();
+    original.uv2Scale = Math::Vector2UVE{2.0F, 3.0F};
+    original.uv2Offset = Math::Vector2UVE{0.25F, 0.5F};
+    original.triplanarEnabled = true;
+    original.worldSpaceTriplanar = true;
+    original.triplanarBlendSharpness = 4.0F;
+    original.uv2Triplanar = true;
+    original.uv2TriplanarSharpness = 2.0F;
+    original.aoOnUv2 = true;
+    original.emissionOnUv2 = true;
+    original.dielectricSpecular = 0.25F;
+    original.normalFlipGreen = true;
+    original.useVertexColorAsAlbedo = true;
+    original.disableFog = true;
+    original.receiveShadows = false;
+    original.rimAmount = 0.5F;
+    original.rimTint = Math::ColorUVE{0.5F, 0.25F, 1.0F};
+    original.refractionAmount = 0.75F;
+    original.renderLayerMask = 0x5U;
+    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+
+    MaterialAssetUVE loaded;
+    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+    EXPECT_EQ(loaded.uv2Scale, (Math::Vector2UVE{2.0F, 3.0F}));
+    EXPECT_EQ(loaded.uv2Offset, (Math::Vector2UVE{0.25F, 0.5F}));
+    EXPECT_TRUE(loaded.triplanarEnabled);
+    EXPECT_TRUE(loaded.worldSpaceTriplanar);
+    EXPECT_FLOAT_EQ(loaded.triplanarBlendSharpness, 4.0F);
+    EXPECT_TRUE(loaded.uv2Triplanar);
+    EXPECT_FALSE(loaded.uv2WorldTriplanar);
+    EXPECT_FLOAT_EQ(loaded.uv2TriplanarSharpness, 2.0F);
+    EXPECT_TRUE(loaded.aoOnUv2);
+    EXPECT_TRUE(loaded.emissionOnUv2);
+    EXPECT_FLOAT_EQ(loaded.dielectricSpecular, 0.25F);
+    EXPECT_TRUE(loaded.normalFlipGreen);
+    EXPECT_TRUE(loaded.useVertexColorAsAlbedo);
+    EXPECT_TRUE(loaded.disableFog);
+    EXPECT_FALSE(loaded.receiveShadows);
+    EXPECT_FLOAT_EQ(loaded.rimAmount, 0.5F);
+    EXPECT_FLOAT_EQ(loaded.rimTint.g, 0.25F);
+    EXPECT_FLOAT_EQ(loaded.refractionAmount, 0.75F);
+    EXPECT_EQ(loaded.renderLayerMask, 0x5U);
+
+    // Untouched, they stay at their defaults through a save.
+    ASSERT_TRUE(SaveMaterialAssetUVE(MakeTestMaterialUVE(), path));
+    MaterialAssetUVE defaultsLoaded;
+    ASSERT_TRUE(LoadMaterialAssetUVE(path, defaultsLoaded));
+    EXPECT_FALSE(defaultsLoaded.triplanarEnabled);
+    EXPECT_FALSE(defaultsLoaded.aoOnUv2);
+    EXPECT_FLOAT_EQ(defaultsLoaded.dielectricSpecular, 0.5F);
+    EXPECT_TRUE(defaultsLoaded.receiveShadows);
+    EXPECT_EQ(defaultsLoaded.renderLayerMask, 0xFFFFFFFFU);
+
+    std::filesystem::remove(path);
+}
+
 TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsEveryKind) {
     const std::filesystem::path path = "uve_material_asset_tests_round_trip_kind.uvmat";
     for (const MaterialKindUVE kind : {MaterialKindUVE::Standard, MaterialKindUVE::Orm, MaterialKindUVE::Shader}) {
