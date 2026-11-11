@@ -4,6 +4,8 @@
 // editor (DrawMaterialPbrEditorInlineUVE).
 #include "editor_prism_details.h"
 
+#include "editor_prism_asset_thumbnail.h"
+
 #include "asset_guid.h"
 #include "i_project_file_index.h"
 #include "material_asset.h"
@@ -127,7 +129,7 @@ void EditorPrismDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& a
             text = "Missing texture";
             for (const Asset::ProjectFileEntryUVE& file : snapshot.entries) {
                 if (file.registeredAssetGuid.has_value() && *file.registeredAssetGuid == loaded.*field) {
-                    text = file.relativePath.filename().string();
+                    text = file.relativePath.stem().string();
                     break;
                 }
             }
@@ -152,14 +154,33 @@ void EditorPrismDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& a
                 edit([&](MaterialUVE& m) { m.*field = guid; });
                 if (auto button = weak.lock()) {
                     const std::filesystem::path path = PathOfGuidUVE(guid);
-                    button->setText(path.empty() ? absolute.filename().string() : path.filename().string());
+                    button->setText(path.empty() ? absolute.stem().string() : path.stem().string());
                 }
             };
             if (auto button = weak.lock()) {
                 ShowPickerUVE(PickerSpecForUVE({".uvtex"}), std::move(actions), button->rect());
             }
         };
-        add(label, b, tip);
+        // The texture itself beside its picker, as Unreal shows a slot.
+        auto thumb = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Texture);
+        thumb->setAssetUVE(PathOfGuidUVE(loaded.*field));
+        auto slot = prism::hbox(6.0F);
+        slot->add(thumb, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Top});
+        slot->add(b, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Top});
+        auto row = std::make_shared<RowUVE>();
+        std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;
+        row->sync = [weakThumb](const void*) {
+            if (auto t = weakThumb.lock()) {
+                t->refreshUVE();
+            }
+        };
+        row->editor = slot.get();
+        m_rows.push_back(row);
+        b->setEnabled(writable);
+        if (tip[0] != '\0') {
+            b->setTooltip(tip);
+        }
+        m_grid->addRow(category, label, slot, tip);
     };
 
     // Kind: a preset over the same physically based path; picking one applies the same defaults

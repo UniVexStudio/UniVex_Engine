@@ -1,6 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_prism_details.h"
 
+#include "editor_prism_asset_thumbnail.h"
+
 #include "color.h"
 #include "engine_project_settings.h"
 #include "scene_component_metadata.h"
@@ -55,6 +57,23 @@ constexpr std::array<std::string_view, 3> kCustomDrawnUVE{"component.name", "com
 
 [[nodiscard]] bool IsCustomDrawnUVE(const std::string_view typeId) {
     return std::find(kCustomDrawnUVE.begin(), kCustomDrawnUVE.end(), typeId) != kCustomDrawnUVE.end();
+}
+
+/// The preview a slot of these file kinds shows beside its picker, if any.
+[[nodiscard]] std::optional<AssetThumbnailUVE::KindUVE> ThumbnailKindForUVE(const std::vector<std::string>& extensions) {
+    const auto has = [&](const char* kind) {
+        return std::find(extensions.begin(), extensions.end(), std::string(kind)) != extensions.end();
+    };
+    if (has(".uvmat") || has(".uvmaterial")) {
+        return AssetThumbnailUVE::KindUVE::Material;
+    }
+    if (has(".uvmodel")) {
+        return AssetThumbnailUVE::KindUVE::Mesh;
+    }
+    if (has(".uvtex") || has(".png")) {
+        return AssetThumbnailUVE::KindUVE::Texture;
+    }
+    return std::nullopt;
 }
 
 [[nodiscard]] std::string LowerUVE(std::string s) {
@@ -749,7 +768,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 if (b && inst != nullptr) {
                     std::string v;
                     p->getValue(inst, &v);
-                    const std::string text = v.empty() ? std::string("Empty") : std::filesystem::path{v}.filename().string();
+                    const std::string text = v.empty() ? std::string("Empty") : std::filesystem::path{v}.stem().string();
                     if (b->text() != text) {
                         b->setText(text);
                     }
@@ -785,7 +804,31 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                     ShowPickerUVE(spec, std::move(actions), b->rect());
                 }
             };
-            editor = pick;
+            if (const std::optional<AssetThumbnailUVE::KindUVE> kind = ThumbnailKindForUVE(extensions); kind.has_value()) {
+                auto thumb = prism::make<AssetThumbnailUVE>(m_editor, *kind);
+                std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;
+                row->sync = [this, p, weakThumb, base = std::move(row->sync)](const void* inst) {
+                    if (base) {
+                        base(inst);
+                    }
+                    auto t = weakThumb.lock();
+                    if (t && inst != nullptr) {
+                        std::string v;
+                        p->getValue(inst, &v);
+                        const std::filesystem::path stored{v};
+                        t->setAssetUVE(v.empty() ? std::filesystem::path{}
+                                                 : stored.is_absolute()
+                                                       ? stored
+                                                       : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / stored);
+                    }
+                };
+                auto box = prism::hbox(6.0F);
+                box->add(thumb, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Top});
+                box->add(pick, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Top});
+                editor = box;
+            } else {
+                editor = pick;
+            }
         }
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
         auto button = prism::make<prism::Button>("", prism::Icon::None, prism::ButtonStyle::Default);
@@ -862,7 +905,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 text = "Missing asset";
                 for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
                     if (file.registeredAssetGuid.has_value() && *file.registeredAssetGuid == value) {
-                        text = file.relativePath.filename().string();
+                        text = file.relativePath.stem().string();
                         break;
                     }
                 }
@@ -899,7 +942,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 std::string text = "Empty";
                 if (value != Asset::AssetGuidUVE{}) {
                     const std::filesystem::path path = PathOfGuidUVE(value);
-                    text = path.empty() ? std::string("Missing model") : path.filename().string();
+                    text = path.empty() ? std::string("Missing model") : path.stem().string();
                 } else if (em.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected)) {
                     static constexpr const char* kNames[] = {"Box", "Sphere", "Plane", "Capsule", "Cylinder"};
                     const auto kind = static_cast<std::size_t>(em.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected).kind);
@@ -955,7 +998,28 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 ShowPickerUVE(spec, std::move(actions), b->rect());
             }
         };
-        editor = button;
+        // Unreal's slot layout: the asset's own preview beside its picker.
+        if (const std::optional<AssetThumbnailUVE::KindUVE> kind = ThumbnailKindForUVE(extensions); kind.has_value()) {
+            auto thumb = prism::make<AssetThumbnailUVE>(m_editor, *kind);
+            std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;
+            row->sync = [this, p, weakThumb, base = std::move(row->sync)](const void* inst) {
+                if (base) {
+                    base(inst);
+                }
+                auto t = weakThumb.lock();
+                if (t && inst != nullptr) {
+                    Asset::AssetGuidUVE value{};
+                    p->getValue(inst, &value);
+                    t->setAssetUVE(PathOfGuidUVE(value));
+                }
+            };
+            auto box = prism::hbox(6.0F);
+            box->add(thumb, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Top});
+            box->add(button, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Top});
+            editor = box;
+        } else {
+            editor = button;
+        }
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
         auto button = prism::make<prism::Button>("Default", prism::Icon::None, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;

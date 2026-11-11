@@ -22,8 +22,9 @@ public:
       lw = std::max(lw, std::ceil(t.ui->width(it.label)));
       sw = std::max(sw, std::ceil(t.ui->width(it.shortcut)));
     }
-    // The label is drawn from x+30 in a box 60 narrower than the row: the row is that much wider.
-    float w = 30 + lw + 30 + 4 + (sw > 0 ? 28 + sw : 0);
+    // The label is drawn from x+30 in a box 60 narrower than the row, and the row is inset 4 on
+    // each side of the menu: the menu is that much wider than its longest label.
+    float w = 30 + lw + 30 + 8 + 4 + (sw > 0 ? 28 + sw : 0);
     float h = kPadY * 2;
     for (auto& it : m_items) h += it.separator ? kSepH : kRowH;
     return m_desired = {std::max(w, 190.f), h};

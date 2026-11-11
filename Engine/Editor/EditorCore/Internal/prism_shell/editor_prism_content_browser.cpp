@@ -1,6 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_prism_content_browser.h"
 
+#include "editor_prism_asset_thumbnail.h"
+
 #include "editor.h"
 #include "editor_content_browser_model.h"
 #include "editor_content_catalogue.h"
@@ -1718,39 +1720,10 @@ const EditorPrismContentBrowserUVE::PreviewUVE* EditorPrismContentBrowserUVE::Pr
         return &preview;
     }
     // Read the engine's GL texture back once; PRISM draws CPU-side pixels.
-    GLint previous = 0;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous);
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
-    GLint w = 0;
-    GLint h = 0;
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
-    if (w <= 0 || h <= 0 || w > 4096 || h > 4096) {
-        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous));
+    if (!ReadTexturePixelsUVE(texture, renderTarget, preview.width, preview.height, preview.pixels)) {
         return nullptr;
     }
-    std::vector<std::uint8_t> rgba(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4U);
-    GLint previousPack = 4;
-    glGetIntegerv(GL_PACK_ALIGNMENT, &previousPack);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
-    glPixelStorei(GL_PACK_ALIGNMENT, previousPack);
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous));
     preview.texture = texture;
-    preview.width = w;
-    preview.height = h;
-    preview.pixels.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h));
-    for (int y = 0; y < h; ++y) {
-        // Render targets are bottom-up; uploaded images are top row first.
-        const int sy = renderTarget ? (h - 1 - y) : y;
-        for (int x = 0; x < w; ++x) {
-            const std::uint8_t* p = rgba.data() + (static_cast<std::size_t>(sy) * static_cast<std::size_t>(w) +
-                                                   static_cast<std::size_t>(x)) * 4U;
-            preview.pixels[static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)] =
-                (static_cast<std::uint32_t>(p[3]) << 24U) | (static_cast<std::uint32_t>(p[0]) << 16U) |
-                (static_cast<std::uint32_t>(p[1]) << 8U) | static_cast<std::uint32_t>(p[2]);
-        }
-    }
     return &preview;
 }
 

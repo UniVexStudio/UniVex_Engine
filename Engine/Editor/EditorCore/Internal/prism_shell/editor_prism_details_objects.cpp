@@ -136,7 +136,7 @@ void EditorPrismDetailsUVE::AddSkeletonSourceUVE(const int category, const Entry
     const auto* skeleton = static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
     const std::string current = skeleton != nullptr ? skeleton->skeletonAssetPath : std::string();
     auto button = prism::make<prism::Button>(current.empty() ? std::string("Empty")
-                                                             : std::filesystem::path{current}.filename().string(),
+                                                             : std::filesystem::path{current}.stem().string(),
                                              prism::Icon::None, prism::ButtonStyle::Default);
     button->setTooltip(property.tooltip);
     std::weak_ptr<prism::Button> weak = button;
