@@ -19,6 +19,7 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <cctype>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -147,7 +148,7 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildLayoutUVE() {
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     centre->add(BuildViewportUVE(), prism::Splitter::Pane{400.0F, 160.0F, 1e9F, true});
     m_dockArea = BuildDockUVE();
-    centre->add(m_dockArea, prism::Splitter::Pane{250.0F, 110.0F, 900.0F, false});
+    centre->add(m_dockArea, prism::Splitter::Pane{290.0F, 110.0F, 900.0F, false});
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     m_outlinerColumn = BuildOutlinerUVE();
@@ -247,6 +248,47 @@ constexpr float kTabRowUVE = 24.0F;
 constexpr float kLogoBoxUVE = kTitleRowUVE + kTabRowUVE; // square: as wide as the two rows are tall
 // Sub row 2: the viewport settings strip.
 constexpr float kSubRow2UVE = 27.0F;
+
+/// The Outliner's drop target for content dragged from the Content Browser.
+class OutlinerDropUVE final : public prism::Border {
+public:
+    explicit OutlinerDropUVE(EditorPrismShellUVE& shell) : m_shell(shell) {}
+    bool onDragEnter(const prism::DragDropEvent& e) override { return Accepts(e); }
+    bool onDragOver(const prism::DragDropEvent& e) override {
+        const bool accepts = Accepts(e);
+        if (accepts != m_hot) {
+            m_hot = accepts;
+            invalidate();
+        }
+        return accepts;
+    }
+    void onDragLeave() override {
+        m_hot = false;
+        invalidate();
+    }
+    bool onDrop(const prism::DragDropEvent& e) override {
+        m_hot = false;
+        invalidate();
+        if (!Accepts(e)) {
+            return false;
+        }
+        const std::string* path = e.operation->getPayload<std::string>();
+        return path != nullptr && m_shell.DropContentOnOutlinerUVE(*path, e.pos);
+    }
+    void paint(prism::Canvas& c) override {
+        prism::Border::paint(c);
+        if (m_hot) {
+            c.strokeRoundRect(rect(), 3.0F, prism::theme().accent, 2);
+        }
+    }
+
+private:
+    [[nodiscard]] static bool Accepts(const prism::DragDropEvent& e) {
+        return e.operation && e.operation->tag() == EditorPrismContentBrowserUVE::kDragTagUVE;
+    }
+    EditorPrismShellUVE& m_shell;
+    bool m_hot = false;
+};
 
 /// #1: the engine logo box. It spans the title bar row and the viewport-name tab row, the same
 /// mark the editor has always shown there (a rounded blue square with the U), kept small like a
@@ -392,7 +434,13 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildTitleBarUVE() {
             m_editor.m_inspectorPanelVisible = !m_editor.m_inspectorPanelVisible;
             UpdateDockColumnsUVE();
         }));
-        items.push_back(prism::MenuItem::Item("Reset Panel Layout", [this] { ResetPanelLayoutUVE(); }));
+        items.push_back(prism::MenuItem::Sub("Layout", {
+            prism::MenuItem::Item("Default", [this] { ApplyLayoutPresetUVE(0); }),
+            prism::MenuItem::Item("Details under Outliner", [this] { ApplyLayoutPresetUVE(1); }),
+            prism::MenuItem::Item("Details beside Outliner", [this] { ApplyLayoutPresetUVE(2); }),
+            prism::MenuItem::Item("Wide Viewport", [this] { ApplyLayoutPresetUVE(3); }),
+        }, prism::Icon::Frame));
+        items.push_back(prism::MenuItem::Item("Reset Panel Layout", [this] { ApplyLayoutPresetUVE(0); }));
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Check("Network Capture", m_editor.m_showCaptureWindow,
                                                [this] { m_editor.m_showCaptureWindow = !m_editor.m_showCaptureWindow; }));
@@ -705,7 +753,10 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildOutlinerUVE() {
             static_cast<void>(m_editor.DeleteSelectedEntityUVE());
         }
     };
-    page->add(m_outliner, prism::Slot{1.0F});
+    // Content dragged from the Content Browser lands here, under the row it is dropped on.
+    auto drop = prism::make<OutlinerDropUVE>(*this);
+    drop->setChild(m_outliner);
+    page->add(drop, prism::Slot{1.0F});
 
     m_outlinerTabs = prism::make<prism::TabView>();
     m_outlinerTabs->addTab("Outliner", prism::Icon::Layers, PanelUVE(page));
@@ -771,6 +822,66 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDockBarUVE() {
     border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 0.0F));
     border->setChild(bar);
     return border;
+}
+
+bool EditorPrismShellUVE::DropContentOnOutlinerUVE(const std::string& relativePath, const prism::Vec2 at) {
+    // Entity assets and models dropped on a row go under that row's object (else where a new
+    // object goes), through the same calls as the Content Browser's "Place in Scene".
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path relative(relativePath);
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    if (m_outliner) {
+        if (const prism::TreeNode* node = m_outliner->nodeAt(at); node != nullptr) {
+            parent = EntityForTreeIdUVE(node->id);
+        }
+    }
+    std::string extension = relative.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    Scene::EntityUVE placed = Scene::kInvalidEntityUVE;
+    if (extension == ".uventity" || extension == ".uvprefab") {
+        placed = m_editor.PlaceEntityAssetUVE(snapshot.contentRoot / relative, parent);
+    } else if (EditorUVE::IsModelSourcePathUVE(relative)) {
+        placed = m_editor.PlaceModelSourceUVE(relative, parent);
+    } else {
+        m_editor.m_contentStatusMessage = "Only entity assets and models can be placed in the Outliner.";
+        return false;
+    }
+    if (placed == Scene::kInvalidEntityUVE && m_editor.m_contentStatusMessage.empty()) {
+        m_editor.m_contentStatusMessage = "Could not place " + relative.filename().string() + ".";
+    }
+    return placed != Scene::kInvalidEntityUVE;
+}
+
+void EditorPrismShellUVE::ApplyLayoutPresetUVE(const int preset) {
+    // Window > Layout: ready-made arrangements of the panels; every panel re-flows at once.
+    ResetPanelLayoutUVE();
+    if (!m_dockSpace || !m_outlinerTabs || !m_detailsTabs) {
+        return;
+    }
+    const auto moveDetails = [this](const prism::TabView::DockZone zone) {
+        const int index = m_detailsTabs->indexOf("Details");
+        if (index >= 0) {
+            static_cast<void>(m_dockSpace->split(m_outlinerTabs.get(), zone, m_detailsTabs->takeTab(index)));
+        }
+    };
+    switch (preset) {
+        case 1: moveDetails(prism::TabView::DockZone::Bottom); break;
+        case 2: moveDetails(prism::TabView::DockZone::Right); break;
+        case 3:
+            m_editor.m_scenePanelVisible = false;
+            m_editor.m_inspectorPanelVisible = false;
+            if (m_dockVisible) {
+                ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, false);
+            }
+            break;
+        default:
+            if (!m_dockVisible) {
+                ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, true);
+            }
+            break;
+    }
+    UpdateDockColumnsUVE();
 }
 
 void EditorPrismShellUVE::UpdateDockColumnsUVE() {
@@ -944,10 +1055,15 @@ void EditorPrismShellUVE::ShowAddMenuUVE() {
             items.push_back(prism::MenuItem::Sep());
         }
         const AddEntryUVE entry = kAddEntriesUVE[i];
-        items.push_back(prism::MenuItem::Item(
+        prism::MenuItem item = prism::MenuItem::Item(
             entry.label,
             [this, kind = entry.kind] { static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind)); }, "",
-            entry.icon));
+            entry.icon);
+        // The engine's own object icon.
+        if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(entry.kind, 16); icon) {
+            item.withImage(icon.pixels, icon.size);
+        }
+        items.push_back(std::move(item));
     }
     prism::showMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below);
 }
@@ -959,13 +1075,17 @@ void EditorPrismShellUVE::ShowAddFilterMenuUVE() {
     for (std::size_t i = kDefaultAddCountUVE; i < kAddEntriesUVE.size(); ++i) {
         const int key = static_cast<int>(i);
         const bool on = m_addAllKinds || m_addKinds.count(key) > 0;
-        items.push_back(prism::MenuItem::Check(kAddEntriesUVE[i].label, on, [this, key] {
+        prism::MenuItem item = prism::MenuItem::Check(kAddEntriesUVE[i].label, on, [this, key] {
             if (m_addKinds.count(key) > 0) {
                 m_addKinds.erase(key);
             } else {
                 m_addKinds.insert(key);
             }
-        }));
+        });
+        if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(kAddEntriesUVE[i].kind, 16); icon) {
+            item.withImage(icon.pixels, icon.size);
+        }
+        items.push_back(std::move(item));
     }
     prism::showMenu(std::move(items), m_filterButton ? m_filterButton->rect() : prism::Rect{},
                     prism::PopupPlacement::Below);

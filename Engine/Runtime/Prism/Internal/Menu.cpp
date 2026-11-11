@@ -46,6 +46,9 @@ public:
       Rect ic{r.x + 6, r.y + (r.h - 16) * 0.5f, 16, 16};
       if (it.checkable) {
         if (it.checked) drawIcon(c, Icon::Check, ic, hot ? t.accentText : t.accent, 1.6f);
+        else if (it.image && it.imageSize > 0) c.blitBlend(it.image, it.imageSize, it.imageSize, it.imageSize, ic);
+      } else if (it.image && it.imageSize > 0) {
+        c.blitBlend(it.image, it.imageSize, it.imageSize, it.imageSize, ic);
       } else if (it.icon != Icon::None) {
         drawIcon(c, it.icon, ic, dim);
       }

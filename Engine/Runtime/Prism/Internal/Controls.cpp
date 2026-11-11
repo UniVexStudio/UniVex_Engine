@@ -79,6 +79,10 @@ void Button::paint(Canvas& c) {
   case ButtonStyle::Flat:
     bg = down ? t.controlPress : (hot ? t.controlHover : Color(0, 0, 0, 0));
     break;
+  case ButtonStyle::Success:
+    bg = !en ? t.control : (down ? t.success.darken(0.2f) : (hot ? t.success.lighten(0.1f) : t.success));
+    fg = en ? Color(255, 255, 255) : t.textDisabled;
+    break;
   case ButtonStyle::Toolbar:
     if (m_checked) bg = down ? t.accentDim.darken(0.2f) : t.accentDim;
     else bg = down ? t.controlPress : (hot ? t.controlHover : Color(0, 0, 0, 0));

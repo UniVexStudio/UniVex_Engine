@@ -90,6 +90,14 @@ private:
     void UpdateDockColumnsUVE();
     /// Puts the Outliner and Details back in their own columns and closes split / floating areas.
     void ResetPanelLayoutUVE();
+    /// Window > Layout: 0 Default, 1 Details under Outliner, 2 Details beside Outliner, 3 Wide Viewport.
+    void ApplyLayoutPresetUVE(int preset);
+
+public:
+    /// Places content dropped on the Outliner (entity assets, models) under the row at `at`.
+    bool DropContentOnOutlinerUVE(const std::string& relativePath, prism::Vec2 at);
+
+private:
 
     void ShowAddMenuUVE();
     void ShowPreviewSettingsUVE(prism::Rect anchor);

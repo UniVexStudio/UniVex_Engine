@@ -2,9 +2,11 @@
 #pragma once
 
 #include "editor.h"
+#include "editor_content_browser_model.h"
 #include "editor_prism_icons.h"
 
 #include "prism/Icons.h"
+#include "prism/Menu.h"
 #include "prism/Widget.h"
 
 #include <cstdint>
@@ -16,25 +18,32 @@
 #include <vector>
 
 namespace prism {
+class Border;
 class Button;
 class Label;
+class ScrollView;
+class Splitter;
+class TableView;
 class TextInput;
 class TreeView;
 class WrapBox;
-class ScrollView;
 } // namespace prism
 
 namespace UVE::Editor {
 
 /// The editor's Content Browser drawn with PRISM widgets. Everything it shows and does is the
 /// engine's own: the project file index snapshot, the content model (ListContentFolderUVE,
-/// CollectVisibleContentFoldersUVE, ContentSelectionUVE), the type classification and focus filter,
-/// the "+ Add" content catalogue, and the same open actions (scene, entity, animation library,
-/// script) the previous Content Browser ran on a double click.
+/// ListContentTreeUVE, CollectVisibleContentFoldersUVE, ContentSelectionUVE, SortContentFactsUVE,
+/// GroupContentByTypeUVE), the type classification and focus filter, the content catalogue, the
+/// favorites and shelves, and the same actions the previous Content Browser ran.
 ///
-///   [ > folder search  q ] | [ Filter | item search   q ]
-///   [ folder tree        ] | [ tiles                    ]
-///   [ +                  ] | [ status                   ]
+///   [ + Add  Save All  Import    ] | [ View  Split  Filter  search          ]
+///   [ Favorites                  ] | [ path                                 ]
+///   [ Content (folder tree)      ] | [ Tiles / Columns / Details / Recent /  ]
+///   [ Shelves                    ] | [ Board                                ]
+///
+/// Two separate settings: the view mode (the engine's five modes, tile size and sort) and the
+/// split mode (how the Content Browser's own sidebar and items share its space).
 class EditorPrismContentBrowserUVE final {
 public:
     explicit EditorPrismContentBrowserUVE(EditorUVE& editor);
@@ -44,8 +53,15 @@ public:
     /// Re-reads the project snapshot and editor state; rebuilds only what changed.
     void RefreshUVE();
 
+    /// Drag payload tag for a content item (the payload is its content-relative path).
+    static constexpr const char* kDragTagUVE = "uve.content";
+
+    /// How the sidebar and the items share the Content Browser.
+    enum class SplitModeUVE : std::uint8_t { SideBySide = 0, Stacked, ItemsOnly, SidebarOnly };
+
 private:
     class TileUVE;
+    class ItemsAreaUVE;
     using ItemTypeUVE = EditorUVE::ContentBrowserItemTypeUVE;
     using FocusUVE = EditorUVE::ContentBrowserTypeFocusUVE;
     [[nodiscard]] static prism::Icon IconForUVE(ItemTypeUVE type);
@@ -56,26 +72,58 @@ private:
                                                                     std::shared_ptr<prism::Widget> extra);
 
     void RebuildFoldersUVE();
-    void RebuildTilesUVE();
-    void ShowAddMenuUVE(prism::Widget* anchor);
+    void RebuildFavoritesUVE();
+    void RebuildItemsUVE();
+    void BuildTilesUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
+    void BuildTableUVE(const Asset::ProjectFileSnapshotUVE& snapshot, bool recent);
+    void BuildColumnsUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
+    void BuildBoardUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
+    void UpdatePickUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
+    void ApplySplitModeUVE();
+    void ShowViewMenuUVE();
+    void ShowSplitMenuUVE();
     void ShowFilterMenuUVE();
+    void ShowItemMenuUVE(std::size_t entryIndex, prism::Vec2 at);
+    void ShowEmptyMenuUVE(prism::Vec2 at);
+    void ShowRenameUVE(std::size_t entryIndex);
+    void BeginDragUVE(std::size_t entryIndex);
+    [[nodiscard]] std::vector<prism::MenuItem> CatalogueMenuUVE();
+    void CreateCatalogueItemUVE(const std::string& id);
     void OpenEntryUVE(std::size_t entryIndex);
     void SelectEntryUVE(std::size_t entryIndex, bool additive, bool range);
     void GoToFolderUVE(const std::filesystem::path& directory);
+    void RevealUVE(const std::filesystem::path& relativePath);
+    void ChangedUVE();
+    [[nodiscard]] std::string DisplayNameUVE(const Asset::ProjectFileEntryUVE& entry) const;
+    [[nodiscard]] EditorPrismIconsUVE::ImageUVE TypeIconUVE(ItemTypeUVE type, int size);
 
     EditorUVE& m_editor;
 
+    // Sidebar.
+    std::shared_ptr<prism::Widget> m_sidebar;
+    std::shared_ptr<prism::TreeView> m_favorites;
+    std::vector<std::filesystem::path> m_favoriteIds; // tree id - 1 -> favorite
     std::shared_ptr<prism::TextInput> m_folderSearch;
     std::shared_ptr<prism::TreeView> m_folders;
     std::shared_ptr<prism::TreeView> m_shelves;
     std::vector<std::string> m_shelfNames;
-    std::shared_ptr<prism::Button> m_addButton;
+    std::vector<std::string> m_folderIds; // tree id - 1 -> folder (generic path)
+
+    // Items.
+    std::shared_ptr<prism::Widget> m_items;
+    std::shared_ptr<prism::Button> m_viewButton;
+    std::shared_ptr<prism::Button> m_splitButton;
     std::shared_ptr<prism::Button> m_filterButton;
     std::shared_ptr<prism::TextInput> m_itemSearch;
-    std::shared_ptr<prism::WrapBox> m_tiles;
-    std::shared_ptr<prism::ScrollView> m_tilesScroll;
     std::shared_ptr<prism::Label> m_path;
+    std::shared_ptr<prism::Border> m_itemsHost;     // holds the current mode's view
+    std::shared_ptr<prism::TableView> m_table;
     std::shared_ptr<prism::Label> m_status;
+
+    // The Content Browser's own split.
+    std::shared_ptr<prism::Border> m_root;
+    std::shared_ptr<prism::Splitter> m_split;
+    SplitModeUVE m_splitMode = SplitModeUVE::SideBySide;
 
     /// A preview read back from the engine's thumbnail texture (kept while the texture id is the same).
     struct PreviewUVE final {
@@ -88,11 +136,13 @@ private:
 
     EditorPrismIconsUVE m_icons;
     std::map<std::string, PreviewUVE> m_previews;
-    std::shared_ptr<prism::Button> m_addAssetButton;
-    std::vector<std::string> m_folderIds; // tree id - 1 -> folder (generic path)
     std::uint64_t m_folderSignature = 0;
     std::uint64_t m_tileSignature = 0;
-    std::vector<std::size_t> m_shown;      // snapshot entry indices, in tile order
+    std::uint64_t m_favoriteSignature = 0;
+    std::uint64_t m_pickSignature = 0;
+    std::vector<std::pair<std::string, std::weak_ptr<TileUVE>>> m_tileWidgets; // shown tiles, by path
+    std::vector<std::size_t> m_shown;      // snapshot entry indices, in the order shown
+    std::vector<ContentItemFactsUVE> m_facts; // per shown item (Details / Recent / Board)
     bool m_syncingFolders = false;
 };
 

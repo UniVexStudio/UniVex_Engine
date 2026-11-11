@@ -501,6 +501,7 @@ void Application::dispatchMouseUp(MouseEvent e) {
   m_mouse = e.pos;
   e.mods = m_mods;
   if (m_activeDragDrop) {
+    releaseMouse();   // the widget that started the drag held the mouse; the drop ends that too
     Widget* hit = hitTestAll(e.pos);
     for (Widget* w = hit; w; w = w->m_parent) {
       DragDropEvent dev{e.pos, m_activeDragDrop, m_mods};
@@ -649,7 +650,9 @@ PixelView Application::frame() const {
 
 bool Application::wantsPointerAt(Vec2 p) {
   layoutIfNeeded();
-  // A widget holding the mouse (a tab or splitter being dragged, a slider ...) keeps it wherever the pointer goes.
+  // A drag-and-drop in progress, or a widget holding the mouse (a tab or splitter being dragged, a slider ...),
+  // keeps the pointer wherever it goes.
+  if (m_activeDragDrop) return true;
   if (auto held = m_capture.lock(); held && held.get() != m_root.get() && held->consumesHostInput()) return true;
   Widget* t = hitTestAll(p);
   return t != nullptr && t != m_root.get() && t->consumesHostInput();
