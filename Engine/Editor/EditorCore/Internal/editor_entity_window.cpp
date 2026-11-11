@@ -9,6 +9,7 @@
 #include "editor.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cfloat>
 #include <cstdint>
 #include <filesystem>
@@ -27,6 +28,9 @@
 #include "uvscript_object_host.h"
 #include "uvscript_compiler.h"
 #include "uvscript_parser.h"
+#include "uve_file_envelope.h"
+
+#include <nlohmann/json.hpp>
 
 namespace UVE::Editor {
 namespace {
@@ -404,6 +408,105 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
     m_entityEditSession->problems = std::move(problems);
     m_entityEditSession->compiled = true;
     return m_entityEditSession->problems.size();
+}
+
+std::vector<EntityDiffRowUVE> EditorUVE::DiffEntityEditorUVE() {
+    if (!m_entityEditSession.has_value()) {
+        return {};
+    }
+    const EntityDocumentScopeUVE scope(*this);
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
+    const auto payloadText = [](const std::vector<std::byte>& payload) {
+        return std::string(reinterpret_cast<const char*>(payload.data()), payload.size());
+    };
+    std::string saved;
+    if (const auto file = Asset::ReadUveFileUVE(m_entityEditSession->assetPath); file.has_value()) {
+        saved = payloadText(file->second);
+    }
+    std::string current;
+    const Scene::EntityUVE root = GetEntityEditorRootUVE();
+    if (root != Scene::kInvalidEntityUVE) {
+        const std::optional<Scene::SceneSnapshotUVE> snapshot = m_services->GetSceneSerializerUVE().CaptureUVE(
+            m_services->GetEntityManagerUVE(), {root}, Asset::AssetKindUVE::Prefab);
+        if (snapshot.has_value()) {
+            if (const auto decoded = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes); decoded.has_value()) {
+                current = payloadText(decoded->second);
+            }
+        }
+    }
+    return DiffEntityPayloadsUVE(saved, current);
+}
+
+std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const std::string_view query) {
+    std::vector<EntityFindRowUVE> rows;
+    if (!m_entityEditSession.has_value() || query.empty()) {
+        return rows;
+    }
+    const EntityDocumentScopeUVE scope(*this);
+    const auto lower = [](std::string text) {
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return text;
+    };
+    const std::string needle = lower(std::string(query));
+    const auto matches = [&](const std::string& text) { return lower(text).find(needle) != std::string::npos; };
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
+        const std::string object = GetEntityDisplayLabelUVE(entity);
+        if (matches(object)) {
+            rows.push_back(EntityFindRowUVE{entity, object, "Name", object});
+        }
+        const std::string type(GetObjectTypeNameUVE(entity));
+        if (matches(type)) {
+            rows.push_back(EntityFindRowUVE{entity, object, "Type", type});
+        }
+        // Its components as the file holds them: every property name and value can be found.
+        const std::optional<Scene::SceneSnapshotUVE> snapshot =
+            m_services->GetSceneSerializerUVE().CaptureUVE(entityManager, {entity}, Asset::AssetKindUVE::Prefab);
+        if (!snapshot.has_value()) {
+            continue;
+        }
+        const auto decoded = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes);
+        if (!decoded.has_value()) {
+            continue;
+        }
+        const nlohmann::json doc = nlohmann::json::parse(
+            std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()), nullptr, false);
+        if (doc.is_discarded() || !doc.contains("entities") || !doc["entities"].is_array()) {
+            continue;
+        }
+        for (const nlohmann::json& item : doc["entities"]) {
+            // The captured object itself (its descendants are listed as themselves).
+            const nlohmann::json& components = item.contains("components") ? item["components"] : nlohmann::json::object();
+            if (!components.is_object() || !components.contains("HierarchyComponentUVE") ||
+                components["HierarchyComponentUVE"].value("parentLocalId", static_cast<std::int64_t>(0)) >= 0) {
+                continue;
+            }
+            for (auto c = components.begin(); c != components.end(); ++c) {
+                std::string component = c.key();
+                if (component == "HierarchyComponentUVE" || component == "NameComponentUVE") {
+                    continue;
+                }
+                if (component.size() > 12U && component.ends_with("ComponentUVE")) {
+                    component.resize(component.size() - 12U);
+                }
+                if (matches(component)) {
+                    rows.push_back(EntityFindRowUVE{entity, object, component, component});
+                }
+                if (!c.value().is_object()) {
+                    continue;
+                }
+                for (auto p = c.value().begin(); p != c.value().end(); ++p) {
+                    const std::string value = p.value().is_string() ? p.value().get<std::string>() : p.value().dump();
+                    if (matches(p.key()) || (p.value().is_string() && matches(value))) {
+                        rows.push_back(EntityFindRowUVE{entity, object, component + "." + p.key(), value});
+                    }
+                }
+            }
+            break;
+        }
+    }
+    return rows;
 }
 
 const std::vector<EditorUVE::EntityCompileProblemUVE>& EditorUVE::GetEntityEditorProblemsUVE() const noexcept {

@@ -44,6 +44,7 @@
 #include "shader_asset.h"
 #include "gltf_skeleton.h"
 #include "editor_content_browser_model.h"
+#include "editor_entity_diff.h"
 #include "editor_retarget_plan.h"
 #include "editor_hierarchy_view.h"
 #include "input_action.h"
@@ -979,6 +980,19 @@ public:
     /// open text editor when it has unsaved text, else from disk) compiled against that object.
     /// Returns the problem count; the list stays until the next Compile, Revert or close.
     std::size_t CompileEntityEditorUVE();
+    /// What changed in the open entity since it was last saved (or opened): objects, components
+    /// and properties, from its saved file to what the editor holds now. Empty when nothing did.
+    [[nodiscard]] std::vector<EntityDiffRowUVE> DiffEntityEditorUVE();
+    /// One place the open entity mentions a searched text: an object's name or type, a component,
+    /// or a property name or value of one of its components (a script path, a material, ...).
+    struct EntityFindRowUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        std::string object;
+        std::string where;  ///< "Name", "Type", "Collider", "Script.scriptAssetPath", ...
+        std::string text;   ///< what matched
+    };
+    /// Every place in the open entity that contains `query` (case-insensitive), in tree order.
+    [[nodiscard]] std::vector<EntityFindRowUVE> FindInEntityEditorUVE(std::string_view query);
     [[nodiscard]] const std::vector<EntityCompileProblemUVE>& GetEntityEditorProblemsUVE() const noexcept;
     /// False until Compile has run for this session (so "no problems" means something).
     [[nodiscard]] bool HasEntityEditorCompiledUVE() const noexcept;
