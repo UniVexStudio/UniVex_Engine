@@ -82,6 +82,12 @@ struct BlueprintNode {
   std::string tooltip;
   enum class Preview { None, Color, Scalar, Texture, Normal } preview = Preview::None;   // small thumbnail under the header (material nodes)
   std::string previewValue;                                                               // "r,g,b" or a 0..1 number
+  // The header icon; None picks one from the title.
+  Icon icon = Icon::None;
+  // A host-owned settings area under the pins (setNodeBody): its height and minimum width in world
+  // units, and the line shown in its place when the view is zoomed too far out for widgets.
+  float bodyH = 0, bodyW = 0;
+  std::string bodySummary;
 };
 
 struct BlueprintVariable {
@@ -158,6 +164,33 @@ public:
   ~BlueprintGraph() override;
 
   // ---- model
+  // What the graph shows and does. Everything is on by default; a host embedding the graph for its
+  // own data (an engine animation graph) turns off what does not apply.
+  struct Features {
+    bool toolbar = true;     // the 36 px tool row (compile, save, find, simulate ...)
+    bool crumbs = true;      // the graph-type chip and breadcrumb strip
+    bool minimap = true;
+    bool watermark = true;
+    bool shortcuts = true;   // C, Ctrl+C/V/X/D/Z/Y/S, F9/F10/F5, Ctrl+Enter (off: Delete, Ctrl+A, F, Home, Esc only)
+    bool history = true;     // the graph's own undo (off: the host's undo, through onCommit)
+  };
+  void setFeatures(const Features& f);
+  const Features& features() const { return m_features; }
+  // The nodes the palette offers; empty uses the global blueprintNodeLibrary().
+  void setNodeLibrary(std::vector<BlueprintNodeSpec> library) { m_library = std::move(library); }
+  const std::vector<BlueprintNodeSpec>& nodeLibrary() const;
+  // Picking a node in the palette: the host makes it (addNode with the id it returns, -1 for none).
+  std::function<int(const BlueprintNodeSpec&, Vec2 world)> onSpawn;
+  // A finished user edit ("Move nodes", "Connect pins", "Delete", ...), after the graph changed.
+  Callback<const std::string&> onCommit;
+  Callback<const std::vector<int>&> onSelectionChanged;
+  Callback<int> onNodeDoubleClicked;
+  // The host's own rule for a connection, asked after the graph's type checks pass.
+  std::function<bool(int fromNode, int fromPin, int toNode, int toPin, std::string* why)> canConnectHook;
+  // A widget drawn and used inside node `nodeId` under its pins (the node's bodyH tall); null removes it.
+  void setNodeBody(int nodeId, Ref<Widget> body);
+  void clearNodeBodies();
+
   void setPreset(BlueprintGraphPreset preset);
   BlueprintGraphPreset preset() const { return m_preset; }
   void addNode(BlueprintNode node);               // id 0 = assign a fresh id
@@ -165,6 +198,7 @@ public:
   void addComment(BlueprintComment comment);
   void connectPins(int fromNode, int fromPin, int toNode, int toPin, BlueprintPinType type);   // unchecked (presets)
   bool canConnect(int fromNode, int fromPin, int toNode, int toPin, std::string* why = nullptr) const;
+  bool canConnectBase(int fromNode, int fromPin, int toNode, int toPin, std::string* why = nullptr) const;   // the graph's own type / loop checks
   bool connect(int fromNode, int fromPin, int toNode, int toPin);                               // validated, replaces
   bool disconnectPin(int nodeId, int pinIndex, bool isInput);
   void removeNode(int nodeId);
@@ -336,6 +370,13 @@ private:
   std::vector<int> flowOrder() const;
   bool usesExecFlow() const;
 
+  Features m_features;
+  std::vector<BlueprintNodeSpec> m_library;
+  std::map<int, Ref<Widget>> m_bodies;
+  std::vector<int> m_lastSelection;
+  void notifySelection();
+  bool onMouseUpInner(const MouseEvent& e);
+  Rect bodyScreenRect(const BlueprintNode& n) const;
   BlueprintGraphPreset m_preset = BlueprintGraphPreset::WidgetBlueprint;
   std::vector<BlueprintNode> m_nodes;
   std::vector<BlueprintWire> m_wires;

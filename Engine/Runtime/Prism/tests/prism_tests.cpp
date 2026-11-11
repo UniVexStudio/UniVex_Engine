@@ -1403,6 +1403,97 @@ static void testBlueprintInteraction(Application& app) {
   app.closeAllPopups();
 }
 
+// An embedded graph: no chrome, its own library and spawn hook, commit / selection callbacks, the
+// host's connection rule, an icon override, and a settings widget inside a node that takes clicks.
+static void testBlueprintEmbedded(Application& app) {
+  SECTION("blueprint_embedded");
+  app.closeAllPopups();
+  app.hostResize(1000, 700);
+  auto g = make<BlueprintGraph>();
+  app.setRoot(g);
+  g->clear();
+  BlueprintGraph::Features f;
+  f.toolbar = f.crumbs = f.minimap = f.watermark = f.shortcuts = f.history = false;
+  g->setFeatures(f);
+  g->setView({0, 0}, 1.0f);
+  auto mkPose = [](const char* title, int inputs) {
+    BlueprintNode n;
+    n.title = title;
+    n.category = BlueprintNodeCategory::Animation;
+    for (int i = 0; i < inputs; i++) n.inputs.push_back(BlueprintPin{"In", BlueprintPinType::Pose, BlueprintPinKind::Input});
+    n.outputs.push_back(BlueprintPin{"Pose", BlueprintPinType::Pose, BlueprintPinKind::Output});
+    return n;
+  };
+  std::vector<BlueprintNodeSpec> lib{{"Animation", "Clip", "clip", [&] { return mkPose("Clip", 0); }}};
+  g->setNodeLibrary(lib);
+  CHECK(g->nodeLibrary().size() == 1 && g->nodeLibrary()[0].name == "Clip");
+  int spawned = 0;
+  g->onSpawn = [&](const BlueprintNodeSpec& spec, Vec2 world) {
+    BlueprintNode n = spec.make();
+    n.id = 500 + spawned++;
+    n.pos = world;
+    g->addNode(n);
+    return n.id;
+  };
+  std::vector<std::string> commits;
+  g->onCommit = [&](const std::string& name) { commits.push_back(name); };
+  std::vector<int> picked;
+  g->onSelectionChanged = [&](const std::vector<int>& ids) { picked = ids; };
+  bool refuse = true;
+  g->canConnectHook = [&](int, int, int, int, std::string* why) { if (refuse && why) *why = "host says no"; return !refuse; };
+
+  BlueprintNode clip = mkPose("Clip", 0);
+  clip.id = 10; clip.pos = {60, 60}; clip.icon = Icon::NodeClip;
+  BlueprintNode blend = mkPose("Blend2", 2);
+  blend.id = 11; blend.pos = {400, 60}; blend.bodyH = 40; blend.bodyW = 200; blend.bodySummary = "weight 0.5";
+  g->addNode(clip);
+  g->addNode(blend);
+  bool clicked = false;
+  auto button = make<Button>("Weight");
+  button->onClick = [&] { clicked = true; };
+  g->setNodeBody(11, button);
+  app.tick(); app.render();
+  CHECK(g->findNode(11)->size.y >= 40 && g->findNode(11)->size.x >= 200);   // the body is part of the node
+  CHECK(button->visible() && button->rect().w > 0);
+  Vec2 bc = button->rect().center();
+  app.hostMouseMove(bc);
+  app.hostMouseButton(bc, MouseButton::Left, true);
+  app.hostMouseButton(bc, MouseButton::Left, false);
+  CHECK(clicked);                                                     // the widget inside the node got the click
+  CHECK(g->findNode(11)->pos.x == 400);                               // and the node did not move
+
+  // the host's rule refuses, then allows
+  CHECK(!g->canConnect(10, 0, 11, 0));
+  refuse = false;
+  CHECK(g->canConnect(10, 0, 11, 0));
+  Vec2 from = g->pinScreenPos(10, 0, false), to = g->pinScreenPos(11, 0, true);
+  app.hostMouseMove(from);
+  app.hostMouseButton(from, MouseButton::Left, true);
+  app.hostMouseMove((from + to) * 0.5f);
+  app.hostMouseMove(to);
+  app.hostMouseButton(to, MouseButton::Left, false);
+  CHECK(g->wireCount() == 1);
+  CHECK(!commits.empty() && commits.back() == "Connect pins");
+  CHECK(!g->canUndo());                                               // the host owns undo
+
+  // selection reaches the host
+  Vec2 head = g->worldToScreen(g->findNode(10)->pos) + Vec2{30, 12};
+  app.hostMouseMove(head);
+  app.hostMouseButton(head, MouseButton::Left, true);
+  app.hostMouseButton(head, MouseButton::Left, false);
+  CHECK(picked.size() == 1 && picked[0] == 10);
+  // without shortcuts the host gets Ctrl+Z
+  CHECK(!g->onKeyDown(KeyEvent{Key::Z, ModCtrl, false}));
+
+  // the palette lists the graph's own library and spawns through the host
+  g->openPalette({700, 400});
+  app.tick(); app.render();
+  app.hostKey(Key::Enter, 0);
+  app.tick();
+  CHECK(spawned == 1 && g->findNode(500) != nullptr);
+  app.closeAllPopups();
+}
+
 static void testBlueprintGraphTypes(Application& app) {
   SECTION("blueprint_graph_types");
   app.hostResize(1200, 700);
@@ -2783,6 +2874,7 @@ int main(int argc, char** argv) {
   testColorPickerWindow(app);
   testBlueprintGraphTypes(app);
   testBlueprintAdvanced(app);
+  testBlueprintEmbedded(app);
   testBlueprintTools(app);
   testLogView(app);
   testBlueprintVM(app);
