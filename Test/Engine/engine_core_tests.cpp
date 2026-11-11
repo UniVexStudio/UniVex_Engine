@@ -1702,6 +1702,40 @@ TEST(EngineCoreUVETest, Renderer3D_ReachableAfterInit_NoActiveCameraStillNoOps) 
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, DocumentScene_IsSeparateFromTheEngineScene) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    EXPECT_EQ(engine.CreateDocumentSceneUVE(), nullptr); // not before Init()
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    EngineServicesUVE& level = engine.GetServicesUVE();
+    std::unique_ptr<DocumentSceneUVE> document = engine.CreateDocumentSceneUVE();
+    ASSERT_NE(document, nullptr);
+    EngineServicesUVE& services = document->GetServicesUVE();
+
+    // The scene half is its own; everything else is the engine's.
+    EXPECT_NE(&services.GetEntityManagerUVE(), &level.GetEntityManagerUVE());
+    EXPECT_NE(&services.GetSceneGraphUVE(), &level.GetSceneGraphUVE());
+    EXPECT_NE(&services.GetRenderer3DUVE(), &level.GetRenderer3DUVE());
+    EXPECT_NE(&services.GetMeshRendererUVE(), &level.GetMeshRendererUVE());
+    EXPECT_EQ(&services.GetAssetDatabaseUVE(), &level.GetAssetDatabaseUVE());
+    EXPECT_EQ(&services.GetRenderDeviceUVE(), &level.GetRenderDeviceUVE());
+    EXPECT_EQ(&services.GetPrefabSystemUVE(), &level.GetPrefabSystemUVE());
+
+    const std::size_t levelCount = level.GetEntityManagerUVE().GetEntityCountUVE();
+    const Scene::EntityUVE entity = document->GetEntityManagerUVE().CreateEntityUVE();
+    EXPECT_TRUE(document->GetEntityManagerUVE().IsAliveUVE(entity));
+    EXPECT_EQ(document->GetEntityManagerUVE().GetEntityCountUVE(), 1U);
+    EXPECT_EQ(level.GetEntityManagerUVE().GetEntityCountUVE(), levelCount);
+
+    document->GetEntityManagerUVE().DestroyEntityUVE(entity);
+    engine.TickFrameUVE();
+    EXPECT_EQ(level.GetEntityManagerUVE().GetEntityCountUVE(), levelCount);
+
+    document.reset();
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, WindowedMode_NoActiveCameraStillClearsDefaultFramebuffer) {
     EngineConfigUVE config = MakeTestConfigUVE();
     config.headlessUVE = false;

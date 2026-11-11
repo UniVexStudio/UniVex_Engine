@@ -301,6 +301,12 @@ int main(const int argc, char** argv) {
         // overwrite its camera; Retarget also keeps its fixed studio framing in its own backend.
         using ViewportContextUVE = UVE::Editor::EditorUVE::ViewportContextUVE;
         std::unique_ptr<UVE::App::EditorViewportBackendsUVE> viewportBackends;
+        editor.SetDocumentSceneFactoryUVE([&engine] { return engine.CreateDocumentSceneUVE(); });
+        editor.SetDocumentSceneClosingUVE([&viewportBackends](const UVE::Core::EngineServicesUVE& services) {
+            if (viewportBackends != nullptr) {
+                viewportBackends->ForgetServicesUVE(services);
+            }
+        });
         if (!options.headless) {
             viewportBackends = std::make_unique<UVE::App::EditorViewportBackendsUVE>(editor, engine);
             editor.SetViewportPanelRendererUVE(

@@ -30,6 +30,7 @@
 #include "i_project_file_index.h"
 #include "i_project_change_watcher.h"
 #include "engine_services.h"
+#include "document_scene.h"
 #include "i_simulation_control.h"
 #include "settings_observer.h"
 #include "settings_registry.h"
@@ -788,6 +789,39 @@ public:
     /// Registers (or clears, with an empty std::function) the Viewport panel's render callback.
     /// Called once per frame from RenderOverlayUVE() while the panel is visible.
     void SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer);
+
+    /// Makes a scene beside the level for an asset document (the Entity Editor's entity), so
+    /// editing it never touches the level. The app passes EngineCoreUVE::CreateDocumentSceneUVE;
+    /// without a factory the Entity Editor cannot open.
+    using DocumentSceneFactoryUVE = std::function<std::unique_ptr<Core::DocumentSceneUVE>()>;
+    void SetDocumentSceneFactoryUVE(DocumentSceneFactoryUVE factory) { m_documentSceneFactory = std::move(factory); }
+    /// Called with a document scene's services just before that scene is destroyed, so whatever
+    /// draws it (the viewport backends) lets go first.
+    using DocumentSceneClosingUVE = std::function<void(const Core::EngineServicesUVE&)>;
+    void SetDocumentSceneClosingUVE(DocumentSceneClosingUVE callback) { m_documentSceneClosing = std::move(callback); }
+
+    /// The services of the document being worked on right now: the level's, or the open entity's
+    /// inside an EntityDocumentScopeUVE. Viewport backends render the scene these hold.
+    [[nodiscard]] Core::EngineServicesUVE& GetActiveServicesUVE() noexcept { return *m_services; }
+    /// True inside an EntityDocumentScopeUVE: the document is the open entity, not the level.
+    [[nodiscard]] bool IsEntityDocumentActiveUVE() const noexcept { return m_entityDocumentActive; }
+
+    /// While alive, the editor works on the open entity: its scene, selection, undo and dirty
+    /// state replace the level's, and everything that reads "the document" reads the entity. The
+    /// level's are put back when it ends. Does nothing while no entity is open, or when an outer
+    /// scope already made the entity the document.
+    class EntityDocumentScopeUVE final {
+    public:
+        explicit EntityDocumentScopeUVE(EditorUVE& editor);
+        ~EntityDocumentScopeUVE();
+        EntityDocumentScopeUVE(const EntityDocumentScopeUVE&) = delete;
+        EntityDocumentScopeUVE& operator=(const EntityDocumentScopeUVE&) = delete;
+        [[nodiscard]] bool ActiveUVE() const noexcept { return m_editor.m_entityDocumentActive; }
+
+    private:
+        EditorUVE& m_editor;
+        bool m_entered = false;
+    };
 
     /// Saves every document root except the editor camera to the active .uvscene path. Dirty state
     /// is cleared only after the scene serializer reports success.
@@ -1604,17 +1638,10 @@ private:
         std::filesystem::path assetPath;
         Asset::AssetGuidUVE guid = Asset::kInvalidAssetGuidUVE;
         Scene::EntityUVE rootEntity = Scene::kInvalidEntityUVE;
-        Scene::SceneSnapshotUVE sceneSnapshot;
-        bool sceneWasEmpty = false;
-        bool sceneDirtyBefore = false;
-        EditorSelectionPathsUVE selectionBefore;
-        /// Set once the entity was written, so closing refreshes its instances in the scene.
+        /// Set once the entity was written, so closing refreshes its instances in the level.
         bool savedOnce = false;
         /// The window's X was pressed with unsaved changes: ask before closing.
         bool confirmClose = false;
-        /// The simulation is held while an entity is open (a character would otherwise fall and
-        /// be saved where it landed); this is what to go back to.
-        std::optional<Core::SimulationExecutionModeUVE> simulationBefore;
         EntityEditorTabUVE tab = EntityEditorTabUVE::Viewport;
         std::vector<EntityCompileProblemUVE> problems;
         bool compiled = false;
@@ -2676,6 +2703,34 @@ private:
     bool m_2dCanvasPanning = false;
     std::deque<HistoryEntryUVE> m_undoHistory;
     std::deque<HistoryEntryUVE> m_redoHistory;
+
+    /// What belongs to one document rather than to the editor: its scene (through its services),
+    /// selection, undo, dirty state and the scene tree's per-document state. The editor's members
+    /// hold the active document's; this holds the other one's until the next swap.
+    struct DocumentStateUVE final {
+        Core::EngineServicesUVE* services = nullptr;
+        std::vector<Scene::EntityUVE> selectedEntities;
+        Scene::EntityUVE selectedEntity = Scene::kInvalidEntityUVE;
+        std::deque<HistoryEntryUVE> undoHistory;
+        std::deque<HistoryEntryUVE> redoHistory;
+        bool sceneDirty = false;
+        std::unordered_set<Scene::EntityUVE> lockedFolders;
+        Scene::EntityUVE lastUsedFolder = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE pendingComponentChangeEntity = Scene::kInvalidEntityUVE;
+        std::unordered_map<Scene::EntityUVE, bool> hierarchyPendingRowOpen;
+        Scene::EntityUVE previewCamera = Scene::kInvalidEntityUVE;
+    };
+    /// Exchanges the active document's state with m_otherDocument's.
+    void SwapDocumentStateUVE();
+    /// Ends the Entity Editor session (the scene is destroyed); the level is the document again.
+    void FinishEntityEditorCloseUVE();
+    DocumentSceneFactoryUVE m_documentSceneFactory;
+    DocumentSceneClosingUVE m_documentSceneClosing;
+    std::unique_ptr<Core::DocumentSceneUVE> m_entityScene;
+    DocumentStateUVE m_otherDocument;
+    bool m_entityDocumentActive = false;
+    /// Close was asked from inside the entity's own scope: finished when that scope ends.
+    std::optional<bool> m_entityClosePending;
     EditorWorkspaceUVE m_activeWorkspace = EditorWorkspaceUVE::Library;
     /// Transient Plugin window/tool gates. These are editor-session state only and never become ECS
     /// components, serialized scene data, or runtime/plugin activation side effects.

@@ -46,6 +46,7 @@
 #include "engine_config.h"
 #include "raycast_audio_occlusion.h"
 #include "engine_services.h"
+#include "document_scene.h"
 #include "i_editor_viewport_host.h"
 #include "i_simulation_control.h"
 #include "engine_state.h"
@@ -438,6 +439,10 @@ public:
     /// than dereferencing an empty std::optional.
     [[nodiscard]] EngineServicesUVE& GetServicesUVE();
 
+    /// A new scene beside the engine's (its own entities, graph, events and renderer, configured
+    /// like the engine's), for an editor document that must not touch the level. Null before Init().
+    [[nodiscard]] std::unique_ptr<DocumentSceneUVE> CreateDocumentSceneUVE();
+
     /// Returns the current UI draw batch/font atlas (SyncUIRuntimeUVE() ticks it once per real
     /// frame during Update()) - for a host that wants to composite authored Canvas/UIText/UIImage/
     /// UIButton content itself (the editor's own Viewport panel draws it via ImGui's overlay draw
@@ -462,6 +467,12 @@ public:
     [[nodiscard]] static VersionUVE GetEngineVersionUVE() noexcept;
 
 private:
+    /// A Renderer3DUVE over the given render systems and event bus, configured from m_config the
+    /// same way for the engine's own scene and for every document scene.
+    [[nodiscard]] std::unique_ptr<Render::IRenderer3DUVE> MakeRenderer3DUVE(Render::IMeshRendererUVE& meshRenderer,
+                                                                          Render::ICameraSystemUVE& cameraSystem,
+                                                                          Render::ILightSystemUVE& lightSystem,
+                                                                          Events::IEventSystemUVE& eventSystem);
     /// Registers the built-in MeshAssetUVE/TextureAssetUVE/ShaderAssetUVE/MaterialAssetUVE/
     /// AudioAssetUVE/AnimationClipAssetUVE
     /// loaders with AssetManagerUVE (Part 7.2's rendering-facing asset types). Called once from

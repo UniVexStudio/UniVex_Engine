@@ -475,7 +475,7 @@ void EditorUVE::TickUVE() {
 
 bool EditorUVE::EnterPlayModeUVE() {
     // The document is an entity while the Entity Editor is open; the scene plays, not it.
-    if (m_entityEditSession.has_value() || m_retargetPreview.has_value()) {
+    if (m_entityDocumentActive || m_retargetPreview.has_value()) {
         return false;
     }
     // A colour still being picked belongs to the document being played; finish it first.
@@ -966,7 +966,7 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
 
 bool EditorUVE::SaveSceneUVE() {
     // While the Entity Editor is open the document is the entity: saving writes the entity.
-    if (m_entityEditSession.has_value()) {
+    if (m_entityDocumentActive) {
         return SaveEntityEditorUVE();
     }
     if (!IsAuthoringCommandAllowedUVE() || m_activeScenePath.empty()) {
@@ -985,11 +985,31 @@ bool EditorUVE::SaveSceneUVE() {
 std::size_t EditorUVE::SaveAllUVE() {
     std::size_t saved = 0U;
     std::vector<std::string> failed;
-    if (m_sceneDirty && (!m_activeScenePath.empty() || m_entityEditSession.has_value())) {
+    if (m_sceneDirty && (!m_activeScenePath.empty() || m_entityDocumentActive)) {
         if (SaveSceneUVE()) {
             ++saved;
         } else {
-            failed.emplace_back(m_activeScenePath.filename().string());
+            failed.emplace_back(m_entityDocumentActive ? GetEntityEditorAssetPathUVE().filename().string()
+                                                       : m_activeScenePath.filename().string());
+        }
+    }
+    // The other document (the open entity while the level is active, or the level from the entity).
+    if (m_entityEditSession.has_value() && m_otherDocument.sceneDirty) {
+        const bool otherIsEntity = !m_entityDocumentActive;
+        const bool ok = otherIsEntity ? SaveEntityEditorUVE() : [this] {
+            // Leave the entity's scope for the level's save.
+            SwapDocumentStateUVE();
+            m_entityDocumentActive = false;
+            const bool levelSaved = !m_activeScenePath.empty() && SaveSceneUVE();
+            m_entityDocumentActive = true;
+            SwapDocumentStateUVE();
+            return levelSaved;
+        }();
+        if (ok) {
+            ++saved;
+        } else {
+            failed.emplace_back(otherIsEntity ? GetEntityEditorAssetPathUVE().filename().string()
+                                              : m_activeScenePath.filename().string());
         }
     }
     if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()) {
@@ -1220,7 +1240,7 @@ Scene::EntityUVE EditorUVE::PlaceEntityAssetUVE(const std::filesystem::path& pat
     // Without this an entity saved after a nudge in its editor landed that far from where it was dropped.
     // (Rotation and scale are the entity's own and stay. Inside an Entity Editor session the offset of a nested
     // entity is the author's layout, so it is left alone there.)
-    if (!m_entityEditSession.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(root)) {
+    if (!m_entityDocumentActive && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(root)) {
         Scene::TransformComponentUVE rootTransform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(root);
         rootTransform.localPosition = Math::Vector3UVE{};
         m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, root, rootTransform);
@@ -1309,7 +1329,7 @@ bool EditorUVE::DiscardSelectedPrefabOverridesAndRefreshUVE() {
 }
 
 bool EditorUVE::LoadSceneUVE() {
-    if (m_entityEditSession.has_value() || m_retargetPreview.has_value()) {
+    if (m_entityDocumentActive || m_retargetPreview.has_value()) {
         return false;
     }
     static_cast<void>(CommitComponentPropertyPreviewUVE());
@@ -2776,7 +2796,7 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
     // New objects join the hierarchy instead of becoming document roots, and are placed before the
     // snapshot below is taken, so undo and redo restore the same place.
     Scene::EntityUVE parentObject = explicitParent;
-    if (m_entityEditSession.has_value()) {
+    if (m_entityDocumentActive) {
         const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
         if (parentObject == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parentObject) ||
             parentObject == GetDocumentSceneRootUVE()) {
@@ -3043,7 +3063,7 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     };
     const Scene::EntityUVE effectiveParent =
         newParent != Scene::kInvalidEntityUVE ? newParent
-        : m_entityEditSession.has_value()     ? GetEntityEditorRootUVE()
+        : m_entityDocumentActive     ? GetEntityEditorRootUVE()
                                               : defaultParent();
     if (effectiveParent == Scene::kInvalidEntityUVE || entity == effectiveParent ||
         DoesSubtreeContainEntityUVE(entity, effectiveParent) || !IsAllowedOutlinerParentUVE(entity, effectiveParent)) {
@@ -3745,7 +3765,7 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentUVE() {
     }
     // In the Entity Editor, new objects belong to the entity. Nothing is sealed there, so the root
     // is returned as it stands - that is the whole point of opening the entity.
-    if (m_entityEditSession.has_value()) {
+    if (m_entityDocumentActive) {
         const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
         if (entityRoot != Scene::kInvalidEntityUVE) {
             return entityRoot;
@@ -4273,7 +4293,7 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
 bool EditorUVE::IsStructuralRootUVE(const Scene::EntityUVE entity) {
     return IsSceneRootEntityUVE(entity) ||
            (entity != Scene::kInvalidEntityUVE && entity == GetDocumentViewportUVE()) ||
-           (m_entityEditSession.has_value() && entity != Scene::kInvalidEntityUVE && entity == GetEntityEditorRootUVE());
+           (m_entityDocumentActive && entity != Scene::kInvalidEntityUVE && entity == GetEntityEditorRootUVE());
 }
 
 bool EditorUVE::IsSceneRootEntityUVE(const Scene::EntityUVE entity) const {
@@ -5196,7 +5216,7 @@ bool EditorUVE::IsHierarchyEntityVisibleUVE(const Scene::EntityUVE entity) const
 }
 
 bool EditorUVE::IsSealedHierarchyRowUVE(const Scene::EntityUVE entity) const noexcept {
-    if (m_entityEditSession.has_value() || !IsDocumentEntityUVE(entity)) {
+    if (m_entityDocumentActive || !IsDocumentEntityUVE(entity)) {
         return false;
     }
     const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();

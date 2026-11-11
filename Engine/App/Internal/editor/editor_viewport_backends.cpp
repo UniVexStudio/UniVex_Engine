@@ -1059,10 +1059,12 @@ using VpCursorUVE = VpInputUVE::CursorUVE;
 
 class ViewportPanelBackendUVE final {
 public:
+    /// Draws the scene `services` hold: the level's, or a document scene's (the Entity Editor's).
     ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineCoreUVE& engine,
+                            UVE::Core::EngineServicesUVE& services,
                             const UVE::Editor::EditorUVE::ViewportContextUVE context)
-        : editor_(editor), engine_(engine), entityManager_(engine.GetServicesUVE().GetEntityManagerUVE()),
-          meshLayer_(engine.GetServicesUVE()), context_(context) {
+        : editor_(editor), engine_(engine), services_(services), entityManager_(services.GetEntityManagerUVE()),
+          meshLayer_(services), context_(context) {
         camera_.Settings().allowFullOrbit = true;
     }
 
@@ -1245,7 +1247,7 @@ public:
             const UVE::Scene::PreviewLightingFrameUVE previewFrame = UVE::Scene::ResolvePreviewLightingUVE(
                 hasAuthoredSun, hasAuthoredEnv, previewSettings);
             meshLayer_.SetPreviewLightingUVE(previewFrame);
-            engine_.GetServicesUVE().GetRenderer3DUVE().SetPreviewEnvironmentUVE(
+            services_.GetRenderer3DUVE().SetPreviewEnvironmentUVE(
                 previewFrame.environmentActive
                     ? std::optional<UVE::Scene::WorldEnvironmentFrameUVE>(previewFrame.environment)
                     : std::nullopt);
@@ -1669,7 +1671,7 @@ private:
     }
 
     void ApplyOverlayStateUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
-        engine_.GetServicesUVE().GetRenderer3DUVE().SetShadingModeUVE(overlayState.shadingMode);
+        services_.GetRenderer3DUVE().SetShadingModeUVE(overlayState.shadingMode);
         auto& settings = renderPass_->Settings();
         settings.projection = overlayState.orthographic ? univex::viewport::ProjectionMode::Orthographic
                                                         : univex::viewport::ProjectionMode::Perspective;
@@ -2650,6 +2652,12 @@ private:
     // The last focus request applied; see ViewportOverlayStateUVE::focusRequestSerial.
     std::uint32_t appliedFocusRequestSerial_ = 0U;
     UVE::Core::EngineCoreUVE& engine_;
+
+public:
+    [[nodiscard]] const UVE::Core::EngineServicesUVE* ServicesUVE() const noexcept { return &services_; }
+
+private:
+    UVE::Core::EngineServicesUVE& services_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EditorMeshLayerUVE meshLayer_;
     UVE::Editor::EditorUVE::ViewportContextUVE context_;
@@ -2776,8 +2784,8 @@ private:
         overlayState.sceneDepth.clear();
         overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
         const UVE::Render::SceneDepthExportUVE depth =
-            engine_.GetServicesUVE().GetRenderer3DUVE().GetLastSceneDepthUVE();
-        auto* const glDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&engine_.GetServicesUVE().GetRenderDeviceUVE());
+            services_.GetRenderer3DUVE().GetLastSceneDepthUVE();
+        auto* const glDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
         if (!depth.valid || glDevice == nullptr || depth.width == 0U || depth.height == 0U || !EnsureHostDepthUVE(width, height)) {
             return;
         }
@@ -2946,13 +2954,12 @@ struct EditorViewportBackendsUVE::ImplUVE final {
     static constexpr std::size_t kContextCountUVE =
         static_cast<std::size_t>(Editor::EditorUVE::ViewportContextUVE::Count);
 
-    ImplUVE(Editor::EditorUVE& editor, Core::EngineCoreUVE& engine) {
-        for (std::size_t index = 0U; index < backends.size(); ++index) {
-            backends[index].emplace(editor, engine,
-                                    static_cast<Editor::EditorUVE::ViewportContextUVE>(index));
-        }
-    }
+    ImplUVE(Editor::EditorUVE& editor, Core::EngineCoreUVE& engine) : editor(editor), engine(engine) {}
 
+    Editor::EditorUVE& editor;
+    Core::EngineCoreUVE& engine;
+    // Built on first use, for the scene of the document active when the view is drawn, and built
+    // again when that changes (the Entity Editor's view draws the entity's own scene).
     std::array<std::optional<ViewportPanelBackendUVE>, kContextCountUVE> backends;
 };
 
@@ -2962,16 +2969,30 @@ EditorViewportBackendsUVE::EditorViewportBackendsUVE(Editor::EditorUVE& editor,
 
 EditorViewportBackendsUVE::~EditorViewportBackendsUVE() = default;
 
+void EditorViewportBackendsUVE::ForgetServicesUVE(const Core::EngineServicesUVE& services) {
+    for (std::optional<ViewportPanelBackendUVE>& backend : m_impl->backends) {
+        if (backend.has_value() && backend->ServicesUVE() == &services) {
+            backend.reset();
+        }
+    }
+}
+
 std::uint64_t EditorViewportBackendsUVE::RenderUVE(
     const Editor::EditorUVE::ViewportContextUVE context,
     const Math::Vector2UVE& availableSize,
     Math::Vector2UVE& outUsedSize,
     const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
     const std::size_t index = static_cast<std::size_t>(context);
-    if (index >= m_impl->backends.size() || !m_impl->backends[index].has_value()) {
+    if (index >= m_impl->backends.size()) {
         return 0U;
     }
-    return m_impl->backends[index]->RenderUVE(availableSize, outUsedSize, overlayState);
+    std::optional<ViewportPanelBackendUVE>& backend = m_impl->backends[index];
+    Core::EngineServicesUVE& services = m_impl->editor.GetActiveServicesUVE();
+    if (!backend.has_value() || backend->ServicesUVE() != &services) {
+        backend.reset();
+        backend.emplace(m_impl->editor, m_impl->engine, services, context);
+    }
+    return backend->RenderUVE(availableSize, outUsedSize, overlayState);
 }
 
 } // namespace UVE::App
