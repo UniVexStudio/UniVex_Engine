@@ -345,11 +345,31 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildToolbarRowUVE() {
         }
     };
     row->add(classSettings, CentreUVE());
+    row->add(HSeparatorUVE());
 
+    // Simulate: the entity's scripts run on its own scene; Stop puts it back as it was.
     row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    m_playButton = ToolButtonUVE(prism::Icon::Play, "Simulate the entity (its scripts run here, the level is untouched)");
+    m_playButton->onClick = [this] {
+        m_lastTick = std::chrono::steady_clock::now();
+        static_cast<void>(m_editor.PlayEntitySimulationUVE());
+    };
+    m_pauseButton = ToolButtonUVE(prism::Icon::Pause, "Pause the simulation");
+    m_pauseButton->onClick = [this] { m_editor.PauseEntitySimulationUVE(); };
+    m_stopButton = ToolButtonUVE(prism::Icon::Stop, "Stop: the entity goes back to how it was before Simulate");
+    m_stopButton->onClick = [this] { static_cast<void>(m_editor.StopEntitySimulationUVE()); };
+    row->add(m_playButton, CentreUVE());
+    row->add(m_pauseButton, CentreUVE());
+    row->add(m_stopButton, CentreUVE());
+    row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    // A fixed width, so a long message never moves the Simulate buttons.
     m_statusLabel = prism::make<prism::Label>("", prism::FontRole::Small);
     m_statusLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    row->add(m_statusLabel, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
+    m_statusLabel->setAlign(prism::HAlign::Right);
+    auto statusBox = prism::make<prism::SizeBox>();
+    statusBox->setWidthOverride(380.0F);
+    statusBox->setContent(m_statusLabel);
+    row->add(statusBox, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
 
     auto border = prism::make<prism::Border>();
     border->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -736,6 +756,18 @@ void EditorPrismEntityEditorUVE::RefreshToolbarUVE() {
     if (m_revertButton) {
         m_revertButton->setEnabled(unsaved);
     }
+    using SimulationUVE = EditorUVE::EntitySimulationStateUVE;
+    const SimulationUVE simulation = m_editor.GetEntitySimulationStateUVE();
+    if (m_playButton) {
+        m_playButton->setChecked(simulation == SimulationUVE::Running);
+    }
+    if (m_pauseButton) {
+        m_pauseButton->setChecked(simulation == SimulationUVE::Paused);
+        m_pauseButton->setEnabled(simulation != SimulationUVE::Stopped);
+    }
+    if (m_stopButton) {
+        m_stopButton->setEnabled(simulation != SimulationUVE::Stopped);
+    }
     if (m_compileState) {
         const std::vector<EditorUVE::EntityCompileProblemUVE>& problems = m_editor.GetEntityEditorProblemsUVE();
         std::string text = "Not compiled";
@@ -769,6 +801,15 @@ void EditorPrismEntityEditorUVE::RefreshToolbarUVE() {
 void EditorPrismEntityEditorUVE::RefreshUVE() {
     if (m_window == 0 || !m_editor.IsEntityDocumentActiveUVE()) {
         return;
+    }
+    // A running simulation advances by the time since the last frame (paused, it keeps the clock).
+    const auto now = std::chrono::steady_clock::now();
+    const double dt = m_lastTick.time_since_epoch().count() == 0
+                          ? 0.0
+                          : std::chrono::duration<double>(now - m_lastTick).count();
+    m_lastTick = now;
+    if (m_editor.GetEntitySimulationStateUVE() == EditorUVE::EntitySimulationStateUVE::Running) {
+        m_editor.TickEntitySimulationUVE(dt);
     }
     m_host.AppUVE().runInWindow(m_window, [this] {
         RefreshComponentsUVE();

@@ -11,6 +11,7 @@
 
 #include "prism/Widget.h"
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -39,7 +40,7 @@ class DocumentTabUVE;
 ///
 ///   [#1 logo] [title bar: File Edit Window Tools Build Help | drag strip | - [] x]
 ///   [       ] [#2 the entity's tab                                               ]
-///   sub row 1: compile + its result, save, revert | browse, find, diff | class settings
+///   sub row 1: compile + its result, save, revert | browse, find, diff | class settings | simulate
 ///   sub row 2: the viewport settings (gizmo mode, snap, grid, projection, shading, preview)
 ///   [ Components (the entity's objects)  | viewport                     ]
 ///   [ ---------------------------------- |                              ]
@@ -100,6 +101,10 @@ private:
     std::shared_ptr<prism::Label> m_compileState;
     std::shared_ptr<prism::Label> m_statusLabel;
     std::shared_ptr<prism::Button> m_revertButton;
+    std::shared_ptr<prism::Button> m_playButton;
+    std::shared_ptr<prism::Button> m_pauseButton;
+    std::shared_ptr<prism::Button> m_stopButton;
+    std::chrono::steady_clock::time_point m_lastTick{};
     std::shared_ptr<prism::Button> m_addButton;
     std::shared_ptr<prism::TreeView> m_components;
     std::shared_ptr<prism::TextInput> m_componentsSearch;

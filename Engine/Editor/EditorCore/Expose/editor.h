@@ -433,6 +433,9 @@ class EditorPrismContentBrowserUVE;
 class EditorPrismDetailsUVE;
 class EditorPrismViewportGizmosUVE;
 
+/// The Entity Editor's running Simulate (editor_entity_window.cpp).
+struct EntitySimulationUVE;
+
 class EditorUVE final {
     friend struct Tests::EditorUVEAccessUVE;
     friend class EditorBridgeUVE;
@@ -983,6 +986,17 @@ public:
     /// What changed in the open entity since it was last saved (or opened): objects, components
     /// and properties, from its saved file to what the editor holds now. Empty when nothing did.
     [[nodiscard]] std::vector<EntityDiffRowUVE> DiffEntityEditorUVE();
+    /// Simulate: the open entity's UVScripts run on its own scene (ready once, then tick every
+    /// frame), the level untouched. Stop puts the entity back exactly as it was before Play.
+    enum class EntitySimulationStateUVE : std::uint8_t { Stopped, Running, Paused };
+    /// Starts (or resumes) the simulation; false when no entity is open or it cannot be captured.
+    bool PlayEntitySimulationUVE();
+    void PauseEntitySimulationUVE();
+    /// Stops it and restores the entity from the snapshot Play took.
+    bool StopEntitySimulationUVE();
+    [[nodiscard]] EntitySimulationStateUVE GetEntitySimulationStateUVE() const noexcept;
+    /// Advances a running simulation by `deltaSeconds` (the Entity Editor calls it each frame).
+    void TickEntitySimulationUVE(double deltaSeconds);
     /// One place the open entity mentions a searched text: an object's name or type, a component,
     /// or a property name or value of one of its components (a script path, a material, ...).
     struct EntityFindRowUVE final {
@@ -1658,6 +1672,8 @@ private:
         bool savedOnce = false;
         /// The window's X was pressed with unsaved changes: ask before closing.
         bool confirmClose = false;
+        /// The running Simulate (scripts and the snapshot to go back to); null while stopped.
+        std::shared_ptr<EntitySimulationUVE> simulation;
         EntityEditorTabUVE tab = EntityEditorTabUVE::Viewport;
         std::vector<EntityCompileProblemUVE> problems;
         bool compiled = false;
