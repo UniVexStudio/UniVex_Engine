@@ -87,7 +87,7 @@ constexpr std::array<ContentCatalogueEntityClassUVE, 6> kEntityClasses{{
      "to come back. Its transform is the whole object, so there is nothing to add to it."},
 }};
 
-constexpr std::array<ContentCatalogueItemUVE, 40> kItems{{
+constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
     {"folder", "Folder", "CREATE BASIC ASSET", "A new folder here in Content", Action::Folder, {}, Scene::ViewportDimensionUVE::ThreeD, "Folder"},
     {"basic_script", "New Script", "CREATE BASIC ASSET", "A new UVScript file (.uvs) ready to edit", Action::ScriptAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Script"},
     {"viewport_3d", "Viewport 3D", "CREATE BASIC ASSET",
@@ -150,6 +150,9 @@ constexpr std::array<ContentCatalogueItemUVE, 40> kItems{{
      Action::EntityAsset, kAnimationGraph, Scene::ViewportDimensionUVE::ThreeD, "AnimationGraph"},
     {"animation-library", "Animation Library", "Animation", "A named collection of animation clips that sequencers load from",
      Action::LibraryAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Animation Library"},
+    {"animation-montage", "Animation Montage", "Animation",
+     "An attack, a reload, an emote: clips in sections with notifies, played from a character's script",
+     Action::MontageAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "AM_Attack"},
 
     {"audio", "Audio Source 3D", "Audio, VFX & UI", "An AudioSource3D that plays a clip in 3D", Action::EntityAsset,
      kAudio, Scene::ViewportDimensionUVE::ThreeD, "AudioSource"},
@@ -252,6 +255,9 @@ Scene::Objects::SceneObjectKindUVE GetContentCatalogueIconKindUVE(const ContentC
     }
     if (item.action == ContentCatalogueActionUVE::ScriptAsset) {
         return Kind::Script;
+    }
+    if (item.action == ContentCatalogueActionUVE::MontageAsset || item.action == ContentCatalogueActionUVE::LibraryAsset) {
+        return Kind::AnimationSequencer;
     }
     if (item.objects.empty()) {
         return Kind::Folder;
