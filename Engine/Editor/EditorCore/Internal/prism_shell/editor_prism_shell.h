@@ -4,8 +4,10 @@
 #include "editor_prism_content_browser.h"
 #include "editor_prism_details.h"
 #include "editor_prism_dock_panels.h"
+#include "editor_prism_entity_editor.h"
 #include "editor_prism_host.h"
 #include "editor_prism_icons.h"
+#include "editor_prism_view_toolbar.h"
 #include "editor_prism_viewport_gizmos.h"
 
 #include "entity.h"
@@ -68,6 +70,8 @@ public:
     void FrameUVE();
 
     bool SaveScreenshotUVE(const std::filesystem::path& path) { return m_host.SaveScreenshotUVE(path); }
+    /// Saves the Entity Editor window's frame (false while no entity is open).
+    bool SaveEntityEditorScreenshotUVE(const std::filesystem::path& path);
     void SetForeignInputUVE(std::function<bool()> wantsMouse, std::function<bool()> wantsKeyboard) {
         m_host.SetForeignInputUVE(std::move(wantsMouse), std::move(wantsKeyboard));
     }
@@ -83,7 +87,6 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildDetailsUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildDockUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildDockBarUVE();
-    [[nodiscard]] prism::Ref<prism::Widget> BuildSubRow2UVE();
     void ShowDockPanelUVE(int index, bool forceVisible);
     /// Shows a side column only while it holds a panel (a panel can be docked elsewhere) and the
     /// Window menu has not hidden it.
@@ -100,7 +103,6 @@ public:
 private:
 
     void ShowAddMenuUVE();
-    void ShowPreviewSettingsUVE(prism::Rect anchor);
     void ShowAddFilterMenuUVE();
     void RefreshOutlinerUVE();
     void RefreshDetailsUVE();
@@ -114,10 +116,13 @@ private:
     // Outlives the host's widget tree (declared first, destroyed last): the TabViews it wires call back into it.
     std::unique_ptr<prism::DockSpace> m_dockSpace;
     EditorPrismHostUVE m_host;
+    // The Entity Editor's window (opened while an entity is open); shares the host.
+    EditorPrismEntityEditorUVE m_entityEditor;
     EditorPrismContentBrowserUVE m_contentBrowser;
     EditorPrismDetailsUVE m_details2;
     EditorPrismDockPanelsUVE m_dockPanels;
     EditorPrismIconsUVE m_icons;
+    EditorPrismViewToolbarUVE m_viewToolbar;
 
     // Widgets the frame updates.
     std::shared_ptr<prism::TreeView> m_outliner;
@@ -126,17 +131,10 @@ private:
     std::shared_ptr<prism::Button> m_filterButton;
     std::shared_ptr<prism::EngineView> m_viewport;
     std::shared_ptr<EditorPrismViewportGizmosUVE> m_gizmos;
-    std::shared_ptr<prism::Segmented> m_gizmoModes;
     std::shared_ptr<prism::ComboBox> m_selectionMode;
     std::shared_ptr<prism::Button> m_playButton;
     std::shared_ptr<prism::Button> m_pauseButton;
     std::shared_ptr<prism::Button> m_stopButton;
-    std::shared_ptr<prism::Button> m_snapButton;
-    std::shared_ptr<prism::Button> m_gridButton;
-    std::shared_ptr<prism::Button> m_projectionButton;
-    std::shared_ptr<prism::Button> m_shadingButton;
-    std::shared_ptr<prism::Button> m_sunButton;
-    std::shared_ptr<prism::Button> m_skyButton;
     std::shared_ptr<prism::PropertyGrid> m_details;
     std::shared_ptr<prism::TextInput> m_detailsSearch;
     std::shared_ptr<prism::Label> m_detailsTitle;

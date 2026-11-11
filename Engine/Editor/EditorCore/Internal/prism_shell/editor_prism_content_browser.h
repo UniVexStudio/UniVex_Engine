@@ -53,6 +53,9 @@ public:
     /// Re-reads the project snapshot and editor state; rebuilds only what changed.
     void RefreshUVE();
 
+    /// Goes to the folder of `absolutePath` (a file under the content root) and picks it there.
+    void RevealFileUVE(const std::filesystem::path& absolutePath);
+
     /// Drag payload tag for a content item (the payload is its content-relative path).
     static constexpr const char* kDragTagUVE = "uve.content";
 

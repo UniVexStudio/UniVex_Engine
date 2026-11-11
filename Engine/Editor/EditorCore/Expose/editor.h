@@ -440,6 +440,8 @@ class EditorUVE final {
     friend class EditorPrismDetailsUVE;
     friend class EditorPrismViewportGizmosUVE;
     friend class EditorPrismDockPanelsUVE;
+    friend class EditorPrismViewToolbarUVE;
+    friend class EditorPrismEntityEditorUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -1696,8 +1698,6 @@ private:
     [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorObjectsUVE();
     /// Instantiates the entity asset as the document's only content (below the scene root).
     [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
-    /// The Entity Editor's own window, and what the main window shows meanwhile.
-    void DrawEntityEditorWindowUVE();
     void DrawRetargetWindowUVE();
     void DrawAnimationLibraryWindowUVE();
     /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).
@@ -1713,14 +1713,6 @@ private:
     std::size_t RefreshSkeletonsForRetargetedModelUVE(const std::filesystem::path& modelFile);
     /// The character file behind a Retarget target: the `.uvmodel` itself, or a model source's imported model.
     [[nodiscard]] std::filesystem::path ResolveRetargetModelFileUVE(const std::filesystem::path& target) const;
-    void DrawEntityEditorPlaceholderUVE();
-    /// The Entity Editor's middle: the Viewport / Scripting / Events tabs and Compile's problems.
-    void DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session);
-    void DrawEntityEditorScriptingTabUVE();
-    void DrawEntityEditorDockUVE(EntityEditSessionUVE& session);
-    void DrawEntityEditorSignalsTabUVE();
-    /// "Not compiled", "Compiled" or "3 problems", in the toolbar.
-    static void DrawEntityCompileBadgeUVE(const EntityEditSessionUVE& session);
 
     struct EntityEditorMeshCacheEntryUVE final {
         std::filesystem::path resolvedPath;
@@ -2704,33 +2696,6 @@ private:
     std::deque<HistoryEntryUVE> m_undoHistory;
     std::deque<HistoryEntryUVE> m_redoHistory;
 
-    /// What belongs to one document rather than to the editor: its scene (through its services),
-    /// selection, undo, dirty state and the scene tree's per-document state. The editor's members
-    /// hold the active document's; this holds the other one's until the next swap.
-    struct DocumentStateUVE final {
-        Core::EngineServicesUVE* services = nullptr;
-        std::vector<Scene::EntityUVE> selectedEntities;
-        Scene::EntityUVE selectedEntity = Scene::kInvalidEntityUVE;
-        std::deque<HistoryEntryUVE> undoHistory;
-        std::deque<HistoryEntryUVE> redoHistory;
-        bool sceneDirty = false;
-        std::unordered_set<Scene::EntityUVE> lockedFolders;
-        Scene::EntityUVE lastUsedFolder = Scene::kInvalidEntityUVE;
-        Scene::EntityUVE pendingComponentChangeEntity = Scene::kInvalidEntityUVE;
-        std::unordered_map<Scene::EntityUVE, bool> hierarchyPendingRowOpen;
-        Scene::EntityUVE previewCamera = Scene::kInvalidEntityUVE;
-    };
-    /// Exchanges the active document's state with m_otherDocument's.
-    void SwapDocumentStateUVE();
-    /// Ends the Entity Editor session (the scene is destroyed); the level is the document again.
-    void FinishEntityEditorCloseUVE();
-    DocumentSceneFactoryUVE m_documentSceneFactory;
-    DocumentSceneClosingUVE m_documentSceneClosing;
-    std::unique_ptr<Core::DocumentSceneUVE> m_entityScene;
-    DocumentStateUVE m_otherDocument;
-    bool m_entityDocumentActive = false;
-    /// Close was asked from inside the entity's own scope: finished when that scope ends.
-    std::optional<bool> m_entityClosePending;
     EditorWorkspaceUVE m_activeWorkspace = EditorWorkspaceUVE::Library;
     /// Transient Plugin window/tool gates. These are editor-session state only and never become ECS
     /// components, serialized scene data, or runtime/plugin activation side effects.
@@ -3216,6 +3181,35 @@ private:
         bool dirtyBefore = false;
     };
     std::optional<ComponentPropertyPreviewUVE> m_componentPropertyPreview;
+
+    /// What belongs to one document rather than to the editor: its scene (through its services),
+    /// selection, undo, dirty state and the scene tree's per-document state. The editor's members
+    /// hold the active document's; this holds the other one's until the next swap.
+    struct DocumentStateUVE final {
+        Core::EngineServicesUVE* services = nullptr;
+        std::vector<Scene::EntityUVE> selectedEntities;
+        Scene::EntityUVE selectedEntity = Scene::kInvalidEntityUVE;
+        std::deque<HistoryEntryUVE> undoHistory;
+        std::deque<HistoryEntryUVE> redoHistory;
+        bool sceneDirty = false;
+        std::unordered_set<Scene::EntityUVE> lockedFolders;
+        Scene::EntityUVE lastUsedFolder = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE pendingComponentChangeEntity = Scene::kInvalidEntityUVE;
+        std::unordered_map<Scene::EntityUVE, bool> hierarchyPendingRowOpen;
+        Scene::EntityUVE previewCamera = Scene::kInvalidEntityUVE;
+        std::optional<ComponentPropertyPreviewUVE> componentPropertyPreview;
+    };
+    /// Exchanges the active document's state with m_otherDocument's.
+    void SwapDocumentStateUVE();
+    /// Ends the Entity Editor session (the scene is destroyed); the level is the document again.
+    void FinishEntityEditorCloseUVE();
+    DocumentSceneFactoryUVE m_documentSceneFactory;
+    DocumentSceneClosingUVE m_documentSceneClosing;
+    std::unique_ptr<Core::DocumentSceneUVE> m_entityScene;
+    DocumentStateUVE m_otherDocument;
+    bool m_entityDocumentActive = false;
+    /// Close was asked from inside the entity's own scope: finished when that scope ends.
+    std::optional<bool> m_entityClosePending;
     std::optional<std::pair<std::string, std::string>> m_pendingAnimationParameterRename;
     std::string m_objectPickerFilter;
     std::string m_objectPickerScrolledFilter;

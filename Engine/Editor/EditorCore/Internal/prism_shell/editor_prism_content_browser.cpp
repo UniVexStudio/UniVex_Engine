@@ -691,6 +691,15 @@ void EditorPrismContentBrowserUVE::RevealUVE(const std::filesystem::path& relati
     }
 }
 
+void EditorPrismContentBrowserUVE::RevealFileUVE(const std::filesystem::path& absolutePath) {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::error_code error;
+    const std::filesystem::path relative = std::filesystem::relative(absolutePath, snapshot.contentRoot, error);
+    if (!error && !relative.empty()) {
+        RevealUVE(relative);
+    }
+}
+
 std::string EditorPrismContentBrowserUVE::DisplayNameUVE(const Asset::ProjectFileEntryUVE& entry) const {
     return entry.relativePath.filename().string();
 }
@@ -1460,17 +1469,18 @@ void EditorPrismContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex,
         add(prism::MenuItem::Item("Open", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::FolderOpen));
     }
     if (!directory && IsEntityAssetUVE(entry.relativePath)) {
+        // Opens the entity in the Entity Editor's own window; the level stays open beside it.
+        add(prism::MenuItem::Item("Open Entity", [this, absolute, name] {
+            if (!m_editor.OpenEntityEditorUVE(absolute)) {
+                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Entity Editor.";
+            }
+        }, "", prism::Icon::Open), allowed);
         add(prism::MenuItem::Item("Place in Scene", [this, absolute, name] {
             if (m_editor.PlaceEntityAssetUVE(absolute) == Scene::kInvalidEntityUVE) {
                 m_editor.m_contentStatusMessage = "Could not place " + name + ".";
             }
         }, "", prism::Icon::Plus), allowed);
         if (extension == ".uventity") {
-            add(prism::MenuItem::Item("Open Tree", [this, absolute, name] {
-                if (!m_editor.OpenEntityEditorUVE(absolute)) {
-                    m_editor.m_contentStatusMessage = "Could not open " + name + " in the Entity Editor.";
-                }
-            }), allowed);
             const bool isDefault = m_editor.GetDefaultPlayerEntityUVE() == entry.relativePath.generic_string();
             add(prism::MenuItem::Check("Default Player", isDefault, [this, isDefault, rel = entry.relativePath] {
                 if (!m_editor.SetDefaultPlayerEntityUVE(isDefault ? std::filesystem::path{} : rel)) {
