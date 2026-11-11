@@ -237,11 +237,15 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildTitleBarUVE() {
     });
     menus->addMenu("Tools", [this] {
         std::vector<prism::MenuItem> items;
-        items.push_back(prism::MenuItem::Item("Find in Components", [this] {
-            if (m_componentsSearch) {
-                prism::Application::get().setFocus(m_componentsSearch.get());
+        items.push_back(prism::MenuItem::Item("Find in Entity", [this] {
+            if (m_findInput) {
+                prism::Application::get().setFocus(m_findInput.get());
             }
         }, "", prism::Icon::Search));
+        items.push_back(prism::MenuItem::Item("Diff Against Saved", [this] { RunDiffUVE(); }, "", prism::Icon::Copy));
+        items.push_back(prism::MenuItem::Item("Class Settings", [this] {
+            ShowClassSettingsUVE(prism::Rect{360.0F, 64.0F, 0.0F, 0.0F});
+        }, "", prism::Icon::Settings));
         return items;
     });
     menus->addMenu("Build", [command] { return std::vector<prism::MenuItem>{command("entity.compile")}; });
@@ -317,6 +321,30 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildToolbarRowUVE() {
         }
     };
     row->add(browse, CentreUVE());
+
+    // Find: every place the text occurs in the entity, listed under the view (Enter).
+    m_findInput = prism::make<prism::TextInput>("", "Find in entity");
+    m_findInput->setTooltip("Object names and types, components, property names and values (Enter lists them)");
+    m_findInput->onCommit = [this](const std::string& text) { RunFindUVE(text); };
+    auto findBox = prism::make<prism::SizeBox>();
+    findBox->setWidthOverride(220.0F);
+    findBox->setContent(m_findInput);
+    row->add(findBox, CentreUVE());
+    auto diff = prism::make<prism::Button>("Diff", prism::Icon::Copy, prism::ButtonStyle::Toolbar);
+    diff->setTooltip("What changed since the entity was last saved");
+    diff->onClick = [this] { RunDiffUVE(); };
+    row->add(diff, CentreUVE());
+    row->add(HSeparatorUVE());
+
+    auto classSettings = prism::make<prism::Button>("Class Settings", prism::Icon::Settings, prism::ButtonStyle::Toolbar);
+    classSettings->setTooltip("The entity's own settings");
+    std::weak_ptr<prism::Button> weakSettings = classSettings;
+    classSettings->onClick = [this, weakSettings] {
+        if (auto anchor = weakSettings.lock()) {
+            ShowClassSettingsUVE(anchor->rect());
+        }
+    };
+    row->add(classSettings, CentreUVE());
 
     row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     m_statusLabel = prism::make<prism::Label>("", prism::FontRole::Small);
@@ -430,11 +458,64 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildCentreUVE() {
             m_editor.SelectEntityUVE(entity);
         }
     };
-    auto results = prism::make<prism::TabView>();
-    results->addTab("Compile Results", prism::Icon::Warning, PanelUVE(m_problems));
+    // Find's results: object, where, what matched; picking one selects its object.
+    m_findTable = prism::make<prism::TableView>();
+    m_findTable->addColumn(prism::TableColumn{"object", "Object", 160.0F});
+    m_findTable->addColumn(prism::TableColumn{"where", "Where", 220.0F});
+    m_findTable->addColumn(prism::TableColumn{"text", "Found", 360.0F});
+    m_findTable->cellText = [this](const int row, const int col) -> std::string {
+        if (row < 0 || static_cast<std::size_t>(row) >= m_findRows.size()) {
+            return {};
+        }
+        const EditorUVE::EntityFindRowUVE& r = m_findRows[static_cast<std::size_t>(row)];
+        return col == 0 ? r.object : col == 1 ? r.where : r.text;
+    };
+    m_findTable->onSelect = [this](const std::vector<int>& rows) {
+        if (!rows.empty() && rows.front() >= 0 && static_cast<std::size_t>(rows.front()) < m_findRows.size()) {
+            const Scene::EntityUVE entity = m_findRows[static_cast<std::size_t>(rows.front())].entity;
+            if (m_editor.m_services->GetEntityManagerUVE().IsAliveUVE(entity)) {
+                m_editor.SelectEntityUVE(entity);
+            }
+        }
+    };
+
+    // Diff: what changed since the last save, object by object.
+    m_diffTable = prism::make<prism::TableView>();
+    m_diffTable->addColumn(prism::TableColumn{"change", "Change", 90.0F});
+    m_diffTable->addColumn(prism::TableColumn{"object", "Object", 180.0F});
+    m_diffTable->addColumn(prism::TableColumn{"what", "Component / Property", 220.0F});
+    m_diffTable->addColumn(prism::TableColumn{"before", "Saved", 160.0F});
+    m_diffTable->addColumn(prism::TableColumn{"after", "Now", 160.0F});
+    m_diffTable->cellText = [this](const int row, const int col) -> std::string {
+        if (row < 0 || static_cast<std::size_t>(row) >= m_diffRows.size()) {
+            return {};
+        }
+        const EntityDiffRowUVE& r = m_diffRows[static_cast<std::size_t>(row)];
+        switch (col) {
+            case 0: return r.kind == EntityDiffRowUVE::KindUVE::Added   ? "Added"
+                           : r.kind == EntityDiffRowUVE::KindUVE::Removed ? "Removed"
+                                                                          : "Changed";
+            case 1: return r.object;
+            case 2: return r.what.empty() ? std::string("(object)") : r.what;
+            case 3: return r.before;
+            default: return r.after;
+        }
+    };
+
+    m_results = prism::make<prism::TabView>();
+    m_results->addTab("Compile Results", prism::Icon::Warning, PanelUVE(m_problems));
+    m_results->addTab("Find Results", prism::Icon::Search, PanelUVE(m_findTable));
+    m_results->addTab("Diff", prism::Icon::Copy, PanelUVE(m_diffTable));
+    auto hide = ToolButtonUVE(prism::Icon::Close, "Hide the results");
+    hide->onClick = [this] {
+        if (m_problemsPanel) {
+            m_problemsPanel->setVisible(false);
+        }
+    };
+    m_results->setStripExtras(hide);
     auto resultsBox = prism::make<prism::SizeBox>();
-    resultsBox->setHeightOverride(170.0F);
-    resultsBox->setContent(results);
+    resultsBox->setHeightOverride(190.0F);
+    resultsBox->setContent(m_results);
     m_problemsPanel = resultsBox;
     m_problemsPanel->setVisible(false);
 
@@ -459,11 +540,97 @@ void EditorPrismEntityEditorUVE::ShowAddMenuUVE() {
 }
 
 void EditorPrismEntityEditorUVE::CompileUVE() {
-    const std::size_t problems = m_editor.CompileEntityEditorUVE();
+    static_cast<void>(m_editor.CompileEntityEditorUVE());
     m_problemsShown = ~std::size_t{0};
-    if (problems == 0U && m_problemsPanel) {
-        m_problemsPanel->setVisible(false);
+}
+
+void EditorPrismEntityEditorUVE::ShowResultsUVE(const int tab) {
+    if (m_results) {
+        m_results->setCurrent(tab);
     }
+    if (m_problemsPanel) {
+        m_problemsPanel->setVisible(true);
+    }
+}
+
+void EditorPrismEntityEditorUVE::RunFindUVE(const std::string& query) {
+    m_findRows = m_editor.FindInEntityEditorUVE(query);
+    if (m_findTable) {
+        m_findTable->setRowCount(static_cast<int>(m_findRows.size()));
+    }
+    m_editor.m_contentStatusMessage = query.empty()        ? std::string()
+                                      : m_findRows.empty() ? "\"" + query + "\" is not in the entity."
+                                                           : std::to_string(m_findRows.size()) + " found for \"" + query + "\".";
+    if (!query.empty()) {
+        ShowResultsUVE(1);
+    }
+}
+
+void EditorPrismEntityEditorUVE::RunDiffUVE() {
+    m_diffRows = m_editor.DiffEntityEditorUVE();
+    if (m_diffTable) {
+        m_diffTable->setRowCount(static_cast<int>(m_diffRows.size()));
+    }
+    m_editor.m_contentStatusMessage = m_diffRows.empty() ? "No changes since " + m_openPath.filename().string() + " was saved."
+                                                         : std::to_string(m_diffRows.size()) +
+                                                               (m_diffRows.size() == 1U ? " change" : " changes") +
+                                                               " since the last save.";
+    ShowResultsUVE(2);
+}
+
+void EditorPrismEntityEditorUVE::ShowClassSettingsUVE(const prism::Rect anchor) {
+    // The entity's own settings: what it is, where it lives, its root, and the project roles it can take.
+    const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+    if (root != Scene::kInvalidEntityUVE) {
+        m_editor.SelectEntityUVE(root);   // the root's components follow in Details
+    }
+    auto grid = prism::make<prism::PropertyGrid>();
+    const int entity = grid->addCategory("Entity", true);
+    const auto text = [](const std::string& value) {
+        auto label = prism::make<prism::Label>(value);
+        label->setColor(prism::ThemeColor(&prism::Theme::textBright));
+        return label;
+    };
+    grid->addRow(entity, "File", text(m_openPath.filename().string()));
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::error_code error;
+    const std::filesystem::path relative = std::filesystem::relative(m_openPath, snapshot.contentRoot, error);
+    grid->addRow(entity, "Folder", text(error ? m_openPath.parent_path().string()
+                                       : relative.parent_path().empty() ? std::string("Content")
+                                                                        : "Content/" + relative.parent_path().generic_string()));
+    grid->addRow(entity, "Root", text(root != Scene::kInvalidEntityUVE ? m_editor.GetEntityDisplayLabelUVE(root) : "(none)"));
+    grid->addRow(entity, "Root Type",
+                 text(root != Scene::kInvalidEntityUVE ? std::string(m_editor.GetObjectTypeNameUVE(root)) : "-"));
+    grid->addRow(entity, "Objects", text(std::to_string(m_editor.CollectEntityEditorObjectsUVE().size())));
+
+    const int project = grid->addCategory("Project", true);
+    if (!error && m_openPath.extension() == ".uventity") {
+        const bool isDefault = m_editor.GetDefaultPlayerEntityUVE() == relative.generic_string();
+        auto player = prism::make<prism::CheckBox>("", isDefault);
+        player->setTooltip("Play spawns this entity as the player");
+        player->onChange = [this, relative](const bool on) {
+            if (!m_editor.SetDefaultPlayerEntityUVE(on ? relative : std::filesystem::path{})) {
+                m_editor.m_contentStatusMessage = "Could not change the default player.";
+            }
+        };
+        grid->addRow(project, "Default Player", player);
+    }
+    grid->addRow(project, "Compiled", text(!m_editor.HasEntityEditorCompiledUVE()             ? "Not yet"
+                                           : m_editor.GetEntityEditorProblemsUVE().empty() ? "Yes, no problems"
+                                                                                            : std::to_string(m_editor.GetEntityEditorProblemsUVE().size()) + " problems"));
+
+    auto size = prism::make<prism::SizeBox>();
+    size->setWidthOverride(360.0F);
+    size->setHeightOverride(260.0F);
+    size->setContent(grid);
+    auto panel = prism::make<prism::Border>();
+    panel->setBackground(prism::ThemeColor(&prism::Theme::panel));
+    panel->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
+    panel->setChild(size);
+    prism::PopupOptions options{};
+    options.placement = prism::PopupPlacement::Below;
+    options.anchor = anchor;
+    prism::Application::get().showPopup(panel, options);
 }
 
 // --------------------------------------------------------------------------------------- refresh
@@ -544,10 +711,14 @@ void EditorPrismEntityEditorUVE::RefreshProblemsUVE() {
     if (problems.size() == m_problemsShown && compiled == m_problemsCompiled) {
         return;
     }
+    const bool newlyCompiled = compiled && (problems.size() != m_problemsShown || !m_problemsCompiled);
     m_problemsShown = problems.size();
     m_problemsCompiled = compiled;
     m_problems->setRowCount(static_cast<int>(problems.size()));
-    m_problemsPanel->setVisible(!problems.empty());
+    // A Compile with problems opens them; a clean one leaves the area as it was.
+    if (newlyCompiled && !problems.empty()) {
+        ShowResultsUVE(0);
+    }
 }
 
 void EditorPrismEntityEditorUVE::RefreshToolbarUVE() {

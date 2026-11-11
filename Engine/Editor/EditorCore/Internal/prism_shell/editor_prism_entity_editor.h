@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 
+#include "editor.h"
 #include "editor_prism_details.h"
 #include "editor_prism_icons.h"
 #include "editor_prism_view_toolbar.h"
@@ -21,6 +22,7 @@ namespace prism {
 class Button;
 class EngineView;
 class Label;
+class TabView;
 class TableView;
 class TextInput;
 class TreeView;
@@ -73,6 +75,11 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildComponentsUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildCentreUVE();
     void ShowAddMenuUVE();
+    void ShowClassSettingsUVE(prism::Rect anchor);
+    void RunFindUVE(const std::string& query);
+    void RunDiffUVE();
+    /// Shows the results area under the view on `tab` (0 Compile Results, 1 Find Results, 2 Diff).
+    void ShowResultsUVE(int tab);
     void RequestCloseUVE();
     void CompileUVE();
     void RefreshComponentsUVE();
@@ -99,7 +106,13 @@ private:
     std::shared_ptr<prism::EngineView> m_viewport;
     std::shared_ptr<EditorPrismViewportGizmosUVE> m_gizmos;
     std::shared_ptr<prism::Widget> m_problemsPanel;
+    std::shared_ptr<prism::TabView> m_results;
     std::shared_ptr<prism::TableView> m_problems;
+    std::shared_ptr<prism::TableView> m_findTable;
+    std::shared_ptr<prism::TableView> m_diffTable;
+    std::shared_ptr<prism::TextInput> m_findInput;
+    std::vector<EditorUVE::EntityFindRowUVE> m_findRows;
+    std::vector<EntityDiffRowUVE> m_diffRows;
     std::shared_ptr<prism::Widget> m_componentsPanel;
     std::shared_ptr<prism::Widget> m_detailsPanel;
 
