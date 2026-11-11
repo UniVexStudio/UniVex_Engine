@@ -20,6 +20,8 @@
 #include "i_entity_manager.h"
 #include "gameplay_attributes.h"
 #include "gameplay_tags.h"
+#include "hierarchy_component.h"
+#include "montage_player_component.h"
 #include "i_input_system.h"
 #include "logging_macros.h"
 #include "network_lobby.h"
@@ -49,6 +51,23 @@ using UVScript::Vec3ValueUVE;
     const std::uint64_t packed = ref.id - 1U;
     return Scene::EntityUVE{static_cast<std::uint32_t>(packed),
                             static_cast<std::uint32_t>(packed >> 32U)};
+}
+
+/// The MontagePlayer a script drives: the object's own, else one directly under it (a character's).
+[[nodiscard]] Scene::MontagePlayerComponentUVE* FindMontagePlayerUVE(Scene::IEntityManagerUVE& entities,
+                                                                   const Scene::EntityUVE entity) {
+    if (entities.HasComponentUVE<Scene::MontagePlayerComponentUVE>(entity)) {
+        return &entities.GetComponentUVE<Scene::MontagePlayerComponentUVE>(entity);
+    }
+    Scene::MontagePlayerComponentUVE* found = nullptr;
+    entities.ForEachUVE<Scene::MontagePlayerComponentUVE>(
+        [&](const Scene::EntityUVE candidate, Scene::MontagePlayerComponentUVE& player) {
+            if (found == nullptr && entities.HasComponentUVE<Scene::HierarchyComponentUVE>(candidate) &&
+                entities.GetComponentUVE<Scene::HierarchyComponentUVE>(candidate).parent == entity) {
+                found = &player;
+            }
+        });
+    return found;
 }
 
 void SetVisibleUVE(Scene::IEntityManagerUVE& entities, const Scene::EntityUVE entity, const bool shown) {
@@ -218,6 +237,25 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
     if (name == "input.pressed" || name == "input.held" || name == "input.released") {
         return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
     }
+    // Montages: the object's MontagePlayer, or the one under it. Plays by the montage file's name.
+    if (name.starts_with("montage.") &&
+        FindMontagePlayerUVE(const_cast<Scene::IEntityManagerUVE&>(m_entityManager), m_entity) != nullptr) {
+        if (name == "montage.play" || name == "montage.jump_to") {
+            return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "montage.play_section") {
+            return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "montage.stop" || name == "montage.is_playing") {
+            return HostFunctionUVE{{}, TypeUVE::BoolUVE()};
+        }
+        if (name == "montage.section") {
+            return HostFunctionUVE{{}, TypeUVE::StrUVE()};
+        }
+        if (name == "montage.curve") {
+            return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::FloatUVE()};
+        }
+    }
     // Ungated: any script may look another object up. The kind is only known when the script runs,
     // so every lookup answers the common root; a missing name answers no object (id 0).
     if (name == "node") {
@@ -351,6 +389,11 @@ std::optional<std::vector<TypeUVE>> UVScriptObjectHostUVE::DescribeEventUVE(cons
     // An AnimationSequencer's clip passed one of its events: sent to the player's own script and to
     // the script of the object it animates (a character's script hears its footsteps).
     if (event == "animation_event") {
+        return std::vector<TypeUVE>{TypeUVE::StrUVE()};
+    }
+    // A montage passed a notify, entered or left a notify state, or ended (its name).
+    if (event == "montage_notify" || event == "montage_notify_begin" || event == "montage_notify_end" ||
+        event == "montage_ended") {
         return std::vector<TypeUVE>{TypeUVE::StrUVE()};
     }
     // Contact edges: both parties' scripts hear, each with the other object's name ("" when the
@@ -514,6 +557,47 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
             name == "attributes.damage" ? Scene::DamageGameplayAttributeUVE(*found, amount)
                                         : Scene::HealGameplayAttributeUVE(*found, amount);
         return result.applied;
+    }
+    if (name.starts_with("montage.")) {
+        Scene::MontagePlayerComponentUVE* const player = FindMontagePlayerUVE(m_entityManager, m_entity);
+        if (player == nullptr) {
+            return name == "montage.section" ? ValueUVE{std::string{}} : name == "montage.curve" ? ValueUVE{0.0} : ValueUVE{false};
+        }
+        // Carried out by the engine's next animation pass, where the montage files are.
+        if (name == "montage.play" || name == "montage.play_section") {
+            player->request = Scene::MontageRequestUVE::Play;
+            player->requestMontage = std::get<std::string>(args[0]);
+            player->requestSection = name == "montage.play_section" ? std::get<std::string>(args[1]) : std::string{};
+            return ValueUVE{true};
+        }
+        if (name == "montage.jump_to") {
+            if (!player->IsPlayingUVE()) {
+                return ValueUVE{false};
+            }
+            player->request = Scene::MontageRequestUVE::JumpTo;
+            player->requestSection = std::get<std::string>(args[0]);
+            return ValueUVE{true};
+        }
+        if (name == "montage.stop") {
+            const bool playing = player->IsPlayingUVE();
+            player->request = Scene::MontageRequestUVE::Stop;
+            return ValueUVE{playing};
+        }
+        if (name == "montage.is_playing") {
+            return ValueUVE{player->IsPlayingUVE() || player->request == Scene::MontageRequestUVE::Play};
+        }
+        if (name == "montage.section") {
+            return ValueUVE{player->playback.section};
+        }
+        if (name == "montage.curve") {
+            const std::string& curve = std::get<std::string>(args[0]);
+            for (const auto& [curveName, value] : player->curveValues) {
+                if (curveName == curve) {
+                    return ValueUVE{static_cast<double>(value)};
+                }
+            }
+            return ValueUVE{0.0};
+        }
     }
     if (name == "tags.has" || name == "tags.add" || name == "tags.remove") {
         if (!m_entityManager.HasComponentUVE<Scene::GameplayTagComponentUVE>(m_entity)) {

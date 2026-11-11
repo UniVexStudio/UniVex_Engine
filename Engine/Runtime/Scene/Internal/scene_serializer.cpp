@@ -45,6 +45,7 @@
 #include "animation_driver_component.h"
 #include "animation_sequencer_component.h"
 #include "animation_graph_component.h"
+#include "montage_player_component.h"
 #include "area_component.h"
 #include "audio_source_component.h"
 #include "bone_modifier_component.h"
@@ -235,6 +236,18 @@ namespace {
                               {"regenPerSecond", attribute.regenPerSecond}});
     }
     return {{"attributes", std::move(attributes)}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const MontagePlayerComponentUVE& component) {
+    nlohmann::json montages = nlohmann::json::array();
+    for (std::size_t i = 0U; i < 8U; ++i) {
+        montages.push_back(component.MontageAtUVE(i).value);
+    }
+    return {{"montages", std::move(montages)}};
+}
+
+[[nodiscard]] bool IsMontagePlayerComponentValidUVE(const MontagePlayerComponentUVE&) noexcept {
+    return true;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const GameplayTagComponentUVE& component) {
@@ -2380,6 +2393,21 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                           }
                           return attributes;
                       }, IsGameplayAttributesComponentValidUVE));
+        table.emplace("MontagePlayerComponentUVE",
+                      MakeRegistrationUVE<MontagePlayerComponentUVE>([](const nlohmann::json& json) {
+                          MontagePlayerComponentUVE slot;
+                          Asset::AssetGuidUVE* const fields[] = {&slot.montage1, &slot.montage2, &slot.montage3,
+                                                                 &slot.montage4, &slot.montage5, &slot.montage6,
+                                                                 &slot.montage7, &slot.montage8};
+                          if (const auto list = json.find("montages"); list != json.end() && list->is_array()) {
+                              for (std::size_t i = 0U; i < list->size() && i < 8U; ++i) {
+                                  if ((*list)[i].is_number_unsigned()) {
+                                      fields[i]->value = (*list)[i].get<std::uint64_t>();
+                                  }
+                              }
+                          }
+                          return slot;
+                      }, IsMontagePlayerComponentValidUVE));
         table.emplace("GameplayTagComponentUVE",
                       MakeRegistrationUVE<GameplayTagComponentUVE>([](const nlohmann::json& json) {
                           GameplayTagComponentUVE tags;

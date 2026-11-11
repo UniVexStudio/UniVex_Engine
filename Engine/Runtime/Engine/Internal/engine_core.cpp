@@ -121,6 +121,9 @@
 #include "full_body_ik_3d.h"
 #include "skeleton_3d.h"
 #include "animation_graph.h"
+#include "animation_montage.h"
+#include "animation_montage_editing.h"
+#include "montage_player_component.h"
 #include "decal_3d_events.h"
 #include "decal_3d.h"
 #include "nav_mesh_volume_3d.h"
@@ -1917,6 +1920,131 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             static_cast<void>(
                 Scene::StepAnimationGraphUVE(tree, clipFor, animDeltaSeconds * mixer.speedScale, *target, mixer));
             raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
+        }
+    }
+
+    // Montages play over what the drivers posed (an attack over the walk), once per frame. A script
+    // asks through the MontagePlayer (montage.play / jump_to / stop); the request is carried out here,
+    // where the montage files are.
+    if (!physicsStep) {
+        const auto montageFor = [this](const Asset::AssetGuidUVE guid) -> const Asset::AnimationMontageAssetUVE* {
+            if (guid == Asset::kInvalidAssetGuidUVE || !m_assetDatabase) {
+                return nullptr;
+            }
+            MontageCacheEntryUVE& entry = m_animationMontages[guid.value];
+            const std::filesystem::path path = m_assetDatabase->ResolveUVE(guid);
+            std::error_code error;
+            const std::filesystem::file_time_type written = std::filesystem::last_write_time(path, error);
+            if (path.empty() || error) {
+                return entry.montage.has_value() ? &*entry.montage : nullptr;
+            }
+            if (path != entry.path || written != entry.written) {
+                entry.path = path;
+                entry.written = written;
+                Asset::AnimationMontageAssetUVE loaded;
+                if (Asset::LoadAnimationMontageAssetUVE(path, loaded)) {
+                    entry.montage = std::move(loaded);
+                } else {
+                    entry.montage.reset();
+                }
+            }
+            return entry.montage.has_value() ? &*entry.montage : nullptr;
+        };
+        const auto lower = [](std::string text) {
+            std::transform(text.begin(), text.end(), text.begin(),
+                           [](const unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            return text;
+        };
+        // A montage event reaches the MontagePlayer's script and the script of the object it is under.
+        const auto raiseMontageEvent = [this](const Scene::EntityUVE self, const char* event, const std::string& name) {
+            if (m_simulationExecutionMode != SimulationExecutionModeUVE::Running) {
+                return;
+            }
+            const Scene::EntityUVE parent = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(self)
+                                                ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(self).parent
+                                                : Scene::kInvalidEntityUVE;
+            for (const Scene::EntityUVE listener : {self, parent}) {
+                const auto slot = m_uvScripts.find(listener);
+                if (listener == Scene::kInvalidEntityUVE || slot == m_uvScripts.end() || slot->second.instance == nullptr) {
+                    continue;
+                }
+                const UVScript::ValueUVE args[] = {UVScript::ValueUVE{name}};
+                static_cast<void>(slot->second.instance->RaiseEventUVE(event, args));
+            }
+        };
+        for (const Scene::EntityUVE entity :
+             CollectFixedStepOrderUVE<Scene::MontagePlayerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+            Scene::MontagePlayerComponentUVE& player = m_entityManager->GetComponentUVE<Scene::MontagePlayerComponentUVE>(entity);
+            std::vector<Scene::MontageEventUVE> events;
+            if (player.request != Scene::MontageRequestUVE::None) {
+                const Scene::MontageRequestUVE request = player.request;
+                player.request = Scene::MontageRequestUVE::None;
+                if (request == Scene::MontageRequestUVE::Play) {
+                    const std::string wanted = lower(player.requestMontage);
+                    for (std::size_t i = 0U; i < 8U; ++i) {
+                        const Asset::AssetGuidUVE guid = player.MontageAtUVE(i);
+                        const Asset::AnimationMontageAssetUVE* const montage = montageFor(guid);
+                        if (montage == nullptr || lower(m_assetDatabase->ResolveUVE(guid).stem().string()) != wanted) {
+                            continue;
+                        }
+                        if (player.IsPlayingUVE() && player.playing != guid) {
+                            player.playback = Scene::MontagePlaybackUVE{};   // another montage takes over
+                        }
+                        if (Scene::StartMontageUVE(*montage, player.playback, player.requestSection)) {
+                            player.playing = guid;
+                            player.playingName = m_assetDatabase->ResolveUVE(guid).stem().string();
+                        }
+                        break;
+                    }
+                } else if (const Asset::AnimationMontageAssetUVE* const montage = montageFor(player.playing)) {
+                    if (request == Scene::MontageRequestUVE::JumpTo) {
+                        static_cast<void>(Scene::JumpToMontageSectionUVE(*montage, player.playback, player.requestSection));
+                    } else {
+                        Scene::StopMontageUVE(*montage, player.playback, events);
+                    }
+                }
+            }
+            const Asset::AnimationMontageAssetUVE* const montage = montageFor(player.playing);
+            const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, Scene::kInvalidEntityUVE);
+            if (montage != nullptr && player.IsPlayingUVE()) {
+                Scene::StepMontageUVE(*montage, player.playback, animDeltaSeconds, events);
+                player.curveValues.clear();
+                for (const Asset::MontageCurveUVE& curve : montage->curves) {
+                    player.curveValues.emplace_back(curve.name,
+                                                    Asset::EvaluateMontageCurveUVE(*montage, curve.name, player.playback.time));
+                }
+                if (skeletonEntity != Scene::kInvalidEntityUVE) {
+                    Scene::Skeleton3DComponentUVE& skeleton =
+                        m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+                    const bool driven =
+                        std::find(posedSkeletons.begin(), posedSkeletons.end(), skeletonEntity) != posedSkeletons.end();
+                    if (!driven) {
+                        skeleton.pose.clear();   // nothing else posed it this pass: blend over the rest pose
+                    }
+                    if (Scene::BlendMontagePoseUVE(*montage, player.playback.time, player.playback.weight, clipFor, skeleton) &&
+                        !driven) {
+                        posedSkeletons.push_back(skeletonEntity);
+                    }
+                }
+            }
+            for (const Scene::MontageEventUVE& event : events) {
+                switch (event.kind) {
+                    case Scene::MontageEventUVE::KindUVE::Notify: raiseMontageEvent(entity, "montage_notify", event.name); break;
+                    case Scene::MontageEventUVE::KindUVE::NotifyBegin: raiseMontageEvent(entity, "montage_notify_begin", event.name); break;
+                    case Scene::MontageEventUVE::KindUVE::NotifyEnd: raiseMontageEvent(entity, "montage_notify_end", event.name); break;
+                    case Scene::MontageEventUVE::KindUVE::Ended: raiseMontageEvent(entity, "montage_ended", player.playingName); break;
+                }
+            }
+            if (!player.IsPlayingUVE() && player.playing != Asset::kInvalidAssetGuidUVE) {
+                // Ended: an undriven skeleton goes back to its rest pose.
+                if (skeletonEntity != Scene::kInvalidEntityUVE &&
+                    std::find(posedSkeletons.begin(), posedSkeletons.end(), skeletonEntity) == posedSkeletons.end()) {
+                    m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose.clear();
+                }
+                player.playing = Asset::kInvalidAssetGuidUVE;
+                player.playingName.clear();
+                player.curveValues.clear();
+            }
         }
     }
 

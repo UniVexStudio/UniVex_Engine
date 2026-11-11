@@ -24,6 +24,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "animation_montage_asset.h"
 #include "animation_clip_asset.h"
 #include "asset_handle.h"
 #include "i_asset_bundle.h"
@@ -943,6 +944,14 @@ private:
     /// release before the manager is destroyed; clips no object references any more are dropped
     /// each frame.
     std::unordered_map<std::uint64_t, Asset::AssetHandleUVE<Asset::AnimationClipAssetUVE>> m_animationClips;
+    /// The Animation Montages MontagePlayers play, by asset guid; reread when the file changes (the
+    /// Montage Editor saves while the game runs in the editor).
+    struct MontageCacheEntryUVE final {
+        std::filesystem::path path;
+        std::filesystem::file_time_type written{};
+        std::optional<Asset::AnimationMontageAssetUVE> montage;
+    };
+    std::unordered_map<std::uint64_t, MontageCacheEntryUVE> m_animationMontages;
     /// IK on a skeleton nothing animates (an editor authoring a rig, a prop with no clip). A modifier blends over
     /// the pose a driver wrote, so applying it to a pose that is not rewritten each frame would blend the same
     /// solve again every frame and creep. `base` is the pose the author left; `written` is what the modifiers

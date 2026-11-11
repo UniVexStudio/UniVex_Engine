@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "montage_player_component.h"
 #include "prism_shell/editor_prism_shell.h"
 #include "logging_macros.h"
 #include "animation_clip_asset.h"
@@ -2712,6 +2713,9 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
             break;
         case Scene::Objects::SceneObjectKindUVE::BoneAttachment3D:
             entity = createObjectWithComponent(Scene::BoneAttachment3DComponentUVE{});
+            break;
+        case Scene::Objects::SceneObjectKindUVE::MontagePlayer:
+            entity = createObjectWithComponent(Scene::MontagePlayerComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::TwoBoneIK3DObjectDefinitionUVE{},
