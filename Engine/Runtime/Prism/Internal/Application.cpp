@@ -169,6 +169,7 @@ void Application::paintAll(Canvas& c) {
 void Application::renderFrame() {
   auto t0 = std::chrono::steady_clock::now();
   if (m_backend) {
+    m_rec.resize(m_canvas.width(), m_canvas.height());   // a secondary window may have recorded at its own size
     m_rec.beginFrame();
     paintAll(m_rec);
     m_backend->submit(m_rec.list());
@@ -181,6 +182,7 @@ void Application::renderFrame() {
 
 const DrawList& Application::renderToDrawList() {
   layoutIfNeeded();
+  m_rec.resize(m_canvas.width(), m_canvas.height());
   m_rec.beginFrame();
   paintAll(m_rec);
   m_dirty = false;
@@ -766,5 +768,20 @@ PixelView Application::renderWindow(int id) {
   });
 }
 Widget* Application::windowFocus(int id) { return inWindow(id, [&] { return focus(); }); }
+void Application::layoutWindow(int id) { inWindow(id, [&] { layoutIfNeeded(); }); }
+void Application::renderWindowTo(int id, RenderBackend& backend) {
+  inWindow(id, [&] {
+    layoutIfNeeded();
+    m_rec.resize(m_canvas.width(), m_canvas.height());
+    m_rec.beginFrame();
+    paintAll(m_rec);
+    backend.submit(m_rec.list());
+    m_dirty = false;
+    if (WinState* ws = findWindow(id)) ws->paintedGen = m_paintGen;
+  });
+}
+bool Application::windowWantsPointerAt(int id, Vec2 p) { return inWindow(id, [&] { return wantsPointerAt(p); }); }
+bool Application::windowHasBlockingPopup(int id) { return inWindow(id, [&] { return hasBlockingPopup(); }); }
+bool Application::windowWantsKeyboard(int id) { return inWindow(id, [&] { return wantsKeyboard(); }); }
 
 } // namespace prism

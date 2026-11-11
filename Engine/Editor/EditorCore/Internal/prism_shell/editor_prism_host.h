@@ -11,8 +11,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <span>
+#include <string>
 
 struct GLFWwindow;
 
@@ -22,18 +24,24 @@ class GlBackend;
 
 namespace UVE::Editor {
 
-/// Hosts PRISM inside the editor's GLFW window: the engine owns the window and the loop, PRISM
-/// owns the UI tree.
+/// Hosts PRISM inside the editor's GLFW windows: the engine owns the main window and the loop,
+/// PRISM owns the UI trees.
 ///
-///   * Platform: clock, clipboard, cursor shapes, window chrome (drag strip, minimize, maximize,
+///   * Platform: clock, clipboard, cursor shapes, window chrome (drag strips, minimize, maximize,
 ///     close) and content scale, all through GLFW.
-///   * Input: GLFW callbacks (chained to whatever was installed before) forward pointer, wheel,
-///     keys and text to prism::Application, and keep raw state for the viewport input frames.
-///   * Rendering: PRISM records a DrawList each frame and the OpenGL backend renders it into its
-///     own texture; the host then draws each engine view texture into its EngineView hole and
-///     blends the UI texture over the whole window.
-/// Platform caption ids from this one up name extra drag areas of the main window's title bar.
+///   * Input: GLFW callbacks forward pointer, wheel, keys and text of each window to its PRISM
+///     window, and keep that window's raw state for its viewport input frames. The main window's
+///     callbacks are chained to whatever was installed before.
+///   * Rendering: PRISM records a DrawList per window and an OpenGL backend renders it into that
+///     window's own texture (in the main context); the host then draws the window's engine view
+///     textures into their EngineView holes and blends the UI texture over the whole window.
+///   * Windows: window 0 is the engine's main window. OpenWindowUVE adds an undecorated window
+///     (PRISM draws its title bar) sharing the main context's textures, for an asset editor.
+/// Platform caption ids from this one up name extra drag areas: kExtraCaptionIdUVE + 100 * window + n.
 inline constexpr int kExtraCaptionIdUVE = 100;
+[[nodiscard]] constexpr int ExtraCaptionIdUVE(const int window, const int n = 0) noexcept {
+    return kExtraCaptionIdUVE + (window * 100) + n;
+}
 
 class EditorPrismHostUVE final {
 public:
@@ -46,6 +54,7 @@ public:
         float textureWidth = 0.0F;     ///< full texture size (for UV scaling)
         float textureHeight = 0.0F;
     };
+    static constexpr int kMainWindowUVE = 0;
 
     EditorPrismHostUVE();
     ~EditorPrismHostUVE();
@@ -60,87 +69,79 @@ public:
     [[nodiscard]] prism::Application& AppUVE() noexcept { return *m_app; }
     void SetRootUVE(prism::Ref<prism::Widget> root);
 
-    /// Timers + layout for this frame (call before reading EngineView rects).
+    /// Opens a native window showing `root` (its own title bar included); returns its PRISM
+    /// window id, or 0 when the window could not be made. Main context current.
+    [[nodiscard]] int OpenWindowUVE(prism::Ref<prism::Widget> root, const std::string& title, int width, int height);
+    void CloseWindowUVE(int id);
+    [[nodiscard]] bool HasWindowUVE(int id) const;
+    /// The OS close button of window `id` was pressed (it stays open until CloseWindowUVE).
+    [[nodiscard]] bool WindowCloseRequestedUVE(int id) const;
+    void ClearCloseRequestUVE(int id);
+    /// Raises window `id` and gives it the keyboard.
+    void FocusWindowUVE(int id);
+
+    /// Timers + layout of every window for this frame (call before reading EngineView rects).
     void BeginFrameUVE();
-    /// Input for an engine view occupying `rect`: hovered only when the pointer is inside it and
-    /// no PRISM widget or popup above it claims the pointer.
-    [[nodiscard]] EditorViewportInputUVE CaptureViewInputUVE(const prism::Rect& rect) const;
+    /// Input for an engine view occupying `rect` of window `id`: hovered only when the pointer
+    /// is inside it and no PRISM widget or popup above it claims the pointer.
+    [[nodiscard]] EditorViewportInputUVE CaptureViewInputUVE(const prism::Rect& rect) const {
+        return CaptureViewInputUVE(kMainWindowUVE, rect);
+    }
+    [[nodiscard]] EditorViewportInputUVE CaptureViewInputUVE(int id, const prism::Rect& rect) const;
     /// Applies a cursor a view requested while it rendered.
-    void ApplyViewCursorUVE(const EditorViewportInputUVE& input);
-    /// Renders the UI, composites `views` under it into the default framebuffer, clears edges.
+    void ApplyViewCursorUVE(const EditorViewportInputUVE& input) { ApplyViewCursorUVE(kMainWindowUVE, input); }
+    void ApplyViewCursorUVE(int id, const EditorViewportInputUVE& input);
+    /// Renders the main window's UI and composites `views` under it into its default framebuffer.
     void RenderUVE(std::span<const ViewImageUVE> views);
+    /// The same for window `id` (not the main one), presented at once; the main context is
+    /// current again when it returns.
+    void RenderWindowUVE(int id, std::span<const ViewImageUVE> views);
 
     /// True once the PRISM close button (or quit) asked the editor to exit.
     [[nodiscard]] bool QuitRequestedUVE() const noexcept;
 
-    /// Saves the current UI frame as PNG (CPU readback of the GL backend).
+    /// Saves the main window's current frame as PNG (CPU readback of the GL backend).
     bool SaveScreenshotUVE(const std::filesystem::path& path);
-    /// Another UI drawn over this one (windows not yet built with PRISM) says when it wants the
-    /// pointer or the keyboard; while it does, neither PRISM nor the viewport receives that input.
+    /// Saves window `id`'s last frame as PNG.
+    bool SaveWindowScreenshotUVE(int id, const std::filesystem::path& path);
+    /// Another UI drawn over the main window (windows not yet built with PRISM) says when it wants
+    /// the pointer or the keyboard; while it does, neither PRISM nor the viewport receives that input.
     void SetForeignInputUVE(std::function<bool()> wantsMouse, std::function<bool()> wantsKeyboard);
 
+    struct WindowUVE;
     // GLFW callback entry points (static trampolines route here).
-    void OnCursorPosUVE(double x, double y);
-    void OnMouseButtonUVE(int button, int action, int mods);
-    void OnScrollUVE(double dx, double dy);
-    void OnKeyUVE(int key, int scancode, int action, int mods);
-    void OnCharUVE(unsigned int codepoint);
-    void OnCursorEnterUVE(int entered);
+    void OnCursorPosUVE(WindowUVE& w, double x, double y);
+    void OnMouseButtonUVE(WindowUVE& w, int button, int action, int mods);
+    void OnScrollUVE(WindowUVE& w, double dx, double dy);
+    void OnKeyUVE(WindowUVE& w, int key, int scancode, int action, int mods);
+    void OnCharUVE(WindowUVE& w, unsigned int codepoint);
+    void OnCursorEnterUVE(WindowUVE& w, int entered);
 
 private:
     class PlatformUVE;
     struct CompositorUVE;
     struct ChainUVE;
+    friend class PlatformUVE;
 
-    [[nodiscard]] prism::Vec2 ToUiUVE(double x, double y) const;
-    void SyncSizeUVE();
-    void UpdateWindowDragUVE();
+    [[nodiscard]] WindowUVE* FindUVE(int id) const;
+    [[nodiscard]] prism::Vec2 ToUiUVE(const WindowUVE& w, double x, double y) const;
+    void SyncSizeUVE(WindowUVE& w);
+    void UpdateWindowDragUVE(WindowUVE& w);
+    void CompositeUVE(WindowUVE& w, std::uint32_t uiTexture, std::uint32_t vao, std::span<const ViewImageUVE> views);
+    void EndInputFrameUVE(WindowUVE& w);
+    [[nodiscard]] bool ForeignMouseUVE(const WindowUVE& w) const;
+    [[nodiscard]] bool ForeignKeyboardUVE(const WindowUVE& w) const;
 
-    GLFWwindow* m_window = nullptr;
     std::shared_ptr<PlatformUVE> m_platform;
     std::unique_ptr<prism::Application> m_app;
     std::shared_ptr<prism::GlBackend> m_backend;
     std::unique_ptr<CompositorUVE> m_compositor;
     std::unique_ptr<ChainUVE> m_chain;
+    std::unique_ptr<WindowUVE> m_main;
+    std::map<int, std::unique_ptr<WindowUVE>> m_windows;   // secondary windows by PRISM id
     bool m_ready = false;
-    int m_fbWidth = 0;
-    int m_fbHeight = 0;
-
-    // Raw state for viewport input frames.
-    prism::Vec2 m_mouse{0.0F, 0.0F};
-    prism::Vec2 m_frameStartMouse{0.0F, 0.0F};
-    bool m_mouseInside = true;
     std::function<bool()> m_foreignMouse;
     std::function<bool()> m_foreignKeyboard;
-    bool m_foreignHover = false;           // the pointer is over the other UI (PRISM was told it left)
-    std::uint32_t m_foreignPresses = 0U;   // buttons pressed while the other UI had the pointer
-    float m_wheel = 0.0F;
-    std::uint8_t m_mods = 0;
-    std::array<bool, EditorViewportInputUVE::kButtonCountUVE> m_down{};
-    std::array<bool, EditorViewportInputUVE::kButtonCountUVE> m_clicked{};
-    std::array<bool, EditorViewportInputUVE::kButtonCountUVE> m_released{};
-    std::array<prism::Vec2, EditorViewportInputUVE::kButtonCountUVE> m_pressPos{};
-    std::array<float, EditorViewportInputUVE::kButtonCountUVE> m_dragDistance{};
-    std::bitset<EditorViewportInputUVE::kKeyCountUVE> m_keysDown;
-    std::bitset<EditorViewportInputUVE::kKeyCountUVE> m_keysPressed;
-    double m_lastFrameTime = 0.0;
-    float m_deltaTime = 1.0F / 60.0F;
-
-    // Double-click detection (PRISM wants a click count).
-    double m_lastClickTime = -1.0;
-    prism::Vec2 m_lastClickPos{0.0F, 0.0F};
-    int m_clickCount = 0;
-
-    // Window drag (title strip) and edge resize, done here because GLFW has no hit-test hook.
-    enum class DragModeUVE : std::uint8_t { None, Move, Resize };
-    DragModeUVE m_dragMode = DragModeUVE::None;
-    int m_resizeEdges = 0; // bit 0 left, 1 right, 2 top, 3 bottom
-    double m_dragStartScreenX = 0.0;
-    double m_dragStartScreenY = 0.0;
-    int m_dragStartWinX = 0;
-    int m_dragStartWinY = 0;
-    int m_dragStartWinW = 0;
-    int m_dragStartWinH = 0;
 };
 
 } // namespace UVE::Editor
