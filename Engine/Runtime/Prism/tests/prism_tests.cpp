@@ -1835,6 +1835,24 @@ static void testMultiWindow(Application& app) {
   CHECK(app.windowOrder().back() == w && app.activeWindow() == w);
   app.windowResize(w, 400, 300);
   CHECK(app.windowSizeOf(w).x == 400 && app.renderWindow(w).width == 400);
+  // a host drawing every window on its own GPU backend: the frame is recorded at that window's size and the main
+  // window's next frame at its own; the per-window questions are answered for that window
+  {
+    SoftwareBackend toolBackend;
+    app.renderWindowTo(w, toolBackend);
+    PixelView tb = toolBackend.readback();
+    CHECK(tb.width == 400 && tb.height == 300 && !app.windowNeedsRender(w));
+    const DrawList& mainList = app.renderToDrawList();
+    CHECK(mainList.width == 800 && mainList.height == 500);
+    CHECK(!app.windowHasBlockingPopup(w) && !app.windowHasBlockingPopup(0));
+    app.windowMouseButton(w, br.center(), MouseButton::Left, true); app.windowMouseButton(w, br.center(), MouseButton::Left, false);
+    CHECK(app.windowHasBlockingPopup(w) && !app.windowHasBlockingPopup(0));   // the menu belongs to the tool window
+    CHECK(app.windowWantsKeyboard(w) && !app.windowWantsKeyboard(0));
+    app.layoutWindow(w);
+    CHECK(app.windowWantsPointerAt(w, {60, 50}));
+    app.windowMouseButton(0, {700, 450}, MouseButton::Left, true); app.windowMouseButton(0, {700, 450}, MouseButton::Left, false);
+    CHECK(!app.windowHasBlockingPopup(w));
+  }
   int w2 = app.openWindow(make<Label>("Second"), OsWindowDesc{});
   CHECK(w2 != w && app.windowOrder().size() == 3 && app.activeWindow() == w2);
   app.closeWindow(w);

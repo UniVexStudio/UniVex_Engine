@@ -181,6 +181,14 @@ public:
   bool windowNeedsRender(int id);
   PixelView renderWindow(int id);                                // CPU frame of that window (window 0 = render())
   Widget* windowFocus(int id);
+  // Hosts that draw every window through their own GPU backend (one per OS window): lays out window `id`, records
+  // its frame and submits it to `backend` instead of painting it on the CPU canvas.
+  void layoutWindow(int id);
+  void renderWindowTo(int id, RenderBackend& backend);
+  // The same questions as wantsPointerAt / hasBlockingPopup / wantsKeyboard, asked of window `id`.
+  bool windowWantsPointerAt(int id, Vec2 p);
+  bool windowHasBlockingPopup(int id);
+  bool windowWantsKeyboard(int id);
   Callback<int> onWindowClosed;                                  // after closeWindow (host destroys its OS window)
 
   // misc
