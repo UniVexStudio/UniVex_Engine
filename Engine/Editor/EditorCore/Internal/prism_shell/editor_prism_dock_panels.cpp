@@ -8,6 +8,7 @@
 #include "prism/Containers.h"
 #include "prism/Controls.h"
 #include "prism/Layouts.h"
+#include "prism/Profiler.h"
 #include "prism/TableView.h"
 #include "prism/Tabs.h"
 #include "prism/TextInput.h"
@@ -430,7 +431,10 @@ prism::Ref<prism::Widget> EditorPrismDockPanelsUVE::BuildProfilerUVE() {
     m_breadcrumbs = prism::make<prism::LogView>();
     m_profilerRuntime = DimLabelUVE();
 
+    m_timeline = prism::make<prism::Profiler>();
+    m_timeline->setTargetMs(1000.0F / 60.0F);
     auto tabs = prism::make<prism::TabView>();
+    tabs->addTab("Timeline", prism::Icon::NodeClock, m_timeline);
     tabs->addTab("Frame", prism::Icon::Info, m_frameTable);
     tabs->addTab("Spans", prism::Icon::NodeClock, m_spanTable);
     tabs->addTab("Counters", prism::Icon::Grid, m_counterTable);
@@ -504,8 +508,56 @@ void EditorPrismDockPanelsUVE::RefreshProfilerUVE() {
     m_breadcrumbsShown = shown.breadcrumbs.size();
 }
 
+void EditorPrismDockPanelsUVE::FeedTimelineUVE() {
+    // One frame for PRISM's profiler: the frame's time, the renderer's draw counts, and - while a
+    // capture runs - the spans the engine recorded for its latest frame (CPU / Render / GPU tracks).
+    if (!m_timeline) {
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const bool first = m_lastFrame == std::chrono::steady_clock::time_point{};
+    const float frameMs = first ? 0.0F : std::chrono::duration<float, std::milli>(now - m_lastFrame).count();
+    m_lastFrame = now;
+    if (first) {
+        return;
+    }
+    const Render::Renderer3DFrameDiagnosticsUVE diagnostics =
+        m_editor.m_services->GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+    prism::ProfileFrame frame;
+    frame.cpuMs = frameMs;
+    frame.drawCalls = static_cast<int>(diagnostics.meshDrawCallsRecorded + diagnostics.decalDrawCallsRecorded +
+                                       diagnostics.primitiveItemsExtracted);
+    frame.triangles = static_cast<int>(diagnostics.decalTrianglesExtracted);
+    if (m_editor.m_profilerCapture.IsActiveUVE()) {
+        const Core::DiagnosticCaptureBundleUVE live = m_editor.m_profilerCapture.SnapshotUVE();
+        std::uint64_t latest = 0U;
+        for (const Core::DiagnosticSpanUVE& span : live.spans) {
+            latest = std::max(latest, span.frameNumber);
+        }
+        std::uint64_t start = ~std::uint64_t{0};
+        for (const Core::DiagnosticSpanUVE& span : live.spans) {
+            if (span.frameNumber == latest) {
+                start = std::min(start, span.beginTimestampNanoseconds);
+            }
+        }
+        for (const Core::DiagnosticSpanUVE& span : live.spans) {
+            if (span.frameNumber != latest || span.endTimestampNanoseconds < span.beginTimestampNanoseconds) {
+                continue;
+            }
+            prism::ProfileScope scope;
+            scope.name = span.name;
+            scope.track = span.category == Core::DiagnosticCategoryUVE::Render ? 1 : 0;
+            scope.startMs = static_cast<float>(span.beginTimestampNanoseconds - start) / 1.0e6F;
+            scope.durMs = static_cast<float>(span.endTimestampNanoseconds - span.beginTimestampNanoseconds) / 1.0e6F;
+            frame.scopes.push_back(std::move(scope));
+        }
+    }
+    m_timeline->pushFrame(std::move(frame));
+}
+
 void EditorPrismDockPanelsUVE::RefreshUVE(const bool consoleShown, const bool profilerShown) {
     PullLogUVE();
+    FeedTimelineUVE();
     if (consoleShown) {
         RefreshConsoleUVE();
     }

@@ -42,6 +42,7 @@
 #include <cmath>
 #include <cstdio>
 #include "prism/Profiler.h"
+#include "prism/Docking.h"
 #include "prism/Views.h"
 #include <filesystem>
 #include <string>
@@ -288,6 +289,19 @@ static void dragMouse(Application& app, Vec2 a, Vec2 b) {
 static void testDocking(Application& app) {
   SECTION("docking");
   app.hostResize(800, 400);
+  {
+    // A floating window leaves the rest of the window working; a menu does not.
+    app.closeAllPopups();
+    CHECK(!app.hasBlockingPopup());
+    FloatingWindowOptions fo;
+    fo.title = "Floating";
+    Ref<Widget> floating = showFloatingWindow(make<Spacer>(), fo);
+    CHECK(app.hasPopup() && !app.hasBlockingPopup());
+    showMenu({MenuItem::Item("Item", [] {})}, Rect{10, 10, 40, 20}, PopupPlacement::Below);
+    CHECK(app.hasBlockingPopup());
+    app.closeAllPopups();
+    CHECK(!app.hasPopup());
+  }
   auto A = make<TabView>(), B = make<TabView>(), C = make<TabView>();
   for (auto* tv : {A.get(), B.get()}) tv->dockGroup = "main";
   C->dockGroup = "other";

@@ -17,6 +17,7 @@
 
 namespace prism {
 class Button;
+class Profiler;
 class Label;
 class LogView;
 class TableView;
@@ -100,6 +101,10 @@ private:
     std::shared_ptr<prism::TableView> m_spanTable;
     std::shared_ptr<prism::TableView> m_counterTable;
     std::shared_ptr<prism::LogView> m_breadcrumbs;
+    // The Timeline: PRISM's frame profiler, fed every frame with the engine's numbers.
+    std::shared_ptr<prism::Profiler> m_timeline;
+    std::chrono::steady_clock::time_point m_lastFrame{};
+    void FeedTimelineUVE();
     std::vector<EditorRenderStatRowUVE> m_frameRows;
     std::vector<Core::ProfilerSpanRowUVE> m_spanRows;
     std::vector<Core::ProfilerCounterRowUVE> m_counterRows;

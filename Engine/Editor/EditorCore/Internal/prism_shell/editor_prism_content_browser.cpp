@@ -111,6 +111,65 @@ constexpr std::array<std::pair<const char*, ContentSortKeyUVE>, 5> kDetailsColum
     {"Folder", ContentSortKeyUVE::Folder},
 }};
 
+/// The tile grid: tiles fill each row edge to edge and re-flow with the width. A narrow area still
+/// fits at least kMinColumnsUVE tiles (they shrink, never below kMinTileUVE); a wide one fits as
+/// many of the chosen size as there is room for. List rows keep their height and fill columns.
+class TileGridUVE final : public prism::Widget {
+public:
+    static constexpr int kMinColumnsUVE = 4;
+    static constexpr float kMinTileUVE = 56.0F;
+    static constexpr float kGapUVE = 6.0F;
+
+    TileGridUVE(const prism::Vec2 baseSize, const bool rows) : m_base(baseSize), m_rows(rows) {}
+    void add(prism::Ref<prism::Widget> w) { addChild(std::move(w)); }
+
+    /// Columns and tile width for a row `width` wide.
+    [[nodiscard]] static std::pair<int, float> Fit(const float width, const float baseWidth, const bool rows) {
+        const float gap = rows ? 2.0F : kGapUVE;
+        int columns = std::max(1, static_cast<int>(std::floor((width + gap) / (baseWidth + gap))));
+        if (!rows) {
+            columns = std::max(columns, kMinColumnsUVE);
+            const int fitMin = std::max(1, static_cast<int>(std::floor((width + gap) / (kMinTileUVE + gap))));
+            columns = std::min(columns, std::max(1, fitMin));
+        }
+        const float tile = std::max(rows ? 120.0F : kMinTileUVE, (width - gap * static_cast<float>(columns - 1)) /
+                                                                       static_cast<float>(columns));
+        return {columns, tile};
+    }
+
+    prism::Vec2 measure(const prism::Vec2 avail) override {
+        const float width = std::max(avail.x, 1.0F);
+        const auto [columns, tile] = Fit(width, m_base.x, m_rows);
+        const float tileH = m_rows ? m_base.y : std::floor(tile * (m_base.y / m_base.x));
+        const int count = static_cast<int>(children().size());
+        const int lines = (count + columns - 1) / std::max(1, columns);
+        const float gap = m_rows ? 1.0F : kGapUVE;
+        for (const auto& child : children()) {
+            child->measure(prism::Vec2(tile, tileH));
+        }
+        return m_desired = constrain(prism::Vec2(width, lines > 0 ? lines * tileH + (lines - 1) * gap : 0.0F));
+    }
+    void arrange(const prism::Rect r) override {
+        prism::Widget::arrange(r);
+        const auto [columns, tile] = Fit(r.w, m_base.x, m_rows);
+        const float tileH = m_rows ? m_base.y : std::floor(tile * (m_base.y / m_base.x));
+        const float gapX = m_rows ? 2.0F : kGapUVE;
+        const float gapY = m_rows ? 1.0F : kGapUVE;
+        int i = 0;
+        for (const auto& child : children()) {
+            const int col = i % columns;
+            const int line = i / columns;
+            child->arrange(prism::Rect{std::floor(r.x + col * (tile + gapX)), std::floor(r.y + line * (tileH + gapY)),
+                                       std::floor(tile), tileH});
+            ++i;
+        }
+    }
+
+private:
+    prism::Vec2 m_base;
+    bool m_rows = false;
+};
+
 } // namespace
 
 prism::Icon EditorPrismContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
@@ -869,7 +928,7 @@ void EditorPrismContentBrowserUVE::BuildTilesUVE(const Asset::ProjectFileSnapsho
     const prism::Vec2 size = rows ? prism::Vec2(240.0F, 24.0F)
                              : view == ViewMode::LargeTiles ? prism::Vec2(140.0F, 172.0F)
                                                             : prism::Vec2(108.0F, 136.0F);
-    auto tiles = prism::make<prism::WrapBox>(prism::Orientation::Horizontal, rows ? 2.0F : 6.0F, rows ? 1.0F : 6.0F);
+    auto tiles = prism::make<TileGridUVE>(size, rows);
     m_tileWidgets.clear();
     for (std::size_t n = 0; n < m_shown.size(); ++n) {
         const std::size_t i = m_shown[n];
