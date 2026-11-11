@@ -72,6 +72,7 @@ const char* AnimationGraphKindLabelUVE(const Kind kind) noexcept {
         case Kind::Select: return "Select";
         case Kind::LayeredBlend: return "Layered Blend";
         case Kind::TimeSeek: return "Time Seek";
+        case Kind::Slot: return "Slot";
     }
     return "?";
 }
@@ -94,6 +95,7 @@ const char* AnimationGraphKindHelpUVE(const Kind kind) noexcept {
         case Kind::LayeredBlend:
             return "Lays the Layer over the Base on chosen bone branches only - shoot with the upper body while running.";
         case Kind::TimeSeek: return "Jumps its input to a time when its trigger fires, then plays on.";
+        case Kind::Slot: return "Where an Animation Montage plays: the montage on this slot is laid over the input.";
     }
     return "";
 }
@@ -154,6 +156,10 @@ std::uint32_t AddAnimationGraphNodeUVE(std::vector<AnimationGraphNodeUVE>& nodes
         case Kind::TimeSeek:
             added.inputs = {0U};
             added.value = 0.0F;
+            break;
+        case Kind::Slot:
+            added.inputs = {0U};
+            added.parameter = "DefaultSlot";
             break;
         default:
             break;

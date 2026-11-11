@@ -190,6 +190,8 @@ public:
                 return EvaluateLayeredBlendUVE(index, node, deltaSeconds, weight, phase);
             case Kind::TimeSeek:
                 return EvaluateTimeSeekUVE(node, deltaSeconds, weight, phase);
+            case Kind::Slot:
+                return EvaluateSlotUVE(node, deltaSeconds, weight, phase);
         }
         return {};
     }
@@ -910,6 +912,35 @@ private:
         }
     }
 
+    /// The input, with the montage playing on this node's slot laid over it by its weight.
+    [[nodiscard]] ResultUVE EvaluateSlotUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds, const float weight,
+                                            const std::optional<float> phase) {
+        ResultUVE result = EvaluateInputUVE(node, 0U, deltaSeconds, weight, phase);
+        const std::string& slot = node.parameter.empty() ? std::string("DefaultSlot") : node.parameter;
+        for (const AnimationGraphSlotPoseUVE& montage : m_tree.slotPoses) {
+            if (montage.slot != slot || !(montage.weight > 0.0F) || montage.bones.empty()) {
+                continue;
+            }
+            m_tree.slotUsed = true;
+            const float w = std::clamp(montage.weight, 0.0F, 1.0F);
+            if (!result.pose.has_value()) {
+                ChannelsUVE pose;
+                pose.reserve(montage.bones.size());
+                for (const AnimationGraphSlotBoneUVE& bone : montage.bones) {
+                    pose.push_back(PoseUVE{bone.position, bone.rotation, bone.scale});
+                }
+                result.pose = std::move(pose);
+            } else if (result.pose->size() == montage.bones.size()) {
+                for (std::size_t i = 0U; i < montage.bones.size(); ++i) {
+                    const AnimationGraphSlotBoneUVE& bone = montage.bones[i];
+                    (*result.pose)[i] = MixPoseUVE((*result.pose)[i], PoseUVE{bone.position, bone.rotation, bone.scale}, w);
+                }
+            }
+            break;
+        }
+        return result;
+    }
+
     [[nodiscard]] ResultUVE EvaluateTimeSeekUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds,
                                                 const float weight, const std::optional<float> phase) {
         if (ConsumeTriggerUVE(node.parameter)) {
@@ -939,6 +970,7 @@ private:
                                                     const AnimationDriverComponentUVE& mixer) {
     tree.rootMotionDelta = Math::Vector3UVE{};
     tree.firedEvents.clear();
+    tree.slotUsed = false;
     if (!mixer.active || !std::isfinite(deltaSeconds) || deltaSeconds < 0.0F) {
         return std::nullopt;
     }

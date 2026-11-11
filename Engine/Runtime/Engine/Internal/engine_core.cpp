@@ -1837,96 +1837,23 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         }
     };
 
-    for (const Scene::EntityUVE entity :
-         CollectFixedStepOrderUVE<Scene::AnimationSequencerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        Scene::AnimationSequencerComponentUVE& player =
-            m_entityManager->GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity);
-        const Scene::AnimationDriverComponentUVE mixer = mixerOf(entity);
-        if (!Scene::IsAnimationDriverRunningOnClockUVE(mixer, callback)) {
-            continue;
-        }
-        const Asset::AnimationClipAssetUVE* const clip = clipFor(player.clip);
-        if (clip == nullptr) {
-            continue; // not set, still loading, or failed - the player waits
-        }
-        // A skeletal clip poses a skeleton: the target when it is one, else the first Skeleton3D
-        // under it (a character's AnimationSequencer targets the character; its skeleton is inside).
-        if (clip->IsSkeletalUVE()) {
-            const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
-            if (skeletonEntity == Scene::kInvalidEntityUVE) {
-                continue;
-            }
-            Scene::Skeleton3DComponentUVE& skeleton =
-                m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-            if (!player.hasStartPose && player.autoplay &&
-                m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
-                Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
-            } else if (player.isPlaying && player.playingClip != player.clip) {
-                // Switched mid-play (a script, a state change): the new clip takes over from the
-                // pose that is there, through the mixer's transition.
-                Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
-            }
-            const bool posed = Scene::StepSkeletalAnimationSequencerUVE(player, *clip, animDeltaSeconds * mixer.speedScale,
-                                                                     skeleton, mixer);
-            if (posed) {
-                posedSkeletons.push_back(skeletonEntity);
-            }
-            raiseAnimationEvents(entity, mixer.target, player.firedEvents);
-            if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
-                applyRootMotion(entity, mixer.target, skeletonEntity, player.rootMotionDelta, animDeltaSeconds);
-            }
-            continue;
-        }
-        // Resolved before playback starts, so a player with nothing to move never "plays".
-        Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
-        if (target == nullptr) {
-            continue;
-        }
-        if (!player.hasStartPose && player.autoplay &&
-            m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
-            Scene::PlayAnimationSequencerUVE(player, *target, clip->durationSeconds);
-        }
-        static_cast<void>(
-            Scene::StepAnimationSequencerUVE(player, *clip, animDeltaSeconds * mixer.speedScale, *target, mixer));
-        raiseAnimationEvents(entity, mixer.target, player.firedEvents);
-    }
-
-    for (const Scene::EntityUVE entity :
-         CollectFixedStepOrderUVE<Scene::AnimationGraphComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-        const Scene::AnimationDriverComponentUVE mixer = mixerOf(entity);
-        if (mixer.processCallback != callback) {
-            continue;
-        }
-        Scene::AnimationGraphComponentUVE& tree = m_entityManager->GetComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
-        // A character's tree poses its skeleton, bone by bone; with no skeleton under the target it
-        // animates the target object itself.
-        const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
-        if (skeletonEntity != Scene::kInvalidEntityUVE) {
-            Scene::Skeleton3DComponentUVE& skeleton =
-                m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-            const bool posed = Scene::StepSkeletalAnimationGraphUVE(tree, clipFor, animDeltaSeconds * mixer.speedScale,
-                                                                   skeleton, mixer);
-            if (posed) {
-                posedSkeletons.push_back(skeletonEntity);
-            }
-            raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
-            if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
-                applyRootMotion(entity, mixer.target, skeletonEntity, tree.rootMotionDelta, animDeltaSeconds);
-            }
-            continue;
-        }
-        Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
-        if (target != nullptr) {
-            static_cast<void>(
-                Scene::StepAnimationGraphUVE(tree, clipFor, animDeltaSeconds * mixer.speedScale, *target, mixer));
-            raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
-        }
-    }
-
-    // Montages play over what the drivers posed (an attack over the walk), once per frame. A script
-    // asks through the MontagePlayer (montage.play / jump_to / stop); the request is carried out here,
-    // where the montage files are.
+    // Montages, first half: a script asks through the MontagePlayer (montage.play / jump_to / stop);
+    // the request is carried out here, where the montage files are, and the montage steps once a
+    // frame. Its pose goes to the character's AnimationGraph when the graph has a Slot node for it
+    // (the graph lays it where the slot is); otherwise it is blended over the whole body after the
+    // drivers below (an attack over the walk).
+    struct MontageFrameUVE final {
+        Scene::EntityUVE player = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE skeleton = Scene::kInvalidEntityUVE;
+        std::vector<Scene::SkeletonBonePoseUVE> pose;
+        float weight = 0.0F;
+        bool viaSlot = false;
+        bool ended = false;
+    };
+    std::vector<MontageFrameUVE> montageFrames;
     if (!physicsStep) {
+        m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
+            [](const Scene::EntityUVE, Scene::AnimationGraphComponentUVE& graph) { graph.slotPoses.clear(); });
         const auto montageFor = [this](const Asset::AssetGuidUVE guid) -> const Asset::AnimationMontageAssetUVE* {
             if (guid == Asset::kInvalidAssetGuidUVE || !m_assetDatabase) {
                 return nullptr;
@@ -2014,17 +1941,37 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                                                     Asset::EvaluateMontageCurveUVE(*montage, curve.name, player.playback.time));
                 }
                 if (skeletonEntity != Scene::kInvalidEntityUVE) {
-                    Scene::Skeleton3DComponentUVE& skeleton =
-                        m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-                    const bool driven =
-                        std::find(posedSkeletons.begin(), posedSkeletons.end(), skeletonEntity) != posedSkeletons.end();
-                    if (!driven) {
-                        skeleton.pose.clear();   // nothing else posed it this pass: blend over the rest pose
-                    }
-                    if (Scene::BlendMontagePoseUVE(*montage, player.playback.time, player.playback.weight, clipFor, skeleton) &&
-                        !driven) {
-                        posedSkeletons.push_back(skeletonEntity);
-                    }
+                    MontageFrameUVE frame;
+                    frame.player = entity;
+                    frame.skeleton = skeletonEntity;
+                    frame.weight = player.playback.weight;
+                    frame.pose = Scene::PoseMontageUVE(*montage, player.playback.time, clipFor,
+                                                       m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity));
+                    // A graph posing the same skeleton with a Slot node for this montage's slot takes it.
+                    m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
+                        [&](const Scene::EntityUVE graphEntity, Scene::AnimationGraphComponentUVE& graph) {
+                            if (frame.viaSlot || frame.pose.empty() ||
+                                resolveSkeleton(graphEntity, mixerOf(graphEntity).target) != skeletonEntity) {
+                                return;
+                            }
+                            const bool hasSlot = std::any_of(graph.nodes.begin(), graph.nodes.end(),
+                                                             [&](const Scene::AnimationGraphNodeUVE& node) {
+                                return node.kind == Scene::AnimationGraphNodeKindUVE::Slot &&
+                                       (node.parameter.empty() ? std::string("DefaultSlot") : node.parameter) == montage->slot;
+                            });
+                            if (!hasSlot) {
+                                return;
+                            }
+                            Scene::AnimationGraphSlotPoseUVE slot;
+                            slot.slot = montage->slot;
+                            slot.weight = frame.weight;
+                            for (const Scene::SkeletonBonePoseUVE& bone : frame.pose) {
+                                slot.bones.push_back(Scene::AnimationGraphSlotBoneUVE{bone.position, bone.rotation, bone.scale});
+                            }
+                            graph.slotPoses.push_back(std::move(slot));
+                            frame.viaSlot = true;
+                        });
+                    montageFrames.push_back(std::move(frame));
                 }
             }
             for (const Scene::MontageEventUVE& event : events) {
@@ -2036,15 +1983,127 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 }
             }
             if (!player.IsPlayingUVE() && player.playing != Asset::kInvalidAssetGuidUVE) {
-                // Ended: an undriven skeleton goes back to its rest pose.
-                if (skeletonEntity != Scene::kInvalidEntityUVE &&
-                    std::find(posedSkeletons.begin(), posedSkeletons.end(), skeletonEntity) == posedSkeletons.end()) {
-                    m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose.clear();
+                // Ended: an undriven skeleton goes back to its rest pose (after the drivers, below).
+                if (skeletonEntity != Scene::kInvalidEntityUVE) {
+                    MontageFrameUVE frame;
+                    frame.player = entity;
+                    frame.skeleton = skeletonEntity;
+                    frame.ended = true;
+                    montageFrames.push_back(std::move(frame));
                 }
                 player.playing = Asset::kInvalidAssetGuidUVE;
                 player.playingName.clear();
                 player.curveValues.clear();
             }
+        }
+    }
+
+    for (const Scene::EntityUVE entity :
+         CollectFixedStepOrderUVE<Scene::AnimationSequencerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        Scene::AnimationSequencerComponentUVE& player =
+            m_entityManager->GetComponentUVE<Scene::AnimationSequencerComponentUVE>(entity);
+        const Scene::AnimationDriverComponentUVE mixer = mixerOf(entity);
+        if (!Scene::IsAnimationDriverRunningOnClockUVE(mixer, callback)) {
+            continue;
+        }
+        const Asset::AnimationClipAssetUVE* const clip = clipFor(player.clip);
+        if (clip == nullptr) {
+            continue; // not set, still loading, or failed - the player waits
+        }
+        // A skeletal clip poses a skeleton: the target when it is one, else the first Skeleton3D
+        // under it (a character's AnimationSequencer targets the character; its skeleton is inside).
+        if (clip->IsSkeletalUVE()) {
+            const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
+            if (skeletonEntity == Scene::kInvalidEntityUVE) {
+                continue;
+            }
+            Scene::Skeleton3DComponentUVE& skeleton =
+                m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+            if (!player.hasStartPose && player.autoplay &&
+                m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
+                Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
+            } else if (player.isPlaying && player.playingClip != player.clip) {
+                // Switched mid-play (a script, a state change): the new clip takes over from the
+                // pose that is there, through the mixer's transition.
+                Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
+            }
+            const bool posed = Scene::StepSkeletalAnimationSequencerUVE(player, *clip, animDeltaSeconds * mixer.speedScale,
+                                                                     skeleton, mixer);
+            if (posed) {
+                posedSkeletons.push_back(skeletonEntity);
+            }
+            raiseAnimationEvents(entity, mixer.target, player.firedEvents);
+            if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
+                applyRootMotion(entity, mixer.target, skeletonEntity, player.rootMotionDelta, animDeltaSeconds);
+            }
+            continue;
+        }
+        // Resolved before playback starts, so a player with nothing to move never "plays".
+        Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
+        if (target == nullptr) {
+            continue;
+        }
+        if (!player.hasStartPose && player.autoplay &&
+            m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
+            Scene::PlayAnimationSequencerUVE(player, *target, clip->durationSeconds);
+        }
+        static_cast<void>(
+            Scene::StepAnimationSequencerUVE(player, *clip, animDeltaSeconds * mixer.speedScale, *target, mixer));
+        raiseAnimationEvents(entity, mixer.target, player.firedEvents);
+    }
+
+    for (const Scene::EntityUVE entity :
+         CollectFixedStepOrderUVE<Scene::AnimationGraphComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+        const Scene::AnimationDriverComponentUVE mixer = mixerOf(entity);
+        if (mixer.processCallback != callback) {
+            continue;
+        }
+        Scene::AnimationGraphComponentUVE& tree = m_entityManager->GetComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
+        // A character's tree poses its skeleton, bone by bone; with no skeleton under the target it
+        // animates the target object itself.
+        const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
+        if (skeletonEntity != Scene::kInvalidEntityUVE) {
+            Scene::Skeleton3DComponentUVE& skeleton =
+                m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
+            const bool posed = Scene::StepSkeletalAnimationGraphUVE(tree, clipFor, animDeltaSeconds * mixer.speedScale,
+                                                                   skeleton, mixer);
+            if (posed) {
+                posedSkeletons.push_back(skeletonEntity);
+            }
+            raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
+            if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
+                applyRootMotion(entity, mixer.target, skeletonEntity, tree.rootMotionDelta, animDeltaSeconds);
+            }
+            continue;
+        }
+        Scene::TransformComponentUVE* const target = resolveTarget(entity, mixer.target);
+        if (target != nullptr) {
+            static_cast<void>(
+                Scene::StepAnimationGraphUVE(tree, clipFor, animDeltaSeconds * mixer.speedScale, *target, mixer));
+            raiseAnimationEvents(entity, mixer.target, tree.firedEvents);
+        }
+    }
+
+    // Montages, second half: a montage no Slot node took is blended over the whole body, over what
+    // the drivers posed (or the rest pose when nothing did).
+    for (const MontageFrameUVE& frame : montageFrames) {
+        if (frame.viaSlot || !m_entityManager->IsAliveUVE(frame.skeleton) ||
+            !m_entityManager->HasComponentUVE<Scene::Skeleton3DComponentUVE>(frame.skeleton)) {
+            continue;
+        }
+        Scene::Skeleton3DComponentUVE& skeleton = m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(frame.skeleton);
+        const bool driven = std::find(posedSkeletons.begin(), posedSkeletons.end(), frame.skeleton) != posedSkeletons.end();
+        if (frame.ended) {
+            if (!driven) {
+                skeleton.pose.clear();
+            }
+            continue;
+        }
+        if (!driven) {
+            skeleton.pose.clear();
+        }
+        if (Scene::BlendBonePosesUVE(skeleton, frame.pose, frame.weight) && !driven) {
+            posedSkeletons.push_back(frame.skeleton);
         }
     }
 
