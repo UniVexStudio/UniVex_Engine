@@ -5,6 +5,8 @@
 #include <gtest/gtest.h>
 
 #include "animation_clip_asset.h"
+#include "animation_graph.h"
+#include "animation_graph_component.h"
 #include "animation_montage.h"
 #include "animation_montage_editing.h"
 #include "skeleton_3d.h"
@@ -131,6 +133,62 @@ TEST(AnimationMontageUVETest, BlendsItsPoseOverTheSkeleton) {
     ASSERT_EQ(skeleton.pose.size(), 1U);
     EXPECT_NEAR(skeleton.pose[0].position.y, 1.0F, 1e-5) << "halfway between the rest pose and the montage";
     EXPECT_FALSE(BlendMontagePoseUVE(montage, 0.5, 0.0F, clipFor, skeleton)) << "no weight, no change";
+}
+
+
+TEST(AnimationMontageUVETest, AGraphSlotNodeLaysTheMontageOverItsInput) {
+    Asset::AnimationClipAssetUVE clip;
+    clip.durationSeconds = 1.0;
+    Asset::AnimationAssetSampleUVE a;
+    a.pose.position = Math::Vector3UVE{0.0F, 2.0F, 0.0F};
+    Asset::AnimationAssetSampleUVE b = a;
+    b.timeSeconds = 1.0;
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {a, b}}};
+    const AnimationClipResolverUVE clipFor = [&clip](const Asset::AssetGuidUVE guid) -> const Asset::AnimationClipAssetUVE* {
+        return guid.value == 7U ? &clip : nullptr;
+    };
+
+    AnimationGraphComponentUVE graph;
+    AnimationGraphNodeUVE output;
+    output.id = 1U;
+    output.kind = AnimationGraphNodeKindUVE::Output;
+    output.name = "Output";
+    output.inputs = {2U};
+    AnimationGraphNodeUVE slot;
+    slot.id = 2U;
+    slot.kind = AnimationGraphNodeKindUVE::Slot;
+    slot.name = "Slot";
+    slot.parameter = "DefaultSlot";
+    slot.inputs = {3U};
+    AnimationGraphNodeUVE walk;
+    walk.id = 3U;
+    walk.kind = AnimationGraphNodeKindUVE::Clip;
+    walk.name = "Walk";
+    walk.clip = Asset::AssetGuidUVE{7U};
+    graph.nodes = {output, slot, walk};
+
+    Skeleton3DComponentUVE skeleton;
+    SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    skeleton.bones = {hips};
+    ASSERT_TRUE(StepSkeletalAnimationGraphUVE(graph, clipFor, 0.1F, skeleton, AnimationDriverComponentUVE{}));
+    EXPECT_NEAR(skeleton.pose[0].position.y, 2.0F, 1e-5) << "no montage: the input passes through";
+    EXPECT_FALSE(graph.slotUsed);
+
+    AnimationGraphSlotPoseUVE attack;
+    attack.slot = "DefaultSlot";
+    attack.weight = 1.0F;
+    attack.bones = {AnimationGraphSlotBoneUVE{Math::Vector3UVE{0.0F, 5.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}};
+    graph.slotPoses = {attack};
+    ASSERT_TRUE(StepSkeletalAnimationGraphUVE(graph, clipFor, 0.1F, skeleton, AnimationDriverComponentUVE{}));
+    EXPECT_NEAR(skeleton.pose[0].position.y, 5.0F, 1e-5) << "the montage at full weight";
+    EXPECT_TRUE(graph.slotUsed);
+    graph.slotPoses[0].weight = 0.5F;
+    ASSERT_TRUE(StepSkeletalAnimationGraphUVE(graph, clipFor, 0.1F, skeleton, AnimationDriverComponentUVE{}));
+    EXPECT_NEAR(skeleton.pose[0].position.y, 3.5F, 1e-5) << "half way between the walk and the montage";
+    graph.slotPoses[0].slot = "UpperBody";
+    ASSERT_TRUE(StepSkeletalAnimationGraphUVE(graph, clipFor, 0.1F, skeleton, AnimationDriverComponentUVE{}));
+    EXPECT_NEAR(skeleton.pose[0].position.y, 2.0F, 1e-5) << "another slot's montage leaves this one alone";
 }
 
 } // namespace UVE::Scene

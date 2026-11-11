@@ -44,6 +44,15 @@ void StopMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlayb
 void StepMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback, double deltaSeconds,
                     std::vector<MontageEventUVE>& events);
 
+/// The montage's own pose at `time` for `skeleton` (one entry per bone, bones without a track at
+/// rest); empty when the clip there is not loaded or has no bones.
+[[nodiscard]] std::vector<SkeletonBonePoseUVE> PoseMontageUVE(const Asset::AnimationMontageAssetUVE& montage, double time,
+                                                              const AnimationClipResolverUVE& clipFor,
+                                                              const Skeleton3DComponentUVE& skeleton);
+
+/// Blends `target` (one pose per bone) over what `skeleton` holds now (its pose, else its rest).
+bool BlendBonePosesUVE(Skeleton3DComponentUVE& skeleton, const std::vector<SkeletonBonePoseUVE>& target, float weight);
+
 /// Blends the montage's pose at `time` over what `skeleton` holds now (its pose, else its rest), by
 /// `weight`. False, leaving the skeleton alone, when the clip there is not loaded or has no bones.
 bool BlendMontagePoseUVE(const Asset::AnimationMontageAssetUVE& montage, double time, float weight,

@@ -61,6 +61,25 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
     LayeredBlend,
     /// Jumps its input to `value` seconds when its trigger fires, then plays on from there.
     TimeSeek,
+    /// Where an Animation Montage plays: its input passes through, and a montage playing on the
+    /// slot named `parameter` (default "DefaultSlot") is blended over it by the montage's weight.
+    Slot,
+};
+
+/// One bone of a montage's pose, handed to a Slot node (runtime only).
+struct AnimationGraphSlotBoneUVE final {
+    Math::Vector3UVE position{};
+    Math::QuaternionUVE rotation{};
+    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+    [[nodiscard]] bool operator==(const AnimationGraphSlotBoneUVE&) const = default;
+};
+
+/// What plays on one slot this step: the montage's pose (one entry per skeleton bone) and weight.
+struct AnimationGraphSlotPoseUVE final {
+    std::string slot;
+    float weight = 0.0F;
+    std::vector<AnimationGraphSlotBoneUVE> bones;
+    [[nodiscard]] bool operator==(const AnimationGraphSlotPoseUVE&) const = default;
 };
 
 enum class AnimationParameterTypeUVE : std::uint8_t {
@@ -287,6 +306,10 @@ struct AnimationGraphComponentUVE final {
     Math::Vector3UVE rootMotionDelta{};
     /// Clip events the last step passed, in the clips that counted most (weight at least a half).
     std::vector<std::string> firedEvents;
+    /// Montages playing on this graph's Slot nodes, set by the engine before each step.
+    std::vector<AnimationGraphSlotPoseUVE> slotPoses;
+    /// True when the last step had a Slot node that took a montage's pose.
+    bool slotUsed = false;
 
     [[nodiscard]] static std::vector<AnimationGraphNodeUVE> MakeDefaultAnimationGraphUVE() {
         AnimationGraphNodeUVE output;

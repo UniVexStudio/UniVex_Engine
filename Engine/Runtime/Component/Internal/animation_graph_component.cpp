@@ -46,6 +46,7 @@ struct InputRuleUVE final {
         case Kind::LayeredBlend:
             return {2U, false};
         case Kind::TimeSeek:
+        case Kind::Slot:
             return {1U, false};
     }
     return {0U, false};
@@ -65,6 +66,7 @@ struct InputRuleUVE final {
         case Kind::Select: return "Select";
         case Kind::LayeredBlend: return "LayeredBlend";
         case Kind::TimeSeek: return "TimeSeek";
+        case Kind::Slot: return "Slot";
     }
     return "?";
 }
@@ -100,7 +102,7 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
         if (node.id == 0U || !indexById.emplace(node.id, index).second) {
             return "node ids must be unique and non-zero";
         }
-        if (node.kind > Kind::TimeSeek || !IsNameValidUVE(node.name)) {
+        if (node.kind > Kind::Slot || !IsNameValidUVE(node.name)) {
             return "a node has an invalid kind or name";
         }
         outputs += node.kind == Kind::Output ? 1U : 0U;

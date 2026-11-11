@@ -191,17 +191,33 @@ void StepMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlayb
     }
 }
 
-bool BlendMontagePoseUVE(const Asset::AnimationMontageAssetUVE& montage, const double time, const float weight,
-                         const AnimationClipResolverUVE& clipFor, Skeleton3DComponentUVE& skeleton) {
-    if (!(weight > 0.0F) || skeleton.bones.empty() || !clipFor) {
-        return false;
+std::vector<SkeletonBonePoseUVE> PoseMontageUVE(const Asset::AnimationMontageAssetUVE& montage, const double time,
+                                                const AnimationClipResolverUVE& clipFor, const Skeleton3DComponentUVE& skeleton) {
+    if (skeleton.bones.empty() || !clipFor) {
+        return {};
     }
     const std::optional<Asset::MontageClipTimeUVE> at = Asset::MapMontageTimeUVE(montage, time);
     if (!at.has_value()) {
-        return false;
+        return {};
     }
     const Asset::AnimationClipAssetUVE* const clip = clipFor(montage.segments[at->segment].clip);
     if (clip == nullptr || !clip->IsSkeletalUVE()) {
+        return {};
+    }
+    Skeleton3DComponentUVE posed = skeleton;
+    posed.pose.clear();
+    AnimationDriverComponentUVE mixer{};
+    if (montage.rootMotion != Asset::MontageRootMotionUVE::Off) {
+        mixer.rootMotion = AnimationRootMotionModeUVE::InPlace;
+    }
+    if (!PoseSkeletonAtTimeUVE(*clip, at->clipTime, posed, mixer) || posed.pose.size() != skeleton.bones.size()) {
+        return {};
+    }
+    return posed.pose;
+}
+
+bool BlendBonePosesUVE(Skeleton3DComponentUVE& skeleton, const std::vector<SkeletonBonePoseUVE>& target, const float weight) {
+    if (!(weight > 0.0F) || skeleton.bones.empty() || target.size() != skeleton.bones.size()) {
         return false;
     }
     // What the skeleton holds now: the pose the drivers wrote this pass, else its rest.
@@ -213,19 +229,11 @@ bool BlendMontagePoseUVE(const Asset::AnimationMontageAssetUVE& montage, const d
                                           skeleton.bones[i].localScale};
         }
     }
-    Skeleton3DComponentUVE posed = skeleton;
-    AnimationDriverComponentUVE mixer{};
-    if (montage.rootMotion != Asset::MontageRootMotionUVE::Off) {
-        mixer.rootMotion = AnimationRootMotionModeUVE::InPlace;
-    }
-    if (!PoseSkeletonAtTimeUVE(*clip, at->clipTime, posed, mixer) || posed.pose.size() != base.size()) {
-        return false;
-    }
     const float w = std::clamp(weight, 0.0F, 1.0F);
     skeleton.pose.resize(base.size());
     for (std::size_t i = 0U; i < base.size(); ++i) {
         const SkeletonBonePoseUVE& a = base[i];
-        const SkeletonBonePoseUVE& b = posed.pose[i];
+        const SkeletonBonePoseUVE& b = target[i];
         SkeletonBonePoseUVE out;
         out.position = a.position + (b.position - a.position) * w;
         out.scale = a.scale + (b.scale - a.scale) * w;
@@ -235,6 +243,14 @@ bool BlendMontagePoseUVE(const Asset::AnimationMontageAssetUVE& montage, const d
         skeleton.pose[i] = out;
     }
     return true;
+}
+
+bool BlendMontagePoseUVE(const Asset::AnimationMontageAssetUVE& montage, const double time, const float weight,
+                         const AnimationClipResolverUVE& clipFor, Skeleton3DComponentUVE& skeleton) {
+    if (!(weight > 0.0F)) {
+        return false;
+    }
+    return BlendBonePosesUVE(skeleton, PoseMontageUVE(montage, time, clipFor, skeleton), weight);
 }
 
 } // namespace UVE::Scene
