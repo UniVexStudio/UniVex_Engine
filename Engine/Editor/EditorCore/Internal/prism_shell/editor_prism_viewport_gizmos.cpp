@@ -450,6 +450,10 @@ void EditorPrismViewportGizmosUVE::paint(prism::Canvas& c) {
         if (b.glyph == GlyphUVE::Icon) {
             continue;
         }
+        // The camera the view looks through draws no glyph of its own: it would frame the view.
+        if (b.glyph == GlyphUVE::Camera && b.entity == m_editor.GetPreviewCameraUVE()) {
+            continue;
+        }
         const bool selected = m_editor.IsEntitySelectedUVE(b.entity);
         prism::ObjectGizmoStyle style;
         style.color = selected ? prism::Color(255, 168, 64) : b.tint;

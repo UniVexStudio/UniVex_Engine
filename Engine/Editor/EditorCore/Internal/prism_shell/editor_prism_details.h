@@ -17,6 +17,7 @@
 #include <vector>
 
 namespace prism {
+class EngineView;
 class Label;
 class PropertyGrid;
 class TextInput;
@@ -44,6 +45,8 @@ public:
     /// Rebuilds the rows when the selection, its components or the search change; otherwise
     /// refreshes the shown values (never the one being edited).
     void RefreshUVE();
+    /// The camera Screen is on: the shell shows the selected camera's view in its viewport's corner.
+    [[nodiscard]] bool CameraScreenOpenUVE() const noexcept { return m_cameraScreenOpen; }
 
 private:
     using EntryUVE = Core::TypeMetadataEntryUVE;
@@ -80,6 +83,13 @@ private:
     [[nodiscard]] std::filesystem::path PathOfGuidUVE(Asset::AssetGuidUVE guid) const;
 
     void RebuildUVE(Scene::EntityUVE entity);
+    // Rows some objects need beyond their properties (editor_prism_details_objects.cpp).
+    void AddCameraPreviewUVE(Scene::EntityUVE entity);
+    void AddSkeletonSourceUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
+                              bool writable);
+    void AddSkeletonBonesUVE(int category, const void* instance);
+    void AddBonePickerUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
+                          bool writable);
     void AddTransformUVE(int category, Scene::EntityUVE entity);
     /// The material file at `absolutePath`, edited in place (editor_prism_details_material.cpp).
     void AddMaterialSectionUVE(const std::filesystem::path& absolutePath, const std::string& slotLabel);
@@ -101,6 +111,8 @@ private:
     std::string m_filter;
     // Materials the rows just added use, shown as their own sections after the component's rows.
     std::vector<std::pair<std::filesystem::path, std::string>> m_pendingMaterials;
+    // The camera Screen toggle (kept across selections).
+    bool m_cameraScreenOpen = true;
 };
 
 } // namespace UVE::Editor

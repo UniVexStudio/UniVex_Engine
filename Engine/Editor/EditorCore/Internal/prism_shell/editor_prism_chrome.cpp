@@ -5,6 +5,7 @@
 
 #include "prism/Application.h"
 #include "prism/Canvas.h"
+#include "prism/EngineView.h"
 #include "prism/Theme.h"
 
 #include <algorithm>
@@ -169,6 +170,58 @@ bool DragStripUVE::onMouseDown(const prism::MouseEvent& e) {
         prism::Application::get().platform().toggleMaximizeWindow(CurrentWindowUVE());
     }
     return e.button == prism::MouseButton::Left;
+}
+
+// --------------------------------------------------------------------------------- camera screen
+
+namespace {
+constexpr float kCameraScreenCaptionUVE = 20.0F;
+constexpr float kCameraScreenMarginUVE = 12.0F;
+} // namespace
+
+CameraScreenUVE::CameraScreenUVE() {
+    auto view = prism::make<prism::EngineView>();
+    view->mode = prism::EngineView::Mode::Hole;
+    m_view = view;
+    addChild(m_view);
+}
+
+void CameraScreenUVE::setTitle(std::string title) {
+    if (title != m_title) {
+        m_title = std::move(title);
+        invalidate();
+    }
+}
+
+prism::Vec2 CameraScreenUVE::measure(prism::Vec2 available) {
+    return m_desired = constrain(available);
+}
+
+void CameraScreenUVE::arrange(const prism::Rect r) {
+    // Its corner of the view: a quarter of the width, 16:9, never smaller than readable.
+    const float w = std::floor(std::clamp(r.w * 0.28F, 180.0F, 420.0F));
+    const float h = std::floor(w * 9.0F / 16.0F);
+    const prism::Rect frame{r.right() - w - kCameraScreenMarginUVE - 2.0F,
+                            r.bottom() - h - kCameraScreenCaptionUVE - kCameraScreenMarginUVE - 2.0F, w + 2.0F,
+                            h + kCameraScreenCaptionUVE + 2.0F};
+    prism::Widget::arrange(frame);
+    m_viewRect = prism::Rect{frame.x + 1.0F, frame.y + kCameraScreenCaptionUVE + 1.0F, w, h};
+    m_view->arrange(m_viewRect);
+}
+
+void CameraScreenUVE::paint(prism::Canvas& c) {
+    const prism::Theme& t = prism::theme();
+    const prism::Rect r = rect();
+    c.shadow(r, 4, 10, prism::Color(0, 0, 0, 160));
+    c.fillRect(prism::Rect{r.x, r.y, r.w, kCameraScreenCaptionUVE + 1.0F}, t.header);
+    c.textIn(*t.small, prism::Rect{r.x + 8.0F, r.y, r.w - 16.0F, kCameraScreenCaptionUVE}, m_title, t.textBright,
+             prism::HAlign::Left, true);
+    m_view->paint(c);
+    c.strokeRect(r, t.borderStrong, 1);
+}
+
+bool CameraScreenUVE::onMouseDown(const prism::MouseEvent& e) {
+    return e.button == prism::MouseButton::Left;   // its own corner: a click there is not a viewport click
 }
 
 // -------------------------------------------------------------------------------- window buttons

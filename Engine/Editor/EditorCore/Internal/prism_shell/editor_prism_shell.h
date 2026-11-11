@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 
+#include "editor_prism_chrome.h"
 #include "editor_prism_content_browser.h"
 #include "editor_prism_details.h"
 #include "editor_prism_dock_panels.h"
@@ -98,6 +99,9 @@ private:
     void ApplyLayoutPresetUVE(int preset);
 
 public:
+    /// Renders the selected camera's Screen of `details` (when it is shown) and adds it to `views`.
+    static void AppendCameraScreenUVE(EditorUVE& editor, const EditorPrismDetailsUVE& details, CameraScreenUVE* screen,
+                                      std::vector<EditorPrismHostUVE::ViewImageUVE>& views);
     /// Places content dropped on the Outliner (entity assets, models) under the row at `at`.
     bool DropContentOnOutlinerUVE(const std::string& relativePath, prism::Vec2 at);
 
@@ -134,6 +138,7 @@ private:
     std::shared_ptr<prism::Button> m_filterButton;
     std::shared_ptr<prism::EngineView> m_viewport;
     std::shared_ptr<EditorPrismViewportGizmosUVE> m_gizmos;
+    std::shared_ptr<CameraScreenUVE> m_cameraScreen;
     std::shared_ptr<prism::ComboBox> m_selectionMode;
     std::shared_ptr<prism::Button> m_playButton;
     std::shared_ptr<prism::Button> m_pauseButton;

@@ -1135,20 +1135,64 @@ public:
         const bool wantPreview =
             !gameWorkspaceActive_ && !studioView_ &&
             ((previewCamera != UVE::Scene::kInvalidEntityUVE) || selectedIsCamera);
+        // Looking through a Camera3D flies the view into it, and back out to where it was: an
+        // animation of the editor camera, not a cut (the small Details preview cuts, it has no
+        // view of its own to fly from).
+        const bool flies = !inspectorCameraPreview && !selectedIsCamera;
         if (wantPreview && !previewing_) {
             poseBeforePreview_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
                                                camera_.IsOrthographic()};
+            fovBeforePreview_ = camera_.Settings().fovYRadians;
             previewing_ = true;
+            if (flies) {
+                if (const std::optional<CameraFlightPoseUVE> into = CameraEntityPoseUVE(previewCamera)) {
+                    camera_.CancelAnimation();
+                    flight_ = CameraFlightUVE{CurrentFlightPoseUVE(), *into, 0.0F, true};
+                    camera_.SetOrthographic(false);
+                }
+            }
         } else if (!wantPreview && previewing_) {
             if (poseBeforePreview_.has_value()) {
                 camera_.CancelAnimation();
-                camera_.SetTarget(poseBeforePreview_->target);
-                camera_.SetYawPitch(poseBeforePreview_->yaw, poseBeforePreview_->pitch);
-                camera_.SetDistance(poseBeforePreview_->distance);
+                const CameraFlightPoseUVE back{poseBeforePreview_->target, poseBeforePreview_->yaw,
+                                               poseBeforePreview_->pitch, poseBeforePreview_->distance, fovBeforePreview_};
+                const std::optional<CameraFlightPoseUVE> from =
+                    flight_.has_value() ? std::optional<CameraFlightPoseUVE>{CurrentFlightPoseUVE()}
+                                        : CameraEntityPoseUVE(lastPreviewCamera_);
+                if (flies && from.has_value()) {
+                    ApplyFlightPoseUVE(*from);
+                    flight_ = CameraFlightUVE{*from, back, 0.0F, false};
+                } else {
+                    flight_.reset();
+                    ApplyFlightPoseUVE(back);
+                }
                 camera_.SetOrthographic(poseBeforePreview_->orthographic);
                 poseBeforePreview_.reset();
             }
             previewing_ = false;
+        }
+        if (previewCamera != UVE::Scene::kInvalidEntityUVE) {
+            lastPreviewCamera_ = previewCamera;
+        }
+        if (flight_.has_value()) {
+            flight_->t = std::min(1.0F, flight_->t + In().deltaTime / kCameraFlightSecondsUVE);
+            const float t = flight_->t;
+            const float e = t * t * (3.0F - 2.0F * t);   // ease in and out
+            const CameraFlightPoseUVE& a = flight_->from;
+            const CameraFlightPoseUVE& b = flight_->to;
+            float yawDelta = b.yaw - a.yaw;
+            while (yawDelta > 3.14159265F) { yawDelta -= 6.2831853F; }
+            while (yawDelta < -3.14159265F) { yawDelta += 6.2831853F; }
+            ApplyFlightPoseUVE(CameraFlightPoseUVE{a.target + (b.target - a.target) * e, a.yaw + yawDelta * e,
+                                                   a.pitch + (b.pitch - a.pitch) * e,
+                                                   a.distance + (b.distance - a.distance) * e,
+                                                   a.fovY + (b.fovY - a.fovY) * e});
+            if (t >= 1.0F) {
+                if (!flight_->entering) {
+                    camera_.Settings().fovYRadians = fovBeforePreview_;
+                }
+                flight_.reset();
+            }
         }
         const bool hostGizmos = overlayState.hostDrawsGizmos;
         renderPass_->Settings().viewGizmos = !hostGizmos && !studioView_ && !gameWorkspaceActive_ && !previewing_;
@@ -1211,7 +1255,8 @@ public:
             lookThroughCamera = FindGameCameraEntityUVE(entityManager_);
         } else if (selectedIsCamera) {
             lookThroughCamera = selectedEntity;
-        } else if (wantPreview) {
+        } else if (wantPreview && !flight_.has_value()) {
+            // Through the camera itself once the view has flown into it.
             lookThroughCamera = previewCamera;
         }
         // ---- Editor preview lighting (Godot's "Preview Sun and Environment") -----------------
@@ -2679,6 +2724,68 @@ private:
     std::optional<CameraPoseUVE> poseBeforeStudio_;
     std::optional<CameraPoseUVE> poseBeforePreview_;
     bool previewing_ = false;
+
+    // The fly into a Camera3D (and back out): the editor camera eased between two poses.
+    static constexpr float kCameraFlightSecondsUVE = 0.45F;
+    struct CameraFlightPoseUVE final {
+        univex::math::Vec3 target{};
+        float yaw = 0.0F;
+        float pitch = 0.0F;
+        float distance = 1.0F;
+        float fovY = 0.87F;
+    };
+    struct CameraFlightUVE final {
+        CameraFlightPoseUVE from;
+        CameraFlightPoseUVE to;
+        float t = 0.0F;
+        bool entering = true;
+    };
+    std::optional<CameraFlightUVE> flight_;
+    float fovBeforePreview_ = 0.87F;
+    UVE::Scene::EntityUVE lastPreviewCamera_ = UVE::Scene::kInvalidEntityUVE;
+
+    [[nodiscard]] CameraFlightPoseUVE CurrentFlightPoseUVE() const {
+        return CameraFlightPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
+                                   camera_.Settings().fovYRadians};
+    }
+    void ApplyFlightPoseUVE(const CameraFlightPoseUVE& pose) {
+        camera_.SetTarget(pose.target);
+        camera_.SetYawPitch(pose.yaw, pose.pitch);
+        camera_.SetDistance(pose.distance);
+        camera_.Settings().fovYRadians = pose.fovY;
+    }
+    /// The editor-camera pose that sees what `entity` (a Camera3D) sees: its eye at the camera,
+    /// looking down its -Z, with its field of view.
+    [[nodiscard]] std::optional<CameraFlightPoseUVE> CameraEntityPoseUVE(const UVE::Scene::EntityUVE entity) const {
+        if (entity == UVE::Scene::kInvalidEntityUVE || !entityManager_.IsAliveUVE(entity) ||
+            !entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(entity)) {
+            return std::nullopt;
+        }
+        const auto& world = entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(entity);
+        const UVE::Math::Vector3UVE f =
+            UVE::Math::RotateVectorUVE(world.worldRotation, UVE::Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+        const float length = std::sqrt(f.x * f.x + f.y * f.y + f.z * f.z);
+        if (!(length > 1e-5F)) {
+            return std::nullopt;
+        }
+        const univex::math::Vec3 forward{f.x / length, f.y / length, f.z / length};
+        const float distance = std::max(1.0F, camera_.Distance() * 0.25F);
+        const univex::math::Vec3 eye{world.worldPosition.x, world.worldPosition.y, world.worldPosition.z};
+        CameraFlightPoseUVE pose;
+        pose.target = eye + forward * distance;
+        pose.distance = distance;
+        // Eye = target + offset * distance with offset = -forward (OrbitCamera::Eye()).
+        pose.pitch = std::asin(std::clamp(-forward.y, -1.0F, 1.0F));
+        pose.yaw = std::atan2(-forward.z, -forward.x);
+        pose.fovY = camera_.Settings().fovYRadians;
+        if (entityManager_.HasComponentUVE<UVE::Scene::CameraComponentUVE>(entity)) {
+            const float degrees = entityManager_.GetComponentUVE<UVE::Scene::CameraComponentUVE>(entity).fieldOfViewDegrees;
+            if (degrees > 1.0F && degrees < 179.0F) {
+                pose.fovY = degrees * 3.14159265F / 180.0F;
+            }
+        }
+        return pose;
+    }
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
     // the transform gizmo off while the Game workspace tab is active (see ApplyOverlayStateUVE's
     // own comment - it already forces the grid off directly, but the gizmo's visibility is decided
