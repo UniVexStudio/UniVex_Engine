@@ -5,6 +5,7 @@
 #include "editor_prism_details.h"
 #include "editor_prism_dock_panels.h"
 #include "editor_prism_entity_editor.h"
+#include "editor_prism_file_dialog.h"
 #include "editor_prism_host.h"
 #include "editor_prism_icons.h"
 #include "editor_prism_view_toolbar.h"
@@ -118,6 +119,8 @@ private:
     EditorPrismHostUVE m_host;
     // The Entity Editor's window (opened while an entity is open); shares the host.
     EditorPrismEntityEditorUVE m_entityEditor;
+    // The file window every Load / Quick Import opens.
+    EditorPrismFileDialogUVE m_fileDialog;
     EditorPrismContentBrowserUVE m_contentBrowser;
     EditorPrismDetailsUVE m_details2;
     EditorPrismDockPanelsUVE m_dockPanels;

@@ -697,6 +697,61 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         };
         text->onCommit = [this, e, p](const std::string& v) { static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &v)); };
         editor = text;
+        // A "file:ext,..." row names a file: the path stays editable, and the picker beside it offers
+        // the project's files of those kinds, Load... and Quick Import....
+        constexpr std::string_view kFilePrefix = "file:";
+        if (property.customDrawerId.rfind(kFilePrefix, 0U) == 0U) {
+            std::vector<std::string> extensions;
+            std::string list = property.customDrawerId.substr(kFilePrefix.size());
+            for (std::size_t start = 0U; start <= list.size();) {
+                const std::size_t comma = list.find(',', start);
+                const std::string kind = list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+                if (!kind.empty()) {
+                    extensions.push_back("." + kind);
+                }
+                if (comma == std::string::npos) {
+                    break;
+                }
+                start = comma + 1U;
+            }
+            auto pick = prism::make<prism::Button>("", prism::Icon::Dots, prism::ButtonStyle::Default);
+            pick->setTooltip("Pick, load or quick import a file");
+            std::weak_ptr<prism::Button> weakPick = pick;
+            pick->onClick = [this, e, p, weakPick, extensions] {
+                const PickerSpecUVE spec = PickerSpecForUVE(extensions);
+                PickerActionsUVE actions;
+                const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+                const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
+                if (em.HasComponentUVE(selected, e->typeIndex)) {
+                    std::string value;
+                    p->getValue(em.GetComponentPointerUVE(selected, e->typeIndex), &value);
+                    if (!value.empty()) {
+                        const std::filesystem::path stored{value};
+                        actions.current = stored.is_absolute() ? stored : snapshot.contentRoot / stored;
+                    }
+                }
+                actions.empty = [this, e, p] {
+                    const std::string none;
+                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
+                };
+                actions.file = [this, e, p](const std::filesystem::path& absolute) {
+                    // Content-relative, as these rows have always stored it; a file outside Content keeps its full path.
+                    const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+                    const std::filesystem::path relative = absolute.lexically_relative(root);
+                    const std::string value = (relative.empty() || *relative.begin() == "..") ? absolute.generic_string()
+                                                                                                : relative.generic_string();
+                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &value));
+                };
+                if (auto b = weakPick.lock()) {
+                    ShowPickerUVE(spec, std::move(actions), b->rect());
+                }
+            };
+            auto box = prism::hbox(4.0F);
+            box->add(text, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+            box->add(pick, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+            editor = box;
+        }
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
         auto button = prism::make<prism::Button>("", prism::Icon::Layers, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
@@ -794,66 +849,75 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 }
             }
         }
-        button->onClick = [this, e, p, weak, extensions] {
-            std::vector<prism::MenuItem> items;
-            items.push_back(prism::MenuItem::Item("(None)", [this, e, p] {
-                const Asset::AssetGuidUVE none{};
-                static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
-            }));
-            const bool isMaterial = std::find(extensions.begin(), extensions.end(), ".uvmat") != extensions.end();
-            if (isMaterial) {
-                // A new material in the Content Browser's folder, assigned at once.
-                items.push_back(prism::MenuItem::Item("New Material", [this, e, p] {
-                    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                    const std::optional<std::filesystem::path> created =
-                        m_editor.CreateContentCatalogueItemUVE("material", snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
-                    if (!created.has_value()) {
-                        m_editor.m_contentStatusMessage = "Could not create a material here.";
-                        return;
-                    }
-                    m_editor.RefreshProjectFileIndexUVE();
-                    const Asset::AssetGuidUVE guid = m_editor.m_services->GetAssetDatabaseUVE().RegisterUVE(*created);
-                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &guid));
-                }, "", prism::Icon::Plus));
-                Asset::AssetGuidUVE current{};
+        // A MeshInstance3D's mesh: a model, or one of the built-in shapes, or nothing.
+        const bool meshSource = e->typeIndex == std::type_index(typeid(Scene::MeshComponentUVE)) && property.name == "meshGuid";
+        if (meshSource) {
+            row->sync = [this, p, weak](const void* inst) {
+                auto b = weak.lock();
+                if (!b || inst == nullptr) {
+                    return;
+                }
+                Asset::AssetGuidUVE value{};
+                p->getValue(inst, &value);
                 const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
                 const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
-                if (em.HasComponentUVE(selected, e->typeIndex)) {
-                    p->getValue(em.GetComponentPointerUVE(selected, e->typeIndex), &current);
+                std::string text = "(Empty)";
+                if (value != Asset::AssetGuidUVE{}) {
+                    const std::filesystem::path path = PathOfGuidUVE(value);
+                    text = path.empty() ? std::string("(missing model)") : path.filename().string();
+                } else if (em.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected)) {
+                    static constexpr const char* kNames[] = {"Box", "Sphere", "Plane", "Capsule", "Cylinder"};
+                    const auto kind = static_cast<std::size_t>(em.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected).kind);
+                    text = std::string(kind < std::size(kNames) ? kNames[kind] : "Shape") + " (shape)";
                 }
-                if (current != Asset::AssetGuidUVE{}) {
-                    items.push_back(prism::MenuItem::Item("Show in Content Browser", [this, current] {
-                        for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
-                            if (file.registeredAssetGuid.has_value() && *file.registeredAssetGuid == current) {
-                                m_editor.m_contentBrowserDirectory = file.relativePath.parent_path();
-                                m_editor.m_contentBrowserShelf.clear();
-                                m_editor.m_contentSelection.ClearUVE();
-                                m_editor.m_selectedProjectFile = file;
-                                break;
-                            }
-                        }
-                    }, "", prism::Icon::FolderOpen));
+                if (b->text() != text) {
+                    b->setText(text);
                 }
+            };
+        }
+        button->onClick = [this, e, p, weak, extensions, meshSource] {
+            PickerSpecUVE spec = PickerSpecForUVE(extensions);
+            spec.shapes = meshSource;
+            PickerActionsUVE actions;
+            const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+            const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
+            if (em.HasComponentUVE(selected, e->typeIndex)) {
+                Asset::AssetGuidUVE current{};
+                p->getValue(em.GetComponentPointerUVE(selected, e->typeIndex), &current);
+                actions.current = PathOfGuidUVE(current);
             }
-            items.push_back(prism::MenuItem::Sep());
-            for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
-                if (!file.registeredAssetGuid.has_value()) {
-                    continue;
+            if (meshSource) {
+                if (em.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected)) {
+                    actions.currentShape = em.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(selected).kind;
                 }
-                const std::string ext = LowerUVE(file.relativePath.extension().string());
-                if (std::find(extensions.begin(), extensions.end(), ext) == extensions.end()) {
-                    continue;
-                }
-                const Asset::AssetGuidUVE guid = *file.registeredAssetGuid;
-                items.push_back(prism::MenuItem::Item(file.relativePath.generic_string(), [this, e, p, guid] {
+                actions.empty = [this] { static_cast<void>(m_editor.SetSelectedMeshSourceUVE(Asset::AssetGuidUVE{}, std::nullopt)); };
+                actions.file = [this](const std::filesystem::path& absolute) {
+                    const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
+                    if (guid == Asset::AssetGuidUVE{}) {
+                        m_editor.m_contentStatusMessage = "Could not read " + absolute.filename().string() + " as a model.";
+                        return;
+                    }
+                    static_cast<void>(m_editor.SetSelectedMeshSourceUVE(guid, std::nullopt));
+                };
+                actions.shape = [this](const Scene::PrimitiveMeshKindUVE kind) {
+                    static_cast<void>(m_editor.SetSelectedMeshSourceUVE(Asset::AssetGuidUVE{}, kind));
+                };
+            } else {
+                actions.empty = [this, e, p] {
+                    const Asset::AssetGuidUVE none{};
+                    static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
+                };
+                actions.file = [this, e, p](const std::filesystem::path& absolute) {
+                    const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
+                    if (guid == Asset::AssetGuidUVE{}) {
+                        m_editor.m_contentStatusMessage = "Could not use " + absolute.filename().string() + ".";
+                        return;
+                    }
                     static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &guid));
-                }));
-            }
-            if (items.back().separator) {
-                items.push_back(prism::MenuItem::Item("No matching assets in this project", {}).disabled());
+                };
             }
             if (auto b = weak.lock()) {
-                prism::showMenu(std::move(items), b->rect(), prism::PopupPlacement::Below);
+                ShowPickerUVE(spec, std::move(actions), b->rect());
             }
         };
         editor = button;

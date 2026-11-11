@@ -1560,6 +1560,79 @@ bool EditorUVE::SetSelectedPrimitiveMeshUVE(const Scene::PrimitiveMeshComponentU
     return true;
 }
 
+bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
+                                         const std::optional<Scene::PrimitiveMeshKindUVE> shape) {
+    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE()) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity)) {
+        return false;
+    }
+    const Scene::MeshComponentUVE beforeMesh = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
+    std::optional<Scene::PrimitiveMeshComponentUVE> beforeShape;
+    if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(m_selectedEntity)) {
+        beforeShape = entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(m_selectedEntity);
+    }
+    Scene::MeshComponentUVE afterMesh = beforeMesh;
+    std::optional<Scene::PrimitiveMeshComponentUVE> afterShape;
+    if (shape.has_value()) {
+        afterMesh.meshGuid = Asset::kInvalidAssetGuidUVE;
+        Scene::PrimitiveMeshComponentUVE primitive = beforeShape.value_or(Scene::PrimitiveMeshComponentUVE{});
+        primitive.kind = *shape;
+        // The surface keeps the material the mesh had.
+        if (primitive.materialGuid == Asset::kInvalidAssetGuidUVE) {
+            primitive.materialGuid = beforeMesh.materialGuid;
+        }
+        afterShape = primitive;
+    } else {
+        afterMesh.meshGuid = model;
+    }
+    const bool sameShape = beforeShape.has_value() == afterShape.has_value() &&
+                           (!afterShape.has_value() || beforeShape->kind == afterShape->kind);
+    if (afterMesh.meshGuid == beforeMesh.meshGuid && sameShape) {
+        return false;
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    if (!ApplyMeshSourceStateUVE(m_selectedEntity, afterMesh, afterShape)) {
+        return false;
+    }
+    // A skinned mesh takes the bones of the model it now draws.
+    if (!shape.has_value() && model != Asset::kInvalidAssetGuidUVE &&
+        entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
+        auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
+        AutoPopulateSkinFromModelUVE(m_selectedEntity, skin);
+        entityManager.AddComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity, skin);
+    }
+    m_sceneDirty = true;
+    RecordHistoryUVE(MeshSourceHistoryEntryUVE{m_selectedEntity, beforeMesh, beforeShape, afterMesh, afterShape,
+                                               selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    return true;
+}
+
+bool EditorUVE::ApplyMeshSourceStateUVE(const Scene::EntityUVE entity, const Scene::MeshComponentUVE& mesh,
+                                        const std::optional<Scene::PrimitiveMeshComponentUVE>& shape) {
+    if (!IsDocumentEntityUVE(entity)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+        return false;
+    }
+    entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity) = mesh;
+    if (shape.has_value()) {
+        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, *shape);
+        if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
+            FitColliderToPrimitiveKindUVE(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity), shape->kind);
+        }
+    } else if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+        entityManager.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
+    }
+    InvalidateHierarchyFilterCacheUVE();
+    return true;
+}
+
 bool EditorUVE::IsSceneComponentValueValidUVE(
     const EditorSceneComponentKindUVE kind, const EditorSceneComponentValueUVE& value) const noexcept {
     return std::visit(
@@ -4067,6 +4140,13 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
+            } else if constexpr (std::is_same_v<EntryType, MeshSourceHistoryEntryUVE>) {
+                if (!ApplyMeshSourceStateUVE(typedEntry.entity, typedEntry.beforeMesh, typedEntry.beforeShape)) {
+                    return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionBefore);
+                m_sceneDirty = typedEntry.dirtyBefore;
+                return true;
             } else if constexpr (std::is_same_v<EntryType, SceneComponentHistoryEntryUVE>) {
                 if (!ApplySceneComponentStateUVE(typedEntry.entity, typedEntry.kind, typedEntry.before)) {
                     return false;
@@ -4175,6 +4255,13 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 return true;
             } else if constexpr (std::is_same_v<EntryType, PrimitiveAppearanceHistoryEntryUVE>) {
                 if (!ApplyPrimitiveMeshStateUVE(typedEntry.entity, typedEntry.after)) {
+                    return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionAfter);
+                m_sceneDirty = typedEntry.dirtyAfter;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, MeshSourceHistoryEntryUVE>) {
+                if (!ApplyMeshSourceStateUVE(typedEntry.entity, typedEntry.afterMesh, typedEntry.afterShape)) {
                     return false;
                 }
                 RestoreSelectionUVE(typedEntry.selectionAfter);

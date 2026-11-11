@@ -96,6 +96,17 @@ FilePickerListingUVE EditorUVE::BuildFilePickerListingUVE(const std::vector<Asse
 }
 
 void EditorUVE::OpenFilePickerUVE(FilePickerRequestUVE request) {
+    if (m_filePickerHost) {
+        // A pick made for the open entity lands on the entity, whatever is active when it fires.
+        if (m_entityDocumentActive && request.onPick) {
+            request.onPick = [this, pick = std::move(request.onPick)](const std::filesystem::path& chosen) {
+                const EntityDocumentScopeUVE scope(*this);
+                pick(chosen);
+            };
+        }
+        m_filePickerHost(std::move(request));
+        return;
+    }
     // One picker: opening another replaces the pending one, and the replaced onPick never fires.
     FilePickerStateUVE picker;
     picker.request = std::move(request);

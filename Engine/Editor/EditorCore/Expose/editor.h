@@ -391,6 +391,8 @@ struct FilePickerRequestUVE final {
     std::vector<std::string> extensions;
     std::filesystem::path startDirectory;
     std::string saveName;
+    /// Quick Import: the picked file is copied into a Content folder first, and the copy is picked.
+    bool quickImport = false;
     std::function<void(const std::filesystem::path&)> onPick;
 };
 
@@ -446,6 +448,7 @@ class EditorUVE final {
     friend class EditorPrismDockPanelsUVE;
     friend class EditorPrismViewToolbarUVE;
     friend class EditorPrismEntityEditorUVE;
+    friend class EditorPrismFileDialogUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -801,6 +804,10 @@ public:
     /// without a factory the Entity Editor cannot open.
     using DocumentSceneFactoryUVE = std::function<std::unique_ptr<Core::DocumentSceneUVE>()>;
     void SetDocumentSceneFactoryUVE(DocumentSceneFactoryUVE factory) { m_documentSceneFactory = std::move(factory); }
+    /// Where OpenFilePickerUVE opens its window when the editor has a host for it (the PRISM file
+    /// window); without one the built-in picker is used.
+    using FilePickerHostUVE = std::function<void(FilePickerRequestUVE)>;
+    void SetFilePickerHostUVE(FilePickerHostUVE host) { m_filePickerHost = std::move(host); }
     /// Called with a document scene's services just before that scene is destroyed, so whatever
     /// draws it (the viewport backends) lets go first.
     using DocumentSceneClosingUVE = std::function<void(const Core::EngineServicesUVE&)>;
@@ -1177,6 +1184,9 @@ public:
     /// becomes one Primitive Appearance Undo/Redo transaction. Invalid, unchanged, multi-selected,
     /// protected-Play, or competing-gesture state returns false without mutation.
     [[nodiscard]] bool SetSelectedPrimitiveMeshUVE(const Scene::PrimitiveMeshComponentUVE& primitive);
+    /// What the selected MeshInstance3D draws: a model (`model`), a built-in shape (`shape`, the
+    /// model cleared) or nothing (neither). Undoable; a skinned mesh's bones follow a new model.
+    [[nodiscard]] bool SetSelectedMeshSourceUVE(Asset::AssetGuidUVE model, std::optional<Scene::PrimitiveMeshKindUVE> shape);
 
     /// Moves the selected document entity by a finite world-space distance along one unit world
     /// axis. Parent world rotation and scale are converted back to a local position delta before
@@ -1882,6 +1892,19 @@ private:
         bool dirtyAfter = false;
     };
 
+    /// A MeshInstance3D's mesh changed between a model, a built-in shape and nothing.
+    struct MeshSourceHistoryEntryUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        Scene::MeshComponentUVE beforeMesh{};
+        std::optional<Scene::PrimitiveMeshComponentUVE> beforeShape;
+        Scene::MeshComponentUVE afterMesh{};
+        std::optional<Scene::PrimitiveMeshComponentUVE> afterShape;
+        EditorSelectionSnapshotUVE selectionBefore;
+        EditorSelectionSnapshotUVE selectionAfter;
+        bool dirtyBefore = false;
+        bool dirtyAfter = false;
+    };
+
     struct SceneComponentHistoryEntryUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
         EditorSceneComponentKindUVE kind = EditorSceneComponentKindUVE::Camera;
@@ -1984,6 +2007,7 @@ private:
 
     using HistoryEntryUVE =
         std::variant<TransformHistoryEntryUVE, NameHistoryEntryUVE, PrimitiveAppearanceHistoryEntryUVE,
+                     MeshSourceHistoryEntryUVE,
                      SceneComponentHistoryEntryUVE, ComponentPropertyHistoryEntryUVE,
                      CreationHistoryEntryUVE, SceneObjectCreationHistoryEntryUVE,
                      DuplicationHistoryEntryUVE,
@@ -2051,6 +2075,8 @@ private:
                                                const Scene::TransformComponentUVE& transform);
     [[nodiscard]] bool ApplyEntityNameStateUVE(Scene::EntityUVE entity,
                                                 const std::optional<std::string>& name);
+    [[nodiscard]] bool ApplyMeshSourceStateUVE(Scene::EntityUVE entity, const Scene::MeshComponentUVE& mesh,
+                                               const std::optional<Scene::PrimitiveMeshComponentUVE>& shape);
     [[nodiscard]] bool ApplyPrimitiveMeshStateUVE(Scene::EntityUVE entity,
                                                     const Scene::PrimitiveMeshComponentUVE& primitive);
     [[nodiscard]] bool IsSceneComponentValueValidUVE(EditorSceneComponentKindUVE kind,
@@ -3235,6 +3261,7 @@ private:
     void FinishEntityEditorCloseUVE();
     DocumentSceneFactoryUVE m_documentSceneFactory;
     DocumentSceneClosingUVE m_documentSceneClosing;
+    FilePickerHostUVE m_filePickerHost;
     std::unique_ptr<Core::DocumentSceneUVE> m_entityScene;
     DocumentStateUVE m_otherDocument;
     bool m_entityDocumentActive = false;

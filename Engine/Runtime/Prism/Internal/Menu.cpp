@@ -22,7 +22,8 @@ public:
       lw = std::max(lw, std::ceil(t.ui->width(it.label)));
       sw = std::max(sw, std::ceil(t.ui->width(it.shortcut)));
     }
-    float w = 30 + lw + (sw > 0 ? 28 + sw : 0) + 28;
+    // The label is drawn from x+30 in a box 60 narrower than the row: the row is that much wider.
+    float w = 30 + lw + 30 + 4 + (sw > 0 ? 28 + sw : 0);
     float h = kPadY * 2;
     for (auto& it : m_items) h += it.separator ? kSepH : kRowH;
     return m_desired = {std::max(w, 190.f), h};
@@ -47,6 +48,7 @@ public:
       if (it.checkable) {
         if (it.checked) drawIcon(c, Icon::Check, ic, hot ? t.accentText : t.accent, 1.6f);
         else if (it.image && it.imageSize > 0) c.blitBlend(it.image, it.imageSize, it.imageSize, it.imageSize, ic);
+        else if (it.icon != Icon::None) drawIcon(c, it.icon, ic, dim);
       } else if (it.image && it.imageSize > 0) {
         c.blitBlend(it.image, it.imageSize, it.imageSize, it.imageSize, ic);
       } else if (it.icon != Icon::None) {
