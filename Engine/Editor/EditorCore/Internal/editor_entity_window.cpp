@@ -13,6 +13,7 @@
 #include <cfloat>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -27,6 +28,7 @@
 #include "script_component.h"
 #include "uvscript_object_host.h"
 #include "uvscript_compiler.h"
+#include "uvscript_instance.h"
 #include "uvscript_parser.h"
 #include "uve_file_envelope.h"
 
@@ -39,6 +41,21 @@ namespace {
 
 
 } // namespace
+
+/// The Entity Editor's Simulate: each scripted object's compiled UVScript, and the entity as it
+/// was when Play was pressed.
+struct EntitySimulationUVE final {
+    struct ScriptUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        std::unique_ptr<Core::UVScriptObjectHostUVE> host;
+        std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
+        bool ready = false;
+    };
+    Scene::SceneSnapshotUVE snapshot;
+    bool dirtyBefore = false;
+    bool paused = false;
+    std::vector<ScriptUVE> scripts;
+};
 
 Scene::EntityUVE EditorUVE::LoadEntityIntoDocumentUVE(const Asset::AssetGuidUVE guid) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -205,6 +222,8 @@ bool EditorUVE::SaveEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
+    // What a simulation did is not the entity: it is put back before anything is written.
+    static_cast<void>(StopEntitySimulationUVE());
     const EntityDocumentScopeUVE scope(*this);
     static_cast<void>(CommitComponentPropertyPreviewUVE());
     const Scene::EntityUVE root = GetEntityEditorRootUVE();
@@ -231,6 +250,10 @@ bool EditorUVE::SaveEntityEditorUVE() {
 bool EditorUVE::RevertEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return false;
+    }
+    if (m_entityEditSession->simulation != nullptr) {
+        m_entityEditSession->simulation->scripts.clear();
+        m_entityEditSession->simulation.reset();
     }
     const EntityDocumentScopeUVE scope(*this);
     m_componentPropertyPreview.reset();
@@ -275,6 +298,10 @@ void EditorUVE::FinishEntityEditorCloseUVE() {
     }
     CloseOpenUVScriptUVE();
     m_componentPropertyPreview.reset();
+    if (m_entityEditSession->simulation != nullptr) {
+        m_entityEditSession->simulation->scripts.clear();   // before the scene they run on goes
+        m_entityEditSession->simulation.reset();
+    }
     const EntityEditSessionUVE session = std::move(*m_entityEditSession);
     m_entityEditSession.reset();
     m_otherDocument = DocumentStateUVE{};
@@ -572,6 +599,152 @@ bool EditorUVE::GoToEntityScriptUVE(const Scene::EntityUVE entity, const std::ui
     m_entityEditSession->forceTab = true;
     m_uvscriptJumpLine = line;
     return true;
+}
+
+
+// ------------------------------------------------------------------------------------ simulate
+
+
+bool EditorUVE::PlayEntitySimulationUVE() {
+    if (!m_entityEditSession.has_value()) {
+        return false;
+    }
+    if (m_entityEditSession->simulation != nullptr) {
+        m_entityEditSession->simulation->paused = false;
+        return true;
+    }
+    const EntityDocumentScopeUVE scope(*this);
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
+    const Scene::EntityUVE root = GetEntityEditorRootUVE();
+    if (root == Scene::kInvalidEntityUVE) {
+        m_contentStatusMessage = "An entity has exactly one root object: put the other top-level objects under it, then simulate.";
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const std::optional<Scene::SceneSnapshotUVE> snapshot =
+        m_services->GetSceneSerializerUVE().CaptureUVE(entityManager, {root}, Asset::AssetKindUVE::Prefab);
+    if (!snapshot.has_value()) {
+        m_contentStatusMessage = "Could not take the entity's state to simulate it.";
+        return false;
+    }
+    auto simulation = std::make_shared<EntitySimulationUVE>();
+    simulation->snapshot = *snapshot;
+    simulation->dirtyBefore = m_sceneDirty;
+    std::size_t failed = 0U;
+    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
+        if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+            continue;
+        }
+        const Scene::ScriptComponentUVE& component = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity);
+        if (!IsUVScriptFileUVE(component.scriptAssetPath)) {
+            continue;
+        }
+        std::optional<std::string> text = m_openUVScript.has_value() && m_openUVScript->path == component.scriptAssetPath
+                                              ? std::optional<std::string>{m_openUVScript->text}
+                                              : ReadProjectTextFileUVE(component.scriptAssetPath);
+        if (!text.has_value()) {
+            ++failed;
+            continue;
+        }
+        EntitySimulationUVE::ScriptUVE script;
+        script.entity = entity;
+        EntitySimulationUVE* const raw = simulation.get();
+        script.host = std::make_unique<Core::UVScriptObjectHostUVE>(
+            entityManager, &m_services->GetInputSystemUVE(), entity, nullptr, nullptr,
+            [raw](const Scene::EntityUVE other) -> UVScript::ScriptInstanceUVE* {
+                for (EntitySimulationUVE::ScriptUVE& candidate : raw->scripts) {
+                    if (candidate.entity == other) {
+                        return candidate.instance.get();
+                    }
+                }
+                return nullptr;
+            });
+        const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(*text, *script.host);
+        if (!compiled.IsSuccessUVE()) {
+            ++failed;
+            continue;
+        }
+        script.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *script.host);
+        for (const UVScript::FieldInfoUVE& field : UVScript::GetProgramFieldsUVE(*compiled.program)) {
+            const auto stored = component.exportValues.find(field.name);
+            if (field.kind != UVScript::FieldKindUVE::Export || stored == component.exportValues.end()) {
+                continue;
+            }
+            if (const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(stored->second, field.type)) {
+                static_cast<void>(script.instance->SetFieldUVE(field.name, *value));
+            }
+        }
+        simulation->scripts.push_back(std::move(script));
+    }
+    m_entityEditSession->simulation = std::move(simulation);
+    const std::size_t running = m_entityEditSession->simulation->scripts.size();
+    m_contentStatusMessage = "Simulating: " + std::to_string(running) + (running == 1U ? " script" : " scripts") +
+                             (failed > 0U ? ", " + std::to_string(failed) + " did not compile (Compile lists them)" : "") + ".";
+    return true;
+}
+
+void EditorUVE::PauseEntitySimulationUVE() {
+    if (m_entityEditSession.has_value() && m_entityEditSession->simulation != nullptr) {
+        m_entityEditSession->simulation->paused = true;
+    }
+}
+
+bool EditorUVE::StopEntitySimulationUVE() {
+    if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr) {
+        return false;
+    }
+    const EntityDocumentScopeUVE scope(*this);
+    const std::shared_ptr<EntitySimulationUVE> simulation = std::move(m_entityEditSession->simulation);
+    m_entityEditSession->simulation.reset();
+    // The scripts go first: they hold the objects about to be replaced.
+    const Scene::SceneSnapshotUVE snapshot = simulation->snapshot;
+    const bool dirtyBefore = simulation->dirtyBefore;
+    simulation->scripts.clear();
+    m_componentPropertyPreview.reset();
+    ClearDocumentSceneUVE();
+    const std::vector<Scene::EntityUVE> restored =
+        m_services->GetSceneSerializerUVE().RestoreUVE(m_services->GetEntityManagerUVE(), snapshot);
+    if (restored.empty()) {
+        m_contentStatusMessage = "Could not put the entity back; Revert reads it from its file.";
+        return false;
+    }
+    m_entityEditSession->rootEntity = restored.front();
+    // The objects are new: what undo remembered named the old ones.
+    ClearHistoryUVE();
+    m_sceneDirty = dirtyBefore;
+    InvalidateHierarchyFilterCacheUVE();
+    SelectEntityUVE(restored.front());
+    m_contentStatusMessage = "Simulation stopped: the entity is as it was.";
+    return true;
+}
+
+EditorUVE::EntitySimulationStateUVE EditorUVE::GetEntitySimulationStateUVE() const noexcept {
+    if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr) {
+        return EntitySimulationStateUVE::Stopped;
+    }
+    return m_entityEditSession->simulation->paused ? EntitySimulationStateUVE::Paused : EntitySimulationStateUVE::Running;
+}
+
+void EditorUVE::TickEntitySimulationUVE(const double deltaSeconds) {
+    if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr ||
+        m_entityEditSession->simulation->paused || !(deltaSeconds >= 0.0)) {
+        return;
+    }
+    const EntityDocumentScopeUVE scope(*this);
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const double dt = std::min(deltaSeconds, 0.1);
+    for (EntitySimulationUVE::ScriptUVE& script : m_entityEditSession->simulation->scripts) {
+        if (script.instance == nullptr || !entityManager.IsAliveUVE(script.entity)) {
+            continue;
+        }
+        if (!script.ready) {
+            script.ready = true;
+            static_cast<void>(script.instance->RaiseEventUVE("ready"));
+        }
+        const UVScript::ValueUVE args[] = {dt};
+        static_cast<void>(script.instance->RaiseEventUVE("tick", args));
+        script.instance->AdvanceUVE(dt);
+    }
 }
 
 } // namespace UVE::Editor
