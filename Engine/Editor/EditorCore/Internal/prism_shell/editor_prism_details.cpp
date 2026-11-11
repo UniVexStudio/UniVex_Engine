@@ -740,8 +740,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 start = comma + 1U;
             }
             // One button, like an asset slot: the file's name, or (Empty); the menu has Empty too.
-            const bool isMaterialFile = std::find(extensions.begin(), extensions.end(), ".uvmat") != extensions.end();
-            auto pick = prism::make<prism::Button>("(Empty)", isMaterialFile ? prism::Icon::Material : prism::Icon::File,
+            auto pick = prism::make<prism::Button>("(Empty)", prism::Icon::None,
                                                    prism::ButtonStyle::Default);
             pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or quick import a file") : property.tooltip);
             std::weak_ptr<prism::Button> weakPick = pick;
@@ -789,7 +788,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
             editor = pick;
         }
     } else if (property.typeId == Scene::kPropertyTypeBitMask32UVE) {
-        auto button = prism::make<prism::Button>("", prism::Icon::Layers, prism::ButtonStyle::Default);
+        auto button = prism::make<prism::Button>("", prism::Icon::None, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
         const bool physics = property.customDrawerId == Scene::kLayerMaskDrawerPhysicsUVE;
         const bool layers = physics || property.customDrawerId == Scene::kLayerMaskDrawerRenderUVE;
@@ -848,7 +847,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         } else if (property.customDrawerId.rfind("asset:", 0U) == 0U) {
             extensions = {"." + property.customDrawerId.substr(6U)};
         }
-        auto button = prism::make<prism::Button>("(None)", material ? prism::Icon::Material : prism::Icon::File,
+        auto button = prism::make<prism::Button>("(None)", prism::Icon::None,
                                                  prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
         row->sync = [this, p, weak](const void* inst) {
@@ -958,7 +957,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         };
         editor = button;
     } else if (property.typeId == Scene::kPropertyTypeEntityUVE) {
-        auto button = prism::make<prism::Button>("(default)", prism::Icon::Cube, prism::ButtonStyle::Default);
+        auto button = prism::make<prism::Button>("(default)", prism::Icon::None, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
         row->sync = [this, p, weak](const void* inst) {
             auto b = weak.lock();

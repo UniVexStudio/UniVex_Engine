@@ -132,7 +132,7 @@ void EditorPrismDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& a
                 }
             }
         }
-        auto b = prism::make<prism::Button>(text, prism::Icon::NodeTexture, prism::ButtonStyle::Default);
+        auto b = prism::make<prism::Button>(text, prism::Icon::None, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = b;
         b->onClick = [this, edit, field, weak, current = loaded.*field] {
             PickerActionsUVE actions;

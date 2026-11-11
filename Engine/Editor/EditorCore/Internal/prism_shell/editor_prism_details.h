@@ -64,7 +64,6 @@ private:
         std::string title;                    ///< "Mesh", "Material", "Texture" ...
         std::vector<std::string> listed;      ///< project files shown, by extension
         std::vector<std::string> loadable;    ///< what Load... / Quick Import... accept
-        prism::Icon icon = prism::Icon::File;
         bool shapes = false;                  ///< built-in shapes (a MeshInstance3D's mesh)
         bool newMaterial = false;
     };

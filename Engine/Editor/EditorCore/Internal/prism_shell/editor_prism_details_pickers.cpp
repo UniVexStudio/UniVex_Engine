@@ -55,28 +55,23 @@ EditorPrismDetailsUVE::PickerSpecUVE EditorPrismDetailsUVE::PickerSpecForUVE(con
         spec.title = "Mesh";
         spec.listed = {".uvmodel"};
         spec.loadable = {".uvmodel", ".glb", ".gltf", ".fbx", ".obj"};
-        spec.icon = prism::Icon::Cube;
     } else if (has(".uvmat") || has(".uvmaterial")) {
         spec.title = "Material";
         spec.listed = {".uvmat", ".uvmaterial"};
         spec.loadable = {".uvmat", ".uvmaterial"};
-        spec.icon = prism::Icon::Material;
         spec.newMaterial = true;
     } else if (has(".uvtex") || has(".png")) {
         spec.title = "Texture";
         spec.listed = {".uvtex"};
         spec.loadable = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
-        spec.icon = prism::Icon::NodeTexture;
     } else if (has(".uvaudio") || has(".wav")) {
         spec.title = "Sound";
         spec.listed = {".uvaudio", ".wav"};
         spec.loadable = {".uvaudio", ".wav"};
-        spec.icon = prism::Icon::File;
     } else {
         spec.title = extensions.empty() ? std::string("File") : extensions.front().substr(1);
         spec.listed = extensions;
         spec.loadable = extensions;
-        spec.icon = prism::Icon::File;
     }
     return spec;
 }
