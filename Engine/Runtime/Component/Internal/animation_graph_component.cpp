@@ -155,7 +155,9 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
         if (!finite3(node.target) || !finite3(node.pole) || !finite3(node.rotationDegrees) || !finite3(node.boneScale) ||
             node.targetSource > AnimationGraphTargetSourceUVE::Bone || node.modifyMode > AnimationBoneModifyModeUVE::Replace ||
             node.space > AnimationBoneSpaceUVE::Component || !std::isfinite(node.clampDegrees) || node.clampDegrees < 0.0F ||
-            !IsNameValidUVE(node.targetBone) || !IsNameValidUVE(node.alphaParameter) || !IsFiniteNonNegativeUVE(node.fadeBackSeconds)) {
+            !IsNameValidUVE(node.targetBone) || !IsNameValidUVE(node.alphaParameter) || !IsFiniteNonNegativeUVE(node.fadeBackSeconds) ||
+            !IsFiniteNonNegativeUVE(node.startSeconds) || !std::isfinite(node.fadeOutSeconds) ||
+            !IsFiniteNonNegativeUVE(node.autoRestartDelaySeconds)) {
             return label + ": invalid value";
         }
         if (node.kind == Kind::TwoBoneIK && node.bones.size() > 3U) {

@@ -339,7 +339,7 @@ void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke) {
   case Icon::TwoBoneIK: { p.line(2.5f, 13.5f, 6, 6.5f); p.line(6, 6.5f, 11, 9.5f); p.dot(2.5f, 13.5f, 1.4f); p.dot(6, 6.5f, 1.4f); p.circle(12.5f, 10.5f, 2.3f); p.line(12.5f, 2, 12.5f, 6.5f); } break;
   case Icon::LookAt: { p.circle(4.8f, 8, 3); p.line(8.5f, 8, 14, 8); p.poly({{11.5f, 5.5f}, {14, 8}, {11.5f, 10.5f}}); p.dot(4.8f, 8, 0.9f); } break;
   case Icon::ModifyBone: { p.line(3, 12, 10, 5); p.dot(2.6f, 12.4f, 1.5f); p.dot(10.4f, 4.6f, 1.5f); p.line(12.5f, 10, 12.5f, 15); p.line(10, 12.5f, 15, 12.5f); } break;
-  case Icon::OneShot: { p.line(2, 8, 10.5f, 8); p.poly({{8, 5}, {11.5f, 8}, {8, 11}}); p.line(14, 3.5f, 14, 12.5f); } break;
+  case Icon::OneShot: { p.circle(8, 8, 6.2f); p.line(8.4f, 4.6f, 8.4f, 11.6f); p.line(6.4f, 6.4f, 8.4f, 4.6f); p.line(6.6f, 11.6f, 10.2f, 11.6f); } break;   // "1", once
   case Icon::TimeScale: { p.circle(7, 8.5f, 5); p.line(7, 8.5f, 7, 5.2f); p.line(7, 8.5f, 9.6f, 9.8f); p.poly({{12.6f, 1.8f}, {14.8f, 4}, {12.6f, 6.2f}}); p.line(10.5f, 4, 14.5f, 4); } break;
   case Icon::TimeSeek: { p.line(2, 12.5f, 14, 12.5f); p.line(11, 2.5f, 11, 14); p.line(2.5f, 6, 8.5f, 6); p.poly({{6.5f, 3.8f}, {8.8f, 6}, {6.5f, 8.2f}}); } break;
   case Icon::AnimSelect: { p.dot(2.8f, 8, 1.6f); p.line(3.5f, 8, 12, 4); p.circle(13.2f, 3.6f, 1.3f); p.circle(13.2f, 12.4f, 1.3f); p.line(10, 12.4f, 11.8f, 12.4f); } break;

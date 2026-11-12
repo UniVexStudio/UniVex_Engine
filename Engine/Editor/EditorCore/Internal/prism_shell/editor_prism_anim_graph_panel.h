@@ -83,7 +83,6 @@ private:
     /// The graph's own edit (move, wire, unwire, delete) written to the component as one step.
     void ApplyGraphEditUVE();
     int SpawnUVE(const prism::BlueprintNodeSpec& spec, prism::Vec2 world);
-    void ShowAddMenuUVE(prism::Vec2 screen);
 
     // ---- settings inside the nodes (editor_prism_anim_graph_bodies.cpp) --------------------------
     [[nodiscard]] static float BodyHeightUVE(const NodeUVE& node);

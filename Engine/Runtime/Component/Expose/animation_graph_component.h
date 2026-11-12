@@ -313,6 +313,14 @@ struct AnimationGraphNodeUVE final {
     std::string alphaParameter;
     /// BlendByBool: seconds to fade back to the second input when the Bool turns false.
     float fadeBackSeconds = 0.2F;
+    /// Clip: where in the clip it starts (and starts over), in seconds.
+    float startSeconds = 0.0F;
+    /// OneShot: seconds to fade back out at the shot's end (`fadeSeconds` is the fade in).
+    /// Negative: the same as the fade in.
+    float fadeOutSeconds = -1.0F;
+    /// OneShot: fires again on its own, `autoRestartDelaySeconds` after each shot ends.
+    bool autoRestart = false;
+    float autoRestartDelaySeconds = 1.0F;
 
     [[nodiscard]] bool operator==(const AnimationGraphNodeUVE&) const = default;
 };
@@ -337,6 +345,8 @@ struct AnimationGraphNodeStateUVE final {
     /// OneShot: playing, and for how long.
     bool shotActive = false;
     float shotElapsedSeconds = 0.0F;
+    /// OneShot with auto restart: seconds since the last shot ended (negative: no shot yet).
+    float sinceShotSeconds = -1.0F;
     bool started = false;
     /// Blend Space: each point's place in its clip, and whether it has played yet.
     std::vector<double> pointTimes;

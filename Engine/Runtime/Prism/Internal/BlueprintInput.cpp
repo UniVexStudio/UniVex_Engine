@@ -179,8 +179,11 @@ private:
         std::string name = lower(lib[i].name), hay = name + " " + lower(lib[i].category) + " " + lower(lib[i].keywords);
         int score = 0;
         bool ok = true;
+        std::string squeezed = hay;   // "oneshot" finds "One Shot"
+        squeezed.erase(std::remove(squeezed.begin(), squeezed.end(), ' '), squeezed.end());
         for (auto& t : toks) {
           size_t pos = hay.find(t);
+          if (pos == std::string::npos && squeezed.find(t) != std::string::npos) pos = name.size();
           if (pos == std::string::npos) { ok = false; break; }
           score += name.rfind(t, 0) == 0 ? 0 : pos < name.size() ? 2 : 6;
         }

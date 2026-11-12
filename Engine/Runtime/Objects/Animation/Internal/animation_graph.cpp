@@ -302,6 +302,9 @@ private:
     [[nodiscard]] ResultUVE EvaluateClipUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
                                             const float deltaSeconds, const float weight,
                                             const std::optional<float> phase) {
+        if (!state.started) {
+            state.timeSeconds = static_cast<double>(std::max(0.0F, node.startSeconds));   // starts (over) at its start
+        }
         return PlayClipUVE(node.clip, node.speed, node.loop, state.timeSeconds, state.started, deltaSeconds, weight, phase);
     }
 
@@ -610,7 +613,14 @@ private:
     [[nodiscard]] ResultUVE EvaluateOneShotUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
                                                const float deltaSeconds, const float weight) {
         const bool fadingOut = !state.shotActive && state.fadeElapsedSeconds < state.fadeSeconds;
-        if (!state.shotActive && ConsumeTriggerUVE(node.parameter)) {
+        // Auto restart: the next shot fires on its own once the delay after the last has passed.
+        bool restartNow = false;
+        if (!state.shotActive && node.autoRestart && state.sinceShotSeconds >= 0.0F) {
+            state.sinceShotSeconds += deltaSeconds;
+            restartNow = state.sinceShotSeconds >= node.autoRestartDelaySeconds;
+        }
+        if (!state.shotActive && (restartNow || ConsumeTriggerUVE(node.parameter))) {
+            state.sinceShotSeconds = -1.0F;
             state.shotActive = true;
             state.shotElapsedSeconds = 0.0F;
             state.fadeSeconds = 0.0F;
@@ -636,8 +646,9 @@ private:
             if (shot.atEnd) {
                 // Ends here; the shot's last pose fades back out into the base.
                 state.shotActive = false;
-                state.fadeSeconds = node.fadeSeconds;
+                state.fadeSeconds = node.fadeOutSeconds < 0.0F ? node.fadeSeconds : node.fadeOutSeconds;
                 state.fadeElapsedSeconds = 0.0F;
+                state.sinceShotSeconds = 0.0F;
             }
         } else {
             state.fadeElapsedSeconds += deltaSeconds;
