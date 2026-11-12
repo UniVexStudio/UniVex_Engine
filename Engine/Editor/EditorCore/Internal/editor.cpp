@@ -9,6 +9,8 @@
 #include "fbx_mesh_converter.h"
 #include "gltf_metadata.h"
 #include "editor.h"
+
+#include "animation_graph_editing.h"
 #include "editor_settings.h"
 #include "editor_settings_binding.h"
 #include "editor_render_stats.h"
@@ -2906,6 +2908,18 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
     const Scene::EntityUVE entity = CreateSceneObjectEntityInternalUVE(kind);
     if (entity == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
+    }
+    // A new AnimationGraph's starting nodes get their parameters too, named after them, like every
+    // node added to it later (the gameplay sets a node by its name).
+    if (entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(entity)) {
+        Scene::AnimationGraphComponentUVE& graph = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
+        std::vector<std::uint32_t> ids;
+        for (const Scene::AnimationGraphNodeUVE& node : graph.nodes) {
+            ids.push_back(node.id);
+        }
+        for (const std::uint32_t id : ids) {
+            BindNewNodeParametersUVE(graph, id);
+        }
     }
     if (parentObject != Scene::kInvalidEntityUVE) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentObject);

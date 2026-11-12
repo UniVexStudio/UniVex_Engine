@@ -194,4 +194,37 @@ TEST(AnimationGraphEditingUVETest, TransitionsAreAddedReorderedAndDescribed) {
 }
 
 } // namespace
+TEST(AnimationGraphEditingUVETest, ANodeGetsAParameterNamedAfterItAndARenameFollowsEverywhere) {
+    Scene::AnimationGraphComponentUVE graph;
+    graph.parameters.clear();
+    const std::uint32_t space = AddAnimationGraphNodeUVE(graph.nodes, Kind::BlendSpace2D, Math::Vector2UVE{});
+    const auto node = [&graph](const std::uint32_t id) {
+        return std::ranges::find(graph.nodes, id, &Scene::AnimationGraphNodeUVE::id);
+    };
+    node(space)->name = "Walk";
+    BindNewNodeParametersUVE(graph, space);
+    ASSERT_EQ(graph.parameters.size(), 1U);
+    EXPECT_EQ(graph.parameters[0].name, "Walk");
+    EXPECT_EQ(graph.parameters[0].type, Scene::AnimationParameterTypeUVE::Vector3) << "a 2D space: one Vector3";
+    EXPECT_EQ(node(space)->parameter, "Walk");
+    BindNewNodeParametersUVE(graph, space);
+    EXPECT_EQ(graph.parameters.size(), 1U) << "bound already: nothing more";
+
+    const std::uint32_t walk2 = AddAnimationGraphNodeUVE(graph.nodes, Kind::BlendSpace2D, Math::Vector2UVE{});
+    node(walk2)->name = "Walk";
+    BindNewNodeParametersUVE(graph, walk2);
+    EXPECT_EQ(node(walk2)->parameter, "Walk2") << "unique";
+
+    const std::uint32_t slot = AddAnimationGraphNodeUVE(graph.nodes, Kind::Slot, Math::Vector2UVE{});
+    node(slot)->parameter = "Walk";   // a slot's name, not a parameter
+    BindNewNodeParametersUVE(graph, slot);
+    EXPECT_EQ(graph.parameters.size(), 2U) << "a Slot takes no parameter";
+
+    EXPECT_TRUE(RenameGraphParameterUVE(graph, "Walk", "Run"));
+    EXPECT_EQ(node(space)->parameter, "Run");
+    EXPECT_EQ(node(slot)->parameter, "Walk") << "the slot keeps its own name";
+    EXPECT_FALSE(RenameGraphParameterUVE(graph, "Run", "Walk2")) << "taken";
+    EXPECT_EQ(ParameterNameForNodeUVE("Blend Space 2D"), "BlendSpace2D");
+}
+
 } // namespace UVE::Editor

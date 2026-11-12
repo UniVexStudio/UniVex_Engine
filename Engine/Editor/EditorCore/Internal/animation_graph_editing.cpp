@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include <string>
+
 namespace UVE::Editor {
 namespace {
 
@@ -510,6 +512,127 @@ bool MoveBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std
     }
     points[slot].position = position;
     return true;
+}
+
+// ---------------------------------------------------------------------------- node parameters
+
+std::string UniqueParameterNameUVE(const Scene::AnimationGraphComponentUVE& graph, const std::string& base) {
+    const auto taken = [&graph](const std::string& name) {
+        return std::ranges::any_of(graph.parameters, [&name](const Scene::AnimationParameterUVE& p) { return p.name == name; });
+    };
+    if (!taken(base)) {
+        return base;
+    }
+    for (int i = 2; i < 1000; ++i) {
+        const std::string candidate = base + std::to_string(i);
+        if (!taken(candidate)) {
+            return candidate;
+        }
+    }
+    return base + "_";
+}
+
+/// The parameter a node is driven by: which field holds its name, and its type. Every node but
+/// Output and Slot has one (Godot's `parameters/<node>`): the gameplay (a Blueprint Class, a script)
+/// sets the node by that name.
+std::optional<AnimationNodeParameterUVE> NodeParameterOfUVE(const Kind kind) {
+    using Type = Scene::AnimationParameterTypeUVE;
+    using N = Scene::AnimationGraphNodeUVE;
+    switch (kind) {
+        case Kind::Clip:
+        case Kind::Blend2:
+        case Kind::Additive:
+        case Kind::LayeredBlend:
+        case Kind::BlendSpace1D:
+        case Kind::TimeScale:
+        case Kind::Select: return AnimationNodeParameterUVE{&N::parameter, Type::Float};
+        case Kind::BlendSpace2D: return AnimationNodeParameterUVE{&N::parameter, Type::Vector3};
+        case Kind::OneShot:
+        case Kind::TimeSeek:
+        case Kind::StateMachine: return AnimationNodeParameterUVE{&N::parameter, Type::Trigger};
+        case Kind::BlendByBool: return AnimationNodeParameterUVE{&N::parameter, Type::Bool};
+        case Kind::TwoBoneIK:
+        case Kind::LookAt:
+        case Kind::ModifyBone: return AnimationNodeParameterUVE{&N::alphaParameter, Type::Float};
+        case Kind::Output:
+        case Kind::Slot: break;
+    }
+    return std::nullopt;
+}
+
+/// A node's name as a parameter name: its words run together ("Blend Space 2D" -> "BlendSpace2D").
+std::string ParameterNameForNodeUVE(const std::string& nodeName) {
+    std::string name;
+    for (const char c : nodeName) {
+        if (c != ' ') {
+            name.push_back(c);
+        }
+    }
+    return name.empty() ? std::string{"Param"} : name;
+}
+
+/// Renames a parameter and every use of it: the nodes it drives and the transition conditions that
+/// read it (a Slot's name is not a parameter). False when `to` is empty or taken.
+bool RenameGraphParameterUVE(Scene::AnimationGraphComponentUVE& graph, const std::string& from, const std::string& to) {
+    if (to.empty() || to == from ||
+        std::ranges::any_of(graph.parameters, [&to](const Scene::AnimationParameterUVE& p) { return p.name == to; })) {
+        return false;
+    }
+    bool found = false;
+    for (Scene::AnimationParameterUVE& p : graph.parameters) {
+        if (p.name == from) {
+            p.name = to;
+            found = true;
+        }
+    }
+    for (Scene::AnimationGraphNodeUVE& node : graph.nodes) {
+        if (node.kind != Kind::Slot) {
+            for (std::string* field : {&node.parameter, &node.parameterY, &node.alphaParameter}) {
+                if (*field == from) {
+                    *field = to;
+                }
+            }
+        }
+        for (Scene::AnimationGraphTransitionUVE& t : node.transitions) {
+            for (Scene::AnimationTransitionConditionUVE& c : t.conditions) {
+                if (c.parameter == from) {
+                    c.parameter = to;
+                }
+            }
+        }
+    }
+    return found;
+}
+
+/// Every node made gets its parameter at once, named after the node ("Walk" for a Blend Space 2D
+/// called Walk), of the node's type, set to the node's current value, and bound to it.
+void BindNewNodeParametersUVE(Scene::AnimationGraphComponentUVE& graph, const std::uint32_t id) {
+    const auto node = std::ranges::find(graph.nodes, id, &Scene::AnimationGraphNodeUVE::id);
+    if (node == graph.nodes.end()) {
+        return;
+    }
+    const std::optional<AnimationNodeParameterUVE> spec = NodeParameterOfUVE(node->kind);
+    if (!spec.has_value() || !((*node).*(spec->field)).empty()) {
+        return;
+    }
+    Scene::AnimationParameterUVE parameter;
+    parameter.name = UniqueParameterNameUVE(graph, ParameterNameForNodeUVE(node->name));
+    parameter.type = spec->type;
+    switch (node->kind) {
+        case Kind::Clip:
+        case Kind::TimeScale: parameter.value = node->speed; break;
+        case Kind::BlendSpace2D: parameter.vector = Math::Vector3UVE{node->value, node->valueY, 0.0F}; break;
+        case Kind::OneShot:
+        case Kind::TimeSeek:
+        case Kind::StateMachine:
+        case Kind::BlendByBool: parameter.value = 0.0F; break;
+        default: parameter.value = node->value; break;
+    }
+    (*node).*(spec->field) = parameter.name;
+    if (node->kind == Kind::BlendSpace2D) {
+        node->parameterY.clear();
+    }
+    graph.parameters.push_back(std::move(parameter));
 }
 
 } // namespace UVE::Editor

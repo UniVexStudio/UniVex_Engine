@@ -113,4 +113,23 @@ bool RemoveBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, 
 bool MoveBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t space, std::size_t slot,
                             Math::Vector2UVE position);
 
+/// The parameter a node is driven by: which field holds its name, and its type. Every node but
+/// Output and Slot has one (Godot's `parameters/<node>`): the gameplay (a Blueprint Class, a script)
+/// sets the node by that name.
+struct AnimationNodeParameterUVE final {
+    std::string Scene::AnimationGraphNodeUVE::*field = nullptr;
+    Scene::AnimationParameterTypeUVE type = Scene::AnimationParameterTypeUVE::Float;
+};
+[[nodiscard]] std::optional<AnimationNodeParameterUVE> NodeParameterOfUVE(Scene::AnimationGraphNodeKindUVE kind);
+/// A node's name as a parameter name: its words run together ("Blend Space 2D" -> "BlendSpace2D").
+[[nodiscard]] std::string ParameterNameForNodeUVE(const std::string& nodeName);
+/// `base`, or base2, base3 ... whichever no parameter of `graph` has.
+[[nodiscard]] std::string UniqueParameterNameUVE(const Scene::AnimationGraphComponentUVE& graph, const std::string& base);
+/// Renames a parameter and every use of it (the nodes it drives, the transition conditions that read
+/// it; a Slot's name is not a parameter). False when `to` is empty or taken.
+bool RenameGraphParameterUVE(Scene::AnimationGraphComponentUVE& graph, const std::string& from, const std::string& to);
+/// Gives node `id` its parameter, named after the node, of the node's type, set to its current value
+/// and bound to it. Nothing for a node that has none or is already bound.
+void BindNewNodeParametersUVE(Scene::AnimationGraphComponentUVE& graph, std::uint32_t id);
+
 } // namespace UVE::Editor

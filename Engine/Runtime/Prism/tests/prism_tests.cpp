@@ -1492,6 +1492,46 @@ static void testBlueprintEmbedded(Application& app) {
   app.tick();
   CHECK(spawned == 1 && g->findNode(500) != nullptr);
   app.closeAllPopups();
+
+  // a pose graph: an output feeds one input, and a node added off a wired pin goes into that wire
+  f.singleLinkOutputs = true;
+  g->setFeatures(f);
+  lib.push_back({"Animation", "Blend", "blend", [&] { return mkPose("Blend", 2); }});
+  g->setNodeLibrary(lib);
+  CHECK(g->wireCount() == 1);                                         // Clip 10 -> Blend2 11
+  BlueprintPinFilter fromClip;
+  fromClip.active = true;
+  fromClip.type = BlueprintPinType::Pose;
+  fromClip.fromKind = BlueprintPinKind::Output;
+  g->openPalette({700, 300}, fromClip, 10, 0);
+  app.tick(); app.render();
+  app.hostKey(Key::Enter, 0);
+  app.tick();
+  CHECK(spawned == 2 && g->findNode(501) != nullptr);
+  const auto wired = [&](int a, int ap, int b, int bp) {
+    return std::any_of(g->wires().begin(), g->wires().end(), [&](const BlueprintWire& w) {
+      return w.fromNodeId == a && w.fromPinIndex == ap && w.toNodeId == b && w.toPinIndex == bp;
+    });
+  };
+  CHECK(wired(10, 0, 501, 0));                                        // the dragged wire ends on the new node
+  CHECK(wired(501, 0, 11, 0));                                        // which took the old wire's place
+  CHECK(!wired(10, 0, 11, 0) && g->wireCount() == 2);
+  // moving a used output's wire takes it off its old input
+  CHECK(g->connect(10, 0, 11, 1));
+  CHECK(!wired(10, 0, 501, 0) && wired(10, 0, 11, 1));
+  // picking a wire up off its input and dropping it in empty space: the new node goes into it
+  Vec2 grab = g->pinScreenPos(11, 1, true), drop{820, 620};
+  app.hostMouseMove(grab);
+  app.hostMouseButton(grab, MouseButton::Left, true);
+  app.hostMouseMove((grab + drop) * 0.5f);
+  app.hostMouseMove(drop);
+  app.hostMouseButton(drop, MouseButton::Left, false);
+  app.tick(); app.render();
+  app.hostKey(Key::Enter, 0);
+  app.tick();
+  CHECK(spawned == 3 && g->findNode(502) != nullptr);
+  CHECK(wired(10, 0, 502, 0) && wired(502, 0, 11, 1));
+  app.closeAllPopups();
 }
 
 static void testBlueprintGraphTypes(Application& app) {

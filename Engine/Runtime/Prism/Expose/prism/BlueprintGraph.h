@@ -10,6 +10,7 @@
 #include "Widget.h"
 #include "Icons.h"
 #include <functional>
+#include <optional>
 #include <map>
 #include <memory>
 #include <set>
@@ -173,6 +174,9 @@ public:
     bool watermark = true;
     bool shortcuts = true;   // C, Ctrl+C/V/X/D/Z/Y/S, F9/F10/F5, Ctrl+Enter (off: Delete, Ctrl+A, F, Home, Esc only)
     bool history = true;     // the graph's own undo (off: the host's undo, through onCommit)
+    // An output feeds one input (a pose graph): wiring it elsewhere moves its wire, and a node
+    // added off a wired pin is inserted into that wire.
+    bool singleLinkOutputs = false;
   };
   void setFeatures(const Features& f);
   const Features& features() const { return m_features; }
@@ -399,6 +403,9 @@ private:
   Vec2 m_commentSizeStart{0, 0};
   // wiring
   PinHit m_wireFrom;
+  // The wire picked up off a connected input (pose graphs): a node added from the palette at the end
+  // of that drag goes back into it.
+  std::optional<BlueprintWire> m_pickedWire;
   PinHit m_wireTarget;
   bool m_wireValid = false;
   std::string m_wireWhy;

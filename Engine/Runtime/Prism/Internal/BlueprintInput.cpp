@@ -6,8 +6,10 @@
 #include "prism/Menu.h"
 #include "prism/Icons.h"
 #include "prism/TextInput.h"
+#include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <optional>
 
 namespace prism {
 
@@ -258,6 +260,21 @@ void BlueprintGraph::openPalette(Vec2 screenPos, const BlueprintPinFilter& filte
 
 void BlueprintGraph::finishSpawn(const BlueprintNodeSpec& spec, Vec2 world, const BlueprintPinFilter& f, int fromNode, int fromPin) {
   if (m_snap) world = {std::round(world.x / 8) * 8, std::round(world.y / 8) * 8};
+  // What the dragged pin was wired to, so the new node can be inserted into that wire.
+  std::optional<BlueprintWire> was;
+  // A wire picked up off an input and dropped in empty space: the new node goes back into it.
+  if (m_pickedWire.has_value() && f.fromKind == PK::Output && m_pickedWire->fromNodeId == fromNode &&
+      m_pickedWire->fromPinIndex == fromPin) {
+    was = m_pickedWire;
+  }
+  m_pickedWire.reset();
+  if (!was.has_value() && f.active && m_features.singleLinkOutputs) {
+    for (const BlueprintWire& w : m_wires) {
+      const bool same = f.fromKind == PK::Output ? (w.fromNodeId == fromNode && w.fromPinIndex == fromPin)
+                                                 : (w.toNodeId == fromNode && w.toPinIndex == fromPin);
+      if (same) { was = w; break; }
+    }
+  }
   int id = onSpawn ? onSpawn(spec, world) : spawnNode(spec, world);
   if (id < 0) return;
   BlueprintNode* n = nodeById(id);
@@ -281,6 +298,19 @@ void BlueprintGraph::finishSpawn(const BlueprintNodeSpec& spec, Vec2 world, cons
       return false;
     };
     if (!tryPins(true)) tryPins(false);
+    // Insert: the other end of the old wire goes to the new node's free side.
+    if (was.has_value() && (n = nodeById(id)) != nullptr) {
+      const bool fromOutput = f.fromKind == PK::Output;
+      const auto& pins = fromOutput ? n->outputs : n->inputs;
+      for (int i = 0; i < int(pins.size()); i++) {
+        const bool used = std::any_of(m_wires.begin(), m_wires.end(), [&](const BlueprintWire& w) {
+          return fromOutput ? (w.fromNodeId == id && w.fromPinIndex == i) : (w.toNodeId == id && w.toPinIndex == i);
+        });
+        if (used) continue;
+        const bool done = fromOutput ? connect(id, i, was->toNodeId, was->toPinIndex) : connect(was->fromNodeId, was->fromPinIndex, id, i);
+        if (done) break;
+      }
+    }
   }
   select(id);
   commit("Add " + spec.name);
@@ -463,6 +493,7 @@ void BlueprintGraph::beginWire(const PinHit& h) {
   m_wireFrom = h;
   m_wireTarget = {};
   m_wireValid = false;
+  m_pickedWire.reset();
   const bool input = h.input;
   // Grabbing a connected data input picks the wire up: the wire's source becomes the dragged end.
   if (input) {
@@ -471,6 +502,7 @@ void BlueprintGraph::beginWire(const PinHit& h) {
       for (size_t i = 0; i < m_wires.size(); i++) {
         if (m_wires[i].toNodeId == h.node && m_wires[i].toPinIndex == h.pin) {
           m_wireFrom = {m_wires[i].fromNodeId, m_wires[i].fromPinIndex, false};
+          if (m_features.singleLinkOutputs) m_pickedWire = m_wires[i];
           m_wires.erase(m_wires.begin() + long(i));
           touch();
           break;
@@ -488,6 +520,7 @@ void BlueprintGraph::finishWire(Vec2 pos) {
   m_wireTarget = {};
   m_wireFrom = {};
   if (target && valid) {
+    m_pickedWire.reset();
     bool ok = from.input ? connect(target.node, target.pin, from.node, from.pin) : connect(from.node, from.pin, target.node, target.pin);
     commit(ok ? "Connect pins" : "Disconnect");
     return;

@@ -973,6 +973,31 @@ TEST(AnimationGraphUVETest, BlendSpace2DMixesInsideItsTriangleAndNeedsOne) {
     EXPECT_NEAR(tree.nodeStates[1].pointWeights[1], 0.25F, 1e-5F);
 }
 
+TEST(AnimationGraphUVETest, BlendSpace2DTakesItsPositionFromOneVector3Parameter) {
+    GraphFixtureUVE fixture;
+    AnimationGraphComponentUVE tree;
+    AnimationParameterUVE walk{"Walk", AnimationParameterTypeUVE::Vector3, 0.0F};
+    walk.vector = Math::Vector3UVE{0.25F, 0.0F, 0.0F};
+    tree.parameters = {walk};
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace2D);
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(0.0F)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(40.0F)},
+                         AnimationBlendPointUVE{{0.0F, 1.0F}, fixture.AddClipUVE(0.0F)}};
+    space.parameter = "Walk";   // named after the node, as the editor makes it
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F) << "x 0.25 of the way to the 40 m clip";
+}
+
+TEST(AnimationGraphUVETest, AClipPlaysAtItsParametersRate) {
+    GraphFixtureUVE fixture;
+    AnimationGraphComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"Run", AnimationParameterTypeUVE::Float, 2.0F}};
+    AnimationGraphNodeUVE clip = GraphFixtureUVE::ClipNodeUVE(2U, fixture.AddClipUVE(10.0F));
+    clip.parameter = "Run";
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), clip};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 2.0F, 1e-4F) << "0.1 s at double rate";
+}
+
 TEST(AnimationGraphUVETest, SmoothingEasesThePositionWithoutOvershoot) {
     Math::Vector2UVE at{};
     Math::Vector2UVE velocity{};
