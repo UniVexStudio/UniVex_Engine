@@ -1040,8 +1040,6 @@ public:
 
     /// The Entity Editor's middle area.
     enum class EntityEditorTabUVE : std::uint8_t { Viewport, Scripting, Events };
-    /// The Entity Editor's bottom dock.
-    enum class EntityEditorDockTabUVE : std::uint8_t { Content, Timeline, AnimGraph };
     [[nodiscard]] EntityEditorTabUVE GetEntityEditorTabUVE() const noexcept;
     void SetEntityEditorTabUVE(EntityEditorTabUVE tab) noexcept;
     /// One thing Compile found wrong with the open entity. `entity` is the object it belongs to
@@ -1771,11 +1769,6 @@ private:
         bool compiled = false;
         /// The window selects `tab` on its next frame (GoTo from a problem or a signal).
         bool forceTab = false;
-        EntityEditorDockTabUVE dockTab = EntityEditorDockTabUVE::Content;
-        /// The object the dock last followed: selecting an AnimationSequencer or AnimationGraph opens its
-        /// tab once, and the tab stays the user's choice until the selection moves again.
-        Scene::EntityUVE dockFollowed = Scene::kInvalidEntityUVE;
-        float dockHeight = 220.0F;
         /// The tree's width, dragged from its seam. 0 means "not dragged yet": the window then
         /// uses the fraction of its own width below, so the columns open at a sensible ratio on
         /// any window size, and the author's own width takes over from the first drag until the
@@ -3214,19 +3207,8 @@ private:
     void RecordAnimationGraphPreviewUVE(const Scene::AnimationGraphComponentUVE& tree);
     /// Puts the previewed skeleton back at rest and the tree back at its start.
     void StopAnimationGraphPreviewUVE();
-    /// A Blend Space opened in the Anim Graph's own editor: tools, snapping, the axes' areas, and
-    /// points to add (picking their animation at once), move and remove.
-    void DrawBlendSpaceEditorUVE(Scene::EntityUVE tree, std::size_t objectIndex);
-    /// A State Machine opened in the Anim Graph: its states as boxes with Entry and Any, the
-    /// transitions as arrows, drawn and edited in place, and what is running shown live.
-    void DrawStateMachineViewUVE(Scene::EntityUVE tree, std::size_t objectIndex);
-    /// The side strip while a State Machine is open: the picked state or transition's settings.
-    void DrawStateMachineSelectionUVE(Scene::EntityUVE tree, std::size_t objectIndex,
-                                      std::optional<std::function<void(Scene::AnimationGraphComponentUVE&)>>& edit);
     /// A clip's file name for labels, "" for none.
     [[nodiscard]] const std::string& AnimationClipNameUVE(Asset::AssetGuidUVE clip);
-    /// The Anim Graph tab's body.
-    void DrawAnimationGraphCanvasUVE();
     /// Changes the AnimationGraph's objects or parameters as one undo step, like an Inspector edit.
     /// False when nothing changed or the result is not a valid graph (the change is dropped).
     bool EditAnimationGraphUVE(Scene::EntityUVE tree,
