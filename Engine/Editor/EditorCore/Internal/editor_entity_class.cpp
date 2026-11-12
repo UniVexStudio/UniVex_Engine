@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 // Entity Class: Content "+ Add" -> Entity -> "Entity Class..." asks first and writes second, like
-// Unreal's Pick Parent Class. The PRISM window (prism_shell/editor_prism_entity_class_window) lists
+// Unreal's Pick Parent Class. The PRISM window (shell/editor_entity_class_window) lists
 // every body an entity can start as; Create makes that body's `.uventity`, selects it in Content and
 // opens it in the Entity Editor. Nothing is written until Create.
 //

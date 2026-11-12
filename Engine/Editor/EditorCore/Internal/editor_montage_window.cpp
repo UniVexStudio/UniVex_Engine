@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 // The Montage Editor's document: an open `.uvmontage`, its undo, and its preview - the character
 // the montage is previewed on, in a scene of its own beside the level (and an open entity), posed
-// at the playhead every frame. The PRISM window (prism_shell/editor_prism_montage_editor) draws it.
+// at the playhead every frame. The PRISM window (shell/editor_montage_editor) draws it.
 #include "editor.h"
 
 #include "animation_clip_asset.h"

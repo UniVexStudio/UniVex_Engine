@@ -12,7 +12,7 @@
 // Moved verbatim. Not one line of the three functions differs from what was in editor_uve.cpp.
 
 #include "editor_viewport_input_imgui.h"
-#include "prism_shell/editor_prism_shell.h"
+#include "shell/editor_shell.h"
 #include "editor_color_field.h"
 #include "editor.h"
 #include "scalar.h"
@@ -91,8 +91,8 @@ void EditorUVE::RenderOverlayUVE() {
         return;
     }
     // The level editor is PRISM's; the windows not yet built with it draw over it through ImGui.
-    if (m_prismShell != nullptr) {
-        m_prismShell->FrameUVE();
+    if (m_levelShell != nullptr) {
+        m_levelShell->FrameUVE();
     }
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
