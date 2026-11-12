@@ -23,7 +23,7 @@ constexpr std::size_t kEnvelopeHeaderBytesUVE = kUveFileEnvelopeHeaderBytesUVE;
 
 [[nodiscard]] bool IsAssetKindValidUVE(const std::uint32_t assetType) noexcept {
     return assetType >= static_cast<std::uint32_t>(AssetKindUVE::Scene) &&
-           assetType <= static_cast<std::uint32_t>(AssetKindUVE::MontageLibrary);
+           assetType <= static_cast<std::uint32_t>(AssetKindUVE::Blueprint);
 }
 
 [[nodiscard]] std::string SourceDescriptionUVE(const std::string_view sourceDescription) {

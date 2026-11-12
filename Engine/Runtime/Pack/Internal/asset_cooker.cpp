@@ -13,6 +13,7 @@
 #include "font_asset.h"
 #include "skeleton_asset.h"
 #include "animation_library_asset.h"
+#include "blueprint_asset.h"
 #include "montage_library_asset.h"
 #include "data_table_asset.h"
 #include "asset_resident_size.h"
@@ -76,7 +77,7 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
         {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},
         {".uvaudio",Asset::AssetKindUVE::Audio},{".uvanim",Asset::AssetKindUVE::Animation},
         {".uvskel",Asset::AssetKindUVE::Skeleton},{".uvanimlib",Asset::AssetKindUVE::AnimationLibrary},
-        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvtable",Asset::AssetKindUVE::DataTable}};
+        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbp",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable}};
     if (const auto it = kinds.find(extension); it == kinds.end() || it->second != envelope->first.assetType) return false;
     switch (envelope->first.assetType) {
     case Asset::AssetKindUVE::Texture: { Asset::TextureAssetUVE v; return Asset::LoadTextureAssetUVE(path,v); }
@@ -107,6 +108,7 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
         CheckGuid(v.previewEntity,db);
         return true;
     }
+    case Asset::AssetKindUVE::Blueprint: { Asset::BlueprintAssetUVE v; return Asset::LoadBlueprintAssetUVE(path,v); }
     case Asset::AssetKindUVE::MontageLibrary: {
         Asset::MontageLibraryAssetUVE v;
         if (!Asset::LoadMontageLibraryAssetUVE(path,v)) return false;
