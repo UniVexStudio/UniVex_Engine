@@ -256,10 +256,6 @@ void BlendSpaceViewUVE::paint(prism::Canvas& c) {
     c.line(prism::Vec2{cross.x - 9.0F, cross.y}, prism::Vec2{cross.x + 9.0F, cross.y}, kCrossUVE, 2.0F);
     c.line(prism::Vec2{cross.x, cross.y - 9.0F}, prism::Vec2{cross.x, cross.y + 9.0F}, kCrossUVE, 2.0F);
     c.strokeCircle(cross, 5.0F, kCrossUVE, 1.5F);
-    static constexpr const char* kTools[] = {"Select: drag a point, or the cross on empty space", "Add: click to put a point",
-                                             "Remove: click a point"};
-    c.textIn(*t.small, prism::Rect{m_rect.x + 10.0F, m_rect.bottom() - 20.0F, m_rect.w - 20.0F, 16.0F},
-             std::string{kTools[std::clamp(v.spaceTool, 0, 2)]} + "   Shift: no snap   Esc: back to the tree", t.textDisabled);
     c.popClip();
 }
 
@@ -372,7 +368,6 @@ void BlendSpaceViewUVE::AskClipUVE(const prism::Vec2 at, const Math::Vector2UVE 
     }
     const std::uint32_t id = space->id;
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Item("Animation for the new point", {}).disabled());
     for (const Asset::AssetGuidUVE clip : m_panel.ClipChoicesUVE()) {
         items.push_back(prism::MenuItem::Item(m_panel.m_editor.AnimationClipNameUVE(clip), [this, id, position, clip] {
             std::optional<std::size_t> added;
@@ -380,10 +375,10 @@ void BlendSpaceViewUVE::AskClipUVE(const prism::Vec2 at, const Math::Vector2UVE 
             if (added.has_value()) {
                 m_panel.m_editor.m_animGraph.pickedState = static_cast<int>(*added);
             }
-        }, "", prism::Icon::NodeClip));
+        }, "", prism::Icon::AnimClip));
     }
-    if (items.size() == 1U) {
-        items.push_back(prism::MenuItem::Item("No animations: add some to the AnimationSequencer", {}).disabled());
+    if (items.empty()) {
+        items.push_back(prism::MenuItem::Item("None", {}).disabled());
     }
     prism::showContextMenu(std::move(items), at);
 }
@@ -408,7 +403,7 @@ void BlendSpaceViewUVE::ShowPointMenuUVE(const prism::Vec2 at, const int point) 
         }));
     }
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Sub("Animation", std::move(clips), prism::Icon::NodeClip));
+    items.push_back(prism::MenuItem::Sub("Animation", std::move(clips), prism::Icon::AnimClip));
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Item("Remove Point", [this, id, point] {
         m_panel.EditUVE([id, point](Scene::AnimationGraphComponentUVE& g) { static_cast<void>(RemoveBlendSpacePointUVE(g.nodes, id, static_cast<std::size_t>(point))); });

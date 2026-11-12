@@ -63,13 +63,6 @@ constexpr std::array<Kind, 16> kAddableKindsUVE{Kind::Clip,       Kind::Blend2, 
     return base + "_";
 }
 
-/// A section title in the side panel.
-[[nodiscard]] prism::Ref<prism::Widget> SectionUVE(const std::string& title) {
-    auto label = prism::make<prism::Label>(title, prism::FontRole::Semibold);
-    label->setPadding(prism::Margin(8.0F, 10.0F, 8.0F, 4.0F));
-    return label;
-}
-
 /// Holds its content to the width it is given: a long help line or name ends in "..." instead of
 /// widening the whole Details column (a ScrollBox otherwise lays its content out at its widest).
 class FitWidthUVE final : public prism::Widget {
@@ -206,7 +199,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildUVE() {
     // The breadcrumb while one is open: Tree > its name.
     auto crumbRow = prism::hbox(4.0F);
     crumbRow->setPadding(prism::Margin(6.0F, 2.0F, 6.0F, 2.0F));
-    auto back = prism::make<prism::Button>("Tree", prism::Icon::AnimGraph, prism::ButtonStyle::Flat);
+    auto back = prism::make<prism::Button>("Tree", prism::Icon::AnimTree, prism::ButtonStyle::Flat);
     back->setTooltip("Back to the tree (Esc)");
     back->onClick = [this] { CloseFocusUVE(); };
     crumbRow->add(back, CentreSlotUVE());
@@ -259,7 +252,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildToolbarUVE() {
     };
     row->add(fit, CentreSlotUVE());
     row->add(HSeparatorUVE(), CentreSlotUVE());
-    m_previewButton = ToolButtonUVE(prism::Icon::Eye, "Run the graph on the entity's skeleton (runtime pose only, never saved)", "Preview");
+    m_previewButton = ToolButtonUVE(prism::Icon::PreviewPose, "Run the graph on the entity's skeleton (runtime pose only, never saved)", "Preview");
     m_previewButton->setCheckable(true);
     m_previewButton->onClick = [this] {
         m_editor.m_animGraph.previewing = !m_editor.m_animGraph.previewing;
@@ -288,8 +281,10 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildToolbarUVE() {
     rateBox->setWidthOverride(70.0F);
     rateBox->setContent(rate);
     row->add(rateBox, CentreSlotUVE());
-    m_problem = prism::make<prism::Label>("", prism::FontRole::Small);
-    m_problem->setColor(prism::ThemeColor(&prism::Theme::warning));
+    // The graph's problem, as a warning badge; what is wrong is its tooltip.
+    m_problem = prism::make<prism::Button>("", prism::Icon::Warning, prism::ButtonStyle::Toolbar);
+    m_problem->setIconColor(prism::ThemeColor(&prism::Theme::warning));
+    m_problem->setVisible(false);
     row->add(m_problem, prism::Slot{1.0F, prism::Margin(12.0F, 0.0F, 0.0F, 0.0F), prism::HAlign::Right, prism::VAlign::Center});
     auto bar = prism::make<prism::Border>();
     bar->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -311,22 +306,22 @@ prism::BlueprintNode EditorPrismAnimGraphPanelUVE::MakeNodeUVE(const NodeUVE& no
     n.tooltip = AnimationGraphKindHelpUVE(node.kind);
     switch (node.kind) {
         case Kind::Output: n.icon = prism::Icon::NodeOutput; n.category = prism::BlueprintNodeCategory::Event; break;
-        case Kind::Clip: n.icon = prism::Icon::NodeClip; break;
+        case Kind::Clip: n.icon = prism::Icon::AnimClipNode; break;
         case Kind::Blend2: n.icon = prism::Icon::NodeBlend; break;
         case Kind::BlendSpace1D:
         case Kind::BlendSpace2D: n.icon = prism::Icon::NodeBlendSpace; break;
-        case Kind::Additive: n.icon = prism::Icon::NodeMixer; break;
-        case Kind::OneShot: n.icon = prism::Icon::NodeFlag; break;
-        case Kind::TimeScale: n.icon = prism::Icon::NodeTimer; break;
-        case Kind::TimeSeek: n.icon = prism::Icon::NodeClock; break;
-        case Kind::StateMachine: n.icon = prism::Icon::StateGraph; n.category = prism::BlueprintNodeCategory::State; break;
-        case Kind::Select: n.icon = prism::Icon::NodeSelector; break;
-        case Kind::LayeredBlend: n.icon = prism::Icon::Layers; break;
+        case Kind::Additive: n.icon = prism::Icon::AdditivePose; break;
+        case Kind::OneShot: n.icon = prism::Icon::OneShot; break;
+        case Kind::TimeScale: n.icon = prism::Icon::TimeScale; break;
+        case Kind::TimeSeek: n.icon = prism::Icon::TimeSeek; break;
+        case Kind::StateMachine: n.icon = prism::Icon::StateMachine; n.category = prism::BlueprintNodeCategory::State; break;
+        case Kind::Select: n.icon = prism::Icon::AnimSelect; break;
+        case Kind::LayeredBlend: n.icon = prism::Icon::LayeredBlend; break;
         case Kind::Slot: n.icon = prism::Icon::NodeSlot; break;
-        case Kind::TwoBoneIK: n.icon = prism::Icon::NodeBone; break;
-        case Kind::ModifyBone: n.icon = prism::Icon::NodeScale; break;
-        case Kind::LookAt: n.icon = prism::Icon::Eye; break;
-        case Kind::BlendByBool: n.icon = prism::Icon::NodeToggle; break;
+        case Kind::TwoBoneIK: n.icon = prism::Icon::TwoBoneIK; break;
+        case Kind::ModifyBone: n.icon = prism::Icon::ModifyBone; break;
+        case Kind::LookAt: n.icon = prism::Icon::LookAt; break;
+        case Kind::BlendByBool: n.icon = prism::Icon::BlendByBool; break;
     }
     for (std::size_t slot = 0U; slot < node.inputs.size(); ++slot) {
         prism::BlueprintPin pin;
@@ -607,8 +602,9 @@ void EditorPrismAnimGraphPanelUVE::RefreshLiveValuesUVE(const GraphUVE& graph) {
         if (problem.empty() && m_view.skeleton == Scene::kInvalidEntityUVE) {
             problem = "No skeleton to preview on: add a Skeleton3D to the entity";
         }
-        if (m_problem->text() != problem) {
-            m_problem->setText(problem);
+        if (m_problem->tooltip() != problem) {
+            m_problem->setTooltip(problem);
+            m_problem->setVisible(!problem.empty());
         }
     }
     // Parameter values the preview moves.
@@ -714,112 +710,53 @@ void EditorPrismAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
     m_shownSelection = m_selected;
     m_parameterRows.clear();
     m_shownLogLines = static_cast<std::size_t>(-1);
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    auto page = prism::vbox(2.0F);
-    page->setPadding(prism::Margin(0.0F, 0.0F, 0.0F, 10.0F));
-
-    // The graph: which sequencer's clips it offers.
-    page->add(SectionUVE("Graph"));
-    {
-        auto row = prism::hbox(6.0F);
-        row->setPadding(prism::Margin(10.0F, 0.0F, 10.0F, 0.0F));
-        auto label = prism::make<prism::Label>("Sequencer", prism::FontRole::Small);
-        label->setColor(prism::ThemeColor(&prism::Theme::textDim));
-        row->add(label, CentreSlotUVE());
-        const Scene::EntityUVE sequencer = m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree);
-        const std::string name = sequencer != Scene::kInvalidEntityUVE ? NameOfUVE(em, sequencer, "AnimationSequencer") : std::string{"None"};
-        auto pick = prism::make<prism::Button>(name, prism::Icon::ChevronDown, prism::ButtonStyle::Default);
-        pick->setTooltip("The AnimationSequencer whose animations the Clip nodes pick from (" +
-                         std::to_string(m_editor.GetSequencerClipsUVE(sequencer).size()) + " clips)");
-        std::weak_ptr<prism::Button> weak = pick;
-        pick->onClick = [this, weak] {
-            if (auto b = weak.lock()) {
-                ShowSequencerMenuUVE(prism::Vec2{b->rect().x, b->rect().bottom()});
-            }
-        };
-        row->add(pick, prism::Slot{1.0F});
-        page->add(row);
-        // Optional: the MontagePlayer whose montages the Slot nodes play.
-        auto montageRow = prism::hbox(6.0F);
-        montageRow->setPadding(prism::Margin(10.0F, 2.0F, 10.0F, 0.0F));
-        auto montageLabel = prism::make<prism::Label>("Montages", prism::FontRole::Small);
-        montageLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
-        montageRow->add(montageLabel, CentreSlotUVE());
-        const Scene::EntityUVE linkedPlayer = graph.montagePlayer;
-        const std::string playerName = linkedPlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(linkedPlayer)
-                                           ? NameOfUVE(em, linkedPlayer, "MontagePlayer")
-                                           : std::string{"Any MontagePlayer (optional)"};
-        auto pickPlayer = prism::make<prism::Button>(playerName, prism::Icon::ChevronDown, prism::ButtonStyle::Default);
-        pickPlayer->setTooltip("Optional: the MontagePlayer whose montages play on this graph's Slot nodes. Unset, any "
-                               "MontagePlayer posing the same skeleton does.");
-        std::weak_ptr<prism::Button> weakPlayer = pickPlayer;
-        pickPlayer->onClick = [this, weakPlayer] {
-            if (auto b = weakPlayer.lock()) {
-                ShowMontagePlayerMenuUVE(prism::Vec2{b->rect().x, b->rect().bottom()});
-            }
-        };
-        montageRow->add(pickPlayer, prism::Slot{1.0F});
-        page->add(montageRow);
-        auto skeleton = prism::make<prism::Label>(
-            m_view.skeleton != Scene::kInvalidEntityUVE ? "Previews on " + NameOfUVE(em, m_view.skeleton, "Skeleton3D") : "No skeleton to preview on",
-            prism::FontRole::Small);
-        skeleton->setColor(prism::ThemeColor(&prism::Theme::textDim));
-        skeleton->setPadding(prism::Margin(10.0F, 2.0F, 10.0F, 0.0F));
-        page->add(skeleton);
-    }
     m_shownPickedState = m_editor.m_animGraph.pickedState;
     m_shownPickedTransition = m_editor.m_animGraph.pickedTransition;
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    // Built like the entity's Details: categories, a label column, one control per row.
+    auto grid = prism::make<prism::PropertyGrid>();
+
+    const int graphCategory = grid->addCategory("Graph");
+    const auto picker = [](const std::string& text, std::function<void(prism::Vec2)> open) {
+        auto button = prism::make<prism::Button>(text, prism::Icon::ChevronDown, prism::ButtonStyle::Default);
+        std::weak_ptr<prism::Button> weak = button;
+        button->onClick = [weak, open = std::move(open)] {
+            if (auto b = weak.lock()) {
+                open(prism::Vec2{b->rect().x, b->rect().bottom()});
+            }
+        };
+        return button;
+    };
+    const Scene::EntityUVE sequencer = m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree);
+    grid->addRow(graphCategory, "Sequencer",
+                 picker(sequencer != Scene::kInvalidEntityUVE ? NameOfUVE(em, sequencer, "AnimationSequencer") : std::string{"None"},
+                        [this](const prism::Vec2 at) { ShowSequencerMenuUVE(at); }),
+                 "The AnimationSequencer whose animations the Clip nodes play");
+    const Scene::EntityUVE linkedPlayer = graph.montagePlayer;
+    grid->addRow(graphCategory, "Montage Player",
+                 picker(linkedPlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(linkedPlayer) ? NameOfUVE(em, linkedPlayer, "MontagePlayer")
+                                                                                                 : std::string{"None"},
+                        [this](const prism::Vec2 at) { ShowMontagePlayerMenuUVE(at); }),
+                 "Optional: the MontagePlayer whose montages play on the Slot nodes. None: any MontagePlayer on the same skeleton.");
+
     if (const NodeUVE* focus = FocusNodeUVE(); focus != nullptr && focus->kind == Kind::StateMachine) {
-        page->add(BuildStateMachineSideUVE(graph, *focus));
-        page->add(BuildParametersUVE(graph));
+        BuildStateMachineSideUVE(*grid, graph, *focus);
     } else if (focus != nullptr) {
-        page->add(BuildBlendSpaceSideUVE(graph, *focus));
-        page->add(BuildParametersUVE(graph));
+        BuildBlendSpaceSideUVE(*grid, graph, *focus);
     } else {
-        page->add(BuildParametersUVE(graph));
-        page->add(BuildSelectedUVE(graph));
+        BuildSelectedUVE(*grid, graph);
     }
-    page->add(BuildPreviewUVE());
-    m_side->setContent(prism::make<FitWidthUVE>(page));
+    BuildParametersUVE(*grid, graph);
+    BuildPreviewUVE(*grid);
+    m_side->setContent(prism::make<FitWidthUVE>(grid));
 }
 
-prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const GraphUVE& graph) {
-    auto box = prism::vbox(3.0F);
-    auto header = prism::hbox(4.0F);
-    header->add(SectionUVE("Parameters  (" + std::to_string(graph.parameters.size()) + ")"), prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    auto add = ToolButtonUVE(prism::Icon::Plus, "Add a parameter", "Add");
-    std::weak_ptr<prism::Button> weakAdd = add;
-    add->onClick = [this, weakAdd] {
-        const auto addOf = [this](const Scene::AnimationParameterTypeUVE type, const char* base) {
-            return [this, type, base] {
-                EditUVE([type, base](GraphUVE& g) {
-                    Scene::AnimationParameterUVE p;
-                    p.name = UniqueParameterNameUVE(g, base);
-                    p.type = type;
-                    g.parameters.push_back(std::move(p));
-                });
-            };
-        };
-        std::vector<prism::MenuItem> items{prism::MenuItem::Item("Float", addOf(Scene::AnimationParameterTypeUVE::Float, "Speed"), "", prism::Icon::NodeSlider),
-                                           prism::MenuItem::Item("Vector3", addOf(Scene::AnimationParameterTypeUVE::Vector3, "Target"), "", prism::Icon::Move),
-                                           prism::MenuItem::Item("Bool", addOf(Scene::AnimationParameterTypeUVE::Bool, "IsMoving"), "", prism::Icon::NodeToggle),
-                                           prism::MenuItem::Item("Trigger", addOf(Scene::AnimationParameterTypeUVE::Trigger, "Attack"), "", prism::Icon::NodeFlag)};
-        if (auto b = weakAdd.lock()) {
-            prism::showContextMenu(std::move(items), prism::Vec2{b->rect().x, b->rect().bottom()});
-        }
-    };
-    header->add(add, prism::Slot{0.0F, prism::Margin(0.0F, 6.0F, 8.0F, 0.0F), prism::HAlign::Right, prism::VAlign::Center});
-    box->add(header);
-    if (graph.parameters.empty()) {
-        auto none = prism::make<prism::Label>("None yet. Scripts set them: Speed, IsMoving...", prism::FontRole::Small);
-        none->setColor(prism::ThemeColor(&prism::Theme::textDim));
-        none->setPadding(prism::Margin(10.0F, 0.0F, 10.0F, 0.0F));
-        box->add(none);
-    }
+void EditorPrismAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid, const GraphUVE& graph) {
+    const int category = grid.addCategory("Parameters");
+    static constexpr const char* kTypes[] = {"Float", "Bool", "Trigger", "Vector3"};
     for (std::size_t index = 0U; index < graph.parameters.size(); ++index) {
         const Scene::AnimationParameterUVE& parameter = graph.parameters[index];
         auto row = prism::hbox(4.0F);
-        row->setPadding(prism::Margin(8.0F, 0.0F, 14.0F, 0.0F));
         auto name = prism::make<prism::TextInput>(parameter.name, "Name");
         const std::string old = parameter.name;
         name->onCommit = [this, old](const std::string& to) {
@@ -834,11 +771,10 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const
                     }
                 }
                 for (NodeUVE& node : g.nodes) {
-                    if (node.parameter == old) {
-                        node.parameter = to;
-                    }
-                    if (node.parameterY == old) {
-                        node.parameterY = to;
+                    for (std::string* field : {&node.parameter, &node.parameterY, &node.alphaParameter}) {
+                        if (*field == old) {
+                            *field = to;
+                        }
                     }
                     for (Scene::AnimationGraphTransitionUVE& t : node.transitions) {
                         for (Scene::AnimationTransitionConditionUVE& c : t.conditions) {
@@ -850,23 +786,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const
                 }
             });
         };
-        auto nameBox = prism::make<prism::SizeBox>();
-        nameBox->setWidthOverride(84.0F);
-        nameBox->setContent(name);
-        row->add(nameBox, CentreSlotUVE());
-        auto type = prism::make<prism::ComboBox>(std::vector<std::string>{"Float", "Bool", "Trigger", "Vector3"}, static_cast<int>(parameter.type));
-        type->onChange = [this, index](const int i) {
-            EditUVE([index, i](GraphUVE& g) {
-                if (index < g.parameters.size()) {
-                    g.parameters[index].type = static_cast<Scene::AnimationParameterTypeUVE>(std::clamp(i, 0, 3));
-                    g.parameters[index].value = 0.0F;
-                }
-            });
-        };
-        auto typeBox = prism::make<prism::SizeBox>();
-        typeBox->setWidthOverride(64.0F);
-        typeBox->setContent(type);
-        row->add(typeBox, CentreSlotUVE());
+        row->add(name, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         ParameterRowUVE live{parameter.name, nullptr, nullptr};
         switch (parameter.type) {
             case Scene::AnimationParameterTypeUVE::Float: {
@@ -874,10 +794,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const
                 number->onChange = [this, index](const float v) { LiveParameterUVE(index, v); };
                 number->onCommit = [this](float) { CommitLiveUVE(); };
                 row->add(number, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-                auto spark = prism::make<SparklineUVE>(nullptr);
-                row->add(spark, CentreSlotUVE());
                 live.number = number;
-                live.sparkline = spark;
                 break;
             }
             case Scene::AnimationParameterTypeUVE::Bool: {
@@ -889,11 +806,10 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const
                         }
                     });
                 };
-                row->add(check, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+                row->add(check, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
                 break;
             }
             case Scene::AnimationParameterTypeUVE::Vector3: {
-                auto xyz = prism::hbox(2.0F);
                 const float values[] = {parameter.vector.x, parameter.vector.y, parameter.vector.z};
                 for (int axis = 0; axis < 3; ++axis) {
                     auto number = prism::make<prism::NumberField>(values[axis], 0.01F, 2);
@@ -905,19 +821,18 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const
                             }
                         });
                     };
-                    xyz->add(number, prism::Slot{1.0F});
+                    row->add(number, prism::Slot{0.6F});
                 }
-                row->add(xyz, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
                 break;
             }
             case Scene::AnimationParameterTypeUVE::Trigger: {
-                auto fire = ToolButtonUVE(prism::Icon::NodeFlag, "Fire it now (the preview consumes it)", "Fire");
+                auto fire = ToolButtonUVE(prism::Icon::Fire, "Fire it now");
                 fire->onClick = [this, index] {
                     if (GraphUVE* g = LiveGraphUVE(); g != nullptr && index < g->parameters.size()) {
                         g->parameters[index].value = 1.0F;   // runtime only: the step consumes it
                     }
                 };
-                row->add(fire, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+                row->add(fire, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
                 break;
             }
         }
@@ -929,21 +844,13 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const
                 }
             });
         };
-        row->add(remove, CentreSlotUVE());
-        box->add(row);
-        // Who writes it: a script, or the engine from the character (its speed, heading, air).
+        row->add(remove, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        grid.addRow(category, kTypes[std::min<std::size_t>(static_cast<std::size_t>(parameter.type), 3U)], row);
+        // Who writes it: a script, or the engine from the character.
         if (parameter.type == Scene::AnimationParameterTypeUVE::Float || parameter.type == Scene::AnimationParameterTypeUVE::Bool) {
-            auto sourceRow = prism::hbox(4.0F);
-            sourceRow->setPadding(prism::Margin(8.0F, 0.0F, 14.0F, 4.0F));
-            auto label = prism::make<prism::Label>("Set by", prism::FontRole::Small);
-            label->setColor(prism::ThemeColor(&prism::Theme::textDim));
-            auto labelBox = prism::make<prism::SizeBox>();
-            labelBox->setWidthOverride(84.0F);
-            labelBox->setContent(label);
             auto source = prism::make<prism::ComboBox>(
-                std::vector<std::string>{"Script", "Character speed", "Character direction", "Character in air", "Character grounded"},
+                std::vector<std::string>{"Script", "Character Speed", "Character Direction", "Character In Air", "Character Grounded"},
                 static_cast<int>(parameter.source));
-            source->setTooltip("From Character: the engine writes it every frame from the Character Controller the graph animates");
             source->onChange = [this, index](const int i) {
                 EditUVE([index, i](GraphUVE& g) {
                     if (index < g.parameters.size()) {
@@ -951,55 +858,52 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const
                     }
                 });
             };
-            sourceRow->add(labelBox, CentreSlotUVE());
-            sourceRow->add(source, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-            box->add(sourceRow);
+            grid.addRow(category, "Set By", source, "Character: the engine writes it every frame from the Character Controller");
         }
         m_parameterRows.push_back(std::move(live));
     }
-    return box;
+    // Add: one button, its type picked from the menu.
+    auto add = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Default);
+    std::weak_ptr<prism::Button> weakAdd = add;
+    add->onClick = [this, weakAdd] {
+        const auto addOf = [this](const Scene::AnimationParameterTypeUVE type, const char* base) {
+            return [this, type, base] {
+                EditUVE([type, base](GraphUVE& g) {
+                    Scene::AnimationParameterUVE p;
+                    p.name = UniqueParameterNameUVE(g, base);
+                    p.type = type;
+                    g.parameters.push_back(std::move(p));
+                });
+            };
+        };
+        std::vector<prism::MenuItem> items{prism::MenuItem::Item("Float", addOf(Scene::AnimationParameterTypeUVE::Float, "Speed"), "", prism::Icon::ParamFloat),
+                                           prism::MenuItem::Item("Bool", addOf(Scene::AnimationParameterTypeUVE::Bool, "IsMoving"), "", prism::Icon::ParamBool),
+                                           prism::MenuItem::Item("Trigger", addOf(Scene::AnimationParameterTypeUVE::Trigger, "Attack"), "", prism::Icon::ParamTrigger),
+                                           prism::MenuItem::Item("Vector3", addOf(Scene::AnimationParameterTypeUVE::Vector3, "Target"), "", prism::Icon::ParamVector)};
+        if (auto b = weakAdd.lock()) {
+            prism::showContextMenu(std::move(items), prism::Vec2{b->rect().x, b->rect().bottom()});
+        }
+    };
+    grid.addRow(category, "", add);
 }
 
-prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildSelectedUVE(const GraphUVE& graph) {
-    auto box = prism::vbox(3.0F);
+void EditorPrismAnimGraphPanelUVE::BuildSelectedUVE(prism::PropertyGrid& grid, const GraphUVE& graph) {
     if (m_selected.size() != 1U) {
-        box->add(SectionUVE("Node"));
-        auto hint = prism::make<prism::Label>(m_selected.empty() ? "Pick a node to name it and see what it does" : std::to_string(m_selected.size()) + " nodes picked",
-                                              prism::FontRole::Small);
-        hint->setColor(prism::ThemeColor(&prism::Theme::textDim));
-        hint->setPadding(prism::Margin(10.0F, 0.0F, 10.0F, 0.0F));
-        box->add(hint);
-        return box;
+        return;
     }
     const std::uint32_t id = m_selected.front();
     const auto found = std::ranges::find(graph.nodes, id, &NodeUVE::id);
     if (found == graph.nodes.end()) {
-        return box;
+        return;
     }
     const NodeUVE& node = *found;
-    box->add(SectionUVE(std::string{"Node  -  "} + AnimationGraphKindLabelUVE(node.kind)));
-    const auto labelled = [&box](const std::string& label, const prism::Ref<prism::Widget>& control) {
-        auto row = prism::hbox(6.0F);
-        row->setPadding(prism::Margin(10.0F, 0.0F, 10.0F, 0.0F));
-        auto text = prism::make<prism::Label>(label, prism::FontRole::Small);
-        text->setColor(prism::ThemeColor(&prism::Theme::textDim));
-        auto textBox = prism::make<prism::SizeBox>();
-        textBox->setWidthOverride(70.0F);
-        textBox->setContent(text);
-        row->add(textBox, CentreSlotUVE());
-        row->add(control, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-        box->add(row);
-    };
-    if (node.kind != Scene::AnimationGraphNodeKindUVE::Output) {
-        auto name = prism::make<prism::TextInput>(node.name, "Name");
-        name->onCommit = [this, id](const std::string& to) { EditNodeUVE(id, [&to](NodeUVE& n) { n.name = to; }); };
-        labelled("Name", name);
+    const int category = grid.addCategory(AnimationGraphKindLabelUVE(node.kind));
+    if (node.kind == Scene::AnimationGraphNodeKindUVE::Output) {
+        return;
     }
-    auto help = prism::make<prism::Label>(AnimationGraphKindHelpUVE(node.kind), prism::FontRole::Small);
-    help->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    help->setTooltip(AnimationGraphKindHelpUVE(node.kind));
-    help->setPadding(prism::Margin(10.0F, 2.0F, 10.0F, 2.0F));
-    box->add(help);
+    auto name = prism::make<prism::TextInput>(node.name, "Name");
+    name->onCommit = [this, id](const std::string& to) { EditNodeUVE(id, [&to](NodeUVE& n) { n.name = to; }); };
+    grid.addRow(category, "Name", name, AnimationGraphKindHelpUVE(node.kind));
 
     // A Layered Blend's bones: the branches its second pose replaces, each with its children.
     if (node.kind == Scene::AnimationGraphNodeKindUVE::LayeredBlend) {
@@ -1013,11 +917,11 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildSelectedUVE(const G
                 });
             };
             auto row = prism::hbox(4.0F);
-            row->add(prism::make<prism::Label>(node.bones[i], prism::FontRole::Regular), prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+            row->add(prism::make<prism::Label>(node.bones[i]), prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
             row->add(remove, CentreSlotUVE());
-            labelled(i == 0U ? "Bones" : "", row);
+            grid.addRow(category, i == 0U ? "Bones" : "", row);
         }
-        std::vector<std::string> bones{"Add a bone..."};
+        std::vector<std::string> bones{"Add"};
         const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
         if (m_view.skeleton != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_view.skeleton)) {
             for (const Scene::SkeletonBoneUVE& bone : em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_view.skeleton).bones) {
@@ -1037,41 +941,30 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildSelectedUVE(const G
                 });
             }
         };
-        labelled(node.bones.empty() ? "Bones" : "", pick);
+        grid.addRow(category, node.bones.empty() ? "Bones" : "", pick);
     }
-    if (node.kind != Scene::AnimationGraphNodeKindUVE::Output) {
-        auto actions = prism::hbox(4.0F);
-        auto duplicate = ToolButtonUVE(prism::Icon::Duplicate, "Duplicate the node", "Duplicate");
-        duplicate->onClick = [this, id] {
-            EditUVE([id](GraphUVE& g) {
-                const std::vector<std::uint32_t> copies = DuplicateAnimationGraphNodesUVE(g.nodes, {id}, Math::Vector2UVE{40.0F, 40.0F});
-                static_cast<void>(copies);
-            });
-        };
-        auto remove = ToolButtonUVE(prism::Icon::Trash, "Delete the node (Delete)", "Delete");
-        remove->onClick = [this, id] {
-            m_selected.clear();
-            EditUVE([id](GraphUVE& g) { static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, {id})); });
-        };
-        actions->add(duplicate, CentreSlotUVE());
-        actions->add(remove, CentreSlotUVE());
-        labelled("", actions);
-    }
-    return box;
+    auto actions = prism::hbox(4.0F);
+    auto duplicate = prism::make<prism::Button>("Duplicate", prism::Icon::Duplicate, prism::ButtonStyle::Default);
+    duplicate->onClick = [this, id] {
+        EditUVE([id](GraphUVE& g) { static_cast<void>(DuplicateAnimationGraphNodesUVE(g.nodes, {id}, Math::Vector2UVE{40.0F, 40.0F})); });
+    };
+    auto remove = prism::make<prism::Button>("Delete", prism::Icon::Trash, prism::ButtonStyle::Default);
+    remove->onClick = [this, id] {
+        m_selected.clear();
+        EditUVE([id](GraphUVE& g) { static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, {id})); });
+    };
+    actions->add(duplicate, prism::Slot{1.0F});
+    actions->add(remove, prism::Slot{1.0F});
+    grid.addRow(category, "", actions);
 }
 
-prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildPreviewUVE() {
-    auto box = prism::vbox(3.0F);
-    box->add(SectionUVE("Preview log"));
+void EditorPrismAnimGraphPanelUVE::BuildPreviewUVE(prism::PropertyGrid& grid) {
+    const int category = grid.addCategory("Preview Log", false);
     m_log = prism::make<prism::LogView>();
     auto logBox = prism::make<prism::SizeBox>();
     logBox->setHeightOverride(150.0F);
     logBox->setContent(m_log);
-    auto frame = prism::hbox();
-    frame->setPadding(prism::Margin(8.0F, 0.0F, 8.0F, 0.0F));
-    frame->add(logBox, prism::Slot{1.0F});
-    box->add(frame);
-    return box;
+    grid.addRow(category, "", logBox);
 }
 
 // ---------------------------------------------------------------------------------------- menus
@@ -1093,24 +986,19 @@ void EditorPrismAnimGraphPanelUVE::ShowMontagePlayerMenuUVE(const prism::Vec2 at
     const GraphUVE* graph = GraphPtrUVE();
     const Scene::EntityUVE bound = graph != nullptr ? graph->montagePlayer : Scene::kInvalidEntityUVE;
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Check("Any MontagePlayer on the same skeleton", bound == Scene::kInvalidEntityUVE, [this] {
+    items.push_back(prism::MenuItem::Check("None", bound == Scene::kInvalidEntityUVE, [this] {
         m_montageSlots.clear();
         EditUVE([](GraphUVE& g) { g.montagePlayer = Scene::kInvalidEntityUVE; });
     }));
     items.push_back(prism::MenuItem::Sep());
-    bool any = false;
     for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
         if (!em.HasComponentUVE<Scene::MontagePlayerComponentUVE>(object)) {
             continue;
         }
-        any = true;
         items.push_back(prism::MenuItem::Check(NameOfUVE(em, object, "MontagePlayer"), bound == object, [this, object] {
             m_montageSlots.clear();
             EditUVE([object](GraphUVE& g) { g.montagePlayer = object; });
         }));
-    }
-    if (!any) {
-        items.push_back(prism::MenuItem::Item("No MontagePlayer in this entity yet", {}).disabled());
     }
     prism::showContextMenu(std::move(items), at);
 }
@@ -1120,7 +1008,7 @@ void EditorPrismAnimGraphPanelUVE::ShowSequencerMenuUVE(const prism::Vec2 at) {
     const GraphUVE* graph = GraphPtrUVE();
     const Scene::EntityUVE bound = graph != nullptr ? graph->sequencer : Scene::kInvalidEntityUVE;
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Check("Automatic (the tree's own, its target's or its parent's)", bound == Scene::kInvalidEntityUVE, [this] {
+    items.push_back(prism::MenuItem::Check("Automatic", bound == Scene::kInvalidEntityUVE, [this] {
         m_editor.m_animGraph.sequencer = Scene::kInvalidEntityUVE;
         EditUVE([](GraphUVE& g) { g.sequencer = Scene::kInvalidEntityUVE; });
     }));
@@ -1129,9 +1017,7 @@ void EditorPrismAnimGraphPanelUVE::ShowSequencerMenuUVE(const prism::Vec2 at) {
         if (!em.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(object)) {
             continue;
         }
-        const std::string label =
-            NameOfUVE(em, object, "AnimationSequencer") + "  (" + std::to_string(m_editor.GetSequencerClipsUVE(object).size()) + " clips)";
-        items.push_back(prism::MenuItem::Check(label, bound == object, [this, object] {
+        items.push_back(prism::MenuItem::Check(NameOfUVE(em, object, "AnimationSequencer"), bound == object, [this, object] {
             m_editor.m_animGraph.sequencer = object;
             EditUVE([object](GraphUVE& g) { g.sequencer = object; });
         }));

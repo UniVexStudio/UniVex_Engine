@@ -16,6 +16,7 @@
 #include "prism/Layouts.h"
 #include "prism/TextInput.h"
 #include "prism/Theme.h"
+#include "prism/Views.h"
 
 #include <algorithm>
 #include <string>
@@ -27,41 +28,14 @@ namespace {
 using Kind = Scene::AnimationGraphNodeKindUVE;
 using Condition = Scene::AnimationConditionUVE;
 
-[[nodiscard]] prism::Ref<prism::Widget> TitleUVE(const std::string& title) {
-    auto label = prism::make<prism::Label>(title, prism::FontRole::Semibold);
-    label->setPadding(prism::Margin(8.0F, 10.0F, 8.0F, 4.0F));
-    return label;
-}
-
-[[nodiscard]] prism::Ref<prism::Widget> HintUVE(const std::string& text) {
-    auto label = prism::make<prism::Label>(text, prism::FontRole::Small);
-    label->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    label->setPadding(prism::Margin(10.0F, 0.0F, 10.0F, 2.0F));
-    label->setTooltip(text);
-    return label;
-}
-
-[[nodiscard]] prism::Ref<prism::Widget> LabelledUVE(const std::string& label, const prism::Ref<prism::Widget>& control) {
-    auto row = prism::hbox(6.0F);
-    row->setPadding(prism::Margin(10.0F, 0.0F, 12.0F, 0.0F));
-    auto text = prism::make<prism::Label>(label, prism::FontRole::Small);
-    text->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    auto textBox = prism::make<prism::SizeBox>();
-    textBox->setWidthOverride(78.0F);
-    textBox->setContent(text);
-    row->add(textBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    row->add(control, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    return row;
-}
-
 [[nodiscard]] bool NeedsParameterUVE(const Condition condition) noexcept {
     return condition != Condition::Always && condition != Condition::AtEnd;
 }
 
 } // namespace
 
-prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE(const GraphUVE& graph, const NodeUVE& machine) {
-    auto box = prism::vbox(4.0F);
+void EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE(prism::PropertyGrid& grid, const GraphUVE& graph, const NodeUVE& machine) {
+    int cat = -1;
     const EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
     const std::uint32_t id = machine.id;
     const auto stateName = [&graph, &machine](const std::uint32_t slot) -> std::string {
@@ -81,8 +55,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE
     if (state.pickedTransition >= 0 && static_cast<std::size_t>(state.pickedTransition) < machine.transitions.size()) {
         const auto index = static_cast<std::size_t>(state.pickedTransition);
         const Scene::AnimationGraphTransitionUVE& t = machine.transitions[index];
-        box->add(TitleUVE(stateName(t.fromState) + "  ->  " + stateName(t.toState)));
-        box->add(HintUVE(DescribeAnimationTransitionUVE(t)));
+        cat = grid.addCategory(stateName(t.fromState) + "  ->  " + stateName(t.toState));
         const auto editTransition = [this, id, index](const std::function<void(Scene::AnimationGraphTransitionUVE&)>& change) {
             EditNodeUVE(id, [&change, index](NodeUVE& n) {
                 if (index < n.transitions.size()) {
@@ -100,10 +73,10 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE
         };
         flags->add(enabled);
         flags->add(interruptible);
-        box->add(LabelledUVE("", flags));
+        grid.addRow(cat, "", flags);
 
         // Its conditions: all must hold (an empty list waits for nothing).
-        box->add(TitleUVE("Conditions  (all must hold)"));
+        cat = grid.addCategory("Conditions");
         static const std::vector<std::string> kConditions{"Always", "At End", "Parameter >", "Parameter <", "Parameter true", "Parameter false", "Triggered"};
         for (std::size_t ci = 0U; ci < t.conditions.size(); ++ci) {
             const Scene::AnimationTransitionConditionUVE& condition = t.conditions[ci];
@@ -172,7 +145,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE
                 });
             };
             row->add(remove, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-            box->add(row);
+            grid.addRow(cat, "If", row);
         }
         auto addCondition = prism::make<prism::Button>("Condition", prism::Icon::Plus, prism::ButtonStyle::Flat);
         addCondition->onClick = [editTransition] {
@@ -182,10 +155,10 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE
                 }
             });
         };
-        box->add(LabelledUVE("", addCondition));
+        grid.addRow(cat, "", addCondition);
 
         // How it hands over.
-        box->add(TitleUVE("Blend"));
+        cat = grid.addCategory("Blend");
         auto fade = prism::make<prism::NumberField>(t.fadeSeconds, 0.01F, 2);
         fade->setRange(0.0F, 10.0F);
         fade->setSuffix(" s");
@@ -197,18 +170,18 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE
             });
         };
         fade->onCommit = [this](float) { CommitLiveUVE(); };
-        box->add(LabelledUVE("Fade", fade));
+        grid.addRow(cat, "Fade", fade);
         auto curve = prism::make<prism::ComboBox>(std::vector<std::string>{"Linear", "Ease In", "Ease Out", "Ease In Out"}, static_cast<int>(t.curve));
         curve->onChange = [editTransition](const int i) {
             editTransition([i](Scene::AnimationGraphTransitionUVE& x) { x.curve = static_cast<Scene::AnimationTransitionCurveUVE>(std::clamp(i, 0, 3)); });
         };
-        box->add(LabelledUVE("Curve", curve));
+        grid.addRow(cat, "Curve", curve);
         auto start = prism::make<prism::ComboBox>(std::vector<std::string>{"Restart", "In step", "Continue"}, static_cast<int>(t.start));
         start->setTooltip("Restart: the new state from its start. In step: at the phase the old one reached. Continue: where it was.");
         start->onChange = [editTransition](const int i) {
             editTransition([i](Scene::AnimationGraphTransitionUVE& x) { x.start = static_cast<Scene::AnimationTransitionStartUVE>(std::clamp(i, 0, 2)); });
         };
-        box->add(LabelledUVE("Start", start));
+        grid.addRow(cat, "Start", start);
         auto exitRow = prism::hbox(6.0F);
         auto exitOn = prism::make<prism::CheckBox>("At phase", t.exitPhase >= 0.0F);
         exitOn->setTooltip("Wait until the current state reaches this phase (0..1) before leaving");
@@ -223,7 +196,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE
         };
         exitRow->add(exitOn, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
         exitRow->add(exitPhase, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-        box->add(LabelledUVE("Exit", exitRow));
+        grid.addRow(cat, "Exit", exitRow);
         // Priority: earlier transitions win when several could fire.
         auto order = prism::hbox(4.0F);
         auto up = prism::make<prism::Button>("Earlier", prism::Icon::ChevronUp, prism::ButtonStyle::Flat);
@@ -242,26 +215,26 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE
         };
         order->add(up, prism::Slot{1.0F});
         order->add(down, prism::Slot{1.0F});
-        box->add(LabelledUVE("Priority " + std::to_string(index + 1U), order));
+        grid.addRow(cat, "Priority", order);
         auto remove = prism::make<prism::Button>("Remove Transition", prism::Icon::Trash, prism::ButtonStyle::Default);
         remove->onClick = [this, id, index] {
             EditUVE([id, index](GraphUVE& g) { static_cast<void>(RemoveAnimationTransitionUVE(g.nodes, id, index)); });
             m_editor.m_animGraph.pickedTransition = -1;
         };
-        box->add(LabelledUVE("", remove));
-        return box;
+        grid.addRow(cat, "", remove);
+        return;
     }
 
     // ---- a state ---------------------------------------------------------------------------------
     if (state.pickedState >= 0 && static_cast<std::size_t>(state.pickedState) < machine.inputs.size()) {
         const auto slot = static_cast<std::uint32_t>(state.pickedState);
-        box->add(TitleUVE("State  -  " + stateName(slot)));
+        cat = grid.addCategory("State");
         const std::uint32_t child = machine.inputs[slot];
         const auto node = std::ranges::find(graph.nodes, child, &NodeUVE::id);
         if (node != graph.nodes.end()) {
             auto name = prism::make<prism::TextInput>(node->name, "Name");
             name->onCommit = [this, child](const std::string& to) { EditNodeUVE(child, [&to](NodeUVE& n) { n.name = to; }); };
-            box->add(LabelledUVE("Name", name));
+            grid.addRow(cat, "Name", name);
             if (node->kind == Kind::Clip) {
                 std::vector<Asset::AssetGuidUVE> choices{Asset::AssetGuidUVE{}};
                 std::vector<std::string> names{"None"};
@@ -280,63 +253,52 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildStateMachineSideUVE
                         EditNodeUVE(child, [picked](NodeUVE& n) { n.clip = picked; });
                     }
                 };
-                box->add(LabelledUVE("Plays", clip));
+                grid.addRow(cat, "Plays", clip);
                 auto loop = prism::make<prism::CheckBox>("Loop", node->loop);
                 loop->onChange = [this, child](const bool v) { EditNodeUVE(child, [v](NodeUVE& n) { n.loop = v; }); };
-                box->add(LabelledUVE("", loop));
+                grid.addRow(cat, "", loop);
             } else {
-                box->add(HintUVE(std::string{"Plays a "} + AnimationGraphKindLabelUVE(node->kind) + ": double-click the state to open it"));
             }
         }
         auto startHere = prism::make<prism::Button>(machine.entryState == slot ? "Starts here" : "Start Here", prism::Icon::NodeEntry,
                                                     prism::ButtonStyle::Default);
         startHere->setEnabled(machine.entryState != slot);
         startHere->onClick = [this, id, slot] { EditNodeUVE(id, [slot](NodeUVE& n) { n.entryState = slot; }); };
-        box->add(LabelledUVE("", startHere));
-        box->add(TitleUVE("Leaves to"));
-        bool any = false;
+        grid.addRow(cat, "", startHere);
+        cat = grid.addCategory("Transitions");
         for (std::size_t i = 0U; i < machine.transitions.size(); ++i) {
             const Scene::AnimationGraphTransitionUVE& t = machine.transitions[i];
             if (t.fromState != slot && t.fromState != Scene::kAnyAnimationStateUVE) {
                 continue;
             }
-            any = true;
-            auto link = prism::make<prism::Button>((t.fromState == slot ? "" : "(any) ") + std::string{"-> "} + stateName(t.toState) + "   " +
-                                                       std::to_string(t.conditions.size()) + " conditions",
-                                                   prism::Icon::NodeTransition, prism::ButtonStyle::Flat);
+            auto link = prism::make<prism::Button>(stateName(t.toState), prism::Icon::NodeTransition, prism::ButtonStyle::Flat);
+            link->setTooltip(DescribeAnimationTransitionUVE(t));
             link->onClick = [this, i] {
                 m_editor.m_animGraph.pickedTransition = static_cast<int>(i);
                 m_editor.m_animGraph.pickedState = -1;
             };
-            box->add(LabelledUVE("", link));
-        }
-        if (!any) {
-            box->add(HintUVE("No transitions out yet: Shift + drag from this state to another"));
+            grid.addRow(cat, t.fromState == slot ? "To" : "Any to", link);
         }
         auto remove = prism::make<prism::Button>("Remove State", prism::Icon::Trash, prism::ButtonStyle::Default);
         remove->onClick = [this, id, slot] {
             EditUVE([id, slot](GraphUVE& g) { static_cast<void>(RemoveAnimationGraphInputSlotUVE(g.nodes, id, slot)); });
             m_editor.m_animGraph.pickedState = -1;
         };
-        box->add(LabelledUVE("", remove));
-        return box;
+        grid.addRow(cat, "", remove);
+        return;
     }
 
-    box->add(TitleUVE(machine.name.empty() ? std::string{"State Machine"} : machine.name));
-    box->add(HintUVE(std::to_string(machine.inputs.size()) + " states, " + std::to_string(machine.transitions.size()) + " transitions"));
-    box->add(HintUVE("Pick a state or an arrow to edit it."));
-    box->add(HintUVE("Double-click empty space: a new state."));
-    box->add(HintUVE("Shift + drag between states: a transition."));
-    return box;
+    static_cast<void>(cat);
+    return;
 }
 
-prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBlendSpaceSideUVE(const GraphUVE& graph, const NodeUVE& space) {
+void EditorPrismAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, const GraphUVE& graph, const NodeUVE& space) {
     static_cast<void>(graph);
-    auto box = prism::vbox(4.0F);
+    int cat = -1;
     EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
     const std::uint32_t id = space.id;
     const bool two = space.kind == Kind::BlendSpace2D;
-    box->add(TitleUVE(space.name.empty() ? std::string{AnimationGraphKindLabelUVE(space.kind)} : space.name));
+    cat = grid.addCategory(space.name.empty() ? std::string{AnimationGraphKindLabelUVE(space.kind)} : space.name);
     auto tool = prism::make<prism::Segmented>();
     tool->add("Select", prism::Icon::Select, "Move points, or the cross on empty space");
     tool->add("Add", prism::Icon::Plus, "Click to put a point");
@@ -346,7 +308,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBlendSpaceSideUVE(c
     auto toolRow = prism::hbox();
     toolRow->setPadding(prism::Margin(10.0F, 0.0F, 12.0F, 2.0F));
     toolRow->add(tool, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    box->add(toolRow);
+    grid.addRow(cat, "Tool", toolRow);
     auto snapRow = prism::hbox(6.0F);
     auto snap = prism::make<prism::CheckBox>("Snap", state.snap);
     snap->onChange = [this](const bool v) { m_editor.m_animGraph.snap = v; };
@@ -355,7 +317,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBlendSpaceSideUVE(c
     step->onCommit = [this](const float v) { m_editor.m_animGraph.snapStep = std::max(0.01F, v); };
     snapRow->add(snap, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     snapRow->add(step, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    box->add(LabelledUVE("Grid", snapRow));
+    grid.addRow(cat, "Grid", snapRow);
 
     // The area the axes span.
     const auto areaField = [this, id](const float value, const int which) {
@@ -378,22 +340,22 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBlendSpaceSideUVE(c
         row->add(b, prism::Slot{1.0F});
         return row;
     };
-    box->add(LabelledUVE("X from / to", pairRow(areaField(space.areaMin.x, 0), areaField(space.areaMax.x, 1))));
+    grid.addRow(cat, "X from / to", pairRow(areaField(space.areaMin.x, 0), areaField(space.areaMax.x, 1)));
     if (two) {
-        box->add(LabelledUVE("Y from / to", pairRow(areaField(space.areaMin.y, 2), areaField(space.areaMax.y, 3))));
+        grid.addRow(cat, "Y from / to", pairRow(areaField(space.areaMin.y, 2), areaField(space.areaMax.y, 3)));
     }
     auto smoothing = prism::make<prism::NumberField>(space.smoothingSeconds, 0.01F, 2);
     smoothing->setRange(0.0F, 5.0F);
     smoothing->setSuffix(" s");
     smoothing->setTooltip("How long the position takes to close half the gap to its parameters (0: at once)");
     smoothing->onCommit = [this, id](const float v) { EditNodeUVE(id, [v](NodeUVE& n) { n.smoothingSeconds = std::clamp(v, 0.0F, 5.0F); }); };
-    box->add(LabelledUVE("Smoothing", smoothing));
+    grid.addRow(cat, "Smoothing", smoothing);
 
     // The picked point.
     if (state.pickedState >= 0 && static_cast<std::size_t>(state.pickedState) < space.blendPoints.size()) {
         const auto slot = static_cast<std::size_t>(state.pickedState);
         const Scene::AnimationBlendPointUVE& point = space.blendPoints[slot];
-        box->add(TitleUVE("Point " + std::to_string(slot + 1U)));
+        cat = grid.addCategory("Point " + std::to_string(slot + 1U));
         const auto editPoint = [this, id, slot](const std::function<void(Scene::AnimationBlendPointUVE&)>& change) {
             EditNodeUVE(id, [&change, slot](NodeUVE& n) {
                 if (slot < n.blendPoints.size()) {
@@ -418,7 +380,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBlendSpaceSideUVE(c
                 editPoint([picked](Scene::AnimationBlendPointUVE& p) { p.clip = picked; });
             }
         };
-        box->add(LabelledUVE("Animation", clip));
+        grid.addRow(cat, "Animation", clip);
         auto speedRow = prism::hbox(6.0F);
         auto speed = prism::make<prism::NumberField>(point.speed, 0.01F, 2);
         speed->setSuffix("x");
@@ -426,8 +388,8 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBlendSpaceSideUVE(c
         auto loop = prism::make<prism::CheckBox>("Loop", point.loop);
         loop->onChange = [editPoint](const bool v) { editPoint([v](Scene::AnimationBlendPointUVE& p) { p.loop = v; }); };
         speedRow->add(speed, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-        box->add(LabelledUVE("Speed", speedRow));
-        box->add(LabelledUVE("", loop));
+        grid.addRow(cat, "Speed", speedRow);
+        grid.addRow(cat, "", loop);
         const auto placeField = [this, id, slot, point](const bool y) {
             auto field = prism::make<prism::NumberField>(y ? point.position.y : point.position.x, 0.01F, 2);
             field->onCommit = [this, id, slot, point, y](const float v) {
@@ -438,17 +400,15 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBlendSpaceSideUVE(c
         };
         const prism::Ref<prism::Widget> place = two ? prism::Ref<prism::Widget>{pairRow(placeField(false), placeField(true))}
                                                     : prism::Ref<prism::Widget>{placeField(false)};
-        box->add(LabelledUVE(two ? "X / Y" : "X", place));
+        grid.addRow(cat, two ? "X / Y" : "X", place);
         auto remove = prism::make<prism::Button>("Remove Point", prism::Icon::Trash, prism::ButtonStyle::Default);
         remove->onClick = [this, id, slot] {
             EditUVE([id, slot](GraphUVE& g) { static_cast<void>(RemoveBlendSpacePointUVE(g.nodes, id, slot)); });
             m_editor.m_animGraph.pickedState = -1;
         };
-        box->add(LabelledUVE("", remove));
-    } else {
-        box->add(HintUVE(std::to_string(space.blendPoints.size()) + " points. Pick one to set its animation."));
+        grid.addRow(cat, "", remove);
     }
-    return box;
+    return;
 }
 
 } // namespace UVE::Editor

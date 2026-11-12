@@ -217,7 +217,7 @@ std::string StateMachineViewUVE::StateNameUVE(const NodeUVE& machine, const std:
 std::string StateMachineViewUVE::StateDetailUVE(const NodeUVE& machine, const std::size_t slot) const {
     const Scene::AnimationGraphComponentUVE* graph = m_panel.GraphPtrUVE();
     if (graph == nullptr || slot >= machine.inputs.size() || machine.inputs[slot] == 0U) {
-        return "plays nothing yet";
+        return {};
     }
     const auto child = std::ranges::find(graph->nodes, machine.inputs[slot], &NodeUVE::id);
     if (child == graph->nodes.end()) {
@@ -225,7 +225,7 @@ std::string StateMachineViewUVE::StateDetailUVE(const NodeUVE& machine, const st
     }
     if (child->kind == Kind::Clip) {
         const std::string& clip = m_panel.m_editor.AnimationClipNameUVE(child->clip);
-        return clip.empty() ? std::string{"no clip picked"} : clip;
+        return clip;
     }
     return AnimationGraphKindLabelUVE(child->kind);
 }
@@ -372,11 +372,6 @@ void StateMachineViewUVE::paint(prism::Canvas& c) {
             c.fillRect(prism::Rect{r.x + 5.0F * v.stateZoom, r.bottom() - 3.0F, (r.w - 5.0F * v.stateZoom) * phase, 2.0F}, kActiveColorUVE);
         }
     }
-    if (machine->inputs.empty()) {
-        c.textIn(*t.ui, m_rect, "Double-click to add a state", t.textDim, prism::HAlign::Center);
-    }
-    c.textIn(*t.small, prism::Rect{m_rect.x + 10.0F, m_rect.bottom() - 22.0F, m_rect.w - 20.0F, 18.0F},
-             "Double-click: add a state   Shift + drag: a transition   Right-click: more   Esc: back to the tree", t.textDisabled);
     c.popClip();
 }
 
@@ -581,7 +576,7 @@ void StateMachineViewUVE::ShowMenuUVE(const prism::Vec2 at, const int box, const
             }));
         }
         if (targets.empty()) {
-            targets.push_back(prism::MenuItem::Item("Add another state first", {}).disabled());
+            targets.push_back(prism::MenuItem::Item("None", {}).disabled());
         }
         items.push_back(prism::MenuItem::Sub("Transition To", std::move(targets), prism::Icon::NodeTransition));
         items.push_back(prism::MenuItem::Item("Transition From Any State", [this, id, slot] {

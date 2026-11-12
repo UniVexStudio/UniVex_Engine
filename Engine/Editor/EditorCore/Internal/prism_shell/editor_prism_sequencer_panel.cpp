@@ -119,7 +119,7 @@ prism::Ref<prism::Widget> EditorPrismSequencerPanelUVE::BuildToolbarUVE() {
                                    "Player");
     m_playerButton->onClick = [this] { ShowPlayerMenuUVE(); };
     row->add(m_playerButton, CentreSlotUVE());
-    m_clipButton = ToolButtonUVE(prism::Icon::NodeClip, "This player's animations: switch, new, add, import, link, export, rename",
+    m_clipButton = ToolButtonUVE(prism::Icon::AnimClip, "This player's animations: switch, new, add, import, link, export, rename",
                                  "No animation");
     m_clipButton->onClick = [this] { ShowClipMenuUVE(); };
     row->add(m_clipButton, CentreSlotUVE());
@@ -184,7 +184,7 @@ prism::Ref<prism::Widget> EditorPrismSequencerPanelUVE::BuildToolbarUVE() {
     row->add(redo, CentreSlotUVE());
     row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
 
-    m_dopeButton = ToolButtonUVE(prism::Icon::Key, "Dope Sheet: keys per bone and channel", "Dope");
+    m_dopeButton = ToolButtonUVE(prism::Icon::DopeSheet, "Dope Sheet: keys per bone and channel", "Dope");
     m_dopeButton->setCheckable(true);
     m_dopeButton->onClick = [this] {
         m_editor.m_timeline.curves = false;
@@ -315,9 +315,6 @@ void EditorPrismSequencerPanelUVE::RefreshUVE(const double deltaSeconds, const b
         if (view.clip->HasMorphTracksUVE()) {
             info += "  |  " + std::to_string(view.clip->morphWeights.size()) + " blend shapes";
         }
-        if (state.morphTracksNotPlaying > 0U) {
-            info += "  |  " + std::to_string(state.morphTracksNotPlaying) + " blend-shape track(s) not playing";
-        }
     }
     if (m_info && m_shownInfo != info) {
         m_shownInfo = info;
@@ -372,21 +369,16 @@ void EditorPrismSequencerPanelUVE::ShowClipMenuUVE() {
     };
     std::vector<prism::MenuItem> items;
     const std::vector<Asset::AssetGuidUVE> own = m_editor.AnimationTimelineOwnClipsUVE(player);
-    items.push_back(prism::MenuItem::Item("On this player  (" + std::to_string(own.size()) + ")", {}).disabled());
     for (const Asset::AssetGuidUVE guid : own) {
         items.push_back(clipItem(guid));
     }
     if (own.empty()) {
-        items.push_back(prism::MenuItem::Item("    No animations yet", {}).disabled());
+        items.push_back(prism::MenuItem::Item("None", {}).disabled());
     }
     if (!m_editor.m_timeline.linkedLibraryName.empty()) {
         const std::vector<Asset::AssetGuidUVE> linked = m_editor.AnimationTimelineLinkedClipsUVE(player);
         items.push_back(prism::MenuItem::Sep());
-        items.push_back(prism::MenuItem::Item("From " + m_editor.m_timeline.linkedLibraryName + "  (" + std::to_string(linked.size()) + ")", {})
-                            .disabled());
-        if (m_editor.m_timeline.linkedLibraryBroken) {
-            items.push_back(prism::MenuItem::Item("    The linked library cannot be read", {}).disabled());
-        }
+        items.push_back(prism::MenuItem::Item(m_editor.m_timeline.linkedLibraryName, {}, "", prism::Icon::AnimLibrary).disabled());
         for (const Asset::AssetGuidUVE guid : linked) {
             items.push_back(clipItem(guid));
         }
@@ -409,7 +401,7 @@ void EditorPrismSequencerPanelUVE::ShowClipMenuUVE() {
         clipMenu.push_back(prism::MenuItem::Item("Remove from Player", [this, player, current] { m_editor.RemoveAnimationTimelineClipUVE(player, current); },
                                                  "", prism::Icon::Trash));
         items.push_back(prism::MenuItem::Sep());
-        items.push_back(prism::MenuItem::Sub("Current Animation", std::move(clipMenu), prism::Icon::NodeClip));
+        items.push_back(prism::MenuItem::Sub("Current Animation", std::move(clipMenu), prism::Icon::AnimClip));
     }
 
     items.push_back(prism::MenuItem::Sep());
@@ -462,13 +454,13 @@ void EditorPrismSequencerPanelUVE::ShowClipMenuUVE() {
         }
     }
     if (!anyClip) {
-        addMenu.push_back(prism::MenuItem::Item("Every clip in the project is already here", {}).disabled());
+        addMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
     }
     if (!anyLibrary) {
-        libraryMenu.push_back(prism::MenuItem::Item("No animation libraries in the project yet", {}).disabled());
+        libraryMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
     }
     items.push_back(prism::MenuItem::Sub("Add from Project", std::move(addMenu), prism::Icon::FolderOpen));
-    items.push_back(prism::MenuItem::Sub("Import Library", std::move(libraryMenu), prism::Icon::Layers));
+    items.push_back(prism::MenuItem::Sub("Import Library", std::move(libraryMenu), prism::Icon::AnimLibrary));
     if (component.libraryRef == Asset::AssetGuidUVE{}) {
         items.push_back(prism::MenuItem::Item("Link Library...", [this, player] {
             m_editor.BrowseAnimationTimelineUVE(player, EditorUVE::AnimationTimelineBrowseUVE::LinkLibrary);
@@ -481,8 +473,6 @@ void EditorPrismSequencerPanelUVE::ShowClipMenuUVE() {
     items.push_back(prism::MenuItem::Item("Export to Library...", [this, player] {
         m_editor.BrowseAnimationTimelineUVE(player, EditorUVE::AnimationTimelineBrowseUVE::ExportLibrary);
     }, "", prism::Icon::Save));
-    items.push_back(prism::MenuItem::Sep());
-    items.push_back(prism::MenuItem::Item("Or drop a .uvanim from the Content Browser on the keys", {}).disabled());
     if (m_clipButton) {
         const prism::Rect r = m_clipButton->rect();
         prism::showContextMenu(std::move(items), prism::Vec2{r.x, r.bottom()});

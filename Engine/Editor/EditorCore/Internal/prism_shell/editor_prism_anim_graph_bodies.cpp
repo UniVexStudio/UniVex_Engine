@@ -117,10 +117,10 @@ std::string EditorPrismAnimGraphPanelUVE::SummaryUVE(const NodeUVE& node) {
             return "option " + std::to_string(std::lround(node.value));
         case Kind::StateMachine: return std::to_string(node.inputs.size()) + " states, " + std::to_string(node.transitions.size()) + " transitions";
         case Kind::Slot: return "slot " + node.parameter;
-        case Kind::TwoBoneIK: return node.bones.size() == 3U ? node.bones[0] + " > " + node.bones[2] : std::string{"pick its three bones"};
+        case Kind::TwoBoneIK: return node.bones.size() == 3U ? node.bones[0] + " > " + node.bones[2] : std::string{};
         case Kind::ModifyBone:
-        case Kind::LookAt: return node.bones.empty() ? std::string{"pick a bone"} : node.bones.front();
-        case Kind::BlendByBool: return node.parameter.empty() ? std::string{"pick a Bool"} : "by " + node.parameter;
+        case Kind::LookAt: return node.bones.empty() ? std::string{} : node.bones.front();
+        case Kind::BlendByBool: return node.parameter.empty() ? std::string{} : "by " + node.parameter;
         case Kind::Output: return {};
     }
     return {};
@@ -292,10 +292,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
                 // Picked before, but not one of the sequencer's: shown so, until it is replaced.
                 choices.push_back(node.clip);
                 const std::string& name = m_editor.AnimationClipNameUVE(node.clip);
-                names.push_back((name.empty() ? std::string{"(missing clip)"} : name) + " (not in the sequencer)");
-            }
-            if (clips.empty()) {
-                names.front() = "None - add animations to the AnimationSequencer";
+                names.push_back(name.empty() ? std::string{"?"} : name);
             }
             for (const Asset::AssetGuidUVE guid : clips) {
                 choices.push_back(guid);
@@ -438,15 +435,12 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
                     }
                 }
                 if (!current.empty() && selected == 0) {
-                    items.push_back(current + " (not in skeleton)");
+                    items.push_back(current);
                     selected = static_cast<int>(items.size()) - 1;
                 }
                 auto combo = prism::make<prism::ComboBox>(items, selected);
                 combo->onChange = [this, id, items, set](const int i) {
                     std::string picked = i <= 0 ? std::string{} : items[static_cast<std::size_t>(i)];
-                    if (const auto cut = picked.find(" (not in skeleton)"); cut != std::string::npos) {
-                        picked.resize(cut);
-                    }
                     EditNodeUVE(id, [&set, &picked](NodeUVE& n) { set(n, picked); });
                 };
                 return combo;
@@ -566,10 +560,8 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
             for (const std::string& montage : montages) {
                 list += (list.empty() ? "" : ", ") + montage;
             }
-            auto plays = prism::make<prism::Label>(list.empty() ? std::string{"no montage on this slot yet"} : list, prism::FontRole::Small);
-            plays->setColor(prism::ThemeColor(list.empty() ? &prism::Theme::textDim : &prism::Theme::text));
-            plays->setTooltip(list.empty() ? "Montages made for this slot, on the entity's MontagePlayer, show here"
-                                           : "These montages play over the input here: " + list);
+            auto plays = prism::make<prism::Label>(list, prism::FontRole::Small);
+            plays->setTooltip("Montages that play over the input here");
             body->add(RowUVE("Plays", plays));
             break;
         }
