@@ -679,7 +679,7 @@ void BlueprintGraph::paintWatermark(Canvas& c) {
   float w = f.width(label);
   Rect r{m_graphRect.x + 18, m_graphRect.bottom() - 74, w + 80, 62};
   if (m_graphRect.w < w + 140 || m_graphRect.h < 200) return;
-  drawIcon(c, own ? m_watermarkIcon : blueprintPresetIcon(m_preset), {r.x, r.y + 2, 52, 52}, Color(58, 61, 67), 3.2f);   // opaque: translucent strokes would double-blend at the round joins
+  drawIcon(c, own ? m_watermarkIcon : blueprintPresetIcon(m_preset), {r.x, r.y + 2, 52, 52}, Color(58, 61, 67), own ? 5.0f : 3.2f);   // opaque: translucent strokes would double-blend at the round joins
   c.textIn(f, {r.x + 62, r.y, w + 6, 56}, label, Color(200, 204, 212, 34), HAlign::Left, false);
   c.textIn(*theme().ui, {r.x + 64, r.y + 50, 300, 14}, own ? m_watermarkCaption : std::string(blueprintPresetGroup(m_preset)) + " graph", theme().textDim.alpha(0.55f), HAlign::Left, false);
 }
