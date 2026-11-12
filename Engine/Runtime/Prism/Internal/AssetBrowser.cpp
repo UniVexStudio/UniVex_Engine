@@ -237,12 +237,15 @@ static void drawThumbBackdrop(Canvas& c, Rect thumb, Color tint) {
   c.popClip();
 }
 
+// The thumbnail well: flat dark grey, no studio backdrop (thumbnails are the subject alone).
+constexpr Color kThumbWell{40, 40, 43, 255};
+
 void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
   int tw = int(thumb.w);
   int th = int(thumb.h);
 
   if (asset.thumbnail != nullptr && asset.thumbnailW > 0 && asset.thumbnailH > 0) {
-    c.fillRect(thumb, Color(17, 20, 27));
+    c.fillRect(thumb, kThumbWell);
     const float fit = std::min(thumb.w / float(asset.thumbnailW), thumb.h / float(asset.thumbnailH)) * asset.thumbnailScale;
     const float w = std::floor(float(asset.thumbnailW) * fit), h = std::floor(float(asset.thumbnailH) * fit);
     c.blitBlend(asset.thumbnail, asset.thumbnailW, asset.thumbnailH, asset.thumbnailW,
@@ -261,13 +264,9 @@ void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
     }
   }
 
-  // Studio backdrop: dark charcoal studio vignette
-  drawThumbBackdrop(c, thumb, asset.badgeColor);
-
-  // Studio horizon and soft floor bounce
+  // No backdrop: the subject on a flat dark grey well, as every thumbnail is.
+  c.fillRect(thumb, kThumbWell);
   float floorY = thumb.bottom() - 10.0f;
-  c.fillRect(Rect{thumb.x, floorY, thumb.w, thumb.bottom() - floorY}, Color(14, 18, 25, 220));
-  c.line(Vec2(thumb.x, floorY), Vec2(thumb.right(), floorY), Color(42, 50, 68, 160), 1.0f);
 
   float cx = thumb.center().x;
   float cy = thumb.y + thumb.h * 0.44f;
@@ -368,8 +367,8 @@ void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
 void paintAssetTile(Canvas& c, Rect tr, const AssetRecord& asset, bool isSel, bool isHov) {
   const Theme& t = theme();
   const Color accent = t.accent;
-  Color cardBg = isSel ? accent.alpha(0.16f).mix(Color(20, 24, 33), 0.0f) : (isHov ? Color(26, 32, 44) : Color(19, 22, 30));
-  if (isSel) cardBg = Color(20, 24, 33).mix(accent, 0.14f);
+  Color cardBg = isHov ? Color(44, 44, 47) : Color(32, 32, 34);
+  if (isSel) cardBg = Color(32, 32, 34).mix(accent, 0.18f);
   c.fillRoundRect(tr, 4.0f, cardBg);
 
   // Thumbnail well (86px)
@@ -408,7 +407,7 @@ void paintAssetTile(Canvas& c, Rect tr, const AssetRecord& asset, bool isSel, bo
   c.popClip();
 
   // Frame: soft border; selection gets an accent frame with corner brackets
-  c.strokeRoundRect(tr, 4.0f, isSel ? accent : (isHov ? Color(70, 86, 112) : Color(34, 40, 54)), isSel ? 1.5f : 1.0f);
+  c.strokeRoundRect(tr, 4.0f, isSel ? accent : (isHov ? Color(78, 78, 82) : Color(46, 46, 49)), isSel ? 1.5f : 1.0f);
   if (isSel) {
     float L = 9.0f;
     Color br = accent.lighten(0.25f);
