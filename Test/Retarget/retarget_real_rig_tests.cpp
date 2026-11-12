@@ -142,6 +142,37 @@ TEST(RetargetRealRigUVETest, TheAnimationAndTheMeshComeThroughRetargetingUnchang
     }
     EXPECT_LT(restMoved, 1e-5F) << "the mesh keeps its rest pose";
 
+    // ---- A picture of the rest pose and the retarget pose ------------------------------------------
+    if (const char* const dump = std::getenv("UVE_RETARGET_DUMP"); dump != nullptr) {
+        // The character at its own rest, and posed in the humanoid's A-pose (what a conformed clip's
+        // rest pose does to it), the mesh skinned both times; and the humanoid's joints.
+        std::vector<Matrix4x4UVE> apose;
+        for (const WorldTransformUVE& w : ComputeWorldTransformsUVE(conformed->skeleton)) {
+            apose.push_back(Matrix4x4UVE::ComposeTrsUVE(w.position, w.rotation, Vector3UVE{1.0F, 1.0F, 1.0F}));
+        }
+        const std::vector<Vector3UVE> posed = SkinUVE(after, apose);
+        if (FILE* const file = std::fopen((std::string{dump} + "/apose.txt").c_str(), "w"); file != nullptr) {
+            for (std::size_t v = 0U; v < posed.size(); v += 5U) {
+                const Vector3UVE a = after.vertices[v].position;
+                std::fprintf(file, "%f %f %f %f %f %f\n", a.x, a.y, a.z, posed[v].x, posed[v].y, posed[v].z);
+            }
+            std::fclose(file);
+        }
+        if (FILE* const file = std::fopen((std::string{dump} + "/reference.txt").c_str(), "w"); file != nullptr) {
+            const std::vector<WorldTransformUVE> world = ComputeWorldTransformsUVE(reference.skeleton);
+            for (std::size_t bone = 0U; bone < world.size(); ++bone) {
+                const std::int32_t parent = reference.skeleton.bones[bone].parent;
+                if (parent < 0 || reference.info[bone].optional) {
+                    continue;
+                }
+                const Vector3UVE& a = world[static_cast<std::size_t>(parent)].position;
+                const Vector3UVE& b = world[bone].position;
+                std::fprintf(file, "%f %f %f %f %f %f\n", a.x, a.y, a.z, b.x, b.y, b.z);
+            }
+            std::fclose(file);
+        }
+    }
+
     // ---- Every frame: the character played before and after ----------------------------------------
     const RetargetSkeletonUVE afterRest = *RigFromMeshUVE(after);
     const std::vector<RestBoneViewUVE> afterViews = ViewsUVE(afterRest);
