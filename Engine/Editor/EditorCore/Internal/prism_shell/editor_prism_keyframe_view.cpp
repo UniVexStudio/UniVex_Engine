@@ -166,20 +166,25 @@ void KeyframeViewUVE::paint(prism::Canvas& c) {
     c.fillRect(m_rect, t.panel);
     const EditorUVE::AnimationTimelineViewUVE& view = m_panel.ResyncUVE();
     EditorUVE& editor = m_panel.EditorRefUVE();
+    // Nothing to show: a quiet icon in the middle; what to do is its tooltip.
+    const auto emptyIcon = [&](const prism::Icon icon, const prism::Rect area, std::string tip) {
+        prism::drawIcon(c, icon, prism::Rect{area.x + area.w * 0.5F - 12.0F, area.y + area.h * 0.5F - 12.0F, 24.0F, 24.0F}, t.textDisabled);
+        setTooltip(std::move(tip));
+    };
     if (view.player == Scene::kInvalidEntityUVE) {
-        c.textIn(*t.ui, m_rect, "Add an AnimationSequencer to the entity to animate it.", t.textDim, prism::HAlign::Center);
+        emptyIcon(prism::Icon::AnimSequencer, m_rect, "Add an AnimationSequencer to the entity to animate it");
         return;
     }
     if (view.clip == nullptr) {
-        const std::string hint = !editor.m_timeline.loadError.empty()
-                                     ? editor.m_timeline.loadError
-                                     : "No animation yet: pick New Animation or Add from Project in the animation menu, or drop a .uvanim here.";
-        c.textIn(*t.ui, m_rect, hint, t.textDim, prism::HAlign::Center);
+        const bool broken = !editor.m_timeline.loadError.empty();
+        emptyIcon(broken ? prism::Icon::Warning : prism::Icon::AnimClip, m_rect,
+                  broken ? editor.m_timeline.loadError : "New Animation or Add from Project in the animation menu, or drop a .uvanim here");
         if (m_dropHot) {
             c.strokeRoundRect(m_rect, 4.0F, t.accent, 2);
         }
         return;
     }
+    setTooltip({});
     const std::vector<RowUVE> rows = RowsUVE();
     ClampScrollUVE(rows.size());
 
@@ -246,7 +251,7 @@ void KeyframeViewUVE::PaintRowsUVE(prism::Canvas& c, const std::vector<RowUVE>& 
         c.fillRect(name, selected ? t.rowSelected : t.window);
         const float indent = 8.0F + static_cast<float>(std::min(row.depth, 20)) * 11.0F;
         if (row.events) {
-            prism::drawIcon(c, prism::Icon::NodeFlag, prism::Rect{name.x + indent, y + 3.0F, 16.0F, 16.0F}, TimelineEventColorUVE());
+            prism::drawIcon(c, prism::Icon::AnimEvent, prism::Rect{name.x + indent, y + 3.0F, 16.0F, 16.0F}, TimelineEventColorUVE());
             c.textIn(*t.ui, prism::Rect{name.x + indent + 20.0F, y, name.w - indent - 22.0F, kRowUVE}, row.label, TimelineEventColorUVE());
         } else if (row.morph != nullptr) {
             c.fillRoundRect(prism::Rect{name.x + indent + 3.0F, y + 7.0F, 8.0F, 8.0F}, 2.0F, TimelineMorphColorUVE());
@@ -255,7 +260,7 @@ void KeyframeViewUVE::PaintRowsUVE(prism::Canvas& c, const std::vector<RowUVE>& 
             const bool open = std::ranges::find(state.expandedTracks, row.track) != state.expandedTracks.end();
             prism::drawIcon(c, open ? prism::Icon::TriDown : prism::Icon::TriRight, prism::Rect{name.x + indent - 2.0F, y + 5.0F, 12.0F, 12.0F},
                             t.textDim);
-            prism::drawIcon(c, row.track.empty() ? prism::Icon::Move : prism::Icon::NodeBone,
+            prism::drawIcon(c, row.track.empty() ? prism::Icon::TransformTrack : prism::Icon::BoneTrack,
                             prism::Rect{name.x + indent + 11.0F, y + 4.0F, 14.0F, 14.0F}, selected ? t.textBright : t.textDim);
             c.textIn(*t.ui, prism::Rect{name.x + indent + 29.0F, y, name.w - indent - 31.0F, kRowUVE}, row.label,
                      selected ? t.textBright : t.text);
@@ -282,9 +287,6 @@ void KeyframeViewUVE::PaintRowsUVE(prism::Canvas& c, const std::vector<RowUVE>& 
                 c.fillPolygon(flag, chosen ? prism::Color(255, 255, 255) : TimelineEventColorUVE());
                 c.textIn(*t.small, prism::Rect{x + 8.0F, y, 160.0F, kRowUVE}, clip.events[e].eventId,
                          chosen ? t.textBright : TimelineEventColorUVE());
-            }
-            if (clip.events.empty()) {
-                c.textIn(*t.small, prism::Rect{keys.x + 8.0F, y, keys.w - 16.0F, kRowUVE}, "Double-click to add an event", t.textDisabled);
             }
         } else if (row.samples != nullptr && !row.samples->empty()) {
             const auto& samples = *row.samples;
@@ -371,10 +373,6 @@ void KeyframeViewUVE::PaintRowsUVE(prism::Canvas& c, const std::vector<RowUVE>& 
         c.popClip();
     }
     c.popClip();
-    if (rows.empty()) {
-        c.textIn(*t.small, prism::Rect{m_rect.x + 8.0F, keys.y + 4.0F, kTrackListUVE - 16.0F, kRowUVE}, "No tracks match the filter.",
-                 t.textDim);
-    }
 }
 
 // --------------------------------------------------------------------------------------- curves
@@ -474,7 +472,7 @@ void KeyframeViewUVE::PaintCurvesUVE(prism::Canvas& c) {
     c.fillRect(keys, t.logBg);
     const CurvePlotUVE plot = BuildCurvePlotUVE();
     if (plot.samples == nullptr) {
-        c.textIn(*t.ui, keys, "Pick a bone on the left to see its curves.", t.textDim, prism::HAlign::Center);
+        prism::drawIcon(c, prism::Icon::BoneTrack, prism::Rect{keys.x + keys.w * 0.5F - 12.0F, keys.y + keys.h * 0.5F - 12.0F, 24.0F, 24.0F}, t.textDisabled);
         c.popClip();
         return;
     }
@@ -541,8 +539,7 @@ void KeyframeViewUVE::PaintCurvesUVE(prism::Canvas& c) {
         x += 14.0F;
     }
     c.textIn(*t.small, prism::Rect{x, keys.y + 4.0F, keys.right() - x - 8.0F, 16.0F},
-             (plot.track.empty() ? std::string{"Transform"} : plot.track) +
-                 (plot.normalized ? "   each channel scaled to fit - open a channel row for its values" : ""),
+             plot.track.empty() ? std::string{"Transform"} : plot.track,
              t.textDim);
     // The point being dragged, with its value.
     if (m_drag == DragUVE::Curve) {
@@ -986,7 +983,7 @@ void KeyframeViewUVE::RenameEventUVE(const int index) {
     }
     editor.m_timeline.selectedEvent = index;
     EditorPrismSequencerPanelUVE::AskNameUVE(
-        "Event Name  (scripts get it as on animation_event(name))", clip->events[static_cast<std::size_t>(index)].eventId,
+        "Event Name", clip->events[static_cast<std::size_t>(index)].eventId,
         [&editor, index](const std::string& name) {
             editor.EditAnimationTimelineClipUVE([&](Asset::AnimationClipAssetUVE& next) {
                 static_cast<void>(RenameClipEventUVE(next, static_cast<std::size_t>(index), name));
@@ -1000,7 +997,7 @@ void KeyframeViewUVE::ShowMenuUVE(const prism::Vec2 at, const RowUVE* row) {
     const double seconds = SnapUVE(ScaleUVE().SecondsUVE(at.x));
     std::vector<prism::MenuItem> items;
     if (row != nullptr && row->events) {
-        items.push_back(prism::MenuItem::Item("Add Event Here...", [this, seconds] { AddEventUVE(seconds); }, "", prism::Icon::NodeFlag));
+        items.push_back(prism::MenuItem::Item("Add Event Here...", [this, seconds] { AddEventUVE(seconds); }, "", prism::Icon::AnimEvent));
         if (state.selectedEvent >= 0) {
             const int chosen = state.selectedEvent;
             items.push_back(prism::MenuItem::Item("Rename Event...", [this, chosen] { RenameEventUVE(chosen); }));
@@ -1026,7 +1023,7 @@ void KeyframeViewUVE::ShowMenuUVE(const prism::Vec2 at, const RowUVE* row) {
         items.push_back(prism::MenuItem::Item("Delete Keys", [this] { DeleteSelectionUVE(); invalidate(); }, "Del", prism::Icon::Trash));
         items.back().enabled = !state.selectedKeys.empty();
         items.push_back(prism::MenuItem::Sep());
-        items.push_back(prism::MenuItem::Item("Add Event Here...", [this, seconds] { AddEventUVE(seconds); }, "", prism::Icon::NodeFlag));
+        items.push_back(prism::MenuItem::Item("Add Event Here...", [this, seconds] { AddEventUVE(seconds); }, "", prism::Icon::AnimEvent));
     }
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Item("Fit the Whole Clip", [this] { FitUVE(); }, "F", prism::Icon::Frame));

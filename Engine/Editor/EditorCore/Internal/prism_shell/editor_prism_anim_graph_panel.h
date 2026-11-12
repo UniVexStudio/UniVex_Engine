@@ -22,6 +22,7 @@ class ComboBox;
 class Label;
 class LogView;
 class NumberField;
+class PropertyGrid;
 class ScrollBox;
 class StackSwitcher;
 } // namespace prism
@@ -108,14 +109,14 @@ private:
 
     // ---- the side panel ---------------------------------------------------------------------------
     void RebuildSideUVE(const GraphUVE& graph);
-    [[nodiscard]] prism::Ref<prism::Widget> BuildParametersUVE(const GraphUVE& graph);
-    [[nodiscard]] prism::Ref<prism::Widget> BuildSelectedUVE(const GraphUVE& graph);
-    [[nodiscard]] prism::Ref<prism::Widget> BuildPreviewUVE();
+    void BuildParametersUVE(prism::PropertyGrid& grid, const GraphUVE& graph);
+    void BuildSelectedUVE(prism::PropertyGrid& grid, const GraphUVE& graph);
+    void BuildPreviewUVE(prism::PropertyGrid& grid);
     /// The side panel while a State Machine is open: the picked state or transition's settings;
     /// while a Blend Space is open: its tool, snapping, area and the picked point
     /// (editor_prism_anim_graph_side.cpp).
-    [[nodiscard]] prism::Ref<prism::Widget> BuildStateMachineSideUVE(const GraphUVE& graph, const NodeUVE& machine);
-    [[nodiscard]] prism::Ref<prism::Widget> BuildBlendSpaceSideUVE(const GraphUVE& graph, const NodeUVE& space);
+    void BuildStateMachineSideUVE(prism::PropertyGrid& grid, const GraphUVE& graph, const NodeUVE& machine);
+    void BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, const GraphUVE& graph, const NodeUVE& space);
     [[nodiscard]] const NodeUVE* FocusNodeUVE() const;
     void SyncFocusUVE();
     void RefreshLiveValuesUVE(const GraphUVE& graph);
@@ -138,7 +139,7 @@ private:
     std::shared_ptr<prism::Button> m_graphButton;
     std::shared_ptr<prism::Button> m_previewButton;
     std::shared_ptr<prism::Button> m_playButton;
-    std::shared_ptr<prism::Label> m_problem;
+    std::shared_ptr<prism::Button> m_problem;
     std::shared_ptr<prism::Label> m_empty;
 
     /// What the view last showed, so it is rebuilt only when the component (or the tree) changes.
