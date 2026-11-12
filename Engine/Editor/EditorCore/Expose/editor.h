@@ -453,6 +453,8 @@ class EditorUVE final {
     friend class EditorPrismSequencerPanelUVE;
     friend class KeyframeViewUVE;
     friend class EditorPrismAnimGraphPanelUVE;
+    friend class StateMachineViewUVE;
+    friend class BlendSpaceViewUVE;
     friend class EditorPrismFileDialogUVE;
     friend class AssetThumbnailUVE;
     friend class EditorPrismObjectMenuUVE;

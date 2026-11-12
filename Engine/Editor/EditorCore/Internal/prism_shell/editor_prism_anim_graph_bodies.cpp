@@ -34,18 +34,18 @@ constexpr float kRowUVE = 25.0F;
 [[nodiscard]] std::size_t BodyRowsUVE(const Kind kind) noexcept {
     switch (kind) {
         case Kind::Output: return 0U;
-        case Kind::Slot:
-        case Kind::StateMachine: return 1U;
+        case Kind::Slot: return 1U;
+        case Kind::StateMachine: return 2U;
+        case Kind::BlendSpace1D: return 3U;
         case Kind::Clip:
         case Kind::Blend2:
         case Kind::Additive:
         case Kind::LayeredBlend:
-        case Kind::BlendSpace1D:
         case Kind::OneShot:
         case Kind::TimeScale:
         case Kind::TimeSeek: return 2U;
         case Kind::Select: return 4U;
-        case Kind::BlendSpace2D: return 5U;
+        case Kind::BlendSpace2D: return 6U;
     }
     return 0U;
 }
@@ -214,6 +214,12 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
         box->onChange = [this, id, set](const bool v) { EditNodeUVE(id, [&set, v](NodeUVE& n) { set(n, v); }); };
         return box;
     };
+    const auto open = [this, id](const std::string& label) {
+        auto button = prism::make<prism::Button>(label, prism::Icon::ChevronRight, prism::ButtonStyle::Default);
+        button->setTooltip("Open it in its own view (or double-click the node)");
+        button->onClick = [this, id] { OpenFocusUVE(id); };
+        return button;
+    };
     const auto pair = [](const prism::Ref<prism::Widget>& a, const prism::Ref<prism::Widget>& b) {
         auto row = prism::hbox(4.0F);
         row->add(a, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
@@ -268,6 +274,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
         case Kind::BlendSpace1D:
             body->add(RowUVE("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
             body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
+            body->add(RowUVE("", open("Open Blend Space")));
             break;
         case Kind::BlendSpace2D: {
             body->add(RowUVE("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
@@ -280,6 +287,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
                 EditNodeUVE(id, [i](NodeUVE& n) { n.blendMode = static_cast<Scene::AnimationBlendModeUVE>(std::clamp(i, 0, 2)); });
             };
             body->add(RowUVE("Mode", mode));
+            body->add(RowUVE("", open("Open Blend Space")));
             break;
         }
         case Kind::OneShot:
@@ -340,6 +348,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
             auto entry = prism::make<prism::ComboBox>(states, static_cast<int>(std::min<std::size_t>(node.entryState, states.size() - 1U)));
             entry->onChange = [this, id](const int i) { EditNodeUVE(id, [i](NodeUVE& n) { n.entryState = static_cast<std::uint32_t>(std::max(0, i)); }); };
             body->add(RowUVE("Entry", entry));
+            body->add(RowUVE("", open("Open States")));
             break;
         }
         case Kind::Slot: {
