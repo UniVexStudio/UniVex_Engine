@@ -116,6 +116,8 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildUVE() {
     features.shortcuts = false;
     features.history = false;   // the editor's undo: every change is a component edit
     features.singleLinkOutputs = true;   // a pose feeds one input; a node added off a wire goes into it
+    features.minimap = true;             // the overview, bottom right
+    features.comments = true;            // C: a comment box around the selection
     m_graph->setFeatures(features);
     m_graph->clear();
     m_graph->setNodeLibrary(NodeLibraryUVE());
@@ -344,6 +346,14 @@ void EditorPrismAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
     for (const NodeUVE& node : graph.nodes) {
         m_graph->addNode(MakeNodeUVE(node));
     }
+    for (const Scene::AnimationGraphCommentUVE& comment : graph.comments) {
+        prism::BlueprintComment box;
+        box.title = comment.title;
+        box.bounds = prism::Rect{comment.position.x, comment.position.y, comment.size.x, comment.size.y};
+        box.color = prism::Color(static_cast<std::uint8_t>(comment.color >> 24U), static_cast<std::uint8_t>(comment.color >> 16U),
+                                 static_cast<std::uint8_t>(comment.color >> 8U), static_cast<std::uint8_t>(comment.color));
+        m_graph->addComment(box);
+    }
     for (const NodeUVE& node : graph.nodes) {
         for (std::size_t slot = 0U; slot < node.inputs.size(); ++slot) {
             if (node.inputs[slot] != 0U) {
@@ -395,6 +405,17 @@ void EditorPrismAnimGraphPanelUVE::ApplyGraphEditUVE() {
                 node.position = Math::Vector2UVE{shown->pos.x, shown->pos.y};
             }
             std::fill(node.inputs.begin(), node.inputs.end(), 0U);
+        }
+        // The comment boxes as the view has them (made, moved, resized, renamed or deleted there).
+        g.comments.clear();
+        for (const prism::BlueprintComment& box : view.comments()) {
+            Scene::AnimationGraphCommentUVE comment;
+            comment.title = box.title;
+            comment.position = Math::Vector2UVE{box.bounds.x, box.bounds.y};
+            comment.size = Math::Vector2UVE{box.bounds.w, box.bounds.h};
+            comment.color = (static_cast<std::uint32_t>(box.color.r) << 24U) | (static_cast<std::uint32_t>(box.color.g) << 16U) |
+                            (static_cast<std::uint32_t>(box.color.b) << 8U) | static_cast<std::uint32_t>(box.color.a);
+            g.comments.push_back(std::move(comment));
         }
         for (const prism::BlueprintWire& wire : view.wires()) {
             for (NodeUVE& node : g.nodes) {

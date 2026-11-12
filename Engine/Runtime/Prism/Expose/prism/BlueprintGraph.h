@@ -177,6 +177,8 @@ public:
     // An output feeds one input (a pose graph): wiring it elsewhere moves its wire, and a node
     // added off a wired pin is inserted into that wire.
     bool singleLinkOutputs = false;
+    // Comment boxes (the C key) even when `shortcuts` is off.
+    bool comments = false;
   };
   void setFeatures(const Features& f);
   const Features& features() const { return m_features; }

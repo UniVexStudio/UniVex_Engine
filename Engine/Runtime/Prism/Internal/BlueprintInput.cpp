@@ -868,7 +868,7 @@ bool BlueprintGraph::onKeyDown(const KeyEvent& e) {
   if (!m_features.shortcuts) {
     // An embedded graph: the host owns copy / paste / undo / save; only selection and view keys here.
     const bool own = e.key == Key::Escape || e.key == Key::Delete || e.key == Key::Backspace || (e.key == Key::A && ctrl) ||
-                     (e.key == Key::F && !ctrl) || e.key == Key::Home;
+                     (e.key == Key::F && !ctrl) || e.key == Key::Home || (m_features.comments && e.key == Key::C && !ctrl);
     if (!own) return false;
   }
   Vec2 mouse = Application::get().mousePos();

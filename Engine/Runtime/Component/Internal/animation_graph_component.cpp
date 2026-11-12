@@ -87,6 +87,15 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
     if (nodes.size() > kMaximumAnimationGraphNodesUVE) {
         return "too many nodes";
     }
+    if (component.comments.size() > 512U) {
+        return "too many comments";
+    }
+    for (const AnimationGraphCommentUVE& comment : component.comments) {
+        if (comment.title.size() > 256U || !std::isfinite(comment.position.x) || !std::isfinite(comment.position.y) ||
+            !std::isfinite(comment.size.x) || !std::isfinite(comment.size.y) || comment.size.x < 0.0F || comment.size.y < 0.0F) {
+            return "a comment has an invalid title or box";
+        }
+    }
     if (component.parameters.size() > kMaximumAnimationParametersUVE) {
         return "too many parameters";
     }
