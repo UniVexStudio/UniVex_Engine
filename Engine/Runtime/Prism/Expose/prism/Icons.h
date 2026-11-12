@@ -26,6 +26,15 @@ enum class Icon : uint8_t {
   NodePalette, NodeTexture, NodeFresnel,
   // timeline transport and keys
   SkipStart, SkipEnd, StepBack, StepForward, Key, Curve,
+  // one glyph per concept: assets, objects, panels, animation nodes and parameters
+  AnimClip, AnimMontage, AnimLibrary, MontageLibrary, AnimSequencer, MontagePlayer, AnimTree, AnimClipNode,
+  LayeredBlend, TwoBoneIK, LookAt, ModifyBone, OneShot, TimeScale, TimeSeek, AnimSelect, BlendByBool,
+  StateMachine, AnimEvent, DopeSheet, BoneTrack, ParamFloat, ParamBool, ParamTrigger, ParamVector, Fire,
+  PreviewPose, Components, OutputLog, CompileResults, FindResults, DiffView, Profiler, LayoutFull,
+  LayoutViewport, MontageSections, AssetBrowser, PreviewCharacter, Collider, Rigid3D, Static3D,
+  MeshInstance, Skeleton, BoneAttachment, Object3D, Marker, Environment, DirectionalLight, Projection,
+  Prefab, Bundle, Model, Shader, EntityAsset, MeshAsset, SceneAsset,
+  AdditivePose, TransformTrack, ProfTimeline, ProfSpans, ProfFrame, ProfCounters, ProfBreadcrumbs,
 };
 
 // Draws `icon` centred in `box`, scaled so a 16x16 design grid fits the shorter side.
