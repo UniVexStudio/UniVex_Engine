@@ -33,6 +33,7 @@ class TextInput;
 class TreeView;
 class Splitter;
 class StackSwitcher;
+class Box;
 } // namespace prism
 
 namespace UVE::Editor {
@@ -138,8 +139,18 @@ private:
     /// Details stay on the left.
     std::shared_ptr<prism::StackSwitcher> m_centreStack;
     std::shared_ptr<prism::Widget> m_dockBar;
-    std::shared_ptr<prism::Button> m_blueprintTab;
     bool m_blueprintMode = false;
+    /// The sub row's trail beside Simulate: Viewport | <folder> > BP_A > BP_B ..., one crumb per
+    /// Blueprint opened in this entity (the Blueprint button adds them).
+    struct OpenBlueprintEntryUVE {
+        std::string path;
+        Scene::EntityUVE target = Scene::kInvalidEntityUVE;
+    };
+    std::vector<OpenBlueprintEntryUVE> m_openBlueprints;
+    std::shared_ptr<prism::Box> m_crumbRow;
+    std::string m_crumbSignature;
+    void SyncBlueprintCrumbsUVE();
+    void CloseBlueprintUVE(const std::string& path);
     void SetBlueprintModeUVE(bool on);
     [[nodiscard]] prism::Ref<prism::Widget> BuildBlueprintViewUVE();
     void SaveAllUVE();
