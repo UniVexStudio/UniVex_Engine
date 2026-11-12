@@ -540,6 +540,8 @@ private:
     /// Reconciles script components with instances in m_uvScripts so event receivers are ready
     /// before any physics or animation step evaluates.
     void ReconcileUVScriptInstancesUVE();
+    /// A script slot's source: a .uvs file's text, or the UVScript a .uvbp Blueprint translates to.
+    [[nodiscard]] std::optional<std::string> ReadUVScriptSourceUVE(const std::string& path) const;
 
     /// Steps every Character3D (CharacterControllerComponentUVE) once per fixed step: velocity
     /// from the built-in movement when it is on (keyboard, with air control, coyote time and a

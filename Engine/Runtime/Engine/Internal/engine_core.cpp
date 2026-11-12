@@ -12,6 +12,9 @@
 
 #include "engine_core.h"
 
+#include "blueprint_asset.h"
+#include "blueprint_nodes.h"
+
 #include "raycast_audio_occlusion.h"
 
 #include "frame_pacing.h"
@@ -1500,6 +1503,23 @@ void EngineCoreUVE::SyncScriptRuntimeUVE() {
     SyncUVScriptsUVE(m_simulationExecutionMode == SimulationExecutionModeUVE::Paused);
 }
 
+std::optional<std::string> EngineCoreUVE::ReadUVScriptSourceUVE(const std::string& path) const {
+    const std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(path);
+    if (!bytes.has_value()) {
+        return std::nullopt;
+    }
+    if (path.ends_with(".uvbp")) {
+        // A Blueprint Class: the UVScript its graph translates to.
+        const std::optional<Asset::BlueprintAssetUVE> blueprint = Asset::DecodeBlueprintAssetUVE(*bytes);
+        if (!blueprint.has_value()) {
+            return std::nullopt;
+        }
+        const std::string stem = std::filesystem::path(path).stem().string();
+        return Asset::TranslateBlueprintToUVScriptUVE(*blueprint, stem, blueprint->parentKind).source;
+    }
+    return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+}
+
 void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
     // Edits are picked up by re-reading every script in use a few times a second: a script whose
     // text changed is dropped (and so recompiled and restarted below), and a failed one is retried.
@@ -1507,13 +1527,7 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
     constexpr auto kRecheckIntervalUVE = std::chrono::milliseconds(500);
     if (const auto now = std::chrono::steady_clock::now(); now - m_uvScriptLastRecheck >= kRecheckIntervalUVE) {
         m_uvScriptLastRecheck = now;
-        const auto readText = [this](const std::string& path) -> std::optional<std::string> {
-            const std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(path);
-            if (!bytes.has_value()) {
-                return std::nullopt;
-            }
-            return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
-        };
+        const auto readText = [this](const std::string& path) { return ReadUVScriptSourceUVE(path); };
         std::erase_if(m_uvScripts,
                       [&readText](const auto& entry) { return readText(entry.second.path) != entry.second.source; });
         std::erase_if(m_uvScriptFailedSources, [this, &readText](const auto& entry) {
@@ -1564,13 +1578,13 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
                 m_scriptReconcileFailedEntities.insert_or_assign(entity, component.scriptAssetPath);
                 UVE_ERROR("EngineCoreUVE: script \"{}\": {}", component.scriptAssetPath, why);
             };
-            const std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(component.scriptAssetPath);
-            if (!bytes.has_value()) {
+            const std::optional<std::string> read = ReadUVScriptSourceUVE(component.scriptAssetPath);
+            if (!read.has_value()) {
                 fail("cannot be read");
                 m_uvScriptFailedSources.insert_or_assign(component.scriptAssetPath, std::nullopt);
                 return;
             }
-            const std::string source(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+            const std::string& source = *read;
             auto host = std::make_unique<UVScriptObjectHostUVE>(
                 *m_entityManager, m_inputSystem.get(), entity, m_audioSourceSystem.get(), m_audioSystem.get(),
                 [this](const Scene::EntityUVE other) { return FindUVScriptInstanceUVE(other); });
