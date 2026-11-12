@@ -598,6 +598,13 @@ void BlueprintGraph::notifySelection() {
   m_lastSelection = now;
   if (onSelectionChanged) onSelectionChanged(now);
 }
+void BlueprintGraph::setWatermark(std::string title, std::string caption, Icon icon) {
+  m_watermarkTitle = std::move(title);
+  m_watermarkCaption = std::move(caption);
+  m_watermarkIcon = icon;
+  invalidate();
+}
+
 void BlueprintGraph::setFeatures(const Features& f) { m_features = f; relayout(); invalidate(); }
 const std::vector<BlueprintNodeSpec>& BlueprintGraph::nodeLibrary() const { return m_library.empty() ? blueprintNodeLibrary() : m_library; }
 void BlueprintGraph::setNodeBody(int nodeId, Ref<Widget> body) {

@@ -594,7 +594,7 @@ void BlueprintGraph::paintToolbar(Canvas& c) {
   button("compile", cl, false, "Compile: validate the graph (state icon: needs compile / ok / warnings / errors)", tint, 0, true, cg, tint.a ? tint : Color(150, 200, 255));
   x -= 3;
   button("compile:opts", "", false, "Compile options: Save on Compile, Jump to Error Node", {}, 0, true, Icon::ChevronDown);
-  button("save", "Save", false, "Save this graph to Graphs/<type>.prismbp (Ctrl+S)", {}, 0, true, Icon::Save);
+  button("save", "Save", false, "Save (Ctrl+S)", {}, 0, true, Icon::Save);
   button("browse", "Browse", false, "Find this graph in the Content Browser", {}, 0, true, Icon::Browse);
   sep();
   button("find", "Find", false, "Find nodes, pins and values (Ctrl+F). Ctrl+Shift+F searches every saved graph", {}, 0, true, Icon::Search);
@@ -620,7 +620,7 @@ void BlueprintGraph::paintToolbar(Canvas& c) {
   std::snprintf(buf, sizeof buf, "%d nodes   %d wires   %d%%", nodeCount(), wireCount(), int(std::lround(m_zoom * 100)));
   float tw = f.width(buf);
   if (x + 16 < bar.right() - tw - 12) c.textIn(f, {bar.right() - tw - 12, bar.y, tw + 2, m_toolbarH}, buf, th.textDim, HAlign::Left, false);
-  paintCrumbs(c);
+  if (m_features.crumbs) paintCrumbs(c);
 }
 
 // ---------------------------------------------------------------------------- tab chip + breadcrumb strip
@@ -672,15 +672,16 @@ void BlueprintGraph::paintCrumbs(Canvas& c) {
 
 // Big faded graph-type label in the corner of the canvas (the graph-type watermark).
 void BlueprintGraph::paintWatermark(Canvas& c) {
-  std::string label = blueprintPresetName(m_preset);
+  const bool own = !m_watermarkTitle.empty();
+  std::string label = own ? m_watermarkTitle : std::string(blueprintPresetName(m_preset));
   for (char& ch : label) ch = char(std::toupper(static_cast<unsigned char>(ch)));
   const Font& f = font(46, Weight::Semibold, 1.0f);
   float w = f.width(label);
   Rect r{m_graphRect.x + 18, m_graphRect.bottom() - 74, w + 80, 62};
   if (m_graphRect.w < w + 140 || m_graphRect.h < 200) return;
-  drawIcon(c, blueprintPresetIcon(m_preset), {r.x, r.y + 2, 52, 52}, Color(58, 61, 67), 3.2f);   // opaque: translucent strokes would double-blend at the round joins
+  drawIcon(c, own ? m_watermarkIcon : blueprintPresetIcon(m_preset), {r.x, r.y + 2, 52, 52}, Color(58, 61, 67), 3.2f);   // opaque: translucent strokes would double-blend at the round joins
   c.textIn(f, {r.x + 62, r.y, w + 6, 56}, label, Color(200, 204, 212, 34), HAlign::Left, false);
-  c.textIn(*theme().ui, {r.x + 64, r.y + 50, 300, 14}, std::string(blueprintPresetGroup(m_preset)) + " graph", theme().textDim.alpha(0.55f), HAlign::Left, false);
+  c.textIn(*theme().ui, {r.x + 64, r.y + 50, 300, 14}, own ? m_watermarkCaption : std::string(blueprintPresetGroup(m_preset)) + " graph", theme().textDim.alpha(0.55f), HAlign::Left, false);
 }
 
 // ---------------------------------------------------------------------------- minimap

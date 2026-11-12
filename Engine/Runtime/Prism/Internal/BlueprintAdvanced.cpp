@@ -234,6 +234,14 @@ bool BlueprintGraph::removeVariable(const std::string& name) {
   return true;
 }
 
+bool BlueprintGraph::setVariableValue(const std::string& name, const std::string& value) {
+  auto it = std::find_if(m_vars.begin(), m_vars.end(), [&](auto& v) { return v.name == name; });
+  if (it == m_vars.end()) return false;
+  it->value = value;
+  if (onChanged) onChanged();
+  return true;
+}
+
 bool BlueprintGraph::renameVariable(const std::string& from, const std::string& to) {
   if (to.empty() || from == to) return false;
   auto it = std::find_if(m_vars.begin(), m_vars.end(), [&](auto& v) { return v.name == from; });

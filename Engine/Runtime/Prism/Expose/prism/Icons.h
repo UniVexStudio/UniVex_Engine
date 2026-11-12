@@ -34,7 +34,7 @@ enum class Icon : uint8_t {
   LayoutViewport, MontageSections, AssetBrowser, PreviewCharacter, Collider, Rigid3D, Static3D,
   MeshInstance, Skeleton, BoneAttachment, Object3D, Marker, Environment, DirectionalLight, Projection,
   Prefab, Bundle, Model, Shader, EntityAsset, MeshAsset, SceneAsset,
-  AdditivePose, TransformTrack, ProfTimeline, ProfSpans, ProfFrame, ProfCounters, ProfBreadcrumbs,
+  AdditivePose, TransformTrack, ProfTimeline, ProfSpans, ProfFrame, ProfCounters, ProfBreadcrumbs, BlueprintClass,
 };
 
 // Draws `icon` centred in `box`, scaled so a 16x16 design grid fits the shorter side.

@@ -2113,7 +2113,7 @@ static void testGoldenImages(Application& app, const std::string& assets) {
   CHECK(goldenCheck(dir, "icons", ic.pixels(), ic.width(), ic.height(), ic.width()));
   // one glyph per concept: every dedicated icon draws something, and no two icons in the set draw the same picture
   {
-    const int first = int(Icon::AnimClip), last = int(Icon::ProfBreadcrumbs);
+    const int first = int(Icon::AnimClip), last = int(Icon::BlueprintClass);
     std::vector<uint64_t> hashes;
     for (int i = 1; i <= last; i++) {
       Canvas one; one.resize(32, 32);

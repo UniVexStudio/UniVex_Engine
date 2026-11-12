@@ -838,7 +838,7 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         if (skySlot || scriptSlot || property.customDrawerId.rfind(kFilePrefix, 0U) == 0U) {
             std::vector<std::string> extensions;
             std::string list = skySlot      ? std::string{"uvtex,png,jpg,jpeg,bmp,tga"}
-                               : scriptSlot ? std::string{"uvs"}
+                               : scriptSlot ? std::string{"uvbp,uvs"}
                                             : property.customDrawerId.substr(kFilePrefix.size());
             for (std::size_t start = 0U; start <= list.size();) {
                 const std::size_t comma = list.find(',', start);

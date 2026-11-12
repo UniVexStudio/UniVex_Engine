@@ -24,7 +24,8 @@ class EditorPrismViewToolbarUVE final {
 public:
     explicit EditorPrismViewToolbarUVE(EditorUVE& editor);
     /// `gizmoOnly`: just the gizmo mode, snapping and grid (the Entity Editor's view).
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE(bool gizmoOnly = false);
+    /// `extra`: a widget after the gizmo settings (the Entity Editor's Blueprint button).
+    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE(bool gizmoOnly = false, prism::Ref<prism::Widget> extra = {});
     /// Re-reads the overlay state (call with the strip's document active).
     void RefreshUVE();
 
