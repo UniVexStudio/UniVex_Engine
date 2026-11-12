@@ -19,6 +19,9 @@
 #include "skeleton_3d.h"
 #include "camera_component.h"
 #include "bone_attachment_3d.h"
+#include "core_variant.h"
+#include "object_metadata_component.h"
+#include "uvscript_value.h"
 
 #include "prism/Application.h"
 #include "prism/Containers.h"
@@ -40,6 +43,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace UVE::Editor {
@@ -55,6 +59,15 @@ constexpr float kDegToRadUVE = 0.01745329252F;
 /// parent through reparenting in the Outliner.
 constexpr std::array<std::string_view, 3> kCustomDrawnUVE{"component.name", "component.transform",
                                                           "component.hierarchy"};
+
+/// The object-wide engine settings every object carries (how it is processed, threaded,
+/// interpolated, translated, described): kept, but collapsed, as Unreal's Advanced, so what the object
+/// is comes first.
+[[nodiscard]] bool IsAdvancedSectionUVE(const std::string_view title) {
+    static constexpr std::array<std::string_view, 5> kAdvanced{"Process", "Thread Group", "Physics Interpolation", "Auto Translate",
+                                                               "Editor Description"};
+    return std::find(kAdvanced.begin(), kAdvanced.end(), title) != kAdvanced.end();
+}
 
 [[nodiscard]] bool IsCustomDrawnUVE(const std::string_view typeId) {
     return std::find(kCustomDrawnUVE.begin(), kCustomDrawnUVE.end(), typeId) != kCustomDrawnUVE.end();
@@ -427,7 +440,7 @@ void EditorPrismDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
             }
             if (category < 0 || property.section != group) {
                 group = property.section;
-                category = m_grid->addCategory(group.empty() ? title : title + " / " + group, true);
+                category = m_grid->addCategory(group.empty() ? title : title + " / " + group, !IsAdvancedSectionUVE(title));
             }
             AddPropertyUVE(category, *entry, property, instance, authoring && property.IsAuthoringWritableUVE());
         }
@@ -566,6 +579,14 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
     }
     if (property.customDrawerId == "skeleton-bones") {
         AddSkeletonBonesUVE(category, instance);
+        return;
+    }
+    if (property.customDrawerId == "script-exports") {
+        AddScriptExportsUVE(category, writable);
+        return;
+    }
+    if (property.customDrawerId == "object-metadata") {
+        AddObjectMetadataUVE(category, instance, writable);
         return;
     }
     if (entry.typeIndex == std::type_index(typeid(Scene::BoneAttachment3DComponentUVE)) && property.name == "boneName") {
@@ -812,9 +833,13 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         // The environment's sky is a slot too: Empty keeps the procedural sky, a panorama (a published
         // .uvtex or the source image) is sampled instead of it.
         const bool skySlot = property.customDrawerId == "sky:asset";
-        if (skySlot || property.customDrawerId.rfind(kFilePrefix, 0U) == 0U) {
+        // The object's script, a slot too: a .uvs file of the project, or Empty.
+        const bool scriptSlot = property.customDrawerId == "script-slot";
+        if (skySlot || scriptSlot || property.customDrawerId.rfind(kFilePrefix, 0U) == 0U) {
             std::vector<std::string> extensions;
-            std::string list = skySlot ? std::string{"uvtex,png,jpg,jpeg,bmp,tga"} : property.customDrawerId.substr(kFilePrefix.size());
+            std::string list = skySlot      ? std::string{"uvtex,png,jpg,jpeg,bmp,tga"}
+                               : scriptSlot ? std::string{"uvs"}
+                                            : property.customDrawerId.substr(kFilePrefix.size());
             for (std::size_t start = 0U; start <= list.size();) {
                 const std::size_t comma = list.find(',', start);
                 const std::string kind = list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
@@ -843,17 +868,25 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                 }
             };
             // Content-relative, as these rows have always stored it; a file outside Content keeps its full path.
-            const std::function<void(const std::filesystem::path&)> useFile = [this, e, p](const std::filesystem::path& absolute) {
+            const std::function<void(const std::filesystem::path&)> useFile = [this, e, p, scriptSlot](const std::filesystem::path& absolute) {
                 const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
                 const std::filesystem::path relative = absolute.lexically_relative(root);
                 const std::string value = (relative.empty() || *relative.begin() == "..") ? absolute.generic_string()
                                                                                             : relative.generic_string();
+                if (scriptSlot) {
+                    if (!m_editor.AssignScriptToSelectedEntityUVE(value)) {
+                        m_editor.m_contentStatusMessage = m_editor.DescribeScriptAssetProblemUVE(value);
+                    }
+                    return;
+                }
                 static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &value));
             };
-            pick->onClick = [this, e, p, weakPick, extensions, useFile, skySlot] {
+            pick->onClick = [this, e, p, weakPick, extensions, useFile, skySlot, scriptSlot] {
                 PickerSpecUVE spec = PickerSpecForUVE(extensions);
                 if (skySlot) {
                     spec.title = "Sky";
+                } else if (scriptSlot) {
+                    spec.title = "Script";
                 }
                 PickerActionsUVE actions;
                 const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -1157,6 +1190,162 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
     }
     m_rows.push_back(row);
     m_grid->addRow(category, label, editor, property.tooltip);
+}
+
+
+// ---------------------------------------------------------------------------------- script exports
+
+void EditorPrismDetailsUVE::AddScriptExportsUVE(const int category, const bool writable) {
+    // One row per `export` field of the object's script, typed; a changed value is marked, and its
+    // tooltip has the script's default (the reset button puts it back).
+    for (const EditorUVE::ScriptExportRowUVE& row : m_editor.GetSelectedScriptExportsUVE()) {
+        const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(row.valueText, row.type);
+        if (!value.has_value()) {
+            continue;
+        }
+        const std::string name = row.name;
+        const auto set = [this, name](std::string text) { static_cast<void>(m_editor.SetSelectedScriptExportUVE(name, std::move(text))); };
+        prism::Ref<prism::Widget> editor;
+        if (const bool* const flag = std::get_if<bool>(&*value)) {
+            auto check = prism::make<prism::CheckBox>("", *flag);
+            check->onChange = [set](const bool v) { set(v ? "true" : "false"); };
+            editor = check;
+        } else if (const std::int64_t* const integer = std::get_if<std::int64_t>(&*value)) {
+            auto number = prism::make<prism::NumberField>(static_cast<float>(*integer), 1.0F, 0);
+            number->onCommit = [set](const float v) { set(std::to_string(std::llround(v))); };
+            editor = number;
+        } else if (const double* const real = std::get_if<double>(&*value)) {
+            auto number = prism::make<prism::NumberField>(static_cast<float>(*real), 0.05F, 3);
+            number->onCommit = [set](const float v) { set(UVScript::FormatValueUVE(UVScript::ValueUVE{static_cast<double>(v)})); };
+            editor = number;
+        } else if (const auto* const vector = std::get_if<UVScript::Vec3ValueUVE>(&*value)) {
+            auto parts = std::make_shared<std::array<double, 3>>(std::array<double, 3>{vector->x, vector->y, vector->z});
+            auto box = prism::hbox(4.0F);
+            for (std::size_t axis = 0U; axis < 3U; ++axis) {
+                auto number = prism::make<prism::NumberField>(static_cast<float>((*parts)[axis]), 0.05F, 3);
+                number->onCommit = [set, parts, axis](const float v) {
+                    (*parts)[axis] = static_cast<double>(v);
+                    set(UVScript::FormatValueUVE(UVScript::ValueUVE{UVScript::Vec3ValueUVE{(*parts)[0], (*parts)[1], (*parts)[2]}}));
+                };
+                box->add(number, prism::Slot{1.0F});
+            }
+            editor = box;
+        } else if (const std::string* const text = std::get_if<std::string>(&*value)) {
+            auto input = prism::make<prism::TextInput>(*text, "");
+            input->onCommit = [set](const std::string& v) { set(v); };
+            editor = input;
+        } else {
+            continue;
+        }
+        editor->setEnabled(writable);
+        auto line = prism::hbox(4.0F);
+        line->add(editor, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        if (row.overridden) {
+            auto reset = prism::make<prism::Button>("", prism::Icon::Undo, prism::ButtonStyle::Flat);
+            reset->setTooltip("Back to the script's default (" + row.defaultText + ")");
+            reset->setEnabled(writable);
+            reset->onClick = [this, name] { static_cast<void>(m_editor.SetSelectedScriptExportUVE(name, std::nullopt)); };
+            line->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        }
+        m_grid->addRow(category, row.name, line, row.type.NameUVE() + ", default " + row.defaultText);
+    }
+}
+
+// ---------------------------------------------------------------------------------- object metadata
+
+void EditorPrismDetailsUVE::AddObjectMetadataUVE(const int category, const void* const instance, const bool writable) {
+    if (instance == nullptr) {
+        return;
+    }
+    using Type = Core::VariantTypeUVE;
+    const auto& metadata = *static_cast<const Scene::ObjectMetadataComponentUVE*>(instance);
+    for (const Scene::ObjectMetadataEntryUVE& item : metadata.entries) {
+        const std::string key = item.key;
+        const Core::VariantUVE& v = item.value;
+        const auto setValue = [this, key](const Core::VariantUVE& value) {
+            static_cast<void>(m_editor.SetSelectedObjectMetadataValueUVE(key, value));
+        };
+        auto name = prism::make<prism::TextInput>(key, "");
+        name->onCommit = [this, key](const std::string& to) {
+            if (!to.empty() && to != key) {
+                static_cast<void>(m_editor.RenameSelectedObjectMetadataUVE(key, to));
+            }
+        };
+        prism::Ref<prism::Widget> value;
+        switch (v.GetTypeUVE()) {
+            case Type::Bool: {
+                auto check = prism::make<prism::CheckBox>("", v.TryGetUVE<bool>() != nullptr && *v.TryGetUVE<bool>());
+                check->onChange = [setValue](const bool b) { setValue(Core::VariantUVE::MakeBoolUVE(b)); };
+                value = check;
+                break;
+            }
+            case Type::Int: {
+                const std::int64_t* const n = v.TryGetUVE<std::int64_t>();
+                auto number = prism::make<prism::NumberField>(n != nullptr ? static_cast<float>(*n) : 0.0F, 1.0F, 0);
+                number->onCommit = [setValue](const float f) { setValue(Core::VariantUVE::MakeIntUVE(std::llround(f))); };
+                value = number;
+                break;
+            }
+            case Type::Float: {
+                const double* const n = v.TryGetUVE<double>();
+                auto number = prism::make<prism::NumberField>(n != nullptr ? static_cast<float>(*n) : 0.0F, 0.05F, 3);
+                number->onCommit = [setValue](const float f) { setValue(Core::VariantUVE::MakeFloatUVE(static_cast<double>(f))); };
+                value = number;
+                break;
+            }
+            case Type::String:
+            case Type::InternedString:
+            case Type::ObjectPath: {
+                const std::string* const s = v.TryGetUVE<std::string>();
+                auto input = prism::make<prism::TextInput>(s != nullptr ? *s : std::string{}, "");
+                const Type type = v.GetTypeUVE();
+                input->onCommit = [setValue, type](const std::string& t) { setValue(Core::VariantUVE::MakeTextUVE(type, t)); };
+                value = input;
+                break;
+            }
+            default: {
+                auto label = prism::make<prism::Label>("", prism::FontRole::Small);
+                label->setColor(prism::ThemeColor(&prism::Theme::textDim));
+                value = label;
+                break;
+            }
+        }
+        value->setEnabled(writable);
+        auto remove = prism::make<prism::Button>("", prism::Icon::Trash, prism::ButtonStyle::Flat);
+        remove->setTooltip("Remove");
+        remove->setEnabled(writable);
+        remove->onClick = [this, key] { static_cast<void>(m_editor.RemoveSelectedObjectMetadataUVE(key)); };
+        auto line = prism::hbox(4.0F);
+        line->add(name, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        line->add(value, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        line->add(remove, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        static constexpr std::array<const char*, 4> kTypes{"Bool", "Int", "Float", "String"};
+        const auto typeIndex = static_cast<std::size_t>(v.GetTypeUVE());
+        m_grid->addRow(category, typeIndex < kTypes.size() ? kTypes[typeIndex] : "Value", line);
+    }
+    // Add: a new key of the type picked, named uniquely.
+    auto add = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Default);
+    add->setEnabled(writable);
+    std::weak_ptr<prism::Button> weakAdd = add;
+    add->onClick = [this, weakAdd] {
+        const auto addOf = [this](const Type type) {
+            return [this, type] {
+                for (int i = 1; i < 1000; ++i) {
+                    const std::string key = i == 1 ? std::string("Key") : "Key" + std::to_string(i);
+                    if (m_editor.AddSelectedObjectMetadataUVE(key, Core::VariantUVE::MakeDefaultUVE(type))) {
+                        return;
+                    }
+                }
+            };
+        };
+        std::vector<prism::MenuItem> items{prism::MenuItem::Item("Bool", addOf(Type::Bool)), prism::MenuItem::Item("Int", addOf(Type::Int)),
+                                           prism::MenuItem::Item("Float", addOf(Type::Float)),
+                                           prism::MenuItem::Item("String", addOf(Type::String))};
+        if (auto b = weakAdd.lock()) {
+            prism::showMenu(std::move(items), b->rect(), prism::PopupPlacement::Below);
+        }
+    };
+    m_grid->addRow(category, "", add);
 }
 
 } // namespace UVE::Editor
