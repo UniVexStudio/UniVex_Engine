@@ -24,6 +24,7 @@
 #include "prism/Icons.h"
 #include "prism/Layouts.h"
 #include "prism/Menu.h"
+#include "prism/SearchMenu.h"
 #include "prism/TableView.h"
 #include "prism/TextInput.h"
 #include "prism/Theme.h"
@@ -473,26 +474,17 @@ prism::Ref<prism::Widget> EditorPrismContentBrowserUVE::BuildUVE() {
     addButton->setTooltip("Create in this folder: folders, scenes, entities, scripts, materials ...");
     std::weak_ptr<prism::Button> weakAdd = addButton;
     addButton->onClick = [this, weakAdd] {
-        std::vector<prism::MenuItem> items = CatalogueMenuUVE();
-        prism::MenuItem folder = prism::MenuItem::Item("New Folder", [this] { CreateCatalogueItemUVE("folder"); });
-        if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ContentTypeUVE("Folder", 16); icon) {
-            folder.withImage(icon.pixels, icon.size);
-        }
-        items.insert(items.begin(), {folder, prism::MenuItem::Sep()});
         const auto anchor = weakAdd.lock();
-        prism::showMenu(std::move(items), anchor ? anchor->rect() : prism::Rect{}, prism::PopupPlacement::Below);
+        prism::showSearchMenu(CatalogueMenuUVE(), anchor ? anchor->rect() : prism::Rect{}, prism::PopupPlacement::Below,
+                              "Search assets");
     };
     auto saveAllButton = prism::make<prism::Button>("Save All", prism::Icon::Save, prism::ButtonStyle::Toolbar);
     saveAllButton->setTooltip("Save everything (Ctrl+Shift+S)");
     saveAllButton->onClick = [this] { static_cast<void>(m_editor.RunEditorCommandUVE("file.saveAll")); };
-    auto importButton = prism::make<prism::Button>("Import", prism::Icon::Open, prism::ButtonStyle::Toolbar);
-    importButton->setTooltip("Import files into this folder");
-    importButton->onClick = [this] { CreateCatalogueItemUVE(""); };
     auto createRow = prism::hbox(4.0F);
     createRow->setPadding(prism::Margin(4.0F, 3.0F, 4.0F, 3.0F));
     createRow->add(addButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(saveAllButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    createRow->add(importButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto createBar = prism::make<prism::Border>();
     createBar->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -1385,47 +1377,43 @@ void EditorPrismContentBrowserUVE::ShowSplitMenuUVE() {
 }
 
 std::vector<prism::MenuItem> EditorPrismContentBrowserUVE::CatalogueMenuUVE() {
-    // The engine's content catalogue as submenus, each item with its object's icon.
+    // What can be made here, as in Unreal's Add menu: a folder, an Entity Class (the class picker:
+    // character, prop, trigger ...), a level, then the assets by kind. Objects (lights, meshes, ...)
+    // are placed with the Outliner's '+', not made as files here.
     std::vector<prism::MenuItem> items;
-    for (const std::string_view group : GetContentCatalogueGroupsUVE()) {
-        std::vector<prism::MenuItem> sub;
-        EditorPrismIconsUVE::ImageUVE groupIcon{};
-        if (group == "Entity") {
-            // Unreal's Pick Parent Class: one window that explains every class before making one.
-            sub.push_back(prism::MenuItem::Item("Entity Class...", [this] {
-                const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                m_editor.OpenEntityClassPickerUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
-            }, "", prism::Icon::Search));
-            sub.push_back(prism::MenuItem::Sep());
+    const auto item = [this](const char* label, const std::string& id, const prism::Icon icon, const char* typeLabel) {
+        prism::MenuItem entry = prism::MenuItem::Item(label, [this, id] { CreateCatalogueItemUVE(id); }, "", icon);
+        if (typeLabel != nullptr) {
+            if (const EditorPrismIconsUVE::ImageUVE image = m_icons.ContentTypeUVE(typeLabel, 16, icon); image) {
+                entry.withImage(image.pixels, image.size);
+            }
         }
-        for (const ContentCatalogueItemUVE& item : GetContentCatalogueItemsUVE()) {
-            if (item.group != group) {
-                continue;
-            }
-            if (!groupIcon) {
-                groupIcon = m_icons.ObjectUVE(GetContentCatalogueIconKindUVE(item), 16); // the group shows its first item's icon
-            }
-            prism::MenuItem entry =
-                prism::MenuItem::Item(std::string(item.label), [this, id = std::string(item.id)] { CreateCatalogueItemUVE(id); });
-            if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(GetContentCatalogueIconKindUVE(item), 16); icon) {
-                entry.withImage(icon.pixels, icon.size);
-            }
-            sub.push_back(std::move(entry));
-        }
-        if (!sub.empty()) {
-            std::string title(group);
-            std::transform(title.begin(), title.end(), title.begin(),
-                           [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            if (!title.empty()) {
-                title[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(title[0])));
-            }
-            prism::MenuItem groupItem = prism::MenuItem::Sub(title, std::move(sub), prism::Icon::Plus);
-            if (groupIcon) {
-                groupItem.withImage(groupIcon.pixels, groupIcon.size);
-            }
-            items.push_back(std::move(groupItem));
-        }
+        return entry;
+    };
+    items.push_back(item("New Folder", "folder", prism::Icon::Folder, "Folder"));
+    prism::MenuItem entityClass = prism::MenuItem::Item("Entity Class", [this] {
+        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        m_editor.OpenEntityClassPickerUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
+    }, "", prism::Icon::EntityAsset);
+    if (const EditorPrismIconsUVE::ImageUVE image = m_icons.ContentTypeUVE("Entity", 16, prism::Icon::EntityAsset); image) {
+        entityClass.withImage(image.pixels, image.size);
     }
+    items.push_back(std::move(entityClass));
+    items.push_back(item("Level", "viewport_3d", prism::Icon::SceneAsset, "Viewport3D"));
+    items.push_back(item("Level 2D", "viewport_2d", prism::Icon::SceneAsset, "Viewport3D"));
+    items.push_back(prism::MenuItem::Sep());
+    items.push_back(prism::MenuItem::Sub("Animation", {
+        item("Animation Library", "animation-library", prism::Icon::AnimLibrary, "Animation Library"),
+        item("Animation Montage", "animation-montage", prism::Icon::AnimMontage, "Animation Montage"),
+        item("Montage Library", "montage-library", prism::Icon::MontageLibrary, "Montage Library"),
+    }));
+    items.push_back(prism::MenuItem::Sub("Materials & Shaders", {
+        item("Material", "material", prism::Icon::Material, "Material"),
+        item("Shader", "shader_script", prism::Icon::Shader, "Shader"),
+    }));
+    items.push_back(prism::MenuItem::Sub("Scripting", {
+        item("Script", "basic_script", prism::Icon::Script, "Script"),
+    }));
     return items;
 }
 
@@ -1447,13 +1435,7 @@ void EditorPrismContentBrowserUVE::CreateCatalogueItemUVE(const std::string& id)
 void EditorPrismContentBrowserUVE::ShowEmptyMenuUVE(const prism::Vec2 at) {
     // Right-click on empty space: create here.
     std::vector<prism::MenuItem> items;
-    prism::MenuItem folder = prism::MenuItem::Item("New Folder", [this] { CreateCatalogueItemUVE("folder"); }, "",
-                                                   prism::Icon::Folder);
-    if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ContentTypeUVE("Folder", 16); icon) {
-        folder.withImage(icon.pixels, icon.size);
-    }
-    items.push_back(std::move(folder));
-    items.push_back(prism::MenuItem::Item("Import Files...", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Item("Import...", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
     items.push_back(prism::MenuItem::Sep());
     for (prism::MenuItem& item : CatalogueMenuUVE()) {
         items.push_back(std::move(item));

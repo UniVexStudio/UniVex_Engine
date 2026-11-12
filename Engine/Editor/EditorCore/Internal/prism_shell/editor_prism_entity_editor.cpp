@@ -16,6 +16,8 @@
 #include "prism/EngineView.h"
 #include "prism/Layouts.h"
 #include "prism/Menu.h"
+#include "prism/SearchMenu.h"
+#include "editor_prism_add_objects.h"
 #include "prism/TableView.h"
 #include "prism/Tabs.h"
 #include "prism/TextInput.h"
@@ -35,31 +37,6 @@ namespace {
 
 using SceneObjectKindUVE = Scene::Objects::SceneObjectKindUVE;
 
-struct AddEntryUVE final {
-    SceneObjectKindUVE kind;
-    const char* label;
-    prism::Icon icon;
-};
-
-/// What the Components '+' adds under the selected object (or the entity's root).
-constexpr std::array<AddEntryUVE, 16> kAddEntriesUVE{{
-    {SceneObjectKindUVE::Object3D, "Object3D", prism::Icon::Object3D},
-    {SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", prism::Icon::MeshInstance},
-    {SceneObjectKindUVE::BoxMesh3D, "Box", prism::Icon::Cube},
-    {SceneObjectKindUVE::SphereMesh3D, "Sphere", prism::Icon::Sphere},
-    {SceneObjectKindUVE::PlaneMesh3D, "Plane", prism::Icon::Plane},
-    {SceneObjectKindUVE::Camera3D, "Camera3D", prism::Icon::Camera},
-    {SceneObjectKindUVE::Light3D, "Light3D", prism::Icon::Light},
-    {SceneObjectKindUVE::Marker3D, "Marker3D", prism::Icon::Marker},
-    {SceneObjectKindUVE::Rigid3D, "Rigid3D", prism::Icon::Rigid3D},
-    {SceneObjectKindUVE::Static3D, "Static3D", prism::Icon::Static3D},
-    {SceneObjectKindUVE::Collider3D, "Collider3D", prism::Icon::Collider},
-    {SceneObjectKindUVE::Skeleton3D, "Skeleton3D", prism::Icon::Skeleton},
-    {SceneObjectKindUVE::AnimationSequencer, "AnimationSequencer", prism::Icon::AnimSequencer},
-    {SceneObjectKindUVE::AnimationGraph, "AnimationGraph", prism::Icon::AnimGraph},
-    {SceneObjectKindUVE::MontagePlayer, "MontagePlayer", prism::Icon::MontagePlayer},
-    {SceneObjectKindUVE::BoneAttachment3D, "BoneAttachment3D", prism::Icon::BoneAttachment},
-}};
 
 constexpr int kWindowWidthUVE = 1240;
 constexpr int kWindowHeightUVE = 760;
@@ -717,17 +694,12 @@ void EditorPrismEntityEditorUVE::SyncAnimationTabsUVE() {
 }
 
 void EditorPrismEntityEditorUVE::ShowAddMenuUVE() {
-    std::vector<prism::MenuItem> items;
-    for (const AddEntryUVE& entry : kAddEntriesUVE) {
-        prism::MenuItem item = prism::MenuItem::Item(
-            entry.label, [this, kind = entry.kind] { static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind)); }, "",
-            entry.icon);
-        if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(entry.kind, 16); icon) {
-            item.withImage(icon.pixels, icon.size);
-        }
-        items.push_back(std::move(item));
-    }
-    prism::showMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below);
+    // What an entity is built from (no level environment, sky or streaming), grouped and searchable.
+    std::vector<prism::MenuItem> items = BuildAddObjectMenuUVE(
+        AddObjectContextUVE::Entity, m_icons,
+        [this](const SceneObjectKindUVE kind) { static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind)); });
+    prism::showSearchMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
+                          "Search components");
 }
 
 void EditorPrismEntityEditorUVE::CompileUVE() {
