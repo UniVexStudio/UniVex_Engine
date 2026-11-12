@@ -1,7 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_prism_anim_graph_panel.h"
 
+#include "editor_prism_blend_space_view.h"
 #include "editor_prism_chrome.h"
+#include "editor_prism_state_machine_view.h"
 
 #include "animation_graph_editing.h"
 #include "animation_sequencer_component.h"
@@ -139,6 +141,17 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildUVE() {
         m_selected.assign(ids.begin(), ids.end());
         m_sideDirty = true;
     };
+    m_graph->onNodeDoubleClicked = [this](const int id) {
+        const GraphUVE* graph = GraphPtrUVE();
+        if (graph == nullptr) {
+            return;
+        }
+        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &NodeUVE::id);
+        if (node != graph->nodes.end() &&
+            (node->kind == Kind::StateMachine || node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D)) {
+            OpenFocusUVE(node->id);
+        }
+    };
     m_graph->canConnectHook = [this](const int fromNode, int, const int toNode, const int toPin, std::string* why) {
         const GraphUVE* graph = GraphPtrUVE();
         if (graph == nullptr) {
@@ -153,19 +166,50 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildUVE() {
     };
     m_side = prism::make<prism::ScrollBox>();
     auto sideBox = prism::make<prism::SizeBox>();
-    sideBox->setWidthOverride(300.0F);
+    sideBox->setWidthOverride(320.0F);
     auto sideFrame = prism::make<prism::Border>();
     sideFrame->setBackground(prism::ThemeColor(&prism::Theme::panel));
     sideFrame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F, 0.0F, 0.0F, 0.0F));
     sideFrame->setChild(m_side);
     sideBox->setContent(sideFrame);
 
+    // The tree, or the State Machine / Blend Space opened from it.
+    m_stateView = prism::make<StateMachineViewUVE>(*this);
+    m_spaceView = prism::make<BlendSpaceViewUVE>(*this);
+    m_canvas = prism::make<prism::StackSwitcher>();
+    m_canvas->addPage(m_graph);
+    m_canvas->addPage(m_stateView);
+    m_canvas->addPage(m_spaceView);
+    m_canvas->setActiveIndex(0);
+    // The breadcrumb while one is open: Tree > its name.
+    auto crumbRow = prism::hbox(4.0F);
+    crumbRow->setPadding(prism::Margin(6.0F, 2.0F, 6.0F, 2.0F));
+    auto back = prism::make<prism::Button>("Tree", prism::Icon::AnimGraph, prism::ButtonStyle::Flat);
+    back->setTooltip("Back to the tree (Esc)");
+    back->onClick = [this] { CloseFocusUVE(); };
+    crumbRow->add(back, CentreSlotUVE());
+    auto chevron = prism::make<prism::Label>(">", prism::FontRole::Semibold);
+    chevron->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    crumbRow->add(chevron, CentreSlotUVE());
+    m_crumbLabel = prism::make<prism::Label>("", prism::FontRole::Semibold);
+    crumbRow->add(m_crumbLabel, CentreSlotUVE());
+    auto crumbs = prism::make<prism::Border>();
+    crumbs->setBackground(prism::ThemeColor(&prism::Theme::window));
+    crumbs->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+    crumbs->setChild(crumbRow);
+    crumbs->setVisible(false);
+    m_crumbs = crumbs;
+    auto left = prism::vbox();
+    left->add(m_crumbs);
+    left->add(m_canvas, prism::Slot{1.0F});
+
     auto body = prism::hbox();
-    body->add(m_graph, prism::Slot{1.0F});
+    body->add(left, prism::Slot{1.0F});
     body->add(sideBox);
     auto page = prism::vbox();
     page->add(BuildToolbarUVE());
     page->add(body, prism::Slot{1.0F});
+    m_shownFocus = ~0U;
     m_shown.reset();
     m_shownTree = Scene::kInvalidEntityUVE;
     m_sideDirty = true;
@@ -493,12 +537,15 @@ void EditorPrismAnimGraphPanelUVE::RefreshUVE(const double deltaSeconds, const b
     if (graph == nullptr) {
         return;
     }
+    SyncFocusUVE();
     if (!m_liveBefore.has_value()) {
         if (m_shownTree != m_view.tree || !m_shown.has_value() || !m_shown->HasSameSettingsUVE(*graph)) {
             RebuildGraphUVE(*graph);
             m_sideDirty = true;
         }
-        if (m_sideDirty || m_selected != m_shownSelection) {
+        const EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+        if (m_sideDirty || m_selected != m_shownSelection || state.pickedState != m_shownPickedState ||
+            state.pickedTransition != m_shownPickedTransition) {
             RebuildSideUVE(*graph);
         }
     }
@@ -556,8 +603,73 @@ void EditorPrismAnimGraphPanelUVE::RefreshLiveValuesUVE(const GraphUVE& graph) {
         }
         m_shownLogLines = state.previewLog.size();
     }
-    if (m_graph) {
-        m_graph->invalidate();
+    if (m_canvas) {
+        m_canvas->invalidate();
+    }
+}
+
+const Scene::AnimationGraphNodeUVE* EditorPrismAnimGraphPanelUVE::FocusNodeUVE() const {
+    const GraphUVE* graph = GraphPtrUVE();
+    const std::uint32_t focus = m_editor.m_animGraph.focus;
+    if (graph == nullptr || focus == 0U) {
+        return nullptr;
+    }
+    const auto node = std::ranges::find(graph->nodes, focus, &NodeUVE::id);
+    return node != graph->nodes.end() ? &*node : nullptr;
+}
+
+void EditorPrismAnimGraphPanelUVE::OpenFocusUVE(const std::uint32_t node) {
+    EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+    state.focus = node;
+    state.pickedState = -1;
+    state.pickedTransition = -1;
+    state.stateFramed = false;
+    m_sideDirty = true;
+    SyncFocusUVE();
+}
+
+void EditorPrismAnimGraphPanelUVE::CloseFocusUVE() {
+    EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+    state.focus = 0U;
+    state.pickedState = -1;
+    state.pickedTransition = -1;
+    m_sideDirty = true;
+    SyncFocusUVE();
+}
+
+void EditorPrismAnimGraphPanelUVE::SyncFocusUVE() {
+    EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+    const NodeUVE* focus = FocusNodeUVE();
+    if (state.focus != 0U && (focus == nullptr || (focus->kind != Kind::StateMachine && focus->kind != Kind::BlendSpace1D &&
+                                                   focus->kind != Kind::BlendSpace2D))) {
+        state.focus = 0U;   // its node went (deleted, undone): back to the tree
+        focus = nullptr;
+    }
+    const int page = focus == nullptr ? 0 : focus->kind == Kind::StateMachine ? 1 : 2;
+    if (m_canvas && m_canvas->activeIndex() != page) {
+        m_canvas->setActiveIndex(page);
+        if (prism::Application::exists()) {
+            prism::Application::get().setFocus(page == 1 ? static_cast<prism::Widget*>(m_stateView.get())
+                                               : page == 2 ? static_cast<prism::Widget*>(m_spaceView.get())
+                                                           : static_cast<prism::Widget*>(m_graph.get()));
+        }
+    }
+    if (m_crumbs) {
+        m_crumbs->setVisible(focus != nullptr);
+    }
+    if (m_crumbLabel && focus != nullptr) {
+        const std::string name = (focus->name.empty() ? std::string{AnimationGraphKindLabelUVE(focus->kind)} : focus->name) + "   (" +
+                                 AnimationGraphKindLabelUVE(focus->kind) + ")";
+        if (m_crumbLabel->text() != name) {
+            m_crumbLabel->setText(name);
+        }
+    }
+    if (m_shownFocus != state.focus) {
+        m_shownFocus = state.focus;
+        m_sideDirty = true;
+        if (prism::Application::exists()) {
+            prism::Application::get().invalidateLayout();
+        }
     }
 }
 
@@ -603,8 +715,18 @@ void EditorPrismAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
         skeleton->setPadding(prism::Margin(10.0F, 2.0F, 10.0F, 0.0F));
         page->add(skeleton);
     }
-    page->add(BuildParametersUVE(graph));
-    page->add(BuildSelectedUVE(graph));
+    m_shownPickedState = m_editor.m_animGraph.pickedState;
+    m_shownPickedTransition = m_editor.m_animGraph.pickedTransition;
+    if (const NodeUVE* focus = FocusNodeUVE(); focus != nullptr && focus->kind == Kind::StateMachine) {
+        page->add(BuildStateMachineSideUVE(graph, *focus));
+        page->add(BuildParametersUVE(graph));
+    } else if (focus != nullptr) {
+        page->add(BuildBlendSpaceSideUVE(graph, *focus));
+        page->add(BuildParametersUVE(graph));
+    } else {
+        page->add(BuildParametersUVE(graph));
+        page->add(BuildSelectedUVE(graph));
+    }
     page->add(BuildPreviewUVE());
     m_side->setContent(page);
 }

@@ -22,6 +22,7 @@ class Label;
 class LogView;
 class NumberField;
 class ScrollBox;
+class StackSwitcher;
 } // namespace prism
 
 namespace UVE::Editor {
@@ -40,7 +41,13 @@ namespace UVE::Editor {
 /// The graph is the engine's: every change made in it (move, wire, unwire, delete, add, a setting)
 /// is one undo step through EditAnimationGraphUVE, and the blueprint view is rebuilt from the
 /// component whenever the component changes (undo included).
+class StateMachineViewUVE;
+class BlendSpaceViewUVE;
+
 class EditorPrismAnimGraphPanelUVE final {
+    friend class StateMachineViewUVE;
+    friend class BlendSpaceViewUVE;
+
 public:
     explicit EditorPrismAnimGraphPanelUVE(EditorUVE& editor);
     ~EditorPrismAnimGraphPanelUVE();
@@ -51,6 +58,10 @@ public:
     /// Runs the preview while the page is `shown`, and rebuilds the graph and the side panel when
     /// the component changed. Inside the Entity Editor's window.
     void RefreshUVE(double deltaSeconds, bool shown);
+    /// Opens a State Machine or Blend Space node in its own view (the breadcrumb leads back), or
+    /// goes back to the tree.
+    void OpenFocusUVE(std::uint32_t node);
+    void CloseFocusUVE();
 
 private:
     using NodeUVE = Scene::AnimationGraphNodeUVE;
@@ -91,6 +102,13 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildParametersUVE(const GraphUVE& graph);
     [[nodiscard]] prism::Ref<prism::Widget> BuildSelectedUVE(const GraphUVE& graph);
     [[nodiscard]] prism::Ref<prism::Widget> BuildPreviewUVE();
+    /// The side panel while a State Machine is open: the picked state or transition's settings;
+    /// while a Blend Space is open: its tool, snapping, area and the picked point
+    /// (editor_prism_anim_graph_side.cpp).
+    [[nodiscard]] prism::Ref<prism::Widget> BuildStateMachineSideUVE(const GraphUVE& graph, const NodeUVE& machine);
+    [[nodiscard]] prism::Ref<prism::Widget> BuildBlendSpaceSideUVE(const GraphUVE& graph, const NodeUVE& space);
+    [[nodiscard]] const NodeUVE* FocusNodeUVE() const;
+    void SyncFocusUVE();
     void RefreshLiveValuesUVE(const GraphUVE& graph);
     void ShowGraphMenuUVE();
     void ShowSequencerMenuUVE(prism::Vec2 at);
@@ -98,6 +116,14 @@ private:
     EditorUVE& m_editor;
     EditorUVE::AnimationGraphPanelViewUVE m_view;
     std::shared_ptr<prism::BlueprintGraph> m_graph;
+    std::shared_ptr<prism::StackSwitcher> m_canvas;
+    std::shared_ptr<StateMachineViewUVE> m_stateView;
+    std::shared_ptr<BlendSpaceViewUVE> m_spaceView;
+    std::shared_ptr<prism::Widget> m_crumbs;
+    std::shared_ptr<prism::Label> m_crumbLabel;
+    std::uint32_t m_shownFocus = 0U;
+    int m_shownPickedState = -1;
+    int m_shownPickedTransition = -1;
     std::shared_ptr<prism::ScrollBox> m_side;
     std::shared_ptr<prism::Button> m_graphButton;
     std::shared_ptr<prism::Button> m_previewButton;
