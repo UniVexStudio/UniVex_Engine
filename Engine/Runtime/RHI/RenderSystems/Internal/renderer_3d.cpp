@@ -5,6 +5,7 @@
 #include "bind_group.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -1353,6 +1354,8 @@ struct Renderer3DUVE::ImplUVE {
     TextureHandleUVE fallbackNormalTexture;
 
     std::unordered_map<Asset::AssetGuidUVE, MeshGpuResourcesUVE> meshCache;
+    /// Textures still loading, held so their loads are not dropped (ResolveTextureGpuHandleUVE).
+    std::unordered_map<Asset::AssetGuidUVE, Asset::AssetHandleUVE<Asset::TextureAssetUVE>> pendingTextureHandles;
     /// Per-entity vertex buffers of skinned meshes, re-skinned every frame. The index buffer is the
     /// mesh's shared one. Entries an extraction did not touch are released at the next one.
     struct SkinnedMeshGpuUVE final {
@@ -1937,8 +1940,17 @@ struct Renderer3DUVE::ImplUVE {
             return fallbackHandle;
         }
 
-        Asset::AssetHandleUVE<Asset::TextureAssetUVE> textureHandle =
-            assetManager.LoadUVE<Asset::TextureAssetUVE>(textureGuid, assetDatabase);
+        // The handle is kept while the texture loads: a load nobody holds is dropped when it
+        // finishes, so asking again every frame would start it over and over and a large texture
+        // would never arrive.
+        auto pendingIt = pendingTextureHandles.find(textureGuid);
+        if (pendingIt == pendingTextureHandles.end()) {
+            pendingIt = pendingTextureHandles.emplace(textureGuid, assetManager.LoadUVE<Asset::TextureAssetUVE>(textureGuid, assetDatabase)).first;
+        }
+        Asset::AssetHandleUVE<Asset::TextureAssetUVE> textureHandle = pendingIt->second;
+        if (textureHandle.HasFailedUVE() || textureHandle.IsReadyUVE()) {
+            pendingTextureHandles.erase(pendingIt);
+        }
         if (textureHandle.HasFailedUVE()) {
             failedTextureGuids.insert(textureGuid);
             ++lastFrameDiagnostics.textureFallbacks;

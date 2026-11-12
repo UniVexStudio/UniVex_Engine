@@ -6612,6 +6612,9 @@ void EditorUVE::PollModelImportJobsUVE() {
             // are registered here instead - this is the only place that knows a conversion is
             // accounted for whether or not it executed.
             static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
+            // The GUIDs an import wrote into its materials and meshes are kept with the project, so
+            // the next session finds them (and the import cache stays valid instead of importing again).
+            static_cast<void>(m_services->GetAssetDatabaseUVE().SaveUVE());
             imported = imported || !job->cacheHit;
             m_modelImportFailures.erase(it->first);
             ++m_importBatchCompleted;
