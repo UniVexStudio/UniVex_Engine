@@ -34,6 +34,9 @@ struct JointReportUVE final {
     JointStatusUVE status = JointStatusUVE::Missing;
     /// Why, in a line, for anything but Good.
     std::string reason;
+    /// Found by the Rig Brain rather than by its name, and how sure it was (0..1).
+    bool byBrain = false;
+    float confidence = 1.0F;
 };
 
 /// A rig's bones set against the humanoid reference.
@@ -59,6 +62,12 @@ struct HumanoidMatchUVE final {
 
 /// The same for bones known only by name, such as a clip's tracks: every named bone found is
 /// Good, the rest Missing; there is no hierarchy or length to check.
+/// Checks the pairs in `match` against the rig's hierarchy and lengths (MatchHumanoidUVE's second
+/// half), for pairs made by other means: under the right parent, a sensible length, left and right
+/// alike. Statuses, reasons, counts and the height scale are set again.
+[[nodiscard]] HumanoidMatchUVE CheckHumanoidMatchUVE(const RetargetSkeletonUVE& rig, const HumanoidReferenceUVE& reference,
+                                                    HumanoidMatchUVE match);
+
 [[nodiscard]] HumanoidMatchUVE MatchHumanoidNamesUVE(const std::vector<std::string>& names,
                                                      const HumanoidReferenceUVE& reference);
 

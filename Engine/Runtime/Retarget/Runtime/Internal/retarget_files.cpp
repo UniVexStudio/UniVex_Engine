@@ -180,6 +180,12 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         return result;
     }
 
+    // Names first; the Rig Brain for the bones they cannot place.
+    const RigBrainUVE* const brain = !request.useBrain ? nullptr : (request.brain != nullptr ? request.brain : &GetDefaultRigBrainUVE());
+    const auto matchOf = [&](const RetargetSkeletonUVE& rig) {
+        return brain != nullptr ? MatchHumanoidWithBrainUVE(rig, reference, *brain) : MatchHumanoidUVE(rig, reference);
+    };
+
     // ---- 1. Read and conform everything in memory ----------------------------------------------
     std::vector<PlannedFileUVE> planned;
     if (hasModel) {
@@ -198,7 +204,7 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
             result.error = request.model.filename().string() + ": " + error;
             return result;
         }
-        const HumanoidMatchUVE match = MatchHumanoidUVE(*rig, reference);
+        const HumanoidMatchUVE match = matchOf(*rig);
         const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error);
         const Asset::MeshAssetUVE before = mesh;
         // The character keeps its own rest pose: no vertex moves (the A-pose is where clips take it).
@@ -243,7 +249,7 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         } else {
             std::string error;
             const RetargetSkeletonUVE rig = RigFromClipUVE(clip);
-            const HumanoidMatchUVE match = MatchHumanoidUVE(rig, reference);
+            const HumanoidMatchUVE match = matchOf(rig);
             const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(rig, match, reference, &error);
             std::optional<Asset::AnimationClipAssetUVE> converted;
             if (conformed.has_value()) {

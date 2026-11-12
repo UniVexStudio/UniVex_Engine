@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "retarget_conform.h"
+#include "retarget_brain.h"
 #include "retarget_humanoid.h"
 
 namespace UVE::Retarget {
@@ -24,6 +25,10 @@ struct RetargetFilesRequestUVE final {
     /// Where backups go; each run makes a folder of its own inside it (for example
     /// `<content>/.retarget-backup`).
     std::filesystem::path backupRoot;
+    /// The Rig Brain that finds the bones names cannot (GetDefaultRigBrainUVE when null, or none
+    /// when `useBrain` is off).
+    const RigBrainUVE* brain = nullptr;
+    bool useBrain = true;
 };
 
 struct RetargetFileReportUVE final {
