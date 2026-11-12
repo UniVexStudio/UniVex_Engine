@@ -14,6 +14,8 @@
 #include "prism/Controls.h"
 #include "prism/EngineView.h"
 #include "prism/Menu.h"
+#include "prism/SearchMenu.h"
+#include "editor_prism_add_objects.h"
 #include "prism/Tabs.h"
 #include "prism/TextInput.h"
 #include "prism/Docking.h"
@@ -42,31 +44,6 @@ namespace {
 
 using SceneObjectKindUVE = Scene::Objects::SceneObjectKindUVE;
 
-struct AddEntryUVE final {
-    SceneObjectKindUVE kind;
-    const char* label;
-    prism::Icon icon;
-};
-
-/// What the Outliner '+' (#7) can create. The first three are the default offer (folder,
-/// environment, sun); the filter (#8) adds any of the rest, or all of them.
-constexpr std::array<AddEntryUVE, 14> kAddEntriesUVE{{
-    {SceneObjectKindUVE::Folder, "Folder", prism::Icon::Folder},
-    {SceneObjectKindUVE::WorldEnvironment3D, "Environment", prism::Icon::Environment},
-    {SceneObjectKindUVE::DirectionalLight3D, "Directional Light", prism::Icon::DirectionalLight},
-    {SceneObjectKindUVE::Object3D, "Object3D", prism::Icon::Object3D},
-    {SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", prism::Icon::MeshInstance},
-    {SceneObjectKindUVE::BoxMesh3D, "Box", prism::Icon::Cube},
-    {SceneObjectKindUVE::SphereMesh3D, "Sphere", prism::Icon::Sphere},
-    {SceneObjectKindUVE::PlaneMesh3D, "Plane", prism::Icon::Plane},
-    {SceneObjectKindUVE::Camera3D, "Camera3D", prism::Icon::Camera},
-    {SceneObjectKindUVE::Light3D, "Light3D", prism::Icon::Light},
-    {SceneObjectKindUVE::Marker3D, "Marker3D", prism::Icon::Marker},
-    {SceneObjectKindUVE::Rigid3D, "Rigid3D", prism::Icon::Rigid3D},
-    {SceneObjectKindUVE::Static3D, "Static3D", prism::Icon::Static3D},
-    {SceneObjectKindUVE::Collider3D, "Collider3D", prism::Icon::Collider},
-}};
-constexpr std::size_t kDefaultAddCountUVE = 3;
 
 void HashUVE(std::uint64_t& h, const std::uint64_t v) {
     h ^= v + 0x9E3779B97F4A7C15ULL + (h << 6) + (h >> 2);
@@ -467,7 +444,7 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildOutlinerUVE() {
     auto bar = prism::hbox(4.0F);
     m_addButton = ToolButtonUVE(prism::Icon::Plus, "Add to the level");
     m_addButton->onClick = [this] { ShowAddMenuUVE(); };
-    m_filterButton = ToolButtonUVE(prism::Icon::Filter, "Choose what '+' offers");
+    m_filterButton = ToolButtonUVE(prism::Icon::Filter, "Favorites: what '+' shows first");
     m_filterButton->onClick = [this] { ShowAddFilterMenuUVE(); };
     m_outlinerSearch = prism::make<prism::TextInput>("", "Search");
     m_outlinerSearch->onChanged = [this](const std::string& text) {
@@ -733,50 +710,44 @@ void EditorPrismShellUVE::ShowDockPanelUVE(const int index, const bool forceVisi
 
 
 void EditorPrismShellUVE::ShowAddMenuUVE() {
-    std::vector<prism::MenuItem> items;
-    for (std::size_t i = 0; i < kAddEntriesUVE.size(); ++i) {
-        const bool offered = i < kDefaultAddCountUVE || m_addAllKinds || m_addKinds.count(static_cast<int>(i)) > 0;
-        if (!offered) {
-            continue;
+    // Everything a level holds, grouped and searchable; the favourites (the filter button) first.
+    std::vector<SceneObjectKindUVE> favorites;
+    if (m_addKinds.empty()) {
+        favorites = {SceneObjectKindUVE::Folder, SceneObjectKindUVE::WorldEnvironment3D, SceneObjectKindUVE::DirectionalLight3D};
+    } else {
+        for (const int kind : m_addKinds) {
+            favorites.push_back(static_cast<SceneObjectKindUVE>(kind));
         }
-        if (i == kDefaultAddCountUVE) {
-            items.push_back(prism::MenuItem::Sep());
-        }
-        const AddEntryUVE entry = kAddEntriesUVE[i];
-        prism::MenuItem item = prism::MenuItem::Item(
-            entry.label,
-            [this, kind = entry.kind] { static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind)); }, "",
-            entry.icon);
-        // The engine's own object icon.
-        if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(entry.kind, 16); icon) {
-            item.withImage(icon.pixels, icon.size);
-        }
-        items.push_back(std::move(item));
     }
-    prism::showMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below);
+    std::vector<prism::MenuItem> items = BuildAddObjectMenuUVE(
+        AddObjectContextUVE::Level, m_icons,
+        [this](const SceneObjectKindUVE kind) { static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind)); }, favorites);
+    prism::showSearchMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
+                          "Search objects");
 }
 
 void EditorPrismShellUVE::ShowAddFilterMenuUVE() {
+    // The favourites '+' shows first, from everything a level can hold.
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Check("All", m_addAllKinds, [this] { m_addAllKinds = !m_addAllKinds; }));
-    items.push_back(prism::MenuItem::Sep());
-    for (std::size_t i = kDefaultAddCountUVE; i < kAddEntriesUVE.size(); ++i) {
-        const int key = static_cast<int>(i);
-        const bool on = m_addAllKinds || m_addKinds.count(key) > 0;
-        prism::MenuItem item = prism::MenuItem::Check(kAddEntriesUVE[i].label, on, [this, key] {
+    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
+        if (!descriptor.libraryCreatable || !IsObjectOfferedUVE(descriptor.kind, AddObjectContextUVE::Level)) {
+            continue;
+        }
+        const int key = static_cast<int>(descriptor.kind);
+        prism::MenuItem item = prism::MenuItem::Check(std::string(descriptor.displayName), m_addKinds.count(key) > 0, [this, key] {
             if (m_addKinds.count(key) > 0) {
                 m_addKinds.erase(key);
             } else {
                 m_addKinds.insert(key);
             }
         });
-        if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(kAddEntriesUVE[i].kind, 16); icon) {
+        if (const EditorPrismIconsUVE::ImageUVE icon = m_icons.ObjectUVE(descriptor.kind, 16); icon) {
             item.withImage(icon.pixels, icon.size);
         }
         items.push_back(std::move(item));
     }
-    prism::showMenu(std::move(items), m_filterButton ? m_filterButton->rect() : prism::Rect{},
-                    prism::PopupPlacement::Below);
+    prism::showSearchMenu(std::move(items), m_filterButton ? m_filterButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
+                          "Favorites");
 }
 
 // ---------------------------------------------------------------------------------------- refresh
