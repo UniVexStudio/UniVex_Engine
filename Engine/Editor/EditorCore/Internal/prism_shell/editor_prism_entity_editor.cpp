@@ -6,6 +6,8 @@
 #include "editor_prism_chrome.h"
 #include "editor_prism_host.h"
 #include "editor_prism_shell.h"
+#include "animation_graph_component.h"
+#include "animation_sequencer.h"
 #include "scene_object_type.h"
 
 #include "prism/Application.h"
@@ -79,7 +81,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 EditorPrismEntityEditorUVE::EditorPrismEntityEditorUVE(EditorUVE& editor, EditorPrismHostUVE& host)
-    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor) {}
+    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor) {}
 
 EditorPrismEntityEditorUVE::~EditorPrismEntityEditorUVE() {
     if (m_window != 0 && m_host.IsReadyUVE()) {
@@ -172,7 +174,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildUVE() {
     window->add(m_viewToolbar.BuildUVE());
 
     // Left: Components over Details (a split, like the level's Outliner and Details stacked);
-    // centre: the view, and Compile's results under it while it has some.
+    // centre: the view over the dock pages; the dock bar runs along the bottom, as in the level.
     auto left = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     m_componentsPanel = BuildComponentsUVE();
     auto detailsTabs = prism::make<prism::TabView>();
@@ -185,6 +187,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildUVE() {
     columns->add(left, prism::Splitter::Pane{340.0F, 240.0F, 900.0F, false});
     columns->add(BuildCentreUVE(), prism::Splitter::Pane{860.0F, 320.0F, 1e9F, true});
     window->add(columns, prism::Slot{1.0F});
+    window->add(BuildDockBarUVE());
 
     auto frame = prism::make<prism::Border>();
     frame->setBackground(prism::ThemeColor(&prism::Theme::window));
@@ -540,27 +543,122 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildCentreUVE() {
         }
     };
 
-    m_results = prism::make<prism::TabView>();
-    m_results->addTab("Compile Results", prism::Icon::Warning, PanelUVE(m_problems));
-    m_results->addTab("Find Results", prism::Icon::Search, PanelUVE(m_findTable));
-    m_results->addTab("Diff", prism::Icon::Copy, PanelUVE(m_diffTable));
-    auto hide = ToolButtonUVE(prism::Icon::Close, "Hide the results");
-    hide->onClick = [this] {
-        if (m_problemsPanel) {
-            m_problemsPanel->setVisible(false);
+    // The dock pages (the level's layout): one page per tab of the bar along the window's bottom.
+    m_dockPanels.AttachLogUVE();
+    m_dockPages = prism::make<prism::StackSwitcher>();
+    m_dockPages->addPage(BuildSequencerPageUVE());
+    m_dockPages->addPage(BuildGraphPageUVE());
+    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildOutputLogUVE()));
+    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildConsoleUVE()));
+    m_dockPages->addPage(PanelUVE(m_problems));
+    m_dockPages->addPage(PanelUVE(m_findTable));
+    m_dockPages->addPage(PanelUVE(m_diffTable));
+    m_dockPages->setActiveIndex(kConsolePageUVE);
+    m_dockArea = m_dockPages;
+    m_problemsPanel = m_dockPages;
+    m_dockVisible = true;
+
+    auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
+    centre->add(view, prism::Splitter::Pane{400.0F, 160.0F, 1e9F, true});
+    centre->add(m_dockArea, prism::Splitter::Pane{290.0F, 110.0F, 900.0F, false});
+    return centre;
+}
+
+prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildDockBarUVE() {
+    // The level's dock bar: each tab shows its page, the active one hides it.
+    auto bar = prism::hbox(2.0F);
+    bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
+    struct DockTabUVE { const char* label; prism::Icon icon; };
+    static constexpr std::array<DockTabUVE, kDockPageCountUVE> kTabs{{
+        {"Animation Sequencer", prism::Icon::NodeClip},
+        {"Animation Graph", prism::Icon::AnimGraph},
+        {"Output Log", prism::Icon::Info},
+        {"Console", prism::Icon::Terminal},
+        {"Compile Results", prism::Icon::Warning},
+        {"Find Results", prism::Icon::Search},
+        {"Diff", prism::Icon::Copy},
+    }};
+    m_dockTabs.clear();
+    for (std::size_t i = 0; i < kTabs.size(); ++i) {
+        auto tab = prism::make<prism::Button>(kTabs[i].label, kTabs[i].icon, prism::ButtonStyle::Toolbar);
+        tab->setCheckable(true);
+        tab->setChecked(static_cast<int>(i) == kConsolePageUVE);
+        tab->onClick = [this, index = static_cast<int>(i)] { ShowDockPanelUVE(index, false); };
+        // The animation tabs come with their objects (SyncAnimationTabsUVE).
+        tab->setVisible(i != kSequencerPageUVE && i != kGraphPageUVE);
+        m_dockTabs.push_back(tab);
+        bar->add(tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    }
+    bar->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    auto border = prism::make<prism::Border>();
+    border->setBackground(prism::ThemeColor(&prism::Theme::statusBar));
+    border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 0.0F));
+    border->setChild(bar);
+    return border;
+}
+
+prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildSequencerPageUVE() {
+    auto page = prism::vbox(6.0F);
+    page->setPadding(prism::Margin(12.0F));
+    page->add(prism::make<prism::Label>("Animation Sequencer"));
+    return PanelUVE(page);
+}
+
+prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildGraphPageUVE() {
+    auto page = prism::vbox(6.0F);
+    page->setPadding(prism::Margin(12.0F));
+    page->add(prism::make<prism::Label>("Animation Graph"));
+    return PanelUVE(page);
+}
+
+void EditorPrismEntityEditorUVE::ShowDockPanelUVE(const int index, const bool forceVisible) {
+    if (!m_dockPages || index < 0 || index >= m_dockPages->count()) {
+        return;
+    }
+    const bool sameTab = m_dockPages->activeIndex() == index;
+    if (sameTab && m_dockVisible && !forceVisible) {
+        m_dockVisible = false;
+    } else {
+        m_dockVisible = true;
+        m_dockPages->setActiveIndex(index);
+    }
+    if (m_dockArea) {
+        m_dockArea->setVisible(m_dockVisible);
+    }
+    for (std::size_t i = 0; i < m_dockTabs.size(); ++i) {
+        m_dockTabs[i]->setChecked(m_dockVisible && static_cast<int>(i) == m_dockPages->activeIndex());
+    }
+}
+
+void EditorPrismEntityEditorUVE::SyncAnimationTabsUVE() {
+    if (!m_dockPages || m_dockTabs.size() != kDockPageCountUVE) {
+        return;
+    }
+    // The tabs follow the objects: an AnimationSequencer / AnimationGraph in the entity brings its tab.
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    bool hasSequencer = false;
+    bool hasGraph = false;
+    for (const Scene::EntityUVE entity : m_editor.CollectEntityEditorObjectsUVE()) {
+        hasSequencer = hasSequencer || em.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(entity);
+        hasGraph = hasGraph || em.HasComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
+    }
+    const auto sync = [this](const int index, const bool want) {
+        prism::Button& tab = *m_dockTabs[static_cast<std::size_t>(index)];
+        if (tab.visible() == want) {
+            return;
+        }
+        tab.setVisible(want);
+        if (want) {
+            ShowDockPanelUVE(index, true);   // a new object opens its tab
+        } else if (m_dockPages->activeIndex() == index) {
+            ShowDockPanelUVE(kConsolePageUVE, true);   // its object went: back to the Console
+        }
+        if (prism::Application::exists()) {
+            prism::Application::get().invalidateLayout();
         }
     };
-    m_results->setStripExtras(hide);
-    auto resultsBox = prism::make<prism::SizeBox>();
-    resultsBox->setHeightOverride(190.0F);
-    resultsBox->setContent(m_results);
-    m_problemsPanel = resultsBox;
-    m_problemsPanel->setVisible(false);
-
-    auto centre = prism::vbox();
-    centre->add(view, prism::Slot{1.0F});
-    centre->add(m_problemsPanel);
-    return centre;
+    sync(kSequencerPageUVE, hasSequencer);
+    sync(kGraphPageUVE, hasGraph);
 }
 
 void EditorPrismEntityEditorUVE::ShowAddMenuUVE() {
@@ -583,11 +681,8 @@ void EditorPrismEntityEditorUVE::CompileUVE() {
 }
 
 void EditorPrismEntityEditorUVE::ShowResultsUVE(const int tab) {
-    if (m_results) {
-        m_results->setCurrent(tab);
-    }
-    if (m_problemsPanel) {
-        m_problemsPanel->setVisible(true);
+    if (tab >= 0 && tab < 3) {
+        ShowDockPanelUVE(kCompilePageUVE + tab, true);
     }
 }
 
@@ -835,6 +930,8 @@ void EditorPrismEntityEditorUVE::RefreshUVE() {
         m_viewToolbar.RefreshUVE();
         RefreshToolbarUVE();
         RefreshProblemsUVE();
+        SyncAnimationTabsUVE();
+        m_dockPanels.RefreshUVE(m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kConsolePageUVE, false);
     });
 }
 
