@@ -135,21 +135,9 @@ std::vector<std::string> EditorPrismAnimGraphPanelUVE::ParameterNamesUVE(const s
 }
 
 std::vector<Asset::AssetGuidUVE> EditorPrismAnimGraphPanelUVE::ClipChoicesUVE() const {
-    // The bound sequencer's animations first, then every other clip in the project.
-    std::vector<Asset::AssetGuidUVE> clips = m_editor.GetSequencerClipsUVE(m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree));
-    const Asset::ProjectFileSnapshotUVE project = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
-        if (entry.kind != Asset::ProjectFileEntryKindUVE::File || entry.relativePath.extension() != ".uvanim") {
-            continue;
-        }
-        const Asset::AssetGuidUVE guid = entry.registeredAssetGuid.has_value()
-                                             ? *entry.registeredAssetGuid
-                                             : m_editor.m_services->GetAssetDatabaseUVE().RegisterUVE(project.contentRoot / entry.relativePath);
-        if (guid != Asset::AssetGuidUVE{} && std::ranges::find(clips, guid) == clips.end()) {
-            clips.push_back(guid);
-        }
-    }
-    return clips;
+    // As Godot's tree takes its player's animations: the linked AnimationSequencer's own list,
+    // its clip and its library's, and nothing else.
+    return m_editor.GetSequencerClipsUVE(m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree));
 }
 
 prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& node) {
@@ -244,8 +232,13 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
             std::vector<std::string> names{"None"};
             int selected = 0;
             if (node.clip != Asset::AssetGuidUVE{} && std::ranges::find(clips, node.clip) == clips.end()) {
+                // Picked before, but not one of the sequencer's: shown so, until it is replaced.
                 choices.push_back(node.clip);
-                names.push_back(m_editor.AnimationClipNameUVE(node.clip).empty() ? "(missing clip)" : m_editor.AnimationClipNameUVE(node.clip));
+                const std::string& name = m_editor.AnimationClipNameUVE(node.clip);
+                names.push_back((name.empty() ? std::string{"(missing clip)"} : name) + " (not in the sequencer)");
+            }
+            if (clips.empty()) {
+                names.front() = "None - add animations to the AnimationSequencer";
             }
             for (const Asset::AssetGuidUVE guid : clips) {
                 choices.push_back(guid);
