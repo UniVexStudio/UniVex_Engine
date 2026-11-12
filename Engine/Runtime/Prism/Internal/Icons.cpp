@@ -390,10 +390,13 @@ void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke) {
   case Icon::ProfFrame: { p.poly({{1.5f, 12}, {4, 9}, {6, 11}, {9, 4}, {11, 8}, {14.5f, 6}}); p.line(1.5f, 14.5f, 14.5f, 14.5f); } break;
   case Icon::ProfCounters: { p.line(5.5f, 2, 4.5f, 14); p.line(11.5f, 2, 10.5f, 14); p.line(2, 6, 14, 6); p.line(2, 10, 14, 10); } break;
   case Icon::ProfBreadcrumbs: { p.dot(2.8f, 8, 1.5f); p.dot(8, 8, 1.5f); p.dot(13.2f, 8, 1.5f); p.poly({{4.8f, 6.6f}, {6.2f, 8}, {4.8f, 9.4f}}); p.poly({{10, 6.6f}, {11.4f, 8}, {10, 9.4f}}); } break;
-  case Icon::BlueprintClass: {   // an italic f, as in f(x): a function-graph class
-    p.poly({{12.6f, 3.0f}, {11.7f, 2.1f}, {10.4f, 1.9f}, {9.3f, 2.6f}, {8.7f, 4.0f}, {8.2f, 6.4f}, {7.4f, 10.4f},
-            {6.8f, 12.8f}, {6.0f, 14.0f}, {4.8f, 14.4f}, {3.6f, 13.6f}});
-    p.line(5.4f, 6.4f, 11.2f, 6.4f);
+  case Icon::BlueprintClass: {   // a bold italic f, as in f(x): a heavy tapered stem, ball ends, crossbar
+    p.poly({{12.4f, 2.9f}, {11.6f, 2.0f}, {10.4f, 1.8f}, {9.4f, 2.4f}, {8.8f, 3.8f}});
+    p.fillPoly({{7.9f, 3.6f}, {9.9f, 3.3f}, {9.5f, 6.8f}, {8.4f, 11.2f}, {7.5f, 13.3f}, {5.7f, 13.8f}, {6.2f, 11.2f}, {7.0f, 6.8f}});
+    p.poly({{7.2f, 12.8f}, {6.3f, 14.0f}, {5.0f, 14.4f}, {3.9f, 13.9f}});
+    p.dot(12.2f, 3.4f, 1.6f);
+    p.dot(3.9f, 13.3f, 1.6f);
+    p.line(5.2f, 6.5f, 11.4f, 6.5f);
   } break;
   case Icon::Curve:
     p.line(2, 13, 2, 3); p.line(2, 13, 14, 13);
