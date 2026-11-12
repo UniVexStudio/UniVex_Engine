@@ -184,20 +184,20 @@ private:
 prism::Icon EditorPrismContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
     switch (type) {
         case ItemTypeUVE::Folder: return prism::Icon::Folder;
-        case ItemTypeUVE::Scene: return prism::Icon::Globe;
-        case ItemTypeUVE::Prefab: return prism::Icon::Layers;
-        case ItemTypeUVE::Entity: return prism::Icon::Cube;
-        case ItemTypeUVE::Bundle: return prism::Icon::Layers;
-        case ItemTypeUVE::Mesh: return prism::Icon::Cube;
-        case ItemTypeUVE::Model: return prism::Icon::NodeBone;
+        case ItemTypeUVE::Scene: return prism::Icon::SceneAsset;
+        case ItemTypeUVE::Prefab: return prism::Icon::Prefab;
+        case ItemTypeUVE::Entity: return prism::Icon::EntityAsset;
+        case ItemTypeUVE::Bundle: return prism::Icon::Bundle;
+        case ItemTypeUVE::Mesh: return prism::Icon::MeshAsset;
+        case ItemTypeUVE::Model: return prism::Icon::Model;
         case ItemTypeUVE::Texture: return prism::Icon::NodeTexture;
-        case ItemTypeUVE::Shader: return prism::Icon::Script;
+        case ItemTypeUVE::Shader: return prism::Icon::Shader;
         case ItemTypeUVE::Material: return prism::Icon::Material;
         case ItemTypeUVE::Save: return prism::Icon::Save;
-        case ItemTypeUVE::Animation: return prism::Icon::AnimGraph;
-        case ItemTypeUVE::AnimationLibrary: return prism::Icon::NodeClip;
-        case ItemTypeUVE::AnimationMontage: return prism::Icon::AnimGraph;
-        case ItemTypeUVE::MontageLibrary: return prism::Icon::Layers;
+        case ItemTypeUVE::Animation: return prism::Icon::AnimClip;
+        case ItemTypeUVE::AnimationLibrary: return prism::Icon::AnimLibrary;
+        case ItemTypeUVE::AnimationMontage: return prism::Icon::AnimMontage;
+        case ItemTypeUVE::MontageLibrary: return prism::Icon::MontageLibrary;
         case ItemTypeUVE::Script: return prism::Icon::Script;
         case ItemTypeUVE::Audio: return prism::Icon::NodeSound;
         case ItemTypeUVE::Font: return prism::Icon::NodeText;
@@ -720,10 +720,7 @@ std::string EditorPrismContentBrowserUVE::DisplayNameUVE(const Asset::ProjectFil
 }
 
 EditorPrismIconsUVE::ImageUVE EditorPrismContentBrowserUVE::TypeIconUVE(const ItemTypeUVE type, const int size) {
-    if (type == ItemTypeUVE::AnimationMontage) {
-        return m_icons.ContentTypeUVE("Animation", size);   // a montage is animation, played as one piece
-    }
-    return m_icons.ContentTypeUVE(EditorUVE::GetContentBrowserItemTypeLabelUVE(type), size);
+    return m_icons.ContentTypeUVE(EditorUVE::GetContentBrowserItemTypeLabelUVE(type), size, IconForUVE(type));
 }
 
 void EditorPrismContentBrowserUVE::RebuildFavoritesUVE() {
@@ -1529,11 +1526,11 @@ void EditorPrismContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex,
         }, "", prism::Icon::Script));
     }
     if (type == ItemTypeUVE::AnimationLibrary) {
-        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }));
+        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::AnimLibrary));
     }
     // A clip becomes a montage: a .uvmontage beside it with the clip on its slot track, opened.
     if (extension == ".uvanim") {
-        add(prism::MenuItem::Item("Create Montage", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimGraph),
+        add(prism::MenuItem::Item("Create Montage", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimMontage),
             allowed);
     }
     // A montage joins a montage library, the way a clip joins an animation library.
@@ -1553,11 +1550,11 @@ void EditorPrismContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex,
         libraries.push_back(prism::MenuItem::Item("New Montage Library", [this, absolute] {
             const std::filesystem::path library = absolute.parent_path() / "Montage Library.uvmontagelib";
             AddMontageToLibraryUVE(absolute, library);
-        }, "", prism::Icon::Plus));
-        add(prism::MenuItem::Sub("Add to Montage Library", std::move(libraries), prism::Icon::Layers), allowed);
+        }, "", prism::Icon::MontageLibrary));
+        add(prism::MenuItem::Sub("Add to Montage Library", std::move(libraries), prism::Icon::MontageLibrary), allowed);
     }
     if (type == ItemTypeUVE::MontageLibrary) {
-        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::Layers));
+        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::MontageLibrary));
     }
     // Model sources and imported models: place, use as the selected object's mesh, retarget.
     const bool modelSource = EditorUVE::IsModelSourcePathUVE(entry.relativePath);

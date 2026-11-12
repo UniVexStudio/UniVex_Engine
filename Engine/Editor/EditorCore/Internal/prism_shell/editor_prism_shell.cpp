@@ -52,19 +52,19 @@ struct AddEntryUVE final {
 /// environment, sun); the filter (#8) adds any of the rest, or all of them.
 constexpr std::array<AddEntryUVE, 14> kAddEntriesUVE{{
     {SceneObjectKindUVE::Folder, "Folder", prism::Icon::Folder},
-    {SceneObjectKindUVE::WorldEnvironment3D, "Environment", prism::Icon::Globe},
-    {SceneObjectKindUVE::DirectionalLight3D, "Directional Light", prism::Icon::Light},
-    {SceneObjectKindUVE::Object3D, "Object3D", prism::Icon::Dot},
-    {SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", prism::Icon::Cube},
+    {SceneObjectKindUVE::WorldEnvironment3D, "Environment", prism::Icon::Environment},
+    {SceneObjectKindUVE::DirectionalLight3D, "Directional Light", prism::Icon::DirectionalLight},
+    {SceneObjectKindUVE::Object3D, "Object3D", prism::Icon::Object3D},
+    {SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", prism::Icon::MeshInstance},
     {SceneObjectKindUVE::BoxMesh3D, "Box", prism::Icon::Cube},
     {SceneObjectKindUVE::SphereMesh3D, "Sphere", prism::Icon::Sphere},
     {SceneObjectKindUVE::PlaneMesh3D, "Plane", prism::Icon::Plane},
     {SceneObjectKindUVE::Camera3D, "Camera3D", prism::Icon::Camera},
-    {SceneObjectKindUVE::Light3D, "Light3D (Omni / Spot)", prism::Icon::Light},
-    {SceneObjectKindUVE::Marker3D, "Marker3D", prism::Icon::Frame},
-    {SceneObjectKindUVE::Rigid3D, "Rigid3D", prism::Icon::Cube},
-    {SceneObjectKindUVE::Static3D, "Static3D", prism::Icon::Cube},
-    {SceneObjectKindUVE::Collider3D, "Collider3D", prism::Icon::Wireframe},
+    {SceneObjectKindUVE::Light3D, "Light3D", prism::Icon::Light},
+    {SceneObjectKindUVE::Marker3D, "Marker3D", prism::Icon::Marker},
+    {SceneObjectKindUVE::Rigid3D, "Rigid3D", prism::Icon::Rigid3D},
+    {SceneObjectKindUVE::Static3D, "Static3D", prism::Icon::Static3D},
+    {SceneObjectKindUVE::Collider3D, "Collider3D", prism::Icon::Collider},
 }};
 constexpr std::size_t kDefaultAddCountUVE = 3;
 
@@ -596,10 +596,10 @@ prism::Ref<prism::Widget> EditorPrismShellUVE::BuildDockBarUVE() {
     bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
     struct DockTabUVE { const char* label; prism::Icon icon; };
     static constexpr std::array<DockTabUVE, 4> kTabs{{
-        {"Content Browser", prism::Icon::Folder},
-        {"Output Log", prism::Icon::Info},
+        {"Content Browser", prism::Icon::AssetBrowser},
+        {"Output Log", prism::Icon::OutputLog},
         {"Console", prism::Icon::Terminal},
-        {"Profiler", prism::Icon::Refresh},
+        {"Profiler", prism::Icon::Profiler},
     }};
     for (std::size_t i = 0; i < kTabs.size(); ++i) {
         auto tab = prism::make<prism::Button>(kTabs[i].label, kTabs[i].icon, prism::ButtonStyle::Toolbar);
