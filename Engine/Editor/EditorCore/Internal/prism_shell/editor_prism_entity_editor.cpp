@@ -81,7 +81,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 EditorPrismEntityEditorUVE::EditorPrismEntityEditorUVE(EditorUVE& editor, EditorPrismHostUVE& host)
-    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor), m_sequencer(editor) {}
+    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor), m_sequencer(editor), m_animGraphPanel(editor) {}
 
 EditorPrismEntityEditorUVE::~EditorPrismEntityEditorUVE() {
     if (m_window != 0 && m_host.IsReadyUVE()) {
@@ -602,10 +602,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildSequencerPageUVE() {
 }
 
 prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildGraphPageUVE() {
-    auto page = prism::vbox(6.0F);
-    page->setPadding(prism::Margin(12.0F));
-    page->add(prism::make<prism::Label>("Animation Graph"));
-    return PanelUVE(page);
+    return PanelUVE(m_animGraphPanel.BuildUVE());
 }
 
 void EditorPrismEntityEditorUVE::ShowDockPanelUVE(const int index, const bool forceVisible) {
@@ -931,6 +928,9 @@ void EditorPrismEntityEditorUVE::RefreshUVE() {
         const bool sequencerShown = m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kSequencerPageUVE &&
                                     m_dockTabs.size() == kDockPageCountUVE && m_dockTabs[kSequencerPageUVE]->visible();
         m_sequencer.RefreshUVE(dt, sequencerShown);
+        const bool graphShown = m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kGraphPageUVE &&
+                                m_dockTabs.size() == kDockPageCountUVE && m_dockTabs[kGraphPageUVE]->visible();
+        m_animGraphPanel.RefreshUVE(dt, graphShown);
         m_dockPanels.RefreshUVE(m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kConsolePageUVE, false);
     });
 }

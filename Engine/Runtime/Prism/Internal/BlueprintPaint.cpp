@@ -491,13 +491,24 @@ void BlueprintGraph::paint(Canvas& c) {
     c.strokeRect(m, Color(120, 176, 255, 210), 1);
   }
   // host-owned node bodies: the settings inside each node, laid out where the node is now
+  // A body under a node drawn later (selected nodes are drawn last) would paint and take clicks
+  // over that node: it steps aside until the nodes no longer overlap.
+  auto drawnAfter = [this](const BlueprintNode& a, const BlueprintNode& b) {
+    if (a.selected != b.selected) return b.selected;
+    return &b > &a;   // same pass: later in m_nodes
+  };
   for (auto& [id, body] : m_bodies) {
     const BlueprintNode* n = findNode(id);
     if (!n || n->bodyH <= 0) { body->setVisible(false); continue; }
     Rect br = bodyScreenRect(*n);
+    bool covered = false;
+    for (const auto& other : m_nodes)
+      if (other.id != n->id && drawnAfter(*n, other) && nodeScreenRect(other).intersects(br)) { covered = true; break; }
+    if (covered) { body->setVisible(false); continue; }
     const bool fits = s >= 0.7f && br.w > 20 && br.h > 6 && m_graphRect.contains(br.pos()) && m_graphRect.contains({br.right(), br.bottom()});
     body->setVisible(fits);
     if (fits) {
+      body->measure({br.w, br.h});   // desired sizes first: the body's rows share its width by them
       body->arrange(br);
       body->paint(c);
     } else if (br.intersects(m_graphRect) && !n->bodySummary.empty() && s >= 0.35f) {

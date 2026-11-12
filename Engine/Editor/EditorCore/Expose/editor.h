@@ -452,6 +452,7 @@ class EditorUVE final {
     friend class EditorPrismEntityEditorUVE;
     friend class EditorPrismSequencerPanelUVE;
     friend class KeyframeViewUVE;
+    friend class EditorPrismAnimGraphPanelUVE;
     friend class EditorPrismFileDialogUVE;
     friend class AssetThumbnailUVE;
     friend class EditorPrismObjectMenuUVE;
@@ -3193,6 +3194,20 @@ private:
     /// Draws the small picker modal listing all AnimationSequencer entities in the Outliner.
     void DrawAnimationSequencerPickerModalUVE(Scene::EntityUVE currentSequencer,
                                              const std::function<void(Scene::EntityUVE)>& onPicked);
+    /// What the Animation Graph page shows: the entity's graphs, the one it shows, and the skeleton
+    /// its preview runs on. Resolved by SyncAnimationGraphViewUVE, which also resets the view state
+    /// when the graph shown changes.
+    struct AnimationGraphPanelViewUVE final {
+        std::vector<Scene::EntityUVE> graphs;
+        Scene::EntityUVE tree = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE skeleton = Scene::kInvalidEntityUVE;
+    };
+    AnimationGraphPanelViewUVE SyncAnimationGraphViewUVE();
+    /// Steps the shown graph on its skeleton by `deltaSeconds` (held while paused, one frame when
+    /// asked), and logs what it did. Runtime pose only; stops when the preview is off.
+    void StepAnimationGraphPreviewUVE(double deltaSeconds);
+    /// A clip the preview reads, loaded once; null when it cannot be read.
+    const Asset::AnimationClipAssetUVE* AnimationGraphPreviewClipUVE(Asset::AssetGuidUVE clip);
     /// Notes what the preview's last step did: clip events, state changes, parameter values.
     void RecordAnimationGraphPreviewUVE(const Scene::AnimationGraphComponentUVE& tree);
     /// Puts the previewed skeleton back at rest and the tree back at its start.
