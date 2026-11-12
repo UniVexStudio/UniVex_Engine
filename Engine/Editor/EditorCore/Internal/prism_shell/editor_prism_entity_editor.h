@@ -3,6 +3,7 @@
 
 #include "editor.h"
 #include "editor_prism_details.h"
+#include "editor_prism_dock_panels.h"
 #include "editor_prism_icons.h"
 #include "editor_prism_view_toolbar.h"
 #include "editor_prism_viewport_gizmos.h"
@@ -27,6 +28,8 @@ class TabView;
 class TableView;
 class TextInput;
 class TreeView;
+class Splitter;
+class StackSwitcher;
 } // namespace prism
 
 namespace UVE::Editor {
@@ -112,7 +115,22 @@ private:
     std::shared_ptr<EditorPrismViewportGizmosUVE> m_gizmos;
     std::shared_ptr<class CameraScreenUVE> m_cameraScreen;
     std::shared_ptr<prism::Widget> m_problemsPanel;
-    std::shared_ptr<prism::TabView> m_results;
+    /// The dock, as the level's: pages over the view's foot, a bar of tabs along the window's bottom.
+    /// Pages: Animation Sequencer and Animation Graph (their tabs show while the entity has one),
+    /// Output Log, Console, Compile Results, Find Results, Diff.
+    enum DockPageUVE : int { kSequencerPageUVE, kGraphPageUVE, kOutputLogPageUVE, kConsolePageUVE, kCompilePageUVE,
+                             kFindPageUVE, kDiffPageUVE, kDockPageCountUVE };
+    std::shared_ptr<prism::StackSwitcher> m_dockPages;
+    std::shared_ptr<prism::Widget> m_dockArea;
+    std::vector<std::shared_ptr<prism::Button>> m_dockTabs;
+    bool m_dockVisible = true;
+    EditorPrismDockPanelsUVE m_dockPanels;
+    [[nodiscard]] prism::Ref<prism::Widget> BuildDockBarUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildSequencerPageUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildGraphPageUVE();
+    /// Shows `index` (the active tab again hides the dock unless `forceVisible`).
+    void ShowDockPanelUVE(int index, bool forceVisible);
+    void SyncAnimationTabsUVE();
     std::shared_ptr<prism::TableView> m_problems;
     std::shared_ptr<prism::TableView> m_findTable;
     std::shared_ptr<prism::TableView> m_diffTable;
