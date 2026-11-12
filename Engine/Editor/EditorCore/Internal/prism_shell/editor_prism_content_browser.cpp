@@ -13,6 +13,7 @@
 #include "animation_montage_editing.h"
 #include "i_asset_database.h"
 #include "i_project_file_index.h"
+#include "material_asset.h"
 #include "montage_library_asset.h"
 
 #include "prism/Application.h"
@@ -476,7 +477,7 @@ prism::Ref<prism::Widget> EditorPrismContentBrowserUVE::BuildUVE() {
     addButton->onClick = [this, weakAdd] {
         const auto anchor = weakAdd.lock();
         prism::showSearchMenu(CatalogueMenuUVE(), anchor ? anchor->rect() : prism::Rect{}, prism::PopupPlacement::Below,
-                              "Search assets");
+                              "Start typing to search", true);
     };
     auto saveAllButton = prism::make<prism::Button>("Save All", prism::Icon::Save, prism::ButtonStyle::Toolbar);
     saveAllButton->setTooltip("Save everything (Ctrl+Shift+S)");
@@ -1377,9 +1378,10 @@ void EditorPrismContentBrowserUVE::ShowSplitMenuUVE() {
 }
 
 std::vector<prism::MenuItem> EditorPrismContentBrowserUVE::CatalogueMenuUVE() {
-    // What can be made here, as in Unreal's Add menu: a folder, an Entity Class (the class picker:
-    // character, prop, trigger ...), a level, then the assets by kind. Objects (lights, meshes, ...)
-    // are placed with the Outliner's '+', not made as files here.
+    // Laid out as Unreal's Content Browser Add: GET (import), CREATE (a folder, the assets made most,
+    // then every kind by category, each opening beside the menu). Only what the engine makes from
+    // nothing is here: objects (lights, meshes ...) are placed with the Outliner's '+', and textures,
+    // meshes and sounds come in through Import.
     std::vector<prism::MenuItem> items;
     const auto item = [this](const char* label, const std::string& id, const prism::Icon icon, const char* typeLabel) {
         prism::MenuItem entry = prism::MenuItem::Item(label, [this, id] { CreateCatalogueItemUVE(id); }, "", icon);
@@ -1390,31 +1392,79 @@ std::vector<prism::MenuItem> EditorPrismContentBrowserUVE::CatalogueMenuUVE() {
         }
         return entry;
     };
+    const auto entityClass = [this] {
+        prism::MenuItem entry = prism::MenuItem::Item("Entity Class", [this] {
+            const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+            m_editor.OpenEntityClassPickerUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
+        }, "", prism::Icon::EntityAsset);
+        if (const EditorPrismIconsUVE::ImageUVE image = m_icons.ContentTypeUVE("Entity", 16, prism::Icon::EntityAsset); image) {
+            entry.withImage(image.pixels, image.size);
+        }
+        return entry;
+    };
+    // A material of a given kind, made in the current folder.
+    const auto material = [this](const char* label, const char* stem, const Asset::MaterialKindUVE kind) {
+        prism::MenuItem entry = prism::MenuItem::Item(label, [this, stem, kind] { CreateMaterialUVE(stem, kind); }, "", prism::Icon::Material);
+        if (const EditorPrismIconsUVE::ImageUVE image = m_icons.ContentTypeUVE("Material", 16, prism::Icon::Material); image) {
+            entry.withImage(image.pixels, image.size);
+        }
+        return entry;
+    };
+
+    items.push_back(prism::MenuItem::Header("GET"));
+    items.push_back(prism::MenuItem::Item("Import to Current Folder", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Header("CREATE"));
     items.push_back(item("New Folder", "folder", prism::Icon::Folder, "Folder"));
-    prism::MenuItem entityClass = prism::MenuItem::Item("Entity Class", [this] {
-        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        m_editor.OpenEntityClassPickerUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
-    }, "", prism::Icon::EntityAsset);
-    if (const EditorPrismIconsUVE::ImageUVE image = m_icons.ContentTypeUVE("Entity", 16, prism::Icon::EntityAsset); image) {
-        entityClass.withImage(image.pixels, image.size);
-    }
-    items.push_back(std::move(entityClass));
+    items.push_back(prism::MenuItem::Sep());
+    items.push_back(entityClass());
     items.push_back(item("Level", "viewport_3d", prism::Icon::SceneAsset, "Viewport3D"));
-    items.push_back(item("Level 2D", "viewport_2d", prism::Icon::SceneAsset, "Viewport3D"));
+    items.push_back(item("Material", "material", prism::Icon::Material, "Material"));
+    items.push_back(item("Animation Montage", "animation-montage", prism::Icon::AnimMontage, "Animation Montage"));
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Sub("Animation", {
         item("Animation Library", "animation-library", prism::Icon::AnimLibrary, "Animation Library"),
         item("Animation Montage", "animation-montage", prism::Icon::AnimMontage, "Animation Montage"),
         item("Montage Library", "montage-library", prism::Icon::MontageLibrary, "Montage Library"),
     }));
-    items.push_back(prism::MenuItem::Sub("Materials & Shaders", {
-        item("Material", "material", prism::Icon::Material, "Material"),
-        item("Shader", "shader_script", prism::Icon::Shader, "Shader"),
-    }));
-    items.push_back(prism::MenuItem::Sub("Scripting", {
+    items.push_back(prism::MenuItem::Sub("Blueprint", {entityClass()}));
+    items.push_back(prism::MenuItem::Sub("Gameplay", {
         item("Script", "basic_script", prism::Icon::Script, "Script"),
     }));
+    items.push_back(prism::MenuItem::Sub("Material", {
+        material("Material", "M_Standard", Asset::MaterialKindUVE::Standard),
+        material("ORM Material", "M_ORM", Asset::MaterialKindUVE::Orm),
+        material("Shader Material", "M_Shader", Asset::MaterialKindUVE::Shader),
+        item("Shader", "shader_script", prism::Icon::Shader, "Shader"),
+    }));
+    items.push_back(prism::MenuItem::Sub("World", {
+        item("Level", "viewport_3d", prism::Icon::SceneAsset, "Viewport3D"),
+        item("Level 2D", "viewport_2d", prism::Icon::SceneAsset, "Viewport3D"),
+    }));
     return items;
+}
+
+void EditorPrismContentBrowserUVE::CreateMaterialUVE(const std::string& stem, const Asset::MaterialKindUVE kind) {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_contentBrowserDirectory;
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, stem, ".uvmaterial");
+    Asset::MaterialAssetUVE material{};
+    material.kind = kind;
+    if (kind == Asset::MaterialKindUVE::Orm) {
+        material.metallic = 1.0F;
+        material.occlusionStrength = 1.0F;
+    } else if (kind == Asset::MaterialKindUVE::Shader) {
+        material.useCustomShaderCode = true;
+    }
+    if (!Asset::SaveMaterialAssetUVE(material, path)) {
+        m_editor.m_contentStatusMessage = "Could not create a material here.";
+        return;
+    }
+    m_editor.m_contentStatusMessage.clear();
+    m_editor.RefreshProjectFileIndexUVE();
+    m_folderSignature = 0;
+    ChangedUVE();
 }
 
 void EditorPrismContentBrowserUVE::CreateCatalogueItemUVE(const std::string& id) {
@@ -1433,20 +1483,16 @@ void EditorPrismContentBrowserUVE::CreateCatalogueItemUVE(const std::string& id)
 }
 
 void EditorPrismContentBrowserUVE::ShowEmptyMenuUVE(const prism::Vec2 at) {
-    // Right-click on empty space: create here.
-    std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Item("Import...", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
-    items.push_back(prism::MenuItem::Sep());
-    for (prism::MenuItem& item : CatalogueMenuUVE()) {
-        items.push_back(std::move(item));
-    }
+    // Right-click on empty space: the same Add menu, and Refresh.
+    std::vector<prism::MenuItem> items = CatalogueMenuUVE();
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Item("Refresh", [this] {
         m_editor.RefreshProjectFileIndexUVE();
         m_folderSignature = 0;
         ChangedUVE();
     }, "", prism::Icon::Refresh));
-    prism::showMenu(std::move(items), prism::Rect{at.x, at.y, 1.0F, 1.0F}, prism::PopupPlacement::Below);
+    prism::showSearchMenu(std::move(items), prism::Rect{at.x, at.y, 1.0F, 1.0F}, prism::PopupPlacement::AtPoint,
+                          "Start typing to search", true);
 }
 
 void EditorPrismContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, const prism::Vec2 at) {
