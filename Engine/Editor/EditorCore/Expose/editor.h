@@ -1852,6 +1852,11 @@ private:
     /// Gives every Skeleton3D bound to `modelFile`'s source the bones of the conformed model; the
     /// number changed.
     std::size_t RefreshSkeletonsForRetargetedModelUVE(const std::filesystem::path& modelFile);
+    /// Whether a model source's imported model is one Retarget conformed, its source unchanged since
+    /// (then it is not imported again over the conformed one).
+    [[nodiscard]] bool IsRetargetedModelCurrentUVE(const std::filesystem::path& relativeSource) const;
+    /// Marks (or unmarks, after Undo) a model source's imported model as conformed by Retarget.
+    void MarkRetargetedModelUVE(const std::filesystem::path& relativeSource, bool retargeted);
     /// The character file behind a Retarget target: the `.uvmodel` itself, or a model source's imported model.
     [[nodiscard]] std::filesystem::path ResolveRetargetModelFileUVE(const std::filesystem::path& target) const;
 

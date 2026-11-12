@@ -90,7 +90,6 @@ void EditorUVE::RenderOverlayUVE() {
     if (m_state != EditorStateUVE::Running || !m_uiInitialized) {
         return;
     }
-    // The level editor is PRISM's; the windows not yet built with it draw over it through ImGui.
     if (m_levelShell != nullptr) {
         m_levelShell->FrameUVE();
     }
@@ -114,6 +113,13 @@ void EditorUVE::RenderOverlayUVE() {
 }
 
 void EditorUVE::DrawOverlayWindowsUVE() {
+    // A game holding the mouse lets go on Escape, or when its window loses focus, so the editor's
+    // own controls (Stop above all) can be reached again.
+    if (m_gameMouseCaptured &&
+        (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+         (m_services != nullptr && m_services->GetWindowManagerUVE().IsValidUVE() && !m_services->GetWindowManagerUVE().IsFocusedUVE()))) {
+        SetGameMouseCapturedUVE(false);
+    }
     DrawPluginWindowUVE();
     const auto sectionWindow = [](const char* const title, bool& open, auto&& body) {
         if (!open) {
