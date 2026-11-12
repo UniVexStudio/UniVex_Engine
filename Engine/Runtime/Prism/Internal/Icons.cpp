@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "prism/Icons.h"
+#include <cmath>
 #include <initializer_list>
 
 namespace prism {
@@ -326,6 +327,69 @@ void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke) {
   case Icon::StepBack: p.fillRect(3.5f, 4, 1.8f, 8); p.fillPoly({{12, 4}, {12, 12}, {6, 8}}); break;
   case Icon::StepForward: p.fillRect(10.7f, 4, 1.8f, 8); p.fillPoly({{4, 4}, {4, 12}, {10, 8}}); break;
   case Icon::Key: p.fillPoly({{8, 2.5f}, {13.5f, 8}, {8, 13.5f}, {2.5f, 8}}); break;
+  case Icon::AnimClip: { p.rrect(2, 3.5f, 12, 9, 1.5f); for (float x : {3.6f, 6.8f, 10.0f, 12.4f}) { p.fillRect(x, 4.6f, 1.1f, 1.1f); p.fillRect(x, 10.3f, 1.1f, 1.1f); } p.fillPoly({{6.6f, 6.4f}, {9.8f, 8}, {6.6f, 9.6f}}); } break;
+  case Icon::AnimMontage: { p.rrect(1.5f, 5.5f, 9, 8, 1.2f); p.poly({{4, 5.5f}, {4, 2.5f}, {14.5f, 2.5f}, {14.5f, 10.5f}, {10.5f, 10.5f}}); p.fillPoly({{4.6f, 7.6f}, {7.8f, 9.5f}, {4.6f, 11.4f}}); } break;
+  case Icon::AnimLibrary: { p.rect(2, 3, 3, 10.5f); p.rect(6.2f, 3, 3, 10.5f); p.poly({{10.5f, 3.6f}, {13.2f, 3}, {15, 12.8f}, {12.3f, 13.4f}}, true); p.dot(3.5f, 5, 0.7f); p.dot(7.7f, 5, 0.7f); } break;
+  case Icon::MontageLibrary: { p.line(1.5f, 13.5f, 14.5f, 13.5f); p.rrect(2, 3, 5, 8, 1); p.rrect(9, 3, 5, 8, 1); p.fillPoly({{3.6f, 5.4f}, {5.6f, 7}, {3.6f, 8.6f}}); p.fillPoly({{10.6f, 5.4f}, {12.6f, 7}, {10.6f, 8.6f}}); } break;
+  case Icon::AnimSequencer: { p.rrect(2, 2.5f, 12, 8, 1.5f); p.fillPoly({{6.5f, 4.5f}, {10, 6.5f}, {6.5f, 8.5f}}); p.line(2, 13.2f, 14, 13.2f); p.dot(6, 13.2f, 1.5f); } break;
+  case Icon::MontagePlayer: { p.circle(8, 8, 6); p.fillPoly({{6.6f, 5.2f}, {11, 8}, {6.6f, 10.8f}}); p.line(3.8f, 3.8f, 2.2f, 2.2f); } break;
+  case Icon::AnimTree: { p.dot(8, 2.8f, 1.4f); p.dot(3.2f, 12.8f, 1.4f); p.dot(8, 12.8f, 1.4f); p.dot(12.8f, 12.8f, 1.4f); p.line(8, 4, 8, 11.5f); p.line(8, 7.5f, 3.4f, 11.6f); p.line(8, 7.5f, 12.6f, 11.6f); } break;
+  case Icon::AnimClipNode: { p.rrect(2, 4, 11, 8, 2); p.fillPoly({{6, 6}, {9.5f, 8}, {6, 10}}); p.dot(14.2f, 8, 1.3f); } break;
+  case Icon::LayeredBlend: { p.poly({{2, 10.5f}, {8, 13.5f}, {14, 10.5f}}); p.poly({{2, 7}, {8, 10}, {14, 7}, {8, 4}}, true); p.line(8, 1.5f, 8, 4); } break;
+  case Icon::TwoBoneIK: { p.line(2.5f, 13.5f, 6, 6.5f); p.line(6, 6.5f, 11, 9.5f); p.dot(2.5f, 13.5f, 1.4f); p.dot(6, 6.5f, 1.4f); p.circle(12.5f, 10.5f, 2.3f); p.line(12.5f, 2, 12.5f, 6.5f); } break;
+  case Icon::LookAt: { p.circle(4.8f, 8, 3); p.line(8.5f, 8, 14, 8); p.poly({{11.5f, 5.5f}, {14, 8}, {11.5f, 10.5f}}); p.dot(4.8f, 8, 0.9f); } break;
+  case Icon::ModifyBone: { p.line(3, 12, 10, 5); p.dot(2.6f, 12.4f, 1.5f); p.dot(10.4f, 4.6f, 1.5f); p.line(12.5f, 10, 12.5f, 15); p.line(10, 12.5f, 15, 12.5f); } break;
+  case Icon::OneShot: { p.line(2, 8, 10.5f, 8); p.poly({{8, 5}, {11.5f, 8}, {8, 11}}); p.line(14, 3.5f, 14, 12.5f); } break;
+  case Icon::TimeScale: { p.circle(7, 8.5f, 5); p.line(7, 8.5f, 7, 5.2f); p.line(7, 8.5f, 9.6f, 9.8f); p.poly({{12.6f, 1.8f}, {14.8f, 4}, {12.6f, 6.2f}}); p.line(10.5f, 4, 14.5f, 4); } break;
+  case Icon::TimeSeek: { p.line(2, 12.5f, 14, 12.5f); p.line(11, 2.5f, 11, 14); p.line(2.5f, 6, 8.5f, 6); p.poly({{6.5f, 3.8f}, {8.8f, 6}, {6.5f, 8.2f}}); } break;
+  case Icon::AnimSelect: { p.dot(2.8f, 8, 1.6f); p.line(3.5f, 8, 12, 4); p.circle(13.2f, 3.6f, 1.3f); p.circle(13.2f, 12.4f, 1.3f); p.line(10, 12.4f, 11.8f, 12.4f); } break;
+  case Icon::BlendByBool: { p.line(2.5f, 3.5f, 8, 8); p.line(2.5f, 12.5f, 8, 8); p.line(8, 8, 14, 8); p.dot(2.5f, 3.5f, 1.5f); p.circle(2.5f, 12.5f, 1.4f); p.poly({{11, 5.5f}, {14, 8}, {11, 10.5f}}); } break;
+  case Icon::StateMachine: { p.rrect(1.5f, 2, 6, 5, 1.5f); p.rrect(8.5f, 9, 6, 5, 1.5f); p.poly({{7.8f, 4.5f}, {11.5f, 4.5f}, {11.5f, 8.2f}}); p.poly({{8.2f, 11.5f}, {4.5f, 11.5f}, {4.5f, 7.8f}}); } break;
+  case Icon::AnimEvent: { p.line(5, 2, 5, 14.5f); p.fillPoly({{5, 2.5f}, {12.5f, 5}, {5, 7.5f}}); p.line(2, 14.5f, 14, 14.5f); } break;
+  case Icon::DopeSheet: { for (float y : {4.0f, 8.0f, 12.0f}) p.line(2, y, 14, y); p.fillPoly({{5, 2.4f}, {6.6f, 4}, {5, 5.6f}, {3.4f, 4}}); p.fillPoly({{10, 6.4f}, {11.6f, 8}, {10, 9.6f}, {8.4f, 8}}); p.fillPoly({{7, 10.4f}, {8.6f, 12}, {7, 13.6f}, {5.4f, 12}}); } break;
+  case Icon::BoneTrack: { p.line(4.5f, 6, 11.5f, 6); p.dot(3.6f, 5, 1.2f); p.dot(3.6f, 7, 1.2f); p.dot(12.4f, 5, 1.2f); p.dot(12.4f, 7, 1.2f); p.line(2, 12, 14, 12); p.dot(8, 12, 1.2f); } break;
+  case Icon::ParamFloat: { p.arc(8, 11, 6, 6, 180, 360); p.line(8, 11, 11.2f, 6.4f); p.dot(8, 11, 1.2f); p.line(2, 13.5f, 14, 13.5f); } break;
+  case Icon::ParamBool: { p.rrect(1.5f, 5, 13, 6, 3); p.dot(11, 8, 2.1f); } break;
+  case Icon::ParamTrigger: { p.poly({{9.5f, 1.5f}, {3.5f, 9}, {7.8f, 9}, {6.5f, 14.5f}, {12.5f, 6.5f}, {8.3f, 6.5f}}, true); } break;
+  case Icon::ParamVector: { p.line(4, 12, 14, 12); p.line(4, 12, 4, 2); p.line(4, 12, 10.5f, 5.5f); p.poly({{12, 10}, {14, 12}, {12, 14}}); p.poly({{2, 4}, {4, 2}, {6, 4}}); p.poly({{8, 5.5f}, {10.5f, 5.5f}, {10.5f, 8}}); } break;
+  case Icon::Fire: { p.circle(8, 8, 2.2f); for (int i = 0; i < 8; ++i) { const float a = 0.7854f * float(i); p.line(8 + 4.2f * std::cos(a), 8 + 4.2f * std::sin(a), 8 + 6.4f * std::cos(a), 8 + 6.4f * std::sin(a)); } } break;
+  case Icon::PreviewPose: { p.rect(1.5f, 1.5f, 13, 13); p.circle(8, 4.8f, 1.5f); p.line(8, 6.4f, 8, 10); p.line(5.2f, 7.8f, 10.8f, 7.8f); p.line(8, 10, 6, 13); p.line(8, 10, 10, 13); } break;
+  case Icon::Components: { p.rect(2, 1.5f, 6, 4); p.rect(7, 7, 7, 3); p.rect(7, 11.5f, 7, 3); p.line(4, 5.5f, 4, 13); p.line(4, 8.5f, 7, 8.5f); p.line(4, 13, 7, 13); } break;
+  case Icon::OutputLog: { p.rrect(3, 1.5f, 10, 13, 1.5f); p.line(5.5f, 5, 10.5f, 5); p.line(5.5f, 8, 10.5f, 8); p.line(5.5f, 11, 8.5f, 11); } break;
+  case Icon::CompileResults: { p.line(7, 4, 14, 4); p.line(7, 8, 14, 8); p.line(7, 12, 14, 12); p.poly({{1.8f, 4}, {3, 5.3f}, {5, 2.7f}}); p.line(2, 6.8f, 5, 9.8f); p.line(5, 6.8f, 2, 9.8f); p.dot(3.5f, 12.4f, 1); } break;
+  case Icon::FindResults: { p.line(2, 3, 10, 3); p.line(2, 6, 6.5f, 6); p.line(2, 9, 5, 9); p.circle(10, 10, 3); p.line(12.2f, 12.2f, 14.5f, 14.5f); } break;
+  case Icon::DiffView: { p.rect(1.5f, 2, 5.5f, 12); p.rect(9, 2, 5.5f, 12); p.line(2.8f, 8, 5.7f, 8); p.line(10.3f, 8, 13.2f, 8); p.line(11.75f, 6.5f, 11.75f, 9.5f); } break;
+  case Icon::Profiler: { p.fillRect(2, 9, 2.5f, 5); p.fillRect(6, 4, 2.5f, 10); p.fillRect(10, 7, 2.5f, 7); p.line(1.5f, 14.8f, 14.5f, 14.8f); } break;
+  case Icon::LayoutFull: { p.rect(1.5f, 1.5f, 13, 13); p.fillRect(3.2f, 3.2f, 9.6f, 9.6f); } break;
+  case Icon::LayoutViewport: { p.rect(1.5f, 1.5f, 13, 13); p.circle(8, 6.5f, 2.2f); p.fillRect(3.2f, 10.8f, 9.6f, 2); } break;
+  case Icon::MontageSections: { p.rect(1.5f, 5.5f, 13, 6); p.line(6, 5.5f, 6, 11.5f); p.line(10, 5.5f, 10, 11.5f); p.fillPoly({{1.5f, 1.8f}, {4.5f, 1.8f}, {1.5f, 4.6f}}); p.fillPoly({{6, 1.8f}, {9, 1.8f}, {6, 4.6f}}); } break;
+  case Icon::AssetBrowser: { p.rect(2, 2, 5, 5); p.rect(9, 2, 5, 5); p.rect(2, 9, 5, 5); p.rect(9, 9, 5, 5); } break;
+  case Icon::PreviewCharacter: { p.circle(8, 3.5f, 1.8f); p.line(8, 5.3f, 8, 10); p.line(3.5f, 7, 12.5f, 7); p.line(8, 10, 5.5f, 14.5f); p.line(8, 10, 10.5f, 14.5f); } break;
+  case Icon::Collider: { for (float x : {2.0f, 14.0f}) for (float y : {2.0f, 14.0f}) { const float dx = x < 8 ? 3.5f : -3.5f; const float dy = y < 8 ? 3.5f : -3.5f; p.line(x, y, x + dx, y); p.line(x, y, x, y + dy); } } break;
+  case Icon::Rigid3D: { p.rect(4, 1.5f, 8, 7); p.line(8, 10, 8, 14.5f); p.poly({{5.8f, 12.3f}, {8, 14.5f}, {10.2f, 12.3f}}); } break;
+  case Icon::Static3D: { p.rect(4, 2, 8, 8); p.line(1.5f, 12.5f, 14.5f, 12.5f); for (float x : {4.0f, 8.0f, 12.0f}) p.line(x, 12.5f, x - 1.5f, 14.8f); } break;
+  case Icon::MeshInstance: { p.poly({{8, 1.5f}, {14.5f, 13.5f}, {1.5f, 13.5f}}, true); p.line(8, 1.5f, 8, 13.5f); p.line(4.8f, 7.5f, 11.2f, 7.5f); } break;
+  case Icon::Skeleton: { p.circle(8, 2.8f, 1.6f); p.line(8, 4.4f, 8, 14.5f); p.line(4.5f, 6.5f, 11.5f, 6.5f); p.line(5, 9.2f, 11, 9.2f); p.line(5.8f, 11.8f, 10.2f, 11.8f); } break;
+  case Icon::BoneAttachment: { p.line(3, 13, 9, 7); p.dot(2.6f, 13.4f, 1.5f); p.dot(9.4f, 6.6f, 1.5f); p.circle(12.2f, 3.8f, 2.3f); } break;
+  case Icon::Object3D: { p.line(7, 9, 14, 9); p.line(7, 9, 7, 2); p.line(7, 9, 2.5f, 13.5f); p.dot(7, 9, 1.4f); } break;
+  case Icon::Marker: { p.circle(8, 6, 3.6f); p.poly({{5.2f, 8.4f}, {8, 14.5f}, {10.8f, 8.4f}}); p.dot(8, 6, 1.1f); } break;
+  case Icon::Environment: { p.arc(8, 13, 6.5f, 9, 180, 360); p.line(1.5f, 13, 14.5f, 13); p.dot(10.6f, 7, 1.3f); } break;
+  case Icon::DirectionalLight: { p.circle(4.2f, 4.2f, 2.4f); p.line(5.5f, 14, 9.5f, 10); p.line(8.5f, 14.8f, 13, 10.3f); p.line(9.5f, 11.5f, 14.5f, 6.5f); } break;
+  case Icon::Projection: { p.poly({{2, 7}, {14, 2.5f}, {14, 13.5f}, {2, 9}}, true); p.line(8, 4.8f, 8, 11.2f); } break;
+  case Icon::Prefab: { p.rect(1.5f, 1.5f, 9, 9); p.rect(5.5f, 5.5f, 9, 9); } break;
+  case Icon::Bundle: { p.rect(2, 5.5f, 12, 9); p.poly({{2, 5.5f}, {4, 2}, {12, 2}, {14, 5.5f}}); p.line(8, 2, 8, 5.5f); p.rect(6.5f, 5.5f, 3, 3); } break;
+  case Icon::Model: { p.poly({{8, 1.5f}, {11, 4}, {8, 6.5f}, {5, 4}}, true); p.poly({{4, 8}, {12, 8}, {10.5f, 14.5f}, {5.5f, 14.5f}}, true); } break;
+  case Icon::Shader: { p.circle(8, 8, 6.2f); p.arc(8, 8, 6.2f, 2.4f, 0, 180); p.arc(8, 8, 2.4f, 6.2f, -90, 90); } break;
+  case Icon::EntityAsset: { p.rrect(2, 2, 12, 12, 2.5f); p.dot(8, 8, 2.3f); } break;
+  case Icon::MeshAsset: { p.rect(2, 2, 12, 12); p.line(2, 14, 14, 2); p.line(2, 8, 8, 2); p.line(8, 14, 14, 8); } break;
+  case Icon::SceneAsset: { p.rect(1.5f, 3, 13, 10); p.poly({{1.5f, 13}, {6, 7.5f}, {9, 10.5f}, {11, 8.5f}, {14.5f, 13}}); } break;
+  case Icon::AdditivePose: { p.poly({{2, 10.5f}, {8, 13.5f}, {14, 10.5f}, {8, 7.5f}}, true); p.line(8, 1.5f, 8, 6); p.line(5.5f, 3.8f, 10.5f, 3.8f); } break;
+  case Icon::TransformTrack: { p.line(8, 2, 8, 9); p.line(4.5f, 5.5f, 11.5f, 5.5f); p.poly({{6.6f, 3.4f}, {8, 2}, {9.4f, 3.4f}}); p.line(2, 12.5f, 14, 12.5f); p.dot(10, 12.5f, 1.3f); } break;
+  case Icon::ProfTimeline: { p.fillRect(2, 3, 7, 2.5f); p.fillRect(5, 7, 8.5f, 2.5f); p.fillRect(3, 11, 5, 2.5f); } break;
+  case Icon::ProfSpans: { p.rect(1.5f, 2.5f, 13, 3); p.rect(3.5f, 7, 9, 3); p.rect(5.5f, 11.5f, 5, 3); } break;
+  case Icon::ProfFrame: { p.poly({{1.5f, 12}, {4, 9}, {6, 11}, {9, 4}, {11, 8}, {14.5f, 6}}); p.line(1.5f, 14.5f, 14.5f, 14.5f); } break;
+  case Icon::ProfCounters: { p.line(5.5f, 2, 4.5f, 14); p.line(11.5f, 2, 10.5f, 14); p.line(2, 6, 14, 6); p.line(2, 10, 14, 10); } break;
+  case Icon::ProfBreadcrumbs: { p.dot(2.8f, 8, 1.5f); p.dot(8, 8, 1.5f); p.dot(13.2f, 8, 1.5f); p.poly({{4.8f, 6.6f}, {6.2f, 8}, {4.8f, 9.4f}}); p.poly({{10, 6.6f}, {11.4f, 8}, {10, 9.4f}}); } break;
   case Icon::Curve:
     p.line(2, 13, 2, 3); p.line(2, 13, 14, 13);
     p.poly({{3.5f, 11.5f}, {5.5f, 10.8f}, {7, 8.5f}, {8.5f, 6}, {10.5f, 4.6f}, {13, 4.2f}}); break;

@@ -57,20 +57,22 @@ Icon nodeIconFor(const BlueprintNode& n) {
   };
   // the animation graph's own spellings first
   if (n.category == BlueprintNodeCategory::Animation) {
-    if (has("sequence player") || t == "clip" || word("clip")) return Icon::NodeClip;
+    if (has("sequence player") || t == "clip" || word("clip")) return Icon::AnimClipNode;
     if (has("blend space") || has("blendspace")) return Icon::NodeBlendSpace;
-    if (has("layered blend")) return Icon::Layers;
-    if (has("blend poses by bool") || has("by bool")) return Icon::NodeToggle;
+    if (has("layered blend")) return Icon::LayeredBlend;
+    if (has("blend poses by bool") || has("by bool")) return Icon::BlendByBool;
     if (has("blend") || has("blend2")) return Icon::NodeBlend;
-    if (has("additive")) return Icon::NodeMixer;
-    if (has("one shot") || has("oneshot")) return Icon::NodeFlag;
-    if (has("time scale") || has("timescale")) return Icon::NodeTimer;
-    if (has("time seek") || has("timeseek")) return Icon::NodeClock;
-    if (word("select")) return Icon::NodeSelector;
-    if (word("ik") || has("two bone") || has("bone")) return Icon::NodeBone;
+    if (has("additive")) return Icon::AdditivePose;
+    if (has("one shot") || has("oneshot")) return Icon::OneShot;
+    if (has("time scale") || has("timescale")) return Icon::TimeScale;
+    if (has("time seek") || has("timeseek")) return Icon::TimeSeek;
+    if (word("select")) return Icon::AnimSelect;
+    if (has("look at") || has("lookat")) return Icon::LookAt;
+    if (has("modify bone")) return Icon::ModifyBone;
+    if (word("ik") || has("two bone") || has("bone")) return Icon::TwoBoneIK;
     if (word("slot") || has("slot ")) return Icon::NodeSlot;
     if (has("output")) return Icon::NodeOutput;
-    if (has("state machine") || has("statemachine")) return Icon::StateGraph;
+    if (has("state machine") || has("statemachine")) return Icon::StateMachine;
   }
   // events
   if (has("overlap")) return Icon::NodeOverlap;

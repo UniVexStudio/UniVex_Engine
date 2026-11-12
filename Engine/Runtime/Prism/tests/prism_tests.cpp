@@ -2071,6 +2071,24 @@ static void testGoldenImages(Application& app, const std::string& assets) {
     drawIcon(ic, Icon(i), {x + 4, y + 164, 32, 32}, Color(220, 222, 226), 2.f);
   }
   CHECK(goldenCheck(dir, "icons", ic.pixels(), ic.width(), ic.height(), ic.width()));
+  // one glyph per concept: every dedicated icon draws something, and no two icons in the set draw the same picture
+  {
+    const int first = int(Icon::AnimClip), last = int(Icon::ProfBreadcrumbs);
+    std::vector<uint64_t> hashes;
+    for (int i = 1; i <= last; i++) {
+      Canvas one; one.resize(32, 32);
+      one.clear(Color(0, 0, 0));
+      drawIcon(one, Icon(i), {0, 0, 32, 32}, Color(255, 255, 255), 2.f);
+      uint64_t h = 1469598103934665603ull;
+      int lit = 0;
+      for (int k = 0; k < 32 * 32; k++) { h = (h ^ one.pixels()[k]) * 1099511628211ull; lit += (one.pixels()[k] & 0xFFu) > 40u; }
+      if (i >= first) CHECK(lit > 12);
+      hashes.push_back(h);
+    }
+    for (int i = first; i <= last; i++)
+      for (int j = 1; j <= last; j++)
+        if (j != i) CHECK(hashes[size_t(i - 1)] != hashes[size_t(j - 1)]);
+  }
   // the comparison itself: an unchanged frame matches, a visibly changed one does not
   double mean = 0;
   CHECK(goldenCheck(dir, "gizmos", cv.pixels(), cv.width(), cv.height(), cv.width(), &mean) && mean < 0.5);   // goldens are stored rounded to integers
