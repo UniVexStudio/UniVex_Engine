@@ -58,7 +58,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 EditorPrismShellUVE::EditorPrismShellUVE(EditorUVE& editor)
-    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_entityClassWindow(editor, m_host), m_montageEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
+    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_entityClassWindow(editor, m_host), m_montageEditor(editor, m_host), m_retargetEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
         ShowDockPanelUVE(0, true);
@@ -103,6 +103,9 @@ void EditorPrismShellUVE::ShutdownUVE() {
     }
     if (m_host.IsReadyUVE() && m_montageEditor.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_montageEditor.WindowIdUVE());
+    }
+    if (m_host.IsReadyUVE() && m_retargetEditor.WindowIdUVE() != 0) {
+        m_host.CloseWindowUVE(m_retargetEditor.WindowIdUVE());
     }
     m_host.ShutdownUVE();
 }
@@ -973,6 +976,7 @@ void EditorPrismShellUVE::FrameUVE() {
     // The Entity Editor's window follows the entity session; its panels read the entity's document.
     m_entityEditor.SyncUVE();
     m_montageEditor.SyncUVE();
+    m_retargetEditor.SyncUVE();
     {
         const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
         m_entityEditor.RefreshUVE();
@@ -1030,6 +1034,7 @@ void EditorPrismShellUVE::FrameUVE() {
         m_entityEditor.RenderUVE();
     }
     m_montageEditor.RenderUVE();
+    m_retargetEditor.RenderUVE();
     m_fileDialog.FrameUVE();
     m_entityClassWindow.FrameUVE();
 }
