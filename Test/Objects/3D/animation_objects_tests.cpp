@@ -497,6 +497,34 @@ TEST(AnimationGraphUVETest, OneShotPlaysOverTheBaseAndHandsBack) {
     EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 4.5F, 1e-3F); // base alone again (1.45 s wrapped)
 }
 
+TEST(AnimationGraphUVETest, AClipStartsAtItsStartTime) {
+    GraphFixtureUVE fixture;
+    AnimationGraphComponentUVE tree;
+    AnimationGraphNodeUVE clip = GraphFixtureUVE::ClipNodeUVE(2U, fixture.AddClipUVE(10.0F));
+    clip.startSeconds = 0.5F;
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), clip};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 6.0F, 1e-4F) << "0.5 s in, then 0.1 s on";
+}
+
+TEST(AnimationGraphUVETest, OneShotRestartsOnItsOwnAfterItsDelay) {
+    GraphFixtureUVE fixture;
+    AnimationGraphComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"attack", AnimationParameterTypeUVE::Trigger, 0.0F}};
+    AnimationGraphNodeUVE shot = GraphFixtureUVE::NodeUVE(2U, Kind::OneShot, {3U, 4U});
+    shot.parameter = "attack";
+    shot.fadeSeconds = 0.0F;
+    shot.autoRestart = true;
+    shot.autoRestartDelaySeconds = 0.5F;
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), shot,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F)),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(100.0F), false)};
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "attack", 1.0F));
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 50.0F, 1e-4F);
+    static_cast<void>(fixture.StepUVE(tree, 0.6F)); // the shot ends here
+    EXPECT_LT(fixture.StepUVE(tree, 0.2F), 20.0F) << "the base, while the delay runs";
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.4F), 40.0F, 1e-3F) << "fired again on its own, 0.4 s in";
+}
+
 TEST(AnimationGraphUVETest, AdditiveLayersAndTimeScaleRescales) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;

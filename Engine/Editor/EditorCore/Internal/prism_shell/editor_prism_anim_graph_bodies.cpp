@@ -43,10 +43,10 @@ constexpr float kRowUVE = 25.0F;
         case Kind::StateMachine: return 2U;
         case Kind::BlendSpace1D: return 3U;
         case Kind::Clip:
+        case Kind::OneShot: return 3U;
         case Kind::Blend2:
         case Kind::Additive:
         case Kind::LayeredBlend:
-        case Kind::OneShot:
         case Kind::TimeScale:
         case Kind::TimeSeek: return 2U;
         case Kind::Select: return 4U;
@@ -313,6 +313,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
             body->add(RowUVE("Clip", combo));
             body->add(RowUVE("Speed", pair(number(node.speed, 0.01F, -10.0F, 10.0F, "x", [](NodeUVE& n, const float v) { n.speed = v; }),
                                            check("Loop", node.loop, [](NodeUVE& n, const bool v) { n.loop = v; }))));
+            body->add(RowUVE("Start", number(node.startSeconds, 0.01F, 0.0F, 3600.0F, " s", [](NodeUVE& n, const float v) { n.startSeconds = v; })));
             break;
         }
         case Kind::Blend2:
@@ -348,7 +349,12 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
         }
         case Kind::OneShot:
             body->add(RowUVE("Fire on", parameterCombo(node.parameter, {ParamType::Trigger, ParamType::Bool}, false)));
-            body->add(RowUVE("Fade", number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s", [](NodeUVE& n, const float v) { n.fadeSeconds = v; })));
+            body->add(RowUVE("Fade", pair(number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s in", [](NodeUVE& n, const float v) { n.fadeSeconds = v; }),
+                                          number(node.fadeOutSeconds < 0.0F ? node.fadeSeconds : node.fadeOutSeconds, 0.01F, 0.0F, 5.0F, " s out",
+                                                 [](NodeUVE& n, const float v) { n.fadeOutSeconds = v; }))));
+            body->add(RowUVE("Repeat", pair(check("Auto", node.autoRestart, [](NodeUVE& n, const bool v) { n.autoRestart = v; }),
+                                            number(node.autoRestartDelaySeconds, 0.01F, 0.0F, 60.0F, " s",
+                                                   [](NodeUVE& n, const float v) { n.autoRestartDelaySeconds = v; }))));
             break;
         case Kind::TimeScale:
             body->add(RowUVE("Rate", number(node.speed, 0.01F, -10.0F, 10.0F, "x", [](NodeUVE& n, const float v) { n.speed = v; })));

@@ -571,7 +571,11 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
                          {"space", static_cast<std::uint8_t>(object.space)},
                          {"clampDegrees", object.clampDegrees},
                          {"alphaParameter", object.alphaParameter},
-                         {"fadeBackSeconds", object.fadeBackSeconds}});
+                         {"fadeBackSeconds", object.fadeBackSeconds},
+                         {"startSeconds", object.startSeconds},
+                         {"fadeOutSeconds", object.fadeOutSeconds},
+                         {"autoRestart", object.autoRestart},
+                         {"autoRestartDelaySeconds", object.autoRestartDelaySeconds}});
     }
     nlohmann::json root = {{"parameters", std::move(parameters)},
             {"nodes", std::move(nodes)}};
@@ -755,6 +759,10 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
             object.clampDegrees = item.value("clampDegrees", 180.0F);
             object.alphaParameter = item.value("alphaParameter", std::string{});
             object.fadeBackSeconds = item.value("fadeBackSeconds", 0.2F);
+            object.startSeconds = item.value("startSeconds", 0.0F);
+            object.fadeOutSeconds = item.value("fadeOutSeconds", -1.0F);
+            object.autoRestart = item.value("autoRestart", false);
+            object.autoRestartDelaySeconds = item.value("autoRestartDelaySeconds", 1.0F);
             tree.nodes.push_back(std::move(object));
         }
         static_cast<void>(MigrateBlendSpaceInputsUVE(tree.nodes, legacyPositions));

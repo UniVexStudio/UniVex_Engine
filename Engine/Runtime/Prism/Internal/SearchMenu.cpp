@@ -224,8 +224,11 @@ private:
         const std::string name = lowered(e.item.label), hay = name + " " + lowered(e.group);
         int score = 0;
         bool ok = true;
+        std::string squeezed = hay;   // "boxmesh" finds "Box Mesh"
+        squeezed.erase(std::remove(squeezed.begin(), squeezed.end(), ' '), squeezed.end());
         for (const std::string& tok : tokens) {
-          const size_t pos = hay.find(tok);
+          size_t pos = hay.find(tok);
+          if (pos == std::string::npos && squeezed.find(tok) != std::string::npos) pos = name.size();
           if (pos == std::string::npos) { ok = false; break; }
           score += name.rfind(tok, 0) == 0 ? 0 : pos < name.size() ? 2 : 6;
         }

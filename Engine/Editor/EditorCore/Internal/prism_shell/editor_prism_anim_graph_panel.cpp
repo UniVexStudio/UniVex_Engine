@@ -132,6 +132,50 @@ Scene::AnimationGraphComponentUVE* EditorPrismAnimGraphPanelUVE::LiveGraphUVE() 
     return &em.GetComponentUVE<Scene::AnimationGraphComponentUVE>(m_view.tree);
 }
 
+namespace {
+
+/// A node that is driven by a value gets a parameter of its own the moment it is made (as Unreal's
+/// pins and Godot's blend tree parameters do): Blend2 a Float "Blend", OneShot a Trigger "Fire", a
+/// Blend Space its axes ... each named uniquely, set to the node's current value, and bound to it.
+/// It is an ordinary parameter after that: rename it, rebind it, or delete it in Parameters.
+void BindNewNodeParametersUVE(Scene::AnimationGraphComponentUVE& graph, const std::uint32_t id) {
+    using Type = Scene::AnimationParameterTypeUVE;
+    const auto node = std::ranges::find(graph.nodes, id, &Scene::AnimationGraphNodeUVE::id);
+    if (node == graph.nodes.end()) {
+        return;
+    }
+    const auto make = [&graph](const std::string& base, const Type type, const float value) {
+        Scene::AnimationParameterUVE parameter;
+        parameter.name = UniqueParameterNameUVE(graph, base);
+        parameter.type = type;
+        parameter.value = value;
+        graph.parameters.push_back(parameter);
+        return parameter.name;
+    };
+    Scene::AnimationGraphNodeUVE& n = *node;
+    switch (n.kind) {
+        case Kind::Blend2: n.parameter = make("Blend", Type::Float, n.value); break;
+        case Kind::Additive: n.parameter = make("AddAmount", Type::Float, n.value); break;
+        case Kind::LayeredBlend: n.parameter = make("LayerWeight", Type::Float, n.value); break;
+        case Kind::BlendSpace1D: n.parameter = make("BlendX", Type::Float, n.value); break;
+        case Kind::BlendSpace2D:
+            n.parameter = make("BlendX", Type::Float, n.value);
+            n.parameterY = make("BlendY", Type::Float, n.valueY);
+            break;
+        case Kind::OneShot: n.parameter = make("Fire", Type::Trigger, 0.0F); break;
+        case Kind::TimeScale: n.parameter = make("TimeScale", Type::Float, n.speed); break;
+        case Kind::TimeSeek: n.parameter = make("Seek", Type::Trigger, 0.0F); break;
+        case Kind::Select: n.parameter = make("Option", Type::Float, n.value); break;
+        case Kind::BlendByBool: n.parameter = make("Switch", Type::Bool, 0.0F); break;
+        case Kind::TwoBoneIK: n.alphaParameter = make("IKAlpha", Type::Float, n.value); break;
+        case Kind::LookAt: n.alphaParameter = make("LookAtAlpha", Type::Float, n.value); break;
+        case Kind::ModifyBone: n.alphaParameter = make("BoneAlpha", Type::Float, n.value); break;
+        default: break;
+    }
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------------------- build
 
 prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildUVE() {
@@ -236,14 +280,6 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildToolbarUVE() {
     m_graphButton = ToolButtonUVE(prism::Icon::AnimGraph, "The AnimationGraph shown (selecting one in Components picks it too)", "Graph");
     m_graphButton->onClick = [this] { ShowGraphMenuUVE(); };
     row->add(m_graphButton, CentreSlotUVE());
-    auto add = ToolButtonUVE(prism::Icon::Plus, "Add a node (or right-click the graph, or drag a wire off a pin)", "Add Node");
-    add->onClick = [this] {
-        if (m_graph) {
-            const prism::Rect r = m_graph->rect();
-            ShowAddMenuUVE(prism::Vec2{r.x + 12.0F, r.y + 8.0F});
-        }
-    };
-    row->add(add, CentreSlotUVE());
     auto fit = ToolButtonUVE(prism::Icon::Frame, "Frame the whole graph (F)");
     fit->onClick = [this] {
         if (m_graph) {
@@ -354,7 +390,12 @@ std::vector<prism::BlueprintNodeSpec> EditorPrismAnimGraphPanelUVE::NodeLibraryU
         spec.name = AnimationGraphKindLabelUVE(kind);
         spec.keywords = AnimationGraphKindHelpUVE(kind);
         spec.make = [this, kind] {
-            NodeUVE node;
+            // Made as the graph would make it, so the palette sees its real input pins (a wire
+            // dragged off an output offers the nodes that take a pose).
+            std::vector<NodeUVE> scratch;
+            const std::uint32_t id = AddAnimationGraphNodeUVE(scratch, kind, Math::Vector2UVE{});
+            const auto made = std::ranges::find(scratch, id, &NodeUVE::id);
+            NodeUVE node = made != scratch.end() ? *made : NodeUVE{};
             node.kind = kind;
             node.name = AnimationGraphKindLabelUVE(kind);
             return MakeNodeUVE(node);
@@ -450,7 +491,12 @@ int EditorPrismAnimGraphPanelUVE::SpawnUVE(const prism::BlueprintNodeSpec& spec,
         return -1;
     }
     std::uint32_t added = 0U;
-    if (!EditUVE([&](GraphUVE& g) { added = AddAnimationGraphNodeUVE(g.nodes, *kind, Math::Vector2UVE{world.x, world.y}); }) || added == 0U) {
+    if (!EditUVE([&](GraphUVE& g) {
+            added = AddAnimationGraphNodeUVE(g.nodes, *kind, Math::Vector2UVE{world.x, world.y});
+            if (added != 0U) {
+                BindNewNodeParametersUVE(g, added);
+            }
+        }) || added == 0U) {
         return -1;
     }
     const GraphUVE* graph = GraphPtrUVE();
@@ -470,21 +516,6 @@ int EditorPrismAnimGraphPanelUVE::SpawnUVE(const prism::BlueprintNodeSpec& spec,
     m_selected = {added};
     m_sideDirty = true;
     return static_cast<int>(added);
-}
-
-void EditorPrismAnimGraphPanelUVE::ShowAddMenuUVE(const prism::Vec2 screen) {
-    std::vector<prism::MenuItem> items;
-    const prism::Rect r = m_graph ? m_graph->rect() : prism::Rect{};
-    const prism::Vec2 world = m_graph ? m_graph->screenToWorld(prism::Vec2{r.x + r.w * 0.4F, r.y + r.h * 0.4F}) : prism::Vec2{};
-    for (const prism::BlueprintNodeSpec& spec : NodeLibraryUVE()) {
-        prism::BlueprintNode look = spec.make();
-        items.push_back(prism::MenuItem::Item(spec.name, [this, spec, world] {
-            if (SpawnUVE(spec, world) > 0 && m_graph) {
-                m_graph->clearSelection();
-            }
-        }, "", look.icon));
-    }
-    prism::showContextMenu(std::move(items), screen);
 }
 
 // ---------------------------------------------------------------------------------------- edits
@@ -839,8 +870,23 @@ void EditorPrismAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid,
         auto remove = ToolButtonUVE(prism::Icon::Trash, "Remove the parameter");
         remove->onClick = [this, index] {
             EditUVE([index](GraphUVE& g) {
-                if (index < g.parameters.size()) {
-                    g.parameters.erase(g.parameters.begin() + static_cast<std::ptrdiff_t>(index));
+                if (index >= g.parameters.size()) {
+                    return;
+                }
+                // Gone everywhere it was used: nodes fall back to their own value, and the
+                // transition conditions that read it go with it.
+                const std::string name = g.parameters[index].name;
+                g.parameters.erase(g.parameters.begin() + static_cast<std::ptrdiff_t>(index));
+                for (NodeUVE& node : g.nodes) {
+                    for (std::string* bound : {&node.parameter, &node.parameterY, &node.alphaParameter}) {
+                        if (*bound == name && node.kind != Kind::Slot) {
+                            bound->clear();
+                        }
+                    }
+                    for (Scene::AnimationGraphTransitionUVE& transition : node.transitions) {
+                        std::erase_if(transition.conditions,
+                                      [&name](const Scene::AnimationTransitionConditionUVE& c) { return c.parameter == name; });
+                    }
                 }
             });
         };
