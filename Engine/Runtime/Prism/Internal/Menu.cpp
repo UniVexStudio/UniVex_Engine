@@ -41,6 +41,10 @@ public:
         c.fillRect({r.x + 6, std::floor(r.y + r.h * 0.5f), r.w - 12, 1}, t.borderSoft);
         continue;
       }
+      if (it.header) {
+        c.textIn(*t.small, {r.x + 8, r.y, r.w - 16, r.h}, it.label, t.textDim, HAlign::Left, false);
+        continue;
+      }
       bool hot = i == m_hover && it.enabled;
       if (hot) c.fillRoundRect(r, 3, t.accent);
       Color fg = !it.enabled ? t.textDisabled : (hot ? t.accentText : t.text);
@@ -151,6 +155,17 @@ private:
 };
 
 } // namespace
+
+Ref<Widget> showSubmenu(std::vector<MenuItem> items, Rect row, std::function<void()> onClose) {
+  auto sub = make<MenuPopup>(std::move(items));
+  sub->setParentMenu(true);
+  PopupOptions o;
+  o.placement = PopupPlacement::Right;
+  o.anchor = row;
+  o.onClose = std::move(onClose);
+  Application::get().showPopup(sub, o);
+  return sub;
+}
 
 void showMenu(std::vector<MenuItem> items, Rect anchor, PopupPlacement placement, std::function<void()> onClose) {
   PopupOptions o;

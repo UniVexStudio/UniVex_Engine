@@ -13,10 +13,12 @@ struct MenuItem {
   const uint32_t* image = nullptr;
   int imageSize = 0;
   bool separator = false, checkable = false, checked = false, enabled = true;
+  bool header = false;   // a section title ("GET", "CREATE"): not pickable
   std::vector<MenuItem> sub;
   std::function<void()> action;
 
   static MenuItem Sep() { MenuItem m; m.separator = true; return m; }
+  static MenuItem Header(std::string label) { MenuItem m; m.label = std::move(label); m.header = true; m.enabled = false; return m; }
   static MenuItem Item(std::string label, std::function<void()> action, std::string shortcut = "", Icon icon = Icon::None) {
     MenuItem m; m.label = std::move(label); m.action = std::move(action); m.shortcut = std::move(shortcut); m.icon = icon; return m;
   }
@@ -65,6 +67,8 @@ private:
 // Show a popup menu. `anchor`/`placement` as in PopupOptions.
 void showMenu(std::vector<MenuItem> items, Rect anchor, PopupPlacement placement, std::function<void()> onClose = {});
 void showContextMenu(std::vector<MenuItem> items, Vec2 pos);
+// A submenu beside `row` (a row of another popup); the returned popup closes with closePopup.
+Ref<Widget> showSubmenu(std::vector<MenuItem> items, Rect row, std::function<void()> onClose = {});
 
 class MenuBar : public Widget {
 public:
