@@ -3,6 +3,7 @@
 
 #include "editor.h"
 #include "editor_prism_content_browser.h"
+#include "editor_prism_timeline_draw.h"
 
 #include "animation_montage_editing.h"
 
@@ -62,7 +63,7 @@ std::size_t MontageTimelineUVE::NotifyTracksUVE() const noexcept {
 
 prism::Vec2 MontageTimelineUVE::measure(const prism::Vec2 avail) {
     const float height = kRulerUVE + kSectionsUVE + kSlotUVE + kNotifyUVE * static_cast<float>(NotifyTracksUVE()) + kCurvesUVE;
-    return {avail.x, height};
+    return m_desired = constrain({avail.x, height});
 }
 
 float MontageTimelineUVE::XOfUVE(const double time) const noexcept {
@@ -125,24 +126,11 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
 
     const prism::Rect content{m_rect.x + kHeaderUVE, m_rect.y, m_rect.w - kHeaderUVE, m_rect.h};
     c.pushClip(content);
-    // The montage's extent and the ruler's ticks.
-    const float endX = XOfUVE(length);
-    c.fillRect(prism::Rect{endX, m_rect.y, std::max(0.0F, content.right() - endX), m_rect.h}, prism::Color(0, 0, 0, 60));
-    static constexpr double kSteps[] = {0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0};
-    double step = kSteps[std::size(kSteps) - 1U];
-    for (const double s : kSteps) {
-        if (s * m_pixelsPerSecond >= 60.0) {
-            step = s;
-            break;
-        }
-    }
+    // The ruler, its grid and the shade past the end: the look every editor timeline shares.
+    const TimelineScaleUVE scale{m_rect.x + kHeaderUVE, m_scroll, static_cast<double>(m_pixelsPerSecond)};
     const prism::Rect ruler = RowRectUVE(RowUVE::Ruler);
-    for (double tick = std::floor(m_scroll / step) * step; XOfUVE(tick) < content.right(); tick += step) {
-        const float x = XOfUVE(tick);
-        c.fillRect(prism::Rect{x, ruler.y + 12.0F, 1.0F, ruler.h - 12.0F}, t.textDim);
-        c.textIn(*t.small, prism::Rect{x + 3.0F, ruler.y, 60.0F, 14.0F}, SecondsTextUVE(tick), t.textDim);
-        c.fillRect(prism::Rect{x, ruler.bottom(), 1.0F, m_rect.bottom() - ruler.bottom()}, prism::Color(255, 255, 255, 14));
-    }
+    DrawTimelineRulerUVE(c, prism::Rect{content.x, ruler.y, content.w, ruler.h}, scale, 30.0, length, m_rect.bottom(), false);
+    DrawTimelineOutOfRangeUVE(c, prism::Rect{content.x, ruler.bottom(), content.w, m_rect.bottom() - ruler.bottom()}, scale, length);
 
     // Sections: a marker and a label each; the line runs down through the tracks.
     const prism::Rect sectionsRow = RowRectUVE(RowUVE::Sections);
@@ -237,12 +225,9 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
     if (m_drag.has_value()) {
         c.fillRect(prism::Rect{m_mouse.x, m_rect.y + kRulerUVE, 1.0F, m_rect.h - kRulerUVE}, t.accent);
     }
-    // The playhead.
-    const float px = XOfUVE(session->playhead);
-    c.fillRect(prism::Rect{px, m_rect.y, 1.0F, m_rect.h}, prism::Color(240, 70, 60));
-    const prism::Vec2 head[] = {{px - 5.0F, ruler.y}, {px + 5.0F, ruler.y}, {px, ruler.y + 8.0F}};
-    c.fillPolygon(head, prism::Color(240, 70, 60));
     c.popClip();
+    // The playhead, with its time on the ruler.
+    DrawTimelinePlayheadUVE(c, content, kRulerUVE, scale, session->playhead, SecondsTextUVE(session->playhead));
     if (m_dropHot) {
         c.strokeRoundRect(slotRow, 3.0F, t.accent, 2);
     }

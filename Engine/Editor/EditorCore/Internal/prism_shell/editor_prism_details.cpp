@@ -976,6 +976,12 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                         break;
                     }
                 }
+                // Registered since the file index's last scan (a clip just added): the database knows it.
+                if (text == "Missing asset") {
+                    if (const std::filesystem::path path = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(value); !path.empty()) {
+                        text = path.stem().string();
+                    }
+                }
             }
             if (b->text() != text) {
                 b->setText(text);

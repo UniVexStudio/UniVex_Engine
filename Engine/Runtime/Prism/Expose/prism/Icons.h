@@ -24,6 +24,8 @@ enum class Icon : uint8_t {
   NodeSelector, NodeChain, NodeDecorator, NodeMoveTo, NodeAttack, NodeRoute, NodeEmitter, NodeGravity, NodeNoise,
   NodeGradient, NodeScale, NodeSprite, NodeWave, NodeEnvelope, NodeFilter, NodeEcho, NodeMixer, NodeSlider,
   NodePalette, NodeTexture, NodeFresnel,
+  // timeline transport and keys
+  SkipStart, SkipEnd, StepBack, StepForward, Key, Curve,
 };
 
 // Draws `icon` centred in `box`, scaled so a 16x16 design grid fits the shorter side.

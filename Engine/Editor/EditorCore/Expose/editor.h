@@ -450,6 +450,8 @@ class EditorUVE final {
     friend class EditorPrismDockPanelsUVE;
     friend class EditorPrismViewToolbarUVE;
     friend class EditorPrismEntityEditorUVE;
+    friend class EditorPrismSequencerPanelUVE;
+    friend class KeyframeViewUVE;
     friend class EditorPrismFileDialogUVE;
     friend class AssetThumbnailUVE;
     friend class EditorPrismObjectMenuUVE;
@@ -3033,8 +3035,57 @@ private:
     /// The Timeline had keyboard focus last frame: its keys (Delete, Ctrl+Z, arrows...) are its own,
     /// so the editor's shortcuts stand aside, as they do while typing.
     bool m_timelineOwnsKeys = false;
-    /// The Timeline tab's body: transport, ruler, bone tracks and the preview on the skeleton.
-    void DrawAnimationTimelineUVE();
+    /// What the Animation Sequencer shows this frame: the entity's players, the one it shows, the
+    /// skeleton and root its preview drives, and that player's clip (null when it has none or the
+    /// file cannot be read). Resolved by SyncAnimationTimelineUVE.
+    struct AnimationTimelineViewUVE final {
+        std::vector<Scene::EntityUVE> players;
+        Scene::EntityUVE player = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE skeleton = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE previewRoot = Scene::kInvalidEntityUVE;
+        const Asset::AnimationClipAssetUVE* clip = nullptr;
+        double durationSeconds = 1.0;
+        double frameRate = 30.0;
+    };
+    /// Picks the player (the selected one, else the one shown last, else the first with a clip),
+    /// reloads its clip when it changed (saving unsaved key edits to the old one first), and finds
+    /// the preview's root and skeleton. Stops the preview when the entity has no player.
+    AnimationTimelineViewUVE SyncAnimationTimelineUVE();
+    /// Advances a playing preview by `deltaSeconds` and poses the skeleton and blend shapes at the
+    /// playhead. Writes runtime state only.
+    void StepAnimationTimelineUVE(double deltaSeconds);
+    /// Transport: the playhead to `seconds` (clamped to the clip, playback paused), Play / Pause,
+    /// Stop (to the start), one frame back or forward, and the Loop switch (the player's loop mode).
+    void SetAnimationTimelineTimeUVE(double seconds);
+    void ToggleAnimationTimelinePlayUVE();
+    void StopAnimationTimelinePlaybackUVE();
+    void StepAnimationTimelineFrameUVE(int frames);
+    void SetAnimationTimelineLoopUVE(bool loop);
+    /// Every change to the open clip: one step of the clip's own undo history, shown at once.
+    bool EditAnimationTimelineClipUVE(const std::function<void(Asset::AnimationClipAssetUVE&)>& change);
+    void UndoAnimationTimelineUVE();
+    void RedoAnimationTimelineUVE();
+    /// Writes the edited clip to its .uvanim.
+    void SaveAnimationTimelineClipUVE();
+    /// K: a key on the selected bone (else the clip's own track) at the playhead.
+    void InsertAnimationTimelineKeyUVE();
+    /// The picker's card for a clip: its name, path, length and kind; read once, cached.
+    const AnimationTimelineStateUVE::ClipCardUVE& AnimationTimelineClipCardUVE(Asset::AssetGuidUVE clip);
+    /// The player's own list (its clip first when an older save never listed it) and the linked
+    /// library's clips it does not list.
+    [[nodiscard]] std::vector<Asset::AssetGuidUVE> AnimationTimelineOwnClipsUVE(Scene::EntityUVE player);
+    [[nodiscard]] std::vector<Asset::AssetGuidUVE> AnimationTimelineLinkedClipsUVE(Scene::EntityUVE player);
+    /// Picker actions on `player`: play another clip, take one off the list, copy one to a new
+    /// file, start a new one-second clip (keyed with the skeleton's rest pose), and rename the open
+    /// clip's file (keeping its GUID).
+    void ChooseAnimationTimelineClipUVE(Scene::EntityUVE player, Asset::AssetGuidUVE clip);
+    void RemoveAnimationTimelineClipUVE(Scene::EntityUVE player, Asset::AssetGuidUVE clip);
+    void DuplicateAnimationTimelineClipUVE(Scene::EntityUVE player, Asset::AssetGuidUVE clip);
+    bool CreateAnimationTimelineClipUVE(Scene::EntityUVE player, Scene::EntityUVE skeleton);
+    bool RenameAnimationTimelineClipUVE(const std::string& name);
+    /// The file dialogs: Add a clip, Import a library, Link a library, Export to a library.
+    enum class AnimationTimelineBrowseUVE : std::uint8_t { AddClip, ImportLibrary, LinkLibrary, ExportLibrary };
+    void BrowseAnimationTimelineUVE(Scene::EntityUVE player, AnimationTimelineBrowseUVE what);
     /// Puts the previewed skeleton back at rest and stops the preview.
     void StopAnimationTimelinePreviewUVE();
     /// Drives the open clip's blend-shape tracks onto the objects their node names refer to, under
@@ -3046,11 +3097,6 @@ private:
     /// The blend-shape names of `entity`'s mesh, in the mesh's own order; cached per mesh, and empty
     /// when the object has no mesh, no readable model or no shapes.
     [[nodiscard]] std::span<const std::string> TimelineMorphTargetNamesUVE(Scene::EntityUVE entity);
-    /// The Timeline's animation picker: the player's animations, switching, New, Add from Project,
-    /// Rename, Duplicate and Remove.
-    void DrawAnimationPickerUVE(Scene::EntityUVE player, Scene::EntityUVE skeleton);
-    /// A .uvanim dragged from Content onto the Timeline joins the player's list.
-    void AcceptTimelineClipDropUVE(Scene::EntityUVE player);
     /// The Entity Editor's Anim Graph: the AnimationGraph it shows as boxes and wires, the view
     /// onto the canvas, and what the mouse is doing to it.
     struct AnimationGraphViewStateUVE final {

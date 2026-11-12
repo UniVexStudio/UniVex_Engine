@@ -81,7 +81,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 EditorPrismEntityEditorUVE::EditorPrismEntityEditorUVE(EditorUVE& editor, EditorPrismHostUVE& host)
-    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor) {}
+    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor), m_sequencer(editor) {}
 
 EditorPrismEntityEditorUVE::~EditorPrismEntityEditorUVE() {
     if (m_window != 0 && m_host.IsReadyUVE()) {
@@ -598,10 +598,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildDockBarUVE() {
 }
 
 prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildSequencerPageUVE() {
-    auto page = prism::vbox(6.0F);
-    page->setPadding(prism::Margin(12.0F));
-    page->add(prism::make<prism::Label>("Animation Sequencer"));
-    return PanelUVE(page);
+    return PanelUVE(m_sequencer.BuildUVE());
 }
 
 prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildGraphPageUVE() {
@@ -924,13 +921,16 @@ void EditorPrismEntityEditorUVE::RefreshUVE() {
     if (m_editor.GetEntitySimulationStateUVE() == EditorUVE::EntitySimulationStateUVE::Running) {
         m_editor.TickEntitySimulationUVE(dt);
     }
-    m_host.AppUVE().runInWindow(m_window, [this] {
+    m_host.AppUVE().runInWindow(m_window, [this, dt] {
         RefreshComponentsUVE();
         m_details.RefreshUVE();
         m_viewToolbar.RefreshUVE();
         RefreshToolbarUVE();
         RefreshProblemsUVE();
         SyncAnimationTabsUVE();
+        const bool sequencerShown = m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kSequencerPageUVE &&
+                                    m_dockTabs.size() == kDockPageCountUVE && m_dockTabs[kSequencerPageUVE]->visible();
+        m_sequencer.RefreshUVE(dt, sequencerShown);
         m_dockPanels.RefreshUVE(m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kConsolePageUVE, false);
     });
 }
