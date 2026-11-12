@@ -169,6 +169,12 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildUVE() {
     subRowExtra->add(m_blueprintButton, CentreUVE());
     subRowExtra->add(HSeparatorUVE());
     subRowExtra->add(m_playButton, CentreUVE());
+    subRowExtra->add(HSeparatorUVE());
+    // Viewport | <folder> > BP_Player > BP_Camera ...: where the centre is, and the Blueprints opened.
+    m_crumbRow = prism::hbox(0.0F);
+    m_crumbSignature.clear();
+    m_openBlueprints.clear();
+    subRowExtra->add(m_crumbRow, CentreUVE());
     window->add(m_viewToolbar.BuildUVE(true, subRowExtra));
     // Compile reads the Blueprint being edited, saved or not.
     m_editor.m_openBlueprintProviderUVE = [this](const std::string& path) { return m_blueprintPanel.UnsavedForUVE(path); };
@@ -820,40 +826,107 @@ void EditorPrismEntityEditorUVE::OpenBlueprintUVE(const std::string& path, const
     if (m_blueprintPanel.PathUVE() != path && !m_blueprintPanel.OpenUVE(path, target)) {
         return;
     }
+    if (std::none_of(m_openBlueprints.begin(), m_openBlueprints.end(),
+                     [&path](const OpenBlueprintEntryUVE& entry) { return entry.path == path; })) {
+        m_openBlueprints.push_back(OpenBlueprintEntryUVE{path, target});
+    }
     SetBlueprintModeUVE(true);
 }
 
 prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildBlueprintViewUVE() {
-    // The graph over the whole centre, under a strip with its tab and the way back to the viewport.
-    auto bar = prism::hbox(2.0F);
-    bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
-    m_blueprintTab = prism::make<prism::Button>("Blueprint", prism::Icon::BlueprintClass, prism::ButtonStyle::Toolbar);
-    m_blueprintTab->setCheckable(true);
-    m_blueprintTab->setChecked(true);
-    m_blueprintTab->setTooltip("The Blueprint Class being edited");
-    bar->add(m_blueprintTab, CentreUVE());
-    bar->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
-    auto viewport = prism::make<prism::Button>("Viewport", prism::Icon::LayoutViewport, prism::ButtonStyle::Toolbar);
-    viewport->setTooltip("Back to the viewport (the Blueprint stays open: the Blueprint button brings it back)");
-    viewport->onClick = [this] { SetBlueprintModeUVE(false); };
-    bar->add(viewport, CentreUVE());
-    auto close = ToolButtonUVE(prism::Icon::Close, "Close the Blueprint (its edits are saved)");
-    close->onClick = [this] {
+    // The graph over the whole centre; the sub row's crumbs switch between it and the viewport.
+    return m_blueprintPanel.BuildUVE();
+}
+
+void EditorPrismEntityEditorUVE::CloseBlueprintUVE(const std::string& path) {
+    if (m_blueprintPanel.PathUVE() == path) {
         if (m_blueprintPanel.DirtyUVE()) {
-            static_cast<void>(m_blueprintPanel.SaveUVE());
+            static_cast<void>(m_blueprintPanel.SaveUVE());   // closing keeps its edits
         }
         m_blueprintPanel.CloseUVE();
-        SetBlueprintModeUVE(false);
-    };
-    bar->add(close, CentreUVE());
-    auto strip = prism::make<prism::Border>();
-    strip->setBackground(prism::ThemeColor(&prism::Theme::statusBar));
-    strip->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    strip->setChild(bar);
-    auto column = prism::vbox();
-    column->add(strip);
-    column->add(m_blueprintPanel.BuildUVE(), prism::Slot{1.0F});
-    return column;
+    }
+    std::erase_if(m_openBlueprints, [&path](const OpenBlueprintEntryUVE& entry) { return entry.path == path; });
+    // The one left of it (or the viewport) takes its place.
+    if (!m_blueprintPanel.IsOpenUVE() && m_blueprintMode && !m_openBlueprints.empty()) {
+        const OpenBlueprintEntryUVE next = m_openBlueprints.back();
+        OpenBlueprintUVE(next.path, next.target);
+        return;
+    }
+    SetBlueprintModeUVE(m_blueprintMode);
+}
+
+void EditorPrismEntityEditorUVE::SyncBlueprintCrumbsUVE() {
+    if (!m_crumbRow) {
+        return;
+    }
+    // Forget crumbs whose object left the entity.
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    const std::vector<Scene::EntityUVE> objects = m_editor.CollectEntityEditorObjectsUVE();
+    std::erase_if(m_openBlueprints, [&](const OpenBlueprintEntryUVE& entry) {
+        return !em.IsAliveUVE(entry.target) || std::find(objects.begin(), objects.end(), entry.target) == objects.end();
+    });
+    const std::string active = m_blueprintMode ? m_blueprintPanel.PathUVE() : std::string{};
+    std::string signature = active + (m_blueprintPanel.DirtyUVE() ? "*" : "") + "|";
+    for (const OpenBlueprintEntryUVE& entry : m_openBlueprints) {
+        signature += entry.path + ";";
+    }
+    if (signature == m_crumbSignature) {
+        return;
+    }
+    m_crumbSignature = signature;
+    m_crumbRow->clearChildren();
+
+    auto viewport = prism::make<prism::Button>("Viewport", prism::Icon::LayoutViewport, prism::ButtonStyle::Toolbar);
+    viewport->setCheckable(true);
+    viewport->setChecked(!m_blueprintMode);
+    viewport->setTooltip("The entity's viewport");
+    viewport->onClick = [this] { SetBlueprintModeUVE(false); };
+    m_crumbRow->add(viewport, CentreUVE());
+    if (!m_openBlueprints.empty()) {
+        const auto chevron = [this] {
+            auto label = prism::make<prism::Label>(">", prism::FontRole::Small);
+            label->setColor(prism::ThemeColor(&prism::Theme::textDim));
+            m_crumbRow->add(label, CentreUVE());
+        };
+        auto bar = prism::make<prism::Label>("|", prism::FontRole::Small);
+        bar->setColor(prism::ThemeColor(&prism::Theme::textDim));
+        m_crumbRow->add(bar, CentreUVE());
+        // The folder of the Blueprint shown (or the first one): Content, or the folder it was made in.
+        const std::string& shown = active.empty() ? m_openBlueprints.front().path : active;
+        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const std::filesystem::path contentProject = m_blueprintPanel.ProjectPathUVE(snapshot.contentRoot);
+        const std::filesystem::path folderRelative = std::filesystem::path(shown).parent_path().lexically_relative(contentProject);
+        const bool atRoot = folderRelative.empty() || folderRelative == "." || *folderRelative.begin() == "..";
+        auto folder = prism::make<prism::Button>(atRoot ? std::string("Content") : folderRelative.filename().string(), prism::Icon::Folder,
+                                                 prism::ButtonStyle::Toolbar);
+        folder->setTooltip(atRoot ? std::string("Content: show it in the Content Browser")
+                                  : "Content/" + folderRelative.generic_string() + ": show it in the Content Browser");
+        folder->onClick = [this, folderRelative, atRoot] {
+            m_editor.m_contentBrowserDirectory = atRoot ? std::filesystem::path{} : folderRelative;
+            m_editor.m_contentStatusMessage = "Content Browser: " + (atRoot ? std::string("Content") : "Content/" + folderRelative.generic_string());
+        };
+        m_crumbRow->add(folder, CentreUVE());
+        for (const OpenBlueprintEntryUVE& entry : m_openBlueprints) {
+            chevron();
+            const bool isActive = entry.path == active;
+            const std::string stem = std::filesystem::path(entry.path).stem().string();
+            auto crumb = prism::make<prism::Button>(stem + (isActive && m_blueprintPanel.DirtyUVE() ? " *" : ""), prism::Icon::BlueprintClass,
+                                                    prism::ButtonStyle::Toolbar);
+            crumb->setCheckable(true);
+            crumb->setChecked(isActive);
+            crumb->setTooltip(entry.path + "  (" + m_editor.GetEntityDisplayLabelUVE(entry.target) + ")");
+            crumb->onClick = [this, entry] { OpenBlueprintUVE(entry.path, entry.target); };
+            m_crumbRow->add(crumb, CentreUVE());
+            if (isActive) {
+                auto close = ToolButtonUVE(prism::Icon::Close, "Close " + stem + " (its edits are saved)");
+                close->onClick = [this, path = entry.path] { CloseBlueprintUVE(path); };
+                m_crumbRow->add(close, CentreUVE());
+            }
+        }
+    }
+    if (prism::Application::exists()) {
+        prism::Application::get().invalidateLayout();
+    }
 }
 
 void EditorPrismEntityEditorUVE::SetBlueprintModeUVE(const bool on) {
@@ -885,12 +958,7 @@ void EditorPrismEntityEditorUVE::SyncBlueprintTabUVE() {
         SetBlueprintModeUVE(false);   // its object went away
         return;
     }
-    if (m_blueprintTab && open) {
-        const std::string label = std::filesystem::path(m_blueprintPanel.PathUVE()).stem().string() + (m_blueprintPanel.DirtyUVE() ? " *" : "");
-        if (m_blueprintTab->text() != label) {
-            m_blueprintTab->setText(label);
-        }
-    }
+    SyncBlueprintCrumbsUVE();
     const bool shown = open && m_blueprintMode;
     if (!m_detailsTabs || shown == m_blueprintDetailsShown) {
         return;
