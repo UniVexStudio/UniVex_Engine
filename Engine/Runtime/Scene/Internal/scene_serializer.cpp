@@ -579,6 +579,16 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
     }
     nlohmann::json root = {{"parameters", std::move(parameters)},
             {"nodes", std::move(nodes)}};
+    if (!component.comments.empty()) {
+        nlohmann::json comments = nlohmann::json::array();
+        for (const AnimationGraphCommentUVE& comment : component.comments) {
+            comments.push_back({{"title", comment.title},
+                                {"position", {comment.position.x, comment.position.y}},
+                                {"size", {comment.size.x, comment.size.y}},
+                                {"color", comment.color}});
+        }
+        root["comments"] = std::move(comments);
+    }
     if (component.sequencer != kInvalidEntityUVE) {
         root["sequencer"] = {{"index", component.sequencer.index}, {"generation", component.sequencer.generation}};
     }
@@ -782,6 +792,23 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
             const float marginY = std::max((hi.y - lo.y) * 0.15F, 0.5F);
             object.areaMin = Math::Vector2UVE{lo.x - marginX, lo.y - marginY};
             object.areaMax = Math::Vector2UVE{hi.x + marginX, hi.y + marginY};
+        }
+    }
+    if (json.contains("comments") && json["comments"].is_array()) {
+        for (const nlohmann::json& item : json["comments"]) {
+            if (!item.is_object()) {
+                continue;
+            }
+            AnimationGraphCommentUVE comment;
+            comment.title = item.value("title", std::string{"Comment"});
+            if (const auto p = item.find("position"); p != item.end() && p->is_array() && p->size() == 2U) {
+                comment.position = Math::Vector2UVE{(*p)[0].get<float>(), (*p)[1].get<float>()};
+            }
+            if (const auto z = item.find("size"); z != item.end() && z->is_array() && z->size() == 2U) {
+                comment.size = Math::Vector2UVE{(*z)[0].get<float>(), (*z)[1].get<float>()};
+            }
+            comment.color = item.value("color", comment.color);
+            tree.comments.push_back(std::move(comment));
         }
     }
     return tree;

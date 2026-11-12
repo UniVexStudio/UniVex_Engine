@@ -377,6 +377,16 @@ struct AnimationGraphNodeStateUVE final {
 
 /// AnimationGraph's own state: an animation graph evaluated every frame. What it moves, which
 /// channels and whether it runs live in its AnimationDriver base (AnimationDriverComponentUVE).
+/// A comment box on the graph editor's canvas (editor only: the runtime never reads it).
+struct AnimationGraphCommentUVE final {
+    std::string title = "Comment";
+    Math::Vector2UVE position{};
+    Math::Vector2UVE size{260.0F, 160.0F};
+    /// RGBA, 0..255.
+    std::uint32_t color = 0x1E50822DU;
+    [[nodiscard]] bool operator==(const AnimationGraphCommentUVE&) const = default;
+};
+
 struct AnimationGraphComponentUVE final {
     /// Outliner entity with AnimationSequencerComponentUVE supplying clips to this graph.
     EntityUVE sequencer = kInvalidEntityUVE;
@@ -386,6 +396,8 @@ struct AnimationGraphComponentUVE final {
     std::vector<AnimationParameterUVE> parameters;
     /// A new tree starts as Output fed by one Clip, so picking a clip is all it takes to play.
     std::vector<AnimationGraphNodeUVE> nodes = MakeDefaultAnimationGraphUVE();
+    /// The editor's comment boxes around groups of nodes.
+    std::vector<AnimationGraphCommentUVE> comments;
 
     // ---- Runtime state, written by the tree; never saved ----------------------------------------
     std::vector<AnimationGraphNodeStateUVE> nodeStates;
@@ -417,7 +429,7 @@ struct AnimationGraphComponentUVE final {
     /// Authored data only: runtime state is ignored.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationGraphComponentUVE& other) const {
         return sequencer == other.sequencer && montagePlayer == other.montagePlayer && parameters == other.parameters &&
-               nodes == other.nodes;
+               nodes == other.nodes && comments == other.comments;
     }
 
     [[nodiscard]] bool operator==(const AnimationGraphComponentUVE&) const = default;
