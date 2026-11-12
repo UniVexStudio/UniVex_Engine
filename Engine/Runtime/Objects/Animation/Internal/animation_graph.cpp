@@ -22,6 +22,7 @@
 #include "animation_sequencer.h"
 #include "object_3d.h"
 #include "skeleton_3d.h"
+#include "two_bone_ik_3d.h"
 
 namespace UVE::Scene {
 namespace {
@@ -192,6 +193,14 @@ public:
                 return EvaluateTimeSeekUVE(node, deltaSeconds, weight, phase);
             case Kind::Slot:
                 return EvaluateSlotUVE(node, deltaSeconds, weight, phase);
+            case Kind::TwoBoneIK:
+                return EvaluateTwoBoneIKUVE(node, deltaSeconds, weight, phase);
+            case Kind::ModifyBone:
+                return EvaluateModifyBoneUVE(node, deltaSeconds, weight, phase);
+            case Kind::LookAt:
+                return EvaluateLookAtUVE(node, deltaSeconds, weight, phase);
+            case Kind::BlendByBool:
+                return EvaluateBlendByBoolUVE(node, state, deltaSeconds, weight, phase);
         }
         return {};
     }
@@ -952,6 +961,268 @@ private:
         return EvaluateInputUVE(node, 0U, deltaSeconds, weight, phase);
     }
 
+    // ---- Pose modifiers: Two Bone IK, Modify Bone, Look At, and Blend by Bool ---------------------
+
+    /// A bone in the skeleton's space: where the pose puts it, all its parents applied.
+    struct GlobalPoseUVE final {
+        Math::Vector3UVE position{};
+        Math::QuaternionUVE rotation{};
+        Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+    };
+
+    [[nodiscard]] std::optional<std::size_t> BoneIndexUVE(const std::string& name) const {
+        if (m_skeleton == nullptr || name.empty()) {
+            return std::nullopt;
+        }
+        const std::vector<SkeletonBoneUVE>& bones = m_skeleton->bones;
+        for (std::size_t i = 0U; i < bones.size(); ++i) {
+            if (bones[i].name == name) {
+                return i;
+            }
+        }
+        // The same forgiving match clips get: the name after a namespace, any case.
+        const auto clean = [](std::string_view text) {
+            if (const auto at = text.find_last_of(":|"); at != std::string_view::npos) {
+                text = text.substr(at + 1U);
+            }
+            return text;
+        };
+        const std::string_view wanted = clean(name);
+        for (std::size_t i = 0U; i < bones.size(); ++i) {
+            const std::string_view candidate = clean(bones[i].name);
+            if (candidate.size() == wanted.size() &&
+                std::equal(candidate.begin(), candidate.end(), wanted.begin(), [](const char a, const char b) {
+                    return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+                })) {
+                return i;
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// Every bone of `pose` in the skeleton's space. Bones are parents first.
+    [[nodiscard]] std::vector<GlobalPoseUVE> GlobalsUVE(const ChannelsUVE& pose) const {
+        std::vector<GlobalPoseUVE> out(pose.size());
+        for (std::size_t i = 0U; i < pose.size(); ++i) {
+            const PoseUVE& local = pose[i];
+            const std::int32_t parent = i < m_skeleton->bones.size() ? m_skeleton->bones[i].parentIndex : -1;
+            if (parent >= 0 && static_cast<std::size_t>(parent) < i) {
+                const GlobalPoseUVE& up = out[static_cast<std::size_t>(parent)];
+                const Math::Vector3UVE scaled{up.scale.x * local.position.x, up.scale.y * local.position.y, up.scale.z * local.position.z};
+                out[i].position = up.position + Math::RotateVectorUVE(up.rotation, scaled);
+                out[i].rotation = Math::MultiplyUVE(up.rotation, local.rotation);
+                out[i].scale = Math::Vector3UVE{up.scale.x * local.scale.x, up.scale.y * local.scale.y, up.scale.z * local.scale.z};
+            } else {
+                out[i] = GlobalPoseUVE{local.position, local.rotation, local.scale};
+            }
+        }
+        return out;
+    }
+
+    [[nodiscard]] Math::QuaternionUVE ParentRotationUVE(const std::vector<GlobalPoseUVE>& globals, const std::size_t bone) const {
+        const std::int32_t parent = m_skeleton->bones[bone].parentIndex;
+        return parent >= 0 && static_cast<std::size_t>(parent) < globals.size() ? globals[static_cast<std::size_t>(parent)].rotation
+                                                                                : Math::QuaternionUVE{};
+    }
+
+    [[nodiscard]] float AlphaUVE(const AnimationGraphNodeUVE& node) {
+        const float alpha = ReadUVE(node.alphaParameter, node.value);
+        return std::isfinite(alpha) ? std::clamp(alpha, 0.0F, 1.0F) : 0.0F;
+    }
+
+    /// The point an IK or a Look At aims at, in the skeleton's space; none when its source has none.
+    [[nodiscard]] std::optional<Math::Vector3UVE> TargetUVE(const AnimationGraphNodeUVE& node, const std::vector<GlobalPoseUVE>& globals) {
+        switch (node.targetSource) {
+            case AnimationGraphTargetSourceUVE::Fixed: return node.target;
+            case AnimationGraphTargetSourceUVE::Parameter: {
+                const AnimationParameterUVE* const parameter = FindParameterUVE(node.parameter);
+                if (parameter != nullptr && parameter->type == AnimationParameterTypeUVE::Vector3) {
+                    return parameter->vector;
+                }
+                return std::nullopt;
+            }
+            case AnimationGraphTargetSourceUVE::Bone:
+                if (const std::optional<std::size_t> bone = BoneIndexUVE(node.targetBone); bone.has_value() && *bone < globals.size()) {
+                    return globals[*bone].position;
+                }
+                return std::nullopt;
+        }
+        return std::nullopt;
+    }
+
+    /// The input with a two-bone chain bent so its tip reaches the effector.
+    [[nodiscard]] ResultUVE EvaluateTwoBoneIKUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds, const float weight,
+                                                 const std::optional<float> phase) {
+        ResultUVE result = EvaluateInputUVE(node, 0U, deltaSeconds, weight, phase);
+        const float alpha = AlphaUVE(node);
+        if (!result.pose.has_value() || m_skeleton == nullptr || node.bones.size() != 3U || !(alpha > 0.0F) ||
+            result.pose->size() != m_skeleton->bones.size()) {
+            return result;
+        }
+        const std::optional<std::size_t> root = BoneIndexUVE(node.bones[0]);
+        const std::optional<std::size_t> middle = BoneIndexUVE(node.bones[1]);
+        const std::optional<std::size_t> tip = BoneIndexUVE(node.bones[2]);
+        if (!root.has_value() || !middle.has_value() || !tip.has_value() || *root == *middle || *middle == *tip) {
+            return result;
+        }
+        ChannelsUVE& pose = *result.pose;
+        const std::vector<GlobalPoseUVE> globals = GlobalsUVE(pose);
+        const std::optional<Math::Vector3UVE> target = TargetUVE(node, globals);
+        if (!target.has_value()) {
+            return result;
+        }
+        TwoBoneIKChainUVE chain;
+        chain.root = globals[*root].position;
+        chain.middle = globals[*middle].position;
+        chain.end = globals[*tip].position;
+        chain.parentRotation = ParentRotationUVE(globals, *root);
+        chain.rootRotation = globals[*root].rotation;
+        chain.middleRotation = globals[*middle].rotation;
+        // No pole: the chain keeps bending the way the pose bends it.
+        Math::Vector3UVE pole = node.pole;
+        if (Math::LengthSquaredUVE(pole) < 1.0e-8F) {
+            pole = chain.middle - (chain.root + chain.end) * 0.5F;
+        }
+        const std::optional<TwoBoneIKSolutionUVE> solution = SolveTwoBoneIKUVE(chain, *target, pole);
+        if (!solution.has_value()) {
+            return result;
+        }
+        Math::QuaternionUVE blended{};
+        if (TryBlendTwoBoneIKRotationUVE(pose[*root].rotation, solution->rootLocalRotation, alpha, blended)) {
+            pose[*root].rotation = blended;
+        }
+        if (TryBlendTwoBoneIKRotationUVE(pose[*middle].rotation, solution->middleLocalRotation, alpha, blended)) {
+            pose[*middle].rotation = blended;
+        }
+        return result;
+    }
+
+    /// The input with one bone moved, turned and scaled.
+    [[nodiscard]] ResultUVE EvaluateModifyBoneUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds, const float weight,
+                                                  const std::optional<float> phase) {
+        ResultUVE result = EvaluateInputUVE(node, 0U, deltaSeconds, weight, phase);
+        const float alpha = AlphaUVE(node);
+        if (!result.pose.has_value() || node.bones.empty() || !(alpha > 0.0F)) {
+            return result;
+        }
+        // On a skeleton the named bone; on an object its one transform.
+        std::size_t bone = 0U;
+        if (m_skeleton != nullptr) {
+            const std::optional<std::size_t> found = BoneIndexUVE(node.bones.front());
+            if (!found.has_value() || *found >= result.pose->size()) {
+                return result;
+            }
+            bone = *found;
+        }
+        constexpr float kRadiansUVE = 3.14159265358979F / 180.0F;
+        Math::QuaternionUVE turn{};
+        if (!Math::TryMakeEulerUVE(node.rotationDegrees * kRadiansUVE, turn)) {
+            turn = Math::QuaternionUVE{};
+        }
+        ChannelsUVE& pose = *result.pose;
+        const PoseUVE local = pose[bone];
+        PoseUVE wanted = local;
+        const bool replace = node.modifyMode == AnimationBoneModifyModeUVE::Replace;
+        if (node.space == AnimationBoneSpaceUVE::Local || m_skeleton == nullptr) {
+            wanted.position = replace ? node.target : local.position + node.target;
+            wanted.rotation = replace ? turn : Math::MultiplyUVE(turn, local.rotation);
+            wanted.scale = replace ? node.boneScale
+                                   : Math::Vector3UVE{local.scale.x * node.boneScale.x, local.scale.y * node.boneScale.y,
+                                                      local.scale.z * node.boneScale.z};
+        } else {
+            // In the skeleton's space, then back into the parent's.
+            const std::vector<GlobalPoseUVE> globals = GlobalsUVE(pose);
+            const GlobalPoseUVE& now = globals[bone];
+            const std::int32_t parent = m_skeleton->bones[bone].parentIndex;
+            const GlobalPoseUVE up = parent >= 0 && static_cast<std::size_t>(parent) < globals.size() ? globals[static_cast<std::size_t>(parent)]
+                                                                                                      : GlobalPoseUVE{};
+            const Math::Vector3UVE position = replace ? node.target : now.position + node.target;
+            const Math::QuaternionUVE rotation = replace ? turn : Math::MultiplyUVE(turn, now.rotation);
+            const Math::QuaternionUVE inverseUp = InverseOrIdentityUVE(up.rotation);
+            const Math::Vector3UVE back = Math::RotateVectorUVE(inverseUp, position - up.position);
+            const auto safe = [](const float value) { return std::abs(value) > 1.0e-6F ? value : 1.0F; };
+            wanted.position = Math::Vector3UVE{back.x / safe(up.scale.x), back.y / safe(up.scale.y), back.z / safe(up.scale.z)};
+            wanted.rotation = Math::MultiplyUVE(inverseUp, rotation);
+            wanted.scale = replace ? node.boneScale
+                                   : Math::Vector3UVE{local.scale.x * node.boneScale.x, local.scale.y * node.boneScale.y,
+                                                      local.scale.z * node.boneScale.z};
+        }
+        pose[bone] = MixPoseUVE(local, wanted, alpha);
+        return result;
+    }
+
+    /// The input with one bone turned to look at the target, no further than its clamp.
+    [[nodiscard]] ResultUVE EvaluateLookAtUVE(const AnimationGraphNodeUVE& node, const float deltaSeconds, const float weight,
+                                              const std::optional<float> phase) {
+        ResultUVE result = EvaluateInputUVE(node, 0U, deltaSeconds, weight, phase);
+        const float alpha = AlphaUVE(node);
+        if (!result.pose.has_value() || m_skeleton == nullptr || node.bones.empty() || !(alpha > 0.0F) ||
+            result.pose->size() != m_skeleton->bones.size()) {
+            return result;
+        }
+        const std::optional<std::size_t> bone = BoneIndexUVE(node.bones.front());
+        if (!bone.has_value()) {
+            return result;
+        }
+        ChannelsUVE& pose = *result.pose;
+        const std::vector<GlobalPoseUVE> globals = GlobalsUVE(pose);
+        const std::optional<Math::Vector3UVE> target = TargetUVE(node, globals);
+        if (!target.has_value()) {
+            return result;
+        }
+        const GlobalPoseUVE& now = globals[*bone];
+        const Math::Vector3UVE toTarget = *target - now.position;
+        const Math::Vector3UVE axis = Math::LengthSquaredUVE(node.pole) > 1.0e-8F ? Math::NormalizeUVE(node.pole) : Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+        const Math::Vector3UVE aim = Math::RotateVectorUVE(now.rotation, axis);
+        if (Math::LengthSquaredUVE(toTarget) < 1.0e-10F || Math::LengthSquaredUVE(aim) < 1.0e-10F) {
+            return result;
+        }
+        const Math::Vector3UVE from = Math::NormalizeUVE(aim);
+        const Math::Vector3UVE to = Math::NormalizeUVE(toTarget);
+        Math::Vector3UVE turnAxis = Math::CrossUVE(from, to);
+        float angle = std::acos(std::clamp(Math::DotUVE(from, to), -1.0F, 1.0F));
+        if (Math::LengthSquaredUVE(turnAxis) < 1.0e-10F) {
+            if (angle < 1.0e-4F) {
+                return result;   // already looking there
+            }
+            // Straight behind: turn about any axis across the aim.
+            turnAxis = Math::CrossUVE(from, std::abs(from.y) < 0.9F ? Math::Vector3UVE{0.0F, 1.0F, 0.0F} : Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+        }
+        angle = std::min(angle, std::max(0.0F, node.clampDegrees) * 3.14159265358979F / 180.0F);
+        Math::QuaternionUVE delta{};
+        if (!Math::TryMakeAxisAngleUVE(Math::NormalizeUVE(turnAxis), angle, delta)) {
+            return result;
+        }
+        const Math::QuaternionUVE global = Math::MultiplyUVE(delta, now.rotation);
+        const Math::QuaternionUVE local = Math::MultiplyUVE(InverseOrIdentityUVE(ParentRotationUVE(globals, *bone)), global);
+        pose[*bone].rotation = SlerpUVE(pose[*bone].rotation, local, alpha);
+        return result;
+    }
+
+    /// The first input while the Bool is true, the second while it is false, faded between.
+    [[nodiscard]] ResultUVE EvaluateBlendByBoolUVE(const AnimationGraphNodeUVE& node, AnimationGraphNodeStateUVE& state,
+                                                   const float deltaSeconds, const float weight, const std::optional<float> phase) {
+        const bool on = ReadUVE(node.parameter, 0.0F) >= 0.5F;
+        float& toward = state.blendAt.x;   // how far toward the first input, 0..1
+        if (!state.started) {
+            state.started = true;
+            toward = on ? 1.0F : 0.0F;
+        }
+        const float goal = on ? 1.0F : 0.0F;
+        const float fade = on ? node.fadeSeconds : node.fadeBackSeconds;
+        if (fade <= 0.0F) {
+            toward = goal;
+        } else {
+            const float most = deltaSeconds / fade;
+            toward += std::clamp(goal - toward, -most, most);
+        }
+        toward = std::clamp(toward, 0.0F, 1.0F);
+        // A side with no weight is not played: it starts over where it is when it fades back in.
+        const ResultUVE whenTrue = toward > 0.0F ? EvaluateInputUVE(node, 0U, deltaSeconds, weight * toward, phase) : ResultUVE{};
+        const ResultUVE whenFalse = toward < 1.0F ? EvaluateInputUVE(node, 1U, deltaSeconds, weight * (1.0F - toward), phase) : ResultUVE{};
+        return MixUVE(whenFalse, whenTrue, toward);
+    }
+
     AnimationGraphComponentUVE& m_tree;
     const AnimationClipResolverUVE& m_clips;
     const Skeleton3DComponentUVE* m_skeleton = nullptr;
@@ -1020,6 +1291,48 @@ void ResetAnimationGraphUVE(AnimationGraphComponentUVE& tree) {
         tree.nodeStates[index].activeState = tree.nodes[index].entryState;
     }
     tree.activeStates.clear();
+}
+
+std::size_t WriteCharacterAnimationParametersUVE(AnimationGraphComponentUVE& tree, const Math::Vector3UVE& velocity,
+                                                 const Math::Vector3UVE& up, const Math::QuaternionUVE& facing, const bool grounded) {
+    const Math::Vector3UVE upAxis = Math::LengthSquaredUVE(up) > 1.0e-8F ? Math::NormalizeUVE(up) : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    // The velocity along the ground: what a walk-run blend reads.
+    const Math::Vector3UVE ground = velocity - upAxis * Math::DotUVE(velocity, upAxis);
+    const float speed = Math::LengthUVE(ground);
+    const Math::Vector3UVE forward = Math::RotateVectorUVE(facing, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    const Math::Vector3UVE right = Math::RotateVectorUVE(facing, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+    float direction = 0.0F;
+    if (speed > 1.0e-3F) {
+        direction = std::atan2(Math::DotUVE(ground, right), Math::DotUVE(ground, forward)) * 180.0F / 3.14159265358979F;
+    }
+    std::size_t written = 0U;
+    for (AnimationParameterUVE& parameter : tree.parameters) {
+        float value = parameter.value;
+        switch (parameter.source) {
+            case AnimationParameterSourceUVE::Script: continue;
+            case AnimationParameterSourceUVE::CharacterSpeed: value = speed; break;
+            case AnimationParameterSourceUVE::CharacterDirection: value = direction; break;
+            case AnimationParameterSourceUVE::CharacterInAir: value = grounded ? 0.0F : 1.0F; break;
+            case AnimationParameterSourceUVE::CharacterGrounded: value = grounded ? 1.0F : 0.0F; break;
+        }
+        if (std::isfinite(value)) {
+            parameter.value = value;
+            ++written;
+        }
+    }
+    return written;
+}
+
+bool SetAnimationGraphVectorParameterUVE(AnimationGraphComponentUVE& tree, const std::string_view name,
+                                         const Math::Vector3UVE& value) {
+    const auto found = std::find_if(tree.parameters.begin(), tree.parameters.end(),
+                                    [name](const AnimationParameterUVE& parameter) { return parameter.name == name; });
+    if (found == tree.parameters.end() || found->type != AnimationParameterTypeUVE::Vector3 || !std::isfinite(value.x) ||
+        !std::isfinite(value.y) || !std::isfinite(value.z)) {
+        return false;
+    }
+    found->vector = value;
+    return true;
 }
 
 bool SetAnimationGraphParameterUVE(AnimationGraphComponentUVE& tree, const std::string_view name, const float value) {

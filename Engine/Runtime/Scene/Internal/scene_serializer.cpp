@@ -489,9 +489,16 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
 [[nodiscard]] nlohmann::json ToJsonUVE(const AnimationGraphComponentUVE& component) {
     nlohmann::json parameters = nlohmann::json::array();
     for (const AnimationParameterUVE& parameter : component.parameters) {
-        parameters.push_back({{"name", parameter.name},
-                              {"type", static_cast<std::uint8_t>(parameter.type)},
-                              {"value", parameter.value}});
+        nlohmann::json entry = {{"name", parameter.name},
+                                {"type", static_cast<std::uint8_t>(parameter.type)},
+                                {"value", parameter.value}};
+        if (parameter.type == AnimationParameterTypeUVE::Vector3) {
+            entry["vector"] = {parameter.vector.x, parameter.vector.y, parameter.vector.z};
+        }
+        if (parameter.source != AnimationParameterSourceUVE::Script) {
+            entry["source"] = static_cast<std::uint8_t>(parameter.source);
+        }
+        parameters.push_back(std::move(entry));
     }
     nlohmann::json nodes = nlohmann::json::array();
     for (const AnimationGraphNodeUVE& object : component.nodes) {
@@ -549,7 +556,18 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
                          {"transitions", std::move(transitions)},
                          {"statePositions", std::move(statePositions)},
                          {"entryPosition", {object.entryPosition.x, object.entryPosition.y}},
-                         {"anyPosition", {object.anyPosition.x, object.anyPosition.y}}});
+                         {"anyPosition", {object.anyPosition.x, object.anyPosition.y}},
+                         {"target", {object.target.x, object.target.y, object.target.z}},
+                         {"pole", {object.pole.x, object.pole.y, object.pole.z}},
+                         {"rotationDegrees", {object.rotationDegrees.x, object.rotationDegrees.y, object.rotationDegrees.z}},
+                         {"boneScale", {object.boneScale.x, object.boneScale.y, object.boneScale.z}},
+                         {"targetSource", static_cast<std::uint8_t>(object.targetSource)},
+                         {"targetBone", object.targetBone},
+                         {"modifyMode", static_cast<std::uint8_t>(object.modifyMode)},
+                         {"space", static_cast<std::uint8_t>(object.space)},
+                         {"clampDegrees", object.clampDegrees},
+                         {"alphaParameter", object.alphaParameter},
+                         {"fadeBackSeconds", object.fadeBackSeconds}});
     }
     nlohmann::json root = {{"parameters", std::move(parameters)},
             {"nodes", std::move(nodes)}};
@@ -597,10 +615,16 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
     }
     tree.parameters.clear();
     for (const nlohmann::json& item : json.value("parameters", nlohmann::json::array())) {
-        tree.parameters.push_back(AnimationParameterUVE{item.at("name").get<std::string>(),
-                                                        static_cast<AnimationParameterTypeUVE>(
-                                                            item.value("type", std::uint8_t{0})),
-                                                        item.value("value", 0.0F)});
+        AnimationParameterUVE parameter;
+        parameter.name = item.at("name").get<std::string>();
+        parameter.type = static_cast<AnimationParameterTypeUVE>(item.value("type", std::uint8_t{0}));
+        parameter.value = item.value("value", 0.0F);
+        const std::vector<float> vector = item.value("vector", std::vector<float>{});
+        if (vector.size() == 3U) {
+            parameter.vector = Math::Vector3UVE{vector[0], vector[1], vector[2]};
+        }
+        parameter.source = static_cast<AnimationParameterSourceUVE>(item.value("source", std::uint8_t{0}));
+        tree.parameters.push_back(std::move(parameter));
     }
     if (json.contains("nodes")) {
         tree.nodes.clear();
@@ -703,6 +727,22 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
             }
             readPair("entryPosition", object.entryPosition);
             readPair("anyPosition", object.anyPosition);
+            const auto readTriple = [&item](const char* key, Math::Vector3UVE& out) {
+                if (const auto found = item.find(key); found != item.end() && found->is_array() && found->size() == 3U) {
+                    out = Math::Vector3UVE{(*found)[0].get<float>(), (*found)[1].get<float>(), (*found)[2].get<float>()};
+                }
+            };
+            readTriple("target", object.target);
+            readTriple("pole", object.pole);
+            readTriple("rotationDegrees", object.rotationDegrees);
+            readTriple("boneScale", object.boneScale);
+            object.targetSource = static_cast<AnimationGraphTargetSourceUVE>(item.value("targetSource", std::uint8_t{0}));
+            object.targetBone = item.value("targetBone", std::string{});
+            object.modifyMode = static_cast<AnimationBoneModifyModeUVE>(item.value("modifyMode", std::uint8_t{0}));
+            object.space = static_cast<AnimationBoneSpaceUVE>(item.value("space", std::uint8_t{0}));
+            object.clampDegrees = item.value("clampDegrees", 180.0F);
+            object.alphaParameter = item.value("alphaParameter", std::string{});
+            object.fadeBackSeconds = item.value("fadeBackSeconds", 0.2F);
             tree.nodes.push_back(std::move(object));
         }
         static_cast<void>(MigrateBlendSpaceInputsUVE(tree.nodes, legacyPositions));

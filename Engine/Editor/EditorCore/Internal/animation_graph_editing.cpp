@@ -73,6 +73,10 @@ const char* AnimationGraphKindLabelUVE(const Kind kind) noexcept {
         case Kind::LayeredBlend: return "Layered Blend";
         case Kind::TimeSeek: return "Time Seek";
         case Kind::Slot: return "Slot";
+        case Kind::TwoBoneIK: return "Two Bone IK";
+        case Kind::ModifyBone: return "Modify Bone";
+        case Kind::LookAt: return "Look At";
+        case Kind::BlendByBool: return "Blend by Bool";
     }
     return "?";
 }
@@ -96,6 +100,11 @@ const char* AnimationGraphKindHelpUVE(const Kind kind) noexcept {
             return "Lays the Layer over the Base on chosen bone branches only - shoot with the upper body while running.";
         case Kind::TimeSeek: return "Jumps its input to a time when its trigger fires, then plays on.";
         case Kind::Slot: return "Where an Animation Montage plays: the montage on this slot is laid over the input.";
+        case Kind::TwoBoneIK:
+            return "Bends a two-bone chain (upper arm, forearm, hand) so its tip reaches a target - a hand on a rail, a foot on a step.";
+        case Kind::ModifyBone: return "Moves, turns and scales one bone, on top of the pose or instead of it.";
+        case Kind::LookAt: return "Turns one bone to face a target, no further than its clamp - a head following the camera.";
+        case Kind::BlendByBool: return "Plays True while a Bool is on and False while it is off, fading between them.";
     }
     return "";
 }
@@ -110,6 +119,10 @@ std::string AnimationGraphSlotLabelUVE(const Kind kind, const std::size_t slot) 
         case Kind::BlendSpace2D: return "Point " + std::to_string(slot + 1U);
         case Kind::Select: return "Option " + std::to_string(slot);
         case Kind::LayeredBlend: return slot == 0U ? "Base" : "Layer";
+        case Kind::BlendByBool: return slot == 0U ? "True" : "False";
+        case Kind::TwoBoneIK:
+        case Kind::ModifyBone:
+        case Kind::LookAt: return "Pose";
         default: return "Input";
     }
 }
@@ -160,6 +173,23 @@ std::uint32_t AddAnimationGraphNodeUVE(std::vector<AnimationGraphNodeUVE>& nodes
         case Kind::Slot:
             added.inputs = {0U};
             added.parameter = "DefaultSlot";
+            break;
+        case Kind::TwoBoneIK:
+            added.inputs = {0U};
+            added.value = 1.0F;
+            added.pole = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+            break;
+        case Kind::ModifyBone:
+            added.inputs = {0U};
+            added.value = 1.0F;
+            break;
+        case Kind::LookAt:
+            added.inputs = {0U};
+            added.value = 1.0F;
+            added.clampDegrees = 75.0F;
+            break;
+        case Kind::BlendByBool:
+            added.inputs = {0U, 0U};
             break;
         default:
             break;

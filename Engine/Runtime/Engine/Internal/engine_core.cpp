@@ -2059,6 +2059,35 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             continue;
         }
         Scene::AnimationGraphComponentUVE& tree = m_entityManager->GetComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
+        // Parameters fed from the character: the Character Controller on the tree's target or an
+        // object above the tree (the character it sits in), searched up.
+        if (std::any_of(tree.parameters.begin(), tree.parameters.end(), [](const Scene::AnimationParameterUVE& p) {
+                return p.source != Scene::AnimationParameterSourceUVE::Script;
+            })) {
+            const auto findCharacter = [this](Scene::EntityUVE from) {
+                for (int depth = 0; depth < 32 && from != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(from); ++depth) {
+                    if (m_entityManager->HasComponentUVE<Scene::CharacterControllerComponentUVE>(from)) {
+                        return from;
+                    }
+                    from = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(from)
+                               ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(from).parent
+                               : Scene::kInvalidEntityUVE;
+                }
+                return Scene::kInvalidEntityUVE;
+            };
+            Scene::EntityUVE character = findCharacter(mixer.target);
+            if (character == Scene::kInvalidEntityUVE) {
+                character = findCharacter(entity);
+            }
+            if (character != Scene::kInvalidEntityUVE) {
+                const auto& controller = m_entityManager->GetComponentUVE<Scene::CharacterControllerComponentUVE>(character);
+                const Math::QuaternionUVE facing = m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(character)
+                                                       ? m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(character).localRotation
+                                                       : Math::QuaternionUVE{};
+                static_cast<void>(Scene::WriteCharacterAnimationParametersUVE(tree, controller.realVelocity, controller.upDirection, facing,
+                                                                             controller.grounded));
+            }
+        }
         // A character's tree poses its skeleton, bone by bone; with no skeleton under the target it
         // animates the target object itself.
         const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, mixer.target);
