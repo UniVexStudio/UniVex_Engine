@@ -50,6 +50,11 @@ struct ConformedRigUVE final {
     /// that already did). Rigs from other tools face any way: Z up, or looking down -X. It is part
     /// of every entry of `moveOfRigBone`, and clips are turned by it too.
     Math::QuaternionUVE orientation{};
+    /// The same bones, names and frames as `skeleton`, resting where the rig itself rests (its own
+    /// T-pose, or whatever it was made in), only stood up +Y. A mesh bound to this keeps every
+    /// vertex where it was (ConformMeshModeUVE::KeepRestPose): a clip conformed to the humanoid then
+    /// poses it into the A-pose and beyond, and nothing is baked into its shape.
+    RetargetSkeletonUVE restSkeleton;
 };
 
 /// Makes `rig` (any rest pose, any unit scale, any way up or facing) the humanoid:
@@ -64,9 +69,17 @@ struct ConformedRigUVE final {
 ///    follow, the root on the ground under the hips);
 ///  - every humanoid bone's rest rotation becomes the reference's.
 /// Nothing when the rig is malformed or has no hips.
+/// What conforming adds beyond the humanoid's core.
+struct ConformOptionsUVE final {
+    /// Also generate the optional bones (the corrective shape helpers) the rig lacks. Off: a rig
+    /// gains only the core bones it is missing (a complete body gains just its root, IK targets
+    /// and sockets).
+    bool includeOptional = false;
+};
+
 [[nodiscard]] std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig, const HumanoidMatchUVE& match,
                                                                 const HumanoidReferenceUVE& reference,
-                                                                std::string* error = nullptr);
+                                                                std::string* error = nullptr, const ConformOptionsUVE& options = {});
 
 /// A skinned mesh's skeleton as a rig: each joint's rest is the inverse of its inverse bind (the
 /// mesh's model space, metres), named as the joint is. Nothing for a static mesh, unnamed joints
@@ -78,13 +91,24 @@ struct ConformedRigUVE final {
 /// skin; dual quaternion blending keeps the volume, so it is what conforming a mesh uses.
 enum class SkinBlendUVE : std::uint8_t { Linear = 0, DualQuaternion };
 
+/// What conforming a mesh does to its shape.
+enum class ConformMeshModeUVE : std::uint8_t {
+    /// Moves the vertices into the A-pose and binds them there (older content).
+    BakeAPose = 0,
+    /// Leaves every vertex where it is (only stood up +Y when the rig lay another way) and binds the
+    /// humanoid's bones at the rig's own rest (`restSkeleton`). Nothing can be damaged: the A-pose
+    /// is a pose a clip puts it in, not a new shape.
+    KeepRestPose,
+};
+
 /// Re-skins `mesh` for `conformed` (made from RigFromMeshUVE of the same mesh): every vertex,
 /// normal and tangent moves with its joints into the A-pose, the joints become the conformed
 /// skeleton's (renamed, reordered, added) with inverse binds for its rest, influences point at the
 /// new joints, and the bounds are remeasured. The weights, UVs and triangles are untouched: the
 /// mesh is moved, never rebuilt. False, leaving `mesh` alone, when the two do not belong together.
 [[nodiscard]] bool ConformMeshUVE(Asset::MeshAssetUVE& mesh, const ConformedRigUVE& conformed, std::string* error = nullptr,
-                                  SkinBlendUVE blend = SkinBlendUVE::DualQuaternion);
+                                  SkinBlendUVE blend = SkinBlendUVE::DualQuaternion,
+                                  ConformMeshModeUVE mode = ConformMeshModeUVE::BakeAPose);
 
 /// How much a mesh's shape changed: over every triangle edge, how much it grew or shrank.
 struct MeshDistortionUVE final {
