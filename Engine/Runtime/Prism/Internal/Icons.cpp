@@ -321,6 +321,14 @@ void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke) {
   case Icon::NodeFresnel:
     p.circle(8, 8, 5.6f); p.arc(8, 8, 3.2f, 3.2f, -70, 110); break;
   case Icon::Play: p.fillPoly({{4.5f, 2.8f}, {13, 8}, {4.5f, 13.2f}}); break;
+  case Icon::SkipStart: p.fillRect(3, 3, 2, 10); p.fillPoly({{13, 3}, {13, 13}, {5.5f, 8}}); break;
+  case Icon::SkipEnd: p.fillRect(11, 3, 2, 10); p.fillPoly({{3, 3}, {3, 13}, {10.5f, 8}}); break;
+  case Icon::StepBack: p.fillRect(3.5f, 4, 1.8f, 8); p.fillPoly({{12, 4}, {12, 12}, {6, 8}}); break;
+  case Icon::StepForward: p.fillRect(10.7f, 4, 1.8f, 8); p.fillPoly({{4, 4}, {4, 12}, {10, 8}}); break;
+  case Icon::Key: p.fillPoly({{8, 2.5f}, {13.5f, 8}, {8, 13.5f}, {2.5f, 8}}); break;
+  case Icon::Curve:
+    p.line(2, 13, 2, 3); p.line(2, 13, 14, 13);
+    p.poly({{3.5f, 11.5f}, {5.5f, 10.8f}, {7, 8.5f}, {8.5f, 6}, {10.5f, 4.6f}, {13, 4.2f}}); break;
   case Icon::Pause: p.fillRect(4, 3, 3, 10); p.fillRect(9, 3, 3, 10); break;
   case Icon::Stop: p.fillRect(3.5f, 3.5f, 9, 9); break;
   case Icon::Undo:

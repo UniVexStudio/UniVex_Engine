@@ -4,6 +4,7 @@
 #include "editor.h"
 #include "editor_prism_details.h"
 #include "editor_prism_dock_panels.h"
+#include "editor_prism_sequencer_panel.h"
 #include "editor_prism_icons.h"
 #include "editor_prism_view_toolbar.h"
 #include "editor_prism_viewport_gizmos.h"
@@ -125,6 +126,7 @@ private:
     std::vector<std::shared_ptr<prism::Button>> m_dockTabs;
     bool m_dockVisible = true;
     EditorPrismDockPanelsUVE m_dockPanels;
+    EditorPrismSequencerPanelUVE m_sequencer;
     [[nodiscard]] prism::Ref<prism::Widget> BuildDockBarUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildSequencerPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildGraphPageUVE();

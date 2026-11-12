@@ -150,4 +150,20 @@ struct TimelineMorphPreviewUVE final {
 /// key every frame; only the frames a shape actually moves on are keys an author can point at.
 [[nodiscard]] bool ShowsMorphKeyUVE(const Asset::AnimationAssetMorphTrackUVE& track, std::size_t index);
 
+/// Frames per second the clip was baked at, from its densest track; 30 when it cannot tell (a
+/// hand-made clip with a few keys was still made at 30).
+[[nodiscard]] double EstimateTimelineFrameRateUVE(const Asset::AnimationClipAssetUVE& clip);
+
+/// A ruler tick spacing, in seconds, that keeps labels at least `minimumPixels` apart.
+[[nodiscard]] double PickTimelineTickStepUVE(double pixelsPerSecond, double frameRate, float minimumPixels);
+
+/// True when `channel` (0 position, 1 rotation, 2 scale) differs between two poses.
+[[nodiscard]] bool TimelineChannelChangesUVE(const Asset::AnimationAssetPoseUVE& before,
+                                             const Asset::AnimationAssetPoseUVE& after, int channel);
+
+/// True when sample `index` is a key worth showing on a row: an end of the track, or a frame the
+/// channel (-1: any channel) moves into or out of. A baked clip stores every channel every frame.
+[[nodiscard]] bool ShowsTimelineKeyUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples, std::size_t index,
+                                       int channel);
+
 } // namespace UVE::Editor
