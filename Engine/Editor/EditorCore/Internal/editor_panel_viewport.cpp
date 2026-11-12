@@ -131,13 +131,7 @@ void EditorUVE::DrawOverlayWindowsUVE() {
     DrawProjectSettingsWindowUVE();
     DrawInputMapWindowUVE();
     DrawKeyboardShortcutsWindowUVE();
-    // The Entity Editor is a PRISM window of its own (EditorPrismEntityEditorUVE).
-    if (m_retargetPreview.has_value()) {
-        DrawRetargetPlaceholderUVE();
-    }
-    if (m_retargetWindow.has_value()) {
-        DrawRetargetWindowUVE();
-    }
+    // The Entity Editor and the Retarget window are PRISM windows of their own.
     if (m_animationLibraryWindow.has_value()) {
         DrawAnimationLibraryWindowUVE();
     }

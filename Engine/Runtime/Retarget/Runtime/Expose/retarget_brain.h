@@ -97,7 +97,7 @@ private:
 /// only one the names did not find). Everything is then checked as usual; a pair the brain made
 /// with less than 85% confidence is a Warning, so it is looked at.
 [[nodiscard]] HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const HumanoidReferenceUVE& reference,
-                                                        const RigBrainUVE& brain, float minimumConfidence = 0.6F);
+                                                        const RigBrainUVE& brain, float minimumConfidence = 0.7F);
 
 /// A project's mapped rigs (what it learned from), as text (`Saved/RigBrain/samples.uvbrain`), and back.
 [[nodiscard]] std::string WriteRigBrainSamplesUVE(const std::vector<RigBrainSampleUVE>& samples);
@@ -105,5 +105,9 @@ private:
 
 /// The brain the engine ships with: trained on first use from generated rigs only (deterministic).
 [[nodiscard]] const RigBrainUVE& GetDefaultRigBrainUVE();
+/// Starts training it in the background (an editor window that will want it soon); returns at once.
+void WarmDefaultRigBrainUVE();
+/// Whether it is trained (GetDefaultRigBrainUVE would not wait).
+[[nodiscard]] bool IsDefaultRigBrainReadyUVE() noexcept;
 
 } // namespace UVE::Retarget

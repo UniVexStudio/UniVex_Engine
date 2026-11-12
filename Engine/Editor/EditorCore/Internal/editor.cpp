@@ -479,7 +479,7 @@ void EditorUVE::TickUVE() {
 
 bool EditorUVE::EnterPlayModeUVE() {
     // The document is an entity while the Entity Editor is open; the scene plays, not it.
-    if (m_entityDocumentActive || m_retargetPreview.has_value()) {
+    if (m_entityDocumentActive) {
         return false;
     }
     // A colour still being picked belongs to the document being played; finish it first.
@@ -1348,7 +1348,7 @@ bool EditorUVE::DiscardSelectedPrefabOverridesAndRefreshUVE() {
 }
 
 bool EditorUVE::LoadSceneUVE() {
-    if (m_entityDocumentActive || m_retargetPreview.has_value()) {
+    if (m_entityDocumentActive) {
         return false;
     }
     static_cast<void>(CommitComponentPropertyPreviewUVE());
@@ -3716,10 +3716,8 @@ bool EditorUVE::IsLifecycleCommandAllowedUVE() const noexcept {
 }
 
 bool EditorUVE::IsAuthoringCommandAllowedUVE() const noexcept {
-    // The Retarget preview stands in for the scene while its window is open: nothing is authored
-    // (or saved) into it.
-    return m_state == EditorStateUVE::Running && m_playModeState == EditorPlayModeStateUVE::Edit &&
-           !m_retargetPreview.has_value();
+    // The Retarget preview has a world of its own: the level stays authorable beside it.
+    return m_state == EditorStateUVE::Running && m_playModeState == EditorPlayModeStateUVE::Edit && !m_retargetSceneActive;
 }
 
 EditorUVE::EditorSelectionSnapshotUVE EditorUVE::CaptureSelectionSnapshotUVE() const {
@@ -4028,7 +4026,7 @@ Scene::EntityUVE EditorUVE::ResolvePlaceableParentUVE(const Scene::EntityUVE can
 }
 
 bool EditorUVE::IsOutlinerLayoutActiveUVE() const noexcept {
-    return !m_retargetPreview.has_value();
+    return !m_retargetSceneActive;
 }
 
 Scene::EntityUVE EditorUVE::GetDocumentViewportUVE() {

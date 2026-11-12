@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <future>
 #include <cmath>
 #include <cstddef>
 #include <cctype>
@@ -393,6 +395,47 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
             sample.rig.bones.push_back(std::move(out));
             sample.referenceOfBone.push_back(static_cast<std::int32_t>(bone));
         }
+        // The end bones exporters add (finger tips, the top of the head, eyes, toe ends): leaves that
+        // are none of the humanoid's, named the rig's way.
+        if (random.ChanceUVE(0.7F)) {
+            const std::size_t count = sample.rig.bones.size();
+            for (std::size_t bone = 0U; bone < count; ++bone) {
+                const std::int32_t ref = sample.referenceOfBone[bone];
+                if (ref < 0) {
+                    continue;
+                }
+                const std::string& key = reference.info[static_cast<std::size_t>(ref)].key;
+                const char sideChar = key.empty() ? 'C' : key.front();
+                std::vector<std::pair<std::string, Math::Vector3UVE>> ends;
+                const bool fingerTip = reference.info[static_cast<std::size_t>(ref)].kind == HumanoidBoneKindUVE::Finger && !key.empty() && key.back() == '3';
+                if (fingerTip) {
+                    ends.emplace_back(key.substr(0U, key.size() - 1U) + "4", Math::Vector3UVE{});
+                } else if (key == "C|head") {
+                    ends.emplace_back("C|head top end", Math::Vector3UVE{0.0F, 0.18F, 0.0F});
+                    ends.emplace_back("L|eye", Math::Vector3UVE{0.03F, 0.07F, 0.09F});
+                    ends.emplace_back("R|eye", Math::Vector3UVE{-0.03F, 0.07F, 0.09F});
+                } else if (key == "L|toe" || key == "R|toe") {
+                    ends.emplace_back(std::string{sideChar} + "|toe end", Math::Vector3UVE{0.0F, 0.0F, 0.08F});
+                }
+                for (auto& [endKey, offset] : ends) {
+                    RetargetBoneUVE out;
+                    std::string engineName = MakeHumanoidBoneNameUVE(endKey);
+                    out.name = NameInStyleUVE(engineName, endKey, style, pad, sample.rig.bones.size(), random);
+                    out.parent = static_cast<std::int32_t>(bone);
+                    // A finger tip goes on along its finger; the others sit where they are said to.
+                    Math::Vector3UVE along = offset * units;
+                    if (fingerTip) {
+                        const std::int32_t parent = sample.rig.bones[bone].parent;
+                        const Math::Vector3UVE from = parent >= 0 ? sample.rig.bones[bone].position - sample.rig.bones[static_cast<std::size_t>(parent)].position
+                                                                   : Math::Vector3UVE{0.0F, -0.02F, 0.0F} * units;
+                        along = from * 0.8F;
+                    }
+                    out.position = sample.rig.bones[bone].position + along;
+                    sample.rig.bones.push_back(std::move(out));
+                    sample.referenceOfBone.push_back(-1);
+                }
+            }
+        }
         // Bones of the rig's own, on random bones.
         const std::size_t extras = random.BelowUVE(5U);
         for (std::size_t e = 0U; e < extras && !sample.rig.bones.empty(); ++e) {
@@ -699,17 +742,56 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
         return match;
     }
     const std::vector<BonePredictionUVE> predictions = brain.PredictUVE(rig, reference);
-    std::vector<std::pair<std::size_t, float>> found;   // reference bone, confidence
+    // The surest first; a guess is taken only where the hierarchy agrees: under the rig bone of the
+    // nearest humanoid bone above it that is found, and above the rig bones of those below it.
+    std::vector<std::size_t> order;
     for (std::size_t bone = 0U; bone < rig.bones.size(); ++bone) {
+        order.push_back(bone);
+    }
+    std::ranges::stable_sort(order, [&predictions](const std::size_t a, const std::size_t b) {
+        return predictions[a].confidence > predictions[b].confidence;
+    });
+    const auto below = [&rig](std::int32_t bone, const std::int32_t ancestor) {
+        for (bone = rig.bones[static_cast<std::size_t>(bone)].parent; bone >= 0; bone = rig.bones[static_cast<std::size_t>(bone)].parent) {
+            if (bone == ancestor) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto agrees = [&](const std::size_t ref, const std::int32_t bone) {
+        std::int32_t above = reference.skeleton.bones[ref].parent;
+        while (above >= 0 && match.joints[static_cast<std::size_t>(above)].bone < 0) {
+            above = reference.skeleton.bones[static_cast<std::size_t>(above)].parent;
+        }
+        if (above >= 0 && !below(bone, match.joints[static_cast<std::size_t>(above)].bone)) {
+            return false;
+        }
+        for (std::size_t other = 0U; other < reference.info.size(); ++other) {
+            const std::int32_t at = match.joints[other].bone;
+            if (at < 0 || !IsBelowUVE(reference.skeleton, static_cast<std::int32_t>(other), static_cast<std::int32_t>(ref))) {
+                continue;
+            }
+            if (!below(at, bone)) {
+                return false;
+            }
+        }
+        return true;
+    };
+    std::vector<std::pair<std::size_t, float>> found;   // reference bone, confidence
+    for (const std::size_t bone : order) {
         const BonePredictionUVE& guess = predictions[bone];
         if (match.referenceOfBone[bone] >= 0 || guess.reference < 0 || guess.confidence < minimumConfidence) {
             continue;
         }
         const auto ref = static_cast<std::size_t>(guess.reference);
-        if (match.joints[ref].bone >= 0) {
-            continue;   // the names already found it
+        if (match.joints[ref].bone >= 0 || !agrees(ref, static_cast<std::int32_t>(bone))) {
+            continue;   // the names already found it, or it would sit in the wrong place
         }
         match.referenceOfBone[bone] = guess.reference;
+        match.joints[ref].bone = static_cast<std::int32_t>(bone);
+        match.joints[ref].status = JointStatusUVE::Good;
+        match.joints[ref].reason.clear();
         found.emplace_back(ref, guess.confidence);
     }
     if (found.empty()) {
@@ -789,11 +871,28 @@ std::vector<RigBrainSampleUVE> ReadRigBrainSamplesUVE(const std::string_view tex
     return samples;
 }
 
+namespace {
+std::atomic<bool> gDefaultBrainReadyUVE{false};
+} // namespace
+
 const RigBrainUVE& GetDefaultRigBrainUVE() {
     static RigBrainUVE brain;
     static std::once_flag once;
-    std::call_once(once, [] { brain.TrainUVE(GetHumanoidReferenceUVE()); });
+    std::call_once(once, [] {
+        brain.TrainUVE(GetHumanoidReferenceUVE());
+        gDefaultBrainReadyUVE = true;
+    });
     return brain;
+}
+
+void WarmDefaultRigBrainUVE() {
+    static std::once_flag once;
+    static std::future<void> training;
+    std::call_once(once, [] { training = std::async(std::launch::async, [] { static_cast<void>(GetDefaultRigBrainUVE()); }); });
+}
+
+bool IsDefaultRigBrainReadyUVE() noexcept {
+    return gDefaultBrainReadyUVE.load();
 }
 
 } // namespace UVE::Retarget

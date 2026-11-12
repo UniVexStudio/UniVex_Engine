@@ -339,6 +339,8 @@ struct RetargetWindowStateUVE final {
     std::filesystem::path target;
     RetargetPlanUVE plan;
     bool planStale = true;
+    /// Counts plans made, so a window showing one knows when it changed.
+    std::size_t planSerial = 0U;
     std::string boneFilter;
     bool problemsOnly = false;
     /// The last result, one line.
@@ -462,6 +464,7 @@ class EditorUVE final {
     friend class EditorPrismEntityClassWindowUVE;
     friend class EditorPrismMontageEditorUVE;
     friend class EditorPrismBlueprintPanelUVE;
+    friend class EditorPrismRetargetWindowUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -1791,14 +1794,10 @@ private:
         float inspectorWidth = 0.0F;
         bool focusPending = true;
     };
-    /// What the Retarget window's viewport shows while it is open: the scene is put aside (as the
-    /// Entity Editor does) and a preview world stands in its place. Closing brings the scene back.
+    /// What the Retarget window's viewport shows: a world of its own (a document scene beside the
+    /// level, as the Montage Editor's), so the level stays open and editable the whole time.
     struct RetargetPreviewUVE final {
-        Scene::SceneSnapshotUVE sceneSnapshot;
-        bool sceneWasEmpty = false;
-        bool sceneDirtyBefore = false;
-        EditorSelectionPathsUVE selectionBefore;
-        std::optional<Core::SimulationExecutionModeUVE> simulationBefore;
+        std::shared_ptr<Core::DocumentSceneUVE> scene;
         /// Everything of the preview stands under it.
         Scene::EntityUVE frameRoot = Scene::kInvalidEntityUVE;
         /// The humanoid and the character stand under it; the viewport frames it.
@@ -1813,19 +1812,34 @@ private:
         std::filesystem::path builtFor;
         bool frameRequested = false;
     };
-    /// Puts the scene aside for the preview. False (nothing changed) when the editor cannot right now.
+    /// Makes the preview's own world. False when the editor cannot make one.
     [[nodiscard]] bool BeginRetargetPreviewUVE();
-    /// Brings the scene back. False, staying in the preview, when it cannot be restored.
+    /// Drops the preview's world (the level was never touched).
     [[nodiscard]] bool EndRetargetPreviewUVE();
+    /// Renders the preview's world for the Retarget window (its own camera state and input).
+    [[nodiscard]] std::uint64_t RenderRetargetPreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
+                                                         const EditorViewportInputUVE& input);
+    /// Runs `work` with the preview's world as the active document; the level's selection and
+    /// dirty flag are left as they were.
+    void WithRetargetSceneUVE(const std::function<void()>& work);
+    /// True while the preview's world is the active document.
+    bool m_retargetSceneActive = false;
     /// Builds the world: a sun, the humanoid and the character side by side (the studio view draws the rest).
     void RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile);
-    void DrawRetargetPreviewUVE();
-    void DrawRetargetPlaceholderUVE();
+    void BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile);
+    /// The Retarget window's work, called every frame while it is open: a finished job's result,
+    /// a fresh plan (and preview) when the character or the files changed.
+    void TickRetargetWindowUVE();
+    /// The rigged characters the Retarget window offers (model sources and .uvmodel files).
+    [[nodiscard]] std::vector<std::filesystem::path> RetargetCandidatesUVE() const;
+    /// Generate: conforms the character and the animations in the background. False when it cannot now.
+    bool StartRetargetUVE();
+    /// Undo Last: puts the last run's originals back.
+    bool UndoLastRetargetUVE();
     /// The entity's objects in tree order (root first). Empty when no entity is open.
     [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorObjectsUVE();
     /// Instantiates the entity asset as the document's only content (below the scene root).
     [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
-    void DrawRetargetWindowUVE();
     void DrawAnimationLibraryWindowUVE();
     /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).
     void DrawOverlayWindowsUVE();

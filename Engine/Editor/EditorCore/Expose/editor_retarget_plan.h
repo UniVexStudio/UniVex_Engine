@@ -27,6 +27,11 @@ struct RetargetJointRowUVE final {
     std::string reason;
     /// The character's own name for it, empty when it has none.
     std::string characterName;
+    /// A corrective the character may lack (it is not generated).
+    bool optional = false;
+    /// Found by the Rig Brain (not by its name), and how sure it was.
+    bool byBrain = false;
+    float confidence = 1.0F;
 };
 
 struct RetargetAnimationRowUVE final {
@@ -38,6 +43,10 @@ struct RetargetAnimationRowUVE final {
 /// What conforming a character and some animations would do, worked out without touching a file.
 /// The Retarget window shows it; Generate carries it out.
 struct RetargetPlanUVE final {
+    /// Core bones the character lacks: what Generate adds (optional correctives are not made).
+    std::size_t missingCore = 0U;
+    /// The Rig Brain helped find the bones (it trains in the background when the window opens).
+    bool usedBrain = false;
     std::filesystem::path model;
     bool modelReadable = false;
     /// Why the character cannot be conformed, when it cannot.
