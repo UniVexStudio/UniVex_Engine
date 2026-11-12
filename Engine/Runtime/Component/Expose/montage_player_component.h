@@ -49,6 +49,8 @@ struct MontagePlayerComponentUVE final {
     Asset::AssetGuidUVE montage6;
     Asset::AssetGuidUVE montage7;
     Asset::AssetGuidUVE montage8;
+    /// A `.uvmontagelib` this player is linked to: its montages play by name as the slots' do.
+    Asset::AssetGuidUVE libraryRef;
 
     // ---- Runtime state; never saved -------------------------------------------------------------
     MontageRequestUVE request = MontageRequestUVE::None;
@@ -70,7 +72,7 @@ struct MontagePlayerComponentUVE final {
     [[nodiscard]] bool operator==(const MontagePlayerComponentUVE& other) const noexcept {
         return montage1 == other.montage1 && montage2 == other.montage2 && montage3 == other.montage3 &&
                montage4 == other.montage4 && montage5 == other.montage5 && montage6 == other.montage6 &&
-               montage7 == other.montage7 && montage8 == other.montage8;
+               montage7 == other.montage7 && montage8 == other.montage8 && libraryRef == other.libraryRef;
     }
 };
 

@@ -64,6 +64,10 @@ EditorPrismDetailsUVE::PickerSpecUVE EditorPrismDetailsUVE::PickerSpecForUVE(con
         spec.title = "Texture";
         spec.listed = {".uvtex"};
         spec.loadable = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
+    } else if (has(".uvmontagelib")) {
+        spec.title = "Montage Library";
+        spec.listed = {".uvmontagelib"};
+        spec.loadable = {".uvmontagelib"};
     } else if (has(".uvmontage")) {
         spec.title = "Montage";
         spec.listed = {".uvmontage"};

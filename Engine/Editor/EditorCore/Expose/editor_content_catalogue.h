@@ -40,6 +40,8 @@ enum class ContentCatalogueActionUVE : std::uint8_t {
     MaterialAsset,
     /// A `.uvshader` custom shader file.
     ShaderAsset,
+    /// A `.uvmontagelib` montage library: an empty list of montages MontagePlayers link to.
+    MontageLibraryAsset,
 };
 
 /// An entry of the Content "+ Add" / right-click menu.

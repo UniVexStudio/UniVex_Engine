@@ -7,6 +7,7 @@
 
 #include "animation_graph_editing.h"
 #include "animation_sequencer_component.h"
+#include "montage_player_component.h"
 #include "name_component.h"
 #include "skeleton_3d.h"
 
@@ -738,6 +739,27 @@ void EditorPrismAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
         };
         row->add(pick, prism::Slot{1.0F});
         page->add(row);
+        // Optional: the MontagePlayer whose montages the Slot nodes play.
+        auto montageRow = prism::hbox(6.0F);
+        montageRow->setPadding(prism::Margin(10.0F, 2.0F, 10.0F, 0.0F));
+        auto montageLabel = prism::make<prism::Label>("Montages", prism::FontRole::Small);
+        montageLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
+        montageRow->add(montageLabel, CentreSlotUVE());
+        const Scene::EntityUVE linkedPlayer = graph.montagePlayer;
+        const std::string playerName = linkedPlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(linkedPlayer)
+                                           ? NameOfUVE(em, linkedPlayer, "MontagePlayer")
+                                           : std::string{"Any MontagePlayer (optional)"};
+        auto pickPlayer = prism::make<prism::Button>(playerName, prism::Icon::ChevronDown, prism::ButtonStyle::Default);
+        pickPlayer->setTooltip("Optional: the MontagePlayer whose montages play on this graph's Slot nodes. Unset, any "
+                               "MontagePlayer posing the same skeleton does.");
+        std::weak_ptr<prism::Button> weakPlayer = pickPlayer;
+        pickPlayer->onClick = [this, weakPlayer] {
+            if (auto b = weakPlayer.lock()) {
+                ShowMontagePlayerMenuUVE(prism::Vec2{b->rect().x, b->rect().bottom()});
+            }
+        };
+        montageRow->add(pickPlayer, prism::Slot{1.0F});
+        page->add(montageRow);
         auto skeleton = prism::make<prism::Label>(
             m_view.skeleton != Scene::kInvalidEntityUVE ? "Previews on " + NameOfUVE(em, m_view.skeleton, "Skeleton3D") : "No skeleton to preview on",
             prism::FontRole::Small);
@@ -1064,6 +1086,33 @@ void EditorPrismAnimGraphPanelUVE::ShowGraphMenuUVE() {
     if (m_graphButton) {
         prism::showContextMenu(std::move(items), prism::Vec2{m_graphButton->rect().x, m_graphButton->rect().bottom()});
     }
+}
+
+void EditorPrismAnimGraphPanelUVE::ShowMontagePlayerMenuUVE(const prism::Vec2 at) {
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    const GraphUVE* graph = GraphPtrUVE();
+    const Scene::EntityUVE bound = graph != nullptr ? graph->montagePlayer : Scene::kInvalidEntityUVE;
+    std::vector<prism::MenuItem> items;
+    items.push_back(prism::MenuItem::Check("Any MontagePlayer on the same skeleton", bound == Scene::kInvalidEntityUVE, [this] {
+        m_montageSlots.clear();
+        EditUVE([](GraphUVE& g) { g.montagePlayer = Scene::kInvalidEntityUVE; });
+    }));
+    items.push_back(prism::MenuItem::Sep());
+    bool any = false;
+    for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
+        if (!em.HasComponentUVE<Scene::MontagePlayerComponentUVE>(object)) {
+            continue;
+        }
+        any = true;
+        items.push_back(prism::MenuItem::Check(NameOfUVE(em, object, "MontagePlayer"), bound == object, [this, object] {
+            m_montageSlots.clear();
+            EditUVE([object](GraphUVE& g) { g.montagePlayer = object; });
+        }));
+    }
+    if (!any) {
+        items.push_back(prism::MenuItem::Item("No MontagePlayer in this entity yet", {}).disabled());
+    }
+    prism::showContextMenu(std::move(items), at);
 }
 
 void EditorPrismAnimGraphPanelUVE::ShowSequencerMenuUVE(const prism::Vec2 at) {

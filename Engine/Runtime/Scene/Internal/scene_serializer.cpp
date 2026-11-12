@@ -243,7 +243,11 @@ namespace {
     for (std::size_t i = 0U; i < 8U; ++i) {
         montages.push_back(component.MontageAtUVE(i).value);
     }
-    return {{"montages", std::move(montages)}};
+    nlohmann::json out = {{"montages", std::move(montages)}};
+    if (component.libraryRef != Asset::AssetGuidUVE{}) {
+        out["library"] = component.libraryRef.value;
+    }
+    return out;
 }
 
 [[nodiscard]] bool IsMontagePlayerComponentValidUVE(const MontagePlayerComponentUVE&) noexcept {
@@ -574,6 +578,9 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
     if (component.sequencer != kInvalidEntityUVE) {
         root["sequencer"] = {{"index", component.sequencer.index}, {"generation", component.sequencer.generation}};
     }
+    if (component.montagePlayer != kInvalidEntityUVE) {
+        root["montagePlayer"] = {{"index", component.montagePlayer.index}, {"generation", component.montagePlayer.generation}};
+    }
     return root;
 }
 
@@ -585,6 +592,11 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
         tree.sequencer = EntityUVE{
             json["sequencer"].value("index", std::numeric_limits<std::uint32_t>::max()),
             json["sequencer"].value("generation", 0U)};
+    }
+    if (json.contains("montagePlayer") && json["montagePlayer"].is_object()) {
+        tree.montagePlayer = EntityUVE{
+            json["montagePlayer"].value("index", std::numeric_limits<std::uint32_t>::max()),
+            json["montagePlayer"].value("generation", 0U)};
     }
     if (!json.contains("nodes") && (json.contains("clipA") || json.contains("clipB"))) {
         tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, json.value("blend", 0.0F)}};
@@ -2446,6 +2458,7 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                                   }
                               }
                           }
+                          slot.libraryRef = Asset::AssetGuidUVE{json.value("library", std::uint64_t{0})};
                           return slot;
                       }, IsMontagePlayerComponentValidUVE));
         table.emplace("GameplayTagComponentUVE",
