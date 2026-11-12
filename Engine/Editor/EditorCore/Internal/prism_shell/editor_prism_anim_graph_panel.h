@@ -62,6 +62,9 @@ public:
     /// goes back to the tree.
     void OpenFocusUVE(std::uint32_t node);
     void CloseFocusUVE();
+    /// The graph's settings (sequencer, parameters, the picked node / state / transition / point,
+    /// the preview log), shown in the Details column while the graph page is up.
+    [[nodiscard]] prism::Ref<prism::Widget> SideUVE() const { return m_sidePanel; }
 
 private:
     using NodeUVE = Scene::AnimationGraphNodeUVE;
@@ -125,6 +128,7 @@ private:
     int m_shownPickedState = -1;
     int m_shownPickedTransition = -1;
     std::shared_ptr<prism::ScrollBox> m_side;
+    std::shared_ptr<prism::Widget> m_sidePanel;
     std::shared_ptr<prism::Button> m_graphButton;
     std::shared_ptr<prism::Button> m_previewButton;
     std::shared_ptr<prism::Button> m_playButton;

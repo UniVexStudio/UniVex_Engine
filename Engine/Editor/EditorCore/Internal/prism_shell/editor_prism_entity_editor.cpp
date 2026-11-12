@@ -180,6 +180,8 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildUVE() {
     auto detailsTabs = prism::make<prism::TabView>();
     detailsTabs->addTab("Details", prism::Icon::Properties, PanelUVE(m_details.BuildUVE()));
     m_detailsPanel = detailsTabs;
+    m_detailsTabs = detailsTabs;
+    m_graphDetailsShown = false;
     left->add(m_componentsPanel, prism::Splitter::Pane{260.0F, 120.0F, 1e9F, false});
     left->add(m_detailsPanel, prism::Splitter::Pane{400.0F, 160.0F, 1e9F, true});
 
@@ -561,6 +563,9 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildCentreUVE() {
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     centre->add(view, prism::Splitter::Pane{400.0F, 160.0F, 1e9F, true});
     centre->add(m_dockArea, prism::Splitter::Pane{290.0F, 110.0F, 900.0F, false});
+    m_viewArea = view;
+    m_centreSplit = centre;
+    m_dockFull = false;
     return centre;
 }
 
@@ -590,6 +595,16 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildDockBarUVE() {
         bar->add(tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     }
     bar->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    // Full: the dock takes the viewport's place; Viewport brings the default layout back.
+    m_fullButton = prism::make<prism::Button>("Full", prism::Icon::Frame, prism::ButtonStyle::Toolbar);
+    m_fullButton->setTooltip("Let the dock fill the viewport's space");
+    m_fullButton->onClick = [this] { SetDockFullUVE(true); };
+    m_viewportButton = prism::make<prism::Button>("Viewport", prism::Icon::Camera, prism::ButtonStyle::Toolbar);
+    m_viewportButton->setTooltip("Back to the default layout: the viewport over the dock");
+    m_viewportButton->onClick = [this] { SetDockFullUVE(false); };
+    m_viewportButton->setVisible(false);
+    bar->add(m_fullButton, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
+    bar->add(m_viewportButton, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
     auto border = prism::make<prism::Border>();
     border->setBackground(prism::ThemeColor(&prism::Theme::statusBar));
     border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 0.0F));
@@ -605,6 +620,49 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildGraphPageUVE() {
     return PanelUVE(m_animGraphPanel.BuildUVE());
 }
 
+void EditorPrismEntityEditorUVE::SetDockFullUVE(const bool full) {
+    if (!m_centreSplit || !m_viewArea) {
+        return;
+    }
+    if (full && !m_dockVisible && m_dockPages) {
+        ShowDockPanelUVE(m_dockPages->activeIndex(), true);   // nothing to fill with while hidden
+    }
+    m_dockFull = full;
+    m_viewArea->setVisible(!full);
+    if (prism::Splitter::Pane* const pane = m_centreSplit->paneAt(1)) {
+        pane->flex = full;
+        pane->maxSize = full ? 1e9F : 900.0F;
+    }
+    if (m_fullButton) {
+        m_fullButton->setVisible(!full);
+    }
+    if (m_viewportButton) {
+        m_viewportButton->setVisible(full);
+    }
+    m_centreSplit->relayout();
+    if (prism::Application::exists()) {
+        prism::Application::get().invalidateLayout();
+    }
+}
+
+void EditorPrismEntityEditorUVE::SyncGraphDetailsUVE(const bool graphShown) {
+    // The graph's settings sit in the Details column while its page is up, picked when it opens.
+    if (!m_detailsTabs || graphShown == m_graphDetailsShown) {
+        return;
+    }
+    const prism::Ref<prism::Widget> side = m_animGraphPanel.SideUVE();
+    if (!side) {
+        return;
+    }
+    if (graphShown) {
+        static_cast<void>(m_detailsTabs->insertTab(m_detailsTabs->count(), prism::TabView::Page{"Animation Graph", prism::Icon::AnimGraph, side, false}));
+    } else if (const int index = m_detailsTabs->indexOf("Animation Graph"); index >= 0) {
+        static_cast<void>(m_detailsTabs->takeTab(index));
+        m_detailsTabs->setCurrent(0);
+    }
+    m_graphDetailsShown = graphShown;
+}
+
 void EditorPrismEntityEditorUVE::ShowDockPanelUVE(const int index, const bool forceVisible) {
     if (!m_dockPages || index < 0 || index >= m_dockPages->count()) {
         return;
@@ -618,6 +676,9 @@ void EditorPrismEntityEditorUVE::ShowDockPanelUVE(const int index, const bool fo
     }
     if (m_dockArea) {
         m_dockArea->setVisible(m_dockVisible);
+    }
+    if (!m_dockVisible && m_dockFull) {
+        SetDockFullUVE(false);
     }
     for (std::size_t i = 0; i < m_dockTabs.size(); ++i) {
         m_dockTabs[i]->setChecked(m_dockVisible && static_cast<int>(i) == m_dockPages->activeIndex());
@@ -931,6 +992,7 @@ void EditorPrismEntityEditorUVE::RefreshUVE() {
         const bool graphShown = m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kGraphPageUVE &&
                                 m_dockTabs.size() == kDockPageCountUVE && m_dockTabs[kGraphPageUVE]->visible();
         m_animGraphPanel.RefreshUVE(dt, graphShown);
+        SyncGraphDetailsUVE(graphShown);
         m_dockPanels.RefreshUVE(m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kConsolePageUVE, false);
     });
 }

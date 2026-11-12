@@ -164,14 +164,15 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildUVE() {
         }
         return ok;
     };
+    // The side panel lives in the Entity Editor's Details column (SideUVE), not beside the graph.
     m_side = prism::make<prism::ScrollBox>();
     auto sideBox = prism::make<prism::SizeBox>();
-    sideBox->setWidthOverride(320.0F);
     auto sideFrame = prism::make<prism::Border>();
     sideFrame->setBackground(prism::ThemeColor(&prism::Theme::panel));
     sideFrame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F, 0.0F, 0.0F, 0.0F));
     sideFrame->setChild(m_side);
     sideBox->setContent(sideFrame);
+    m_sidePanel = sideBox;
 
     // The tree, or the State Machine / Blend Space opened from it.
     m_stateView = prism::make<StateMachineViewUVE>(*this);
@@ -205,7 +206,6 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildUVE() {
 
     auto body = prism::hbox();
     body->add(left, prism::Slot{1.0F});
-    body->add(sideBox);
     auto page = prism::vbox();
     page->add(BuildToolbarUVE());
     page->add(body, prism::Slot{1.0F});
