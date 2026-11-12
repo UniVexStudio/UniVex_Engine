@@ -6,6 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <set>
@@ -26,6 +27,17 @@ namespace {
 
 } // namespace
 
+float MontageBlendCurveWeightUVE(const MontageBlendCurveUVE curve, const double t) noexcept {
+    const float x = static_cast<float>(std::clamp(t, 0.0, 1.0));
+    switch (curve) {
+        case MontageBlendCurveUVE::EaseIn: return x * x;
+        case MontageBlendCurveUVE::EaseOut: return 1.0F - (1.0F - x) * (1.0F - x);
+        case MontageBlendCurveUVE::EaseInOut: return x * x * (3.0F - 2.0F * x);
+        case MontageBlendCurveUVE::Linear: break;
+    }
+    return x;
+}
+
 bool IsAnimationMontageAssetValidUVE(const AnimationMontageAssetUVE& montage) noexcept {
     if (montage.slot.size() > kMaximumMontageNameBytesUVE || montage.segments.size() > kMaximumMontageSegmentsUVE ||
         montage.sections.size() > kMaximumMontageSectionsUVE ||
@@ -35,7 +47,8 @@ bool IsAnimationMontageAssetValidUVE(const AnimationMontageAssetUVE& montage) no
     }
     if (!FiniteUVE(montage.blendInSeconds) || montage.blendInSeconds < 0.0 || !FiniteUVE(montage.blendOutSeconds) ||
         montage.blendOutSeconds < 0.0 || !FiniteUVE(montage.blendOutTriggerSeconds) || !FiniteUVE(montage.rateScale) ||
-        montage.rateScale <= 0.0 || montage.rootMotion > MontageRootMotionUVE::ApplyToTarget) {
+        montage.rateScale <= 0.0 || montage.rootMotion > MontageRootMotionUVE::ApplyToTarget ||
+        montage.blendInCurve > MontageBlendCurveUVE::EaseInOut || montage.blendOutCurve > MontageBlendCurveUVE::EaseInOut) {
         return false;
     }
     for (const MontageSegmentUVE& segment : montage.segments) {
@@ -53,7 +66,9 @@ bool IsAnimationMontageAssetValidUVE(const AnimationMontageAssetUVE& montage) no
         }
     }
     for (const MontageNotifyUVE& notify : montage.notifies) {
-        if (!NameOkUVE(notify.name) || !FiniteUVE(notify.time) || notify.time < 0.0) {
+        if (!NameOkUVE(notify.name) || !FiniteUVE(notify.time) || notify.time < 0.0 || !std::isfinite(notify.triggerChance) ||
+            notify.triggerChance < 0.0F || notify.triggerChance > 1.0F || !std::isfinite(notify.minWeight) ||
+            notify.minWeight < 0.0F || notify.minWeight > 1.0F) {
             return false;
         }
     }
@@ -110,7 +125,14 @@ bool SaveAnimationMontageAssetUVE(const AnimationMontageAssetUVE& montage, const
     payload["sections"] = std::move(sections);
     nlohmann::json notifies = nlohmann::json::array();
     for (const MontageNotifyUVE& notify : montage.notifies) {
-        notifies.push_back(nlohmann::json{{"name", notify.name}, {"time", notify.time}, {"track", notify.track}});
+        nlohmann::json entry{{"name", notify.name}, {"time", notify.time}, {"track", notify.track}};
+        if (notify.triggerChance != 1.0F) {
+            entry["chance"] = notify.triggerChance;
+        }
+        if (notify.minWeight != 0.0F) {
+            entry["minWeight"] = notify.minWeight;
+        }
+        notifies.push_back(std::move(entry));
     }
     payload["notifies"] = std::move(notifies);
     nlohmann::json states = nlohmann::json::array();
@@ -137,6 +159,12 @@ bool SaveAnimationMontageAssetUVE(const AnimationMontageAssetUVE& montage, const
     }
     if (montage.blendOutSeconds != defaults.blendOutSeconds) {
         payload["blendOut"] = montage.blendOutSeconds;
+    }
+    if (montage.blendInCurve != defaults.blendInCurve) {
+        payload["blendInCurve"] = static_cast<std::uint8_t>(montage.blendInCurve);
+    }
+    if (montage.blendOutCurve != defaults.blendOutCurve) {
+        payload["blendOutCurve"] = static_cast<std::uint8_t>(montage.blendOutCurve);
     }
     if (montage.blendOutTriggerSeconds != defaults.blendOutTriggerSeconds) {
         payload["blendOutTrigger"] = montage.blendOutTriggerSeconds;
@@ -189,8 +217,10 @@ bool LoadAnimationMontageAssetUVE(const std::filesystem::path& path, AnimationMo
                                                          s.value("next", std::string{})});
         }
         for (const nlohmann::json& n : payload.value("notifies", nlohmann::json::array())) {
-            montage.notifies.push_back(
-                MontageNotifyUVE{n.at("name").get<std::string>(), n.value("time", 0.0), n.value("track", 0U)});
+            MontageNotifyUVE notify{n.at("name").get<std::string>(), n.value("time", 0.0), n.value("track", 0U)};
+            notify.triggerChance = n.value("chance", 1.0F);
+            notify.minWeight = n.value("minWeight", 0.0F);
+            montage.notifies.push_back(std::move(notify));
         }
         for (const nlohmann::json& n : payload.value("notifyStates", nlohmann::json::array())) {
             montage.notifyStates.push_back(MontageNotifyStateUVE{n.at("name").get<std::string>(), n.value("begin", 0.0),
@@ -207,6 +237,8 @@ bool LoadAnimationMontageAssetUVE(const std::filesystem::path& path, AnimationMo
         montage.notifyTracks = payload.value("notifyTracks", montage.notifyTracks);
         montage.blendInSeconds = payload.value("blendIn", montage.blendInSeconds);
         montage.blendOutSeconds = payload.value("blendOut", montage.blendOutSeconds);
+        montage.blendInCurve = static_cast<MontageBlendCurveUVE>(payload.value("blendInCurve", std::uint8_t{0}));
+        montage.blendOutCurve = static_cast<MontageBlendCurveUVE>(payload.value("blendOutCurve", std::uint8_t{0}));
         montage.blendOutTriggerSeconds = payload.value("blendOutTrigger", montage.blendOutTriggerSeconds);
         montage.autoBlendOut = payload.value("autoBlendOut", montage.autoBlendOut);
         montage.rateScale = payload.value("rateScale", montage.rateScale);

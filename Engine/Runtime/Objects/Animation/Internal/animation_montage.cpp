@@ -19,8 +19,8 @@ namespace {
 }
 
 /// Raises the notifies in [from, to) on the way.
-void CollectNotifiesUVE(const Asset::AnimationMontageAssetUVE& montage, const double from, const double to,
-                        std::vector<MontageEventUVE>& events) {
+void CollectNotifiesUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback, const double from,
+                        const double to, std::vector<MontageEventUVE>& events) {
     if (!(to > from)) {
         return;
     }
@@ -33,6 +33,20 @@ void CollectNotifiesUVE(const Asset::AnimationMontageAssetUVE& montage, const do
     std::stable_sort(passed.begin(), passed.end(),
                      [](const Asset::MontageNotifyUVE* a, const Asset::MontageNotifyUVE* b) { return a->time < b->time; });
     for (const Asset::MontageNotifyUVE* notify : passed) {
+        if (playback.weight < notify->minWeight) {
+            continue;   // below its trigger weight threshold (a blend in or out)
+        }
+        if (notify->triggerChance < 1.0F) {
+            // splitmix64: the same playback rolls the same, so a replay is the same.
+            std::uint64_t z = (playback.chanceSeed += 0x9E3779B97F4A7C15ULL);
+            z = (z ^ (z >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+            z = (z ^ (z >> 27U)) * 0x94D049BB133111EBULL;
+            z ^= z >> 31U;
+            const float roll = static_cast<float>(z >> 40U) / static_cast<float>(1ULL << 24U);
+            if (roll >= notify->triggerChance) {
+                continue;
+            }
+        }
         events.push_back(MontageEventUVE{MontageEventUVE::KindUVE::Notify, notify->name});
     }
 }
@@ -135,13 +149,13 @@ void StepMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlayb
     playback.phaseTime += deltaSeconds;
     if (playback.phase == MontagePhaseUVE::BlendIn) {
         const double t = montage.blendInSeconds > 0.0 ? playback.phaseTime / montage.blendInSeconds : 1.0;
-        playback.weight = static_cast<float>(std::min(1.0, t));
+        playback.weight = Asset::MontageBlendCurveWeightUVE(montage.blendInCurve, t);
         if (t >= 1.0) {
             playback.phase = MontagePhaseUVE::Playing;
         }
     } else if (playback.phase == MontagePhaseUVE::BlendOut) {
         const double t = montage.blendOutSeconds > 0.0 ? playback.phaseTime / montage.blendOutSeconds : 1.0;
-        playback.weight = static_cast<float>(std::max(0.0, 1.0 - t));
+        playback.weight = 1.0F - Asset::MontageBlendCurveWeightUVE(montage.blendOutCurve, t);
         if (t >= 1.0) {
             FinishUVE(montage, playback, events);
             return;
@@ -156,7 +170,7 @@ void StepMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlayb
         if (to < end) {
             break;
         }
-        CollectNotifiesUVE(montage, from, end, events);
+        CollectNotifiesUVE(montage, playback, from, end, events);
         const Asset::MontageSectionUVE* const current = Asset::FindMontageSectionUVE(montage, playback.section);
         const std::string next = current != nullptr ? current->next : std::string();
         const Asset::MontageSectionUVE* const following = Asset::FindMontageSectionUVE(montage, next);
@@ -174,7 +188,7 @@ void StepMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlayb
         from = following->time;
         to = following->time + overflow;
     }
-    CollectNotifiesUVE(montage, from, to, events);
+    CollectNotifiesUVE(montage, playback, from, to, events);
     playback.time = to;
 
     // Auto Blend Out starts before the end of the section that ends the montage.

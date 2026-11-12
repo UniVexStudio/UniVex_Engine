@@ -1,4 +1,5 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,7 @@
 #include "animation_graph.h"
 #include "animation_graph_component.h"
 #include "animation_montage.h"
+#include "animation_montage_asset.h"
 #include "animation_montage_editing.h"
 #include "skeleton_3d.h"
 
@@ -109,6 +111,45 @@ TEST(AnimationMontageUVETest, RaisesNotifiesAndNotifyStates) {
     events.clear();
     StepMontageUVE(montage, playback, 0.2, events);    // 1.45
     EXPECT_TRUE(HasEventUVE(events, Kind::NotifyEnd, "hit_window"));
+}
+
+TEST(AnimationMontageUVETest, ABlendCurveShapesTheWeight) {
+    EXPECT_FLOAT_EQ(Asset::MontageBlendCurveWeightUVE(Asset::MontageBlendCurveUVE::Linear, 0.5), 0.5F);
+    EXPECT_FLOAT_EQ(Asset::MontageBlendCurveWeightUVE(Asset::MontageBlendCurveUVE::EaseIn, 0.5), 0.25F);
+    EXPECT_FLOAT_EQ(Asset::MontageBlendCurveWeightUVE(Asset::MontageBlendCurveUVE::EaseOut, 0.5), 0.75F);
+    EXPECT_FLOAT_EQ(Asset::MontageBlendCurveWeightUVE(Asset::MontageBlendCurveUVE::EaseInOut, 2.0), 1.0F) << "clamped";
+    Asset::AnimationMontageAssetUVE montage = MakeComboUVE();
+    montage.blendInSeconds = 1.0;
+    montage.blendInCurve = Asset::MontageBlendCurveUVE::EaseIn;
+    MontagePlaybackUVE playback;
+    std::vector<MontageEventUVE> events;
+    ASSERT_TRUE(StartMontageUVE(montage, playback));
+    StepMontageUVE(montage, playback, 0.5, events);
+    EXPECT_NEAR(playback.weight, 0.25F, 1e-5) << "eased in: a quarter at half time";
+}
+
+TEST(AnimationMontageUVETest, ANotifyKeepsToItsChanceAndWeight) {
+    Asset::AnimationMontageAssetUVE montage = MakeComboUVE();
+    Asset::AddMontageNotifyUVE(montage, "never", 1.2, 0U);
+    Asset::AddMontageNotifyUVE(montage, "heavy", 1.3, 0U);
+    montage.notifies[0].triggerChance = 0.0F;
+    montage.notifies[1].minWeight = 0.9F;
+    montage.blendInSeconds = 1.0;
+    MontagePlaybackUVE playback;
+    std::vector<MontageEventUVE> events;
+    ASSERT_TRUE(StartMontageUVE(montage, playback, "Attack"));
+    StepMontageUVE(montage, playback, 0.5, events);   // 1.5, weight 0.5
+    EXPECT_FALSE(HasEventUVE(events, Kind::Notify, "never")) << "a 0 chance is never raised";
+    EXPECT_FALSE(HasEventUVE(events, Kind::Notify, "heavy")) << "passed at half weight: below its threshold";
+    // Saved and read back.
+    const std::filesystem::path file = std::filesystem::temp_directory_path() / "uve_montage_notify_chance_test.uvmontage";
+    ASSERT_TRUE(Asset::SaveAnimationMontageAssetUVE(montage, file));
+    Asset::AnimationMontageAssetUVE copy;
+    ASSERT_TRUE(Asset::LoadAnimationMontageAssetUVE(file, copy));
+    std::error_code ignored;
+    std::filesystem::remove(file, ignored);
+    EXPECT_EQ(copy.notifies[0].triggerChance, 0.0F);
+    EXPECT_EQ(copy.notifies[1].minWeight, 0.9F);
 }
 
 TEST(AnimationMontageUVETest, BlendsItsPoseOverTheSkeleton) {

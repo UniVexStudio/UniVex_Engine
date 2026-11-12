@@ -26,6 +26,7 @@ struct MontagePlaybackUVE final {
     double phaseTime = 0.0;         ///< seconds into the blend in / out
     float weight = 0.0F;            ///< how much of the pose is the montage's
     std::vector<bool> activeStates; ///< per notify state: inside it now
+    std::uint64_t chanceSeed = 0x9E3779B97F4A7C15ULL; ///< drives notify trigger chances (deterministic)
 };
 
 /// What a script asked of the slot; the engine carries it out on its next animation pass.
