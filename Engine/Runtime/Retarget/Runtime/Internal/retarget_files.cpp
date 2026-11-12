@@ -2,6 +2,8 @@
 
 #include "retarget_files.h"
 
+#include "skeleton_asset.h"
+
 #include <chrono>
 #include <algorithm>
 #include <cstdio>
@@ -29,7 +31,9 @@ struct PlannedFileUVE final {
     fs::path file;
     std::optional<Asset::MeshAssetUVE> mesh;
     std::optional<Asset::AnimationClipAssetUVE> clip;
+    std::optional<Asset::SkeletonAssetUVE> skeleton;
     std::string note;
+    [[nodiscard]] bool WritesUVE() const noexcept { return mesh.has_value() || clip.has_value() || skeleton.has_value(); }
 };
 
 [[nodiscard]] std::string TimestampUVE() {
@@ -87,8 +91,9 @@ struct PlannedFileUVE final {
 
 [[nodiscard]] bool WritePlannedFileUVE(const PlannedFileUVE& planned) {
     const fs::path temporary = TemporaryPathUVE(planned.file);
-    const bool written = planned.mesh.has_value() ? Asset::SaveMeshAssetUVE(*planned.mesh, temporary)
-                                                  : Asset::SaveAnimationClipAssetUVE(*planned.clip, temporary);
+    const bool written = planned.mesh.has_value()       ? Asset::SaveMeshAssetUVE(*planned.mesh, temporary)
+                         : planned.skeleton.has_value() ? Asset::SaveSkeletonAssetUVE(*planned.skeleton, temporary)
+                                                        : Asset::SaveAnimationClipAssetUVE(*planned.clip, temporary);
     if (!written) {
         std::error_code error;
         fs::remove(temporary, error);
@@ -220,6 +225,23 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         model.note = std::to_string(conformed->skeleton.bones.size() - rig->bones.size()) + " bones added" + distortion;
         model.mesh = std::move(mesh);
         planned.push_back(std::move(model));
+        // The importer's skeleton beside the model is what the editor builds the character's
+        // Skeleton3D from: it takes the engine's bones at the rig's own rest too.
+        fs::path skeletonFile = request.model;
+        skeletonFile.replace_extension(".uvskel");
+        if (std::error_code skeletonExists; fs::is_regular_file(skeletonFile, skeletonExists)) {
+            PlannedFileUVE skeleton;
+            skeleton.file = skeletonFile;
+            Asset::SkeletonAssetUVE asset;
+            asset.skeletonId = request.model.stem().string();
+            for (const RetargetBoneUVE& bone : conformed->restSkeleton.bones) {
+                asset.joints.push_back(Asset::SkeletonJointUVE{bone.name, bone.parent, bone.position, bone.rotation,
+                                                               Math::Vector3UVE{bone.scale, bone.scale, bone.scale}});
+            }
+            skeleton.skeleton = std::move(asset);
+            skeleton.note = "the character's skeleton, in the engine's bones";
+            planned.push_back(std::move(skeleton));
+        }
         for (const fs::path& partFile : partFiles) {
             PlannedFileUVE part;
             part.file = partFile;
@@ -272,7 +294,7 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
     // ---- 2. Back up what will change ---------------------------------------------------------------
     std::vector<fs::path> changing;
     for (const PlannedFileUVE& file : planned) {
-        if (file.mesh.has_value() || file.clip.has_value()) {
+        if (file.WritesUVE()) {
             changing.push_back(file.file);
         }
     }
@@ -293,7 +315,7 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         RetargetFileReportUVE entry;
         entry.file = file.file;
         entry.note = file.note;
-        if (file.mesh.has_value() || file.clip.has_value()) {
+        if (file.WritesUVE()) {
             report(index, file.file.filename().string());
             if (!WritePlannedFileUVE(file)) {
                 std::string restoreError;

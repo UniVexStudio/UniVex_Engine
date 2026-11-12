@@ -955,6 +955,8 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
     }
     if (captured) {
         glfwSetInputMode(nativeWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        // A quick Escape is kept until the editor looks, so letting go of the mouse never misses it.
+        glfwSetInputMode(nativeWindow, GLFW_STICKY_KEYS, GLFW_TRUE);
         if (glfwRawMouseMotionSupported()) {
             glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
@@ -6458,6 +6460,51 @@ EditorModelSourceInfoUVE EditorUVE::ReadModelSourceInfoForSourceUVE(const std::f
     return info;
 }
 
+namespace {
+
+[[nodiscard]] std::filesystem::path RetargetMarkerOfUVE(const std::filesystem::path& importedModel) {
+    std::filesystem::path marker = importedModel;
+    marker += ".retargeted";
+    return marker;
+}
+
+[[nodiscard]] std::string SourceStampUVE(const std::filesystem::path& source) {
+    std::error_code error;
+    const std::filesystem::file_time_type time = std::filesystem::last_write_time(source, error);
+    return error ? std::string{} : std::to_string(time.time_since_epoch().count());
+}
+
+} // namespace
+
+bool EditorUVE::IsRetargetedModelCurrentUVE(const std::filesystem::path& relativeSource) const {
+    const std::filesystem::path imported = GetImportedModelPathUVE(relativeSource);
+    std::error_code error;
+    if (imported.empty() || !std::filesystem::is_regular_file(imported, error)) {
+        return false;
+    }
+    std::ifstream in(RetargetMarkerOfUVE(imported));
+    std::string stamp;
+    if (!in || !std::getline(in, stamp)) {
+        return false;
+    }
+    const std::string current = SourceStampUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource);
+    return !current.empty() && stamp == current;
+}
+
+void EditorUVE::MarkRetargetedModelUVE(const std::filesystem::path& relativeSource, const bool retargeted) {
+    if (!IsModelSourcePathUVE(relativeSource)) {
+        return;
+    }
+    const std::filesystem::path marker = RetargetMarkerOfUVE(GetImportedModelPathUVE(relativeSource));
+    std::error_code error;
+    if (!retargeted) {
+        std::filesystem::remove(marker, error);
+        return;
+    }
+    std::ofstream out(marker, std::ios::trunc);
+    out << SourceStampUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource) << "\n";
+}
+
 void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
     Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
     m_modelSources.clear();
@@ -6477,6 +6524,13 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         }
         if (m_modelImportJobs.find(key) != m_modelImportJobs.end()) {
             continue; // Already queued or running; its completion is collected by PollModelImportJobsUVE.
+        }
+        // A character Retarget conformed keeps its conformed model until its source changes:
+        // importing it again would put the source's own bones back under clips made for the
+        // engine's.
+        if (IsRetargetedModelCurrentUVE(entry.relativePath)) {
+            static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(entry.relativePath)));
+            continue;
         }
         Asset::AssetImportRequestUVE request;
         request.sourcePath = source;

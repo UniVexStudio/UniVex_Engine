@@ -120,8 +120,20 @@ std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const 
             std::filesystem::path skelPath = importedPath;
             skelPath.replace_extension(".uvskel");
             Asset::SkeletonAssetUVE skelAsset;
+            // Only while it still describes the mesh's joints (Retarget renames them).
+            const auto sameJoints = [&] {
+                if (meshPtr == nullptr || meshPtr->joints.size() != skelAsset.joints.size()) {
+                    return meshPtr == nullptr;
+                }
+                for (std::size_t joint = 0U; joint < skelAsset.joints.size(); ++joint) {
+                    if (skelAsset.joints[joint].name != meshPtr->joints[joint].name) {
+                        return false;
+                    }
+                }
+                return true;
+            };
             if (std::filesystem::is_regular_file(skelPath, ec) && Asset::LoadSkeletonAssetUVE(skelPath, skelAsset) &&
-                !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones) {
+                !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones && sameJoints()) {
                 Asset::GltfSkeletonUVE skeleton;
                 skeleton.skinCount = 1U;
                 skeleton.joints.reserve(skelAsset.joints.size());
