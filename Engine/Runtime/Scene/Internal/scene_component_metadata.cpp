@@ -442,9 +442,11 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     TypeMetadataEntryUVE primitive =
         MakeEntryUVE("component.primitive_mesh", "PrimitiveMeshComponentUVE", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
                      {
-                         DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
+                         // The object's kind is its shape (a BoxMesh3D is a box): kept in the
+                         // file, never offered, so a box cannot be turned into a sphere here.
+                         HiddenUVE(DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
                              "kind", "Shape",
-                             {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}}),
+                             {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}})),
                          // Kept in the file, never offered: scenes saved while a primitive had its
                          // own tint still carry the value, and the renderer still honours it, but
                          // the Inspector no longer sets one. A surface has one colour - the

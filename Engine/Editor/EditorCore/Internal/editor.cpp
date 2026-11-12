@@ -1604,6 +1604,10 @@ bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
         afterShape = primitive;
     } else {
         afterMesh.meshGuid = model;
+        // The model keeps the material the shape had.
+        if (afterMesh.materialGuid == Asset::kInvalidAssetGuidUVE && beforeShape.has_value()) {
+            afterMesh.materialGuid = beforeShape->materialGuid;
+        }
     }
     const bool sameShape = beforeShape.has_value() == afterShape.has_value() &&
                            (!afterShape.has_value() || beforeShape->kind == afterShape->kind);

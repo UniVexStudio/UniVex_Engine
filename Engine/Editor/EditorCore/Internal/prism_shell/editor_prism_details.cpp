@@ -809,9 +809,12 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
         // A "file:ext,..." row names a file: the path stays editable, and the picker beside it offers
         // the project's files of those kinds, Load... and Import....
         constexpr std::string_view kFilePrefix = "file:";
-        if (property.customDrawerId.rfind(kFilePrefix, 0U) == 0U) {
+        // The environment's sky is a slot too: Empty keeps the procedural sky, a panorama (a published
+        // .uvtex or the source image) is sampled instead of it.
+        const bool skySlot = property.customDrawerId == "sky:asset";
+        if (skySlot || property.customDrawerId.rfind(kFilePrefix, 0U) == 0U) {
             std::vector<std::string> extensions;
-            std::string list = property.customDrawerId.substr(kFilePrefix.size());
+            std::string list = skySlot ? std::string{"uvtex,png,jpg,jpeg,bmp,tga"} : property.customDrawerId.substr(kFilePrefix.size());
             for (std::size_t start = 0U; start <= list.size();) {
                 const std::size_t comma = list.find(',', start);
                 const std::string kind = list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
@@ -847,8 +850,11 @@ void EditorPrismDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& e
                                                                                             : relative.generic_string();
                 static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &value));
             };
-            pick->onClick = [this, e, p, weakPick, extensions, useFile] {
-                const PickerSpecUVE spec = PickerSpecForUVE(extensions);
+            pick->onClick = [this, e, p, weakPick, extensions, useFile, skySlot] {
+                PickerSpecUVE spec = PickerSpecForUVE(extensions);
+                if (skySlot) {
+                    spec.title = "Sky";
+                }
                 PickerActionsUVE actions;
                 const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                 const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
