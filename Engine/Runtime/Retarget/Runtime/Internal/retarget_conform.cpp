@@ -242,17 +242,25 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
         rotationBefore[index] = world[index].rotation;
     }
     const std::vector<std::optional<Math::Vector3UVE>> elbowAxes = ReadElbowAxesUVE(keys, aims, world);
-    for (std::size_t index = 0U; index < referenceCount; ++index) {
-        const std::int32_t aim = aims[index];
-        if (aim < 0 || !TurnsToThePoseUVE(keys[index])) {
-            continue;
+    const auto aimAll = [&] {
+        for (std::size_t index = 0U; index < referenceCount; ++index) {
+            const std::int32_t aim = aims[index];
+            if (aim < 0 || !TurnsToThePoseUVE(keys[index])) {
+                continue;
+            }
+            const auto target = static_cast<std::size_t>(aim);
+            const Math::Vector3UVE want = referenceWorld[target].position - referenceWorld[index].position;
+            const Math::Vector3UVE now = world[target].position - world[index].position;
+            RotateSubtreeUVE(layout, world, index, RotationBetweenUVE(now, want));
         }
-        const auto target = static_cast<std::size_t>(aim);
-        const Math::Vector3UVE want = referenceWorld[target].position - referenceWorld[index].position;
-        const Math::Vector3UVE now = world[target].position - world[index].position;
-        RotateSubtreeUVE(layout, world, index, RotationBetweenUVE(now, want));
+    };
+    // The A-pose bends the elbows forward, so rolling an upper arm swings its forearm: aim, roll,
+    // and aim again until the limbs lie the reference's way with the roll kept.
+    aimAll();
+    for (int pass = 0; pass < 3; ++pass) {
+        RollArmsUVE(layout, world, keys, aims, elbowAxes, byKey);
+        aimAll();
     }
-    RollArmsUVE(layout, world, keys, aims, elbowAxes, byKey);
     for (std::size_t index = 0U; index < referenceCount; ++index) {
         if (keys[index].Is("foot") && keys[index].side != 'C') {
             RestoreRotationUVE(layout, world, index, rotationBefore[index]);
