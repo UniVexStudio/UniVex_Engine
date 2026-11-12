@@ -59,6 +59,10 @@ struct MontageNotifyUVE final {
     std::string name;
     double time = 0.0;
     std::uint32_t track = 0U;
+    /// How likely it is to be raised each time it is passed (1: always).
+    float triggerChance = 1.0F;
+    /// Raised only while the montage weighs at least this much (0: also while blending in or out).
+    float minWeight = 0.0F;
     [[nodiscard]] bool operator==(const MontageNotifyUVE&) const = default;
 };
 
@@ -90,6 +94,17 @@ enum class MontageRootMotionUVE : std::uint8_t {
     ApplyToTarget = 2,
 };
 
+/// The shape of a blend in or out over its time.
+enum class MontageBlendCurveUVE : std::uint8_t {
+    Linear = 0,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+};
+
+/// The weight `curve` gives at `t` (0..1, clamped) of the way through a blend.
+[[nodiscard]] float MontageBlendCurveWeightUVE(MontageBlendCurveUVE curve, double t) noexcept;
+
 struct AnimationMontageAssetUVE final {
     /// The slot it plays on: a Slot node of that name in the character's Anim Graph, or the whole
     /// body when the graph has none.
@@ -105,6 +120,8 @@ struct AnimationMontageAssetUVE final {
     std::uint32_t notifyTracks = 1U;
     double blendInSeconds = 0.25;
     double blendOutSeconds = 0.25;
+    MontageBlendCurveUVE blendInCurve = MontageBlendCurveUVE::Linear;
+    MontageBlendCurveUVE blendOutCurve = MontageBlendCurveUVE::Linear;
     /// When the blend-out starts, in seconds before the end; below 0 it starts blendOutSeconds before.
     double blendOutTriggerSeconds = -1.0;
     /// Off: the montage holds its last pose until stopped.

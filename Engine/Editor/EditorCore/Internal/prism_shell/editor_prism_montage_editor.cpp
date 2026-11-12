@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_prism_montage_editor.h"
+#include "editor_prism_fit_width.h"
 
 #include "editor.h"
 #include "editor_prism_chrome.h"
@@ -45,30 +46,6 @@ constexpr int kWindowHeightUVE = 800;
     char text[32];
     std::snprintf(text, sizeof(text), "%.2f", t);
     return text;
-}
-
-/// One Details row: the label, then the value's widget.
-[[nodiscard]] prism::Ref<prism::Widget> RowUVE(const std::string& label, prism::Ref<prism::Widget> value) {
-    auto row = prism::hbox(6.0F);
-    row->setPadding(prism::Margin(8.0F, 2.0F, 8.0F, 2.0F));
-    auto name = prism::make<prism::Label>(label);
-    name->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    auto nameBox = prism::make<prism::SizeBox>();
-    nameBox->setWidthOverride(130.0F);
-    nameBox->setContent(name);
-    row->add(nameBox, CentreUVE());
-    row->add(std::move(value), prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    return row;
-}
-
-[[nodiscard]] prism::Ref<prism::Widget> HeadingUVE(const std::string& text) {
-    auto label = prism::make<prism::Label>(text);
-    label->setColor(prism::ThemeColor(&prism::Theme::textBright));
-    auto box = prism::make<prism::Border>();
-    box->setBackground(prism::ThemeColor(&prism::Theme::header));
-    box->setPadding(prism::Margin(8.0F, 4.0F, 8.0F, 4.0F));
-    box->setChild(label);
-    return box;
 }
 
 } // namespace
@@ -510,7 +487,8 @@ void EditorPrismMontageEditorUVE::RebuildDetailsUVE() {
         return;
     }
     const Asset::AnimationMontageAssetUVE& m = session->montage;
-    auto page = prism::vbox(2.0F);
+    auto grid = prism::make<prism::PropertyGrid>();
+    int cat = -1;
     const auto number = [this](const double value, const float step, const int decimals,
                                std::function<void(Asset::AnimationMontageAssetUVE&, double)> set) {
         auto field = prism::make<prism::NumberField>(static_cast<float>(value), step, decimals);
@@ -532,58 +510,88 @@ void EditorPrismMontageEditorUVE::RebuildDetailsUVE() {
     const std::size_t i = selection.index;
     if (selection.kind == Kind::Segment && i < m.segments.size()) {
         const Asset::MontageSegmentUVE& s = m.segments[i];
-        page->add(HeadingUVE("Clip: " + ClipNameUVE(s.clip)));
-        page->add(RowUVE("Clip Length", prism::make<prism::Label>(SecondsUVE(s.clipLength) + " s")));
-        page->add(RowUVE("Start In Clip", number(s.clipStart, 0.01F, 2, [i](auto& mm, double v) { mm.segments[i].clipStart = std::max(0.0, v); })));
-        page->add(RowUVE("End In Clip", number(s.clipEnd, 0.01F, 2, [i](auto& mm, double v) { mm.segments[i].clipEnd = std::max(0.0, v); })));
-        page->add(RowUVE("Rate", number(s.rate, 0.05F, 2, [i](auto& mm, double v) { mm.segments[i].rate = std::max(0.01, v); })));
-        page->add(RowUVE("Loops", number(s.loops, 1.0F, 0, [i](auto& mm, double v) {
+        cat = grid->addCategory(ClipNameUVE(s.clip));
+        grid->addRow(cat, "Clip Length", prism::make<prism::Label>(SecondsUVE(s.clipLength) + " s"));
+        grid->addRow(cat, "Start In Clip", number(s.clipStart, 0.01F, 2, [i](auto& mm, double v) { mm.segments[i].clipStart = std::max(0.0, v); }));
+        grid->addRow(cat, "End In Clip", number(s.clipEnd, 0.01F, 2, [i](auto& mm, double v) { mm.segments[i].clipEnd = std::max(0.0, v); }));
+        grid->addRow(cat, "Rate", number(s.rate, 0.05F, 2, [i](auto& mm, double v) { mm.segments[i].rate = std::max(0.01, v); }));
+        grid->addRow(cat, "Loops", number(s.loops, 1.0F, 0, [i](auto& mm, double v) {
                       mm.segments[i].loops = static_cast<std::uint32_t>(std::clamp(std::lround(v), 1L, 1000L));
-                  })));
+                  }));
     } else if (selection.kind == Kind::Section && i < m.sections.size()) {
         const std::string name = m.sections[i].name;
-        page->add(HeadingUVE("Section: " + name));
-        page->add(RowUVE("Name", text(name, [name](auto& mm, const std::string& v) { static_cast<void>(Asset::RenameMontageSectionUVE(mm, name, v)); })));
-        page->add(RowUVE("Starts At", number(m.sections[i].time, 0.01F, 2, [name](auto& mm, double v) {
+        cat = grid->addCategory(name);
+        grid->addRow(cat, "Name", text(name, [name](auto& mm, const std::string& v) { static_cast<void>(Asset::RenameMontageSectionUVE(mm, name, v)); }));
+        grid->addRow(cat, "Starts At", number(m.sections[i].time, 0.01F, 2, [name](auto& mm, double v) {
                       static_cast<void>(Asset::MoveMontageSectionUVE(mm, name, v));
-                  })));
+                  }));
     } else if (selection.kind == Kind::Notify && i < m.notifies.size()) {
-        page->add(HeadingUVE("Notify: " + m.notifies[i].name));
-        page->add(RowUVE("Name", text(m.notifies[i].name, [i](auto& mm, const std::string& v) { mm.notifies[i].name = v; })));
-        page->add(RowUVE("Time", number(m.notifies[i].time, 0.01F, 2, [i](auto& mm, double v) { mm.notifies[i].time = std::max(0.0, v); })));
-        page->add(RowUVE("Track", number(m.notifies[i].track + 1U, 1.0F, 0, [i](auto& mm, double v) {
+        cat = grid->addCategory(m.notifies[i].name);
+        grid->addRow(cat, "Name", text(m.notifies[i].name, [i](auto& mm, const std::string& v) { mm.notifies[i].name = v; }));
+        grid->addRow(cat, "Time", number(m.notifies[i].time, 0.01F, 2, [i](auto& mm, double v) { mm.notifies[i].time = std::max(0.0, v); }));
+        grid->addRow(cat, "Track", number(m.notifies[i].track + 1U, 1.0F, 0, [i](auto& mm, double v) {
                       mm.notifies[i].track = static_cast<std::uint32_t>(std::clamp(std::lround(v), 1L, 16L) - 1);
-                  })));
+                  }));
+        grid->addRow(cat, "Trigger Chance", number(m.notifies[i].triggerChance, 0.05F, 2, [i](auto& mm, double v) {
+                         mm.notifies[i].triggerChance = static_cast<float>(std::clamp(v, 0.0, 1.0));
+                     }),
+                     "How likely it is to be raised each time it is passed (1: always)");
+        grid->addRow(cat, "Trigger Weight", number(m.notifies[i].minWeight, 0.05F, 2, [i](auto& mm, double v) {
+                         mm.notifies[i].minWeight = static_cast<float>(std::clamp(v, 0.0, 1.0));
+                     }),
+                     "Raised only while the montage weighs at least this much (0: also while it blends)");
     } else if (selection.kind == Kind::State && i < m.notifyStates.size()) {
-        page->add(HeadingUVE("Notify State: " + m.notifyStates[i].name));
-        page->add(RowUVE("Name", text(m.notifyStates[i].name, [i](auto& mm, const std::string& v) { mm.notifyStates[i].name = v; })));
-        page->add(RowUVE("Begin", number(m.notifyStates[i].begin, 0.01F, 2, [i](auto& mm, double v) {
+        cat = grid->addCategory(m.notifyStates[i].name);
+        grid->addRow(cat, "Name", text(m.notifyStates[i].name, [i](auto& mm, const std::string& v) { mm.notifyStates[i].name = v; }));
+        grid->addRow(cat, "Begin", number(m.notifyStates[i].begin, 0.01F, 2, [i](auto& mm, double v) {
                       mm.notifyStates[i].begin = std::clamp(v, 0.0, mm.notifyStates[i].end);
-                  })));
-        page->add(RowUVE("End", number(m.notifyStates[i].end, 0.01F, 2, [i](auto& mm, double v) {
+                  }));
+        grid->addRow(cat, "End", number(m.notifyStates[i].end, 0.01F, 2, [i](auto& mm, double v) {
                       mm.notifyStates[i].end = std::max(v, mm.notifyStates[i].begin);
-                  })));
+                  }));
     } else if (selection.kind == Kind::CurveKey && i < m.curves.size() && selection.key < m.curves[i].keys.size()) {
         const std::size_t k = selection.key;
-        page->add(HeadingUVE("Curve: " + m.curves[i].name));
-        page->add(RowUVE("Name", text(m.curves[i].name, [i](auto& mm, const std::string& v) { mm.curves[i].name = v; })));
-        page->add(RowUVE("Key Time", number(m.curves[i].keys[k].time, 0.01F, 2, [i, k](auto& mm, double v) { mm.curves[i].keys[k].time = std::max(0.0, v); })));
-        page->add(RowUVE("Key Value", number(m.curves[i].keys[k].value, 0.05F, 2, [i, k](auto& mm, double v) {
+        cat = grid->addCategory(m.curves[i].name);
+        grid->addRow(cat, "Name", text(m.curves[i].name, [i](auto& mm, const std::string& v) { mm.curves[i].name = v; }));
+        grid->addRow(cat, "Key Time", number(m.curves[i].keys[k].time, 0.01F, 2, [i, k](auto& mm, double v) { mm.curves[i].keys[k].time = std::max(0.0, v); }));
+        grid->addRow(cat, "Key Value", number(m.curves[i].keys[k].value, 0.05F, 2, [i, k](auto& mm, double v) {
                       mm.curves[i].keys[k].value = static_cast<float>(v);
-                  })));
+                  }));
     }
 
-    page->add(HeadingUVE("Montage"));
-    page->add(RowUVE("Slot", text(m.slot, [](auto& mm, const std::string& v) { mm.slot = v.empty() ? std::string("DefaultSlot") : v; })));
-    page->add(RowUVE("Blend In", number(m.blendInSeconds, 0.01F, 2, [](auto& mm, double v) { mm.blendInSeconds = std::max(0.0, v); })));
-    page->add(RowUVE("Blend Out", number(m.blendOutSeconds, 0.01F, 2, [](auto& mm, double v) { mm.blendOutSeconds = std::max(0.0, v); })));
-    page->add(RowUVE("Blend Out Trigger", number(m.blendOutTriggerSeconds, 0.01F, 2, [](auto& mm, double v) { mm.blendOutTriggerSeconds = v; })));
+    cat = grid->addCategory("Montage");
+    grid->addRow(cat, "Slot", text(m.slot, [](auto& mm, const std::string& v) { mm.slot = v.empty() ? std::string("DefaultSlot") : v; }));
+    // A blend: its time, and the shape of its weight over that time.
+    const auto blend = [this, &number](const double seconds, const Asset::MontageBlendCurveUVE curve,
+                                       std::function<void(Asset::AnimationMontageAssetUVE&, double)> setTime,
+                                       std::function<void(Asset::AnimationMontageAssetUVE&, Asset::MontageBlendCurveUVE)> setCurve) {
+        auto shape = prism::make<prism::ComboBox>(std::vector<std::string>{"Linear", "Ease In", "Ease Out", "Ease In Out"},
+                                                  static_cast<int>(curve));
+        shape->onChange = [this, setCurve = std::move(setCurve)](const int v) {
+            m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) {
+                setCurve(mm, static_cast<Asset::MontageBlendCurveUVE>(std::clamp(v, 0, 3)));
+            });
+        };
+        auto row = prism::hbox(4.0F);
+        row->add(number(seconds, 0.01F, 2, std::move(setTime)), prism::Slot{1.0F});
+        row->add(shape, prism::Slot{1.0F});
+        return row;
+    };
+    grid->addRow(cat, "Blend In", blend(m.blendInSeconds, m.blendInCurve,
+                                        [](auto& mm, double v) { mm.blendInSeconds = std::max(0.0, v); },
+                                        [](auto& mm, Asset::MontageBlendCurveUVE c) { mm.blendInCurve = c; }),
+                 "Seconds to blend in, and the shape of the blend");
+    grid->addRow(cat, "Blend Out", blend(m.blendOutSeconds, m.blendOutCurve,
+                                         [](auto& mm, double v) { mm.blendOutSeconds = std::max(0.0, v); },
+                                         [](auto& mm, Asset::MontageBlendCurveUVE c) { mm.blendOutCurve = c; }),
+                 "Seconds to blend out, and the shape of the blend");
+    grid->addRow(cat, "Blend Out Trigger", number(m.blendOutTriggerSeconds, 0.01F, 2, [](auto& mm, double v) { mm.blendOutTriggerSeconds = v; }));
     auto autoBlend = prism::make<prism::CheckBox>("", m.autoBlendOut);
     autoBlend->onChange = [this](const bool v) {
         m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) { mm.autoBlendOut = v; });
     };
-    page->add(RowUVE("Auto Blend Out", autoBlend));
-    page->add(RowUVE("Rate Scale", number(m.rateScale, 0.05F, 2, [](auto& mm, double v) { mm.rateScale = std::max(0.01, v); })));
+    grid->addRow(cat, "Auto Blend Out", autoBlend);
+    grid->addRow(cat, "Rate Scale", number(m.rateScale, 0.05F, 2, [](auto& mm, double v) { mm.rateScale = std::max(0.01, v); }));
     auto rootMotion = prism::make<prism::ComboBox>(std::vector<std::string>{"Off", "In Place", "Apply To Target"},
                                                    static_cast<int>(m.rootMotion));
     rootMotion->onChange = [this](const int v) {
@@ -591,15 +599,8 @@ void EditorPrismMontageEditorUVE::RebuildDetailsUVE() {
             mm.rootMotion = static_cast<Asset::MontageRootMotionUVE>(std::clamp(v, 0, 2));
         });
     };
-    page->add(RowUVE("Root Motion", rootMotion));
-    auto note = prism::make<prism::Label>("Length " + SecondsUVE(Asset::MontageLengthUVE(m)) + " s, " +
-                                              std::to_string(m.segments.size()) + " clips, " + std::to_string(m.sections.size()) +
-                                              " sections, " + std::to_string(m.notifies.size() + m.notifyStates.size()) + " notifies",
-                                          prism::FontRole::Small);
-    note->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    note->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 6.0F));
-    page->add(note);
-    m_details->setContent(page);
+    grid->addRow(cat, "Root Motion", rootMotion);
+    m_details->setContent(prism::make<FitWidthUVE>(grid));
 }
 
 void EditorPrismMontageEditorUVE::RebuildSectionsUVE() {
@@ -608,8 +609,9 @@ void EditorPrismMontageEditorUVE::RebuildSectionsUVE() {
         return;
     }
     const Asset::AnimationMontageAssetUVE& m = session->montage;
-    auto page = prism::vbox(2.0F);
-    page->add(HeadingUVE("Sections: what follows each one"));
+    // Each section with what follows it (End, Loop, or another section), as Unreal's Montage Sections.
+    auto grid = prism::make<prism::PropertyGrid>();
+    const int cat = grid->addCategory("Sections");
     for (const Asset::MontageSectionUVE& section : m.sections) {
         // Next: End, Loop (itself), or another section.
         std::vector<std::string> choices{"End", "Loop"};
@@ -632,18 +634,13 @@ void EditorPrismMontageEditorUVE::RebuildSectionsUVE() {
         };
         auto preview = ToolButtonUVE(prism::Icon::Play, "Preview from this section");
         preview->onClick = [this, name = section.name] { m_editor.PlayMontagePreviewUVE(name); };
-        auto row = prism::hbox(6.0F);
-        row->setPadding(prism::Margin(8.0F, 2.0F, 8.0F, 2.0F));
-        auto label = prism::make<prism::Label>(section.name + "  (" + SecondsUVE(section.time) + " s)");
-        auto labelBox = prism::make<prism::SizeBox>();
-        labelBox->setWidthOverride(150.0F);
-        labelBox->setContent(label);
-        row->add(labelBox, CentreUVE());
+        auto row = prism::hbox(4.0F);
         row->add(next, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         row->add(preview, CentreUVE());
-        page->add(row);
+        grid->addRow(cat, section.name, row, "Starts at " + SecondsUVE(section.time) + " s");
     }
-    auto add = prism::make<prism::Button>("Add Section at the Playhead", prism::Icon::Plus, prism::ButtonStyle::Default);
+    auto add = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Default);
+    add->setTooltip("Add a section at the playhead");
     add->onClick = [this] {
         const EditorUVE::MontageEditSessionUVE* const s = m_editor.MontageEditSessionPtrUVE();
         const double at = s != nullptr ? s->playhead : 0.0;
@@ -651,11 +648,8 @@ void EditorPrismMontageEditorUVE::RebuildSectionsUVE() {
             m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) { static_cast<void>(Asset::AddMontageSectionUVE(mm, name, at)); });
         });
     };
-    auto addRow = prism::hbox();
-    addRow->setPadding(prism::Margin(8.0F, 8.0F, 8.0F, 8.0F));
-    addRow->add(add, CentreUVE());
-    page->add(addRow);
-    m_sections->setContent(page);
+    grid->addRow(cat, "", add);
+    m_sections->setContent(prism::make<FitWidthUVE>(grid));
 }
 
 // ---------------------------------------------------------------------------------------- render
