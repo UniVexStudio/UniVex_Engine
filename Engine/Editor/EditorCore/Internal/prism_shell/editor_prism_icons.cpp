@@ -3,6 +3,8 @@
 
 #include "editor_icon_set.h"
 
+#include "prism/Canvas.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -18,10 +20,17 @@ EditorPrismIconsUVE::ImageUVE EditorPrismIconsUVE::ObjectUVE(const Scene::Object
     if (descriptor == nullptr) {
         return {};
     }
-    return GetUVE(static_cast<int>(EditorIconGroupUVE::Object), descriptor->typeId, size, false);
+    if (ImageUVE image = GetUVE(static_cast<int>(EditorIconGroupUVE::Object), descriptor->typeId, size, false)) {
+        return image;
+    }
+    // Kinds with no picture of their own get their own glyph.
+    switch (kind) {
+        case Scene::Objects::SceneObjectKindUVE::MontagePlayer: return GlyphUVE(prism::Icon::MontagePlayer, size);
+        default: return {};
+    }
 }
 
-EditorPrismIconsUVE::ImageUVE EditorPrismIconsUVE::ContentTypeUVE(const std::string_view typeLabel, const int size) {
+EditorPrismIconsUVE::ImageUVE EditorPrismIconsUVE::ContentTypeUVE(const std::string_view typeLabel, const int size, const prism::Icon fallback) {
     // Viewport3D is the label of a scene asset; its icon source keeps the identifier spelling.
     const std::string_view name = typeLabel == "Viewport3D" ? std::string_view{"viewport_3d"} : typeLabel;
     std::string lower(name);
@@ -29,10 +38,38 @@ EditorPrismIconsUVE::ImageUVE EditorPrismIconsUVE::ContentTypeUVE(const std::str
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     const bool folder = lower == "folder" || lower == "folder_open";
     ImageUVE image = GetUVE(static_cast<int>(EditorIconGroupUVE::ContentType), name, size, folder);
+    if (!image && fallback != prism::Icon::None) {
+        image = GlyphUVE(fallback, size);
+    }
     if (!image) {
         image = GetUVE(static_cast<int>(EditorIconGroupUVE::ContentType), "file", size, false);
     }
     return image;
+}
+
+EditorPrismIconsUVE::ImageUVE EditorPrismIconsUVE::GlyphUVE(const prism::Icon icon, const int size) {
+    if (icon == prism::Icon::None || size <= 0) {
+        return {};
+    }
+    const std::string key = "glyph/" + std::to_string(static_cast<int>(icon)) + "/" + std::to_string(size);
+    if (const auto it = m_cache.find(key); it != m_cache.end()) {
+        return it->second.empty() ? ImageUVE{} : ImageUVE{it->second.data(), size};
+    }
+    // White on black, then the brightness becomes the alpha of a light grey glyph.
+    prism::Canvas canvas;
+    canvas.resize(size, size);
+    canvas.clear(prism::Color(0, 0, 0));
+    const float pad = static_cast<float>(size) * 0.12F;
+    prism::drawIcon(canvas, icon, prism::Rect{pad, pad, static_cast<float>(size) - 2.0F * pad, static_cast<float>(size) - 2.0F * pad},
+                    prism::Color(255, 255, 255), std::max(1.0F, static_cast<float>(size) / 16.0F * 1.2F));
+    std::vector<std::uint32_t>& out = m_cache[key];
+    out.resize(static_cast<std::size_t>(size) * static_cast<std::size_t>(size));
+    for (std::size_t i = 0U; i < out.size(); ++i) {
+        const std::uint32_t pixel = canvas.pixels()[i];
+        const std::uint32_t a = std::max({(pixel >> 16U) & 0xFFU, (pixel >> 8U) & 0xFFU, pixel & 0xFFU});
+        out[i] = (a << 24U) | 0x00D8DCE4U;
+    }
+    return ImageUVE{out.data(), size};
 }
 
 EditorPrismIconsUVE::ImageUVE EditorPrismIconsUVE::GetUVE(const int group, const std::string_view name, const int size,

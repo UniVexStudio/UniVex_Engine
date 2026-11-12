@@ -64,7 +64,7 @@ prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE() {
     // Projection and facing: the engine's own setters (SetViewportOrthographicUVE /
     // RequestViewportViewUVE), the same entries the previous toolbar had.
     using ViewUVE = EditorUVE::ViewportViewUVE;
-    m_projectionButton = prism::make<prism::Button>("Perspective", prism::Icon::Camera, prism::ButtonStyle::Toolbar);
+    m_projectionButton = prism::make<prism::Button>("Perspective", prism::Icon::Projection, prism::ButtonStyle::Toolbar);
     m_projectionButton->setTooltip("Projection and facing");
     m_projectionButton->onClick = [this] {
         EditorUVE::ViewportOverlayStateUVE& state = m_editor.m_viewportOverlayState;
@@ -102,10 +102,10 @@ prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE() {
     settings->add(HSeparatorUVE());
 
     // Preview: the editor-only sun and sky, and their settings.
-    m_sunButton = ToolButtonUVE(prism::Icon::Light, "Preview sun");
+    m_sunButton = ToolButtonUVE(prism::Icon::DirectionalLight, "Preview sun");
     m_sunButton->setCheckable(true);
     m_sunButton->onToggle = [this](const bool on) { m_editor.m_viewportOverlayState.previewSun = on; };
-    m_skyButton = ToolButtonUVE(prism::Icon::Globe, "Preview sky");
+    m_skyButton = ToolButtonUVE(prism::Icon::Environment, "Preview sky");
     m_skyButton->setCheckable(true);
     m_skyButton->onToggle = [this](const bool on) { m_editor.m_viewportOverlayState.previewEnvironment = on; };
     auto previewSettings = prism::make<prism::Button>("Preview", prism::Icon::Settings, prism::ButtonStyle::Toolbar);

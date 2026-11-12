@@ -43,22 +43,22 @@ struct AddEntryUVE final {
 
 /// What the Components '+' adds under the selected object (or the entity's root).
 constexpr std::array<AddEntryUVE, 16> kAddEntriesUVE{{
-    {SceneObjectKindUVE::Object3D, "Object3D", prism::Icon::Dot},
-    {SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", prism::Icon::Cube},
+    {SceneObjectKindUVE::Object3D, "Object3D", prism::Icon::Object3D},
+    {SceneObjectKindUVE::MeshInstance3D, "MeshInstance3D", prism::Icon::MeshInstance},
     {SceneObjectKindUVE::BoxMesh3D, "Box", prism::Icon::Cube},
     {SceneObjectKindUVE::SphereMesh3D, "Sphere", prism::Icon::Sphere},
     {SceneObjectKindUVE::PlaneMesh3D, "Plane", prism::Icon::Plane},
     {SceneObjectKindUVE::Camera3D, "Camera3D", prism::Icon::Camera},
-    {SceneObjectKindUVE::Light3D, "Light3D (Omni / Spot)", prism::Icon::Light},
-    {SceneObjectKindUVE::Marker3D, "Marker3D", prism::Icon::Frame},
-    {SceneObjectKindUVE::Rigid3D, "Rigid3D", prism::Icon::Cube},
-    {SceneObjectKindUVE::Static3D, "Static3D", prism::Icon::Cube},
-    {SceneObjectKindUVE::Collider3D, "Collider3D", prism::Icon::Wireframe},
-    {SceneObjectKindUVE::Skeleton3D, "Skeleton3D", prism::Icon::Dot},
-    {SceneObjectKindUVE::AnimationSequencer, "AnimationSequencer", prism::Icon::Play},
-    {SceneObjectKindUVE::AnimationGraph, "AnimationGraph", prism::Icon::Play},
-    {SceneObjectKindUVE::MontagePlayer, "MontagePlayer (attacks)", prism::Icon::Play},
-    {SceneObjectKindUVE::BoneAttachment3D, "BoneAttachment3D", prism::Icon::Dot},
+    {SceneObjectKindUVE::Light3D, "Light3D", prism::Icon::Light},
+    {SceneObjectKindUVE::Marker3D, "Marker3D", prism::Icon::Marker},
+    {SceneObjectKindUVE::Rigid3D, "Rigid3D", prism::Icon::Rigid3D},
+    {SceneObjectKindUVE::Static3D, "Static3D", prism::Icon::Static3D},
+    {SceneObjectKindUVE::Collider3D, "Collider3D", prism::Icon::Collider},
+    {SceneObjectKindUVE::Skeleton3D, "Skeleton3D", prism::Icon::Skeleton},
+    {SceneObjectKindUVE::AnimationSequencer, "AnimationSequencer", prism::Icon::AnimSequencer},
+    {SceneObjectKindUVE::AnimationGraph, "AnimationGraph", prism::Icon::AnimGraph},
+    {SceneObjectKindUVE::MontagePlayer, "MontagePlayer", prism::Icon::MontagePlayer},
+    {SceneObjectKindUVE::BoneAttachment3D, "BoneAttachment3D", prism::Icon::BoneAttachment},
 }};
 
 constexpr int kWindowWidthUVE = 1240;
@@ -255,7 +255,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildTitleBarUVE() {
                 prism::Application::get().setFocus(m_findInput.get());
             }
         }, "", prism::Icon::Search));
-        items.push_back(prism::MenuItem::Item("Diff Against Saved", [this] { RunDiffUVE(); }, "", prism::Icon::Copy));
+        items.push_back(prism::MenuItem::Item("Diff Against Saved", [this] { RunDiffUVE(); }, "", prism::Icon::DiffView));
         items.push_back(prism::MenuItem::Item("Class Settings", [this] {
             ShowClassSettingsUVE(prism::Rect{360.0F, 64.0F, 0.0F, 0.0F});
         }, "", prism::Icon::Settings));
@@ -273,7 +273,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildTitleBarUVE() {
     //           [ #2 the entity's tab ]
     auto tabRow = prism::hbox();
     m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::Cube);
+    m_tab->setFallbackIcon(prism::Icon::EntityAsset);
     m_tab->setName(m_editor.GetEntityEditorAssetPathUVE().stem().string());
     m_tab->onClick = [this] {
         const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
@@ -308,7 +308,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildToolbarRowUVE() {
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
 
-    auto compile = prism::make<prism::Button>("Compile", prism::Icon::Refresh, prism::ButtonStyle::Toolbar);
+    auto compile = prism::make<prism::Button>("Compile", prism::Icon::Compile, prism::ButtonStyle::Toolbar);
     compile->setTooltip("Check the whole entity: one root, and every object's script against its object (F7)");
     compile->onClick = [this] { CompileUVE(); };
     row->add(compile, CentreUVE());
@@ -343,7 +343,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildToolbarRowUVE() {
     findBox->setWidthOverride(220.0F);
     findBox->setContent(m_findInput);
     row->add(findBox, CentreUVE());
-    auto diff = prism::make<prism::Button>("Diff", prism::Icon::Copy, prism::ButtonStyle::Toolbar);
+    auto diff = prism::make<prism::Button>("Diff", prism::Icon::DiffView, prism::ButtonStyle::Toolbar);
     diff->setTooltip("What changed since the entity was last saved");
     diff->onClick = [this] { RunDiffUVE(); };
     row->add(diff, CentreUVE());
@@ -458,7 +458,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildComponentsUVE() {
     page->add(m_components, prism::Slot{1.0F});
 
     auto tabs = prism::make<prism::TabView>();
-    tabs->addTab("Components", prism::Icon::Layers, PanelUVE(page));
+    tabs->addTab("Components", prism::Icon::Components, PanelUVE(page));
     return tabs;
 }
 
@@ -575,13 +575,13 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildDockBarUVE() {
     bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
     struct DockTabUVE { const char* label; prism::Icon icon; };
     static constexpr std::array<DockTabUVE, kDockPageCountUVE> kTabs{{
-        {"Animation Sequencer", prism::Icon::NodeClip},
+        {"Animation Sequencer", prism::Icon::AnimSequencer},
         {"Animation Graph", prism::Icon::AnimGraph},
-        {"Output Log", prism::Icon::Info},
+        {"Output Log", prism::Icon::OutputLog},
         {"Console", prism::Icon::Terminal},
-        {"Compile Results", prism::Icon::Warning},
-        {"Find Results", prism::Icon::Search},
-        {"Diff", prism::Icon::Copy},
+        {"Compile Results", prism::Icon::CompileResults},
+        {"Find Results", prism::Icon::FindResults},
+        {"Diff", prism::Icon::DiffView},
     }};
     m_dockTabs.clear();
     for (std::size_t i = 0; i < kTabs.size(); ++i) {
@@ -596,10 +596,10 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildDockBarUVE() {
     }
     bar->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     // Full: the dock takes the viewport's place; Viewport brings the default layout back.
-    m_fullButton = prism::make<prism::Button>("Full", prism::Icon::Frame, prism::ButtonStyle::Toolbar);
+    m_fullButton = prism::make<prism::Button>("Full", prism::Icon::LayoutFull, prism::ButtonStyle::Toolbar);
     m_fullButton->setTooltip("Let the dock fill the viewport's space");
     m_fullButton->onClick = [this] { SetDockFullUVE(true); };
-    m_viewportButton = prism::make<prism::Button>("Viewport", prism::Icon::Camera, prism::ButtonStyle::Toolbar);
+    m_viewportButton = prism::make<prism::Button>("Viewport", prism::Icon::LayoutViewport, prism::ButtonStyle::Toolbar);
     m_viewportButton->setTooltip("Back to the default layout: the viewport over the dock");
     m_viewportButton->onClick = [this] { SetDockFullUVE(false); };
     m_viewportButton->setVisible(false);

@@ -3,6 +3,8 @@
 
 #include "scene_object_registry.h"
 
+#include "prism/Icons.h"
+
 #include <cstdint>
 #include <map>
 #include <string>
@@ -28,7 +30,10 @@ public:
     /// The icon of a scene object kind (a Folder object uses the folder icon, tinted).
     [[nodiscard]] ImageUVE ObjectUVE(Scene::Objects::SceneObjectKindUVE kind, int size);
     /// A content-type icon by the Content Browser's type label ("Mesh", "Folder", "Viewport3D", ...).
-    [[nodiscard]] ImageUVE ContentTypeUVE(std::string_view typeLabel, int size);
+    /// A type with no picture of its own gets `fallback` drawn at that size, never another type's picture.
+    [[nodiscard]] ImageUVE ContentTypeUVE(std::string_view typeLabel, int size, prism::Icon fallback = prism::Icon::None);
+    /// A PRISM glyph drawn once at `size` (light grey, straight alpha) and kept.
+    [[nodiscard]] ImageUVE GlyphUVE(prism::Icon icon, int size);
 
 private:
     [[nodiscard]] ImageUVE GetUVE(int group, std::string_view name, int size, bool folderTint);

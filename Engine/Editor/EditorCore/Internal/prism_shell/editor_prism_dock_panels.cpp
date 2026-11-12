@@ -434,11 +434,11 @@ prism::Ref<prism::Widget> EditorPrismDockPanelsUVE::BuildProfilerUVE() {
     m_timeline = prism::make<prism::Profiler>();
     m_timeline->setTargetMs(1000.0F / 60.0F);
     auto tabs = prism::make<prism::TabView>();
-    tabs->addTab("Timeline", prism::Icon::NodeClock, m_timeline);
-    tabs->addTab("Frame", prism::Icon::Info, m_frameTable);
-    tabs->addTab("Spans", prism::Icon::NodeClock, m_spanTable);
-    tabs->addTab("Counters", prism::Icon::Grid, m_counterTable);
-    tabs->addTab("Breadcrumbs", prism::Icon::NodeFlag, m_breadcrumbs);
+    tabs->addTab("Timeline", prism::Icon::ProfTimeline, m_timeline);
+    tabs->addTab("Frame", prism::Icon::ProfFrame, m_frameTable);
+    tabs->addTab("Spans", prism::Icon::ProfSpans, m_spanTable);
+    tabs->addTab("Counters", prism::Icon::ProfCounters, m_counterTable);
+    tabs->addTab("Breadcrumbs", prism::Icon::ProfBreadcrumbs, m_breadcrumbs);
 
     auto runtime = prism::hbox();
     runtime->setPadding(prism::Margin(8.0F, 2.0F, 8.0F, 3.0F));

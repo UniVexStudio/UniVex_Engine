@@ -286,8 +286,8 @@ prism::Ref<prism::Widget> EditorPrismMontageEditorUVE::BuildUVE() {
 
     auto tabs = prism::make<prism::TabView>();
     tabs->addTab("Details", prism::Icon::Properties, PanelUVE(m_details));
-    tabs->addTab("Sections", prism::Icon::Layers, PanelUVE(m_sections));
-    tabs->addTab("Asset Browser", prism::Icon::Folder, PanelUVE(assetsPage));
+    tabs->addTab("Sections", prism::Icon::MontageSections, PanelUVE(m_sections));
+    tabs->addTab("Asset Browser", prism::Icon::AssetBrowser, PanelUVE(assetsPage));
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     columns->add(centre, prism::Splitter::Pane{900.0F, 400.0F, 1e9F, true});
@@ -340,7 +340,7 @@ prism::Ref<prism::Widget> EditorPrismMontageEditorUVE::BuildTitleBarUVE() {
 
     auto tabRow = prism::hbox();
     m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::AnimGraph);
+    m_tab->setFallbackIcon(prism::Icon::AnimMontage);
     m_tab->setName(m_openPath.empty() && m_editor.MontageEditSessionPtrUVE() != nullptr
                        ? m_editor.MontageEditSessionPtrUVE()->path.stem().string()
                        : m_openPath.stem().string());
@@ -372,7 +372,7 @@ prism::Ref<prism::Widget> EditorPrismMontageEditorUVE::BuildToolbarUVE() {
     save->onClick = [this] { static_cast<void>(m_editor.SaveMontageEditorUVE()); };
     row->add(save, CentreUVE());
     row->add(HSeparatorUVE(), CentreUVE());
-    m_previewButton = ToolButtonUVE(prism::Icon::Cube, "The character the montage is previewed on", "Preview");
+    m_previewButton = ToolButtonUVE(prism::Icon::PreviewCharacter, "The character the montage is previewed on", "Preview");
     m_previewButton->onClick = [this] { ShowPreviewMenuUVE(); };
     row->add(m_previewButton, CentreUVE());
     row->add(HSeparatorUVE(), CentreUVE());
