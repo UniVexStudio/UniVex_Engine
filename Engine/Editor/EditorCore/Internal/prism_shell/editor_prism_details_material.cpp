@@ -59,7 +59,8 @@ void EditorPrismDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& a
         return;
     }
     const bool writable = m_editor.IsAuthoringCommandAllowedUVE();
-    const std::string title = "Material: " + absolutePath.stem().string() + (slotLabel.empty() ? "" : "  (" + slotLabel + ")");
+    static_cast<void>(slotLabel);
+    const std::string title = absolutePath.stem().string();
 
     // Every edit: read the file as it is now, change the one field, write it back, and let the
     // thumbnails and the renderer pick up the new file (as the previous Inspector did).
