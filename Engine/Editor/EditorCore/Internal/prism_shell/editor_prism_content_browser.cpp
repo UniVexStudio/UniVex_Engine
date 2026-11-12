@@ -324,6 +324,12 @@ public:
         record.thumbnailH = m_previewH;
         record.thumbnailScale = m_previewScale;
         prism::paintAssetTile(c, r, record, m_selected, m_hot);
+        if (m_type == ItemTypeUVE::Blueprint) {
+            // A Blueprint's well is the word, not a glyph.
+            const prism::Rect well{r.x + 3.0F, r.y + 3.0F, r.w - 6.0F, 86.0F - 17.0F};
+            c.fillRect(well, m_hot && !m_selected ? prism::Color(40, 41, 45) : prism::Color(30, 31, 34));
+            c.textIn(*t.medium, well, "Blueprint", prism::Color(214, 220, 230), prism::HAlign::Center, false);
+        }
     }
 
     bool onMouseDown(const prism::MouseEvent& e) override {
