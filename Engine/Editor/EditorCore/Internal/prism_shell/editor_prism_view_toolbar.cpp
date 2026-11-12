@@ -31,7 +31,7 @@ namespace {
 
 EditorPrismViewToolbarUVE::EditorPrismViewToolbarUVE(EditorUVE& editor) : m_editor(editor) {}
 
-prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE() {
+prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE(const bool gizmoOnly) {
     // Sub row 2 (full width): gizmo mode, snapping, grid, projection - the viewport settings row.
     auto settings = prism::hbox(4.0F);
     settings->setPadding(prism::Margin(6.0F, 1.0F, 6.0F, 1.0F));
@@ -59,6 +59,11 @@ prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE() {
     m_gridButton->onToggle = [this](const bool on) { m_editor.m_viewportOverlayState.gridVisible = on; };
     settings->add(m_snapButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     settings->add(m_gridButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    if (gizmoOnly) {
+        // The Entity Editor's view: the gizmo and its snapping only; the camera, shading and preview
+        // lighting are the studio's own.
+        return FinishBarUVE(settings);
+    }
     settings->add(HSeparatorUVE());
 
     // Projection and facing: the engine's own setters (SetViewportOrthographicUVE /
@@ -119,6 +124,10 @@ prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE() {
     settings->add(m_sunButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     settings->add(m_skyButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     settings->add(previewSettings, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    return FinishBarUVE(settings);
+}
+
+prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::FinishBarUVE(const prism::Ref<prism::Box>& settings) {
     settings->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto bar = prism::make<prism::Border>();
     bar->setBackground(prism::ThemeColor(&prism::Theme::panel));

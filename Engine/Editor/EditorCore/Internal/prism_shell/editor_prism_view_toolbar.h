@@ -7,6 +7,7 @@
 
 namespace prism {
 class Button;
+class Box;
 class Segmented;
 struct Rect;
 } // namespace prism
@@ -22,12 +23,14 @@ class EditorUVE;
 class EditorPrismViewToolbarUVE final {
 public:
     explicit EditorPrismViewToolbarUVE(EditorUVE& editor);
-    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
+    /// `gizmoOnly`: just the gizmo mode, snapping and grid (the Entity Editor's view).
+    [[nodiscard]] prism::Ref<prism::Widget> BuildUVE(bool gizmoOnly = false);
     /// Re-reads the overlay state (call with the strip's document active).
     void RefreshUVE();
 
 private:
     void ShowPreviewSettingsUVE(prism::Rect anchor);
+    [[nodiscard]] prism::Ref<prism::Widget> FinishBarUVE(const prism::Ref<prism::Box>& settings);
 
     EditorUVE& m_editor;
     std::shared_ptr<prism::Segmented> m_gizmoModes;

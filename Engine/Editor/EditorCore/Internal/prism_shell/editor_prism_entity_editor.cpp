@@ -148,7 +148,7 @@ prism::Ref<prism::Widget> EditorPrismEntityEditorUVE::BuildUVE() {
     auto window = prism::vbox();
     window->add(BuildTitleBarUVE());
     window->add(BuildToolbarRowUVE());
-    window->add(m_viewToolbar.BuildUVE());
+    window->add(m_viewToolbar.BuildUVE(true));
 
     // Left: Components over Details (a split, like the level's Outliner and Details stacked);
     // centre: the view over the dock pages; the dock bar runs along the bottom, as in the level.
