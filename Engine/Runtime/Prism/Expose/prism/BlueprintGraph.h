@@ -181,6 +181,8 @@ public:
     bool comments = false;
   };
   void setFeatures(const Features& f);
+  /// The watermark's title, caption and glyph in place of the preset's (an empty title restores it).
+  void setWatermark(std::string title, std::string caption, Icon icon);
   const Features& features() const { return m_features; }
   // The nodes the palette offers; empty uses the global blueprintNodeLibrary().
   void setNodeLibrary(std::vector<BlueprintNodeSpec> library) { m_library = std::move(library); }
@@ -242,6 +244,12 @@ public:
   std::string serialize(bool selectionOnly = false) const;
   bool deserialize(const std::string& text);        // replaces the graph; false (and unchanged) if malformed
   Callback<> onBrowse;                               // "Browse": reveal this graph in the content browser
+  // A host that owns the file and the compiler: Save / Ctrl+S and Compile call these instead of the
+  // graph's own save and validation; the host reports back with setCompileResult.
+  std::function<void()> onSaveRequested;
+  std::function<void()> onCompileRequested;
+  void setCompileResult(BlueprintCompileReport report) { m_report = std::move(report); m_compiled = true; invalidate(); }
+  void clearCompileResult() { m_compiled = false; m_report = {}; invalidate(); }
   std::string saveDir = "Graphs";                    // Save / Load folder (one .prismbp file per graph type)
   bool saveToFile();                                 // writes <saveDir>/<graph type>.prismbp
   bool loadFromFile(const std::string& path);
@@ -272,6 +280,7 @@ public:
   BlueprintVariable* addVariable(const std::string& name, BlueprintPinType type, const std::string& value = "");   // unique-ifies the name
   bool removeVariable(const std::string& name);                                                                    // also removes its Get/Set nodes
   bool renameVariable(const std::string& from, const std::string& to);
+  bool setVariableValue(const std::string& name, const std::string& value);                                       // its default
   int spawnVariableNode(const std::string& name, bool setter, Vec2 world);                                          // -1 if unknown
   void showVariables();                                                                                             // floating Variables panel
   // debugger: breakpoints pause the animated run on that node
@@ -424,6 +433,8 @@ private:
   Rect m_graphRect;                  // canvas area under the toolbar
   float m_toolbarH = 36;
   float m_crumbH = 30;               // tab chip + breadcrumb strip under the toolbar
+  std::string m_watermarkTitle, m_watermarkCaption;
+  Icon m_watermarkIcon{};
   bool m_hideUnrelated = false, m_saveOnCompile = false, m_navigating = false;
   std::vector<BlueprintGraphPreset> m_navBack, m_navFwd;
   std::set<int> m_related;           // selection + directly linked nodes (for Hide Unrelated)

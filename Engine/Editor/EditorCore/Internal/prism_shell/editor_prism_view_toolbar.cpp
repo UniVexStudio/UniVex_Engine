@@ -31,7 +31,7 @@ namespace {
 
 EditorPrismViewToolbarUVE::EditorPrismViewToolbarUVE(EditorUVE& editor) : m_editor(editor) {}
 
-prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE(const bool gizmoOnly) {
+prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE(const bool gizmoOnly, prism::Ref<prism::Widget> extra) {
     // Sub row 2 (full width): gizmo mode, snapping, grid, projection - the viewport settings row.
     auto settings = prism::hbox(4.0F);
     settings->setPadding(prism::Margin(6.0F, 1.0F, 6.0F, 1.0F));
@@ -62,6 +62,10 @@ prism::Ref<prism::Widget> EditorPrismViewToolbarUVE::BuildUVE(const bool gizmoOn
     if (gizmoOnly) {
         // The Entity Editor's view: the gizmo and its snapping only; the camera, shading and preview
         // lighting are the studio's own.
+        if (extra) {
+            settings->add(HSeparatorUVE());
+            settings->add(extra, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        }
         return FinishBarUVE(settings);
     }
     settings->add(HSeparatorUVE());

@@ -1,5 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_prism_content_browser.h"
+#include <iterator>
+#include <fstream>
+#include "blueprint_asset.h"
 
 #include "editor_prism_asset_thumbnail.h"
 
@@ -200,6 +203,7 @@ prism::Icon EditorPrismContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::AnimationLibrary: return prism::Icon::AnimLibrary;
         case ItemTypeUVE::AnimationMontage: return prism::Icon::AnimMontage;
         case ItemTypeUVE::MontageLibrary: return prism::Icon::MontageLibrary;
+        case ItemTypeUVE::Blueprint: return prism::Icon::BlueprintClass;
         case ItemTypeUVE::Script: return prism::Icon::Script;
         case ItemTypeUVE::Audio: return prism::Icon::NodeSound;
         case ItemTypeUVE::Font: return prism::Icon::NodeText;
@@ -225,6 +229,7 @@ std::pair<std::string, std::string> EditorPrismContentBrowserUVE::DescribeUVE(co
         case ItemTypeUVE::AnimationLibrary: return {"Animation Library", "LIB"};
         case ItemTypeUVE::AnimationMontage: return {"Animation Montage", "MONT"};
         case ItemTypeUVE::MontageLibrary: return {"Montage Library", "MLIB"};
+        case ItemTypeUVE::Blueprint: return {"Blueprint Class", "BP"};
         case ItemTypeUVE::Script: return {"Script", "UVS"};
         case ItemTypeUVE::Audio: return {"Audio", "AUD"};
         case ItemTypeUVE::Font: return {"Font", "FNT"};
@@ -250,6 +255,7 @@ prism::Color EditorPrismContentBrowserUVE::TintForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::AnimationMontage:
         case ItemTypeUVE::MontageLibrary: return prism::Color(90, 200, 200);
         case ItemTypeUVE::Audio: return prism::Color(230, 190, 90);
+        case ItemTypeUVE::Blueprint: return prism::Color(80, 150, 240);
         default: return prism::Color(170, 176, 186);
     }
 }
@@ -1426,10 +1432,11 @@ std::vector<prism::MenuItem> EditorPrismContentBrowserUVE::CatalogueMenuUVE() {
         item("Animation Montage", "animation-montage", prism::Icon::AnimMontage, "Animation Montage"),
         item("Montage Library", "montage-library", prism::Icon::MontageLibrary, "Montage Library"),
     }));
-    items.push_back(prism::MenuItem::Sub("Blueprint", {entityClass()}));
-    items.push_back(prism::MenuItem::Sub("Gameplay", {
-        item("Script", "basic_script", prism::Icon::Script, "Script"),
-    }));
+    // A Blueprint Class: gameplay as nodes (what an object's Script slot runs).
+    prism::MenuItem blueprintClass =
+        prism::MenuItem::Item("Blueprint Class", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+    items.push_back(prism::MenuItem::Sub("Blueprint", {blueprintClass, entityClass()}));
+    items.push_back(prism::MenuItem::Sub("Gameplay", {blueprintClass}));
     items.push_back(prism::MenuItem::Sub("Material", {
         material("Material", "M_Standard", Asset::MaterialKindUVE::Standard),
         material("ORM Material", "M_ORM", Asset::MaterialKindUVE::Orm),
@@ -1465,6 +1472,62 @@ void EditorPrismContentBrowserUVE::CreateMaterialUVE(const std::string& stem, co
     m_editor.RefreshProjectFileIndexUVE();
     m_folderSignature = 0;
     ChangedUVE();
+}
+
+void EditorPrismContentBrowserUVE::CreateBlueprintUVE() {
+    // A Blueprint Class with Unreal's starting graph (Event Ready, Event Tick); an object's Script
+    // slot picks it, or the Entity Editor's Blueprint button makes one for an object directly.
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_contentBrowserDirectory;
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, "BP_NewBlueprint", ".uvbp");
+    Asset::BlueprintAssetUVE blueprint;
+    blueprint.parentKind = "Object3D";
+    Asset::BlueprintNodeUVE ready;
+    ready.id = 1U;
+    ready.type = "event_ready";
+    Asset::BlueprintNodeUVE tick;
+    tick.id = 2U;
+    tick.type = "event_tick";
+    tick.y = 200.0F;
+    blueprint.nodes = {ready, tick};
+    if (!Asset::SaveBlueprintAssetUVE(blueprint, path)) {
+        m_editor.m_contentStatusMessage = "Could not create a Blueprint here.";
+        return;
+    }
+    m_editor.m_contentStatusMessage.clear();
+    m_editor.RefreshProjectFileIndexUVE();
+    m_folderSignature = 0;
+    ChangedUVE();
+}
+
+void EditorPrismContentBrowserUVE::OpenBlueprintUVE(const std::filesystem::path& full) {
+    // A Blueprint is edited on its object: open the entity whose object runs it, then the graph.
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path relative = full.lexically_relative(snapshot.contentRoot);
+    const std::string name = full.filename().string();
+    for (const Asset::ProjectFileEntryUVE& other : snapshot.entries) {
+        if (other.kind != Asset::ProjectFileEntryKindUVE::File || LowerExtensionUVE(other.relativePath) != ".uventity") {
+            continue;
+        }
+        const std::filesystem::path entityPath = snapshot.contentRoot / other.relativePath;
+        std::ifstream in(entityPath, std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const std::size_t at = text.find(relative.generic_string() + "\"");
+        if (at == std::string::npos) {
+            continue;
+        }
+        // The path as the Script slot stores it (everything from its opening quote).
+        const std::size_t open = text.rfind('"', at - 1U);
+        const std::string stored = open == std::string::npos ? relative.generic_string() : text.substr(open + 1U, at + relative.generic_string().size() - open - 1U);
+        if (!m_editor.OpenEntityEditorUVE(entityPath)) {
+            break;
+        }
+        m_editor.m_pendingBlueprintOpenUVE = stored;
+        return;
+    }
+    m_editor.m_contentStatusMessage = name + " is not on any object yet: pick it in an object's Script slot, or use the Entity Editor's Blueprint button.";
 }
 
 void EditorPrismContentBrowserUVE::CreateCatalogueItemUVE(const std::string& id) {
@@ -1856,6 +1919,9 @@ void EditorPrismContentBrowserUVE::OpenEntryUVE(const std::size_t entryIndex) {
             if (!m_editor.OpenAnimationLibraryUVE(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " as an animation library.";
             }
+            break;
+        case ItemTypeUVE::Blueprint:
+            OpenBlueprintUVE(full);
             break;
         case ItemTypeUVE::Script:
             if (!m_editor.OpenUVScriptPathUVE(full)) {

@@ -6,6 +6,7 @@
 #include "editor_prism_dock_panels.h"
 #include "editor_prism_sequencer_panel.h"
 #include "editor_prism_anim_graph_panel.h"
+#include "editor_prism_blueprint_panel.h"
 #include "editor_prism_icons.h"
 #include "editor_prism_view_toolbar.h"
 #include "editor_prism_viewport_gizmos.h"
@@ -129,6 +130,26 @@ private:
     EditorPrismDockPanelsUVE m_dockPanels;
     EditorPrismSequencerPanelUVE m_sequencer;
     EditorPrismAnimGraphPanelUVE m_animGraphPanel;
+    /// The Blueprint page: one object's Blueprint Class, picked from the sub row's Blueprint button.
+    EditorPrismBlueprintPanelUVE m_blueprintPanel;
+    std::shared_ptr<prism::Button> m_blueprintButton;
+    bool m_blueprintDetailsShown = false;
+    /// Blueprint mode: the graph takes the whole centre (no viewport, no dock); Components and
+    /// Details stay on the left.
+    std::shared_ptr<prism::StackSwitcher> m_centreStack;
+    std::shared_ptr<prism::Widget> m_dockBar;
+    std::shared_ptr<prism::Button> m_blueprintTab;
+    bool m_blueprintMode = false;
+    void SetBlueprintModeUVE(bool on);
+    [[nodiscard]] prism::Ref<prism::Widget> BuildBlueprintViewUVE();
+    void SaveAllUVE();
+    /// The sub row's Blueprint button: the entity's objects (the root and its children), each to
+    /// open its Blueprint or make one.
+    void ShowBlueprintMenuUVE();
+    /// The create dialog: the Blueprint's name and the folder it goes in.
+    void ShowCreateBlueprintUVE(Scene::EntityUVE target);
+    void OpenBlueprintUVE(const std::string& path, Scene::EntityUVE target);
+    void SyncBlueprintTabUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildDockBarUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildSequencerPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildGraphPageUVE();

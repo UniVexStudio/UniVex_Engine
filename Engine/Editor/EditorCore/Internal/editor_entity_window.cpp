@@ -8,6 +8,11 @@
 
 #include "editor.h"
 
+#include "blueprint_asset.h"
+#include "blueprint_nodes.h"
+#include "scene_object_registry.h"
+#include "scene_object_type.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
@@ -407,6 +412,51 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
         base.entity = entity;
         base.objectName = GetEntityDisplayLabelUVE(entity);
         base.scriptPath = path;
+        if (path.ends_with(".uvbp")) {
+            // A Blueprint Class: the graph being edited (or the file), translated and compiled
+            // against this object; each problem points at its node.
+            std::optional<Asset::BlueprintAssetUVE> blueprint =
+                m_openBlueprintProviderUVE ? m_openBlueprintProviderUVE(path) : std::optional<Asset::BlueprintAssetUVE>{};
+            if (!blueprint.has_value()) {
+                if (const std::optional<std::string> bytes = ReadProjectTextFileUVE(path); bytes.has_value()) {
+                    const auto* const data = reinterpret_cast<const std::byte*>(bytes->data());
+                    blueprint = Asset::DecodeBlueprintAssetUVE(std::vector<std::byte>(data, data + bytes->size()));
+                }
+            }
+            if (!blueprint.has_value()) {
+                base.message = "The Blueprint at " + path + " cannot be read.";
+                problems.push_back(std::move(base));
+                continue;
+            }
+            const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+                Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
+            const Asset::BlueprintTranslationUVE translated = Asset::TranslateBlueprintToUVScriptUVE(
+                *blueprint, std::filesystem::path(path).stem().string(), descriptor != nullptr ? descriptor->displayName : "Object3D");
+            const auto titled = [&blueprint](const std::uint32_t node, const std::string& message) {
+                for (const Asset::BlueprintNodeUVE& n : blueprint->nodes) {
+                    if (n.id == node) {
+                        const Asset::BlueprintNodeTypeUVE* const type = Asset::FindBlueprintNodeTypeUVE(n.type);
+                        const std::string title = type == nullptr ? n.type : n.variable.empty() ? type->title : type->title + " " + n.variable;
+                        return title + ": " + message;
+                    }
+                }
+                return message;
+            };
+            for (const auto& [node, message] : translated.problems) {
+                EntityCompileProblemUVE problem = base;
+                problem.blueprintNode = node;
+                problem.message = titled(node, message);
+                problems.push_back(std::move(problem));
+            }
+            Core::UVScriptObjectHostUVE host(entityManager, nullptr, entity);
+            for (const UVScript::DiagnosticUVE& diagnostic : UVScript::CompileUVScriptSourceUVE(translated.source, host).diagnostics) {
+                EntityCompileProblemUVE problem = base;
+                problem.blueprintNode = translated.NodeAtLineUVE(diagnostic.at.line);
+                problem.message = titled(problem.blueprintNode, diagnostic.message);
+                problems.push_back(std::move(problem));
+            }
+            continue;
+        }
         if (!IsUVScriptFileUVE(path)) {
             base.message = "The script is not a UVScript file (.uvs).";
             problems.push_back(std::move(base));
@@ -536,6 +586,32 @@ std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const 
     return rows;
 }
 
+std::optional<std::string> EditorUVE::ReadEntityScriptSourceUVE(const std::string& path, const Scene::EntityUVE entity) const {
+    if (path.ends_with(".uvbp")) {
+        std::optional<Asset::BlueprintAssetUVE> blueprint =
+            m_openBlueprintProviderUVE ? m_openBlueprintProviderUVE(path) : std::optional<Asset::BlueprintAssetUVE>{};
+        if (!blueprint.has_value()) {
+            if (const std::optional<std::string> bytes = ReadProjectTextFileUVE(path); bytes.has_value()) {
+                const auto* const data = reinterpret_cast<const std::byte*>(bytes->data());
+                blueprint = Asset::DecodeBlueprintAssetUVE(std::vector<std::byte>(data, data + bytes->size()));
+            }
+        }
+        if (!blueprint.has_value()) {
+            return std::nullopt;
+        }
+        const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+            Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
+        return Asset::TranslateBlueprintToUVScriptUVE(*blueprint, std::filesystem::path(path).stem().string(),
+                                                      descriptor != nullptr ? descriptor->displayName : "Object3D")
+            .source;
+    }
+    if (m_openUVScript.has_value() && m_openUVScript->path == path) {
+        return m_openUVScript->text;
+    }
+    return ReadProjectTextFileUVE(path);
+}
+
 const std::vector<EditorUVE::EntityCompileProblemUVE>& EditorUVE::GetEntityEditorProblemsUVE() const noexcept {
     static const std::vector<EntityCompileProblemUVE> kNoneUVE;
     return m_entityEditSession.has_value() ? m_entityEditSession->problems : kNoneUVE;
@@ -554,12 +630,10 @@ std::vector<EditorUVE::EntitySignalRowUVE> EditorUVE::GetEntityEditorSignalsUVE(
             continue;
         }
         const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
-        if (!IsUVScriptFileUVE(path)) {
+        if (!IsUVScriptFileUVE(path) && !path.ends_with(".uvbp")) {
             continue;
         }
-        const std::optional<std::string> text = m_openUVScript.has_value() && m_openUVScript->path == path
-                                                    ? std::optional<std::string>{m_openUVScript->text}
-                                                    : ReadProjectTextFileUVE(path);
+        const std::optional<std::string> text = ReadEntityScriptSourceUVE(path, entity);
         if (!text.has_value()) {
             continue;
         }
@@ -636,12 +710,10 @@ bool EditorUVE::PlayEntitySimulationUVE() {
             continue;
         }
         const Scene::ScriptComponentUVE& component = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity);
-        if (!IsUVScriptFileUVE(component.scriptAssetPath)) {
+        if (!IsUVScriptFileUVE(component.scriptAssetPath) && !component.scriptAssetPath.ends_with(".uvbp")) {
             continue;
         }
-        std::optional<std::string> text = m_openUVScript.has_value() && m_openUVScript->path == component.scriptAssetPath
-                                              ? std::optional<std::string>{m_openUVScript->text}
-                                              : ReadProjectTextFileUVE(component.scriptAssetPath);
+        std::optional<std::string> text = ReadEntityScriptSourceUVE(component.scriptAssetPath, entity);
         if (!text.has_value()) {
             ++failed;
             continue;

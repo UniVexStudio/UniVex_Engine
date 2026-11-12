@@ -390,6 +390,7 @@ void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke) {
   case Icon::ProfFrame: { p.poly({{1.5f, 12}, {4, 9}, {6, 11}, {9, 4}, {11, 8}, {14.5f, 6}}); p.line(1.5f, 14.5f, 14.5f, 14.5f); } break;
   case Icon::ProfCounters: { p.line(5.5f, 2, 4.5f, 14); p.line(11.5f, 2, 10.5f, 14); p.line(2, 6, 14, 6); p.line(2, 10, 14, 10); } break;
   case Icon::ProfBreadcrumbs: { p.dot(2.8f, 8, 1.5f); p.dot(8, 8, 1.5f); p.dot(13.2f, 8, 1.5f); p.poly({{4.8f, 6.6f}, {6.2f, 8}, {4.8f, 9.4f}}); p.poly({{10, 6.6f}, {11.4f, 8}, {10, 9.4f}}); } break;
+  case Icon::BlueprintClass: { p.rrect(1.5f, 2.5f, 13, 11, 1.6f); p.rect(3.5f, 5, 4, 3); p.rect(9, 8.5f, 4, 3); p.line(7.5f, 6.5f, 8.2f, 6.5f); p.line(8.2f, 6.5f, 8.2f, 10); p.line(8.2f, 10, 9, 10); } break;
   case Icon::Curve:
     p.line(2, 13, 2, 3); p.line(2, 13, 14, 13);
     p.poly({{3.5f, 11.5f}, {5.5f, 10.8f}, {7, 8.5f}, {8.5f, 6}, {10.5f, 4.6f}, {13, 4.2f}}); break;

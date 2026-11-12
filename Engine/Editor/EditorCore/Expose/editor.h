@@ -25,6 +25,7 @@
 #include <variant>
 #include <vector>
 
+#include "blueprint_asset.h"
 #include "i_asset_database.h"
 #include "i_asset_import_queue.h"
 #include "i_project_file_index.h"
@@ -460,6 +461,7 @@ class EditorUVE final {
     friend class EditorPrismObjectMenuUVE;
     friend class EditorPrismEntityClassWindowUVE;
     friend class EditorPrismMontageEditorUVE;
+    friend class EditorPrismBlueprintPanelUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -1054,7 +1056,14 @@ public:
         std::string scriptPath;
         UVScript::SourceLocationUVE at;
         std::string message;
+        /// A Blueprint's problem: the node it is on (0 for none).
+        std::uint32_t blueprintNode = 0U;
     };
+    /// The Blueprint panel's unsaved graph for a `.uvbp` path, so Compile checks what is being
+    /// edited (like the open text editor for a `.uvs`). Unset or empty: the file on disk.
+    std::function<std::optional<Asset::BlueprintAssetUVE>(const std::string& path)> m_openBlueprintProviderUVE;
+    /// A Blueprint (project path) the Entity Editor opens once its entity is open (Content Browser open).
+    std::string m_pendingBlueprintOpenUVE;
     /// Checks the whole open entity: one root, and every object's `.uvs` script (read from the
     /// open text editor when it has unsaved text, else from disk) compiled against that object.
     /// Returns the problem count; the list stays until the next Compile, Revert or close.
@@ -1938,6 +1947,8 @@ private:
         AnimationMontage,
         /// A named list of montages (`.uvmontagelib`) MontagePlayers link to.
         MontageLibrary,
+        /// A Blueprint Class (`.uvbp`): an object's gameplay as a node graph, edited in the Entity Editor.
+        Blueprint,
         Script,
         Audio,
         Font,
@@ -2102,6 +2113,9 @@ private:
     [[nodiscard]] bool WriteProjectTextFileUVE(const std::filesystem::path& path, std::string_view text);
     /// Reads a project file by the same rule as WriteProjectTextFileUVE.
     [[nodiscard]] std::optional<std::string> ReadProjectTextFileUVE(const std::filesystem::path& path) const;
+    /// The UVScript an object's Script slot runs in the Entity Editor: a .uvs as edited (saved or
+    /// not), or a Blueprint (.uvbp, the open graph or the file) translated for that object.
+    [[nodiscard]] std::optional<std::string> ReadEntityScriptSourceUVE(const std::string& path, Scene::EntityUVE entity) const;
     [[nodiscard]] bool IsDocumentEntityUVE(Scene::EntityUVE entity) const noexcept;
     [[nodiscard]] bool HasSceneGraphObjectUVE(Scene::EntityUVE entity) const noexcept;
     /// True for any live document entity in the hierarchy, spatial or not. This, not

@@ -471,7 +471,7 @@ void BlueprintGraph::addCommentAround(const std::vector<int>& ids, Vec2 fallback
   m_comments.push_back(c);
   commit("Add comment");
   touch();
-  editComment(m_comments.back());
+  // Not straight into the title: the C that made it would be typed there (double-click renames).
 }
 
 void BlueprintGraph::insertReroute(int wi, Vec2 world) {
@@ -582,13 +582,14 @@ bool BlueprintGraph::toolbarClick(Vec2 p) {
       auto ids = selectedIds();
       if (ids.size() == 1 && isCollapsed(ids[0])) expandNode(ids[0]); else collapseSelected();
     }
-    else if (id == "save") saveToFile();
+    else if (id == "save") { if (onSaveRequested) onSaveRequested(); else saveToFile(); }
     else if (id == "load") { openLoadMenu(b.r); return true; }
     else if (id == "find") { openFind(b.r); return true; }
     else if (id == "browse") { if (onBrowse) onBrowse(); else Application::get().notify("Browse: no content browser connected", ToastLevel::Info, 1500); }
     else if (id == "undo") undo();
     else if (id == "redo") redo();
     else if (id == "run") run();
+    else if (id == "compile" && onCompileRequested) { onCompileRequested(); }
     else if (id == "compile") {
       auto r = compile();
       if (r.errors) Application::get().notify(std::to_string(r.errors) + " error(s): " + r.messages.front(), ToastLevel::Error);
@@ -894,7 +895,7 @@ bool BlueprintGraph::onKeyDown(const KeyEvent& e) {
     case Key::Z: if (ctrl) { return shift ? redo() || true : undo() || true; } return false;
     case Key::Y: if (ctrl) { redo(); return true; } return false;
     case Key::F: if (!ctrl) { frameSelection(); return true; } openFind({m_graphRect.x + 10, m_graphRect.y + 4, 200, 24}, shift); return true;
-    case Key::S: if (ctrl) { saveToFile(); return true; } return false;
+    case Key::S: if (ctrl) { if (onSaveRequested) onSaveRequested(); else saveToFile(); return true; } return false;
     case Key::Home: frameAll(); return true;
     case Key::Enter: if (ctrl) { run(); return true; } return false;
     default: return false;

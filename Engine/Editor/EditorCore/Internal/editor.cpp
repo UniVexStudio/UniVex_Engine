@@ -5618,6 +5618,9 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvsave") {
         return ContentBrowserItemTypeUVE::Save;
     }
+    if (extension == ".uvbp") {
+        return ContentBrowserItemTypeUVE::Blueprint;
+    }
     if (extension == ".uvs") {
         return ContentBrowserItemTypeUVE::Script;
     }
@@ -5683,6 +5686,8 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Animation Montage";
         case ContentBrowserItemTypeUVE::MontageLibrary:
             return "Montage Library";
+        case ContentBrowserItemTypeUVE::Blueprint:
+            return "Blueprint";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:
