@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -64,7 +65,18 @@ TEST(RetargetFilesUVETest, RetargetFilesUVE_ConformsTheModelAndEveryAnimationInP
     Asset::MeshAssetUVE mesh;
     ASSERT_TRUE(Asset::LoadMeshAssetUVE(fixture.request.model, mesh));
     ASSERT_TRUE(Asset::IsMeshSkinningDataValidUVE(mesh));
-    EXPECT_EQ(mesh.joints.size(), GetHumanoidReferenceUVE().skeleton.bones.size() + 1U);
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    EXPECT_EQ(mesh.joints.size(),
+              static_cast<std::size_t>(std::ranges::count_if(reference.info, [](const HumanoidBoneInfoUVE& info) { return !info.optional; })) + 1U);
+    // The character keeps its own rest pose: not one vertex moved.
+    const Asset::MeshAssetUVE original = MakeMeshUVE(fixture.rig);
+    ASSERT_EQ(mesh.vertices.size(), original.vertices.size());
+    for (std::size_t vertex = 0U; vertex < mesh.vertices.size(); ++vertex) {
+        EXPECT_EQ(mesh.vertices[vertex].position.x, original.vertices[vertex].position.x);
+        EXPECT_EQ(mesh.vertices[vertex].position.y, original.vertices[vertex].position.y);
+        EXPECT_EQ(mesh.vertices[vertex].position.z, original.vertices[vertex].position.z);
+    }
+    EXPECT_EQ(result.meshDistortion.maximumEdgeChange, 0.0F);
     EXPECT_EQ(mesh.joints[1].name, "Hips");
 
     for (const fs::path& path : fixture.request.animations) {

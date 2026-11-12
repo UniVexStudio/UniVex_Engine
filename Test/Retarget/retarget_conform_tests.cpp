@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -57,18 +58,23 @@ TEST(RetargetConformUVETest, ConformSkeletonUVE_GivesTheRigTheHumanoidsBonesName
     const ConformedFixtureUVE fixture;
     const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
     const ConformedRigUVE& conformed = fixture.conformed;
-    ASSERT_EQ(conformed.skeleton.bones.size(), reference.skeleton.bones.size() + 1U);
+    // The humanoid's core bones (the optional correctives the rig lacks are not made), then its own.
+    const std::size_t core = static_cast<std::size_t>(std::ranges::count_if(reference.info, [](const HumanoidBoneInfoUVE& info) { return !info.optional; }));
+    ASSERT_EQ(conformed.skeleton.bones.size(), core + 1U);
     ASSERT_TRUE(IsRetargetSkeletonValidUVE(conformed.skeleton));
     EXPECT_NEAR(conformed.heightScale, 1.1F, 1e-3F);
     const std::vector<WorldTransformUVE> referenceWorld = ComputeWorldTransformsUVE(reference.skeleton);
-    for (std::size_t index = 0U; index < reference.skeleton.bones.size(); ++index) {
+    for (std::size_t index = 0U; index < core; ++index) {
         const RetargetBoneUVE& bone = conformed.skeleton.bones[index];
-        EXPECT_EQ(bone.name, reference.skeleton.bones[index].name);
-        EXPECT_EQ(bone.parent, reference.skeleton.bones[index].parent) << bone.name;
-        EXPECT_EQ(conformed.referenceOfBone[index], static_cast<std::int32_t>(index));
+        const std::int32_t ref = conformed.referenceOfBone[index];
+        ASSERT_GE(ref, 0) << bone.name;
+        EXPECT_FALSE(reference.info[static_cast<std::size_t>(ref)].optional) << bone.name;
+        EXPECT_EQ(bone.name, reference.skeleton.bones[static_cast<std::size_t>(ref)].name);
+        const std::int32_t parent = reference.skeleton.bones[static_cast<std::size_t>(ref)].parent;
+        EXPECT_EQ(bone.parent < 0 ? -1 : conformed.referenceOfBone[static_cast<std::size_t>(bone.parent)], parent) << bone.name;
         // Every humanoid bone's frame is the reference's, whatever frame the rig used.
         const QuaternionUVE& a = fixture.world[index].rotation;
-        const QuaternionUVE& b = referenceWorld[index].rotation;
+        const QuaternionUVE& b = referenceWorld[static_cast<std::size_t>(ref)].rotation;
         EXPECT_NEAR(std::abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w), 1.0F, 1e-4F) << bone.name;
     }
     // The rig's own end bone is kept, under the head.
@@ -421,6 +427,50 @@ TEST(RetargetConformUVETest, ConformMeshUVE_DualQuaternionBlendingPinchesTheShou
         EXPECT_EQ(dual.skinningInfluences[vertex].weights[0], original.skinningInfluences[vertex].weights[0]);
     }
     EXPECT_FLOAT_EQ(MeasureMeshDistortionUVE(original, original).maximumEdgeChange, 0.0F);
+}
+
+
+TEST(RetargetConformUVETest, ConformSkeletonUVE_MakesOptionalBonesOnlyWhenAsked) {
+    const TPoseRigUVE rig;
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    const HumanoidMatchUVE match = MatchHumanoidUVE(rig.skeleton, reference);
+    const std::optional<ConformedRigUVE> all = ConformSkeletonUVE(rig.skeleton, match, reference, nullptr, ConformOptionsUVE{true});
+    ASSERT_TRUE(all.has_value());
+    EXPECT_EQ(all->skeleton.bones.size(), reference.skeleton.bones.size() + 1U);
+    EXPECT_GE(FindBoneUVE(all->skeleton, "UpperArmBicep_L"), 0);
+    const std::optional<ConformedRigUVE> core = ConformSkeletonUVE(rig.skeleton, match, reference);
+    ASSERT_TRUE(core.has_value());
+    EXPECT_LT(FindBoneUVE(core->skeleton, "UpperArmBicep_L"), 0);
+    // The core still has its twists, IK targets and sockets.
+    for (const char* name : {"UpperArmTwist1_L", "IKFoot_L", "IKHand_R", "IKFootRoot", "CenterOfMass", "Root"}) {
+        EXPECT_GE(FindBoneUVE(core->skeleton, name), 0) << name;
+    }
+}
+
+TEST(RetargetConformUVETest, ConformMeshUVE_KeepingTheRestPoseMovesNoVertex) {
+    const TPoseRigUVE rig;
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    const HumanoidMatchUVE match = MatchHumanoidUVE(rig.skeleton, reference);
+    const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(rig.skeleton, match, reference);
+    ASSERT_TRUE(conformed.has_value());
+    ASSERT_EQ(conformed->restSkeleton.bones.size(), conformed->skeleton.bones.size());
+    // The rest skeleton is where the rig rests: each of its bones, in the humanoid's names.
+    const std::vector<WorldTransformUVE> rigWorld = ComputeWorldTransformsUVE(rig.skeleton);
+    const std::vector<WorldTransformUVE> restWorld = ComputeWorldTransformsUVE(conformed->restSkeleton);
+    for (std::size_t bone = 0U; bone < rig.skeleton.bones.size(); ++bone) {
+        const auto at = static_cast<std::size_t>(conformed->boneOfRigBone[bone]);
+        ExpectNear(restWorld[at].position, rigWorld[bone].position, 1e-4F, rig.skeleton.bones[bone].name);
+    }
+    // A clip at the humanoid's rest poses the mesh into the A-pose: each bone's skin turn is the
+    // move conforming measured for it.
+    const std::vector<WorldTransformUVE> poseWorld = ComputeWorldTransformsUVE(conformed->skeleton);
+    for (std::size_t bone = 0U; bone < rig.skeleton.bones.size(); ++bone) {
+        const auto at = static_cast<std::size_t>(conformed->boneOfRigBone[bone]);
+        const QuaternionUVE skin = Math::MultiplyUVE(poseWorld[at].rotation, Math::ConjugateUVE(restWorld[at].rotation));
+        const QuaternionUVE& move = conformed->moveOfRigBone[bone].rotation;
+        EXPECT_NEAR(std::abs(skin.x * move.x + skin.y * move.y + skin.z * move.z + skin.w * move.w), 1.0F, 1e-4F)
+            << rig.skeleton.bones[bone].name;
+    }
 }
 
 } // namespace

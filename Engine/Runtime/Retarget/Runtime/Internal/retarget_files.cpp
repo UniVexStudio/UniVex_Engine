@@ -201,7 +201,8 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         const HumanoidMatchUVE match = MatchHumanoidUVE(*rig, reference);
         const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error);
         const Asset::MeshAssetUVE before = mesh;
-        if (!conformed.has_value() || !ConformMeshUVE(mesh, *conformed, &error)) {
+        // The character keeps its own rest pose: no vertex moves (the A-pose is where clips take it).
+        if (!conformed.has_value() || !ConformMeshUVE(mesh, *conformed, &error, SkinBlendUVE::DualQuaternion, ConformMeshModeUVE::KeepRestPose)) {
             result.error = request.model.filename().string() + ": " + error;
             return result;
         }
@@ -218,7 +219,8 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
             part.file = partFile;
             Asset::MeshAssetUVE partMesh;
             std::string partError;
-            if (!Asset::LoadMeshAssetUVE(partFile, partMesh) || !ConformMeshUVE(partMesh, *conformed, &partError)) {
+            if (!Asset::LoadMeshAssetUVE(partFile, partMesh) ||
+                !ConformMeshUVE(partMesh, *conformed, &partError, SkinBlendUVE::DualQuaternion, ConformMeshModeUVE::KeepRestPose)) {
                 result.error = partFile.filename().string() + ": " + (partError.empty() ? "cannot read it" : partError);
                 return result;
             }
