@@ -113,6 +113,11 @@ struct PlannedFileUVE final {
     }
     nlohmann::json manifest{{"version", 1}, {"files", nlohmann::json::array()}};
     for (std::size_t index = 0U; index < files.size(); ++index) {
+        // A file the run will create (a skeleton the character had none of): Undo removes it.
+        if (std::error_code exists; !fs::exists(files[index], exists)) {
+            manifest["files"].push_back({{"created", true}, {"original", files[index].generic_string()}});
+            continue;
+        }
         const std::string name = std::to_string(index) + "_" + files[index].filename().string();
         fs::copy_file(files[index], dir / name, fs::copy_options::overwrite_existing, code);
         if (code) {
@@ -225,21 +230,23 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         model.note = std::to_string(conformed->skeleton.bones.size() - rig->bones.size()) + " bones added" + distortion;
         model.mesh = std::move(mesh);
         planned.push_back(std::move(model));
-        // The importer's skeleton beside the model is what the editor builds the character's
-        // Skeleton3D from: it takes the engine's bones at the rig's own rest too.
+        // The character's skeleton beside the model (what the editor builds its Skeleton3D from):
+        // the engine's bones resting in the A-pose. The mesh stays bound where it was made, so the
+        // character stands in the A-pose without one vertex of its file moving, and clips conformed
+        // to the humanoid play on it exactly.
         fs::path skeletonFile = request.model;
         skeletonFile.replace_extension(".uvskel");
-        if (std::error_code skeletonExists; fs::is_regular_file(skeletonFile, skeletonExists)) {
+        {
             PlannedFileUVE skeleton;
             skeleton.file = skeletonFile;
             Asset::SkeletonAssetUVE asset;
             asset.skeletonId = request.model.stem().string();
-            for (const RetargetBoneUVE& bone : conformed->restSkeleton.bones) {
+            for (const RetargetBoneUVE& bone : conformed->skeleton.bones) {
                 asset.joints.push_back(Asset::SkeletonJointUVE{bone.name, bone.parent, bone.position, bone.rotation,
                                                                Math::Vector3UVE{bone.scale, bone.scale, bone.scale}});
             }
             skeleton.skeleton = std::move(asset);
-            skeleton.note = "the character's skeleton, in the engine's bones";
+            skeleton.note = "the character's skeleton: the engine's bones, resting in the A-pose";
             planned.push_back(std::move(skeleton));
         }
         for (const fs::path& partFile : partFiles) {
@@ -349,9 +356,14 @@ bool RestoreRetargetBackupUVE(const fs::path& backupDir, std::string* error) {
         return fail("no backup manifest in " + backupDir.string());
     }
     std::vector<std::pair<fs::path, fs::path>> pairs;
+    std::vector<fs::path> created;
     try {
         const nlohmann::json manifest = nlohmann::json::parse(in);
         for (const nlohmann::json& file : manifest.at("files")) {
+            if (file.value("created", false)) {
+                created.emplace_back(file.at("original").get<std::string>());
+                continue;
+            }
             pairs.emplace_back(backupDir / file.at("backup").get<std::string>(),
                                fs::path{file.at("original").get<std::string>()});
         }
@@ -367,6 +379,10 @@ bool RestoreRetargetBackupUVE(const fs::path& backupDir, std::string* error) {
             allRestored = false;
             failures += (failures.empty() ? "" : "; ") + original.string() + ": " + code.message();
         }
+    }
+    for (const fs::path& file : created) {
+        std::error_code code;
+        fs::remove(file, code);
     }
     return allRestored || fail(failures);
 }

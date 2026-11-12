@@ -25,6 +25,7 @@
 #include "mesh_instance_3d.h"
 #include "object_3d.h"
 #include "skeleton_3d.h"
+#include "skeleton_asset.h"
 #include "retarget_conform.h"
 #include "retarget_humanoid.h"
 #include "i_scene_graph.h"
@@ -246,8 +247,29 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
         Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
         place(figure, "Character", Kind::Object3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
         Scene::EntityUVE meshParent = figure;
-        if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(mesh);
-            rig.has_value() && rig->bones.size() <= Scene::kMaximumSkeletonBonesUVE) {
+        // The character's own skeleton file when it describes this mesh (a retargeted character rests
+        // in the A-pose there), else the mesh's bind.
+        std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(mesh);
+        {
+            std::filesystem::path skeletonFile = modelFile;
+            skeletonFile.replace_extension(".uvskel");
+            Asset::SkeletonAssetUVE skeleton;
+            if (rig.has_value() && std::filesystem::is_regular_file(skeletonFile, error) && Asset::LoadSkeletonAssetUVE(skeletonFile, skeleton) &&
+                skeleton.joints.size() == rig->bones.size()) {
+                bool same = true;
+                for (std::size_t joint = 0U; joint < skeleton.joints.size() && same; ++joint) {
+                    same = skeleton.joints[joint].name == rig->bones[joint].name;
+                }
+                if (same) {
+                    for (std::size_t joint = 0U; joint < skeleton.joints.size(); ++joint) {
+                        rig->bones[joint].position = skeleton.joints[joint].position;
+                        rig->bones[joint].rotation = skeleton.joints[joint].rotation;
+                        rig->bones[joint].scale = skeleton.joints[joint].scale.x;
+                    }
+                }
+            }
+        }
+        if (rig.has_value() && rig->bones.size() <= Scene::kMaximumSkeletonBonesUVE) {
             Scene::Skeleton3DObjectDefinitionUVE definition;
             definition.skeleton.bones = BonesOfUVE(*rig);
             const Scene::EntityUVE skeleton = shell("Character Skeleton");

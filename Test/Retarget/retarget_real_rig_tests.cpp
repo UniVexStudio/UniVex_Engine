@@ -120,7 +120,18 @@ TEST(RetargetRealRigUVETest, TheAnimationAndTheMeshComeThroughRetargetingUnchang
     const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error);
     ASSERT_TRUE(conformed.has_value()) << error;
     Asset::MeshAssetUVE after = mesh;
-    ASSERT_TRUE(ConformMeshUVE(after, *conformed, &error, SkinBlendUVE::DualQuaternion, ConformMeshModeUVE::KeepRestPose)) << error;
+    // UVE_RETARGET_MODE=bake: the character takes the A-pose as its rest (the default Generate).
+    const char* const modeText = std::getenv("UVE_RETARGET_MODE");
+    // bake: vertices moved into the A-pose; keep: own rest; default (apose): the skeleton rests in
+    // the A-pose, the vertices stay where they were made.
+    const std::string_view mode = modeText == nullptr ? std::string_view{"apose"} : std::string_view{modeText};
+    const bool bake = mode == "bake";
+    ASSERT_TRUE(ConformMeshUVE(after, *conformed, &error, SkinBlendUVE::DualQuaternion,
+                               bake ? ConformMeshModeUVE::BakeAPose : ConformMeshModeUVE::KeepRestPose))
+        << error;
+    const MeshDistortionUVE distortion = MeasureMeshDistortionUVE(mesh, after);
+    std::printf("[ real rig ] %s: worst edge change %.1f%%, %.2f%% of edges over 10%%\n", bake ? "vertices moved into the A-pose" : "vertices untouched",
+                distortion.maximumEdgeChange * 100.0, distortion.fractionOverTenPercent * 100.0);
     // The clip's rig: its own rest skeleton when it has one, else the character's.
     RetargetSkeletonUVE clipRig = *rig;
     if (!clip.rest.empty()) {
@@ -140,7 +151,9 @@ TEST(RetargetRealRigUVETest, TheAnimationAndTheMeshComeThroughRetargetingUnchang
     for (std::size_t v = 0U; v < mesh.vertices.size(); ++v) {
         restMoved = std::max(restMoved, Math::LengthUVE(after.vertices[v].position - Math::RotateVectorUVE(conformed->orientation, mesh.vertices[v].position)));
     }
-    EXPECT_LT(restMoved, 1e-5F) << "the mesh keeps its rest pose";
+    if (!bake) {
+        EXPECT_LT(restMoved, 1e-5F) << "no vertex of the file moves";
+    }
 
     // ---- A picture of the rest pose and the retarget pose ------------------------------------------
     if (const char* const dump = std::getenv("UVE_RETARGET_DUMP"); dump != nullptr) {
@@ -174,7 +187,9 @@ TEST(RetargetRealRigUVETest, TheAnimationAndTheMeshComeThroughRetargetingUnchang
     }
 
     // ---- Every frame: the character played before and after ----------------------------------------
-    const RetargetSkeletonUVE afterRest = *RigFromMeshUVE(after);
+    // The skeleton the character rests in: the A-pose (what Retarget writes as its skeleton), or the
+    // mesh's own bind.
+    const RetargetSkeletonUVE afterRest = mode == "apose" ? conformed->skeleton : *RigFromMeshUVE(after);
     const std::vector<RestBoneViewUVE> afterViews = ViewsUVE(afterRest);
     const ConformedPlaybackUVE playback = PlanConformedPlaybackUVE(*conformedClip, afterViews);
     const ConformedPlaybackUVE plain{};

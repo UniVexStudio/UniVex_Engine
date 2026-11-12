@@ -172,6 +172,9 @@ void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::R
     if (!window.jobModel.empty()) {
         MarkRetargetedModelUVE(window.target, true);
     }
+    // The preview's world drew the files as they were (its own renderer caches them): a new one.
+    static_cast<void>(EndRetargetPreviewUVE());
+    static_cast<void>(BeginRetargetPreviewUVE());
     window.lastBackup = result.backupDir;
     std::size_t changed = 0U;
     for (const Retarget::RetargetFileReportUVE& file : result.files) {
@@ -288,6 +291,8 @@ bool EditorUVE::UndoLastRetargetUVE() {
     const std::size_t skeletons = modelFile.empty() ? 0U : RefreshSkeletonsForRetargetedModelUVE(modelFile);
     MarkRetargetedModelUVE(window.target, false);
     ClearMeshThumbnailCacheUVE();
+    static_cast<void>(EndRetargetPreviewUVE());
+    static_cast<void>(BeginRetargetPreviewUVE());
     window.status = "Put the originals back (" + std::to_string(skeletons) + " skeleton" + (skeletons == 1U ? "" : "s") + " updated).";
     window.statusIsError = false;
     window.lastBackup.clear();
