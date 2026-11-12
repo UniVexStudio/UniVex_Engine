@@ -93,6 +93,13 @@ private:
     [[nodiscard]] std::vector<prism::MenuItem> CatalogueMenuUVE();
     void CreateCatalogueItemUVE(const std::string& id);
     void OpenEntryUVE(std::size_t entryIndex);
+    /// Right-click a clip > Create Montage: AM_<clip>.uvmontage beside it, the clip on its slot
+    /// track, opened in the Montage Editor.
+    void CreateMontageFromClipUVE(const std::filesystem::path& clipPath);
+    /// Puts the montage in the library (made when it does not exist yet).
+    void AddMontageToLibraryUVE(const std::filesystem::path& montagePath, const std::filesystem::path& libraryPath);
+    /// A montage library's list: open a montage, or take it off.
+    void ShowMontageLibraryUVE(const std::filesystem::path& libraryPath);
     void SelectEntryUVE(std::size_t entryIndex, bool additive, bool range);
     void GoToFolderUVE(const std::filesystem::path& directory);
     void RevealUVE(const std::filesystem::path& relativePath);

@@ -5,6 +5,7 @@
 #include "logging_macros.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
+#include "montage_library_asset.h"
 #include "fbx_mesh_converter.h"
 #include "gltf_metadata.h"
 #include "editor.h"
@@ -1145,6 +1146,18 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
         const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvmontage");
         if (!Asset::SaveAnimationMontageAssetUVE(Asset::AnimationMontageAssetUVE{}, path)) {
+            return std::nullopt;
+        }
+        static_cast<void>(m_services->GetAssetDatabaseUVE().RegisterUVE(path));
+        return path;
+    }
+
+    if (item->action == ContentCatalogueActionUVE::MontageLibraryAsset) {
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvmontagelib");
+        Asset::MontageLibraryAssetUVE library;
+        library.libraryId = path.stem().generic_string().empty() ? std::string{"montages"} : path.stem().generic_string();
+        if (!Asset::SaveMontageLibraryAssetUVE(library, path)) {
             return std::nullopt;
         }
         static_cast<void>(m_services->GetAssetDatabaseUVE().RegisterUVE(path));
@@ -5602,6 +5615,9 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvmontage") {
         return ContentBrowserItemTypeUVE::AnimationMontage;
     }
+    if (extension == ".uvmontagelib") {
+        return ContentBrowserItemTypeUVE::MontageLibrary;
+    }
     // The envelope the audio importer writes, and every source format an importer can turn into
     // one: WAV, plus the compressed Ogg/Vorbis, MP3 and FLAC streams RegisterCompressedAudioImportersUVE
     // reads (compressed_audio_importer_uve.h). A container with no registered importer - .m4a, .aac,
@@ -5647,6 +5663,8 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Animation Library";
         case ContentBrowserItemTypeUVE::AnimationMontage:
             return "Animation Montage";
+        case ContentBrowserItemTypeUVE::MontageLibrary:
+            return "Montage Library";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:

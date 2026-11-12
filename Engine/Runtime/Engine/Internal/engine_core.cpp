@@ -197,6 +197,7 @@
 #include "checkpoint_manager.h"
 #include "save_game_system.h"
 #include "character_controller_component.h"
+#include "montage_library_asset.h"
 #include "collider_component.h"
 #include "particle_emitter_component.h"
 #include "rigid_3d_component.h"
@@ -1908,10 +1909,24 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 player.request = Scene::MontageRequestUVE::None;
                 if (request == Scene::MontageRequestUVE::Play) {
                     const std::string wanted = lower(player.requestMontage);
+                    // Its slots, then its linked library's montages (by the library's name or the file's).
+                    std::vector<std::pair<Asset::AssetGuidUVE, std::string>> offered;
                     for (std::size_t i = 0U; i < 8U; ++i) {
-                        const Asset::AssetGuidUVE guid = player.MontageAtUVE(i);
+                        offered.emplace_back(player.MontageAtUVE(i), std::string{});
+                    }
+                    if (player.libraryRef != Asset::AssetGuidUVE{}) {
+                        Asset::MontageLibraryAssetUVE library;
+                        const std::filesystem::path libraryPath = m_assetDatabase->ResolveUVE(player.libraryRef);
+                        if (!libraryPath.empty() && Asset::LoadMontageLibraryAssetUVE(libraryPath, library)) {
+                            for (const Asset::MontageLibraryEntryUVE& entry : library.entries) {
+                                offered.emplace_back(entry.montage, entry.name);
+                            }
+                        }
+                    }
+                    for (const auto& [guid, libraryName] : offered) {
                         const Asset::AnimationMontageAssetUVE* const montage = montageFor(guid);
-                        if (montage == nullptr || lower(m_assetDatabase->ResolveUVE(guid).stem().string()) != wanted) {
+                        if (montage == nullptr || (lower(m_assetDatabase->ResolveUVE(guid).stem().string()) != wanted &&
+                                                   lower(libraryName) != wanted)) {
                             continue;
                         }
                         if (player.IsPlayingUVE() && player.playing != guid) {
@@ -1952,6 +1967,11 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                         [&](const Scene::EntityUVE graphEntity, Scene::AnimationGraphComponentUVE& graph) {
                             if (frame.viaSlot || frame.pose.empty() ||
                                 resolveSkeleton(graphEntity, mixerOf(graphEntity).target) != skeletonEntity) {
+                                return;
+                            }
+                            // A graph linked to another MontagePlayer leaves this one's montages alone.
+                            if (graph.montagePlayer != Scene::kInvalidEntityUVE && graph.montagePlayer != entity &&
+                                m_entityManager->IsAliveUVE(graph.montagePlayer)) {
                                 return;
                             }
                             const bool hasSlot = std::any_of(graph.nodes.begin(), graph.nodes.end(),

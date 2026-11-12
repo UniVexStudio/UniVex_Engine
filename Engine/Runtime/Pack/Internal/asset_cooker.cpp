@@ -13,6 +13,7 @@
 #include "font_asset.h"
 #include "skeleton_asset.h"
 #include "animation_library_asset.h"
+#include "montage_library_asset.h"
 #include "data_table_asset.h"
 #include "asset_resident_size.h"
 #include "texture_mipmap.h"
@@ -38,7 +39,7 @@ std::string Extension(const std::filesystem::path& path) {
 }
 bool RuntimePath(const std::filesystem::path& path) {
     static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvshader", ".uvscene",
-        ".uvprefab", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage", ".uvfont", ".uvtable",
+        ".uvprefab", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage", ".uvmontagelib", ".uvfont", ".uvtable",
         ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
     return extensions.contains(Extension(path));
 }
@@ -75,7 +76,7 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
         {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},
         {".uvaudio",Asset::AssetKindUVE::Audio},{".uvanim",Asset::AssetKindUVE::Animation},
         {".uvskel",Asset::AssetKindUVE::Skeleton},{".uvanimlib",Asset::AssetKindUVE::AnimationLibrary},
-        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvtable",Asset::AssetKindUVE::DataTable}};
+        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvtable",Asset::AssetKindUVE::DataTable}};
     if (const auto it = kinds.find(extension); it == kinds.end() || it->second != envelope->first.assetType) return false;
     switch (envelope->first.assetType) {
     case Asset::AssetKindUVE::Texture: { Asset::TextureAssetUVE v; return Asset::LoadTextureAssetUVE(path,v); }
@@ -104,6 +105,12 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
         if (!Asset::LoadAnimationMontageAssetUVE(path,v)) return false;
         for (const auto& segment : v.segments) CheckGuid(segment.clip,db);
         CheckGuid(v.previewEntity,db);
+        return true;
+    }
+    case Asset::AssetKindUVE::MontageLibrary: {
+        Asset::MontageLibraryAssetUVE v;
+        if (!Asset::LoadMontageLibraryAssetUVE(path,v)) return false;
+        for (const auto& entry : v.entries) CheckGuid(entry.montage,db);
         return true;
     }
     case Asset::AssetKindUVE::AnimationLibrary: {
@@ -223,7 +230,7 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             catalog[hex] = relative.generic_string();
         }
         const std::set<std::string> native{ ".uvtex",".uvmodel",".uvmat",".uvshader",".uvscene",".uvprefab",
-            ".uvaudio",".uvanim",".uvskel",".uvanimlib",".uvmontage",".uvfont",".uvtable" };
+            ".uvaudio",".uvanim",".uvskel",".uvanimlib",".uvmontage",".uvmontagelib",".uvfont",".uvtable" };
         const std::set<std::string> text{ ".uvs",".glsl",".vert",".frag",".comp",".glslinc" };
         for (const auto& entry : std::filesystem::recursive_directory_iterator(content)) {
             if (entry.is_symlink()) throw std::runtime_error("Cook does not accept symlinks");

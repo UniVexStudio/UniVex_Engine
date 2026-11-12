@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace prism {
@@ -89,6 +90,11 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildBodyUVE(const NodeUVE& node);
     [[nodiscard]] std::vector<std::string> ParameterNamesUVE(std::initializer_list<Scene::AnimationParameterTypeUVE> types) const;
     [[nodiscard]] std::vector<Asset::AssetGuidUVE> ClipChoicesUVE() const;
+    /// The MontagePlayers whose montages reach this graph: the linked one, else every one in the
+    /// entity; and the names of their montages that play on `slot`.
+    [[nodiscard]] std::vector<Scene::EntityUVE> MontagePlayersUVE() const;
+    [[nodiscard]] std::vector<std::string> MontagesOnSlotUVE(const std::string& slot) const;
+    void ShowMontagePlayerMenuUVE(prism::Vec2 at);
 
     // ---- edits ----------------------------------------------------------------------------------
     /// One undo step on the component; the view is rebuilt on the next refresh.
@@ -152,6 +158,8 @@ private:
     };
     std::vector<ParameterRowUVE> m_parameterRows;
     std::shared_ptr<prism::LogView> m_log;
+    /// Montage slots read from their files, by GUID (empty: unreadable).
+    mutable std::unordered_map<std::uint64_t, std::string> m_montageSlots;
     std::size_t m_shownLogLines = static_cast<std::size_t>(-1);
 };
 

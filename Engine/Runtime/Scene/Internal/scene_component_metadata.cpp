@@ -2234,6 +2234,10 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage6>("montage6", "Montage 6", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage7>("montage7", "Montage 7", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage8>("montage8", "Montage 8", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MP::libraryRef>("libraryRef", "Library", kPropertyTypeAssetGuidUVE),
+                                                   "asset:uvmontagelib"),
+                               "A .uvmontagelib whose montages this player also plays by name, live: editing the file changes "
+                               "what it offers."),
                 InGroupUVE(DeclareRuntimeStateUVE<&MP::playingName>("playingName", "Playing", kPropertyTypeStringUVE), "State"),
             }));
 

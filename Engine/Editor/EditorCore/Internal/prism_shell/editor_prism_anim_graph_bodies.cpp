@@ -10,6 +10,9 @@
 #include "i_asset_database.h"
 #include "i_project_file_index.h"
 #include "skeleton_3d.h"
+#include "animation_montage_asset.h"
+#include "montage_library_asset.h"
+#include "montage_player_component.h"
 
 #include "prism/Containers.h"
 #include "prism/Controls.h"
@@ -20,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -35,7 +39,7 @@ constexpr float kRowUVE = 25.0F;
 [[nodiscard]] std::size_t BodyRowsUVE(const Kind kind) noexcept {
     switch (kind) {
         case Kind::Output: return 0U;
-        case Kind::Slot: return 1U;
+        case Kind::Slot: return 2U;
         case Kind::StateMachine: return 2U;
         case Kind::BlendSpace1D: return 3U;
         case Kind::Clip:
@@ -138,6 +142,59 @@ std::vector<Asset::AssetGuidUVE> EditorPrismAnimGraphPanelUVE::ClipChoicesUVE() 
     // As Godot's tree takes its player's animations: the linked AnimationSequencer's own list,
     // its clip and its library's, and nothing else.
     return m_editor.GetSequencerClipsUVE(m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree));
+}
+
+std::vector<Scene::EntityUVE> EditorPrismAnimGraphPanelUVE::MontagePlayersUVE() const {
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    const GraphUVE* graph = GraphPtrUVE();
+    if (graph != nullptr && graph->montagePlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(graph->montagePlayer) &&
+        em.HasComponentUVE<Scene::MontagePlayerComponentUVE>(graph->montagePlayer)) {
+        return {graph->montagePlayer};
+    }
+    std::vector<Scene::EntityUVE> players;
+    for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
+        if (em.HasComponentUVE<Scene::MontagePlayerComponentUVE>(object)) {
+            players.push_back(object);
+        }
+    }
+    return players;
+}
+
+std::vector<std::string> EditorPrismAnimGraphPanelUVE::MontagesOnSlotUVE(const std::string& slot) const {
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+    std::vector<std::string> names;
+    const auto consider = [&](const Asset::AssetGuidUVE guid) {
+        if (guid == Asset::AssetGuidUVE{}) {
+            return;
+        }
+        auto found = m_montageSlots.find(guid.value);
+        if (found == m_montageSlots.end()) {
+            Asset::AnimationMontageAssetUVE montage;
+            const std::filesystem::path path = database.ResolveUVE(guid);
+            found = m_montageSlots.emplace(guid.value, !path.empty() && Asset::LoadAnimationMontageAssetUVE(path, montage) ? montage.slot : std::string{}).first;
+        }
+        const std::string name = database.ResolveUVE(guid).stem().string();
+        if (found->second == slot && std::ranges::find(names, name) == names.end()) {
+            names.push_back(name);
+        }
+    };
+    for (const Scene::EntityUVE player : MontagePlayersUVE()) {
+        const auto& component = em.GetComponentUVE<Scene::MontagePlayerComponentUVE>(player);
+        for (std::size_t i = 0U; i < 8U; ++i) {
+            consider(component.MontageAtUVE(i));
+        }
+        if (component.libraryRef != Asset::AssetGuidUVE{}) {
+            Asset::MontageLibraryAssetUVE library;
+            const std::filesystem::path path = database.ResolveUVE(component.libraryRef);
+            if (!path.empty() && Asset::LoadMontageLibraryAssetUVE(path, library)) {
+                for (const Asset::MontageLibraryEntryUVE& entry : library.entries) {
+                    consider(entry.montage);
+                }
+            }
+        }
+    }
+    return names;
 }
 
 prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& node) {
@@ -503,6 +560,17 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
             name->setTooltip("The montage slot laid over the input here (a MontagePlayer plays into it)");
             name->onCommit = [this, id](const std::string& to) { EditNodeUVE(id, [&to](NodeUVE& n) { n.parameter = to; }); };
             body->add(RowUVE("Slot", name));
+            // What the montages on this slot are, from the MontagePlayer(s) the graph takes.
+            const std::vector<std::string> montages = MontagesOnSlotUVE(node.parameter.empty() ? std::string{"DefaultSlot"} : node.parameter);
+            std::string list;
+            for (const std::string& montage : montages) {
+                list += (list.empty() ? "" : ", ") + montage;
+            }
+            auto plays = prism::make<prism::Label>(list.empty() ? std::string{"no montage on this slot yet"} : list, prism::FontRole::Small);
+            plays->setColor(prism::ThemeColor(list.empty() ? &prism::Theme::textDim : &prism::Theme::text));
+            plays->setTooltip(list.empty() ? "Montages made for this slot, on the entity's MontagePlayer, show here"
+                                           : "These montages play over the input here: " + list);
+            body->add(RowUVE("Plays", plays));
             break;
         }
     }

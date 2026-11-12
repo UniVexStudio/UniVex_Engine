@@ -8,6 +8,13 @@
 #include "editor_content_catalogue.h"
 #include "mesh_component.h"
 
+#include "animation_clip_asset.h"
+#include "animation_montage_asset.h"
+#include "animation_montage_editing.h"
+#include "i_asset_database.h"
+#include "i_project_file_index.h"
+#include "montage_library_asset.h"
+
 #include "prism/Application.h"
 
 #include <GL/gl.h>
@@ -190,6 +197,7 @@ prism::Icon EditorPrismContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::Animation: return prism::Icon::AnimGraph;
         case ItemTypeUVE::AnimationLibrary: return prism::Icon::NodeClip;
         case ItemTypeUVE::AnimationMontage: return prism::Icon::AnimGraph;
+        case ItemTypeUVE::MontageLibrary: return prism::Icon::Layers;
         case ItemTypeUVE::Script: return prism::Icon::Script;
         case ItemTypeUVE::Audio: return prism::Icon::NodeSound;
         case ItemTypeUVE::Font: return prism::Icon::NodeText;
@@ -214,6 +222,7 @@ std::pair<std::string, std::string> EditorPrismContentBrowserUVE::DescribeUVE(co
         case ItemTypeUVE::Animation: return {"Animation", "ANM"};
         case ItemTypeUVE::AnimationLibrary: return {"Animation Library", "LIB"};
         case ItemTypeUVE::AnimationMontage: return {"Animation Montage", "MONT"};
+        case ItemTypeUVE::MontageLibrary: return {"Montage Library", "MLIB"};
         case ItemTypeUVE::Script: return {"Script", "UVS"};
         case ItemTypeUVE::Audio: return {"Audio", "AUD"};
         case ItemTypeUVE::Font: return {"Font", "FNT"};
@@ -236,7 +245,8 @@ prism::Color EditorPrismContentBrowserUVE::TintForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::Shader: return prism::Color(170, 150, 230);
         case ItemTypeUVE::Animation:
         case ItemTypeUVE::AnimationLibrary:
-        case ItemTypeUVE::AnimationMontage: return prism::Color(90, 200, 200);
+        case ItemTypeUVE::AnimationMontage:
+        case ItemTypeUVE::MontageLibrary: return prism::Color(90, 200, 200);
         case ItemTypeUVE::Audio: return prism::Color(230, 190, 90);
         default: return prism::Color(170, 176, 186);
     }
@@ -1521,6 +1531,34 @@ void EditorPrismContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex,
     if (type == ItemTypeUVE::AnimationLibrary) {
         add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }));
     }
+    // A clip becomes a montage: a .uvmontage beside it with the clip on its slot track, opened.
+    if (extension == ".uvanim") {
+        add(prism::MenuItem::Item("Create Montage", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimGraph),
+            allowed);
+    }
+    // A montage joins a montage library, the way a clip joins an animation library.
+    if (type == ItemTypeUVE::AnimationMontage) {
+        std::vector<prism::MenuItem> libraries;
+        for (const Asset::ProjectFileEntryUVE& other : snapshot.entries) {
+            if (other.kind != Asset::ProjectFileEntryKindUVE::File || LowerExtensionUVE(other.relativePath) != ".uvmontagelib") {
+                continue;
+            }
+            const std::filesystem::path library = snapshot.contentRoot / other.relativePath;
+            libraries.push_back(prism::MenuItem::Item(other.relativePath.stem().string(),
+                                                      [this, absolute, library] { AddMontageToLibraryUVE(absolute, library); }));
+        }
+        if (!libraries.empty()) {
+            libraries.push_back(prism::MenuItem::Sep());
+        }
+        libraries.push_back(prism::MenuItem::Item("New Montage Library", [this, absolute] {
+            const std::filesystem::path library = absolute.parent_path() / "Montage Library.uvmontagelib";
+            AddMontageToLibraryUVE(absolute, library);
+        }, "", prism::Icon::Plus));
+        add(prism::MenuItem::Sub("Add to Montage Library", std::move(libraries), prism::Icon::Layers), allowed);
+    }
+    if (type == ItemTypeUVE::MontageLibrary) {
+        add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::Layers));
+    }
     // Model sources and imported models: place, use as the selected object's mesh, retarget.
     const bool modelSource = EditorUVE::IsModelSourcePathUVE(entry.relativePath);
     const std::filesystem::path importedModel =
@@ -1786,6 +1824,9 @@ void EditorPrismContentBrowserUVE::OpenEntryUVE(const std::size_t entryIndex) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Montage Editor.";
             }
             break;
+        case ItemTypeUVE::MontageLibrary:
+            ShowMontageLibraryUVE(full);
+            break;
         case ItemTypeUVE::AnimationLibrary:
             if (!m_editor.OpenAnimationLibraryUVE(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " as an animation library.";
@@ -1824,6 +1865,111 @@ void EditorPrismContentBrowserUVE::ShowFilterMenuUVE() {
         }));
     }
     prism::showMenu(std::move(items), m_filterButton ? m_filterButton->rect() : prism::Rect{}, prism::PopupPlacement::Below);
+}
+
+// ---------------------------------------------------------------------------------- montages
+
+void EditorPrismContentBrowserUVE::CreateMontageFromClipUVE(const std::filesystem::path& clipPath) {
+    Asset::AnimationClipAssetUVE clip;
+    if (!Asset::LoadAnimationClipAssetUVE(clipPath, clip)) {
+        m_editor.m_contentStatusMessage = "Could not read " + clipPath.filename().string();
+        return;
+    }
+    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+    const Asset::AssetGuidUVE guid = database.RegisterUVE(clipPath);
+    Asset::AnimationMontageAssetUVE montage;
+    static_cast<void>(Asset::AddMontageSegmentUVE(montage, guid, clip.durationSeconds));
+    // AM_<clip>, or AM_<clip>_2 ... beside the clip.
+    std::filesystem::path path = clipPath.parent_path() / ("AM_" + clipPath.stem().string() + ".uvmontage");
+    std::error_code error;
+    for (int n = 2; std::filesystem::exists(path, error) && n < 1000; ++n) {
+        path = clipPath.parent_path() / ("AM_" + clipPath.stem().string() + "_" + std::to_string(n) + ".uvmontage");
+    }
+    if (!Asset::SaveAnimationMontageAssetUVE(montage, path)) {
+        m_editor.m_contentStatusMessage = "Could not write " + path.filename().string();
+        return;
+    }
+    static_cast<void>(database.RegisterUVE(path));
+    static_cast<void>(m_editor.m_services->GetProjectFileIndexUVE().RefreshUVE(m_editor.m_services->GetAssetDatabaseUVE()));
+    m_editor.m_contentStatusMessage = "Created " + path.filename().string();
+    static_cast<void>(m_editor.OpenMontageEditorUVE(path));
+}
+
+void EditorPrismContentBrowserUVE::AddMontageToLibraryUVE(const std::filesystem::path& montagePath, const std::filesystem::path& libraryPath) {
+    Asset::MontageLibraryAssetUVE library;
+    std::error_code error;
+    if (std::filesystem::exists(libraryPath, error)) {
+        if (!Asset::LoadMontageLibraryAssetUVE(libraryPath, library)) {
+            m_editor.m_contentStatusMessage = "Not a montage library: " + libraryPath.filename().string();
+            return;
+        }
+    } else {
+        library.libraryId = libraryPath.stem().string();
+    }
+    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+    const Asset::AssetGuidUVE guid = database.RegisterUVE(montagePath);
+    if (std::ranges::any_of(library.entries, [guid](const Asset::MontageLibraryEntryUVE& e) { return e.montage == guid; })) {
+        m_editor.m_contentStatusMessage = montagePath.stem().string() + " is already in " + libraryPath.stem().string();
+        return;
+    }
+    Asset::MontageLibraryEntryUVE entry;
+    entry.montage = guid;
+    entry.name = montagePath.stem().string();
+    library.entries.push_back(std::move(entry));
+    if (!Asset::SaveMontageLibraryAssetUVE(library, libraryPath)) {
+        m_editor.m_contentStatusMessage = "Could not write " + libraryPath.filename().string();
+        return;
+    }
+    static_cast<void>(database.RegisterUVE(libraryPath));
+    static_cast<void>(m_editor.m_services->GetProjectFileIndexUVE().RefreshUVE(m_editor.m_services->GetAssetDatabaseUVE()));
+    m_editor.m_contentStatusMessage = "Added " + montagePath.stem().string() + " to " + libraryPath.stem().string();
+}
+
+void EditorPrismContentBrowserUVE::ShowMontageLibraryUVE(const std::filesystem::path& libraryPath) {
+    Asset::MontageLibraryAssetUVE library;
+    if (!Asset::LoadMontageLibraryAssetUVE(libraryPath, library)) {
+        m_editor.m_contentStatusMessage = "Could not read " + libraryPath.filename().string();
+        return;
+    }
+    // Its montages, each with the name a script plays it by, opened or taken off the list.
+    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+    auto list = prism::vbox(4.0F);
+    list->setPadding(prism::Margin(4.0F));
+    if (library.entries.empty()) {
+        auto hint = prism::make<prism::Label>("Empty. Right-click a montage > Add to Montage Library.", prism::FontRole::Small);
+        hint->setColor(prism::ThemeColor(&prism::Theme::textDim));
+        list->add(hint);
+    }
+    for (const Asset::MontageLibraryEntryUVE& entry : library.entries) {
+        const std::filesystem::path montage = database.ResolveUVE(entry.montage);
+        auto row = prism::hbox(6.0F);
+        auto label = prism::make<prism::Label>(entry.name + (montage.empty() ? "   (missing)" : "   " + montage.filename().string()));
+        row->add(label, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        auto open = prism::make<prism::Button>("Open", prism::Icon::Open, prism::ButtonStyle::Flat);
+        open->setEnabled(!montage.empty());
+        open->onClick = [this, montage] {
+            if (prism::Application::exists()) {
+                prism::Application::get().closeAllPopups();
+            }
+            static_cast<void>(m_editor.OpenMontageEditorUVE(montage));
+        };
+        auto remove = prism::make<prism::Button>("Remove", prism::Icon::Trash, prism::ButtonStyle::Flat);
+        remove->onClick = [this, libraryPath, guid = entry.montage] {
+            Asset::MontageLibraryAssetUVE current;
+            if (Asset::LoadMontageLibraryAssetUVE(libraryPath, current)) {
+                std::erase_if(current.entries, [guid](const Asset::MontageLibraryEntryUVE& e) { return e.montage == guid; });
+                static_cast<void>(Asset::SaveMontageLibraryAssetUVE(current, libraryPath));
+            }
+            if (prism::Application::exists()) {
+                prism::Application::get().closeAllPopups();
+            }
+            ShowMontageLibraryUVE(libraryPath);
+        };
+        row->add(open);
+        row->add(remove);
+        list->add(row);
+    }
+    prism::showDialog("Montage Library - " + libraryPath.stem().string(), list, {prism::DialogButton{"Close", true, {}}}, 480.0F);
 }
 
 } // namespace UVE::Editor

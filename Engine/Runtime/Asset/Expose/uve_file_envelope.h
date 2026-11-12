@@ -56,6 +56,8 @@ enum class AssetKindUVE : std::uint32_t {
     AnimationLibrary = 14,
     Font = 15,
     AnimationMontage = 16,
+    /// `.uvmontagelib`: a named list of montages a MontagePlayer can link to.
+    MontageLibrary = 17,
 };
 
 /// The fixed-size portion of a `.uve*` file's header, returned by ReadUveFileUVE() alongside the

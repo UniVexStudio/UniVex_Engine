@@ -1933,6 +1933,8 @@ private:
         AnimationLibrary,
         /// An Animation Montage (`.uvmontage`): opens in the Montage Editor.
         AnimationMontage,
+        /// A named list of montages (`.uvmontagelib`) MontagePlayers link to.
+        MontageLibrary,
         Script,
         Audio,
         Font,
