@@ -87,6 +87,10 @@ private:
     void AddSkeletonSourceUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
                               bool writable);
     void AddSkeletonBonesUVE(int category, const void* instance);
+    /// The object's script `export` fields, one typed row each.
+    void AddScriptExportsUVE(int category, bool writable);
+    /// The object's metadata: key, value and remove per entry, then Add.
+    void AddObjectMetadataUVE(int category, const void* instance, bool writable);
     void AddBonePickerUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
                           bool writable);
     void AddTransformUVE(int category, Scene::EntityUVE entity);
