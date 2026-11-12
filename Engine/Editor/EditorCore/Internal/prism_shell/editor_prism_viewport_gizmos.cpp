@@ -135,11 +135,20 @@ void EditorPrismViewportGizmosUVE::SyncUVE() {
     const prism::Rect r = rect();
     const auto& cam = state.viewCamera;
 
+    // What this view paints, taken now: the level's and the Entity Editor's views share one overlay
+    // state, so by paint time it holds whichever view rendered last.
+    m_lines = state.gizmoLines;
+    m_triangles = state.gizmoTriangles;
+    m_aspect = state.viewCamera.height > 0.0F ? state.viewCamera.width / state.viewCamera.height : 1.6F;
+    m_gameWorkspace = state.gameWorkspaceActive;
     // Occlusion: the renderer's scene depth over the whole view.
     m_depth = prism::GizmoDepth{};
     if (!state.sceneDepth.empty() && state.sceneDepthWidth > 0 && state.sceneDepthHeight > 0 &&
         state.sceneDepth.size() >= static_cast<std::size_t>(state.sceneDepthWidth) * static_cast<std::size_t>(state.sceneDepthHeight)) {
-        m_depth.data = state.sceneDepth.data();
+        // A copy of its own: the level's and the Entity Editor's views render into the same overlay
+        // state, so by paint time the shared buffer holds the other view's depth.
+        m_depthCopy.assign(state.sceneDepth.begin(), state.sceneDepth.end());
+        m_depth.data = m_depthCopy.data();
         m_depth.width = state.sceneDepthWidth;
         m_depth.height = state.sceneDepthHeight;
         m_depth.area = prism::Rect{r.x, r.y, cam.width, cam.height};
@@ -235,7 +244,7 @@ void EditorPrismViewportGizmosUVE::SyncUVE() {
             visit(child);
         }
     };
-    if (!state.gameWorkspaceActive) {
+    if (!m_gameWorkspace) {
         for (const Scene::EntityUVE root : m_editor.GetDocumentRootsUVE()) {
             visit(root);
         }
@@ -436,13 +445,13 @@ void EditorPrismViewportGizmosUVE::paint(prism::Canvas& c) {
         c.blitBlend(m_outlinePixels.data(), m_outlineSize[0], m_outlineSize[1], m_outlineSize[0], m_outlineRect);
     }
     // Object gizmos: the engine's own geometry for this view, faint where the scene is in front.
-    for (const auto& tri : state.gizmoTriangles) {
+    for (const auto& tri : m_triangles) {
         prism::drawWorldTriangle(c, m_camera, V3UVE(tri.a), V3UVE(tri.b), V3UVE(tri.c), ColorUVE(tri.color, tri.alpha),
                                  depth, kHiddenGizmoAlphaUVE);
     }
-    for (const auto& line : state.gizmoLines) {
+    for (const auto& line : m_lines) {
         prism::drawWorldLine(c, m_camera, V3UVE(line.a), V3UVE(line.b), ColorUVE(line.color),
-                             std::max(1.0F, line.widthPx), depth, kHiddenGizmoAlphaUVE);
+                             std::max(1.0F, line.widthPx), depth, line.occluded ? 0.0F : kHiddenGizmoAlphaUVE);
     }
     // Camera and light glyphs (PRISM's own), then the billboards, selected one ringed.
     for (BillboardUVE& b : m_billboards) {
@@ -466,7 +475,7 @@ void EditorPrismViewportGizmosUVE::paint(prism::Canvas& c) {
                 // World sized, about as big as a 1-unit box; the frustum (selected) a little further out.
                 style.worldSize = kCameraGlyphWorldUVE;
                 prism::drawCameraGizmo(c, m_camera, b.position, b.forward, b.up, b.fovYDegrees,
-                                       state.viewCamera.height > 0.0F ? state.viewCamera.width / state.viewCamera.height : 1.6F,
+                                       m_aspect,
                                        b.orthographic, selected, std::min(b.range, kCameraGlyphWorldUVE * 1.6F), style);
                 break;
             case GlyphUVE::DirectionalLight:
@@ -520,7 +529,7 @@ void EditorPrismViewportGizmosUVE::paint(prism::Canvas& c) {
         }
     }
     // Corner navigation.
-    if (!state.gameWorkspaceActive) {
+    if (!m_gameWorkspace) {
         m_nav.draw(c);
     }
     c.popClip();

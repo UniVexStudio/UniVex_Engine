@@ -1345,10 +1345,12 @@ public:
                 univex::gizmo::GizmoMesh more = BuildMoreObjectGizmosMeshUVE(entityManager_, !hostGizmos);
                 overlay.lines.insert(overlay.lines.end(), more.lines.begin(), more.lines.end());
                 univex::gizmo::GizmoMesh colliders = BuildColliderMeshUVE(entityManager_);
+                const std::size_t colliderLinesFrom = overlay.lines.size();
                 overlay.lines.insert(overlay.lines.end(), colliders.lines.begin(), colliders.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), colliders.triangles.begin(), colliders.triangles.end());
                 if (hostGizmos) {
                     hostOverlayMesh_ = std::move(overlay);
+                    hostOverlayOccludedFrom_ = colliderLinesFrom;
                     renderPass_->SetCameraFrustumMeshUVE({});
                 } else {
                     hostOverlayMesh_.Clear();
@@ -2816,6 +2818,7 @@ private:
     univex::gizmo::GizmoMesh hostOverlayMesh_;
     univex::gizmo::GizmoMesh hostBonesMesh_;
     std::vector<univex::gizmo::GizmoLine> hostColliderLines_;
+    std::size_t hostOverlayOccludedFrom_ = static_cast<std::size_t>(-1);
 
     // Reports the view's camera, the selection gizmo pivot and the object gizmo geometry through the
     // overlay state's output fields, so a shell can draw the gizmos over the image.
@@ -2856,9 +2859,14 @@ private:
             }
         };
         append(hostOverlayMesh_);
+        // Collision shapes hide behind the mesh they wrap, as in the GL path; a faint x-ray of every
+        // edge made a solid box read as glass.
+        for (std::size_t i = hostOverlayOccludedFrom_; i < hostOverlayMesh_.lines.size(); ++i) {
+            overlayState.gizmoLines[overlayState.gizmoLines.size() - hostOverlayMesh_.lines.size() + i].occluded = true;
+        }
         append(hostBonesMesh_);
         for (const univex::gizmo::GizmoLine& line : hostColliderLines_) {
-            overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx});
+            overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx, true});
         }
     }
     void ExportGridForHostUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState, const bool want) {

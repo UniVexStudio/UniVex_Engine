@@ -732,6 +732,9 @@ public:
             std::array<float, 3> b{};
             std::array<float, 3> color{};
             float widthPx = 2.0F;
+            /// Hidden where the scene is in front of it (a collision shape), instead of showing
+            /// through faintly like a gizmo or a bone.
+            bool occluded = false;
         };
         struct GizmoTriangleUVE final {
             std::array<float, 3> a{};

@@ -711,17 +711,62 @@ void drawPieces(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, fl
     }
     run.clear();
   };
+  // Visibility at a parameter along the segment (true without a depth test).
+  const auto seen = [&](const float t) {
+    if (!test) return true;
+    Vec2 p;
+    float z = 0;
+    return !cam.project(a + (b - a) * t, p, &z) || depth->visible(p, z);
+  };
+  // The pieces, at most `pixelsPerPiece` long ON SCREEN (a long world line in perspective has pieces near
+  // the eye far longer than those far off, so equal steps in world space would step over a whole mesh),
+  // each cut where the line passes behind (or out from behind) the scene, found by bisection to well
+  // under a pixel, so a line never pokes into a mesh.
+  const auto screenAt = [&](const float t, Vec2& out) { return cam.project(a + (b - a) * t, out); };
+  std::vector<float> steps{0.f};
+  {
+    std::vector<std::pair<float, float>> todo;
+    for (int i = n - 1; i >= 0; --i) todo.push_back({float(i) / float(n), float(i + 1) / float(n)});
+    while (!todo.empty()) {
+      const auto [t0, t1] = todo.back();
+      todo.pop_back();
+      Vec2 s0, s1;
+      if (t1 - t0 > 1e-4f && screenAt(t0, s0) && screenAt(t1, s1) && (s1 - s0).length() > pixelsPerPiece && steps.size() < 2048) {
+        const float tm = (t0 + t1) * 0.5f;
+        todo.push_back({tm, t1});
+        todo.push_back({t0, tm});
+        continue;
+      }
+      steps.push_back(t1);
+    }
+  }
+  std::vector<std::pair<float, bool>> cuts;   // (start t, visible) of each stretch
+  bool prevSeen = seen(0.f);
+  cuts.push_back({0.f, prevSeen});
+  for (size_t i = 0; i + 1 < steps.size(); ++i) {
+    const float t0 = steps[i], t1 = steps[i + 1];
+    const bool endSeen = seen(t1);
+    if (endSeen != prevSeen) {
+      float lo = t0, hi = t1;
+      for (int it = 0; it < 8; ++it) {
+        const float mid = (lo + hi) * 0.5f;
+        (seen(mid) == prevSeen ? lo : hi) = mid;
+      }
+      cuts.push_back({(lo + hi) * 0.5f, endSeen});
+      prevSeen = endSeen;
+    }
+    // A piece also ends at its own end, so the fade along it keeps its steps.
+    if (i + 2 < steps.size()) cuts.push_back({t1, prevSeen});
+  }
+  cuts.push_back({1.f, prevSeen});
   Vec2 prev = pa;
-  for (int i = 0; i < n; ++i) {
-    const float t0 = float(i) / float(n), t1 = float(i + 1) / float(n), tm = (t0 + t1) * 0.5f;
+  for (size_t i = 0; i + 1 < cuts.size(); ++i) {
+    const float t0 = cuts[i].first, t1 = cuts[i + 1].first;
+    if (t1 <= t0) continue;
     Vec2 q;
     if (!cam.project(a + (b - a) * t1, q)) break;
-    float k = alphaAt(a + (b - a) * tm);
-    if (test) {
-      Vec2 mid;
-      float z = 0;
-      if (cam.project(a + (b - a) * tm, mid, &z) && !depth->visible(mid, z)) k *= hiddenAlpha;
-    }
+    float k = alphaAt(a + (b - a) * ((t0 + t1) * 0.5f));
+    if (!cuts[i].second) k *= hiddenAlpha;
     const int al = std::clamp(int(std::lround(float(col.a) * std::clamp(k, 0.f, 1.f) / 8.f)) * 8, 0, 255);
     if (al != runAlpha) {
       flush();

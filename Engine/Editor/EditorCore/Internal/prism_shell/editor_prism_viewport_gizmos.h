@@ -91,6 +91,11 @@ private:
     std::array<float, 2> m_orbitRequest{0.0F, 0.0F};
     // Scene depth (occlusion), the ground grid and the selection outline band for this view.
     prism::GizmoDepth m_depth;
+    std::vector<float> m_depthCopy;
+    std::vector<EditorUVE::ViewportOverlayStateUVE::GizmoLineUVE> m_lines;
+    std::vector<EditorUVE::ViewportOverlayStateUVE::GizmoTriangleUVE> m_triangles;
+    float m_aspect = 1.6F;
+    bool m_gameWorkspace = false;
     prism::WorldGrid m_grid;
     bool m_gridVisible = false;
     std::vector<std::uint32_t> m_outlinePixels;

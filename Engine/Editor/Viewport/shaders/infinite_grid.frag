@@ -237,6 +237,9 @@ void main() {
     finalColor = Over(finalColor, uAxisColorZ, axisZAlpha);
     finalColor = Over(finalColor, uAxisColorY, axisYAlpha);
     float finalAlpha = finalColor.a;
+    // How fast the ground's depth changes across a pixel, taken while the whole quad is still live.
+    vec4 groundClip = uViewProj * vec4(FromGridPlane(worldPos), 1.0);
+    float depthSlope = fwidth((groundClip.z / groundClip.w) * 0.5);
     if (finalAlpha < 0.002) discard;   // nothing to show; don't touch depth either
 
     // ---- real depth, so the grid composites with scene geometry -----------
@@ -248,7 +251,11 @@ void main() {
     if (axisZAlpha > strongest) { strongest = axisZAlpha; depthSourcePos = axisZClosestPoint; }
     if (axisYAlpha > strongest) { strongest = axisYAlpha; depthSourcePos = axisYClosestPoint; }
     vec4 clip = uViewProj * vec4(depthSourcePos, 1.0);
-    gl_FragDepth = clamp((clip.z / clip.w) * 0.5 + 0.5, 0.0, 0.999999);
+    // Pushed a hair behind its true depth, so a surface lying on the grid (a floor, a plane, the
+    // bottom of a box) always wins instead of flickering against the lines.
+    float gridDepth = (clip.z / clip.w) * 0.5 + 0.5;
+    gridDepth += clamp(depthSlope * 2.0, 4.0e-7, 1.0e-3);
+    gl_FragDepth = clamp(gridDepth, 0.0, 0.999999);
 
     fragColor = vec4(finalColor.rgb, finalAlpha);
 }

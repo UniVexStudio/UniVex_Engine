@@ -2817,8 +2817,14 @@ struct Renderer3DUVE::ImplUVE {
                 // at extraction: the handle owns the reference that keeps the payload alive until
                 // the colour pass consumes it.
                 Asset::AssetGuidUVE materialGuid = Asset::kInvalidAssetGuidUVE;
-                if (Scene::HasAssignedPrimitiveMaterialUVE(primitive)) {
-                    materialGuid = primitive.materialGuid;
+                // A MeshInstance3D drawing a built-in shape keeps its material on the mesh slot (the
+                // one its Details show); the shape's own slot wins when both are set.
+                Asset::AssetGuidUVE chosenMaterial = primitive.materialGuid;
+                if (chosenMaterial == Asset::kInvalidAssetGuidUVE && entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+                    chosenMaterial = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity).materialGuid;
+                }
+                if (chosenMaterial != Asset::kInvalidAssetGuidUVE) {
+                    materialGuid = chosenMaterial;
                     namedPrimitiveMaterials[materialGuid] = true;
                     auto materialIt = primitiveMaterialHandles.find(materialGuid);
                     if (materialIt == primitiveMaterialHandles.end()) {
