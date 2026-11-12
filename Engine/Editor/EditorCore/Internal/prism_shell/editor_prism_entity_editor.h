@@ -135,6 +135,16 @@ private:
     /// Shows `index` (the active tab again hides the dock unless `forceVisible`).
     void ShowDockPanelUVE(int index, bool forceVisible);
     void SyncAnimationTabsUVE();
+    /// Full: the dock fills the viewport's space (a Viewport button brings the default back).
+    void SetDockFullUVE(bool full);
+    void SyncGraphDetailsUVE(bool graphShown);
+    std::shared_ptr<prism::TabView> m_detailsTabs;
+    std::shared_ptr<prism::Splitter> m_centreSplit;
+    std::shared_ptr<prism::Widget> m_viewArea;
+    std::shared_ptr<prism::Button> m_fullButton;
+    std::shared_ptr<prism::Button> m_viewportButton;
+    bool m_dockFull = false;
+    bool m_graphDetailsShown = false;
     std::shared_ptr<prism::TableView> m_problems;
     std::shared_ptr<prism::TableView> m_findTable;
     std::shared_ptr<prism::TableView> m_diffTable;
