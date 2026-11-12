@@ -1,7 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "montage_player_component.h"
-#include "prism_shell/editor_prism_shell.h"
+#include "shell/editor_shell.h"
 #include "logging_macros.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
@@ -316,7 +316,7 @@ void EditorUVE::SetPrismUiEnabledUVE(const bool enabled, std::filesystem::path a
 }
 
 bool EditorUVE::SavePrismScreenshotUVE(const std::filesystem::path& path) {
-    return m_prismShell != nullptr && m_prismShell->SaveScreenshotUVE(path);
+    return m_levelShell != nullptr && m_levelShell->SaveScreenshotUVE(path);
 }
 
 void EditorUVE::InitUVE() {
@@ -328,10 +328,10 @@ void EditorUVE::InitUVE() {
     if (m_prismUiRequested && windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
         // The level editor is PRISM's. Its GLFW callbacks go in first, so the overlay below chains
         // in front of them (and is shut down first).
-        auto shell = std::make_unique<EditorPrismShellUVE>(*this);
+        auto shell = std::make_unique<EditorShellUVE>(*this);
         if (shell->InitializeUVE(static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()),
                                  m_prismAssetDir)) {
-            m_prismShell = std::move(shell);
+            m_levelShell = std::move(shell);
         } else {
             UVE_ERROR("EditorUVE: the PRISM editor UI could not start (assets: {})", m_prismAssetDir.string());
         }
@@ -407,9 +407,9 @@ void EditorUVE::InitUVE() {
             m_meshThumbnailRenderer.InitializeUVE();
             m_materialThumbnailRenderer.InitializeUVE();
             m_uiInitialized = true;
-            if (m_prismShell != nullptr) {
+            if (m_levelShell != nullptr) {
                 // While an overlay window has the pointer or the keyboard, the level editor does not.
-                m_prismShell->SetForeignInputUVE(
+                m_levelShell->SetForeignInputUVE(
                     [] { return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse; },
                     [] { return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard; });
             }
@@ -4945,9 +4945,9 @@ void EditorUVE::ShutdownUVE() {
             ImGui_ImplGlfw_Shutdown();
             ImGui::DestroyContext();
         }
-        if (m_prismShell != nullptr) {
-            m_prismShell->ShutdownUVE();
-            m_prismShell.reset();
+        if (m_levelShell != nullptr) {
+            m_levelShell->ShutdownUVE();
+            m_levelShell.reset();
         }
         m_uiInitialized = false;
     }

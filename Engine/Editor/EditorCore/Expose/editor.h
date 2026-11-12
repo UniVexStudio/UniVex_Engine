@@ -435,10 +435,10 @@ struct FilePickerListingUVE final {
     std::vector<std::filesystem::path> files;
 };
 
-class EditorPrismShellUVE;
-class EditorPrismContentBrowserUVE;
-class EditorPrismDetailsUVE;
-class EditorPrismViewportGizmosUVE;
+class EditorShellUVE;
+class EditorContentBrowserUVE;
+class EditorDetailsUVE;
+class EditorViewportGizmosUVE;
 
 /// The Entity Editor's running Simulate (editor_entity_window.cpp).
 struct EntitySimulationUVE;
@@ -446,25 +446,25 @@ struct EntitySimulationUVE;
 class EditorUVE final {
     friend struct Tests::EditorUVEAccessUVE;
     friend class EditorBridgeUVE;
-    friend class EditorPrismShellUVE;
-    friend class EditorPrismContentBrowserUVE;
-    friend class EditorPrismDetailsUVE;
-    friend class EditorPrismViewportGizmosUVE;
-    friend class EditorPrismDockPanelsUVE;
-    friend class EditorPrismViewToolbarUVE;
-    friend class EditorPrismEntityEditorUVE;
-    friend class EditorPrismSequencerPanelUVE;
+    friend class EditorShellUVE;
+    friend class EditorContentBrowserUVE;
+    friend class EditorDetailsUVE;
+    friend class EditorViewportGizmosUVE;
+    friend class EditorDockPanelsUVE;
+    friend class EditorViewToolbarUVE;
+    friend class EditorEntityEditorUVE;
+    friend class EditorSequencerPanelUVE;
     friend class KeyframeViewUVE;
-    friend class EditorPrismAnimGraphPanelUVE;
+    friend class EditorAnimGraphPanelUVE;
     friend class StateMachineViewUVE;
     friend class BlendSpaceViewUVE;
-    friend class EditorPrismFileDialogUVE;
+    friend class EditorFileDialogUVE;
     friend class AssetThumbnailUVE;
-    friend class EditorPrismObjectMenuUVE;
-    friend class EditorPrismEntityClassWindowUVE;
-    friend class EditorPrismMontageEditorUVE;
-    friend class EditorPrismBlueprintPanelUVE;
-    friend class EditorPrismRetargetWindowUVE;
+    friend class EditorObjectMenuUVE;
+    friend class EditorEntityClassWindowUVE;
+    friend class EditorMontageEditorUVE;
+    friend class EditorBlueprintPanelUVE;
+    friend class EditorRetargetWindowUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -484,7 +484,7 @@ public:
     /// Selects the PRISM editor shell instead of the previous UI backend. Must be called before
     /// InitUVE(); `assetDir` holds PRISM's fonts, themes and locale tables.
     void SetPrismUiEnabledUVE(bool enabled, std::filesystem::path assetDir = {});
-    [[nodiscard]] bool IsPrismUiActiveUVE() const noexcept { return m_prismShell != nullptr; }
+    [[nodiscard]] bool IsPrismUiActiveUVE() const noexcept { return m_levelShell != nullptr; }
     /// Saves the current PRISM editor frame as PNG (false when the PRISM shell is not active).
     bool SavePrismScreenshotUVE(const std::filesystem::path& path);
 
@@ -3484,7 +3484,7 @@ private:
     ViewportPanelRendererUVE m_viewportPanelRenderer;
     bool m_prismUiRequested = false;
     std::filesystem::path m_prismAssetDir;
-    std::unique_ptr<EditorPrismShellUVE> m_prismShell;
+    std::unique_ptr<EditorShellUVE> m_levelShell;
     // UI/render state is isolated just like the three backend cameras and render targets. Main
     // remains the canonical settings-backed state; tool-window state is session-local.
     ViewportOverlayStateUVE m_viewportOverlayState;
