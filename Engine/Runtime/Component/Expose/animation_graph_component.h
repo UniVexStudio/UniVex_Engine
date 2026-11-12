@@ -64,6 +64,46 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
     /// Where an Animation Montage plays: its input passes through, and a montage playing on the
     /// slot named `parameter` (default "DefaultSlot") is blended over it by the montage's weight.
     Slot,
+    /// Bends a two-bone chain (`bones`: root, middle, tip - upper arm, forearm, hand) so the tip
+    /// reaches the effector (see `targetSource`), the middle joint bending toward `pole`, by `value`
+    /// (or the Float `alphaParameter`). In the skeleton's space.
+    TwoBoneIK,
+    /// Moves one bone (`bones[0]`): `target` translation, `rotationDegrees` and `boneScale`, added to
+    /// its pose or replacing it (`modifyMode`), in its parent's or the skeleton's space (`space`), by
+    /// `value` (or `alphaParameter`).
+    ModifyBone,
+    /// Turns one bone (`bones[0]`) so its `pole` axis points at the target (see `targetSource`), at
+    /// most `clampDegrees` from where the pose has it, by `value` (or `alphaParameter`).
+    LookAt,
+    /// Plays the first input while the Bool `parameter` is true, the second while it is false,
+    /// fading over `fadeSeconds` toward true and `fadeBackSeconds` back.
+    BlendByBool,
+};
+
+/// Where a Two Bone IK's effector or a Look At's target comes from.
+enum class AnimationGraphTargetSourceUVE : std::uint8_t {
+    /// `target`, as set on the node.
+    Fixed = 0,
+    /// The Vector3 parameter named `parameter` (a script sets it each frame).
+    Parameter,
+    /// Where the bone named `targetBone` is in this pose (a hand on a weapon's grip bone).
+    Bone,
+};
+
+/// How a Modify Bone node applies its transform.
+enum class AnimationBoneModifyModeUVE : std::uint8_t {
+    /// On top of the pose: the translation adds, the rotation turns, the scale multiplies.
+    Add = 0,
+    /// Instead of the pose.
+    Replace,
+};
+
+/// The space a Modify Bone node's transform is in.
+enum class AnimationBoneSpaceUVE : std::uint8_t {
+    /// The bone's parent's (its local pose).
+    Local = 0,
+    /// The skeleton's.
+    Component,
 };
 
 /// One bone of a montage's pose, handed to a Slot node (runtime only).
@@ -87,6 +127,20 @@ enum class AnimationParameterTypeUVE : std::uint8_t {
     Bool,
     /// Set by a script or the Inspector; cleared by the first transition or one-shot that uses it.
     Trigger,
+    /// A point or direction (`vector`): an IK effector, a look target.
+    Vector3,
+};
+
+/// Who writes a parameter. Script parameters are set by scripts and the Inspector; the others are
+/// written by the engine every frame from the character the graph animates (its Character
+/// Controller): its ground speed, its heading against its facing in degrees (-180..180, positive to
+/// the right), and whether it is off or on the ground.
+enum class AnimationParameterSourceUVE : std::uint8_t {
+    Script = 0,
+    CharacterSpeed,
+    CharacterDirection,
+    CharacterInAir,
+    CharacterGrounded,
 };
 
 /// A named value the graph reads - speed, grounded, attack. Scripts and the Inspector set them;
@@ -95,6 +149,9 @@ struct AnimationParameterUVE final {
     std::string name;
     AnimationParameterTypeUVE type = AnimationParameterTypeUVE::Float;
     float value = 0.0F;
+    /// Vector3 parameters: the value.
+    Math::Vector3UVE vector{};
+    AnimationParameterSourceUVE source = AnimationParameterSourceUVE::Script;
 
     [[nodiscard]] bool operator==(const AnimationParameterUVE&) const = default;
 };
@@ -237,6 +294,25 @@ struct AnimationGraphNodeUVE final {
     std::vector<Math::Vector2UVE> statePositions;
     Math::Vector2UVE entryPosition{-240.0F, 0.0F};
     Math::Vector2UVE anyPosition{-240.0F, 120.0F};
+    /// TwoBoneIK / LookAt: the effector or target when `targetSource` is Fixed. ModifyBone: the
+    /// translation. In the skeleton's space (ModifyBone: in `space`).
+    Math::Vector3UVE target{};
+    /// TwoBoneIK: the direction the middle joint bends toward (zero: keep the pose's bend).
+    /// LookAt: the bone's own axis that points at the target.
+    Math::Vector3UVE pole{0.0F, 0.0F, 1.0F};
+    /// ModifyBone: rotation (XYZ Euler, degrees) and scale.
+    Math::Vector3UVE rotationDegrees{};
+    Math::Vector3UVE boneScale{1.0F, 1.0F, 1.0F};
+    AnimationGraphTargetSourceUVE targetSource = AnimationGraphTargetSourceUVE::Fixed;
+    std::string targetBone;
+    AnimationBoneModifyModeUVE modifyMode = AnimationBoneModifyModeUVE::Add;
+    AnimationBoneSpaceUVE space = AnimationBoneSpaceUVE::Local;
+    /// LookAt: the most the bone turns away from its pose.
+    float clampDegrees = 180.0F;
+    /// TwoBoneIK / ModifyBone / LookAt: a Float parameter for the alpha, instead of `value`.
+    std::string alphaParameter;
+    /// BlendByBool: seconds to fade back to the second input when the Bool turns false.
+    float fadeBackSeconds = 0.2F;
 
     [[nodiscard]] bool operator==(const AnimationGraphNodeUVE&) const = default;
 };

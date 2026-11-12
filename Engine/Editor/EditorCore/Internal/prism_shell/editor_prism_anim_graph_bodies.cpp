@@ -9,6 +9,7 @@
 #include "animation_graph_editing.h"
 #include "i_asset_database.h"
 #include "i_project_file_index.h"
+#include "skeleton_3d.h"
 
 #include "prism/Containers.h"
 #include "prism/Controls.h"
@@ -46,6 +47,10 @@ constexpr float kRowUVE = 25.0F;
         case Kind::TimeSeek: return 2U;
         case Kind::Select: return 4U;
         case Kind::BlendSpace2D: return 6U;
+        case Kind::BlendByBool: return 2U;
+        case Kind::LookAt:
+        case Kind::TwoBoneIK:
+        case Kind::ModifyBone: return 6U;
     }
     return 0U;
 }
@@ -108,6 +113,10 @@ std::string EditorPrismAnimGraphPanelUVE::SummaryUVE(const NodeUVE& node) {
             return "option " + std::to_string(std::lround(node.value));
         case Kind::StateMachine: return std::to_string(node.inputs.size()) + " states, " + std::to_string(node.transitions.size()) + " transitions";
         case Kind::Slot: return "slot " + node.parameter;
+        case Kind::TwoBoneIK: return node.bones.size() == 3U ? node.bones[0] + " > " + node.bones[2] : std::string{"pick its three bones"};
+        case Kind::ModifyBone:
+        case Kind::LookAt: return node.bones.empty() ? std::string{"pick a bone"} : node.bones.front();
+        case Kind::BlendByBool: return node.parameter.empty() ? std::string{"pick a Bool"} : "by " + node.parameter;
         case Kind::Output: return {};
     }
     return {};
@@ -349,6 +358,151 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
             entry->onChange = [this, id](const int i) { EditNodeUVE(id, [i](NodeUVE& n) { n.entryState = static_cast<std::uint32_t>(std::max(0, i)); }); };
             body->add(RowUVE("Entry", entry));
             body->add(RowUVE("", open("Open States")));
+            break;
+        }
+        case Kind::BlendByBool: {
+            body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Bool, ParamType::Trigger}, false)));
+            body->add(RowUVE("Fade", pair(number(node.fadeSeconds, 0.01F, 0.0F, 5.0F, " s", [](NodeUVE& n, const float v) { n.fadeSeconds = v; }),
+                                          number(node.fadeBackSeconds, 0.01F, 0.0F, 5.0F, " s back",
+                                                 [](NodeUVE& n, const float v) { n.fadeBackSeconds = v; }))));
+            break;
+        }
+        case Kind::TwoBoneIK:
+        case Kind::ModifyBone:
+        case Kind::LookAt: {
+            // The skeleton's bones, for the pickers.
+            std::vector<std::string> boneNames;
+            const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+            if (m_view.skeleton != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_view.skeleton)) {
+                for (const Scene::SkeletonBoneUVE& bone : em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(m_view.skeleton).bones) {
+                    boneNames.push_back(bone.name);
+                }
+            }
+            const auto bonePicker = [this, id, boneNames](const std::string& current, const std::function<void(NodeUVE&, const std::string&)>& set) {
+                std::vector<std::string> items{"(none)"};
+                int selected = 0;
+                for (const std::string& name : boneNames) {
+                    items.push_back(name);
+                    if (name == current) {
+                        selected = static_cast<int>(items.size()) - 1;
+                    }
+                }
+                if (!current.empty() && selected == 0) {
+                    items.push_back(current + " (not in skeleton)");
+                    selected = static_cast<int>(items.size()) - 1;
+                }
+                auto combo = prism::make<prism::ComboBox>(items, selected);
+                combo->onChange = [this, id, items, set](const int i) {
+                    std::string picked = i <= 0 ? std::string{} : items[static_cast<std::size_t>(i)];
+                    if (const auto cut = picked.find(" (not in skeleton)"); cut != std::string::npos) {
+                        picked.resize(cut);
+                    }
+                    EditNodeUVE(id, [&set, &picked](NodeUVE& n) { set(n, picked); });
+                };
+                return combo;
+            };
+            const auto boneSlot = [](const std::size_t slot) {
+                return [slot](NodeUVE& n, const std::string& name) {
+                    if (n.bones.size() <= slot) {
+                        n.bones.resize(slot + 1U);
+                    }
+                    n.bones[slot] = name;
+                };
+            };
+            const auto boneAt = [&node](const std::size_t slot) { return slot < node.bones.size() ? node.bones[slot] : std::string{}; };
+            // Three numbers on one row: X, Y, Z.
+            const auto triple = [this, id](const Math::Vector3UVE value, const float step, const std::function<Math::Vector3UVE&(NodeUVE&)>& field) {
+                auto row = prism::hbox(2.0F);
+                static constexpr const char* kAxes[] = {"X", "Y", "Z"};
+                const prism::Color colors[] = {prism::theme().axisX, prism::theme().axisY, prism::theme().axisZ};
+                const float values[] = {value.x, value.y, value.z};
+                for (int axis = 0; axis < 3; ++axis) {
+                    auto number = prism::make<prism::NumberField>(values[axis], step, 2);
+                    number->setAxisLabel(kAxes[axis], colors[axis]);
+                    number->onChange = [this, id, field, axis](const float v) {
+                        LiveNodeUVE(id, [&field, axis, v](NodeUVE& n) {
+                            Math::Vector3UVE& f = field(n);
+                            (axis == 0 ? f.x : axis == 1 ? f.y : f.z) = v;
+                        });
+                    };
+                    number->onCommit = [this](float) { CommitLiveUVE(); };
+                    row->add(number, prism::Slot{1.0F});
+                }
+                return row;
+            };
+            // Where the effector or the target comes from, and its value.
+            const auto targetRows = [&] {
+                auto source = prism::make<prism::ComboBox>(std::vector<std::string>{"Fixed point", "Vector3 parameter", "Bone"},
+                                                           static_cast<int>(node.targetSource));
+                source->onChange = [this, id](const int i) {
+                    EditNodeUVE(id, [i](NodeUVE& n) { n.targetSource = static_cast<Scene::AnimationGraphTargetSourceUVE>(std::clamp(i, 0, 2)); });
+                };
+                body->add(RowUVE("Target", source));
+                switch (node.targetSource) {
+                    case Scene::AnimationGraphTargetSourceUVE::Parameter:
+                        body->add(RowUVE("Param", parameterCombo(node.parameter, {ParamType::Vector3}, false)));
+                        break;
+                    case Scene::AnimationGraphTargetSourceUVE::Bone:
+                        body->add(RowUVE("Bone", bonePicker(node.targetBone, [](NodeUVE& n, const std::string& name) { n.targetBone = name; })));
+                        break;
+                    case Scene::AnimationGraphTargetSourceUVE::Fixed:
+                        body->add(RowUVE("At", triple(node.target, 0.01F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.target; })));
+                        break;
+                }
+            };
+            // How much it applies: its own value, or a Float parameter's.
+            const auto alphaRow = [&] {
+                std::vector<std::string> names = ParameterNamesUVE({ParamType::Float});
+                std::vector<std::string> items{"Fixed"};
+                int selected = 0;
+                for (std::size_t i = 0U; i < names.size(); ++i) {
+                    items.push_back(names[i]);
+                    if (names[i] == node.alphaParameter) {
+                        selected = static_cast<int>(i) + 1;
+                    }
+                }
+                auto by = prism::make<prism::ComboBox>(items, selected);
+                by->setTooltip("The Float parameter that sets the alpha (Fixed: the slider)");
+                by->onChange = [this, id, names](const int i) {
+                    const std::string picked = i <= 0 ? std::string{} : names[static_cast<std::size_t>(i - 1)];
+                    EditNodeUVE(id, [&picked](NodeUVE& n) { n.alphaParameter = picked; });
+                };
+                auto byBox = prism::make<prism::SizeBox>();
+                byBox->setWidthOverride(72.0F);
+                byBox->setContent(by);
+                body->add(RowUVE("Alpha", pair(valueSlider(0.0F, 1.0F, node.value, node.alphaParameter, false), byBox)));
+            };
+            if (node.kind == Kind::TwoBoneIK) {
+                body->add(RowUVE("Root", bonePicker(boneAt(0U), boneSlot(0U))));
+                body->add(RowUVE("Middle", bonePicker(boneAt(1U), boneSlot(1U))));
+                body->add(RowUVE("Tip", bonePicker(boneAt(2U), boneSlot(2U))));
+                targetRows();
+                alphaRow();
+            } else if (node.kind == Kind::LookAt) {
+                body->add(RowUVE("Bone", bonePicker(boneAt(0U), boneSlot(0U))));
+                targetRows();
+                body->add(RowUVE("Axis", triple(node.pole, 0.1F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.pole; })));
+                body->add(RowUVE("Clamp", number(node.clampDegrees, 1.0F, 0.0F, 180.0F, " deg", [](NodeUVE& n, const float v) { n.clampDegrees = v; })));
+                alphaRow();
+            } else {
+                body->add(RowUVE("Bone", bonePicker(boneAt(0U), boneSlot(0U))));
+                auto mode = prism::make<prism::ComboBox>(std::vector<std::string>{"Add to pose", "Replace pose"}, static_cast<int>(node.modifyMode));
+                mode->onChange = [this, id](const int i) {
+                    EditNodeUVE(id, [i](NodeUVE& n) { n.modifyMode = static_cast<Scene::AnimationBoneModifyModeUVE>(std::clamp(i, 0, 1)); });
+                };
+                auto space = prism::make<prism::ComboBox>(std::vector<std::string>{"Local", "Skeleton"}, static_cast<int>(node.space));
+                space->onChange = [this, id](const int i) {
+                    EditNodeUVE(id, [i](NodeUVE& n) { n.space = static_cast<Scene::AnimationBoneSpaceUVE>(std::clamp(i, 0, 1)); });
+                };
+                auto modeRow = prism::hbox(4.0F);
+                modeRow->add(mode, prism::Slot{1.0F});
+                modeRow->add(space, prism::Slot{1.0F});
+                body->add(RowUVE("Mode", modeRow));
+                body->add(RowUVE("Move", triple(node.target, 0.01F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.target; })));
+                body->add(RowUVE("Turn", triple(node.rotationDegrees, 1.0F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.rotationDegrees; })));
+                body->add(RowUVE("Scale", triple(node.boneScale, 0.01F, [](NodeUVE& n) -> Math::Vector3UVE& { return n.boneScale; })));
+                alphaRow();
+            }
             break;
         }
         case Kind::Slot: {
