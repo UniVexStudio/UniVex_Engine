@@ -552,7 +552,11 @@ bool BlueprintGraph::connect(int fromNode, int fromPin, int toNode, int toPin) {
   PT t = resolvedType(fromNode, fromPin, false);
   if (t == PT::Wildcard) t = resolvedType(toNode, toPin, true);
   if (t == PT::Exec) std::erase_if(m_wires, [&](const BlueprintWire& w) { return w.fromNodeId == fromNode && w.fromPinIndex == fromPin; });   // one exec out
-  else std::erase_if(m_wires, [&](const BlueprintWire& w) { return w.toNodeId == toNode && w.toPinIndex == toPin; });                          // one data in
+  else {
+    std::erase_if(m_wires, [&](const BlueprintWire& w) { return w.toNodeId == toNode && w.toPinIndex == toPin; });                            // one data in
+    if (m_features.singleLinkOutputs)   // and one link out: the wire moves
+      std::erase_if(m_wires, [&](const BlueprintWire& w) { return w.fromNodeId == fromNode && w.fromPinIndex == fromPin; });
+  }
   m_wires.push_back({fromNode, fromPin, toNode, toPin, t});
   touch();
   return true;

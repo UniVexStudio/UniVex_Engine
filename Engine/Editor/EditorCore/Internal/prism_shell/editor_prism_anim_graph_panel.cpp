@@ -48,21 +48,6 @@ constexpr std::array<Kind, 16> kAddableKindsUVE{Kind::Clip,       Kind::Blend2, 
                                                                : std::string{fallback};
 }
 
-[[nodiscard]] std::string UniqueParameterNameUVE(const Scene::AnimationGraphComponentUVE& graph, const std::string& base) {
-    const auto taken = [&graph](const std::string& name) {
-        return std::ranges::any_of(graph.parameters, [&name](const Scene::AnimationParameterUVE& p) { return p.name == name; });
-    };
-    if (!taken(base)) {
-        return base;
-    }
-    for (int i = 2; i < 1000; ++i) {
-        const std::string candidate = base + std::to_string(i);
-        if (!taken(candidate)) {
-            return candidate;
-        }
-    }
-    return base + "_";
-}
 
 /// A small sparkline of a Float parameter's recent values.
 class SparklineUVE final : public prism::Widget {
@@ -116,45 +101,6 @@ Scene::AnimationGraphComponentUVE* EditorPrismAnimGraphPanelUVE::LiveGraphUVE() 
 
 namespace {
 
-/// A node that is driven by a value gets a parameter of its own the moment it is made (as Unreal's
-/// pins and Godot's blend tree parameters do): Blend2 a Float "Blend", OneShot a Trigger "Fire", a
-/// Blend Space its axes ... each named uniquely, set to the node's current value, and bound to it.
-/// It is an ordinary parameter after that: rename it, rebind it, or delete it in Parameters.
-void BindNewNodeParametersUVE(Scene::AnimationGraphComponentUVE& graph, const std::uint32_t id) {
-    using Type = Scene::AnimationParameterTypeUVE;
-    const auto node = std::ranges::find(graph.nodes, id, &Scene::AnimationGraphNodeUVE::id);
-    if (node == graph.nodes.end()) {
-        return;
-    }
-    const auto make = [&graph](const std::string& base, const Type type, const float value) {
-        Scene::AnimationParameterUVE parameter;
-        parameter.name = UniqueParameterNameUVE(graph, base);
-        parameter.type = type;
-        parameter.value = value;
-        graph.parameters.push_back(parameter);
-        return parameter.name;
-    };
-    Scene::AnimationGraphNodeUVE& n = *node;
-    switch (n.kind) {
-        case Kind::Blend2: n.parameter = make("Blend", Type::Float, n.value); break;
-        case Kind::Additive: n.parameter = make("AddAmount", Type::Float, n.value); break;
-        case Kind::LayeredBlend: n.parameter = make("LayerWeight", Type::Float, n.value); break;
-        case Kind::BlendSpace1D: n.parameter = make("BlendX", Type::Float, n.value); break;
-        case Kind::BlendSpace2D:
-            n.parameter = make("BlendX", Type::Float, n.value);
-            n.parameterY = make("BlendY", Type::Float, n.valueY);
-            break;
-        case Kind::OneShot: n.parameter = make("Fire", Type::Trigger, 0.0F); break;
-        case Kind::TimeScale: n.parameter = make("TimeScale", Type::Float, n.speed); break;
-        case Kind::TimeSeek: n.parameter = make("Seek", Type::Trigger, 0.0F); break;
-        case Kind::Select: n.parameter = make("Option", Type::Float, n.value); break;
-        case Kind::BlendByBool: n.parameter = make("Switch", Type::Bool, 0.0F); break;
-        case Kind::TwoBoneIK: n.alphaParameter = make("IKAlpha", Type::Float, n.value); break;
-        case Kind::LookAt: n.alphaParameter = make("LookAtAlpha", Type::Float, n.value); break;
-        case Kind::ModifyBone: n.alphaParameter = make("BoneAlpha", Type::Float, n.value); break;
-        default: break;
-    }
-}
 
 } // namespace
 
@@ -169,6 +115,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildUVE() {
     features.watermark = false;
     features.shortcuts = false;
     features.history = false;   // the editor's undo: every change is a component edit
+    features.singleLinkOutputs = true;   // a pose feeds one input; a node added off a wire goes into it
     m_graph->setFeatures(features);
     m_graph->clear();
     m_graph->setNodeLibrary(NodeLibraryUVE());
@@ -531,7 +478,7 @@ void EditorPrismAnimGraphPanelUVE::LiveNodeUVE(const std::uint32_t id, const std
     }
 }
 
-void EditorPrismAnimGraphPanelUVE::LiveParameterUVE(const std::size_t index, const float value) {
+void EditorPrismAnimGraphPanelUVE::LiveParameterUVE(const std::size_t index, const float value, const int axis) {
     GraphUVE* graph = LiveGraphUVE();
     if (graph == nullptr || index >= graph->parameters.size()) {
         return;
@@ -539,7 +486,16 @@ void EditorPrismAnimGraphPanelUVE::LiveParameterUVE(const std::size_t index, con
     if (!m_liveBefore.has_value()) {
         m_liveBefore = *graph;
     }
-    graph->parameters[index].value = value;
+    Scene::AnimationParameterUVE& parameter = graph->parameters[index];
+    if (axis == 0) {
+        parameter.vector.x = value;
+    } else if (axis == 1) {
+        parameter.vector.y = value;
+    } else if (axis == 2) {
+        parameter.vector.z = value;
+    } else {
+        parameter.value = value;
+    }
 }
 
 void EditorPrismAnimGraphPanelUVE::CommitLiveUVE() {
@@ -772,32 +728,20 @@ void EditorPrismAnimGraphPanelUVE::BuildParametersUVE(prism::PropertyGrid& grid,
         auto row = prism::hbox(4.0F);
         auto name = prism::make<prism::TextInput>(parameter.name, "Name");
         const std::string old = parameter.name;
+        // Which nodes it drives, so the list reads as the graph's controls.
+        std::string drives;
+        for (const NodeUVE& node : graph.nodes) {
+            if (node.kind != Kind::Slot && (node.parameter == old || node.parameterY == old || node.alphaParameter == old)) {
+                drives += (drives.empty() ? "" : ", ") + (node.name.empty() ? std::string(AnimationGraphKindLabelUVE(node.kind)) : node.name);
+            }
+        }
+        name->setTooltip(drives.empty() ? std::string{"Not used by a node"} : "Drives " + drives);
         name->onCommit = [this, old](const std::string& to) {
             if (to.empty() || to == old) {
                 return;
             }
             // References follow the rename: nodes and transitions read the parameter by name.
-            EditUVE([&old, &to](GraphUVE& g) {
-                for (Scene::AnimationParameterUVE& p : g.parameters) {
-                    if (p.name == old) {
-                        p.name = to;
-                    }
-                }
-                for (NodeUVE& node : g.nodes) {
-                    for (std::string* field : {&node.parameter, &node.parameterY, &node.alphaParameter}) {
-                        if (*field == old) {
-                            *field = to;
-                        }
-                    }
-                    for (Scene::AnimationGraphTransitionUVE& t : node.transitions) {
-                        for (Scene::AnimationTransitionConditionUVE& c : t.conditions) {
-                            if (c.parameter == old) {
-                                c.parameter = to;
-                            }
-                        }
-                    }
-                }
-            });
+            EditUVE([&old, &to](GraphUVE& g) { static_cast<void>(RenameGraphParameterUVE(g, old, to)); });
         };
         row->add(name, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         ParameterRowUVE live{parameter.name, nullptr, nullptr};
@@ -930,8 +874,66 @@ void EditorPrismAnimGraphPanelUVE::BuildSelectedUVE(prism::PropertyGrid& grid, c
         return;
     }
     auto name = prism::make<prism::TextInput>(node.name, "Name");
-    name->onCommit = [this, id](const std::string& to) { EditNodeUVE(id, [&to](NodeUVE& n) { n.name = to; }); };
+    name->onCommit = [this, id](const std::string& to) {
+        EditUVE([id, &to](GraphUVE& g) {
+            const auto n = std::ranges::find(g.nodes, id, &NodeUVE::id);
+            if (n == g.nodes.end() || to.empty()) {
+                return;
+            }
+            // Its parameter still named after it follows the new name ("Walk" -> "Run").
+            if (const std::optional<AnimationNodeParameterUVE> spec = NodeParameterOfUVE(n->kind); spec.has_value()) {
+                const std::string bound = (*n).*(spec->field);
+                if (!bound.empty() && bound == ParameterNameForNodeUVE(n->name)) {
+                    static_cast<void>(RenameGraphParameterUVE(g, bound, ParameterNameForNodeUVE(to)));
+                }
+            }
+            const auto again = std::ranges::find(g.nodes, id, &NodeUVE::id);
+            again->name = to;
+        });
+    };
     grid.addRow(category, "Name", name, AnimationGraphKindHelpUVE(node.kind));
+
+    // Its parameter: the name the gameplay sets it by. Typing a name renames it everywhere (or,
+    // with none bound yet, makes one).
+    if (const std::optional<AnimationNodeParameterUVE> spec = NodeParameterOfUVE(node.kind); spec.has_value()) {
+        const std::string bound = node.*(spec->field);
+        static constexpr prism::Icon kIcons[] = {prism::Icon::ParamFloat, prism::Icon::ParamBool, prism::Icon::ParamTrigger,
+                                                 prism::Icon::ParamVector};
+        static constexpr const char* kTypes[] = {"Float", "Bool", "Trigger", "Vector3"};
+        const auto typeIndex = std::min<std::size_t>(static_cast<std::size_t>(spec->type), 3U);
+        auto icon = ToolButtonUVE(kIcons[typeIndex], kTypes[typeIndex]);
+        icon->setEnabled(false);
+        auto field = prism::make<prism::TextInput>(bound, "Parameter name");
+        const Scene::AnimationParameterTypeUVE type = spec->type;
+        field->onCommit = [this, id, bound, type](const std::string& to) {
+            if (to.empty() || to == bound) {
+                return;
+            }
+            EditUVE([id, &bound, &to, type](GraphUVE& g) {
+                const bool exists = std::ranges::any_of(g.parameters, [&bound](const Scene::AnimationParameterUVE& p) { return p.name == bound; });
+                if (!bound.empty() && exists) {
+                    static_cast<void>(RenameGraphParameterUVE(g, bound, to));
+                    return;
+                }
+                const auto n = std::ranges::find(g.nodes, id, &NodeUVE::id);
+                const std::optional<AnimationNodeParameterUVE> s = n != g.nodes.end() ? NodeParameterOfUVE(n->kind) : std::nullopt;
+                if (!s.has_value()) {
+                    return;
+                }
+                if (std::ranges::none_of(g.parameters, [&to](const Scene::AnimationParameterUVE& p) { return p.name == to; })) {
+                    Scene::AnimationParameterUVE made;
+                    made.name = to;
+                    made.type = type;
+                    g.parameters.push_back(made);
+                }
+                (*n).*(s->field) = to;
+            });
+        };
+        auto row = prism::hbox(4.0F);
+        row->add(icon, CentreSlotUVE());
+        row->add(field, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        grid.addRow(category, "Parameter", row, std::string(kTypes[typeIndex]) + " the gameplay sets this node by");
+    }
 
     // A Layered Blend's bones: the branches its second pose replaces, each with its children.
     if (node.kind == Scene::AnimationGraphNodeKindUVE::LayeredBlend) {

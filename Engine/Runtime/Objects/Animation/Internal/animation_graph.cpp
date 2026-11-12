@@ -305,7 +305,9 @@ private:
         if (!state.started) {
             state.timeSeconds = static_cast<double>(std::max(0.0F, node.startSeconds));   // starts (over) at its start
         }
-        return PlayClipUVE(node.clip, node.speed, node.loop, state.timeSeconds, state.started, deltaSeconds, weight, phase);
+        // Its rate: the node's own parameter when it has one (the gameplay sets it by the node's name).
+        return PlayClipUVE(node.clip, ReadUVE(node.parameter, node.speed), node.loop, state.timeSeconds, state.started, deltaSeconds,
+                           weight, phase);
     }
 
     /// Plays a clip on its own clock (`timeSeconds`, `started`): a Clip node's, or a blend point's.
@@ -466,7 +468,12 @@ private:
         for (const AnimationBlendPointUVE& point : node.blendPoints) {
             positions.push_back(twoD ? point.position : Math::Vector2UVE{point.position.x, 0.0F});
         }
-        const Math::Vector2UVE goal{ReadUVE(node.parameter, node.value), twoD ? ReadUVE(node.parameterY, node.valueY) : 0.0F};
+        Math::Vector2UVE goal{ReadUVE(node.parameter, node.value), twoD ? ReadUVE(node.parameterY, node.valueY) : 0.0F};
+        // A 2D space driven by one Vector3 parameter (named after the node): its x and y.
+        if (const AnimationParameterUVE* const vector = twoD ? FindParameterUVE(node.parameter) : nullptr;
+            vector != nullptr && vector->type == AnimationParameterTypeUVE::Vector3) {
+            goal = Math::Vector2UVE{vector->vector.x, vector->vector.y};
+        }
         if (!state.blendAtSet) {
             state.blendAt = goal;
             state.blendVelocity = Math::Vector2UVE{};

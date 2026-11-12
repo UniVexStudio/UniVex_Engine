@@ -228,12 +228,19 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
     // A value slider: the node's own value, or - when a parameter drives it - that parameter's.
     const auto valueSlider = [this, id, graph](const float lo, const float hi, const float own, const std::string& parameter, const bool y) {
         std::optional<std::size_t> bound;
+        int axis = -1;   // a Vector3 parameter: x drives X, y drives Y
         float value = own;
         if (graph != nullptr && !parameter.empty()) {
             for (std::size_t i = 0U; i < graph->parameters.size(); ++i) {
                 if (graph->parameters[i].name == parameter) {
                     bound = i;
-                    value = graph->parameters[i].value;
+                    const Scene::AnimationParameterUVE& p = graph->parameters[i];
+                    if (p.type == ParamType::Vector3) {
+                        axis = y ? 1 : 0;
+                        value = y ? p.vector.y : p.vector.x;
+                    } else {
+                        value = p.value;
+                    }
                 }
             }
         }
@@ -242,15 +249,46 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
         if (bound.has_value()) {
             slider->setTooltip("Drives the parameter " + parameter + " (a script sets it in game)");
         }
-        slider->onChange = [this, id, bound, y](const float v) {
+        slider->onChange = [this, id, bound, y, axis](const float v) {
             if (bound.has_value()) {
-                LiveParameterUVE(*bound, v);
+                LiveParameterUVE(*bound, v, axis);
             } else {
                 LiveNodeUVE(id, [v, y](NodeUVE& n) { (y ? n.valueY : n.value) = v; });
             }
         };
         slider->onCommit = [this](float) { CommitLiveUVE(); };
         return slider;
+    };
+    // A number that is the node's parameter's value when one drives it (Speed, Rate), else the node's own.
+    const auto drivenNumber = [this, id, graph](const float own, const std::string& parameter, const float step, const float lo,
+                                                const float hi, const char* suffix, const std::function<void(NodeUVE&, float)>& set) {
+        std::optional<std::size_t> bound;
+        float value = own;
+        if (graph != nullptr && !parameter.empty()) {
+            for (std::size_t i = 0U; i < graph->parameters.size(); ++i) {
+                if (graph->parameters[i].name == parameter && graph->parameters[i].type == ParamType::Float) {
+                    bound = i;
+                    value = graph->parameters[i].value;
+                }
+            }
+        }
+        auto field = prism::make<prism::NumberField>(value, step, 2);
+        field->setRange(lo, hi);
+        if (suffix != nullptr) {
+            field->setSuffix(suffix);
+        }
+        if (bound.has_value()) {
+            field->setTooltip("The parameter " + parameter);
+        }
+        field->onChange = [this, id, set, bound](const float v) {
+            if (bound.has_value()) {
+                LiveParameterUVE(*bound, v);
+            } else {
+                LiveNodeUVE(id, [&set, v](NodeUVE& n) { set(n, v); });
+            }
+        };
+        field->onCommit = [this](float) { CommitLiveUVE(); };
+        return field;
     };
     const auto number = [this, id](const float value, const float step, const float lo, const float hi, const char* suffix,
                                    const std::function<void(NodeUVE&, float)>& set) {
@@ -311,7 +349,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
                 }
             };
             body->add(RowUVE("Clip", combo));
-            body->add(RowUVE("Speed", pair(number(node.speed, 0.01F, -10.0F, 10.0F, "x", [](NodeUVE& n, const float v) { n.speed = v; }),
+            body->add(RowUVE("Speed", pair(drivenNumber(node.speed, node.parameter, 0.01F, -10.0F, 10.0F, "x", [](NodeUVE& n, const float v) { n.speed = v; }),
                                            check("Loop", node.loop, [](NodeUVE& n, const bool v) { n.loop = v; }))));
             body->add(RowUVE("Start", number(node.startSeconds, 0.01F, 0.0F, 3600.0F, " s", [](NodeUVE& n, const float v) { n.startSeconds = v; })));
             break;
@@ -334,10 +372,19 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
             body->add(RowUVE("", open("Open Blend Space")));
             break;
         case Kind::BlendSpace2D: {
+            // One Vector3 parameter (x, y) drives both axes; or a Float for each.
+            const bool vector = graph != nullptr && std::ranges::any_of(graph->parameters, [&node](const Scene::AnimationParameterUVE& p) {
+                return p.name == node.parameter && p.type == ParamType::Vector3;
+            });
             body->add(RowUVE("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
-            body->add(RowUVE("Y", valueSlider(node.areaMin.y, node.areaMax.y, node.valueY, node.parameterY, true)));
-            body->add(RowUVE("X by", parameterCombo(node.parameter, {ParamType::Float}, false)));
-            body->add(RowUVE("Y by", parameterCombo(node.parameterY, {ParamType::Float}, true)));
+            body->add(RowUVE("Y", valueSlider(node.areaMin.y, node.areaMax.y, node.valueY, vector ? node.parameter : node.parameterY, true)));
+            body->add(RowUVE(vector ? "By" : "X by", parameterCombo(node.parameter, {ParamType::Vector3, ParamType::Float}, false)));
+            if (vector) {
+                auto same = prism::make<prism::Label>("", prism::FontRole::Small);
+                body->add(RowUVE("", same));
+            } else {
+                body->add(RowUVE("Y by", parameterCombo(node.parameterY, {ParamType::Float}, true)));
+            }
             auto mode = prism::make<prism::ComboBox>(std::vector<std::string>{"Blend", "Nearest", "Nearest, in step"},
                                                      static_cast<int>(node.blendMode));
             mode->onChange = [this, id](const int i) {
@@ -357,7 +404,7 @@ prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildBodyUVE(const NodeU
                                                    [](NodeUVE& n, const float v) { n.autoRestartDelaySeconds = v; }))));
             break;
         case Kind::TimeScale:
-            body->add(RowUVE("Rate", number(node.speed, 0.01F, -10.0F, 10.0F, "x", [](NodeUVE& n, const float v) { n.speed = v; })));
+            body->add(RowUVE("Rate", drivenNumber(node.speed, node.parameter, 0.01F, -10.0F, 10.0F, "x", [](NodeUVE& n, const float v) { n.speed = v; })));
             body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
             break;
         case Kind::TimeSeek:

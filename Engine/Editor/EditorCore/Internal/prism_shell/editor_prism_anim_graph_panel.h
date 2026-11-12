@@ -103,7 +103,8 @@ private:
     /// A slider or number drag: changes the component live (the preview follows), and the release
     /// records the whole gesture as one undo step.
     void LiveNodeUVE(std::uint32_t id, const std::function<void(NodeUVE&)>& change);
-    void LiveParameterUVE(std::size_t index, float value);
+    /// `axis` 0..2 sets that component of a Vector3 parameter; -1 its value.
+    void LiveParameterUVE(std::size_t index, float value, int axis = -1);
     void CommitLiveUVE();
 
     // ---- the side panel ---------------------------------------------------------------------------
