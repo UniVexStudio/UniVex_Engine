@@ -69,6 +69,25 @@ constexpr std::array<Kind, 16> kAddableKindsUVE{Kind::Clip,       Kind::Blend2, 
     return label;
 }
 
+/// Holds its content to the width it is given: a long help line or name ends in "..." instead of
+/// widening the whole Details column (a ScrollBox otherwise lays its content out at its widest).
+class FitWidthUVE final : public prism::Widget {
+public:
+    explicit FitWidthUVE(prism::Ref<prism::Widget> content) : m_content(std::move(content)) { addChild(m_content); }
+    prism::Vec2 measure(const prism::Vec2 avail) override {
+        const prism::Vec2 inner = m_content->measure(avail);
+        return m_desired = constrain({std::min(inner.x, std::max(1.0F, avail.x)), inner.y});
+    }
+    void arrange(const prism::Rect r) override {
+        m_rect = r;
+        m_content->arrange(r);
+    }
+    void paint(prism::Canvas& c) override { m_content->paint(c); }
+
+private:
+    prism::Ref<prism::Widget> m_content;
+};
+
 /// A small sparkline of a Float parameter's recent values.
 class SparklineUVE final : public prism::Widget {
 public:
@@ -581,6 +600,9 @@ void EditorPrismAnimGraphPanelUVE::RefreshLiveValuesUVE(const GraphUVE& graph) {
         if (problem.empty() && !state.status.empty()) {
             problem = state.status;
         }
+        if (problem.empty() && m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree) == Scene::kInvalidEntityUVE) {
+            problem = "No AnimationSequencer: add one to the entity (the graph plays its animations)";
+        }
         if (problem.empty() && m_view.skeleton == Scene::kInvalidEntityUVE) {
             problem = "No skeleton to preview on: add a Skeleton3D to the entity";
         }
@@ -736,7 +758,7 @@ void EditorPrismAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
         page->add(BuildSelectedUVE(graph));
     }
     page->add(BuildPreviewUVE());
-    m_side->setContent(page);
+    m_side->setContent(prism::make<FitWidthUVE>(page));
 }
 
 prism::Ref<prism::Widget> EditorPrismAnimGraphPanelUVE::BuildParametersUVE(const GraphUVE& graph) {
