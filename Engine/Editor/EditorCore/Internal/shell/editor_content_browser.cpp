@@ -849,7 +849,17 @@ void EditorContentBrowserUVE::RebuildItemsUVE() {
     Asset::IProjectFileIndexUVE& index = m_editor.m_services->GetProjectFileIndexUVE();
     const Asset::ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
     m_editor.ReconcileContentBrowserDirectoryUVE(snapshot);
+    m_contentRoot = snapshot.contentRoot;
     std::uint64_t h = snapshot.refreshGeneration;
+    // Clip icons drawn in the background: the tiles take the new ones a few times a second at most.
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (m_editor.m_animationIconGeneration != m_iconGenerationShown && now - m_iconGenerationAt > std::chrono::milliseconds(300)) {
+            m_iconGenerationShown = m_editor.m_animationIconGeneration;
+            m_iconGenerationAt = now;
+        }
+        HashUVE(h, m_iconGenerationShown);
+    }
     HashUVE(h, m_editor.m_contentBrowserDirectory.generic_string());
     HashUVE(h, m_editor.m_assetFilter);
     HashUVE(h, m_editor.m_contentBrowserShelf);
@@ -967,6 +977,7 @@ void EditorContentBrowserUVE::BuildTilesUVE(const Asset::ProjectFileSnapshotUVE&
                                                             : prism::Vec2(108.0F, 136.0F);
     auto tiles = prism::make<TileGridUVE>(size, rows);
     m_tileWidgets.clear();
+    m_editor.BeginAnimationIconBatchUVE();   // this folder's clips are drawn first, top-down
     for (std::size_t n = 0; n < m_shown.size(); ++n) {
         const std::size_t i = m_shown[n];
         const Asset::ProjectFileEntryUVE& entry = snapshot.entries[i];
@@ -1613,6 +1624,9 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
 
     if (directory) {
         add(prism::MenuItem::Item("Open", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::FolderOpen));
+        add(prism::MenuItem::Item("Optimize Animations in Folder", [this, rel = entry.relativePath] {
+            m_editor.StartOptimizeAnimationsUVE(m_editor.CollectAnimationClipsUVE(rel));
+        }, "", prism::Icon::AnimClip), allowed && !m_editor.IsOptimizingAnimationsUVE());
     }
     if (!directory && IsEntityAssetUVE(entry.relativePath)) {
         // Opens the entity in the Entity Editor's own window; the level stays open beside it.
@@ -1653,6 +1667,8 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
     }
     // A clip becomes a montage: a .uvmontage beside it with the clip on its slot track, opened.
     if (extension == ".uvanim") {
+        add(prism::MenuItem::Item("Optimize Animation", [this, absolute] { m_editor.StartOptimizeAnimationsUVE({absolute}); }, "",
+                                  prism::Icon::AnimClip), allowed);
         add(prism::MenuItem::Item("Create Montage", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimMontage),
             allowed);
     }
@@ -1879,7 +1895,9 @@ const EditorContentBrowserUVE::PreviewUVE* EditorContentBrowserUVE::PreviewForUV
             break;
         case ItemTypeUVE::Animation: {
             // A clip's icon is drawn on the CPU already: copied as it is (again when it is redrawn).
-            const std::filesystem::path absolute = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / entry.relativePath;
+            // The content root kept from the last listing: a snapshot copy per tile would cost a
+            // whole project listing for each of thousands of clips.
+            const std::filesystem::path absolute = m_contentRoot / entry.relativePath;
             const EditorUVE::AnimationIconUVE* const icon = m_editor.GetAnimationIconUVE(absolute);
             if (icon == nullptr) {
                 return nullptr;

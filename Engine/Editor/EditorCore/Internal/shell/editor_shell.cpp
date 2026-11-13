@@ -319,6 +319,14 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Project Browser", [this] { ShowDockPanelUVE(0, true); }));
         items.push_back(prism::MenuItem::Item("Import Queue", {}).disabled());
+        if (m_editor.IsOptimizingAnimationsUVE()) {
+            items.push_back(prism::MenuItem::Item("Stop Optimizing Animations", [this] { m_editor.CancelOptimizeAnimationsUVE(); }, "",
+                                                  prism::Icon::Stop));
+        } else {
+            items.push_back(prism::MenuItem::Item("Optimize Project Animations", [this] {
+                m_editor.StartOptimizeAnimationsUVE(m_editor.CollectAnimationClipsUVE({}));
+            }, "", prism::Icon::AnimClip));
+        }
         items.push_back(prism::MenuItem::Sep());
         for (prism::MenuItem& item : CommandItemsUVE({"file.projectSettings", "file.preferences", "file.commandPalette"})) {
             items.push_back(std::move(item));

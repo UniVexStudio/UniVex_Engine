@@ -460,6 +460,7 @@ void EditorUVE::TickUVE() {
     if (m_state != EditorStateUVE::Running) {
         return;
     }
+    PollOptimizeAnimationsUVE();
 
     const Asset::ProjectChangeSnapshotUVE changeSnapshot = m_services->GetProjectChangeWatcherUVE().GetSnapshotUVE();
     const bool firstProjectIndexRefresh = !m_projectFileSnapshotInitialized;
@@ -6725,6 +6726,10 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         }
     }
     s_importedAnimCache[cacheKey] = CachedAnimationImportUVE{sourceTime, std::move(allDestinations)};
+    // Freshly imported takes are every frame baked: optimised in the background.
+    if (!written.empty()) {
+        StartOptimizeAnimationsUVE(written);
+    }
     return written;
 }
 

@@ -105,6 +105,8 @@ struct EditorUVEAccessUVE;
 }
 
 namespace UVE::Editor {
+struct AnimationIconWorkerUVE;
+struct AnimationOptimizeJobUVE;
 
 struct EditorSettingBindingUVE;
 
@@ -458,6 +460,8 @@ class EditorUVE final {
     friend class EditorAnimGraphPanelUVE;
     friend class StateMachineViewUVE;
     friend class BlendSpaceViewUVE;
+    friend struct AnimationIconWorkerUVE;
+    friend struct AnimationOptimizeJobUVE;
     friend class EditorFileDialogUVE;
     friend class AssetThumbnailUVE;
     friend class EditorObjectMenuUVE;
@@ -1885,6 +1889,7 @@ private:
     [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
     /// An animation clip's icon (152 x 128, ARGB, the shape of a tile's picture): its skeleton half-way through, from the front, or an
     /// object's path; drawn again when the file changes. Null when the file is not a clip.
+public:
     struct AnimationIconUVE final {
         std::filesystem::file_time_type written{};
         std::vector<std::uint32_t> pixels;
@@ -1896,8 +1901,32 @@ private:
         /// Bumped each time it is drawn again, so a view that copied it copies it again.
         std::uint64_t serial = 0U;
     };
+private:
+    /// Never blocks: a clip not drawn yet is read and drawn on a worker thread (newest asked first)
+    /// and kept on disk under the project's .uvcache, so the next session has it at once; until then
+    /// it answers null (or the last picture of a changed file). `m_animationIconGeneration` moves
+    /// when new icons have arrived.
     [[nodiscard]] const AnimationIconUVE* GetAnimationIconUVE(const std::filesystem::path& absolutePath);
+    /// The same, drawn now on this thread when it is not ready (for one clip a window needs at once).
+    [[nodiscard]] const AnimationIconUVE* GetAnimationIconNowUVE(const std::filesystem::path& absolutePath);
+    /// The icons asked for next go ahead of those already waiting, in the order asked (a view about
+    /// to list its clips calls it first).
+    void BeginAnimationIconBatchUVE();
     std::unordered_map<std::string, AnimationIconUVE> m_animationIcons;
+    std::shared_ptr<struct AnimationIconWorkerUVE> m_animationIconWorker;
+    /// Optimize Animations: rewrites clips with as few keys as keep every joint within a small
+    /// error of the original (Asset::OptimizeAnimationClipUVE), on a worker thread, a backup of each
+    /// first (<project>/.uvcache/animation-backup). Files given while one runs join it. Progress and
+    /// the result go to the Content Browser's status line.
+    void StartOptimizeAnimationsUVE(std::vector<std::filesystem::path> absoluteClips);
+    void CancelOptimizeAnimationsUVE();
+    [[nodiscard]] bool IsOptimizingAnimationsUVE() const;
+    void PollOptimizeAnimationsUVE();
+    /// Every .uvanim under `relativeFolder` (empty: the whole project), absolute.
+    [[nodiscard]] std::vector<std::filesystem::path> CollectAnimationClipsUVE(const std::filesystem::path& relativeFolder) const;
+    std::shared_ptr<AnimationOptimizeJobUVE> m_animationOptimizeJob;
+    std::uint64_t m_animationIconGeneration = 0U;
+    std::filesystem::path m_animationIconCacheDir;
     /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).
     void DrawOverlayWindowsUVE();
     /// Window > Network Capture / Audio Mixer: the previous bottom dock's sections, as windows of

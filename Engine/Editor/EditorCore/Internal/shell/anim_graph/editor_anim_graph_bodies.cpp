@@ -21,6 +21,7 @@
 #include "prism/Theme.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -145,18 +146,32 @@ std::vector<Asset::AssetGuidUVE> EditorAnimGraphPanelUVE::ClipChoicesUVE() const
     // The linked AnimationSequencer's clips first (its clip and its library's), then every other
     // clip in the project, so a new graph can use any animation at once.
     std::vector<Asset::AssetGuidUVE> clips = m_editor.GetSequencerClipsUVE(m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree));
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
-    std::vector<std::filesystem::path> project;
-    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
-        if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory && entry.relativePath.extension() == ".uvanim") {
-            project.push_back(snapshot.contentRoot / entry.relativePath);
+    // The project's clips, listed again only when the project's files change (a project may hold
+    // thousands, and this is asked for every clip picker drawn).
+    Asset::IProjectFileIndexUVE& index = m_editor.m_services->GetProjectFileIndexUVE();
+    const auto now = std::chrono::steady_clock::now();
+    if (!m_projectClipsValid || now - m_projectClipsAt > std::chrono::seconds(2)) {
+        m_projectClipsAt = now;
+        const Asset::ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
+        Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+        std::vector<std::filesystem::path> project;
+        for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+            if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory && entry.relativePath.extension() == ".uvanim") {
+                project.push_back(snapshot.contentRoot / entry.relativePath);
+            }
         }
+        std::ranges::sort(project);
+        m_projectClips.clear();
+        for (const std::filesystem::path& path : project) {
+            const Asset::AssetGuidUVE guid = database.RegisterUVE(path);
+            if (guid != Asset::AssetGuidUVE{}) {
+                m_projectClips.push_back(guid);
+            }
+        }
+        m_projectClipsValid = true;
     }
-    std::ranges::sort(project);
-    for (const std::filesystem::path& path : project) {
-        const Asset::AssetGuidUVE guid = database.RegisterUVE(path);
-        if (guid != Asset::AssetGuidUVE{} && std::ranges::find(clips, guid) == clips.end()) {
+    for (const Asset::AssetGuidUVE guid : m_projectClips) {
+        if (std::ranges::find(clips, guid) == clips.end()) {
             clips.push_back(guid);
         }
     }

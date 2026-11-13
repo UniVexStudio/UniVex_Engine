@@ -342,6 +342,9 @@ void BlendSpaceViewUVE::PaintStripUVE(prism::Canvas& c) {
         const prism::Rect iconRect{r.x + 3.0F, r.y + 3.0F, (r.h - 6.0F) * 152.0F / 128.0F, r.h - 6.0F};
         const std::filesystem::path file = database.ResolveUVE(m_clips[row]);
         const EditorUVE::AnimationIconUVE* icon = file.empty() ? nullptr : m_panel.m_editor.GetAnimationIconUVE(file);
+        if (icon == nullptr) {
+            invalidate();   // drawn in the background: look again next frame
+        }
         if (icon != nullptr && icon->width > 0) {
             c.blitScaled(icon->pixels.data(), icon->width, icon->height, icon->width, iconRect);
         } else {
