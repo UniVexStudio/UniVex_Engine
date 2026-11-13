@@ -4,6 +4,7 @@
 // no skeleton shows the path it takes. Drawn on the CPU with PRISM's canvas, kept per file and
 // drawn again when the file changes.
 #include "editor.h"
+#include "prism/AssetBrowser.h"
 
 #include "animation_clip_asset.h"
 #include "model_animations.h"
@@ -107,9 +108,9 @@ struct Point2UVE {
 /// Draws the icon of `clip` into `canvas` (cleared, kIconWUVE x kIconHUVE).
 void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& clip) {
     canvas.resize(kIconWUVE, kIconHUVE);
-    // A deep backdrop of its own, so the icon reads the same on any tile.
-    // One plain dark backdrop (no gradient): the figure reads the same on any tile.
+    // On the thumbnail backdrop every thumbnail sits on (a dark checker), else plain dark.
     canvas.clear(prism::Color(18, 19, 23));
+    prism::drawThumbnailBackdrop(canvas, prism::Rect{0.0F, 0.0F, static_cast<float>(kIconWUVE), static_cast<float>(kIconHUVE)});
     const prism::Color line(110, 236, 196);
     const prism::Color joint(222, 255, 244);
     const prism::Color shade(8, 10, 14, 200);
@@ -261,7 +262,7 @@ namespace {
 
 // ---- the disk cache: <project>/.uvcache/animicons/<hash of the path>.bin
 constexpr std::uint32_t kCacheMagicUVE = 0x55564149U;   // "UVAI"
-constexpr std::uint32_t kCacheVersionUVE = 2U;
+constexpr std::uint32_t kCacheVersionUVE = 4U;
 
 [[nodiscard]] std::filesystem::path CacheFileUVE(const std::filesystem::path& dir, const std::string& key) {
     std::uint64_t h = 1469598103934665603ULL;

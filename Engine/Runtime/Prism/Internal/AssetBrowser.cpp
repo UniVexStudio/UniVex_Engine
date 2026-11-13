@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <utility>
 
 namespace prism {
 
@@ -237,15 +238,49 @@ static void drawThumbBackdrop(Canvas& c, Rect thumb, Color tint) {
   c.popClip();
 }
 
-// The thumbnail well: flat dark grey, no studio backdrop (thumbnails are the subject alone).
+// The thumbnail well without a backdrop image: flat dark grey.
 constexpr Color kThumbWell{40, 40, 43, 255};
+
+namespace {
+std::vector<uint32_t> g_backdrop;
+int g_backdropW = 0, g_backdropH = 0;
+} // namespace
+
+void setThumbnailBackdrop(std::vector<uint32_t> argb, int w, int h) {
+  if (w <= 0 || h <= 0 || argb.size() != size_t(w) * size_t(h)) {
+    g_backdrop.clear();
+    g_backdropW = g_backdropH = 0;
+    return;
+  }
+  g_backdrop = std::move(argb);
+  g_backdropW = w;
+  g_backdropH = h;
+}
+
+const std::vector<uint32_t>& thumbnailBackdrop(int& w, int& h) {
+  w = g_backdropW;
+  h = g_backdropH;
+  return g_backdrop;
+}
+
+void drawThumbnailBackdrop(Canvas& c, Rect r) {
+  if (g_backdrop.empty()) {
+    c.fillRect(r, kThumbWell);
+    return;
+  }
+  c.pushClip(r);
+  for (float y = std::floor(r.y); y < r.bottom(); y += float(g_backdropH))
+    for (float x = std::floor(r.x); x < r.right(); x += float(g_backdropW))
+      c.blit(g_backdrop.data(), g_backdropW, g_backdropH, Vec2(x, y));
+  c.popClip();
+}
 
 void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
   int tw = int(thumb.w);
   int th = int(thumb.h);
 
   if (asset.thumbnail != nullptr && asset.thumbnailW > 0 && asset.thumbnailH > 0) {
-    c.fillRect(thumb, kThumbWell);
+    drawThumbnailBackdrop(c, thumb);
     const float fit = std::min(thumb.w / float(asset.thumbnailW), thumb.h / float(asset.thumbnailH)) * asset.thumbnailScale;
     const float w = std::floor(float(asset.thumbnailW) * fit), h = std::floor(float(asset.thumbnailH) * fit);
     c.blitBlend(asset.thumbnail, asset.thumbnailW, asset.thumbnailH, asset.thumbnailW,
@@ -264,8 +299,8 @@ void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
     }
   }
 
-  // No backdrop: the subject on a flat dark grey well, as every thumbnail is.
-  c.fillRect(thumb, kThumbWell);
+  // The subject on the thumbnail backdrop, as every thumbnail is.
+  drawThumbnailBackdrop(c, thumb);
   float floorY = thumb.bottom() - 10.0f;
 
   float cx = thumb.center().x;

@@ -902,6 +902,10 @@ void EditorContentBrowserUVE::RebuildItemsUVE() {
                          : ListContentFolderUVE(snapshot.entries, directory, m_editor.m_assetFilter);
     std::vector<std::size_t> candidates;
     for (const std::size_t i : listed) {
+        // Gameplay is written as Blueprints: loose script files are not listed.
+        if (EditorUVE::ClassifyContentBrowserEntryUVE(snapshot.entries[i]) == ItemTypeUVE::Script) {
+            continue;
+        }
         if (m_editor.DoesContentBrowserEntryMatchFocusUVE(snapshot.entries[i])) {
             candidates.push_back(i);
         }
@@ -1651,10 +1655,6 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
     }
     if (type == ItemTypeUVE::Scene) {
         add(prism::MenuItem::Item("Open Scene", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::Globe));
-    }
-    if (extension == ".uvs") {
-        add(prism::MenuItem::Item("Edit Script", [this, absolute] { static_cast<void>(m_editor.OpenUVScriptPathUVE(absolute)); },
-                                  "", prism::Icon::Script), allowed);
     }
     if (extension == ".uvshader") {
         add(prism::MenuItem::Item("Edit Shader", [this, entry] {

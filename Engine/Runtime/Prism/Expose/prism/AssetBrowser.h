@@ -32,6 +32,13 @@ struct AssetRecord {
   float thumbnailScale = 1.0f;   // < 1 shrinks small previews such as type icons inside the well
 };
 
+// The image every thumbnail sits on (ARGB pixels, drawn 1:1 from the well's top-left corner and
+// repeated); until one is set, the well is flat dark grey. Set once, before thumbnails are drawn.
+void setThumbnailBackdrop(std::vector<uint32_t> argb, int w, int h);
+// The backdrop's pixels (empty when none is set), for a host drawing thumbnails of its own.
+const std::vector<uint32_t>& thumbnailBackdrop(int& w, int& h);
+// Fills `r` with the backdrop (or the flat well).
+void drawThumbnailBackdrop(Canvas& c, Rect r);
 // Draws `asset`'s thumbnail (PBR previews for meshes / materials, texture, shader, font and level cards,
 // otherwise its icon) into `thumbRect`.
 void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumbRect);
