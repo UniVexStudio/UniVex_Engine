@@ -79,7 +79,7 @@ struct AnimationOptimizeJobUVE final {
         }
         // The original first, under the same place it had in Content.
         std::filesystem::path relative = std::filesystem::relative(stored, contentRoot, error);
-        if (error || relative.empty() || relative.native().starts_with("..")) {
+        if (error || relative.empty() || relative.generic_string().starts_with("..")) {
             relative = stored.filename();
             error.clear();
         }
