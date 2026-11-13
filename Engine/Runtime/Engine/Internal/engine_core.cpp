@@ -1476,6 +1476,10 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
         }
         m_uiRuntime.SetViewportSizeUVE(anchorViewport);
     }
+    if (m_uiPointerOriginUVE.has_value()) {
+        uiTransform.inputOffsetX = m_uiPointerOriginUVE->x * uiTransform.inputScaleX;
+        uiTransform.inputOffsetY = m_uiPointerOriginUVE->y * uiTransform.inputScaleY;
+    }
     m_uiRuntime.SetCoordinateTransformUVE(uiTransform);
 
     // Whether a text is translated is its resolved Auto Translate mode, asked of the scene graph so

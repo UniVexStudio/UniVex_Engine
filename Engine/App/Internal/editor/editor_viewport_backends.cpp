@@ -1095,6 +1095,11 @@ public:
         if (!EnsureGlewInitializedUVE() || !EnsureRenderPassUVE()) {
             return 0U;
         }
+        // The game's UI is drawn inside this view, so its buttons are hit where they are drawn:
+        // the pointer is measured from the view's corner, not the window's.
+        if (context_ == UVE::Editor::EditorUVE::ViewportContextUVE::Main) {
+            engine_.SetUIPointerOriginUVE(In().imageOrigin);
+        }
 
         const int width = std::max(1, static_cast<int>(availableSize.x));
         const int height = std::max(1, static_cast<int>(availableSize.y));

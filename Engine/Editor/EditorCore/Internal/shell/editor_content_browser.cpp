@@ -204,6 +204,7 @@ prism::Icon EditorContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::AnimationMontage: return prism::Icon::AnimMontage;
         case ItemTypeUVE::MontageLibrary: return prism::Icon::MontageLibrary;
         case ItemTypeUVE::Blueprint: return prism::Icon::BlueprintClass;
+        case ItemTypeUVE::WidgetBlueprint: return prism::Icon::BlueprintClass;
         case ItemTypeUVE::Script: return prism::Icon::Script;
         case ItemTypeUVE::Audio: return prism::Icon::NodeSound;
         case ItemTypeUVE::Font: return prism::Icon::NodeText;
@@ -230,6 +231,7 @@ std::pair<std::string, std::string> EditorContentBrowserUVE::DescribeUVE(const I
         case ItemTypeUVE::AnimationMontage: return {"Animation Montage", "MONT"};
         case ItemTypeUVE::MontageLibrary: return {"Montage Library", "MLIB"};
         case ItemTypeUVE::Blueprint: return {"Blueprint Class", "BP"};
+        case ItemTypeUVE::WidgetBlueprint: return {"Widget Blueprint", "WBP"};
         case ItemTypeUVE::Script: return {"Script", "UVS"};
         case ItemTypeUVE::Audio: return {"Audio", "AUD"};
         case ItemTypeUVE::Font: return {"Font", "FNT"};
@@ -256,6 +258,7 @@ prism::Color EditorContentBrowserUVE::TintForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::MontageLibrary: return prism::Color(90, 200, 200);
         case ItemTypeUVE::Audio: return prism::Color(230, 190, 90);
         case ItemTypeUVE::Blueprint: return prism::Color(80, 150, 240);
+        case ItemTypeUVE::WidgetBlueprint: return prism::Color(70, 190, 140);
         default: return prism::Color(170, 176, 186);
     }
 }
@@ -324,11 +327,12 @@ public:
         record.thumbnailH = m_previewH;
         record.thumbnailScale = m_previewScale;
         prism::paintAssetTile(c, r, record, m_selected, m_hot);
-        if (m_type == ItemTypeUVE::Blueprint) {
+        if (m_type == ItemTypeUVE::Blueprint || m_type == ItemTypeUVE::WidgetBlueprint) {
             // A Blueprint's well is the word, not a glyph.
             const prism::Rect well{r.x + 3.0F, r.y + 3.0F, r.w - 6.0F, 86.0F - 17.0F};
             c.fillRect(well, m_hot && !m_selected ? prism::Color(40, 41, 45) : prism::Color(30, 31, 34));
-            c.textIn(*t.medium, well, "Blueprint", prism::Color(214, 220, 230), prism::HAlign::Center, false);
+            c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Blueprint" : "Widget Blueprint", prism::Color(214, 220, 230),
+                     prism::HAlign::Center, false);
         }
     }
 
@@ -1443,6 +1447,10 @@ std::vector<prism::MenuItem> EditorContentBrowserUVE::CatalogueMenuUVE() {
         prism::MenuItem::Item("Blueprint Class", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
     items.push_back(prism::MenuItem::Sub("Blueprint", {blueprintClass, entityClass()}));
     items.push_back(prism::MenuItem::Sub("Gameplay", {blueprintClass}));
+    // A Widget Blueprint: a screen of UI (text, buttons, bars ...) with its own graph.
+    prism::MenuItem widgetBlueprint =
+        prism::MenuItem::Item("Widget Blueprint", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+    items.push_back(prism::MenuItem::Sub("User Interface", {widgetBlueprint}));
     items.push_back(prism::MenuItem::Sub("Material", {
         material("Material", "M_Standard", Asset::MaterialKindUVE::Standard),
         material("ORM Material", "M_ORM", Asset::MaterialKindUVE::Orm),
@@ -1500,6 +1508,20 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
     blueprint.nodes = {ready, tick};
     if (!Asset::SaveBlueprintAssetUVE(blueprint, path)) {
         m_editor.m_contentStatusMessage = "Could not create a Blueprint here.";
+        return;
+    }
+    m_editor.m_contentStatusMessage.clear();
+    m_editor.RefreshProjectFileIndexUVE();
+    m_folderSignature = 0;
+    ChangedUVE();
+}
+
+void EditorContentBrowserUVE::CreateWidgetBlueprintUVE() {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::optional<std::filesystem::path> made =
+        m_editor.CreateWidgetBlueprintAssetUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
+    if (!made.has_value()) {
+        m_editor.m_contentStatusMessage = "Could not create a Widget Blueprint here.";
         return;
     }
     m_editor.m_contentStatusMessage.clear();
@@ -1928,6 +1950,11 @@ void EditorContentBrowserUVE::OpenEntryUVE(const std::size_t entryIndex) {
             break;
         case ItemTypeUVE::Blueprint:
             OpenBlueprintUVE(full);
+            break;
+        case ItemTypeUVE::WidgetBlueprint:
+            if (!m_editor.OpenEntityEditorUVE(full)) {
+                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Widget Editor.";
+            }
             break;
         case ItemTypeUVE::Script:
             if (!m_editor.OpenUVScriptPathUVE(full)) {

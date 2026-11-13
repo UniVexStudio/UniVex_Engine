@@ -88,6 +88,10 @@
 #include "primitive_mesh_component.h"
 #include "prefab_instance_component.h"
 #include "script_component.h"
+#include "ui_button_component.h"
+#include "ui_text_component.h"
+#include "widget_blueprint_asset.h"
+#include "blueprint_asset.h"
 #include "visibility_component.h"
 #include "world_transform_component.h"
 
@@ -1225,6 +1229,107 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
     }
     InvalidateHierarchyFilterCacheUVE();
     if (guid == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    return path;
+}
+
+std::optional<std::filesystem::path> EditorUVE::CreateWidgetBlueprintAssetUVE(const std::filesystem::path& directory,
+                                                                             const std::string_view stem) {
+    if (!IsAuthoringCommandAllowedUVE()) {
+        return std::nullopt;
+    }
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvwbp");
+    // The script slot names the file as the engine reads it: relative to the project root.
+    std::string projectPath;
+    if (const std::filesystem::path probe = m_services->GetFileSystemUVE().ResolveRealPathUVE("uve_root_probe"); !probe.empty()) {
+        const std::filesystem::path root = std::filesystem::weakly_canonical(probe.parent_path(), error);
+        const std::filesystem::path relative = std::filesystem::weakly_canonical(path, error).lexically_relative(root);
+        if (!relative.empty() && *relative.begin() != "..") {
+            projectPath = relative.generic_string();
+        }
+    }
+    if (projectPath.empty()) {
+        const std::filesystem::path content = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        const std::filesystem::path relative = path.lexically_relative(content.parent_path());
+        projectPath = relative.empty() || *relative.begin() == ".." ? path.filename().generic_string() : relative.generic_string();
+    }
+
+    // Built in the live entity manager, saved and destroyed again here, like a catalogue item.
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const Scene::EntityUVE root = CreateSceneObjectEntityInternalUVE(Scene::Objects::SceneObjectKindUVE::Canvas);
+    if (root == Scene::kInvalidEntityUVE) {
+        return std::nullopt;
+    }
+    const auto make = [&](const Scene::Objects::SceneObjectKindUVE kind, const std::string& name, const Scene::EntityUVE parent) {
+        const Scene::EntityUVE entity = CreateSceneObjectEntityInternalUVE(kind);
+        if (entity != Scene::kInvalidEntityUVE) {
+            entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name = name;
+            sceneGraph.SetParentUVE(entityManager, entity, parent);
+        }
+        return entity;
+    };
+    entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name = path.stem().string();
+    Scene::ScriptComponentUVE script;
+    script.scriptAssetPath = projectPath;
+    if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(root)) {
+        entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root) = script;
+    } else {
+        entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(root, script);
+    }
+    const Scene::EntityUVE title = make(Scene::Objects::SceneObjectKindUVE::UIText, "Title", root);
+    if (title != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::UITextComponentUVE>(title)) {
+        Scene::UITextComponentUVE& text = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(title);
+        text.text = "Hello, Widget";
+        text.positionPixels = Math::Vector2UVE{80.0F, 60.0F};
+        text.fontSize = 36.0F;
+    }
+    const Scene::EntityUVE start = make(Scene::Objects::SceneObjectKindUVE::UIButton, "Start", root);
+    if (start != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(start)) {
+        Scene::UIButtonComponentUVE& button = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(start);
+        button.rect = Math::RectUVE{Math::Vector2UVE{80.0F, 130.0F}, Math::Vector2UVE{220.0F, 56.0F}};
+        button.normalColor = Math::Vector3UVE{0.16F, 0.42F, 0.86F};
+        button.hoverColor = Math::Vector3UVE{0.24F, 0.52F, 0.95F};
+        button.pressedColor = Math::Vector3UVE{0.10F, 0.30F, 0.66F};
+    }
+    const Scene::EntityUVE label = make(Scene::Objects::SceneObjectKindUVE::UIText, "StartLabel", start != Scene::kInvalidEntityUVE ? start : root);
+    if (label != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::UITextComponentUVE>(label)) {
+        Scene::UITextComponentUVE& text = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(label);
+        text.text = "Start";
+        text.positionPixels = Math::Vector2UVE{158.0F, 146.0F};
+        text.fontSize = 22.0F;
+    }
+
+    const Asset::AssetGuidUVE guid =
+        m_services->GetPrefabSystemUVE().SavePrefabUVE(entityManager, m_services->GetAssetDatabaseUVE(), root, path);
+    DestroyDocumentSubtreeUVE(root);
+    InvalidateHierarchyFilterCacheUVE();
+    if (guid == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    // Its graph: Event Construct, and a click on Start sets the title.
+    Asset::BlueprintAssetUVE graph;
+    graph.parentKind = "Canvas";
+    Asset::BlueprintNodeUVE construct;
+    construct.id = 1U;
+    construct.type = "ui_on_construct";
+    Asset::BlueprintNodeUVE clicked;
+    clicked.id = 2U;
+    clicked.type = "ui_on_clicked";
+    clicked.y = 180.0F;
+    clicked.inputValues = {"Start"};
+    Asset::BlueprintNodeUVE setText;
+    setText.id = 3U;
+    setText.type = "ui_set_text";
+    setText.x = 320.0F;
+    setText.y = 180.0F;
+    setText.inputValues = {"", "Title", "Clicked!"};
+    graph.nodes = {construct, clicked, setText};
+    graph.wires = {Asset::BlueprintWireUVE{2U, 0U, 3U, 0U}};
+    if (!Asset::SaveWidgetBlueprintGraphUVE(path, graph)) {
         return std::nullopt;
     }
     return path;
@@ -5621,6 +5726,9 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvbp") {
         return ContentBrowserItemTypeUVE::Blueprint;
     }
+    if (extension == ".uvwbp") {
+        return ContentBrowserItemTypeUVE::WidgetBlueprint;
+    }
     if (extension == ".uvs") {
         return ContentBrowserItemTypeUVE::Script;
     }
@@ -5688,6 +5796,8 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Montage Library";
         case ContentBrowserItemTypeUVE::Blueprint:
             return "Blueprint";
+        case ContentBrowserItemTypeUVE::WidgetBlueprint:
+            return "Widget Blueprint";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:

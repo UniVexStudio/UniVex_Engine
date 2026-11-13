@@ -421,6 +421,9 @@ public:
     /// runtime/test path that never calls this is unaffected. Set (or cleared) once per frame,
     /// before TickFrameUVE() - see EditorUVE::DrawViewportPanelUVE()'s own per-frame call.
     void SetEditorViewportRegionUVE(std::optional<Render::ViewportRectUVE> region) noexcept override;
+    /// Where, in window coordinates, the editor shows the game's view (its UI drawn from there):
+    /// the UI's pointer is measured from it. Nothing (the default) is the window's own corner.
+    void SetUIPointerOriginUVE(std::optional<Math::Vector2UVE> origin) noexcept { m_uiPointerOriginUVE = origin; }
 
     /// Registers a non-owning callback invoked after the renderer has submitted the frame's scene
     /// work but immediately before the window back buffer is presented. This is a generic
@@ -873,6 +876,7 @@ private:
     std::unique_ptr<Asset::IDerivedArtifactCacheUVE> m_derivedArtifactCache;
     std::unique_ptr<Asset::IProjectChangeWatcherUVE> m_projectChangeWatcher;
     std::unique_ptr<Scene::ISceneSerializerUVE> m_sceneSerializer;
+    std::optional<Math::Vector2UVE> m_uiPointerOriginUVE;
     std::unique_ptr<Scene::IPrefabSystemUVE> m_prefabSystem;
     std::unique_ptr<Asset::IHotReloadUVE> m_hotReload;
     std::unique_ptr<Asset::IAssetManagerUVE> m_assetManager;

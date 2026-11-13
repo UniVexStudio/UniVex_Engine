@@ -10,6 +10,7 @@
 
 #include "blueprint_asset.h"
 #include "blueprint_nodes.h"
+#include "widget_blueprint_asset.h"
 #include "scene_object_registry.h"
 #include "scene_object_type.h"
 
@@ -41,6 +42,15 @@
 
 namespace UVE::Editor {
 namespace {
+
+/// A script slot that holds a node graph: a Blueprint Class, or a Widget Blueprint's own graph.
+[[nodiscard]] bool IsGraphScriptPathUVE(const std::string_view path) noexcept {
+    return path.ends_with(".uvbp") || Asset::IsWidgetBlueprintPathUVE(path);
+}
+
+[[nodiscard]] std::optional<Asset::BlueprintAssetUVE> DecodeGraphScriptUVE(const std::string_view path, const std::vector<std::byte>& bytes) {
+    return Asset::IsWidgetBlueprintPathUVE(path) ? Asset::ReadWidgetBlueprintGraphUVE(bytes) : Asset::DecodeBlueprintAssetUVE(bytes);
+}
 
 [[nodiscard]] bool IsUVScriptFileUVE(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
 
@@ -236,8 +246,17 @@ bool EditorUVE::SaveEntityEditorUVE() {
         m_contentStatusMessage = "An entity has exactly one root object: put the other top-level objects under it, then save.";
         return false;
     }
+    // A Widget Blueprint's graph lives in the same file: kept across the widgets being written.
+    const bool widget = Asset::IsWidgetBlueprintPathUVE(m_entityEditSession->assetPath.generic_string());
+    std::optional<Asset::BlueprintAssetUVE> widgetGraph;
+    if (widget) {
+        widgetGraph = Asset::LoadWidgetBlueprintGraphUVE(m_entityEditSession->assetPath);
+    }
     const Asset::AssetGuidUVE guid = m_services->GetPrefabSystemUVE().SavePrefabUVE(
         m_services->GetEntityManagerUVE(), m_services->GetAssetDatabaseUVE(), root, m_entityEditSession->assetPath);
+    if (guid != Asset::kInvalidAssetGuidUVE && widget && widgetGraph.has_value()) {
+        static_cast<void>(Asset::SaveWidgetBlueprintGraphUVE(m_entityEditSession->assetPath, *widgetGraph));
+    }
     if (guid == Asset::kInvalidAssetGuidUVE) {
         m_contentStatusMessage = "Could not save " + m_entityEditSession->assetPath.filename().string() + ".";
         return false;
@@ -412,7 +431,7 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
         base.entity = entity;
         base.objectName = GetEntityDisplayLabelUVE(entity);
         base.scriptPath = path;
-        if (path.ends_with(".uvbp")) {
+        if (IsGraphScriptPathUVE(path)) {
             // A Blueprint Class: the graph being edited (or the file), translated and compiled
             // against this object; each problem points at its node.
             std::optional<Asset::BlueprintAssetUVE> blueprint =
@@ -420,7 +439,7 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
             if (!blueprint.has_value()) {
                 if (const std::optional<std::string> bytes = ReadProjectTextFileUVE(path); bytes.has_value()) {
                     const auto* const data = reinterpret_cast<const std::byte*>(bytes->data());
-                    blueprint = Asset::DecodeBlueprintAssetUVE(std::vector<std::byte>(data, data + bytes->size()));
+                    blueprint = DecodeGraphScriptUVE(path, std::vector<std::byte>(data, data + bytes->size()));
                 }
             }
             if (!blueprint.has_value()) {
@@ -587,13 +606,13 @@ std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const 
 }
 
 std::optional<std::string> EditorUVE::ReadEntityScriptSourceUVE(const std::string& path, const Scene::EntityUVE entity) const {
-    if (path.ends_with(".uvbp")) {
+    if (IsGraphScriptPathUVE(path)) {
         std::optional<Asset::BlueprintAssetUVE> blueprint =
             m_openBlueprintProviderUVE ? m_openBlueprintProviderUVE(path) : std::optional<Asset::BlueprintAssetUVE>{};
         if (!blueprint.has_value()) {
             if (const std::optional<std::string> bytes = ReadProjectTextFileUVE(path); bytes.has_value()) {
                 const auto* const data = reinterpret_cast<const std::byte*>(bytes->data());
-                blueprint = Asset::DecodeBlueprintAssetUVE(std::vector<std::byte>(data, data + bytes->size()));
+                blueprint = DecodeGraphScriptUVE(path, std::vector<std::byte>(data, data + bytes->size()));
             }
         }
         if (!blueprint.has_value()) {
@@ -630,7 +649,7 @@ std::vector<EditorUVE::EntitySignalRowUVE> EditorUVE::GetEntityEditorSignalsUVE(
             continue;
         }
         const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
-        if (!IsUVScriptFileUVE(path) && !path.ends_with(".uvbp")) {
+        if (!IsUVScriptFileUVE(path) && !IsGraphScriptPathUVE(path)) {
             continue;
         }
         const std::optional<std::string> text = ReadEntityScriptSourceUVE(path, entity);
@@ -710,7 +729,7 @@ bool EditorUVE::PlayEntitySimulationUVE() {
             continue;
         }
         const Scene::ScriptComponentUVE& component = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity);
-        if (!IsUVScriptFileUVE(component.scriptAssetPath) && !component.scriptAssetPath.ends_with(".uvbp")) {
+        if (!IsUVScriptFileUVE(component.scriptAssetPath) && !IsGraphScriptPathUVE(component.scriptAssetPath)) {
             continue;
         }
         std::optional<std::string> text = ReadEntityScriptSourceUVE(component.scriptAssetPath, entity);
