@@ -11,6 +11,7 @@
 #include "editor_view_toolbar.h"
 #include "editor_viewport_gizmos.h"
 #include "editor_widget_designer.h"
+#include "editor_content_browser.h"
 
 #include "entity.h"
 
@@ -125,7 +126,20 @@ private:
     /// Pages: Animation Sequencer and Animation Graph (their tabs show while the entity has one),
     /// Output Log, Console, Compile Results, Find Results, Diff.
     enum DockPageUVE : int { kSequencerPageUVE, kGraphPageUVE, kOutputLogPageUVE, kConsolePageUVE, kCompilePageUVE,
-                             kFindPageUVE, kDiffPageUVE, kDockPageCountUVE };
+                             kFindPageUVE, kDiffPageUVE, kContentPageUVE, kDockPageCountUVE };
+    /// The project's content in the entity window: a drawer that slides up over the bottom (its
+    /// button on the dock bar, or Ctrl+Space), or docked as a tab of the dock (Dock in Layout).
+    EditorContentBrowserUVE m_contentBrowser;
+    prism::Ref<prism::Widget> m_contentFrame;
+    std::shared_ptr<prism::Border> m_contentDockHolder;
+    std::shared_ptr<prism::Button> m_contentDockToggle;
+    std::shared_ptr<prism::Button> m_drawerButton;
+    std::shared_ptr<prism::Widget> m_drawerPopup;
+    bool m_contentDocked = false;
+    [[nodiscard]] prism::Ref<prism::Widget> BuildContentFrameUVE();
+    void ToggleContentDrawerUVE();
+    void CloseContentDrawerUVE();
+    void SetContentDockedUVE(bool docked);
     std::shared_ptr<prism::StackSwitcher> m_dockPages;
     std::shared_ptr<prism::Widget> m_dockArea;
     std::vector<std::shared_ptr<prism::Button>> m_dockTabs;
