@@ -38,9 +38,9 @@ namespace {
 
 constexpr int kWindowWidthUVE = 980;
 constexpr int kWindowHeightUVE = 640;
-constexpr float kTileWUVE = 150.0F;
-constexpr float kTileHUVE = 186.0F;
-constexpr float kGapUVE = 12.0F;
+constexpr float kTileWUVE = 112.0F;
+constexpr float kTileHUVE = 150.0F;
+constexpr float kGapUVE = 10.0F;
 constexpr float kPadUVE = 14.0F;
 
 [[nodiscard]] prism::Slot CentreUVE() {
