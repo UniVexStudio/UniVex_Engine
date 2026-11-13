@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "quaternion.h"
 #include "retarget_brain.h"
 #include "retarget_humanoid.h"
 #include "retarget_match.h"
@@ -108,7 +109,69 @@ TEST(RetargetBrainUVETest, FindsTheBodyOfARigWhoseNamesSayNothing) {
         right += match.referenceOfBone[bone] == byName.referenceOfBone[bone] ? 1U : 0U;
     }
     std::printf("[ RigBrain ] anonymous rig: %zu of %zu bones found\n", right, total);
-    EXPECT_GE(right * 10U, total * 6U) << "at least 60% of an unnamed body found from its shape";
+    EXPECT_GE(right * 10U, total * 7U) << "at least 70% of an unnamed body found from its shape";
+}
+
+/// The test rig with names that say nothing, stood the way `turn` stands it.
+[[nodiscard]] RetargetSkeletonUVE AnonymousTurnedUVE(const RetargetSkeletonUVE& rig, const Math::QuaternionUVE& turn) {
+    RetargetSkeletonUVE out = rig;
+    for (std::size_t bone = 0U; bone < out.bones.size(); ++bone) {
+        char text[16];
+        std::snprintf(text, sizeof(text), "joint%zu", bone);
+        out.bones[bone].name = text;
+    }
+    if (!out.bones.empty()) {
+        // The root carries the turn; everything below follows it.
+        out.bones.front().position = Math::RotateVectorUVE(turn, out.bones.front().position);
+        out.bones.front().rotation = Math::MultiplyUVE(turn, out.bones.front().rotation);
+    }
+    return out;
+}
+
+TEST(RetargetBrainUVETest, FindsAnUnnamedBodyHoweverItsToolStoodIt) {
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    const RigBrainUVE& brain = GetDefaultRigBrainUVE();
+    TestRigUVE::TPoseRigUVE rig;
+    const HumanoidMatchUVE byName = MatchHumanoidUVE(rig.skeleton, reference);
+    Math::QuaternionUVE zUp{};
+    Math::QuaternionUVE away{};
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -1.5707963F, zUp));
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 3.1415927F, away));
+    for (const Math::QuaternionUVE& turn : {Math::QuaternionUVE{}, zUp, away}) {
+        const RetargetSkeletonUVE anonymous = AnonymousTurnedUVE(rig.skeleton, turn);
+        const HumanoidMatchUVE match = MatchHumanoidWithBrainUVE(anonymous, reference, brain, 0.3F);
+        std::size_t right = 0U;
+        std::size_t total = 0U;
+        for (std::size_t bone = 0U; bone < anonymous.bones.size(); ++bone) {
+            if (byName.referenceOfBone[bone] >= 0) {
+                ++total;
+                right += match.referenceOfBone[bone] == byName.referenceOfBone[bone] ? 1U : 0U;
+            }
+        }
+        std::printf("[ RigBrain ] unnamed rig turned (%.2f %.2f %.2f %.2f): %zu of %zu\n", static_cast<double>(turn.x),
+                    static_cast<double>(turn.y), static_cast<double>(turn.z), static_cast<double>(turn.w), right, total);
+        EXPECT_GE(right * 10U, total * 7U) << "at least 70% of an unnamed body, however it stands";
+    }
+}
+
+TEST(RetargetBrainUVETest, NamesHeldOutRigsInEveryNamingStyle) {
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    const RigBrainUVE& brain = GetDefaultRigBrainUVE();
+    // Rigs it never saw (another seed): every naming style, stood every way, a little off the ideal.
+    std::vector<RigBrainSampleUVE> named;
+    std::vector<RigBrainSampleUVE> unnamed;
+    for (RigBrainSampleUVE& sample : MakeSyntheticRigsUVE(reference, 120U, 0x51DE5U)) {
+        const std::string& first = sample.rig.bones.front().name;
+        (first.starts_with("Bone") || first.starts_with("joint") ? unnamed : named).push_back(std::move(sample));
+    }
+    ASSERT_FALSE(named.empty());
+    ASSERT_FALSE(unnamed.empty());
+    const float byName = AccuracyUVE(brain, named, reference);
+    const float byShape = AccuracyUVE(brain, unnamed, reference);
+    std::printf("[ RigBrain ] held-out: named rigs %.1f%%, rigs whose names say nothing %.1f%%\n",
+                static_cast<double>(byName) * 100.0, static_cast<double>(byShape) * 100.0);
+    EXPECT_GT(byName, 0.97F);
+    EXPECT_GT(byShape, 0.7F);
 }
 
 TEST(RetargetBrainUVETest, LearnsFromTheProjectsOwnRigs) {
@@ -145,7 +208,7 @@ TEST(RetargetBrainUVETest, TheEnginesOwnBrainIsTrainedOnFirstUse) {
     EXPECT_EQ(brain.ClassCountUVE(), reference.skeleton.bones.size() + 1U);
     const float accuracy = AccuracyUVE(brain, MakeSyntheticRigsUVE(reference, 30U, 0xFEEDU), reference);
     std::printf("[ RigBrain ] engine brain held-out core accuracy %.1f%%\n", static_cast<double>(accuracy) * 100.0);
-    EXPECT_GT(accuracy, 0.9F);
+    EXPECT_GT(accuracy, 0.92F);
 }
 
 

@@ -14,6 +14,7 @@
 #include <exception>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -100,6 +101,129 @@ void NameFeaturesUVE(const std::string_view name, float* out) {
     }
 }
 
+
+/// How a rig stands, read from its shape alone (for rigs whose names say nothing): the hips are the
+/// first bone that branches three ways (the spine and two legs), the chest the first three-way
+/// branch up the spine (the neck and two arms); up runs from one to the other. The legs end in the
+/// feet and toes, which point forward. Nothing when the shape is not a body's.
+[[nodiscard]] std::optional<Math::QuaternionUVE> OrientationFromShapeUVE(const RetargetSkeletonUVE& rig,
+                                                                       const std::vector<WorldTransformUVE>& world) {
+    const std::size_t count = rig.bones.size();
+    std::vector<std::vector<std::size_t>> children(count);
+    std::vector<std::size_t> below(count, 0U);
+    for (std::size_t bone = 0U; bone < count; ++bone) {
+        if (const std::int32_t parent = rig.bones[bone].parent; parent >= 0) {
+            children[static_cast<std::size_t>(parent)].push_back(bone);
+        }
+    }
+    for (std::size_t bone = count; bone-- > 0U;) {
+        if (const std::int32_t parent = rig.bones[bone].parent; parent >= 0) {
+            below[static_cast<std::size_t>(parent)] += below[bone] + 1U;
+        }
+    }
+    // Branches that matter: a child with a few bones below it, not a lone end bone or a prop.
+    const auto branches = [&](const std::size_t bone) {
+        std::vector<std::size_t> out;
+        for (const std::size_t child : children[bone]) {
+            if (below[child] >= 2U) {
+                out.push_back(child);
+            }
+        }
+        std::ranges::sort(out, [&below](const std::size_t a, const std::size_t b) { return below[a] > below[b]; });
+        return out;
+    };
+    // The length down a branch, along the child with most below it each time.
+    const auto chainOf = [&](std::size_t bone) {
+        std::vector<std::size_t> chain{bone};
+        while (!children[chain.back()].empty() && chain.size() < 24U) {
+            std::size_t next = children[chain.back()].front();
+            for (const std::size_t child : children[chain.back()]) {
+                if (below[child] > below[next]) {
+                    next = child;
+                }
+            }
+            chain.push_back(next);
+        }
+        return chain;
+    };
+    const auto lengthOf = [&](const std::vector<std::size_t>& chain) {
+        float length = 0.0F;
+        for (std::size_t i = 1U; i < chain.size(); ++i) {
+            length += Math::LengthUVE(world[chain[i]].position - world[chain[i - 1U]].position);
+        }
+        return length;
+    };
+    // A left and right pair hanging from `bone` (two legs, two arms): as many bones below each, as
+    // long, and at least three bones deep. IK and socket roots are never such a pair.
+    const auto pairAt = [&](const std::size_t bone) -> std::optional<std::pair<std::size_t, std::size_t>> {
+        const std::vector<std::size_t> options = branches(bone);
+        for (std::size_t i = 0U; i < options.size(); ++i) {
+            for (std::size_t j = i + 1U; j < options.size(); ++j) {
+                const std::vector<std::size_t> a = chainOf(options[i]);
+                const std::vector<std::size_t> b = chainOf(options[j]);
+                const float la = lengthOf(a);
+                const float lb = lengthOf(b);
+                const std::size_t most = std::max(below[options[i]], below[options[j]]);
+                const std::size_t least = std::min(below[options[i]], below[options[j]]);
+                if (most - least <= std::max<std::size_t>(1U, most / 4U) && a.size() >= 3U && b.size() >= 3U && la > 1e-6F &&
+                    std::abs(la - lb) <= 0.1F * std::max(la, lb)) {
+                    return std::pair{options[i], options[j]};
+                }
+            }
+        }
+        return std::nullopt;
+    };
+    // Down from the root along the biggest branch to the first pair: the legs, at the hips.
+    std::size_t hips = 0U;
+    std::optional<std::pair<std::size_t, std::size_t>> legs;
+    for (std::size_t guard = 0U; guard < count && !(legs = pairAt(hips)).has_value(); ++guard) {
+        const std::vector<std::size_t> next = branches(hips);
+        if (next.empty()) {
+            return std::nullopt;
+        }
+        hips = next.front();
+    }
+    if (!legs.has_value()) {
+        return std::nullopt;
+    }
+    // On up the biggest branch that is not a leg to the next pair: the arms, at the chest.
+    std::size_t chest = hips;
+    for (const std::size_t child : branches(hips)) {
+        if (child != legs->first && child != legs->second) {
+            chest = child;
+            break;
+        }
+    }
+    if (chest == hips) {
+        return std::nullopt;
+    }
+    for (std::size_t guard = 0U; guard < count && !pairAt(chest).has_value(); ++guard) {
+        const std::vector<std::size_t> next = branches(chest);
+        if (next.empty()) {
+            break;
+        }
+        chest = next.front();
+    }
+    Math::Vector3UVE up = world[chest].position - world[hips].position;
+    if (!(Math::LengthUVE(up) > 1e-6F)) {
+        return std::nullopt;
+    }
+    up = Math::NormalizeUVE(up);
+    // Each leg's last step (toe from foot) points forward.
+    Math::Vector3UVE forward{};
+    for (const std::size_t leg : {legs->first, legs->second}) {
+        const std::vector<std::size_t> chain = chainOf(leg);
+        const Math::Vector3UVE step = world[chain.back()].position - world[chain[chain.size() - 2U]].position;
+        forward += step - up * Math::DotUVE(step, up);
+    }
+    const Math::QuaternionUVE stand = RotationBetweenUVE(up, kUpUVE);
+    Math::QuaternionUVE yaw{};
+    const Math::Vector3UVE ahead = Math::RotateVectorUVE(stand, forward);
+    if (ahead.x * ahead.x + ahead.z * ahead.z > 1e-10F) {
+        static_cast<void>(Math::TryMakeAxisAngleUVE(kUpUVE, -std::atan2(ahead.x, ahead.z), yaw));
+    }
+    return Math::MultiplyUVE(yaw, stand);
+}
 } // namespace
 
 std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const HumanoidReferenceUVE& reference) {
@@ -115,7 +239,21 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
         names.push_back(bone.name);
     }
     const HumanoidMatchUVE named = MatchHumanoidNamesUVE(names, reference);
-    const Math::QuaternionUVE orientation = OrientationOfRigUVE(world, named, reference);
+    Math::QuaternionUVE orientation = OrientationOfRigUVE(world, named, reference);
+    // Names that do not find the hips and the head say nothing of how it stands: read the shape.
+    const auto namedBone = [&](const std::string_view key) {
+        for (std::size_t index = 0U; index < reference.info.size(); ++index) {
+            if (reference.info[index].key == key) {
+                return named.joints[index].bone >= 0;
+            }
+        }
+        return false;
+    };
+    if (!namedBone("C|hips") || !(namedBone("C|head") || namedBone("C|neck 1") || namedBone("C|spine 5"))) {
+        if (const std::optional<Math::QuaternionUVE> shape = OrientationFromShapeUVE(rig, world); shape.has_value()) {
+            orientation = *shape;
+        }
+    }
     Math::Vector3UVE low{1e30F, 1e30F, 1e30F};
     Math::Vector3UVE high{-1e30F, -1e30F, -1e30F};
     Math::Vector3UVE sum{};
@@ -194,6 +332,56 @@ std::vector<float> RigBoneFeaturesUVE(const RetargetSkeletonUVE& rig, const Huma
         shape[at++] = static_cast<float>(children[bone].size()) / 5.0F;
         shape[at++] = static_cast<float>(below[bone]) / static_cast<float>(count);
         shape[at++] = children[bone].empty() ? 1.0F : 0.0F;
+        // Context: the parent's place, how far up the nearest branching is, how deep this goes,
+        // whether it is the parent's main way on, and where its chain ends.
+        const std::int32_t parent = rig.bones[bone].parent;
+        if (parent >= 0) {
+            const auto up = static_cast<std::size_t>(parent);
+            const Math::Vector3UVE q = (world[up].position - origin) * (1.0F / height);
+            shape[at++] = q.y;
+            shape[at++] = std::abs(q.x) * 2.0F;
+            shape[at++] = (p.x - q.x) * 4.0F;
+            shape[at++] = (p.y - q.y) * 4.0F;
+            shape[at++] = (p.z - q.z) * 4.0F;
+            std::size_t mainOfParent = children[up].front();
+            for (const std::size_t sibling : children[up]) {
+                mainOfParent = below[sibling] > below[mainOfParent] ? sibling : mainOfParent;
+            }
+            shape[at++] = mainOfParent == bone ? 1.0F : 0.0F;
+            shape[at++] = static_cast<float>(children[up].size() - 1U) / 4.0F;
+            // Siblings as big as this one (the other leg, the other arm).
+            std::size_t twins = 0U;
+            for (const std::size_t sibling : children[up]) {
+                twins += sibling != bone && below[sibling] == below[bone] ? 1U : 0U;
+            }
+            shape[at++] = static_cast<float>(twins) / 2.0F;
+        } else {
+            at += 8U;
+        }
+        std::size_t toBranch = 0U;
+        for (std::int32_t above = parent; above >= 0 && children[static_cast<std::size_t>(above)].size() < 2U;
+             above = rig.bones[static_cast<std::size_t>(above)].parent) {
+            ++toBranch;
+        }
+        shape[at++] = static_cast<float>(toBranch) / 6.0F;
+        std::size_t deepest = bone;
+        std::size_t steps = 0U;
+        while (!children[deepest].empty() && steps < 32U) {
+            std::size_t next = children[deepest].front();
+            for (const std::size_t child : children[deepest]) {
+                next = below[child] > below[next] ? child : next;
+            }
+            deepest = next;
+            ++steps;
+        }
+        const Math::Vector3UVE end = (world[deepest].position - origin) * (1.0F / height);
+        shape[at++] = static_cast<float>(steps) / 8.0F;
+        shape[at++] = end.y;
+        shape[at++] = (end.x - p.x) * 2.0F;
+        shape[at++] = (end.y - p.y) * 2.0F;
+        shape[at++] = (end.z - p.z) * 2.0F;
+        shape[at++] = std::abs(end.x) * 2.0F;
+        shape[at++] = Math::LengthUVE(end - p) * 2.0F;
     }
     return rows;
 }
@@ -288,6 +476,20 @@ namespace {
         case 4U:   // upper_arm.L
             join("_", false);
             return sided ? joined + (side == 'L' ? ".L" : ".R") : joined;
+        case 7U:   // Bip01 L UpperArm
+            join(" ", true);
+            return sided ? std::string{"Bip01 "} + side + " " + joined : "Bip01 " + joined;
+        case 8U: {   // leftUpperArm
+            join("", true);
+            std::string out = sided ? (side == 'L' ? "left" : "right") + joined : joined;
+            if (!sided && !out.empty()) {
+                out.front() = static_cast<char>(std::tolower(static_cast<unsigned char>(out.front())));
+            }
+            return out;
+        }
+        case 9U:   // UpperArm_Left.001
+            join("", true);
+            return (sided ? joined + (side == 'L' ? "_Left" : "_Right") : joined) + (random.ChanceUVE(0.3F) ? ".001" : "");
         default:   // DEF-upperarm.L
             join("", false);
             return "DEF-" + (sided ? joined + (side == 'L' ? ".L" : ".R") : joined);
@@ -374,7 +576,11 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
             }
         }
         // The rig: kept bones under their nearest kept ancestor, in the reference's order.
-        const std::size_t style = random.BelowUVE(7U);
+        // One rig in five has names that say nothing: the shape alone must carry those.
+        const std::size_t style = random.ChanceUVE(0.2F) ? 5U : [&random] {
+            const std::size_t pick = random.BelowUVE(9U);
+            return pick >= 5U ? pick + 1U : pick;
+        }();
         const bool pad = random.ChanceUVE(0.3F);
         RigBrainSampleUVE sample;
         std::vector<std::int32_t> indexOf(bones, -1);
@@ -448,11 +654,24 @@ std::vector<RigBrainSampleUVE> MakeSyntheticRigsUVE(const HumanoidReferenceUVE& 
             sample.rig.bones.push_back(std::move(out));
             sample.referenceOfBone.push_back(-1);
         }
-        // World positions to locals (no rotations: names and shape are what the brain reads).
+        // Stood however its tool stands rigs (Y-up, Z-up, facing away, turned), and placed a little
+        // off the ideal, as real rigs are.
+        Math::QuaternionUVE stood{};
+        const float how = random.UnitUVE();
+        if (how < 0.2F) {
+            static_cast<void>(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, -1.5707963F, stood));
+        } else if (how < 0.35F) {
+            static_cast<void>(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, 3.1415927F, stood));
+        } else if (how < 0.5F) {
+            static_cast<void>(Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, random.RangeUVE(-3.1F, 3.1F), stood));
+        }
+        const float jitter = random.RangeUVE(0.0F, 0.012F) * units;
         std::vector<Math::Vector3UVE> worldPosition(sample.rig.bones.size());
         for (std::size_t bone = 0U; bone < sample.rig.bones.size(); ++bone) {
-            worldPosition[bone] = sample.rig.bones[bone].position;
+            const Math::Vector3UVE off{random.RangeUVE(-jitter, jitter), random.RangeUVE(-jitter, jitter), random.RangeUVE(-jitter, jitter)};
+            worldPosition[bone] = Math::RotateVectorUVE(stood, sample.rig.bones[bone].position + off);
         }
+        // World positions to locals (no rotations: names and shape are what the brain reads).
         for (std::size_t bone = 0U; bone < sample.rig.bones.size(); ++bone) {
             const std::int32_t parent = sample.rig.bones[bone].parent;
             sample.rig.bones[bone].position = parent < 0 ? worldPosition[bone] : worldPosition[bone] - worldPosition[static_cast<std::size_t>(parent)];
@@ -617,7 +836,9 @@ void RigBrainUVE::TrainUVE(const HumanoidReferenceUVE& reference, const std::vec
             const float scale = 1.0F / static_cast<float>(end - start);
             const float correction1 = 1.0F - std::pow(kBeta1UVE, static_cast<float>(step));
             const float correction2 = 1.0F - std::pow(kBeta2UVE, static_cast<float>(step));
-            const float rate = config.learningRate * std::sqrt(correction2) / correction1;
+            // The last third of the epochs at a third of the rate: it settles rather than wanders.
+            const float settle = epoch * 3U >= config.epochs * 2U ? 0.33F : 1.0F;
+            const float rate = config.learningRate * settle * std::sqrt(correction2) / correction1;
             for (std::size_t layer = 0U; layer < m_layers.size(); ++layer) {
                 LayerUVE& l = m_layers[layer];
                 MomentsUVE& m = moments[layer];
@@ -767,6 +988,15 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
         if (above >= 0 && !below(bone, match.joints[static_cast<std::size_t>(above)].bone)) {
             return false;
         }
+        // And nothing found in between: the rig's nearest found bone above it must be that same
+        // bone (a finger under the hand is not a twist of the upper arm above the hand).
+        std::int32_t rigAbove = rig.bones[static_cast<std::size_t>(bone)].parent;
+        while (rigAbove >= 0 && match.referenceOfBone[static_cast<std::size_t>(rigAbove)] < 0) {
+            rigAbove = rig.bones[static_cast<std::size_t>(rigAbove)].parent;
+        }
+        if (above >= 0 && rigAbove >= 0 && rigAbove != match.joints[static_cast<std::size_t>(above)].bone) {
+            return false;
+        }
         for (std::size_t other = 0U; other < reference.info.size(); ++other) {
             const std::int32_t at = match.joints[other].bone;
             if (at < 0 || !IsBelowUVE(reference.skeleton, static_cast<std::int32_t>(other), static_cast<std::int32_t>(ref))) {
@@ -793,6 +1023,56 @@ HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const
         match.joints[ref].status = JointStatusUVE::Good;
         match.joints[ref].reason.clear();
         found.emplace_back(ref, guess.confidence);
+    }
+    // Along the chains: a found bone with one body bone of the humanoid's still to find below it,
+    // and one bone of the rig's not yet given below it, is that bone (the forearm after the upper
+    // arm, the hand after the forearm) - the surest guess where a name and the network both fail.
+    constexpr float kChainConfidenceUVE = 0.6F;
+    std::vector<std::vector<std::size_t>> rigChildren(rig.bones.size());
+    for (std::size_t bone = 0U; bone < rig.bones.size(); ++bone) {
+        if (const std::int32_t parent = rig.bones[bone].parent; parent >= 0) {
+            rigChildren[static_cast<std::size_t>(parent)].push_back(bone);
+        }
+    }
+    for (bool grew = true; grew;) {
+        grew = false;
+        for (std::size_t ref = 0U; ref < reference.info.size(); ++ref) {
+            const std::int32_t at = match.joints[ref].bone;
+            if (at < 0) {
+                continue;
+            }
+            std::vector<std::size_t> wanted;
+            for (std::size_t child = 0U; child < reference.info.size(); ++child) {
+                const HumanoidBoneInfoUVE& info = reference.info[child];
+                if (reference.skeleton.bones[child].parent == static_cast<std::int32_t>(ref) && !info.optional &&
+                    (info.kind == HumanoidBoneKindUVE::Body || info.kind == HumanoidBoneKindUVE::Finger) && match.joints[child].bone < 0) {
+                    wanted.push_back(child);
+                }
+            }
+            std::vector<std::size_t> free;
+            for (const std::size_t child : rigChildren[static_cast<std::size_t>(at)]) {
+                if (match.referenceOfBone[child] < 0) {
+                    free.push_back(child);
+                }
+            }
+            if (wanted.size() != 1U || free.size() != 1U) {
+                continue;
+            }
+            // A child the humanoid continues from must have bones of its own below it, and an end
+            // bone answers an end bone.
+            const bool refHasMore = std::ranges::any_of(reference.skeleton.bones, [&](const RetargetBoneUVE& bone) {
+                return bone.parent == static_cast<std::int32_t>(wanted.front());
+            });
+            if (refHasMore && rigChildren[free.front()].empty()) {
+                continue;
+            }
+            match.referenceOfBone[free.front()] = static_cast<std::int32_t>(wanted.front());
+            match.joints[wanted.front()].bone = static_cast<std::int32_t>(free.front());
+            match.joints[wanted.front()].status = JointStatusUVE::Good;
+            match.joints[wanted.front()].reason.clear();
+            found.emplace_back(wanted.front(), kChainConfidenceUVE);
+            grew = true;
+        }
     }
     if (found.empty()) {
         return match;

@@ -28,9 +28,9 @@ namespace UVE::Retarget {
 struct RigBrainConfigUVE final {
     std::uint32_t seed = 0x5EED1234U;
     /// Generated rigs to learn from (each about 60-160 bones).
-    std::size_t rigs = 160U;
-    std::size_t epochs = 6U;
-    std::size_t hidden = 64U;
+    std::size_t rigs = 260U;
+    std::size_t epochs = 10U;
+    std::size_t hidden = 128U;
     float learningRate = 0.003F;
 };
 
@@ -51,8 +51,9 @@ class RigBrainUVE final {
 public:
     /// Hashed letter triples and words of the bone's name.
     static constexpr std::size_t kNameFeaturesUVE = 128U;
-    /// Its side, where it sits, its length and direction, its place in the hierarchy.
-    static constexpr std::size_t kShapeFeaturesUVE = 24U;
+    /// Its side, where it sits, its length and direction, its place in the hierarchy, and the same
+    /// of its parent, its siblings and the chain it is on.
+    static constexpr std::size_t kShapeFeaturesUVE = 40U;
     static constexpr std::size_t kFeaturesUVE = kNameFeaturesUVE + kShapeFeaturesUVE;
 
     [[nodiscard]] bool IsTrainedUVE() const noexcept { return !m_layers.empty(); }
@@ -94,7 +95,8 @@ private:
 
 /// MatchHumanoidUVE, with the brain finding the bones names could not: a bone the names left
 /// unpaired is given the humanoid bone the brain is surest of (at least `minimumConfidence`, and
-/// only one the names did not find). Everything is then checked as usual; a pair the brain made
+/// only one the names did not find, where the hierarchy agrees). Then the chains are followed: a
+/// found bone with one body bone left to find below it and one rig bone left below it pairs them. Everything is then checked as usual; a pair the brain made
 /// with less than 85% confidence is a Warning, so it is looked at.
 [[nodiscard]] HumanoidMatchUVE MatchHumanoidWithBrainUVE(const RetargetSkeletonUVE& rig, const HumanoidReferenceUVE& reference,
                                                         const RigBrainUVE& brain, float minimumConfidence = 0.7F);
