@@ -190,6 +190,50 @@ std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() cons
         spec.make = [&type, blueprint] { return MakeNodeUVE(type, blueprint, {}); };
         library.push_back(std::move(spec));
     }
+    if (widgetsProvider) {
+        // Widgets, one sub-category each: its events and calls, already pointed at it by name.
+        using K = WidgetKindUVE;
+        const auto keysFor = [](const K kind) -> std::vector<const char*> {
+            switch (kind) {
+                case K::Button: return {"ui_on_clicked", "ui_set_visibility", "ui_set_color"};
+                case K::Text: return {"ui_set_text", "ui_get_text", "ui_set_color", "ui_set_visibility"};
+                case K::Image:
+                case K::Border: return {"ui_set_color", "ui_set_visibility"};
+                case K::ProgressBar: return {"ui_set_percent", "ui_get_value", "ui_set_visibility"};
+                case K::Slider: return {"ui_on_changed", "ui_get_value", "ui_set_percent", "ui_set_visibility"};
+                case K::CheckBox: return {"ui_on_changed", "ui_is_checked", "ui_set_checked", "ui_set_visibility"};
+                case K::TextBox: return {"ui_on_committed", "ui_get_text", "ui_set_text", "ui_set_visibility"};
+                case K::ComboBox:
+                    return {"ui_on_changed", "ui_get_selected_option", "ui_get_selected_index", "ui_set_selected_index", "ui_add_option",
+                            "ui_set_visibility"};
+                default: return {"ui_set_visibility"};
+            }
+        };
+        for (const auto& [name, kind] : widgetsProvider()) {
+            for (const char* key : keysFor(kind)) {
+                const Asset::BlueprintNodeTypeUVE* const type = Asset::FindBlueprintNodeTypeUVE(key);
+                if (type == nullptr) {
+                    continue;
+                }
+                prism::BlueprintNodeSpec spec;
+                spec.category = std::string("Widgets|") + name;
+                spec.name = type->title + " (" + name + ")";
+                spec.keywords = name + " " + WidgetKindLabelUVE(kind) + " " + type->keywords;
+                spec.make = [type, blueprint, name = name] {
+                    prism::BlueprintNode node = MakeNodeUVE(*type, blueprint, {});
+                    // The widget pin is the first that is not an exec pin.
+                    for (prism::BlueprintPin& pin : node.inputs) {
+                        if (pin.type != PT::Exec) {
+                            pin.defaultValue = name;
+                            break;
+                        }
+                    }
+                    return node;
+                };
+                library.push_back(std::move(spec));
+            }
+        }
+    }
     if (m_graph) {
         const Asset::BlueprintNodeTypeUVE* const get = Asset::FindBlueprintNodeTypeUVE("get_variable");
         const Asset::BlueprintNodeTypeUVE* const set = Asset::FindBlueprintNodeTypeUVE("set_variable");

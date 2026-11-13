@@ -115,6 +115,7 @@
 #include "canvas_component.h"
 #include "ui_button_component.h"
 #include "ui_checkbox_component.h"
+#include "ui_dropdown_component.h"
 #include "ui_slider_component.h"
 #include "ui_text_input_component.h"
 #include "name_component.h"
@@ -1608,6 +1609,14 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
                 *m_entityManager, m_inputSystem.get(), entity, m_audioSourceSystem.get(), m_audioSystem.get(),
                 [this](const Scene::EntityUVE other) { return FindUVScriptInstanceUVE(other); });
             host->SetWidgetFactoryUVE([this](const std::string& path) { return CreateWidgetUVE(path); });
+            host->SetCursorHandlerUVE([this](const bool show) {
+                // The editor frees or captures its own view's pointer; a game shows or hides the window's.
+                if (m_mouseCursorHandlerUVE) {
+                    m_mouseCursorHandlerUVE(show);
+                } else if (m_windowManager != nullptr) {
+                    m_windowManager->SetCursorVisibleUVE(show);
+                }
+            });
             const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(source, *host);
             if (!compiled.IsSuccessUVE()) {
                 for (const UVScript::DiagnosticUVE& diagnostic : compiled.diagnostics) {
@@ -1744,6 +1753,11 @@ void EngineCoreUVE::RaiseWidgetScriptEventsUVE() {
     });
     m_entityManager->ForEachUVE<Scene::UICheckboxComponentUVE>([&used](const Scene::EntityUVE entity, const Scene::UICheckboxComponentUVE& box) {
         if (box.wasToggledThisFrame) {
+            used.emplace_back(entity, "ui_changed");
+        }
+    });
+    m_entityManager->ForEachUVE<Scene::UIDropdownComponentUVE>([&used](const Scene::EntityUVE entity, const Scene::UIDropdownComponentUVE& box) {
+        if (box.wasSelectionChangedThisFrame) {
             used.emplace_back(entity, "ui_changed");
         }
     });

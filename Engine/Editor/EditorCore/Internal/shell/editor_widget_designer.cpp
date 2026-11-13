@@ -174,6 +174,56 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 }
                 break;
             }
+            case KindUVE::ComboBox: {
+                c.fillRoundRect(v, 3.0F * s, prism::Color(34, 34, 40));
+                c.strokeRoundRect(v, 3.0F * s, prism::Color(150, 120, 230));
+                const prism::Font& font = FontAtUVE(item.fontSize * s, false);
+                c.textIn(font, prism::Rect{v.x + 6.0F * s, v.y, v.w - v.h - 8.0F * s, v.h}, item.text, item.color, prism::HAlign::Left, true);
+                const float a = std::max(3.0F, v.h * 0.18F);
+                const prism::Vec2 mid{v.right() - v.h * 0.5F, v.y + v.h * 0.5F};
+                const prism::Vec2 tri[] = {{mid.x - a, mid.y - a * 0.5F}, {mid.x + a, mid.y - a * 0.5F}, {mid.x, mid.y + a * 0.6F}};
+                c.fillPolygon(tri, prism::Color(220, 210, 245));
+                break;
+            }
+            case KindUVE::VerticalBox:
+            case KindUVE::HorizontalBox:
+            case KindUVE::WrapBox:
+            case KindUVE::ScrollBox: {
+                // A panel lays its children out; it draws nothing in the game, so the Designer marks
+                // where it is with a dashed edge and its name.
+                const prism::Color edge = item.kind == KindUVE::ScrollBox ? prism::Color(60, 200, 190, 200) : prism::Color(245, 160, 60, 200);
+                const float dash = 6.0F;
+                for (float x = v.x; x < v.right(); x += dash * 2.0F) {
+                    c.hline(x, std::min(x + dash, v.right()), std::floor(v.y), edge);
+                    c.hline(x, std::min(x + dash, v.right()), std::floor(v.bottom()) - 1.0F, edge);
+                }
+                for (float y = v.y; y < v.bottom(); y += dash * 2.0F) {
+                    c.vline(std::floor(v.x), y, std::min(y + dash, v.bottom()), edge);
+                    c.vline(std::floor(v.right()) - 1.0F, y, std::min(y + dash, v.bottom()), edge);
+                }
+                if (item.kind == KindUVE::ScrollBox) {
+                    const prism::Rect track{v.right() - 8.0F, v.y + 3.0F, 5.0F, v.h - 6.0F};
+                    c.fillRoundRect(track, 2.0F, prism::Color(30, 32, 38));
+                    c.fillRoundRect(prism::Rect{track.x, track.y, track.w, track.h * 0.35F}, 2.0F, prism::Color(60, 200, 190));
+                }
+                if (const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(item.kind, 14); icon) {
+                    c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, prism::Rect{v.x + 3.0F, v.y + 3.0F, 14.0F, 14.0F});
+                }
+                c.textIn(*t.small, prism::Rect{v.x + 20.0F, v.y + 2.0F, std::max(0.0F, v.w - 24.0F), 16.0F}, item.name, edge,
+                         prism::HAlign::Left, true);
+                break;
+            }
+            case KindUVE::Border:
+                c.fillRoundRect(v, 6.0F * s, item.color);
+                c.strokeRoundRect(v, 6.0F * s, MixUVE(item.color, prism::Color(255, 255, 255), 0.3F), std::max(1, static_cast<int>(3.0F * s)));
+                break;
+            case KindUVE::Spacer:
+                if (item.entity == m_hover || item.entity == m_selected) {
+                    c.fillRect(v, prism::Color(200, 200, 210, 30));
+                }
+                break;
+            case KindUVE::Canvas:
+                break;
             case KindUVE::TextBox: {
                 c.fillRoundRect(v, 3.0F * s, prism::Color(22, 23, 26));
                 c.strokeRoundRect(v, 3.0F * s, prism::Color(96, 102, 112));

@@ -47,6 +47,7 @@ public:
     void SetWindowModeUVE(Platform::WindowModeUVE mode) override;
     [[nodiscard]] Platform::WindowModeUVE GetWindowModeUVE() const noexcept override;
     void SetWindowTitleUVE(std::string_view title) override;
+    void SetCursorVisibleUVE(bool visible) override;
     [[nodiscard]] bool IsFocusedUVE() const noexcept override;
     void GetContentScaleUVE(float& outX, float& outY) const noexcept override;
     void SetDisplaySleepAllowedUVE(bool allowed) noexcept override;

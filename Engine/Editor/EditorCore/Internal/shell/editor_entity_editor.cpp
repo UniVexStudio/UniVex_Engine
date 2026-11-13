@@ -32,6 +32,13 @@
 #include "ui_text_input_component.h"
 #include "visibility_component.h"
 #include "widget_blueprint_asset.h"
+#include "editor_widget_icons.h"
+#include "ui_dropdown_component.h"
+#include "ui_layout.h"
+#include "ui_font_atlas.h"
+#include "ui_layout_container_component.h"
+#include "ui_scroll_container_component.h"
+#include "ui_scrollbar_component.h"
 #include <typeindex>
 #include <type_traits>
 #include "editor_add_objects.h"
@@ -208,6 +215,21 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     }
     // Compile reads the Blueprint being edited, saved or not.
     m_editor.m_openBlueprintProviderUVE = [this](const std::string& path) { return m_blueprintPanel.UnsavedForUVE(path); };
+    if (m_widgetMode) {
+        m_blueprintPanel.widgetsProvider = [this] {
+            std::vector<std::pair<std::string, WidgetKindUVE>> widgets;
+            const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+            for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
+                const std::optional<WidgetKindUVE> kind = ClassifyWidgetUVE(em, object);
+                if (kind.has_value() && *kind != WidgetKindUVE::Canvas && em.HasComponentUVE<Scene::NameComponentUVE>(object)) {
+                    widgets.emplace_back(em.GetComponentUVE<Scene::NameComponentUVE>(object).name, *kind);
+                }
+            }
+            return widgets;
+        };
+    } else {
+        m_blueprintPanel.widgetsProvider = nullptr;
+    }
 
     // Left: Components over Details (a split, like the level's Outliner and Details stacked);
     // centre: the view over the dock pages; the dock bar runs along the bottom, as in the level.
@@ -1076,7 +1098,12 @@ void EditorEntityEditorUVE::RefreshDesignerUVE() {
     if (!m_designer) {
         return;
     }
-    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    if (m_dragWidget == Scene::kInvalidEntityUVE) {
+        // Boxes place their children as the game will, so the Designer shows what the player sees.
+        static const UI::UIFontAtlasUVE atlas;
+        UI::LayoutUIContainersUVE(em, atlas);
+    }
     std::vector<WidgetDesignerViewUVE::ItemUVE> items;
     std::uint64_t signature = 1469598103934665603ULL;
     const auto toColor = [](const Math::Vector3UVE& c, const float alpha = 1.0F) {
@@ -1096,47 +1123,93 @@ void EditorEntityEditorUVE::RefreshDesignerUVE() {
         item.name = em.HasComponentUVE<Scene::NameComponentUVE>(entity) ? em.GetComponentUVE<Scene::NameComponentUVE>(entity).name : std::string{};
         item.visible = !em.HasComponentUVE<Scene::VisibilityComponentUVE>(entity) || em.GetComponentUVE<Scene::VisibilityComponentUVE>(entity).visible;
         const auto fromRect = [](const Math::RectUVE& r) { return prism::Rect{r.position.x, r.position.y, r.size.x, r.size.y}; };
-        if (em.HasComponentUVE<Scene::UIButtonComponentUVE>(entity)) {
-            const auto& b = em.GetComponentUVE<Scene::UIButtonComponentUVE>(entity);
-            item.kind = WidgetDesignerViewUVE::KindUVE::Button;
-            item.rect = fromRect(b.rect);
-            item.color = toColor(b.normalColor);
-        } else if (em.HasComponentUVE<Scene::UITextComponentUVE>(entity)) {
-            const auto& t = em.GetComponentUVE<Scene::UITextComponentUVE>(entity);
-            item.kind = WidgetDesignerViewUVE::KindUVE::Text;
-            item.text = t.text;
-            item.fontSize = t.fontSize;
-            item.color = toColor(t.color, t.alpha);
-            item.rect = prism::Rect{t.positionPixels.x, t.positionPixels.y,
-                                    std::max(8.0F, static_cast<float>(t.text.size()) * t.fontSize * 0.55F), t.fontSize * 1.25F};
-        } else if (em.HasComponentUVE<Scene::UIImageComponentUVE>(entity)) {
-            const auto& i = em.GetComponentUVE<Scene::UIImageComponentUVE>(entity);
-            item.kind = WidgetDesignerViewUVE::KindUVE::Image;
-            item.rect = fromRect(i.rect);
-            item.color = toColor(i.tintColor, i.alpha);
-        } else if (em.HasComponentUVE<Scene::UIProgressBarComponentUVE>(entity)) {
-            const auto& b = em.GetComponentUVE<Scene::UIProgressBarComponentUVE>(entity);
-            item.kind = WidgetDesignerViewUVE::KindUVE::ProgressBar;
-            item.rect = fromRect(b.rect);
-            item.value = fraction(b.value, b.minValue, b.maxValue);
-        } else if (em.HasComponentUVE<Scene::UISliderComponentUVE>(entity)) {
-            const auto& sl = em.GetComponentUVE<Scene::UISliderComponentUVE>(entity);
-            item.kind = WidgetDesignerViewUVE::KindUVE::Slider;
-            item.rect = fromRect(sl.rect);
-            item.value = fraction(sl.value, sl.minValue, sl.maxValue);
-        } else if (em.HasComponentUVE<Scene::UICheckboxComponentUVE>(entity)) {
-            const auto& cb = em.GetComponentUVE<Scene::UICheckboxComponentUVE>(entity);
-            item.kind = WidgetDesignerViewUVE::KindUVE::CheckBox;
-            item.rect = fromRect(cb.rect);
-            item.checked = cb.checked;
-        } else if (em.HasComponentUVE<Scene::UITextInputComponentUVE>(entity)) {
-            const auto& ti = em.GetComponentUVE<Scene::UITextInputComponentUVE>(entity);
-            item.kind = WidgetDesignerViewUVE::KindUVE::TextBox;
-            item.rect = fromRect(ti.rect);
-            item.text = ti.text.empty() ? ti.placeholder : ti.text;
-            item.fontSize = ti.fontSize;
-        } else {
+        const std::optional<WidgetKindUVE> kind = ClassifyWidgetUVE(em, entity);
+        if (!kind.has_value() || *kind == WidgetKindUVE::Canvas) {
             continue;
+        }
+        item.kind = *kind;
+        switch (*kind) {
+            case WidgetKindUVE::Button: {
+                const auto& b = em.GetComponentUVE<Scene::UIButtonComponentUVE>(entity);
+                item.rect = fromRect(b.rect);
+                item.color = toColor(b.normalColor);
+                break;
+            }
+            case WidgetKindUVE::Text: {
+                const auto& t = em.GetComponentUVE<Scene::UITextComponentUVE>(entity);
+                item.text = t.text;
+                item.fontSize = t.fontSize;
+                item.color = toColor(t.color, t.alpha);
+                item.rect = prism::Rect{t.positionPixels.x, t.positionPixels.y,
+                                        std::max(8.0F, static_cast<float>(t.text.size()) * t.fontSize * 0.55F), t.fontSize * 1.25F};
+                break;
+            }
+            case WidgetKindUVE::Image:
+            case WidgetKindUVE::Border:
+            case WidgetKindUVE::Spacer: {
+                const auto& i = em.GetComponentUVE<Scene::UIImageComponentUVE>(entity);
+                item.rect = fromRect(i.rect);
+                item.color = toColor(i.tintColor, *kind == WidgetKindUVE::Spacer ? 1.0F : i.alpha);
+                break;
+            }
+            case WidgetKindUVE::ProgressBar: {
+                const auto& b = em.GetComponentUVE<Scene::UIProgressBarComponentUVE>(entity);
+                item.rect = fromRect(b.rect);
+                item.value = fraction(b.value, b.minValue, b.maxValue);
+                break;
+            }
+            case WidgetKindUVE::Slider: {
+                const auto& sl = em.GetComponentUVE<Scene::UISliderComponentUVE>(entity);
+                item.rect = fromRect(sl.rect);
+                item.value = fraction(sl.value, sl.minValue, sl.maxValue);
+                break;
+            }
+            case WidgetKindUVE::CheckBox: {
+                const auto& cb = em.GetComponentUVE<Scene::UICheckboxComponentUVE>(entity);
+                item.rect = fromRect(cb.rect);
+                item.checked = cb.checked;
+                break;
+            }
+            case WidgetKindUVE::TextBox: {
+                const auto& ti = em.GetComponentUVE<Scene::UITextInputComponentUVE>(entity);
+                item.rect = fromRect(ti.rect);
+                item.text = ti.text.empty() ? ti.placeholder : ti.text;
+                item.fontSize = ti.fontSize;
+                break;
+            }
+            case WidgetKindUVE::ComboBox: {
+                const auto& box = em.GetComponentUVE<Scene::UIDropdownComponentUVE>(entity);
+                item.rect = fromRect(box.rect);
+                item.fontSize = box.fontSize;
+                item.color = toColor(box.textColor);
+                // The chosen option, as the game shows it closed.
+                std::vector<std::string> options;
+                for (std::size_t begin = 0U; begin <= box.options.size();) {
+                    const std::size_t end = box.options.find('\n', begin);
+                    const std::string line = box.options.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+                    if (!line.empty()) {
+                        options.push_back(line);
+                    }
+                    if (end == std::string::npos) {
+                        break;
+                    }
+                    begin = end + 1U;
+                }
+                item.text = box.selectedIndex >= 0 && static_cast<std::size_t>(box.selectedIndex) < options.size()
+                                ? options[static_cast<std::size_t>(box.selectedIndex)]
+                                : box.placeholder;
+                break;
+            }
+            case WidgetKindUVE::VerticalBox:
+            case WidgetKindUVE::HorizontalBox:
+            case WidgetKindUVE::WrapBox:
+                item.rect = fromRect(em.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(entity).rect);
+                break;
+            case WidgetKindUVE::ScrollBox:
+                item.rect = fromRect(em.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(entity).rect);
+                break;
+            case WidgetKindUVE::Canvas:
+                break;
         }
         HashUVE(signature, (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index);
         HashUVE(signature, item.text + "|" + item.name);
@@ -1180,6 +1253,15 @@ namespace {
     if (em.HasComponentUVE<Scene::UITextInputComponentUVE>(entity)) {
         return &em.GetComponentUVE<Scene::UITextInputComponentUVE>(entity).rect.position;
     }
+    if (em.HasComponentUVE<Scene::UIDropdownComponentUVE>(entity)) {
+        return &em.GetComponentUVE<Scene::UIDropdownComponentUVE>(entity).rect.position;
+    }
+    if (em.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(entity)) {
+        return &em.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(entity).rect.position;
+    }
+    if (em.HasComponentUVE<Scene::UIScrollContainerComponentUVE>(entity)) {
+        return &em.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(entity).rect.position;
+    }
     return nullptr;
 }
 
@@ -1203,7 +1285,16 @@ namespace {
     if (em.HasComponentUVE<Scene::UICheckboxComponentUVE>(entity)) {
         return std::type_index(typeid(Scene::UICheckboxComponentUVE));
     }
-    return std::type_index(typeid(Scene::UITextInputComponentUVE));
+    if (em.HasComponentUVE<Scene::UITextInputComponentUVE>(entity)) {
+        return std::type_index(typeid(Scene::UITextInputComponentUVE));
+    }
+    if (em.HasComponentUVE<Scene::UIDropdownComponentUVE>(entity)) {
+        return std::type_index(typeid(Scene::UIDropdownComponentUVE));
+    }
+    if (em.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(entity)) {
+        return std::type_index(typeid(Scene::UILayoutContainerComponentUVE));
+    }
+    return std::type_index(typeid(Scene::UIScrollContainerComponentUVE));
 }
 
 template <typename Component>
@@ -1257,7 +1348,10 @@ void EditorEntityEditorUVE::MoveWidgetUVE(const Scene::EntityUVE entity, const f
                               CommitWidgetComponentUVE<Scene::UIProgressBarComponentUVE>(em, moved, type, from, set) ||
                               CommitWidgetComponentUVE<Scene::UISliderComponentUVE>(em, moved, type, from, set) ||
                               CommitWidgetComponentUVE<Scene::UICheckboxComponentUVE>(em, moved, type, from, set) ||
-                              CommitWidgetComponentUVE<Scene::UITextInputComponentUVE>(em, moved, type, from, set));
+                              CommitWidgetComponentUVE<Scene::UITextInputComponentUVE>(em, moved, type, from, set) ||
+                              CommitWidgetComponentUVE<Scene::UIDropdownComponentUVE>(em, moved, type, from, set) ||
+                              CommitWidgetComponentUVE<Scene::UILayoutContainerComponentUVE>(em, moved, type, from, set) ||
+                              CommitWidgetComponentUVE<Scene::UIScrollContainerComponentUVE>(em, moved, type, from, set));
         }
         m_editor.SelectEntityUVE(entity);
         m_dragWidget = Scene::kInvalidEntityUVE;
@@ -1287,79 +1381,156 @@ void EditorEntityEditorUVE::MoveWidgetUVE(const Scene::EntityUVE entity, const f
         if (Math::Vector2UVE* position = em.IsAliveUVE(moved) ? WidgetPositionUVE(em, moved) : nullptr) {
             position->x += dx;
             position->y += dy;
+            // A Scroll Box's scrollbar rides along its edge.
+            if (em.HasComponentUVE<Scene::UIScrollbarComponentUVE>(moved)) {
+                auto& bar = em.GetComponentUVE<Scene::UIScrollbarComponentUVE>(moved).rect.position;
+                bar.x += dx;
+                bar.y += dy;
+            }
         }
     }
 }
 
 void EditorEntityEditorUVE::ShowWidgetPaletteUVE() {
-    // The Palette: what a widget is built from, placed on its Canvas a little apart each time.
-    const auto place = [this](const std::string& name, const SceneObjectKindUVE kind, std::function<void(Scene::IEntityManagerUVE&, Scene::EntityUVE)> shape) {
-        const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
-        const Scene::EntityUVE made = m_editor.CreateDocumentSceneObjectUVE(kind, root);
+    // The Palette: what a widget is built from, each with its own icon. A new widget goes into the
+    // selected panel (a Vertical Box, a Scroll Box ...), else onto the Canvas, a little apart each time.
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    Scene::EntityUVE parent = m_editor.GetEntityEditorRootUVE();
+    if (const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE(); em.IsAliveUVE(selected)) {
+        if (const std::optional<WidgetKindUVE> kind = ClassifyWidgetUVE(em, selected);
+            kind == WidgetKindUVE::VerticalBox || kind == WidgetKindUVE::HorizontalBox || kind == WidgetKindUVE::WrapBox ||
+            kind == WidgetKindUVE::ScrollBox) {
+            parent = selected;
+        }
+    }
+    const float offset = 40.0F * static_cast<float>(m_editor.CollectEntityEditorObjectsUVE().size() % 12U);
+    const Math::Vector2UVE at{120.0F + offset, 120.0F + offset};
+    using Shape = std::function<void(Scene::IEntityManagerUVE&, Scene::EntityUVE)>;
+    const auto place = [this, parent](const std::string& name, const SceneObjectKindUVE kind, const Shape& shape) {
+        const Scene::EntityUVE made = m_editor.CreateDocumentSceneObjectUVE(kind, parent);
         if (made == Scene::kInvalidEntityUVE) {
             return;
         }
-        Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-        if (em.HasComponentUVE<Scene::NameComponentUVE>(made)) {
-            em.GetComponentUVE<Scene::NameComponentUVE>(made).name = name;
+        Scene::IEntityManagerUVE& entities = m_editor.m_services->GetEntityManagerUVE();
+        if (entities.HasComponentUVE<Scene::NameComponentUVE>(made)) {
+            entities.GetComponentUVE<Scene::NameComponentUVE>(made).name = name;
         }
         if (shape) {
-            shape(em, made);
+            shape(entities, made);
         }
         m_editor.SelectEntityUVE(made);
         m_designerSignature = 0;
     };
-    const float offset = 40.0F * static_cast<float>(m_editor.CollectEntityEditorObjectsUVE().size() % 12U);
-    const Math::Vector2UVE at{120.0F + offset, 120.0F + offset};
-    const auto swapImageFor = [](auto component) {
-        return [component](Scene::IEntityManagerUVE& em, const Scene::EntityUVE entity) mutable {
-            if (em.HasComponentUVE<Scene::UIImageComponentUVE>(entity)) {
-                em.RemoveComponentUVE<Scene::UIImageComponentUVE>(entity);
+    // A widget that is not a Text, Button or Image starts as an Image and takes its own component.
+    const auto instead = [](auto component) -> Shape {
+        return [component](Scene::IEntityManagerUVE& entities, const Scene::EntityUVE entity) {
+            if (entities.HasComponentUVE<Scene::UIImageComponentUVE>(entity)) {
+                entities.RemoveComponentUVE<Scene::UIImageComponentUVE>(entity);
             }
-            em.AddComponentUVE<decltype(component)>(entity, component);
+            entities.AddComponentUVE<decltype(component)>(entity, component);
+        };
+    };
+    const auto image = [](Scene::UIImageComponentUVE component) -> Shape {
+        return [component](Scene::IEntityManagerUVE& entities, const Scene::EntityUVE entity) {
+            if (entities.HasComponentUVE<Scene::UIImageComponentUVE>(entity)) {
+                entities.GetComponentUVE<Scene::UIImageComponentUVE>(entity) = component;
+            }
         };
     };
     std::vector<prism::MenuItem> items;
+    const auto entry = [&items, place](const WidgetKindUVE kind, const std::string& name, const SceneObjectKindUVE objectKind, Shape shape) {
+        prism::MenuItem item = prism::MenuItem::Item(WidgetKindLabelUVE(kind), [place, name, objectKind, shape] { place(name, objectKind, shape); });
+        if (const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(kind, 16); icon) {
+            item.withImage(icon.pixels, icon.size);
+        }
+        items.push_back(std::move(item));
+    };
+
     items.push_back(prism::MenuItem::Header("COMMON"));
-    items.push_back(prism::MenuItem::Item("Text", [place, at] {
-        place("Text", SceneObjectKindUVE::UIText, [at](Scene::IEntityManagerUVE& em, const Scene::EntityUVE e) {
-            if (em.HasComponentUVE<Scene::UITextComponentUVE>(e)) {
-                auto& text = em.GetComponentUVE<Scene::UITextComponentUVE>(e);
-                text.text = "Text Block";
-                text.positionPixels = at;
-                text.fontSize = 24.0F;
-            }
-        });
-    }, "", prism::Icon::NodeText));
-    items.push_back(prism::MenuItem::Item("Button", [place, at] {
-        place("Button", SceneObjectKindUVE::UIButton, [at](Scene::IEntityManagerUVE& em, const Scene::EntityUVE e) {
-            if (em.HasComponentUVE<Scene::UIButtonComponentUVE>(e)) {
-                em.GetComponentUVE<Scene::UIButtonComponentUVE>(e).rect = Math::RectUVE{at, Math::Vector2UVE{200.0F, 52.0F}};
-            }
-        });
-    }, "", prism::Icon::Play));
-    items.push_back(prism::MenuItem::Item("Image", [place, at] {
-        place("Image", SceneObjectKindUVE::UIImage, [at](Scene::IEntityManagerUVE& em, const Scene::EntityUVE e) {
-            if (em.HasComponentUVE<Scene::UIImageComponentUVE>(e)) {
-                em.GetComponentUVE<Scene::UIImageComponentUVE>(e).rect = Math::RectUVE{at, Math::Vector2UVE{128.0F, 128.0F}};
-            }
-        });
-    }, "", prism::Icon::NodeTexture));
-    Scene::UIProgressBarComponentUVE bar;
-    bar.rect = Math::RectUVE{at, Math::Vector2UVE{320.0F, 24.0F}};
-    bar.value = 0.6F;
-    items.push_back(prism::MenuItem::Item("Progress Bar", [place, f = swapImageFor(bar)] { place("ProgressBar", SceneObjectKindUVE::UIImage, f); }));
+    entry(WidgetKindUVE::Text, "Text", SceneObjectKindUVE::UIText, [at](Scene::IEntityManagerUVE& entities, const Scene::EntityUVE e) {
+        if (entities.HasComponentUVE<Scene::UITextComponentUVE>(e)) {
+            auto& text = entities.GetComponentUVE<Scene::UITextComponentUVE>(e);
+            text.text = "Text Block";
+            text.positionPixels = at;
+            text.fontSize = 24.0F;
+        }
+    });
+    entry(WidgetKindUVE::Button, "Button", SceneObjectKindUVE::UIButton, [at](Scene::IEntityManagerUVE& entities, const Scene::EntityUVE e) {
+        if (entities.HasComponentUVE<Scene::UIButtonComponentUVE>(e)) {
+            auto& button = entities.GetComponentUVE<Scene::UIButtonComponentUVE>(e);
+            button.rect = Math::RectUVE{at, Math::Vector2UVE{200.0F, 52.0F}};
+            button.normalColor = Math::Vector3UVE{0.16F, 0.42F, 0.86F};
+            button.hoverColor = Math::Vector3UVE{0.24F, 0.52F, 0.95F};
+            button.pressedColor = Math::Vector3UVE{0.10F, 0.30F, 0.66F};
+        }
+    });
+    Scene::UIImageComponentUVE picture;
+    picture.rect = Math::RectUVE{at, Math::Vector2UVE{128.0F, 128.0F}};
+    entry(WidgetKindUVE::Image, "Image", SceneObjectKindUVE::UIImage, image(picture));
+    Scene::UIImageComponentUVE border;
+    border.rect = Math::RectUVE{at, Math::Vector2UVE{320.0F, 200.0F}};
+    border.tintColor = Math::Vector3UVE{0.10F, 0.11F, 0.14F};
+    border.alpha = 0.85F;
+    border.nineSliceEnabled = true;
+    entry(WidgetKindUVE::Border, "Border", SceneObjectKindUVE::UIImage, image(border));
+    Scene::UIImageComponentUVE spacer;
+    spacer.rect = Math::RectUVE{at, Math::Vector2UVE{40.0F, 40.0F}};
+    spacer.alpha = 0.0F;
+    entry(WidgetKindUVE::Spacer, "Spacer", SceneObjectKindUVE::UIImage, image(spacer));
+
+    items.push_back(prism::MenuItem::Header("INPUT"));
+    Scene::UICheckboxComponentUVE check;
+    check.rect = Math::RectUVE{at, Math::Vector2UVE{28.0F, 28.0F}};
+    entry(WidgetKindUVE::CheckBox, "CheckBox", SceneObjectKindUVE::UIImage, instead(check));
     Scene::UISliderComponentUVE slider;
     slider.rect = Math::RectUVE{at, Math::Vector2UVE{260.0F, 24.0F}};
     slider.value = 0.5F;
-    items.push_back(prism::MenuItem::Item("Slider", [place, f = swapImageFor(slider)] { place("Slider", SceneObjectKindUVE::UIImage, f); }));
-    Scene::UICheckboxComponentUVE check;
-    check.rect = Math::RectUVE{at, Math::Vector2UVE{28.0F, 28.0F}};
-    items.push_back(prism::MenuItem::Item("Check Box", [place, f = swapImageFor(check)] { place("CheckBox", SceneObjectKindUVE::UIImage, f); }));
+    entry(WidgetKindUVE::Slider, "Slider", SceneObjectKindUVE::UIImage, instead(slider));
     Scene::UITextInputComponentUVE input;
     input.rect = Math::RectUVE{at, Math::Vector2UVE{300.0F, 36.0F}};
     input.placeholder = "Type here...";
-    items.push_back(prism::MenuItem::Item("Text Box", [place, f = swapImageFor(input)] { place("TextBox", SceneObjectKindUVE::UIImage, f); }));
+    entry(WidgetKindUVE::TextBox, "TextBox", SceneObjectKindUVE::UIImage, instead(input));
+    Scene::UIDropdownComponentUVE combo;
+    combo.rect = Math::RectUVE{at, Math::Vector2UVE{220.0F, 32.0F}};
+    combo.options = "Option 1\nOption 2\nOption 3";
+    combo.selectedIndex = 0;
+    entry(WidgetKindUVE::ComboBox, "ComboBox", SceneObjectKindUVE::UIImage, instead(combo));
+
+    items.push_back(prism::MenuItem::Header("FEEDBACK"));
+    Scene::UIProgressBarComponentUVE bar;
+    bar.rect = Math::RectUVE{at, Math::Vector2UVE{320.0F, 24.0F}};
+    bar.value = 0.6F;
+    entry(WidgetKindUVE::ProgressBar, "ProgressBar", SceneObjectKindUVE::UIImage, instead(bar));
+
+    items.push_back(prism::MenuItem::Header("PANEL"));
+    Scene::UILayoutContainerComponentUVE vertical;
+    vertical.rect = Math::RectUVE{at, Math::Vector2UVE{260.0F, 300.0F}};
+    vertical.direction = Scene::UILayoutDirectionUVE::Vertical;
+    vertical.padding = 8.0F;
+    vertical.spacing = 8.0F;
+    entry(WidgetKindUVE::VerticalBox, "VerticalBox", SceneObjectKindUVE::UIImage, instead(vertical));
+    Scene::UILayoutContainerComponentUVE horizontal = vertical;
+    horizontal.rect = Math::RectUVE{at, Math::Vector2UVE{480.0F, 80.0F}};
+    horizontal.direction = Scene::UILayoutDirectionUVE::Horizontal;
+    entry(WidgetKindUVE::HorizontalBox, "HorizontalBox", SceneObjectKindUVE::UIImage, instead(horizontal));
+    Scene::UILayoutContainerComponentUVE wrap = horizontal;
+    wrap.rect = Math::RectUVE{at, Math::Vector2UVE{420.0F, 260.0F}};
+    wrap.wrapAfter = 3U;
+    entry(WidgetKindUVE::WrapBox, "WrapBox", SceneObjectKindUVE::UIImage, instead(wrap));
+    Scene::UIScrollContainerComponentUVE scroll;
+    scroll.rect = Math::RectUVE{at, Math::Vector2UVE{280.0F, 320.0F}};
+    entry(WidgetKindUVE::ScrollBox, "ScrollBox", SceneObjectKindUVE::UIImage,
+          [scroll](Scene::IEntityManagerUVE& entities, const Scene::EntityUVE e) {
+              if (entities.HasComponentUVE<Scene::UIImageComponentUVE>(e)) {
+                  entities.RemoveComponentUVE<Scene::UIImageComponentUVE>(e);
+              }
+              entities.AddComponentUVE<Scene::UIScrollContainerComponentUVE>(e, scroll);
+              // Its scrollbar on the same widget, down its right edge.
+              Scene::UIScrollbarComponentUVE bar;
+              bar.rect = Math::RectUVE{Math::Vector2UVE{scroll.rect.position.x + scroll.rect.size.x - 12.0F, scroll.rect.position.y},
+                                       Math::Vector2UVE{12.0F, scroll.rect.size.y}};
+              entities.AddComponentUVE<Scene::UIScrollbarComponentUVE>(e, bar);
+          });
     prism::showSearchMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
                           "Search widgets");
 }
@@ -1519,6 +1690,15 @@ void EditorEntityEditorUVE::RefreshComponentsUVE() {
             node->imageSize = icon.size;
         }
         node->badge = std::string(m_editor.GetObjectTypeNameUVE(e));
+        if (m_widgetMode) {
+            // A widget reads as what it is (Combo Box, Vertical Box ...), with the widget's own icon.
+            if (const std::optional<WidgetKindUVE> kind = ClassifyWidgetUVE(em, e)) {
+                const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(*kind, 16);
+                node->image = icon.pixels;
+                node->imageSize = icon.size;
+                node->badge = WidgetKindLabelUVE(*kind);
+            }
+        }
         if (m_editor.IsEntitySelectedUVE(e)) {
             selected.push_back(id);
         }

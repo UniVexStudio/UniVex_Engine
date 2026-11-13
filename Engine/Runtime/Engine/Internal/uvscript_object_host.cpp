@@ -14,6 +14,7 @@
 #include "canvas_component.h"
 #include "ui_button_component.h"
 #include "ui_checkbox_component.h"
+#include "ui_dropdown_component.h"
 #include "ui_image_component.h"
 #include "ui_progress_bar_component.h"
 #include "ui_slider_component.h"
@@ -296,6 +297,24 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
     }
     if (name == "ui.remove") {
         return HostFunctionUVE{{}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.show_cursor") {
+        return HostFunctionUVE{{TypeUVE::BoolUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.set_checked") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::BoolUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.get_selected_option") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::StrUVE()};
+    }
+    if (name == "ui.get_selected_index") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::IntUVE()};
+    }
+    if (name == "ui.set_selected_index") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::IntUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.add_option") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
     }
     // Ungated: any script may look another object up. The kind is only known when the script runs,
     // so every lookup answers the common root; a missing name answers no object (id 0).
@@ -1341,6 +1360,13 @@ ValueUVE UVScriptObjectHostUVE::WidgetCallUVE(const std::string_view name, const
         }
         return true;
     }
+    if (name == "ui.show_cursor") {
+        if (!m_cursorHandler) {
+            return false;
+        }
+        m_cursorHandler(std::get<bool>(args[0]));
+        return true;
+    }
     if (name == "ui.remove") {
         if (!entities.IsAliveUVE(m_entity) || !entities.HasComponentUVE<Scene::CanvasComponentUVE>(m_entity)) {
             return false;
@@ -1425,6 +1451,49 @@ ValueUVE UVScriptObjectHostUVE::WidgetCallUVE(const std::string_view name, const
             return static_cast<double>(entities.GetComponentUVE<Scene::UIProgressBarComponentUVE>(widget).value);
         }
         return 0.0;
+    }
+    if (name == "ui.set_checked") {
+        if (!alive || !entities.HasComponentUVE<Scene::UICheckboxComponentUVE>(widget)) {
+            return false;
+        }
+        entities.GetComponentUVE<Scene::UICheckboxComponentUVE>(widget).checked = std::get<bool>(args[1]);
+        return true;
+    }
+    // A Combo Box: its options are one per line.
+    if (name.starts_with("ui.get_selected") || name == "ui.set_selected_index" || name == "ui.add_option") {
+        const bool combo = alive && entities.HasComponentUVE<Scene::UIDropdownComponentUVE>(widget);
+        if (name == "ui.get_selected_index") {
+            return combo ? static_cast<std::int64_t>(entities.GetComponentUVE<Scene::UIDropdownComponentUVE>(widget).selectedIndex)
+                         : std::int64_t{-1};
+        }
+        if (!combo) {
+            return name == "ui.get_selected_option" ? ValueUVE{std::string{}} : ValueUVE{false};
+        }
+        Scene::UIDropdownComponentUVE& box = entities.GetComponentUVE<Scene::UIDropdownComponentUVE>(widget);
+        std::vector<std::string> options;
+        for (std::size_t begin = 0U; begin <= box.options.size() && !box.options.empty();) {
+            const std::size_t end = box.options.find('\n', begin);
+            options.push_back(box.options.substr(begin, end == std::string::npos ? std::string::npos : end - begin));
+            if (end == std::string::npos) {
+                break;
+            }
+            begin = end + 1U;
+        }
+        if (name == "ui.get_selected_option") {
+            return box.selectedIndex >= 0 && static_cast<std::size_t>(box.selectedIndex) < options.size()
+                       ? options[static_cast<std::size_t>(box.selectedIndex)]
+                       : std::string{};
+        }
+        if (name == "ui.add_option") {
+            box.options += (box.options.empty() ? "" : "\n") + std::get<std::string>(args[1]);
+            return true;
+        }
+        const std::int64_t index = std::get<std::int64_t>(args[1]);
+        if (index < -1 || index >= static_cast<std::int64_t>(options.size())) {
+            return false;
+        }
+        box.selectedIndex = static_cast<std::int32_t>(index);
+        return true;
     }
     if (name == "ui.is_checked") {
         return alive && entities.HasComponentUVE<Scene::UICheckboxComponentUVE>(widget) &&
