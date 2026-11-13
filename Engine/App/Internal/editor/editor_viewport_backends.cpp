@@ -1763,6 +1763,23 @@ private:
         const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);
         renderPass_->SetGridPlaneUVE(univex::render::GridPlaneFacing(viewAxis.x, viewAxis.y, viewAxis.z));
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
+        // Play flies the editing camera (mouse look, WASD) when the scene has no camera of its own;
+        // Stop puts it back where it was, so the level is seen again as it was left - not from
+        // wherever the game's mouse look happened to turn it.
+        {
+            const bool inPlay = editor_.GetPlayModeStateUVE() != UVE::Editor::EditorPlayModeStateUVE::Edit;
+            if (inPlay && !poseBeforePlay_.has_value()) {
+                poseBeforePlay_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
+                                                camera_.IsOrthographic()};
+            } else if (!inPlay && poseBeforePlay_.has_value()) {
+                camera_.CancelAnimation();
+                camera_.SetTarget(poseBeforePlay_->target);
+                camera_.SetYawPitch(poseBeforePlay_->yaw, poseBeforePlay_->pitch);
+                camera_.SetDistance(poseBeforePlay_->distance);
+                camera_.SetOrthographic(poseBeforePlay_->orthographic);
+                poseBeforePlay_.reset();
+            }
+        }
         pointerOverOverlay_ = overlayState.pointerOverOverlay;
         ApplyStudioViewUVE(overlayState);
         // Axis colours drive the gizmo AND the grid's own axis lines, so they go through
@@ -2734,6 +2751,8 @@ private:
         bool orthographic = false;
     };
     std::optional<CameraPoseUVE> poseBeforeStudio_;
+    /// The editing camera as Play found it; Stop restores it.
+    std::optional<CameraPoseUVE> poseBeforePlay_;
     std::optional<CameraPoseUVE> poseBeforePreview_;
     bool previewing_ = false;
 
