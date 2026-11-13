@@ -6,6 +6,7 @@
 #include "prism/Widget.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 
 namespace UVE::Editor {
@@ -54,6 +55,9 @@ private:
     [[nodiscard]] HitUVE HitTestUVE(prism::Vec2 p) const;
     [[nodiscard]] std::size_t NotifyTracksUVE() const noexcept;
     void ShowContextMenuUVE(const HitUVE& hit, prism::Vec2 at);
+    void ShowHeaderMenuUVE(const HitUVE& hit, prism::Vec2 at);
+    /// The notify track under window height `y`, if any.
+    [[nodiscard]] std::optional<std::uint32_t> TrackAtUVE(float y) const noexcept;
     void DeleteSelectionUVE();
     void CommitDragUVE(prism::Vec2 p);
 

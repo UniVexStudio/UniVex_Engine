@@ -42,8 +42,13 @@ bool IsAnimationMontageAssetValidUVE(const AnimationMontageAssetUVE& montage) no
     if (montage.slot.size() > kMaximumMontageNameBytesUVE || montage.segments.size() > kMaximumMontageSegmentsUVE ||
         montage.sections.size() > kMaximumMontageSectionsUVE ||
         montage.notifies.size() + montage.notifyStates.size() > kMaximumMontageNotifiesUVE ||
-        montage.curves.size() > kMaximumMontageCurvesUVE || montage.notifyTracks > 64U) {
+        montage.curves.size() > kMaximumMontageCurvesUVE || montage.notifyTracks > 64U || montage.notifyTrackNames.size() > 64U) {
         return false;
+    }
+    for (const std::string& name : montage.notifyTrackNames) {
+        if (name.size() > kMaximumMontageNameBytesUVE) {
+            return false;
+        }
     }
     if (!FiniteUVE(montage.blendInSeconds) || montage.blendInSeconds < 0.0 || !FiniteUVE(montage.blendOutSeconds) ||
         montage.blendOutSeconds < 0.0 || !FiniteUVE(montage.blendOutTriggerSeconds) || !FiniteUVE(montage.rateScale) ||
@@ -68,7 +73,7 @@ bool IsAnimationMontageAssetValidUVE(const AnimationMontageAssetUVE& montage) no
     for (const MontageNotifyUVE& notify : montage.notifies) {
         if (!NameOkUVE(notify.name) || !FiniteUVE(notify.time) || notify.time < 0.0 || !std::isfinite(notify.triggerChance) ||
             notify.triggerChance < 0.0F || notify.triggerChance > 1.0F || !std::isfinite(notify.minWeight) ||
-            notify.minWeight < 0.0F || notify.minWeight > 1.0F) {
+            notify.minWeight < 0.0F || notify.minWeight > 1.0F || notify.colour > 0xFFFFFFU) {
             return false;
         }
     }
@@ -132,6 +137,9 @@ bool SaveAnimationMontageAssetUVE(const AnimationMontageAssetUVE& montage, const
         if (notify.minWeight != 0.0F) {
             entry["minWeight"] = notify.minWeight;
         }
+        if (notify.colour != 0U) {
+            entry["colour"] = notify.colour;
+        }
         notifies.push_back(std::move(entry));
     }
     payload["notifies"] = std::move(notifies);
@@ -153,6 +161,9 @@ bool SaveAnimationMontageAssetUVE(const AnimationMontageAssetUVE& montage, const
     }
     if (montage.notifyTracks != defaults.notifyTracks) {
         payload["notifyTracks"] = montage.notifyTracks;
+    }
+    if (!montage.notifyTrackNames.empty()) {
+        payload["trackNames"] = montage.notifyTrackNames;
     }
     if (montage.blendInSeconds != defaults.blendInSeconds) {
         payload["blendIn"] = montage.blendInSeconds;
@@ -220,6 +231,7 @@ bool LoadAnimationMontageAssetUVE(const std::filesystem::path& path, AnimationMo
             MontageNotifyUVE notify{n.at("name").get<std::string>(), n.value("time", 0.0), n.value("track", 0U)};
             notify.triggerChance = n.value("chance", 1.0F);
             notify.minWeight = n.value("minWeight", 0.0F);
+            notify.colour = n.value("colour", 0U);
             montage.notifies.push_back(std::move(notify));
         }
         for (const nlohmann::json& n : payload.value("notifyStates", nlohmann::json::array())) {
@@ -235,6 +247,7 @@ bool LoadAnimationMontageAssetUVE(const std::filesystem::path& path, AnimationMo
             montage.curves.push_back(std::move(curve));
         }
         montage.notifyTracks = payload.value("notifyTracks", montage.notifyTracks);
+        montage.notifyTrackNames = payload.value("trackNames", std::vector<std::string>{});
         montage.blendInSeconds = payload.value("blendIn", montage.blendInSeconds);
         montage.blendOutSeconds = payload.value("blendOut", montage.blendOutSeconds);
         montage.blendInCurve = static_cast<MontageBlendCurveUVE>(payload.value("blendInCurve", std::uint8_t{0}));
