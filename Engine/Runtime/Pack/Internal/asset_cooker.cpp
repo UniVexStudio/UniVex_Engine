@@ -40,7 +40,7 @@ std::string Extension(const std::filesystem::path& path) {
 }
 bool RuntimePath(const std::filesystem::path& path) {
     static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvshader", ".uvscene",
-        ".uvprefab", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage", ".uvmontagelib", ".uvfont", ".uvtable",
+        ".uvprefab", ".uvwbp", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage", ".uvmontagelib", ".uvfont", ".uvtable",
         ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
     return extensions.contains(Extension(path));
 }
@@ -74,7 +74,7 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
     const std::map<std::string,Asset::AssetKindUVE> kinds{
         {".uvtex",Asset::AssetKindUVE::Texture},{".uvmodel",Asset::AssetKindUVE::Mesh},
         {".uvmat",Asset::AssetKindUVE::Material},{".uvshader",Asset::AssetKindUVE::Shader},
-        {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},
+        {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},{".uvwbp",Asset::AssetKindUVE::Prefab},
         {".uvaudio",Asset::AssetKindUVE::Audio},{".uvanim",Asset::AssetKindUVE::Animation},
         {".uvskel",Asset::AssetKindUVE::Skeleton},{".uvanimlib",Asset::AssetKindUVE::AnimationLibrary},
         {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbp",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable}};
@@ -231,7 +231,7 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             if (record.guid.value == 0) throw std::runtime_error("Invalid zero GUID");
             catalog[hex] = relative.generic_string();
         }
-        const std::set<std::string> native{ ".uvtex",".uvmodel",".uvmat",".uvshader",".uvscene",".uvprefab",
+        const std::set<std::string> native{ ".uvtex",".uvmodel",".uvmat",".uvshader",".uvscene",".uvprefab",".uvwbp",
             ".uvaudio",".uvanim",".uvskel",".uvanimlib",".uvmontage",".uvmontagelib",".uvfont",".uvtable" };
         const std::set<std::string> text{ ".uvs",".glsl",".vert",".frag",".comp",".glslinc" };
         for (const auto& entry : std::filesystem::recursive_directory_iterator(content)) {

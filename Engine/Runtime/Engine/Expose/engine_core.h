@@ -535,6 +535,11 @@ private:
     /// Runs every object's `.uvs` script for this frame (see SyncUVScriptsUVE). An object whose script
     /// path is not a `.uvs` file is reported once in m_scriptReconcileFailedEntities and skipped.
     void SyncScriptRuntimeUVE();
+    /// Makes a Widget Blueprint's widgets (hidden) for a script's `ui.create`.
+    [[nodiscard]] Scene::EntityUVE CreateWidgetUVE(const std::string& path);
+    /// Buttons clicked, sliders and check boxes changed, text boxes committed this frame: their
+    /// `ui_*` events, to every scripted object above them.
+    void RaiseWidgetScriptEventsUVE();
     /// Compiles each object's text script once, drops the
     void SyncUVScriptsUVE(bool simulationPaused);
     /// Reconciles script components with instances in m_uvScripts so event receivers are ready

@@ -87,7 +87,8 @@ TEST_F(BlueprintUVETest, EveryNodeOfThePaletteTranslatesToUVScriptThatCompiles) 
             continue;   // the next test
         }
         blueprint.nodes.push_back(NodeUVE(1U, "event_tick"));
-        const bool needsObject = type.key == "hide_object" || type.key == "show_object" || type.key == "is_valid";
+        const bool needsObject = type.key == "hide_object" || type.key == "show_object" || type.key == "is_valid" ||
+                                 type.key == "ui_add_to_viewport";
         if (type.role == BlueprintNodeRoleUVE::Pure) {
             // Its first output stored in a variable of that type.
             blueprint.variables.push_back({"result", type.outputs.front().type, "", false});

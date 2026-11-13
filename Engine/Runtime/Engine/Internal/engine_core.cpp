@@ -14,6 +14,7 @@
 
 #include "blueprint_asset.h"
 #include "blueprint_nodes.h"
+#include "widget_blueprint_asset.h"
 
 #include "raycast_audio_occlusion.h"
 
@@ -111,6 +112,11 @@
 #include "animation_sequencer_component.h"
 #include "camera_component.h"
 #include "hierarchy_component.h"
+#include "canvas_component.h"
+#include "ui_button_component.h"
+#include "ui_checkbox_component.h"
+#include "ui_slider_component.h"
+#include "ui_text_input_component.h"
 #include "name_component.h"
 #include "mesh_component.h"
 #include "process_component.h"
@@ -1517,6 +1523,15 @@ std::optional<std::string> EngineCoreUVE::ReadUVScriptSourceUVE(const std::strin
         const std::string stem = std::filesystem::path(path).stem().string();
         return Asset::TranslateBlueprintToUVScriptUVE(*blueprint, stem, blueprint->parentKind).source;
     }
+    if (Asset::IsWidgetBlueprintPathUVE(path)) {
+        // A Widget Blueprint: the UVScript its graph translates to, run on the widget's Canvas.
+        const std::optional<Asset::BlueprintAssetUVE> graph = Asset::ReadWidgetBlueprintGraphUVE(*bytes);
+        if (!graph.has_value()) {
+            return std::nullopt;
+        }
+        const std::string stem = std::filesystem::path(path).stem().string();
+        return Asset::TranslateBlueprintToUVScriptUVE(*graph, stem, graph->parentKind).source;
+    }
     return std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size());
 }
 
@@ -1588,6 +1603,7 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
             auto host = std::make_unique<UVScriptObjectHostUVE>(
                 *m_entityManager, m_inputSystem.get(), entity, m_audioSourceSystem.get(), m_audioSystem.get(),
                 [this](const Scene::EntityUVE other) { return FindUVScriptInstanceUVE(other); });
+            host->SetWidgetFactoryUVE([this](const std::string& path) { return CreateWidgetUVE(path); });
             const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(source, *host);
             if (!compiled.IsSuccessUVE()) {
                 for (const UVScript::DiagnosticUVE& diagnostic : compiled.diagnostics) {
@@ -1657,6 +1673,88 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
         RaiseContactScriptEventUVE(
             transition.pair.first, transition.pair.second,
             transition.kind == Physics::CollisionTransitionKindUVE::Entered ? "collision_enter" : "collision_exit");
+    }
+    RaiseWidgetScriptEventsUVE();
+}
+
+Scene::EntityUVE EngineCoreUVE::CreateWidgetUVE(const std::string& path) {
+    if (!Asset::IsWidgetBlueprintPathUVE(path) || m_sceneSerializer == nullptr) {
+        UVE_ERROR("EngineCoreUVE: \"{}\" is not a Widget Blueprint", path);
+        return Scene::kInvalidEntityUVE;
+    }
+    std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(path);
+    if (!bytes.has_value()) {
+        UVE_ERROR("EngineCoreUVE: Widget Blueprint \"{}\" cannot be read", path);
+        return Scene::kInvalidEntityUVE;
+    }
+    const std::vector<Scene::EntityUVE> roots =
+        m_sceneSerializer->RestoreUVE(*m_entityManager, Scene::SceneSnapshotUVE{std::move(*bytes), Scene::SceneAssetTypeUVE::Prefab});
+    if (roots.size() != 1U) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const Scene::EntityUVE root = roots.front();
+    // Made hidden: Add to Viewport shows it. Its graph is the file itself.
+    if (m_entityManager->HasComponentUVE<Scene::CanvasComponentUVE>(root)) {
+        m_entityManager->GetComponentUVE<Scene::CanvasComponentUVE>(root).visible = false;
+    }
+    if (m_entityManager->HasComponentUVE<Scene::ScriptComponentUVE>(root)) {
+        m_entityManager->GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath = path;
+    }
+    return root;
+}
+
+void EngineCoreUVE::RaiseWidgetScriptEventsUVE() {
+    // A widget that was used tells every scripted object above it (and itself): a Widget
+    // Blueprint's graph sits on its root Canvas and hears each of its buttons by name.
+    const auto raise = [this](Scene::EntityUVE widget, const std::string_view event, const std::span<const UVScript::ValueUVE> args) {
+        for (int depth = 0; depth < 256 && m_entityManager->IsAliveUVE(widget); ++depth) {
+            if (const auto slot = m_uvScripts.find(widget); slot != m_uvScripts.end() && slot->second.instance != nullptr) {
+                static_cast<void>(slot->second.instance->RaiseEventUVE(event, args));
+            }
+            if (!m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(widget)) {
+                break;
+            }
+            const Scene::EntityUVE parent = m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(widget).parent;
+            if (parent == widget) {
+                break;
+            }
+            widget = parent;
+        }
+    };
+    const auto nameOf = [this](const Scene::EntityUVE entity) {
+        return m_entityManager->HasComponentUVE<Scene::NameComponentUVE>(entity)
+                   ? m_entityManager->GetComponentUVE<Scene::NameComponentUVE>(entity).name
+                   : std::string{};
+    };
+    std::vector<std::pair<Scene::EntityUVE, std::string_view>> used;
+    std::vector<std::pair<Scene::EntityUVE, std::string>> committed;
+    m_entityManager->ForEachUVE<Scene::UIButtonComponentUVE>([&used](const Scene::EntityUVE entity, const Scene::UIButtonComponentUVE& button) {
+        if (button.wasClickedThisFrame) {
+            used.emplace_back(entity, "ui_clicked");
+        }
+    });
+    m_entityManager->ForEachUVE<Scene::UISliderComponentUVE>([&used](const Scene::EntityUVE entity, const Scene::UISliderComponentUVE& slider) {
+        if (slider.wasChangedThisFrame) {
+            used.emplace_back(entity, "ui_changed");
+        }
+    });
+    m_entityManager->ForEachUVE<Scene::UICheckboxComponentUVE>([&used](const Scene::EntityUVE entity, const Scene::UICheckboxComponentUVE& box) {
+        if (box.wasToggledThisFrame) {
+            used.emplace_back(entity, "ui_changed");
+        }
+    });
+    m_entityManager->ForEachUVE<Scene::UITextInputComponentUVE>([&committed](const Scene::EntityUVE entity, const Scene::UITextInputComponentUVE& field) {
+        if (field.wasSubmittedThisFrame) {
+            committed.emplace_back(entity, field.text);
+        }
+    });
+    for (const auto& [entity, event] : used) {
+        const UVScript::ValueUVE args[] = {nameOf(entity)};
+        raise(entity, event, args);
+    }
+    for (const auto& [entity, text] : committed) {
+        const UVScript::ValueUVE args[] = {nameOf(entity), text};
+        raise(entity, "ui_committed", args);
     }
 }
 
