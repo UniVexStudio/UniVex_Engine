@@ -32,7 +32,7 @@ namespace UVE::Editor {
 namespace {
 
 constexpr float kFieldOfViewYRadiansUVE = 0.6981317F; // 40 degrees
-constexpr float kCameraDistanceMarginUVE = 1.35F;
+constexpr float kCameraDistanceMarginUVE = 1.06F;
 // Only a guard against a mesh with no extent at all: a small model (a 2 cm bolt, a coin) is framed
 // to fill the card like any other, rather than shown as a dot in a quarter-metre view.
 constexpr float kMinimumBoundingRadiusUVE = 1.0e-4F;
@@ -336,7 +336,8 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
 
 std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, const int width,
                                                              const int height,
-                                                             const std::vector<MeshThumbnailLookUVE>& looksBySlot) {
+                                                             const std::vector<MeshThumbnailLookUVE>& looksBySlot,
+                                                             const std::vector<MeshThumbnailBoneUVE>& bones) {
     if (!m_gl || !m_gl->functionsLoaded || !m_gl->programLinked) {
         return 0U;
     }
@@ -350,9 +351,27 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     const float boundingRadius =
         std::max(kMinimumBoundingRadiusUVE,
                  std::sqrt(extents.x * extents.x + extents.y * extents.y + extents.z * extents.z));
-    const float distance = (boundingRadius / std::sin(kFieldOfViewYRadiansUVE * 0.5F)) * kCameraDistanceMarginUVE;
-
-    const Math::Vector3UVE viewDirection = Math::NormalizeUVE(Math::Vector3UVE{0.6F, 0.35F, 1.0F});
+    // A little from the right and above, mostly from the front.
+    const Math::Vector3UVE viewDirection = Math::NormalizeUVE(Math::Vector3UVE{0.38F, 0.22F, 1.0F});
+    // Framed on the model itself, not on a sphere around it: the camera stands just far enough
+    // back that every corner of the box fits the picture, so the model fills the tile.
+    float distance = 0.0F;
+    {
+        const Math::Vector3UVE forward = viewDirection * -1.0F;
+        const Math::Vector3UVE side = Math::NormalizeUVE(Math::CrossUVE(forward, Math::Vector3UVE{0.0F, 1.0F, 0.0F}));
+        const Math::Vector3UVE upward = Math::CrossUVE(side, forward);
+        const float tanHalf = std::tan(kFieldOfViewYRadiansUVE * 0.5F);
+        const float aspect = static_cast<float>(width) / static_cast<float>(height);
+        for (int corner = 0; corner < 8; ++corner) {
+            const Math::Vector3UVE d{(corner & 1) != 0 ? extents.x : -extents.x, (corner & 2) != 0 ? extents.y : -extents.y,
+                                     (corner & 4) != 0 ? extents.z : -extents.z};
+            const float x = std::abs(Math::DotUVE(d, side));
+            const float y = std::abs(Math::DotUVE(d, upward));
+            const float z = Math::DotUVE(d, viewDirection);
+            distance = std::max({distance, z + x / (tanHalf * aspect), z + y / tanHalf});
+        }
+        distance = std::max(distance * kCameraDistanceMarginUVE, boundingRadius * 0.5F);
+    }
     const Math::Vector3UVE cameraPosition = center + viewDirection * distance;
 
     Math::QuaternionUVE cameraRotation{};
@@ -512,6 +531,54 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
 
         gl.table.glBindVertexArray(0);
 
+        // The skeleton over the model, as the viewport draws it: a slim outline from each joint to
+        // the next, in light strokes, never hiding the model.
+        if (succeeded && !bones.empty() && gl.boneProgramLinked) {
+            const Math::Vector3UVE forward = viewDirection * -1.0F;
+            std::vector<Math::Vector3UVE> lines;
+            lines.reserve(bones.size() * 16U);
+            for (const MeshThumbnailBoneUVE& bone : bones) {
+                const Math::Vector3UVE head{bone.head[0], bone.head[1], bone.head[2]};
+                const Math::Vector3UVE tail{bone.tail[0], bone.tail[1], bone.tail[2]};
+                const Math::Vector3UVE along = tail - head;
+                const float length = Math::LengthUVE(along);
+                if (length < 1.0e-4F) {
+                    continue;
+                }
+                const Math::Vector3UVE axis = along * (1.0F / length);
+                Math::Vector3UVE across = Math::CrossUVE(axis, forward);
+                const float acrossLength = Math::LengthUVE(across);
+                across = acrossLength > 1.0e-4F ? across * (1.0F / acrossLength) : Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+                const float half = std::clamp(length * 0.08F, boundingRadius * 0.004F, boundingRadius * 0.025F);
+                const Math::Vector3UVE waist = head + along * 0.2F;
+                const Math::Vector3UVE a = waist + across * half;
+                const Math::Vector3UVE b = waist - across * half;
+                lines.insert(lines.end(), {head, a, a, tail, tail, b, b, head});
+            }
+            if (!lines.empty()) {
+                GLuint boneVao = 0U;
+                GLuint boneVbo = 0U;
+                gl.table.glGenVertexArrays(1, &boneVao);
+                gl.table.glBindVertexArray(boneVao);
+                gl.table.glGenBuffers(1, &boneVbo);
+                gl.table.glBindBuffer(GL_ARRAY_BUFFER, boneVbo);
+                gl.table.glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(lines.size() * sizeof(Math::Vector3UVE)),
+                                      lines.data(), GL_STREAM_DRAW);
+                gl.table.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Math::Vector3UVE), nullptr);
+                gl.table.glEnableVertexAttribArray(0);
+                gl.table.glUseProgram(gl.boneShaderProgram);
+                gl.table.glUniformMatrix4fv(gl.boneViewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
+                constexpr float kBoneColourUVE[4] = {0.55F, 0.95F, 0.80F, 0.95F};
+                gl.table.glUniform4fv(gl.boneColorUniform, 1, kBoneColourUVE);
+                SetGlCapabilityUVE(GL_DEPTH_TEST, GL_FALSE);
+                SetGlCapabilityUVE(GL_BLEND, GL_TRUE);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(lines.size()));
+                gl.table.glBindVertexArray(0);
+                gl.table.glDeleteBuffers(1, &boneVbo);
+                gl.table.glDeleteVertexArrays(1, &boneVao);
+            }
+        }
     }
 
     for (const auto& [image, id] : albedoTextures) {
