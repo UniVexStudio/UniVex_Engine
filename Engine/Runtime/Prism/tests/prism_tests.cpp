@@ -2928,6 +2928,37 @@ static void testDialogButtonsReadFields(Application& app) {
   CHECK(weak.expired());   // and the dialog closed
 }
 
+// A text input may be cleared and typed into again; a host sets a pin's value (one undo step) and
+// a value of the wrong type is refused.
+static void testBlueprintPinValues(Application& app) {
+  SECTION("blueprint pin values: editable when empty, set by the host");
+  app.hostResize(900, 600);
+  auto g = make<BlueprintGraph>();
+  BlueprintNode n;
+  n.title = "Set Text";
+  BlueprintPin widget{"Widget", BlueprintPinType::String, BlueprintPinKind::Input, "", false, false, true};
+  BlueprintPin amount{"Amount", BlueprintPinType::Float, BlueprintPinKind::Input, "0.5"};
+  n.inputs = {widget, amount};
+  g->clear();   // a new graph shows its preset's demo nodes
+  g->addNode(n);
+  app.setRoot(g);
+  app.tick();
+  int id = -1;
+  for (const BlueprintNode& each : g->nodes()) if (each.title == "Set Text") id = each.id;
+  CHECK(id >= 0 && g->findNode(id) != nullptr);
+  if (id < 0) return;
+  CHECK(g->setPinDefault(id, 0, "Title"));
+  CHECK(g->findNode(id)->inputs[0].defaultValue == "Title");
+  CHECK(g->setPinDefault(id, 0, ""));                       // cleared on purpose
+  CHECK(g->findNode(id)->inputs[0].defaultValue.empty());
+  CHECK(!g->setPinDefault(id, 1, "lots"));                  // not a number
+  CHECK(g->findNode(id)->inputs[1].defaultValue == "0.5");
+  CHECK(g->canUndo());
+  int asked = 0;
+  g->pinChoices = [&asked](const BlueprintNode&, int pin) { ++asked; return pin == 0 ? std::vector<std::string>{"Title", "Score"} : std::vector<std::string>{}; };
+  CHECK(g->pinChoices(*g->findNode(id), 0).size() == 2 && asked == 1);
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -2969,6 +3000,7 @@ int main(int argc, char** argv) {
   testRuntimeProfile();
   testBlueprintGraph();
   testBlueprintEditing();
+  testBlueprintPinValues(app);
   testBlueprintInteraction(app);
   testColorPickerWindow(app);
   testBlueprintGraphTypes(app);

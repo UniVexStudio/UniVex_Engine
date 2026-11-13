@@ -649,7 +649,7 @@ void BlueprintGraph::layoutNode(BlueprintNode& n) const {
   float leftW = 0, rightW = 0;
   for (auto& p : n.inputs) {
     float w = kPinX + kPinR + 7 + (p.hideLabel ? 0.f : textWidth(p.name, kLabelPx, Weight::Regular));
-    if (!p.defaultValue.empty() && p.type != PT::Exec) {
+    if ((!p.defaultValue.empty() || p.editable) && p.type != PT::Exec) {
       float bw = p.type == PT::Bool ? 16.f : p.type == PT::Color ? 30.f : std::max(34.f, textWidth(p.defaultValue, kLabelPx - 1, Weight::Regular) + 14.f);
       w += 8 + bw;
     }

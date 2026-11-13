@@ -23,6 +23,8 @@
 #include "prism/Views.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <map>
 
 namespace UVE::Editor {
@@ -94,8 +96,14 @@ using Role = Asset::BlueprintNodeRoleUVE;
         pin.name = spec.type == T::Exec && spec.name.empty() ? std::string("Exec") : spec.name;
         pin.hideLabel = spec.type == T::Exec && spec.name.empty();
         pin.type = ToPrismUVE(spec.type);
+        // A colour is picked, not typed: the colour picker for a Vector named for a colour.
+        if (spec.type == T::Vector && (spec.name == "Color" || spec.name == "Colour" || spec.name == "Tint")) {
+            pin.type = PT::Color;
+        }
         pin.kind = kind;
         pin.defaultValue = kind == prism::BlueprintPinKind::Input ? spec.defaultText : std::string{};
+        // Text and numbers keep their box even when cleared, so they can always be typed into.
+        pin.editable = kind == prism::BlueprintPinKind::Input && spec.type != T::Exec && spec.type != T::Object;
         return pin;
     };
     for (const Asset::BlueprintPinSpecUVE& spec : pins.inputs) {
@@ -133,9 +141,69 @@ using Role = Asset::BlueprintNodeRoleUVE;
     }
 }
 
+/// The kinds of widget a UI node acts on (empty: not a UI node, or any widget).
+[[nodiscard]] std::vector<WidgetKindUVE> WidgetKindsForUVE(const std::string& key) {
+    using K = WidgetKindUVE;
+    if (key == "ui_set_text" || key == "ui_get_text") return {K::Text, K::TextBox, K::Button};
+    if (key == "ui_on_clicked") return {K::Button};
+    if (key == "ui_on_committed") return {K::TextBox};
+    if (key == "ui_on_changed") return {K::Slider, K::CheckBox, K::ComboBox};
+    if (key == "ui_set_percent" || key == "ui_get_value") return {K::ProgressBar, K::Slider};
+    if (key == "ui_is_checked" || key == "ui_set_checked") return {K::CheckBox};
+    if (key == "ui_get_selected_option" || key == "ui_get_selected_index" || key == "ui_set_selected_index" || key == "ui_add_option")
+        return {K::ComboBox};
+    if (key == "ui_show_screen") return {K::Canvas};
+    return {};
+}
+
+[[nodiscard]] bool IsWidgetNodeUVE(const std::string& key) {
+    return key == "ui_set_visibility" || key == "ui_set_color" || !WidgetKindsForUVE(key).empty();
+}
+
+/// The node's widget input: its first input that is not an exec pin.
+[[nodiscard]] int WidgetPinOfUVE(const prism::BlueprintNode& node) {
+    for (int i = 0; i < static_cast<int>(node.inputs.size()); ++i) {
+        if (node.inputs[static_cast<std::size_t>(i)].type != PT::Exec) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 } // namespace
 
 EditorBlueprintPanelUVE::EditorBlueprintPanelUVE(EditorUVE& editor) : m_editor(editor) {}
+
+std::string EditorBlueprintPanelUVE::NodeKeyUVE(const prism::BlueprintNode& node) {
+    static const std::map<std::string, std::string> byTitle = [] {
+        std::map<std::string, std::string> out;
+        for (const Asset::BlueprintNodeTypeUVE& type : Asset::GetBlueprintNodeTypesUVE()) {
+            out[type.title] = type.key;
+        }
+        return out;
+    }();
+    const auto found = byTitle.find(node.title);
+    return found == byTitle.end() ? std::string{} : found->second;
+}
+
+std::vector<std::string> EditorBlueprintPanelUVE::WidgetChoicesUVE(const std::string& key) const {
+    std::vector<std::string> names;
+    if (!widgetsProvider || !IsWidgetNodeUVE(key)) {
+        return names;
+    }
+    const std::vector<WidgetKindUVE> kinds = WidgetKindsForUVE(key);
+    for (const auto& [name, kind] : widgetsProvider()) {
+        const bool screen = kind == WidgetKindUVE::Canvas;
+        const bool wantsScreen = key == "ui_show_screen";
+        if (screen != wantsScreen || (!kinds.empty() && std::find(kinds.begin(), kinds.end(), kind) == kinds.end())) {
+            continue;
+        }
+        if (std::find(names.begin(), names.end(), name) == names.end()) {
+            names.push_back(name);
+        }
+    }
+    return names;
+}
 
 prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
     m_graph = prism::make<prism::BlueprintGraph>();
@@ -154,6 +222,14 @@ prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
     m_graph->setWatermark("Blueprint Class", "Gameplay graph", prism::Icon::BlueprintClass);
     m_graph->clear();
     m_graph->setNodeLibrary(LibraryUVE());
+    // A widget pin lists the widget's own widgets of the kind the node acts on.
+    m_graph->pinChoices = [this](const prism::BlueprintNode& node, const int pin) -> std::vector<std::string> {
+        if (pin != WidgetPinOfUVE(node)) {
+            return {};
+        }
+        return WidgetChoicesUVE(NodeKeyUVE(node));
+    };
+    m_graph->onSelectionChanged = [this](const std::vector<int>&) { m_sideDirty = true; };
     m_graph->onSaveRequested = [this] { static_cast<void>(SaveUVE()); };
     m_graph->onCompileRequested = [this] { CompileUVE(); };
     m_graph->onCommit = [this](const std::string&) {
@@ -187,7 +263,19 @@ std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() cons
         spec.category = type.category;
         spec.name = type.title;
         spec.keywords = type.keywords + " " + type.tooltip;
-        spec.make = [&type, blueprint] { return MakeNodeUVE(type, blueprint, {}); };
+        spec.make = [this, &type, blueprint] {
+            prism::BlueprintNode node = MakeNodeUVE(type, blueprint, {});
+            // A UI node starts on the first widget it can act on, not a placeholder name.
+            const std::vector<std::string> widgets = WidgetChoicesUVE(type.key);
+            const int pin = WidgetPinOfUVE(node);
+            if (!widgets.empty() && pin >= 0 && IsWidgetNodeUVE(type.key)) {
+                const std::string& current = node.inputs[static_cast<std::size_t>(pin)].defaultValue;
+                if (std::find(widgets.begin(), widgets.end(), current) == widgets.end()) {
+                    node.inputs[static_cast<std::size_t>(pin)].defaultValue = widgets.front();
+                }
+            }
+            return node;
+        };
         library.push_back(std::move(spec));
     }
     if (widgetsProvider) {
@@ -316,8 +404,9 @@ void EditorBlueprintPanelUVE::LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& b
         prism::BlueprintNode shown = MakeNodeUVE(*type, blueprint, node.variable);
         shown.id = static_cast<int>(node.id);
         shown.pos = prism::Vec2{node.x, node.y};
+        // As saved, empty included: a value cleared on purpose stays cleared.
         for (std::size_t i = 0U; i < shown.inputs.size() && i < node.inputValues.size(); ++i) {
-            if (!node.inputValues[i].empty()) {
+            if (shown.inputs[i].type != PT::Exec) {
                 shown.inputs[i].defaultValue = node.inputValues[i];
             }
         }
@@ -465,6 +554,29 @@ void EditorBlueprintPanelUVE::CompileUVE() {
             }
         }
     }
+    // A widget node names a widget the widget has.
+    if (widgetsProvider) {
+        std::vector<std::string> all;
+        for (const auto& entry : widgetsProvider()) {
+            all.push_back(entry.first);
+        }
+        for (const prism::BlueprintNode& node : m_graph->nodes()) {
+            const std::string key = NodeKeyUVE(node);
+            const int pin = WidgetPinOfUVE(node);
+            if (!IsWidgetNodeUVE(key) || pin < 0 || m_graph->isPinConnected(node.id, pin, true)) {
+                continue;
+            }
+            const std::string& name = node.inputs[static_cast<std::size_t>(pin)].defaultValue;
+            const bool anyAllowed = key == "ui_on_clicked" || key == "ui_on_changed" || key == "ui_on_committed";
+            if ((name.empty() && anyAllowed) || std::find(all.begin(), all.end(), name) != all.end()) {
+                continue;
+            }
+            const std::string message = node.title + ": the widget has no " + (name.empty() ? std::string("widget named here") : "widget named \"" + name + "\"");
+            ++report.errors;
+            report.messages.push_back(message);
+            report.nodeIssues[node.id] = message;
+        }
+    }
     m_graph->setCompileResult(std::move(report));
 }
 
@@ -509,12 +621,120 @@ void EditorBlueprintPanelUVE::RefreshUVE() {
     }
 }
 
+void EditorBlueprintPanelUVE::AddNodeDetailsUVE(prism::PropertyGrid& grid, const prism::BlueprintNode& node) {
+    const std::string key = NodeKeyUVE(node);
+    const Asset::BlueprintNodeTypeUVE* const type = key.empty() ? nullptr : Asset::FindBlueprintNodeTypeUVE(key);
+    const int cat = grid.addCategory("Node: " + node.title);
+    if (type != nullptr) {
+        auto category = prism::make<prism::Label>(type->category);
+        category->setColor(prism::ThemeColor(&prism::Theme::textDim));
+        grid.addRow(cat, "Category", category);
+        if (!type->tooltip.empty()) {
+            auto about = prism::make<prism::Label>(type->tooltip, prism::FontRole::Small);
+            about->setColor(prism::ThemeColor(&prism::Theme::textDim));
+            grid.addRow(cat, "Does", about, type->tooltip);
+        }
+    }
+    const int nodeId = node.id;
+    const int widgetPin = WidgetPinOfUVE(node);
+    for (int i = 0; i < static_cast<int>(node.inputs.size()); ++i) {
+        const prism::BlueprintPin& pin = node.inputs[static_cast<std::size_t>(i)];
+        if (pin.type == PT::Exec) {
+            continue;
+        }
+        if (m_graph->isPinConnected(nodeId, i, true)) {
+            auto wired = prism::make<prism::Label>("(wired)");
+            wired->setColor(prism::ThemeColor(&prism::Theme::textDim));
+            grid.addRow(cat, pin.name, wired, "Takes its value from the wire");
+            continue;
+        }
+        const auto set = [this, nodeId, i](const std::string& value) {
+            if (m_graph && m_graph->setPinDefault(nodeId, i, value)) {
+                m_dirty = true;
+                m_sideDirty = true;
+            } else if (prism::Application::exists()) {
+                prism::Application::get().notify("'" + value + "' is not a value this input takes", prism::ToastLevel::Warning, 1800);
+            }
+        };
+        prism::Ref<prism::Widget> editor;
+        const std::vector<std::string> choices = i == widgetPin ? WidgetChoicesUVE(key) : std::vector<std::string>{};
+        if (!choices.empty()) {
+            std::vector<std::string> items = choices;
+            int current = -1;
+            for (std::size_t c = 0U; c < items.size(); ++c) {
+                current = items[c] == pin.defaultValue ? static_cast<int>(c) : current;
+            }
+            if (current < 0) {
+                items.insert(items.begin(), pin.defaultValue.empty() ? std::string("(any)") : pin.defaultValue + "  (missing)");
+                current = 0;
+            }
+            const bool extra = items.size() > choices.size();
+            auto combo = prism::make<prism::ComboBox>(items, current);
+            combo->onChange = [set, choices, extra](const int v) {
+                const int at = v - (extra ? 1 : 0);
+                if (at >= 0 && static_cast<std::size_t>(at) < choices.size()) {
+                    set(choices[static_cast<std::size_t>(at)]);
+                }
+            };
+            editor = combo;
+        } else if (pin.type == PT::Bool) {
+            auto check = prism::make<prism::CheckBox>("", pin.defaultValue == "true");
+            check->onChange = [set](const bool on) { set(on ? "true" : "false"); };
+            editor = check;
+        } else if (pin.type == PT::Float || pin.type == PT::Int) {
+            float value = 0.0F;
+            try {
+                value = pin.defaultValue.empty() ? 0.0F : std::stof(pin.defaultValue);
+            } catch (...) {
+            }
+            const bool integer = pin.type == PT::Int;
+            auto number = prism::make<prism::NumberField>(value, integer ? 1.0F : 0.05F, integer ? 0 : 3);
+            number->onCommit = [set, integer](const float v) {
+                char text[48];
+                if (integer) {
+                    std::snprintf(text, sizeof(text), "%ld", std::lround(v));
+                } else {
+                    std::snprintf(text, sizeof(text), "%g", static_cast<double>(v));
+                }
+                set(text);
+            };
+            editor = number;
+        } else {
+            auto field = prism::make<prism::TextInput>(pin.defaultValue, pin.type == PT::Color ? "r,g,b (0..1)" : "");
+            field->onCommit = [set](const std::string& v) { set(v); };
+            editor = field;
+        }
+        // Back to what the node starts with.
+        std::string initial;
+        if (type != nullptr) {
+            const prism::BlueprintNode fresh = MakeNodeUVE(*type, Asset::BlueprintAssetUVE{}, {});
+            if (static_cast<std::size_t>(i) < fresh.inputs.size()) {
+                initial = fresh.inputs[static_cast<std::size_t>(i)].defaultValue;
+            }
+        }
+        auto reset = prism::make<prism::Button>("", prism::Icon::Undo, prism::ButtonStyle::Flat);
+        reset->setTooltip("Reset to its default (" + (initial.empty() ? std::string("empty") : initial) + ")");
+        reset->setEnabled(pin.defaultValue != initial);
+        reset->onClick = [set, initial] { set(initial); };
+        auto row = prism::hbox(4.0F);
+        row->add(editor, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        row->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        grid.addRow(cat, pin.name, row, std::string(TypeNameUVE(pin.type)) + " input");
+    }
+}
+
 void EditorBlueprintPanelUVE::RebuildSideUVE() {
     m_sideDirty = false;
     if (!m_side) {
         return;
     }
     auto grid = prism::make<prism::PropertyGrid>();
+    // The node picked in the graph, as Unreal's Details: what it is and every input it takes.
+    if (m_graph && m_graph->selectedCount() == 1) {
+        if (const prism::BlueprintNode* node = m_graph->findNode(m_graph->selectedIds().front())) {
+            AddNodeDetailsUVE(*grid, *node);
+        }
+    }
     const int classCat = grid->addCategory("Class");
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     const std::string target = IsOpenUVE() && em.IsAliveUVE(m_target) ? m_editor.GetEntityDisplayLabelUVE(m_target) : std::string("None");
