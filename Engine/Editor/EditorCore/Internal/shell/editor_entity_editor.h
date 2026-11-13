@@ -208,6 +208,15 @@ private:
     std::shared_ptr<prism::Button> m_resolutionButton;
     void ShowResolutionMenuUVE();
     void ShowWidgetPaletteUVE();
+    /// The Stage tab (2): the widget's 3D world. 0 Designer, 1 Graph.
+    bool m_stageMode = false;
+    void SetWidgetPageUVE(int page);
+    [[nodiscard]] Scene::EntityUVE FindWidgetStageUVE() const;
+    void EnsureWidgetStageUVE();
+    void ShowStageAddMenuUVE();
+    /// The Stage as the Designer's live 3D View last saw it.
+    std::vector<std::byte> m_stageSnapshot;
+    std::chrono::steady_clock::time_point m_stageSnapshotTime{};
     void OpenWidgetGraphUVE();
 
     std::vector<Scene::EntityUVE> m_treeEntities;

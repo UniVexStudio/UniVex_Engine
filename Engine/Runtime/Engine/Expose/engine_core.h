@@ -549,6 +549,14 @@ private:
     void RaiseWidgetScriptEventsUVE();
     /// Stands each 3D View's asset on its own stage and turns it (UIView3DComponentUVE).
     void SyncUIView3DStagesUVE(float deltaSeconds);
+    /// A widget's Stage (the child named Stage of its root Canvas), or none.
+    [[nodiscard]] Scene::EntityUVE FindWidgetStageUVE(Scene::EntityUVE widget) const;
+    [[nodiscard]] Scene::EntityUVE FindNamedUnderUVE(Scene::EntityUVE root, std::string_view name) const;
+    /// `entity`'s position and rotation in `ancestor`'s space, from their local transforms.
+    [[nodiscard]] std::optional<std::pair<Math::Vector3UVE, Math::QuaternionUVE>> PoseUnderUVE(Scene::EntityUVE entity,
+                                                                                             Scene::EntityUVE ancestor) const;
+    /// Takes off a Stage what must not act from it: cameras, scripts, bodies, suns, environments.
+    void StripWidgetStageUVE(Scene::EntityUVE stage);
     /// Compiles each object's text script once, drops the
     void SyncUVScriptsUVE(bool simulationPaused);
     /// Reconciles script components with instances in m_uvScripts so event receivers are ready

@@ -4,8 +4,10 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 #include "entity.h"
+#include "quaternion.h"
 #include "rect.h"
 #include "vector2.h"
 #include "vector3.h"
@@ -36,13 +38,33 @@ struct UIView3DComponentUVE final {
     Math::Vector3UVE backgroundColor{0.05F, 0.06F, 0.08F};
     /// 0: nothing behind the asset (the UI and the game show through); 1: the background colour.
     float backgroundAlpha = 0.0F;
+    /// Stand the asset in the widget's own Stage (its "Stage" object: floor, lights, props, a
+    /// StageCamera and a ModelSpot, made in the Widget Editor's Stage tab) and look through its
+    /// StageCamera. Off, or a widget with no Stage: the asset alone, from this view's camera.
+    bool useWidgetStage = true;
+    /// No sky behind the stage: where nothing is drawn the UI and the game show through.
+    bool transparentBackground = true;
 
     // ---- runtime, never saved: the stage the runtime made for it
     EntityUVE stageRoot = kInvalidEntityUVE;
     std::string stagedAssetPath;
     float spinYawDegrees = 0.0F;
     std::uint32_t stageSlot = 0U;
+    /// The widget's Stage, moved onto this view's stage, and its StageCamera's view.
+    EntityUVE widgetStage = kInvalidEntityUVE;
+    bool stageCameraValid = false;
+    Math::Vector3UVE stageCameraPosition{};
+    Math::QuaternionUVE stageCameraRotation{};
+    float stageCameraFieldOfViewDegrees = 32.0F;
+    Math::Vector3UVE stageCameraLocalPosition{};
+    Math::QuaternionUVE stageCameraLocalRotation{};
 };
+
+/// The names a widget's Stage is found by: its root (a child of the widget's Canvas), the camera
+/// a 3D View looks through, and the spot its asset stands on.
+inline constexpr std::string_view kWidgetStageNameUVE = "Stage";
+inline constexpr std::string_view kWidgetStageCameraNameUVE = "StageCamera";
+inline constexpr std::string_view kWidgetModelSpotNameUVE = "ModelSpot";
 
 [[nodiscard]] bool IsUIView3DComponentValidUVE(const UIView3DComponentUVE& component) noexcept;
 

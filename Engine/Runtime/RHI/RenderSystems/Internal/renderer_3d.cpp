@@ -1098,6 +1098,8 @@ struct Renderer3DUVE::ImplUVE {
     float probeCaptureFovY = Math::kPiUVE * 0.5F;
     /// A 3D View capture: no sky, and alpha 0 wherever nothing was drawn.
     bool captureTransparentBackground = false;
+    /// A 3D View is being captured (not a reflection probe).
+    bool uiViewCaptureActive = false;
     /// Each 3D View's own picture (UIView3DComponentUVE), by its widget.
     struct UIViewCaptureUVE final {
         TextureHandleUVE color = kInvalidTextureHandleUVE;
@@ -4551,6 +4553,7 @@ void Renderer3DUVE::CaptureUIViewsUVE(Scene::IEntityManagerUVE& entityManager, c
     m_impl->destinationViewportOverride.reset();
     m_impl->probeCaptureViewActive = true;
     m_impl->captureTransparentBackground = true;
+    m_impl->uiViewCaptureActive = true;
     for (const auto& [key, size] : shown) {
         const Scene::EntityUVE widget{static_cast<std::uint32_t>(key & 0xFFFFFFFFU), static_cast<std::uint32_t>(key >> 32U)};
         if (!entityManager.IsAliveUVE(widget) || !entityManager.HasComponentUVE<Scene::UIView3DComponentUVE>(widget)) {
@@ -4587,6 +4590,13 @@ void Renderer3DUVE::CaptureUIViewsUVE(Scene::IEntityManagerUVE& entityManager, c
         m_impl->probeCapturePosition = target - forward * view.cameraDistance;
         m_impl->probeCaptureRotation = rotation;
         m_impl->probeCaptureFovY = view.fieldOfViewDegrees * (Math::kPiUVE / 180.0F);
+        if (view.useWidgetStage && view.stageCameraValid) {
+            // The widget's Stage: through its StageCamera, as the Stage tab frames it.
+            m_impl->probeCapturePosition = view.stageCameraPosition;
+            m_impl->probeCaptureRotation = view.stageCameraRotation;
+            m_impl->probeCaptureFovY = std::clamp(view.stageCameraFieldOfViewDegrees, 5.0F, 150.0F) * (Math::kPiUVE / 180.0F);
+        }
+        m_impl->captureTransparentBackground = view.transparentBackground;
         m_impl->probeCaptureNear = 0.05F;
         m_impl->probeCaptureFar = std::max(20.0F, view.cameraDistance * 6.0F);
         m_impl->probeCaptureVisibilityLayers = 0xFFFFFFFFU;
@@ -4595,6 +4605,7 @@ void Renderer3DUVE::CaptureUIViewsUVE(Scene::IEntityManagerUVE& entityManager, c
     }
     m_impl->probeCaptureViewActive = false;
     m_impl->captureTransparentBackground = false;
+    m_impl->uiViewCaptureActive = false;
     m_impl->probeCaptureFovY = Math::kPiUVE * 0.5F;
     m_impl->destinationViewportOverride = savedRegion;
     static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
@@ -5919,8 +5930,12 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uFxaaTexelX", m_impl->humanEyeTexelX);
             m_impl->toneMappingProgram->SetFloatUVE("uFxaaTexelY", m_impl->humanEyeTexelY);
             m_impl->toneMappingProgram->SetIntUVE("uSceneDepthTexture", 1);
+            // A 3D View with a sky behind it is opaque; a probe or a see-through view keeps coverage.
             m_impl->toneMappingProgram->SetIntUVE("uWriteCoverageAlpha",
-                                                   m_impl->destinationTextureOverride.has_value() ? 1 : 0);
+                                                   m_impl->destinationTextureOverride.has_value() &&
+                                                           !(m_impl->uiViewCaptureActive && !m_impl->captureTransparentBackground)
+                                                       ? 1
+                                                       : 0);
             m_impl->toneMappingProgram->SetIntUVE("uHumanEye", m_impl->humanEyeEnabled ? 1 : 0);
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeTexelX", m_impl->humanEyeTexelX);

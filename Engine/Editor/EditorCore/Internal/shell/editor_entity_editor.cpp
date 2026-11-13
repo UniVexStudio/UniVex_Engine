@@ -39,6 +39,15 @@
 #include "ui_layout_container_component.h"
 #include "ui_scroll_container_component.h"
 #include "ui_view_3d_component.h"
+#include "i_scene_serializer.h"
+#include "engine_services.h"
+#include "i_scene_graph.h"
+#include "scalar.h"
+#include "quaternion.h"
+#include "transform_component.h"
+#include "primitive_mesh_component.h"
+#include "light_component.h"
+#include "camera_component.h"
 #include "ui_scrollbar_component.h"
 #include <typeindex>
 #include <type_traits>
@@ -459,7 +468,9 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildComponentsUVE() {
     auto bar = prism::hbox(4.0F);
     m_addButton = ToolButtonUVE(prism::Icon::Plus, m_widgetMode ? "Palette: add a widget" : "Add an object to the entity");
     m_addButton->onClick = [this] {
-        if (m_widgetMode) {
+        if (m_widgetMode && m_stageMode) {
+            ShowStageAddMenuUVE();
+        } else if (m_widgetMode) {
             ShowWidgetPaletteUVE();
         } else {
             ShowAddMenuUVE();
@@ -553,6 +564,10 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildCentreUVE() {
             ResizeWidgetUVE(entity, rect, finished);
         };
         view->add(m_designer);
+        // The Stage tab: the widget's 3D world, in the entity's own 3D view and gizmos.
+        view->add(m_viewport);
+        view->add(m_gizmos);
+        m_gizmos->setVisible(false);
     } else {
         view->add(m_viewport);
         view->add(m_gizmos);
@@ -952,7 +967,7 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
         return !em.IsAliveUVE(entry.target) || std::find(objects.begin(), objects.end(), entry.target) == objects.end();
     });
     const std::string active = m_blueprintMode ? m_blueprintPanel.PathUVE() : std::string{};
-    std::string signature = active + (m_blueprintPanel.DirtyUVE() ? "*" : "") + "|";
+    std::string signature = active + (m_blueprintPanel.DirtyUVE() ? "*" : "") + (m_stageMode ? "S" : "") + "|";
     for (const OpenBlueprintEntryUVE& entry : m_openBlueprints) {
         signature += entry.path + ";";
     }
@@ -974,9 +989,17 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
         graph->setChecked(m_blueprintMode);
         graph->setTooltip("Graph: what the widget does (On Button Clicked, Set Text ...)");
         graph->onClick = [this] { OpenWidgetGraphUVE(); };
+        designer->setChecked(!m_blueprintMode && !m_stageMode);
+        designer->onClick = [this] { SetWidgetPageUVE(0); };
+        auto stage = prism::make<prism::Button>("Stage", prism::Icon::Cube, prism::ButtonStyle::Toolbar);
+        stage->setCheckable(true);
+        stage->setChecked(!m_blueprintMode && m_stageMode);
+        stage->setTooltip("Stage: the 3D world a 3D View shows its asset in - floor, lights, props, StageCamera, ModelSpot");
+        stage->onClick = [this] { SetWidgetPageUVE(2); };
         m_crumbRow->add(designer, CentreUVE());
         m_crumbRow->add(graph, CentreUVE());
-        if (!m_blueprintMode && m_designer) {
+        m_crumbRow->add(stage, CentreUVE());
+        if (!m_blueprintMode && !m_stageMode && m_designer) {
             // The screen the widget is designed for.
             auto bar = prism::make<prism::Label>("|", prism::FontRole::Small);
             bar->setColor(prism::ThemeColor(&prism::Theme::textDim));
@@ -1804,6 +1827,142 @@ void EditorEntityEditorUVE::ShowWidgetPaletteUVE() {
                           "Search widgets");
 }
 
+void EditorEntityEditorUVE::SetWidgetPageUVE(const int page) {
+    // 0 Designer, 1 Graph, 2 Stage.
+    if (page == 1) {
+        OpenWidgetGraphUVE();
+        return;
+    }
+    m_stageMode = page == 2;
+    if (m_stageMode) {
+        EnsureWidgetStageUVE();
+    }
+    SetBlueprintModeUVE(false);
+    if (m_designer) {
+        m_designer->setVisible(!m_stageMode);
+    }
+    if (m_viewport) {
+        m_viewport->setVisible(m_stageMode);
+    }
+    if (m_gizmos) {
+        m_gizmos->setVisible(m_stageMode);
+    }
+    if (m_addButton) {
+        m_addButton->setTooltip(m_stageMode ? "Add to the Stage: lights, meshes, props, cameras" : "Palette: add a widget");
+    }
+    m_crumbSignature.clear();
+    SyncBlueprintCrumbsUVE();
+    if (prism::Application::exists()) {
+        prism::Application::get().invalidateLayout();
+    }
+}
+
+Scene::EntityUVE EditorEntityEditorUVE::FindWidgetStageUVE() const {
+    const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    if (root == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+    for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, root)) {
+        if (em.HasComponentUVE<Scene::NameComponentUVE>(child) &&
+            em.GetComponentUVE<Scene::NameComponentUVE>(child).name == Scene::kWidgetStageNameUVE) {
+            return child;
+        }
+    }
+    return Scene::kInvalidEntityUVE;
+}
+
+void EditorEntityEditorUVE::EnsureWidgetStageUVE() {
+    // A widget's first Stage: a floor, a key and a rim light, the camera a 3D View looks
+    // through and the spot its asset stands on - a lit set, ready to dress.
+    if (FindWidgetStageUVE() != Scene::kInvalidEntityUVE) {
+        return;
+    }
+    const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+    if (root == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& graph = m_editor.m_services->GetSceneGraphUVE();
+    const auto make = [&](const SceneObjectKindUVE kind, const std::string_view name, const Scene::EntityUVE parent,
+                          const Math::Vector3UVE position, const Math::Vector3UVE eulerDegrees, const Math::Vector3UVE scale) {
+        const Scene::EntityUVE entity = m_editor.CreateDocumentSceneObjectUVE(kind, parent);
+        if (entity == Scene::kInvalidEntityUVE) {
+            return entity;
+        }
+        if (em.HasComponentUVE<Scene::NameComponentUVE>(entity)) {
+            em.GetComponentUVE<Scene::NameComponentUVE>(entity).name = std::string(name);
+        }
+        if (em.HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+            Scene::TransformComponentUVE transform = em.GetComponentUVE<Scene::TransformComponentUVE>(entity);
+            const float k = Math::kPiUVE / 180.0F;
+            transform.localPosition = position;
+            transform.localEulerRadians = Math::Vector3UVE{eulerDegrees.x * k, eulerDegrees.y * k, eulerDegrees.z * k};
+            static_cast<void>(Math::TryMakeEulerUVE(transform.localEulerRadians, transform.localRotation));
+            transform.localScale = scale;
+            graph.SetLocalTransformUVE(em, entity, transform);
+        }
+        return entity;
+    };
+    const Math::Vector3UVE one{1.0F, 1.0F, 1.0F};
+    const Scene::EntityUVE stage = make(SceneObjectKindUVE::Object3D, Scene::kWidgetStageNameUVE, root, {}, {}, one);
+    if (stage == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    const Scene::EntityUVE floor = make(SceneObjectKindUVE::PlaneMesh3D, "Floor", stage, {}, {}, Math::Vector3UVE{8.0F, 1.0F, 8.0F});
+    if (floor != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(floor)) {
+        em.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(floor).baseColor = Math::Vector3UVE{0.34F, 0.36F, 0.42F};
+    }
+    const auto light = [&](const std::string_view name, const Math::Vector3UVE position, const Math::ColorUVE color, const float intensity) {
+        const Scene::EntityUVE entity = make(SceneObjectKindUVE::Light3D, name, stage, position, {}, one);
+        if (entity != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::LightComponentUVE>(entity)) {
+            Scene::LightComponentUVE& l = em.GetComponentUVE<Scene::LightComponentUVE>(entity);
+            l.type = Scene::LightTypeUVE::Point;
+            l.color = color;
+            l.intensity = intensity;
+            l.range = 14.0F;
+        }
+    };
+    light("KeyLight", Math::Vector3UVE{2.2F, 3.2F, 2.6F}, Math::ColorUVE{1.0F, 0.95F, 0.88F}, 14.0F);
+    light("RimLight", Math::Vector3UVE{-2.6F, 2.4F, -2.2F}, Math::ColorUVE{0.55F, 0.7F, 1.0F}, 9.0F);
+    light("FillLight", Math::Vector3UVE{-2.4F, 1.6F, 3.0F}, Math::ColorUVE{0.9F, 0.92F, 1.0F}, 5.0F);
+    const Scene::EntityUVE camera =
+        make(SceneObjectKindUVE::Camera3D, Scene::kWidgetStageCameraNameUVE, stage, Math::Vector3UVE{0.0F, 1.05F, 4.8F},
+             Math::Vector3UVE{-2.0F, 0.0F, 0.0F}, one);
+    if (camera != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::CameraComponentUVE>(camera)) {
+        Scene::CameraComponentUVE& lens = em.GetComponentUVE<Scene::CameraComponentUVE>(camera);
+        lens.fieldOfViewDegrees = 32.0F;
+        lens.current = false;
+    }
+    make(SceneObjectKindUVE::Marker3D, Scene::kWidgetModelSpotNameUVE, stage, {}, {}, one);
+    m_editor.SelectEntityUVE(stage);
+}
+
+void EditorEntityEditorUVE::ShowStageAddMenuUVE() {
+    // What a Stage is dressed with: everything an entity is built from, under the Stage.
+    const Scene::EntityUVE stage = FindWidgetStageUVE();
+    std::vector<prism::MenuItem> items = BuildAddObjectMenuUVE(
+        AddObjectContextUVE::Entity, m_icons, [this, stage](const SceneObjectKindUVE kind) {
+            Scene::EntityUVE parent = stage;
+            const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE();
+            // Into the selected Stage object when it is one, else onto the Stage.
+            for (Scene::EntityUVE cursor = selected; cursor != Scene::kInvalidEntityUVE;) {
+                if (cursor == stage) {
+                    parent = selected;
+                    break;
+                }
+                Scene::EntityUVE up = Scene::kInvalidEntityUVE;
+                if (!m_editor.TryGetDocumentParentUVE(cursor, up) || up == cursor) {
+                    break;
+                }
+                cursor = up;
+            }
+            static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind, parent));
+        });
+    prism::showSearchMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
+                          "Search stage objects");
+}
+
 void EditorEntityEditorUVE::ShowAddMenuUVE() {
     // What an entity is built from (no level environment, sky or streaming), grouped and searchable.
     std::vector<prism::MenuItem> items = BuildAddObjectMenuUVE(
@@ -2178,6 +2337,22 @@ void EditorEntityEditorUVE::RenderUVE() {
             request.lookAtHeight = component.lookAtHeight;
             request.cameraDistance = component.cameraDistance;
             request.pitchDegrees = component.pitchDegrees;
+            if (component.useWidgetStage) {
+                // The Stage as it is now, snapshotted a few times a second (not every frame).
+                const auto now = std::chrono::steady_clock::now();
+                if (now - m_stageSnapshotTime > std::chrono::milliseconds(250)) {
+                    m_stageSnapshotTime = now;
+                    m_stageSnapshot.clear();
+                    const Scene::EntityUVE stage = FindWidgetStageUVE();
+                    if (stage != Scene::kInvalidEntityUVE) {
+                        if (const std::optional<Scene::SceneSnapshotUVE> snapshot = m_editor.m_services->GetSceneSerializerUVE().CaptureUVE(
+                                m_editor.m_services->GetEntityManagerUVE(), {stage}, Scene::SceneAssetTypeUVE::Prefab)) {
+                            m_stageSnapshot = snapshot->bytes;
+                        }
+                    }
+                }
+                request.stage = m_stageSnapshot;
+            }
             Math::Vector2UVE used{0.0F, 0.0F};
             const std::uint64_t texture = m_editor.RenderWidgetPreviewUVE(request, Math::Vector2UVE{rect.w, rect.h}, used);
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
