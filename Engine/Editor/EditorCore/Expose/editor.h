@@ -1875,6 +1875,9 @@ private:
     bool m_showCaptureWindow = false;
     bool m_showAudioMixerWindow = false;
     void DrawImportProgressModalUVE();
+    /// Reloads every loaded asset whose file is one of `files`, under whichever path spelling it was
+    /// registered (a relative and an absolute spelling are two GUIDs with two loaded copies).
+    void ReloadRetargetedFilesUVE(const std::vector<std::filesystem::path>& files);
     void FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::RetargetFilesResultUVE result);
     /// Gives every Skeleton3D bound to `modelFile`'s source the bones of the conformed model; the
     /// number changed.

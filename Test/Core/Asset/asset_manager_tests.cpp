@@ -235,6 +235,51 @@ TEST_F(AssetManagerUVETest, LoadUVE_RealFile_BecomesReadyWithMatchingBytes) {
     std::filesystem::remove(path);
 }
 
+TEST_F(AssetManagerUVETest, ReloadUVE_WhileLoading_RunsAgainAndEndsWithTheNewFile) {
+    // A tool rewrote the file while it was being loaded: the reload asked for meanwhile is not
+    // dropped, so the asset ends up holding the new file, not the one the running load read.
+    const std::filesystem::path path = "uve_asset_manager_tests_queued_reload.uvblob";
+    std::filesystem::remove(path);
+    const auto write = [&path](const std::string& text) {
+        const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
+        return WriteUveFileUVE(path, AssetKindUVE::Blob, std::vector<std::byte>(bytes, bytes + text.size()));
+    };
+    ASSERT_TRUE(write("before"));
+    std::atomic<bool> release{false};
+    std::atomic<int> loads{0};
+    assetManager.RegisterLoaderUVE<BlobAssetUVE>([&release, &loads](const std::filesystem::path& file, BlobAssetUVE& out) {
+        if (loads.fetch_add(1) == 0) {
+            for (int spin = 0; spin < 2000000 && !release.load(); ++spin) {
+                std::this_thread::yield();
+            }
+        }
+        return LoadBlobUVE(file, out);
+    });
+    const AssetGuidUVE guid = assetDatabase.RegisterUVE(path);
+    const AssetHandleUVE<BlobAssetUVE> handle = assetManager.LoadUVE<BlobAssetUVE>(guid, assetDatabase);
+    for (int spin = 0; spin < 2000000 && loads.load() == 0; ++spin) {
+        std::this_thread::yield();
+    }
+    ASSERT_EQ(loads.load(), 1);
+    ASSERT_FALSE(handle.IsReadyUVE());
+    assetManager.ReloadUVE(guid, assetDatabase);
+    ASSERT_TRUE(write("after"));
+    release.store(true);
+    for (int spin = 0; spin < 4000000 && loads.load() < 2; ++spin) {
+        std::this_thread::yield();
+    }
+    EXPECT_EQ(loads.load(), 2);
+    bool sawAfter = false;
+    for (int spin = 0; spin < 4000000 && !sawAfter; ++spin) {
+        if (const BlobAssetUVE* const blob = handle.TryGetUVE(); blob != nullptr) {
+            sawAfter = std::string(reinterpret_cast<const char*>(blob->data()), blob->size()) == "after";
+        }
+        std::this_thread::yield();
+    }
+    EXPECT_TRUE(sawAfter);
+    std::filesystem::remove(path);
+}
+
 TEST_F(AssetManagerUVETest, LoadUVE_CalledTwiceForSameGuid_LoadsOnlyOnce) {
     const std::filesystem::path path = "uve_asset_manager_tests_shared.uvblob";
     std::filesystem::remove(path);

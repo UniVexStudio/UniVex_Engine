@@ -14,6 +14,7 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -145,6 +146,37 @@ std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesyst
     return changed;
 }
 
+void EditorUVE::ReloadRetargetedFilesUVE(const std::vector<std::filesystem::path>& files) {
+    // A file can be registered under more than one spelling (relative to the working folder, or
+    // absolute), and each spelling is its own GUID with its own loaded copy: a character placed
+    // before Generate plays the clip it loaded then. Every GUID whose path is this file reloads.
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    Asset::IAssetManagerUVE& assets = m_services->GetAssetManagerUVE();
+    const auto identity = [](const std::filesystem::path& path) {
+        std::error_code error;
+        const std::filesystem::path absolute = std::filesystem::weakly_canonical(std::filesystem::absolute(path, error), error);
+        return error ? path.lexically_normal().generic_string() : absolute.generic_string();
+    };
+    std::unordered_set<std::string> wanted;
+    for (const std::filesystem::path& file : files) {
+        if (!file.empty()) {
+            wanted.insert(identity(file));
+            static_cast<void>(database.RegisterUVE(file));
+        }
+    }
+    if (wanted.empty()) {
+        return;
+    }
+    for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
+        if (record.guid == Asset::kInvalidAssetGuidUVE || !wanted.contains(identity(record.path))) {
+            continue;
+        }
+        if (assets.GetLoadStateUVE(record.guid) != Asset::AssetLoadStateUVE::NotLoaded) {
+            assets.ReloadUVE(record.guid, database);
+        }
+    }
+}
+
 void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::RetargetFilesResultUVE result) {
     window.statusIsError = !result.ok;
     if (!result.ok) {
@@ -153,16 +185,13 @@ void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::R
         return;
     }
     // The renderer and the animation players may hold the old files.
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    std::vector<std::filesystem::path> changedFiles;
     for (const Retarget::RetargetFileReportUVE& file : result.files) {
-        if (!file.changed) {
-            continue;
-        }
-        const Asset::AssetGuidUVE guid = database.RegisterUVE(file.file);
-        if (guid != Asset::kInvalidAssetGuidUVE) {
-            m_services->GetAssetManagerUVE().ReloadUVE(guid, database);
+        if (file.changed) {
+            changedFiles.push_back(file.file);
         }
     }
+    ReloadRetargetedFilesUVE(changedFiles);
     const std::size_t skeletons =
         window.jobModel.empty() ? 0U : RefreshSkeletonsForRetargetedModelUVE(window.jobModel);
     if (!window.jobModel.empty()) {
@@ -276,18 +305,23 @@ bool EditorUVE::UndoLastRetargetUVE() {
         window.statusIsError = true;
         return false;
     }
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
     const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
     std::vector<std::filesystem::path> files;
     if (!modelFile.empty()) {
+        // The character and everything published beside it (parts, skeleton) came back.
         files.push_back(modelFile);
-    }
-    files.insert(files.end(), window.animations.begin(), window.animations.end());
-    for (const std::filesystem::path& file : files) {
-        if (const Asset::AssetGuidUVE guid = database.RegisterUVE(file); guid != Asset::kInvalidAssetGuidUVE) {
-            m_services->GetAssetManagerUVE().ReloadUVE(guid, database);
+        std::error_code error;
+        const std::string prefix = modelFile.stem().string() + ".";
+        for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(modelFile.parent_path(), error)) {
+            const std::string name = entry.path().filename().string();
+            const std::string extension = LowerUVE(entry.path().extension().string());
+            if (entry.path() != modelFile && name.starts_with(prefix) && (extension == ".uvmodel" || extension == ".uvskel")) {
+                files.push_back(entry.path());
+            }
         }
     }
+    files.insert(files.end(), window.animations.begin(), window.animations.end());
+    ReloadRetargetedFilesUVE(files);
     const std::size_t skeletons = modelFile.empty() ? 0U : RefreshSkeletonsForRetargetedModelUVE(modelFile);
     MarkRetargetedModelUVE(window.target, false);
     ClearMeshThumbnailCacheUVE();
