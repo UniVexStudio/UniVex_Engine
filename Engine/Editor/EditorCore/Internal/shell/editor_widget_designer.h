@@ -42,6 +42,11 @@ public:
     void SetItemsUVE(std::vector<ItemUVE> items);
     [[nodiscard]] const std::vector<ItemUVE>& ItemsUVE() const noexcept { return m_items; }
     void SetSelectedUVE(Scene::EntityUVE entity);
+    /// The 3D View whose live picture the owner draws under the Designer: its rect is left open.
+    void SetLivePreviewUVE(Scene::EntityUVE entity);
+    [[nodiscard]] Scene::EntityUVE LivePreviewUVE() const noexcept { return m_livePreview; }
+    /// Where a widget is drawn, in window pixels, cut to the visible canvas (empty when it is not shown).
+    [[nodiscard]] prism::Rect ViewRectOfUVE(Scene::EntityUVE entity) const;
     void SetResolutionUVE(float width, float height);
     [[nodiscard]] float WidthUVE() const noexcept { return m_designW; }
     [[nodiscard]] float HeightUVE() const noexcept { return m_designH; }
@@ -50,12 +55,15 @@ public:
     std::function<void(Scene::EntityUVE)> onPicked;
     /// A widget dragged by `delta` design pixels: live while held, `finished` when let go.
     std::function<void(Scene::EntityUVE, float dx, float dy, bool finished)> onMoved;
+    /// A widget resized from one of its corner handles to `rect` (design pixels): live, then `finished`.
+    std::function<void(Scene::EntityUVE, prism::Rect rect, bool finished)> onResized;
 
     prism::Vec2 measure(prism::Vec2 available) override;
     void paint(prism::Canvas& c) override;
     bool onMouseDown(const prism::MouseEvent& e) override;
     bool onMouseMove(const prism::MouseEvent& e) override;
     bool onMouseUp(const prism::MouseEvent& e) override;
+    prism::Cursor cursor() const override;
 
 private:
     /// Where the design canvas sits in the view, and its scale.
@@ -67,6 +75,15 @@ private:
     std::vector<ItemUVE> m_items;
     Scene::EntityUVE m_selected = Scene::kInvalidEntityUVE;
     Scene::EntityUVE m_hover = Scene::kInvalidEntityUVE;
+    Scene::EntityUVE m_livePreview = Scene::kInvalidEntityUVE;
+    /// The selected widget's corner handle under `p` (0 top-left, 1 top-right, 2 bottom-left,
+    /// 3 bottom-right), or -1.
+    [[nodiscard]] int HandleAtUVE(prism::Vec2 p) const;
+    int m_resizeCorner = -1;
+    int m_hoverCorner = -1;
+    prism::Rect m_resizeStart{};
+    prism::Vec2 m_resizePress{};
+    bool m_resized = false;
     float m_designW = 1920.0F;
     float m_designH = 1080.0F;
     bool m_dragging = false;

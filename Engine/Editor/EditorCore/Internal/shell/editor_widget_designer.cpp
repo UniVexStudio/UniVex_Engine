@@ -55,6 +55,32 @@ void WidgetDesignerViewUVE::SetSelectedUVE(const Scene::EntityUVE entity) {
     }
 }
 
+void WidgetDesignerViewUVE::SetLivePreviewUVE(const Scene::EntityUVE entity) {
+    if (m_livePreview != entity) {
+        m_livePreview = entity;
+        invalidate();
+    }
+}
+
+prism::Rect WidgetDesignerViewUVE::ViewRectOfUVE(const Scene::EntityUVE entity) const {
+    for (const ItemUVE& item : m_items) {
+        if (item.entity != entity || !item.visible) {
+            continue;
+        }
+        const prism::Rect v = ToViewUVE(item.rect);
+        const prism::Rect canvas = CanvasRectUVE();
+        const float x0 = std::max(v.x, canvas.x);
+        const float y0 = std::max(v.y, canvas.y);
+        const float x1 = std::min(v.right(), canvas.right());
+        const float y1 = std::min(v.bottom(), canvas.bottom());
+        if (x1 - x0 < 2.0F || y1 - y0 < 2.0F) {
+            return prism::Rect{};
+        }
+        return prism::Rect{std::floor(x0), std::floor(y0), std::floor(x1 - x0), std::floor(y1 - y0)};
+    }
+    return prism::Rect{};
+}
+
 void WidgetDesignerViewUVE::SetResolutionUVE(const float width, const float height) {
     m_designW = std::max(64.0F, width);
     m_designH = std::max(64.0F, height);
@@ -223,6 +249,21 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 }
                 break;
             case KindUVE::View3D: {
+                if (item.entity == m_livePreview) {
+                    // The live picture is drawn under the Designer: leave its place open, and name it.
+                    const prism::Rect hole = ViewRectOfUVE(item.entity);
+                    if (hole.w > 0.0F) {
+                        c.fillRaw(hole, 0x00000000U);
+                        const prism::Rect strip{hole.x, hole.y, hole.w, std::min(hole.h, 20.0F)};
+                        c.fillRect(strip, prism::Color(10, 12, 18, 150));
+                        if (const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(KindUVE::View3D, 14); icon) {
+                            c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, prism::Rect{strip.x + 3.0F, strip.y + 3.0F, 14.0F, 14.0F});
+                        }
+                        c.textIn(*t.small, prism::Rect{strip.x + 20.0F, strip.y + 2.0F, std::max(0.0F, strip.w - 24.0F), 16.0F}, item.text,
+                                 prism::Color(225, 232, 244), prism::HAlign::Left, true);
+                    }
+                    break;
+                }
                 // The asset turns here in the game; the Designer shows where, and what.
                 c.pushClip(v);
                 c.gradientV(v, prism::Color(28, 34, 48), prism::Color(14, 16, 22));
@@ -289,9 +330,46 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
     }
 }
 
+int WidgetDesignerViewUVE::HandleAtUVE(const prism::Vec2 p) const {
+    for (const ItemUVE& item : m_items) {
+        if (item.entity != m_selected || !item.visible || item.kind == KindUVE::Canvas) {
+            continue;
+        }
+        const prism::Rect v = ToViewUVE(item.rect);
+        const prism::Rect frame{std::floor(v.x) - 1.0F, std::floor(v.y) - 1.0F, std::ceil(v.w) + 2.0F, std::ceil(v.h) + 2.0F};
+        const prism::Vec2 corners[] = {frame.pos(), prism::Vec2{frame.right(), frame.y}, prism::Vec2{frame.x, frame.bottom()},
+                                       prism::Vec2{frame.right(), frame.bottom()}};
+        for (int i = 0; i < 4; ++i) {
+            if (std::fabs(p.x - corners[i].x) <= 6.0F && std::fabs(p.y - corners[i].y) <= 6.0F) {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
+prism::Cursor WidgetDesignerViewUVE::cursor() const {
+    if (m_resizeCorner >= 0 || m_hoverCorner >= 0) {
+        return prism::Cursor::SizeAll;
+    }
+    return m_dragging ? prism::Cursor::SizeAll : (m_hover != Scene::kInvalidEntityUVE ? prism::Cursor::Hand : prism::Cursor::Arrow);
+}
+
 bool WidgetDesignerViewUVE::onMouseDown(const prism::MouseEvent& e) {
     if (e.button != prism::MouseButton::Left) {
         return false;
+    }
+    // A corner handle of the selected widget resizes it.
+    if (const int corner = HandleAtUVE(e.pos); corner >= 0) {
+        for (const ItemUVE& item : m_items) {
+            if (item.entity == m_selected) {
+                m_resizeCorner = corner;
+                m_resizeStart = item.rect;
+                m_resizePress = e.pos;
+                m_resized = false;
+                return true;
+            }
+        }
     }
     const Scene::EntityUVE hit = HitUVE(e.pos);
     m_selected = hit;
@@ -307,7 +385,46 @@ bool WidgetDesignerViewUVE::onMouseDown(const prism::MouseEvent& e) {
 }
 
 bool WidgetDesignerViewUVE::onMouseMove(const prism::MouseEvent& e) {
+    if (m_resizeCorner >= 0) {
+        const float s = ScaleUVE();
+        const float dx = std::round((e.pos.x - m_resizePress.x) / s);
+        const float dy = std::round((e.pos.y - m_resizePress.y) / s);
+        prism::Rect r = m_resizeStart;
+        constexpr float kMinimumUVE = 8.0F;
+        const bool left = m_resizeCorner == 0 || m_resizeCorner == 2;
+        const bool top = m_resizeCorner == 0 || m_resizeCorner == 1;
+        if (left) {
+            const float w = std::max(kMinimumUVE, m_resizeStart.w - dx);
+            r.x = m_resizeStart.right() - w;
+            r.w = w;
+        } else {
+            r.w = std::max(kMinimumUVE, m_resizeStart.w + dx);
+        }
+        if (top) {
+            const float h = std::max(kMinimumUVE, m_resizeStart.h - dy);
+            r.y = m_resizeStart.bottom() - h;
+            r.h = h;
+        } else {
+            r.h = std::max(kMinimumUVE, m_resizeStart.h + dy);
+        }
+        for (ItemUVE& item : m_items) {
+            if (item.entity == m_selected) {
+                item.rect = r;
+            }
+        }
+        m_resized = true;
+        if (onResized) {
+            onResized(m_selected, r, false);
+        }
+        invalidate();
+        return true;
+    }
     if (!m_dragging) {
+        const int corner = HandleAtUVE(e.pos);
+        if (corner != m_hoverCorner) {
+            m_hoverCorner = corner;
+            invalidate();
+        }
         const Scene::EntityUVE hover = HitUVE(e.pos);
         if (hover != m_hover) {
             m_hover = hover;
@@ -342,6 +459,18 @@ bool WidgetDesignerViewUVE::onMouseMove(const prism::MouseEvent& e) {
 }
 
 bool WidgetDesignerViewUVE::onMouseUp(const prism::MouseEvent& e) {
+    if (e.button == prism::MouseButton::Left && m_resizeCorner >= 0) {
+        m_resizeCorner = -1;
+        if (m_resized && onResized) {
+            for (const ItemUVE& item : m_items) {
+                if (item.entity == m_selected) {
+                    onResized(m_selected, item.rect, true);
+                }
+            }
+        }
+        m_resized = false;
+        return true;
+    }
     if (e.button != prism::MouseButton::Left || !m_dragging) {
         return false;
     }

@@ -808,6 +808,8 @@ public:
         InspectorCameraPreview,
         /// The Montage Editor's preview of its character.
         MontageEditor,
+        /// The Widget Editor's Designer: a 3D View's asset, live, where the widget stands.
+        WidgetPreview,
         Count
     };
 
@@ -1005,6 +1007,22 @@ public:
     /// Draws the preview into the Montage Editor's view (ViewportContextUVE::MontageEditor).
     [[nodiscard]] std::uint64_t RenderMontagePreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
                                                         const EditorViewportInputUVE& input);
+    /// What the Widget Editor's Designer shows in a 3D View (UIView3DComponentUVE's look).
+    struct WidgetPreviewRequestUVE final {
+        /// The entity asset, as the project reads it ("assets/Hero.uventity").
+        std::string assetPath;
+        float yawDegrees = 0.0F;
+        float spinDegreesPerSecond = 0.0F;
+        float lookAtHeight = 1.0F;
+        float cameraDistance = 3.5F;
+        float pitchDegrees = 0.0F;
+    };
+    /// Draws a 3D View's asset, lit and turning, into the Designer's preview
+    /// (ViewportContextUVE::WidgetPreview), in a world of its own; 0 when there is nothing to show.
+    [[nodiscard]] std::uint64_t RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& request, const Math::Vector2UVE& size,
+                                                      Math::Vector2UVE& outUsed);
+    /// Lets the preview's world go (the Widget Editor closed, or no 3D View left).
+    void EndWidgetPreviewUVE();
     /// The open montage's clip `guid`, loaded once (nullptr when it is not a readable skeletal clip).
     [[nodiscard]] const Asset::AnimationClipAssetUVE* MontageClipUVE(Asset::AssetGuidUVE guid);
     [[nodiscard]] MontageEditSessionUVE* MontageEditSessionPtrUVE() noexcept {
@@ -3439,6 +3457,18 @@ private:
     /// The Montage Editor's preview scene (its character), beside the level and the entity.
     std::unique_ptr<Core::DocumentSceneUVE> m_montageScene;
     std::map<std::uint64_t, std::optional<Asset::AnimationClipAssetUVE>> m_montageClips;
+    /// The Widget Editor's 3D View preview: its world, the asset standing in it, how it is framed.
+    struct WidgetPreviewUVE final {
+        std::unique_ptr<Core::DocumentSceneUVE> scene;
+        std::string assetPath;
+        Scene::EntityUVE root = Scene::kInvalidEntityUVE;
+        ViewportOverlayStateUVE overlay;
+        float spinDegrees = 0.0F;
+        std::chrono::steady_clock::time_point lastFrame{};
+        std::array<float, 3> framedTarget{0.0F, 0.0F, 0.0F};
+        float framedRadius = 0.0F;
+    };
+    std::optional<WidgetPreviewUVE> m_widgetPreview;
     void RebuildMontagePreviewUVE();
     DocumentStateUVE m_otherDocument;
     bool m_entityDocumentActive = false;
