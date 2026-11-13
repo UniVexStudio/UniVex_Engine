@@ -144,7 +144,7 @@ public:
 
     void SetCameraFrustumMeshUVE(univex::gizmo::GizmoMesh mesh) { cameraFrustumMesh_ = std::move(mesh); }
 
-    // Collision shapes to draw this frame (Unreal's "Show Collision"): world-space line segments,
+    // Collision shapes to draw this frame (the standard "Show Collision"): world-space line segments,
     // empty for none. Unlike the bones, these are DEPTH-TESTED against the scene and drawn before
     // the depth buffer is cleared - a collider behind a wall is behind a wall, which is the whole
     // point of looking at it from the camera the player will use.

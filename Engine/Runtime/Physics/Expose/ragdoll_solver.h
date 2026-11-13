@@ -36,7 +36,7 @@ inline constexpr std::uint32_t kMaximumRagdollSubstepsUVE = 8U;
 /// point where a 19-body humanoid at a 4:1 mass ratio stops visibly stretching, and a ninth gains
 /// less than it costs.
 inline constexpr std::size_t kRagdollDefaultVelocityIterationsUVE = 8U;
-/// Position iterations. This is Unreal's "Enable Linear/Angular Projection" and it is a different
+/// Position iterations. This is the common "Enable Linear/Angular Projection" and it is a different
 /// mechanism from the velocity solve: it moves bodies back onto the joint AFTER integration, so it
 /// removes drift without injecting energy into the velocity state.
 inline constexpr std::size_t kRagdollDefaultPositionIterationsUVE = 4U;
@@ -55,7 +55,7 @@ inline constexpr float kRagdollSleepDelaySecondsUVE = 0.5F;
 
 /// A joint's freedom about one rotational axis.
 ///
-/// This is deliberately Unreal's three-way motion model (Free / Limited / Locked from its Physics
+/// This is deliberately the common three-way motion model (Free / Limited / Locked from its Physics
 /// Constraint editor) rather than a `Hinge`/`BallSocket` pair of closed joint types. The reason is
 /// anatomical: a shoulder and a knee are not two species of joint, they are the same spherical joint
 /// with different limits. Encoding the limits instead of the type means the twist axis, the cone and
@@ -82,7 +82,7 @@ struct RagdollBodyUVE final {
     /// Half the CYLINDRICAL part of the capsule, along the body's local +Y. The total length is
     /// `2 * (halfHeight + radius)`.
     float halfHeight = 0.08F;
-    /// Unreal's per-body Linear/Angular Damping, and its default advice applies: distal limbs want
+    /// The standard per-body Linear/Angular Damping, and its default advice applies: distal limbs want
     /// more angular damping than proximal ones or the extremities spin after everything else stops.
     /// `velocity *= 1 / (1 + damping * dt)` - implicit, so it cannot overshoot at any step size.
     float linearDamping = 0.05F;
@@ -108,7 +108,7 @@ struct RagdollBodyUVE final {
 /// One joint between two bodies.
 ///
 /// Angular limits are measured as the deviation of the two bodies' joint frames from coincident -
-/// the same "constraint frame" model Unreal's Physics Asset uses. Each frame is a single quaternion
+/// the same "constraint frame" model the standard Physics Asset uses. Each frame is a single quaternion
 /// in its own body's local space, and the builder is expected to choose the second frame so the two
 /// coincide at bind: `secondFrame = conjugate(secondBind) * firstBind * firstFrame`. A frame whose
 /// local +X is the twist axis then means, with no extra state anywhere, that twist is rotation about
@@ -124,7 +124,7 @@ struct RagdollJointUVE final {
     Math::QuaternionUVE firstFrame{};
     Math::QuaternionUVE secondFrame{};
 
-    /// Unreal's Linear Limits, which for a ragdoll are always Locked: a ball socket joint is a point
+    /// The standard Linear Limits, which for a ragdoll are always Locked: a ball socket joint is a point
     /// coincidence, and a limb that could slide along its bone axis would grow.
     /// ---- Angular limits ----
     RagdollMotionUVE swing1Motion = RagdollMotionUVE::Limited;
@@ -143,14 +143,14 @@ struct RagdollJointUVE final {
     bool twistAsymmetric = false;
     float twistLowerLimitDegrees = -45.0F;
     float twistUpperLimitDegrees = 45.0F;
-    /// How hard an exceeded limit is pushed back, 0..1. Unreal exposes this as Limit Stiffness; the
+    /// How hard an exceeded limit is pushed back, 0..1. Others expose this as Limit Stiffness; the
     /// useful range there is the same, and the default is deliberately short of 1 so a hard stop
     /// reads as a joint stopping rather than as a latch snapping shut.
     float limitStiffness = 0.6F;
     /// Extra damping applied only while a limit is exceeded, draining the momentum that drove the
-    /// joint into it instead of letting it ring. Unreal's Limit Damping, same purpose.
+    /// joint into it instead of letting it ring. The standard Limit Damping, same purpose.
     float limitDamping = 0.8F;
-    /// Whether position projection corrects this joint's drift. Unreal gates projection per joint
+    /// Whether position projection corrects this joint's drift. Others gate projection per joint
     /// because projecting a joint that is being pushed apart by a collision fights the collision.
     bool projectionEnabled = true;
 
@@ -205,7 +205,7 @@ struct RagdollStepReportUVE final {
 
 /// A bounded, deterministic articulated-body solver for ragdolls.
 ///
-/// The method is sequential impulses (also called projected Gauss-Seidel), the family Unreal's
+/// The method is sequential impulses (also called projected Gauss-Seidel), the family the standard
 /// PhysX-backed ragdolls, Bullet and Box2D all use: each joint and each contact is solved in turn,
 /// applying an impulse that removes the constraint's relative velocity, repeating until the
 /// corrections stop fighting each other. It is not an exact solver - a 19-body chain never fully
@@ -218,7 +218,7 @@ struct RagdollStepReportUVE final {
 /// the same bits, which is what `Test/Physics/ragdoll_solver_uve_tests.cpp` asserts directly.
 ///
 /// Deliberately absent, and each for a reason:
-///  * No self-collision between the ragdoll's own bodies. Unreal disables collision between
+///  * No self-collision between the ragdoll's own bodies. Others disable collision between
 ///    constrained bodies for the same reason: adjacent capsules overlap at bind, and solving that
 ///    overlap costs more than the silhouette it would buy.
 ///  * No joint motors, no pose matching, no get-up. This is a passive ragdoll, not an active one.
@@ -339,7 +339,7 @@ void ComputeRagdollCapsuleWorldSegmentUVE(const RagdollBodyUVE& body, Math::Vect
                                                              const Math::QuaternionUVE& firstFrame = {}) noexcept;
 
 /// Convenience constructors for the three shapes a humanoid rig actually needs. Each writes the
-/// motions and limits that Unreal's Physics Asset editor would produce for that joint.
+/// motions and limits that the standard Physics Asset editor would produce for that joint.
 [[nodiscard]] RagdollJointUVE MakeBallSocketJointUVE(std::uint32_t firstBody, std::uint32_t secondBody,
                                                      const Math::Vector3UVE& firstAnchor,
                                                      const Math::Vector3UVE& secondAnchor,

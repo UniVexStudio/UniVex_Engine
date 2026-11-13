@@ -18,7 +18,7 @@ class EditorUVE;
 bool ReadTexturePixelsUVE(std::uintptr_t texture, bool bottomUp, int& width, int& height,
                           std::vector<std::uint32_t>& pixels);
 
-/// The thumbnail beside an asset slot in Details, as Unreal shows one: the engine's own preview of
+/// The thumbnail beside an asset slot in Details, as editors show one: the engine's own preview of
 /// the asset in the slot - a material on its lit PBR sphere, a model, a texture - small, and a click
 /// shows it large in a popup. It follows the slot: a new asset, or the material saved again, shows at once.
 class AssetThumbnailUVE final : public prism::Widget {

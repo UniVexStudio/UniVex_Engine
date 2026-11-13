@@ -731,7 +731,7 @@ private:
     void SyncPerceptionUVE(float deltaSeconds);
 
     /// The interaction scan, new wiring for previously unconsumed authored data (the
-    /// Unreal-Lyra-style interactor/focus loop Godot leaves every game to hand-roll out of
+    /// Established interactor/focus loop Godot leaves every game to hand-roll out of
     /// Area3D signals): every frame, every character-controller entity that has a
     /// ColliderComponentUVE and a world transform is an interactor, a possessed Player3D is the
     /// PRIMARY interactor when one exists (else the first in (index,generation) order via
@@ -765,7 +765,7 @@ private:
     void SyncInteractionArea3DObjectsUVE();
 
     /// The LevelStreamer3D consumer: pure per-tick streaming verdicts on LevelStreamer3D objects
-    /// (Godot has no built-in counterpart at all; Unreal's streaming volumes are the inspiration).
+    /// (Godot has no built-in counterpart at all; the standard streaming volumes are the inspiration).
     /// Pass 1 (read-only) collects the viewer point cloud for the tick - the active camera's world
     /// position plus every character-controller entity's world position, finite poses only
     /// (Frostbite's listener-model multi-source). Pass 2 applies Scene::
@@ -800,7 +800,7 @@ private:
     void SyncReflectionProbe3DObjectsUVE();
 
     /// The WorldPartition3D consumer: cell-based visibility for a partition's own subtree
-    /// (Godot has no built-in equivalent at all; this is Unreal World Partition translated into
+    /// (Godot has no built-in equivalent at all; this is World Partition translated into
     /// an in-document budget). Pass 1 walks each enabled, valid partition's descendants
     /// breadth-first (a nested WorldPartition3D manages its own subtree - closest ancestor wins,
     /// so an inner partition is never re-partitioned by an outer one), marks every descendant

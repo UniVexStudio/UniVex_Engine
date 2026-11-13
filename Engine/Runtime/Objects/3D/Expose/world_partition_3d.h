@@ -53,7 +53,7 @@ struct WorldPartition3DMembershipComponentUVE final {
 };
 
 // A cell's integer coordinate inside its partition grid. The partition's own world position is
-// the grid's minimum corner (Unreal's convention), so cell (0,0,0) starts exactly AT the
+// the grid's minimum corner (the standard convention), so cell (0,0,0) starts exactly AT the
 // partition object and the volume covers [origin, origin + cellSize*counts).
 struct WorldPartition3DCellIdUVE final {
     std::int32_t x = 0;

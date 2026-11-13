@@ -4531,7 +4531,7 @@ TEST(EngineCoreUVETest, LevelStreamer3D_CharacterControllerServesAsViewerWithout
 }
 
 TEST(EngineCoreUVETest, LevelStreamer3D_DisablingTheStreamerPullsItsContentWhileTheViewerWatches) {
-    // The authored toggle beats distance, matching the Unreal convention a disabled streaming
+    // The authored toggle beats distance, matching the common convention a disabled streaming
     // volume stops holding its level - measured while the camera stands inside the load radius.
     ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
     StreamerTestCleanupUVE cleanup;
@@ -4681,7 +4681,7 @@ std::uint32_t TotalProbeGenerationsUVE(Scene::IEntityManagerUVE& entityManager,
 } // namespace
 
 TEST(EngineCoreUVETest, ReflectionProbe3D_OnceCapturesOnFirstTickThenStaysSilentForever) {
-    // The measurable answer to Unreal's "capture scene on load" convention: first Tick resolves
+    // The measurable answer to the standard "capture scene on load" convention: first Tick resolves
     // exactly one capture (capturedOnce flips, captureGeneration hits 1), every subsequent tick
     // touches nothing - no re-capture, no latch drift, cost paid exactly once.
     EngineConfigUVE config = MakeTestConfigUVE();

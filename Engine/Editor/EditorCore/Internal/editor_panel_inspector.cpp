@@ -436,7 +436,7 @@ void EditorUVE::DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUV
     ImGui::Separator();
     ImGui::Spacing();
 
-    // Unreal shows an import's outcome on the asset itself; here the closest thing to the asset is
+    // Other editors show an import's outcome on the asset itself; here the closest thing to the asset is
     // the source file's card, and without this the only record of a failed conversion was the log.
     if (IsModelSourcePathUVE(entry.relativePath)) {
         ImGui::TextDisabled("MODEL IMPORT");

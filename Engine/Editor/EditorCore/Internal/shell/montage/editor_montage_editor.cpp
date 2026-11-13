@@ -759,7 +759,7 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
                   }));
     }
 
-    // The asset itself, as Unreal's Asset Details: what it is made of, and what it is shown on.
+    // The asset itself, as the standard Asset Details: what it is made of, and what it is shown on.
     cat = grid->addCategory("Asset");
     {
         std::error_code error;
@@ -843,7 +843,7 @@ void EditorMontageEditorUVE::RebuildSectionsUVE() {
         return;
     }
     const Asset::AnimationMontageAssetUVE& m = session->montage;
-    // Each section with what follows it (End, Loop, or another section), as Unreal's Montage Sections.
+    // Each section with what follows it (End, Loop, or another section), as the standard Montage Sections.
     auto grid = prism::make<prism::PropertyGrid>();
     const int cat = grid->addCategory("Sections");
     for (const Asset::MontageSectionUVE& section : m.sections) {

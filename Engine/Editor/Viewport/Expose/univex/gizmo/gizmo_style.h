@@ -44,7 +44,7 @@ struct GizmoStyle {
     // ---- line weights, in pixels -----------------------------------------
     // Kept deliberately light. A gizmo is read, not admired: past about two pixels a stroke stops
     // looking precise and starts looking drawn on, and the rotate rings suffer worst because three
-    // of them cross in a small area. These sit close to what ImGuizmo and Unreal use.
+    // of them cross in a small area. These sit close to what ImGuizmo and other editors use.
     float axisLineWidthPx = 2.6f;
     // Every stroke and ring is drawn over a darker, slightly wider copy of itself, pushed a pixel
     // behind it: a cheap outline that separates a handle from the scene and from its neighbours

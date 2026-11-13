@@ -189,7 +189,7 @@ enum class EditorSiblingMoveUVE {
 /// orbit distance) so the value is independent of any concrete camera implementation - the app
 /// host applies it through its OrbitCamera's SetTarget/SetYawPitch/SetDistance. Session-local and
 /// never serialized (persisting these across runs needs a settings schema this increment does not
-/// define - real, separate follow-up, the same call Unreal makes for its own Ctrl+0..9 viewport
+/// define - real, separate follow-up, the same call other editors make for its own Ctrl+0..9 viewport
 /// bookmarks when they are stored only in per-user editor settings anyway).
 struct EditorViewportBookmarkUVE final {
     Math::Vector3UVE target{};
@@ -198,7 +198,7 @@ struct EditorViewportBookmarkUVE final {
     float distance = 10.0F;
 };
 
-/// The numeric bookmark slots following the Unreal editor convention (Ctrl+digit stores,
+/// The numeric bookmark slots following the common editor convention (Ctrl+digit stores,
 /// plain digit restores).
 inline constexpr std::size_t kEditorViewportBookmarkSlotCountUVE = 10U;
 
@@ -286,7 +286,7 @@ struct EditorModelSourceInfoUVE final {
 
 /// What placing a model source must do, decided BEFORE the first scene object exists.
 ///
-/// Unreal's FBX pipeline never leaves an asset half-built: an import produces the skeletal mesh, its
+/// The standard FBX pipeline never leaves an asset half-built: an import produces the skeletal mesh, its
 /// skeleton and its materials together, or it fails and says why. This enum is that promise written
 /// down in one place, because the state it rules out does not look like an error - a file whose
 /// converted mesh is not written yet can still be read for its bones, and building those alone
@@ -660,7 +660,7 @@ public:
 
         // Every enabled, visible Skeleton3D's bones, rebuilt each frame; empty in the Game workspace.
         std::vector<ViewportBoneUVE> bones;
-        /// Unreal's "Show Collision": every collider in the document drawn as its actual shape, not
+        /// The standard "Show Collision": every collider in the document drawn as its actual shape, not
         /// as its bounding box. Off by default and session-only, like the equivalent toggle in every
         /// engine - it is a diagnostic, not a project setting, so it must not survive a relaunch and
         /// silently ship in some else's build.
@@ -1530,7 +1530,7 @@ public:
     /// Returns editor-only 2D canvas state for screen-space authoring. It is not scene data.
     [[nodiscard]] Editor2DCanvasStateUVE Get2DCanvasStateUVE() const noexcept;
 
-    /// The editor-viewport bookmark slots (Unreal-editor Ctrl+digit/digit convention). All of it
+    /// The editor-viewport bookmark slots (common editor Ctrl+digit/digit convention). All of it
     /// is transient session state on EditorUVE, never document data and never dirtying the scene:
     /// Set rejects an out-of-range slot or a non-finite/badly-formed pose, Get answers no value
     /// for an empty slot, and Clear empties one slot. The app host owns applying a pose to its

@@ -21,7 +21,7 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr float kSmallUVE = 64.0F;   // as big as Unreal's slot thumbnail
+constexpr float kSmallUVE = 64.0F;   // as big as the standard slot thumbnail
 constexpr float kLargeUVE = 240.0F;
 
 /// The large look at a slot's preview: the picture and the asset's name.

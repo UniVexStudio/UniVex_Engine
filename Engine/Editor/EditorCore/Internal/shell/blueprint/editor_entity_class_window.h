@@ -21,7 +21,7 @@ namespace UVE::Editor {
 class EditorUVE;
 class EditorHostUVE;
 
-/// Entity Class, drawn with PRISM in a window of its own - Unreal's Pick Parent Class for an
+/// Entity Class, drawn with PRISM in a window of its own - the standard Pick Parent Class for an
 /// entity: Content "+ Add" -> Entity -> "Entity Class...".
 ///
 ///   [Entity Class                                      - [] x]

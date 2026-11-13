@@ -100,7 +100,7 @@ void ApplyReflectionProbe3DObjectDefinitionUVE(IEntityManagerUVE& entityManager,
                                                const ReflectionProbe3DObjectDefinitionUVE& value);
 
 // The budget of probe captures serviced per tick. A cubemap capture costs six scene passes -
-// Godot's Always mode re-renders EVERY probe every frame, and Unreal blocks on capture; time-
+// Godot's Always mode re-renders EVERY probe every frame, and others block on capture; time-
 // slicing in the Frostbite style instead starts at most this many captures per tick and lets
 // the rest carry over, prioritized nearest-camera-first. Measured by the engine tests.
 inline constexpr std::size_t kMaximumReflectionProbeCapturesPerTickUVE = 2U;
@@ -130,7 +130,7 @@ struct ReflectionProbe3DCaptureFrameUVE final {
 // doc comment). The rule: normalize the offset per axis by the half extent, take the maximum -
 // the box-shaped Chebyshev distance - and let weight fall linearly from 1 at the center to 0
 // exactly AT the face. Godot's ReflectionProbe ends its influence with a hard clip at the face
-// and Unreal's boxes fade the same normalized way on paper but keep it internal; here the rule
+// and the standard boxes fade the same normalized way on paper but keep it internal; here the rule
 // is one total, directly measurable function: non-finite inputs and degenerate half extents
 // answer 0, `1 - d` is exact at every boundary, and no point ever reports a negative weight.
 [[nodiscard]] float ResolveReflectionProbe3DInfluenceWeightUVE(

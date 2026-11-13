@@ -2527,7 +2527,7 @@ private:
         }
     }
 
-    // Unreal's Ctrl+digit (store) / digit (restore) viewport bookmarks, plus F-to-focus - the
+    // The standard Ctrl+digit (store) / digit (restore) viewport bookmarks, plus F-to-focus - the
     // live consumer of Marker3D in the real editor. Same hovered-panel routing
     // UpdateCameraFromMouseUVE() uses, and deliberately inert while a text field owns the
     // keyboard so typing a digit into an input never hijacks the camera. All bookmark state and
@@ -2599,7 +2599,7 @@ private:
             const std::optional<UVE::Editor::EditorViewportBookmarkUVE> bookmark =
                 editor_.GetViewportBookmarkUVE(slot);
             if (!bookmark.has_value()) {
-                continue; // an empty slot restores nothing - Unreal does the same
+                continue; // an empty slot restores nothing - other editors do the same
             }
             editor_.NotifyViewportOrbitedUVE(); // a restored pose is a free view, not a named one
             camera_.CancelAnimation();

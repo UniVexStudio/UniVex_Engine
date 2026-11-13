@@ -1409,7 +1409,7 @@ void EditorContentBrowserUVE::ShowSplitMenuUVE() {
 }
 
 std::vector<prism::MenuItem> EditorContentBrowserUVE::CatalogueMenuUVE() {
-    // Laid out as Unreal's Content Browser Add: GET (import), CREATE (a folder, the assets made most,
+    // Laid out as the standard Content Browser Add: GET (import), CREATE (a folder, the assets made most,
     // then every kind by category, each opening beside the menu). Only what the engine makes from
     // nothing is here: objects (lights, meshes ...) are placed with the Outliner's '+', and textures,
     // meshes and sounds come in through Import.
@@ -1504,7 +1504,7 @@ void EditorContentBrowserUVE::CreateMaterialUVE(const std::string& stem, const A
 }
 
 void EditorContentBrowserUVE::CreateBlueprintUVE() {
-    // A Blueprint Class with Unreal's starting graph (Event Ready, Event Tick); an object's Script
+    // A Blueprint Class with the standard starting graph (Event Ready, Event Tick); an object's Script
     // slot picks it, or the Entity Editor's Blueprint button makes one for an object directly.
     const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_contentBrowserDirectory;

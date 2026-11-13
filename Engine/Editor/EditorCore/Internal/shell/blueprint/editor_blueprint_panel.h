@@ -91,7 +91,7 @@ private:
     Scene::EntityUVE m_target = Scene::kInvalidEntityUVE;
     bool m_dirty = false;
     bool m_loading = false;
-    /// Variables shown in Details as an object's export (Unreal's Instance Editable).
+    /// Variables shown in Details as an object's export (the standard Instance Editable).
     std::set<std::string> m_exposed;
     /// What the Details tab last showed, to rebuild it only when the variables change.
     std::vector<prism::BlueprintVariable> m_shownVariables;

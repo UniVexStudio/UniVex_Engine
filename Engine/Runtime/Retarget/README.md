@@ -79,7 +79,7 @@ build/Engine/Runtime/Retarget/Runtime/uve_retarget_make_reference <source.fbx> \
 
 ## Rigs from other tools
 
-Names are read by meaning, and the tests cover the conventions in common use: Mixamo, Unreal,
+Names are read by meaning, and the tests cover the conventions in common use: Mixamo,
 Unity Humanoid (`LeftUpperArm`, `LeftThumbProximal`), Rokoko (`LeftInHandIndex` is the
 metacarpal), Rigify (`DEF-spine.004` is the first neck bone, `DEF-upper_arm.L.001` the first
 twist, `DEF-palm.01.L` the index metacarpal), 3ds Max Biped (`Bip01 L Calf`), HumanIK

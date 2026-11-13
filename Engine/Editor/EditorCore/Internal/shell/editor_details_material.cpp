@@ -163,7 +163,7 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
                 ShowPickerUVE(PickerSpecForUVE({".uvtex"}), std::move(actions), button->rect());
             }
         };
-        // The texture itself beside its picker, as Unreal shows a slot.
+        // The texture itself beside its picker, as editors show a slot.
         auto thumb = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Texture);
         thumb->setAssetUVE(PathOfGuidUVE(loaded.*field));
         auto slot = prism::hbox(6.0F);

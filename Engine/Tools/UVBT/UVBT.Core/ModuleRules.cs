@@ -15,7 +15,7 @@ namespace UniVexBuildTool
 
     /// <summary>
     /// Base class for all UniVex engine module build descriptors ([Module].Build.cs).
-    /// Modeled after Unreal Engine's UnrealBuildTool (UBT) ModuleRules.
+    /// Modeled on established engine build tools' ModuleRules.
     /// </summary>
     public abstract class ModuleRules
     {

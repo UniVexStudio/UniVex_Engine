@@ -128,7 +128,7 @@ const MontageSectionUVE* FindMontageSectionUVE(const AnimationMontageAssetUVE& m
 std::string AddMontageSectionUVE(AnimationMontageAssetUVE& montage, const std::string_view name, const double time) {
     const std::string unique = MakeUniqueMontageSectionNameUVE(montage, name);
     const double at = ClampTimeUVE(montage, time);
-    // The section it cuts into leads into it, the way Unreal links a new section after the one before.
+    // The section it cuts into leads into it, the usual way of linking a new section after the one before.
     const MontageSectionUVE* const before = MontageSectionAtUVE(montage, at);
     const std::string beforeName = before != nullptr ? before->name : std::string();
     std::string inherited = before != nullptr ? before->next : std::string();

@@ -11,7 +11,7 @@
 
 namespace UVE::Asset {
 
-/// An Animation Montage (`.uvmontage`), Unreal's montage: a timed piece of animation a character
+/// An Animation Montage (`.uvmontage`), the standard montage: a timed piece of animation a character
 /// plays on top of what it is doing - an attack, a reload, an emote.
 ///
 ///   time ->   0 ........................................................ length

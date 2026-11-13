@@ -442,7 +442,7 @@ void EditorUVE::InitUVE() {
     // is trying to author around, and a level that starts shuffling under gravity the moment it is
     // opened cannot be placed in: a Rigid3D spawned above the ground is on the floor before the
     // next frame, with no snapshot to put it back and no undo entry that owns a simulation-driven
-    // transform. Unreal reaches the same place from the other direction - its physics ticks with a
+    // transform. Other engines reach the same place from the other direction - its physics ticks with a
     // zero delta in edit mode, so nothing integrates - and this is that answer stated plainly.
     // Play sets Running (EnterPlayModeUVE) and stopping Play restores this frozen state
     // (StopPlayModeUVE), so the only way simulation runs is when the author asked for it.
