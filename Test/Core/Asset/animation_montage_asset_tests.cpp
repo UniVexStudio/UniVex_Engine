@@ -108,3 +108,47 @@ TEST(AnimationMontageAssetUVETest, SaveThenLoadRoundTrips) {
 }
 
 } // namespace UVE::Asset::Tests
+
+namespace UVE::Asset::Tests {
+
+TEST(AnimationMontageAssetUVETest, NotifiesCanBeLaidOutBeforeAnyClip) {
+    AnimationMontageAssetUVE montage;
+    const std::size_t notify = AddMontageNotifyUVE(montage, "step", 0.6, 0U);
+    EXPECT_DOUBLE_EQ(montage.notifies[notify].time, 0.6) << "not pulled back to 0 when the montage has no clip yet";
+    AddMontageNotifyUVE(montage, "late", 5.0, 0U);
+    EXPECT_DOUBLE_EQ(montage.notifies.back().time, kMontageEmptyTimelineSecondsUVE);
+}
+
+TEST(AnimationMontageAssetUVETest, NotifyTracksAreNamedAndRemoved) {
+    AnimationMontageAssetUVE montage = MakeAttackUVE();
+    montage.notifyTracks = 3U;
+    AddMontageNotifyUVE(montage, "a", 0.1, 0U);
+    AddMontageNotifyUVE(montage, "b", 0.2, 1U);
+    AddMontageNotifyStateUVE(montage, "c", 0.3, 0.5, 2U);
+    EXPECT_EQ(MontageNotifyTrackNameUVE(montage, 1U), "Notify 2");
+    SetMontageNotifyTrackNameUVE(montage, 2U, "Sounds");
+    EXPECT_EQ(MontageNotifyTrackNameUVE(montage, 2U), "Sounds");
+    ASSERT_TRUE(RemoveMontageNotifyTrackUVE(montage, 1U));
+    EXPECT_EQ(montage.notifyTracks, 2U);
+    ASSERT_EQ(montage.notifies.size(), 1U) << "what was on the removed track goes with it";
+    ASSERT_EQ(montage.notifyStates.size(), 1U);
+    EXPECT_EQ(montage.notifyStates.front().track, 1U) << "the tracks below move up";
+    EXPECT_EQ(MontageNotifyTrackNameUVE(montage, 1U), "Sounds") << "and keep their names";
+    EXPECT_TRUE(RemoveMontageNotifyTrackUVE(montage, 1U));
+    EXPECT_FALSE(RemoveMontageNotifyTrackUVE(montage, 0U)) << "the last track stays";
+}
+
+TEST(AnimationMontageAssetUVETest, NotifyColoursAndTrackNamesRoundTrip) {
+    AnimationMontageAssetUVE montage = MakeAttackUVE();
+    AddMontageNotifyUVE(montage, "hit", 0.5, 0U);
+    montage.notifies.front().colour = 0xE05A5AU;
+    SetMontageNotifyTrackNameUVE(montage, 0U, "Combat");
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "uve_montage_colour_test.uvmontage";
+    ASSERT_TRUE(SaveAnimationMontageAssetUVE(montage, path));
+    AnimationMontageAssetUVE read;
+    ASSERT_TRUE(LoadAnimationMontageAssetUVE(path, read));
+    EXPECT_EQ(read, montage);
+    std::filesystem::remove(path);
+}
+
+} // namespace UVE::Asset::Tests

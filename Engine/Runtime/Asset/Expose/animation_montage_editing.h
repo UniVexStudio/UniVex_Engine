@@ -10,6 +10,9 @@
 
 namespace UVE::Asset {
 
+/// How long a montage with no clip yet lets notifies, states, sections and keys be laid out.
+inline constexpr double kMontageEmptyTimelineSecondsUVE = 1.0;
+
 // What the Montage Editor does to a montage, as pure operations on the asset (tested without an
 // editor). Times are montage seconds unless a name says clip.
 
@@ -57,6 +60,11 @@ bool SetMontageSectionNextUVE(AnimationMontageAssetUVE& montage, std::string_vie
 std::size_t AddMontageNotifyUVE(AnimationMontageAssetUVE& montage, std::string_view name, double time, std::uint32_t track);
 std::size_t AddMontageNotifyStateUVE(AnimationMontageAssetUVE& montage, std::string_view name, double begin, double end,
                                      std::uint32_t track);
+/// Removes notify track `track` with what is on it; the tracks below move up. False for the last track.
+bool RemoveMontageNotifyTrackUVE(AnimationMontageAssetUVE& montage, std::uint32_t track);
+/// A notify track's name ("Notify <n>" when it has none), and setting it.
+[[nodiscard]] std::string MontageNotifyTrackNameUVE(const AnimationMontageAssetUVE& montage, std::uint32_t track);
+void SetMontageNotifyTrackNameUVE(AnimationMontageAssetUVE& montage, std::uint32_t track, std::string_view name);
 /// Sets a curve key at `time` (replacing one within a millisecond), keys kept in time order.
 void SetMontageCurveKeyUVE(AnimationMontageAssetUVE& montage, std::string_view curve, double time, float value);
 /// A curve's value at `time`: linear between keys, clamped to the first and last; 0 with no keys.

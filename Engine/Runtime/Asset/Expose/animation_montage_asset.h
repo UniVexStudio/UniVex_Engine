@@ -63,6 +63,8 @@ struct MontageNotifyUVE final {
     float triggerChance = 1.0F;
     /// Raised only while the montage weighs at least this much (0: also while blending in or out).
     float minWeight = 0.0F;
+    /// Its colour on the timeline, 0xRRGGBB (0: the track's own).
+    std::uint32_t colour = 0U;
     [[nodiscard]] bool operator==(const MontageNotifyUVE&) const = default;
 };
 
@@ -118,6 +120,8 @@ struct AnimationMontageAssetUVE final {
     std::vector<MontageCurveUVE> curves;
     /// How many notify tracks the editor shows (at least every track a notify uses).
     std::uint32_t notifyTracks = 1U;
+    /// The notify tracks' names, by track (a missing or empty one shows as "Notify <n>").
+    std::vector<std::string> notifyTrackNames;
     double blendInSeconds = 0.25;
     double blendOutSeconds = 0.25;
     MontageBlendCurveUVE blendInCurve = MontageBlendCurveUVE::Linear;

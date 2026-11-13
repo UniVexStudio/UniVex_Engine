@@ -44,6 +44,32 @@ using KindUVE = SelectionUVE::KindUVE;
     return text;
 }
 
+/// The value range a curve is drawn over: its keys' range, always taking in 0..1, so a key's height
+/// means the same when drawn, picked, added and dragged.
+struct CurveRangeUVE final {
+    float lo = 0.0F;
+    float span = 1.0F;
+};
+[[nodiscard]] CurveRangeUVE CurveRangeOfUVE(const Asset::MontageCurveUVE& curve) {
+    float lo = 0.0F;
+    float hi = 1.0F;
+    for (const Asset::MontageCurveKeyUVE& key : curve.keys) {
+        lo = std::min(lo, key.value);
+        hi = std::max(hi, key.value);
+    }
+    return CurveRangeUVE{lo, std::max(hi - lo, 1e-6F)};
+}
+
+[[nodiscard]] prism::Color NotifyColourUVE(const std::uint32_t colour, const bool selected) {
+    if (colour == 0U) {
+        return selected ? prism::Color(255, 210, 90) : prism::Color(230, 180, 60);
+    }
+    const prism::Color c(static_cast<std::uint8_t>(colour >> 16U), static_cast<std::uint8_t>(colour >> 8U), static_cast<std::uint8_t>(colour));
+    return selected ? prism::Color(static_cast<std::uint8_t>(std::min(255, c.r + 40)), static_cast<std::uint8_t>(std::min(255, c.g + 40)),
+                                   static_cast<std::uint8_t>(std::min(255, c.b + 40)))
+                    : c;
+}
+
 } // namespace
 
 std::size_t MontageTimelineUVE::NotifyTracksUVE() const noexcept {
@@ -120,9 +146,10 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
     header(RowRectUVE(RowUVE::Sections), "Sections", true);
     header(RowRectUVE(RowUVE::Slot), montage.slot, false);
     for (std::size_t i = 0U; i < tracks; ++i) {
-        header(RowRectUVE(RowUVE::Notify, i), "Notify " + std::to_string(i + 1U), i % 2U == 0U);
+        header(RowRectUVE(RowUVE::Notify, i), Asset::MontageNotifyTrackNameUVE(montage, static_cast<std::uint32_t>(i)), i % 2U == 0U);
     }
-    header(RowRectUVE(RowUVE::Curves), "Curves", false);
+    header(RowRectUVE(RowUVE::Curves),
+           m_window.activeCurve < montage.curves.size() ? "Curve: " + montage.curves[m_window.activeCurve].name : std::string("Curves"), false);
 
     const prism::Rect content{m_rect.x + kHeaderUVE, m_rect.y, m_rect.w - kHeaderUVE, m_rect.h};
     c.pushClip(content);
@@ -180,6 +207,9 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
         const bool selected = picked.kind == KindUVE::State && picked.index == i;
         const prism::Rect bar{x0, row.y + 4.0F, x1 - x0, row.h - 8.0F};
         c.fillRoundRect(bar, 3.0F, selected ? prism::Color(200, 120, 60) : prism::Color(150, 90, 50));
+        if (selected) {
+            c.strokeRoundRect(bar, 3.0F, t.accent, 1);
+        }
         c.textIn(*t.small, prism::Rect{bar.x + 5.0F, bar.y, bar.w - 6.0F, bar.h}, state.name, t.textBright);
     }
     for (std::size_t i = 0U; i < montage.notifies.size(); ++i) {
@@ -189,36 +219,47 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
         const float cy = row.y + row.h * 0.5F;
         const bool selected = picked.kind == KindUVE::Notify && picked.index == i;
         const prism::Vec2 diamond[] = {{x, cy - 6.0F}, {x + 6.0F, cy}, {x, cy + 6.0F}, {x - 6.0F, cy}};
-        c.fillPolygon(diamond, selected ? prism::Color(255, 210, 90) : prism::Color(230, 180, 60));
+        c.fillPolygon(diamond, NotifyColourUVE(notify.colour, selected));
+        if (selected) {
+            c.polyline(diamond, t.textBright, 1.0F, true);
+        }
         c.textIn(*t.small, prism::Rect{x + 9.0F, row.y, 160.0F, row.h}, notify.name, t.text);
     }
 
-    // Curves: each a line over the row, its keys as dots.
+    // Curves: the one being edited bold, with its keys; the others faint behind it.
     const prism::Rect curvesRow = RowRectUVE(RowUVE::Curves);
-    for (std::size_t ci = 0U; ci < montage.curves.size(); ++ci) {
-        const Asset::MontageCurveUVE& curve = montage.curves[ci];
-        if (curve.keys.empty()) {
-            continue;
+    for (std::size_t pass = 0U; pass < 2U; ++pass) {
+        for (std::size_t ci = 0U; ci < montage.curves.size(); ++ci) {
+            const bool active = ci == m_window.activeCurve;
+            if ((pass == 0U) == active) {
+                continue;   // the active one last, on top
+            }
+            const Asset::MontageCurveUVE& curve = montage.curves[ci];
+            if (curve.keys.empty()) {
+                continue;
+            }
+            const CurveRangeUVE range = CurveRangeOfUVE(curve);
+            const auto yOf = [&](const float v) { return curvesRow.bottom() - 6.0F - (v - range.lo) / range.span * (curvesRow.h - 12.0F); };
+            const prism::Color base = SectionColorUVE(ci + 2U);
+            const prism::Color color = active ? base : prism::Color(base.r, base.g, base.b, 80);
+            for (std::size_t k = 1U; k < curve.keys.size(); ++k) {
+                c.line({XOfUVE(curve.keys[k - 1U].time), yOf(curve.keys[k - 1U].value)}, {XOfUVE(curve.keys[k].time), yOf(curve.keys[k].value)},
+                       color, active ? 1.8F : 1.0F);
+            }
+            if (!active) {
+                continue;
+            }
+            for (std::size_t k = 0U; k < curve.keys.size(); ++k) {
+                const bool selected = picked.kind == KindUVE::CurveKey && picked.index == ci && picked.key == k;
+                const prism::Vec2 at{XOfUVE(curve.keys[k].time), yOf(curve.keys[k].value)};
+                c.fillCircle(at, selected ? 5.0F : 3.5F, selected ? t.textBright : color);
+                c.strokeCircle(at, selected ? 5.0F : 3.5F, prism::Color(0, 0, 0, 160), 1.0F);
+            }
         }
-        float lo = curve.keys.front().value;
-        float hi = lo;
-        for (const Asset::MontageCurveKeyUVE& key : curve.keys) {
-            lo = std::min(lo, key.value);
-            hi = std::max(hi, key.value);
-        }
-        const float span = hi - lo > 1e-6F ? hi - lo : 1.0F;
-        const auto yOf = [&](const float v) { return curvesRow.bottom() - 6.0F - (v - lo) / span * (curvesRow.h - 12.0F); };
-        const prism::Color color = SectionColorUVE(ci + 2U);
-        for (std::size_t k = 1U; k < curve.keys.size(); ++k) {
-            c.line({XOfUVE(curve.keys[k - 1U].time), yOf(curve.keys[k - 1U].value)}, {XOfUVE(curve.keys[k].time), yOf(curve.keys[k].value)},
-                   color, 1.5F);
-        }
-        for (std::size_t k = 0U; k < curve.keys.size(); ++k) {
-            const bool selected = picked.kind == KindUVE::CurveKey && picked.index == ci && picked.key == k;
-            c.fillCircle({XOfUVE(curve.keys[k].time), yOf(curve.keys[k].value)}, selected ? 4.5F : 3.0F,
-                         selected ? t.textBright : color);
-        }
-        c.textIn(*t.small, prism::Rect{XOfUVE(curve.keys.front().time) + 6.0F, curvesRow.y + 2.0F, 120.0F, 14.0F}, curve.name, color);
+    }
+    if (montage.curves.empty()) {
+        c.textIn(*t.small, prism::Rect{content.x + 8.0F, curvesRow.y, content.w - 16.0F, curvesRow.h},
+                 "Right-click > Add Key Here, or + Curve in the toolbar", t.textDim);
     }
 
     // What is being dragged, where it would land.
@@ -294,21 +335,13 @@ MontageTimelineUVE::HitUVE MontageTimelineUVE::HitTestUVE(const prism::Vec2 p) c
     if (RowRectUVE(RowUVE::Curves).contains(p)) {
         hit.row = RowUVE::Curves;
         const prism::Rect row = RowRectUVE(RowUVE::Curves);
-        for (std::size_t ci = 0U; ci < montage.curves.size(); ++ci) {
+        const std::size_t ci = m_window.activeCurve;
+        if (ci < montage.curves.size()) {
             const Asset::MontageCurveUVE& curve = montage.curves[ci];
-            if (curve.keys.empty()) {
-                continue;
-            }
-            float lo = curve.keys.front().value;
-            float hi = lo;
-            for (const Asset::MontageCurveKeyUVE& key : curve.keys) {
-                lo = std::min(lo, key.value);
-                hi = std::max(hi, key.value);
-            }
-            const float span = hi - lo > 1e-6F ? hi - lo : 1.0F;
+            const CurveRangeUVE range = CurveRangeOfUVE(curve);
             for (std::size_t k = 0U; k < curve.keys.size(); ++k) {
                 const float x = XOfUVE(curve.keys[k].time);
-                const float y = row.bottom() - 6.0F - (curve.keys[k].value - lo) / span * (row.h - 12.0F);
+                const float y = row.bottom() - 6.0F - (curve.keys[k].value - range.lo) / range.span * (row.h - 12.0F);
                 if (std::abs(x - p.x) <= 6.0F && std::abs(y - p.y) <= 6.0F) {
                     hit.item = SelectionUVE{KindUVE::CurveKey, ci, k};
                     return hit;
@@ -324,7 +357,14 @@ bool MontageTimelineUVE::onMouseDown(const prism::MouseEvent& e) {
         prism::Application::get().setFocus(this);
     }
     EditorUVE& editor = m_window.EditorRefUVE();
-    if (editor.MontageEditSessionPtrUVE() == nullptr || e.pos.x < m_rect.x + kHeaderUVE) {
+    if (editor.MontageEditSessionPtrUVE() == nullptr) {
+        return true;
+    }
+    if (e.pos.x < m_rect.x + kHeaderUVE) {
+        // A track's header: its own menu (add, rename, remove a track; the curves).
+        if (e.button == prism::MouseButton::Right) {
+            ShowHeaderMenuUVE(HitTestUVE(prism::Vec2{m_rect.x + kHeaderUVE + 1.0F, e.pos.y}), e.pos);
+        }
         return true;
     }
     const HitUVE hit = HitTestUVE(e.pos);
@@ -413,7 +453,10 @@ void MontageTimelineUVE::CommitDragUVE(const prism::Vec2 p) {
         case KindUVE::Notify:
             editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                 if (drag.item.index < m.notifies.size()) {
-                    m.notifies[drag.item.index].time = std::clamp(time, 0.0, Asset::MontageLengthUVE(m));
+                    m.notifies[drag.item.index].time = std::clamp(time, 0.0, std::max(Asset::kMontageEmptyTimelineSecondsUVE, Asset::MontageLengthUVE(m)));
+                    if (const std::optional<std::uint32_t> track = TrackAtUVE(p.y)) {
+                        m.notifies[drag.item.index].track = *track;   // dropped on another track: it moves there
+                    }
                 }
             });
             break;
@@ -423,7 +466,10 @@ void MontageTimelineUVE::CommitDragUVE(const prism::Vec2 p) {
                     return;
                 }
                 Asset::MontageNotifyStateUVE& state = m.notifyStates[drag.item.index];
-                const double length = Asset::MontageLengthUVE(m);
+                const double length = std::max(Asset::kMontageEmptyTimelineSecondsUVE, Asset::MontageLengthUVE(m));
+                if (const std::optional<std::uint32_t> track = TrackAtUVE(p.y); track.has_value() && drag.edge == 0) {
+                    state.track = *track;
+                }
                 if (drag.edge < 0) {
                     state.begin = std::clamp(time, 0.0, state.end);
                 } else if (drag.edge > 0) {
@@ -439,7 +485,12 @@ void MontageTimelineUVE::CommitDragUVE(const prism::Vec2 p) {
             editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                 if (drag.item.index < m.curves.size() && drag.item.key < m.curves[drag.item.index].keys.size()) {
                     auto& keys = m.curves[drag.item.index].keys;
+                    // Time and value both follow the mouse, on the scale the curve is drawn on.
+                    const CurveRangeUVE range = CurveRangeOfUVE(m.curves[drag.item.index]);
+                    const prism::Rect row = RowRectUVE(RowUVE::Curves);
+                    const float fraction = std::clamp((row.bottom() - 6.0F - p.y) / std::max(1.0F, row.h - 12.0F), 0.0F, 1.0F);
                     keys[drag.item.key].time = std::max(0.0, time);
+                    keys[drag.item.key].value = range.lo + fraction * range.span;
                     std::sort(keys.begin(), keys.end(),
                               [](const Asset::MontageCurveKeyUVE& a, const Asset::MontageCurveKeyUVE& b) { return a.time < b.time; });
                 }
@@ -465,6 +516,19 @@ bool MontageTimelineUVE::onMouseWheel(const prism::MouseEvent& e) {
 
 bool MontageTimelineUVE::onKeyDown(const prism::KeyEvent& e) {
     EditorUVE& editor = m_window.EditorRefUVE();
+    const bool ctrl = (e.mods & prism::ModCtrl) != 0U;
+    if (ctrl && e.key == prism::Key::S) {
+        static_cast<void>(editor.SaveMontageEditorUVE());
+        return true;
+    }
+    if (ctrl && (e.key == prism::Key::Y || (e.key == prism::Key::Z && (e.mods & prism::ModShift) != 0U))) {
+        static_cast<void>(editor.RedoMontageEditUVE());
+        return true;
+    }
+    if (ctrl && e.key == prism::Key::Z) {
+        static_cast<void>(editor.UndoMontageEditUVE());
+        return true;
+    }
     if (e.key == prism::Key::Delete || e.key == prism::Key::Backspace) {
         DeleteSelectionUVE();
         return true;
@@ -585,7 +649,7 @@ void MontageTimelineUVE::ShowContextMenuUVE(const HitUVE& hit, const prism::Vec2
                 });
             }));
             items.push_back(prism::MenuItem::Item("Add Notify Track", [&editor] {
-                editor.EditMontageUVE([](Asset::AnimationMontageAssetUVE& m) { m.notifyTracks = std::min(16U, m.notifyTracks + 1U); });
+                editor.EditMontageUVE([](Asset::AnimationMontageAssetUVE& m) { m.notifyTracks = std::min(64U, m.notifyTracks + 1U); });
             }));
             if (hit.item.kind == KindUVE::Notify || hit.item.kind == KindUVE::State) {
                 const bool isNotify = hit.item.kind == KindUVE::Notify;
@@ -613,15 +677,20 @@ void MontageTimelineUVE::ShowContextMenuUVE(const HitUVE& hit, const prism::Vec2
             break;
         }
         case RowUVE::Curves: {
+            // The key goes on the curve being edited, at the height clicked (on its own scale).
             const prism::Rect row = RowRectUVE(RowUVE::Curves);
-            const float value = std::clamp((row.bottom() - at.y) / std::max(1.0F, row.h), 0.0F, 1.0F);
-            items.push_back(prism::MenuItem::Item("Add Key Here...", [this, time, value] {
-                const auto* session = m_window.EditorRefUVE().MontageEditSessionPtrUVE();
-                const std::string current =
-                    session != nullptr && !session->montage.curves.empty() ? session->montage.curves.front().name : std::string("Curve");
-                m_window.AskNameUVE("Curve", current, [this, time, value](const std::string& name) {
-                    m_window.EditorRefUVE().EditMontageUVE(
-                        [&](Asset::AnimationMontageAssetUVE& m) { Asset::SetMontageCurveKeyUVE(m, name, time, value); });
+            const float fraction = std::clamp((row.bottom() - 6.0F - at.y) / std::max(1.0F, row.h - 12.0F), 0.0F, 1.0F);
+            const auto* session = editor.MontageEditSessionPtrUVE();
+            const bool haveCurve = session != nullptr && m_window.activeCurve < session->montage.curves.size();
+            items.push_back(prism::MenuItem::Item(haveCurve ? "Add Key Here" : "Add Curve and Key Here", [this, time, fraction] {
+                m_window.EditorRefUVE().EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
+                    if (m_window.activeCurve >= m.curves.size()) {
+                        m.curves.push_back(Asset::MontageCurveUVE{m_window.UniqueCurveNameUVE(m, "Curve"), {}});
+                        m_window.activeCurve = m.curves.size() - 1U;
+                    }
+                    Asset::MontageCurveUVE& curve = m.curves[m_window.activeCurve];
+                    const CurveRangeUVE range = CurveRangeOfUVE(curve);
+                    Asset::SetMontageCurveKeyUVE(m, curve.name, time, range.lo + fraction * range.span);
                 });
             }, "", prism::Icon::Plus));
             if (hit.item.kind == KindUVE::CurveKey) {
@@ -631,6 +700,60 @@ void MontageTimelineUVE::ShowContextMenuUVE(const HitUVE& hit, const prism::Vec2
         }
         case RowUVE::None:
             break;
+    }
+    if (!items.empty()) {
+        prism::showContextMenu(std::move(items), at);
+    }
+}
+
+std::optional<std::uint32_t> MontageTimelineUVE::TrackAtUVE(const float y) const noexcept {
+    for (std::size_t track = 0U; track < NotifyTracksUVE(); ++track) {
+        const prism::Rect row = RowRectUVE(RowUVE::Notify, track);
+        if (y >= row.y && y < row.bottom()) {
+            return static_cast<std::uint32_t>(track);
+        }
+    }
+    return std::nullopt;
+}
+
+void MontageTimelineUVE::ShowHeaderMenuUVE(const HitUVE& hit, const prism::Vec2 at) {
+    EditorUVE& editor = m_window.EditorRefUVE();
+    const auto* session = editor.MontageEditSessionPtrUVE();
+    if (session == nullptr) {
+        return;
+    }
+    std::vector<prism::MenuItem> items;
+    if (hit.row == RowUVE::Notify) {
+        const auto track = static_cast<std::uint32_t>(hit.track);
+        items.push_back(prism::MenuItem::Item("Add Notify Track", [&editor] {
+            editor.EditMontageUVE([](Asset::AnimationMontageAssetUVE& m) { m.notifyTracks = std::min(64U, m.notifyTracks + 1U); });
+        }, "", prism::Icon::Plus));
+        items.push_back(prism::MenuItem::Item("Rename Track...", [this, track] {
+            const auto* s = m_window.EditorRefUVE().MontageEditSessionPtrUVE();
+            const std::string current = s != nullptr ? Asset::MontageNotifyTrackNameUVE(s->montage, track) : std::string();
+            m_window.AskNameUVE("Rename Track", current, [this, track](const std::string& name) {
+                m_window.EditorRefUVE().EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) { Asset::SetMontageNotifyTrackNameUVE(m, track, name); });
+            });
+        }));
+        prism::MenuItem remove = prism::MenuItem::Item("Remove Track", [&editor, track] {
+            editor.EditMontageUVE([track](Asset::AnimationMontageAssetUVE& m) { static_cast<void>(Asset::RemoveMontageNotifyTrackUVE(m, track)); });
+        }, "", prism::Icon::Trash);
+        remove.enabled = NotifyTracksUVE() > 1U;
+        items.push_back(prism::MenuItem::Sep());
+        items.push_back(std::move(remove));
+    } else if (hit.row == RowUVE::Curves) {
+        for (std::size_t ci = 0U; ci < session->montage.curves.size(); ++ci) {
+            items.push_back(prism::MenuItem::Check(session->montage.curves[ci].name, ci == m_window.activeCurve,
+                                                   [this, ci] { m_window.activeCurve = ci; invalidate(); }));
+        }
+        if (!items.empty()) {
+            items.push_back(prism::MenuItem::Sep());
+        }
+        items.push_back(prism::MenuItem::Item("Add Curve", [this] { m_window.AddAtPlayheadUVE(EditorMontageEditorUVE::AddKindUVE::Curve); }, "",
+                                              prism::Icon::Plus));
+    } else if (hit.row == RowUVE::Sections) {
+        items.push_back(prism::MenuItem::Item("Add Section at Playhead", [this] { m_window.AddAtPlayheadUVE(EditorMontageEditorUVE::AddKindUVE::Section); },
+                                              "", prism::Icon::Plus));
     }
     if (!items.empty()) {
         prism::showContextMenu(std::move(items), at);

@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace prism {
@@ -36,10 +37,10 @@ class MontageTimelineUVE;
 ///
 ///   [#1 logo] [title bar: File Edit Window Help | drag strip | - [] x]
 ///   [       ] [#2 the montage's tab                                 ]
-///   [ Save Browse | Preview: <character> | > || [] Loop 1x | status ]
-///   [ preview of the character (the montage at the playhead) | Details  ]
-///   [                                                         | Sections ]
-///   [ timeline: ruler, Sections, Slot, Notifies, Curves       | Assets   ]
+///   [ Save | Preview: <character> | > || [] Loop 1x | + Notify + State + Section + Curve + Track | status ]
+///   [ preview of the character (the montage at the playhead) | Details (asset, montage, picked)  ]
+///   [                                                         | Sections                         ]
+///   [ timeline: ruler, Sections, Slot, Notifies, Curves       | Notifies & Curves | Asset Browser]
 ///
 /// Everything it shows and does is EditorUVE's montage session (OpenMontageEditorUVE ...).
 class EditorMontageEditorUVE final {
@@ -65,7 +66,14 @@ public:
         [[nodiscard]] bool operator==(const SelectionUVE&) const = default;
     };
     SelectionUVE selection;
+    /// The curve the Curves track edits (its keys are shown and added to).
+    std::size_t activeCurve = 0U;
     EditorUVE& EditorRefUVE() noexcept { return m_editor; }
+    /// Adds one at the playhead with a name of its own, and picks it (Details edits it).
+    enum class AddKindUVE : std::uint8_t { Notify, State, Section, Curve, Track };
+    void AddAtPlayheadUVE(AddKindUVE kind);
+    /// A curve name not used yet: `base`, else "base 2", "base 3"...
+    [[nodiscard]] static std::string UniqueCurveNameUVE(const Asset::AnimationMontageAssetUVE& montage, const std::string& base);
     /// Asks for a name in a small dialog of this window; `done` gets it.
     void AskNameUVE(const std::string& title, const std::string& initial, std::function<void(const std::string&)> done);
     /// The project's clips (content-relative .uvanim), for the Slot track's menus.
@@ -86,6 +94,7 @@ private:
     void RebuildDetailsUVE();
     void RebuildSectionsUVE();
     void RebuildAssetsUVE();
+    void RebuildNotifiesUVE();
 
     EditorUVE& m_editor;
     EditorHostUVE& m_host;
@@ -105,6 +114,10 @@ private:
     std::shared_ptr<MontageTimelineUVE> m_timeline;
     std::shared_ptr<prism::ScrollBox> m_details;
     std::shared_ptr<prism::ScrollBox> m_sections;
+    std::shared_ptr<prism::TableView> m_notifyList;
+    std::shared_ptr<prism::ScrollBox> m_curveList;
+    /// The Notifies list's rows: (is a state, index).
+    std::vector<std::pair<bool, std::size_t>> m_notifyRows;
     std::shared_ptr<prism::TableView> m_assets;
     std::vector<std::filesystem::path> m_assetRows;
 

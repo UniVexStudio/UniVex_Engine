@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <utility>
 
 namespace UVE::Asset {
@@ -14,7 +15,8 @@ void SortSectionsUVE(AnimationMontageAssetUVE& montage) {
 }
 
 [[nodiscard]] double ClampTimeUVE(const AnimationMontageAssetUVE& montage, const double time) noexcept {
-    return std::clamp(std::isfinite(time) ? time : 0.0, 0.0, std::max(0.0, MontageLengthUVE(montage)));
+    // A montage with no clip yet still has its first second to lay notifies out on.
+    return std::clamp(std::isfinite(time) ? time : 0.0, 0.0, std::max(kMontageEmptyTimelineSecondsUVE, MontageLengthUVE(montage)));
 }
 
 } // namespace
@@ -256,6 +258,45 @@ void SetMontageCurveKeyUVE(AnimationMontageAssetUVE& montage, const std::string_
     }
     keys.push_back(MontageCurveKeyUVE{std::max(0.0, time), value});
     std::sort(keys.begin(), keys.end(), [](const MontageCurveKeyUVE& a, const MontageCurveKeyUVE& b) { return a.time < b.time; });
+}
+
+bool RemoveMontageNotifyTrackUVE(AnimationMontageAssetUVE& montage, const std::uint32_t track) {
+    if (montage.notifyTracks <= 1U || track >= montage.notifyTracks) {
+        return false;
+    }
+    std::erase_if(montage.notifies, [track](const MontageNotifyUVE& n) { return n.track == track; });
+    std::erase_if(montage.notifyStates, [track](const MontageNotifyStateUVE& s) { return s.track == track; });
+    for (MontageNotifyUVE& n : montage.notifies) {
+        n.track -= n.track > track ? 1U : 0U;
+    }
+    for (MontageNotifyStateUVE& s : montage.notifyStates) {
+        s.track -= s.track > track ? 1U : 0U;
+    }
+    if (track < montage.notifyTrackNames.size()) {
+        montage.notifyTrackNames.erase(montage.notifyTrackNames.begin() + static_cast<std::ptrdiff_t>(track));
+    }
+    --montage.notifyTracks;
+    return true;
+}
+
+std::string MontageNotifyTrackNameUVE(const AnimationMontageAssetUVE& montage, const std::uint32_t track) {
+    if (track < montage.notifyTrackNames.size() && !montage.notifyTrackNames[track].empty()) {
+        return montage.notifyTrackNames[track];
+    }
+    return "Notify " + std::to_string(track + 1U);
+}
+
+void SetMontageNotifyTrackNameUVE(AnimationMontageAssetUVE& montage, const std::uint32_t track, const std::string_view name) {
+    if (track >= 64U) {
+        return;
+    }
+    if (montage.notifyTrackNames.size() <= track) {
+        montage.notifyTrackNames.resize(track + 1U);
+    }
+    montage.notifyTrackNames[track] = std::string(name);
+    while (!montage.notifyTrackNames.empty() && montage.notifyTrackNames.back().empty()) {
+        montage.notifyTrackNames.pop_back();
+    }
 }
 
 float EvaluateMontageCurveUVE(const AnimationMontageAssetUVE& montage, const std::string_view curve, const double time) noexcept {
