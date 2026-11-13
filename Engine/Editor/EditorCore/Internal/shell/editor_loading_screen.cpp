@@ -11,10 +11,12 @@
 
 namespace UVE::Editor {
 
-void EditorLoadingScreenUVE::SyncRenderUVE(const bool shown, const prism::Rect view, std::string text, const float progress) {
+void EditorLoadingScreenUVE::SyncRenderUVE(const bool shown, const prism::Rect view, std::string text, std::string detail,
+                                           const float progress) {
     m_renderShown = shown;
     m_renderView = view;
     m_renderText = std::move(text);
+    m_renderDetail = std::move(detail);
     m_renderProgress += (std::clamp(progress, 0.0F, 1.0F) - m_renderProgress) * 0.2F;
     if (!shown) {
         m_renderProgress = 0.0F;
@@ -83,8 +85,9 @@ void EditorLoadingScreenUVE::paint(prism::Canvas& c) {
     const prism::Rect r = rect();
     const prism::Color accent(48, 132, 240);
     if (!m_state.startup && m_renderShown && m_renderView.w > 260.0F && m_renderView.h > 80.0F) {
-        // Over the level view, at its top: the render loading.
-        const prism::Rect panel{std::floor(m_renderView.x + (m_renderView.w - 248.0F) * 0.5F), m_renderView.y + 14.0F, 248.0F, 44.0F};
+        // Over the level view, at its top: the render loading, and what it is drawing now.
+        const float height = m_renderDetail.empty() ? 44.0F : 62.0F;
+        const prism::Rect panel{std::floor(m_renderView.x + (m_renderView.w - 268.0F) * 0.5F), m_renderView.y + 14.0F, 268.0F, height};
         c.fillRoundRect(panel, 6.0F, prism::Color(20, 22, 27, 230));
         c.strokeRoundRect(panel, 6.0F, t.border, 1);
         c.textIn(*t.small, prism::Rect{panel.x + 12.0F, panel.y + 6.0F, panel.w - 70.0F, 16.0F}, m_renderText, t.textBright);
@@ -94,6 +97,9 @@ void EditorLoadingScreenUVE::paint(prism::Canvas& c) {
         const prism::Rect bar{panel.x + 12.0F, panel.y + 28.0F, panel.w - 24.0F, 5.0F};
         c.fillRoundRect(bar, 2.5F, t.window);
         c.fillRoundRect(prism::Rect{bar.x, bar.y, std::max(5.0F, bar.w * m_renderProgress), bar.h}, 2.5F, accent);
+        if (!m_renderDetail.empty()) {
+            c.textIn(*t.small, prism::Rect{panel.x + 12.0F, panel.y + 40.0F, panel.w - 24.0F, 16.0F}, m_renderDetail, t.textDim);
+        }
     }
     if (!m_state.startup && !m_state.busy) {
         return;

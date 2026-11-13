@@ -148,6 +148,8 @@ private:
     int m_viewWarmFrame = 0;
     std::size_t m_renderLoadPeak = 0U;
     bool m_renderLoadDone = false;
+    bool m_uploadBudgetSet = false;
+    std::vector<std::string> m_renderLoadNames;
     EditorHostUVE::ViewImageUVE m_lastView{};
 
     // Widgets the frame updates.

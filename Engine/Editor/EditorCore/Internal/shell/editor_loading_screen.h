@@ -20,7 +20,7 @@ public:
     void SyncUVE(const EditorUVE::EditorLoadingStateUVE& state, const std::string& project);
     /// The level view's own loading, drawn over the view (`view`): the render warming up and the
     /// assets it is still loading, after the editor has appeared.
-    void SyncRenderUVE(bool shown, prism::Rect view, std::string text, float progress);
+    void SyncRenderUVE(bool shown, prism::Rect view, std::string text, std::string detail, float progress);
     std::function<void()> onDismiss;
 
     prism::Vec2 measure(prism::Vec2 avail) override;
@@ -36,6 +36,7 @@ private:
     bool m_renderShown = false;
     prism::Rect m_renderView{};
     std::string m_renderText;
+    std::string m_renderDetail;
     float m_renderProgress = 0.0F;
     /// The bar moves toward its value instead of jumping.
     float m_shown = 0.0F;

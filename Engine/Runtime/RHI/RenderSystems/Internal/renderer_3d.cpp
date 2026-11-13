@@ -946,6 +946,9 @@ struct Renderer3DUVE::ImplUVE {
     /// Copied only through IRenderer3DUVE::GetLastFrameDiagnosticsUVE(). Recorded counts are
     /// CPU-side renderer facts; the OpenGL-issued count never asserts completed presentation.
     Renderer3DFrameDiagnosticsUVE lastFrameDiagnostics;
+    /// New meshes a frame may upload (0: no limit), and this frame's deferred ones (each counted once).
+    std::size_t meshUploadBudget = 0U;
+    std::vector<std::uint64_t> deferredMeshesThisFrame;
 
     /// Flat ambient term added to every rendered item every frame, regardless of whether an
     /// active light exists this frame (see EngineConfigUVE::ambientColor, Increment 23).
@@ -1886,6 +1889,19 @@ struct Renderer3DUVE::ImplUVE {
         if (existingIt != meshCache.end()) {
             return existingIt->second;
         }
+        // Over this frame's upload budget: drawn from a later frame, when its turn comes.
+        if (meshUploadBudget > 0U && lastFrameDiagnostics.meshUploads >= meshUploadBudget) {
+            if (std::find(deferredMeshesThisFrame.begin(), deferredMeshesThisFrame.end(), guid.value) == deferredMeshesThisFrame.end()) {
+                deferredMeshesThisFrame.push_back(guid.value);
+                ++lastFrameDiagnostics.meshUploadsDeferred;
+            }
+            static const MeshGpuResourcesUVE kNotYetUVE{};
+            return kNotYetUVE;
+        }
+        if (lastFrameDiagnostics.meshUploads < lastFrameDiagnostics.uploadedMeshes.size()) {
+            lastFrameDiagnostics.uploadedMeshes[lastFrameDiagnostics.meshUploads] = guid;
+        }
+        ++lastFrameDiagnostics.meshUploads;
 
         // Asset loaders derive tangents for legacy `.uvmodel` payloads, but runtime/custom mesh
         // loaders may construct MeshAssetUVE directly. Regenerate into this one-time GPU-upload copy
@@ -4618,6 +4634,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const bool capturingProbe = m_impl->probeCaptureViewActive;
     if (!capturingProbe) {
         m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
+        m_impl->deferredMeshesThisFrame.clear();
         // Reset here, not beside the main pass: the shadow cascades are recorded BEFORE it, so a reset
         // at the main pass would discard the count this counter exists to report.
         m_impl->shadowInstancedDrawCallsThisFrame = 0U;
@@ -4655,6 +4672,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     if (!capturingProbe) {
         CaptureDueReflectionProbesUVE(entityManager, cameraEntity);
         m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
+        m_impl->deferredMeshesThisFrame.clear();
         m_impl->shadowInstancedDrawCallsThisFrame = 0U;
         m_impl->indirectInstancedDrawCallsThisFrame = 0U;
         m_impl->nextIndirectCullIndex = 0U;
@@ -6322,6 +6340,10 @@ void Renderer3DUVE::SetCullingSettingsUVE(const CullingSettingsUVE& settings) no
 
 void Renderer3DUVE::SetShadingModeUVE(const std::int32_t shadingMode) noexcept {
     m_impl->shadingMode = std::clamp(shadingMode, 0, 4);
+}
+
+void Renderer3DUVE::SetMeshUploadBudgetUVE(const std::size_t meshesPerFrame) noexcept {
+    m_impl->meshUploadBudget = meshesPerFrame;
 }
 
 void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) noexcept {
