@@ -622,6 +622,12 @@ Platform::WindowModeUVE WindowManagerUVE::GetWindowModeUVE() const noexcept {
     return m_impl->windowMode;
 }
 
+void WindowManagerUVE::SetCursorVisibleUVE(const bool visible) {
+    m_impl->desc.cursorVisible = visible;
+    m_impl->desc.cursorConfinedToWindow = !visible;
+    m_impl->ApplyCursorInputModeUVE();
+}
+
 void WindowManagerUVE::SetWindowTitleUVE(const std::string_view title) {
     if (!m_impl->valid || title.empty() || title.size() > kMaximumWindowTitleBytesUVE ||
         title.find('\0') != std::string_view::npos) {

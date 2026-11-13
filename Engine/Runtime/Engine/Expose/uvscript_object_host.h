@@ -155,6 +155,9 @@ public:
     using WidgetFactoryUVE = std::function<Scene::EntityUVE(const std::string& path)>;
     /// Without one, `ui.create` answers no object.
     void SetWidgetFactoryUVE(WidgetFactoryUVE factory) { m_widgetFactory = std::move(factory); }
+    /// `ui.show_cursor(show)`: shows and frees the pointer for UI, or hides and captures it for the game.
+    using CursorHandlerUVE = std::function<void(bool show)>;
+    void SetCursorHandlerUVE(CursorHandlerUVE handler) { m_cursorHandler = std::move(handler); }
 
 private:
     /// Widget Blueprints: `ui.*`. The widget named `name` under this object's Canvas (the whole
@@ -219,6 +222,7 @@ private:
     Network::NetworkRelayUVE* m_relay = nullptr;
     Network::NetworkSessionUVE* m_relaySession = nullptr;
     WidgetFactoryUVE m_widgetFactory;
+    CursorHandlerUVE m_cursorHandler;
 };
 
 } // namespace UVE::Core

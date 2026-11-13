@@ -4,6 +4,9 @@
 #include "editor.h"
 
 #include "blueprint_asset.h"
+#include "editor_widget_icons.h"
+#include <functional>
+#include <utility>
 
 #include "prism/BlueprintGraph.h"
 #include "prism/Widget.h"
@@ -61,6 +64,9 @@ public:
     /// The project-relative (VFS) path of a file, as a Script slot stores it.
     [[nodiscard]] std::string ProjectPathUVE(const std::filesystem::path& absolute) const;
 
+    /// A Widget Blueprint's widgets (name and kind): the palette's Widgets category lists each with
+    /// the nodes it takes, its name already filled in.
+    std::function<std::vector<std::pair<std::string, WidgetKindUVE>>()> widgetsProvider;
 private:
     [[nodiscard]] Asset::BlueprintAssetUVE FromGraphUVE() const;
     void LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& blueprint);

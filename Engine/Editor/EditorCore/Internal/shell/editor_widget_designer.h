@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #pragma once
 
+#include "editor_widget_icons.h"
 #include "entity.h"
 #include "prism/Widget.h"
 
@@ -17,7 +18,7 @@ namespace UVE::Editor {
 /// owner through onMoved). What it shows is given to it (SetItemsUVE) from the open document.
 class WidgetDesignerViewUVE final : public prism::Widget {
 public:
-    enum class KindUVE : std::uint8_t { Text, Button, Image, ProgressBar, Slider, CheckBox, TextBox };
+    using KindUVE = WidgetKindUVE;
 
     struct ItemUVE {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;

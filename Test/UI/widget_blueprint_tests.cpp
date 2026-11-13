@@ -16,6 +16,7 @@
 #include "scene_serializer.h"
 #include "transform_component.h"
 #include "ui_button_component.h"
+#include "ui_dropdown_component.h"
 #include "ui_progress_bar_component.h"
 #include "ui_text_component.h"
 #include "uvscript_compiler.h"
@@ -165,6 +166,37 @@ TEST_F(WidgetBlueprintUVETest, CreateWidgetThenAddToViewportShowsIt) {
     const CanvasComponentUVE& canvas = entityManager.GetComponentUVE<CanvasComponentUVE>(made);
     EXPECT_TRUE(canvas.visible);
     EXPECT_EQ(canvas.sortOrder, 5);
+}
+
+TEST_F(WidgetBlueprintUVETest, ShowMouseCursorAndAComboBoxChoiceReachTheGame) {
+    const EntityUVE root = MakeWidgetUVE();
+    const EntityUVE combo = MakeUVE("Quality", root);
+    UIDropdownComponentUVE box;
+    box.options = "Low\nHigh";
+    box.selectedIndex = 0;
+    entityManager.AddComponentUVE<UIDropdownComponentUVE>(combo, box);
+    std::vector<bool> shown;
+    Core::UVScriptObjectHostUVE host{entityManager, nullptr, root};
+    host.SetCursorHandlerUVE([&shown](const bool show) { shown.push_back(show); });
+    BlueprintAssetUVE graph;
+    graph.parentKind = "Canvas";
+    graph.nodes = {NodeUVE(1U, "ui_on_construct"), NodeUVE(2U, "ui_show_mouse_cursor", {"", "true"}),
+                   NodeUVE(3U, "ui_add_option", {"", "Quality", "Ultra"}), NodeUVE(4U, "ui_set_selected_index", {"", "Quality", "2"}),
+                   NodeUVE(5U, "ui_on_changed", {"Quality"}), NodeUVE(6U, "ui_get_selected_option", {"Quality"}),
+                   NodeUVE(7U, "ui_set_text", {"", "Score", ""})};
+    graph.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}, BlueprintWireUVE{2U, 0U, 3U, 0U}, BlueprintWireUVE{3U, 0U, 4U, 0U},
+                   BlueprintWireUVE{5U, 0U, 7U, 0U}, BlueprintWireUVE{6U, 0U, 7U, 2U}};
+    const UVScript::CompileResultUVE compiled = CompileUVE(graph, host);
+    ASSERT_TRUE(compiled.IsSuccessUVE());
+    UVScript::ScriptInstanceUVE instance(compiled.program, host);
+    static_cast<void>(instance.RaiseEventUVE("ready"));
+    ASSERT_EQ(shown.size(), 1U);
+    EXPECT_TRUE(shown.front());
+    EXPECT_EQ(entityManager.GetComponentUVE<UIDropdownComponentUVE>(combo).options, "Low\nHigh\nUltra");
+    EXPECT_EQ(entityManager.GetComponentUVE<UIDropdownComponentUVE>(combo).selectedIndex, 2);
+    const UVScript::ValueUVE changed[] = {std::string{"Quality"}};
+    static_cast<void>(instance.RaiseEventUVE("ui_changed", changed));
+    EXPECT_EQ(TextOfUVE("Score"), "Ultra");
 }
 
 TEST_F(WidgetBlueprintUVETest, TheFileKeepsItsWidgetsAndItsGraph) {

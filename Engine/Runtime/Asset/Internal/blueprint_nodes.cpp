@@ -215,6 +215,18 @@ using Pin = BlueprintPinSpecUVE;
          {"ui.get_value({0})"}, "slider progress percent");
     pure("ui_is_checked", "Is Checked", "User Interface", {Pin{"Widget", T::String, "CheckBox"}}, {Pin{"Checked", T::Bool, ""}},
          {"ui.is_checked({0})"}, "check box ticked toggle");
+    action("ui_set_checked", "Set Is Checked", "User Interface", {Pin{"Widget", T::String, "CheckBox"}, Pin{"Checked", T::Bool, "true"}},
+           "ui.set_checked({1}, {2})", "check box tick toggle");
+    pure("ui_get_selected_option", "Get Selected Option", "User Interface|Combo Box", {Pin{"Widget", T::String, "ComboBox"}},
+         {Pin{"Option", T::String, ""}}, {"ui.get_selected_option({0})"}, "dropdown combo choice");
+    pure("ui_get_selected_index", "Get Selected Index", "User Interface|Combo Box", {Pin{"Widget", T::String, "ComboBox"}},
+         {Pin{"Index", T::Int, ""}}, {"ui.get_selected_index({0})"}, "dropdown combo choice");
+    action("ui_set_selected_index", "Set Selected Index", "User Interface|Combo Box",
+           {Pin{"Widget", T::String, "ComboBox"}, Pin{"Index", T::Int, "0"}}, "ui.set_selected_index({1}, {2})", "dropdown combo choice");
+    action("ui_add_option", "Add Option", "User Interface|Combo Box", {Pin{"Widget", T::String, "ComboBox"}, Pin{"Option", T::String, "Option"}},
+           "ui.add_option({1}, {2})", "dropdown combo item");
+    action("ui_show_mouse_cursor", "Set Show Mouse Cursor", "User Interface|Input", {Pin{"Show", T::Bool, "true"}}, "ui.show_cursor({1})",
+           "pointer mouse cursor visible input mode ui", "Shows and frees the pointer so the UI can be clicked; false hides it for the game again");
     action("ui_remove", "Remove from Parent", "User Interface", {}, "ui.remove()", "close hide widget",
            "Takes this widget off the screen");
     {
