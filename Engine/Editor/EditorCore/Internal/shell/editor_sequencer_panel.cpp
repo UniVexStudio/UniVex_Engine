@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_sequencer_panel.h"
+#include "model_animations.h"
 
 #include "editor_chrome.h"
 #include "editor_keyframe_view.h"
@@ -334,7 +335,7 @@ void EditorSequencerPanelUVE::RefreshUVE(const double deltaSeconds, const bool s
     }
     if (m_clipButton) {
         const std::string clip =
-            view.clip != nullptr ? m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(state.clipGuid).stem().string()
+            view.clip != nullptr ? Asset::AssetDisplayNameUVE(m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(state.clipGuid))
             : view.player != Scene::kInvalidEntityUVE &&
                     em.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(view.player).clip != Asset::AssetGuidUVE{}
                 ? std::string{"(unreadable clip)"}
@@ -450,7 +451,7 @@ void EditorSequencerPanelUVE::ShowClipMenuUVE() {
         const bool readable = m_editor.AnimationTimelineClipCardUVE(current).readable;
         std::vector<prism::MenuItem> clipMenu;
         clipMenu.push_back(prism::MenuItem::Item("Rename...", [this] {
-            const std::string name = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(m_editor.m_timeline.clipGuid).stem().string();
+            const std::string name = Asset::AssetDisplayNameUVE(m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(m_editor.m_timeline.clipGuid));
             AskNameUVE("Animation Name", name, [this](const std::string& to) { static_cast<void>(m_editor.RenameAnimationTimelineClipUVE(to)); });
         }));
         clipMenu.back().enabled = m_editor.m_timeline.clip != nullptr;
@@ -468,7 +469,7 @@ void EditorSequencerPanelUVE::ShowClipMenuUVE() {
     items.push_back(prism::MenuItem::Item("New Animation", [this, player, skeleton] {
         if (m_editor.CreateAnimationTimelineClipUVE(player, skeleton)) {
             ResyncUVE();
-            const std::string name = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(m_editor.m_timeline.clipGuid).stem().string();
+            const std::string name = Asset::AssetDisplayNameUVE(m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(m_editor.m_timeline.clipGuid));
             AskNameUVE("Animation Name", name, [this](const std::string& to) { static_cast<void>(m_editor.RenameAnimationTimelineClipUVE(to)); });
         }
     }, "", prism::Icon::Plus));
@@ -512,6 +513,22 @@ void EditorSequencerPanelUVE::ShowClipMenuUVE() {
                 static_cast<void>(m_editor.ImportAnimationLibraryIntoSequencerUVE(player, absolute));
             }, folder.empty() ? "Content" : folder));
         }
+    }
+    // The takes kept inside the project's models.
+    for (const Asset::AssetRecordUVE& record : m_editor.m_services->GetAssetDatabaseUVE().GetRegisteredAssetsUVE()) {
+        std::filesystem::path model;
+        std::string take;
+        if (!Asset::SplitEmbeddedClipPathUVE(record.path, model, take) || std::ranges::find(own, record.guid) != own.end()) {
+            continue;
+        }
+        if (!anyClip) {
+            addMenu.push_back(prism::MenuItem::Sep());
+            anyClip = true;
+        }
+        const std::filesystem::path absolute = record.path;
+        addMenu.push_back(prism::MenuItem::Item(Asset::AssetDisplayNameUVE(absolute), [this, player, absolute] {
+            static_cast<void>(m_editor.AddClipToAnimationSequencerUVE(player, absolute));
+        }, "Models"));
     }
     if (!anyClip) {
         addMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
@@ -597,7 +614,10 @@ void EditorSequencerPanelUVE::ExportLibraryUVE() {
         const Asset::ProjectFileSnapshotUVE project = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         std::filesystem::path folder = project.contentRoot;
         const std::filesystem::path clip = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(m_editor.m_timeline.clipGuid);
-        if (!clip.empty()) {
+        // (A take inside a model has no folder in Content: its library goes to the top.)
+        std::filesystem::path model;
+        std::string take;
+        if (!clip.empty() && !Asset::SplitEmbeddedClipPathUVE(clip, model, take)) {
             folder = clip.parent_path();
         }
         std::filesystem::path target = folder / (name + ".uvanimlib");

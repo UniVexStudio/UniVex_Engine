@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_details.h"
+#include "model_animations.h"
 
 #include "editor_asset_thumbnail.h"
 #include "editor_content_browser.h"
@@ -1019,7 +1020,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                 // Registered since the file index's last scan (a clip just added): the database knows it.
                 if (text == "Missing asset") {
                     if (const std::filesystem::path path = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(value); !path.empty()) {
-                        text = path.stem().string();
+                        text = Asset::AssetDisplayNameUVE(path);
                     }
                 }
             }

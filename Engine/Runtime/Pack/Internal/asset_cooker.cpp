@@ -1,4 +1,5 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#include "model_animations.h"
 #include "animation_montage_asset.h"
 #include "asset_cooker.h"
 #include <algorithm>
@@ -38,7 +39,13 @@ std::string Extension(const std::filesystem::path& path) {
     std::transform(value.begin(),value.end(),value.begin(),[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return value;
 }
+/// A take kept inside a model ("Hero.uvmodel#Walk") is runtime content of its model.
+bool EmbeddedClip(const std::filesystem::path& path, std::filesystem::path& model) {
+    std::string take;
+    return Asset::SplitEmbeddedClipPathUVE(path, model, take);
+}
 bool RuntimePath(const std::filesystem::path& path) {
+    if (std::filesystem::path model; EmbeddedClip(path, model)) return Extension(model) == ".uvmodel";
     static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvshader", ".uvscene",
         ".uvprefab", ".uvwbp", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage", ".uvmontagelib", ".uvfont", ".uvtable",
         ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
@@ -220,6 +227,21 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             // Editor registries can include authoring sources as well as imported outputs.
             // Omit those source records; a runtime reference to one is rejected by CheckGuid.
             if (!RuntimePath(record.path)) continue;
+            if (std::filesystem::path model; EmbeddedClip(record.path, model)) {
+                // The take ships inside its model; the catalog names it as the model and the take.
+                if (!model.is_absolute()) model = root/model;
+                model = Contained(root,model);
+                if (!Relative(model.lexically_relative(content))) throw std::runtime_error("Registered asset outside content");
+                Asset::AnimationClipAssetUVE clip;
+                if (!Asset::LoadAnimationClipAssetUVE(record.path.is_absolute() ? record.path : root/record.path,clip))
+                    throw std::runtime_error("Invalid registered native asset: " + record.path.string());
+                const auto relative = model.lexically_relative(root);
+                required.insert(relative);
+                char hex[17]; std::snprintf(hex,sizeof(hex),"%016llx",static_cast<unsigned long long>(record.guid.value));
+                if (record.guid.value == 0) throw std::runtime_error("Invalid zero GUID");
+                catalog[hex] = relative.generic_string() + record.path.generic_string().substr(record.path.generic_string().rfind('#'));
+                continue;
+            }
             std::filesystem::path source = record.path;
             if (!source.is_absolute()) source = root/source;
             source = Contained(root,source);

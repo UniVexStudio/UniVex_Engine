@@ -2,6 +2,9 @@
 
 
 #include "mesh_asset.h"
+#include "model_animations.h"
+#include "uve_file_envelope.h"
+#include <cstring>
 
 #include <cmath>
 #include <cstring>
@@ -63,7 +66,11 @@ constexpr std::size_t kSerializedMorphDeltaBytesUVE = sizeof(std::uint32_t) + si
 }
 
 [[nodiscard]] bool PeeksTrailingSectionUVE(const std::vector<std::byte>& payload, const std::size_t offset) {
-    return PeeksMaterialSectionUVE(payload, offset) || PeeksMorphSectionUVE(payload, offset) ||
+    std::size_t peekOffset = offset;
+    std::uint32_t tag = 0U;
+    // A model's own takes (model_animations.h) trail every mesh section; they are not mesh data.
+    const bool takes = Utilities::ReadUint32LeFromBufferUVE(payload, peekOffset, tag) && tag == kModelAnimationSectionTagUVE;
+    return takes || PeeksMaterialSectionUVE(payload, offset) || PeeksMorphSectionUVE(payload, offset) ||
            PeeksSurfaceSectionUVE(payload, offset);
 }
 
@@ -882,6 +889,26 @@ bool SaveMeshAssetUVE(const MeshAssetUVE& mesh, const std::filesystem::path& pat
         }
     }
 
+    // The model's own takes stay with it when its mesh is written again (a retarget, a re-save).
+    {
+        std::error_code error;
+        if (std::filesystem::is_regular_file(path, error)) {
+            if (const auto previous = ReadUveFileUVE(path); previous.has_value() && previous->first.assetType == AssetKindUVE::Mesh) {
+                const std::vector<std::byte> takes = ExtractModelAnimationSectionUVE(previous->second);
+                if (!takes.empty()) {
+                    // The footer points at where the section starts: here, in the new payload.
+                    const std::size_t sectionAt = payload.size();
+                    payload.insert(payload.end(), takes.begin(), takes.end() - 12);
+                    std::uint64_t at = sectionAt;
+                    std::byte footer[12];
+                    std::memcpy(footer, &at, 8);
+                    const std::uint32_t tag = kModelAnimationSectionTagUVE;
+                    std::memcpy(footer + 8, &tag, 4);
+                    payload.insert(payload.end(), footer, footer + 12);
+                }
+            }
+        }
+    }
     return WriteUveFileUVE(path, AssetKindUVE::Mesh, payload);
 }
 

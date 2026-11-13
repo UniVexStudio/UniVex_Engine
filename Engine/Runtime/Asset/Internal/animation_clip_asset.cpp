@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "animation_clip_asset.h"
+#include "model_animations.h"
 
 // The morph-track weight cap IS the mesh shape cap: a clip may not carry more weights per key than
 // any mesh can have shapes, or the two formats could disagree about what a track means.
@@ -241,9 +242,8 @@ bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
     return true;
 }
 
-bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::filesystem::path& path) {
+bool SerializeAnimationClipPayloadUVE(const AnimationClipAssetUVE& clip, std::vector<std::byte>& outPayload) {
     if (!IsAnimationClipAssetValidUVE(clip)) {
-        UVE_ERROR("AnimationClipAssetUVE: refusing to save invalid clip to {}", path.string());
         return false;
     }
     // The schema is the union of what the clip needs: v4 only when it carries blend shapes, v3 only
@@ -290,22 +290,72 @@ bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::fil
     }
     const std::string serialized = document.dump();
     if (serialized.empty() || serialized.size() > kMaximumAnimationAssetPayloadBytesUVE) {
-        UVE_ERROR("AnimationClipAssetUVE: serialized payload is empty or oversized for {}", path.string());
         return false;
     }
     const auto* const bytes = reinterpret_cast<const std::byte*>(serialized.data());
-    return WriteUveFileUVE(path, AssetKindUVE::Animation, std::vector<std::byte>(bytes, bytes + serialized.size()));
+    outPayload.assign(bytes, bytes + serialized.size());
+    return true;
+}
+
+bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::filesystem::path& path) {
+    if (!IsAnimationClipAssetValidUVE(clip)) {
+        UVE_ERROR("AnimationClipAssetUVE: refusing to save invalid clip to {}", path.string());
+        return false;
+    }
+    // A take kept inside a model is written back into the model, beside its other takes.
+    std::filesystem::path model;
+    std::string take;
+    if (SplitEmbeddedClipPathUVE(path, model, take)) {
+        std::vector<AnimationClipAssetUVE> takes;
+        bool replaced = false;
+        for (const ModelAnimationEntryUVE& entry : ListModelAnimationsUVE(model)) {
+            AnimationClipAssetUVE existing;
+            if (entry.name == take) {
+                existing = clip;
+                existing.clipId = take;
+                replaced = true;
+            } else if (!LoadModelAnimationUVE(model, entry.name, existing)) {
+                return false;
+            }
+            takes.push_back(std::move(existing));
+        }
+        if (!replaced) {
+            AnimationClipAssetUVE added = clip;
+            added.clipId = take;
+            takes.push_back(std::move(added));
+        }
+        return SaveModelAnimationsUVE(model, takes, ReadModelAnimationStampUVE(model));
+    }
+    std::vector<std::byte> payload;
+    if (!SerializeAnimationClipPayloadUVE(clip, payload)) {
+        UVE_ERROR("AnimationClipAssetUVE: serialized payload is empty or oversized for {}", path.string());
+        return false;
+    }
+    return WriteUveFileUVE(path, AssetKindUVE::Animation, payload);
 }
 
 bool LoadAnimationClipAssetUVE(const std::filesystem::path& path, AnimationClipAssetUVE& outClip) {
+    // A take kept inside a model ("Hero.uvmodel#Walk") is read from the model.
+    std::filesystem::path model;
+    std::string take;
+    if (SplitEmbeddedClipPathUVE(path, model, take)) {
+        return LoadModelAnimationUVE(model, take, outClip);
+    }
     const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
     if (!file.has_value() || file->first.assetType != AssetKindUVE::Animation || file->second.empty() ||
         file->second.size() > kMaximumAnimationAssetPayloadBytesUVE) {
         UVE_ERROR("AnimationClipAssetUVE: invalid animation envelope {}", path.string());
         return false;
     }
+    return ParseAnimationClipPayloadUVE(file->second, outClip);
+}
+
+bool ParseAnimationClipPayloadUVE(const std::vector<std::byte>& payload, AnimationClipAssetUVE& outClip) {
+    if (payload.empty() || payload.size() > kMaximumAnimationAssetPayloadBytesUVE) {
+        return false;
+    }
     try {
-        const std::string serialized(reinterpret_cast<const char*>(file->second.data()), file->second.size());
+        const std::string serialized(reinterpret_cast<const char*>(payload.data()), payload.size());
         const JsonUVE document = JsonUVE::parse(serialized);
         const std::string schema = document.is_object() ? document.value("schema", std::string{}) : std::string{};
         if (!document.is_object() ||
@@ -418,10 +468,10 @@ bool LoadAnimationClipAssetUVE(const std::filesystem::path& path, AnimationClipA
         outClip = std::move(candidate);
         return true;
     } catch (const std::exception& exception) {
-        UVE_ERROR("AnimationClipAssetUVE: failed to parse {}: {}", path.string(), exception.what());
+        UVE_ERROR("AnimationClipAssetUVE: failed to parse a clip: {}", exception.what());
         return false;
     } catch (...) {
-        UVE_ERROR("AnimationClipAssetUVE: failed to parse {} with an unknown exception", path.string());
+        UVE_ERROR("AnimationClipAssetUVE: failed to parse a clip with an unknown exception");
         return false;
     }
 }

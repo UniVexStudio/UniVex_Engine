@@ -6,6 +6,7 @@
 // goes through.
 
 #include "editor.h"
+#include "model_animations.h"
 #include "animation_graph_editing.h"
 
 #include <algorithm>
@@ -44,7 +45,7 @@ using Scene::AnimationParameterUVE;
 const std::string& EditorUVE::AnimationClipNameUVE(const Asset::AssetGuidUVE clip) {
     auto [it, added] = m_animGraph.clipNames.try_emplace(clip.value);
     if (added && clip != Asset::AssetGuidUVE{}) {
-        it->second = m_services->GetAssetDatabaseUVE().ResolveUVE(clip).stem().string();
+        it->second = Asset::AssetDisplayNameUVE(m_services->GetAssetDatabaseUVE().ResolveUVE(clip));
     }
     return it->second;
 }
