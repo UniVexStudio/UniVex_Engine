@@ -3254,6 +3254,10 @@ private:
         std::string boneSearch;
         /// The object opened in its own editor (a Blend Space or a State Machine), 0 for the graph.
         std::uint32_t focus = 0U;
+        /// The graph shown when nothing is focused: the top tree (machine 0), or the graph of a
+        /// State Machine's state.
+        std::uint32_t scopeMachine = 0U;
+        std::uint32_t scopeState = 0U;
         /// The State Machine view: its own pan and zoom (framed on first look), what is picked
         /// (a state slot or a transition index, -1 for none), a box being dragged (a state slot,
         /// kEntry/kAny, or -3 none) with the tree before it, a transition being drawn from a state

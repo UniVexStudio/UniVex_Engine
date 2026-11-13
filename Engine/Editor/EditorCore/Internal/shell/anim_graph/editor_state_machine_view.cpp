@@ -12,6 +12,7 @@
 #include "prism/Icons.h"
 #include "prism/Menu.h"
 #include "prism/Theme.h"
+#include "prism/Views.h"
 
 #include <algorithm>
 #include <cmath>
@@ -209,13 +210,7 @@ int StateMachineViewUVE::TransitionAtUVE(const NodeUVE& machine, const prism::Ve
 
 std::string StateMachineViewUVE::StateNameUVE(const NodeUVE& machine, const std::size_t slot) const {
     const Scene::AnimationGraphComponentUVE* graph = m_panel.GraphPtrUVE();
-    if (graph != nullptr && slot < machine.inputs.size() && machine.inputs[slot] != 0U) {
-        const auto child = std::ranges::find(graph->nodes, machine.inputs[slot], &NodeUVE::id);
-        if (child != graph->nodes.end() && !child->name.empty()) {
-            return child->name;
-        }
-    }
-    return AnimationGraphSlotLabelUVE(Kind::StateMachine, slot);
+    return graph != nullptr ? AnimationStateNameUVE(graph->nodes, machine, slot) : AnimationGraphSlotLabelUVE(Kind::StateMachine, slot);
 }
 
 std::string StateMachineViewUVE::StateDetailUVE(const NodeUVE& machine, const std::size_t slot) const {
@@ -332,7 +327,15 @@ void StateMachineViewUVE::paint(prism::Canvas& c) {
     // A link being drawn.
     if (m_drag == DragUVE::Link) {
         const prism::Rect from = ScreenBoxUVE(*machine, m_dragBox);
-        ArrowUVE(c, prism::Vec2{from.x + from.w * 0.5F, from.y + from.h * 0.5F}, m_mouse, t.accent, 2.0F, true);
+        const prism::Vec2 centre{from.x + from.w * 0.5F, from.y + from.h * 0.5F};
+        const int target = BoxAtUVE(*machine, m_mouse);
+        prism::Vec2 end = m_mouse;
+        if (target >= 0 && target != m_dragBox) {
+            const prism::Rect to = ScreenBoxUVE(*machine, target);
+            c.strokeRoundRect(to.inflated(3.0F), 8.0F * v.stateZoom, t.accent, 2);
+            end = EdgePointUVE(to, prism::Vec2{to.x + to.w * 0.5F, to.y + to.h * 0.5F}, centre);
+        }
+        ArrowUVE(c, EdgePointUVE(from, centre, m_mouse), end, t.accent, 2.2F, target < 0);
     }
     // Entry, Any and the states.
     const auto port = [&](const int box, const char* label, const prism::Color color) {
@@ -360,6 +363,10 @@ void StateMachineViewUVE::paint(prism::Canvas& c) {
         if (picked) {
             c.strokeRoundRect(r.inflated(2.0F), radius + 2.0F, prism::Color(255, 255, 255), 2);
         }
+        // Its border lights where a drag starts a transition.
+        if (m_drag == DragUVE::None && m_hoverBox == static_cast<int>(slot) && m_hoverEdge) {
+            c.strokeRoundRect(r.inflated(4.0F), radius + 4.0F, t.accent, 2);
+        }
         if (machine->entryState == slot) {
             prism::drawIcon(c, prism::Icon::NodeEntry, prism::Rect{r.right() - 20.0F * v.stateZoom, r.y + 4.0F * v.stateZoom, 14.0F * v.stateZoom, 14.0F * v.stateZoom},
                             kEntryColorUVE);
@@ -376,6 +383,12 @@ void StateMachineViewUVE::paint(prism::Canvas& c) {
             c.fillRect(prism::Rect{r.x + 5.0F * v.stateZoom, r.bottom() - 3.0F, (r.w - 5.0F * v.stateZoom) * phase, 2.0F}, kActiveColorUVE);
         }
     }
+    // How to use it, along the bottom.
+    const char* hint = m_drag == DragUVE::Link ? "Release (or click) on a state to make the transition - Esc cancels"
+                                               : "Drag from a state's edge to another state: a transition   |   Double-click a state: its graph   |   "
+                                                 "Right-click: add, rename, remove";
+    c.fillRect(prism::Rect{m_rect.x, m_rect.bottom() - 24.0F, m_rect.w, 24.0F}, prism::Color(18, 20, 24, 210));
+    c.textIn(*t.small, prism::Rect{m_rect.x + 10.0F, m_rect.bottom() - 24.0F, m_rect.w - 20.0F, 24.0F}, hint, prism::Color(160, 168, 184));
     c.popClip();
 }
 
@@ -394,6 +407,17 @@ bool StateMachineViewUVE::onMouseDown(const prism::MouseEvent& e) {
     m_dragFrom = e.pos;
     const int box = BoxAtUVE(*machine, e.pos);
     const int transition = box == kNoneUVE ? TransitionAtUVE(*machine, e.pos) : -1;
+    if (m_linkPending) {
+        // The transition from the menu ends where this click lands.
+        m_linkPending = false;
+        if (e.button == prism::MouseButton::Left) {
+            onMouseUp(e);
+        } else {
+            m_drag = DragUVE::None;
+            invalidate();
+        }
+        return true;
+    }
     if (e.button == prism::MouseButton::Right) {
         ShowMenuUVE(e.pos, box, transition);
         return true;
@@ -409,14 +433,7 @@ bool StateMachineViewUVE::onMouseDown(const prism::MouseEvent& e) {
         if (box >= 0) {
             OpenStateUVE(static_cast<std::size_t>(box));
         } else if (box == kNoneUVE && transition < 0) {
-            const Math::Vector2UVE at = ToWorldUVE(e.pos);
-            const std::uint32_t id = machine->id;
-            std::optional<std::size_t> added;
-            m_panel.EditUVE([&](Scene::AnimationGraphComponentUVE& g) {
-                added = AddAnimationStateUVE(g.nodes, id, Math::Vector2UVE{at.x - kStateWUVE * 0.5F, at.y - kStateHUVE * 0.5F});
-            });
-            v.pickedState = added.has_value() ? static_cast<int>(*added) : -1;
-            v.pickedTransition = -1;
+            AddStateUVE(ToWorldUVE(e.pos), Asset::AssetGuidUVE{});
         }
         invalidate();
         return true;
@@ -429,7 +446,8 @@ bool StateMachineViewUVE::onMouseDown(const prism::MouseEvent& e) {
     m_panel.m_sideDirty = true;
     if (box != kNoneUVE) {
         m_dragBox = box;
-        m_drag = (e.mods & prism::ModShift) != 0U ? DragUVE::Link : DragUVE::Move;
+        const bool link = (e.mods & prism::ModShift) != 0U || OnEdgeUVE(*machine, box, e.pos);
+        m_drag = link ? DragUVE::Link : DragUVE::Move;
     } else if (transition < 0) {
         m_drag = DragUVE::Pan;
     }
@@ -438,6 +456,15 @@ bool StateMachineViewUVE::onMouseDown(const prism::MouseEvent& e) {
 }
 
 bool StateMachineViewUVE::onMouseMove(const prism::MouseEvent& e) {
+    if (const NodeUVE* machine = MachineUVE(); machine != nullptr && m_drag == DragUVE::None) {
+        const int box = BoxAtUVE(*machine, e.pos);
+        const bool edge = box != kNoneUVE && OnEdgeUVE(*machine, box, e.pos);
+        if (box != m_hoverBox || edge != m_hoverEdge) {
+            m_hoverBox = box;
+            m_hoverEdge = edge;
+            invalidate();
+        }
+    }
     if (m_drag == DragUVE::Pan) {
         EditorUVE::AnimationGraphViewStateUVE& v = m_panel.m_editor.m_animGraph;
         v.statePanX -= (e.pos.x - m_mouse.x) / v.stateZoom;
@@ -502,7 +529,20 @@ bool StateMachineViewUVE::onMouseWheel(const prism::MouseEvent& e) {
 
 bool StateMachineViewUVE::onKeyDown(const prism::KeyEvent& e) {
     switch (e.key) {
-        case prism::Key::Escape: m_panel.CloseFocusUVE(); return true;
+        case prism::Key::Escape:
+            if (m_drag == DragUVE::Link) {
+                m_drag = DragUVE::None;
+                m_linkPending = false;
+                invalidate();
+                return true;
+            }
+            m_panel.CloseFocusUVE();
+            return true;
+        case prism::Key::F2:
+            if (m_panel.m_editor.m_animGraph.pickedState >= 0) {
+                RenameStateUVE(static_cast<std::size_t>(m_panel.m_editor.m_animGraph.pickedState));
+            }
+            return true;
         case prism::Key::Delete:
         case prism::Key::Backspace: DeletePickedUVE(); return true;
         case prism::Key::F: FrameUVE(); return true;
@@ -533,21 +573,102 @@ void StateMachineViewUVE::DeletePickedUVE() {
 
 void StateMachineViewUVE::OpenStateUVE(const std::size_t slot) {
     const NodeUVE* machine = MachineUVE();
-    const Scene::AnimationGraphComponentUVE* graph = m_panel.GraphPtrUVE();
-    if (machine == nullptr || graph == nullptr || slot >= machine->inputs.size() || machine->inputs[slot] == 0U) {
+    if (machine == nullptr || slot >= machine->inputs.size()) {
         return;
     }
-    // What the state plays: its own editor when it has one, else picked in the tree.
-    const std::uint32_t child = machine->inputs[slot];
-    const auto node = std::ranges::find(graph->nodes, child, &NodeUVE::id);
-    if (node != graph->nodes.end() && (node->kind == Kind::StateMachine || node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D)) {
-        m_panel.OpenFocusUVE(child);
-    } else {
-        m_panel.CloseFocusUVE();
-        m_panel.m_selected = {child};
-        m_panel.m_sideDirty = true;
-        m_panel.m_shown.reset();
+    m_panel.OpenStateGraphUVE(machine->id, static_cast<std::uint32_t>(slot));
+}
+
+bool StateMachineViewUVE::OnEdgeUVE(const NodeUVE& machine, const int box, const prism::Vec2 screen) const {
+    if (box < 0) {
+        return false;
     }
+    const prism::Rect r = ScreenBoxUVE(machine, box);
+    const float band = std::clamp(9.0F * m_panel.m_editor.m_animGraph.stateZoom, 6.0F, 14.0F);
+    return r.contains(screen) && !r.deflated(band).contains(screen);
+}
+
+void StateMachineViewUVE::BeginTransitionUVE(const int slot) {
+    m_dragBox = slot;
+    m_drag = DragUVE::Link;
+    m_linkPending = true;
+    if (prism::Application::exists()) {
+        m_mouse = prism::Application::get().mousePos();
+        prism::Application::get().setFocus(this);
+    }
+    invalidate();
+}
+
+void StateMachineViewUVE::RenameStateUVE(const std::size_t slot) {
+    const NodeUVE* machine = MachineUVE();
+    if (machine == nullptr || slot >= machine->inputs.size()) {
+        return;
+    }
+    const prism::Rect r = ScreenBoxUVE(*machine, static_cast<int>(slot));
+    const std::uint32_t id = machine->id;
+    prism::showTextPopup(this, prism::Vec2{r.x + 8.0F, r.y + 4.0F}, StateNameUVE(*machine, slot), [this, id, slot](const std::string& to) {
+        if (to.empty()) {
+            return false;
+        }
+        m_panel.EditNodeUVE(id, [slot, &to](NodeUVE& n) {
+            if (slot < n.inputs.size()) {
+                if (n.stateNames.size() < n.inputs.size()) {
+                    n.stateNames.resize(n.inputs.size());
+                }
+                n.stateNames[slot] = to;
+            }
+        });
+        m_panel.m_sideDirty = true;
+        return true;
+    });
+}
+
+void StateMachineViewUVE::AddStateUVE(const Math::Vector2UVE at, const Asset::AssetGuidUVE clip) {
+    const NodeUVE* machine = MachineUVE();
+    if (machine == nullptr) {
+        return;
+    }
+    const std::uint32_t id = machine->id;
+    std::optional<std::size_t> added;
+    m_panel.EditUVE([&](Scene::AnimationGraphComponentUVE& g) {
+        added = AddAnimationStateUVE(g.nodes, id, Math::Vector2UVE{at.x - kStateWUVE * 0.5F, at.y - kStateHUVE * 0.5F});
+        if (!added.has_value() || clip == Asset::AssetGuidUVE{}) {
+            return;
+        }
+        // Playing that clip, and named after it.
+        const auto node = std::ranges::find(g.nodes, id, &NodeUVE::id);
+        if (node != g.nodes.end() && *added < node->inputs.size()) {
+            const std::uint32_t child = node->inputs[*added];
+            if (const auto played = std::ranges::find(g.nodes, child, &NodeUVE::id); played != g.nodes.end()) {
+                played->clip = clip;
+            }
+            const std::string name = m_panel.m_editor.AnimationClipNameUVE(clip);
+            const auto again = std::ranges::find(g.nodes, id, &NodeUVE::id);
+            if (!name.empty() && *added < again->stateNames.size()) {
+                again->stateNames[*added] = name;
+            }
+        }
+    });
+    EditorUVE::AnimationGraphViewStateUVE& v = m_panel.m_editor.m_animGraph;
+    v.pickedState = added.has_value() ? static_cast<int>(*added) : -1;
+    v.pickedTransition = -1;
+    m_panel.m_sideDirty = true;
+    invalidate();
+}
+
+void StateMachineViewUVE::onMouseLeave() {
+    if (m_hoverBox != kNoneUVE || m_hoverEdge) {
+        m_hoverBox = kNoneUVE;
+        m_hoverEdge = false;
+        invalidate();
+    }
+}
+
+prism::Cursor StateMachineViewUVE::cursor() const {
+    if (m_drag == DragUVE::Link || m_hoverEdge) {
+        return prism::Cursor::Hand;
+    }
+    return m_drag == DragUVE::Move ? prism::Cursor::SizeAll : prism::Cursor::Arrow;
 }
 
 void StateMachineViewUVE::ShowMenuUVE(const prism::Vec2 at, const int box, const int transition) {
@@ -563,8 +684,11 @@ void StateMachineViewUVE::ShowMenuUVE(const prism::Vec2 at, const int box, const
         v.pickedState = box;
         v.pickedTransition = -1;
         m_panel.m_sideDirty = true;
-        items.push_back(prism::MenuItem::Item("Start Here", [this, id, slot] { m_panel.EditNodeUVE(id, [slot](NodeUVE& n) { n.entryState = slot; }); }, "",
-                                              prism::Icon::NodeEntry));
+        items.push_back(prism::MenuItem::Header(StateNameUVE(*machine, slot)));
+        items.push_back(prism::MenuItem::Item("Open State Graph", [this, slot] { OpenStateUVE(slot); }, "Double-click", prism::Icon::StateGraph));
+        items.push_back(prism::MenuItem::Item("Rename", [this, slot] { RenameStateUVE(slot); }, "F2"));
+        items.push_back(prism::MenuItem::Sep());
+        items.push_back(prism::MenuItem::Item("Add Transition...", [this, box] { BeginTransitionUVE(box); }, "Drag from edge", prism::Icon::NodeTransition));
         std::vector<prism::MenuItem> targets;
         for (std::size_t other = 0U; other < machine->inputs.size(); ++other) {
             if (other == slot) {
@@ -580,21 +704,33 @@ void StateMachineViewUVE::ShowMenuUVE(const prism::Vec2 at, const int box, const
             }));
         }
         if (targets.empty()) {
-            targets.push_back(prism::MenuItem::Item("None", {}).disabled());
+            targets.push_back(prism::MenuItem::Item("No other state", {}).disabled());
         }
         items.push_back(prism::MenuItem::Sub("Transition To", std::move(targets), prism::Icon::NodeTransition));
         items.push_back(prism::MenuItem::Item("Transition From Any State", [this, id, slot] {
             m_panel.EditUVE([&](Scene::AnimationGraphComponentUVE& g) { static_cast<void>(AddAnimationTransitionUVE(g.nodes, id, Scene::kAnyAnimationStateUVE, slot)); });
         }));
-        items.push_back(prism::MenuItem::Item("Open What It Plays", [this, slot] { OpenStateUVE(slot); }));
+        auto entry = prism::MenuItem::Item("Set as Entry State", [this, id, slot] { m_panel.EditNodeUVE(id, [slot](NodeUVE& n) { n.entryState = slot; }); }, "",
+                                           prism::Icon::NodeEntry);
+        if (machine->entryState == slot) {
+            entry.enabled = false;
+        }
+        items.push_back(std::move(entry));
         items.push_back(prism::MenuItem::Sep());
-        items.push_back(prism::MenuItem::Item("Remove State", [this] { DeletePickedUVE(); }, "Del", prism::Icon::Trash));
+        auto remove = prism::MenuItem::Item("Delete State", [this] { DeletePickedUVE(); }, "Del", prism::Icon::Trash);
+        if (machine->inputs.size() <= 1U) {
+            remove.enabled = false;   // a machine keeps one state
+        }
+        items.push_back(std::move(remove));
     } else if (transition >= 0) {
         v.pickedTransition = transition;
         v.pickedState = -1;
         m_panel.m_sideDirty = true;
         const auto index = static_cast<std::size_t>(transition);
-        const bool enabled = machine->transitions[index].enabled;
+        const Scene::AnimationGraphTransitionUVE& tr = machine->transitions[index];
+        const std::string from = tr.fromState == Scene::kAnyAnimationStateUVE ? std::string{"Any State"} : StateNameUVE(*machine, tr.fromState);
+        items.push_back(prism::MenuItem::Header(from + "  ->  " + StateNameUVE(*machine, tr.toState)));
+        const bool enabled = tr.enabled;
         items.push_back(prism::MenuItem::Check("Enabled", enabled, [this, id, index, enabled] {
             m_panel.EditNodeUVE(id, [index, enabled](NodeUVE& n) {
                 if (index < n.transitions.size()) {
@@ -602,17 +738,38 @@ void StateMachineViewUVE::ShowMenuUVE(const prism::Vec2 at, const int box, const
                 }
             });
         }));
+        if (tr.fromState != Scene::kAnyAnimationStateUVE) {
+            const std::uint32_t back = tr.fromState;
+            const std::uint32_t to = tr.toState;
+            const bool exists = std::ranges::any_of(machine->transitions, [back, to](const Scene::AnimationGraphTransitionUVE& o) {
+                return o.fromState == to && o.toState == back;
+            });
+            auto reverse = prism::MenuItem::Item("Add Reverse Transition", [this, id, back, to] {
+                m_panel.EditUVE([&](Scene::AnimationGraphComponentUVE& g) { static_cast<void>(AddAnimationTransitionUVE(g.nodes, id, to, back)); });
+            });
+            if (exists) {
+                reverse.enabled = false;
+            }
+            items.push_back(std::move(reverse));
+        }
         items.push_back(prism::MenuItem::Sep());
-        items.push_back(prism::MenuItem::Item("Remove Transition", [this] { DeletePickedUVE(); }, "Del", prism::Icon::Trash));
+        items.push_back(prism::MenuItem::Item("Delete Transition", [this] { DeletePickedUVE(); }, "Del", prism::Icon::Trash));
     } else {
         const Math::Vector2UVE world = ToWorldUVE(at);
-        items.push_back(prism::MenuItem::Item("Add State Here", [this, id, world] {
-            m_panel.EditUVE([&](Scene::AnimationGraphComponentUVE& g) {
-                static_cast<void>(AddAnimationStateUVE(g.nodes, id, Math::Vector2UVE{world.x - kStateWUVE * 0.5F, world.y - kStateHUVE * 0.5F}));
-            });
-        }, "", prism::Icon::Plus));
+        items.push_back(prism::MenuItem::Header("State Machine"));
+        items.push_back(prism::MenuItem::Item("Add State", [this, world] { AddStateUVE(world, Asset::AssetGuidUVE{}); }, "Double-click", prism::Icon::Plus));
+        std::vector<prism::MenuItem> clips;
+        for (const Asset::AssetGuidUVE clip : m_panel.ClipChoicesUVE()) {
+            clips.push_back(prism::MenuItem::Item(m_panel.m_editor.AnimationClipNameUVE(clip), [this, world, clip] { AddStateUVE(world, clip); }, "",
+                                                  prism::Icon::AnimClip));
+        }
+        if (clips.empty()) {
+            clips.push_back(prism::MenuItem::Item("No animations in the project", {}).disabled());
+        }
+        items.push_back(prism::MenuItem::Sub("Add State Playing", std::move(clips), prism::Icon::AnimClip));
+        items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Item("Frame All", [this] { FrameUVE(); }, "F", prism::Icon::Frame));
-        items.push_back(prism::MenuItem::Item("Back to the Tree", [this] { m_panel.CloseFocusUVE(); }, "Esc", prism::Icon::ChevronLeft));
+        items.push_back(prism::MenuItem::Item("Up", [this] { m_panel.CloseFocusUVE(); }, "Esc", prism::Icon::ChevronLeft));
     }
     prism::showContextMenu(std::move(items), at);
     invalidate();

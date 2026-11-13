@@ -294,6 +294,19 @@ struct AnimationGraphNodeUVE final {
     std::vector<Math::Vector2UVE> statePositions;
     Math::Vector2UVE entryPosition{-240.0F, 0.0F};
     Math::Vector2UVE anyPosition{-240.0F, 120.0F};
+    /// StateMachine: each state's name, by slot (empty: named after what it plays).
+    std::vector<std::string> stateNames;
+    /// The graph the editor shows this node in when no wire says (a node not wired yet): a State
+    /// Machine's id and the state's slot; 0 is the top tree. A wired node goes where its wire leads.
+    std::uint32_t owner = 0U;
+    std::uint32_t ownerState = 0U;
+    /// Blend Space 1D / 2D: the lines its editor's grid has per axis (points snap to them when
+    /// `snapToGrid`), and each axis's name (its parameter's when empty).
+    std::uint32_t gridX = 4U;
+    std::uint32_t gridY = 4U;
+    bool snapToGrid = true;
+    std::string axisNameX;
+    std::string axisNameY;
     /// TwoBoneIK / LookAt: the effector or target when `targetSource` is Fixed. ModifyBone: the
     /// translation. In the skeleton's space (ModifyBone: in `space`).
     Math::Vector3UVE target{};
@@ -384,6 +397,9 @@ struct AnimationGraphCommentUVE final {
     Math::Vector2UVE size{260.0F, 160.0F};
     /// RGBA, 0..255.
     std::uint32_t color = 0x1E50822DU;
+    /// The graph it is drawn in: 0 the top tree, else a State Machine's id and the state's slot.
+    std::uint32_t owner = 0U;
+    std::uint32_t ownerState = 0U;
     [[nodiscard]] bool operator==(const AnimationGraphCommentUVE&) const = default;
 };
 

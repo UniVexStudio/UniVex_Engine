@@ -211,5 +211,8 @@ struct DialogButton {
   std::function<void()> action;
 };
 void showDialog(const std::string& title, Ref<Widget> content, std::vector<DialogButton> buttons, float width = 440);
+// A one-line editor at `at` (a rename in place): Enter hands the text to `accept`, which closes it
+// by returning true; Esc closes it. `refocus` gets the keyboard back after.
+void showTextPopup(Widget* refocus, Vec2 at, const std::string& initial, std::function<bool(const std::string&)> accept);
 
 } // namespace prism

@@ -155,7 +155,8 @@ TEST(AnimationGraphEditingUVETest, StatesAreAddedWithAClipAndKeepTheirPlaces) {
     const auto& added = ObjectUVE(objects, machine);
     ASSERT_EQ(added.inputs.size(), 2U);
     EXPECT_EQ(ObjectUVE(objects, added.inputs[1]).kind, Kind::Clip);
-    EXPECT_EQ(ObjectUVE(objects, added.inputs[1]).name, "State 2");
+    EXPECT_EQ(AnimationStateNameUVE(objects, added, 1U), "State 2");
+    EXPECT_EQ(AnimationGraphScopeOfUVE(objects, added.inputs[1]), (AnimationGraphScopeUVE{machine, 1U})) << "its clip is in the state's graph";
     EXPECT_EQ(AnimationStatePositionUVE(added, 1U).x, 220.0F);
     EXPECT_EQ(AnimationStatePositionUVE(added, 7U).x, 200.0F) << "never placed: a grid spot";
 
@@ -191,6 +192,54 @@ TEST(AnimationGraphEditingUVETest, TransitionsAreAddedReorderedAndDescribed) {
     transition.enabled = false;
     EXPECT_EQ(DescribeAnimationTransitionUVE(transition), "speed > 0.5 and not crouched, after 75% (off)");
     EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects)).empty());
+}
+
+TEST(AnimationGraphEditingUVETest, EachStateHasAGraphOfItsOwn) {
+    auto objects = Scene::AnimationGraphComponentUVE::MakeDefaultAnimationGraphUVE();
+    const std::uint32_t machine = AddAnimationGraphNodeUVE(objects, Kind::StateMachine, {});
+    static_cast<void>(AddAnimationStateUVE(objects, machine, {}));
+    static_cast<void>(AddAnimationStateUVE(objects, machine, {200.0F, 0.0F}));
+    const std::uint32_t idle = ObjectUVE(objects, machine).inputs[0];
+    const std::uint32_t run = ObjectUVE(objects, machine).inputs[1];
+    EXPECT_EQ(AnimationStateNameUVE(objects, ObjectUVE(objects, machine), 0U), "State 1");
+    EXPECT_EQ(AnimationGraphScopeOfUVE(objects, machine), AnimationGraphScopeUVE{}) << "the machine is in the top tree";
+
+    // A node wired into a state's clip is in that state; one made there but not wired stays there.
+    const std::uint32_t speed = AddAnimationGraphNodeUVE(objects, Kind::TimeScale, {});
+    ASSERT_TRUE(ConnectAnimationGraphNodesUVE(objects, machine, 1U, speed));
+    ASSERT_TRUE(ConnectAnimationGraphNodesUVE(objects, speed, 0U, run));
+    EXPECT_EQ(AnimationGraphScopeOfUVE(objects, run), (AnimationGraphScopeUVE{machine, 1U})) << "through the wires";
+    const std::uint32_t loose = AddAnimationGraphNodeUVE(objects, Kind::Blend2, {});
+    for (Scene::AnimationGraphNodeUVE& node : objects) {
+        if (node.id == loose) {
+            node.owner = machine;
+            node.ownerState = 1U;
+        }
+    }
+    EXPECT_EQ(AnimationGraphScopeOfUVE(objects, loose), (AnimationGraphScopeUVE{machine, 1U})) << "where it was put";
+    const std::vector<std::uint32_t> top = AnimationGraphScopeNodesUVE(objects, AnimationGraphScopeUVE{});
+    EXPECT_EQ(std::ranges::count(top, idle) + std::ranges::count(top, run) + std::ranges::count(top, loose), 0)
+        << "the top tree shows none of the states' nodes";
+    EXPECT_EQ(AnimationGraphNodesInsideUVE(objects, machine).size(), 4U) << "both clips, the time scale and the loose blend";
+
+    // Duplicating the machine copies its states' graphs, each copy in the copy's states.
+    const std::size_t before = objects.size();
+    const std::vector<std::uint32_t> copied = DuplicateAnimationGraphNodesUVE(objects, {machine}, {50.0F, 0.0F});
+    ASSERT_EQ(copied.size(), 1U);
+    EXPECT_EQ(objects.size(), before + 5U);
+    EXPECT_EQ(AnimationGraphNodesInsideUVE(objects, copied[0]).size(), 4U);
+    EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects)).empty())
+        << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects));
+
+    // Removing a state takes its graph with it; the later states' nodes move down a slot.
+    ASSERT_TRUE(RemoveAnimationGraphInputSlotUVE(objects, machine, 0U));
+    EXPECT_EQ(std::ranges::count_if(objects, [idle](const Scene::AnimationGraphNodeUVE& n) { return n.id == idle; }), 0);
+    EXPECT_EQ(AnimationGraphScopeOfUVE(objects, loose), (AnimationGraphScopeUVE{machine, 0U}));
+    EXPECT_EQ(AnimationStateNameUVE(objects, ObjectUVE(objects, machine), 0U), "State 2") << "its name moved with it";
+    // Deleting the machine takes every state's graph.
+    ASSERT_EQ(DeleteAnimationGraphNodesUVE(objects, {machine}), 4U);
+    EXPECT_TRUE(Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects)).empty())
+        << Scene::DescribeAnimationGraphProblemUVE(TreeOfUVE(objects));
 }
 
 } // namespace

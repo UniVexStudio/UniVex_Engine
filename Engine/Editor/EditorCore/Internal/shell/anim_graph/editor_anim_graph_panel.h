@@ -4,6 +4,7 @@
 #include "editor.h"
 
 #include "animation_graph_component.h"
+#include "animation_graph_editing.h"
 
 #include "prism/BlueprintGraph.h"
 #include "prism/Widget.h"
@@ -17,6 +18,7 @@
 #include <vector>
 
 namespace prism {
+class Box;
 class Button;
 class ComboBox;
 class Label;
@@ -64,6 +66,8 @@ public:
     /// goes back to the tree.
     void OpenFocusUVE(std::uint32_t node);
     void CloseFocusUVE();
+    /// Opens the graph of a State Machine's state (what it plays).
+    void OpenStateGraphUVE(std::uint32_t machine, std::uint32_t slot);
     /// The graph's settings (sequencer, parameters, the picked node / state / transition / point,
     /// the preview log), shown in the Details column while the graph page is up.
     [[nodiscard]] prism::Ref<prism::Widget> SideUVE() const { return m_sidePanel; }
@@ -118,6 +122,10 @@ private:
     void BuildStateMachineSideUVE(prism::PropertyGrid& grid, const GraphUVE& graph, const NodeUVE& machine);
     void BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, const GraphUVE& graph, const NodeUVE& space);
     [[nodiscard]] const NodeUVE* FocusNodeUVE() const;
+    /// The graph the tree page shows (checked: a scope whose machine went is the top).
+    [[nodiscard]] AnimationGraphScopeUVE ScopeUVE() const;
+    /// The id of a state graph's result node, drawn there and never stored.
+    static constexpr int kStateResultUVE = 0x7FFFFF00;
     void SyncFocusUVE();
     void RefreshLiveValuesUVE(const GraphUVE& graph);
     void ShowGraphMenuUVE();
@@ -134,7 +142,9 @@ private:
     std::shared_ptr<StateMachineViewUVE> m_stateView;
     std::shared_ptr<BlendSpaceViewUVE> m_spaceView;
     std::shared_ptr<prism::Widget> m_crumbs;
-    std::shared_ptr<prism::Label> m_crumbLabel;
+    std::shared_ptr<prism::Box> m_crumbRow;
+    std::string m_crumbSignature = "-";
+    AnimationGraphScopeUVE m_shownScope;
     std::uint32_t m_shownFocus = 0U;
     int m_shownPickedState = -1;
     int m_shownPickedTransition = -1;

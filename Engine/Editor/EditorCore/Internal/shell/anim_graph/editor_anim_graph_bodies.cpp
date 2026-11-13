@@ -142,9 +142,25 @@ std::vector<std::string> EditorAnimGraphPanelUVE::ParameterNamesUVE(const std::i
 }
 
 std::vector<Asset::AssetGuidUVE> EditorAnimGraphPanelUVE::ClipChoicesUVE() const {
-    // As Godot's tree takes its player's animations: the linked AnimationSequencer's own list,
-    // its clip and its library's, and nothing else.
-    return m_editor.GetSequencerClipsUVE(m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree));
+    // The linked AnimationSequencer's clips first (its clip and its library's), then every other
+    // clip in the project, so a new graph can use any animation at once.
+    std::vector<Asset::AssetGuidUVE> clips = m_editor.GetSequencerClipsUVE(m_editor.ResolveActiveSequencerForGraphUVE(m_view.tree));
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
+    std::vector<std::filesystem::path> project;
+    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+        if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory && entry.relativePath.extension() == ".uvanim") {
+            project.push_back(snapshot.contentRoot / entry.relativePath);
+        }
+    }
+    std::ranges::sort(project);
+    for (const std::filesystem::path& path : project) {
+        const Asset::AssetGuidUVE guid = database.RegisterUVE(path);
+        if (guid != Asset::AssetGuidUVE{} && std::ranges::find(clips, guid) == clips.end()) {
+            clips.push_back(guid);
+        }
+    }
+    return clips;
 }
 
 std::vector<Scene::EntityUVE> EditorAnimGraphPanelUVE::MontagePlayersUVE() const {
@@ -445,14 +461,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         case Kind::StateMachine: {
             std::vector<std::string> states;
             for (std::size_t slot = 0U; slot < node.inputs.size(); ++slot) {
-                std::string name = AnimationGraphSlotLabelUVE(node.kind, slot);
-                if (graph != nullptr && node.inputs[slot] != 0U) {
-                    if (const auto child = std::ranges::find(graph->nodes, node.inputs[slot], &NodeUVE::id);
-                        child != graph->nodes.end() && !child->name.empty()) {
-                        name = child->name;
-                    }
-                }
-                states.push_back(name);
+                states.push_back(graph != nullptr ? AnimationStateNameUVE(graph->nodes, node, slot) : AnimationGraphSlotLabelUVE(node.kind, slot));
             }
             if (states.empty()) {
                 states.push_back("(no states)");
