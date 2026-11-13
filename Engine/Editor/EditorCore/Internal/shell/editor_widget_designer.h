@@ -40,6 +40,7 @@ public:
     WidgetDesignerViewUVE();
 
     void SetItemsUVE(std::vector<ItemUVE> items);
+    [[nodiscard]] const std::vector<ItemUVE>& ItemsUVE() const noexcept { return m_items; }
     void SetSelectedUVE(Scene::EntityUVE entity);
     void SetResolutionUVE(float width, float height);
     [[nodiscard]] float WidthUVE() const noexcept { return m_designW; }

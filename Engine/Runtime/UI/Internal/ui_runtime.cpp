@@ -17,6 +17,7 @@
 #include "ui_dropdown_component.h"
 #include "ui_image_component.h"
 #include "ui_progress_bar_component.h"
+#include "ui_view_3d_component.h"
 #include "ui_scroll_container_component.h"
 #include "ui_scrollbar_component.h"
 #include "ui_slider_component.h"
@@ -221,6 +222,9 @@ void AppendImageQuadsUVE(const Scene::UIImageComponentUVE& image, const float al
     }
     if (entityManager.HasComponentUVE<Scene::UIProgressBarComponentUVE>(entity)) {
         return entityManager.GetComponentUVE<Scene::UIProgressBarComponentUVE>(entity).rect;
+    }
+    if (entityManager.HasComponentUVE<Scene::UIView3DComponentUVE>(entity)) {
+        return entityManager.GetComponentUVE<Scene::UIView3DComponentUVE>(entity).rect;
     }
     return std::nullopt;
 }
@@ -512,6 +516,33 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
             }
             std::vector<UIQuadUVE> quads;
             AppendImageQuadsUVE(image, TweenedAlphaUVE(entityManager, entity, image.alpha), quads);
+            RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 0, std::move(quads), ranked);
+        });
+
+    entityManager.ForEachUVE<Scene::UIView3DComponentUVE>(
+        [&entityManager, &ranked](const Scene::EntityUVE entity, const Scene::UIView3DComponentUVE& view) {
+            if (!ShouldDrawUiWidgetUVE(entityManager, entity) || !Scene::IsUIView3DComponentValidUVE(view)) {
+                return;
+            }
+            const float alpha = TweenedAlphaUVE(entityManager, entity, 1.0F);
+            std::vector<UIQuadUVE> quads;
+            if (view.backgroundAlpha > 0.0F) {
+                UIQuadUVE background{};
+                background.rect = view.rect;
+                background.color = view.backgroundColor;
+                background.alpha = view.backgroundAlpha * alpha;
+                background.kind = UIDrawItemKindUVE::SolidColor;
+                quads.push_back(background);
+            }
+            UIQuadUVE picture{};
+            picture.rect = view.rect;
+            // The capture is a render target: its rows run bottom-up.
+            picture.v0 = 1.0F;
+            picture.v1 = 0.0F;
+            picture.alpha = alpha;
+            picture.kind = UIDrawItemKindUVE::View3D;
+            picture.viewKey = (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index;
+            quads.push_back(picture);
             RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 0, std::move(quads), ranked);
         });
 

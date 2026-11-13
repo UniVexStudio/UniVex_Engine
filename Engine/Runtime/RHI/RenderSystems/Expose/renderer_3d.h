@@ -76,6 +76,9 @@ public:
     void SetShadingModeUVE(std::int32_t shadingMode) noexcept override;
     void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept override;
     void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
+    /// Renders every 3D View the UI drew last frame (UIView3DComponentUVE) into its own picture,
+    /// which the UI pass then draws in its rect. Called at the start of each frame.
+    void CaptureUIViewsUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity);
     void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept override;
 
     [[nodiscard]] Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override;

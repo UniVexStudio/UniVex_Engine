@@ -2,6 +2,7 @@
 
 #include "montage_player_component.h"
 #include "shell/editor_shell.h"
+#include "shell/editor_widget_icons.h"
 #include "logging_macros.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
@@ -3700,8 +3701,15 @@ std::string_view EditorUVE::GetObjectTypeNameUVE(const Scene::EntityUVE entity) 
     if (!IsDocumentEntityUVE(entity)) {
         return {};
     }
-    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(
-        Scene::ResolveSceneObjectKindUVE(m_services->GetEntityManagerUVE(), entity));
+    const Scene::Objects::SceneObjectKindUVE kind = Scene::ResolveSceneObjectKindUVE(m_services->GetEntityManagerUVE(), entity);
+    // A UI object reads as the widget it is (a Combo Box, a 3D View ...), not as the Image it was made from.
+    if (kind == Scene::Objects::SceneObjectKindUVE::UIImage || kind == Scene::Objects::SceneObjectKindUVE::UIText ||
+        kind == Scene::Objects::SceneObjectKindUVE::UIButton) {
+        if (const std::optional<WidgetKindUVE> widget = ClassifyWidgetUVE(m_services->GetEntityManagerUVE(), entity)) {
+            return WidgetKindLabelUVE(*widget);
+        }
+    }
+    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
     return descriptor != nullptr ? descriptor->displayName : std::string_view{};
 }
 

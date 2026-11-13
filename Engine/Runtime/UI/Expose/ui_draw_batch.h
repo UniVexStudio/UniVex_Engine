@@ -21,6 +21,8 @@ enum class UIDrawItemKindUVE : std::uint8_t {
     Image,
     /// Samples the shared font atlas at (u0,v0)-(u1,v1) (one character from a UITextComponentUVE).
     Glyph,
+    /// A 3D View's picture: the renderer's own capture for `viewKey` (UIView3DComponentUVE).
+    View3D,
 };
 
 /// One screen-space quad with a top-left origin. UIRuntimeUVE transforms authored window-coordinate
@@ -37,6 +39,8 @@ struct UIQuadUVE final {
     float alpha = 1.0F;
     UIDrawItemKindUVE kind = UIDrawItemKindUVE::SolidColor;
     Asset::AssetGuidUVE imageAssetGuid{};
+    /// View3D: which 3D View's capture (its widget, packed).
+    std::uint64_t viewKey = 0U;
 };
 
 /// The CPU-side output of one UIRuntimeUVE::TickUVE() call - a flat, ordered list of quads ready

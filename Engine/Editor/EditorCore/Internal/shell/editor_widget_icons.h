@@ -30,6 +30,7 @@ enum class WidgetKindUVE : std::uint8_t {
     ScrollBox,
     Border,
     Spacer,
+    View3D,
 };
 
 /// Its name ("Combo Box", "Vertical Box" ...).

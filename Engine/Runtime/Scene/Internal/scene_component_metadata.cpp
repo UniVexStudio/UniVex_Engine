@@ -48,6 +48,7 @@
 #include "ui_image_component.h"
 #include "ui_layout_container_component.h"
 #include "ui_progress_bar_component.h"
+#include "ui_view_3d_component.h"
 #include "ui_scroll_container_component.h"
 #include "ui_scrollbar_component.h"
 #include "ui_slider_component.h"
@@ -2573,6 +2574,39 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                     "Appearance"),
                          InGroupUVE(DeclareUVE<&UIProgressBarComponentUVE::fillColor>("fillColor", "Fill",
                                                                                      kPropertyTypeColorUVE),
+                                    "Appearance"),
+                     }));
+    AddValidatedUVE<UIView3DComponentUVE, &IsUIView3DComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.ui_view_3d", "UIView3DComponentUVE", "UI 3D View", kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UIView3DComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&UIView3DComponentUVE::assetPath>(
+                                                                "assetPath", "Shows", kPropertyTypeStringUVE),
+                                                            "file:uventity,uvprefab"),
+                                        "The entity asset shown in 3D: a character, a weapon, a car ..."),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::cameraDistance>("cameraDistance", "Distance",
+                                                                                     kPropertyTypeFloatUVE),
+                                    "Camera"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::lookAtHeight>("lookAtHeight", "Look At Height",
+                                                                                   kPropertyTypeFloatUVE),
+                                    "Camera"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::pitchDegrees>("pitchDegrees", "Pitch",
+                                                                                   kPropertyTypeFloatUVE),
+                                    "Camera"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::fieldOfViewDegrees>("fieldOfViewDegrees",
+                                                                                         "Field of View", kPropertyTypeFloatUVE),
+                                    "Camera"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::yawDegrees>("yawDegrees", "Turn", kPropertyTypeFloatUVE),
+                                    "Motion"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::spinDegreesPerSecond>("spinDegreesPerSecond",
+                                                                                           "Spin (deg/s)", kPropertyTypeFloatUVE),
+                                    "Motion"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::backgroundColor>("backgroundColor", "Background",
+                                                                                      kPropertyTypeColorUVE),
+                                    "Appearance"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::backgroundAlpha>("backgroundAlpha", "Background Alpha",
+                                                                                      kPropertyTypeFloatUVE),
                                     "Appearance"),
                      }));
     AddUVE<UITweenComponentUVE>(

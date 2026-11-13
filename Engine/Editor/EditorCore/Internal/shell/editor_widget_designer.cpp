@@ -222,6 +222,37 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                     c.fillRect(v, prism::Color(200, 200, 210, 30));
                 }
                 break;
+            case KindUVE::View3D: {
+                // The asset turns here in the game; the Designer shows where, and what.
+                c.pushClip(v);
+                c.gradientV(v, prism::Color(28, 34, 48), prism::Color(14, 16, 22));
+                const float unit = std::min(v.w, v.h);
+                const prism::Vec2 mid{v.x + v.w * 0.5F, v.y + v.h * 0.52F};
+                const prism::Color figure(70, 110, 170);
+                c.fillCircle(prism::Vec2{mid.x, mid.y - unit * 0.24F}, unit * 0.09F, figure);
+                c.fillRoundRect(prism::Rect{mid.x - unit * 0.14F, mid.y - unit * 0.13F, unit * 0.28F, unit * 0.32F}, unit * 0.06F, figure);
+                c.fillRoundRect(prism::Rect{mid.x - unit * 0.11F, mid.y + unit * 0.17F, unit * 0.09F, unit * 0.2F}, unit * 0.03F, figure);
+                c.fillRoundRect(prism::Rect{mid.x + unit * 0.02F, mid.y + unit * 0.17F, unit * 0.09F, unit * 0.2F}, unit * 0.03F, figure);
+                for (int i = 0; i < 48; ++i) {
+                    const float a0 = static_cast<float>(i) / 48.0F * 6.2832F;
+                    const float a1 = static_cast<float>(i + 1) / 48.0F * 6.2832F;
+                    if (i % 2 == 0 && std::sin(a0) > -0.2F) {
+                        c.line(prism::Vec2{mid.x + std::cos(a0) * unit * 0.36F, mid.y + unit * 0.38F + std::sin(a0) * unit * 0.07F},
+                               prism::Vec2{mid.x + std::cos(a1) * unit * 0.36F, mid.y + unit * 0.38F + std::sin(a1) * unit * 0.07F},
+                               prism::Color(250, 205, 80, 200), 1.5F);
+                    }
+                }
+                if (const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(KindUVE::View3D, 16); icon) {
+                    c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, prism::Rect{v.x + 4.0F, v.y + 4.0F, 16.0F, 16.0F});
+                }
+                c.textIn(*t.small, prism::Rect{v.x + 24.0F, v.y + 4.0F, std::max(0.0F, v.w - 28.0F), 16.0F},
+                         item.text.empty() ? std::string("3D View - pick what it shows in Details") : item.text, prism::Color(220, 228, 240),
+                         prism::HAlign::Left, true);
+                c.textIn(*t.small, prism::Rect{v.x + 4.0F, v.bottom() - 18.0F, std::max(0.0F, v.w - 8.0F), 16.0F}, "Live 3D in the game",
+                         prism::Color(150, 160, 178), prism::HAlign::Center, true);
+                c.popClip();
+                break;
+            }
             case KindUVE::Canvas:
                 break;
             case KindUVE::TextBox: {
