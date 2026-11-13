@@ -7,6 +7,7 @@
 #include "editor_anim_graph_panel.h"
 
 #include "animation_graph_editing.h"
+#include "model_animations.h"
 #include "i_asset_database.h"
 #include "i_project_file_index.h"
 #include "skeleton_3d.h"
@@ -161,6 +162,14 @@ std::vector<Asset::AssetGuidUVE> EditorAnimGraphPanelUVE::ClipChoicesUVE() const
             }
         }
         std::ranges::sort(project);
+        // And the takes kept inside the project's models.
+        for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
+            std::filesystem::path model;
+            std::string take;
+            if (Asset::SplitEmbeddedClipPathUVE(record.path, model, take)) {
+                project.push_back(record.path);
+            }
+        }
         m_projectClips.clear();
         for (const std::filesystem::path& path : project) {
             const Asset::AssetGuidUVE guid = database.RegisterUVE(path);

@@ -26,6 +26,7 @@
 #include "mesh_asset.h"
 #include "engine_services.h"
 #include "editor.h"
+#include "model_animations.h"
 #include "i_entity_manager.h"
 #include "skeleton_3d.h"
 #include "retarget_brain.h"
@@ -276,6 +277,15 @@ bool EditorUVE::StartRetargetUVE() {
     // A character done already is left alone: only the animations are conformed.
     request.model = plan.CharacterDoneUVE() ? std::filesystem::path{} : plan.model;
     request.animations = window.animations;
+    // The character's own takes, kept inside its model, are conformed with it.
+    if (!request.model.empty()) {
+        for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(request.model)) {
+            const std::filesystem::path embedded = Asset::MakeEmbeddedClipPathUVE(request.model, take.name);
+            if (std::ranges::find(request.animations, embedded) == request.animations.end()) {
+                request.animations.push_back(embedded);
+            }
+        }
+    }
     request.backupRoot = project.contentRoot.parent_path() / ".retarget-backup";
     window.jobModel = request.model;
     window.status.clear();

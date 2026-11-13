@@ -6,6 +6,7 @@
 #include "editor.h"
 
 #include "animation_clip_asset.h"
+#include "model_animations.h"
 #include "matrix4x4.h"
 #include "quaternion.h"
 #include "retarget_humanoid.h"
@@ -427,9 +428,18 @@ struct AnimationIconWorkerUVE final {
     }
 };
 
+namespace {
+/// The file a clip's path is kept in: itself, or the model a take lives in.
+[[nodiscard]] std::filesystem::path StoredInUVE(const std::filesystem::path& path) {
+    std::filesystem::path model;
+    std::string take;
+    return Asset::SplitEmbeddedClipPathUVE(path, model, take) ? model : path;
+}
+} // namespace
+
 const EditorUVE::AnimationIconUVE* EditorUVE::GetAnimationIconUVE(const std::filesystem::path& absolutePath) {
     std::error_code error;
-    const std::filesystem::file_time_type written = std::filesystem::last_write_time(absolutePath, error);
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(StoredInUVE(absolutePath), error);
     if (error) {
         return nullptr;
     }
@@ -485,12 +495,12 @@ void EditorUVE::BeginAnimationIconBatchUVE() {
 const EditorUVE::AnimationIconUVE* EditorUVE::GetAnimationIconNowUVE(const std::filesystem::path& absolutePath) {
     if (const AnimationIconUVE* icon = GetAnimationIconUVE(absolutePath); icon != nullptr) {
         std::error_code error;
-        if (icon->written == std::filesystem::last_write_time(absolutePath, error)) {
+        if (icon->written == std::filesystem::last_write_time(StoredInUVE(absolutePath), error)) {
             return icon;
         }
     }
     std::error_code error;
-    const std::filesystem::file_time_type written = std::filesystem::last_write_time(absolutePath, error);
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(StoredInUVE(absolutePath), error);
     if (error) {
         return nullptr;
     }

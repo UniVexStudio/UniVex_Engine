@@ -124,5 +124,9 @@ struct AnimationClipAssetUVE final {
 /// Saves a validated animation clip as an AssetKindUVE::Animation envelope.
 [[nodiscard]] bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip,
                                               const std::filesystem::path& path);
+/// A clip's payload (the JSON a .uvanim file's envelope holds), in memory: what a model keeps
+/// for each of its takes. False for an invalid or oversized clip.
+[[nodiscard]] bool SerializeAnimationClipPayloadUVE(const AnimationClipAssetUVE& clip, std::vector<std::byte>& outPayload);
+[[nodiscard]] bool ParseAnimationClipPayloadUVE(const std::vector<std::byte>& payload, AnimationClipAssetUVE& outClip);
 
 } // namespace UVE::Asset

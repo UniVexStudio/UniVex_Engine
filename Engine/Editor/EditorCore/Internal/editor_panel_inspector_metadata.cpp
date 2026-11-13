@@ -19,6 +19,7 @@
 // would be wrong rather than merely plain, and each says so at its exclusion below.
 
 #include "editor.h"
+#include "model_animations.h"
 #include "logging_macros.h"
 #include "scalar.h"
 
@@ -1348,7 +1349,7 @@ std::optional<Asset::AssetGuidUVE> EditorUVE::DrawAssetPickerUVE(const char* con
     std::string preview = "Empty";
     if (value != Asset::kInvalidAssetGuidUVE) {
         const std::filesystem::path path = database.ResolveUVE(value);
-        preview = path.empty() ? "(missing asset)" : path.stem().string();
+        preview = path.empty() ? "(missing asset)" : Asset::AssetDisplayNameUVE(path);
     }
     const bool isMaterial = (extension == ".uvmaterial" || extension == ".uvmat");
     // A texture reference names either the published .uvtex or the source image it came from, and

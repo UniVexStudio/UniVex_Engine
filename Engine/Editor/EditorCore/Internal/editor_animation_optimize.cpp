@@ -6,6 +6,7 @@
 #include "animation_clip_asset.h"
 #include "animation_optimizer.h"
 #include "i_project_file_index.h"
+#include "model_animations.h"
 
 #include <atomic>
 #include <chrono>
@@ -63,7 +64,11 @@ struct AnimationOptimizeJobUVE final {
 
     void OptimizeOneUVE(const std::filesystem::path& file) {
         std::error_code error;
-        const std::uintmax_t size = std::filesystem::file_size(file, error);
+        // A take inside a model is measured, and backed up, as its model.
+        std::filesystem::path stored = file;
+        std::string take;
+        const bool embedded = Asset::SplitEmbeddedClipPathUVE(file, stored, take);
+        const std::uintmax_t size = std::filesystem::file_size(stored, error);
         Asset::AnimationClipAssetUVE clip;
         if (error || !Asset::LoadAnimationClipAssetUVE(file, clip)) {
             return;
@@ -73,22 +78,23 @@ struct AnimationOptimizeJobUVE final {
             return;
         }
         // The original first, under the same place it had in Content.
-        std::filesystem::path relative = std::filesystem::relative(file, contentRoot, error);
-        if (error || relative.empty()) {
-            relative = file.filename();
+        std::filesystem::path relative = std::filesystem::relative(stored, contentRoot, error);
+        if (error || relative.empty() || relative.native().starts_with("..")) {
+            relative = stored.filename();
             error.clear();
         }
         const std::filesystem::path backup = backupRoot / relative;
         std::filesystem::create_directories(backup.parent_path(), error);
         if (!std::filesystem::exists(backup, error)) {
-            std::filesystem::copy_file(file, backup, std::filesystem::copy_options::overwrite_existing, error);
+            std::filesystem::copy_file(stored, backup, std::filesystem::copy_options::overwrite_existing, error);
         }
+        static_cast<void>(embedded);
         if (error || !Asset::SaveAnimationClipAssetUVE(clip, file)) {
             return;
         }
         ++changed;
         bytesBefore += size;
-        bytesAfter += std::filesystem::file_size(file, error);
+        bytesAfter += std::filesystem::file_size(stored, error);
         keysBefore += result.samplesBefore;
         keysAfter += result.samplesAfter;
     }
@@ -105,6 +111,16 @@ std::vector<std::filesystem::path> EditorUVE::CollectAnimationClipsUVE(const std
         const std::string path = entry.relativePath.generic_string();
         if (folder.empty() || path.rfind(folder + "/", 0U) == 0U) {
             clips.push_back(snapshot.contentRoot / entry.relativePath);
+        }
+    }
+    // The whole project also means the takes kept inside its models.
+    if (folder.empty()) {
+        for (const Asset::AssetRecordUVE& record : m_services->GetAssetDatabaseUVE().GetRegisteredAssetsUVE()) {
+            std::filesystem::path model;
+            std::string take;
+            if (Asset::SplitEmbeddedClipPathUVE(record.path, model, take)) {
+                clips.push_back(record.path);
+            }
         }
     }
     return clips;

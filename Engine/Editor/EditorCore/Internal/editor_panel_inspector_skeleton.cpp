@@ -7,6 +7,7 @@
 // is pointed at a rigged model, and pointing it again (Reload) picks up an edited rig.
 
 #include "editor.h"
+#include "model_animations.h"
 #include "skeleton_asset.h"
 #include "retarget_conform.h"
 #include "retarget_humanoid.h"
@@ -252,11 +253,20 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         if (sourceInfo.animationCount > 0U) {
             static_cast<void>(ImportModelAnimationsUVE(source));
         }
+        // A model with a mesh keeps its takes inside it: those are its player's animations.
+        for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(GetImportedModelPathUVE(relativeSource))) {
+            clips.push_back(Asset::MakeEmbeddedClipPathUVE(GetImportedModelPathUVE(relativeSource), take.name));
+        }
         const std::string prefix = source.stem().string() + "_";
+        std::filesystem::path fragmentModel;
+        std::string fragmentTake;
         for (const std::filesystem::directory_entry& entry :
              std::filesystem::directory_iterator(source.parent_path(), error)) {
             const std::string name = entry.path().filename().string();
             // "<FBX>.uvanim" (one take) or "<FBX>_<take>.uvanim" (several).
+            if (!clips.empty() && Asset::SplitEmbeddedClipPathUVE(clips.front(), fragmentModel, fragmentTake)) {
+                break;   // the takes are in the model: no loose files to gather
+            }
             if (entry.path().extension() == ".uvanim" &&
                 (name.starts_with(prefix) || entry.path().stem() == source.stem())) {
                 clips.push_back(entry.path());

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "retarget_files.h"
+#include "model_animations.h"
 
 #include "skeleton_asset.h"
 
@@ -90,10 +91,29 @@ struct PlannedFileUVE final {
 }
 
 [[nodiscard]] bool WritePlannedFileUVE(const PlannedFileUVE& planned) {
+    // A take kept inside a model is written into the model itself (after the model, which keeps it).
+    fs::path model;
+    std::string take;
+    if (planned.clip.has_value() && Asset::SplitEmbeddedClipPathUVE(planned.file, model, take)) {
+        return Asset::SaveAnimationClipAssetUVE(*planned.clip, planned.file);
+    }
     const fs::path temporary = TemporaryPathUVE(planned.file);
-    const bool written = planned.mesh.has_value()       ? Asset::SaveMeshAssetUVE(*planned.mesh, temporary)
-                         : planned.skeleton.has_value() ? Asset::SaveSkeletonAssetUVE(*planned.skeleton, temporary)
-                                                        : Asset::SaveAnimationClipAssetUVE(*planned.clip, temporary);
+    bool written = planned.mesh.has_value()       ? Asset::SaveMeshAssetUVE(*planned.mesh, temporary)
+                   : planned.skeleton.has_value() ? Asset::SaveSkeletonAssetUVE(*planned.skeleton, temporary)
+                                                  : Asset::SaveAnimationClipAssetUVE(*planned.clip, temporary);
+    // The model's own takes go with it into the new file.
+    if (written && planned.mesh.has_value()) {
+        std::vector<Asset::AnimationClipAssetUVE> takes;
+        for (const Asset::ModelAnimationEntryUVE& entry : Asset::ListModelAnimationsUVE(planned.file)) {
+            Asset::AnimationClipAssetUVE clip;
+            if (Asset::LoadModelAnimationUVE(planned.file, entry.name, clip)) {
+                takes.push_back(std::move(clip));
+            }
+        }
+        if (!takes.empty()) {
+            written = Asset::SaveModelAnimationsUVE(temporary, takes, Asset::ReadModelAnimationStampUVE(planned.file));
+        }
+    }
     if (!written) {
         std::error_code error;
         fs::remove(temporary, error);

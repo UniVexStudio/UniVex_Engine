@@ -11,6 +11,8 @@
 #include "gltf_metadata.h"
 #include "editor.h"
 #include "editor_entity_thumbnail.h"
+#include "animation_optimizer.h"
+#include "model_animations.h"
 
 #include "animation_graph_editing.h"
 #include "editor_settings.h"
@@ -6599,6 +6601,26 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     };
     static std::unordered_map<std::string, CachedAnimationImportUVE> s_importedAnimCache;
     const std::string cacheKey = absoluteSource.generic_string();
+    // A model with a mesh keeps its takes inside its .uvmodel: none is written beside it as a
+    // loose file. Only a file of animations alone (no mesh) gives .uvanim files.
+    const Asset::ProjectFileSnapshotUVE projectSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::filesystem::path relativeSource = std::filesystem::relative(absoluteSource, projectSnapshot.contentRoot, error);
+    if (error) {
+        error.clear();
+        relativeSource.clear();
+    }
+    const bool keepInModel = !relativeSource.empty() && !ReadModelSourceInfoForSourceUVE(relativeSource).animationOnly;
+    const std::filesystem::path importedModel = keepInModel ? GetImportedModelPathUVE(relativeSource) : std::filesystem::path{};
+    const auto stamp = static_cast<std::uint64_t>(sourceTime.time_since_epoch().count());
+    if (keepInModel) {
+        std::error_code modelError;
+        if (!std::filesystem::is_regular_file(importedModel, modelError)) {
+            return written;   // after its mesh is imported (the next refresh)
+        }
+        if (Asset::ReadModelAnimationStampUVE(importedModel) == stamp) {
+            return written;   // its takes came from this version of the source already
+        }
+    }
     if (const auto cacheIt = s_importedAnimCache.find(cacheKey);
         cacheIt != s_importedAnimCache.end() && cacheIt->second.sourceTime == sourceTime) {
         bool allPresent = true;
@@ -6618,12 +6640,15 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     const std::filesystem::path primaryDestination =
         absoluteSource.parent_path() / (stem + ".uvanim");
     const std::filesystem::file_time_type existingPrimary = std::filesystem::last_write_time(primaryDestination, error);
-    if (!error && existingPrimary >= sourceTime) {
+    if (!keepInModel && !error && existingPrimary >= sourceTime) {
         return written; // fast-path: primary clip already imported since FBX last changed
     }
     error.clear();
     for (const std::filesystem::directory_entry& entry :
          std::filesystem::directory_iterator(absoluteSource.parent_path(), error)) {
+        if (keepInModel) {
+            break;
+        }
         if (!entry.is_regular_file() || entry.path().extension() != ".uvanim") {
             continue;
         }
@@ -6671,6 +6696,60 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     }
     if (takes.empty() && !rawTakes.empty()) {
         takes.push_back(rawTakes.front());
+    }
+
+    if (keepInModel) {
+        // Each take named as its file would have been (the take, or the model's own name for one),
+        // optimised, and kept in the model; loose files an earlier import left beside the source
+        // move in: their asset ids now name the take in the model, so whatever used them still does.
+        Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+        std::vector<Asset::AnimationClipAssetUVE> kept;
+        std::vector<std::string> names;
+        for (Asset::AnimationClipAssetUVE clip : takes) {
+            const std::size_t bar = clip.clipId.find_last_of('|');
+            std::string take = bar == std::string::npos ? clip.clipId : clip.clipId.substr(bar + 1U);
+            if (takes.size() == 1U || IsGenericTakeNameUVE(take)) {
+                take = stem;
+            }
+            for (char& character : take) {
+                const bool keep = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+                                  (character >= '0' && character <= '9') || character == '-' || character == '_' || character == ' ';
+                character = keep ? character : '_';
+            }
+            if (std::ranges::find(names, take) != names.end()) {
+                continue;
+            }
+            clip.clipId = take;
+            static_cast<void>(Asset::OptimizeAnimationClipUVE(clip));
+            names.push_back(take);
+            kept.push_back(std::move(clip));
+        }
+        if (!Asset::SaveModelAnimationsUVE(importedModel, kept, stamp)) {
+            UVE_WARNING("EditorUVE: could not keep the animations of {} in its model", absoluteSource.string());
+            return written;
+        }
+        const std::filesystem::path backup = projectSnapshot.contentRoot.parent_path() / ".uvcache" / "animation-backup" / "moved-into-models";
+        for (const std::string& take : names) {
+            const std::filesystem::path embedded = Asset::MakeEmbeddedClipPathUVE(importedModel, take);
+            const std::filesystem::path loose = absoluteSource.parent_path() / ((take == stem ? stem : stem + "_" + take) + ".uvanim");
+            std::error_code looseError;
+            if (std::filesystem::is_regular_file(loose, looseError)) {
+                const Asset::AssetGuidUVE guid = database.RegisterUVE(loose);
+                static_cast<void>(database.RelocateUVE(guid, embedded));
+                std::filesystem::create_directories(backup, looseError);
+                std::filesystem::rename(loose, backup / loose.filename(), looseError);
+                if (looseError) {
+                    looseError.clear();
+                    std::filesystem::copy_file(loose, backup / loose.filename(), std::filesystem::copy_options::overwrite_existing, looseError);
+                    std::filesystem::remove(loose, looseError);
+                }
+            } else {
+                static_cast<void>(database.RegisterUVE(embedded));
+            }
+            written.push_back(embedded);
+        }
+        static_cast<void>(database.SaveUVE());
+        return written;
     }
 
     // Clean up any stale duplicate take001 files that might have been created previously
@@ -6896,6 +6975,10 @@ void EditorUVE::PollModelImportJobsUVE() {
             // are registered here instead - this is the only place that knows a conversion is
             // accounted for whether or not it executed.
             static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
+            // Its takes go into the model now that the model is there.
+            if (const auto info = m_modelSources.find(it->first); info != m_modelSources.end() && info->second.animationCount > 0U) {
+                static_cast<void>(ImportModelAnimationsUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / it->first));
+            }
             // The GUIDs an import wrote into its materials and meshes are kept with the project, so
             // the next session finds them (and the import cache stays valid instead of importing again).
             static_cast<void>(m_services->GetAssetDatabaseUVE().SaveUVE());
