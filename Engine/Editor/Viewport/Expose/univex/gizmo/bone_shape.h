@@ -6,9 +6,11 @@
 // whatever tool exported it. Drawn as outlines only - no faces - so the model
 // is always seen through its skeleton, and a full rig costs next to nothing:
 //
-//   - a slim diamond of strokes from head to tail, widest a fifth of the way
-//     along, in the bone's colour;
-//   - a ring at the head, always facing the camera, a little bolder;
+//   - one ring per joint, facing the camera, sized by the longest bone
+//     leaving it;
+//   - a slim kite of four strokes, facing the camera, from the edge of a
+//     joint's ring to the edge of the next - nothing crosses inside a joint;
+//   - a dark stroke under every stroke, so it reads over any background;
 //   - the picked bone in thicker strokes;
 //   - helper bones (root, IK targets, sockets) as a ringed cross, tied to
 //     their parent by a dashed line;
@@ -63,9 +65,9 @@ struct BoneStyleUVE {
     Vec3 idleColor{0.33f, 0.34f, 0.36f};       // charcoal
     Vec3 linkColor{0.52f, 0.53f, 0.55f};
     float outlineShade = 0.32f;      // outline and joint rim, as a fraction of the bone's colour
-    float widthRatio = 0.09f;        // diamond half-width as a fraction of the bone's length
+    float widthRatio = 0.075f;       // kite half-width as a fraction of the bone's length
     float widestAt = 0.20f;          // where along the bone the diamond is widest
-    float jointRatio = 0.075f;       // joint radius as a fraction of the bone's length
+    float jointRatio = 0.07f;        // joint radius as a fraction of the bone's length
     float minimumRadius = 0.012f;    // world units - a tiny bone stays visible
     float maximumRadius = 0.07f;     // and a huge one does not swallow the view
     int jointSegments = 16;
@@ -73,6 +75,9 @@ struct BoneStyleUVE {
     float linePx = 1.4f;             // a bone's strokes
     float selectedLinePx = 2.6f;     // the picked bone's strokes
     Vec3 helperColor{0.35f, 0.85f, 1.00f};  // helpers with no colour of their own: cyan
+    float shadowPx = 2.0f;           // the dark stroke under every stroke, this much wider
+    float jointMinRadius = 0.006f;   // world units: a finger joint
+    float jointMaxRadius = 0.04f;    // world units: a hip or a shoulder
     float helperRadius = 0.035f;     // world units
     float linkPx = 1.f;
 };
