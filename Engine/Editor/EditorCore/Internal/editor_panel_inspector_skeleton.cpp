@@ -29,6 +29,7 @@
 #include <string>
 #include <system_error>
 #include <typeindex>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -89,6 +90,29 @@ void ReadOnlyRowUVE(const char* const label, const char* const value) {
         return std::nullopt;
     }
     return Asset::ReadFbxSkeletonUVE(std::as_bytes(std::span<const char>(bytes)), maximumBones);
+}
+
+/// A helper bone rather than a part of the body: the root on the ground, IK targets, sockets.
+/// Drawn as a joint alone - a blade to it would cut across the figure (from the floor to a hand).
+[[nodiscard]] bool IsHelperBoneUVE(const std::string& name) {
+    static const std::unordered_set<std::string> helpers = [] {
+        std::unordered_set<std::string> out;
+        const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
+        for (std::size_t bone = 0U; bone < reference.info.size() && bone < reference.skeleton.bones.size(); ++bone) {
+            const Retarget::HumanoidBoneKindUVE kind = reference.info[bone].kind;
+            if (kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::IK ||
+                kind == Retarget::HumanoidBoneKindUVE::Socket) {
+                out.insert(reference.skeleton.bones[bone].name);
+            }
+        }
+        return out;
+    }();
+    if (helpers.contains(name)) {
+        return true;
+    }
+    // Another tool's IK bones ("ik_foot_l", "IK_Hand_R").
+    return name.size() > 2U && (name[0] == 'i' || name[0] == 'I') && (name[1] == 'k' || name[1] == 'K') &&
+           (name[2] == '_' || std::isupper(static_cast<unsigned char>(name[2])) != 0);
 }
 
 } // namespace
@@ -653,72 +677,116 @@ void EditorUVE::BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) 
                 upAxes[index] = subtract(Math::TransformPointUVE(frames[index], Math::Vector3UVE{0.0F, 1.0F, 0.0F}),
                                          heads[index]);
             }
-            // A bone points along its own +Y (the convention DCC exporters use) and ends at the
-            // child that continues that line; a leaf gets a length from its parent.
-            std::vector<Math::Vector3UVE> tails(count);
-            std::vector<float> lengths(count, 0.0F);
+            // The skeleton is drawn connected, as one figure: a blade from each joint to every joint
+            // that hangs from it, so no bone floats apart from the next. A joint that sits on the way
+            // to a sibling (a twist bone half-way down the arm) is a joint on that blade, not a blade
+            // of its own; a bone with nothing below it goes on a short way the way its parent came.
+            // Only where each joint is matters - the numbers are the skeleton's own, untouched.
+            std::vector<std::vector<std::size_t>> children(count);
+            std::vector<float> fromParent(count, 0.0F);
             for (std::size_t index = 0U; index < count; ++index) {
-                const float upLength = length(upAxes[index]);
-                const Math::Vector3UVE up = upLength > 1.0e-6F
-                                                ? Math::Vector3UVE{upAxes[index].x / upLength, upAxes[index].y / upLength,
-                                                                   upAxes[index].z / upLength}
-                                                : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-                float bestScore = 0.7F;
-                for (std::size_t child = index + 1U; child < count; ++child) {
-                    if (skeleton.bones[child].parentIndex != static_cast<std::int32_t>(index)) {
+                const std::int32_t parent = skeleton.bones[index].parentIndex;
+                if (parent >= 0 && static_cast<std::size_t>(parent) < count) {
+                    children[static_cast<std::size_t>(parent)].push_back(index);
+                    fromParent[index] = length(subtract(heads[index], heads[static_cast<std::size_t>(parent)]));
+                }
+            }
+            const auto dot = [](const Math::Vector3UVE& a, const Math::Vector3UVE& b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+            // Whether `child` lies on the way from `index` to one of its other children.
+            const auto onTheWay = [&](const std::size_t index, const std::size_t child) {
+                const Math::Vector3UVE to = subtract(heads[child], heads[index]);
+                for (const std::size_t other : children[index]) {
+                    if (other == child) {
                         continue;
                     }
-                    const Math::Vector3UVE offset = subtract(heads[child], heads[index]);
-                    const float offsetLength = length(offset);
-                    if (offsetLength < 1.0e-4F) {
+                    const Math::Vector3UVE way = subtract(heads[other], heads[index]);
+                    const float wayLength = length(way);
+                    if (wayLength < 1.0e-4F) {
                         continue;
                     }
-                    const float score = (offset.x * up.x + offset.y * up.y + offset.z * up.z) / offsetLength;
-                    if (score > bestScore) {
-                        bestScore = score;
-                        tails[index] = heads[child];
-                        lengths[index] = offsetLength;
+                    const float along = dot(to, way) / wayLength;
+                    const Math::Vector3UVE across = subtract(to, Math::Vector3UVE{way.x * along / wayLength, way.y * along / wayLength,
+                                                                                  way.z * along / wayLength});
+                    if (along > 0.0F && along < wayLength * 0.98F && length(across) < wayLength * 0.12F) {
+                        return true;
                     }
                 }
-                if (lengths[index] <= 0.0F) {
-                    const std::int32_t parent = skeleton.bones[index].parentIndex;
-                    const float fallback = parent >= 0 && lengths[static_cast<std::size_t>(parent)] > 0.0F
-                                               ? lengths[static_cast<std::size_t>(parent)] * 0.6F
-                                               : 0.1F;
-                    lengths[index] = fallback;
-                    tails[index] = Math::Vector3UVE{heads[index].x + up.x * fallback, heads[index].y + up.y * fallback,
-                                                    heads[index].z + up.z * fallback};
+                return false;
+            };
+            std::vector<bool> helper(count, false);
+            for (std::size_t index = 0U; index < count; ++index) {
+                helper[index] = IsHelperBoneUVE(skeleton.bones[index].name);
+            }
+            std::vector<bool> inline_(count, false);
+            for (std::size_t index = 0U; index < count; ++index) {
+                for (const std::size_t child : children[index]) {
+                    inline_[child] = inline_[child] || onTheWay(index, child);
                 }
             }
             const bool selected = entity == m_selectedEntity;
-            for (std::size_t index = 0U; index < count; ++index) {
+            const RetargetPreviewUVE* const retarget =
+                m_retargetSceneActive && m_retargetPreview.has_value() ? &*m_retargetPreview : nullptr;
+            const auto emit = [&](const std::size_t index, const Math::Vector3UVE& tail, const bool jointOnly) {
                 ViewportBoneUVE bone;
                 bone.head = toArray(heads[index]);
-                bone.tail = toArray(tails[index]);
-                bone.side = toArray(subtract(Math::TransformPointUVE(frames[index], Math::Vector3UVE{1.0F, 0.0F, 0.0F}),
-                                             heads[index]));
-                const std::int32_t parent = skeleton.bones[index].parentIndex;
-                if (parent >= 0 && length(subtract(tails[static_cast<std::size_t>(parent)], heads[index])) > 1.0e-4F) {
-                    bone.hasLink = true;
-                    bone.linkFrom = toArray(tails[static_cast<std::size_t>(parent)]);
-                }
+                bone.tail = toArray(tail);
+                bone.side = toArray(subtract(Math::TransformPointUVE(frames[index], Math::Vector3UVE{1.0F, 0.0F, 0.0F}), heads[index]));
+                bone.jointOnly = jointOnly;
                 bone.skeletonSelected = selected;
                 bone.boneSelected = selected && skeleton.bones[index].name == m_selectedSkeletonBone;
-                if (m_retargetSceneActive && m_retargetPreview.has_value()) {
-                    // The Retarget preview colours joints by how the character answers the humanoid.
-                    const RetargetPreviewUVE& preview = *m_retargetPreview;
-                    if (entity == preview.sourceSkeleton && index < preview.sourceColours.size()) {
-                        bone.hasColour = true;
-                        bone.colour = preview.sourceColours[index];
-                    } else if (entity == preview.targetSkeleton) {
-                        if (const auto found = preview.targetColours.find(skeleton.bones[index].name);
-                            found != preview.targetColours.end()) {
+                if (retarget != nullptr) {
+                    // The Retarget preview colours joints by how the character answers the humanoid,
+                    // and lights the one picked in the window.
+                    if (entity == retarget->targetSkeleton) {
+                        if (const auto found = retarget->targetColours.find(skeleton.bones[index].name);
+                            found != retarget->targetColours.end()) {
                             bone.hasColour = true;
                             bone.colour = found->second;
+                        }
+                        if (!retarget->highlightBone.empty() && skeleton.bones[index].name == retarget->highlightBone) {
+                            bone.boneSelected = true;
+                            bone.hasColour = false;
                         }
                     }
                 }
                 outBones.push_back(bone);
+            };
+            for (std::size_t index = 0U; index < count; ++index) {
+                if (helper[index]) {
+                    // A marker where it is, tied to its parent by a dashed line (drawn by the viewport).
+                    emit(index, Math::Vector3UVE{heads[index].x, heads[index].y + 0.05F, heads[index].z}, true);
+                    ViewportBoneUVE& marker = outBones.back();
+                    marker.helper = true;
+                    const std::int32_t parent = skeleton.bones[index].parentIndex;
+                    if (parent >= 0 && fromParent[index] > 1.0e-4F) {
+                        marker.hasLink = true;
+                        marker.linkFrom = toArray(heads[static_cast<std::size_t>(parent)]);
+                    }
+                    continue;
+                }
+                bool drew = false;
+                for (const std::size_t child : children[index]) {
+                    if (!inline_[child] && !helper[child] && fromParent[child] >= 1.0e-4F) {
+                        emit(index, heads[child], false);
+                        drew = true;
+                    }
+                }
+                if (drew) {
+                    continue;
+                }
+                // Nothing below it to reach: on a short way the way it came (or along its own +Y).
+                const std::int32_t parent = skeleton.bones[index].parentIndex;
+                Math::Vector3UVE way = parent >= 0 ? subtract(heads[index], heads[static_cast<std::size_t>(parent)]) : upAxes[index];
+                float wayLength = length(way);
+                if (wayLength < 1.0e-6F) {
+                    way = upAxes[index];
+                    wayLength = length(way);
+                }
+                const Math::Vector3UVE dir = wayLength > 1.0e-6F ? Math::Vector3UVE{way.x / wayLength, way.y / wayLength, way.z / wayLength}
+                                                                 : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                const float reach = std::max(parent >= 0 ? fromParent[index] * 0.45F : 0.1F, 0.01F);
+                emit(index, Math::Vector3UVE{heads[index].x + dir.x * reach, heads[index].y + dir.y * reach, heads[index].z + dir.z * reach},
+                     inline_[index]);
             }
         });
 }

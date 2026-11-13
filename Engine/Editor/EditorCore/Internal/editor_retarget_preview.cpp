@@ -1,11 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // The Retarget window's own world. The editor has one viewport that draws whatever the world
-// holds, so the preview works the way the Entity Editor does: the scene is captured and put
-// aside, a small world stands in its place (a sun, the humanoid and the character side by side),
-// and closing the window brings the scene back untouched. The sky, the ground and the floor with
+// holds, so the preview works the way the Entity Editor does: a small world of its own (a sun and
+// the character alone, in the middle - the source skeleton is drawn in the window's source box,
+// not here), and the level is never touched. The sky, the ground and the floor with
 // its fog are the viewport's studio view (ViewportOverlayStateUVE::studioView), not objects.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -36,10 +37,6 @@
 namespace UVE::Editor {
 namespace {
 
-/// How far each figure stands from the middle, so the two read side by side.
-constexpr float kFigureOffsetUVE = 1.0F;
-/// About how tall a figure stands, for framing both in the view.
-constexpr float kFigureHeightUVE = 1.8F;
 
 [[nodiscard]] Math::QuaternionUVE EulerUVE(const float x, const float y, const float z) {
     Math::QuaternionUVE rotation;
@@ -126,10 +123,11 @@ std::uint64_t EditorUVE::RenderRetargetPreviewUVE(const Math::Vector2UVE& size, 
     }
     RetargetPreviewUVE& preview = *m_retargetPreview;
     ViewportOverlayStateUVE& state = m_retargetViewportOverlayState;
-    // The camera faces both figures from the front, a little above the floor.
+    // The camera faces the character from the front, its whole height in view.
     if (preview.frameRequested) {
-        state.studioTarget = {0.0F, kFigureHeightUVE * 0.5F, 0.0F};
-        state.studioRadius = kFigureOffsetUVE + kFigureHeightUVE * 0.75F;
+        const float height = std::clamp(preview.figureHeight, 0.2F, 50.0F);
+        state.studioTarget = {0.0F, height * 0.5F, 0.0F};
+        state.studioRadius = height * 0.62F;
         ++state.studioFramingSerial;
         preview.frameRequested = false;
     }
@@ -160,6 +158,7 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
     ClearDocumentSceneUVE();
     preview.frameRoot = preview.figures = preview.sourceSkeleton = preview.targetSkeleton = Scene::kInvalidEntityUVE;
     preview.sourceColours.clear();
+    preview.figureHeight = 1.8F;
     preview.targetColours.clear();
 
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -199,27 +198,15 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
     const Scene::EntityUVE figures = place(CreateSceneObjectEntityInternalUVE(Kind::Object3D), "Figures", Kind::Object3D, preview.frameRoot);
     preview.figures = figures;
 
-    // ---- The humanoid, on the left ---------------------------------------------------------------
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-    {
-        const Scene::EntityUVE figure = shell("Humanoid");
-        Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
-        place(figure, "Humanoid", Kind::Object3D, figures, Math::Vector3UVE{-kFigureOffsetUVE, 0.0F, 0.0F});
-        Scene::Skeleton3DObjectDefinitionUVE definition;
-        definition.skeleton.bones = BonesOfUVE(reference.skeleton);
-        const Scene::EntityUVE skeleton = shell("Humanoid Skeleton");
-        Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeleton, definition);
-        preview.sourceSkeleton = place(skeleton, "Humanoid Skeleton", Kind::Skeleton3D, figure);
-    }
-    preview.sourceColours.assign(reference.skeleton.bones.size(), GetRetargetStatusColourUVE(Retarget::JointStatusUVE::Missing));
-    for (std::size_t bone = 0U; bone < plan.joints.size() && bone < preview.sourceColours.size(); ++bone) {
-        preview.sourceColours[bone] = GetRetargetStatusColourUVE(plan.joints[bone].status);
+    // The joint colours, by the character's own bone names (the humanoid itself is drawn in the
+    // window's source box).
+    for (std::size_t bone = 0U; bone < plan.joints.size(); ++bone) {
         if (!plan.joints[bone].characterName.empty()) {
-            preview.targetColours[plan.joints[bone].characterName] = preview.sourceColours[bone];
+            preview.targetColours[plan.joints[bone].characterName] = GetRetargetStatusColourUVE(plan.joints[bone].status);
         }
     }
 
-    // ---- The character, on the right --------------------------------------------------------------
+    // ---- The character, in the middle --------------------------------------------------------------
     preview.builtFor = modelFile;
     Asset::MeshAssetUVE mesh;
     std::error_code error;
@@ -245,7 +232,7 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
     if (loadPreviewMesh()) {
         const Scene::EntityUVE figure = shell("Character");
         Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
-        place(figure, "Character", Kind::Object3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
+        place(figure, "Character", Kind::Object3D, figures);
         Scene::EntityUVE meshParent = figure;
         // The character's own skeleton file when it describes this mesh (a retargeted character rests
         // in the A-pose there), else the mesh's bind.
@@ -269,6 +256,7 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
                 }
             }
         }
+        preview.figureHeight = std::max(0.2F, mesh.localBounds.max.y - std::min(0.0F, mesh.localBounds.min.y));
         if (rig.has_value() && rig->bones.size() <= Scene::kMaximumSkeletonBonesUVE) {
             Scene::Skeleton3DObjectDefinitionUVE definition;
             definition.skeleton.bones = BonesOfUVE(*rig);
@@ -299,7 +287,7 @@ void EditorUVE::BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const 
                 }
                 const Scene::EntityUVE figure = shell("Character");
                 Scene::ApplyObject3DObjectDefinitionUVE(entityManager, figure, Scene::Object3DObjectDefinitionUVE{});
-                place(figure, "Character", Kind::Object3D, figures, Math::Vector3UVE{kFigureOffsetUVE, 0.0F, 0.0F});
+                place(figure, "Character", Kind::Object3D, figures);
                 Scene::Skeleton3DObjectDefinitionUVE definition;
                 definition.skeleton.bones = BonesOfUVE(rig);
                 const Scene::EntityUVE skeleton = shell("Character Skeleton");

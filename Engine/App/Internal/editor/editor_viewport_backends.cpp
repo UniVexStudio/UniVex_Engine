@@ -1803,7 +1803,8 @@ private:
         for (const auto& bone : overlayState.bones) {
             bones.push_back(univex::gizmo::BoneOverlayUVE{toVec3(bone.head), toVec3(bone.tail), toVec3(bone.side),
                                                           bone.hasLink, toVec3(bone.linkFrom), bone.skeletonSelected,
-                                                          bone.boneSelected, bone.hasColour, toVec3(bone.colour)});
+                                                          bone.boneSelected, bone.hasColour, toVec3(bone.colour),
+                                                          bone.jointOnly, bone.helper});
         }
         if (overlayState.hostDrawsGizmos) {
             // The shell draws them: keep the same bone shapes, built for the current view.

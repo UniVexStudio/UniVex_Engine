@@ -1115,35 +1115,37 @@ int main() {
         bone.tail = Vec3{0.f, 1.f, 0.f};
         bone.skeletonSelected = true;
         const auto mesh = univex::gizmo::BuildBoneMeshUVE({bone}, view, style);
-        const std::size_t jointFaces = static_cast<std::size_t>(style.jointSegments) * 2U;
-        Check(mesh.triangles.size() == 8U + jointFaces, "one bone is an 8-face diamond plus a two-tone joint");
-        Check(mesh.lines.size() == 8U, "and 8 outline edges");
-        std::size_t lit = 0U;
-        for (const auto& tri : mesh.triangles) lit += tri.lit == 1.f ? 1U : 0U;
-        Check(lit == 8U, "the diamond is lit; the camera-facing joint is flat");
+        const std::size_t ringStrokes = static_cast<std::size_t>(style.jointSegments);
+        Check(mesh.triangles.empty(), "a bone is outlines only, so the model shows through it");
+        Check(mesh.lines.size() == 12U + ringStrokes, "a 12-edge diamond plus a joint ring");
         bool withinBone = true;
-        for (const auto& line : mesh.lines) {
-            for (const Vec3& p : {line.a, line.b}) {
+        for (std::size_t i = 0U; i < 12U && i < mesh.lines.size(); ++i) {
+            for (const Vec3& p : {mesh.lines[i].a, mesh.lines[i].b}) {
                 withinBone = withinBone && p.y >= -1e-4f && p.y <= 1.0001f && std::fabs(p.x) <= 0.1f &&
                              std::fabs(p.z) <= 0.1f;
             }
         }
-        Check(withinBone, "the outline stays within the bone's length and width");
-        Check(mesh.triangles.front().color.x == style.selectedColor.x, "a selected skeleton is light grey");
+        Check(withinBone, "the diamond stays within the bone's length and width");
+        Check(mesh.lines.front().color.x == style.selectedColor.x, "a selected skeleton is light grey");
 
         BoneOverlayUVE idle = bone;
         idle.skeletonSelected = false;
-        Check(univex::gizmo::BuildBoneMeshUVE({idle}, view, style).triangles.front().color.x == style.idleColor.x,
+        Check(univex::gizmo::BuildBoneMeshUVE({idle}, view, style).lines.front().color.x == style.idleColor.x,
               "another skeleton is charcoal");
         bone.boneSelected = true;
-        Check(univex::gizmo::BuildBoneMeshUVE({bone}, view, style).triangles.front().color.x ==
-                  style.activeBoneColor.x,
-              "the Inspector's bone is the orange accent");
+        const auto picked = univex::gizmo::BuildBoneMeshUVE({bone}, view, style);
+        Check(picked.lines.front().color.x == style.activeBoneColor.x, "the Inspector's bone is the orange accent");
+        Check(picked.lines.front().widthPx > mesh.lines.front().widthPx, "and drawn bolder");
+
+        BoneOverlayUVE joint = bone;
+        joint.jointOnly = true;
+        const auto ringOnly = univex::gizmo::BuildBoneMeshUVE({joint}, view, style);
+        Check(ringOnly.triangles.empty() && ringOnly.lines.size() == ringStrokes, "a joint-only bone is a ring and nothing else");
 
         BoneOverlayUVE linked = bone;
         linked.hasLink = true;
         linked.linkFrom = Vec3{0.f, -0.5f, 0.f};
-        Check(univex::gizmo::BuildBoneMeshUVE({linked}, view, style).lines.size() == 9U,
+        Check(univex::gizmo::BuildBoneMeshUVE({linked}, view, style).lines.size() == 13U + ringStrokes,
               "a bone that does not start at its parent's tail gets a link line");
 
         BoneOverlayUVE degenerate;

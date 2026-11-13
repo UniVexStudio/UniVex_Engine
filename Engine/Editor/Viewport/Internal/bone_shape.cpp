@@ -23,21 +23,15 @@ using univex::math::Normalize;
     return Normalize(side);
 }
 
-void PushLitUVE(GizmoMesh& mesh, const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& color) {
-    GizmoTriangle triangle{a, b, c, color, 1.f};
-    triangle.lit = 1.f;
-    mesh.triangles.push_back(triangle);
-}
-
-/// A flat disc facing the eye, lifted `lift` toward it.
-void PushDiscUVE(GizmoMesh& mesh, const Vec3& center, float radius, const Vec3& right, const Vec3& up,
-                 const Vec3& color, int segments) {
+/// A ring of strokes facing the eye: a joint drawn as an outline, so the model shows through it.
+void PushRingUVE(GizmoMesh& mesh, const Vec3& center, float radius, const Vec3& right, const Vec3& up,
+                 const Vec3& color, float widthPx, int segments) {
     constexpr float kTwoPi = 2.f * std::numbers::pi_v<float>;
     Vec3 previous = center + right * radius;
     for (int i = 1; i <= segments; ++i) {
         const float t = kTwoPi * static_cast<float>(i) / static_cast<float>(segments);
         const Vec3 current = center + right * (std::cos(t) * radius) + up * (std::sin(t) * radius);
-        mesh.triangles.push_back(GizmoTriangle{center, previous, current, color, 1.f});
+        mesh.lines.push_back(GizmoLine{previous, current, color, widthPx});
         previous = current;
     }
 }
@@ -46,9 +40,9 @@ void PushDiscUVE(GizmoMesh& mesh, const Vec3& center, float radius, const Vec3& 
 
 GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3& viewDirection,
                            const BoneStyleUVE& style) {
+    // Outlines only - no faces - so the model is never hidden behind its own skeleton.
     GizmoMesh mesh;
-    mesh.triangles.reserve(bones.size() * static_cast<std::size_t>(8 + style.jointSegments * 2));
-    mesh.lines.reserve(bones.size() * 9U);
+    mesh.lines.reserve(bones.size() * static_cast<std::size_t>(12 + style.jointSegments));
     const Vec3 view = Normalize(viewDirection);
     const Vec3 right = PerpendicularUVE(view, Vec3{0.f, 1.f, 0.f});
     const Vec3 up = Cross(right, view);
@@ -57,13 +51,37 @@ GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3&
                            : bone.boneSelected  ? style.activeBoneColor
                            : bone.skeletonSelected ? style.selectedColor
                                                    : style.idleColor;
-        const Vec3 outline = color * style.outlineShade;
+        const float widthPx = bone.boneSelected ? style.selectedLinePx : style.linePx;
+        if (bone.helper) {
+            // Always the helper colour (cyan), so a helper never reads as a body joint; orange when picked.
+            const Vec3 mark = bone.boneSelected ? style.activeBoneColor : style.helperColor;
+            if (bone.hasLink && Length(bone.head - bone.linkFrom) > 1e-4f) {
+                // Dashed, so a link across the figure (a hand target to its root) stays light.
+                constexpr int kDashes = 24;
+                const Vec3 step = (bone.head - bone.linkFrom) / static_cast<float>(kDashes * 2);
+                for (int i = 0; i < kDashes; ++i) {
+                    const Vec3 a = bone.linkFrom + step * static_cast<float>(i * 2);
+                    mesh.lines.push_back(GizmoLine{a, a + step, mark * 0.8f, 1.f});
+                }
+            }
+            const float r = style.helperRadius;
+            const Vec3 c = bone.head - view * (r * 1.5f);
+            PushRingUVE(mesh, c, r, right, up, mark, widthPx, style.jointSegments);
+            mesh.lines.push_back(GizmoLine{c - right * (r * 1.6f), c + right * (r * 1.6f), mark, widthPx});
+            mesh.lines.push_back(GizmoLine{c - up * (r * 1.6f), c + up * (r * 1.6f), mark, widthPx});
+            continue;
+        }
         if (bone.hasLink && Length(bone.head - bone.linkFrom) > 1e-4f) {
             mesh.lines.push_back(GizmoLine{bone.linkFrom, bone.head, style.linkColor, style.linkPx});
         }
         const Vec3 along = bone.tail - bone.head;
         const float length = Length(along);
         if (length < 1e-3f) {
+            continue;
+        }
+        if (bone.jointOnly) {
+            const float radius = std::clamp(length * style.jointRatio * 1.4f, style.minimumRadius * 0.8f, style.maximumRadius * 0.7f);
+            PushRingUVE(mesh, bone.head - view * (radius * 1.6f), radius, right, up, color, widthPx, style.jointSegments);
             continue;
         }
         const Vec3 axis = along / length;
@@ -76,18 +94,13 @@ GizmoMesh BuildBoneMeshUVE(const std::vector<BoneOverlayUVE>& bones, const Vec3&
         for (std::size_t i = 0U; i < ring.size(); ++i) {
             const Vec3& a = ring[i];
             const Vec3& b = ring[(i + 1U) % ring.size()];
-            PushLitUVE(mesh, bone.head, a, b, color);
-            PushLitUVE(mesh, a, bone.tail, b, color);
-            mesh.lines.push_back(GizmoLine{a, bone.tail, outline, style.outlinePx});
-            mesh.lines.push_back(GizmoLine{a, b, outline, style.outlinePx});
+            mesh.lines.push_back(GizmoLine{bone.head, a, color, widthPx});
+            mesh.lines.push_back(GizmoLine{a, bone.tail, color, widthPx});
+            mesh.lines.push_back(GizmoLine{a, b, color, widthPx});
         }
-
-        // The joint: a dark rim disc with the bone's colour inside, turned to the eye and lifted
-        // a little so it sits over the diamond's root rather than inside it.
+        // The joint: a ring turned to the eye, a little thicker than the blade.
         const float radius = std::clamp(length * style.jointRatio, style.minimumRadius, style.maximumRadius);
-        const Vec3 center = bone.head - view * (radius * 1.2f);
-        PushDiscUVE(mesh, center, radius, right, up, outline, style.jointSegments);
-        PushDiscUVE(mesh, center - view * (radius * 0.05f), radius * 0.72f, right, up, color, style.jointSegments);
+        PushRingUVE(mesh, bone.head - view * (radius * 1.2f), radius, right, up, color, widthPx + 0.6f, style.jointSegments);
     }
     return mesh;
 }
