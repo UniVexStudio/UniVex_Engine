@@ -9,6 +9,7 @@
 #include "editor_entity_class_window.h"
 #include "editor_montage_editor.h"
 #include "editor_retarget_editor.h"
+#include "editor_animation_library_editor.h"
 #include "editor_file_dialog.h"
 #include "editor_host.h"
 #include "editor_icons.h"
@@ -133,6 +134,7 @@ private:
     // The Montage Editor's window (opened while a montage is open).
     EditorMontageEditorUVE m_montageEditor;
     EditorRetargetWindowUVE m_retargetEditor;
+    EditorAnimationLibraryWindowUVE m_animationLibraryEditor;
     EditorContentBrowserUVE m_contentBrowser;
     EditorDetailsUVE m_details2;
     EditorDockPanelsUVE m_dockPanels;

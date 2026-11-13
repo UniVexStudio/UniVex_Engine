@@ -61,7 +61,7 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 } // namespace
 
 EditorShellUVE::EditorShellUVE(EditorUVE& editor)
-    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_entityClassWindow(editor, m_host), m_montageEditor(editor, m_host), m_retargetEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
+    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_entityClassWindow(editor, m_host), m_montageEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
         ShowDockPanelUVE(0, true);
@@ -109,6 +109,9 @@ void EditorShellUVE::ShutdownUVE() {
     }
     if (m_host.IsReadyUVE() && m_retargetEditor.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_retargetEditor.WindowIdUVE());
+    }
+    if (m_host.IsReadyUVE() && m_animationLibraryEditor.WindowIdUVE() != 0) {
+        m_host.CloseWindowUVE(m_animationLibraryEditor.WindowIdUVE());
     }
     m_host.ShutdownUVE();
 }
@@ -980,6 +983,7 @@ void EditorShellUVE::FrameUVE() {
     m_entityEditor.SyncUVE();
     m_montageEditor.SyncUVE();
     m_retargetEditor.SyncUVE();
+    m_animationLibraryEditor.SyncUVE();
     {
         const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
         m_entityEditor.RefreshUVE();
@@ -1038,6 +1042,7 @@ void EditorShellUVE::FrameUVE() {
     }
     m_montageEditor.RenderUVE();
     m_retargetEditor.RenderUVE();
+    m_animationLibraryEditor.RenderUVE();
     m_fileDialog.FrameUVE();
     m_entityClassWindow.FrameUVE();
 }

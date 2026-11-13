@@ -1877,6 +1877,24 @@ const EditorContentBrowserUVE::PreviewUVE* EditorContentBrowserUVE::PreviewForUV
             texture = m_editor.GetMaterialThumbnailUVE(entry.relativePath);
             renderTarget = true;
             break;
+        case ItemTypeUVE::Animation: {
+            // A clip's icon is drawn on the CPU already: copied as it is (again when it is redrawn).
+            const std::filesystem::path absolute = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / entry.relativePath;
+            const EditorUVE::AnimationIconUVE* const icon = m_editor.GetAnimationIconUVE(absolute);
+            if (icon == nullptr) {
+                return nullptr;
+            }
+            PreviewUVE& preview = m_previews[entry.relativePath.generic_string()];
+            const std::uint64_t generation = icon->serial | (std::uint64_t{1} << 63U);
+            if (preview.generation != generation || preview.pixels.empty()) {
+                preview.pixels = icon->pixels;
+                preview.width = icon->size;
+                preview.height = icon->size;
+                preview.texture = 0U;
+                preview.generation = generation;
+            }
+            return &preview;
+        }
         case ItemTypeUVE::Mesh:
         case ItemTypeUVE::Model:
             // The mesh preview is drawn upright already (its projection is flipped for top-down
