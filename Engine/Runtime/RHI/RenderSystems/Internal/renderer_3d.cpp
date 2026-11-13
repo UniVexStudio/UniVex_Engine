@@ -32,6 +32,7 @@
 #include "texture_compression.h"
 #include "camera_component.h"
 #include "canvas_component.h"
+#include "ui_view_3d_component.h"
 #include "hierarchy_component.h"
 #include "mesh_component.h"
 #include "primitive_mesh_component.h"
@@ -1093,6 +1094,28 @@ struct Renderer3DUVE::ImplUVE {
     Math::QuaternionUVE probeCaptureRotation{};
     float probeCaptureNear = 0.05F;
     float probeCaptureFar = 50.0F;
+    /// A capture's vertical lens (a probe face is 90 degrees; a 3D View's is its own).
+    float probeCaptureFovY = Math::kPiUVE * 0.5F;
+    /// A 3D View capture: no sky, and alpha 0 wherever nothing was drawn.
+    bool captureTransparentBackground = false;
+    /// Each 3D View's own picture (UIView3DComponentUVE), by its widget.
+    struct UIViewCaptureUVE final {
+        TextureHandleUVE color = kInvalidTextureHandleUVE;
+        TextureHandleUVE depth = kInvalidTextureHandleUVE;
+        std::uint32_t width = 0U;
+        std::uint32_t height = 0U;
+        bool ready = false;
+    };
+    std::unordered_map<std::uint64_t, UIViewCaptureUVE> uiViewCaptures;
+    void DestroyUIViewCaptureUVE(UIViewCaptureUVE& capture) {
+        if (capture.color != kInvalidTextureHandleUVE) {
+            renderDevice.DestroyTextureUVE(capture.color);
+        }
+        if (capture.depth != kInvalidTextureHandleUVE) {
+            renderDevice.DestroyTextureUVE(capture.depth);
+        }
+        capture = UIViewCaptureUVE{};
+    }
     int reflectionProbeEnabled = 0;
     Math::Vector3UVE reflectionProbePosition{};
     Math::Vector3UVE reflectionProbeAxisX{1.0F, 0.0F, 0.0F};
@@ -4005,6 +4028,14 @@ struct Renderer3DUVE::ImplUVE {
                 }
                 texture = uiFontAtlasTexture;
                 break;
+            case UI::UIDrawItemKindUVE::View3D: {
+                const auto capture = uiViewCaptures.find(quad.viewKey);
+                if (capture == uiViewCaptures.end() || !capture->second.ready) {
+                    continue; // drawn from the next frame, once its stage has been captured
+                }
+                texture = capture->second.color;
+                break;
+            }
             }
             if (orderedTextureBatches.empty() || orderedTextureBatches.back().texture != texture ||
                 orderedTextureBatches.back().quads.size() >= kMaximumUIQuadsUVE) {
@@ -4489,7 +4520,90 @@ void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& enti
     static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
 }
 
+void Renderer3DUVE::CaptureUIViewsUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE cameraEntity) {
+    if (m_impl->uiRuntimeForFrame == nullptr || !entityManager.IsAliveUVE(cameraEntity) ||
+        !entityManager.HasComponentUVE<Scene::CameraComponentUVE>(cameraEntity) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(cameraEntity)) {
+        return;
+    }
+    // Only the 3D Views the UI drew last: a hidden menu costs nothing.
+    std::vector<std::pair<std::uint64_t, Math::Vector2UVE>> shown;
+    for (const UI::UIQuadUVE& quad : m_impl->uiRuntimeForFrame->GetDrawBatchUVE().quads) {
+        if (quad.kind == UI::UIDrawItemKindUVE::View3D) {
+            shown.emplace_back(quad.viewKey, quad.rect.size);
+        }
+    }
+    for (auto it = m_impl->uiViewCaptures.begin(); it != m_impl->uiViewCaptures.end();) {
+        const bool stillShown = std::any_of(shown.begin(), shown.end(), [&it](const auto& view) { return view.first == it->first; });
+        if (!stillShown) {
+            m_impl->DestroyUIViewCaptureUVE(it->second);
+            it = m_impl->uiViewCaptures.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (shown.empty()) {
+        return;
+    }
+    const std::uint32_t savedWidth = m_impl->targetWidth;
+    const std::uint32_t savedHeight = m_impl->targetHeight;
+    const std::optional<ViewportRectUVE> savedRegion = m_impl->destinationViewportOverride;
+    m_impl->destinationViewportOverride.reset();
+    m_impl->probeCaptureViewActive = true;
+    m_impl->captureTransparentBackground = true;
+    for (const auto& [key, size] : shown) {
+        const Scene::EntityUVE widget{static_cast<std::uint32_t>(key & 0xFFFFFFFFU), static_cast<std::uint32_t>(key >> 32U)};
+        if (!entityManager.IsAliveUVE(widget) || !entityManager.HasComponentUVE<Scene::UIView3DComponentUVE>(widget)) {
+            continue;
+        }
+        const Scene::UIView3DComponentUVE& view = entityManager.GetComponentUVE<Scene::UIView3DComponentUVE>(widget);
+        if (!entityManager.IsAliveUVE(view.stageRoot)) {
+            continue;
+        }
+        const std::uint32_t width = static_cast<std::uint32_t>(std::clamp(std::lround(size.x), 16L, 2048L));
+        const std::uint32_t height = static_cast<std::uint32_t>(std::clamp(std::lround(size.y), 16L, 2048L));
+        ImplUVE::UIViewCaptureUVE& capture = m_impl->uiViewCaptures[key];
+        if (capture.width != width || capture.height != height) {
+            m_impl->DestroyUIViewCaptureUVE(capture);
+            capture = ImplUVE::UIViewCaptureUVE{};
+            capture.color = m_impl->renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::RGBA8Unorm, 1});
+            capture.depth = m_impl->renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::Depth32Float, 1});
+            capture.width = width;
+            capture.height = height;
+        }
+        if (capture.color == kInvalidTextureHandleUVE || capture.depth == kInvalidTextureHandleUVE ||
+            !m_impl->ResizeTargetsUVE(width, height)) {
+            continue;
+        }
+        // The widget's camera, around its stage: back from the look-at point along its tilt.
+        const Math::Vector3UVE stage = Scene::UIView3DStagePositionUVE(view.stageSlot);
+        const Math::Vector3UVE target{stage.x, stage.y + view.lookAtHeight, stage.z};
+        const float pitch = view.pitchDegrees * (Math::kPiUVE / 180.0F);
+        Math::QuaternionUVE rotation{};
+        if (!Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, pitch, rotation)) {
+            continue;
+        }
+        const Math::Vector3UVE forward = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+        m_impl->probeCapturePosition = target - forward * view.cameraDistance;
+        m_impl->probeCaptureRotation = rotation;
+        m_impl->probeCaptureFovY = view.fieldOfViewDegrees * (Math::kPiUVE / 180.0F);
+        m_impl->probeCaptureNear = 0.05F;
+        m_impl->probeCaptureFar = std::max(20.0F, view.cameraDistance * 6.0F);
+        m_impl->probeCaptureVisibilityLayers = 0xFFFFFFFFU;
+        RenderFrameToTargetUVE(entityManager, cameraEntity, capture.color, capture.depth, width, height, 0U);
+        capture.ready = true;
+    }
+    m_impl->probeCaptureViewActive = false;
+    m_impl->captureTransparentBackground = false;
+    m_impl->probeCaptureFovY = Math::kPiUVE * 0.5F;
+    m_impl->destinationViewportOverride = savedRegion;
+    static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
+}
+
 void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) {
+    if (!m_impl->probeCaptureViewActive) {
+        CaptureUIViewsUVE(entityManager, cameraEntity);
+    }
     const bool capturingProbe = m_impl->probeCaptureViewActive;
     if (!capturingProbe) {
         m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
@@ -4602,10 +4716,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->humanEyeCenterScale = 1.0F;
         m_impl->environmentCameraNear = m_impl->probeCaptureNear;
         m_impl->environmentCameraFar = m_impl->probeCaptureFar;
-        viewProjection = Math::Matrix4x4UVE::PerspectiveUVE(kHalfPiUVE, aspectRatio, m_impl->probeCaptureNear,
+        viewProjection = Math::Matrix4x4UVE::PerspectiveUVE(m_impl->probeCaptureFovY, aspectRatio, m_impl->probeCaptureNear,
                                                             m_impl->probeCaptureFar) *
                          Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(viewPosition, viewRotation);
-        m_impl->skyTanHalfFov = 1.0F;
+        m_impl->skyTanHalfFov = std::tan(m_impl->probeCaptureFovY * 0.5F);
     } else {
         m_impl->humanEyeEnabled = camera.projection == Scene::CameraProjectionModeUVE::HumanEye;
         m_impl->humanEyeCenterScale =
@@ -4650,7 +4764,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     // perspective camera) just means SSAO is skipped this frame, not a fatal error.
     const Math::Matrix4x4UVE projection =
         capturingProbe
-            ? Math::Matrix4x4UVE::PerspectiveUVE(kHalfPiUVE, aspectRatio, m_impl->probeCaptureNear,
+            ? Math::Matrix4x4UVE::PerspectiveUVE(m_impl->probeCaptureFovY, aspectRatio, m_impl->probeCaptureNear,
                                                  m_impl->probeCaptureFar)
             : m_impl->cameraSystem.ComputeProjectionMatrixUVE(entityManager, cameraEntity, aspectRatio);
     Math::Matrix4x4UVE inverseProjection{};
@@ -5244,7 +5358,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const bool sunDiscActive = m_impl->sunEnergy > 0.0F &&
                                m_impl->sunDiscAngularDiameterDegrees > 0.0F &&
                                m_impl->sunDiscIntensity > 0.0F;
-    const bool skyActive = (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
+    const bool skyActive = !m_impl->captureTransparentBackground &&
+                           (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
                            m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValidUVE();
     if (skyActive) {
         const std::array<RenderGraphResourceUseUVE, 5U> skyResources{
@@ -5822,7 +5937,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uCameraNear", m_impl->environmentCameraNear);
             m_impl->toneMappingProgram->SetFloatUVE("uCameraFar", m_impl->environmentCameraFar);
             m_impl->toneMappingProgram->SetFloatUVE("uFogSkyAffect", m_impl->environmentFrame.fogSkyAffect);
-            m_impl->toneMappingProgram->SetIntUVE("uSkyCovers", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE(
+                "uSkyCovers", m_impl->environmentFrame.hasEnvironment && !m_impl->captureTransparentBackground ? 1 : 0);
             m_impl->toneMappingProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
             m_impl->toneMappingProgram->SetFloatUVE("uOrthoHalfHeight", orthoHalfHeight);
             m_impl->toneMappingProgram->SetFloatUVE("uBrightness", m_impl->environmentFrame.brightness);

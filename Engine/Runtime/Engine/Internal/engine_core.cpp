@@ -113,6 +113,9 @@
 #include "camera_component.h"
 #include "hierarchy_component.h"
 #include "canvas_component.h"
+#include "ui_view_3d_component.h"
+#include "scalar.h"
+#include "quaternion.h"
 #include "ui_button_component.h"
 #include "ui_checkbox_component.h"
 #include "ui_dropdown_component.h"
@@ -1496,7 +1499,100 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
     if (m_timer != nullptr) {
         m_uiRuntime.SetDeltaTimeUVE(static_cast<float>(m_timer->GetDeltaTimeUVE()));
     }
+    {
+        // The stage turns on the real frame clock, like UI tweens: a menu keeps turning while paused.
+        const auto now = std::chrono::steady_clock::now();
+        const float dt = m_uiView3DClockUVE.time_since_epoch().count() == 0
+                             ? 0.0F
+                             : std::chrono::duration<float>(now - m_uiView3DClockUVE).count();
+        m_uiView3DClockUVE = now;
+        SyncUIView3DStagesUVE(dt);
+    }
     m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem, localization);
+}
+
+void EngineCoreUVE::SyncUIView3DStagesUVE(const float deltaSeconds) {
+    // Each 3D View's asset stands on a stage of its own, far below the level: made when the view
+    // names it, remade when it names another (or the stage was taken away, as leaving Play does),
+    // and turned by its spin every frame. Only what the picture needs is kept on it: its scripts,
+    // bodies, controllers and cameras are taken off, so it neither falls nor plays nor takes the view.
+    std::vector<Scene::EntityUVE> views;
+    m_entityManager->ForEachUVE<Scene::UIView3DComponentUVE>(
+        [&views](const Scene::EntityUVE entity, const Scene::UIView3DComponentUVE&) { views.push_back(entity); });
+    if (views.empty()) {
+        return;
+    }
+    const std::function<void(Scene::EntityUVE)> destroy = [this, &destroy](const Scene::EntityUVE root) {
+        if (!m_entityManager->IsAliveUVE(root)) {
+            return;
+        }
+        for (const Scene::EntityUVE child : m_sceneGraph->GetChildrenUVE(*m_entityManager, root)) {
+            destroy(child);
+        }
+        m_entityManager->DestroyEntityUVE(root);
+    };
+    const std::function<void(Scene::EntityUVE)> strip = [this, &strip](const Scene::EntityUVE entity) {
+        if (!m_entityManager->IsAliveUVE(entity)) {
+            return;
+        }
+        if (m_entityManager->HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::ScriptComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::Rigid3DComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::CameraComponentUVE>(entity);
+        }
+        for (const Scene::EntityUVE child : m_sceneGraph->GetChildrenUVE(*m_entityManager, entity)) {
+            strip(child);
+        }
+    };
+    std::uint32_t nextSlot = 0U;
+    for (const Scene::EntityUVE entity : views) {
+        Scene::UIView3DComponentUVE& view = m_entityManager->GetComponentUVE<Scene::UIView3DComponentUVE>(entity);
+        view.stageSlot = nextSlot++;
+        const bool lost = view.stageRoot != Scene::kInvalidEntityUVE && !m_entityManager->IsAliveUVE(view.stageRoot);
+        if (view.stagedAssetPath != view.assetPath || lost) {
+            destroy(view.stageRoot);
+            view.stageRoot = Scene::kInvalidEntityUVE;
+            view.stagedAssetPath = view.assetPath;
+            if (!view.assetPath.empty() && m_sceneSerializer != nullptr) {
+                if (std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(view.assetPath)) {
+                    const std::vector<Scene::EntityUVE> roots = m_sceneSerializer->RestoreUVE(
+                        *m_entityManager, Scene::SceneSnapshotUVE{std::move(*bytes), Scene::SceneAssetTypeUVE::Prefab});
+                    if (roots.size() == 1U) {
+                        view.stageRoot = roots.front();
+                        strip(view.stageRoot);
+                    }
+                } else {
+                    UVE_ERROR("EngineCoreUVE: the 3D View's \"{}\" cannot be read", view.assetPath);
+                }
+            }
+        }
+        if (!m_entityManager->IsAliveUVE(view.stageRoot) ||
+            !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(view.stageRoot)) {
+            continue;
+        }
+        if (std::isfinite(deltaSeconds) && deltaSeconds > 0.0F) {
+            view.spinYawDegrees = std::fmod(view.spinYawDegrees + view.spinDegreesPerSecond * std::min(deltaSeconds, 0.1F), 360.0F);
+        }
+        Scene::TransformComponentUVE& transform = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(view.stageRoot);
+        transform.localPosition = Scene::UIView3DStagePositionUVE(view.stageSlot);
+        Math::QuaternionUVE turn{};
+        if (Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+                                      (view.yawDegrees + view.spinYawDegrees) * (Math::kPiUVE / 180.0F), turn)) {
+            transform.localRotation = turn;
+            transform.rotationEditMode = Scene::RotationEditModeUVE::Quaternion;
+        }
+        // Marked stale so the scene graph recomputes the world transform the renderer reads.
+        if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(view.stageRoot)) {
+            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(view.stageRoot).dirty = true;
+        }
+    }
 }
 
 namespace {

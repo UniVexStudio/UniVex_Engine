@@ -19,6 +19,7 @@
 #include "ui_dropdown_component.h"
 #include "ui_progress_bar_component.h"
 #include "ui_text_component.h"
+#include "ui_view_3d_component.h"
 #include "uvscript_compiler.h"
 #include "uvscript_instance.h"
 #include "uvscript_object_host.h"
@@ -197,6 +198,26 @@ TEST_F(WidgetBlueprintUVETest, ShowMouseCursorAndAComboBoxChoiceReachTheGame) {
     const UVScript::ValueUVE changed[] = {std::string{"Quality"}};
     static_cast<void>(instance.RaiseEventUVE("ui_changed", changed));
     EXPECT_EQ(TextOfUVE("Score"), "Ultra");
+}
+
+TEST(UIView3DUVETest, AViewIsValidOnlyWithASaneCameraAndEachStageStandsApartFarBelow) {
+    UIView3DComponentUVE view;
+    EXPECT_TRUE(IsUIView3DComponentValidUVE(view));
+    view.cameraDistance = 0.0F;
+    EXPECT_FALSE(IsUIView3DComponentValidUVE(view)) << "a camera on top of its asset";
+    view = UIView3DComponentUVE{};
+    view.backgroundAlpha = 2.0F;
+    EXPECT_FALSE(IsUIView3DComponentValidUVE(view));
+    view = UIView3DComponentUVE{};
+    view.rect.size = Math::Vector2UVE{2.0F, 2.0F};
+    EXPECT_FALSE(IsUIView3DComponentValidUVE(view)) << "too small to render into";
+
+    const Math::Vector3UVE first = UIView3DStagePositionUVE(0U);
+    const Math::Vector3UVE second = UIView3DStagePositionUVE(1U);
+    EXPECT_LT(first.y, -10000.0F) << "out of every game camera's reach";
+    const float dx = second.x - first.x;
+    const float dz = second.z - first.z;
+    EXPECT_GE(dx * dx + dz * dz, 30.0F * 30.0F) << "two stages never see each other's asset";
 }
 
 TEST_F(WidgetBlueprintUVETest, TheFileKeepsItsWidgetsAndItsGraph) {

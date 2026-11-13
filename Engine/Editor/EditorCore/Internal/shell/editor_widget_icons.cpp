@@ -13,6 +13,7 @@
 #include "ui_slider_component.h"
 #include "ui_text_component.h"
 #include "ui_text_input_component.h"
+#include "ui_view_3d_component.h"
 
 #include <algorithm>
 #include <array>
@@ -219,6 +220,26 @@ void PaintUVE(IconPainterUVE& p, const WidgetKindUVE kind) {
             p.FrameUVE(1.2F, 1.2F, 13.6F, 13.6F, 3.0F, 2.4F, kGoldUVE);
             p.RoundRectUVE(4.6F, 4.6F, 6.8F, 6.8F, 1.0F, InkUVE{0.82F, 0.66F, 0.40F, 0.35F});
             break;
+        case WidgetKindUVE::View3D: {
+            // A cube in the round, an orbit around it.
+            const InkUVE top{0.55F, 0.80F, 1.0F, 1.0F};
+            const InkUVE left{0.24F, 0.52F, 0.96F, 1.0F};
+            const InkUVE right{0.15F, 0.34F, 0.70F, 1.0F};
+            p.TriangleUVE(8.0F, 2.6F, 12.6F, 5.2F, 8.0F, 7.8F, top);
+            p.TriangleUVE(8.0F, 2.6F, 3.4F, 5.2F, 8.0F, 7.8F, top);
+            p.TriangleUVE(3.4F, 5.2F, 8.0F, 7.8F, 3.4F, 10.6F, left);
+            p.TriangleUVE(8.0F, 7.8F, 8.0F, 13.2F, 3.4F, 10.6F, left);
+            p.TriangleUVE(12.6F, 5.2F, 8.0F, 7.8F, 12.6F, 10.6F, right);
+            p.TriangleUVE(8.0F, 7.8F, 8.0F, 13.2F, 12.6F, 10.6F, right);
+            p.ShapeUVE([](const float u, const float v) {
+                const float dx = (u - 8.0F) / 7.2F;
+                const float dy = (v - 11.0F) / 2.6F;
+                const float r = dx * dx + dy * dy;
+                return r <= 1.0F && r >= 0.62F && v > 11.0F;
+            }, kYellowUVE);
+            p.TriangleUVE(14.6F, 10.0F, 15.6F, 12.6F, 12.8F, 12.2F, kYellowUVE);
+            break;
+        }
         case WidgetKindUVE::Spacer:
             p.LineUVE(2.0F, 4.0F, 2.0F, 12.0F, 1.2F, kDimUVE);
             p.LineUVE(14.0F, 4.0F, 14.0F, 12.0F, 1.2F, kDimUVE);
@@ -248,6 +269,7 @@ const char* WidgetKindLabelUVE(const WidgetKindUVE kind) noexcept {
         case WidgetKindUVE::ScrollBox: return "Scroll Box";
         case WidgetKindUVE::Border: return "Border";
         case WidgetKindUVE::Spacer: return "Spacer";
+        case WidgetKindUVE::View3D: return "3D View";
     }
     return "Widget";
 }
@@ -256,6 +278,9 @@ std::optional<WidgetKindUVE> ClassifyWidgetUVE(const Scene::IEntityManagerUVE& c
     auto& em = const_cast<Scene::IEntityManagerUVE&>(constEm);
     if (!em.IsAliveUVE(entity)) {
         return std::nullopt;
+    }
+    if (em.HasComponentUVE<Scene::UIView3DComponentUVE>(entity)) {
+        return WidgetKindUVE::View3D;
     }
     if (em.HasComponentUVE<Scene::UIButtonComponentUVE>(entity)) {
         return WidgetKindUVE::Button;

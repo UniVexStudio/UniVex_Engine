@@ -547,6 +547,8 @@ private:
     /// Buttons clicked, sliders and check boxes changed, text boxes committed this frame: their
     /// `ui_*` events, to every scripted object above them.
     void RaiseWidgetScriptEventsUVE();
+    /// Stands each 3D View's asset on its own stage and turns it (UIView3DComponentUVE).
+    void SyncUIView3DStagesUVE(float deltaSeconds);
     /// Compiles each object's text script once, drops the
     void SyncUVScriptsUVE(bool simulationPaused);
     /// Reconciles script components with instances in m_uvScripts so event receivers are ready
@@ -882,6 +884,7 @@ private:
     std::unique_ptr<Scene::ISceneSerializerUVE> m_sceneSerializer;
     std::optional<Math::Vector2UVE> m_uiPointerOriginUVE;
     std::function<void(bool)> m_mouseCursorHandlerUVE;
+    std::chrono::steady_clock::time_point m_uiView3DClockUVE{};
     std::unique_ptr<Scene::IPrefabSystemUVE> m_prefabSystem;
     std::unique_ptr<Asset::IHotReloadUVE> m_hotReload;
     std::unique_ptr<Asset::IAssetManagerUVE> m_assetManager;
