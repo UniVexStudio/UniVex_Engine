@@ -144,6 +144,12 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t decalDrawsDropped = 0U;
     /// Skinned meshes posed by a skeleton and drawn from their own vertex buffer this frame.
     std::size_t skinnedMeshesDrawn = 0U;
+    /// Meshes sent to the GPU this frame, and those left for a later frame by the upload budget
+    /// (SetMeshUploadBudgetUVE): a scene that is still coming in shows here, mesh by mesh.
+    std::size_t meshUploads = 0U;
+    std::size_t meshUploadsDeferred = 0U;
+    /// The first meshes sent this frame (unused slots stay invalid), so a host can say what it is drawing.
+    std::array<Asset::AssetGuidUVE, 4U> uploadedMeshes{};
     std::size_t meshDrawCallsRecorded = 0U;
     /// How many of `meshDrawCallsRecorded` were instanced draws, and how many objects those draws
     /// covered. Both name what instancing ACTUALLY did this frame, not what it was offered: a
@@ -421,6 +427,13 @@ public:
     /// Sets the viewport shading mode (0: Lit, 1: Unshaded, 2: Wireframe, 3: Lighting, 4: Normals).
     virtual void SetShadingModeUVE(std::int32_t shadingMode) noexcept {
         static_cast<void>(shadingMode);
+    }
+
+    /// How many new meshes a frame may send to the GPU; the rest wait for later frames and are not
+    /// drawn until then, so a scene comes in a few meshes at a time instead of all in one frame.
+    /// Zero (the default) means no limit.
+    virtual void SetMeshUploadBudgetUVE(std::size_t meshesPerFrame) noexcept {
+        static_cast<void>(meshesPerFrame);
     }
 
     /// Sets the rendering scalability / quality preset (0: Low, 1: Medium, 2: High/Ultra).

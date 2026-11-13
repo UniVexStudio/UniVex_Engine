@@ -1121,12 +1121,35 @@ void EditorShellUVE::FrameUVE() {
         const int every = warm < 1.0 ? 4 : warm < 2.0 ? 3 : warm < 3.0 ? 2 : 1;
         renderView = m_lastView.texture == 0U || (++m_viewWarmFrame % every) == 0;
         // "Loading render" over the view: until the warm-up is through and the renderer has
-        // nothing left to load for the scene.
-        const Render::Renderer3DFrameDiagnosticsUVE frame = m_editor.m_services->GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
-        const std::size_t loading = frame.pendingAssetLoads + frame.primitiveMaterialPending;
+        // nothing left to load or send to the GPU (it sends a few meshes a frame), with the names
+        // of the meshes it is drawing now.
+        Render::IRenderer3DUVE& renderer = m_editor.m_services->GetRenderer3DUVE();
+        if (!m_uploadBudgetSet) {
+            renderer.SetMeshUploadBudgetUVE(2U);
+            m_uploadBudgetSet = true;
+        }
+        const Render::Renderer3DFrameDiagnosticsUVE frame = renderer.GetLastFrameDiagnosticsUVE();
+        const std::size_t loading = frame.pendingAssetLoads + frame.primitiveMaterialPending + frame.meshUploadsDeferred;
         if (warm < 0.05) {
             m_renderLoadPeak = 0U;
             m_renderLoadDone = false;
+            m_renderLoadNames.clear();
+        }
+        // Names of the meshes just drawn for the first time (an imported part reads as its part name).
+        for (const Asset::AssetGuidUVE guid : frame.uploadedMeshes) {
+            if (guid == Asset::AssetGuidUVE{}) {
+                continue;
+            }
+            std::string name = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(guid).stem().string();
+            if (const std::size_t part = name.find(".part-"); part != std::string::npos) {
+                name = name.substr(part + 6U);
+            }
+            if (!name.empty() && (m_renderLoadNames.empty() || m_renderLoadNames.front() != name)) {
+                m_renderLoadNames.insert(m_renderLoadNames.begin(), name);
+                if (m_renderLoadNames.size() > 2U) {
+                    m_renderLoadNames.resize(2U);
+                }
+            }
         }
         m_renderLoadPeak = std::max(m_renderLoadPeak, loading);
         if (!m_renderLoadDone && warm >= 3.0 && loading == 0U) {
@@ -1137,17 +1160,21 @@ void EditorShellUVE::FrameUVE() {
             const float assetPart = m_renderLoadPeak > 0U
                                         ? static_cast<float>(m_renderLoadPeak - std::min(loading, m_renderLoadPeak)) / static_cast<float>(m_renderLoadPeak)
                                         : 1.0F;
-            const std::string text = loading > 0U ? "Loading render (" + std::to_string(loading) + " assets)" : "Loading render";
-            m_loadingScreen->SyncRenderUVE(!m_renderLoadDone && m_viewport->visible(), m_viewport->rect(), text,
+            const std::string text = loading > 0U ? "Loading render (" + std::to_string(loading) + " left)" : "Loading render";
+            std::string detail;
+            for (const std::string& name : m_renderLoadNames) {
+                detail += (detail.empty() ? "Rendering " : ", ") + name;
+            }
+            m_loadingScreen->SyncRenderUVE(!m_renderLoadDone && m_viewport->visible(), m_viewport->rect(), text, detail,
                                            std::min(warmPart, assetPart));
         }
+    }
+    if (m_loadingScreen && !m_startupCovered) {
+        m_loadingScreen->SyncUVE(m_editor.GetLoadingStateUVE(), m_projectName);
     }
     m_host.BeginFrameUVE();
 
     std::vector<EditorHostUVE::ViewImageUVE> views;
-    if (m_loadingScreen && !m_startupCovered) {
-        m_loadingScreen->SyncUVE(m_editor.GetLoadingStateUVE(), m_projectName);
-    }
     if (!renderView && !m_startupCovered && m_viewport && m_viewport->visible() && m_lastView.texture != 0U) {
         views.push_back(m_lastView); // the last frame again, between warm-up frames
     } else if (renderView && m_viewport && m_viewport->visible() && m_editor.m_viewportPanelRenderer) {
