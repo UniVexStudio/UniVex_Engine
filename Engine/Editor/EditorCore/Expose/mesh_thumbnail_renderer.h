@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace UVE::Asset {
 struct MeshAssetUVE;
@@ -14,8 +16,17 @@ namespace UVE::Editor {
 
 struct MaterialThumbnailImageUVE;
 
+/// How one material slot of a mesh looks in its thumbnail: its albedo colour, times its albedo
+/// map when it has one. A see-through slot (eyelashes, hair cards) is left out of the picture.
+struct MeshThumbnailLookUVE final {
+    std::array<float, 3> colour{0.70F, 0.72F, 0.76F};
+    const MaterialThumbnailImageUVE* albedo = nullptr;
+    bool skip = false;
+};
+
 /// Renders a small preview image of a mesh asset's own geometry - fixed default camera angle
-/// auto-framed to the mesh's bounding box, flat directional-key-light shading, no material -
+/// auto-framed to the mesh's bounding box, key/fill light shading, each surface in its material's
+/// albedo colour and map -
 /// directly into a standalone GL texture, for Content Browser mesh thumbnails.
 ///
 /// Mirrors EditorUiAssetsUVE's precedent of talking to raw OpenGL directly from the editor module
@@ -58,6 +69,10 @@ public:
     /// previously failed, or any GL step fails. The caller owns the returned texture's lifetime.
     [[nodiscard]] std::uintptr_t RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, int width, int height,
                                                     const MaterialThumbnailImageUVE* albedoTexture = nullptr);
+    /// The same, each surface shaded by its own material slot's look (`looksBySlot[slot]`); a
+    /// surface whose slot has no look is drawn in a neutral grey.
+    [[nodiscard]] std::uintptr_t RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, int width, int height,
+                                                    const std::vector<MeshThumbnailLookUVE>& looksBySlot);
 
     /// Opaque - defined only in mesh_thumbnail_renderer_uve.cpp, which is the sole translation
     /// unit allowed to name its members. Public (rather than private) purely so that file's own

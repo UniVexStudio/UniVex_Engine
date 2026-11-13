@@ -148,6 +148,8 @@ private:
         std::vector<std::uint32_t> pixels;
         int width = 0;
         int height = 0;
+        /// The editor's mesh-picture generation it was copied at (a texture id can be reused).
+        std::uint64_t generation = 0U;
     };
     [[nodiscard]] const PreviewUVE* PreviewForUVE(const Asset::ProjectFileEntryUVE& entry, ItemTypeUVE type);
 

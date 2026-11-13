@@ -77,7 +77,7 @@ void main() {
         if (sampled.a < 0.05) {
             discard;
         }
-        albedo = sampled.rgb;
+        albedo = uBaseColor * sampled.rgb;
     }
 
     vec3 keyDir = normalize(-uLightDirection);
@@ -324,6 +324,19 @@ void MeshThumbnailRendererUVE::ShutdownUVE() noexcept {
 std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, const int width,
                                                              const int height,
                                                              const MaterialThumbnailImageUVE* albedoTexture) {
+    // One look for every slot (and for a mesh with no slots).
+    MeshThumbnailLookUVE look;
+    if (albedoTexture != nullptr) {
+        look.colour = {1.0F, 1.0F, 1.0F};
+        look.albedo = albedoTexture;
+    }
+    const std::size_t slots = std::max<std::size_t>(1U, mesh.materialGuids.size());
+    return RenderThumbnailUVE(mesh, width, height, std::vector<MeshThumbnailLookUVE>(slots, look));
+}
+
+std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, const int width,
+                                                             const int height,
+                                                             const std::vector<MeshThumbnailLookUVE>& looksBySlot) {
     if (!m_gl || !m_gl->functionsLoaded || !m_gl->programLinked) {
         return 0U;
     }
@@ -403,19 +416,30 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
     }
 
-    GLuint albedoTex = 0U;
-    if (succeeded && albedoTexture != nullptr && albedoTexture->IsValidUVE()) {
-        glGenTextures(1, &albedoTex);
-        if (albedoTex != 0U) {
-            glBindTexture(GL_TEXTURE_2D, albedoTex);
+    // Each distinct albedo map uploaded once.
+    std::vector<std::pair<const MaterialThumbnailImageUVE*, GLuint>> albedoTextures;
+    const auto textureOf = [&albedoTextures](const MaterialThumbnailImageUVE* image) -> GLuint {
+        if (image == nullptr || !image->IsValidUVE()) {
+            return 0U;
+        }
+        for (const auto& [known, id] : albedoTextures) {
+            if (known == image) {
+                return id;
+            }
+        }
+        GLuint id = 0U;
+        glGenTextures(1, &id);
+        if (id != 0U) {
+            glBindTexture(GL_TEXTURE_2D, id);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, albedoTexture->width, albedoTexture->height, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, albedoTexture->rgba8.data());
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image->width, image->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->rgba8.data());
         }
-    }
+        albedoTextures.emplace_back(image, id);
+        return id;
+    };
 
     GLuint vao = 0U;
     GLuint vertexBuffer = 0U;
@@ -456,112 +480,44 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         gl.table.glUseProgram(gl.shaderProgram);
         gl.table.glUniformMatrix4fv(gl.viewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
         gl.table.glUniform3fv(gl.lightDirectionUniform, 1, &lightDirection.x);
-        gl.table.glUniform3fv(gl.baseColorUniform, 1, &kBaseColorUVE.x);
         gl.table.glUniform3fv(gl.cameraPositionUniform, 1, &cameraPosition.x);
-
-        if (albedoTex != 0U) {
-            // glActiveTexture is a GL 1.3 entry point: Windows' opengl32 <GL/gl.h> only declares
-            // GL 1.1, so it must come from the shared loaded proc table like every other post-1.1 call.
-            gl.table.glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, albedoTex);
-            gl.table.glUniform1i(gl.hasAlbedoTextureUniform, 1);
-            gl.table.glUniform1i(gl.albedoTextureUniform, 0);
-        } else {
-            gl.table.glUniform1i(gl.hasAlbedoTextureUniform, 0);
+        gl.table.glUniform1i(gl.albedoTextureUniform, 0);
+        // Each surface in its own material's look; see-through ones are left out.
+        for (std::size_t index = 0U; index < mesh.SurfaceCountUVE(); ++index) {
+            const Asset::MeshSurfaceUVE surface = mesh.GetSurfaceUVE(index);
+            if (surface.indexCount == 0U || static_cast<std::size_t>(surface.firstIndex) + surface.indexCount > mesh.indices.size()) {
+                continue;
+            }
+            MeshThumbnailLookUVE look;
+            look.colour = {kBaseColorUVE.x, kBaseColorUVE.y, kBaseColorUVE.z};
+            if (surface.materialSlot < looksBySlot.size()) {
+                look = looksBySlot[surface.materialSlot];
+            }
+            if (look.skip) {
+                continue;
+            }
+            gl.table.glUniform3fv(gl.baseColorUniform, 1, look.colour.data());
+            const GLuint texture = textureOf(look.albedo);
+            if (texture != 0U) {
+                // glActiveTexture is a GL 1.3 entry point: Windows' opengl32 <GL/gl.h> only declares
+                // GL 1.1, so it must come from the shared loaded proc table like every other post-1.1 call.
+                gl.table.glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, texture);
+            }
+            gl.table.glUniform1i(gl.hasAlbedoTextureUniform, texture != 0U ? 1 : 0);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(surface.indexCount), GL_UNSIGNED_INT,
+                           reinterpret_cast<const void*>(static_cast<std::uintptr_t>(surface.firstIndex) * sizeof(std::uint32_t)));
         }
-
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indices.size()), GL_UNSIGNED_INT, nullptr);
         succeeded = glGetError() == GL_NO_ERROR;
 
         gl.table.glBindVertexArray(0);
 
-        // Render skeleton bones if the model has a joint hierarchy
-        if (succeeded && !mesh.joints.empty() && gl.boneProgramLinked) {
-            std::vector<Math::Vector3UVE> jointPositions(mesh.joints.size(), Math::Vector3UVE{});
-            std::vector<bool> jointValid(mesh.joints.size(), false);
-            for (std::size_t i = 0U; i < mesh.joints.size(); ++i) {
-                Math::Matrix4x4UVE bindMatrix{};
-                if (Math::TryInverseUVE(mesh.joints[i].inverseBindMatrix, bindMatrix)) {
-                    jointPositions[i] = Math::Vector3UVE{bindMatrix.m[0][3], bindMatrix.m[1][3], bindMatrix.m[2][3]};
-                    jointValid[i] = true;
-                }
-            }
-
-            std::vector<Math::Vector3UVE> boneLineVertices;
-            for (std::size_t i = 0U; i < mesh.joints.size(); ++i) {
-                const std::uint32_t p = mesh.joints[i].parentIndex;
-                if (p < mesh.joints.size() && jointValid[p] && jointValid[i]) {
-                    const Math::Vector3UVE head = jointPositions[p];
-                    const Math::Vector3UVE tail = jointPositions[i];
-                    const Math::Vector3UVE dir = tail - head;
-                    const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
-                    if (len > 1.0e-3F) {
-                        const Math::Vector3UVE normDir = dir * (1.0F / len);
-                        Math::Vector3UVE perp1 = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-                        if (std::abs(normDir.y) > 0.9F) {
-                            perp1 = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-                        }
-                        const Math::Vector3UVE right = Math::NormalizeUVE(Math::CrossUVE(normDir, perp1));
-                        const Math::Vector3UVE up = Math::NormalizeUVE(Math::CrossUVE(right, normDir));
-                        const float r = std::clamp(len * 0.08F, 0.01F, 0.06F);
-                        const Math::Vector3UVE mid = head + normDir * (len * 0.25F);
-                        const Math::Vector3UVE m0 = mid + right * r;
-                        const Math::Vector3UVE m1 = mid + up * r;
-                        const Math::Vector3UVE m2 = mid - right * r;
-                        const Math::Vector3UVE m3 = mid - up * r;
-
-                        boneLineVertices.push_back(head); boneLineVertices.push_back(m0);
-                        boneLineVertices.push_back(head); boneLineVertices.push_back(m1);
-                        boneLineVertices.push_back(head); boneLineVertices.push_back(m2);
-                        boneLineVertices.push_back(head); boneLineVertices.push_back(m3);
-
-                        boneLineVertices.push_back(m0); boneLineVertices.push_back(m1);
-                        boneLineVertices.push_back(m1); boneLineVertices.push_back(m2);
-                        boneLineVertices.push_back(m2); boneLineVertices.push_back(m3);
-                        boneLineVertices.push_back(m3); boneLineVertices.push_back(m0);
-
-                        boneLineVertices.push_back(m0); boneLineVertices.push_back(tail);
-                        boneLineVertices.push_back(m1); boneLineVertices.push_back(tail);
-                        boneLineVertices.push_back(m2); boneLineVertices.push_back(tail);
-                        boneLineVertices.push_back(m3); boneLineVertices.push_back(tail);
-                    }
-                }
-            }
-
-            if (!boneLineVertices.empty()) {
-                GLuint boneVao = 0U;
-                GLuint boneVbo = 0U;
-                gl.table.glGenVertexArrays(1, &boneVao);
-                gl.table.glBindVertexArray(boneVao);
-                gl.table.glGenBuffers(1, &boneVbo);
-                gl.table.glBindBuffer(GL_ARRAY_BUFFER, boneVbo);
-                gl.table.glBufferData(GL_ARRAY_BUFFER,
-                                      static_cast<GLsizeiptr>(boneLineVertices.size() * sizeof(Math::Vector3UVE)),
-                                      boneLineVertices.data(), GL_STREAM_DRAW);
-                gl.table.glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Math::Vector3UVE), nullptr);
-                gl.table.glEnableVertexAttribArray(0);
-
-                gl.table.glUseProgram(gl.boneShaderProgram);
-                gl.table.glUniformMatrix4fv(gl.boneViewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
-                constexpr float boneColor[4] = {0.95F, 0.65F, 0.15F, 0.90F};
-                gl.table.glUniform4fv(gl.boneColorUniform, 1, boneColor);
-
-                SetGlCapabilityUVE(GL_DEPTH_TEST, GL_FALSE);
-                SetGlCapabilityUVE(GL_BLEND, GL_TRUE);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glLineWidth(1.5F);
-
-                glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(boneLineVertices.size()));
-
-                gl.table.glBindVertexArray(0);
-                gl.table.glDeleteBuffers(1, &boneVbo);
-                gl.table.glDeleteVertexArrays(1, &boneVao);
-            }
-        }
     }
 
-    if (albedoTex != 0U) {
-        glDeleteTextures(1, &albedoTex);
+    for (const auto& [image, id] : albedoTextures) {
+        if (id != 0U) {
+            glDeleteTextures(1, &id);
+        }
     }
     if (vertexBuffer != 0U) {
         gl.table.glDeleteBuffers(1, &vertexBuffer);

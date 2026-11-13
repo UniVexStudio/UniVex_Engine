@@ -2994,8 +2994,19 @@ private:
     /// index is successfully refreshed, since on-disk content may have changed.
     std::map<std::string, std::uintptr_t> m_textureThumbnailCache;
     /// Content-derived thumbnail textures for Content Browser mesh entries, rendered on demand by
-    /// m_meshThumbnailRenderer. Same caching/invalidation contract as m_textureThumbnailCache.
-    std::map<std::string, std::uintptr_t> m_meshThumbnailCache;
+    /// m_meshThumbnailRenderer. Kept up to date on its own: the files it was drawn from (the mesh
+    /// and its materials) are looked at again now and then, and a change draws it again; a
+    /// picture that could not be drawn yet (an import still running) is tried again.
+    struct MeshThumbnailEntryUVE final {
+        std::uintptr_t texture = 0U;
+        /// The files the picture was drawn from, and when each was last written then.
+        std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> sources;
+        std::chrono::steady_clock::time_point checkedAt{};
+    };
+    std::map<std::string, MeshThumbnailEntryUVE> m_meshThumbnailCache;
+    /// Bumped whenever a mesh picture is drawn again or the pictures are dropped: views that copy
+    /// pictures by texture id copy again (an id can be reused for a new picture).
+    std::uint64_t m_meshThumbnailGeneration = 0U;
     /// Content-derived thumbnail textures for Content Browser material entries, rendered on demand
     /// by m_materialThumbnailRenderer. Same caching contract as m_textureThumbnailCache, plus
     /// targeted invalidation when the Inspector saves a material (InvalidateMaterialThumbnailCacheUVE).
