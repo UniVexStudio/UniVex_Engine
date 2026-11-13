@@ -877,6 +877,12 @@ public:
     [[nodiscard]] std::optional<std::filesystem::path> CreateContentCatalogueItemUVE(
         std::string_view itemId, const std::filesystem::path& directory);
 
+    /// Makes a Widget Blueprint (`.uvwbp`) in `directory`: a Canvas with a title Text and a Start
+    /// Button, and a graph where clicking Start sets the title. The document is not touched.
+    /// Returns its path, or nothing when it could not be written.
+    [[nodiscard]] std::optional<std::filesystem::path> CreateWidgetBlueprintAssetUVE(const std::filesystem::path& directory,
+                                                                                    std::string_view stem = "WBP_NewWidget");
+
     /// Brings the entity asset (`.uventity` or `.uvprefab`) at `path` into the scene under
     /// `parent` - or, when that is invalid, where a new object would go - selects it and records one
     /// undo step. Returns the new root, or kInvalidEntityUVE.
@@ -1968,6 +1974,8 @@ private:
         MontageLibrary,
         /// A Blueprint Class (`.uvbp`): an object's gameplay as a node graph, edited in the Entity Editor.
         Blueprint,
+        /// A Widget Blueprint (`.uvwbp`): UI widgets and their graph, edited in the Widget Editor.
+        WidgetBlueprint,
         Script,
         Audio,
         Font,

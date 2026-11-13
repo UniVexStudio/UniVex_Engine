@@ -4,6 +4,7 @@
 #include "editor_fit_width.h"
 
 #include "blueprint_nodes.h"
+#include "widget_blueprint_asset.h"
 #include "i_entity_manager.h"
 #include "i_file_system.h"
 #include "i_project_file_index.h"
@@ -333,12 +334,27 @@ bool EditorBlueprintPanelUVE::OpenUVE(const std::string& path, const Scene::Enti
         real = path;
     }
     Asset::BlueprintAssetUVE blueprint;
-    if (!Asset::LoadBlueprintAssetUVE(real, blueprint)) {
+    // A Widget Blueprint keeps its graph beside its widgets, in the same file.
+    if (Asset::IsWidgetBlueprintPathUVE(path)) {
+        if (std::optional<Asset::BlueprintAssetUVE> graph = Asset::LoadWidgetBlueprintGraphUVE(real)) {
+            blueprint = std::move(*graph);
+        } else {
+            m_editor.m_contentStatusMessage = "Could not open the Widget Blueprint " + path + ".";
+            return false;
+        }
+    } else if (!Asset::LoadBlueprintAssetUVE(real, blueprint)) {
         m_editor.m_contentStatusMessage = "Could not open the Blueprint " + path + ".";
         return false;
     }
     m_path = path;
     m_target = target;
+    if (m_graph) {
+        if (Asset::IsWidgetBlueprintPathUVE(path)) {
+            m_graph->setWatermark("Widget Blueprint", "UI graph", prism::Icon::BlueprintClass);
+        } else {
+            m_graph->setWatermark("Blueprint Class", "Gameplay graph", prism::Icon::BlueprintClass);
+        }
+    }
     LoadIntoGraphUVE(blueprint);
     return true;
 }
@@ -370,7 +386,9 @@ bool EditorBlueprintPanelUVE::SaveUVE() {
     if (real.empty()) {
         real = m_path;
     }
-    if (!Asset::SaveBlueprintAssetUVE(FromGraphUVE(), real)) {
+    const bool saved = Asset::IsWidgetBlueprintPathUVE(m_path) ? Asset::SaveWidgetBlueprintGraphUVE(real, FromGraphUVE())
+                                                                : Asset::SaveBlueprintAssetUVE(FromGraphUVE(), real);
+    if (!saved) {
         if (prism::Application::exists()) {
             prism::Application::get().notify("Could not save " + m_path, prism::ToastLevel::Error);
         }

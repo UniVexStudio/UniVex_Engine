@@ -10,11 +10,13 @@
 #include "editor_icons.h"
 #include "editor_view_toolbar.h"
 #include "editor_viewport_gizmos.h"
+#include "editor_widget_designer.h"
 
 #include "entity.h"
 
 #include "prism/Widget.h"
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -185,6 +187,21 @@ private:
     std::vector<EntityDiffRowUVE> m_diffRows;
     std::shared_ptr<prism::Widget> m_componentsPanel;
     std::shared_ptr<prism::Widget> m_detailsPanel;
+
+    /// Widget mode: the open file is a Widget Blueprint (.uvwbp). The centre is the Designer (its
+    /// screen drawn as the game draws it) or the widget's Graph; the sub row switches them; "+"
+    /// is the widget Palette.
+    bool m_widgetMode = false;
+    std::shared_ptr<WidgetDesignerViewUVE> m_designer;
+    std::uint64_t m_designerSignature = 0;
+    /// Where the widget being dragged started (its undo step is from there to where it is let go).
+    Scene::EntityUVE m_dragWidget = Scene::kInvalidEntityUVE;
+    /// Each widget moving with it (it and the widgets inside it), and where each started.
+    std::vector<std::pair<Scene::EntityUVE, std::array<float, 2>>> m_dragStarts;
+    void RefreshDesignerUVE();
+    void MoveWidgetUVE(Scene::EntityUVE entity, float dx, float dy, bool finished);
+    void ShowWidgetPaletteUVE();
+    void OpenWidgetGraphUVE();
 
     std::vector<Scene::EntityUVE> m_treeEntities;
     std::uint64_t m_componentsSignature = 0;

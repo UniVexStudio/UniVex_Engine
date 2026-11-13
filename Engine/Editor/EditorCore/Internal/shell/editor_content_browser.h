@@ -97,6 +97,7 @@ private:
     /// A new material of `kind` in the current folder, named `stem` (made unique).
     void CreateMaterialUVE(const std::string& stem, Asset::MaterialKindUVE kind);
     void CreateBlueprintUVE();
+    void CreateWidgetBlueprintUVE();
     void OpenBlueprintUVE(const std::filesystem::path& full);
     void OpenEntryUVE(std::size_t entryIndex);
     /// Right-click a clip > Create Montage: AM_<clip>.uvmontage beside it, the clip on its slot
