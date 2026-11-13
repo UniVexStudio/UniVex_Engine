@@ -2949,6 +2949,8 @@ private:
     /// Empty is the ProjectFileIndexUVE content root. This value is session-only and must name a
     /// directory in the latest successful copied snapshot before it is used as a browser location.
     std::filesystem::path m_contentBrowserDirectory;
+    /// The Entity Editor's Content Browser is docked as a tab (else it is a drawer that slides up).
+    bool m_entityContentDocked = false;
     /// User-curated shortcuts into the project tree, as project-relative generic paths; both
     /// directories and files may be favorited. Persisted across sessions (see
     /// Save/LoadSessionSettingsUVE). An entry no longer present in the latest snapshot is simply

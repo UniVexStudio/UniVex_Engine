@@ -99,8 +99,25 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
 
 } // namespace
 
+namespace {
+
+/// The entity window's root: Ctrl+Space anywhere in it toggles the Content Drawer.
+class ContentKeysUVE final : public prism::Border {
+public:
+    std::function<void()> onToggle;
+    prism::Reply onPreviewKeyDown(const prism::KeyEvent& e) override {
+        if (e.key == prism::Key::Space && (e.mods & prism::ModCtrl) != 0U && !e.repeat && onToggle) {
+            onToggle();
+            return prism::Reply::handled();
+        }
+        return prism::Reply::unhandled();
+    }
+};
+
+} // namespace
+
 EditorEntityEditorUVE::EditorEntityEditorUVE(EditorUVE& editor, EditorHostUVE& host)
-    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor), m_sequencer(editor), m_animGraphPanel(editor), m_blueprintPanel(editor) {}
+    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor), m_sequencer(editor), m_animGraphPanel(editor), m_blueprintPanel(editor), m_contentBrowser(editor) {}
 
 EditorEntityEditorUVE::~EditorEntityEditorUVE() {
     m_editor.m_openBlueprintProviderUVE = nullptr;
@@ -290,10 +307,18 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
         }
     }
 
-    auto frame = prism::make<prism::Border>();
+    auto frame = prism::make<ContentKeysUVE>();
+    frame->onToggle = [this] { ToggleContentDrawerUVE(); };
     frame->setBackground(prism::ThemeColor(&prism::Theme::window));
     frame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
     frame->setChild(window);
+    // Docked last time: the Content Browser comes back as a tab.
+    m_contentFrame.reset();
+    m_drawerPopup.reset();
+    m_contentDocked = false;
+    if (m_editor.m_entityContentDocked) {
+        SetContentDockedUVE(true);
+    }
     return frame;
 }
 
@@ -676,6 +701,8 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildCentreUVE() {
     m_dockPages->addPage(PanelUVE(m_problems));
     m_dockPages->addPage(PanelUVE(m_findTable));
     m_dockPages->addPage(PanelUVE(m_diffTable));
+    m_contentDockHolder = prism::make<prism::Border>();
+    m_dockPages->addPage(m_contentDockHolder);
     m_dockPages->setActiveIndex(kConsolePageUVE);
     m_dockArea = m_dockPages;
     m_problemsPanel = m_dockPages;
@@ -703,7 +730,13 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildDockBarUVE() {
         {"Compile Results", prism::Icon::CompileResults},
         {"Find Results", prism::Icon::FindResults},
         {"Diff", prism::Icon::DiffView},
+        {"Content Browser", prism::Icon::AssetBrowser},
     }};
+    // The Content Drawer first, as the level's bottom bar has it.
+    m_drawerButton = prism::make<prism::Button>("Content Drawer", prism::Icon::AssetBrowser, prism::ButtonStyle::Toolbar);
+    m_drawerButton->setTooltip("The project's content, sliding up over the bottom (Ctrl+Space)");
+    m_drawerButton->onClick = [this] { ToggleContentDrawerUVE(); };
+    bar->add(m_drawerButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     m_dockTabs.clear();
     for (std::size_t i = 0; i < kTabs.size(); ++i) {
         auto tab = prism::make<prism::Button>(kTabs[i].label, kTabs[i].icon, prism::ButtonStyle::Toolbar);
@@ -711,7 +744,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildDockBarUVE() {
         tab->setChecked(static_cast<int>(i) == kConsolePageUVE);
         tab->onClick = [this, index = static_cast<int>(i)] { ShowDockPanelUVE(index, false); };
         // The animation tabs come with their objects (SyncAnimationTabsUVE).
-        tab->setVisible(i != kSequencerPageUVE && i != kGraphPageUVE);
+        tab->setVisible(i != kSequencerPageUVE && i != kGraphPageUVE && (i != kContentPageUVE || m_contentDocked));
         m_dockTabs.push_back(tab);
         bar->add(tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     }
@@ -731,6 +764,120 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildDockBarUVE() {
     border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 0.0F));
     border->setChild(bar);
     return border;
+}
+
+prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildContentFrameUVE() {
+    // Header: what it is, and where it lives (drawer or dock); under it the Content Browser.
+    auto header = prism::hbox(6.0F);
+    header->setPadding(prism::Margin(8.0F, 3.0F, 6.0F, 3.0F));
+    auto title = prism::make<prism::Label>("Content Browser", prism::FontRole::Semibold);
+    header->add(title, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    header->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    m_contentDockToggle = prism::make<prism::Button>(m_contentDocked ? "Undock to Drawer" : "Dock in Layout", prism::Icon::LayoutViewport,
+                                                     prism::ButtonStyle::Toolbar);
+    m_contentDockToggle->setTooltip("Keep it as a tab of the dock, or back to a drawer that slides up");
+    m_contentDockToggle->onClick = [this] { SetContentDockedUVE(!m_contentDocked); };
+    header->add(m_contentDockToggle, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
+    auto headerBar = prism::make<prism::Border>();
+    headerBar->setBackground(prism::ThemeColor(&prism::Theme::header));
+    headerBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+    headerBar->setChild(header);
+    auto column = prism::vbox();
+    column->add(headerBar);
+    column->add(m_contentBrowser.BuildUVE(), prism::Slot{1.0F});
+    auto frame = prism::make<prism::Border>();
+    frame->setBackground(prism::ThemeColor(&prism::Theme::panel));
+    frame->setBorder(prism::ThemeColor(&prism::Theme::borderStrong), prism::Margin(1.0F));
+    frame->setChild(column);
+    return frame;
+}
+
+void EditorEntityEditorUVE::CloseContentDrawerUVE() {
+    if (m_drawerPopup && prism::Application::exists()) {
+        const std::shared_ptr<prism::Widget> popup = m_drawerPopup;
+        m_drawerPopup.reset();
+        prism::Application::get().closePopup(popup.get());
+    }
+    if (m_drawerButton) {
+        m_drawerButton->setChecked(false);
+    }
+}
+
+void EditorEntityEditorUVE::ToggleContentDrawerUVE() {
+    if (!prism::Application::exists()) {
+        return;
+    }
+    if (!m_contentFrame) {
+        m_contentFrame = BuildContentFrameUVE();
+    }
+    if (m_contentDocked) {
+        ShowDockPanelUVE(kContentPageUVE, false);   // docked: the drawer button shows its tab
+        return;
+    }
+    if (m_drawerPopup) {
+        CloseContentDrawerUVE();
+        return;
+    }
+    // Over the bottom of the window, about 40% of its height, the dock bar's width.
+    const prism::Rect barRect = m_dockBar ? m_dockBar->rect() : prism::Rect{};
+    const float width = std::max(480.0F, barRect.w - 8.0F);
+    const float height = std::max(260.0F, barRect.y * 0.42F);
+    auto box = prism::make<prism::SizeBox>();
+    box->setWidthOverride(width);
+    box->setHeightOverride(height);
+    if (m_contentDockHolder) {
+        m_contentDockHolder->setChild(prism::make<prism::Spacer>());
+    }
+    box->setContent(m_contentFrame);
+    prism::PopupOptions options;
+    options.placement = prism::PopupPlacement::AtPoint;
+    options.anchor = prism::Rect{barRect.x + 4.0F, barRect.y - height - 2.0F, 0.0F, 0.0F};
+    options.dismissOnOutside = true;
+    options.shadow = true;
+    options.onClose = [this] {
+        m_drawerPopup.reset();
+        if (m_drawerButton) {
+            m_drawerButton->setChecked(false);
+        }
+    };
+    m_drawerPopup = box;
+    prism::Application::get().showPopup(box, options);
+    if (m_drawerButton) {
+        m_drawerButton->setCheckable(true);
+        m_drawerButton->setChecked(true);
+    }
+}
+
+void EditorEntityEditorUVE::SetContentDockedUVE(const bool docked) {
+    if (!m_contentFrame) {
+        m_contentFrame = BuildContentFrameUVE();
+    }
+    CloseContentDrawerUVE();
+    m_contentDocked = docked;
+    m_editor.m_entityContentDocked = docked;
+    if (m_contentDockToggle) {
+        m_contentDockToggle->setText(docked ? "Undock to Drawer" : "Dock in Layout");
+    }
+    if (m_dockTabs.size() == kDockPageCountUVE) {
+        m_dockTabs[kContentPageUVE]->setVisible(docked);
+    }
+    if (docked) {
+        if (m_contentDockHolder) {
+            m_contentDockHolder->setChild(m_contentFrame);
+        }
+        ShowDockPanelUVE(kContentPageUVE, true);
+    } else {
+        if (m_contentDockHolder) {
+            m_contentDockHolder->setChild(prism::make<prism::Spacer>());
+        }
+        if (m_dockPages && m_dockPages->activeIndex() == kContentPageUVE) {
+            ShowDockPanelUVE(kConsolePageUVE, true);
+        }
+        ToggleContentDrawerUVE();
+    }
+    if (prism::Application::exists()) {
+        prism::Application::get().invalidateLayout();
+    }
 }
 
 prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildSequencerPageUVE() {
@@ -2540,6 +2687,9 @@ void EditorEntityEditorUVE::RefreshUVE() {
             RefreshDesignerUVE();
         }
         m_dockPanels.RefreshUVE(m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kConsolePageUVE, false);
+        if (m_contentFrame && (m_drawerPopup || (m_contentDocked && m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kContentPageUVE))) {
+            m_contentBrowser.RefreshUVE();
+        }
     });
 }
 
