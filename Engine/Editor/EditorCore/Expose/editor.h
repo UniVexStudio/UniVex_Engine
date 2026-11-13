@@ -488,7 +488,18 @@ public:
 
     /// Selects the PRISM editor shell instead of the previous UI backend. Must be called before
     /// InitUVE(); `assetDir` holds PRISM's fonts, themes and locale tables.
-    void SetPrismUiEnabledUVE(bool enabled, std::filesystem::path assetDir = {});
+/// What the loading screen shows: the start of the editor (it covers the window) or work still
+    /// running after it (a small panel in a corner).
+    struct EditorLoadingStateUVE final {
+        bool startup = false;
+        bool busy = false;
+        float progress = 0.0F;
+        std::string step;
+        std::string detail;
+    };
+    [[nodiscard]] EditorLoadingStateUVE GetLoadingStateUVE() const;
+    void DismissStartupLoadingUVE() noexcept { m_startupLoading = false; }
+        void SetPrismUiEnabledUVE(bool enabled, std::filesystem::path assetDir = {});
     [[nodiscard]] bool IsPrismUiActiveUVE() const noexcept { return m_levelShell != nullptr; }
     /// Saves the current PRISM editor frame as PNG (false when the PRISM shell is not active).
     bool SavePrismScreenshotUVE(const std::filesystem::path& path);
@@ -2807,6 +2818,23 @@ private:
     /// Queues an import for every model source in `snapshot` that is not already in flight. An
     /// unchanged source is a cache hit in the import queue, so this costs a hash, not a re-import.
     void QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
+    /// A model's takes go into it a few at a time each frame (all at once without the PRISM UI,
+    /// where nothing draws between frames anyway), so a project of hundreds never stalls a frame.
+    void QueueModelAnimationImportUVE(const std::filesystem::path& absoluteSource);
+    void ProcessPendingModelAnimationImportsUVE(double budgetSeconds);
+    void UpdateStartupLoadingUVE();
+    [[nodiscard]] std::size_t PendingAnimationIconCountUVE() const;
+    std::deque<std::filesystem::path> m_pendingModelAnimations;
+    std::unordered_set<std::string> m_pendingModelAnimationKeys;
+    std::size_t m_modelAnimationBatchTotal = 0U;
+    std::size_t m_modelAnimationBatchDone = 0U;
+    /// The loading screen at start: until the project is scanned, its models imported and the
+    /// first animation previews drawn.
+    bool m_startupLoading = true;
+    int m_startupStep = 0;
+    std::chrono::steady_clock::time_point m_startupBegan{};
+    std::chrono::steady_clock::time_point m_startupStepBegan{};
+    std::size_t m_startupIconPeak = 0U;
     /// Collects finished auto-imports; a successful one refreshes the mesh thumbnails.
     void PollModelImportJobsUVE();
     /// Registers the converted mesh at `importedModel` and every published asset beside it -

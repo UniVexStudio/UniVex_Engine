@@ -514,3 +514,15 @@ const EditorUVE::AnimationIconUVE* EditorUVE::GetAnimationIconNowUVE(const std::
 }
 
 } // namespace UVE::Editor
+
+namespace UVE::Editor {
+
+std::size_t EditorUVE::PendingAnimationIconCountUVE() const {
+    if (m_animationIconWorker == nullptr) {
+        return 0U;
+    }
+    const std::scoped_lock lock(m_animationIconWorker->mutex);
+    return m_animationIconWorker->jobs.size();
+}
+
+} // namespace UVE::Editor
