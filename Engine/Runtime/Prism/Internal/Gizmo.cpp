@@ -678,6 +678,16 @@ bool GizmoDepth::visible(Vec2 p, float z) const {
   return z <= d + std::max(minTolerance, std::fabs(d) * bias);
 }
 
+bool GizmoDepth::visibleStrict(Vec2 p, float z) const {
+  // The nearest of a small neighbourhood: the depth is read at a coarser size, so a line on a surface's edge
+  // checks the surface beside it too.
+  float d = sample(p);
+  for (const Vec2 o : {Vec2{2, 0}, Vec2{-2, 0}, Vec2{0, 2}, Vec2{0, -2}}) d = std::min(d, sample(p + o));
+  if (!(d < farDepth)) return true;
+  z -= zOffset;
+  return z < d - std::max(minTolerance, std::fabs(d) * bias);
+}
+
 namespace {
 // Clips a segment to the near plane; false when it lies wholly behind it.
 bool clipNear(const GizmoCamera& cam, Vec3& a, Vec3& b) {
@@ -693,7 +703,7 @@ bool clipNear(const GizmoCamera& cam, Vec3& a, Vec3& b) {
 // behind the scene take `hiddenAlpha` more. Runs of equal look are joined into one line.
 template <class AlphaFn>
 void drawPieces(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, float width, const GizmoDepth* depth,
-                float hiddenAlpha, AlphaFn alphaAt, float pixelsPerPiece) {
+                float hiddenAlpha, AlphaFn alphaAt, float pixelsPerPiece, bool strict = false) {
   if (!clipNear(cam, a, b)) return;
   Vec2 pa, pb;
   if (!cam.project(a, pa) || !cam.project(b, pb)) return;
@@ -716,7 +726,7 @@ void drawPieces(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, fl
     if (!test) return true;
     Vec2 p;
     float z = 0;
-    return !cam.project(a + (b - a) * t, p, &z) || depth->visible(p, z);
+    return !cam.project(a + (b - a) * t, p, &z) || (strict ? depth->visibleStrict(p, z) : depth->visible(p, z));
   };
   // The pieces, at most `pixelsPerPiece` long ON SCREEN (a long world line in perspective has pieces near
   // the eye far longer than those far off, so equal steps in world space would step over a whole mesh),
@@ -875,7 +885,8 @@ void drawWorldGrid(Canvas& c, const GizmoCamera& cam, const WorldGrid& g, const 
         Vec3 p, q;
         if (dir == 0) { p = u * w + v * (fv - r); q = u * w + v * (fv + r); }
         else { p = v * w + u * (fu - r); q = v * w + u * (fu + r); }
-        drawPieces(c, cam, p, q, k, g.lineWidth, depth, 0.f, lodAlpha, 14.f);
+        // The grey lines go under whatever stands on them (a floor on the grid hides them; no fighting).
+        drawPieces(c, cam, p, q, k, g.lineWidth, depth, 0.f, lodAlpha, 6.f, true);
       }
     }
   };
@@ -887,14 +898,15 @@ void drawWorldGrid(Canvas& c, const GizmoCamera& cam, const WorldGrid& g, const 
   const float r = reach;
   const auto axisLine = [&](Vec3 dir, int axisId, float along) {
     const Vec3 p = dir * (along - r), q = dir * (along + r);
-    drawPieces(c, cam, p, q, mix(g.axis[axisId], g.opacity), g.axisWidth, depth, 0.f, distAlpha, 14.f);
+    // The axes stay readable under a mesh: dimmed there, never chopped.
+    drawPieces(c, cam, p, q, mix(g.axis[axisId], g.opacity), g.axisWidth, depth, 0.4f, distAlpha, 6.f, true);
   };
   axisLine(u, uAxis, fu);
   axisLine(v, vAxis, fv);
   if (g.plane == WorldGrid::Plane::XZ) {
     const Vec3 p = nrm * (-r), q = nrm * r;
-    drawPieces(c, cam, p, q, mix(g.axis[nAxis], g.opacity * 0.8f), g.axisWidth, depth, 0.f,
-               [&](Vec3 at) { const float d = std::min(1.f, std::fabs(at.dot(nrm)) / r); return 1.f - d * d; }, 14.f);
+    drawPieces(c, cam, p, q, mix(g.axis[nAxis], g.opacity * 0.8f), g.axisWidth, depth, 0.4f,
+               [&](Vec3 at) { const float d = std::min(1.f, std::fabs(at.dot(nrm)) / r); return 1.f - d * d; }, 6.f, true);
   }
 }
 
