@@ -559,6 +559,10 @@ public:
         /// A colour of its own (the Retarget window's joint colours); otherwise the selection look.
         bool hasColour = false;
         std::array<float, 3> colour{};
+        /// Only the joint (a twist bone on the way down its limb): no blade of its own.
+        bool jointOnly = false;
+        /// A helper (root, IK target, socket): a marker, tied to its parent by a dashed line.
+        bool helper = false;
     };
 
     /// One world-space segment of a collider wireframe, as the viewport renderer wants it: plain
@@ -1827,7 +1831,8 @@ private:
         std::shared_ptr<Core::DocumentSceneUVE> scene;
         /// Everything of the preview stands under it.
         Scene::EntityUVE frameRoot = Scene::kInvalidEntityUVE;
-        /// The humanoid and the character stand under it; the viewport frames it.
+        /// The character stands under it; the viewport frames it. (The humanoid is drawn in the
+        /// window's source box, not in this world.)
         Scene::EntityUVE figures = Scene::kInvalidEntityUVE;
         Scene::EntityUVE sourceSkeleton = Scene::kInvalidEntityUVE;
         Scene::EntityUVE targetSkeleton = Scene::kInvalidEntityUVE;
@@ -1838,6 +1843,10 @@ private:
         /// The character the preview was built for; a change rebuilds it.
         std::filesystem::path builtFor;
         bool frameRequested = false;
+        /// The character's bone picked in the window (the source box or the bone list), lit in the preview.
+        std::string highlightBone;
+        /// How tall the character stands (metres), for framing it.
+        float figureHeight = 1.8F;
     };
     /// Makes the preview's own world. False when the editor cannot make one.
     [[nodiscard]] bool BeginRetargetPreviewUVE();
@@ -1851,7 +1860,7 @@ private:
     void WithRetargetSceneUVE(const std::function<void()>& work);
     /// True while the preview's world is the active document.
     bool m_retargetSceneActive = false;
-    /// Builds the world: a sun, the humanoid and the character side by side (the studio view draws the rest).
+    /// Builds the world: a sun and the character alone, in the middle (the studio view draws the rest).
     void RebuildRetargetPreviewUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile);
     void BuildRetargetPreviewWorldUVE(const RetargetPlanUVE& plan, const std::filesystem::path& modelFile);
     /// The Retarget window's work, called every frame while it is open: a finished job's result,
