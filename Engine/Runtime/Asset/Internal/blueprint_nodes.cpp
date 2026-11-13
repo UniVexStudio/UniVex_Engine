@@ -225,6 +225,8 @@ using Pin = BlueprintPinSpecUVE;
            {Pin{"Widget", T::String, "ComboBox"}, Pin{"Index", T::Int, "0"}}, "ui.set_selected_index({1}, {2})", "dropdown combo choice");
     action("ui_add_option", "Add Option", "User Interface|Combo Box", {Pin{"Widget", T::String, "ComboBox"}, Pin{"Option", T::String, "Option"}},
            "ui.add_option({1}, {2})", "dropdown combo item");
+    action("ui_show_screen", "Show Screen", "User Interface", {Pin{"Screen", T::String, "Main"}}, "ui.show_screen({1})",
+           "page menu switcher designer tab", "Shows one of the widget's screens (its Designer tabs) and hides the others");
     action("ui_show_mouse_cursor", "Set Show Mouse Cursor", "User Interface|Input", {Pin{"Show", T::Bool, "true"}}, "ui.show_cursor({1})",
            "pointer mouse cursor visible input mode ui", "Shows and frees the pointer so the UI can be clicked; false hides it for the game again");
     action("ui_remove", "Remove from Parent", "User Interface", {}, "ui.remove()", "close hide widget",

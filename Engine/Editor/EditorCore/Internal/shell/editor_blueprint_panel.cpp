@@ -206,6 +206,7 @@ std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() cons
                 case K::ComboBox:
                     return {"ui_on_changed", "ui_get_selected_option", "ui_get_selected_index", "ui_set_selected_index", "ui_add_option",
                             "ui_set_visibility"};
+                case K::Canvas: return {"ui_show_screen"};
                 default: return {"ui_set_visibility"};
             }
         };

@@ -90,6 +90,7 @@
 #include "prefab_instance_component.h"
 #include "script_component.h"
 #include "ui_button_component.h"
+#include "canvas_component.h"
 #include "ui_text_component.h"
 #include "widget_blueprint_asset.h"
 #include "blueprint_asset.h"
@@ -1274,6 +1275,10 @@ std::optional<std::filesystem::path> EditorUVE::CreateWidgetBlueprintAssetUVE(co
         return entity;
     };
     entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name = path.stem().string();
+    if (entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(root)) {
+        // Laid out on this device's screen, fitted to whatever screen it is shown on.
+        entityManager.GetComponentUVE<Scene::CanvasComponentUVE>(root).scaleWithScreen = true;
+    }
     Scene::ScriptComponentUVE script;
     script.scriptAssetPath = projectPath;
     if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(root)) {

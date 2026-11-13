@@ -1487,6 +1487,29 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
         uiTransform.inputOffsetX = m_uiPointerOriginUVE->x * uiTransform.inputScaleX;
         uiTransform.inputOffsetY = m_uiPointerOriginUVE->y * uiTransform.inputScaleY;
     }
+    // Scale With Screen: a canvas laid out for a reference resolution is fitted to the screen it is
+    // shown on - the editor's view, the window, a phone - whole and centred, so what the Designer
+    // showed is what any player sees.
+    if (const std::optional<Math::Vector2UVE> reference = ScaledCanvasReferenceUVE()) {
+        Math::Vector2UVE target{0.0F, 0.0F};
+        if (m_uiViewportSizeUVE.has_value()) {
+            target = *m_uiViewportSizeUVE;
+        } else if (m_windowManager != nullptr) {
+            float contentX = 1.0F;
+            float contentY = 1.0F;
+            m_windowManager->GetContentScaleUVE(contentX, contentY);
+            target = Math::Vector2UVE{static_cast<float>(m_windowManager->GetWidthUVE()) / std::max(contentX, 0.01F),
+                                      static_cast<float>(m_windowManager->GetHeightUVE()) / std::max(contentY, 0.01F)};
+        }
+        if (target.x > 0.0F && target.y > 0.0F && reference->x > 0.0F && reference->y > 0.0F) {
+            const float fit = std::min(target.x / reference->x, target.y / reference->y);
+            uiTransform.scaleX = fit;
+            uiTransform.scaleY = fit;
+            uiTransform.offsetX = (target.x - reference->x * fit) * 0.5F;
+            uiTransform.offsetY = (target.y - reference->y * fit) * 0.5F;
+            m_uiRuntime.SetViewportSizeUVE(*reference);
+        }
+    }
     m_uiRuntime.SetCoordinateTransformUVE(uiTransform);
 
     // Whether a text is translated is its resolved Auto Translate mode, asked of the scene graph so
@@ -1512,6 +1535,46 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
         SyncUIView3DStagesUVE(dt);
     }
     m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem, localization);
+}
+
+std::optional<Math::Vector2UVE> EngineCoreUVE::ScaledCanvasReferenceUVE() {
+    // The first shown top-level Canvas that scales with the screen decides the fit.
+    std::optional<Math::Vector2UVE> reference;
+    m_entityManager->ForEachUVE<Scene::CanvasComponentUVE>([&](const Scene::EntityUVE entity, const Scene::CanvasComponentUVE& canvas) {
+        if (reference.has_value() || !canvas.visible || !canvas.scaleWithScreen ||
+            canvas.renderMode != Scene::CanvasRenderModeUVE::ScreenSpaceOverlay) {
+            return;
+        }
+        if (m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+            const Scene::EntityUVE parent = m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+            if (parent != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(parent) &&
+                m_entityManager->HasComponentUVE<Scene::CanvasComponentUVE>(parent)) {
+                return;   // a screen inside a widget: its widget's root decides
+            }
+        }
+        reference = canvas.referenceResolution.x > 0.0F && canvas.referenceResolution.y > 0.0F ? canvas.referenceResolution
+                                                                                              : DeviceScreenSizeUVE();
+    });
+    return reference;
+}
+
+Math::Vector2UVE EngineCoreUVE::DeviceScreenSizeUVE() {
+    // The device's own screen (the primary monitor), read once.
+    if (!m_deviceScreenSizeUVE.has_value()) {
+        Math::Vector2UVE size{1920.0F, 1080.0F};
+        if (m_windowManager != nullptr) {
+            for (const Window::MonitorInfoUVE& monitor : m_windowManager->EnumerateMonitorsUVE()) {
+                if (monitor.width > 0U && monitor.height > 0U) {
+                    size = Math::Vector2UVE{static_cast<float>(monitor.width), static_cast<float>(monitor.height)};
+                    if (monitor.isPrimary) {
+                        break;
+                    }
+                }
+            }
+        }
+        m_deviceScreenSizeUVE = size;
+    }
+    return *m_deviceScreenSizeUVE;
 }
 
 Scene::EntityUVE EngineCoreUVE::FindWidgetStageUVE(Scene::EntityUVE widget) const {

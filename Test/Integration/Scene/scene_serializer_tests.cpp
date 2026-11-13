@@ -2588,13 +2588,15 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_LayoutContainer_RoundTripsExactly) {
     std::filesystem::remove(path);
 }
 
-TEST_F(SceneSerializerUVETest, MetadataPilot_CanvasWritesExactlyItsTwoPropertyKeys) {
+TEST_F(SceneSerializerUVETest, MetadataPilot_CanvasWritesExactlyItsPropertyKeys) {
     // The Tier 1.5 pilot: Canvas has no hand-written JSON on either side, so this pins the
     // generic property writer's exact output shape for it.
     const EntityUVE entity = entityManager.CreateEntityUVE();
     CanvasComponentUVE canvas{};
     canvas.visible = false;
     canvas.sortOrder = -5;
+    canvas.scaleWithScreen = true;
+    canvas.referenceResolution = Math::Vector2UVE{1280.0F, 720.0F};
     entityManager.AddComponentUVE<CanvasComponentUVE>(entity, canvas);
 
     const std::optional<SceneSnapshotUVE> snapshot =
@@ -2607,9 +2609,13 @@ TEST_F(SceneSerializerUVETest, MetadataPilot_CanvasWritesExactlyItsTwoPropertyKe
     const nlohmann::json payload = nlohmann::json::parse(payloadText);
     const nlohmann::json& canvasJson =
         payload.at("entities").at(0).at("components").at("CanvasComponentUVE");
-    EXPECT_EQ(canvasJson.size(), 2U);
+    // Visible, Sort Order, and the Scale With Screen pair a Widget Blueprint's root uses.
+    EXPECT_EQ(canvasJson.size(), 4U);
     EXPECT_EQ(canvasJson.at("visible").get<bool>(), false);
     EXPECT_EQ(canvasJson.at("sortOrder").get<std::int32_t>(), -5);
+    EXPECT_EQ(canvasJson.at("scaleWithScreen").get<bool>(), true);
+    EXPECT_FLOAT_EQ(canvasJson.at("referenceResolution").at(0).get<float>(), 1280.0F);
+    EXPECT_FLOAT_EQ(canvasJson.at("referenceResolution").at(1).get<float>(), 720.0F);
 }
 
 TEST_F(SceneSerializerUVETest, MetadataPilot_CanvasMissingKeysLoadFactoryDefaults) {

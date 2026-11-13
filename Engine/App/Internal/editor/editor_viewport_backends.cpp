@@ -1099,6 +1099,7 @@ public:
         // the pointer is measured from the view's corner, not the window's.
         if (context_ == UVE::Editor::EditorUVE::ViewportContextUVE::Main) {
             engine_.SetUIPointerOriginUVE(In().imageOrigin);
+            engine_.SetUIViewportSizeUVE(UVE::Math::Vector2UVE{std::floor(availableSize.x), std::floor(availableSize.y)});
             if (!engine_.HasMouseCursorHandlerUVE()) {
                 // Set Show Mouse Cursor in Play frees the editor's view pointer for the game's UI.
                 engine_.SetMouseCursorHandlerUVE([this](const bool show) { editor_.SetGameMouseCapturedUVE(!show); });

@@ -39,6 +39,8 @@
 #include "ui_layout_container_component.h"
 #include "ui_scroll_container_component.h"
 #include "ui_view_3d_component.h"
+#include "monitor_info.h"
+#include "i_window_manager.h"
 #include "i_scene_serializer.h"
 #include "engine_services.h"
 #include "i_scene_graph.h"
@@ -232,7 +234,8 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
             const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
             for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
                 const std::optional<WidgetKindUVE> kind = ClassifyWidgetUVE(em, object);
-                if (kind.has_value() && *kind != WidgetKindUVE::Canvas && em.HasComponentUVE<Scene::NameComponentUVE>(object)) {
+                const bool screen = kind == WidgetKindUVE::Canvas && object != m_editor.GetEntityEditorRootUVE();
+                if (kind.has_value() && (*kind != WidgetKindUVE::Canvas || screen) && em.HasComponentUVE<Scene::NameComponentUVE>(object)) {
                     widgets.emplace_back(em.GetComponentUVE<Scene::NameComponentUVE>(object).name, *kind);
                 }
             }
@@ -968,6 +971,15 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
     });
     const std::string active = m_blueprintMode ? m_blueprintPanel.PathUVE() : std::string{};
     std::string signature = active + (m_blueprintPanel.DirtyUVE() ? "*" : "") + (m_stageMode ? "S" : "") + "|";
+    if (m_widgetMode) {
+        const Scene::IEntityManagerUVE& screenEm = m_editor.m_services->GetEntityManagerUVE();
+        for (const Scene::EntityUVE screen : WidgetScreensUVE()) {
+            signature += (screen == m_activeScreen ? "*" : "") +
+                         (screenEm.HasComponentUVE<Scene::NameComponentUVE>(screen) ? screenEm.GetComponentUVE<Scene::NameComponentUVE>(screen).name
+                                                                                 : std::string()) + ";";
+        }
+        signature += std::to_string(static_cast<int>(m_designer ? m_designer->WidthUVE() : 0.0F));
+    }
     for (const OpenBlueprintEntryUVE& entry : m_openBlueprints) {
         signature += entry.path + ";";
     }
@@ -978,25 +990,56 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
     m_crumbRow->clearChildren();
     if (m_widgetMode) {
         // Designer | Graph: the widget's screen, or its graph.
-        auto designer = prism::make<prism::Button>("Designer", prism::Icon::LayoutViewport, prism::ButtonStyle::Toolbar);
-        designer->setCheckable(true);
-        designer->setChecked(!m_blueprintMode);
-        designer->setTooltip("Designer: lay out the widget's text, buttons and images");
-        designer->onClick = [this] { SetBlueprintModeUVE(false); };
+        // One Designer tab per screen (none: the widget is one screen), then + for another.
+        const std::vector<Scene::EntityUVE> screens = WidgetScreensUVE();
+        const Scene::IEntityManagerUVE& screenEm = m_editor.m_services->GetEntityManagerUVE();
+        const bool designerPage = !m_blueprintMode && !m_stageMode;
+        for (const Scene::EntityUVE screen : screens) {
+            const std::string name = screenEm.HasComponentUVE<Scene::NameComponentUVE>(screen)
+                                         ? screenEm.GetComponentUVE<Scene::NameComponentUVE>(screen).name
+                                         : std::string("Screen");
+            auto tab = prism::make<prism::Button>(name, prism::Icon::LayoutViewport, prism::ButtonStyle::Toolbar);
+            tab->setCheckable(true);
+            const bool active = screen == m_activeScreen;
+            tab->setChecked(designerPage && active);
+            tab->setTooltip("Designer: the " + name + " screen. Click it again to rename or delete it");
+            tab->onClick = [this, screen, active, designerPage] {
+                if (active && designerPage) {
+                    ShowScreenSettingsUVE(screen);
+                    return;
+                }
+                m_activeScreen = screen;
+                m_designerSignature = 0;
+                SetWidgetPageUVE(0);
+            };
+            m_crumbRow->add(tab, CentreUVE());
+        }
+        if (screens.empty()) {
+            auto designer = prism::make<prism::Button>("Designer", prism::Icon::LayoutViewport, prism::ButtonStyle::Toolbar);
+            designer->setCheckable(true);
+            designer->setChecked(designerPage);
+            designer->setTooltip("Designer: lay out the widget's text, buttons and images");
+            designer->onClick = [this] { SetWidgetPageUVE(0); };
+            m_crumbRow->add(designer, CentreUVE());
+        }
+        auto addScreen = prism::make<prism::Button>("", prism::Icon::Plus, prism::ButtonStyle::Toolbar);
+        addScreen->setTooltip("Add a screen: another Designer (Settings, Pause, Credits ...) run by the same Graph");
+        addScreen->onClick = [this] { AddWidgetScreenUVE(); };
+        m_crumbRow->add(addScreen, CentreUVE());
+        auto bar0 = prism::make<prism::Label>("|", prism::FontRole::Small);
+        bar0->setColor(prism::ThemeColor(&prism::Theme::textDim));
+        m_crumbRow->add(bar0, CentreUVE());
         auto graph = prism::make<prism::Button>(std::string("Graph") + (m_blueprintPanel.DirtyUVE() ? " *" : ""), prism::Icon::BlueprintClass,
                                                 prism::ButtonStyle::Toolbar);
         graph->setCheckable(true);
         graph->setChecked(m_blueprintMode);
         graph->setTooltip("Graph: what the widget does (On Button Clicked, Set Text ...)");
         graph->onClick = [this] { OpenWidgetGraphUVE(); };
-        designer->setChecked(!m_blueprintMode && !m_stageMode);
-        designer->onClick = [this] { SetWidgetPageUVE(0); };
         auto stage = prism::make<prism::Button>("Stage", prism::Icon::Cube, prism::ButtonStyle::Toolbar);
         stage->setCheckable(true);
         stage->setChecked(!m_blueprintMode && m_stageMode);
         stage->setTooltip("Stage: the 3D world a 3D View shows its asset in - floor, lights, props, StageCamera, ModelSpot");
         stage->onClick = [this] { SetWidgetPageUVE(2); };
-        m_crumbRow->add(designer, CentreUVE());
         m_crumbRow->add(graph, CentreUVE());
         m_crumbRow->add(stage, CentreUVE());
         if (!m_blueprintMode && !m_stageMode && m_designer) {
@@ -1151,8 +1194,34 @@ void EditorEntityEditorUVE::RefreshDesignerUVE() {
         return prism::Color(byte(c.x), byte(c.y), byte(c.z), byte(alpha));
     };
     const auto fraction = [](const float value, const float lo, const float hi) { return hi > lo ? (value - lo) / (hi - lo) : 0.0F; };
+    // Only the active screen's widgets (a widget with screens shows one at a time).
+    const Scene::EntityUVE screenRoot = DesignerParentUVE();
+    const bool screened = screenRoot != m_editor.GetEntityEditorRootUVE();
+    const auto onScreen = [&](Scene::EntityUVE entity) {
+        if (!screened) {
+            return true;
+        }
+        for (int depth = 0; depth < 256 && em.IsAliveUVE(entity); ++depth) {
+            if (entity == screenRoot) {
+                return true;
+            }
+            if (!em.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+                return false;
+            }
+            entity = em.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+        }
+        return false;
+    };
+    HashUVE(signature, (static_cast<std::uint64_t>(screenRoot.generation) << 32U) | screenRoot.index);
+    // The screen size: the widget's reference resolution, else this device's.
+    if (const Math::Vector2UVE design = DesignResolutionUVE();
+        design.x != m_designer->WidthUVE() || design.y != m_designer->HeightUVE()) {
+        m_designer->SetResolutionUVE(design.x, design.y);
+        m_crumbSignature.clear();
+        m_designerSignature = 0;
+    }
     for (const Scene::EntityUVE entity : m_editor.CollectEntityEditorObjectsUVE()) {
-        if (!em.IsAliveUVE(entity)) {
+        if (!em.IsAliveUVE(entity) || !onScreen(entity)) {
             continue;
         }
         WidgetDesignerViewUVE::ItemUVE item;
@@ -1597,13 +1666,24 @@ void EditorEntityEditorUVE::ShowResolutionMenuUVE() {
     };
     std::vector<prism::MenuItem> items;
     items.push_back(prism::MenuItem::Header("SCREEN SIZE"));
+    {
+        Math::Vector2UVE device{1920.0F, 1080.0F};
+        for (const Window::MonitorInfoUVE& monitor : m_editor.m_services->GetWindowManagerUVE().EnumerateMonitorsUVE()) {
+            if (monitor.width > 0U && monitor.height > 0U) {
+                device = Math::Vector2UVE{static_cast<float>(monitor.width), static_cast<float>(monitor.height)};
+                if (monitor.isPrimary) {
+                    break;
+                }
+            }
+        }
+        prism::MenuItem automatic = prism::MenuItem::Item(
+            "Auto - this device  " + std::to_string(static_cast<int>(device.x)) + " x " + std::to_string(static_cast<int>(device.y)),
+            [this] { SetDesignResolutionUVE(Math::Vector2UVE{0.0F, 0.0F}); });
+        items.push_back(std::move(automatic));
+    }
     for (const PresetUVE& preset : kPresetsUVE) {
         prism::MenuItem item = prism::MenuItem::Item(preset.label, [this, preset] {
-            if (m_designer) {
-                m_designer->SetResolutionUVE(preset.width, preset.height);
-            }
-            m_crumbSignature.clear();
-            SyncBlueprintCrumbsUVE();
+            SetDesignResolutionUVE(Math::Vector2UVE{preset.width, preset.height});
         });
         item.checked = m_designer && m_designer->WidthUVE() == preset.width && m_designer->HeightUVE() == preset.height;
         items.push_back(std::move(item));
@@ -1656,7 +1736,7 @@ void EditorEntityEditorUVE::ShowWidgetPaletteUVE() {
     // selected panel (a Vertical Box, a Scroll Box ...), else onto the Canvas at the first free
     // place for its size - never on top of another.
     Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    Scene::EntityUVE parent = m_editor.GetEntityEditorRootUVE();
+    Scene::EntityUVE parent = DesignerParentUVE();
     bool intoPanel = false;
     if (const Scene::EntityUVE selected = m_editor.GetSelectedEntityUVE(); em.IsAliveUVE(selected)) {
         if (const std::optional<WidgetKindUVE> kind = ClassifyWidgetUVE(em, selected);
@@ -1825,6 +1905,161 @@ void EditorEntityEditorUVE::ShowWidgetPaletteUVE() {
           });
     prism::showSearchMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
                           "Search widgets");
+}
+
+std::vector<Scene::EntityUVE> EditorEntityEditorUVE::WidgetScreensUVE() const {
+    std::vector<Scene::EntityUVE> screens;
+    const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+    if (root == Scene::kInvalidEntityUVE) {
+        return screens;
+    }
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, root)) {
+        if (em.HasComponentUVE<Scene::CanvasComponentUVE>(child)) {
+            screens.push_back(child);
+        }
+    }
+    return screens;
+}
+
+Scene::EntityUVE EditorEntityEditorUVE::DesignerParentUVE() {
+    const std::vector<Scene::EntityUVE> screens = WidgetScreensUVE();
+    if (screens.empty()) {
+        m_activeScreen = Scene::kInvalidEntityUVE;
+        return m_editor.GetEntityEditorRootUVE();
+    }
+    if (std::find(screens.begin(), screens.end(), m_activeScreen) == screens.end()) {
+        m_activeScreen = screens.front();
+    }
+    return m_activeScreen;
+}
+
+void EditorEntityEditorUVE::AddWidgetScreenUVE() {
+    // The first time, the widget's own widgets become its Main screen; then a new, hidden screen
+    // (the Graph's Show Screen brings it up) opens in the Designer.
+    const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+    if (root == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    const auto makeScreen = [&](const std::string& name, const bool visible) {
+        const Scene::EntityUVE screen = m_editor.CreateDocumentSceneObjectUVE(SceneObjectKindUVE::Canvas, root);
+        if (screen == Scene::kInvalidEntityUVE) {
+            return screen;
+        }
+        if (em.HasComponentUVE<Scene::NameComponentUVE>(screen)) {
+            em.GetComponentUVE<Scene::NameComponentUVE>(screen).name = name;
+        }
+        if (em.HasComponentUVE<Scene::CanvasComponentUVE>(screen)) {
+            em.GetComponentUVE<Scene::CanvasComponentUVE>(screen).visible = visible;
+        }
+        return screen;
+    };
+    std::vector<Scene::EntityUVE> screens = WidgetScreensUVE();
+    if (screens.empty()) {
+        const std::vector<Scene::EntityUVE> children = m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, root);
+        const Scene::EntityUVE main = makeScreen("Main", true);
+        if (main == Scene::kInvalidEntityUVE) {
+            return;
+        }
+        for (const Scene::EntityUVE child : children) {
+            const bool stage = em.HasComponentUVE<Scene::NameComponentUVE>(child) &&
+                               em.GetComponentUVE<Scene::NameComponentUVE>(child).name == Scene::kWidgetStageNameUVE;
+            if (child != main && !stage) {
+                static_cast<void>(m_editor.ReparentDocumentEntityUVE(child, main));
+            }
+        }
+        screens.push_back(main);
+    }
+    std::string name = "Screen" + std::to_string(screens.size() + 1U);
+    const Scene::EntityUVE made = makeScreen(name, false);
+    if (made != Scene::kInvalidEntityUVE) {
+        m_activeScreen = made;
+        m_editor.SelectEntityUVE(made);
+    }
+    m_designerSignature = 0;
+    SetWidgetPageUVE(0);
+}
+
+void EditorEntityEditorUVE::ShowScreenSettingsUVE(const Scene::EntityUVE screen) {
+    // Rename or delete a screen (its name is what the Graph's Show Screen calls it by).
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    const std::string current = em.HasComponentUVE<Scene::NameComponentUVE>(screen) ? em.GetComponentUVE<Scene::NameComponentUVE>(screen).name
+                                                                                    : std::string("Screen");
+    auto content = prism::vbox(6.0F);
+    content->add(prism::make<prism::Label>("Screen name (Show Screen uses it):"));
+    auto input = prism::make<prism::TextInput>(current, "Screen name");
+    content->add(input);
+    m_host.AppUVE().runInWindow(m_window, [this, screen, input, content] {
+        prism::showDialog(
+            "Screen", content,
+            {prism::DialogButton{"Rename", true,
+                                 [this, screen, input] {
+                                     const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
+                                     const std::string name = input->text();
+                                     if (!name.empty()) {
+                                         m_editor.SelectEntityUVE(screen);
+                                         static_cast<void>(m_editor.SetSelectedEntityNameUVE(name));
+                                     }
+                                     m_crumbSignature.clear();
+                                 }},
+             prism::DialogButton{"Delete Screen", false,
+                                 [this, screen] {
+                                     const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
+                                     m_editor.SelectEntityUVE(screen);
+                                     static_cast<void>(m_editor.DeleteSelectedEntityUVE());
+                                     m_activeScreen = Scene::kInvalidEntityUVE;
+                                     m_designerSignature = 0;
+                                     m_crumbSignature.clear();
+                                 }},
+             prism::DialogButton{"Cancel", false, [] {}}},
+            380.0F);
+    });
+}
+
+Math::Vector2UVE EditorEntityEditorUVE::DesignResolutionUVE() const {
+    const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    if (root != Scene::kInvalidEntityUVE && em.HasComponentUVE<Scene::CanvasComponentUVE>(root)) {
+        const Math::Vector2UVE reference = em.GetComponentUVE<Scene::CanvasComponentUVE>(root).referenceResolution;
+        if (reference.x > 0.0F && reference.y > 0.0F) {
+            return reference;
+        }
+    }
+    // Auto: this device's own screen.
+    Math::Vector2UVE device{1920.0F, 1080.0F};
+    for (const Window::MonitorInfoUVE& monitor : m_editor.m_services->GetWindowManagerUVE().EnumerateMonitorsUVE()) {
+        if (monitor.width > 0U && monitor.height > 0U) {
+            device = Math::Vector2UVE{static_cast<float>(monitor.width), static_cast<float>(monitor.height)};
+            if (monitor.isPrimary) {
+                break;
+            }
+        }
+    }
+    return device;
+}
+
+void EditorEntityEditorUVE::SetDesignResolutionUVE(const Math::Vector2UVE size) {
+    // Kept on the widget (its root Canvas), one undo step; the game fits the canvas to any screen.
+    const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    if (root == Scene::kInvalidEntityUVE || !em.HasComponentUVE<Scene::CanvasComponentUVE>(root)) {
+        return;
+    }
+    const Scene::EntityUVE previous = m_editor.GetSelectedEntityUVE();
+    Scene::CanvasComponentUVE next = em.GetComponentUVE<Scene::CanvasComponentUVE>(root);
+    next.referenceResolution = size;
+    next.scaleWithScreen = true;
+    m_editor.SelectEntityUVE(root);
+    if (const Core::TypeMetadataEntryUVE* const entry =
+            Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Scene::CanvasComponentUVE)))) {
+        static_cast<void>(m_editor.SetSelectedComponentValueUVE(*entry, &next));
+    }
+    if (previous != Scene::kInvalidEntityUVE && em.IsAliveUVE(previous)) {
+        m_editor.SelectEntityUVE(previous);
+    }
+    m_crumbSignature.clear();
+    m_designerSignature = 0;
 }
 
 void EditorEntityEditorUVE::SetWidgetPageUVE(const int page) {
@@ -2124,7 +2359,7 @@ void EditorEntityEditorUVE::RefreshComponentsUVE() {
                 const EditorIconsUVE::ImageUVE icon = WidgetIconUVE(*kind, 16);
                 node->image = icon.pixels;
                 node->imageSize = icon.size;
-                node->badge = WidgetKindLabelUVE(*kind);
+                node->badge = e == m_editor.GetEntityEditorRootUVE() ? std::string("Widget") : std::string(WidgetKindLabelUVE(*kind));
             }
         }
         if (m_editor.IsEntitySelectedUVE(e)) {
