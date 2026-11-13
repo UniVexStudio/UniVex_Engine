@@ -215,7 +215,11 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
             return result;
         }
         const HumanoidMatchUVE match = matchOf(*rig);
-        const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error);
+        // An all-but-complete character is renamed, not rebuilt: body bones are added only when it
+        // lacks many of them.
+        ConformOptionsUVE options;
+        options.addBodyBonesOnlyWhenLacking = true;
+        const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error, options);
         const Asset::MeshAssetUVE before = mesh;
         // The character keeps its own rest pose: no vertex moves (the A-pose is where clips take it).
         if (!conformed.has_value() || !ConformMeshUVE(mesh, *conformed, &error, SkinBlendUVE::DualQuaternion, ConformMeshModeUVE::KeepRestPose)) {
@@ -227,7 +231,8 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         char distortion[64];
         std::snprintf(distortion, sizeof(distortion), "; %.1f%% of edges changed by more than 10%%",
                       static_cast<double>(result.meshDistortion.fractionOverTenPercent) * 100.0);
-        model.note = std::to_string(conformed->skeleton.bones.size() - rig->bones.size()) + " bones added" + distortion;
+        const std::size_t added = conformed->skeleton.bones.size() > rig->bones.size() ? conformed->skeleton.bones.size() - rig->bones.size() : 0U;
+        model.note = (added == 0U ? std::string{"renamed only, no bone added"} : std::to_string(added) + " bones added") + distortion;
         model.mesh = std::move(mesh);
         planned.push_back(std::move(model));
         // The character's skeleton beside the model (what the editor builds its Skeleton3D from):
