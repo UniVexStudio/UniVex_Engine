@@ -163,6 +163,9 @@ struct GizmoDepth {
   float sample(Vec2 p) const;   // depth under canvas point p (+inf outside the buffer)
   // True when a point at canvas p and view depth z is in front of the scene there.
   bool visible(Vec2 p, float z) const;
+  // True only when the point is clearly in front of the scene (by the tolerance): a surface lying on it, such
+  // as a floor on the ground grid, hides it instead of fighting it.
+  bool visibleStrict(Vec2 p, float z) const;
 };
 
 // A world segment, depth-tested: the parts behind the scene are drawn at `hiddenAlpha` of the colour's alpha

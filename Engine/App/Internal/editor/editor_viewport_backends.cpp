@@ -115,7 +115,7 @@ void main() {
         discard; // the renderer drew nothing here; leave the backdrop and its depth alone
     }
     FragColor = vec4(meshColor.rgb, 1.0);
-    gl_FragDepth = (meshColor.a > 0.875) ? 0.0 : 0.999999;
+    gl_FragDepth = 0.0; // every covered pixel hides the grid: an edge or a soft surface too, never the grid over it
 }
 )";
 
