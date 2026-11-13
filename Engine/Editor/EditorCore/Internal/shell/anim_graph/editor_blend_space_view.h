@@ -7,6 +7,8 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace UVE::Editor {
 
@@ -30,10 +32,17 @@ public:
     bool onMouseMove(const prism::MouseEvent& e) override;
     bool onMouseUp(const prism::MouseEvent& e) override;
     bool onKeyDown(const prism::KeyEvent& e) override;
+    bool onMouseWheel(const prism::MouseEvent& e) override;
+    void onMouseLeave() override;
+    bool onDragOver(const prism::DragDropEvent& e) override;
+    void onDragLeave() override;
+    bool onDrop(const prism::DragDropEvent& e) override;
+    const std::string& tooltipAt(prism::Vec2 p) const override;
+    prism::Cursor cursor() const override;
     bool focusable() const override { return true; }
 
 private:
-    enum class DragUVE : std::uint8_t { None, Point, Cross };
+    enum class DragUVE : std::uint8_t { None, Point, Cross, Clip };
 
     [[nodiscard]] const Scene::AnimationGraphNodeUVE* SpaceUVE() const;
     [[nodiscard]] std::size_t SpaceIndexUVE() const;
@@ -46,12 +55,27 @@ private:
     void SetCrossUVE(const Scene::AnimationGraphNodeUVE& space, Math::Vector2UVE at);
     void ShowPointMenuUVE(prism::Vec2 at, int point);
     void AskClipUVE(prism::Vec2 at, Math::Vector2UVE position);
+    void ShowEmptyMenuUVE(prism::Vec2 at, Math::Vector2UVE position);
+    void AddPointUVE(Math::Vector2UVE position, Asset::AssetGuidUVE clip);
+    /// The animations list along the right: its area, a row's area, and the row under a point.
+    [[nodiscard]] prism::Rect StripUVE() const noexcept;
+    [[nodiscard]] prism::Rect StripRowUVE(std::size_t row) const noexcept;
+    [[nodiscard]] int StripRowAtUVE(prism::Vec2 screen) const;
+    void PaintStripUVE(prism::Canvas& c);
+    /// The grid step of an axis (the area over its divisions).
+    [[nodiscard]] float GridStepUVE(const Scene::AnimationGraphNodeUVE& space, bool y) const;
 
     EditorAnimGraphPanelUVE& m_panel;
     DragUVE m_drag = DragUVE::None;
     int m_dragPoint = -1;
     bool m_snap = true;
     prism::Vec2 m_mouse{};
+    std::vector<Asset::AssetGuidUVE> m_clips;
+    float m_stripScroll = 0.0F;
+    int m_stripHover = -1;
+    Asset::AssetGuidUVE m_dragClip{};
+    bool m_dropHot = false;
+    mutable std::string m_tip;
 };
 
 } // namespace UVE::Editor
