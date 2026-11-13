@@ -113,6 +113,20 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
                 plan.keptBones.push_back(rig.bones[bone].name);
             }
         }
+        // What Generate will add: helpers it lacks, and body bones only when it lacks many.
+        const Retarget::BodyBoneCountUVE body = Retarget::CountBodyBonesUVE(match, reference);
+        plan.bonesToAdd = body.missingHelpers + (Retarget::IsRigVeryLackingUVE(match, reference) ? body.missing : 0U);
+        plan.renameOnly = plan.bonesToAdd == 0U;
+        const bool lacking = Retarget::IsRigVeryLackingUVE(match, reference);
+        for (RetargetJointRowUVE& row : plan.joints) {
+            if (row.status != Retarget::JointStatusUVE::Missing || row.optional || row.referenceBone < 0) {
+                continue;
+            }
+            const Retarget::HumanoidBoneKindUVE kind = reference.info[static_cast<std::size_t>(row.referenceBone)].kind;
+            const bool helper = kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::IK ||
+                                kind == Retarget::HumanoidBoneKindUVE::Socket;
+            row.willMake = helper || lacking;
+        }
     }
 
     for (const std::filesystem::path& file : animations) {

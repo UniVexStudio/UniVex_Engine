@@ -147,12 +147,18 @@ namespace {
 
 /// Drops the optional bones conforming added (the correctives the rig lacked) together with every
 /// index that points at them, keeping any bone of the rig's own that sits under one.
-void PruneOptionalBonesUVE(ConformedRigUVE& out, const HumanoidReferenceUVE& reference) {
+void PruneAddedBonesUVE(ConformedRigUVE& out, const HumanoidReferenceUVE& reference, const bool optional, const bool body) {
     const std::size_t count = out.skeleton.bones.size();
     std::vector<bool> drop(count, false);
     for (std::size_t index = 0U; index < count; ++index) {
         const std::int32_t ref = out.referenceOfBone[index];
-        drop[index] = out.added[index] && ref >= 0 && reference.info[static_cast<std::size_t>(ref)].optional;
+        if (!out.added[index] || ref < 0) {
+            continue;
+        }
+        const HumanoidBoneInfoUVE& info = reference.info[static_cast<std::size_t>(ref)];
+        const bool isBody = info.kind == HumanoidBoneKindUVE::Body || info.kind == HumanoidBoneKindUVE::Finger ||
+                            info.kind == HumanoidBoneKindUVE::Twist;
+        drop[index] = (optional && info.optional) || (body && !info.optional && isBody);
     }
     // A kept bone keeps every bone above it.
     for (std::size_t index = 0U; index < count; ++index) {
@@ -450,10 +456,36 @@ std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig
     }
 
     // ---- Only what was asked for -----------------------------------------------------------------
-    if (!options.includeOptional) {
-        PruneOptionalBonesUVE(out, reference);
+    const bool pruneBody = options.addBodyBonesOnlyWhenLacking && !IsRigVeryLackingUVE(match, reference, options.lackingFraction);
+    if (!options.includeOptional || pruneBody) {
+        PruneAddedBonesUVE(out, reference, !options.includeOptional, pruneBody);
     }
     return out;
+}
+
+BodyBoneCountUVE CountBodyBonesUVE(const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference) {
+    BodyBoneCountUVE count;
+    for (std::size_t ref = 0U; ref < reference.info.size() && ref < match.joints.size(); ++ref) {
+        const HumanoidBoneInfoUVE& info = reference.info[ref];
+        if (info.optional) {
+            continue;
+        }
+        const bool missing = match.joints[ref].status == JointStatusUVE::Missing;
+        if (info.kind == HumanoidBoneKindUVE::Root || info.kind == HumanoidBoneKindUVE::IK || info.kind == HumanoidBoneKindUVE::Socket) {
+            count.missingHelpers += missing ? 1U : 0U;
+            continue;
+        }
+        if (info.kind == HumanoidBoneKindUVE::Body || info.kind == HumanoidBoneKindUVE::Finger || info.kind == HumanoidBoneKindUVE::Twist) {
+            ++count.total;
+            count.missing += missing ? 1U : 0U;
+        }
+    }
+    return count;
+}
+
+bool IsRigVeryLackingUVE(const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference, const float lackingFraction) {
+    const BodyBoneCountUVE count = CountBodyBonesUVE(match, reference);
+    return count.total > 0U && static_cast<float>(count.missing) > lackingFraction * static_cast<float>(count.total);
 }
 
 std::optional<RetargetSkeletonUVE> RigFromMeshUVE(const Asset::MeshAssetUVE& mesh, std::string* error) {

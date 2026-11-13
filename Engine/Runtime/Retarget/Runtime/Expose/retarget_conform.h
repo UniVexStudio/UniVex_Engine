@@ -75,7 +75,25 @@ struct ConformOptionsUVE final {
     /// gains only the core bones it is missing (a complete body gains just its root, IK targets
     /// and sockets).
     bool includeOptional = false;
+    /// Body bones (spine, limbs, fingers, twists) the rig lacks are added only when it lacks many
+    /// of them (more than `lackingFraction` of the humanoid's): a rig that is all but complete is
+    /// renamed, not rebuilt, and a bone it lacks is left out (a bone it has under one keeps it).
+    /// Root, IK targets and sockets are still added when missing.
+    bool addBodyBonesOnlyWhenLacking = false;
+    float lackingFraction = 0.25F;
 };
+
+/// How many body bones (spine, limbs, fingers, twists; not the optional correctives) `match` lacks,
+/// and how many the humanoid has.
+struct BodyBoneCountUVE final {
+    std::size_t missing = 0U;
+    std::size_t total = 0U;
+    /// Root, IK targets and sockets the rig lacks.
+    std::size_t missingHelpers = 0U;
+};
+[[nodiscard]] BodyBoneCountUVE CountBodyBonesUVE(const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference);
+/// Whether the rig lacks enough body bones that conforming adds them (see ConformOptionsUVE).
+[[nodiscard]] bool IsRigVeryLackingUVE(const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference, float lackingFraction = 0.25F);
 
 [[nodiscard]] std::optional<ConformedRigUVE> ConformSkeletonUVE(const RetargetSkeletonUVE& rig, const HumanoidMatchUVE& match,
                                                                 const HumanoidReferenceUVE& reference,

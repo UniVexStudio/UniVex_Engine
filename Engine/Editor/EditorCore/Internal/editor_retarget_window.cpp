@@ -237,6 +237,7 @@ void EditorUVE::TickRetargetWindowUVE() {
     if (window.planStale && !window.job.valid()) {
         const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
         window.plan = PlanRetargetUVE(modelFile, window.animations);
+        window.plan.alreadyRetargeted = !window.target.empty() && IsRetargetedModelCurrentUVE(window.target);
         window.planStale = false;
         ++window.planSerial;
         // The picture follows the plan: a new character, or files that just changed.
@@ -272,10 +273,11 @@ bool EditorUVE::StartRetargetUVE() {
     }
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     Retarget::RetargetFilesRequestUVE request;
-    request.model = plan.model;
+    // A character done already is left alone: only the animations are conformed.
+    request.model = plan.CharacterDoneUVE() ? std::filesystem::path{} : plan.model;
     request.animations = window.animations;
     request.backupRoot = project.contentRoot.parent_path() / ".retarget-backup";
-    window.jobModel = plan.model;
+    window.jobModel = request.model;
     window.status.clear();
     window.progress->done = 0U;
     window.progress->total = (request.model.empty() ? 0U : 1U) + request.animations.size();

@@ -447,6 +447,63 @@ TEST(RetargetConformUVETest, ConformSkeletonUVE_MakesOptionalBonesOnlyWhenAsked)
     }
 }
 
+TEST(RetargetConformUVETest, ConformSkeletonUVE_AnAllButCompleteRigIsRenamedNotRebuilt) {
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    ConformOptionsUVE renameFirst;
+    renameFirst.addBodyBonesOnlyWhenLacking = true;
+    renameFirst.includeOptional = true;
+    // A rig with every bone, helper and IK target: nothing is added.
+    const RetargetSkeletonUVE complete = reference.skeleton;
+    const HumanoidMatchUVE all = MatchHumanoidUVE(complete, reference);
+    EXPECT_FALSE(IsRigVeryLackingUVE(all, reference));
+    EXPECT_EQ(CountBodyBonesUVE(all, reference).missing, 0U);
+    const std::optional<ConformedRigUVE> same = ConformSkeletonUVE(complete, all, reference, nullptr, renameFirst);
+    ASSERT_TRUE(same.has_value());
+    EXPECT_EQ(same->skeleton.bones.size(), complete.bones.size());
+    EXPECT_TRUE(std::ranges::none_of(same->added, [](const bool added) { return added; }));
+
+    // One twist bone short (a leaf): still renamed only - the twist is not made.
+    std::int32_t twist = -1;
+    for (std::size_t bone = 0U; bone < reference.info.size(); ++bone) {
+        const bool leaf = std::ranges::none_of(complete.bones, [bone](const RetargetBoneUVE& b) { return b.parent == static_cast<std::int32_t>(bone); });
+        if (reference.info[bone].kind == HumanoidBoneKindUVE::Twist && leaf) {
+            twist = static_cast<std::int32_t>(bone);
+            break;
+        }
+    }
+    ASSERT_GE(twist, 0);
+    RetargetSkeletonUVE short1;
+    for (std::size_t bone = 0U; bone < complete.bones.size(); ++bone) {
+        if (static_cast<std::int32_t>(bone) == twist) {
+            continue;
+        }
+        RetargetBoneUVE copy = complete.bones[bone];
+        copy.parent = copy.parent > twist ? copy.parent - 1 : copy.parent;
+        short1.bones.push_back(std::move(copy));
+    }
+    const HumanoidMatchUVE oneShort = MatchHumanoidUVE(short1, reference);
+    EXPECT_FALSE(IsRigVeryLackingUVE(oneShort, reference));
+    const std::optional<ConformedRigUVE> renamed = ConformSkeletonUVE(short1, oneShort, reference, nullptr, renameFirst);
+    ASSERT_TRUE(renamed.has_value());
+    EXPECT_EQ(renamed->skeleton.bones.size(), short1.bones.size()) << "no bone added";
+    EXPECT_LT(FindBoneUVE(renamed->skeleton, complete.bones[static_cast<std::size_t>(twist)].name), 0);
+    // Without the option the twist is made, as before.
+    ConformOptionsUVE rebuild;
+    rebuild.includeOptional = true;
+    const std::optional<ConformedRigUVE> rebuilt = ConformSkeletonUVE(short1, oneShort, reference, nullptr, rebuild);
+    ASSERT_TRUE(rebuilt.has_value());
+    EXPECT_GE(FindBoneUVE(rebuilt->skeleton, complete.bones[static_cast<std::size_t>(twist)].name), 0);
+
+    // A rig lacking much (the test rig has no fingers or twists) still gets them all.
+    const TPoseRigUVE sparse;
+    const HumanoidMatchUVE few = MatchHumanoidUVE(sparse.skeleton, reference);
+    if (IsRigVeryLackingUVE(few, reference)) {
+        const std::optional<ConformedRigUVE> grown = ConformSkeletonUVE(sparse.skeleton, few, reference, nullptr, renameFirst);
+        ASSERT_TRUE(grown.has_value());
+        EXPECT_GE(FindBoneUVE(grown->skeleton, "UpperArmTwist1_L"), 0);
+    }
+}
+
 TEST(RetargetConformUVETest, ConformMeshUVE_KeepingTheRestPoseMovesNoVertex) {
     const TPoseRigUVE rig;
     const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();

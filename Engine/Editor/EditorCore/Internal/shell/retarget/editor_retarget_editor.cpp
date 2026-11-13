@@ -251,7 +251,7 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
             if (!joint.characterName.empty()) {
                 return joint.characterName;
             }
-            return joint.optional ? std::string("(optional, not made)") : std::string("(generated)");
+            return joint.optional ? std::string("(optional, not made)") : joint.willMake ? std::string("(generated)") : std::string("(none - renamed only)");
         }
         if (joint.characterName.empty()) {
             return joint.optional ? std::string{} : std::string("Rig Brain");
@@ -328,8 +328,10 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildTitleBarUVE() {
     menus->setItemPadding(12.0F);
     menus->addMenu("File", [this] {
         std::vector<prism::MenuItem> items;
-        items.push_back(prism::MenuItem::Item("Generate Retarget", [this] { static_cast<void>(m_editor.StartRetargetUVE()); }, "",
-                                              prism::Icon::Play));
+        prism::MenuItem generate = prism::MenuItem::Item("Generate Retarget", [this] { static_cast<void>(m_editor.StartRetargetUVE()); }, "",
+                                                         prism::Icon::Play);
+        generate.enabled = m_editor.m_retargetWindow.has_value() && m_editor.m_retargetWindow->plan.CanGenerateUVE();
+        items.push_back(std::move(generate));
         prism::MenuItem undo = prism::MenuItem::Item("Undo Last", [this] { static_cast<void>(m_editor.UndoLastRetargetUVE()); }, "",
                                                      prism::Icon::Undo);
         undo.enabled = m_editor.m_retargetWindow.has_value() && !m_editor.m_retargetWindow->lastBackup.empty();
@@ -518,6 +520,15 @@ void EditorRetargetWindowUVE::RefreshUVE() {
     }
     if (m_generate) {
         m_generate->setEnabled(!running && plan.CanGenerateUVE() && m_editor.IsAuthoringCommandAllowedUVE());
+        const std::string label = plan.modelReadable && plan.CharacterDoneUVE()
+                                      ? (plan.ReadyAnimationsUVE() > 0U ? "Retarget Animations" : "Already Retargeted")
+                                      : plan.renameOnly ? "Generate (Rename Only)" : "Generate Retarget";
+        if (m_generate->text() != label) {
+            m_generate->setText(label);
+        }
+        m_generate->setTooltip(plan.CharacterDoneUVE() ? "This character is retargeted already: Undo Last, or import it again, to retarget it anew"
+                               : plan.renameOnly       ? "The character has every bone, helper and IK target: its bones only take the engine's names"
+                                                       : "Adds the bones the character lacks, then names every bone as the engine's");
     }
     if (m_undo) {
         m_undo->setEnabled(!running && !window.lastBackup.empty());
@@ -539,8 +550,16 @@ void EditorRetargetWindowUVE::RefreshUVE() {
             std::string text = window.status;
             if (text.empty() && plan.modelReadable) {
                 char line[192];
-                std::snprintf(line, sizeof(line), "%zu of %zu animations will be conformed; %zu missing core bones will be made; the mesh keeps its rest pose.",
-                              plan.ReadyAnimationsUVE(), plan.animations.size(), plan.missingCore);
+                if (plan.CharacterDoneUVE()) {
+                    std::snprintf(line, sizeof(line), "The character is retargeted already (Undo Last or import it again to redo it); %zu of %zu animations will be conformed.",
+                                  plan.ReadyAnimationsUVE(), plan.animations.size());
+                } else if (plan.renameOnly) {
+                    std::snprintf(line, sizeof(line), "Rename only: every bone, helper and IK target is there, no bone is added; %zu of %zu animations will be conformed.",
+                                  plan.ReadyAnimationsUVE(), plan.animations.size());
+                } else {
+                    std::snprintf(line, sizeof(line), "%zu bones will be added; %zu of %zu animations will be conformed; the mesh keeps its rest pose.",
+                                  plan.bonesToAdd, plan.ReadyAnimationsUVE(), plan.animations.size());
+                }
                 text = line;
             }
             m_status->setText(text);
@@ -566,7 +585,9 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
         }
         const RetargetJointRowUVE& joint = plan.joints[ref];
         if (joint.characterName.empty()) {
-            return joint.optional ? "optional - the character has none" : "the character has none - Generate makes it";
+            return joint.optional   ? "optional - the character has none"
+                   : joint.willMake ? "the character has none - Generate makes it"
+                                    : "the character has none - left out (the rig is all but complete: renamed only)";
         }
         std::string text = "character: " + joint.characterName;
         if (joint.byBrain) {
