@@ -339,11 +339,11 @@ void BlendSpaceViewUVE::PaintStripUVE(prism::Canvas& c) {
         }
         const bool hot = m_stripHover == static_cast<int>(row) || (m_drag == DragUVE::Clip && m_dragClip == m_clips[row]);
         c.fillRoundRect(r, 4.0F, hot ? prism::Color(52, 58, 72) : prism::Color(32, 35, 42));
-        const prism::Rect iconRect{r.x + 3.0F, r.y + 3.0F, r.h - 6.0F, r.h - 6.0F};
+        const prism::Rect iconRect{r.x + 3.0F, r.y + 3.0F, (r.h - 6.0F) * 152.0F / 128.0F, r.h - 6.0F};
         const std::filesystem::path file = database.ResolveUVE(m_clips[row]);
         const EditorUVE::AnimationIconUVE* icon = file.empty() ? nullptr : m_panel.m_editor.GetAnimationIconUVE(file);
-        if (icon != nullptr && icon->size > 0) {
-            c.blitScaled(icon->pixels.data(), icon->size, icon->size, icon->size, iconRect);
+        if (icon != nullptr && icon->width > 0) {
+            c.blitScaled(icon->pixels.data(), icon->width, icon->height, icon->width, iconRect);
         } else {
             c.fillRoundRect(iconRect, 3.0F, prism::Color(40, 44, 54));
             prism::drawIcon(c, prism::Icon::AnimClip, iconRect.deflated(8.0F), t.textDim);
