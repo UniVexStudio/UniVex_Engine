@@ -18,6 +18,10 @@
 #include "prism/TextInput.h"
 #include "prism/Theme.h"
 #include "prism/Views.h"
+#include "prism/SearchMenu.h"
+#include "prism/Canvas.h"
+
+#include "editor_content_browser.h"
 
 #include <algorithm>
 #include <cmath>
@@ -77,6 +81,45 @@ const EditorUVE::AnimationTimelineViewUVE& EditorSequencerPanelUVE::ResyncUVE() 
     return m_view;
 }
 
+namespace {
+
+/// The panel's frame: Animation Libraries and clips dropped from the Content Browser land here.
+class SequencerDropUVE final : public prism::Border {
+public:
+    std::function<bool(const std::string&)> accepts;
+    std::function<bool(const std::string&)> dropped;
+    bool onDragOver(const prism::DragDropEvent& e) override {
+        const std::string* path = e.operation && e.operation->tag() == EditorContentBrowserUVE::kDragTagUVE ? e.operation->getPayload<std::string>() : nullptr;
+        const bool ok = path != nullptr && accepts && accepts(*path);
+        if (ok != m_hot) {
+            m_hot = ok;
+            invalidate();
+        }
+        return ok;
+    }
+    void onDragLeave() override {
+        m_hot = false;
+        invalidate();
+    }
+    bool onDrop(const prism::DragDropEvent& e) override {
+        const bool ok = onDragOver(e);
+        m_hot = false;
+        invalidate();
+        return ok && dropped && dropped(*e.operation->getPayload<std::string>());
+    }
+    void paint(prism::Canvas& c) override {
+        prism::Border::paint(c);
+        if (m_hot) {
+            c.strokeRoundRect(rect().deflated(2.0F), 4.0F, prism::theme().accent, 2);
+        }
+    }
+
+private:
+    bool m_hot = false;
+};
+
+} // namespace
+
 void EditorSequencerPanelUVE::AskNameUVE(const std::string& title, const std::string& initial,
                                              std::function<void(const std::string&)> done) {
     auto field = prism::make<prism::TextInput>(initial, "Name");
@@ -102,10 +145,17 @@ void EditorSequencerPanelUVE::AskNameUVE(const std::string& title, const std::st
 
 prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildUVE() {
     m_keys = prism::make<KeyframeViewUVE>(*this);
-    auto page = prism::vbox();
-    page->add(BuildToolbarUVE());
-    page->add(m_keys, prism::Slot{1.0F});
-    page->add(BuildStatusBarUVE());
+    auto column = prism::vbox();
+    column->add(BuildToolbarUVE());
+    column->add(m_keys, prism::Slot{1.0F});
+    column->add(BuildStatusBarUVE());
+    auto page = prism::make<SequencerDropUVE>();
+    page->accepts = [](const std::string& path) {
+        const std::string ext = std::filesystem::path{path}.extension().string();
+        return ext == ".uvanimlib" || ext == ".uvanim";
+    };
+    page->dropped = [this](const std::string& path) { return AcceptDroppedUVE(path); };
+    page->setChild(column);
     m_shownPlayer.clear();
     m_shownClip.clear();
     m_shownClock.clear();
@@ -125,6 +175,14 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildToolbarUVE() {
                                  "No animation");
     m_clipButton->onClick = [this] { ShowClipMenuUVE(); };
     row->add(m_clipButton, CentreSlotUVE());
+    // An Animation Library in and out, in plain sight (dropping a library on the panel loads it too).
+    m_loadLibraryButton = ToolButtonUVE(prism::Icon::AnimLibrary, "Load an Animation Library into this player (or link it live); "
+                                                                  "a library dropped on the panel loads too", "Load Library");
+    m_loadLibraryButton->onClick = [this] { ShowLoadLibraryMenuUVE(); };
+    row->add(m_loadLibraryButton, CentreSlotUVE());
+    auto exportLibrary = ToolButtonUVE(prism::Icon::Save, "Export this player's animations as a new Animation Library", "Export Library");
+    exportLibrary->onClick = [this] { ExportLibraryUVE(); };
+    row->add(exportLibrary, CentreSlotUVE());
     row->add(HSeparatorUVE(), CentreSlotUVE());
 
     const auto transport = [&](const prism::Icon icon, const char* tip, std::function<void()> action) {
@@ -461,7 +519,13 @@ void EditorSequencerPanelUVE::ShowClipMenuUVE() {
     if (!anyLibrary) {
         libraryMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
     }
-    items.push_back(prism::MenuItem::Sub("Add from Project", std::move(addMenu), prism::Icon::FolderOpen));
+    // A project may hold thousands of clips: a searchable list, not a submenu.
+    items.push_back(prism::MenuItem::Item("Add from Project...", [this, addMenu = std::move(addMenu)]() mutable {
+        if (m_clipButton) {
+            const prism::Rect r = m_clipButton->rect();
+            prism::showSearchMenu(std::move(addMenu), r, prism::PopupPlacement::Below, "Search animations");
+        }
+    }, "", prism::Icon::FolderOpen));
     items.push_back(prism::MenuItem::Sub("Import Library", std::move(libraryMenu), prism::Icon::AnimLibrary));
     if (component.libraryRef == Asset::AssetGuidUVE{}) {
         items.push_back(prism::MenuItem::Item("Link Library...", [this, player] {
@@ -479,6 +543,81 @@ void EditorSequencerPanelUVE::ShowClipMenuUVE() {
         const prism::Rect r = m_clipButton->rect();
         prism::showContextMenu(std::move(items), prism::Vec2{r.x, r.bottom()});
     }
+}
+
+void EditorSequencerPanelUVE::ShowLoadLibraryMenuUVE() {
+    const EditorUVE::AnimationTimelineViewUVE& view = ResyncUVE();
+    if (view.player == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    const Scene::EntityUVE player = view.player;
+    const Asset::ProjectFileSnapshotUVE project = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::vector<prism::MenuItem> load;
+    std::vector<prism::MenuItem> link;
+    for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
+        if (entry.kind != Asset::ProjectFileEntryKindUVE::File || entry.relativePath.extension() != ".uvanimlib") {
+            continue;
+        }
+        const std::filesystem::path absolute = project.contentRoot / entry.relativePath;
+        const std::string folder = entry.relativePath.parent_path().generic_string();
+        load.push_back(prism::MenuItem::Item(entry.relativePath.stem().string(), [this, player, absolute] {
+            static_cast<void>(m_editor.ImportAnimationLibraryIntoSequencerUVE(player, absolute));
+        }, folder.empty() ? "Content" : folder, prism::Icon::AnimLibrary));
+        link.push_back(prism::MenuItem::Item(entry.relativePath.stem().string(), [this, player, absolute] {
+            static_cast<void>(m_editor.LinkAnimationLibraryToSequencerUVE(player, absolute));
+        }, folder.empty() ? "Content" : folder, prism::Icon::AnimLibrary));
+    }
+    std::vector<prism::MenuItem> items;
+    items.push_back(prism::MenuItem::Item("Browse...", [this, player] {
+        m_editor.BrowseAnimationTimelineUVE(player, EditorUVE::AnimationTimelineBrowseUVE::ImportLibrary);
+    }, "", prism::Icon::Browse));
+    if (load.empty()) {
+        items.push_back(prism::MenuItem::Item("No Animation Library in the project", {}).disabled());
+    } else {
+        items.push_back(prism::MenuItem::Sub("Load into the Player", std::move(load), prism::Icon::AnimLibrary));
+        items.push_back(prism::MenuItem::Sub("Link Live (follows the library)", std::move(link), prism::Icon::AnimLibrary));
+    }
+    if (m_loadLibraryButton) {
+        const prism::Rect r = m_loadLibraryButton->rect();
+        prism::showSearchMenu(std::move(items), r, prism::PopupPlacement::Below, "Search libraries");
+    }
+}
+
+void EditorSequencerPanelUVE::ExportLibraryUVE() {
+    const EditorUVE::AnimationTimelineViewUVE& view = ResyncUVE();
+    if (view.player == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    const Scene::EntityUVE player = view.player;
+    AskNameUVE("Export Animation Library", "Animation Library", [this, player](const std::string& name) {
+        if (name.empty()) {
+            return;
+        }
+        // Beside the player's current clip, else at the top of Content.
+        const Asset::ProjectFileSnapshotUVE project = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        std::filesystem::path folder = project.contentRoot;
+        const std::filesystem::path clip = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(m_editor.m_timeline.clipGuid);
+        if (!clip.empty()) {
+            folder = clip.parent_path();
+        }
+        std::filesystem::path target = folder / (name + ".uvanimlib");
+        for (int n = 2; std::filesystem::exists(target); ++n) {
+            target = folder / (name + " " + std::to_string(n) + ".uvanimlib");
+        }
+        static_cast<void>(m_editor.ExportAnimationSequencerToLibraryUVE(player, target));
+    });
+}
+
+bool EditorSequencerPanelUVE::AcceptDroppedUVE(const std::string& contentRelative) {
+    const EditorUVE::AnimationTimelineViewUVE& view = ResyncUVE();
+    if (view.player == Scene::kInvalidEntityUVE) {
+        return false;
+    }
+    const std::filesystem::path absolute = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / contentRelative;
+    if (absolute.extension() == ".uvanimlib") {
+        return m_editor.ImportAnimationLibraryIntoSequencerUVE(view.player, absolute);
+    }
+    return m_editor.AddClipToAnimationSequencerUVE(view.player, absolute);
 }
 
 } // namespace UVE::Editor

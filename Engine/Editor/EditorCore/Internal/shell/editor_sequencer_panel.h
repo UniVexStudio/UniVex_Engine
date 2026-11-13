@@ -53,12 +53,19 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildStatusBarUVE();
     void ShowPlayerMenuUVE();
     void ShowClipMenuUVE();
+    /// Load Library: import a project's .uvanimlib into this player's list (or link it live).
+    void ShowLoadLibraryMenuUVE();
+    /// Export Library: this player's animations to a new .uvanimlib, named in a dialog.
+    void ExportLibraryUVE();
+    /// A file dropped on the panel: a library is loaded, a clip is added.
+    bool AcceptDroppedUVE(const std::string& contentRelative);
 
     EditorUVE& m_editor;
     EditorUVE::AnimationTimelineViewUVE m_view;
     std::shared_ptr<KeyframeViewUVE> m_keys;
     std::shared_ptr<prism::Button> m_playerButton;
     std::shared_ptr<prism::Button> m_clipButton;
+    std::shared_ptr<prism::Button> m_loadLibraryButton;
     std::shared_ptr<prism::Button> m_playButton;
     std::shared_ptr<prism::Button> m_loopButton;
     std::shared_ptr<prism::Button> m_keyButton;
