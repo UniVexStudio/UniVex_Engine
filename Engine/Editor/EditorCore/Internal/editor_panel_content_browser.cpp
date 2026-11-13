@@ -1300,7 +1300,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
             interact(entry, look, clicked);
             ImDrawList& drawList = *ImGui::GetWindowDrawList();
 
-            // 1. Unreal-style card background
+            // 1. Card-style background
             constexpr float rounding = 5.0F;
             const ImU32 cardBg = selected ? IM_COL32(38, 52, 78, 240)
                                           : (hovered ? IM_COL32(34, 38, 48, 220) : IM_COL32(24, 26, 32, 200));
@@ -1326,7 +1326,7 @@ void EditorUVE::DrawContentBrowserBodyUVE() {
                                   ImVec2{iconX + drawSize, iconY + drawSize});
             }
 
-            // 3. Dynamic category indicator bar (matching UE5 / project palette)
+            // 3. Dynamic category indicator bar (matching the project palette)
             ImU32 indicatorColor = IM_COL32(100, 116, 139, 255);
             switch (look.type) {
                 case ContentBrowserItemTypeUVE::Mesh:

@@ -56,7 +56,7 @@ namespace UniVexBuildTool
 
     /// <summary>
     /// Base class for all UniVex engine target descriptors ([Target].Target.cs).
-    /// Modeled after Unreal Engine's UnrealBuildTool (UBT) TargetRules.
+    /// Modeled on established engine build tools' TargetRules.
     /// </summary>
     public abstract class TargetRules
     {

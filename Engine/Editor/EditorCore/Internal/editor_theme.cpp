@@ -32,7 +32,7 @@ void ApplyEditorVisualThemeUVE(const EditorExtendedPreferencesUVE* const prefere
         style.ItemInnerSpacing = ImVec2{4.0F, 3.0F};
     }
     style.ScrollbarSize = 10.0F;
-    // Unreal Engine 5 design: dock panels and windows form a flat seamless grid (0px rounding),
+    // Desktop editor design: dock panels and windows form a flat seamless grid (0px rounding),
     // while interactive controls (inputs, buttons) use a subtle micro-chamfer.
     style.WindowRounding = 0.0F;
     style.ChildRounding = 0.0F;
@@ -118,7 +118,7 @@ void ApplyEditorVisualThemeUVE(const EditorExtendedPreferencesUVE* const prefere
     const float baseG = preferences != nullptr ? preferences->themeBaseColor.g : 0.13F;
     const float baseB = preferences != nullptr ? preferences->themeBaseColor.b : 0.15F;
 
-    // Accent reference tint (Unreal Electric Blue #0e70e3)
+    // Accent reference tint (Electric Blue #0e70e3)
     const float accR = preferences != nullptr ? preferences->themeAccentColor.r : 0.055F;
     const float accG = preferences != nullptr ? preferences->themeAccentColor.g : 0.440F;
     const float accB = preferences != nullptr ? preferences->themeAccentColor.b : 0.890F;

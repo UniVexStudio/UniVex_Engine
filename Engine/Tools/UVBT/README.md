@@ -1,12 +1,12 @@
 # UniVexBuildTool (UVBT)
 
-**UniVexBuildTool (UVBT)** is the dedicated C# build system for the **UniVex Engine**, directly inspired by Unreal Engine's UnrealBuildTool (UBT). It replaces complex CMake configurations with clean, type-safe, and modular C# build scripts (`*.Build.cs` and `*.Target.cs`).
+**UniVexBuildTool (UVBT)** is the dedicated C# build system for the **UniVex Engine**, built on the module-rules model of established engine build tools. It replaces complex CMake configurations with clean, type-safe, and modular C# build scripts (`*.Build.cs` and `*.Target.cs`).
 
 ---
 
 ## 🚀 Key Features
 
-1. **Unreal-Style C# Build Architecture**:
+1. **Module-Rules C# Build Architecture**:
    - Each engine module defines its build rules in a `[ModuleName].Build.cs` inheriting from `UniVexBuildTool.ModuleRules`.
    - Each target binary (Game, Editor, Tools, Tests) defines a `[TargetName].Target.cs` inheriting from `UniVexBuildTool.TargetRules`.
    - Dependency propagation: Public dependencies export include paths, macro definitions, and system libraries down the DAG.

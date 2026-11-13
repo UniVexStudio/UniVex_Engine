@@ -11,7 +11,7 @@
 
 namespace UVE::Editor {
 
-/// Where an "+ Add" menu creates objects. Each offers only what belongs there (Unreal's Place Actors
+/// Where an "+ Add" menu creates objects. Each offers only what belongs there (the standard Place Actors
 /// for a level, the Components panel's Add for a Blueprint):
 ///   Level  - what a level holds: meshes, lights, cameras, the environment and sky, volumes, world
 ///            streaming, physics props, UI. Not a character's parts (those are built in an Entity).

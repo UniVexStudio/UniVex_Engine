@@ -737,7 +737,7 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
         return;
     }
     auto grid = prism::make<prism::PropertyGrid>();
-    // The node picked in the graph, as Unreal's Details: what it is and every input it takes.
+    // The node picked in the graph, as the standard Details: what it is and every input it takes.
     if (m_graph && m_graph->selectedCount() == 1) {
         if (const prism::BlueprintNode* node = m_graph->findNode(m_graph->selectedIds().front())) {
             AddNodeDetailsUVE(*grid, *node);
@@ -847,7 +847,7 @@ std::string EditorBlueprintPanelUVE::CreateForUVE(const Scene::EntityUVE target,
         return {};
     }
     m_target = target;
-    // Unreal's starting graph: Event Ready (BeginPlay) and Event Tick.
+    // The standard starting graph: Event Ready (BeginPlay) and Event Tick.
     Asset::BlueprintAssetUVE blueprint;
     blueprint.parentKind = ParentKindUVE();
     Asset::BlueprintNodeUVE ready;

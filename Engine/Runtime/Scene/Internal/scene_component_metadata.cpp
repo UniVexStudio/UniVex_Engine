@@ -2883,7 +2883,7 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// The abstract 3D bases. Their sections appear on every concrete child, between what the child
 /// itself brings and the common Object section.
 // The gameplay-owned authored data: what the scene means to a game rather than to the renderer or
-// the solver. SpawnPoint3D is the first citizen here (Unreal's PlayerStart role - Godot ships no
+// the solver. SpawnPoint3D is the first citizen here (the standard PlayerStart role - Godot ships no
 // built-in counterpart), and the section is deliberately declarative: the query that consumes it
 // lives in uve_scene, and nothing in this file decides when a point fires.
 void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {

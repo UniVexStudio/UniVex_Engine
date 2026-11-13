@@ -80,7 +80,7 @@ struct RagdollBoneBindingUVE final {
 
 /// A ragdoll: the simulated body a skeleton becomes when animation stops driving it.
 ///
-/// This is the passive half of what Unreal calls a Physics Asset plus the ragdoll mode of its skeletal
+/// This is the passive half of what is commonly called a Physics Asset plus the ragdoll mode of its skeletal
 /// mesh component, and it makes the same three choices that decide whether the result reads as a
 /// body or as a bag of sticks:
 ///

@@ -63,7 +63,7 @@ constexpr std::array<std::string_view, 3> kCustomDrawnUVE{"component.name", "com
                                                           "component.hierarchy"};
 
 /// The object-wide engine settings every object carries (how it is processed, threaded,
-/// interpolated, translated, described): kept, but collapsed, as Unreal's Advanced, so what the object
+/// interpolated, translated, described): kept, but collapsed, as the standard Advanced, so what the object
 /// is comes first.
 [[nodiscard]] bool IsAdvancedSectionUVE(const std::string_view title) {
     static constexpr std::array<std::string_view, 5> kAdvanced{"Process", "Thread Group", "Physics Interpolation", "Auto Translate",
@@ -1119,7 +1119,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                 ShowPickerUVE(spec, std::move(actions), b->rect());
             }
         };
-        // Unreal's slot layout: the asset's own preview beside its picker.
+        // The standard slot layout: the asset's own preview beside its picker.
         if (const std::optional<AssetThumbnailUVE::KindUVE> kind = ThumbnailKindForUVE(extensions); kind.has_value()) {
             auto thumb = prism::make<AssetThumbnailUVE>(m_editor, *kind);
             std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;

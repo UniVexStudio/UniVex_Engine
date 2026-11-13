@@ -130,7 +130,7 @@ void BuildTangentsUVE(const Math::Vector3UVE& normal, Math::Vector3UVE& outTange
 
 /// Swing and twist of a joint's relative rotation, about the frame's local X, Y and Z.
 ///
-/// This is the decomposition Unreal's constraint editor draws as one twist gauge and a two-axis
+/// This is the decomposition the standard constraint editor draws as one twist gauge and a two-axis
 /// swing cone, and it is the reason a knee and a shoulder need no separate joint types.
 struct JointAnglesUVE final {
     float twist = 0.0F;
@@ -299,7 +299,7 @@ RagdollJointUVE MakeHingeJointUVE(const std::uint32_t firstBody, const std::uint
                                   const Math::Vector3UVE& firstAnchor, const Math::Vector3UVE& secondAnchor,
                                   const float twistLimitDegrees) noexcept {
     RagdollJointUVE joint = MakeBallSocketJointUVE(firstBody, secondBody, firstAnchor, secondAnchor);
-    // Unreal's "Swing1/Swing2 Locked, Twist Limited": two hard angular constraints and one limited
+    // The standard "Swing1/Swing2 Locked, Twist Limited": two hard angular constraints and one limited
     // axis. That is the whole difference between a knee and a knee that bends backwards.
     joint.swing1Motion = RagdollMotionUVE::Locked;
     joint.swing2Motion = RagdollMotionUVE::Locked;
@@ -411,7 +411,7 @@ void RagdollSolverUVE::IntegrateVelocitiesUVE(const Math::Vector3UVE& gravity,
         RagdollBodyUVE& body = m_bodies[index];
         if (!(body.inverseMass > 0.0F) && Math::LengthSquaredUVE(body.inverseInertiaLocal) <= 0.0F) continue;
         if (body.gravityEnabled) body.linearVelocity += gravity * deltaTimeSeconds;
-        // Implicit damping: v /= (1 + d*dt). Unconditional, and it is Unreal's own per-body damping
+        // Implicit damping: v /= (1 + d*dt). Unconditional, and it is the common per-body damping
         // form - the difference from exp(-d*dt) is under a tenth of a percent per step.
         const float linearFactor = 1.0F / (1.0F + std::max(0.0F, body.linearDamping) * deltaTimeSeconds);
         const float angularFactor = 1.0F / (1.0F + std::max(0.0F, body.angularDamping) * deltaTimeSeconds);

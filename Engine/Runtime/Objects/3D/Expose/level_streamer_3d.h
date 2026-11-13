@@ -58,7 +58,7 @@ void ApplyLevelStreamer3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, E
                                              const LevelStreamer3DObjectDefinitionUVE& value);
 
 // The budget of streaming loads serviced per tick. Godot gives a distant scene nothing at all;
-// Unreal's streaming volumes issue loads immediately and let the renderer hitch. Time-sliced
+// The standard streaming volumes issue loads immediately and let the renderer hitch. Time-sliced
 // budgeting in the Frostbite style instead: at most this many streamers begin loading each tick
 // and the rest carry over to the next one, so a teleport across the map can never hitch the
 // engine past the budget. Measured by the engine tests (5 streamers demand load -> exactly 4

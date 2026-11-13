@@ -12,7 +12,7 @@
 namespace UVE::Scene {
 
 /// Authored state for a SpawnPoint3D: the place the player starts when Play is entered
-/// (Unreal's PlayerStart role - Godot ships no built-in equivalent and leaves this to scripts,
+/// (the standard PlayerStart role - Godot ships no built-in equivalent and leaves this to scripts,
 /// which is exactly the hole this object fills).
 ///
 /// `localPosition`/`localRotation` are NOT a shadow of the entity's transform: they are the

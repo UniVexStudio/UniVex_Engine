@@ -33,7 +33,7 @@ class EditorHostUVE;
 class DocumentTabUVE;
 class MontageTimelineUVE;
 
-/// The Montage Editor, Unreal's Animation Montage editor in a window of its own:
+/// The Montage Editor, the standard Animation Montage editor in a window of its own:
 ///
 ///   [#1 logo] [title bar: File Edit Window Help | drag strip | - [] x]
 ///   [       ] [#2 the montage's tab                                 ]

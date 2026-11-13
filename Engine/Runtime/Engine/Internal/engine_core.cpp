@@ -3262,7 +3262,7 @@ void EngineCoreUVE::SyncLevelStreamer3DObjectsUVE() {
         }
     }
 
-    // Pass 1 (read-only): the viewer point cloud for this tick. The active camera is the Unreal
+    // Pass 1 (read-only): the viewer point cloud for this tick. The active camera is the common
     // convention (streaming follows the eye); every character controller is a Frostbite-style
     // listener source (split-screen clients each drag their own content in). Finite world poses
     // only - a degenerate camera/contoller pose simply stops being a viewer, it never poisons
