@@ -97,6 +97,8 @@ EditorEntityEditorUVE::EditorEntityEditorUVE(EditorUVE& editor, EditorHostUVE& h
     : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor), m_sequencer(editor), m_animGraphPanel(editor), m_blueprintPanel(editor) {}
 
 EditorEntityEditorUVE::~EditorEntityEditorUVE() {
+    m_editor.m_openBlueprintProviderUVE = nullptr;
+    m_editor.m_saveOpenBlueprintUVE = nullptr;
     if (m_window != 0 && m_host.IsReadyUVE()) {
         m_host.CloseWindowUVE(m_window);
     }
@@ -228,6 +230,11 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     }
     // Compile reads the Blueprint being edited, saved or not.
     m_editor.m_openBlueprintProviderUVE = [this](const std::string& path) { return m_blueprintPanel.UnsavedForUVE(path); };
+    m_editor.m_saveOpenBlueprintUVE = [this] {
+        if (m_blueprintPanel.IsOpenUVE() && m_blueprintPanel.DirtyUVE()) {
+            static_cast<void>(m_blueprintPanel.SaveUVE());
+        }
+    };
     if (m_widgetMode) {
         m_blueprintPanel.widgetsProvider = [this] {
             std::vector<std::pair<std::string, WidgetKindUVE>> widgets;
@@ -896,12 +903,15 @@ void EditorEntityEditorUVE::ShowCreateBlueprintUVE(const Scene::EntityUVE target
     form->addRow(cat, "Parent", prism::make<prism::Label>(std::string(m_editor.GetObjectTypeNameUVE(target))), "The object kind it drives");
     std::weak_ptr<prism::TextInput> weakName = name;
     std::weak_ptr<prism::ComboBox> weakFolder = folder;
-    const auto create = [this, target, folders, weakName, weakFolder] {
+    // Enter in the name field and the Create button can both fire: one Blueprint, made once.
+    auto made = std::make_shared<bool>(false);
+    const auto create = [this, target, folders, weakName, weakFolder, made] {
         const auto n = weakName.lock();
         const auto f = weakFolder.lock();
-        if (!n || !f || n->text().empty()) {
+        if (*made || !n || !f || n->text().empty()) {
             return;
         }
+        *made = true;
         const std::filesystem::path dir = folders[static_cast<std::size_t>(std::clamp(f->selected(), 0, static_cast<int>(folders.size()) - 1))];
         const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(dir, n->text(), ".uvbp");
         const std::string path = m_blueprintPanel.CreateForUVE(target, file);
@@ -910,6 +920,12 @@ void EditorEntityEditorUVE::ShowCreateBlueprintUVE(const Scene::EntityUVE target
             return;
         }
         OpenBlueprintUVE(path, target);
+        // On disk at once: the entity's Script slot now names the Blueprint, so the level's copies
+        // and the game run it (it used to live only in the open window until a Save).
+        if (m_editor.SaveEntityEditorUVE()) {
+            m_editor.m_contentStatusMessage = "Made " + file.filename().string() + " and attached it to " +
+                                              m_editor.GetEntityDisplayLabelUVE(target) + ".";
+        }
     };
     name->onCommit = [create](const std::string&) {
         create();
@@ -963,9 +979,15 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
     if (!m_crumbRow) {
         return;
     }
-    // Forget crumbs whose object left the entity.
+    // A crumb whose object came back under a new handle (Simulate, Revert) follows it; the rest,
+    // whose object left the entity, are forgotten.
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     const std::vector<Scene::EntityUVE> objects = m_editor.CollectEntityEditorObjectsUVE();
+    for (OpenBlueprintEntryUVE& entry : m_openBlueprints) {
+        if (!em.IsAliveUVE(entry.target)) {
+            entry.target = m_blueprintPanel.FindUserUVE(entry.path);
+        }
+    }
     std::erase_if(m_openBlueprints, [&](const OpenBlueprintEntryUVE& entry) {
         return !em.IsAliveUVE(entry.target) || std::find(objects.begin(), objects.end(), entry.target) == objects.end();
     });
@@ -1168,11 +1190,17 @@ void EditorEntityEditorUVE::OpenWidgetGraphUVE() {
     }
     const std::string path = m_blueprintPanel.ProjectPathUVE(m_openPath);
     Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    // An older widget without its Script slot runs its graph once it has one.
-    if (!em.HasComponentUVE<Scene::ScriptComponentUVE>(root)) {
+    // An older widget without its Script slot runs its graph once it has one (an edit like any other:
+    // the widget is unsaved until it is written, and Undo takes it back).
+    if (!em.HasComponentUVE<Scene::ScriptComponentUVE>(root) ||
+        em.GetComponentUVE<Scene::ScriptComponentUVE>(root).scriptAssetPath != path) {
         Scene::ScriptComponentUVE script;
+        if (em.HasComponentUVE<Scene::ScriptComponentUVE>(root)) {
+            script = em.GetComponentUVE<Scene::ScriptComponentUVE>(root);
+        }
         script.scriptAssetPath = path;
-        em.AddComponentUVE<Scene::ScriptComponentUVE>(root, script);
+        m_editor.SelectEntityUVE(root);
+        static_cast<void>(m_editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, script));
     }
     OpenBlueprintUVE(path, root);
 }

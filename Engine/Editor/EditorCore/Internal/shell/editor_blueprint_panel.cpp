@@ -481,7 +481,15 @@ void EditorBlueprintPanelUVE::RefreshUVE() {
     if (IsOpenUVE()) {
         const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
         if (!em.IsAliveUVE(m_target)) {
-            CloseUVE();
+            // The scene was rebuilt (Simulate stopped, Revert): the object whose Script slot names
+            // this Blueprint is the same object under a new handle - the graph stays open on it.
+            m_target = FindUserUVE(m_path);
+            if (m_target == Scene::kInvalidEntityUVE) {
+                if (DirtyUVE()) {
+                    static_cast<void>(SaveUVE());   // its edits are kept even when its object is gone
+                }
+                CloseUVE();
+            }
         }
     }
     if (!m_graph) {
@@ -591,6 +599,20 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
     m_side->setContent(prism::make<FitWidthUVE>(grid));
 }
 
+Scene::EntityUVE EditorBlueprintPanelUVE::FindUserUVE(const std::string& path) const {
+    if (path.empty()) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
+        if (em.IsAliveUVE(object) && em.HasComponentUVE<Scene::ScriptComponentUVE>(object) &&
+            em.GetComponentUVE<Scene::ScriptComponentUVE>(object).scriptAssetPath == path) {
+            return object;
+        }
+    }
+    return Scene::kInvalidEntityUVE;
+}
+
 std::string EditorBlueprintPanelUVE::CreateForUVE(const Scene::EntityUVE target, const std::filesystem::path& absolutePath) {
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     if (!em.IsAliveUVE(target)) {
@@ -623,9 +645,12 @@ std::string EditorBlueprintPanelUVE::CreateForUVE(const Scene::EntityUVE target,
     if (em.HasComponentUVE<Scene::ScriptComponentUVE>(target)) {
         script = em.GetComponentUVE<Scene::ScriptComponentUVE>(target);
     }
+    const bool already = em.HasComponentUVE<Scene::ScriptComponentUVE>(target) && script.scriptAssetPath == path;
     script.scriptAssetPath = path;
     script.exportValues.clear();
-    if (!m_editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, script)) {
+    if (!already && !m_editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Script, script)) {
+        // Not attached: no Blueprint left lying about that nothing uses.
+        std::filesystem::remove(absolutePath, error);
         return {};
     }
     m_editor.RefreshProjectFileIndexUVE();

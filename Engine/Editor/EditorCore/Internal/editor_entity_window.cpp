@@ -7,6 +7,7 @@
 // entity with no second set of tools, while the level stays open and editable in its own window.
 
 #include "editor.h"
+#include "transform_component.h"
 
 #include "blueprint_asset.h"
 #include "blueprint_nodes.h"
@@ -114,6 +115,13 @@ EditorUVE::EntityDocumentScopeUVE::~EntityDocumentScopeUVE() {
     }
     m_editor.SwapDocumentStateUVE();
     m_editor.m_entityDocumentActive = false;
+    if (m_editor.m_entityLevelRefreshPending && m_editor.m_entityEditSession.has_value()) {
+        m_editor.m_entityLevelRefreshPending = false;
+        const std::string status = m_editor.m_contentStatusMessage;
+        if (m_editor.RefreshLevelCopiesUVE(m_editor.m_entityEditSession->guid, m_editor.m_entityEditSession->assetPath) == 0U) {
+            m_editor.m_contentStatusMessage = status;
+        }
+    }
     if (m_editor.m_entityClosePending.has_value()) {
         m_editor.m_entityClosePending.reset();
         m_editor.FinishEntityEditorCloseUVE();
@@ -237,6 +245,9 @@ bool EditorUVE::SaveEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
+    if (m_saveOpenBlueprintUVE) {
+        m_saveOpenBlueprintUVE();   // Ctrl+S saves the graph and the entity together
+    }
     // What a simulation did is not the entity: it is put back before anything is written.
     static_cast<void>(StopEntitySimulationUVE());
     const EntityDocumentScopeUVE scope(*this);
@@ -263,6 +274,8 @@ bool EditorUVE::SaveEntityEditorUVE() {
     }
     m_entityEditSession->savedOnce = true;
     m_sceneDirty = false;
+    // The level's copies follow every save, not only the close (done once the level is active).
+    m_entityLevelRefreshPending = true;
     if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE() && !SaveOpenUVScriptUVE()) {
         m_contentStatusMessage = "Saved the entity, but could not write " + m_openUVScript->path + ".";
         return false;
@@ -274,6 +287,9 @@ bool EditorUVE::SaveEntityEditorUVE() {
 bool EditorUVE::RevertEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return false;
+    }
+    if (m_saveOpenBlueprintUVE) {
+        m_saveOpenBlueprintUVE();   // Revert is the entity's, not the Blueprint's edits
     }
     if (m_entityEditSession->simulation != nullptr) {
         m_entityEditSession->simulation->scripts.clear();
@@ -334,30 +350,56 @@ void EditorUVE::FinishEntityEditorCloseUVE() {
     }
     m_entityScene.reset();
 
-    // The file changed: instances of it in the level that have no local changes follow it.
+    // The file changed: the copies of it in the level follow it.
     if (session.savedOnce) {
-        Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-        std::vector<Scene::EntityUVE> instances;
-        entityManager.ForEachUVE<Scene::PrefabInstanceComponentUVE>(
-            [&instances, &session](const Scene::EntityUVE entity, Scene::PrefabInstanceComponentUVE& instance) {
-                if (instance.sourcePrefabGuid == session.guid) {
-                    instances.push_back(entity);
-                }
-            });
-        std::size_t refreshed = 0U;
-        for (const Scene::EntityUVE instance : instances) {
-            const Scene::PrefabRefreshResultUVE result = m_services->GetPrefabSystemUVE().RefreshInstanceUVE(
-                entityManager, m_services->GetSceneGraphUVE(), m_services->GetAssetDatabaseUVE(), instance);
-            refreshed += result.code == Scene::PrefabRefreshCodeUVE::Refreshed ? 1U : 0U;
-        }
-        if (refreshed > 0U) {
-            m_sceneDirty = true;
-            InvalidateHierarchyFilterCacheUVE();
-            m_contentStatusMessage = "Updated " + std::to_string(refreshed) + " placed " +
-                                     (refreshed == 1U ? "copy" : "copies") + " of " +
-                                     session.assetPath.filename().string() + " in the level.";
-        }
+        RefreshLevelCopiesUVE(session.guid, session.assetPath);
     }
+}
+
+std::size_t EditorUVE::RefreshLevelCopiesUVE(const Asset::AssetGuidUVE guid, const std::filesystem::path& assetPath) {
+    if (m_entityDocumentActive || guid == Asset::kInvalidAssetGuidUVE) {
+        return 0U;   // only on the level's own scene
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    std::vector<Scene::EntityUVE> instances;
+    entityManager.ForEachUVE<Scene::PrefabInstanceComponentUVE>(
+        [&instances, guid](const Scene::EntityUVE entity, Scene::PrefabInstanceComponentUVE& instance) {
+            if (instance.sourcePrefabGuid == guid) {
+                instances.push_back(entity);
+            }
+        });
+    std::size_t refreshed = 0U;
+    for (const Scene::EntityUVE instance : instances) {
+        // Where the copy stands and what it is called are the level's, not the file's: kept.
+        const std::optional<Scene::TransformComponentUVE> placed =
+            entityManager.HasComponentUVE<Scene::TransformComponentUVE>(instance)
+                ? std::optional<Scene::TransformComponentUVE>{entityManager.GetComponentUVE<Scene::TransformComponentUVE>(instance)}
+                : std::nullopt;
+        const std::optional<std::string> name =
+            entityManager.HasComponentUVE<Scene::NameComponentUVE>(instance)
+                ? std::optional<std::string>{entityManager.GetComponentUVE<Scene::NameComponentUVE>(instance).name}
+                : std::nullopt;
+        const Scene::PrefabRefreshResultUVE result = m_services->GetPrefabSystemUVE().RefreshInstanceUVE(
+            entityManager, sceneGraph, m_services->GetAssetDatabaseUVE(), instance, true);
+        if (result.code != Scene::PrefabRefreshCodeUVE::Refreshed || !entityManager.IsAliveUVE(result.rootEntity)) {
+            continue;
+        }
+        if (placed.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(result.rootEntity)) {
+            sceneGraph.SetLocalTransformUVE(entityManager, result.rootEntity, *placed);
+        }
+        if (name.has_value() && entityManager.HasComponentUVE<Scene::NameComponentUVE>(result.rootEntity)) {
+            entityManager.GetComponentUVE<Scene::NameComponentUVE>(result.rootEntity).name = *name;
+        }
+        ++refreshed;
+    }
+    if (refreshed > 0U) {
+        m_sceneDirty = true;
+        InvalidateHierarchyFilterCacheUVE();
+        m_contentStatusMessage = "Updated " + std::to_string(refreshed) + " placed " + (refreshed == 1U ? "copy" : "copies") + " of " +
+                                 assetPath.filename().string() + " in the level.";
+    }
+    return refreshed;
 }
 
 EditorUVE::EntityEditorTabUVE EditorUVE::GetEntityEditorTabUVE() const noexcept {
@@ -701,6 +743,9 @@ bool EditorUVE::GoToEntityScriptUVE(const Scene::EntityUVE entity, const std::ui
 bool EditorUVE::PlayEntitySimulationUVE() {
     if (!m_entityEditSession.has_value()) {
         return false;
+    }
+    if (m_entityEditSession->simulation == nullptr && m_saveOpenBlueprintUVE) {
+        m_saveOpenBlueprintUVE();   // the run and the editor read the same graph, and Stop keeps it
     }
     if (m_entityEditSession->simulation != nullptr) {
         m_entityEditSession->simulation->paused = false;
