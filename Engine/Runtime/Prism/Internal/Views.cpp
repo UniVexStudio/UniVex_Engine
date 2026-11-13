@@ -774,7 +774,14 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   for (auto& b : buttons) {
     auto btn = make<Button>(b.label, Icon::None, b.primary ? ButtonStyle::Primary : ButtonStyle::Default);
     auto act = b.action;
-    btn->onClick = [close, act] { close(); if (act) act(); };
+    // The action runs first, while the dialog is still open: it reads what was typed into the
+    // dialog's fields (closing first dropped them, so OK did nothing and only Enter worked). The
+    // dialog is held alive to the end, since closing it frees this very button.
+    btn->onClick = [wr, act] {
+      const Ref<Widget> keep = wr.lock();
+      if (act) act();
+      if (keep) Application::get().closePopup(keep.get());
+    };
     btn->setMinSize(76, 0);
     frow->add(btn);
   }

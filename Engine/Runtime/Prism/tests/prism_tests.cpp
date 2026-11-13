@@ -12,6 +12,7 @@
 #include <prism/RenderThreadBridge.h>
 #include <prism/Brush.h>
 #include <prism/TableView.h>
+#include <prism/TextInput.h>
 #include <prism/Accessibility.h>
 #include <prism/AccessibilityBridge.h>
 #include <prism/IconAtlas.h>
@@ -2888,6 +2889,45 @@ static void testHostGizmos() {
   CHECK(!buildSelectionOutline(empty.data(), 4, 4, 2, Color(255, 160, 40), band, box));
 }
 
+// A dialog button acts on what was typed: the action runs while the dialog is still open (it used
+// to run after the dialog was closed and freed, so a field read through a weak reference was gone and
+// OK did nothing - only Enter worked).
+static Button* findButtonUVE(Widget* w, const std::string& label) {
+  if (auto* b = dynamic_cast<Button*>(w); b && b->text() == label) return b;
+  for (const Ref<Widget>& c : w->children()) {
+    if (Button* found = findButtonUVE(c.get(), label)) return found;
+  }
+  return nullptr;
+}
+
+static void testDialogButtonsReadFields(Application& app) {
+  SECTION("dialog buttons read the dialog's fields");
+  app.hostResize(800, 600);
+  app.setRoot(make<Spacer>());
+  auto field = make<TextInput>("", "Name");
+  field->setText("Footstep");
+  std::weak_ptr<TextInput> weak = field;
+  std::string got;
+  showDialog("Add Notify", field, {{"Cancel", false, nullptr}, {"OK", true, [weak, &got] {
+                                                                 if (auto f = weak.lock()) got = f->text();
+                                                               }}});
+  app.tick();
+  Widget* root = field.get();
+  while (root->parent() != nullptr) root = root->parent();
+  field.reset();   // the dialog holds the only reference now, as in the editor
+  Button* ok = findButtonUVE(root, "OK");
+  CHECK(ok != nullptr);
+  if (ok != nullptr) {
+    const Vec2 p = ok->rect().center();
+    app.hostMouseMove(p);
+    app.hostMouseButton(p, MouseButton::Left, true);
+    app.hostMouseButton(p, MouseButton::Left, false);
+  }
+  app.tick();
+  CHECK(got == "Footstep");
+  CHECK(weak.expired());   // and the dialog closed
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -2901,6 +2941,7 @@ int main(int argc, char** argv) {
   testTheme();
   testLayout(app);
   testHitAndRouting(app);
+  testDialogButtonsReadFields(app);
   testDocking(app);
   testToastsAndTimers(app, *plat);
   testDrawList(app);

@@ -1066,6 +1066,9 @@ public:
     /// Writes the entity back to its file. Refused (with a Content status line) when the root is
     /// gone or other objects sit beside it: an entity has exactly one root.
     bool SaveEntityEditorUVE();
+    /// Brings every copy of the entity `guid` placed in the level up to its saved file (each keeps
+    /// where it stands and its name). Level scope only. Returns how many were updated.
+    std::size_t RefreshLevelCopiesUVE(Asset::AssetGuidUVE guid, const std::filesystem::path& assetPath);
     /// Throws away the edits and loads the file again.
     bool RevertEntityEditorUVE();
     /// Closes the Entity Editor, saving first when `save`, and brings the scene back. After a save,
@@ -1096,6 +1099,9 @@ public:
     /// The Blueprint panel's unsaved graph for a `.uvbp` path, so Compile checks what is being
     /// edited (like the open text editor for a `.uvs`). Unset or empty: the file on disk.
     std::function<std::optional<Asset::BlueprintAssetUVE>(const std::string& path)> m_openBlueprintProviderUVE;
+    /// Writes the Entity Editor's open Blueprint graph when it has unsaved edits (set by its window):
+    /// every save of the entity saves its graph too, and Simulate and Revert keep its edits.
+    std::function<void()> m_saveOpenBlueprintUVE;
     /// A Blueprint (project path) the Entity Editor opens once its entity is open (Content Browser open).
     std::string m_pendingBlueprintOpenUVE;
     /// Checks the whole open entity: one root, and every object's `.uvs` script (read from the
@@ -3503,6 +3509,9 @@ private:
     bool m_entityDocumentActive = false;
     /// Close was asked from inside the entity's own scope: finished when that scope ends.
     std::optional<bool> m_entityClosePending;
+    /// The entity was saved inside its own scope: its copies in the level are refreshed once the
+    /// level is the active document again.
+    bool m_entityLevelRefreshPending = false;
     std::optional<std::pair<std::string, std::string>> m_pendingAnimationParameterRename;
     std::string m_objectPickerFilter;
     std::string m_objectPickerScrolledFilter;

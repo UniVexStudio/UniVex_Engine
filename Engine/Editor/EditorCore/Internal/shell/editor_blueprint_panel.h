@@ -61,6 +61,8 @@ public:
     /// A new Blueprint Class for `target` at `absolutePath` (with Event Ready and Event Tick), the
     /// target's Script set to it (one undo step). Returns its project-relative path, empty on failure.
     [[nodiscard]] std::string CreateForUVE(Scene::EntityUVE target, const std::filesystem::path& absolutePath);
+    /// The object of the open entity whose Script slot names `path` (after a rebuild its handle is new).
+    [[nodiscard]] Scene::EntityUVE FindUserUVE(const std::string& path) const;
     /// The project-relative (VFS) path of a file, as a Script slot stores it.
     [[nodiscard]] std::string ProjectPathUVE(const std::filesystem::path& absolute) const;
 
