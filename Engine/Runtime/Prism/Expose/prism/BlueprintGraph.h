@@ -9,6 +9,7 @@
 #include "Transaction.h"
 #include "Widget.h"
 #include "Icons.h"
+#include "Menu.h"
 #include <functional>
 #include <optional>
 #include <map>
@@ -194,6 +195,19 @@ public:
   Callback<const std::string&> onCommit;
   Callback<const std::vector<int>&> onSelectionChanged;
   Callback<int> onNodeDoubleClicked;
+  // Right-click menus: a node's (Delete, Cut, Copy, Duplicate, Break Links, Add Comment ...), a
+  // pin's, a wire's and a comment's; empty space opens the palette with Add Comment on top.
+  // A host adds its own items to a node's menu, and may do an edit itself: onNodeAction with
+  // "Delete", "Duplicate", "Copy", "Cut" or "Paste" (and the nodes) returning true means it did.
+  std::function<void(int nodeId, std::vector<MenuItem>& items)> extendNodeMenu;
+  std::function<bool(const std::string& action, const std::vector<int>& ids)> onNodeAction;
+  // Rename from a node's menu, F2 or a double-click on its title: the graph asks for the name over
+  // the title and hands it here (null: nodes keep their titles, and a double-click is onNodeDoubleClicked).
+  std::function<void(int nodeId, const std::string& to)> onNodeRenamed;
+  void renameNode(int nodeId);
+  void showNodeMenu(int nodeId, Vec2 screen);
+  // A comment box around the selection (or at `world` with nothing selected), then its title to type.
+  void addCommentAroundSelection(Vec2 world, bool rename = true);
   // The host's own rule for a connection, asked after the graph's type checks pass.
   std::function<bool(int fromNode, int fromPin, int toNode, int toPin, std::string* why)> canConnectHook;
   // The values an input may take (the host's widgets, assets ...): editing it opens a list of
@@ -374,6 +388,13 @@ private:
   void paintMinimap(Canvas& c);
   void paintGrid(Canvas& c, Rect view);
   void addCommentAround(const std::vector<int>& ids, Vec2 fallbackWorld);
+  void openContextAt(Vec2 screen);
+  void showPinMenu(const PinHit& h, Vec2 screen);
+  void showWireMenu(int wireIndex, Vec2 screen);
+  void showCommentMenu(int commentId, Vec2 screen);
+  // An edit the host may take over (onNodeAction); false: the graph does it.
+  bool hostAction(const std::string& action, const std::vector<int>& ids);
+  BlueprintComment* commentAt(Vec2 screen);
   void startFlowTimer();
   void insertReroute(int wireIndex, Vec2 world);
   void finishSpawn(const BlueprintNodeSpec& spec, Vec2 world, const BlueprintPinFilter& f, int fromNode, int fromPin);
@@ -399,6 +420,7 @@ private:
   void notifySelection();
   bool onMouseUpInner(const MouseEvent& e);
   Rect bodyScreenRect(const BlueprintNode& n) const;
+  void paintScaledBody(Canvas& c, const BlueprintNode& n, Widget& body, Rect screen, float zoom);
   BlueprintGraphPreset m_preset = BlueprintGraphPreset::WidgetBlueprint;
   std::vector<BlueprintNode> m_nodes;
   std::vector<BlueprintWire> m_wires;
