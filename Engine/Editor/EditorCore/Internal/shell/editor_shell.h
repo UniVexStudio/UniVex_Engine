@@ -13,6 +13,7 @@
 #include "editor_file_dialog.h"
 #include "editor_host.h"
 #include "editor_icons.h"
+#include "editor_loading_screen.h"
 #include "editor_view_toolbar.h"
 #include "editor_viewport_gizmos.h"
 
@@ -25,6 +26,7 @@
 #include <filesystem>
 #include <functional>
 #include <initializer_list>
+#include <chrono>
 #include <memory>
 #include <set>
 #include <string>
@@ -140,6 +142,14 @@ private:
     EditorDockPanelsUVE m_dockPanels;
     EditorIconsUVE m_icons;
     EditorViewToolbarUVE m_viewToolbar;
+    prism::Ref<EditorLoadingScreenUVE> m_loadingScreen;
+    std::string m_projectName;
+    bool m_startupCovered = false;
+    std::chrono::steady_clock::time_point m_viewWarmBegan{};
+    int m_viewWarmFrame = 0;
+    std::size_t m_renderLoadPeak = 0U;
+    bool m_renderLoadDone = false;
+    EditorHostUVE::ViewImageUVE m_lastView{};
 
     // Widgets the frame updates.
     std::shared_ptr<prism::TreeView> m_outliner;

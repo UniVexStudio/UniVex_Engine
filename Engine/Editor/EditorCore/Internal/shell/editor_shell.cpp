@@ -26,6 +26,7 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <array>
 #include <cmath>
@@ -41,6 +42,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <string_view>
+#include <system_error>
 
 namespace UVE::Editor {
 namespace {
@@ -158,7 +160,13 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     frame->setBackground(prism::ThemeColor(&prism::Theme::window));
     frame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
     frame->setChild(window);
-    return frame;
+    // The loading screen over everything while the editor starts (and a corner panel after).
+    auto root = prism::make<prism::Overlay>();
+    root->add(frame);
+    m_loadingScreen = prism::make<EditorLoadingScreenUVE>();
+    m_loadingScreen->onDismiss = [this] { m_editor.DismissStartupLoadingUVE(); };
+    root->add(m_loadingScreen);
+    return root;
 }
 
 std::vector<prism::MenuItem> EditorShellUVE::CommandItemsUVE(const std::initializer_list<const char*> ids) {
@@ -996,10 +1004,63 @@ void EditorShellUVE::FrameUVE() {
         const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
         m_entityEditor.RefreshUVE();
     }
+    if (m_loadingScreen) {
+        const EditorUVE::EditorLoadingStateUVE loading = m_editor.GetLoadingStateUVE();
+        if (loading.startup && m_projectName.empty() && m_editor.m_projectFileSnapshotInitialized) {
+            // The project's folder: the one that holds its content folder.
+            std::error_code error;
+            std::filesystem::path content = std::filesystem::absolute(m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot, error);
+            if (content.filename().empty()) {
+                content = content.parent_path();
+            }
+            m_projectName = content.parent_path().filename().string();
+        }
+        m_loadingScreen->SyncUVE(loading, m_projectName);
+        m_startupCovered = loading.startup;
+    }
+    // The level view starts gently: nothing while the loading screen covers it, then a frame now
+    // and then, more often each second, until it draws every frame (about three seconds), so the
+    // device is not hit with the full scene the moment the editor appears.
+    bool renderView = !m_startupCovered;
+    if (renderView) {
+        const auto now = std::chrono::steady_clock::now();
+        if (m_viewWarmBegan == std::chrono::steady_clock::time_point{}) {
+            m_viewWarmBegan = now;
+        }
+        const double warm = std::chrono::duration<double>(now - m_viewWarmBegan).count();
+        const int every = warm < 1.0 ? 4 : warm < 2.0 ? 3 : warm < 3.0 ? 2 : 1;
+        renderView = m_lastView.texture == 0U || (++m_viewWarmFrame % every) == 0;
+        // "Loading render" over the view: until the warm-up is through and the renderer has
+        // nothing left to load for the scene.
+        const Render::Renderer3DFrameDiagnosticsUVE frame = m_editor.m_services->GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+        const std::size_t loading = frame.pendingAssetLoads + frame.primitiveMaterialPending;
+        if (warm < 0.05) {
+            m_renderLoadPeak = 0U;
+            m_renderLoadDone = false;
+        }
+        m_renderLoadPeak = std::max(m_renderLoadPeak, loading);
+        if (!m_renderLoadDone && warm >= 3.0 && loading == 0U) {
+            m_renderLoadDone = true;
+        }
+        if (m_loadingScreen && m_viewport) {
+            const float warmPart = static_cast<float>(std::min(warm / 3.0, 1.0));
+            const float assetPart = m_renderLoadPeak > 0U
+                                        ? static_cast<float>(m_renderLoadPeak - std::min(loading, m_renderLoadPeak)) / static_cast<float>(m_renderLoadPeak)
+                                        : 1.0F;
+            const std::string text = loading > 0U ? "Loading render (" + std::to_string(loading) + " assets)" : "Loading render";
+            m_loadingScreen->SyncRenderUVE(!m_renderLoadDone && m_viewport->visible(), m_viewport->rect(), text,
+                                           std::min(warmPart, assetPart));
+        }
+    }
     m_host.BeginFrameUVE();
 
     std::vector<EditorHostUVE::ViewImageUVE> views;
-    if (m_viewport && m_viewport->visible() && m_editor.m_viewportPanelRenderer) {
+    if (m_loadingScreen && !m_startupCovered) {
+        m_loadingScreen->SyncUVE(m_editor.GetLoadingStateUVE(), m_projectName);
+    }
+    if (!renderView && !m_startupCovered && m_viewport && m_viewport->visible() && m_lastView.texture != 0U) {
+        views.push_back(m_lastView); // the last frame again, between warm-up frames
+    } else if (renderView && m_viewport && m_viewport->visible() && m_editor.m_viewportPanelRenderer) {
         const prism::Rect rect = m_viewport->rect();
         if (rect.w >= 1.0F && rect.h >= 1.0F) {
             EditorUVE::ViewportOverlayStateUVE& state = m_editor.m_viewportOverlayState;
@@ -1039,6 +1100,7 @@ void EditorShellUVE::FrameUVE() {
                 view.textureWidth = used.x;
                 view.textureHeight = used.y;
                 views.push_back(view);
+                m_lastView = view;
             }
         }
     }

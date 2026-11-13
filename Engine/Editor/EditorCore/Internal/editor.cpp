@@ -473,6 +473,11 @@ void EditorUVE::TickUVE() {
         RefreshProjectFileIndexUVE();
     }
     PollModelImportJobsUVE();
+    // Behind the loading screen nothing else is drawn, so the takes get most of the frame.
+    ProcessPendingModelAnimationImportsUVE(m_startupLoading ? 0.12 : 0.025);
+    if (m_startupLoading) {
+        UpdateStartupLoadingUVE();
+    }
 
     PruneSelectionUVE();
     if (m_hierarchyRenameEntity != Scene::kInvalidEntityUVE &&
@@ -6880,7 +6885,7 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
         // An FBX's takes (the extension is compared as the model check compares it: any case).
         if (info.animationCount > 0U) {
-            static_cast<void>(ImportModelAnimationsUVE(source));
+            QueueModelAnimationImportUVE(source);
         }
         if (info.animationOnly) {
             continue; // Motion with nothing to draw: there is no mesh to import.
@@ -6941,6 +6946,124 @@ Asset::AssetGuidUVE EditorUVE::RegisterImportedModelArtifactsUVE(const std::file
     return meshGuid;
 }
 
+void EditorUVE::QueueModelAnimationImportUVE(const std::filesystem::path& absoluteSource) {
+    if (!m_prismUiRequested) {
+        static_cast<void>(ImportModelAnimationsUVE(absoluteSource));
+        return;
+    }
+    if (m_pendingModelAnimationKeys.insert(absoluteSource.generic_string()).second) {
+        m_pendingModelAnimations.push_back(absoluteSource);
+        ++m_modelAnimationBatchTotal;
+    }
+}
+
+void EditorUVE::ProcessPendingModelAnimationImportsUVE(const double budgetSeconds) {
+    const auto began = std::chrono::steady_clock::now();
+    while (!m_pendingModelAnimations.empty()) {
+        const std::filesystem::path source = std::move(m_pendingModelAnimations.front());
+        m_pendingModelAnimations.pop_front();
+        m_pendingModelAnimationKeys.erase(source.generic_string());
+        static_cast<void>(ImportModelAnimationsUVE(source));
+        ++m_modelAnimationBatchDone;
+        if (std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() >= budgetSeconds) {
+            break;
+        }
+    }
+    if (m_pendingModelAnimations.empty()) {
+        m_modelAnimationBatchTotal = 0U;
+        m_modelAnimationBatchDone = 0U;
+    }
+}
+
+void EditorUVE::UpdateStartupLoadingUVE() {
+    const auto now = std::chrono::steady_clock::now();
+    if (m_startupBegan == std::chrono::steady_clock::time_point{}) {
+        m_startupBegan = now;
+        m_startupStepBegan = now;
+    }
+    const auto advance = [this, now] {
+        ++m_startupStep;
+        m_startupStepBegan = now;
+    };
+    const double inStep = std::chrono::duration<double>(now - m_startupStepBegan).count();
+    switch (m_startupStep) {
+    case 0: // The project's files.
+        if (m_projectFileSnapshotInitialized) {
+            advance();
+        }
+        break;
+    case 1: // Its models and the takes inside them.
+        if (m_modelImportJobs.empty() && m_pendingModelAnimations.empty()) {
+            advance();
+        }
+        break;
+    case 2: // The first animation previews (a few frames for the browser to ask for them).
+        m_startupIconPeak = std::max(m_startupIconPeak, PendingAnimationIconCountUVE());
+        if ((inStep > 0.5 && PendingAnimationIconCountUVE() == 0U) || inStep > 8.0) {
+            advance();
+        }
+        break;
+    default:
+        m_startupLoading = false;
+        break;
+    }
+    // Never held longer than this: what is left goes on behind the editor.
+    if (std::chrono::duration<double>(now - m_startupBegan).count() > 180.0) {
+        m_startupLoading = false;
+    }
+}
+
+EditorUVE::EditorLoadingStateUVE EditorUVE::GetLoadingStateUVE() const {
+    EditorLoadingStateUVE state;
+    const std::size_t modelTotal = std::max(m_importBatchTotal, m_modelImportJobs.size() + m_importBatchCompleted);
+    const std::size_t total = modelTotal + m_modelAnimationBatchTotal;
+    const std::size_t done = m_importBatchCompleted + m_modelAnimationBatchDone;
+    const float work = total > 0U ? std::clamp(static_cast<float>(done) / static_cast<float>(total), 0.0F, 1.0F) : 1.0F;
+    const auto counted = [](const char* what, const std::size_t at, const std::size_t of) {
+        return std::string(what) + " " + std::to_string(std::min(at + 1U, of)) + " of " + std::to_string(of);
+    };
+    std::string workDetail;
+    if (!m_modelImportJobs.empty()) {
+        workDetail = counted("Importing model", m_importBatchCompleted, modelTotal);
+    } else if (!m_pendingModelAnimations.empty()) {
+        workDetail = counted("Storing animations of model", m_modelAnimationBatchDone, m_modelAnimationBatchTotal) +
+                     " (" + m_pendingModelAnimations.front().filename().string() + ")";
+    }
+    if (m_startupLoading && m_state == EditorStateUVE::Running) {
+        state.startup = true;
+        switch (m_startupStep) {
+        case 0:
+            state.step = "Scanning project files";
+            state.progress = 0.05F;
+            break;
+        case 1:
+            state.step = "Importing models";
+            state.detail = workDetail;
+            state.progress = 0.15F + 0.6F * work;
+            break;
+        case 2: {
+            state.step = "Preparing animation previews";
+            const std::size_t left = PendingAnimationIconCountUVE();
+            const std::size_t peak = std::max(m_startupIconPeak, left);
+            state.detail = left > 0U ? std::to_string(peak - left) + " of " + std::to_string(peak) : std::string{};
+            state.progress = 0.75F + 0.23F * (peak > 0U ? static_cast<float>(peak - left) / static_cast<float>(peak) : 1.0F);
+            break;
+        }
+        default:
+            state.step = "Opening the editor";
+            state.progress = 1.0F;
+            break;
+        }
+        return state;
+    }
+    if (!workDetail.empty()) {
+        state.busy = true;
+        state.step = workDetail;
+        state.progress = work;
+    }
+    return state;
+}
+
 void EditorUVE::PollModelImportJobsUVE() {
     if (m_modelImportJobs.empty()) {
         m_importBatchTotal = 0U;
@@ -6977,7 +7100,7 @@ void EditorUVE::PollModelImportJobsUVE() {
             static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
             // Its takes go into the model now that the model is there.
             if (const auto info = m_modelSources.find(it->first); info != m_modelSources.end() && info->second.animationCount > 0U) {
-                static_cast<void>(ImportModelAnimationsUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / it->first));
+                QueueModelAnimationImportUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / it->first);
             }
             // The GUIDs an import wrote into its materials and meshes are kept with the project, so
             // the next session finds them (and the import cache stays valid instead of importing again).
