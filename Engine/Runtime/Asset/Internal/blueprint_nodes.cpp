@@ -163,6 +163,77 @@ using Pin = BlueprintPinSpecUVE;
     action("hide_object", "Hide Object", "Objects", {Pin{"Object", T::Object, ""}}, "{1}.hide()");
     action("show_object", "Show Object", "Objects", {Pin{"Object", T::Object, ""}}, "{1}.show()");
 
+    // ---- user interface (Widget Blueprints)
+    // Widget events: the named widget's (empty: any widget's). They reach the graph of the widget
+    // they belong to, and the graph of every object above it.
+    const auto widgetEvent = [&all](std::string key, std::string title, std::string ev, std::string widget, std::vector<Pin> data,
+                                    std::string keywords, std::string tip) {
+        BlueprintNodeTypeUVE n;
+        n.key = std::move(key);
+        n.title = std::move(title);
+        n.category = "User Interface|Events";
+        n.keywords = std::move(keywords);
+        n.role = Role::Event;
+        n.event = std::move(ev);
+        n.inputs.push_back(Pin{std::move(widget), T::String, ""});
+        n.outputs.push_back(Exec());
+        for (Pin& p : data) {
+            n.outputs.push_back(std::move(p));
+        }
+        n.tooltip = std::move(tip);
+        all.push_back(std::move(n));
+    };
+    widgetEvent("ui_on_clicked", "On Button Clicked", "ui_clicked", "Button", {Pin{"Button", T::String, ""}}, "press click onclicked widget",
+                "A button of the widget was clicked (name it, or leave it empty for any)");
+    widgetEvent("ui_on_changed", "On Value Changed", "ui_changed", "Widget", {Pin{"Widget", T::String, ""}}, "slider check box toggle",
+                "A slider moved or a check box was ticked");
+    widgetEvent("ui_on_committed", "On Text Committed", "ui_committed", "Text Box", {Pin{"Text Box", T::String, ""}, Pin{"Text", T::String, ""}},
+                "enter submit input", "A text box was submitted with Enter");
+    {
+        BlueprintNodeTypeUVE construct;
+        construct.key = "ui_on_construct";
+        construct.title = "Event Construct";
+        construct.category = "User Interface|Events";
+        construct.keywords = "widget created ready begin";
+        construct.role = Role::Event;
+        construct.event = "ready";
+        construct.outputs.push_back(Exec());
+        construct.tooltip = "Once, when the widget is made";
+        all.push_back(std::move(construct));
+    }
+    action("ui_set_text", "Set Text", "User Interface", {Pin{"Widget", T::String, "Text"}, Pin{"Text", T::String, "Hello"}},
+           "ui.set_text({1}, {2})", "label caption", "A Text or Text Box of the widget, by name");
+    pure("ui_get_text", "Get Text", "User Interface", {Pin{"Widget", T::String, "Text"}}, {Pin{"Text", T::String, ""}},
+         {"ui.get_text({0})"}, "label caption read");
+    action("ui_set_visibility", "Set Visibility", "User Interface", {Pin{"Widget", T::String, "Text"}, Pin{"Visible", T::Bool, "true"}},
+           "ui.set_visible({1}, {2})", "hide show collapse");
+    action("ui_set_color", "Set Color", "User Interface", {Pin{"Widget", T::String, "Text"}, Pin{"Color", T::Vector, "1,1,1"}},
+           "ui.set_color({1}, {2})", "tint colour", "A Text's color, a Button's color, an Image's tint");
+    action("ui_set_percent", "Set Percent", "User Interface", {Pin{"Widget", T::String, "ProgressBar"}, Pin{"Percent", T::Float, "0.5"}},
+           "ui.set_progress({1}, {2})", "progress bar health fill slider value");
+    pure("ui_get_value", "Get Value", "User Interface", {Pin{"Widget", T::String, "Slider"}}, {Pin{"Value", T::Float, ""}},
+         {"ui.get_value({0})"}, "slider progress percent");
+    pure("ui_is_checked", "Is Checked", "User Interface", {Pin{"Widget", T::String, "CheckBox"}}, {Pin{"Checked", T::Bool, ""}},
+         {"ui.is_checked({0})"}, "check box ticked toggle");
+    action("ui_remove", "Remove from Parent", "User Interface", {}, "ui.remove()", "close hide widget",
+           "Takes this widget off the screen");
+    {
+        // Returns the widget it made: an action with a value, kept for the nodes after it.
+        BlueprintNodeTypeUVE create;
+        create.key = "ui_create_widget";
+        create.title = "Create Widget";
+        create.category = "User Interface";
+        create.keywords = "spawn new widget blueprint hud menu";
+        create.role = Role::Action;
+        create.inputs = {Exec(), Pin{"Class", T::String, ""}};
+        create.outputs = {Exec(), Pin{"Return Value", T::Object, ""}};
+        create.outputCode = {"ui.create({1})"};
+        create.tooltip = "Makes a Widget Blueprint's widgets (its .uvwbp file); Add to Viewport shows them";
+        all.push_back(std::move(create));
+    }
+    action("ui_add_to_viewport", "Add to Viewport", "User Interface", {Pin{"Widget", T::Object, ""}, Pin{"Z Order", T::Int, "0"}},
+           "ui.add_to_viewport({1}, {2})", "show screen hud", "Shows a widget Create Widget made");
+
     // ---- gameplay
     pure("attr_has", "Has Attribute", "Gameplay|Attributes", {Pin{"Attribute", T::String, "stamina"}}, {Pin{"Has", T::Bool, ""}}, {"attributes.has({0})"});
     pure("attr_get", "Get Attribute", "Gameplay|Attributes", {Pin{"Attribute", T::String, "stamina"}}, {Pin{"Value", T::Float, ""}}, {"attributes.get({0})"}, "health stat");
@@ -381,7 +452,14 @@ public:
             Line("on " + event + (params.empty() ? std::string{} : "(" + params + ")") + ":", nodes.front()->id);
             const std::size_t before = m_lines.size();
             for (const BlueprintNodeUVE* node : nodes) {
-                EmitFrom(node->id, 0U, 1);
+                // A widget event names its widget: only that one's (empty: every widget's).
+                const std::string widget = !type->inputs.empty() && !node->inputValues.empty() ? node->inputValues[0] : std::string{};
+                if (!widget.empty() && type->outputs.size() > 1U) {
+                    Line("    if arg1 == " + LiteralUVE(T::String, widget) + ":", node->id);
+                    EmitBlock(node->id, 0U, 2);
+                } else {
+                    EmitFrom(node->id, 0U, 1);
+                }
             }
             if (m_lines.size() == before) {
                 Line("    pass", nodes.front()->id);
@@ -463,7 +541,15 @@ private:
                 for (std::uint32_t i = 0U; i < type->inputs.size(); ++i) {
                     args.push_back(type->inputs[i].type == T::Exec ? std::string{} : InputExpr(node, i));
                 }
-                Line(pad + FormatUVE(type->code, args), id);
+                if (!type->outputCode.empty() && type->outputs.size() > 1U) {
+                    // An action with a value: kept in a field for the nodes after it.
+                    const T valueType = type->outputs[1].type;
+                    m_fields.push_back("var ret" + tag + ": " + std::string(BlueprintPinTypeScriptNameUVE(valueType)) +
+                                       (valueType == T::Object ? std::string{} : " = " + LiteralUVE(valueType, "")));
+                    Line(pad + "ret" + tag + " = " + FormatUVE(type->outputCode[0], args), id);
+                } else {
+                    Line(pad + FormatUVE(type->code, args), id);
+                }
                 EmitFrom(id, 0U, depth);
                 break;
             }
@@ -561,6 +647,7 @@ private:
         const std::string tag = std::to_string(id);
         switch (type->role) {
             case Role::Event: return "arg" + std::to_string(pin);
+            case Role::Action: return type->outputCode.empty() ? std::string{"none"} : "ret" + tag;
             case Role::GetVariable:
             case Role::SetVariable: return IdentifierUVE(node.variable);
             case Role::ForLoop: return "i" + tag;

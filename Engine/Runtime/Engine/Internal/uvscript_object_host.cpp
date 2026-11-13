@@ -2,6 +2,7 @@
 
 #include "uvscript_object_host.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <type_traits>
@@ -10,6 +11,14 @@
 #include "i_audio_system.h"
 #include "audio_source_component.h"
 #include "camera_component.h"
+#include "canvas_component.h"
+#include "ui_button_component.h"
+#include "ui_checkbox_component.h"
+#include "ui_image_component.h"
+#include "ui_progress_bar_component.h"
+#include "ui_slider_component.h"
+#include "ui_text_component.h"
+#include "ui_text_input_component.h"
 #include "character_controller_component.h"
 #include "light_component.h"
 #include "name_component.h"
@@ -256,6 +265,38 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
             return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::FloatUVE()};
         }
     }
+    // Widget Blueprints, ungated: a widget's graph reaches its own widgets by name; any graph
+    // may create a widget and put it on the screen.
+    if (name == "ui.create") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::ObjectUVE("Object3D")};
+    }
+    if (name == "ui.add_to_viewport") {
+        return HostFunctionUVE{{TypeUVE::ObjectUVE("Object3D"), TypeUVE::IntUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.set_text") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.get_text") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::StrUVE()};
+    }
+    if (name == "ui.set_visible") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::BoolUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.set_color") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::Vec3UVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.set_progress") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::FloatUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.get_value") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::FloatUVE()};
+    }
+    if (name == "ui.is_checked") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.remove") {
+        return HostFunctionUVE{{}, TypeUVE::BoolUVE()};
+    }
     // Ungated: any script may look another object up. The kind is only known when the script runs,
     // so every lookup answers the common root; a missing name answers no object (id 0).
     if (name == "node") {
@@ -382,6 +423,14 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
 std::optional<std::vector<TypeUVE>> UVScriptObjectHostUVE::DescribeEventUVE(const std::string_view event) const {
     if (event == "ready") {
         return std::vector<TypeUVE>{};
+    }
+    // A widget under this object was used: a button clicked, a slider or check box changed (its
+    // name), a text box committed (its name and text).
+    if (event == "ui_clicked" || event == "ui_changed") {
+        return std::vector<TypeUVE>{TypeUVE::StrUVE()};
+    }
+    if (event == "ui_committed") {
+        return std::vector<TypeUVE>{TypeUVE::StrUVE(), TypeUVE::StrUVE()};
     }
     if (event == "tick") {
         return std::vector<TypeUVE>{TypeUVE::FloatUVE()};
@@ -613,6 +662,9 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
             return Scene::AddGameplayTagUVE(tags, std::string{tag});
         }
         return Scene::RemoveGameplayTagUVE(tags, tag);
+    }
+    if (name.starts_with("ui.")) {
+        return WidgetCallUVE(name, args);
     }
     // A lookup needs no input system, so it routes before the null-input early-out below.
     if (name == "node") {
@@ -1239,6 +1291,146 @@ void UVScriptObjectHostUVE::PrintUVE([[maybe_unused]] const std::string_view tex
                                  ? m_entityManager.GetComponentUVE<Scene::NameComponentUVE>(m_entity).name
                                  : std::string{"object"};
     UVE_INFO("[{}] {}", object, text);
+}
+
+Scene::EntityUVE UVScriptObjectHostUVE::FindWidgetUVE(const std::string_view name) const {
+    auto& entities = const_cast<Scene::IEntityManagerUVE&>(m_entityManager);
+    const bool scoped = entities.IsAliveUVE(m_entity) && entities.HasComponentUVE<Scene::CanvasComponentUVE>(m_entity);
+    const auto under = [&entities, this](Scene::EntityUVE entity) {
+        for (int depth = 0; depth < 256 && entities.IsAliveUVE(entity); ++depth) {
+            if (entity == m_entity) {
+                return true;
+            }
+            if (!entities.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+                return false;
+            }
+            entity = entities.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+        }
+        return false;
+    };
+    Scene::EntityUVE found = Scene::kInvalidEntityUVE;
+    entities.ForEachUVE<Scene::NameComponentUVE>([&](const Scene::EntityUVE entity, const Scene::NameComponentUVE& named) {
+        if (found == Scene::kInvalidEntityUVE && named.name == name && (!scoped || under(entity))) {
+            found = entity;
+        }
+    });
+    return found;
+}
+
+ValueUVE UVScriptObjectHostUVE::WidgetCallUVE(const std::string_view name, const std::span<const ValueUVE> args) {
+    auto& entities = m_entityManager;
+    if (name == "ui.create") {
+        if (!m_widgetFactory) {
+            return ValueUVE{ObjectRefUVE{}};
+        }
+        const Scene::EntityUVE root = m_widgetFactory(std::get<std::string>(args[0]));
+        return ValueUVE{root == Scene::kInvalidEntityUVE ? ObjectRefUVE{} : ObjectRefUVE{PackEntityUVE(root)}};
+    }
+    if (name == "ui.add_to_viewport") {
+        const ObjectRefUVE ref = std::get<ObjectRefUVE>(args[0]);
+        const Scene::EntityUVE root = ref.id == 0U ? Scene::kInvalidEntityUVE : UnpackEntityUVE(ref);
+        if (root == Scene::kInvalidEntityUVE || !entities.IsAliveUVE(root) ||
+            !entities.HasComponentUVE<Scene::CanvasComponentUVE>(root)) {
+            return false;
+        }
+        Scene::CanvasComponentUVE& canvas = entities.GetComponentUVE<Scene::CanvasComponentUVE>(root);
+        canvas.visible = true;
+        canvas.sortOrder = Scene::ClampCanvasSortOrderUVE(static_cast<std::int32_t>(std::get<std::int64_t>(args[1])));
+        if (entities.HasComponentUVE<Scene::VisibilityComponentUVE>(root)) {
+            entities.GetComponentUVE<Scene::VisibilityComponentUVE>(root).visible = true;
+        }
+        return true;
+    }
+    if (name == "ui.remove") {
+        if (!entities.IsAliveUVE(m_entity) || !entities.HasComponentUVE<Scene::CanvasComponentUVE>(m_entity)) {
+            return false;
+        }
+        entities.GetComponentUVE<Scene::CanvasComponentUVE>(m_entity).visible = false;
+        return true;
+    }
+    const Scene::EntityUVE widget = FindWidgetUVE(std::get<std::string>(args[0]));
+    const bool alive = widget != Scene::kInvalidEntityUVE && entities.IsAliveUVE(widget);
+    if (name == "ui.set_text") {
+        const std::string& text = std::get<std::string>(args[1]);
+        if (alive && entities.HasComponentUVE<Scene::UITextComponentUVE>(widget)) {
+            entities.GetComponentUVE<Scene::UITextComponentUVE>(widget).text = text;
+            return true;
+        }
+        if (alive && entities.HasComponentUVE<Scene::UITextInputComponentUVE>(widget)) {
+            entities.GetComponentUVE<Scene::UITextInputComponentUVE>(widget).text = text;
+            return true;
+        }
+        return false;
+    }
+    if (name == "ui.get_text") {
+        if (alive && entities.HasComponentUVE<Scene::UITextComponentUVE>(widget)) {
+            return entities.GetComponentUVE<Scene::UITextComponentUVE>(widget).text;
+        }
+        if (alive && entities.HasComponentUVE<Scene::UITextInputComponentUVE>(widget)) {
+            return entities.GetComponentUVE<Scene::UITextInputComponentUVE>(widget).text;
+        }
+        return std::string{};
+    }
+    if (name == "ui.set_visible") {
+        if (!alive) {
+            return false;
+        }
+        const bool visible = std::get<bool>(args[1]);
+        if (entities.HasComponentUVE<Scene::CanvasComponentUVE>(widget)) {
+            entities.GetComponentUVE<Scene::CanvasComponentUVE>(widget).visible = visible;
+        }
+        if (!entities.HasComponentUVE<Scene::VisibilityComponentUVE>(widget)) {
+            entities.AddComponentUVE<Scene::VisibilityComponentUVE>(widget);
+        }
+        Scene::VisibilityComponentUVE& visibility = entities.GetComponentUVE<Scene::VisibilityComponentUVE>(widget);
+        visibility.visible = visible;
+        visibility.visibleInHierarchy = visible;
+        return true;
+    }
+    if (name == "ui.set_color") {
+        const Math::Vector3UVE color = ToEngineUVE(args[1]);
+        if (alive && entities.HasComponentUVE<Scene::UITextComponentUVE>(widget)) {
+            entities.GetComponentUVE<Scene::UITextComponentUVE>(widget).color = color;
+            return true;
+        }
+        if (alive && entities.HasComponentUVE<Scene::UIButtonComponentUVE>(widget)) {
+            entities.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).normalColor = color;
+            return true;
+        }
+        if (alive && entities.HasComponentUVE<Scene::UIImageComponentUVE>(widget)) {
+            entities.GetComponentUVE<Scene::UIImageComponentUVE>(widget).tintColor = color;
+            return true;
+        }
+        return false;
+    }
+    if (name == "ui.set_progress") {
+        const float value = static_cast<float>(std::get<double>(args[1]));
+        if (alive && entities.HasComponentUVE<Scene::UIProgressBarComponentUVE>(widget)) {
+            Scene::UIProgressBarComponentUVE& bar = entities.GetComponentUVE<Scene::UIProgressBarComponentUVE>(widget);
+            bar.value = std::clamp(value, bar.minValue, bar.maxValue);
+            return true;
+        }
+        if (alive && entities.HasComponentUVE<Scene::UISliderComponentUVE>(widget)) {
+            Scene::UISliderComponentUVE& slider = entities.GetComponentUVE<Scene::UISliderComponentUVE>(widget);
+            slider.value = std::clamp(value, slider.minValue, slider.maxValue);
+            return true;
+        }
+        return false;
+    }
+    if (name == "ui.get_value") {
+        if (alive && entities.HasComponentUVE<Scene::UISliderComponentUVE>(widget)) {
+            return static_cast<double>(entities.GetComponentUVE<Scene::UISliderComponentUVE>(widget).value);
+        }
+        if (alive && entities.HasComponentUVE<Scene::UIProgressBarComponentUVE>(widget)) {
+            return static_cast<double>(entities.GetComponentUVE<Scene::UIProgressBarComponentUVE>(widget).value);
+        }
+        return 0.0;
+    }
+    if (name == "ui.is_checked") {
+        return alive && entities.HasComponentUVE<Scene::UICheckboxComponentUVE>(widget) &&
+               entities.GetComponentUVE<Scene::UICheckboxComponentUVE>(widget).checked;
+    }
+    return false;
 }
 
 } // namespace UVE::Core
