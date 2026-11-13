@@ -201,7 +201,7 @@ private:
 
   BlueprintPinFilter m_filter;
   std::function<void(const BlueprintNodeSpec&)> m_pick;
-  const std::vector<BlueprintNodeSpec>& m_lib;
+  std::vector<BlueprintNodeSpec> m_lib;
   Ref<TextInput> m_input;
   std::string m_query;
   std::vector<Row> m_rows;
@@ -249,7 +249,27 @@ bool validValue(PT t, const std::string& v) {
 
 void BlueprintGraph::openPalette(Vec2 screenPos, const BlueprintPinFilter& filter, int fromNode, int fromPin) {
   Vec2 world = screenToWorld(screenPos);
-  auto pal = make<Palette>(filter, [this, world, filter, fromNode, fromPin](const BlueprintNodeSpec& spec) { finishSpawn(spec, world, filter, fromNode, fromPin); }, nodeLibrary());
+  std::vector<BlueprintNodeSpec> library = nodeLibrary();
+  // Empty space: a comment box is one of the things to add.
+  static const std::string kCommentSpec = "Add Comment";
+  const bool comments = !filter.active && (m_features.comments || m_features.shortcuts);
+  if (comments) {
+    BlueprintNodeSpec spec;
+    spec.category = "Graph";
+    spec.name = kCommentSpec;
+    spec.keywords = "comment box note group label";
+    spec.make = [] {
+      BlueprintNode n;
+      n.title = kCommentSpec;
+      n.category = BlueprintNodeCategory::Flow;
+      return n;
+    };
+    library.insert(library.begin(), std::move(spec));
+  }
+  auto pal = make<Palette>(filter, [this, world, filter, fromNode, fromPin, comments](const BlueprintNodeSpec& spec) {
+    if (comments && spec.category == "Graph" && spec.name == kCommentSpec) { addCommentAroundSelection(world); return; }
+    finishSpawn(spec, world, filter, fromNode, fromPin);
+  }, library);
   PopupOptions o;
   o.placement = PopupPlacement::AtPoint;
   o.anchor = {screenPos.x, screenPos.y, 0, 0};
@@ -678,6 +698,19 @@ bool BlueprintGraph::onMouseDown(const MouseEvent& e) {
 
   if (const BlueprintNode* hit = nodeAt(e.pos)) {
     int id = hit->id;
+    // Its settings, drawn scaled while zoomed: the view comes back to 100% around them to edit.
+    if (std::fabs(m_zoom - 1.f) >= 0.02f && hit->bodyH > 0 && m_bodies.count(id) && bodyScreenRect(*hit).contains(e.pos)) {
+      select(id);
+      zoomAt(e.pos, 1.f / m_zoom);
+      notifySelection();
+      return true;
+    }
+    if (e.clicks == 2 && onNodeRenamed && hit->style == BlueprintNodeStyle::Header &&
+        e.pos.y < nodeScreenRect(*hit).y + (hit->subtitle.empty() ? bp::kHeaderShort : bp::kHeaderTall) * m_zoom) {
+      select(id);
+      renameNode(id);
+      return true;
+    }
     if (e.clicks == 2 && onNodeDoubleClicked) { select(id); onNodeDoubleClicked(id); return true; }
     BlueprintNode* n = nodeById(id);
     if (additive) n->selected = !n->selected;
@@ -837,7 +870,7 @@ bool BlueprintGraph::onMouseUpInner(const MouseEvent& e) {
   m_drag = Drag::None;
   switch (d) {
     case Drag::Pan:
-      if (m_rightDown && !m_dragMoved) openPalette(e.pos, {});
+      if (m_rightDown && !m_dragMoved) openContextAt(e.pos);
       break;
     case Drag::Nodes:
       if (m_dragMoved) commit("Move nodes");
@@ -901,12 +934,186 @@ Cursor BlueprintGraph::cursor() const {
   return Cursor::Arrow;
 }
 
+// ============================================================================ context menus
+BlueprintComment* BlueprintGraph::commentAt(Vec2 p) {
+  for (auto it = m_comments.rbegin(); it != m_comments.rend(); ++it) {
+    Vec2 o = worldToScreen(it->bounds.pos());
+    if (Rect{o.x, o.y, it->bounds.w * m_zoom, it->bounds.h * m_zoom}.contains(p)) return &*it;
+  }
+  return nullptr;
+}
+
+bool BlueprintGraph::hostAction(const std::string& action, const std::vector<int>& ids) {
+  return onNodeAction && onNodeAction(action, ids);
+}
+
+void BlueprintGraph::openContextAt(Vec2 p) {
+  if (PinHit h = pinAt(p)) { showPinMenu(h, p); return; }
+  if (const BlueprintNode* n = nodeAt(p)) { showNodeMenu(n->id, p); return; }
+  int wi = wireAt(p);
+  if (wi >= 0) { showWireMenu(wi, p); return; }
+  if (BlueprintComment* cm = commentTitleAt(p)) { showCommentMenu(cm->id, p); return; }
+  openPalette(p, {});
+}
+
+void BlueprintGraph::renameNode(int nodeId) {
+  const BlueprintNode* n = findNode(nodeId);
+  if (!n || !onNodeRenamed) return;
+  Rect r = nodeScreenRect(*n);
+  textPopup(this, {r.x + 30 * m_zoom, r.y + 4 * m_zoom, 0, 0}, n->title, std::max(160.f, r.w - 40 * m_zoom), [this, nodeId](const std::string& v) {
+    if (v.empty()) return false;
+    if (onNodeRenamed) onNodeRenamed(nodeId, v);
+    return true;
+  });
+}
+
+void BlueprintGraph::addCommentAroundSelection(Vec2 world, bool rename) {
+  addCommentAround(selectedIds(), world);
+  if (rename && !m_comments.empty()) editComment(m_comments.back());
+}
+
+void BlueprintGraph::showNodeMenu(int nodeId, Vec2 p) {
+  BlueprintNode* n = nodeById(nodeId);
+  if (!n) return;
+  if (!n->selected) { clearSelection(); n->selected = true; notifySelection(); invalidate(); }
+  const std::vector<int> ids = selectedIds();
+  const bool many = ids.size() > 1;
+  const std::string what = many ? std::to_string(ids.size()) + " Nodes" : std::string(n->title.empty() ? "Reroute" : n->title);
+  std::vector<MenuItem> items;
+  items.push_back(MenuItem::Header(what));
+  if (onNodeRenamed && !many) items.push_back(MenuItem::Item("Rename", [this, nodeId] { renameNode(nodeId); }, "F2"));
+  if (extendNodeMenu && !many) {
+    std::vector<MenuItem> extra;
+    extendNodeMenu(nodeId, extra);
+    if (!extra.empty()) {
+      for (auto& m : extra) items.push_back(std::move(m));
+    }
+  }
+  items.push_back(MenuItem::Sep());
+  const Vec2 world = screenToWorld(p);
+  items.push_back(MenuItem::Item("Delete", [this, ids] {
+    if (hostAction("Delete", ids)) return;
+    for (int id : ids) if (BlueprintNode* m = nodeById(id)) m->selected = true;
+    removeSelected();
+  }, "Del", Icon::Trash));
+  items.push_back(MenuItem::Item("Cut", [this, ids] {
+    if (hostAction("Cut", ids)) return;
+    copySelected();
+    removeSelected();
+  }, "Ctrl+X"));
+  items.push_back(MenuItem::Item("Copy", [this, ids] { if (!hostAction("Copy", ids)) copySelected(); }, "Ctrl+C", Icon::Copy));
+  items.push_back(MenuItem::Item("Duplicate", [this, ids] { if (!hostAction("Duplicate", ids)) duplicateSelected(); }, "Ctrl+D", Icon::Duplicate));
+  const bool pasteable = !m_clipboard.empty() || onNodeAction;
+  MenuItem pasteItem = MenuItem::Item("Paste", [this, world] { if (!hostAction("Paste", {})) paste(world); }, "Ctrl+V", Icon::Paste);
+  if (!pasteable) pasteItem.enabled = false;
+  items.push_back(std::move(pasteItem));
+  items.push_back(MenuItem::Sep());
+  const bool linked = std::any_of(m_wires.begin(), m_wires.end(), [&ids](const BlueprintWire& w) {
+    return std::find(ids.begin(), ids.end(), w.fromNodeId) != ids.end() || std::find(ids.begin(), ids.end(), w.toNodeId) != ids.end();
+  });
+  MenuItem breakAll = MenuItem::Item("Break All Links", [this, ids] {
+    const size_t before = m_wires.size();
+    std::erase_if(m_wires, [&ids](const BlueprintWire& w) {
+      return std::find(ids.begin(), ids.end(), w.fromNodeId) != ids.end() || std::find(ids.begin(), ids.end(), w.toNodeId) != ids.end();
+    });
+    if (m_wires.size() != before) { touch(); commit("Break links"); }
+  });
+  if (!linked) breakAll.enabled = false;
+  items.push_back(std::move(breakAll));
+  if (m_features.comments || m_features.shortcuts)
+    items.push_back(MenuItem::Item("Add Comment Around", [this, world] { addCommentAroundSelection(world); }, "C"));
+  items.push_back(MenuItem::Item("Frame", [this] { frameSelection(); }, "F", Icon::Frame));
+  showContextMenu(std::move(items), p);
+}
+
+void BlueprintGraph::showPinMenu(const PinHit& h, Vec2 p) {
+  const BlueprintNode* n = findNode(h.node);
+  if (!n) return;
+  const BlueprintPin& pin = (h.input ? n->inputs : n->outputs)[size_t(h.pin)];
+  std::vector<MenuItem> items;
+  items.push_back(MenuItem::Header((pin.name.empty() ? std::string(h.input ? "Input" : "Output") : pin.name) + "  (" + blueprintPinTypeName(resolvedType(h.node, h.pin, h.input)) + ")"));
+  const int nodeId = h.node, pinIndex = h.pin;
+  const bool input = h.input;
+  MenuItem brk = MenuItem::Item("Break Link", [this, nodeId, pinIndex, input] { if (disconnectPin(nodeId, pinIndex, input)) commit("Break links"); });
+  if (!isPinConnected(nodeId, pinIndex, input)) brk.enabled = false;
+  items.push_back(std::move(brk));
+  if (input && pin.type != PT::Exec && !pin.defaultValue.empty() && !isPinConnected(nodeId, pinIndex, true)) {
+    PinHit at = h;
+    items.push_back(MenuItem::Item("Edit Value", [this, at] { editDefault(at); }));
+  }
+  items.push_back(MenuItem::Sep());
+  items.push_back(MenuItem::Item("Node...", [this, nodeId, p] { showNodeMenu(nodeId, p); }));
+  showContextMenu(std::move(items), p);
+}
+
+void BlueprintGraph::showWireMenu(int wi, Vec2 p) {
+  if (wi < 0 || wi >= int(m_wires.size())) return;
+  const BlueprintWire w = m_wires[size_t(wi)];
+  std::vector<MenuItem> items;
+  items.push_back(MenuItem::Header("Wire"));
+  items.push_back(MenuItem::Item("Delete Wire", [this, w] {
+    const size_t before = m_wires.size();
+    std::erase_if(m_wires, [&w](const BlueprintWire& o) {
+      return o.fromNodeId == w.fromNodeId && o.fromPinIndex == w.fromPinIndex && o.toNodeId == w.toNodeId && o.toPinIndex == w.toPinIndex;
+    });
+    if (m_wires.size() != before) { touch(); commit("Delete wire"); }
+  }, "Alt+Click", Icon::Trash));
+  if (m_features.shortcuts) {
+    const Vec2 world = screenToWorld(p);
+    items.push_back(MenuItem::Item("Add Reroute Node", [this, w, world] {
+      for (size_t i = 0; i < m_wires.size(); i++) {
+        const BlueprintWire& o = m_wires[i];
+        if (o.fromNodeId == w.fromNodeId && o.fromPinIndex == w.fromPinIndex && o.toNodeId == w.toNodeId && o.toPinIndex == w.toPinIndex) {
+          insertReroute(int(i), world);
+          return;
+        }
+      }
+    }, "Double-click"));
+  }
+  showContextMenu(std::move(items), p);
+}
+
+void BlueprintGraph::showCommentMenu(int commentId, Vec2 p) {
+  std::vector<MenuItem> items;
+  items.push_back(MenuItem::Header("Comment"));
+  items.push_back(MenuItem::Item("Rename", [this, commentId] {
+    for (auto& c : m_comments) if (c.id == commentId) { editComment(c); return; }
+  }, "Double-click"));
+  static const std::pair<const char*, Color> kTints[] = {
+      {"Blue", Color(40, 100, 160, 52)}, {"Green", Color(60, 140, 80, 52)}, {"Orange", Color(160, 100, 40, 52)},
+      {"Purple", Color(130, 60, 160, 52)}, {"Red", Color(170, 50, 50, 52)}, {"Grey", Color(110, 116, 128, 52)}};
+  std::vector<MenuItem> colours;
+  for (const auto& [name, tint] : kTints) {
+    const Color colour = tint;
+    colours.push_back(MenuItem::Item(name, [this, commentId, colour] {
+      for (auto& c : m_comments) if (c.id == commentId) { c.color = colour; commit("Comment colour"); invalidate(); }
+    }));
+  }
+  items.push_back(MenuItem::Sub("Colour", std::move(colours)));
+  items.push_back(MenuItem::Item("Select Nodes Inside", [this, commentId] {
+    for (auto& c : m_comments) {
+      if (c.id != commentId) continue;
+      clearSelection();
+      for (auto& n : m_nodes) n.selected = c.bounds.contains(n.pos) && c.bounds.contains(n.pos + n.size);
+      notifySelection();
+      invalidate();
+    }
+  }));
+  items.push_back(MenuItem::Sep());
+  items.push_back(MenuItem::Item("Delete Comment", [this, commentId] {
+    const size_t before = m_comments.size();
+    std::erase_if(m_comments, [commentId](const BlueprintComment& c) { return c.id == commentId; });
+    if (m_comments.size() != before) { touch(); commit("Delete comment"); }
+  }, "", Icon::Trash));
+  showContextMenu(std::move(items), p);
+}
+
 // ============================================================================ keyboard
 bool BlueprintGraph::onKeyDown(const KeyEvent& e) {
   const bool ctrl = (e.mods & ModCtrl) != 0, shift = (e.mods & ModShift) != 0;
   if (!m_features.shortcuts) {
     // An embedded graph: the host owns copy / paste / undo / save; only selection and view keys here.
-    const bool own = e.key == Key::Escape || e.key == Key::Delete || e.key == Key::Backspace || (e.key == Key::A && ctrl) ||
+    const bool own = e.key == Key::Escape || e.key == Key::Delete || e.key == Key::Backspace || (e.key == Key::A && ctrl) || e.key == Key::F2 ||
                      (e.key == Key::F && !ctrl) || e.key == Key::Home || (m_features.comments && e.key == Key::C && !ctrl);
     if (!own) return false;
   }
@@ -935,6 +1142,7 @@ bool BlueprintGraph::onKeyDown(const KeyEvent& e) {
     case Key::F: if (!ctrl) { frameSelection(); return true; } openFind({m_graphRect.x + 10, m_graphRect.y + 4, 200, 24}, shift); return true;
     case Key::S: if (ctrl) { if (onSaveRequested) onSaveRequested(); else saveToFile(); return true; } return false;
     case Key::Home: frameAll(); return true;
+    case Key::F2: if (onNodeRenamed && selectedCount() == 1) { renameNode(selectedIds().front()); return true; } return false;
     case Key::Enter: if (ctrl) { run(); return true; } return false;
     default: return false;
   }

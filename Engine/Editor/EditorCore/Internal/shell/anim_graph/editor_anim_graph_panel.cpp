@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <unordered_map>
 
 namespace UVE::Editor {
 namespace {
@@ -143,6 +144,24 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
         if (node != graph->nodes.end() &&
             (node->kind == Kind::StateMachine || node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D)) {
             OpenFocusUVE(node->id);
+        }
+    };
+    m_graph->onNodeRenamed = [this](const int id, const std::string& to) { RenameNodeUVE(static_cast<std::uint32_t>(id), to); };
+    m_graph->onNodeAction = [this](const std::string& action, const std::vector<int>& ids) { return NodeActionUVE(action, ids); };
+    m_graph->extendNodeMenu = [this](const int id, std::vector<prism::MenuItem>& items) {
+        const GraphUVE* graph = GraphPtrUVE();
+        if (graph == nullptr) {
+            return;
+        }
+        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &NodeUVE::id);
+        if (node == graph->nodes.end()) {
+            return;
+        }
+        const std::uint32_t nodeId = node->id;
+        if (node->kind == Kind::StateMachine) {
+            items.push_back(prism::MenuItem::Item("Open States", [this, nodeId] { OpenFocusUVE(nodeId); }, "Double-click", prism::Icon::StateMachine));
+        } else if (node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D) {
+            items.push_back(prism::MenuItem::Item("Open Blend Space", [this, nodeId] { OpenFocusUVE(nodeId); }, "Double-click", prism::Icon::NodeBlendSpace));
         }
     };
     m_graph->canConnectHook = [this](const int fromNode, int, const int toNode, const int toPin, std::string* why) {
@@ -899,23 +918,7 @@ void EditorAnimGraphPanelUVE::BuildSelectedUVE(prism::PropertyGrid& grid, const 
         return;
     }
     auto name = prism::make<prism::TextInput>(node.name, "Name");
-    name->onCommit = [this, id](const std::string& to) {
-        EditUVE([id, &to](GraphUVE& g) {
-            const auto n = std::ranges::find(g.nodes, id, &NodeUVE::id);
-            if (n == g.nodes.end() || to.empty()) {
-                return;
-            }
-            // Its parameter still named after it follows the new name ("Walk" -> "Run").
-            if (const std::optional<AnimationNodeParameterUVE> spec = NodeParameterOfUVE(n->kind); spec.has_value()) {
-                const std::string bound = (*n).*(spec->field);
-                if (!bound.empty() && bound == ParameterNameForNodeUVE(n->name)) {
-                    static_cast<void>(RenameGraphParameterUVE(g, bound, ParameterNameForNodeUVE(to)));
-                }
-            }
-            const auto again = std::ranges::find(g.nodes, id, &NodeUVE::id);
-            again->name = to;
-        });
-    };
+    name->onCommit = [this, id](const std::string& to) { RenameNodeUVE(id, to); };
     grid.addRow(category, "Name", name, AnimationGraphKindHelpUVE(node.kind));
 
     // Its parameter: the name the gameplay sets it by. Typing a name renames it everywhere (or,
@@ -1023,6 +1026,111 @@ void EditorAnimGraphPanelUVE::BuildPreviewUVE(prism::PropertyGrid& grid) {
 }
 
 // ---------------------------------------------------------------------------------------- menus
+
+void EditorAnimGraphPanelUVE::RenameNodeUVE(const std::uint32_t id, const std::string& to) {
+    if (to.empty()) {
+        return;
+    }
+    EditUVE([id, &to](GraphUVE& g) {
+        const auto n = std::ranges::find(g.nodes, id, &NodeUVE::id);
+        if (n == g.nodes.end() || n->kind == Kind::Output) {
+            return;
+        }
+        // Its parameter still named after it follows the new name ("Walk" -> "Run").
+        if (const std::optional<AnimationNodeParameterUVE> spec = NodeParameterOfUVE(n->kind); spec.has_value()) {
+            const std::string bound = (*n).*(spec->field);
+            if (!bound.empty() && bound == ParameterNameForNodeUVE(n->name)) {
+                const std::string wanted = UniqueParameterNameUVE(g, ParameterNameForNodeUVE(to));
+                static_cast<void>(RenameGraphParameterUVE(g, bound, wanted));
+            }
+        }
+        const auto again = std::ranges::find(g.nodes, id, &NodeUVE::id);
+        again->name = to;
+    });
+    m_sideDirty = true;
+}
+
+bool EditorAnimGraphPanelUVE::NodeActionUVE(const std::string& action, const std::vector<int>& ids) {
+    const GraphUVE* graph = GraphPtrUVE();
+    if (graph == nullptr) {
+        return true;
+    }
+    std::vector<std::uint32_t> picked;
+    for (const int id : ids) {
+        const auto node = std::ranges::find(graph->nodes, static_cast<std::uint32_t>(id), &NodeUVE::id);
+        if (node != graph->nodes.end() && node->kind != Kind::Output) {
+            picked.push_back(node->id);
+        }
+    }
+    if (action == "Copy" || action == "Cut") {
+        m_clipboard.clear();
+        for (const std::uint32_t id : picked) {
+            m_clipboard.push_back(*std::ranges::find(graph->nodes, id, &NodeUVE::id));
+        }
+        if (action == "Cut" && !picked.empty()) {
+            EditUVE([&picked](GraphUVE& g) { static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, picked)); });
+        }
+        return true;
+    }
+    if (action == "Delete") {
+        if (!picked.empty()) {
+            EditUVE([&picked](GraphUVE& g) { static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, picked)); });
+        }
+        m_selected.clear();
+        m_sideDirty = true;
+        return true;
+    }
+    if (action == "Duplicate") {
+        std::vector<std::uint32_t> made;
+        if (!picked.empty()) {
+            EditUVE([&](GraphUVE& g) { made = DuplicateAnimationGraphNodesUVE(g.nodes, picked, Math::Vector2UVE{40.0F, 40.0F}); });
+        }
+        m_selected = made;
+        m_sideDirty = true;
+        return true;
+    }
+    if (action == "Paste") {
+        if (m_clipboard.empty()) {
+            return true;
+        }
+        const prism::Vec2 mouse = prism::Application::exists() ? prism::Application::get().mousePos() : prism::Vec2{};
+        const prism::Vec2 at = m_graph ? m_graph->screenToWorld(mouse) : prism::Vec2{};
+        std::vector<std::uint32_t> made;
+        const std::vector<NodeUVE> copies = m_clipboard;
+        EditUVE([&](GraphUVE& g) {
+            std::uint32_t next = 1U;
+            for (const NodeUVE& node : g.nodes) {
+                next = std::max(next, node.id + 1U);
+            }
+            float left = 1e30F, top = 1e30F;
+            for (const NodeUVE& node : copies) {
+                left = std::min(left, node.position.x);
+                top = std::min(top, node.position.y);
+            }
+            std::unordered_map<std::uint32_t, std::uint32_t> remap;
+            for (const NodeUVE& node : copies) {
+                remap.emplace(node.id, next++);
+            }
+            for (NodeUVE node : copies) {
+                if (g.nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
+                    break;
+                }
+                node.id = remap[node.id];
+                for (std::uint32_t& input : node.inputs) {
+                    const auto found = remap.find(input);
+                    input = found != remap.end() ? found->second : 0U;
+                }
+                node.position = Math::Vector2UVE{at.x + node.position.x - left, at.y + node.position.y - top};
+                made.push_back(node.id);
+                g.nodes.push_back(std::move(node));
+            }
+        });
+        m_selected = made;
+        m_sideDirty = true;
+        return true;
+    }
+    return false;
+}
 
 void EditorAnimGraphPanelUVE::ShowGraphMenuUVE() {
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();

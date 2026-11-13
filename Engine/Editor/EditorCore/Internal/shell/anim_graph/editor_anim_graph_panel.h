@@ -121,6 +121,10 @@ private:
     void SyncFocusUVE();
     void RefreshLiveValuesUVE(const GraphUVE& graph);
     void ShowGraphMenuUVE();
+    /// Renames a node; its parameter still named after it follows.
+    void RenameNodeUVE(std::uint32_t id, const std::string& to);
+    /// The graph's node menu and keys: Delete, Cut, Copy, Paste and Duplicate as component edits.
+    bool NodeActionUVE(const std::string& action, const std::vector<int>& ids);
     void ShowSequencerMenuUVE(prism::Vec2 at);
 
     EditorUVE& m_editor;
@@ -161,6 +165,7 @@ private:
     std::shared_ptr<prism::LogView> m_log;
     /// Montage slots read from their files, by GUID (empty: unreadable).
     mutable std::unordered_map<std::uint64_t, std::string> m_montageSlots;
+    std::vector<NodeUVE> m_clipboard;
     std::size_t m_shownLogLines = static_cast<std::size_t>(-1);
 };
 

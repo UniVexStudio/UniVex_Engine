@@ -4,6 +4,7 @@
 #include "prism/Application.h"
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace prism {
 
@@ -507,13 +508,18 @@ void BlueprintGraph::paint(Canvas& c) {
     for (const auto& other : m_nodes)
       if (other.id != n->id && drawnAfter(*n, other) && nodeScreenRect(other).intersects(br)) { covered = true; break; }
     if (covered) { body->setVisible(false); continue; }
-    const bool fits = s >= 0.7f && br.w > 20 && br.h > 6 && m_graphRect.contains(br.pos()) && m_graphRect.contains({br.right(), br.bottom()});
-    body->setVisible(fits);
-    if (fits) {
+    // At 100% the settings are live widgets; zoomed, they are drawn at their own size and scaled
+    // with the node, so the node keeps one look at every zoom (a click there zooms back to 100%).
+    const bool inside = m_graphRect.contains(br.pos()) && m_graphRect.contains({br.right(), br.bottom()});
+    const bool live = std::fabs(s - 1.f) < 0.02f && br.w > 20 && br.h > 6 && inside;
+    body->setVisible(live);
+    if (live) {
       body->measure({br.w, br.h});   // desired sizes first: the body's rows share its width by them
       body->arrange(br);
       body->paint(c);
-    } else if (br.intersects(m_graphRect) && !n->bodySummary.empty() && s >= 0.35f) {
+    } else if (br.intersects(m_graphRect) && s >= 0.3f && br.w > 8 && br.h > 4) {
+      paintScaledBody(c, *n, *body, br, s);
+    } else if (br.intersects(m_graphRect) && !n->bodySummary.empty() && s >= 0.2f) {
       c.textIn(font(kLabelPx, Weight::Regular, s), br, n->bodySummary, Color(196, 204, 216), HAlign::Left, true);
     }
   }
@@ -538,6 +544,63 @@ std::vector<Vec2> BlueprintGraph::wirePoints(Vec2 a, Vec2 b, int segments) const
 }
 
 // ---------------------------------------------------------------------------- toolbar
+void BlueprintGraph::paintScaledBody(Canvas& c, const BlueprintNode& n, Widget& body, Rect br, float s) {
+  // The body at its own size (1:1 world units), over the node's own gradient so its labels sit on
+  // what they will be shown on, then resampled to the zoom with a box / bilinear filter.
+  const int nw = std::max(1, int(std::ceil(br.w / s)));
+  const int nh = std::max(1, int(std::ceil(br.h / s)));
+  if (nw > 2048 || nh > 2048) return;
+  Canvas off;
+  off.resize(nw, nh);
+  const Chrome ch = chromeFor(n.category);
+  const Rect nr = nodeScreenRect(n);
+  const float t0 = nr.h > 0 ? std::clamp((br.y - nr.y) / nr.h, 0.f, 1.f) : 0.f;
+  const float t1 = nr.h > 0 ? std::clamp((br.bottom() - nr.y) / nr.h, 0.f, 1.f) : 1.f;
+  off.clear(ch.body.mix(ch.bodyDark, t0));
+  off.gradientV(Rect{0, 0, float(nw), float(nh)}, ch.body.mix(ch.bodyDark, t0), ch.body.mix(ch.bodyDark, t1));
+  body.measure({float(nw), float(nh)});
+  body.arrange(Rect{0, 0, float(nw), float(nh)});
+  body.paint(off);
+  const int tw = std::max(1, int(std::lround(br.w)));
+  const int th = std::max(1, int(std::lround(br.h)));
+  std::vector<uint32_t> out(size_t(tw) * size_t(th));
+  const uint32_t* src = off.pixels();
+  const float sx = float(nw) / float(tw), sy = float(nh) / float(th);
+  for (int y = 0; y < th; y++) {
+    for (int x = 0; x < tw; x++) {
+      // The source area this pixel covers (at least one pixel, bilinear when magnified).
+      const float fx0 = x * sx, fy0 = y * sy;
+      const float fx1 = std::max(fx0 + 1.f, (x + 1) * sx), fy1 = std::max(fy0 + 1.f, (y + 1) * sy);
+      float r = 0, g = 0, b = 0, wsum = 0;
+      if (sx >= 1.f && sy >= 1.f) {
+        for (int yy = int(fy0); yy < int(std::ceil(fy1)) && yy < nh; yy++) {
+          const float wy = std::min(fy1, float(yy + 1)) - std::max(fy0, float(yy));
+          for (int xx = int(fx0); xx < int(std::ceil(fx1)) && xx < nw; xx++) {
+            const float wx = std::min(fx1, float(xx + 1)) - std::max(fx0, float(xx));
+            const float w = wx * wy;
+            const uint32_t p = src[size_t(yy) * size_t(nw) + size_t(xx)];
+            r += float((p >> 16) & 255) * w; g += float((p >> 8) & 255) * w; b += float(p & 255) * w; wsum += w;
+          }
+        }
+      } else {
+        const float cx = std::clamp((x + 0.5f) * sx - 0.5f, 0.f, float(nw - 1));
+        const float cy = std::clamp((y + 0.5f) * sy - 0.5f, 0.f, float(nh - 1));
+        const int x0 = int(cx), y0 = int(cy), x1 = std::min(x0 + 1, nw - 1), y1 = std::min(y0 + 1, nh - 1);
+        const float ax = cx - float(x0), ay = cy - float(y0);
+        const uint32_t q[4] = {src[size_t(y0) * nw + x0], src[size_t(y0) * nw + x1], src[size_t(y1) * nw + x0], src[size_t(y1) * nw + x1]};
+        const float wq[4] = {(1 - ax) * (1 - ay), ax * (1 - ay), (1 - ax) * ay, ax * ay};
+        for (int k = 0; k < 4; k++) {
+          r += float((q[k] >> 16) & 255) * wq[k]; g += float((q[k] >> 8) & 255) * wq[k]; b += float(q[k] & 255) * wq[k]; wsum += wq[k];
+        }
+      }
+      if (wsum <= 0) wsum = 1;
+      out[size_t(y) * size_t(tw) + size_t(x)] = 0xFF000000u | (uint32_t(std::lround(r / wsum)) << 16) | (uint32_t(std::lround(g / wsum)) << 8) |
+                                               uint32_t(std::lround(b / wsum));
+    }
+  }
+  c.blit(out.data(), tw, th, br.pos());
+}
+
 void BlueprintGraph::paintToolbar(Canvas& c) {
   const Theme& th = theme();
   Rect bar{m_rect.x, m_rect.y, m_rect.w, m_toolbarH};
