@@ -18,6 +18,7 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+#include <cstddef>
 
 namespace UVE::Editor {
 

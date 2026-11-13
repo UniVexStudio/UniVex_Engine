@@ -8,6 +8,10 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <array>
+#include <cstddef>
+#include <string>
+#include <vector>
 
 namespace UVE::Editor {
 namespace {

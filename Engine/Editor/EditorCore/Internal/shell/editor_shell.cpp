@@ -38,6 +38,9 @@
 #include <utility>
 #include <unordered_map>
 #include <vector>
+#include <cstddef>
+#include <filesystem>
+#include <string_view>
 
 namespace UVE::Editor {
 namespace {

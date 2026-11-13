@@ -18,6 +18,9 @@
 #include <algorithm>
 #include <cstddef>
 #include <utility>
+#include <cstdint>
+#include <functional>
+#include <string>
 
 namespace UVE::Editor {
 namespace {

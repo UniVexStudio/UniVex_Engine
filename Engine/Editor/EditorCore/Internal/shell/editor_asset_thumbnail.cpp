@@ -11,6 +11,12 @@
 
 #include <algorithm>
 #include <system_error>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace UVE::Editor {
 namespace {

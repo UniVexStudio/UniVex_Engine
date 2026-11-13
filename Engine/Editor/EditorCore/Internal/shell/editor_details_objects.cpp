@@ -28,6 +28,8 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
 
 namespace UVE::Editor {
 namespace {

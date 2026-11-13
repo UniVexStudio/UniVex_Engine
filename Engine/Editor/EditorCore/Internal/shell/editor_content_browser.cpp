@@ -45,6 +45,10 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <cstddef>
+#include <cstdio>
+#include <optional>
+#include <system_error>
 
 namespace UVE::Editor {
 namespace {

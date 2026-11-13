@@ -5,6 +5,10 @@
 #include <array>
 #include <string>
 #include <string_view>
+#include <cstddef>
+#include <functional>
+#include <utility>
+#include <vector>
 
 namespace UVE::Editor {
 namespace {

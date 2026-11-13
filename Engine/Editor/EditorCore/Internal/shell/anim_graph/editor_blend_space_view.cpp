@@ -18,6 +18,10 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <utility>
 
 namespace UVE::Editor {
 namespace {

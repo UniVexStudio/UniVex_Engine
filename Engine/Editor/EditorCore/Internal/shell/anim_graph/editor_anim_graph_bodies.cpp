@@ -27,6 +27,9 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
 
 namespace UVE::Editor {
 namespace {
