@@ -26,6 +26,14 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
 
 namespace UVE::Editor {
 namespace {

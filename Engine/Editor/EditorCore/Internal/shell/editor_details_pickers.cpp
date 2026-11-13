@@ -26,6 +26,7 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+#include <functional>
 
 namespace UVE::Editor {
 namespace {

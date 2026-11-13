@@ -45,6 +45,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <cstddef>
 
 namespace UVE::Editor {
 namespace {

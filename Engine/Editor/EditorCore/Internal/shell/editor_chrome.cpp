@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <cstdint>
+#include <functional>
+#include <string>
 
 namespace UVE::Editor {
 

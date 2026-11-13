@@ -28,6 +28,10 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <optional>
 
 namespace UVE::Editor {
 namespace {

@@ -31,6 +31,10 @@
 #include <system_error>
 #include <utility>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <functional>
 
 namespace UVE::Editor {
 namespace {

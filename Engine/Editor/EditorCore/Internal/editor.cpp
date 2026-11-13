@@ -2,7 +2,7 @@
 
 #include "montage_player_component.h"
 #include "shell/editor_shell.h"
-#include "shell/editor_widget_icons.h"
+#include "shell/widget/editor_widget_icons.h"
 #include "logging_macros.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"

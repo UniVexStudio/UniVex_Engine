@@ -67,6 +67,12 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string_view>
+#include <system_error>
 
 namespace UVE::Editor {
 namespace {

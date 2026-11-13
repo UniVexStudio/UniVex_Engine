@@ -9,6 +9,9 @@
 #include <cctype>
 #include <cstdint>
 #include <string>
+#include <cstddef>
+#include <string_view>
+#include <vector>
 
 namespace UVE::Editor {
 
