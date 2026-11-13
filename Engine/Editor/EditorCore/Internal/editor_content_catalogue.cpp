@@ -87,9 +87,8 @@ constexpr std::array<ContentCatalogueEntityClassUVE, 6> kEntityClasses{{
      "to come back. Its transform is the whole object, so there is nothing to add to it."},
 }};
 
-constexpr std::array<ContentCatalogueItemUVE, 42> kItems{{
+constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
     {"folder", "Folder", "CREATE BASIC ASSET", "A new folder here in Content", Action::Folder, {}, Scene::ViewportDimensionUVE::ThreeD, "Folder"},
-    {"basic_script", "New Script", "CREATE BASIC ASSET", "A new UVScript file (.uvs) ready to edit", Action::ScriptAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Script"},
     {"viewport_3d", "Viewport 3D", "CREATE BASIC ASSET",
      "A new 3D level: a Viewport ready for objects, empty until you add one", Action::SceneAsset, kViewport3D, Scene::ViewportDimensionUVE::ThreeD, "Viewport3D"},
     {"viewport_2d", "Viewport 2D", "CREATE BASIC ASSET",

@@ -1,5 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_shell.h"
+#include "prism/AssetBrowser.h"
+#include "png_metadata.h"
 #include "editor_object_menu.h"
 #include "i_asset_database.h"
 #include "prefab_instance_component.h"
@@ -41,6 +43,7 @@
 #include <vector>
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
 #include <string_view>
 #include <system_error>
 
@@ -58,6 +61,29 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
     for (const char c : s) {
         HashUVE(h, static_cast<std::uint64_t>(static_cast<unsigned char>(c)));
     }
+}
+
+/// The picture every thumbnail sits on (a dark checker), from the editor's assets.
+void LoadThumbnailBackdropUVE(const std::filesystem::path& file) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        return;
+    }
+    std::vector<std::byte> bytes;
+    for (char ch; in.get(ch);) {
+        bytes.push_back(static_cast<std::byte>(ch));
+    }
+    Asset::PngRgba8ImageUVE image;
+    if (!Asset::DecodePngRgba8ImageUVE(bytes, image) || image.width == 0U || image.height == 0U) {
+        return;
+    }
+    const auto* const rgba = reinterpret_cast<const std::uint8_t*>(image.pixels.data());
+    std::vector<std::uint32_t> argb(static_cast<std::size_t>(image.width) * image.height);
+    for (std::size_t i = 0U; i < argb.size(); ++i) {
+        argb[i] = 0xFF000000U | (static_cast<std::uint32_t>(rgba[i * 4U]) << 16U) |
+                  (static_cast<std::uint32_t>(rgba[i * 4U + 1U]) << 8U) | static_cast<std::uint32_t>(rgba[i * 4U + 2U]);
+    }
+    prism::setThumbnailBackdrop(std::move(argb), static_cast<int>(image.width), static_cast<int>(image.height));
 }
 
 } // namespace
@@ -85,6 +111,7 @@ bool EditorShellUVE::InitializeUVE(GLFWwindow* const window, const std::filesyst
     if (!m_host.InitializeUVE(window, assetDir)) {
         return false;
     }
+    LoadThumbnailBackdropUVE(assetDir / "images" / "thumbnail_backdrop.png");
     m_dockPanels.AttachLogUVE();
     m_editor.SetFilePickerHostUVE([this](FilePickerRequestUVE request) { m_fileDialog.OpenUVE(std::move(request)); });
     m_host.SetRootUVE(BuildLayoutUVE());

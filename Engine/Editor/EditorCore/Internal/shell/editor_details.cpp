@@ -835,12 +835,12 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
         // The environment's sky is a slot too: Empty keeps the procedural sky, a panorama (a published
         // .uvtex or the source image) is sampled instead of it.
         const bool skySlot = property.customDrawerId == "sky:asset";
-        // The object's script, a slot too: a .uvs file of the project, or Empty.
+        // The object's Blueprint, a slot too: a .uvbp of the project, or Empty.
         const bool scriptSlot = property.customDrawerId == "script-slot";
         if (skySlot || scriptSlot || property.customDrawerId.rfind(kFilePrefix, 0U) == 0U) {
             std::vector<std::string> extensions;
             std::string list = skySlot      ? std::string{"uvtex,png,jpg,jpeg,bmp,tga"}
-                               : scriptSlot ? std::string{"uvbp,uvs"}
+                               : scriptSlot ? std::string{"uvbp"}
                                             : property.customDrawerId.substr(kFilePrefix.size());
             for (std::size_t start = 0U; start <= list.size();) {
                 const std::size_t comma = list.find(',', start);
@@ -888,7 +888,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                 if (skySlot) {
                     spec.title = "Sky";
                 } else if (scriptSlot) {
-                    spec.title = "Script";
+                    spec.title = "Blueprint";
                 }
                 PickerActionsUVE actions;
                 const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();

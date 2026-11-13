@@ -80,23 +80,18 @@ void main() {
         albedo = uBaseColor * sampled.rgb;
     }
 
-    vec3 keyDir = normalize(-uLightDirection);
-    float keyDiff = max(dot(normal, keyDir), 0.0);
-
-    vec3 fillDir = normalize(vec3(0.5, 0.4, 0.8));
-    float fillDiff = max(dot(normal, fillDir), 0.0) * 0.35;
-
+    // One light: the sun, warm white, with only the sky's soft fill around it (no fill or rim lights).
+    vec3 sunDir = normalize(-uLightDirection);
+    float sun = max(dot(normal, sunDir), 0.0);
     vec3 viewDir = normalize(uCameraPosition - vWorldPosition);
-    float rim = 1.0 - max(dot(viewDir, normal), 0.0);
-    rim = pow(rim, 3.0) * 0.35;
 
     float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 ambient = mix(vec3(0.18, 0.19, 0.22), vec3(0.40, 0.43, 0.48), hemi);
+    vec3 sky = mix(vec3(0.10, 0.10, 0.11), vec3(0.24, 0.25, 0.27), hemi);
 
-    vec3 halfVec = normalize(keyDir + viewDir);
-    float spec = pow(max(dot(normal, halfVec), 0.0), 32.0) * 0.22;
+    vec3 halfVec = normalize(sunDir + viewDir);
+    float spec = pow(max(dot(normal, halfVec), 0.0), 32.0) * 0.18 * step(0.0, dot(normal, sunDir));
 
-    vec3 litColor = albedo * (ambient + keyDiff * 0.75 + fillDiff) + vec3(spec + rim);
+    vec3 litColor = albedo * (sky + sun * vec3(1.05, 1.0, 0.94)) + vec3(spec);
 
     // ACES filmic tonemapping for vivid, crisp rendering
     litColor = litColor / (litColor + vec3(0.12)) * 1.12;
