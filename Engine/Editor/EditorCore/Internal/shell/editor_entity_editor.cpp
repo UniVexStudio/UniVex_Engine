@@ -101,6 +101,7 @@ void EditorEntityEditorUVE::SyncUVE() {
     const std::filesystem::path path = open ? m_editor.GetEntityEditorAssetPathUVE() : std::filesystem::path{};
     // Closed, or another entity opened in its place: this window's tree described the old one.
     if (m_window != 0 && (!open || path != m_openPath)) {
+        m_editor.EndWidgetPreviewUVE();
         m_host.CloseWindowUVE(m_window);
         m_window = 0;
         m_openPath.clear();
@@ -548,6 +549,9 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildCentreUVE() {
         m_designer->onMoved = [this](const Scene::EntityUVE entity, const float dx, const float dy, const bool finished) {
             MoveWidgetUVE(entity, dx, dy, finished);
         };
+        m_designer->onResized = [this](const Scene::EntityUVE entity, const prism::Rect rect, const bool finished) {
+            ResizeWidgetUVE(entity, rect, finished);
+        };
         view->add(m_designer);
     } else {
         view->add(m_viewport);
@@ -972,6 +976,18 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
         graph->onClick = [this] { OpenWidgetGraphUVE(); };
         m_crumbRow->add(designer, CentreUVE());
         m_crumbRow->add(graph, CentreUVE());
+        if (!m_blueprintMode && m_designer) {
+            // The screen the widget is designed for.
+            auto bar = prism::make<prism::Label>("|", prism::FontRole::Small);
+            bar->setColor(prism::ThemeColor(&prism::Theme::textDim));
+            m_crumbRow->add(bar, CentreUVE());
+            m_resolutionButton = prism::make<prism::Button>(
+                std::to_string(static_cast<int>(m_designer->WidthUVE())) + " x " + std::to_string(static_cast<int>(m_designer->HeightUVE())),
+                prism::Icon::LayoutViewport, prism::ButtonStyle::Toolbar);
+            m_resolutionButton->setTooltip("The screen size the Designer shows the widget at");
+            m_resolutionButton->onClick = [this] { ShowResolutionMenuUVE(); };
+            m_crumbRow->add(m_resolutionButton, CentreUVE());
+        }
         if (prism::Application::exists()) {
             prism::Application::get().invalidateLayout();
         }
@@ -1233,6 +1249,21 @@ void EditorEntityEditorUVE::RefreshDesignerUVE() {
         m_designer->SetItemsUVE(std::move(items));
     }
     m_designer->SetSelectedUVE(m_editor.GetSelectedEntityUVE());
+    // One 3D View shows its asset live: the selected one, else the first with an asset.
+    Scene::EntityUVE live = Scene::kInvalidEntityUVE;
+    for (const WidgetDesignerViewUVE::ItemUVE& item : m_designer->ItemsUVE()) {
+        if (item.kind != WidgetKindUVE::View3D || item.text.empty() || !item.visible) {
+            continue;
+        }
+        if (item.entity == m_editor.GetSelectedEntityUVE()) {
+            live = item.entity;
+            break;
+        }
+        if (live == Scene::kInvalidEntityUVE) {
+            live = item.entity;
+        }
+    }
+    m_designer->SetLivePreviewUVE(m_blueprintMode ? Scene::kInvalidEntityUVE : live);
 }
 
 namespace {
@@ -1403,6 +1434,159 @@ void EditorEntityEditorUVE::MoveWidgetUVE(const Scene::EntityUVE entity, const f
             }
         }
     }
+}
+
+namespace {
+
+/// A rect widget's rect (not a Text's: it has a pen, not a rect).
+[[nodiscard]] const Math::RectUVE* WidgetRectUVE(Scene::IEntityManagerUVE& em, const Scene::EntityUVE e) {
+    if (em.HasComponentUVE<Scene::UIView3DComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UIView3DComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UIButtonComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UIButtonComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UIImageComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UIImageComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UIProgressBarComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UIProgressBarComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UISliderComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UISliderComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UICheckboxComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UICheckboxComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UITextInputComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UITextInputComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UIDropdownComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UIDropdownComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UILayoutContainerComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UILayoutContainerComponentUVE>(e).rect;
+    }
+    if (em.HasComponentUVE<Scene::UIScrollContainerComponentUVE>(e)) {
+        return &em.GetComponentUVE<Scene::UIScrollContainerComponentUVE>(e).rect;
+    }
+    return nullptr;
+}
+
+template <typename Component>
+void SetWidgetRectOnUVE(Component& component, const Math::RectUVE& rect) {
+    component.rect = rect;
+}
+
+void SetWidgetRectOnUVE(Scene::UITextComponentUVE& text, const Math::RectUVE& rect) {
+    // A Text is sized by its letters: the handle's height is its font size.
+    text.positionPixels = rect.position;
+    text.fontSize = std::clamp(rect.size.y / 1.25F, 6.0F, 400.0F);
+}
+
+using SetWidgetComponentUVE = std::function<void(const Core::TypeMetadataEntryUVE&, const void*)>;
+
+/// Sets `rect` live, or (commit) puts `start` back and records `rect` as one undo step.
+template <typename Component>
+bool ResizeWidgetComponentUVE(Scene::IEntityManagerUVE& em, const Scene::EntityUVE entity, const Math::RectUVE& rect,
+                              const Math::RectUVE& start, const bool commit, const SetWidgetComponentUVE& set) {
+    if (!em.HasComponentUVE<Component>(entity)) {
+        return false;
+    }
+    Component& component = em.GetComponentUVE<Component>(entity);
+    if (!commit) {
+        SetWidgetRectOnUVE(component, rect);
+        return true;
+    }
+    Component next = component;
+    SetWidgetRectOnUVE(next, rect);
+    SetWidgetRectOnUVE(component, start);
+    if (const Core::TypeMetadataEntryUVE* const entry = Scene::FindSceneComponentMetadataUVE(std::type_index(typeid(Component)))) {
+        set(*entry, &next);
+    } else {
+        component = next;
+    }
+    return true;
+}
+
+bool ResizeAnyWidgetUVE(Scene::IEntityManagerUVE& em, const Scene::EntityUVE e, const Math::RectUVE& r, const Math::RectUVE& start,
+                        const bool commit, const SetWidgetComponentUVE& set) {
+    return ResizeWidgetComponentUVE<Scene::UIView3DComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UIButtonComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UIImageComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UIProgressBarComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UISliderComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UICheckboxComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UITextInputComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UIDropdownComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UILayoutContainerComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UIScrollContainerComponentUVE>(em, e, r, start, commit, set) ||
+           ResizeWidgetComponentUVE<Scene::UITextComponentUVE>(em, e, r, start, commit, set);
+}
+
+[[nodiscard]] Math::RectUVE ToEngineRectUVE(const prism::Rect& r) {
+    return Math::RectUVE{Math::Vector2UVE{r.x, r.y}, Math::Vector2UVE{r.w, r.h}};
+}
+
+} // namespace
+
+void EditorEntityEditorUVE::ResizeWidgetUVE(const Scene::EntityUVE entity, const prism::Rect rect, const bool finished) {
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    if (!em.IsAliveUVE(entity)) {
+        m_resizeWidget = Scene::kInvalidEntityUVE;
+        return;
+    }
+    if (m_resizeWidget != entity) {
+        // Where it started: the component as it is before this first change.
+        m_resizeWidget = entity;
+        m_resizeStartRect = rect;
+        if (em.HasComponentUVE<Scene::UITextComponentUVE>(entity) && !em.HasComponentUVE<Scene::UIButtonComponentUVE>(entity)) {
+            const auto& text = em.GetComponentUVE<Scene::UITextComponentUVE>(entity);
+            m_resizeStartRect = prism::Rect{text.positionPixels.x, text.positionPixels.y, rect.w, text.fontSize * 1.25F};
+        } else if (const Math::RectUVE* current = WidgetRectUVE(em, entity)) {
+            m_resizeStartRect = prism::Rect{current->position.x, current->position.y, current->size.x, current->size.y};
+        }
+    }
+    const SetWidgetComponentUVE set = [this](const Core::TypeMetadataEntryUVE& entry, const void* value) {
+        static_cast<void>(m_editor.SetSelectedComponentValueUVE(entry, value));
+    };
+    if (!finished) {
+        static_cast<void>(ResizeAnyWidgetUVE(em, entity, ToEngineRectUVE(rect), ToEngineRectUVE(m_resizeStartRect), false, set));
+        return;
+    }
+    m_editor.SelectEntityUVE(entity);
+    static_cast<void>(ResizeAnyWidgetUVE(em, entity, ToEngineRectUVE(rect), ToEngineRectUVE(m_resizeStartRect), true, set));
+    m_resizeWidget = Scene::kInvalidEntityUVE;
+    m_designerSignature = 0;
+}
+
+void EditorEntityEditorUVE::ShowResolutionMenuUVE() {
+    struct PresetUVE {
+        const char* label;
+        float width;
+        float height;
+    };
+    static constexpr PresetUVE kPresetsUVE[] = {
+        {"Desktop  1920 x 1080", 1920.0F, 1080.0F}, {"Desktop  2560 x 1440", 2560.0F, 1440.0F},
+        {"Desktop  1280 x 720", 1280.0F, 720.0F},   {"Ultrawide  3440 x 1440", 3440.0F, 1440.0F},
+        {"Phone  2340 x 1080", 2340.0F, 1080.0F},   {"Phone (portrait)  1080 x 2340", 1080.0F, 2340.0F},
+        {"Tablet  2048 x 1536", 2048.0F, 1536.0F},
+    };
+    std::vector<prism::MenuItem> items;
+    items.push_back(prism::MenuItem::Header("SCREEN SIZE"));
+    for (const PresetUVE& preset : kPresetsUVE) {
+        prism::MenuItem item = prism::MenuItem::Item(preset.label, [this, preset] {
+            if (m_designer) {
+                m_designer->SetResolutionUVE(preset.width, preset.height);
+            }
+            m_crumbSignature.clear();
+            SyncBlueprintCrumbsUVE();
+        });
+        item.checked = m_designer && m_designer->WidthUVE() == preset.width && m_designer->HeightUVE() == preset.height;
+        items.push_back(std::move(item));
+    }
+    prism::showSearchMenu(std::move(items), m_resolutionButton ? m_resolutionButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
+                          "Search sizes");
 }
 
 namespace {
@@ -1971,6 +2155,34 @@ void EditorEntityEditorUVE::RenderUVE() {
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
                 EditorHostUVE::ViewImageUVE view{};
                 view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x, used.y};
+                view.texture = static_cast<std::uint32_t>(texture);
+                view.usedWidth = used.x;
+                view.usedHeight = used.y;
+                view.textureWidth = used.x;
+                view.textureHeight = used.y;
+                views.push_back(view);
+            }
+        }
+    }
+    if (m_widgetMode && m_designer && m_designer->visible() && !m_blueprintMode) {
+        const Scene::EntityUVE live = m_designer->LivePreviewUVE();
+        const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+        const prism::Rect rect = m_designer->ViewRectOfUVE(live);
+        if (live != Scene::kInvalidEntityUVE && rect.w > 0.0F && em.IsAliveUVE(live) &&
+            em.HasComponentUVE<Scene::UIView3DComponentUVE>(live)) {
+            const Scene::UIView3DComponentUVE& component = em.GetComponentUVE<Scene::UIView3DComponentUVE>(live);
+            EditorUVE::WidgetPreviewRequestUVE request;
+            request.assetPath = component.assetPath;
+            request.yawDegrees = component.yawDegrees;
+            request.spinDegreesPerSecond = component.spinDegreesPerSecond;
+            request.lookAtHeight = component.lookAtHeight;
+            request.cameraDistance = component.cameraDistance;
+            request.pitchDegrees = component.pitchDegrees;
+            Math::Vector2UVE used{0.0F, 0.0F};
+            const std::uint64_t texture = m_editor.RenderWidgetPreviewUVE(request, Math::Vector2UVE{rect.w, rect.h}, used);
+            if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
+                EditorHostUVE::ViewImageUVE view{};
+                view.rect = rect;
                 view.texture = static_cast<std::uint32_t>(texture);
                 view.usedWidth = used.x;
                 view.usedHeight = used.y;

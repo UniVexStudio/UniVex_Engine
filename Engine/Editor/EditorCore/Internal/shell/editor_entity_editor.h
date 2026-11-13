@@ -200,6 +200,13 @@ private:
     std::vector<std::pair<Scene::EntityUVE, std::array<float, 2>>> m_dragStarts;
     void RefreshDesignerUVE();
     void MoveWidgetUVE(Scene::EntityUVE entity, float dx, float dy, bool finished);
+    /// A corner-handle resize: live while held, one undo step when let go.
+    void ResizeWidgetUVE(Scene::EntityUVE entity, prism::Rect rect, bool finished);
+    Scene::EntityUVE m_resizeWidget = Scene::kInvalidEntityUVE;
+    prism::Rect m_resizeStartRect{};
+    /// The Designer's screen size, picked from the sub row (Desktop, Phone ...).
+    std::shared_ptr<prism::Button> m_resolutionButton;
+    void ShowResolutionMenuUVE();
     void ShowWidgetPaletteUVE();
     void OpenWidgetGraphUVE();
 
