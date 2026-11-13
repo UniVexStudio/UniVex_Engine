@@ -104,11 +104,8 @@ void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& 
     const prism::Color joint(222, 255, 244);
     const prism::Color shade(8, 10, 14, 200);
     const float size = static_cast<float>(kIconSizeUVE);
-    // Along the bottom: the clip's length, with a mark where the pose is taken.
-    constexpr float kBarUVE = 12.0F;
-    canvas.fillRoundRect(prism::Rect{10.0F, size - kBarUVE, size - 20.0F, 4.0F}, 2.0F, prism::Color(255, 255, 255, 40));
-    canvas.fillRoundRect(prism::Rect{10.0F, size - kBarUVE, (size - 20.0F) * 0.5F, 4.0F}, 2.0F, prism::Color(110, 236, 196, 150));
-    canvas.fillCircle(prism::Vec2{size * 0.5F, size - kBarUVE + 2.0F}, 3.5F, joint);
+    const prism::Color helper(96, 214, 255);
+    constexpr float kBarUVE = -4.0F;   // no bar along the bottom: the figure takes the whole tile
 
     const double mid = clip.durationSeconds * 0.5;
     if (!clip.rest.empty()) {
@@ -140,9 +137,6 @@ void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& 
         // Seen from the front, standing up (a rig made standing on Z is stood up too).
         float lowY = 1e30F, highY = -1e30F, lowZ = 1e30F, highZ = -1e30F;
         for (std::size_t bone = 0U; bone < count; ++bone) {
-            if (IsHelperUVE(clip.rest[bone].bone)) {
-                continue;
-            }
             lowY = std::min(lowY, at[bone].y);
             highY = std::max(highY, at[bone].y);
             lowZ = std::min(lowZ, at[bone].z);
@@ -151,14 +145,14 @@ void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& 
         const bool zUp = highZ - lowZ > (highY - lowY) * 1.2F;
         std::vector<Point2UVE> flat;
         std::vector<std::size_t> drawn;
+        // Every bone, helpers and IK targets too (they are drawn their own way below).
         for (std::size_t bone = 0U; bone < count; ++bone) {
-            if (!IsHelperUVE(clip.rest[bone].bone)) {
-                flat.push_back(Point2UVE{at[bone].x, zUp ? at[bone].z : at[bone].y});
-                drawn.push_back(bone);
-            }
+            flat.push_back(Point2UVE{at[bone].x, zUp ? at[bone].z : at[bone].y});
+            drawn.push_back(bone);
         }
         if (!flat.empty()) {
             const std::vector<prism::Vec2> screen = FitUVE(flat, 12.0F, kBarUVE + 4.0F);
+            static_cast<void>(joint);
             std::unordered_map<std::size_t, prism::Vec2> where;
             for (std::size_t i = 0U; i < drawn.size(); ++i) {
                 where.emplace(drawn[i], screen[i]);
@@ -173,15 +167,39 @@ void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& 
                 }
                 return std::nullopt;
             };
-            // A dark stroke under every bone, then the bone: it reads on any tile.
+            // A dark stroke under every bone, then the bone: it reads on any tile. Helpers and IK
+            // targets hang off what they follow by a dotted line.
             for (const int pass : {0, 1}) {
                 for (const std::size_t bone : drawn) {
-                    if (const std::optional<prism::Vec2> from = drawnParent(bone)) {
-                        canvas.line(*from, where[bone], pass == 0 ? shade : line, pass == 0 ? 4.2F : 2.2F);
+                    const std::optional<prism::Vec2> from = drawnParent(bone);
+                    if (!from.has_value()) {
+                        continue;
                     }
+                    if (IsHelperUVE(clip.rest[bone].bone)) {
+                        if (pass == 1) {
+                            const prism::Vec2 to = where[bone];
+                            for (int dot = 1; dot < 8; dot += 2) {
+                                const float a = static_cast<float>(dot) / 8.0F;
+                                const float b = static_cast<float>(dot + 1) / 8.0F;
+                                canvas.line(prism::Vec2{from->x + (to.x - from->x) * a, from->y + (to.y - from->y) * a},
+                                            prism::Vec2{from->x + (to.x - from->x) * b, from->y + (to.y - from->y) * b}, helper, 1.0F);
+                            }
+                        }
+                        continue;
+                    }
+                    canvas.line(*from, where[bone], pass == 0 ? shade : line, pass == 0 ? 4.2F : 2.2F);
                 }
             }
             for (const std::size_t bone : drawn) {
+                if (IsHelperUVE(clip.rest[bone].bone)) {
+                    // A small ringed cross, as in the viewport.
+                    const prism::Vec2 c = where[bone];
+                    canvas.strokeCircle(c, 3.4F, shade, 2.4F);
+                    canvas.strokeCircle(c, 3.4F, helper, 1.2F);
+                    canvas.line(prism::Vec2{c.x - 5.0F, c.y}, prism::Vec2{c.x + 5.0F, c.y}, helper, 1.2F);
+                    canvas.line(prism::Vec2{c.x, c.y - 5.0F}, prism::Vec2{c.x, c.y + 5.0F}, helper, 1.2F);
+                    continue;
+                }
                 canvas.fillCircle(where[bone], 2.6F, shade);
                 canvas.fillCircle(where[bone], 1.6F, joint);
             }
