@@ -11,6 +11,11 @@
 #include "prism/Font.h"
 #include "prism/Menu.h"
 #include "prism/Theme.h"
+#include "prism/Icons.h"
+
+#include "editor_content_browser.h"
+#include "i_asset_database.h"
+#include "i_project_file_index.h"
 
 #include <algorithm>
 #include <cmath>
@@ -22,6 +27,8 @@
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include <chrono>
+#include <filesystem>
 
 namespace UVE::Editor {
 namespace {
@@ -31,6 +38,9 @@ using NodeUVE = Scene::AnimationGraphNodeUVE;
 
 const prism::Color kPointUVE{230, 180, 70};
 const prism::Color kCrossUVE{236, 86, 86};
+constexpr float kStripWUVE = 236.0F;
+constexpr float kStripRowHUVE = 46.0F;
+constexpr float kHintHUVE = 24.0F;
 
 [[nodiscard]] std::string NumberTextUVE(float v) {
     if (std::abs(v) < 1.0e-5F) {
@@ -62,7 +72,8 @@ std::size_t BlendSpaceViewUVE::SpaceIndexUVE() const {
 }
 
 prism::Rect BlendSpaceViewUVE::PlotUVE() const noexcept {
-    return prism::Rect{m_rect.x + 56.0F, m_rect.y + 24.0F, std::max(40.0F, m_rect.w - 84.0F), std::max(40.0F, m_rect.h - 80.0F)};
+    return prism::Rect{m_rect.x + 56.0F, m_rect.y + 28.0F, std::max(40.0F, m_rect.w - 84.0F - kStripWUVE),
+                       std::max(40.0F, m_rect.h - 84.0F - kHintHUVE)};
 }
 
 prism::Vec2 BlendSpaceViewUVE::ToScreenUVE(const NodeUVE& space, const Math::Vector2UVE at) const {
@@ -81,12 +92,22 @@ Math::Vector2UVE BlendSpaceViewUVE::ToSpaceUVE(const NodeUVE& space, const prism
                         space.kind == Kind::BlendSpace1D ? 0.0F : space.areaMin.y + (plot.bottom() - screen.y) / plot.h * (space.areaMax.y - space.areaMin.y)};
     at.x = std::clamp(at.x, std::min(space.areaMin.x, space.areaMax.x), std::max(space.areaMin.x, space.areaMax.x));
     at.y = std::clamp(at.y, std::min(space.areaMin.y, space.areaMax.y), std::max(space.areaMin.y, space.areaMax.y));
-    const EditorUVE::AnimationGraphViewStateUVE& v = m_panel.m_editor.m_animGraph;
-    if (snap && v.snap && v.snapStep > 1.0e-4F) {
-        at.x = std::round(at.x / v.snapStep) * v.snapStep;
-        at.y = std::round(at.y / v.snapStep) * v.snapStep;
+    // Onto the grid's lines (Shift turns snapping off for one drag).
+    if (snap && space.snapToGrid) {
+        const float sx = GridStepUVE(space, false);
+        const float sy = GridStepUVE(space, true);
+        at.x = space.areaMin.x + std::round((at.x - space.areaMin.x) / sx) * sx;
+        if (space.kind == Kind::BlendSpace2D) {
+            at.y = space.areaMin.y + std::round((at.y - space.areaMin.y) / sy) * sy;
+        }
     }
     return at;
+}
+
+float BlendSpaceViewUVE::GridStepUVE(const NodeUVE& space, const bool y) const {
+    const float span = y ? space.areaMax.y - space.areaMin.y : space.areaMax.x - space.areaMin.x;
+    const auto divisions = static_cast<float>(std::max<std::uint32_t>(1U, y ? space.gridY : space.gridX));
+    return std::max(std::abs(span) / divisions, 1.0e-4F);
 }
 
 int BlendSpaceViewUVE::PointAtUVE(const NodeUVE& space, const prism::Vec2 screen) const {
@@ -161,39 +182,33 @@ void BlendSpaceViewUVE::paint(prism::Canvas& c) {
     c.pushClip(m_rect);
     c.fillRoundRect(plot.inflated(1.0F), 4.0F, prism::Color(34, 37, 44));
     c.strokeRoundRect(plot.inflated(1.0F), 4.0F, t.border, 1);
-    // Grid: the snap step when it is fine enough to read, else tenths of the area; labelled axes.
-    const auto gridStep = [&v](const float span) {
-        float step = v.snap && v.snapStep > 1.0e-4F ? v.snapStep : span / 10.0F;
-        while (span / step > 24.0F) {
-            step *= 2.0F;
-        }
-        return std::max(step, 1.0e-4F);
-    };
+    // Grid: one line per division of each axis, labelled; the axes named.
     {
-        const float lo = std::min(space->areaMin.x, space->areaMax.x);
-        const float hi = std::max(space->areaMin.x, space->areaMax.x);
-        const float step = gridStep(hi - lo);
-        for (float x = std::ceil(lo / step) * step; x <= hi + 1.0e-4F; x += step) {
+        const float step = GridStepUVE(*space, false);
+        for (std::uint32_t k = 0U; k <= std::max<std::uint32_t>(1U, space->gridX); ++k) {
+            const float x = space->areaMin.x + step * static_cast<float>(k);
             const float sx = ToScreenUVE(*space, Math::Vector2UVE{x, space->areaMin.y}).x;
-            c.fillRect(prism::Rect{sx, plot.y, 1.0F, plot.h}, std::abs(x) < step * 0.01F ? prism::Color(255, 255, 255, 45) : prism::Color(255, 255, 255, 12));
+            c.fillRect(prism::Rect{sx, plot.y, 1.0F, plot.h}, std::abs(x) < step * 0.01F ? prism::Color(255, 255, 255, 45) : prism::Color(255, 255, 255, 16));
             c.textIn(*t.small, prism::Rect{sx - 24.0F, plot.bottom() + 4.0F, 48.0F, 14.0F}, NumberTextUVE(x), t.textDim, prism::HAlign::Center, false);
         }
-        c.textIn(*t.small, prism::Rect{plot.x, plot.bottom() + 18.0F, plot.w, 14.0F},
-                 space->parameter.empty() ? std::string{"X"} : space->parameter, t.text, prism::HAlign::Center);
+        const std::string name = !space->axisNameX.empty() ? space->axisNameX : space->parameter.empty() ? std::string{"X"} : space->parameter;
+        c.textIn(*t.semibold, prism::Rect{plot.x, plot.bottom() + 20.0F, plot.w, 16.0F}, name, t.text, prism::HAlign::Center);
     }
     if (two) {
-        const float lo = std::min(space->areaMin.y, space->areaMax.y);
-        const float hi = std::max(space->areaMin.y, space->areaMax.y);
-        const float step = gridStep(hi - lo);
-        for (float y = std::ceil(lo / step) * step; y <= hi + 1.0e-4F; y += step) {
+        const float step = GridStepUVE(*space, true);
+        for (std::uint32_t k = 0U; k <= std::max<std::uint32_t>(1U, space->gridY); ++k) {
+            const float y = space->areaMin.y + step * static_cast<float>(k);
             const float sy = ToScreenUVE(*space, Math::Vector2UVE{space->areaMin.x, y}).y;
-            c.fillRect(prism::Rect{plot.x, sy, plot.w, 1.0F}, std::abs(y) < step * 0.01F ? prism::Color(255, 255, 255, 45) : prism::Color(255, 255, 255, 12));
+            c.fillRect(prism::Rect{plot.x, sy, plot.w, 1.0F}, std::abs(y) < step * 0.01F ? prism::Color(255, 255, 255, 45) : prism::Color(255, 255, 255, 16));
             c.textIn(*t.small, prism::Rect{plot.x - 52.0F, sy - 7.0F, 46.0F, 14.0F}, NumberTextUVE(y), t.textDim, prism::HAlign::Right, false);
         }
-        c.textIn(*t.small, prism::Rect{m_rect.x + 4.0F, plot.y - 20.0F, 120.0F, 14.0F},
-                 space->parameterY.empty() ? std::string{"Y"} : space->parameterY, t.text);
+        const std::string name = !space->axisNameY.empty() ? space->axisNameY : space->parameterY.empty() ? std::string{"Y"} : space->parameterY;
+        c.textIn(*t.semibold, prism::Rect{m_rect.x + 6.0F, plot.y - 22.0F, 200.0F, 16.0F}, name, t.text);
     } else {
         c.fillRect(prism::Rect{plot.x, plot.y + plot.h * 0.5F, plot.w, 1.0F}, prism::Color(255, 255, 255, 40));
+    }
+    if (m_dropHot || m_drag == DragUVE::Clip) {
+        c.strokeRoundRect(plot.inflated(3.0F), 5.0F, t.accent, 2);
     }
 
     // The runtime's triangles and weights, when the preview has run it.
@@ -260,6 +275,90 @@ void BlendSpaceViewUVE::paint(prism::Canvas& c) {
     c.line(prism::Vec2{cross.x - 9.0F, cross.y}, prism::Vec2{cross.x + 9.0F, cross.y}, kCrossUVE, 2.0F);
     c.line(prism::Vec2{cross.x, cross.y - 9.0F}, prism::Vec2{cross.x, cross.y + 9.0F}, kCrossUVE, 2.0F);
     c.strokeCircle(cross, 5.0F, kCrossUVE, 1.5F);
+    // A clip being dragged in from the list: where it would land.
+    if (m_drag == DragUVE::Clip && plot.inflated(6.0F).contains(m_mouse)) {
+        const prism::Vec2 at = ToScreenUVE(*space, ToSpaceUVE(*space, m_mouse, m_snap));
+        c.fillCircle(at, 7.0F, t.accent);
+        c.textIn(*t.small, prism::Rect{at.x + 10.0F, at.y - 16.0F, 200.0F, 14.0F}, m_panel.m_editor.AnimationClipNameUVE(m_dragClip), t.textBright);
+    }
+    PaintStripUVE(c);
+    const char* hint = m_drag == DragUVE::Clip ? "Drop on the grid to put the animation there   |   Shift: no snapping"
+                                               : "Drag an animation from the list (or the Content Browser) onto the grid   |   Double-click: add here   |   "
+                                                 "Drag the red cross to preview   |   Right-click: more";
+    c.fillRect(prism::Rect{m_rect.x, m_rect.bottom() - kHintHUVE, m_rect.w, kHintHUVE}, prism::Color(18, 20, 24, 220));
+    c.textIn(*t.small, prism::Rect{m_rect.x + 10.0F, m_rect.bottom() - kHintHUVE, m_rect.w - 20.0F, kHintHUVE}, hint, prism::Color(160, 168, 184));
+    if (m_drag == DragUVE::Clip && !plot.inflated(6.0F).contains(m_mouse)) {
+        c.textIn(*t.small, prism::Rect{m_mouse.x + 12.0F, m_mouse.y + 4.0F, 220.0F, 14.0F}, m_panel.m_editor.AnimationClipNameUVE(m_dragClip), t.textBright);
+    }
+    c.popClip();
+}
+
+prism::Rect BlendSpaceViewUVE::StripUVE() const noexcept {
+    return prism::Rect{m_rect.right() - kStripWUVE, m_rect.y, kStripWUVE, std::max(0.0F, m_rect.h - kHintHUVE)};
+}
+
+prism::Rect BlendSpaceViewUVE::StripRowUVE(const std::size_t row) const noexcept {
+    const prism::Rect strip = StripUVE();
+    return prism::Rect{strip.x + 6.0F, strip.y + 32.0F + static_cast<float>(row) * kStripRowHUVE - m_stripScroll, strip.w - 12.0F, kStripRowHUVE - 4.0F};
+}
+
+int BlendSpaceViewUVE::StripRowAtUVE(const prism::Vec2 screen) const {
+    const prism::Rect strip = StripUVE();
+    if (!strip.contains(screen) || screen.y < strip.y + 32.0F) {
+        return -1;
+    }
+    for (std::size_t row = 0U; row < m_clips.size(); ++row) {
+        if (StripRowUVE(row).contains(screen)) {
+            return static_cast<int>(row);
+        }
+    }
+    return -1;
+}
+
+void BlendSpaceViewUVE::PaintStripUVE(prism::Canvas& c) {
+    const prism::Theme& t = prism::theme();
+    // The project's animations, read again now and then (files come and go).
+    static std::chrono::steady_clock::time_point lastRead{};
+    const auto now = std::chrono::steady_clock::now();
+    if (m_clips.empty() || now - lastRead > std::chrono::milliseconds(1500)) {
+        m_clips = m_panel.ClipChoicesUVE();
+        lastRead = now;
+    }
+    const prism::Rect strip = StripUVE();
+    c.fillRect(strip, prism::Color(22, 24, 29));
+    c.fillRect(prism::Rect{strip.x, strip.y, 1.0F, strip.h}, t.border);
+    prism::drawIcon(c, prism::Icon::AnimLibrary, prism::Rect{strip.x + 10.0F, strip.y + 8.0F, 16.0F, 16.0F}, t.text);
+    c.textIn(*t.semibold, prism::Rect{strip.x + 32.0F, strip.y + 4.0F, strip.w - 40.0F, 24.0F},
+             "Animations (" + std::to_string(m_clips.size()) + ")", t.textBright);
+    c.pushClip(prism::Rect{strip.x, strip.y + 30.0F, strip.w, strip.h - 30.0F});
+    Asset::IAssetDatabaseUVE& database = m_panel.m_editor.m_services->GetAssetDatabaseUVE();
+    for (std::size_t row = 0U; row < m_clips.size(); ++row) {
+        const prism::Rect r = StripRowUVE(row);
+        if (r.bottom() < strip.y + 30.0F || r.y > strip.bottom()) {
+            continue;
+        }
+        const bool hot = m_stripHover == static_cast<int>(row) || (m_drag == DragUVE::Clip && m_dragClip == m_clips[row]);
+        c.fillRoundRect(r, 4.0F, hot ? prism::Color(52, 58, 72) : prism::Color(32, 35, 42));
+        const prism::Rect iconRect{r.x + 3.0F, r.y + 3.0F, r.h - 6.0F, r.h - 6.0F};
+        const std::filesystem::path file = database.ResolveUVE(m_clips[row]);
+        const EditorUVE::AnimationIconUVE* icon = file.empty() ? nullptr : m_panel.m_editor.GetAnimationIconUVE(file);
+        if (icon != nullptr && icon->size > 0) {
+            c.blitScaled(icon->pixels.data(), icon->size, icon->size, icon->size, iconRect);
+        } else {
+            c.fillRoundRect(iconRect, 3.0F, prism::Color(40, 44, 54));
+            prism::drawIcon(c, prism::Icon::AnimClip, iconRect.deflated(8.0F), t.textDim);
+        }
+        c.textIn(*t.ui, prism::Rect{iconRect.right() + 8.0F, r.y + 3.0F, r.right() - iconRect.right() - 12.0F, 18.0F},
+                 m_panel.m_editor.AnimationClipNameUVE(m_clips[row]), t.text);
+        if (icon != nullptr) {
+            char detail[64];
+            std::snprintf(detail, sizeof(detail), "%.2f s  -  %zu frames", icon->durationSeconds, icon->frames);
+            c.textIn(*t.small, prism::Rect{iconRect.right() + 8.0F, r.y + 22.0F, r.right() - iconRect.right() - 12.0F, 16.0F}, detail, t.textDim);
+        }
+    }
+    if (m_clips.empty()) {
+        c.textIn(*t.small, prism::Rect{strip.x + 10.0F, strip.y + 36.0F, strip.w - 20.0F, 40.0F}, "No animations in the project yet", t.textDim);
+    }
     c.popClip();
 }
 
@@ -276,15 +375,31 @@ bool BlendSpaceViewUVE::onMouseDown(const prism::MouseEvent& e) {
     EditorUVE::AnimationGraphViewStateUVE& v = m_panel.m_editor.m_animGraph;
     m_mouse = e.pos;
     m_snap = (e.mods & prism::ModShift) == 0U;
+    // The animations list: press on one and drag it onto the grid.
+    if (StripUVE().contains(e.pos)) {
+        const int row = StripRowAtUVE(e.pos);
+        if (row >= 0 && e.button == prism::MouseButton::Left) {
+            m_dragClip = m_clips[static_cast<std::size_t>(row)];
+            m_drag = DragUVE::Clip;
+            invalidate();
+        }
+        return true;
+    }
     const int point = PointAtUVE(*space, e.pos);
     if (e.button == prism::MouseButton::Right) {
         if (point >= 0) {
             ShowPointMenuUVE(e.pos, point);
+        } else if (PlotUVE().inflated(6.0F).contains(e.pos)) {
+            ShowEmptyMenuUVE(e.pos, ToSpaceUVE(*space, e.pos, m_snap));
         }
         return true;
     }
     if (e.button != prism::MouseButton::Left) {
         return false;
+    }
+    if (e.clicks >= 2 && point < 0 && PlotUVE().inflated(6.0F).contains(e.pos)) {
+        AskClipUVE(e.pos, ToSpaceUVE(*space, e.pos, m_snap));
+        return true;
     }
     const std::uint32_t id = space->id;
     switch (v.spaceTool) {
@@ -319,6 +434,13 @@ bool BlendSpaceViewUVE::onMouseDown(const prism::MouseEvent& e) {
 
 bool BlendSpaceViewUVE::onMouseMove(const prism::MouseEvent& e) {
     m_mouse = e.pos;
+    if (m_drag == DragUVE::Clip) {
+        m_snap = (e.mods & prism::ModShift) == 0U;
+    }
+    if (const int row = m_drag == DragUVE::None ? StripRowAtUVE(e.pos) : -1; row != m_stripHover) {
+        m_stripHover = row;
+        invalidate();
+    }
     if (m_drag == DragUVE::Cross) {
         if (const NodeUVE* space = SpaceUVE()) {
             SetCrossUVE(*space, ToSpaceUVE(*space, e.pos, false));
@@ -340,6 +462,8 @@ bool BlendSpaceViewUVE::onMouseUp(const prism::MouseEvent& e) {
         m_panel.EditUVE([&](Scene::AnimationGraphComponentUVE& g) { static_cast<void>(MoveBlendSpacePointUVE(g.nodes, id, slot, to)); });
     } else if (m_drag == DragUVE::Cross) {
         m_panel.CommitLiveUVE();
+    } else if (space != nullptr && m_drag == DragUVE::Clip && PlotUVE().inflated(6.0F).contains(e.pos)) {
+        AddPointUVE(ToSpaceUVE(*space, e.pos, m_snap), m_dragClip);
     }
     m_drag = DragUVE::None;
     m_dragPoint = -1;
@@ -407,13 +531,124 @@ void BlendSpaceViewUVE::ShowPointMenuUVE(const prism::Vec2 at, const int point) 
         }));
     }
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Sub("Animation", std::move(clips), prism::Icon::AnimClip));
+    items.push_back(prism::MenuItem::Header(m_panel.m_editor.AnimationClipNameUVE(current).empty() ? std::string{"Point"}
+                                                                                                      : m_panel.m_editor.AnimationClipNameUVE(current)));
+    items.push_back(prism::MenuItem::Sub("Replace Animation", std::move(clips), prism::Icon::AnimClip));
     items.push_back(prism::MenuItem::Sep());
-    items.push_back(prism::MenuItem::Item("Remove Point", [this, id, point] {
+    items.push_back(prism::MenuItem::Item("Delete Point", [this, id, point] {
         m_panel.EditUVE([id, point](Scene::AnimationGraphComponentUVE& g) { static_cast<void>(RemoveBlendSpacePointUVE(g.nodes, id, static_cast<std::size_t>(point))); });
         m_panel.m_editor.m_animGraph.pickedState = -1;
     }, "Del", prism::Icon::Trash));
     prism::showContextMenu(std::move(items), at);
+}
+
+void BlendSpaceViewUVE::AddPointUVE(const Math::Vector2UVE position, const Asset::AssetGuidUVE clip) {
+    const NodeUVE* space = SpaceUVE();
+    if (space == nullptr) {
+        return;
+    }
+    const std::uint32_t id = space->id;
+    std::optional<std::size_t> added;
+    m_panel.EditUVE([&](Scene::AnimationGraphComponentUVE& g) { added = AddBlendSpacePointUVE(g.nodes, id, position, clip); });
+    if (added.has_value()) {
+        m_panel.m_editor.m_animGraph.pickedState = static_cast<int>(*added);
+    } else if (prism::Application::exists()) {
+        prism::Application::get().notify("A point is already there (or the space is full)", prism::ToastLevel::Warning, 1800);
+    }
+    m_panel.m_sideDirty = true;
+    invalidate();
+}
+
+void BlendSpaceViewUVE::ShowEmptyMenuUVE(const prism::Vec2 at, const Math::Vector2UVE position) {
+    std::vector<prism::MenuItem> clips;
+    for (const Asset::AssetGuidUVE clip : m_panel.ClipChoicesUVE()) {
+        clips.push_back(prism::MenuItem::Item(m_panel.m_editor.AnimationClipNameUVE(clip), [this, position, clip] { AddPointUVE(position, clip); }, "",
+                                              prism::Icon::AnimClip));
+    }
+    if (clips.empty()) {
+        clips.push_back(prism::MenuItem::Item("No animations in the project", {}).disabled());
+    }
+    std::vector<prism::MenuItem> items;
+    items.push_back(prism::MenuItem::Header("Blend Space"));
+    items.push_back(prism::MenuItem::Sub("Add Animation Here", std::move(clips), prism::Icon::Plus));
+    items.push_back(prism::MenuItem::Item("Empty Point Here", [this, position] { AddPointUVE(position, Asset::AssetGuidUVE{}); }));
+    items.push_back(prism::MenuItem::Sep());
+    items.push_back(prism::MenuItem::Item("Up", [this] { m_panel.CloseFocusUVE(); }, "Esc", prism::Icon::ChevronLeft));
+    prism::showContextMenu(std::move(items), at);
+}
+
+bool BlendSpaceViewUVE::onMouseWheel(const prism::MouseEvent& e) {
+    if (!StripUVE().contains(e.pos)) {
+        return false;
+    }
+    const float content = static_cast<float>(m_clips.size()) * kStripRowHUVE + 40.0F;
+    m_stripScroll = std::clamp(m_stripScroll - e.wheel.y * 40.0F, 0.0F, std::max(0.0F, content - StripUVE().h));
+    invalidate();
+    return true;
+}
+
+void BlendSpaceViewUVE::onMouseLeave() {
+    if (m_stripHover != -1) {
+        m_stripHover = -1;
+        invalidate();
+    }
+}
+
+bool BlendSpaceViewUVE::onDragOver(const prism::DragDropEvent& e) {
+    const std::string* path = e.operation && e.operation->tag() == EditorContentBrowserUVE::kDragTagUVE ? e.operation->getPayload<std::string>() : nullptr;
+    const bool accepts = path != nullptr && std::filesystem::path{*path}.extension() == ".uvanim" && PlotUVE().inflated(6.0F).contains(e.pos);
+    m_mouse = e.pos;
+    if (accepts != m_dropHot) {
+        m_dropHot = accepts;
+    }
+    invalidate();
+    return accepts;
+}
+
+void BlendSpaceViewUVE::onDragLeave() {
+    m_dropHot = false;
+    invalidate();
+}
+
+bool BlendSpaceViewUVE::onDrop(const prism::DragDropEvent& e) {
+    const bool accepts = onDragOver(e);
+    m_dropHot = false;
+    const NodeUVE* space = SpaceUVE();
+    if (!accepts || space == nullptr) {
+        return false;
+    }
+    const std::filesystem::path relative{*e.operation->getPayload<std::string>()};
+    const Asset::ProjectFileSnapshotUVE snapshot = m_panel.m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const Asset::AssetGuidUVE clip = m_panel.m_editor.m_services->GetAssetDatabaseUVE().RegisterUVE(snapshot.contentRoot / relative);
+    AddPointUVE(ToSpaceUVE(*space, e.pos, (e.mods & prism::ModShift) == 0U), clip);
+    return true;
+}
+
+const std::string& BlendSpaceViewUVE::tooltipAt(const prism::Vec2 p) const {
+    m_tip.clear();
+    const NodeUVE* space = SpaceUVE();
+    if (space == nullptr || m_drag != DragUVE::None) {
+        return m_tip;
+    }
+    if (const int point = PointAtUVE(*space, p); point >= 0) {
+        const Scene::AnimationBlendPointUVE& at = space->blendPoints[static_cast<std::size_t>(point)];
+        m_tip = m_panel.m_editor.AnimationClipNameUVE(at.clip);
+        if (m_tip.empty()) {
+            m_tip = "(no animation)";
+        }
+        m_tip += "\nAt " + NumberTextUVE(at.position.x) + (space->kind == Kind::BlendSpace2D ? ", " + NumberTextUVE(at.position.y) : std::string{}) +
+                 "\nRate " + NumberTextUVE(at.speed) + "x" + (at.loop ? ", loops" : "");
+    } else if (const int row = StripRowAtUVE(p); row >= 0) {
+        m_tip = m_panel.m_editor.AnimationClipNameUVE(m_clips[static_cast<std::size_t>(row)]) + "\nDrag it onto the grid";
+    }
+    return m_tip;
+}
+
+prism::Cursor BlendSpaceViewUVE::cursor() const {
+    if (m_drag == DragUVE::Clip || m_stripHover >= 0) {
+        return prism::Cursor::Hand;
+    }
+    return m_drag == DragUVE::Point ? prism::Cursor::SizeAll : prism::Cursor::Arrow;
 }
 
 } // namespace UVE::Editor

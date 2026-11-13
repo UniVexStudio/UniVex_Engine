@@ -19,6 +19,7 @@
 #include "prism/Views.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <cstddef>
@@ -405,57 +406,97 @@ void EditorAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, 
     const std::uint32_t id = space.id;
     const bool two = space.kind == Kind::BlendSpace2D;
     cat = grid.addCategory(space.name.empty() ? std::string{AnimationGraphKindLabelUVE(space.kind)} : space.name);
-    auto tool = prism::make<prism::Segmented>();
-    tool->add("Select", prism::Icon::Select, "Move points, or the cross on empty space");
-    tool->add("Add", prism::Icon::Plus, "Click to put a point");
-    tool->add("Remove", prism::Icon::Trash, "Click a point to take it away");
-    tool->setSelected(std::clamp(state.spaceTool, 0, 2));
-    tool->onSelect = [this](const int i) { m_editor.m_animGraph.spaceTool = i; };
-    auto toolRow = prism::hbox();
-    toolRow->setPadding(prism::Margin(10.0F, 0.0F, 12.0F, 2.0F));
-    toolRow->add(tool, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    grid.addRow(cat, "Tool", toolRow);
-    auto snapRow = prism::hbox(6.0F);
-    auto snap = prism::make<prism::CheckBox>("Snap", state.snap);
-    snap->onChange = [this](const bool v) { m_editor.m_animGraph.snap = v; };
-    auto step = prism::make<prism::NumberField>(state.snapStep, 0.01F, 2);
-    step->setRange(0.01F, 100.0F);
-    step->onCommit = [this](const float v) { m_editor.m_animGraph.snapStep = std::max(0.01F, v); };
-    snapRow->add(snap, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    snapRow->add(step, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    grid.addRow(cat, "Grid", snapRow);
-
-    // The area the axes span.
-    const auto areaField = [this, id](const float value, const int which) {
-        auto field = prism::make<prism::NumberField>(value, 0.05F, 2);
-        field->onCommit = [this, id, which](const float v) {
-            EditNodeUVE(id, [which, v](NodeUVE& n) {
-                switch (which) {
-                    case 0: n.areaMin.x = v; break;
-                    case 1: n.areaMax.x = v; break;
-                    case 2: n.areaMin.y = v; break;
-                    default: n.areaMax.y = v; break;
-                }
-            });
-        };
-        return field;
-    };
+    state.spaceTool = 0;   // points are added by dragging animations in, or from the menus
     const auto pairRow = [](const prism::Ref<prism::Widget>& a, const prism::Ref<prism::Widget>& b) {
         auto row = prism::hbox(4.0F);
         row->add(a, prism::Slot{1.0F});
         row->add(b, prism::Slot{1.0F});
         return row;
     };
-    grid.addRow(cat, "X from / to", pairRow(areaField(space.areaMin.x, 0), areaField(space.areaMax.x, 1)));
-    if (two) {
-        grid.addRow(cat, "Y from / to", pairRow(areaField(space.areaMin.y, 2), areaField(space.areaMax.y, 3)));
+    std::vector<std::string> floats{"(its own value)"};
+    std::vector<std::string> vectors{"(its own value)"};
+    for (const Scene::AnimationParameterUVE& p : graph.parameters) {
+        if (p.type == Scene::AnimationParameterTypeUVE::Float) {
+            floats.push_back(p.name);
+        } else if (p.type == Scene::AnimationParameterTypeUVE::Vector3) {
+            vectors.push_back(p.name);
+        }
     }
+    // A 2D space may be moved by one Vector3 (x and y at once) instead of two Floats.
+    const bool byVector = two && std::ranges::find(vectors, space.parameter) != vectors.end() && !space.parameter.empty();
+    // ---- Axis Settings: each axis's name, range, grid and the parameter that moves along it.
+    for (const bool y : two ? std::vector<bool>{false, true} : std::vector<bool>{false}) {
+        cat = grid.addCategory(two ? (y ? "Vertical Axis" : "Horizontal Axis") : "Axis");
+        auto name = prism::make<prism::TextInput>(y ? space.axisNameY : space.axisNameX, y ? "Y" : "X");
+        name->onCommit = [this, id, y](const std::string& to) { EditNodeUVE(id, [y, &to](NodeUVE& n) { (y ? n.axisNameY : n.axisNameX) = to; }); };
+        grid.addRow(cat, "Name", name, "Shown along the axis");
+        const auto areaField = [this, id, y](const float value, const bool high) {
+            auto field = prism::make<prism::NumberField>(value, 0.05F, 2);
+            field->onCommit = [this, id, y, high](const float v) {
+                EditNodeUVE(id, [y, high, v](NodeUVE& n) {
+                    float& target = y ? (high ? n.areaMax.y : n.areaMin.y) : (high ? n.areaMax.x : n.areaMin.x);
+                    target = v;
+                });
+            };
+            return field;
+        };
+        grid.addRow(cat, "Minimum / Maximum", pairRow(areaField(y ? space.areaMin.y : space.areaMin.x, false), areaField(y ? space.areaMax.y : space.areaMax.x, true)),
+                    "The range the editor shows and the grid divides");
+        auto divisions = prism::make<prism::NumberField>(static_cast<float>(y ? space.gridY : space.gridX), 1.0F, 0);
+        divisions->setRange(1.0F, 64.0F);
+        divisions->onCommit = [this, id, y](const float v) {
+            const auto count = static_cast<std::uint32_t>(std::clamp(std::lround(v), 1L, 64L));
+            EditNodeUVE(id, [y, count](NodeUVE& n) { (y ? n.gridY : n.gridX) = count; });
+        };
+        grid.addRow(cat, "Grid Divisions", divisions, "Lines across the axis; points snap to them");
+        if (byVector && y) {
+            auto note = prism::make<prism::Label>("From " + space.parameter + " (its y)");
+            note->setColor(prism::ThemeColor(&prism::Theme::textDim));
+            grid.addRow(cat, "Parameter", note);
+            continue;
+        }
+        std::vector<std::string> choices = floats;
+        if (two && !y) {
+            for (std::size_t k = 1U; k < vectors.size(); ++k) {
+                choices.push_back(vectors[k]);
+            }
+        }
+        const std::string& bound = y ? space.parameterY : space.parameter;
+        int selected = 0;
+        for (std::size_t k = 1U; k < choices.size(); ++k) {
+            if (choices[k] == bound) {
+                selected = static_cast<int>(k);
+            }
+        }
+        auto parameter = prism::make<prism::ComboBox>(choices, selected);
+        parameter->onChange = [this, id, y, choices](const int k) {
+            const std::string to = k > 0 && static_cast<std::size_t>(k) < choices.size() ? choices[static_cast<std::size_t>(k)] : std::string{};
+            EditNodeUVE(id, [y, &to](NodeUVE& n) { (y ? n.parameterY : n.parameter) = to; });
+        };
+        grid.addRow(cat, "Parameter", parameter,
+                    two && !y ? "A Float for this axis, or a Vector3 for both (x, y)" : "The Float the gameplay moves along this axis");
+    }
+    cat = grid.addCategory("Blending");
+    auto snapGrid = prism::make<prism::CheckBox>("Snap to Grid", space.snapToGrid);
+    snapGrid->onChange = [this, id](const bool v) { EditNodeUVE(id, [v](NodeUVE& n) { n.snapToGrid = v; }); };
+    grid.addRow(cat, "", snapGrid, "Points land on the grid's lines (Shift while dragging: free)");
+    auto mode = prism::make<prism::ComboBox>(std::vector<std::string>{"Blend", "Nearest", "Nearest, in step"}, static_cast<int>(space.blendMode));
+    mode->onChange = [this, id](const int k) {
+        EditNodeUVE(id, [k](NodeUVE& n) { n.blendMode = static_cast<Scene::AnimationBlendModeUVE>(std::clamp(k, 0, 2)); });
+    };
+    grid.addRow(cat, "Mode", mode, "Blend mixes the nearest points; Nearest plays one (in step: from the same phase)");
+    auto sync = prism::make<prism::CheckBox>("Keep in step", space.sync);
+    sync->onChange = [this, id](const bool v) { EditNodeUVE(id, [v](NodeUVE& n) { n.sync = v; }); };
+    grid.addRow(cat, "Sync", sync, "The heaviest animation leads; the others follow its phase (feet together)");
     auto smoothing = prism::make<prism::NumberField>(space.smoothingSeconds, 0.01F, 2);
     smoothing->setRange(0.0F, 5.0F);
     smoothing->setSuffix(" s");
     smoothing->setTooltip("How long the position takes to close half the gap to its parameters (0: at once)");
     smoothing->onCommit = [this, id](const float v) { EditNodeUVE(id, [v](NodeUVE& n) { n.smoothingSeconds = std::clamp(v, 0.0F, 5.0F); }); };
     grid.addRow(cat, "Smoothing", smoothing);
+    auto count = prism::make<prism::Label>(std::to_string(space.blendPoints.size()) + (space.blendPoints.size() == 1U ? " animation" : " animations"));
+    count->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    grid.addRow(cat, "", count);
 
     // The picked point.
     if (state.pickedState >= 0 && static_cast<std::size_t>(state.pickedState) < space.blendPoints.size()) {
@@ -494,7 +535,7 @@ void EditorAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, 
         auto loop = prism::make<prism::CheckBox>("Loop", point.loop);
         loop->onChange = [editPoint](const bool v) { editPoint([v](Scene::AnimationBlendPointUVE& p) { p.loop = v; }); };
         speedRow->add(speed, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-        grid.addRow(cat, "Speed", speedRow);
+        grid.addRow(cat, "Rate", speedRow);
         grid.addRow(cat, "", loop);
         const auto placeField = [this, id, slot, point](const bool y) {
             auto field = prism::make<prism::NumberField>(y ? point.position.y : point.position.x, 0.01F, 2);
@@ -507,7 +548,7 @@ void EditorAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, 
         const prism::Ref<prism::Widget> place = two ? prism::Ref<prism::Widget>{pairRow(placeField(false), placeField(true))}
                                                     : prism::Ref<prism::Widget>{placeField(false)};
         grid.addRow(cat, two ? "X / Y" : "X", place);
-        auto remove = prism::make<prism::Button>("Remove Point", prism::Icon::Trash, prism::ButtonStyle::Default);
+        auto remove = prism::make<prism::Button>("Delete Point", prism::Icon::Trash, prism::ButtonStyle::Default);
         remove->onClick = [this, id, slot] {
             EditUVE([id, slot](GraphUVE& g) { static_cast<void>(RemoveBlendSpacePointUVE(g.nodes, id, slot)); });
             m_editor.m_animGraph.pickedState = -1;
