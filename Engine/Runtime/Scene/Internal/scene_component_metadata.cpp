@@ -2385,6 +2385,12 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                   kPropertyTypeBoolUVE),
                          DeclareUVE<&CanvasComponentUVE::sortOrder>("sortOrder", "Sort Order",
                                                                     kPropertyTypeInt32UVE),
+                         WithTooltipUVE(DeclareUVE<&CanvasComponentUVE::scaleWithScreen>("scaleWithScreen", "Scale With Screen",
+                                                                                        kPropertyTypeBoolUVE),
+                                        "Fit the canvas, laid out for its Reference Resolution, to any screen"),
+                         WithTooltipUVE(DeclareUVE<&CanvasComponentUVE::referenceResolution>(
+                                            "referenceResolution", "Reference Resolution", kPropertyTypeVector2UVE),
+                                        "The screen size the widgets were placed for (0 = this device's screen)"),
                      }));
 
     AddValidatedUVE<UITextComponentUVE, &IsUITextComponentValidUVE>(

@@ -301,6 +301,9 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
     if (name == "ui.show_cursor") {
         return HostFunctionUVE{{TypeUVE::BoolUVE()}, TypeUVE::BoolUVE()};
     }
+    if (name == "ui.show_screen") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+    }
     if (name == "ui.set_checked") {
         return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::BoolUVE()}, TypeUVE::BoolUVE()};
     }
@@ -1359,6 +1362,38 @@ ValueUVE UVScriptObjectHostUVE::WidgetCallUVE(const std::string_view name, const
             entities.GetComponentUVE<Scene::VisibilityComponentUVE>(root).visible = true;
         }
         return true;
+    }
+    if (name == "ui.show_screen") {
+        // A widget's screens are the Canvases right under its root Canvas: one shows, the rest hide.
+        Scene::EntityUVE root = Scene::kInvalidEntityUVE;
+        for (Scene::EntityUVE cursor = m_entity; entities.IsAliveUVE(cursor);) {
+            if (entities.HasComponentUVE<Scene::CanvasComponentUVE>(cursor)) {
+                root = cursor;
+            }
+            if (!entities.HasComponentUVE<Scene::HierarchyComponentUVE>(cursor)) {
+                break;
+            }
+            const Scene::EntityUVE up = entities.GetComponentUVE<Scene::HierarchyComponentUVE>(cursor).parent;
+            if (up == cursor) {
+                break;
+            }
+            cursor = up;
+        }
+        if (root == Scene::kInvalidEntityUVE) {
+            return false;
+        }
+        const std::string& wanted = std::get<std::string>(args[0]);
+        bool found = false;
+        entities.ForEachUVE<Scene::HierarchyComponentUVE>([&](const Scene::EntityUVE child, const Scene::HierarchyComponentUVE& h) {
+            if (h.parent != root || !entities.HasComponentUVE<Scene::CanvasComponentUVE>(child)) {
+                return;
+            }
+            const bool match = entities.HasComponentUVE<Scene::NameComponentUVE>(child) &&
+                               entities.GetComponentUVE<Scene::NameComponentUVE>(child).name == wanted;
+            entities.GetComponentUVE<Scene::CanvasComponentUVE>(child).visible = match;
+            found = found || match;
+        });
+        return found;
     }
     if (name == "ui.show_cursor") {
         if (!m_cursorHandler) {

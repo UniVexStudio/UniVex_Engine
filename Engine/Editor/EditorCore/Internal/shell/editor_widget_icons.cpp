@@ -254,7 +254,7 @@ void PaintUVE(IconPainterUVE& p, const WidgetKindUVE kind) {
 
 const char* WidgetKindLabelUVE(const WidgetKindUVE kind) noexcept {
     switch (kind) {
-        case WidgetKindUVE::Canvas: return "Canvas Panel";
+        case WidgetKindUVE::Canvas: return "Screen";
         case WidgetKindUVE::Text: return "Text";
         case WidgetKindUVE::Button: return "Button";
         case WidgetKindUVE::Image: return "Image";

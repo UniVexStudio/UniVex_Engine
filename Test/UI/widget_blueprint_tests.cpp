@@ -200,6 +200,34 @@ TEST_F(WidgetBlueprintUVETest, ShowMouseCursorAndAComboBoxChoiceReachTheGame) {
     EXPECT_EQ(TextOfUVE("Score"), "Ultra");
 }
 
+TEST_F(WidgetBlueprintUVETest, ShowScreenShowsOneScreenAndHidesTheOthers) {
+    const EntityUVE root = MakeWidgetUVE();
+    const auto screen = [&](const std::string& name, const bool visible) {
+        const EntityUVE entity = MakeUVE(name, root);
+        CanvasComponentUVE canvas;
+        canvas.visible = visible;
+        entityManager.AddComponentUVE<CanvasComponentUVE>(entity, canvas);
+        return entity;
+    };
+    const EntityUVE main = screen("Main", true);
+    const EntityUVE settings = screen("Settings", false);
+    const EntityUVE button = MakeUVE("Open", main);
+    entityManager.AddComponentUVE<UIButtonComponentUVE>(button, UIButtonComponentUVE{});
+    BlueprintAssetUVE graph;
+    graph.parentKind = "Canvas";
+    graph.nodes = {NodeUVE(1U, "ui_on_clicked", {"Open"}), NodeUVE(2U, "ui_show_screen", {"", "Settings"})};
+    graph.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}};
+    Core::UVScriptObjectHostUVE host{entityManager, nullptr, root};
+    const UVScript::CompileResultUVE compiled = CompileUVE(graph, host);
+    ASSERT_TRUE(compiled.IsSuccessUVE());
+    UVScript::ScriptInstanceUVE instance(compiled.program, host);
+    const UVScript::ValueUVE clicked[] = {std::string{"Open"}};
+    static_cast<void>(instance.RaiseEventUVE("ui_clicked", clicked));
+    EXPECT_FALSE(entityManager.GetComponentUVE<CanvasComponentUVE>(main).visible);
+    EXPECT_TRUE(entityManager.GetComponentUVE<CanvasComponentUVE>(settings).visible);
+    EXPECT_TRUE(entityManager.GetComponentUVE<CanvasComponentUVE>(root).visible) << "the widget itself stays shown";
+}
+
 TEST(UIView3DUVETest, AViewIsValidOnlyWithASaneCameraAndEachStageStandsApartFarBelow) {
     UIView3DComponentUVE view;
     EXPECT_TRUE(IsUIView3DComponentValidUVE(view));

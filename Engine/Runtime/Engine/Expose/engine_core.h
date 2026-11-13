@@ -424,6 +424,10 @@ public:
     /// Where, in window coordinates, the editor shows the game's view (its UI drawn from there):
     /// the UI's pointer is measured from it. Nothing (the default) is the window's own corner.
     void SetUIPointerOriginUVE(std::optional<Math::Vector2UVE> origin) noexcept { m_uiPointerOriginUVE = origin; }
+    /// The size of the editor's view the game's UI is drawn into; nothing outside the editor.
+    void SetUIViewportSizeUVE(std::optional<Math::Vector2UVE> size) noexcept { m_uiViewportSizeUVE = size; }
+    /// The device's own screen (its primary monitor): what "auto" screen size means.
+    [[nodiscard]] Math::Vector2UVE DeviceScreenSizeUVE();
     /// Who answers a script's Set Show Mouse Cursor (the editor, for its own view). Without one the
     /// window's pointer is shown or hidden.
     void SetMouseCursorHandlerUVE(std::function<void(bool show)> handler) { m_mouseCursorHandlerUVE = std::move(handler); }
@@ -549,6 +553,8 @@ private:
     void RaiseWidgetScriptEventsUVE();
     /// Stands each 3D View's asset on its own stage and turns it (UIView3DComponentUVE).
     void SyncUIView3DStagesUVE(float deltaSeconds);
+    /// The reference resolution of the first shown widget that scales with the screen, if any.
+    [[nodiscard]] std::optional<Math::Vector2UVE> ScaledCanvasReferenceUVE();
     /// A widget's Stage (the child named Stage of its root Canvas), or none.
     [[nodiscard]] Scene::EntityUVE FindWidgetStageUVE(Scene::EntityUVE widget) const;
     [[nodiscard]] Scene::EntityUVE FindNamedUnderUVE(Scene::EntityUVE root, std::string_view name) const;
@@ -891,6 +897,8 @@ private:
     std::unique_ptr<Asset::IProjectChangeWatcherUVE> m_projectChangeWatcher;
     std::unique_ptr<Scene::ISceneSerializerUVE> m_sceneSerializer;
     std::optional<Math::Vector2UVE> m_uiPointerOriginUVE;
+    std::optional<Math::Vector2UVE> m_uiViewportSizeUVE;
+    std::optional<Math::Vector2UVE> m_deviceScreenSizeUVE;
     std::function<void(bool)> m_mouseCursorHandlerUVE;
     std::chrono::steady_clock::time_point m_uiView3DClockUVE{};
     std::unique_ptr<Scene::IPrefabSystemUVE> m_prefabSystem;

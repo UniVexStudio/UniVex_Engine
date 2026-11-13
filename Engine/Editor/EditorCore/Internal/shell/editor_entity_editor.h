@@ -214,6 +214,17 @@ private:
     [[nodiscard]] Scene::EntityUVE FindWidgetStageUVE() const;
     void EnsureWidgetStageUVE();
     void ShowStageAddMenuUVE();
+    /// Screens: a widget's Designer tabs (Main Menu, Settings ...), each a Canvas right under its
+    /// root, one graph for all of them. None: the root itself is the one screen.
+    Scene::EntityUVE m_activeScreen = Scene::kInvalidEntityUVE;
+    [[nodiscard]] std::vector<Scene::EntityUVE> WidgetScreensUVE() const;
+    /// Where the Designer shows and places widgets: the active screen, or the root.
+    [[nodiscard]] Scene::EntityUVE DesignerParentUVE();
+    void AddWidgetScreenUVE();
+    void ShowScreenSettingsUVE(Scene::EntityUVE screen);
+    /// The screen size the Designer shows: the widget's reference resolution, else this device's.
+    [[nodiscard]] Math::Vector2UVE DesignResolutionUVE() const;
+    void SetDesignResolutionUVE(Math::Vector2UVE size);
     /// The Stage as the Designer's live 3D View last saw it.
     std::vector<std::byte> m_stageSnapshot;
     std::chrono::steady_clock::time_point m_stageSnapshotTime{};
