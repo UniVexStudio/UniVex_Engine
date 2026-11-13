@@ -24,6 +24,13 @@
 #include <system_error>
 #include <unordered_map>
 #include <vector>
+#include <unordered_set>
+#include <thread>
+#include <mutex>
+#include <fstream>
+#include <cstdio>
+#include <condition_variable>
+#include <deque>
 
 namespace UVE::Editor {
 namespace {
@@ -227,20 +234,14 @@ void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& 
 
 } // namespace
 
-const EditorUVE::AnimationIconUVE* EditorUVE::GetAnimationIconUVE(const std::filesystem::path& absolutePath) {
-    std::error_code error;
-    const std::filesystem::file_time_type written = std::filesystem::last_write_time(absolutePath, error);
-    if (error) {
-        return nullptr;
-    }
-    const std::string key = absolutePath.lexically_normal().generic_string();
-    if (const auto found = m_animationIcons.find(key); found != m_animationIcons.end() && found->second.written == written) {
-        return found->second.pixels.empty() ? nullptr : &found->second;
-    }
-    AnimationIconUVE icon;
+namespace {
+
+/// The icon of the clip at `path` as it is on disk now (empty pixels: not a clip).
+[[nodiscard]] EditorUVE::AnimationIconUVE MakeIconUVE(const std::filesystem::path& path, const std::filesystem::file_time_type written) {
+    EditorUVE::AnimationIconUVE icon;
     icon.written = written;
     Asset::AnimationClipAssetUVE clip;
-    if (Asset::LoadAnimationClipAssetUVE(absolutePath, clip)) {
+    if (Asset::LoadAnimationClipAssetUVE(path, clip)) {
         prism::Canvas canvas;
         DrawClipIconUVE(canvas, clip);
         icon.width = kIconWUVE;
@@ -254,10 +255,251 @@ const EditorUVE::AnimationIconUVE* EditorUVE::GetAnimationIconUVE(const std::fil
         icon.frames = std::max(frames, clip.samples.size());
         icon.bones = clip.rest.empty() ? clip.bones.size() : clip.rest.size();
     }
+    return icon;
+}
+
+// ---- the disk cache: <project>/.uvcache/animicons/<hash of the path>.bin
+constexpr std::uint32_t kCacheMagicUVE = 0x55564149U;   // "UVAI"
+constexpr std::uint32_t kCacheVersionUVE = 2U;
+
+[[nodiscard]] std::filesystem::path CacheFileUVE(const std::filesystem::path& dir, const std::string& key) {
+    std::uint64_t h = 1469598103934665603ULL;
+    for (const unsigned char c : key) {
+        h = (h ^ c) * 1099511628211ULL;
+    }
+    char name[32];
+    std::snprintf(name, sizeof(name), "%016llx.bin", static_cast<unsigned long long>(h));
+    return dir / name;
+}
+
+[[nodiscard]] bool ReadCacheUVE(const std::filesystem::path& file, const std::filesystem::file_time_type written, EditorUVE::AnimationIconUVE& out) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        return false;
+    }
+    std::uint32_t magic = 0U, version = 0U;
+    std::int64_t stamp = 0;
+    std::int32_t w = 0, h = 0;
+    double duration = 0.0;
+    std::uint64_t frames = 0U, bones = 0U;
+    in.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    in.read(reinterpret_cast<char*>(&version), sizeof(version));
+    in.read(reinterpret_cast<char*>(&stamp), sizeof(stamp));
+    in.read(reinterpret_cast<char*>(&w), sizeof(w));
+    in.read(reinterpret_cast<char*>(&h), sizeof(h));
+    in.read(reinterpret_cast<char*>(&duration), sizeof(duration));
+    in.read(reinterpret_cast<char*>(&frames), sizeof(frames));
+    in.read(reinterpret_cast<char*>(&bones), sizeof(bones));
+    if (!in || magic != kCacheMagicUVE || version != kCacheVersionUVE || stamp != written.time_since_epoch().count() || w != kIconWUVE ||
+        h != kIconHUVE) {
+        return false;
+    }
+    out.pixels.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h));
+    in.read(reinterpret_cast<char*>(out.pixels.data()), static_cast<std::streamsize>(out.pixels.size() * sizeof(std::uint32_t)));
+    if (!in) {
+        out.pixels.clear();
+        return false;
+    }
+    out.written = written;
+    out.width = w;
+    out.height = h;
+    out.durationSeconds = duration;
+    out.frames = static_cast<std::size_t>(frames);
+    out.bones = static_cast<std::size_t>(bones);
+    return true;
+}
+
+void WriteCacheUVE(const std::filesystem::path& file, const EditorUVE::AnimationIconUVE& icon) {
+    if (icon.pixels.empty() || file.empty()) {
+        return;
+    }
+    std::error_code error;
+    std::filesystem::create_directories(file.parent_path(), error);
+    const std::filesystem::path temporary = file.string() + ".tmp";
+    {
+        std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            return;
+        }
+        const std::uint32_t magic = kCacheMagicUVE, version = kCacheVersionUVE;
+        const std::int64_t stamp = icon.written.time_since_epoch().count();
+        const std::int32_t w = icon.width, h = icon.height;
+        const double duration = icon.durationSeconds;
+        const std::uint64_t frames = icon.frames, bones = icon.bones;
+        out.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+        out.write(reinterpret_cast<const char*>(&version), sizeof(version));
+        out.write(reinterpret_cast<const char*>(&stamp), sizeof(stamp));
+        out.write(reinterpret_cast<const char*>(&w), sizeof(w));
+        out.write(reinterpret_cast<const char*>(&h), sizeof(h));
+        out.write(reinterpret_cast<const char*>(&duration), sizeof(duration));
+        out.write(reinterpret_cast<const char*>(&frames), sizeof(frames));
+        out.write(reinterpret_cast<const char*>(&bones), sizeof(bones));
+        out.write(reinterpret_cast<const char*>(icon.pixels.data()), static_cast<std::streamsize>(icon.pixels.size() * sizeof(std::uint32_t)));
+    }
+    std::filesystem::rename(temporary, file, error);
+}
+
+} // namespace
+
+/// One thread that reads and draws clips the views asked for, newest first, so the folder on
+/// screen fills before one scrolled past; each icon also goes to the disk cache.
+struct AnimationIconWorkerUVE final {
+    struct JobUVE final {
+        std::string key;
+        std::filesystem::path path;
+        std::filesystem::file_time_type written{};
+        std::filesystem::path cacheFile;
+    };
+    std::mutex mutex;
+    std::condition_variable wake;
+    /// In the order they are drawn: a view's batch goes in ahead of what was asked before it, in the
+    /// view's own order, so the folder on screen fills top-down first.
+    std::deque<JobUVE> jobs;
+    std::size_t insertAt = 0U;
+    std::unordered_set<std::string> pending;
+    std::vector<std::pair<std::string, EditorUVE::AnimationIconUVE>> done;
+    bool stopping = false;
+    std::thread thread;
+
+    AnimationIconWorkerUVE() {
+        thread = std::thread([this] { RunUVE(); });
+    }
+    ~AnimationIconWorkerUVE() {
+        {
+            const std::scoped_lock lock(mutex);
+            stopping = true;
+        }
+        wake.notify_all();
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+    AnimationIconWorkerUVE(const AnimationIconWorkerUVE&) = delete;
+    AnimationIconWorkerUVE& operator=(const AnimationIconWorkerUVE&) = delete;
+
+    void BeginBatchUVE() {
+        const std::scoped_lock lock(mutex);
+        insertAt = 0U;
+    }
+
+    void AskUVE(JobUVE job) {
+        {
+            const std::scoped_lock lock(mutex);
+            if (!pending.insert(job.key).second) {
+                // Asked again: moved up to this batch's place.
+                const auto found = std::find_if(jobs.begin(), jobs.end(), [&job](const JobUVE& j) { return j.key == job.key; });
+                if (found != jobs.end()) {
+                    const auto index = static_cast<std::size_t>(found - jobs.begin());
+                    if (index > insertAt) {
+                        JobUVE moved = std::move(*found);
+                        jobs.erase(found);
+                        jobs.insert(jobs.begin() + static_cast<std::ptrdiff_t>(std::min(insertAt, jobs.size())), std::move(moved));
+                    }
+                    insertAt = std::min(insertAt + 1U, jobs.size());
+                }
+                return;
+            }
+            jobs.insert(jobs.begin() + static_cast<std::ptrdiff_t>(std::min(insertAt, jobs.size())), std::move(job));
+            insertAt = std::min(insertAt + 1U, jobs.size());
+        }
+        wake.notify_one();
+    }
+
+    void RunUVE() {
+        for (;;) {
+            JobUVE job;
+            {
+                std::unique_lock lock(mutex);
+                wake.wait(lock, [this] { return stopping || !jobs.empty(); });
+                if (stopping) {
+                    return;
+                }
+                job = std::move(jobs.front());
+                jobs.pop_front();
+                insertAt = insertAt > 0U ? insertAt - 1U : 0U;
+            }
+            EditorUVE::AnimationIconUVE icon = MakeIconUVE(job.path, job.written);
+            WriteCacheUVE(job.cacheFile, icon);
+            const std::scoped_lock lock(mutex);
+            pending.erase(job.key);
+            done.emplace_back(job.key, std::move(icon));
+        }
+    }
+};
+
+const EditorUVE::AnimationIconUVE* EditorUVE::GetAnimationIconUVE(const std::filesystem::path& absolutePath) {
+    std::error_code error;
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(absolutePath, error);
+    if (error) {
+        return nullptr;
+    }
+    if (!m_animationIconWorker) {
+        m_animationIconWorker = std::make_shared<AnimationIconWorkerUVE>();
+    }
+    if (m_animationIconCacheDir.empty()) {
+        m_animationIconCacheDir = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot.parent_path() / ".uvcache" / "animicons";
+    }
+    // What the worker finished since last asked.
+    {
+        std::vector<std::pair<std::string, AnimationIconUVE>> finished;
+        {
+            const std::scoped_lock lock(m_animationIconWorker->mutex);
+            finished.swap(m_animationIconWorker->done);
+        }
+        for (auto& [key, icon] : finished) {
+            AnimationIconUVE& stored = m_animationIcons[key];
+            const std::uint64_t serial = stored.serial + 1U;
+            stored = std::move(icon);
+            stored.serial = serial;
+        }
+        if (!finished.empty()) {
+            ++m_animationIconGeneration;
+        }
+    }
+    const std::string key = absolutePath.lexically_normal().generic_string();
+    const auto found = m_animationIcons.find(key);
+    if (found != m_animationIcons.end() && found->second.written == written) {
+        return found->second.pixels.empty() ? nullptr : &found->second;
+    }
+    // From the disk cache, at once.
+    const std::filesystem::path cacheFile = CacheFileUVE(m_animationIconCacheDir, key);
+    AnimationIconUVE cached;
+    if (ReadCacheUVE(cacheFile, written, cached)) {
+        AnimationIconUVE& stored = m_animationIcons[key];
+        const std::uint64_t serial = stored.serial + 1U;
+        stored = std::move(cached);
+        stored.serial = serial;
+        return &stored;
+    }
+    m_animationIconWorker->AskUVE(AnimationIconWorkerUVE::JobUVE{key, absolutePath, written, cacheFile});
+    // A changed file keeps its last picture until the new one is ready.
+    return found != m_animationIcons.end() && !found->second.pixels.empty() ? &found->second : nullptr;
+}
+
+void EditorUVE::BeginAnimationIconBatchUVE() {
+    if (m_animationIconWorker) {
+        m_animationIconWorker->BeginBatchUVE();
+    }
+}
+
+const EditorUVE::AnimationIconUVE* EditorUVE::GetAnimationIconNowUVE(const std::filesystem::path& absolutePath) {
+    if (const AnimationIconUVE* icon = GetAnimationIconUVE(absolutePath); icon != nullptr) {
+        std::error_code error;
+        if (icon->written == std::filesystem::last_write_time(absolutePath, error)) {
+            return icon;
+        }
+    }
+    std::error_code error;
+    const std::filesystem::file_time_type written = std::filesystem::last_write_time(absolutePath, error);
+    if (error) {
+        return nullptr;
+    }
+    const std::string key = absolutePath.lexically_normal().generic_string();
     AnimationIconUVE& stored = m_animationIcons[key];
     const std::uint64_t serial = stored.serial + 1U;
-    stored = std::move(icon);
+    stored = MakeIconUVE(absolutePath, written);
     stored.serial = serial;
+    WriteCacheUVE(CacheFileUVE(m_animationIconCacheDir, key), stored);
     return stored.pixels.empty() ? nullptr : &stored;
 }
 

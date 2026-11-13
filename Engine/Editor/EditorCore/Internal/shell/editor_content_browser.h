@@ -11,6 +11,7 @@
 #include "prism/Menu.h"
 #include "prism/Widget.h"
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -76,6 +77,9 @@ private:
                                                                     std::shared_ptr<prism::Widget> body,
                                                                     std::shared_ptr<prism::Widget> extra);
 
+    std::filesystem::path m_contentRoot;
+    std::uint64_t m_iconGenerationShown = 0U;
+    std::chrono::steady_clock::time_point m_iconGenerationAt{};
     void RebuildFoldersUVE();
     void RebuildFavoritesUVE();
     void RebuildItemsUVE();

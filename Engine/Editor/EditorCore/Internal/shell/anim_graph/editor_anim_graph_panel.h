@@ -9,6 +9,7 @@
 #include "prism/BlueprintGraph.h"
 #include "prism/Widget.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -176,6 +177,9 @@ private:
     /// Montage slots read from their files, by GUID (empty: unreadable).
     mutable std::unordered_map<std::uint64_t, std::string> m_montageSlots;
     std::vector<NodeUVE> m_clipboard;
+    mutable std::vector<Asset::AssetGuidUVE> m_projectClips;
+    mutable std::chrono::steady_clock::time_point m_projectClipsAt{};
+    mutable bool m_projectClipsValid = false;
     std::size_t m_shownLogLines = static_cast<std::size_t>(-1);
 };
 
