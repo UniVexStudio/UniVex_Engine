@@ -76,10 +76,12 @@ public:
     [[nodiscard]] std::uintptr_t RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, int width, int height,
                                                     const MaterialThumbnailImageUVE* albedoTexture = nullptr);
     /// The same, each surface shaded by its own material slot's look (`looksBySlot[slot]`); a
-    /// surface whose slot has no look is drawn in a neutral grey.
+    /// surface whose slot has no look is drawn in a neutral grey. `viewDirection` (x, y, z: from
+    /// the model toward the eye) is the thumbnail camera's angle; null keeps the three-quarter front.
     [[nodiscard]] std::uintptr_t RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, int width, int height,
                                                     const std::vector<MeshThumbnailLookUVE>& looksBySlot,
-                                                    const std::vector<MeshThumbnailBoneUVE>& bones = {});
+                                                    const std::vector<MeshThumbnailBoneUVE>& bones = {},
+                                                    const float* viewDirection = nullptr);
 
     /// Opaque - defined only in mesh_thumbnail_renderer_uve.cpp, which is the sole translation
     /// unit allowed to name its members. Public (rather than private) purely so that file's own

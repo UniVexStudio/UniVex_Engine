@@ -337,7 +337,8 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
 std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAssetUVE& mesh, const int width,
                                                              const int height,
                                                              const std::vector<MeshThumbnailLookUVE>& looksBySlot,
-                                                             const std::vector<MeshThumbnailBoneUVE>& bones) {
+                                                             const std::vector<MeshThumbnailBoneUVE>& bones,
+                                                             const float* const viewDirectionIn) {
     if (!m_gl || !m_gl->functionsLoaded || !m_gl->programLinked) {
         return 0U;
     }
@@ -352,7 +353,14 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         std::max(kMinimumBoundingRadiusUVE,
                  std::sqrt(extents.x * extents.x + extents.y * extents.y + extents.z * extents.z));
     // A little from the right and above, mostly from the front.
-    const Math::Vector3UVE viewDirection = Math::NormalizeUVE(Math::Vector3UVE{0.38F, 0.22F, 1.0F});
+    Math::Vector3UVE viewDirection = Math::NormalizeUVE(Math::Vector3UVE{0.38F, 0.22F, 1.0F});
+    if (viewDirectionIn != nullptr) {
+        const Math::Vector3UVE asked{viewDirectionIn[0], viewDirectionIn[1], viewDirectionIn[2]};
+        // Straight up or down has no "up" to look with: tipped a little off the vertical.
+        if (std::abs(asked.y) < 0.995F && (asked.x != 0.0F || asked.z != 0.0F)) {
+            viewDirection = Math::NormalizeUVE(asked);
+        }
+    }
     // Framed on the model itself, not on a sphere around it: the camera stands just far enough
     // back that every corner of the box fits the picture, so the model fills the tile.
     float distance = 0.0F;

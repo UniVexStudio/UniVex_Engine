@@ -10,6 +10,7 @@
 #include "fbx_mesh_converter.h"
 #include "gltf_metadata.h"
 #include "editor.h"
+#include "editor_entity_thumbnail.h"
 
 #include "animation_graph_editing.h"
 #include "editor_settings.h"
@@ -6278,7 +6279,51 @@ std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relat
     };
     remember(absolutePath);
     Asset::MeshAssetUVE mesh;
-    if (Asset::LoadMeshAssetUVE(absolutePath, mesh)) {
+    std::string extension = relativePath.extension().string();
+    std::ranges::transform(extension, extension.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (extension == ".uventity" || extension == ".uvprefab") {
+        // An entity: its meshes and primitives where it puts them, seen by the thumbnail's own
+        // camera (its "Thumbnail Camera" when it has one) - never the viewport's.
+        Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
+        std::vector<std::unique_ptr<MaterialThumbnailImageUVE>> images;
+        const auto lookOf = [&](const Asset::AssetGuidUVE materialGuid) {
+            MeshThumbnailLookUVE look;
+            const std::filesystem::path materialPath = assetDatabase.ResolveUVE(materialGuid);
+            Asset::MaterialAssetUVE material;
+            if (materialPath.empty() || !Asset::LoadMaterialAssetUVE(materialPath, material)) {
+                return look;
+            }
+            remember(materialPath);
+            look.colour = {material.albedoColor.r, material.albedoColor.g, material.albedoColor.b};
+            if (material.albedoTexture != Asset::kInvalidAssetGuidUVE) {
+                const std::filesystem::path texturePath = assetDatabase.ResolveUVE(material.albedoTexture);
+                auto image = std::make_unique<MaterialThumbnailImageUVE>();
+                if (!texturePath.empty() && LoadMaterialPreviewImageUVE(texturePath, true, *image)) {
+                    remember(texturePath);
+                    look.albedo = image.get();
+                    images.push_back(std::move(image));
+                }
+            }
+            return look;
+        };
+        const auto pose = [&](Asset::MeshAssetUVE& model, const std::filesystem::path& file) {
+            std::filesystem::path skeletonFile = file;
+            skeletonFile.replace_extension(".uvskel");
+            std::vector<MeshThumbnailBoneUVE> unused;
+            PoseMeshForThumbnailUVE(model, skeletonFile, unused);
+            remember(skeletonFile);
+        };
+        EntityThumbnailSceneUVE scene;
+        if (BuildEntityThumbnailSceneUVE(absolutePath, assetDatabase, lookOf, pose, scene)) {
+            for (const std::filesystem::path& file : scene.sources) {
+                remember(file);
+            }
+            const float direction[3] = {scene.viewDirection ? scene.viewDirection->x : 0.0F, scene.viewDirection ? scene.viewDirection->y : 0.0F,
+                                        scene.viewDirection ? scene.viewDirection->z : 0.0F};
+            entry.texture = m_meshThumbnailRenderer.RenderThumbnailUVE(scene.mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, scene.looks, {},
+                                                                        scene.viewDirection ? direction : nullptr);
+        }
+    } else if (Asset::LoadMeshAssetUVE(absolutePath, mesh)) {
         // In its skeleton's rest pose (the A-pose once retargeted), with its bones drawn over it.
         std::filesystem::path skeletonFile = absolutePath;
         skeletonFile.replace_extension(".uvskel");

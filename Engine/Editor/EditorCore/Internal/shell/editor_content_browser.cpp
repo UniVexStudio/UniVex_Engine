@@ -1895,6 +1895,9 @@ const EditorContentBrowserUVE::PreviewUVE* EditorContentBrowserUVE::PreviewForUV
             }
             return &preview;
         }
+        case ItemTypeUVE::Entity:
+        case ItemTypeUVE::Prefab:
+            // An entity's own look: its models and primitives through the thumbnail's camera.
         case ItemTypeUVE::Mesh:
         case ItemTypeUVE::Model:
             // The mesh preview is drawn upright already (its projection is flipped for top-down
