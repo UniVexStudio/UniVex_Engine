@@ -34,6 +34,7 @@ public:
         /// The clip's icon (ARGB, `iconSize` square), or none.
         const std::vector<std::uint32_t>* icon = nullptr;
         int iconSize = 0;
+        int iconHeight = 0;
         /// Its index in the library (the tiles may be filtered).
         std::size_t entry = 0U;
     };

@@ -1888,8 +1888,8 @@ const EditorContentBrowserUVE::PreviewUVE* EditorContentBrowserUVE::PreviewForUV
             const std::uint64_t generation = icon->serial | (std::uint64_t{1} << 63U);
             if (preview.generation != generation || preview.pixels.empty()) {
                 preview.pixels = icon->pixels;
-                preview.width = icon->size;
-                preview.height = icon->size;
+                preview.width = icon->width;
+                preview.height = icon->height;
                 preview.texture = 0U;
                 preview.generation = generation;
             }

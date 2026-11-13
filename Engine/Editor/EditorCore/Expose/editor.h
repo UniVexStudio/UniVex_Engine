@@ -1883,12 +1883,13 @@ private:
     [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorObjectsUVE();
     /// Instantiates the entity asset as the document's only content (below the scene root).
     [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
-    /// An animation clip's icon (128 px, ARGB): its skeleton half-way through, from the front, or an
+    /// An animation clip's icon (152 x 128, ARGB, the shape of a tile's picture): its skeleton half-way through, from the front, or an
     /// object's path; drawn again when the file changes. Null when the file is not a clip.
     struct AnimationIconUVE final {
         std::filesystem::file_time_type written{};
         std::vector<std::uint32_t> pixels;
-        int size = 0;
+        int width = 0;
+        int height = 0;
         double durationSeconds = 0.0;
         std::size_t frames = 0U;
         std::size_t bones = 0U;

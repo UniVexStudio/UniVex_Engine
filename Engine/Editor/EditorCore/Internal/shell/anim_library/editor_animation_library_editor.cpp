@@ -107,10 +107,11 @@ void AnimationLibraryGridUVE::paint(prism::Canvas& c) {
         c.shadow(r, 6.0F, 4, prism::Color(0, 0, 0, 90));
         c.fillRoundRect(r, 6.0F, hovered ? t.controlHover : t.panel);
         // The icon on a deep backdrop, as a thumbnail is shown in the Content Browser.
-        const prism::Rect art{r.x + 8.0F, r.y + 8.0F, r.w - 16.0F, r.w - 16.0F};
+        // The picture edge to edge across the tile, in the icon's own shape.
+        const prism::Rect art{r.x + 1.0F, r.y + 1.0F, r.w - 2.0F, std::floor((r.w - 2.0F) * 128.0F / 152.0F)};
         c.fillRect(art, prism::Color(18, 19, 23));
         if (tile.icon != nullptr && tile.iconSize > 0) {
-            c.blitBlend(tile.icon->data(), tile.iconSize, tile.iconSize, tile.iconSize, art);
+            c.blitBlend(tile.icon->data(), tile.iconSize, tile.iconHeight, tile.iconSize, art);
         } else {
             prism::drawIcon(c, prism::Icon::AnimClip, prism::Rect{art.x + art.w * 0.3F, art.y + art.h * 0.3F, art.w * 0.4F, art.h * 0.4F},
                             t.textDim, 1.5F);
@@ -491,7 +492,8 @@ void EditorAnimationLibraryWindowUVE::RefreshUVE() {
         const EditorUVE::AnimationIconUVE* icon = tile.missing ? nullptr : m_editor.GetAnimationIconUVE(path);
         if (icon != nullptr) {
             tile.icon = &icon->pixels;
-            tile.iconSize = icon->size;
+            tile.iconSize = icon->width;
+            tile.iconHeight = icon->height;
             char detail[96];
             std::snprintf(detail, sizeof(detail), "%.2f s  -  %zu frames", icon->durationSeconds, icon->frames);
             tile.detail = detail;

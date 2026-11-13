@@ -28,7 +28,9 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr int kIconSizeUVE = 128;
+/// Wide, the shape of a Content Browser tile's picture, so the figure fills it edge to edge.
+constexpr int kIconWUVE = 152;
+constexpr int kIconHUVE = 128;
 
 /// The sample of `samples` nearest `time` (they are sorted by time).
 [[nodiscard]] const Asset::AnimationAssetPoseUVE* PoseAtUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples, const double time) {
@@ -79,30 +81,30 @@ struct Point2UVE {
         lowY = std::min(lowY, p.y);
         highY = std::max(highY, p.y);
     }
-    const float size = static_cast<float>(kIconSizeUVE);
+    const float width = static_cast<float>(kIconWUVE);
+    const float height = static_cast<float>(kIconHUVE);
     const float w = std::max(highX - lowX, 1e-5F);
     const float h = std::max(highY - lowY, 1e-5F);
-    const float scale = std::min((size - 2.0F * margin) / w, (size - 2.0F * margin - bottomSpace) / h);
+    const float scale = std::min((width - 2.0F * margin) / w, (height - 2.0F * margin - bottomSpace) / h);
     const float cx = (lowX + highX) * 0.5F;
     const float cy = (lowY + highY) * 0.5F;
     std::vector<prism::Vec2> out;
     out.reserve(points.size());
     for (const Point2UVE& p : points) {
-        out.push_back(prism::Vec2{size * 0.5F + (p.x - cx) * scale, (size - bottomSpace) * 0.5F - (p.y - cy) * scale});
+        out.push_back(prism::Vec2{width * 0.5F + (p.x - cx) * scale, (height - bottomSpace) * 0.5F - (p.y - cy) * scale});
     }
     return out;
 }
 
-/// Draws the icon of `clip` into `canvas` (cleared, kIconSizeUVE square).
+/// Draws the icon of `clip` into `canvas` (cleared, kIconWUVE x kIconHUVE).
 void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& clip) {
-    canvas.resize(kIconSizeUVE, kIconSizeUVE);
+    canvas.resize(kIconWUVE, kIconHUVE);
     // A deep backdrop of its own, so the icon reads the same on any tile.
     // One plain dark backdrop (no gradient): the figure reads the same on any tile.
     canvas.clear(prism::Color(18, 19, 23));
     const prism::Color line(110, 236, 196);
     const prism::Color joint(222, 255, 244);
     const prism::Color shade(8, 10, 14, 200);
-    const float size = static_cast<float>(kIconSizeUVE);
     const prism::Color helper(96, 214, 255);
     constexpr float kBarUVE = -4.0F;   // no bar along the bottom: the figure takes the whole tile
 
@@ -150,7 +152,7 @@ void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& 
             drawn.push_back(bone);
         }
         if (!flat.empty()) {
-            const std::vector<prism::Vec2> screen = FitUVE(flat, 12.0F, kBarUVE + 4.0F);
+            const std::vector<prism::Vec2> screen = FitUVE(flat, 6.0F, kBarUVE + 4.0F);
             static_cast<void>(joint);
             std::unordered_map<std::size_t, prism::Vec2> where;
             for (std::size_t i = 0U; i < drawn.size(); ++i) {
@@ -211,7 +213,7 @@ void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& 
         for (const Asset::AnimationAssetSampleUVE& sample : clip.samples) {
             path.push_back(Point2UVE{sample.pose.position.x, -sample.pose.position.z});
         }
-        std::vector<prism::Vec2> screen = FitUVE(path, 18.0F, kBarUVE + 4.0F);
+        std::vector<prism::Vec2> screen = FitUVE(path, 10.0F, kBarUVE + 4.0F);
         for (std::size_t i = 1U; i < screen.size(); ++i) {
             canvas.line(screen[i - 1U], screen[i], shade, 4.2F);
         }
@@ -241,8 +243,9 @@ const EditorUVE::AnimationIconUVE* EditorUVE::GetAnimationIconUVE(const std::fil
     if (Asset::LoadAnimationClipAssetUVE(absolutePath, clip)) {
         prism::Canvas canvas;
         DrawClipIconUVE(canvas, clip);
-        icon.size = kIconSizeUVE;
-        icon.pixels.assign(canvas.pixels(), canvas.pixels() + static_cast<std::size_t>(kIconSizeUVE) * static_cast<std::size_t>(kIconSizeUVE));
+        icon.width = kIconWUVE;
+        icon.height = kIconHUVE;
+        icon.pixels.assign(canvas.pixels(), canvas.pixels() + static_cast<std::size_t>(kIconWUVE) * static_cast<std::size_t>(kIconHUVE));
         icon.durationSeconds = clip.durationSeconds;
         std::size_t frames = 0U;
         for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
