@@ -25,6 +25,7 @@
 #include "editor_theme.h"
 #include <algorithm>
 #include <chrono>
+#include <unordered_map>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -57,6 +58,10 @@
 #include "bmp_metadata.h"
 #include "jpeg_metadata.h"
 #include "mesh_asset.h"
+#include "matrix4x4.h"
+#include "retarget_humanoid.h"
+#include "skeleton_asset.h"
+#include "mesh_skinning.h"
 #include "material_asset.h"
 #include "shader_asset.h"
 #include "png_metadata.h"
@@ -6137,6 +6142,101 @@ void EditorUVE::ClearTextureThumbnailCacheUVE() noexcept {
     m_textureThumbnailCache.clear();
 }
 
+namespace {
+
+/// A helper bone rather than a part of the body (the root on the ground, IK targets, sockets):
+/// left out of a thumbnail's skeleton, where a line to it would cut across the figure.
+[[nodiscard]] bool IsThumbnailHelperBoneUVE(const std::string& name) {
+    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
+    for (std::size_t bone = 0U; bone < reference.info.size() && bone < reference.skeleton.bones.size(); ++bone) {
+        if (reference.skeleton.bones[bone].name == name) {
+            const Retarget::HumanoidBoneKindUVE kind = reference.info[bone].kind;
+            return kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::IK ||
+                   kind == Retarget::HumanoidBoneKindUVE::Socket;
+        }
+    }
+    return name.size() > 2U && (name[0] == 'i' || name[0] == 'I') && (name[1] == 'k' || name[1] == 'K') &&
+           (name[2] == '_' || std::isupper(static_cast<unsigned char>(name[2])) != 0);
+}
+
+/// Stands `mesh` in its skeleton's rest pose when it has one (`skeletonFile`, joints matched by
+/// name - a retargeted character rests in the A-pose there, its mesh still bound in its own pose),
+/// and lists its bones in that pose. A pose that would fling the skin off the model (another unit
+/// scale, say) is not used: the mesh then shows as bound, and its bones with it.
+void PoseMeshForThumbnailUVE(Asset::MeshAssetUVE& mesh, const std::filesystem::path& skeletonFile,
+                             std::vector<MeshThumbnailBoneUVE>& outBones) {
+    outBones.clear();
+    const std::size_t count = mesh.joints.size();
+    if (count == 0U) {
+        return;
+    }
+    // Each joint's own rest, from the binds (bind(parent)^-1 * bind(joint)).
+    std::vector<Math::Matrix4x4UVE> bind(count, Math::Matrix4x4UVE::IdentityUVE());
+    for (std::size_t joint = 0U; joint < count; ++joint) {
+        static_cast<void>(Math::TryInverseUVE(mesh.joints[joint].inverseBindMatrix, bind[joint]));
+    }
+    std::vector<Math::Matrix4x4UVE> locals(count);
+    for (std::size_t joint = 0U; joint < count; ++joint) {
+        const std::uint32_t parent = mesh.joints[joint].parentIndex;
+        locals[joint] = parent < joint ? mesh.joints[parent].inverseBindMatrix * bind[joint] : bind[joint];
+    }
+    std::vector<Math::Matrix4x4UVE> world = bind;
+    bool posed = false;
+    Asset::SkeletonAssetUVE skeleton;
+    std::error_code error;
+    if (!skeletonFile.empty() && std::filesystem::is_regular_file(skeletonFile, error) && Asset::LoadSkeletonAssetUVE(skeletonFile, skeleton)) {
+        std::unordered_map<std::string, std::size_t> byName;
+        for (std::size_t joint = 0U; joint < skeleton.joints.size(); ++joint) {
+            byName.emplace(skeleton.joints[joint].name, joint);
+        }
+        std::vector<Math::Matrix4x4UVE> poseLocals = locals;
+        std::size_t matched = 0U;
+        for (std::size_t joint = 0U; joint < count; ++joint) {
+            if (const auto found = byName.find(mesh.joints[joint].name); found != byName.end()) {
+                const Asset::SkeletonJointUVE& rest = skeleton.joints[found->second];
+                poseLocals[joint] = Math::Matrix4x4UVE::ComposeTrsUVE(rest.position, rest.rotation, rest.scale);
+                ++matched;
+            }
+        }
+        std::vector<Math::Matrix4x4UVE> skinning;
+        std::vector<Asset::MeshVertexUVE> vertices;
+        if (matched * 2U >= count && Asset::TryResolvePoseUVE(mesh.joints, poseLocals, skinning) &&
+            Asset::TrySkinMeshUVE(mesh, skinning, vertices) && !vertices.empty()) {
+            Math::AabbUVE bounds{vertices.front().position, vertices.front().position};
+            for (const Asset::MeshVertexUVE& vertex : vertices) {
+                bounds.min = Math::Vector3UVE{std::min(bounds.min.x, vertex.position.x), std::min(bounds.min.y, vertex.position.y),
+                                              std::min(bounds.min.z, vertex.position.z)};
+                bounds.max = Math::Vector3UVE{std::max(bounds.max.x, vertex.position.x), std::max(bounds.max.y, vertex.position.y),
+                                              std::max(bounds.max.z, vertex.position.z)};
+            }
+            const Math::Vector3UVE before = mesh.localBounds.GetExtentsUVE();
+            const Math::Vector3UVE after = bounds.GetExtentsUVE();
+            const float ratio = after.y / std::max(before.y, 1.0e-6F);
+            if (ratio > 0.6F && ratio < 1.6F) {
+                mesh.vertices = std::move(vertices);
+                mesh.localBounds = bounds;
+                for (std::size_t joint = 0U; joint < count; ++joint) {
+                    const std::uint32_t parent = mesh.joints[joint].parentIndex;
+                    world[joint] = parent < joint ? world[parent] * poseLocals[joint] : poseLocals[joint];
+                }
+                posed = true;
+            }
+        }
+    }
+    static_cast<void>(posed);
+    for (std::size_t joint = 0U; joint < count; ++joint) {
+        const std::uint32_t parent = mesh.joints[joint].parentIndex;
+        if (parent >= joint || IsThumbnailHelperBoneUVE(mesh.joints[joint].name) || IsThumbnailHelperBoneUVE(mesh.joints[parent].name)) {
+            continue;
+        }
+        const Math::Vector3UVE head = Math::TransformPointUVE(world[parent], Math::Vector3UVE{});
+        const Math::Vector3UVE tail = Math::TransformPointUVE(world[joint], Math::Vector3UVE{});
+        outBones.push_back(MeshThumbnailBoneUVE{{head.x, head.y, head.z}, {tail.x, tail.y, tail.z}});
+    }
+}
+
+} // namespace
+
 std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relativePath) {
     const std::string cacheKey = relativePath.generic_string();
     const auto now = std::chrono::steady_clock::now();
@@ -6179,6 +6279,12 @@ std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relat
     remember(absolutePath);
     Asset::MeshAssetUVE mesh;
     if (Asset::LoadMeshAssetUVE(absolutePath, mesh)) {
+        // In its skeleton's rest pose (the A-pose once retargeted), with its bones drawn over it.
+        std::filesystem::path skeletonFile = absolutePath;
+        skeletonFile.replace_extension(".uvskel");
+        std::vector<MeshThumbnailBoneUVE> bones;
+        PoseMeshForThumbnailUVE(mesh, skeletonFile, bones);
+        remember(skeletonFile);
         // Each material slot as its material says: its albedo colour times its albedo map. A
         // see-through slot (eyelashes, hair cards) is left out; a slot whose material cannot be
         // read is a neutral grey - never some other file's texture.
@@ -6215,7 +6321,7 @@ std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relat
                 look.skip = false;
             }
         }
-        entry.texture = m_meshThumbnailRenderer.RenderThumbnailUVE(mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, looks);
+        entry.texture = m_meshThumbnailRenderer.RenderThumbnailUVE(mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, looks, bones);
     }
     const std::uintptr_t texture = entry.texture;
     m_meshThumbnailCache.emplace(cacheKey, std::move(entry));
