@@ -6139,94 +6139,99 @@ void EditorUVE::ClearTextureThumbnailCacheUVE() noexcept {
 
 std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relativePath) {
     const std::string cacheKey = relativePath.generic_string();
-    const auto cachedIt = m_meshThumbnailCache.find(cacheKey);
-    if (cachedIt != m_meshThumbnailCache.end()) {
-        return cachedIt->second;
+    const auto now = std::chrono::steady_clock::now();
+    std::uintptr_t oldTexture = 0U;
+    if (const auto cachedIt = m_meshThumbnailCache.find(cacheKey); cachedIt != m_meshThumbnailCache.end()) {
+        MeshThumbnailEntryUVE& entry = cachedIt->second;
+        // Looked at again at most twice a second: drawn again when a file it came from changed,
+        // and tried again when there was nothing to draw yet.
+        if (now - entry.checkedAt < std::chrono::milliseconds{500}) {
+            return entry.texture;
+        }
+        entry.checkedAt = now;
+        bool stale = entry.texture == 0U;
+        for (const auto& [file, written] : entry.sources) {
+            std::error_code error;
+            const std::filesystem::file_time_type current = std::filesystem::last_write_time(file, error);
+            stale = stale || error || current != written;
+        }
+        if (!stale) {
+            return entry.texture;
+        }
+        // Freed only after the new picture is made, so it gets a new texture id and every view
+        // that copied the old picture by its id copies the new one.
+        oldTexture = entry.texture;
+        m_meshThumbnailCache.erase(cachedIt);
     }
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     // A model source previews its imported mesh; until that exists there is nothing to render yet.
     const std::filesystem::path absolutePath =
         IsModelSourcePathUVE(relativePath) ? GetImportedModelPathUVE(relativePath) : snapshot.contentRoot / relativePath;
+    MeshThumbnailEntryUVE entry;
+    entry.checkedAt = now;
+    const auto remember = [&entry](const std::filesystem::path& file) {
+        std::error_code error;
+        const std::filesystem::file_time_type written = std::filesystem::last_write_time(file, error);
+        if (!error) {
+            entry.sources.emplace_back(file, written);
+        }
+    };
+    remember(absolutePath);
     Asset::MeshAssetUVE mesh;
-    std::uintptr_t textureId = 0U;
     if (Asset::LoadMeshAssetUVE(absolutePath, mesh)) {
-        MaterialThumbnailImageUVE albedoImage;
-        bool hasAlbedo = false;
+        // Each material slot as its material says: its albedo colour times its albedo map. A
+        // see-through slot (eyelashes, hair cards) is left out; a slot whose material cannot be
+        // read is a neutral grey - never some other file's texture.
         Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
-
-        // 1. Check mesh.materialGuids
-        for (const Asset::AssetGuidUVE& matGuid : mesh.materialGuids) {
-            if (matGuid != Asset::kInvalidAssetGuidUVE) {
-                const std::filesystem::path matPath = assetDatabase.ResolveUVE(matGuid);
-                Asset::MaterialAssetUVE mat;
-                if (!matPath.empty() && Asset::LoadMaterialAssetUVE(matPath, mat)) {
-                    if (mat.albedoTexture != Asset::kInvalidAssetGuidUVE) {
-                        const std::filesystem::path texPath = assetDatabase.ResolveUVE(mat.albedoTexture);
-                        if (!texPath.empty() && LoadMaterialPreviewImageUVE(texPath, true, albedoImage)) {
-                            hasAlbedo = true;
-                            break;
-                        }
-                    }
+        std::vector<MeshThumbnailLookUVE> looks(mesh.materialGuids.size());
+        std::vector<std::unique_ptr<MaterialThumbnailImageUVE>> images;
+        for (std::size_t slot = 0U; slot < mesh.materialGuids.size(); ++slot) {
+            const Asset::AssetGuidUVE materialGuid = mesh.materialGuids[slot];
+            if (materialGuid == Asset::kInvalidAssetGuidUVE) {
+                continue;
+            }
+            const std::filesystem::path materialPath = assetDatabase.ResolveUVE(materialGuid);
+            Asset::MaterialAssetUVE material;
+            if (materialPath.empty() || !Asset::LoadMaterialAssetUVE(materialPath, material)) {
+                continue;
+            }
+            remember(materialPath);
+            MeshThumbnailLookUVE& look = looks[slot];
+            look.colour = {material.albedoColor.r, material.albedoColor.g, material.albedoColor.b};
+            look.skip = material.isTransparent || material.alphaCutoff > 0.0F;
+            if (material.albedoTexture != Asset::kInvalidAssetGuidUVE) {
+                const std::filesystem::path texturePath = assetDatabase.ResolveUVE(material.albedoTexture);
+                auto image = std::make_unique<MaterialThumbnailImageUVE>();
+                if (!texturePath.empty() && LoadMaterialPreviewImageUVE(texturePath, true, *image)) {
+                    remember(texturePath);
+                    look.albedo = image.get();
+                    images.push_back(std::move(image));
                 }
             }
         }
-
-        // 2. If no texture from materials, check directory of imported model for .uvmat / .uvtex
-        if (!hasAlbedo) {
-            std::error_code ec;
-            const std::filesystem::path importedDir = absolutePath.parent_path();
-            if (std::filesystem::is_directory(importedDir, ec)) {
-                for (const auto& entry : std::filesystem::directory_iterator(importedDir, ec)) {
-                    const std::string ext = entry.path().extension().string();
-                    if (ext == ".uvmat" || ext == ".uvmaterial") {
-                        Asset::MaterialAssetUVE mat;
-                        if (Asset::LoadMaterialAssetUVE(entry.path(), mat)) {
-                            if (mat.albedoTexture != Asset::kInvalidAssetGuidUVE) {
-                                const std::filesystem::path texPath = assetDatabase.ResolveUVE(mat.albedoTexture);
-                                if (!texPath.empty() && LoadMaterialPreviewImageUVE(texPath, true, albedoImage)) {
-                                    hasAlbedo = true;
-                                    break;
-                                }
-                            }
-                        }
-                    } else if (ext == ".uvtex") {
-                        if (LoadMaterialPreviewImageUVE(entry.path(), true, albedoImage)) {
-                            hasAlbedo = true;
-                            break;
-                        }
-                    }
-                }
+        // Never draw nothing: when every slot is see-through, draw them all.
+        if (!looks.empty() && std::ranges::all_of(looks, [](const MeshThumbnailLookUVE& look) { return look.skip; })) {
+            for (MeshThumbnailLookUVE& look : looks) {
+                look.skip = false;
             }
         }
-
-        // 3. If still no texture, check source directory for raw image files (diffuse/albedo/textures)
-        if (!hasAlbedo) {
-            std::error_code ec;
-            const std::filesystem::path sourceDir = (snapshot.contentRoot / relativePath).parent_path();
-            if (std::filesystem::is_directory(sourceDir, ec)) {
-                for (const auto& entry : std::filesystem::directory_iterator(sourceDir, ec)) {
-                    if (IsRawSourceImagePathUVE(entry.path())) {
-                        if (LoadMaterialPreviewImageUVE(entry.path(), true, albedoImage)) {
-                            hasAlbedo = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        textureId = m_meshThumbnailRenderer.RenderThumbnailUVE(
-            mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, hasAlbedo ? &albedoImage : nullptr);
+        entry.texture = m_meshThumbnailRenderer.RenderThumbnailUVE(mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, looks);
     }
-    m_meshThumbnailCache.emplace(cacheKey, textureId);
-    return textureId;
+    const std::uintptr_t texture = entry.texture;
+    m_meshThumbnailCache.emplace(cacheKey, std::move(entry));
+    if (oldTexture != 0U) {
+        ++m_meshThumbnailGeneration;
+    }
+    EditorUiAssetsUVE::DeleteDynamicTextureUVE(oldTexture);
+    return texture;
 }
 
 void EditorUVE::ClearMeshThumbnailCacheUVE() noexcept {
-    for (auto& [path, textureId] : m_meshThumbnailCache) {
-        EditorUiAssetsUVE::DeleteDynamicTextureUVE(textureId);
+    for (auto& [path, entry] : m_meshThumbnailCache) {
+        EditorUiAssetsUVE::DeleteDynamicTextureUVE(entry.texture);
     }
     m_meshThumbnailCache.clear();
+    ++m_meshThumbnailGeneration;
 }
 
 std::uintptr_t EditorUVE::GetMaterialThumbnailUVE(const std::filesystem::path& relativePath) {

@@ -1875,8 +1875,10 @@ const EditorContentBrowserUVE::PreviewUVE* EditorContentBrowserUVE::PreviewForUV
             break;
         case ItemTypeUVE::Mesh:
         case ItemTypeUVE::Model:
+            // The mesh preview is drawn upright already (its projection is flipped for top-down
+            // images), so it is read as it is; reading it bottom-up stood the model on its head.
             texture = m_editor.GetMeshThumbnailUVE(entry.relativePath);
-            renderTarget = true;
+            renderTarget = false;
             break;
         default: return nullptr;
     }
@@ -1884,7 +1886,8 @@ const EditorContentBrowserUVE::PreviewUVE* EditorContentBrowserUVE::PreviewForUV
         return nullptr;
     }
     PreviewUVE& preview = m_previews[entry.relativePath.generic_string()];
-    if (preview.texture == texture && !preview.pixels.empty()) {
+    const std::uint64_t generation = m_editor.m_meshThumbnailGeneration;
+    if (preview.texture == texture && preview.generation == generation && !preview.pixels.empty()) {
         return &preview;
     }
     // Read the engine's GL texture back once; PRISM draws CPU-side pixels.
@@ -1892,6 +1895,7 @@ const EditorContentBrowserUVE::PreviewUVE* EditorContentBrowserUVE::PreviewForUV
         return nullptr;
     }
     preview.texture = texture;
+    preview.generation = generation;
     return &preview;
 }
 

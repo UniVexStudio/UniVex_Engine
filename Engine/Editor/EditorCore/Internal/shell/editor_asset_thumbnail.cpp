@@ -126,8 +126,9 @@ void AssetThumbnailUVE::refreshUVE() {
     if (texture == 0U || texture == m_texture) {
         return;
     }
-    // Material and mesh previews are render targets (bottom-up); a texture is an uploaded image.
-    if (ReadTexturePixelsUVE(texture, m_kind != KindUVE::Texture, m_width, m_height, m_pixels)) {
+    // A material preview is a render target (bottom-up); a texture is an uploaded image, and the
+    // mesh preview is drawn upright already (its projection is flipped for top-down images).
+    if (ReadTexturePixelsUVE(texture, m_kind == KindUVE::Material, m_width, m_height, m_pixels)) {
         m_texture = texture;
         invalidate();
     }
