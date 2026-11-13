@@ -244,8 +244,8 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
         const RetargetJointRowUVE& joint = plan.joints[index];
         const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
         if (col == 0) {
-            return std::string(static_cast<std::size_t>(std::max(0, joint.depth)) * 2U, ' ') +
-                   reference.skeleton.bones[static_cast<std::size_t>(joint.referenceBone)].name;
+            // One column, all names lined up (no hierarchy indent).
+            return reference.skeleton.bones[static_cast<std::size_t>(joint.referenceBone)].name;
         }
         if (col == 1) {
             if (!joint.characterName.empty()) {

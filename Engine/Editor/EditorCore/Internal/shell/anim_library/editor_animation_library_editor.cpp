@@ -108,7 +108,7 @@ void AnimationLibraryGridUVE::paint(prism::Canvas& c) {
         c.fillRoundRect(r, 6.0F, hovered ? t.controlHover : t.panel);
         // The icon on a deep backdrop, as a thumbnail is shown in the Content Browser.
         const prism::Rect art{r.x + 8.0F, r.y + 8.0F, r.w - 16.0F, r.w - 16.0F};
-        c.gradientV(art, prism::Color(34, 38, 46), prism::Color(20, 22, 27));
+        c.fillRect(art, prism::Color(18, 19, 23));
         if (tile.icon != nullptr && tile.iconSize > 0) {
             c.blitBlend(tile.icon->data(), tile.iconSize, tile.iconSize, tile.iconSize, art);
         } else {

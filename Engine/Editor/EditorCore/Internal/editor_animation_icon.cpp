@@ -97,9 +97,8 @@ struct Point2UVE {
 void DrawClipIconUVE(prism::Canvas& canvas, const Asset::AnimationClipAssetUVE& clip) {
     canvas.resize(kIconSizeUVE, kIconSizeUVE);
     // A deep backdrop of its own, so the icon reads the same on any tile.
-    canvas.clear(prism::Color(20, 22, 27));
-    canvas.gradientV(prism::Rect{0.0F, 0.0F, static_cast<float>(kIconSizeUVE), static_cast<float>(kIconSizeUVE)}, prism::Color(38, 44, 54),
-                     prism::Color(18, 20, 25));
+    // One plain dark backdrop (no gradient): the figure reads the same on any tile.
+    canvas.clear(prism::Color(18, 19, 23));
     const prism::Color line(110, 236, 196);
     const prism::Color joint(222, 255, 244);
     const prism::Color shade(8, 10, 14, 200);
