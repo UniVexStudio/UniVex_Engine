@@ -465,6 +465,7 @@ class EditorUVE final {
     friend class EditorMontageEditorUVE;
     friend class EditorBlueprintPanelUVE;
     friend class EditorRetargetWindowUVE;
+    friend class EditorAnimationLibraryWindowUVE;
 
 public:
     explicit EditorUVE(Core::EngineServicesUVE& services,
@@ -1882,7 +1883,20 @@ private:
     [[nodiscard]] std::vector<Scene::EntityUVE> CollectEntityEditorObjectsUVE();
     /// Instantiates the entity asset as the document's only content (below the scene root).
     [[nodiscard]] Scene::EntityUVE LoadEntityIntoDocumentUVE(Asset::AssetGuidUVE guid);
-    void DrawAnimationLibraryWindowUVE();
+    /// An animation clip's icon (128 px, ARGB): its skeleton half-way through, from the front, or an
+    /// object's path; drawn again when the file changes. Null when the file is not a clip.
+    struct AnimationIconUVE final {
+        std::filesystem::file_time_type written{};
+        std::vector<std::uint32_t> pixels;
+        int size = 0;
+        double durationSeconds = 0.0;
+        std::size_t frames = 0U;
+        std::size_t bones = 0U;
+        /// Bumped each time it is drawn again, so a view that copied it copies it again.
+        std::uint64_t serial = 0U;
+    };
+    [[nodiscard]] const AnimationIconUVE* GetAnimationIconUVE(const std::filesystem::path& absolutePath);
+    std::unordered_map<std::string, AnimationIconUVE> m_animationIcons;
     /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).
     void DrawOverlayWindowsUVE();
     /// Window > Network Capture / Audio Mixer: the previous bottom dock's sections, as windows of

@@ -137,10 +137,7 @@ void EditorUVE::DrawOverlayWindowsUVE() {
     DrawProjectSettingsWindowUVE();
     DrawInputMapWindowUVE();
     DrawKeyboardShortcutsWindowUVE();
-    // The Entity Editor and the Retarget window are PRISM windows of their own.
-    if (m_animationLibraryWindow.has_value()) {
-        DrawAnimationLibraryWindowUVE();
-    }
+    // The Entity Editor, Retarget and the Animation Library are PRISM windows of their own.
     if (m_filePicker.has_value()) {
         DrawFilePickerUVE();
     }
