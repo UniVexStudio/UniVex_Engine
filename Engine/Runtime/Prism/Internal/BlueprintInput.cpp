@@ -247,6 +247,10 @@ bool validValue(PT t, const std::string& v) {
 
 } // namespace
 
+void showTextPopup(Widget* refocus, Vec2 at, const std::string& initial, std::function<bool(const std::string&)> accept) {
+  textPopup(refocus, Rect{at.x, at.y, 0, 0}, initial, 160, std::move(accept));
+}
+
 void BlueprintGraph::openPalette(Vec2 screenPos, const BlueprintPinFilter& filter, int fromNode, int fromPin) {
   Vec2 world = screenToWorld(screenPos);
   std::vector<BlueprintNodeSpec> library = nodeLibrary();

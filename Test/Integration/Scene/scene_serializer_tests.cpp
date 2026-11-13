@@ -1343,6 +1343,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     transition.fadeSeconds = 0.05F;
     machine.transitions = {transition};
     machine.statePositions = {Math::Vector2UVE{40.0F, -20.0F}};
+    machine.stateNames = {"Idle", "Jump"};
     machine.entryPosition = Math::Vector2UVE{-300.0F, 10.0F};
     machine.anyPosition = Math::Vector2UVE{-300.0F, 90.0F};
     blend.nodes[0].inputs = {3U};
@@ -1360,6 +1361,13 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     space.valueY = 0.75F;
     space.blendMode = AnimationBlendModeUVE::NearestInStep;
     space.smoothingSeconds = 0.15F;
+    space.gridX = 6U;
+    space.gridY = 3U;
+    space.snapToGrid = false;
+    space.axisNameX = "Direction";
+    space.axisNameY = "Speed";
+    space.owner = 3U; // placed in the machine's second state's graph
+    space.ownerState = 1U;
     blend.nodes.push_back(space);
     AnimationGraphNodeUVE layered;
     layered.id = 5U;
@@ -1368,6 +1376,11 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     layered.bones = {"Spine", "LeftShoulder"};
     layered.restart = false;
     blend.nodes.push_back(layered);
+    AnimationGraphCommentUVE note;
+    note.title = "Jump";
+    note.owner = 3U;
+    note.ownerState = 1U;
+    blend.comments.push_back(note);
     ASSERT_TRUE(IsAnimationGraphComponentValidUVE(blend)) << DescribeAnimationGraphProblemUVE(blend);
     entityManager.AddComponentUVE<AnimationGraphComponentUVE>(player, blend);
 

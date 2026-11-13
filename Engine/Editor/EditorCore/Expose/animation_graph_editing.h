@@ -16,6 +16,31 @@ namespace UVE::Editor {
 /// testable without a window. Every one leaves a valid graph valid: it refuses what would break it
 /// (a cycle, a second Output, deleting the Output) rather than repairing afterwards.
 
+/// A graph the editor shows: the top tree (machine 0), or the graph of a State Machine's state.
+struct AnimationGraphScopeUVE final {
+    std::uint32_t machine = 0U;
+    std::uint32_t state = 0U;
+    [[nodiscard]] bool operator==(const AnimationGraphScopeUVE&) const = default;
+};
+
+/// Where a node is shown: the state its wires lead into (up to the first State Machine), else
+/// where it was put (`owner`), else the top tree.
+[[nodiscard]] AnimationGraphScopeUVE AnimationGraphScopeOfUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                              std::uint32_t id);
+
+/// The nodes shown in `scope`, in graph order.
+[[nodiscard]] std::vector<std::uint32_t> AnimationGraphScopeNodesUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                                     AnimationGraphScopeUVE scope);
+
+/// Everything inside a node: a State Machine's states' nodes, and theirs (nested machines). Empty
+/// for other kinds.
+[[nodiscard]] std::vector<std::uint32_t> AnimationGraphNodesInsideUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                                      std::uint32_t id);
+
+/// A state's name: its own, else what it plays, else "State N".
+[[nodiscard]] std::string AnimationStateNameUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                const Scene::AnimationGraphNodeUVE& machine, std::size_t slot);
+
 /// What a kind is called in the editor ("Blend Space" for BlendSpace1D...).
 [[nodiscard]] const char* AnimationGraphKindLabelUVE(Scene::AnimationGraphNodeKindUVE kind) noexcept;
 

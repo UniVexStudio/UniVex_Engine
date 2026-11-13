@@ -231,8 +231,16 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
                 !std::isfinite(node.anyPosition.x) || !std::isfinite(node.anyPosition.y)) {
                 return label + ": a state's place in its view is invalid";
             }
-        } else if (!node.transitions.empty() || !node.statePositions.empty()) {
+            if (node.stateNames.size() > node.inputs.size() ||
+                std::ranges::any_of(node.stateNames, [](const std::string& name) { return !IsNameValidUVE(name); })) {
+                return label + ": a state's name is invalid";
+            }
+        } else if (!node.transitions.empty() || !node.statePositions.empty() || !node.stateNames.empty()) {
             return label + ": only a StateMachine has transitions";
+        }
+        if (node.gridX < 1U || node.gridX > 64U || node.gridY < 1U || node.gridY > 64U || !IsNameValidUVE(node.axisNameX) ||
+            !IsNameValidUVE(node.axisNameY)) {
+            return label + ": its grid or axis names are invalid";
         }
     }
 

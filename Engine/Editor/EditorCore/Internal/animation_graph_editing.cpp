@@ -235,7 +235,16 @@ bool DisconnectAnimationGraphInputUVE(std::vector<AnimationGraphNodeUVE>& nodes,
 }
 
 std::size_t DeleteAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nodes,
-                                         const std::vector<std::uint32_t>& ids) {
+                                         const std::vector<std::uint32_t>& given) {
+    // A State Machine goes with everything in its states.
+    std::vector<std::uint32_t> ids = given;
+    for (const std::uint32_t id : given) {
+        for (const std::uint32_t inside : AnimationGraphNodesInsideUVE(nodes, id)) {
+            if (std::ranges::find(ids, inside) == ids.end()) {
+                ids.push_back(inside);
+            }
+        }
+    }
     const auto doomed = [&ids](const AnimationGraphNodeUVE& node) {
         return node.kind != Kind::Output && std::ranges::find(ids, node.id) != ids.end();
     };
@@ -257,8 +266,19 @@ std::size_t DeleteAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nod
 }
 
 std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nodes,
-                                                           const std::vector<std::uint32_t>& ids,
+                                                           const std::vector<std::uint32_t>& given,
                                                            const Math::Vector2UVE offset) {
+    // A State Machine is copied with its states' graphs (the copies keep their places in them).
+    std::vector<std::uint32_t> ids = given;
+    std::vector<std::uint32_t> inside;
+    for (const std::uint32_t id : given) {
+        for (const std::uint32_t member : AnimationGraphNodesInsideUVE(nodes, id)) {
+            if (std::ranges::find(ids, member) == ids.end()) {
+                ids.push_back(member);
+                inside.push_back(member);
+            }
+        }
+    }
     std::unordered_map<std::uint32_t, std::uint32_t> copyOf;
     std::vector<AnimationGraphNodeUVE> copies;
     std::uint32_t nextId = Scene::NextAnimationGraphNodeIdUVE(nodes);
@@ -270,7 +290,9 @@ std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<Animation
         }
         AnimationGraphNodeUVE copy = *original;
         copy.id = nextId++;
-        copy.position = copy.position + offset;
+        if (std::ranges::find(inside, id) == inside.end()) {
+            copy.position = copy.position + offset;
+        }
         copyOf.emplace(id, copy.id);
         copies.push_back(std::move(copy));
     }
@@ -280,8 +302,15 @@ std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<Animation
             const auto it = copyOf.find(input);
             input = it == copyOf.end() ? 0U : it->second;
         }
-        created.push_back(copy.id);
+        if (const auto owner = copyOf.find(copy.owner); owner != copyOf.end()) {
+            copy.owner = owner->second;
+        }
         nodes.push_back(std::move(copy));
+    }
+    for (const std::uint32_t id : given) {
+        if (const auto copied = copyOf.find(id); copied != copyOf.end()) {
+            created.push_back(copied->second);
+        }
     }
     return created;
 }
@@ -303,9 +332,22 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
         node->inputs.size() <= 1U) {
         return false;
     }
+    // A state goes with its graph.
+    std::vector<std::uint32_t> inside;
+    if (node->kind == Kind::StateMachine) {
+        for (const std::uint32_t id : AnimationGraphScopeNodesUVE(nodes, AnimationGraphScopeUVE{target, static_cast<std::uint32_t>(slot)})) {
+            inside.push_back(id);
+            for (const std::uint32_t deeper : AnimationGraphNodesInsideUVE(nodes, id)) {
+                inside.push_back(deeper);
+            }
+        }
+    }
     node->inputs.erase(node->inputs.begin() + static_cast<std::ptrdiff_t>(slot));
     if (node->kind == Kind::StateMachine) {
         const auto state = static_cast<std::uint32_t>(slot);
+        if (slot < node->stateNames.size()) {
+            node->stateNames.erase(node->stateNames.begin() + static_cast<std::ptrdiff_t>(slot));
+        }
         std::erase_if(node->transitions, [state](const Scene::AnimationGraphTransitionUVE& transition) {
             return transition.fromState == state || transition.toState == state;
         });
@@ -320,6 +362,14 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
         node->entryState = std::min(node->entryState, static_cast<std::uint32_t>(node->inputs.size() - 1U));
         if (slot < node->statePositions.size()) {
             node->statePositions.erase(node->statePositions.begin() + static_cast<std::ptrdiff_t>(slot));
+        }
+        for (AnimationGraphNodeUVE& other : nodes) {
+            if (other.owner == target && other.ownerState > state) {
+                --other.ownerState;
+            }
+        }
+        if (!inside.empty()) {
+            static_cast<void>(DeleteAnimationGraphNodesUVE(nodes, inside));
         }
     }
     return true;
@@ -357,10 +407,9 @@ std::optional<std::size_t> AddAnimationStateUVE(std::vector<AnimationGraphNodeUV
         nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
         return std::nullopt;
     }
-    // A state plays something: it starts as a Clip, set beside the machine in the tree, whose
+    // A state plays something: its graph starts as a Clip feeding the state's result, whose
     // animation is picked next.
-    const Math::Vector2UVE beside{node->position.x - 240.0F, node->position.y + static_cast<float>(node->inputs.size()) * 70.0F};
-    const std::uint32_t clip = AddAnimationGraphNodeUVE(nodes, Kind::Clip, beside);
+    const std::uint32_t clip = AddAnimationGraphNodeUVE(nodes, Kind::Clip, Math::Vector2UVE{-320.0F, -40.0F});
     if (clip == 0U) {
         return std::nullopt;
     }
@@ -372,8 +421,26 @@ std::optional<std::size_t> AddAnimationStateUVE(std::vector<AnimationGraphNodeUV
         node->inputs.push_back(0U);
     }
     node->inputs[slot] = clip;
-    // Named for the state it plays, so the view and the tree read the same.
-    FindNodeUVE(nodes, clip)->name = "State " + std::to_string(slot + 1U);
+    if (node->stateNames.size() < node->inputs.size()) {
+        node->stateNames.resize(node->inputs.size());
+    }
+    // A name no other state has.
+    std::uint32_t number = static_cast<std::uint32_t>(slot) + 1U;
+    const auto taken = [&](const std::string& name) {
+        for (std::size_t other = 0U; other < node->inputs.size(); ++other) {
+            if (other != slot && AnimationStateNameUVE(nodes, *node, other) == name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    while (taken("State " + std::to_string(number))) {
+        ++number;
+    }
+    node->stateNames[slot] = "State " + std::to_string(number);
+    AnimationGraphNodeUVE* made = FindNodeUVE(nodes, clip);
+    made->owner = machine;
+    made->ownerState = static_cast<std::uint32_t>(slot);
     static_cast<void>(SetAnimationStatePositionUVE(nodes, machine, slot, position));
     return slot;
 }
@@ -633,6 +700,86 @@ void BindNewNodeParametersUVE(Scene::AnimationGraphComponentUVE& graph, const st
         node->parameterY.clear();
     }
     graph.parameters.push_back(std::move(parameter));
+}
+
+AnimationGraphScopeUVE AnimationGraphScopeOfUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t id) {
+    // Up the wires: the first State Machine met holds it, in the state that wire is.
+    std::uint32_t at = id;
+    for (std::size_t guard = 0U; guard <= nodes.size(); ++guard) {
+        const AnimationGraphNodeUVE* parent = nullptr;
+        std::size_t slot = 0U;
+        for (const AnimationGraphNodeUVE& node : nodes) {
+            const auto found = std::ranges::find(node.inputs, at);
+            if (at != 0U && found != node.inputs.end()) {
+                parent = &node;
+                slot = static_cast<std::size_t>(found - node.inputs.begin());
+                break;
+            }
+        }
+        if (parent == nullptr) {
+            const AnimationGraphNodeUVE* top = FindNodeUVE(nodes, at);
+            if (top == nullptr || top->owner == 0U || top->owner == top->id) {
+                return {};
+            }
+            const AnimationGraphNodeUVE* owner = FindNodeUVE(nodes, top->owner);
+            if (owner == nullptr || owner->kind != Kind::StateMachine || top->ownerState >= owner->inputs.size()) {
+                return {};
+            }
+            return AnimationGraphScopeUVE{owner->id, top->ownerState};
+        }
+        if (parent->kind == Kind::StateMachine) {
+            return AnimationGraphScopeUVE{parent->id, static_cast<std::uint32_t>(slot)};
+        }
+        at = parent->id;
+    }
+    return {};
+}
+
+std::vector<std::uint32_t> AnimationGraphScopeNodesUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const AnimationGraphScopeUVE scope) {
+    std::vector<std::uint32_t> shown;
+    for (const AnimationGraphNodeUVE& node : nodes) {
+        if (scope.machine != 0U && node.kind == Kind::Output) {
+            continue;
+        }
+        if (AnimationGraphScopeOfUVE(nodes, node.id) == scope) {
+            shown.push_back(node.id);
+        }
+    }
+    return shown;
+}
+
+std::vector<std::uint32_t> AnimationGraphNodesInsideUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t id) {
+    std::vector<std::uint32_t> inside;
+    std::vector<std::uint32_t> machines{id};
+    while (!machines.empty()) {
+        const std::uint32_t machine = machines.back();
+        machines.pop_back();
+        const AnimationGraphNodeUVE* node = FindNodeUVE(nodes, machine);
+        if (node == nullptr || node->kind != Kind::StateMachine) {
+            continue;
+        }
+        for (std::size_t state = 0U; state < node->inputs.size(); ++state) {
+            for (const std::uint32_t member : AnimationGraphScopeNodesUVE(nodes, AnimationGraphScopeUVE{machine, static_cast<std::uint32_t>(state)})) {
+                if (std::ranges::find(inside, member) == inside.end() && member != id) {
+                    inside.push_back(member);
+                    machines.push_back(member);
+                }
+            }
+        }
+    }
+    return inside;
+}
+
+std::string AnimationStateNameUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const AnimationGraphNodeUVE& machine, const std::size_t slot) {
+    if (slot < machine.stateNames.size() && !machine.stateNames[slot].empty()) {
+        return machine.stateNames[slot];
+    }
+    if (slot < machine.inputs.size() && machine.inputs[slot] != 0U) {
+        if (const AnimationGraphNodeUVE* child = FindNodeUVE(nodes, machine.inputs[slot]); child != nullptr && !child->name.empty()) {
+            return child->name;
+        }
+    }
+    return "State " + std::to_string(slot + 1U);
 }
 
 } // namespace UVE::Editor

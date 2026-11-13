@@ -228,6 +228,11 @@ public:
             if (active >= node.inputs.size()) {
                 continue;
             }
+            if (active < node.stateNames.size() && !node.stateNames[active].empty()) {
+                names += names.empty() ? "" : ", ";
+                names += node.stateNames[active];
+                continue;
+            }
             if (const std::optional<std::size_t> child = IndexOfUVE(node.inputs[active])) {
                 const AnimationGraphNodeUVE& state = m_tree.nodes[*child];
                 names += names.empty() ? "" : ", ";

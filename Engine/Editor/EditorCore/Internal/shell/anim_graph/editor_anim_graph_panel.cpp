@@ -159,9 +159,9 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
         }
         const std::uint32_t nodeId = node->id;
         if (node->kind == Kind::StateMachine) {
-            items.push_back(prism::MenuItem::Item("Open States", [this, nodeId] { OpenFocusUVE(nodeId); }, "Double-click", prism::Icon::StateMachine));
+            items.push_back(prism::MenuItem::Item("Open States", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::StateMachine));
         } else if (node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D) {
-            items.push_back(prism::MenuItem::Item("Open Blend Space", [this, nodeId] { OpenFocusUVE(nodeId); }, "Double-click", prism::Icon::NodeBlendSpace));
+            items.push_back(prism::MenuItem::Item("Open Blend Space", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::NodeBlendSpace));
         }
     };
     m_graph->canConnectHook = [this](const int fromNode, int, const int toNode, const int toPin, std::string* why) {
@@ -194,18 +194,11 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
     m_canvas->addPage(m_stateView);
     m_canvas->addPage(m_spaceView);
     m_canvas->setActiveIndex(0);
-    // The breadcrumb while one is open: Tree > its name.
-    auto crumbRow = prism::hbox(4.0F);
+    // The breadcrumb while a state, a State Machine or a Blend Space is open: Tree > Locomotion >
+    // Idle; each one a button back to it.
+    auto crumbRow = prism::hbox(2.0F);
     crumbRow->setPadding(prism::Margin(6.0F, 2.0F, 6.0F, 2.0F));
-    auto back = prism::make<prism::Button>("Tree", prism::Icon::AnimTree, prism::ButtonStyle::Flat);
-    back->setTooltip("Back to the tree (Esc)");
-    back->onClick = [this] { CloseFocusUVE(); };
-    crumbRow->add(back, CentreSlotUVE());
-    auto chevron = prism::make<prism::Label>(">", prism::FontRole::Semibold);
-    chevron->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    crumbRow->add(chevron, CentreSlotUVE());
-    m_crumbLabel = prism::make<prism::Label>("", prism::FontRole::Semibold);
-    crumbRow->add(m_crumbLabel, CentreSlotUVE());
+    m_crumbRow = crumbRow;
     auto crumbs = prism::make<prism::Border>();
     crumbs->setBackground(prism::ThemeColor(&prism::Theme::window));
     crumbs->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
@@ -313,7 +306,8 @@ prism::BlueprintNode EditorAnimGraphPanelUVE::MakeNodeUVE(const NodeUVE& node) c
         case Kind::LookAt: n.icon = prism::Icon::LookAt; break;
         case Kind::BlendByBool: n.icon = prism::Icon::BlendByBool; break;
     }
-    for (std::size_t slot = 0U; slot < node.inputs.size(); ++slot) {
+    // A State Machine's inputs are its states: they are opened, not wired, so it shows none.
+    for (std::size_t slot = 0U; slot < node.inputs.size() && node.kind != Kind::StateMachine; ++slot) {
         prism::BlueprintPin pin;
         pin.name = AnimationGraphSlotLabelUVE(node.kind, slot);
         pin.type = prism::BlueprintPinType::Pose;
@@ -364,12 +358,42 @@ void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
         return;
     }
     m_rebuilding = true;
-    const bool first = m_shownTree != m_view.tree;
+    const AnimationGraphScopeUVE scope = ScopeUVE();
+    const bool first = m_shownTree != m_view.tree || !(m_shownScope == scope);
+    const std::vector<std::uint32_t> shown = AnimationGraphScopeNodesUVE(graph.nodes, scope);
+    const auto inScope = [&shown](const std::uint32_t id) { return std::ranges::find(shown, id) != shown.end(); };
     m_graph->clear();
     for (const NodeUVE& node : graph.nodes) {
-        m_graph->addNode(MakeNodeUVE(node));
+        if (inScope(node.id)) {
+            m_graph->addNode(MakeNodeUVE(node));
+        }
+    }
+    // A state's graph ends in its result: the pose the state plays.
+    const NodeUVE* machine = nullptr;
+    if (scope.machine != 0U) {
+        const auto found = std::ranges::find(graph.nodes, scope.machine, &NodeUVE::id);
+        machine = found != graph.nodes.end() ? &*found : nullptr;
+    }
+    if (machine != nullptr) {
+        prism::BlueprintNode result;
+        result.id = kStateResultUVE;
+        result.title = "Output Pose";
+        result.subtitle = AnimationStateNameUVE(graph.nodes, *machine, scope.state);
+        result.category = prism::BlueprintNodeCategory::Event;
+        result.icon = prism::Icon::NodeOutput;
+        result.pos = prism::Vec2{0.0F, 0.0F};
+        result.tooltip = "What this state plays: the pose wired here";
+        prism::BlueprintPin pin;
+        pin.name = "Result";
+        pin.type = prism::BlueprintPinType::Pose;
+        pin.kind = prism::BlueprintPinKind::Input;
+        result.inputs.push_back(std::move(pin));
+        m_graph->addNode(std::move(result));
     }
     for (const Scene::AnimationGraphCommentUVE& comment : graph.comments) {
+        if (!(AnimationGraphScopeUVE{comment.owner, comment.ownerState} == scope)) {
+            continue;
+        }
         prism::BlueprintComment box;
         box.title = comment.title;
         box.bounds = prism::Rect{comment.position.x, comment.position.y, comment.size.x, comment.size.y};
@@ -378,15 +402,22 @@ void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
         m_graph->addComment(box);
     }
     for (const NodeUVE& node : graph.nodes) {
+        if (!inScope(node.id) || node.kind == Kind::StateMachine) {
+            continue;
+        }
         for (std::size_t slot = 0U; slot < node.inputs.size(); ++slot) {
-            if (node.inputs[slot] != 0U) {
+            if (node.inputs[slot] != 0U && inScope(node.inputs[slot])) {
                 m_graph->connectPins(static_cast<int>(node.inputs[slot]), 0, static_cast<int>(node.id), static_cast<int>(slot),
                                      prism::BlueprintPinType::Pose);
             }
         }
     }
+    if (machine != nullptr && scope.state < machine->inputs.size() && machine->inputs[scope.state] != 0U &&
+        inScope(machine->inputs[scope.state])) {
+        m_graph->connectPins(static_cast<int>(machine->inputs[scope.state]), 0, kStateResultUVE, 0, prism::BlueprintPinType::Pose);
+    }
     for (const NodeUVE& node : graph.nodes) {
-        if (BodyHeightUVE(node) > 0.0F) {
+        if (inScope(node.id) && BodyHeightUVE(node) > 0.0F) {
             m_graph->setNodeBody(static_cast<int>(node.id), BuildBodyUVE(node));
         }
     }
@@ -402,6 +433,7 @@ void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
     }
     m_shown = graph;
     m_shownTree = m_view.tree;
+    m_shownScope = scope;
 }
 
 void EditorAnimGraphPanelUVE::ApplyGraphEditUVE() {
@@ -413,24 +445,42 @@ void EditorAnimGraphPanelUVE::ApplyGraphEditUVE() {
         return;
     }
     const prism::BlueprintGraph& view = *m_graph;
-    static_cast<void>(EditUVE([&view](GraphUVE& g) {
+    const AnimationGraphScopeUVE scope = m_shownScope;
+    static_cast<void>(EditUVE([&view, scope](GraphUVE& g) {
+        // What the view shows is this scope's nodes: the ones missing were deleted there.
+        const std::vector<std::uint32_t> shown = AnimationGraphScopeNodesUVE(g.nodes, scope);
         std::vector<std::uint32_t> gone;
-        for (const NodeUVE& node : g.nodes) {
-            if (view.findNode(static_cast<int>(node.id)) == nullptr) {
-                gone.push_back(node.id);
+        for (const std::uint32_t id : shown) {
+            if (view.findNode(static_cast<int>(id)) == nullptr) {
+                gone.push_back(id);
             }
         }
         if (!gone.empty()) {
             static_cast<void>(DeleteAnimationGraphNodesUVE(g.nodes, gone));
         }
+        // Everything shown here stays here, wired or not (a wire taken off keeps it in this graph).
         for (NodeUVE& node : g.nodes) {
-            if (const prism::BlueprintNode* shown = view.findNode(static_cast<int>(node.id))) {
-                node.position = Math::Vector2UVE{shown->pos.x, shown->pos.y};
+            const prism::BlueprintNode* drawn = view.findNode(static_cast<int>(node.id));
+            if (drawn == nullptr || static_cast<int>(node.id) == kStateResultUVE) {
+                continue;
             }
-            std::fill(node.inputs.begin(), node.inputs.end(), 0U);
+            node.position = Math::Vector2UVE{drawn->pos.x, drawn->pos.y};
+            node.owner = scope.machine;
+            node.ownerState = scope.state;
+            if (node.kind != Kind::StateMachine) {
+                std::fill(node.inputs.begin(), node.inputs.end(), 0U);
+            }
         }
-        // The comment boxes as the view has them (made, moved, resized, renamed or deleted there).
-        g.comments.clear();
+        NodeUVE* machine = nullptr;
+        if (scope.machine != 0U) {
+            const auto found = std::ranges::find(g.nodes, scope.machine, &NodeUVE::id);
+            machine = found != g.nodes.end() && scope.state < found->inputs.size() ? &*found : nullptr;
+            if (machine != nullptr) {
+                machine->inputs[scope.state] = 0U;
+            }
+        }
+        // This graph's comment boxes as the view has them (made, moved, resized, renamed or deleted).
+        std::erase_if(g.comments, [scope](const Scene::AnimationGraphCommentUVE& c) { return AnimationGraphScopeUVE{c.owner, c.ownerState} == scope; });
         for (const prism::BlueprintComment& box : view.comments()) {
             Scene::AnimationGraphCommentUVE comment;
             comment.title = box.title;
@@ -438,11 +488,19 @@ void EditorAnimGraphPanelUVE::ApplyGraphEditUVE() {
             comment.size = Math::Vector2UVE{box.bounds.w, box.bounds.h};
             comment.color = (static_cast<std::uint32_t>(box.color.r) << 24U) | (static_cast<std::uint32_t>(box.color.g) << 16U) |
                             (static_cast<std::uint32_t>(box.color.b) << 8U) | static_cast<std::uint32_t>(box.color.a);
+            comment.owner = scope.machine;
+            comment.ownerState = scope.state;
             g.comments.push_back(std::move(comment));
         }
         for (const prism::BlueprintWire& wire : view.wires()) {
+            if (wire.toNodeId == kStateResultUVE) {
+                if (machine != nullptr) {
+                    machine->inputs[scope.state] = static_cast<std::uint32_t>(wire.fromNodeId);
+                }
+                continue;
+            }
             for (NodeUVE& node : g.nodes) {
-                if (static_cast<int>(node.id) == wire.toNodeId && wire.toPinIndex >= 0 &&
+                if (static_cast<int>(node.id) == wire.toNodeId && node.kind != Kind::StateMachine && wire.toPinIndex >= 0 &&
                     static_cast<std::size_t>(wire.toPinIndex) < node.inputs.size()) {
                     node.inputs[static_cast<std::size_t>(wire.toPinIndex)] = static_cast<std::uint32_t>(wire.fromNodeId);
                 }
@@ -464,10 +522,20 @@ int EditorAnimGraphPanelUVE::SpawnUVE(const prism::BlueprintNodeSpec& spec, cons
         return -1;
     }
     std::uint32_t added = 0U;
+    const AnimationGraphScopeUVE scope = m_shownScope;
     if (!EditUVE([&](GraphUVE& g) {
             added = AddAnimationGraphNodeUVE(g.nodes, *kind, Math::Vector2UVE{world.x, world.y});
             if (added != 0U) {
                 BindNewNodeParametersUVE(g, added);
+                // Made in a state's graph: it stays there.
+                if (const auto made = std::ranges::find(g.nodes, added, &NodeUVE::id); made != g.nodes.end()) {
+                    made->owner = scope.machine;
+                    made->ownerState = scope.state;
+                }
+                // A State Machine starts with a first state, playing a Clip in its own graph.
+                if (*kind == Kind::StateMachine) {
+                    static_cast<void>(AddAnimationStateUVE(g.nodes, added, Math::Vector2UVE{0.0F, 0.0F}));
+                }
             }
         }) || added == 0U) {
         return -1;
@@ -575,7 +643,7 @@ void EditorAnimGraphPanelUVE::RefreshUVE(const double deltaSeconds, const bool s
     }
     SyncFocusUVE();
     if (!m_liveBefore.has_value()) {
-        if (m_shownTree != m_view.tree || !m_shown.has_value() || !m_shown->HasSameSettingsUVE(*graph)) {
+        if (m_shownTree != m_view.tree || !m_shown.has_value() || !m_shown->HasSameSettingsUVE(*graph) || !(m_shownScope == ScopeUVE())) {
             RebuildGraphUVE(*graph);
             m_sideDirty = true;
         }
@@ -668,10 +736,50 @@ void EditorAnimGraphPanelUVE::OpenFocusUVE(const std::uint32_t node) {
     SyncFocusUVE();
 }
 
-void EditorAnimGraphPanelUVE::CloseFocusUVE() {
+void EditorAnimGraphPanelUVE::OpenStateGraphUVE(const std::uint32_t machine, const std::uint32_t slot) {
     EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
     state.focus = 0U;
+    state.scopeMachine = machine;
+    state.scopeState = slot;
     state.pickedState = -1;
+    state.pickedTransition = -1;
+    m_selected.clear();
+    m_sideDirty = true;
+    SyncFocusUVE();
+}
+
+AnimationGraphScopeUVE EditorAnimGraphPanelUVE::ScopeUVE() const {
+    const EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+    const GraphUVE* graph = GraphPtrUVE();
+    if (graph == nullptr || state.scopeMachine == 0U) {
+        return {};
+    }
+    const auto machine = std::ranges::find(graph->nodes, state.scopeMachine, &NodeUVE::id);
+    if (machine == graph->nodes.end() || machine->kind != Kind::StateMachine || state.scopeState >= machine->inputs.size()) {
+        return {};
+    }
+    return AnimationGraphScopeUVE{state.scopeMachine, state.scopeState};
+}
+
+void EditorAnimGraphPanelUVE::CloseFocusUVE() {
+    // One step up: a State Machine or Blend Space goes back to the graph it sits in; a state's
+    // graph goes back to its State Machine.
+    EditorUVE::AnimationGraphViewStateUVE& state = m_editor.m_animGraph;
+    const GraphUVE* graph = GraphPtrUVE();
+    if (state.focus != 0U) {
+        const AnimationGraphScopeUVE where = graph != nullptr ? AnimationGraphScopeOfUVE(graph->nodes, state.focus) : AnimationGraphScopeUVE{};
+        m_selected = {state.focus};
+        state.focus = 0U;
+        state.scopeMachine = where.machine;
+        state.scopeState = where.state;
+    } else if (const AnimationGraphScopeUVE scope = ScopeUVE(); scope.machine != 0U) {
+        state.focus = scope.machine;
+        state.stateFramed = false;
+        state.pickedState = static_cast<int>(scope.state);
+    } else {
+        state.scopeMachine = 0U;
+        state.scopeState = 0U;
+    }
     state.pickedTransition = -1;
     m_sideDirty = true;
     SyncFocusUVE();
@@ -685,6 +793,10 @@ void EditorAnimGraphPanelUVE::SyncFocusUVE() {
         state.focus = 0U;   // its node went (deleted, undone): back to the tree
         focus = nullptr;
     }
+    if (state.focus == 0U && state.scopeMachine != 0U && ScopeUVE().machine == 0U) {
+        state.scopeMachine = 0U;   // its State Machine or state went
+        state.scopeState = 0U;
+    }
     const int page = focus == nullptr ? 0 : focus->kind == Kind::StateMachine ? 1 : 2;
     if (m_canvas && m_canvas->activeIndex() != page) {
         m_canvas->setActiveIndex(page);
@@ -694,18 +806,76 @@ void EditorAnimGraphPanelUVE::SyncFocusUVE() {
                                                            : static_cast<prism::Widget*>(m_graph.get()));
         }
     }
-    if (m_crumbs) {
-        m_crumbs->setVisible(focus != nullptr);
+    // The path: Tree > each State Machine and state down to here > what is open.
+    struct CrumbUVE final {
+        std::string text;
+        prism::Icon icon = prism::Icon::None;
+        std::function<void()> go;
+    };
+    std::vector<CrumbUVE> path;
+    const GraphUVE* graph = GraphPtrUVE();
+    AnimationGraphScopeUVE scope = ScopeUVE();
+    if (graph != nullptr && focus != nullptr) {
+        const std::uint32_t id = focus->id;
+        path.push_back(CrumbUVE{(focus->name.empty() ? std::string{AnimationGraphKindLabelUVE(focus->kind)} : focus->name),
+                                focus->kind == Kind::StateMachine ? prism::Icon::StateMachine : prism::Icon::NodeBlendSpace,
+                                [this, id] { OpenFocusUVE(id); }});
+        scope = AnimationGraphScopeOfUVE(graph->nodes, focus->id);
     }
-    if (m_crumbLabel && focus != nullptr) {
-        const std::string name = (focus->name.empty() ? std::string{AnimationGraphKindLabelUVE(focus->kind)} : focus->name) + "   (" +
-                                 AnimationGraphKindLabelUVE(focus->kind) + ")";
-        if (m_crumbLabel->text() != name) {
-            m_crumbLabel->setText(name);
+    for (std::size_t guard = 0U; graph != nullptr && scope.machine != 0U && guard < 32U; ++guard) {
+        const auto machine = std::ranges::find(graph->nodes, scope.machine, &NodeUVE::id);
+        if (machine == graph->nodes.end()) {
+            break;
+        }
+        const std::uint32_t machineId = machine->id;
+        const std::uint32_t slot = scope.state;
+        path.push_back(CrumbUVE{AnimationStateNameUVE(graph->nodes, *machine, scope.state), prism::Icon::StateGraph,
+                                [this, machineId, slot] { OpenStateGraphUVE(machineId, slot); }});
+        path.push_back(CrumbUVE{machine->name.empty() ? std::string{"State Machine"} : machine->name, prism::Icon::StateMachine,
+                                [this, machineId] { OpenFocusUVE(machineId); }});
+        scope = AnimationGraphScopeOfUVE(graph->nodes, machineId);
+    }
+    std::ranges::reverse(path);
+    std::string signature;
+    for (const CrumbUVE& crumb : path) {
+        signature += crumb.text + "\x1f";
+    }
+    if (m_crumbs) {
+        m_crumbs->setVisible(!path.empty());
+    }
+    if (m_crumbRow && signature != m_crumbSignature) {
+        m_crumbSignature = signature;
+        m_crumbRow->clearChildren();
+        auto up = prism::make<prism::Button>("", prism::Icon::ChevronLeft, prism::ButtonStyle::Flat);
+        up->setTooltip("Up one level (Esc in a State Machine or Blend Space)");
+        up->onClick = [this] { CloseFocusUVE(); };
+        m_crumbRow->add(up, CentreSlotUVE());
+        auto tree = prism::make<prism::Button>("Tree", prism::Icon::AnimTree, prism::ButtonStyle::Flat);
+        tree->setTooltip("Back to the top of the graph");
+        tree->onClick = [this] {
+            EditorUVE::AnimationGraphViewStateUVE& s = m_editor.m_animGraph;
+            s.focus = 0U;
+            s.scopeMachine = 0U;
+            s.scopeState = 0U;
+            m_sideDirty = true;
+            SyncFocusUVE();
+        };
+        m_crumbRow->add(tree, CentreSlotUVE());
+        for (std::size_t i = 0U; i < path.size(); ++i) {
+            auto chevron = prism::make<prism::Label>(">", prism::FontRole::Semibold);
+            chevron->setColor(prism::ThemeColor(&prism::Theme::textDim));
+            m_crumbRow->add(chevron, CentreSlotUVE());
+            auto step = prism::make<prism::Button>(path[i].text, path[i].icon, i + 1U == path.size() ? prism::ButtonStyle::Default : prism::ButtonStyle::Flat);
+            step->onClick = path[i].go;
+            m_crumbRow->add(step, CentreSlotUVE());
+        }
+        if (prism::Application::exists()) {
+            prism::Application::get().invalidateLayout();
         }
     }
-    if (m_shownFocus != state.focus) {
-        m_shownFocus = state.focus;
+    const std::uint32_t where = state.focus != 0U ? state.focus : (state.scopeMachine << 8U) ^ (state.scopeState + 1U) ^ 0x80000000U;
+    if (m_shownFocus != where) {
+        m_shownFocus = where;
         m_sideDirty = true;
         if (prism::Application::exists()) {
             prism::Application::get().invalidateLayout();
@@ -1121,6 +1291,8 @@ bool EditorAnimGraphPanelUVE::NodeActionUVE(const std::string& action, const std
                     input = found != remap.end() ? found->second : 0U;
                 }
                 node.position = Math::Vector2UVE{at.x + node.position.x - left, at.y + node.position.y - top};
+                node.owner = m_shownScope.machine;
+                node.ownerState = m_shownScope.state;
                 made.push_back(node.id);
                 g.nodes.push_back(std::move(node));
             }

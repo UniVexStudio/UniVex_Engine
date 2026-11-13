@@ -33,7 +33,14 @@ public:
     bool onMouseUp(const prism::MouseEvent& e) override;
     bool onMouseWheel(const prism::MouseEvent& e) override;
     bool onKeyDown(const prism::KeyEvent& e) override;
+    void onMouseLeave() override;
+    prism::Cursor cursor() const override;
     bool focusable() const override { return true; }
+
+    /// Starts a transition from `slot` that follows the mouse until a state is clicked.
+    void BeginTransitionUVE(int slot);
+    /// Asks for a state's new name in place.
+    void RenameStateUVE(std::size_t slot);
 
     /// Fits every box in view.
     void FrameUVE();
@@ -59,6 +66,9 @@ private:
     [[nodiscard]] std::string StateNameUVE(const Scene::AnimationGraphNodeUVE& machine, std::size_t slot) const;
     [[nodiscard]] std::string StateDetailUVE(const Scene::AnimationGraphNodeUVE& machine, std::size_t slot) const;
     void ShowMenuUVE(prism::Vec2 at, int box, int transition);
+    /// Near a state's border (where a drag makes a transition) rather than inside it.
+    [[nodiscard]] bool OnEdgeUVE(const Scene::AnimationGraphNodeUVE& machine, int box, prism::Vec2 screen) const;
+    void AddStateUVE(Math::Vector2UVE world, Asset::AssetGuidUVE clip);
     void DeletePickedUVE();
     void OpenStateUVE(std::size_t slot);
 
@@ -67,6 +77,10 @@ private:
     int m_dragBox = kNoneUVE;
     prism::Vec2 m_dragFrom{};
     prism::Vec2 m_mouse{};
+    int m_hoverBox = -3;
+    bool m_hoverEdge = false;
+    /// A transition started from the menu: it follows the mouse until the next click.
+    bool m_linkPending = false;
 };
 
 } // namespace UVE::Editor

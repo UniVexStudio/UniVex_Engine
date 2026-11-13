@@ -561,6 +561,14 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
                          {"statePositions", std::move(statePositions)},
                          {"entryPosition", {object.entryPosition.x, object.entryPosition.y}},
                          {"anyPosition", {object.anyPosition.x, object.anyPosition.y}},
+                         {"stateNames", object.stateNames},
+                         {"owner", object.owner},
+                         {"ownerState", object.ownerState},
+                         {"gridX", object.gridX},
+                         {"gridY", object.gridY},
+                         {"snapToGrid", object.snapToGrid},
+                         {"axisNameX", object.axisNameX},
+                         {"axisNameY", object.axisNameY},
                          {"target", {object.target.x, object.target.y, object.target.z}},
                          {"pole", {object.pole.x, object.pole.y, object.pole.z}},
                          {"rotationDegrees", {object.rotationDegrees.x, object.rotationDegrees.y, object.rotationDegrees.z}},
@@ -585,7 +593,9 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
             comments.push_back({{"title", comment.title},
                                 {"position", {comment.position.x, comment.position.y}},
                                 {"size", {comment.size.x, comment.size.y}},
-                                {"color", comment.color}});
+                                {"color", comment.color},
+                                {"owner", comment.owner},
+                                {"ownerState", comment.ownerState}});
         }
         root["comments"] = std::move(comments);
     }
@@ -773,6 +783,18 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
             object.fadeOutSeconds = item.value("fadeOutSeconds", -1.0F);
             object.autoRestart = item.value("autoRestart", false);
             object.autoRestartDelaySeconds = item.value("autoRestartDelaySeconds", 1.0F);
+            if (const auto names = item.find("stateNames"); names != item.end() && names->is_array()) {
+                for (const nlohmann::json& name : *names) {
+                    object.stateNames.push_back(name.is_string() ? name.get<std::string>() : std::string{});
+                }
+            }
+            object.owner = item.value("owner", std::uint32_t{0});
+            object.ownerState = item.value("ownerState", std::uint32_t{0});
+            object.gridX = item.value("gridX", std::uint32_t{4});
+            object.gridY = item.value("gridY", std::uint32_t{4});
+            object.snapToGrid = item.value("snapToGrid", true);
+            object.axisNameX = item.value("axisNameX", std::string{});
+            object.axisNameY = item.value("axisNameY", std::string{});
             tree.nodes.push_back(std::move(object));
         }
         static_cast<void>(MigrateBlendSpaceInputsUVE(tree.nodes, legacyPositions));
@@ -808,6 +830,8 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
                 comment.size = Math::Vector2UVE{(*z)[0].get<float>(), (*z)[1].get<float>()};
             }
             comment.color = item.value("color", comment.color);
+            comment.owner = item.value("owner", std::uint32_t{0});
+            comment.ownerState = item.value("ownerState", std::uint32_t{0});
             tree.comments.push_back(std::move(comment));
         }
     }
