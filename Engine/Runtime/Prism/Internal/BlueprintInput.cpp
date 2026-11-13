@@ -388,7 +388,7 @@ BlueprintGraph::PinHit BlueprintGraph::defaultBoxAt(Vec2 p) const {
     if (!nodeScreenRect(n).contains(p)) continue;
     for (int i = 0; i < int(n.inputs.size()); i++) {
       const BlueprintPin& pin = n.inputs[size_t(i)];
-      if (pin.type == PT::Exec || pin.defaultValue.empty() || isPinConnected(n.id, i, true)) continue;
+      if (pin.type == PT::Exec || (pin.defaultValue.empty() && !pin.editable) || isPinConnected(n.id, i, true)) continue;
       Rect lb = defaultBoxLocal(n, i);
       Vec2 o = worldToScreen(n.pos);
       if (Rect{o.x + lb.x * m_zoom, o.y + lb.y * m_zoom, lb.w * m_zoom, lb.h * m_zoom}.inflated(2).contains(p)) return {n.id, i, true};
@@ -434,6 +434,31 @@ void BlueprintGraph::editDefault(const PinHit& h) {
   Vec2 o = worldToScreen(n->pos);
   int id = n->id, pi = h.pin;
   std::string name = p.name;
+  // A pin with known values (the host's widgets, say) picks from them; anything else is typed.
+  if (pinChoices && !m_typingChoice) {
+    const std::vector<std::string> choices = pinChoices(*n, h.pin);
+    if (!choices.empty()) {
+      std::vector<MenuItem> items;
+      for (const std::string& choice : choices) {
+        items.push_back(MenuItem::Check(choice, choice == p.defaultValue, [this, id, pi, name, choice] {
+          if (BlueprintNode* nn = nodeById(id)) {
+            nn->inputs[size_t(pi)].defaultValue = choice;
+            layoutNode(*nn);
+            commit("Edit " + name);
+            touch();
+          }
+        }));
+      }
+      items.push_back(MenuItem::Sep());
+      items.push_back(MenuItem::Item("Type a value...", [this, h] {
+        m_typingChoice = true;
+        editDefault(h);
+        m_typingChoice = false;
+      }));
+      showMenu(std::move(items), Rect{o.x + lb.x * m_zoom, o.y + lb.y * m_zoom, lb.w * m_zoom, lb.h * m_zoom}, PopupPlacement::Below);
+      return;
+    }
+  }
   textPopup(this, {o.x + lb.x * m_zoom, o.y + lb.y * m_zoom, 0, 0}, p.defaultValue, 120, [this, id, pi, t, name](const std::string& v) {
     if (!validValue(t, v)) { Application::get().notify("'" + v + "' is not a valid " + blueprintPinTypeName(t) + " value", ToastLevel::Warning, 1800); return false; }
     if (BlueprintNode* nn = nodeById(id)) {
@@ -444,6 +469,19 @@ void BlueprintGraph::editDefault(const PinHit& h) {
     }
     return true;
   });
+}
+
+bool BlueprintGraph::setPinDefault(int nodeId, int pinIndex, const std::string& value) {
+  BlueprintNode* n = nodeById(nodeId);
+  if (!n || pinIndex < 0 || pinIndex >= int(n->inputs.size())) return false;
+  BlueprintPin& p = n->inputs[size_t(pinIndex)];
+  if (p.type == PT::Exec || !(value.empty() || validValue(p.type, value))) return false;
+  if (p.defaultValue == value) return true;
+  p.defaultValue = value;
+  layoutNode(*n);
+  commit("Edit " + p.name);
+  touch();
+  return true;
 }
 
 void BlueprintGraph::editComment(BlueprintComment& c) {

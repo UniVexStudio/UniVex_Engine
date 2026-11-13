@@ -19,6 +19,7 @@
 #include <vector>
 
 namespace prism {
+class PropertyGrid;
 class ScrollBox;
 } // namespace prism
 
@@ -70,6 +71,12 @@ public:
     /// the nodes it takes, its name already filled in.
     std::function<std::vector<std::pair<std::string, WidgetKindUVE>>()> widgetsProvider;
 private:
+    /// The catalogue key of a graph node ("ui_set_text"), empty for one that is not the engine's.
+    [[nodiscard]] static std::string NodeKeyUVE(const prism::BlueprintNode& node);
+    /// The widgets a UI node of `key` can act on, by name (empty: not a UI node, or no widgets).
+    [[nodiscard]] std::vector<std::string> WidgetChoicesUVE(const std::string& key) const;
+    /// The picked node's section of Details: what it is, and an editor for each input.
+    void AddNodeDetailsUVE(prism::PropertyGrid& grid, const prism::BlueprintNode& node);
     [[nodiscard]] Asset::BlueprintAssetUVE FromGraphUVE() const;
     void LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& blueprint);
     [[nodiscard]] std::vector<prism::BlueprintNodeSpec> LibraryUVE() const;

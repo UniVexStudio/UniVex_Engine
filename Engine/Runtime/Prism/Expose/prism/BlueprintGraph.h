@@ -45,6 +45,7 @@ struct BlueprintPin {
   std::string defaultValue;   // inline value shown in a box while an input is unconnected ("Self", "0.5", "true")
   bool hideLabel = false;
   bool required = false;      // unconnected required inputs are reported by compile()
+  bool editable = false;      // keeps its value box even while empty (text a user may clear)
 };
 
 enum class BlueprintNodeCategory {
@@ -195,6 +196,9 @@ public:
   Callback<int> onNodeDoubleClicked;
   // The host's own rule for a connection, asked after the graph's type checks pass.
   std::function<bool(int fromNode, int fromPin, int toNode, int toPin, std::string* why)> canConnectHook;
+  // The values an input may take (the host's widgets, assets ...): editing it opens a list of
+  // them, with "Type a value..." for anything else. Empty: the plain text box.
+  std::function<std::vector<std::string>(const BlueprintNode& node, int inputPin)> pinChoices;
   // A widget drawn and used inside node `nodeId` under its pins (the node's bodyH tall); null removes it.
   void setNodeBody(int nodeId, Ref<Widget> body);
   void clearNodeBodies();
@@ -214,6 +218,9 @@ public:
 
   bool isPinConnected(int nodeId, int pinIndex, bool isInput) const;
   const BlueprintNode* findNode(int id) const;
+  // Sets input `pinIndex` of node `nodeId` to `value` (one undo step), as editing its box does.
+  // False when there is no such pin or the value is not one of its type.
+  bool setPinDefault(int nodeId, int pinIndex, const std::string& value);
   BlueprintPinType resolvedType(int nodeId, int pinIndex, bool isInput) const;   // resolves Wildcard pins
 
   int nodeCount() const { return int(m_nodes.size()); }
@@ -401,6 +408,7 @@ private:
 
   Vec2 m_pan{60, 50};
   float m_zoom = 1.0f;
+  bool m_typingChoice = false;   // "Type a value..." asked for the text box over the list
   bool m_snap = true;
   bool m_needFrame = false;   // frame the whole graph on the next arrange (after a preset load)
 

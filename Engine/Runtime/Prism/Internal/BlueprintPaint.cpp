@@ -328,7 +328,7 @@ void BlueprintPaint::node(const BlueprintGraph& g, Canvas& c, const BlueprintNod
         if (input) c.textIn(lf, {at.x + (kPinR + 7) * s + (t == PT::Exec ? 0 : 0.f), at.y - kRowH * 0.5f * s, lw, kRowH * s}, p.name, lc, HAlign::Left, false);
         else c.textIn(lf, {at.x - (kPinR + 7) * s - lw, at.y - kRowH * 0.5f * s, lw, kRowH * s}, p.name, lc, HAlign::Right, false);
       }
-      if (input && !conn && t != PT::Exec && !p.defaultValue.empty()) {
+      if (input && !conn && t != PT::Exec && (!p.defaultValue.empty() || p.editable)) {
         Rect lb = g.defaultBoxLocal(n, i);
         Vec2 o = g.worldToScreen(n.pos);
         Rect b{o.x + lb.x * s, o.y + lb.y * s, lb.w * s, lb.h * s};
