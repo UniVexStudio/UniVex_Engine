@@ -494,10 +494,13 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildOutlinerUVE() {
     page->setPadding(prism::Margin(4.0F));
 
     auto bar = prism::hbox(4.0F);
-    m_addButton = ToolButtonUVE(prism::Icon::Plus, "Add to the level");
-    m_addButton->onClick = [this] { ShowAddMenuUVE(); };
-    m_filterButton = ToolButtonUVE(prism::Icon::Filter, "Favorites: what '+' shows first");
-    m_filterButton->onClick = [this] { ShowAddFilterMenuUVE(); };
+    // A folder in one click, and the level's objects (Basic, Lights, Shapes, ...) under one button.
+    m_addButton = ToolButtonUVE(prism::Icon::Folder, "New Folder");
+    m_addButton->onClick = [this] {
+        static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(SceneObjectKindUVE::Folder));
+    };
+    m_filterButton = ToolButtonUVE(prism::Icon::Cube, "Place an object in the level");
+    m_filterButton->onClick = [this] { ShowAddMenuUVE(); };
     m_outlinerSearch = prism::make<prism::TextInput>("", "Search");
     m_outlinerSearch->onChanged = [this](const std::string& text) {
         if (m_outliner) {
@@ -762,44 +765,104 @@ void EditorShellUVE::ShowDockPanelUVE(const int index, const bool forceVisible) 
 
 
 void EditorShellUVE::ShowAddMenuUVE() {
-    // Everything a level holds, grouped and searchable; the favourites (the filter button) first.
-    std::vector<SceneObjectKindUVE> favorites;
-    if (m_addKinds.empty()) {
-        favorites = {SceneObjectKindUVE::Folder, SceneObjectKindUVE::WorldEnvironment3D, SceneObjectKindUVE::DirectionalLight3D};
-    } else {
-        for (const int kind : m_addKinds) {
-            favorites.push_back(static_cast<SceneObjectKindUVE>(kind));
+    // GET CONTENT, PLACE OBJECTS (a flyout per group) and RECENTLY PLACED; typing searches them all.
+    // Only what a level holds: a character's parts are built in an Entity, and an entity of the
+    // project (a player, a character) is offered under Basic once it is in Content.
+    const auto place = [this](const SceneObjectKindUVE kind) {
+        static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind));
+        const int key = static_cast<int>(kind);
+        m_recentKinds.erase(std::remove(m_recentKinds.begin(), m_recentKinds.end(), key), m_recentKinds.end());
+        m_recentKinds.insert(m_recentKinds.begin(), key);
+        if (m_recentKinds.size() > 5U) {
+            m_recentKinds.resize(5U);
         }
-    }
-    std::vector<prism::MenuItem> items = BuildAddObjectMenuUVE(
-        AddObjectContextUVE::Level, m_icons,
-        [this](const SceneObjectKindUVE kind) { static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind)); }, favorites);
-    prism::showSearchMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
-                          "Search objects");
-}
-
-void EditorShellUVE::ShowAddFilterMenuUVE() {
-    // The favourites '+' shows first, from everything a level can hold.
-    std::vector<prism::MenuItem> items;
-    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
-        if (!descriptor.libraryCreatable || !IsObjectOfferedUVE(descriptor.kind, AddObjectContextUVE::Level)) {
-            continue;
+    };
+    const auto itemFor = [this, &place](const SceneObjectKindUVE kind, std::string label = {}) {
+        const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+        if (label.empty()) {
+            label = descriptor != nullptr ? std::string(descriptor->displayName) : std::string("Object");
         }
-        const int key = static_cast<int>(descriptor.kind);
-        prism::MenuItem item = prism::MenuItem::Check(std::string(descriptor.displayName), m_addKinds.count(key) > 0, [this, key] {
-            if (m_addKinds.count(key) > 0) {
-                m_addKinds.erase(key);
-            } else {
-                m_addKinds.insert(key);
-            }
-        });
-        if (const EditorIconsUVE::ImageUVE icon = m_icons.ObjectUVE(descriptor.kind, 16); icon) {
+        prism::MenuItem item = prism::MenuItem::Item(label, [place, kind] { place(kind); }, "", ObjectKindGlyphUVE(kind));
+        if (const EditorIconsUVE::ImageUVE icon = m_icons.ObjectUVE(kind, 16); icon) {
             item.withImage(icon.pixels, icon.size);
         }
-        items.push_back(std::move(item));
+        return item;
+    };
+    const auto offered = [](const SceneObjectKindUVE kind) {
+        const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
+        return descriptor != nullptr && descriptor->libraryCreatable && IsObjectOfferedUVE(kind, AddObjectContextUVE::Level);
+    };
+    std::set<int> grouped;
+    const auto group = [&](const char* const title, const prism::Icon icon, std::initializer_list<SceneObjectKindUVE> kinds,
+                           std::vector<prism::MenuItem> extra = {}) {
+        std::vector<prism::MenuItem> sub = std::move(extra);
+        for (const SceneObjectKindUVE kind : kinds) {
+            if (offered(kind)) {
+                sub.push_back(itemFor(kind));
+                grouped.insert(static_cast<int>(kind));
+            }
+        }
+        return prism::MenuItem::Sub(title, std::move(sub), icon);
+    };
+
+    std::vector<prism::MenuItem> items;
+    items.push_back(prism::MenuItem::Header("GET CONTENT"));
+    items.push_back(prism::MenuItem::Item("Import Content...", [this] {
+        static_cast<void>(m_editor.PromptImportFilesUVE(m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot));
+    }, "", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Header("PLACE OBJECTS"));
+
+    // The project's own entities (a player, a character): placed as they are in Content.
+    std::vector<prism::MenuItem> entities;
+    {
+        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+            if (entry.kind != Asset::ProjectFileEntryKindUVE::File || entry.relativePath.extension() != ".uventity") {
+                continue;
+            }
+            const std::filesystem::path absolute = snapshot.contentRoot / entry.relativePath;
+            entities.push_back(prism::MenuItem::Item(entry.relativePath.stem().string(), [this, absolute] {
+                static_cast<void>(m_editor.PlaceEntityAssetUVE(absolute));
+            }, "", prism::Icon::PreviewCharacter));
+        }
+    }
+    items.push_back(group("Basic", prism::Icon::Object3D,
+                          {SceneObjectKindUVE::Object3D, SceneObjectKindUVE::Marker3D, SceneObjectKindUVE::SpawnPoint3D,
+                           SceneObjectKindUVE::Camera3D, SceneObjectKindUVE::Light3D, SceneObjectKindUVE::Area3D},
+                          std::move(entities)));
+    items.push_back(group("Lights", prism::Icon::Light,
+                          {SceneObjectKindUVE::DirectionalLight3D, SceneObjectKindUVE::Light3D, SceneObjectKindUVE::WorldEnvironment3D,
+                           SceneObjectKindUVE::Sky, SceneObjectKindUVE::ReflectionProbe3D}));
+    items.push_back(group("Shapes", prism::Icon::Cube,
+                          {SceneObjectKindUVE::BoxMesh3D, SceneObjectKindUVE::SphereMesh3D, SceneObjectKindUVE::PlaneMesh3D,
+                           SceneObjectKindUVE::MeshInstance3D, SceneObjectKindUVE::LODGroup3D}));
+    items.push_back(group("Cinematic", prism::Icon::Camera,
+                          {SceneObjectKindUVE::Camera3D, SceneObjectKindUVE::SpringArm3D, SceneObjectKindUVE::AnimationSequencer}));
+    items.push_back(group("Visual Effects", prism::Icon::Environment,
+                          {SceneObjectKindUVE::ParticleEmitter3D, SceneObjectKindUVE::Decal3D, SceneObjectKindUVE::FogVolume3D}));
+    items.push_back(group("Volumes", prism::Icon::Collider,
+                          {SceneObjectKindUVE::Area3D, SceneObjectKindUVE::Collider3D, SceneObjectKindUVE::NavMeshVolume3D,
+                           SceneObjectKindUVE::LevelStreamer3D, SceneObjectKindUVE::WorldPartition3D, SceneObjectKindUVE::Occluder3D,
+                           SceneObjectKindUVE::VisibilityRegion3D}));
+    // Everything else a level holds (bodies, gameplay, sound, UI, 2D), so nothing is out of reach.
+    std::vector<prism::MenuItem> other;
+    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
+        if (descriptor.kind != SceneObjectKindUVE::Folder && offered(descriptor.kind) &&
+            grouped.count(static_cast<int>(descriptor.kind)) == 0U) {
+            other.push_back(itemFor(descriptor.kind));
+        }
+    }
+    if (!other.empty()) {
+        items.push_back(prism::MenuItem::Sub("More", std::move(other), prism::Icon::Plus));
+    }
+    if (!m_recentKinds.empty()) {
+        items.push_back(prism::MenuItem::Header("RECENTLY PLACED"));
+        for (const int key : m_recentKinds) {
+            items.push_back(itemFor(static_cast<SceneObjectKindUVE>(key)));
+        }
     }
     prism::showSearchMenu(std::move(items), m_filterButton ? m_filterButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
-                          "Favorites");
+                          "Search objects", true);
 }
 
 // ---------------------------------------------------------------------------------------- refresh

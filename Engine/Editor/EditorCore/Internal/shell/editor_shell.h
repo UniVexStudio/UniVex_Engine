@@ -114,7 +114,6 @@ public:
 private:
 
     void ShowAddMenuUVE();
-    void ShowAddFilterMenuUVE();
     void RefreshOutlinerUVE();
     void RefreshDetailsUVE();
     void RefreshToolbarUVE();
@@ -188,7 +187,8 @@ private:
     std::string m_detailsFilter;
 
     // Kinds the Outliner '+' offers (filter #8). Empty set = the default trio.
-    std::set<int> m_addKinds;
+    /// The kinds placed last from the object menu, newest first.
+    std::vector<int> m_recentKinds;
     bool m_addAllKinds = false;
 
     bool m_dockVisible = true;
