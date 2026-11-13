@@ -1016,6 +1016,9 @@ public:
         float lookAtHeight = 1.0F;
         float cameraDistance = 3.5F;
         float pitchDegrees = 0.0F;
+        /// The widget's Stage as it is in the editor (a prefab snapshot of its "Stage" object), or
+        /// empty: the asset then stands alone on the studio floor.
+        std::vector<std::byte> stage;
     };
     /// Draws a 3D View's asset, lit and turning, into the Designer's preview
     /// (ViewportContextUVE::WidgetPreview), in a world of its own; 0 when there is nothing to show.
@@ -3467,6 +3470,9 @@ private:
         std::chrono::steady_clock::time_point lastFrame{};
         std::array<float, 3> framedTarget{0.0F, 0.0F, 0.0F};
         float framedRadius = 0.0F;
+        std::vector<std::byte> stageBytes;
+        Scene::EntityUVE stage = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE stageCamera = Scene::kInvalidEntityUVE;
     };
     std::optional<WidgetPreviewUVE> m_widgetPreview;
     void RebuildMontagePreviewUVE();

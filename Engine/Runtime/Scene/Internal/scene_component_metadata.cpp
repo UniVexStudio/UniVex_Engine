@@ -2608,6 +2608,14 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          InGroupUVE(DeclareUVE<&UIView3DComponentUVE::backgroundAlpha>("backgroundAlpha", "Background Alpha",
                                                                                       kPropertyTypeFloatUVE),
                                     "Appearance"),
+                         InGroupUVE(WithTooltipUVE(DeclareUVE<&UIView3DComponentUVE::useWidgetStage>(
+                                                       "useWidgetStage", "Use Widget Stage", kPropertyTypeBoolUVE),
+                                                   "Stand the asset on the widget's Stage (the Stage tab) and look through its StageCamera"),
+                                    "Stage"),
+                         InGroupUVE(WithTooltipUVE(DeclareUVE<&UIView3DComponentUVE::transparentBackground>(
+                                                       "transparentBackground", "Transparent Background", kPropertyTypeBoolUVE),
+                                                   "No sky behind the stage: the UI and the game show through"),
+                                    "Stage"),
                      }));
     AddUVE<UITweenComponentUVE>(
         entries,

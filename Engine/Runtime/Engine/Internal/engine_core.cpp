@@ -114,6 +114,9 @@
 #include "hierarchy_component.h"
 #include "canvas_component.h"
 #include "ui_view_3d_component.h"
+#include "light_component.h"
+#include "world_environment_3d.h"
+#include "directional_light_3d.h"
 #include "scalar.h"
 #include "quaternion.h"
 #include "ui_button_component.h"
@@ -1511,6 +1514,110 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
     m_uiRuntime.TickUVE(*m_entityManager, *m_inputSystem, localization);
 }
 
+Scene::EntityUVE EngineCoreUVE::FindWidgetStageUVE(Scene::EntityUVE widget) const {
+    // The widget's root Canvas (the topmost Canvas above it), then its child named Stage.
+    Scene::EntityUVE root = Scene::kInvalidEntityUVE;
+    for (int depth = 0; depth < 256 && m_entityManager->IsAliveUVE(widget); ++depth) {
+        if (m_entityManager->HasComponentUVE<Scene::CanvasComponentUVE>(widget)) {
+            root = widget;
+        }
+        if (!m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(widget)) {
+            break;
+        }
+        const Scene::EntityUVE parent = m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(widget).parent;
+        if (parent == widget) {
+            break;
+        }
+        widget = parent;
+    }
+    if (root == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+    for (const Scene::EntityUVE child : m_sceneGraph->GetChildrenUVE(*m_entityManager, root)) {
+        if (m_entityManager->HasComponentUVE<Scene::NameComponentUVE>(child) &&
+            m_entityManager->GetComponentUVE<Scene::NameComponentUVE>(child).name == Scene::kWidgetStageNameUVE) {
+            return child;
+        }
+    }
+    return Scene::kInvalidEntityUVE;
+}
+
+Scene::EntityUVE EngineCoreUVE::FindNamedUnderUVE(const Scene::EntityUVE root, const std::string_view name) const {
+    std::vector<Scene::EntityUVE> open{root};
+    for (std::size_t i = 0U; i < open.size() && i < 4096U; ++i) {
+        const Scene::EntityUVE entity = open[i];
+        if (entity != root && m_entityManager->HasComponentUVE<Scene::NameComponentUVE>(entity) &&
+            m_entityManager->GetComponentUVE<Scene::NameComponentUVE>(entity).name == name) {
+            return entity;
+        }
+        const std::vector<Scene::EntityUVE> children = m_sceneGraph->GetChildrenUVE(*m_entityManager, entity);
+        open.insert(open.end(), children.begin(), children.end());
+    }
+    return Scene::kInvalidEntityUVE;
+}
+
+std::optional<std::pair<Math::Vector3UVE, Math::QuaternionUVE>> EngineCoreUVE::PoseUnderUVE(Scene::EntityUVE entity,
+                                                                                           const Scene::EntityUVE ancestor) const {
+    // The entity's place in `ancestor`'s space: its local transforms composed up to it.
+    Math::Vector3UVE position{0.0F, 0.0F, 0.0F};
+    Math::QuaternionUVE rotation{};
+    for (int depth = 0; depth < 256; ++depth) {
+        if (entity == ancestor) {
+            return std::make_pair(position, rotation);
+        }
+        if (!m_entityManager->IsAliveUVE(entity) || !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(entity)) {
+            return std::nullopt;
+        }
+        const Scene::TransformComponentUVE& local = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(entity);
+        Math::QuaternionUVE localRotation = local.localRotation;
+        if (local.rotationEditMode == Scene::RotationEditModeUVE::Euler) {
+            static_cast<void>(Math::TryMakeEulerUVE(local.localEulerRadians, localRotation));
+        }
+        const Math::Vector3UVE scaled{position.x * local.localScale.x, position.y * local.localScale.y, position.z * local.localScale.z};
+        position = Math::RotateVectorUVE(localRotation, scaled) + local.localPosition;
+        rotation = Math::MultiplyUVE(localRotation, rotation);
+        if (!m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+            return std::nullopt;
+        }
+        entity = m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+    }
+    return std::nullopt;
+}
+
+void EngineCoreUVE::StripWidgetStageUVE(const Scene::EntityUVE stage) {
+    std::vector<Scene::EntityUVE> open{stage};
+    for (std::size_t i = 0U; i < open.size() && i < 4096U; ++i) {
+        const Scene::EntityUVE entity = open[i];
+        if (m_entityManager->HasComponentUVE<Scene::CameraComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::CameraComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::ScriptComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::Rigid3DComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::Rigid3DComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::CharacterControllerComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::DirectionalLight3DComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::DirectionalLight3DComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::WorldEnvironment3DComponentUVE>(entity)) {
+            m_entityManager->RemoveComponentUVE<Scene::WorldEnvironment3DComponentUVE>(entity);
+        }
+        if (m_entityManager->HasComponentUVE<Scene::LightComponentUVE>(entity) &&
+            m_entityManager->GetComponentUVE<Scene::LightComponentUVE>(entity).type == Scene::LightTypeUVE::Directional) {
+            // A sun would light the whole level: on a Stage, a light is local.
+            Scene::LightComponentUVE& light = m_entityManager->GetComponentUVE<Scene::LightComponentUVE>(entity);
+            light.type = Scene::LightTypeUVE::Point;
+            light.range = std::max(light.range, 12.0F);
+        }
+        const std::vector<Scene::EntityUVE> children = m_sceneGraph->GetChildrenUVE(*m_entityManager, entity);
+        open.insert(open.end(), children.begin(), children.end());
+    }
+}
+
 void EngineCoreUVE::SyncUIView3DStagesUVE(const float deltaSeconds) {
     // Each 3D View's asset stands on a stage of its own, far below the level: made when the view
     // names it, remade when it names another (or the stage was taken away, as leaving Play does),
@@ -1573,6 +1680,44 @@ void EngineCoreUVE::SyncUIView3DStagesUVE(const float deltaSeconds) {
                 }
             }
         }
+        // The widget's own Stage (the Stage tab's world), when this view stands its asset on it.
+        const Math::Vector3UVE stagePosition = Scene::UIView3DStagePositionUVE(view.stageSlot);
+        const Scene::EntityUVE stage = view.useWidgetStage ? FindWidgetStageUVE(entity) : Scene::kInvalidEntityUVE;
+        if (stage != view.widgetStage) {
+            view.widgetStage = stage;
+            view.stageCameraValid = false;
+            if (stage != Scene::kInvalidEntityUVE) {
+                // Its camera is read once, relative to the Stage, and then taken off: it must
+                // never become the game's camera. What would light or shade the whole level from
+                // down there (a sun, an environment) is taken off too.
+                const Scene::EntityUVE camera = FindNamedUnderUVE(stage, Scene::kWidgetStageCameraNameUVE);
+                if (camera != Scene::kInvalidEntityUVE) {
+                    if (const std::optional<std::pair<Math::Vector3UVE, Math::QuaternionUVE>> pose = PoseUnderUVE(camera, stage)) {
+                        view.stageCameraLocalPosition = pose->first;
+                        view.stageCameraLocalRotation = pose->second;
+                        view.stageCameraValid = true;
+                        if (m_entityManager->HasComponentUVE<Scene::CameraComponentUVE>(camera)) {
+                            view.stageCameraFieldOfViewDegrees =
+                                m_entityManager->GetComponentUVE<Scene::CameraComponentUVE>(camera).fieldOfViewDegrees;
+                        }
+                    }
+                }
+                StripWidgetStageUVE(stage);
+            }
+        }
+        if (m_entityManager->IsAliveUVE(stage) && m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(stage)) {
+            Scene::TransformComponentUVE& stageTransform = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(stage);
+            if (!(stageTransform.localPosition == stagePosition)) {
+                stageTransform.localPosition = stagePosition;
+                if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(stage)) {
+                    m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(stage).dirty = true;
+                }
+            }
+            view.stageCameraPosition = stagePosition + view.stageCameraLocalPosition;
+            view.stageCameraRotation = view.stageCameraLocalRotation;
+        } else {
+            view.stageCameraValid = false;
+        }
         if (!m_entityManager->IsAliveUVE(view.stageRoot) ||
             !m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(view.stageRoot)) {
             continue;
@@ -1580,8 +1725,19 @@ void EngineCoreUVE::SyncUIView3DStagesUVE(const float deltaSeconds) {
         if (std::isfinite(deltaSeconds) && deltaSeconds > 0.0F) {
             view.spinYawDegrees = std::fmod(view.spinYawDegrees + view.spinDegreesPerSecond * std::min(deltaSeconds, 0.1F), 360.0F);
         }
+        // On the Stage the asset stands on its ModelSpot (and moves with it); alone, on the view's stage.
+        const Scene::EntityUVE spot =
+            m_entityManager->IsAliveUVE(stage) ? FindNamedUnderUVE(stage, Scene::kWidgetModelSpotNameUVE) : Scene::kInvalidEntityUVE;
+        const Scene::EntityUVE parent = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(view.stageRoot)
+                                            ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(view.stageRoot).parent
+                                            : Scene::kInvalidEntityUVE;
+        if (spot != Scene::kInvalidEntityUVE && parent != spot) {
+            m_sceneGraph->SetParentUVE(*m_entityManager, view.stageRoot, spot);
+        } else if (spot == Scene::kInvalidEntityUVE && parent != Scene::kInvalidEntityUVE) {
+            m_sceneGraph->SetParentUVE(*m_entityManager, view.stageRoot, Scene::kInvalidEntityUVE);
+        }
         Scene::TransformComponentUVE& transform = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(view.stageRoot);
-        transform.localPosition = Scene::UIView3DStagePositionUVE(view.stageSlot);
+        transform.localPosition = spot != Scene::kInvalidEntityUVE ? Math::Vector3UVE{0.0F, 0.0F, 0.0F} : stagePosition;
         Math::QuaternionUVE turn{};
         if (Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F},
                                       (view.yawDegrees + view.spinYawDegrees) * (Math::kPiUVE / 180.0F), turn)) {
