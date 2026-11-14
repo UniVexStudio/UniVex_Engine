@@ -3,6 +3,7 @@
 #include "prism/BlueprintVM.h"
 #include "BlueprintInternal.h"
 #include "prism/Application.h"
+#include <cmath>
 #include <algorithm>
 #include <cstdio>
 #include <set>
@@ -470,7 +471,15 @@ int BlueprintGraph::spawnNode(const BlueprintNodeSpec& spec, Vec2 world) {
 }
 
 void BlueprintGraph::addComment(BlueprintComment c) {
-  if (c.id == 0) c.id = nextId();
+  // A comment's id is its own: one already taken by a node or another comment gets a fresh one.
+  const bool taken = std::any_of(m_comments.begin(), m_comments.end(), [&](const BlueprintComment& o) { return o.id == c.id; }) ||
+                     findNode(c.id) != nullptr;
+  if (c.id == 0 || taken) c.id = nextId();
+  // A size from a file is kept sane (finite, not inverted, not microscopic).
+  if (!std::isfinite(c.bounds.x) || !std::isfinite(c.bounds.y)) c.bounds.x = c.bounds.y = 0;
+  if (!std::isfinite(c.bounds.w) || c.bounds.w < 90) c.bounds.w = std::isfinite(c.bounds.w) ? std::max(c.bounds.w, 90.f) : 260.f;
+  if (!std::isfinite(c.bounds.h) || c.bounds.h < 60) c.bounds.h = std::isfinite(c.bounds.h) ? std::max(c.bounds.h, 60.f) : 160.f;
+  if (c.title.size() > 256) c.title.resize(256);
   m_comments.push_back(std::move(c));
   touch();
 }

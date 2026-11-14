@@ -390,11 +390,15 @@ void EditorAnimGraphPanelUVE::RebuildGraphUVE(const GraphUVE& graph) {
         result.inputs.push_back(std::move(pin));
         m_graph->addNode(std::move(result));
     }
+    // Each comment keeps the same id across rebuilds (its place among this graph's comments, far
+    // above any node id), so a rename or a drag that outlives a rebuild still finds its box.
+    int commentOrdinal = 0;
     for (const Scene::AnimationGraphCommentUVE& comment : graph.comments) {
         if (!(AnimationGraphScopeUVE{comment.owner, comment.ownerState} == scope)) {
             continue;
         }
         prism::BlueprintComment box;
+        box.id = 0x40000000 + commentOrdinal++;
         box.title = comment.title;
         box.bounds = prism::Rect{comment.position.x, comment.position.y, comment.size.x, comment.size.y};
         box.color = prism::Color(static_cast<std::uint8_t>(comment.color >> 24U), static_cast<std::uint8_t>(comment.color >> 16U),

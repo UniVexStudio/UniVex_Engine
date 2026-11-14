@@ -119,6 +119,8 @@ public:
   // popups
   void showPopup(Ref<Widget> w, const PopupOptions& o);
   void closePopup(const Widget* w);
+  // True for the window's root and for each open popup's own widget.
+  bool isPopupRoot(const Widget* w) const;
   void movePopup(const Widget* w, Vec2 topLeft);   // reposition a popup (floating windows); clamped on screen
   void closeAllPopups();
   bool hasPopup() const { return !m_popups.empty(); }
