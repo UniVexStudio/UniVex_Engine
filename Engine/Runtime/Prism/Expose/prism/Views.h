@@ -4,6 +4,7 @@
 #include "Containers.h"
 #include "Controls.h"
 #include "TextInput.h"
+#include <functional>
 #include <memory>
 #include <map>
 #include <set>
@@ -84,9 +85,16 @@ public:
   Callback<TreeNode*> onVisibilityToggle, onLockToggle, onActivate, onDelete;
   Callback<TreeNode*, const std::string&> onRename;
   Callback<TreeNode*, Vec2> onContext;
+  // Drag a row onto another to move it there. Set onDropNode to allow it; canDropNode (optional)
+  // refuses a target. The drop is before or after the target (a sibling) or inside it (a child).
+  enum class DropWhere { Before, Inside, After };
+  std::function<bool(TreeNode* dragged, TreeNode* target, DropWhere where)> canDropNode;
+  Callback<TreeNode*, TreeNode*, DropWhere> onDropNode;
 
   void arrange(Rect r) override;
   bool onKeyDown(const KeyEvent& e) override;
+  bool onMouseMove(const MouseEvent& e) override;
+  bool onMouseUp(const MouseEvent& e) override;
   AccessRole accessRole() const override { return AccessRole::Tree; }
 protected:
   struct Row { TreeNode* n; int depth; };
@@ -109,6 +117,13 @@ private:
   Ref<TextInput> m_edit;
   TreeNode* m_renaming = nullptr;
   bool m_guides = false;
+  // Row drag: armed on press, live past a few pixels.
+  int m_dragId = 0;
+  Vec2 m_dragFrom;
+  bool m_dragging = false;
+  int m_dropId = 0;
+  DropWhere m_dropWhere = DropWhere::Inside;
+  bool dropTarget(Vec2 p, TreeNode*& target, DropWhere& where);
 };
 
 // ------------------------------------------------------------------ LogView

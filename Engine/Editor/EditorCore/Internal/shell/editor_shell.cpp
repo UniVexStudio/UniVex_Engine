@@ -569,6 +569,27 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildOutlinerUVE() {
         hooks.addChild = [this] { ShowAddMenuUVE(); };
         EditorObjectMenuUVE::ShowUVE(m_editor, entity, node, at, hooks);
     };
+    // Drag an object onto another: inside it (a child), or before / after it (a sibling).
+    m_outliner->canDropNode = [this](prism::TreeNode* dragged, prism::TreeNode* target, const prism::TreeView::DropWhere where) {
+        const Scene::EntityUVE entity = EntityForTreeIdUVE(dragged->id);
+        const Scene::EntityUVE onto = EntityForTreeIdUVE(target->id);
+        if (entity == Scene::kInvalidEntityUVE || onto == Scene::kInvalidEntityUVE || !m_editor.IsReparentableObjectUVE(entity)) {
+            return false;
+        }
+        if (where == prism::TreeView::DropWhere::Inside) {
+            return m_editor.IsAllowedOutlinerParentUVE(entity, onto);
+        }
+        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+        return m_editor.TryGetDocumentParentUVE(onto, parent) && m_editor.IsAllowedOutlinerParentUVE(entity, parent);
+    };
+    m_outliner->onDropNode = [this](prism::TreeNode* dragged, prism::TreeNode* target, const prism::TreeView::DropWhere where) {
+        const Scene::EntityUVE entity = EntityForTreeIdUVE(dragged->id);
+        const Scene::EntityUVE onto = EntityForTreeIdUVE(target->id);
+        const int place = where == prism::TreeView::DropWhere::Before ? 0 : where == prism::TreeView::DropWhere::Inside ? 1 : 2;
+        if (m_editor.PlaceDocumentEntityUVE(entity, onto, place)) {
+            m_editor.SelectEntityUVE(entity);
+        }
+    };
     // Double-click a placed entity: it opens in the Entity Editor (its inside is edited there).
     m_outliner->onActivate = [this](prism::TreeNode* node) {
         const Scene::EntityUVE entity = node != nullptr ? EntityForTreeIdUVE(node->id) : Scene::kInvalidEntityUVE;

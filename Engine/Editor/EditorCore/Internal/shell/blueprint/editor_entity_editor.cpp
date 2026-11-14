@@ -582,11 +582,37 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildComponentsUVE() {
             static_cast<void>(m_editor.DeleteSelectedEntityUVE());
         }
     };
+    // Drag a row onto another: inside it (a child), or before / after it (a sibling).
+    m_components->canDropNode = [this](prism::TreeNode* dragged, prism::TreeNode* target, const prism::TreeView::DropWhere where) {
+        const Scene::EntityUVE entity = EntityForTreeIdUVE(dragged->id);
+        const Scene::EntityUVE onto = EntityForTreeIdUVE(target->id);
+        const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+        if (entity == Scene::kInvalidEntityUVE || onto == Scene::kInvalidEntityUVE || entity == root) {
+            return false;
+        }
+        // Nothing goes beside the root: everything lives under it.
+        return !(onto == root && where != prism::TreeView::DropWhere::Inside);
+    };
+    m_components->onDropNode = [this](prism::TreeNode* dragged, prism::TreeNode* target, const prism::TreeView::DropWhere where) {
+        const Scene::EntityUVE entity = EntityForTreeIdUVE(dragged->id);
+        const Scene::EntityUVE onto = EntityForTreeIdUVE(target->id);
+        const int place = where == prism::TreeView::DropWhere::Before ? 0 : where == prism::TreeView::DropWhere::Inside ? 1 : 2;
+        if (m_editor.PlaceDocumentEntityUVE(entity, onto, place)) {
+            m_editor.SelectEntityUVE(entity);
+        }
+    };
     m_components->onContext = [this](prism::TreeNode* node, const prism::Vec2 at) {
         const Scene::EntityUVE entity = node != nullptr ? EntityForTreeIdUVE(node->id) : Scene::kInvalidEntityUVE;
         EditorObjectMenuUVE::HooksUVE hooks;
         hooks.tree = m_components.get();
-        hooks.addChild = [this] { ShowAddMenuUVE(); };
+        // A widget's children come from the widget palette, not the 3D Add menu.
+        hooks.addChild = [this] {
+            if (m_widgetMode) {
+                ShowWidgetPaletteUVE();
+            } else {
+                ShowAddMenuUVE();
+            }
+        };
         EditorObjectMenuUVE::ShowUVE(m_editor, entity, node, at, hooks);
     };
     page->add(m_components, prism::Slot{1.0F});
