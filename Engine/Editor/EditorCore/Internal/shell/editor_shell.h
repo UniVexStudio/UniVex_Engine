@@ -84,9 +84,6 @@ public:
     bool SaveScreenshotUVE(const std::filesystem::path& path) { return m_host.SaveScreenshotUVE(path); }
     /// Saves the Entity Editor window's frame (false while no entity is open).
     bool SaveEntityEditorScreenshotUVE(const std::filesystem::path& path);
-    void SetForeignInputUVE(std::function<bool()> wantsMouse, std::function<bool()> wantsKeyboard) {
-        m_host.SetForeignInputUVE(std::move(wantsMouse), std::move(wantsKeyboard));
-    }
 
 private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildLayoutUVE();

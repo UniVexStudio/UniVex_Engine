@@ -16,7 +16,6 @@
 #include <string_view>
 #include <vector>
 
-#include <imgui.h>
 
 #include "viewport_render_pass.h"
 #include "integration/editor_mesh_layer.h"
@@ -80,7 +79,7 @@
 namespace {
 
 // How far the pointer may travel on the nav gizmo (accumulated since the button went down, in
-// ImGui points) and still count as a click rather than a drag - mirrors app/main.cpp's own
+// view pixels) and still count as a click rather than a drag - mirrors app/main.cpp's own
 // kNavClickSlopPixels for the standalone demo.
 constexpr float kNavClickSlopPixelsUVE = 4.0F;
 
@@ -116,6 +115,40 @@ void main() {
     }
     FragColor = vec4(meshColor.rgb, 1.0);
     gl_FragDepth = 0.0; // every covered pixel hides the grid: an edge or a soft surface too, never the grid over it
+}
+)";
+
+// The game's UI over the view: quads in view pixels (top-left origin), glyphs from the UI font
+// atlas, solid quads in their tint. Straight alpha, blended over the resolved scene.
+constexpr std::string_view kUIOverlayVertexShaderUVE = R"(#version 330 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aUv;
+layout(location = 2) in vec4 aColor;
+layout(location = 3) in float aTextured;
+uniform vec2 uViewSize;
+out vec2 vUv;
+out vec4 vColor;
+out float vTextured;
+void main() {
+    vUv = aUv;
+    vColor = aColor;
+    vTextured = aTextured;
+    gl_Position = vec4(aPos.x / uViewSize.x * 2.0 - 1.0, 1.0 - aPos.y / uViewSize.y * 2.0, 0.0, 1.0);
+}
+)";
+
+constexpr std::string_view kUIOverlayFragmentShaderUVE = R"(#version 330 core
+uniform sampler2D uAtlas;
+in vec2 vUv;
+in vec4 vColor;
+in float vTextured;
+out vec4 FragColor;
+void main() {
+    vec4 color = vColor;
+    if (vTextured > 0.5) {
+        color *= texture(uAtlas, vUv);
+    }
+    FragColor = color;
 }
 )";
 
@@ -1044,13 +1077,13 @@ private:
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
 // gizmos + one proxy cube per live scene entity) into EditorUVE's generic, viewport-agnostic
 // "Viewport" panel hook (EditorUVE::SetViewportPanelRendererUVE) - see that method's own doc
-// comment in editor_uve.h for why EditorCore itself stays free of any Viewport-module/GL/ImGui
+// comment in editor_uve.h for why EditorCore itself stays free of any Viewport-module/GL
 // types. Renders off-screen into an MSAA framebuffer, resolves into a plain 2D texture
-// ImGui::Image() can sample, and recreates both whenever the panel's reported size changes -
+// the editor's view can show, and recreates both whenever the panel's reported size changes -
 // the same multisample-then-resolve shape tools/headless_capture.cpp already uses (that file's
 // own comment explains why: the solid gizmo/cube geometry has nothing but MSAA to soften its
 // silhouettes) and the same resize-on-demand shape app/main.cpp's interactive demo already uses
-// for its own window-sized framebuffer, just driven by the ImGui panel's reported size instead of
+// for its own window-sized framebuffer, just driven by the view's reported size instead of
 // a GLFW framebuffer-resize callback.
 using VpInputUVE = UVE::Editor::EditorViewportInputUVE;
 using VpBtnUVE = VpInputUVE::ButtonUVE;
@@ -1075,6 +1108,12 @@ public:
         }
         if (uiFontAtlasTexture_ != 0U) {
             glDeleteTextures(1, &uiFontAtlasTexture_);
+        }
+        if (uiOverlayVao_ != 0U) {
+            glDeleteVertexArrays(1, &uiOverlayVao_);
+        }
+        if (uiOverlayVbo_ != 0U) {
+            glDeleteBuffers(1, &uiOverlayVbo_);
         }
     }
 
@@ -1131,7 +1170,7 @@ public:
             glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
             glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
             if (overlayState.gameWorkspaceActive) {
-                DrawUIOverlayUVE();
+                DrawUIOverlayUVE(width, height);
             }
             return static_cast<std::uint64_t>(resolveColorTexture_);
         }
@@ -1498,11 +1537,10 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
 
         // Player-facing HUD content only shows during the Game workspace tab's "what a player
-        // would see" preview (matching the grid/transform-gizmo hiding above) - drawn via ImGui's
-        // own foreground overlay rather than baked into meshResult's texture; see this method's own
-        // DrawUIOverlayUVE() comment for why.
+        // would see" preview (matching the grid/transform-gizmo hiding above), drawn over the
+        // resolved image; see DrawUIOverlayUVE.
         if (gameWorkspaceActive_) {
-            DrawUIOverlayUVE();
+            DrawUIOverlayUVE(width, height);
         }
 
         return static_cast<std::uint64_t>(resolveColorTexture_);
@@ -1667,41 +1705,92 @@ private:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    // Draws UIRuntimeUVE's current draw batch directly via ImGui's own foreground overlay draw
-    // list, in the same real-window pixel coordinates UIQuadUVE is authored in (matching
-    // IInputSystemUVE::GetMousePositionUVE()'s own convention - confirmed directly: hovering the
-    // real cursor at a button's authored positionPixels correctly sets isHovered, proving that
-    // space really is the whole application window, not this one panel's local render-target
-    // space). This is why UI content is NOT baked into meshLayer_'s own offscreen texture (see
-    // EditorMeshLayerUVE::RenderUVE()'s own call site comment) - a per-pixel depth-based compositor
-    // could never distinguish "UI was drawn here" from "nothing was drawn here" without real
-    // OpenGL depth WRITES, which require depth TESTING to also be enabled - exactly what a
-    // screen-space overlay must never have (it always draws on top, regardless of the 3D scene).
-    // Image quads referencing a real (non-zero) texture asset guid fall back to a flat tint here
-    // (this preview path does not resolve/upload arbitrary imported textures) - an honest, stated
-    // limitation, not a silent gap.
-    void DrawUIOverlayUVE() {
+    // Draws UIRuntimeUVE's current draw batch into the view's own resolved image, over the scene:
+    // the game's UI is laid out in the view's pixels (its pointer is measured from the view's
+    // corner, see RenderUVE), so it lands exactly where its buttons are hit. Drawn after the
+    // resolve with no depth test, so it is always on top of the 3D scene. Glyphs sample the UI font
+    // atlas; image quads that reference an imported texture fall back to their flat tint (this
+    // preview does not resolve arbitrary imported textures).
+    void DrawUIOverlayUVE(const int width, const int height) {
         const UVE::UI::UIDrawBatchUVE& batch = engine_.GetUIRuntimeUVE().GetDrawBatchUVE();
-        if (batch.quads.empty() || ImGui::GetCurrentContext() == nullptr) {
+        if (batch.quads.empty() || width <= 0 || height <= 0 || !EnsureUIOverlayResourcesUVE()) {
             return;
         }
         EnsureUIFontAtlasTextureUVE(engine_.GetUIRuntimeUVE().GetFontAtlasUVE());
-        // Window pixels, placed where the window is: with viewports on, ImGui draws in screen
-        // coordinates, so the main window's own screen position is added.
-        const ImVec2 origin = ImGui::GetMainViewport()->Pos;
-        ImDrawList* const drawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
+        // x, y (view pixels), u, v, r, g, b, a, textured
+        uiOverlayVertices_.clear();
+        uiOverlayVertices_.reserve(batch.quads.size() * 6U * 9U);
         for (const UVE::UI::UIQuadUVE& quad : batch.quads) {
-            const ImVec2 pMin{origin.x + quad.rect.position.x, origin.y + quad.rect.position.y};
-            const ImVec2 pMax{pMin.x + quad.rect.size.x, pMin.y + quad.rect.size.y};
-            const ImU32 tint = ImGui::ColorConvertFloat4ToU32(
-                ImVec4{quad.color.x, quad.color.y, quad.color.z, quad.alpha});
-            if (quad.kind == UVE::UI::UIDrawItemKindUVE::Glyph && uiFontAtlasTexture_ != 0U) {
-                drawList->AddImage(static_cast<ImTextureID>(static_cast<std::uintptr_t>(uiFontAtlasTexture_)), pMin,
-                                   pMax, ImVec2{quad.u0, quad.v0}, ImVec2{quad.u1, quad.v1}, tint);
-            } else {
-                drawList->AddRectFilled(pMin, pMax, tint);
-            }
+            const float x0 = quad.rect.position.x;
+            const float y0 = quad.rect.position.y;
+            const float x1 = x0 + quad.rect.size.x;
+            const float y1 = y0 + quad.rect.size.y;
+            const float textured = quad.kind == UVE::UI::UIDrawItemKindUVE::Glyph && uiFontAtlasTexture_ != 0U ? 1.0F : 0.0F;
+            const auto vertex = [&](const float x, const float y, const float u, const float v) {
+                uiOverlayVertices_.insert(uiOverlayVertices_.end(),
+                                          {x, y, u, v, quad.color.x, quad.color.y, quad.color.z, quad.alpha, textured});
+            };
+            vertex(x0, y0, quad.u0, quad.v0);
+            vertex(x1, y0, quad.u1, quad.v0);
+            vertex(x1, y1, quad.u1, quad.v1);
+            vertex(x0, y0, quad.u0, quad.v0);
+            vertex(x1, y1, quad.u1, quad.v1);
+            vertex(x0, y1, quad.u0, quad.v1);
         }
+        GLint previousFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+        GLint previousViewport[4] = {0, 0, 0, 0};
+        glGetIntegerv(GL_VIEWPORT, previousViewport);
+        glBindFramebuffer(GL_FRAMEBUFFER, resolveFbo_);
+        glViewport(0, 0, width, height);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        glEnable(GL_BLEND);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        uiOverlayProgram_->Use();
+        glUniform2f(uiOverlayProgram_->UniformLocation("uViewSize"), static_cast<float>(width), static_cast<float>(height));
+        glUniform1i(uiOverlayProgram_->UniformLocation("uAtlas"), 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, uiFontAtlasTexture_);
+        glBindVertexArray(uiOverlayVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, uiOverlayVbo_);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(uiOverlayVertices_.size() * sizeof(float)), uiOverlayVertices_.data(),
+                     GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(uiOverlayVertices_.size() / 9U));
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_BLEND);
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
+        glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+    }
+
+    [[nodiscard]] bool EnsureUIOverlayResourcesUVE() {
+        if (uiOverlayProgram_.has_value()) {
+            return true;
+        }
+        std::string error;
+        uiOverlayProgram_ = univex::render::ShaderProgram::Build(kUIOverlayVertexShaderUVE, kUIOverlayFragmentShaderUVE, error);
+        if (!uiOverlayProgram_.has_value()) {
+            UVE_ERROR("uve_editor_app: game UI overlay shader build failed: {}", error);
+            return false;
+        }
+        glGenVertexArrays(1, &uiOverlayVao_);
+        glGenBuffers(1, &uiOverlayVbo_);
+        glBindVertexArray(uiOverlayVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, uiOverlayVbo_);
+        constexpr GLsizei stride = 9 * sizeof(float);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(2 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(4 * sizeof(float)));
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(8 * sizeof(float)));
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        return true;
     }
 
     // Applies EditorUVE's own generic overlay-toolbar state (see ViewportOverlayStateUVE's doc
@@ -2464,10 +2553,9 @@ private:
     }
 
     // Mirrors app/main.cpp's own GLFW mouse-button/scroll wiring (left-drag orbits, middle/right
-    // drag pans, wheel dollies) but sourced from ImGui's IO instead of GLFW callbacks, since input
-    // flows through ImGui while the viewport is docked. Called from inside EditorUVE's own
-    // ImGui::Begin("Viewport")/End() block (via the render callback this class provides to
-    // SetViewportPanelRendererUVE), so In().hovered here correctly reports hover over
+    // drag pans, wheel dollies) but sourced from the view's per-frame input (EditorViewportInputUVE)
+    // instead of GLFW callbacks, since the editor's UI routes input to the view. Called from the
+    // render callback this class provides to SetViewportPanelRendererUVE, so In().hovered here correctly reports hover over
     // the Viewport panel specifically. Known simplification versus the GLFW demo: a drag that
     // began inside the panel stops orbiting the moment the cursor leaves it, rather than
     // continuing to track a global drag - acceptable for this integration slice.
@@ -2659,7 +2747,7 @@ private:
 
     // Returns true and fills the nav-local position if the cursor is over the orientation gizmo -
     // ports app/main.cpp's own CursorOverNavGizmo() (the standalone GLFW demo, where this already
-    // works) into the ImGui-hosted real editor. `fbX`/`fbY` are pixel coordinates relative to the
+    // works) into the real editor. `fbX`/`fbY` are pixel coordinates relative to the
     // Viewport panel's own rendered image top-left, matching NavViewportRectFor()'s own convention.
     [[nodiscard]] bool CursorOverNavGizmoUVE(int width, int height, float fbX, float fbY,
                                             float& outLocalX, float& outLocalY) const {
@@ -2688,8 +2776,8 @@ private:
 
     // Handles both nav-gizmo gestures - drag-anywhere-on-it orbits exactly like dragging the scene,
     // click-a-ball snaps the camera to look down that axis - mirroring app/main.cpp's own
-    // OnMouseButton()/OnCursorPos() handling for the standalone demo, just driven by ImGui's per-
-    // frame IO instead of GLFW press/release/move callbacks. Returns true while this gesture owns
+    // OnMouseButton()/OnCursorPos() handling for the standalone demo, just driven by the view's per-
+    // frame input instead of GLFW press/release/move callbacks. Returns true while this gesture owns
     // the left mouse button, so UpdateCameraFromMouseUVE() knows to suppress its own generic orbit.
     [[nodiscard]] bool UpdateNavGizmoInteractionUVE(const int width, const int height) {
         if (!In().hovered && !navDragging_) {
@@ -3110,6 +3198,10 @@ private:
     // one (created only inside its "UIOverlay" render-graph pass, which this panel deliberately
     // never runs - see EditorMeshLayerUVE::RenderUVE()'s own call site comment).
     GLuint uiFontAtlasTexture_ = 0U;
+    std::optional<univex::render::ShaderProgram> uiOverlayProgram_;
+    GLuint uiOverlayVao_ = 0U;
+    GLuint uiOverlayVbo_ = 0U;
+    std::vector<float> uiOverlayVertices_;
     std::optional<UVE::App::Viewport2DIntegration::Viewport2DHostUVE> viewport2dHost_;
 
     // Gizmo overlay geometry cache (WP-P4: eliminates per-frame heap churn while orbiting/swiping).

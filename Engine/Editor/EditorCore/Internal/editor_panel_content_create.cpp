@@ -846,7 +846,13 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
     }
 #endif
 
-    OpenQuickImportModalUVE(destDir);
+    // Any file on this computer, through the editor's own file dialog; it is imported into destDir.
+    FilePickerRequestUVE request;
+    request.mode = FilePickerModeUVE::Open;
+    request.title = "Import Assets";
+    request.extensions = {".fbx", ".gltf", ".glb", ".obj", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg", ".mp3", ".uvshader", ".glsl"};
+    request.onPick = [this, destDir](const std::filesystem::path& chosen) { static_cast<void>(ImportExternalFilesUVE({chosen}, destDir)); };
+    OpenFilePickerUVE(std::move(request));
     return false;
 }
 
@@ -884,112 +890,6 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
     }
     return false;
 }
-
-void EditorUVE::OpenQuickImportModalUVE(const std::filesystem::path& targetDirectory) {
-    m_quickImportModal = QuickImportModalStateUVE{};
-    m_quickImportModal.openRequested = true;
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    m_quickImportModal.targetDirectory = targetDirectory.empty() ? (snapshot.contentRoot / m_contentBrowserDirectory) : targetDirectory;
-}
-
-void EditorUVE::DrawQuickImportModalUVE() {
-    constexpr const char* kModalId = "Quick Import Assets##uve_quick_import_modal";
-    if (m_quickImportModal.openRequested) {
-        ImGui::OpenPopup(kModalId);
-        m_quickImportModal.openRequested = false;
-    }
-
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(mainViewport->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5F, 0.5F});
-    ImGui::SetNextWindowSize(ImVec2{520.0F, 0.0F}, ImGuiCond_Appearing);
-
-    constexpr ImGuiWindowFlags modalFlags =
-        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
-    if (!ImGui::BeginPopupModal(kModalId, nullptr, modalFlags)) {
-        return;
-    }
-
-    QuickImportModalStateUVE& modal = m_quickImportModal;
-
-    ImGui::TextColored(ImVec4{0.95F, 0.95F, 0.98F, 1.0F}, "Import Assets into Project");
-    ImGui::TextDisabled("Select or specify external 3D models, textures, audio, shaders or scripts.");
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    const std::filesystem::path relDest = modal.targetDirectory.lexically_relative(snapshot.contentRoot);
-    const std::string displayDest = (relDest.empty() || *relDest.begin() == "..") ? "Content" : ("Content / " + relDest.generic_string());
-
-    ImGui::Text("Destination Folder: %s", displayDest.c_str());
-    ImGui::Spacing();
-
-    // Source path input
-    ImGui::TextUnformatted("Source File Path:");
-    std::array<char, 1024> pathBuffer{};
-    modal.sourcePath.copy(pathBuffer.data(), std::min(modal.sourcePath.size(), pathBuffer.size() - 1U));
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0F);
-    if (ImGui::InputText("##source_path_input", pathBuffer.data(), pathBuffer.size())) {
-        modal.sourcePath = pathBuffer.data();
-        modal.statusMessage.clear();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Browse...")) {
-#if defined(_WIN32)
-        HMODULE comdlg = LoadLibraryA("comdlg32.dll");
-        if (comdlg != nullptr) {
-            const GetOpenFileNameWFn pGetOpenFileNameW = LoadGetOpenFileNameW(comdlg);
-            if (pGetOpenFileNameW != nullptr) {
-                wchar_t buf[2048] = {0};
-                OPENFILENAMEW ofn;
-                std::memset(&ofn, 0, sizeof(ofn));
-                ofn.lStructSize = sizeof(ofn);
-                ofn.lpstrFile = buf;
-                ofn.nMaxFile = sizeof(buf) / sizeof(wchar_t);
-                ofn.lpstrTitle = L"Select File to Import";
-                ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
-                if (pGetOpenFileNameW(&ofn)) {
-                    modal.sourcePath = std::filesystem::path(buf).string();
-                }
-            }
-            FreeLibrary(comdlg);
-        }
-#endif
-    }
-
-    if (!modal.statusMessage.empty()) {
-        ImGui::Spacing();
-        ImGui::TextColored(ImVec4{0.95F, 0.45F, 0.40F, 1.0F}, "%s", modal.statusMessage.c_str());
-    }
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    const bool cancel = ImGui::Button("Cancel", ImVec2{110.0F, 28.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape);
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 110.0F);
-
-    const bool canImport = !modal.sourcePath.empty();
-    ImGui::BeginDisabled(!canImport);
-    const bool doImport = ImGui::Button("Import", ImVec2{110.0F, 28.0F}) ||
-                          (canImport && ImGui::IsKeyPressed(ImGuiKey_Enter));
-    ImGui::EndDisabled();
-
-    if (doImport && canImport) {
-        std::error_code ec;
-        const std::filesystem::path src(modal.sourcePath);
-        if (std::filesystem::exists(src, ec) && std::filesystem::is_regular_file(src, ec)) {
-            ImportExternalFilesUVE({src}, modal.targetDirectory);
-            ImGui::CloseCurrentPopup();
-        } else {
-            modal.statusMessage = "File does not exist or is not a regular file.";
-        }
-    } else if (cancel) {
-        ImGui::CloseCurrentPopup();
-    }
-
-    ImGui::EndPopup();
-}
-
 
 void EditorUVE::OpenCreateShaderModalUVE(const std::filesystem::path& targetDirectory,
                                         std::function<void(const std::filesystem::path&)> onCreated) {

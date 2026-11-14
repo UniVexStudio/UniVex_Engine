@@ -166,8 +166,6 @@ struct EditorHostUVE::WindowUVE final {
     prism::Vec2 mouse{0.0F, 0.0F};
     prism::Vec2 frameStartMouse{0.0F, 0.0F};
     bool mouseInside = true;
-    bool foreignHover = false;          // the pointer is over the other UI (PRISM was told it left)
-    std::uint32_t foreignPresses = 0U;  // buttons pressed while the other UI had the pointer
     float wheel = 0.0F;
     std::uint8_t mods = 0;
     std::array<bool, EditorViewportInputUVE::kButtonCountUVE> down{};
@@ -906,14 +904,6 @@ void EditorHostUVE::BeginFrameUVE() {
     }
 }
 
-bool EditorHostUVE::ForeignMouseUVE(const WindowUVE& w) const {
-    return w.id == kMainWindowUVE && m_foreignMouse && m_foreignMouse();
-}
-
-bool EditorHostUVE::ForeignKeyboardUVE(const WindowUVE& w) const {
-    return w.id == kMainWindowUVE && m_foreignKeyboard && m_foreignKeyboard();
-}
-
 EditorViewportInputUVE EditorHostUVE::CaptureViewInputUVE(const int id, const prism::Rect& rect) const {
     EditorViewportInputUVE input{};
     const WindowUVE* found = FindUVE(id);
@@ -1107,24 +1097,12 @@ bool EditorHostUVE::SaveWindowScreenshotUVE(const int id, const std::filesystem:
 
 // ----------------------------------------------------------------------------------------- input
 
-void EditorHostUVE::SetForeignInputUVE(std::function<bool()> wantsMouse, std::function<bool()> wantsKeyboard) {
-    m_foreignMouse = std::move(wantsMouse);
-    m_foreignKeyboard = std::move(wantsKeyboard);
+void EditorHostUVE::SetKeyHookUVE(std::function<bool(int key, int action)> hook) {
+    m_keyHook = std::move(hook);
 }
 
 void EditorHostUVE::OnCursorPosUVE(WindowUVE& w, const double x, const double y) {
     w.mouse = ToUiUVE(w, x, y);
-    const bool anyDown = std::any_of(w.down.begin(), w.down.end(), [](const bool d) { return d; });
-    if (!anyDown && w.dragMode == WindowUVE::DragModeUVE::None && ForeignMouseUVE(w)) {
-        // Over a window of the other UI: PRISM and the viewport see the pointer leave.
-        if (!w.foreignHover) {
-            w.foreignHover = true;
-            m_app->windowMouseLeave(w.id);
-        }
-        w.mouseInside = false;
-        return;
-    }
-    w.foreignHover = false;
     w.mouseInside = true;
     for (std::size_t i = 0; i < w.down.size(); ++i) {
         if (w.down[i]) {
@@ -1172,14 +1150,6 @@ void EditorHostUVE::OnCursorPosUVE(WindowUVE& w, const double x, const double y)
 
 void EditorHostUVE::OnMouseButtonUVE(WindowUVE& w, const int button, const int action, const int mods) {
     const std::uint32_t bit = (button >= 0 && button < 32) ? (1U << static_cast<unsigned>(button)) : 0U;
-    if (action == GLFW_PRESS && ForeignMouseUVE(w)) {
-        w.foreignPresses |= bit;   // the other UI's click, and its release, are not ours
-        return;
-    }
-    if (action == GLFW_RELEASE && (w.foreignPresses & bit) != 0U) {
-        w.foreignPresses &= ~bit;
-        return;
-    }
     w.mods = ToPrismModsUVE(mods);
     m_app->hostSetModifiers(w.mods);
     const int slot = ToViewButtonUVE(button);
@@ -1332,16 +1302,13 @@ void EditorHostUVE::UpdateWindowDragUVE(WindowUVE& w) {
 }
 
 void EditorHostUVE::OnScrollUVE(WindowUVE& w, const double dx, const double dy) {
-    if (w.foreignHover) {
-        return;
-    }
     w.wheel += static_cast<float>(dy);
     m_app->windowMouseWheel(w.id, w.mouse, prism::Vec2{static_cast<float>(dx), static_cast<float>(dy)});
 }
 
 void EditorHostUVE::OnKeyUVE(WindowUVE& w, const int key, const int /*scancode*/, const int action, const int mods) {
-    if (action != GLFW_RELEASE && ForeignKeyboardUVE(w)) {
-        return;   // typing into the other UI; releases still pass so no key stays held
+    if (w.id == kMainWindowUVE && m_keyHook && m_keyHook(key, action)) {
+        return;   // taken before the UI sees it (Escape giving the editor its mouse back)
     }
     w.mods = ToPrismModsUVE(mods);
     m_app->hostSetModifiers(w.mods);
@@ -1367,9 +1334,6 @@ void EditorHostUVE::OnKeyUVE(WindowUVE& w, const int key, const int /*scancode*/
 }
 
 void EditorHostUVE::OnCharUVE(WindowUVE& w, const unsigned int codepoint) {
-    if (ForeignKeyboardUVE(w)) {
-        return;
-    }
     std::string utf8;
     AppendUtf8UVE(utf8, static_cast<char32_t>(codepoint));
     m_app->windowText(w.id, utf8);
