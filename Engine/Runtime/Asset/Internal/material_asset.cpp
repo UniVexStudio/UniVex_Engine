@@ -66,6 +66,8 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
            std::isfinite(material.uvOffset.x) && std::isfinite(material.uvOffset.y) &&
            std::isfinite(material.uv2Scale.x) && std::isfinite(material.uv2Scale.y) &&
            std::isfinite(material.uv2Offset.x) && std::isfinite(material.uv2Offset.y) &&
+           std::isfinite(material.triplanarBlendSharpness) && material.triplanarBlendSharpness >= 0.0F &&
+           std::isfinite(material.uv2TriplanarSharpness) && material.uv2TriplanarSharpness >= 0.0F &&
            IsFiniteUnitIntervalUVE(material.alphaCutoff) &&
            IsFiniteUnitIntervalUVE(material.dielectricSpecular) &&
            std::isfinite(material.heightScale) && material.heightScale >= 0.0F &&
@@ -157,6 +159,64 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         }
         if (payload.contains("uvOffset")) {
             material.uvOffset = JsonToVector2UVE(payload.at("uvOffset"));
+        }
+        if (payload.contains("uv2Scale")) {
+            material.uv2Scale = JsonToVector2UVE(payload.at("uv2Scale"));
+        }
+        if (payload.contains("uv2Offset")) {
+            material.uv2Offset = JsonToVector2UVE(payload.at("uv2Offset"));
+        }
+        const auto readBool = [&payload](const char* key, bool& out) {
+            if (payload.contains(key)) {
+                out = payload.at(key).get<bool>();
+            }
+        };
+        const auto readFloat = [&payload](const char* key, float& out) {
+            if (payload.contains(key)) {
+                out = payload.at(key).get<float>();
+            }
+        };
+        readBool("uv1Triplanar", material.triplanarEnabled);
+        readBool("uv1WorldTriplanar", material.worldSpaceTriplanar);
+        readFloat("uv1TriplanarSharpness", material.triplanarBlendSharpness);
+        readBool("uv2Triplanar", material.uv2Triplanar);
+        readBool("uv2WorldTriplanar", material.uv2WorldTriplanar);
+        readFloat("uv2TriplanarSharpness", material.uv2TriplanarSharpness);
+        readBool("aoOnUv2", material.aoOnUv2);
+        readBool("emissionOnUv2", material.emissionOnUv2);
+        // The rest of what the material Details edits (each written only when it differs from its
+        // default, so older files read exactly as before).
+        readFloat("dielectricSpecular", material.dielectricSpecular);
+        readBool("normalFlipGreen", material.normalFlipGreen);
+        readBool("useVertexColorAsAlbedo", material.useVertexColorAsAlbedo);
+        readBool("vertexColorIsSrgb", material.vertexColorIsSrgb);
+        readBool("disableAmbientLight", material.disableAmbientLight);
+        readBool("disableFog", material.disableFog);
+        readBool("aoAffectsDirectLight", material.aoAffectsDirectLight);
+        readBool("receiveShadows", material.receiveShadows);
+        readFloat("rimAmount", material.rimAmount);
+        if (payload.contains("rimTint")) {
+            material.rimTint = JsonToColorUVE(payload.at("rimTint"));
+        }
+        readFloat("clearcoatRoughness", material.clearcoatRoughness);
+        readFloat("anisotropyAmount", material.anisotropyAmount);
+        readFloat("subsurfaceStrength", material.subsurfaceStrength);
+        readFloat("refractionAmount", material.refractionAmount);
+        readFloat("heightScale", material.heightScale);
+        if (payload.contains("heightTexture")) {
+            material.heightTexture = AssetGuidUVE{payload.at("heightTexture").get<std::uint64_t>()};
+        }
+        if (payload.contains("parallaxMinLayers")) {
+            material.parallaxMinLayers = payload.at("parallaxMinLayers").get<std::uint8_t>();
+        }
+        if (payload.contains("parallaxMaxLayers")) {
+            material.parallaxMaxLayers = payload.at("parallaxMaxLayers").get<std::uint8_t>();
+        }
+        readFloat("proximityFadeDistance", material.proximityFadeDistance);
+        readFloat("distanceFadeNear", material.distanceFadeNear);
+        readFloat("distanceFadeFar", material.distanceFadeFar);
+        if (payload.contains("renderLayerMask")) {
+            material.renderLayerMask = payload.at("renderLayerMask").get<std::uint32_t>();
         }
         if (payload.contains("unshaded")) {
             material.unshaded = payload.at("unshaded").get<bool>();
@@ -263,6 +323,75 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     payload["occlusionStrength"] = material.occlusionStrength;
     payload["uvScale"] = Vector2ToJsonUVE(material.uvScale);
     payload["uvOffset"] = Vector2ToJsonUVE(material.uvOffset);
+    // UV2 and triplanar only when set, so materials that never use them keep their files as they were.
+    if (material.uv2Scale.x != 1.0F || material.uv2Scale.y != 1.0F) {
+        payload["uv2Scale"] = Vector2ToJsonUVE(material.uv2Scale);
+    }
+    if (material.uv2Offset.x != 0.0F || material.uv2Offset.y != 0.0F) {
+        payload["uv2Offset"] = Vector2ToJsonUVE(material.uv2Offset);
+    }
+    const auto writeBool = [&payload](const char* key, const bool value) {
+        if (value) {
+            payload[key] = true;
+        }
+    };
+    const auto writeSharpness = [&payload](const char* key, const float value) {
+        if (value != 1.0F) {
+            payload[key] = value;
+        }
+    };
+    writeBool("uv1Triplanar", material.triplanarEnabled);
+    writeBool("uv1WorldTriplanar", material.worldSpaceTriplanar);
+    writeSharpness("uv1TriplanarSharpness", material.triplanarBlendSharpness);
+    writeBool("uv2Triplanar", material.uv2Triplanar);
+    writeBool("uv2WorldTriplanar", material.uv2WorldTriplanar);
+    writeSharpness("uv2TriplanarSharpness", material.uv2TriplanarSharpness);
+    writeBool("aoOnUv2", material.aoOnUv2);
+    writeBool("emissionOnUv2", material.emissionOnUv2);
+    const MaterialAssetUVE defaults{};
+    const auto writeFloat = [&payload](const char* key, const float value, const float fallback) {
+        if (value != fallback) {
+            payload[key] = value;
+        }
+    };
+    const auto writeFlag = [&payload](const char* key, const bool value, const bool fallback) {
+        if (value != fallback) {
+            payload[key] = value;
+        }
+    };
+    writeFloat("dielectricSpecular", material.dielectricSpecular, defaults.dielectricSpecular);
+    writeFlag("normalFlipGreen", material.normalFlipGreen, defaults.normalFlipGreen);
+    writeFlag("useVertexColorAsAlbedo", material.useVertexColorAsAlbedo, defaults.useVertexColorAsAlbedo);
+    writeFlag("vertexColorIsSrgb", material.vertexColorIsSrgb, defaults.vertexColorIsSrgb);
+    writeFlag("disableAmbientLight", material.disableAmbientLight, defaults.disableAmbientLight);
+    writeFlag("disableFog", material.disableFog, defaults.disableFog);
+    writeFlag("aoAffectsDirectLight", material.aoAffectsDirectLight, defaults.aoAffectsDirectLight);
+    writeFlag("receiveShadows", material.receiveShadows, defaults.receiveShadows);
+    writeFloat("rimAmount", material.rimAmount, defaults.rimAmount);
+    if (material.rimTint.r != defaults.rimTint.r || material.rimTint.g != defaults.rimTint.g ||
+        material.rimTint.b != defaults.rimTint.b) {
+        payload["rimTint"] = ColorToJsonUVE(material.rimTint);
+    }
+    writeFloat("clearcoatRoughness", material.clearcoatRoughness, defaults.clearcoatRoughness);
+    writeFloat("anisotropyAmount", material.anisotropyAmount, defaults.anisotropyAmount);
+    writeFloat("subsurfaceStrength", material.subsurfaceStrength, defaults.subsurfaceStrength);
+    writeFloat("refractionAmount", material.refractionAmount, defaults.refractionAmount);
+    writeFloat("heightScale", material.heightScale, defaults.heightScale);
+    if (material.heightTexture != kInvalidAssetGuidUVE) {
+        payload["heightTexture"] = material.heightTexture.value;
+    }
+    if (material.parallaxMinLayers != defaults.parallaxMinLayers) {
+        payload["parallaxMinLayers"] = material.parallaxMinLayers;
+    }
+    if (material.parallaxMaxLayers != defaults.parallaxMaxLayers) {
+        payload["parallaxMaxLayers"] = material.parallaxMaxLayers;
+    }
+    writeFloat("proximityFadeDistance", material.proximityFadeDistance, defaults.proximityFadeDistance);
+    writeFloat("distanceFadeNear", material.distanceFadeNear, defaults.distanceFadeNear);
+    writeFloat("distanceFadeFar", material.distanceFadeFar, defaults.distanceFadeFar);
+    if (material.renderLayerMask != defaults.renderLayerMask) {
+        payload["renderLayerMask"] = material.renderLayerMask;
+    }
     payload["unshaded"] = material.unshaded;
     payload["alphaCutoff"] = material.alphaCutoff;
     if (material.albedoAlpha != 1.0F) {

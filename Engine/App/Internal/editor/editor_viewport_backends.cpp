@@ -16,7 +16,6 @@
 #include <string_view>
 #include <vector>
 
-#include <imgui.h>
 
 #include "viewport_render_pass.h"
 #include "integration/editor_mesh_layer.h"
@@ -31,6 +30,7 @@
 #include "univex/render/studio_backdrop_renderer.h"
 
 #include "engine_core.h"
+#include "gl_render_device.h"
 #include "logging_macros.h"
 #include "editor_bridge_stdio.h"
 #include "ui_draw_batch.h"
@@ -56,6 +56,19 @@
 #include "visibility_region_3d.h"
 #include "world_environment_3d.h"
 #include "world_partition_3d.h"
+#include "audio_listener_3d.h"
+#include "decal_3d.h"
+#include "gi_probes_3d.h"
+#include "light_component.h"
+#include "marker_3d.h"
+#include "nav_mesh_volume_3d.h"
+#include "path_3d.h"
+#include "ray_cast_3d.h"
+#include "shape_cast_3d.h"
+#include "spawn_point_3d.h"
+#include "spring_arm_3d.h"
+#include "visibility_component.h"
+#include "visible_on_screen_notifier_3d.h"
 #include "camera_system.h"
 #include "i_scene_graph.h"
 #include "univex/gizmo/gizmo_geometry.h"
@@ -66,7 +79,7 @@
 namespace {
 
 // How far the pointer may travel on the nav gizmo (accumulated since the button went down, in
-// ImGui points) and still count as a click rather than a drag - mirrors app/main.cpp's own
+// view pixels) and still count as a click rather than a drag - mirrors app/main.cpp's own
 // kNavClickSlopPixels for the standalone demo.
 constexpr float kNavClickSlopPixelsUVE = 4.0F;
 
@@ -101,7 +114,79 @@ void main() {
         discard; // the renderer drew nothing here; leave the backdrop and its depth alone
     }
     FragColor = vec4(meshColor.rgb, 1.0);
-    gl_FragDepth = (meshColor.a > 0.875) ? 0.0 : 0.999999;
+    gl_FragDepth = 0.0; // every covered pixel hides the grid: an edge or a soft surface too, never the grid over it
+}
+)";
+
+// The game's UI over the view: quads in view pixels (top-left origin), glyphs from the UI font
+// atlas, solid quads in their tint. Straight alpha, blended over the resolved scene.
+constexpr std::string_view kUIOverlayVertexShaderUVE = R"(#version 330 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aUv;
+layout(location = 2) in vec4 aColor;
+layout(location = 3) in float aTextured;
+uniform vec2 uViewSize;
+out vec2 vUv;
+out vec4 vColor;
+out float vTextured;
+void main() {
+    vUv = aUv;
+    vColor = aColor;
+    vTextured = aTextured;
+    gl_Position = vec4(aPos.x / uViewSize.x * 2.0 - 1.0, 1.0 - aPos.y / uViewSize.y * 2.0, 0.0, 1.0);
+}
+)";
+
+constexpr std::string_view kUIOverlayFragmentShaderUVE = R"(#version 330 core
+uniform sampler2D uAtlas;
+in vec2 vUv;
+in vec4 vColor;
+in float vTextured;
+out vec4 FragColor;
+void main() {
+    vec4 color = vColor;
+    if (vTextured > 0.5) {
+        color *= texture(uAtlas, vUv);
+    }
+    FragColor = color;
+}
+)";
+
+// Scene depth for the PRISM shell's overlays: each output texel is the nearest surface of a 2x2
+// block of the renderer's depth target, as the distance along the editor view's forward axis from
+// its eye (world units), or 1e30 where nothing was drawn.
+constexpr std::string_view kHostDepthFragmentShaderUVE = R"(#version 330 core
+uniform sampler2D uDepth;
+uniform mat4 uInvViewProj;
+uniform vec3 uEye;
+uniform vec3 uForward;
+uniform vec2 uOutSize;
+out vec4 FragColor;
+void main() {
+    ivec2 size = textureSize(uDepth, 0);
+    vec2 uv = gl_FragCoord.xy / uOutSize;
+    ivec2 base = ivec2(uv * vec2(size));
+    float d = 1.0;
+    float u = 0.0;
+    float v = 0.0;
+    for (int y = -1; y <= 0; ++y) {
+        for (int x = -1; x <= 0; ++x) {
+            ivec2 p = clamp(base + ivec2(x, y), ivec2(0), size - 1);
+            float s = texelFetch(uDepth, p, 0).r;
+            if (s < d) {
+                d = s;
+                u = (float(p.x) + 0.5) / float(size.x);
+                v = (float(p.y) + 0.5) / float(size.y);
+            }
+        }
+    }
+    if (d >= 0.999999) {
+        FragColor = vec4(1.0e30);
+        return;
+    }
+    vec4 world = uInvViewProj * vec4(u * 2.0 - 1.0, v * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    world /= world.w;
+    FragColor = vec4(dot(world.xyz - uEye, uForward));
 }
 )";
 
@@ -708,23 +793,311 @@ void AppendOccluderGizmoUVE(univex::gizmo::GizmoMesh& mesh, const UVE::Scene::Oc
     return mesh;
 }
 
+// Gizmos for the remaining spatial objects, from their own components: point light range spheres
+// and spot light cones (unless the host draws spot lights itself), decal and GI volumes, navigation mesh bounds, on-screen notifier boxes,
+// ray / shape casts, spring arms, markers, spawn points, audio listeners and paths. Shown only for
+// objects visible in the hierarchy, never for the editor's own internal entities.
+class ObjectGizmoBuilderUVE final {
+public:
+    using Vec3 = univex::math::Vec3;
+
+    explicit ObjectGizmoBuilderUVE(univex::gizmo::GizmoMesh& mesh) : mesh_(mesh) {}
+
+    void Line(const Vec3& a, const Vec3& b, const Vec3& color, const float width = 1.4F) {
+        mesh_.lines.push_back(univex::gizmo::GizmoLine{a, b, color, width});
+    }
+
+    // `local` placed by the object's world transform (scale, then rotation, then position).
+    [[nodiscard]] static Vec3 Place(const UVE::Scene::WorldTransformComponentUVE& world, const Vec3& local) {
+        const UVE::Math::Vector3UVE scaled{local.x * world.worldScale.x, local.y * world.worldScale.y,
+                                           local.z * world.worldScale.z};
+        const UVE::Math::Vector3UVE rotated = UVE::Math::RotateVectorUVE(world.worldRotation, scaled);
+        return Vec3{world.worldPosition.x + rotated.x, world.worldPosition.y + rotated.y,
+                    world.worldPosition.z + rotated.z};
+    }
+    // A direction rotated (not scaled) into world space.
+    [[nodiscard]] static Vec3 Turn(const UVE::Scene::WorldTransformComponentUVE& world, const Vec3& local) {
+        const UVE::Math::Vector3UVE rotated =
+            UVE::Math::RotateVectorUVE(world.worldRotation, UVE::Math::Vector3UVE{local.x, local.y, local.z});
+        return Vec3{rotated.x, rotated.y, rotated.z};
+    }
+
+    void Box(const UVE::Scene::WorldTransformComponentUVE& world, const Vec3& centre, const Vec3& half,
+             const Vec3& color, const float width = 1.4F) {
+        const auto corner = [&](const float sx, const float sy, const float sz) {
+            return Place(world, Vec3{centre.x + sx * half.x, centre.y + sy * half.y, centre.z + sz * half.z});
+        };
+        const float s[2] = {-1.0F, 1.0F};
+        for (const float y : s) {
+            for (const float z : s) {
+                Line(corner(-1.0F, y, z), corner(1.0F, y, z), color, width);
+            }
+        }
+        for (const float x : s) {
+            for (const float z : s) {
+                Line(corner(x, -1.0F, z), corner(x, 1.0F, z), color, width);
+            }
+        }
+        for (const float x : s) {
+            for (const float y : s) {
+                Line(corner(x, y, -1.0F), corner(x, y, 1.0F), color, width);
+            }
+        }
+    }
+
+    // A world-space circle around `centre` in the plane spanned by `u` and `v` (unit vectors).
+    void Circle(const Vec3& centre, const Vec3& u, const Vec3& v, const float radius, const Vec3& color,
+                const float width = 1.4F) {
+        constexpr int kSegments = 40;
+        Vec3 previous = centre + u * radius;
+        for (int i = 1; i <= kSegments; ++i) {
+            const float a = static_cast<float>(i) * (6.2831853F / static_cast<float>(kSegments));
+            const Vec3 point = centre + u * (std::cos(a) * radius) + v * (std::sin(a) * radius);
+            Line(previous, point, color, width);
+            previous = point;
+        }
+    }
+
+    void Sphere(const Vec3& centre, const float radius, const Vec3& color) {
+        Circle(centre, Vec3{1.0F, 0.0F, 0.0F}, Vec3{0.0F, 1.0F, 0.0F}, radius, color, 1.2F);
+        Circle(centre, Vec3{1.0F, 0.0F, 0.0F}, Vec3{0.0F, 0.0F, 1.0F}, radius, color, 1.2F);
+        Circle(centre, Vec3{0.0F, 1.0F, 0.0F}, Vec3{0.0F, 0.0F, 1.0F}, radius, color, 1.2F);
+    }
+
+    void Arrow(const Vec3& from, const Vec3& to, const Vec3& color, const float width = 1.6F) {
+        Line(from, to, color, width);
+        const Vec3 d = to - from;
+        const float length = univex::math::Length(d);
+        if (length < 1e-4F) {
+            return;
+        }
+        const Vec3 dir = d * (1.0F / length);
+        const Vec3 side = std::fabs(dir.y) < 0.9F ? univex::math::Normalize(univex::math::Cross(dir, Vec3{0.0F, 1.0F, 0.0F}))
+                                                  : univex::math::Normalize(univex::math::Cross(dir, Vec3{1.0F, 0.0F, 0.0F}));
+        const Vec3 up = univex::math::Cross(side, dir);
+        const float head = std::min(0.25F, length * 0.3F);
+        const Vec3 base = to - dir * head;
+        Line(to, base + side * (head * 0.45F), color, width);
+        Line(to, base - side * (head * 0.45F), color, width);
+        Line(to, base + up * (head * 0.45F), color, width);
+        Line(to, base - up * (head * 0.45F), color, width);
+    }
+
+private:
+    univex::gizmo::GizmoMesh& mesh_;
+};
+
+[[nodiscard]] bool ShowsObjectGizmoUVE(UVE::Scene::IEntityManagerUVE& entityManager, const UVE::Scene::EntityUVE entity) {
+    if (entityManager.HasComponentUVE<UVE::Scene::EditorInternalEntityComponentUVE>(entity)) {
+        return false;
+    }
+    return !entityManager.HasComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity) ||
+           entityManager.GetComponentUVE<UVE::Scene::VisibilityComponentUVE>(entity).visibleInHierarchy;
+}
+
+[[nodiscard]] univex::gizmo::GizmoMesh BuildMoreObjectGizmosMeshUVE(UVE::Scene::IEntityManagerUVE& entityManager,
+                                                                   const bool includeSpotCones) {
+    using univex::math::Vec3;
+    using WorldUVE = UVE::Scene::WorldTransformComponentUVE;
+    univex::gizmo::GizmoMesh mesh;
+    ObjectGizmoBuilderUVE g(mesh);
+    const Vec3 zero{0.0F, 0.0F, 0.0F};
+    const auto origin = [](const WorldUVE& w) { return Vec3{w.worldPosition.x, w.worldPosition.y, w.worldPosition.z}; };
+
+    // Point lights: their range as three rings; spot lights: their cone out to the range.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::LightComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::LightComponentUVE& light) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || light.type == UVE::Scene::LightTypeUVE::Directional ||
+                !(light.range > 0.0F) || !std::isfinite(light.range)) {
+                return;
+            }
+            const Vec3 color{0.5F + 0.5F * std::clamp(light.color.r, 0.0F, 1.0F),
+                             0.5F + 0.5F * std::clamp(light.color.g, 0.0F, 1.0F),
+                             0.5F + 0.5F * std::clamp(light.color.b, 0.0F, 1.0F)};
+            if (light.type == UVE::Scene::LightTypeUVE::Point) {
+                g.Sphere(origin(w), light.range, color);
+                return;
+            }
+            if (!includeSpotCones) {
+                return;
+            }
+            const Vec3 apex = origin(w);
+            const Vec3 forward = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F});
+            const Vec3 right = ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F});
+            const Vec3 up = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 1.0F, 0.0F});
+            const float angle = std::clamp(light.spotAngleDegrees, 0.5F, 89.5F) * 0.0174532925F;
+            const float radius = light.range * std::tan(angle);
+            const Vec3 end = apex + forward * light.range;
+            g.Circle(end, right, up, radius, color);
+            g.Line(apex, end + right * radius, color);
+            g.Line(apex, end - right * radius, color);
+            g.Line(apex, end + up * radius, color);
+            g.Line(apex, end - up * radius, color);
+        });
+
+    // Decals: the projection box and the direction they project along (-Y).
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::Decal3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::Decal3DComponentUVE& decal) {
+            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+                return;
+            }
+            const Vec3 color{0.95F, 0.78F, 0.40F};
+            const Vec3 half{decal.size.x * 0.5F, decal.size.y * 0.5F, decal.size.z * 0.5F};
+            g.Box(w, zero, half, color);
+            g.Arrow(ObjectGizmoBuilderUVE::Place(w, zero), ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, -half.y, 0.0F}),
+                    color);
+        });
+
+    // Global illumination volumes and navigation mesh bounds.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::VoxelGI3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::VoxelGI3DComponentUVE& gi) {
+            if (ShowsObjectGizmoUVE(entityManager, e)) {
+                g.Box(w, zero, Vec3{gi.halfExtents.x, gi.halfExtents.y, gi.halfExtents.z}, Vec3{0.55F, 0.85F, 1.0F});
+            }
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::LightmapGI3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::LightmapGI3DComponentUVE& gi) {
+            if (ShowsObjectGizmoUVE(entityManager, e)) {
+                g.Box(w, zero, Vec3{gi.halfExtents.x, gi.halfExtents.y, gi.halfExtents.z}, Vec3{1.0F, 0.85F, 0.45F});
+            }
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::NavMeshVolume3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::NavMeshVolume3DComponentUVE& nav) {
+            if (ShowsObjectGizmoUVE(entityManager, e)) {
+                g.Box(w, zero, Vec3{nav.boundsHalfExtents.x, nav.boundsHalfExtents.y, nav.boundsHalfExtents.z},
+                      Vec3{0.35F, 0.90F, 0.50F});
+            }
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::VisibleOnScreenNotifier3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::VisibleOnScreenNotifier3DComponentUVE& n) {
+            if (ShowsObjectGizmoUVE(entityManager, e)) {
+                g.Box(w, Vec3{n.aabbCenterOffset.x, n.aabbCenterOffset.y, n.aabbCenterOffset.z},
+                      Vec3{n.aabbHalfExtents.x, n.aabbHalfExtents.y, n.aabbHalfExtents.z}, Vec3{0.95F, 0.60F, 0.95F});
+            }
+        });
+
+    // Ray and shape casts: the cast, with the swept shape's end where it stops.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::RayCast3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::RayCast3DComponentUVE& ray) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || !(ray.length > 0.0F) || !std::isfinite(ray.length)) {
+                return;
+            }
+            const Vec3 dir = univex::math::Normalize(
+                ObjectGizmoBuilderUVE::Turn(w, Vec3{ray.direction.x, ray.direction.y, ray.direction.z}));
+            g.Arrow(origin(w), origin(w) + dir * ray.length,
+                    ray.hit ? Vec3{1.0F, 0.35F, 0.30F} : Vec3{1.0F, 0.62F, 0.22F});
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::ShapeCast3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::ShapeCast3DComponentUVE& cast) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || !(cast.maxDistance > 0.0F) || !std::isfinite(cast.maxDistance)) {
+                return;
+            }
+            const Vec3 color = cast.hit ? Vec3{1.0F, 0.35F, 0.30F} : Vec3{1.0F, 0.62F, 0.22F};
+            const Vec3 dir = univex::math::Normalize(
+                ObjectGizmoBuilderUVE::Turn(w, Vec3{cast.direction.x, cast.direction.y, cast.direction.z}));
+            const float reach = cast.hit ? cast.hitDistance : cast.maxDistance;
+            g.Line(origin(w), origin(w) + dir * reach, color);
+            g.Sphere(origin(w), std::max(0.01F, cast.radius), color);
+            g.Sphere(origin(w) + dir * reach, std::max(0.01F, cast.radius), color);
+        });
+
+    // Spring arms extend along local +Z; the current length is the solid part.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::SpringArm3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::SpringArm3DComponentUVE& arm) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || !(arm.armLength > 0.0F) || !std::isfinite(arm.armLength)) {
+                return;
+            }
+            const Vec3 dir = ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, 1.0F});
+            const float current = std::clamp(arm.currentLength, 0.0F, arm.armLength);
+            g.Line(origin(w), origin(w) + dir * current, Vec3{0.92F, 0.90F, 0.40F}, 2.0F);
+            g.Line(origin(w) + dir * current, origin(w) + dir * arm.armLength, Vec3{0.55F, 0.54F, 0.30F}, 1.2F);
+            g.Sphere(origin(w) + dir * current, 0.08F, Vec3{0.92F, 0.90F, 0.40F});
+        });
+
+    // Markers: a small axis cross. Spawn points: a ring and the facing arrow. Listeners: a ring.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::Marker3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::Marker3DComponentUVE&) {
+            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+                return;
+            }
+            const float s = 0.5F;
+            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{-s, 0.0F, 0.0F}), ObjectGizmoBuilderUVE::Place(w, Vec3{s, 0.0F, 0.0F}),
+                   Vec3{0.90F, 0.32F, 0.32F});
+            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, -s, 0.0F}), ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, s, 0.0F}),
+                   Vec3{0.45F, 0.80F, 0.30F});
+            g.Line(ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, 0.0F, -s}), ObjectGizmoBuilderUVE::Place(w, Vec3{0.0F, 0.0F, s}),
+                   Vec3{0.30F, 0.55F, 0.92F});
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::SpawnPoint3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::SpawnPoint3DComponentUVE&) {
+            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+                return;
+            }
+            const Vec3 color{0.40F, 0.80F, 1.0F};
+            g.Circle(origin(w), ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F}),
+                     ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, 1.0F}), 0.5F, color);
+            g.Arrow(origin(w), origin(w) + ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F}) * 0.9F, color);
+        });
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::AudioListener3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::AudioListener3DComponentUVE&) {
+            if (!ShowsObjectGizmoUVE(entityManager, e)) {
+                return;
+            }
+            const Vec3 color{0.82F, 0.82F, 0.86F};
+            g.Circle(origin(w), ObjectGizmoBuilderUVE::Turn(w, Vec3{1.0F, 0.0F, 0.0F}),
+                     ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 1.0F, 0.0F}), 0.35F, color);
+            g.Arrow(origin(w), origin(w) + ObjectGizmoBuilderUVE::Turn(w, Vec3{0.0F, 0.0F, -1.0F}) * 0.7F, color);
+        });
+
+    // Paths: the curve through their points (local space), closed when they loop.
+    entityManager.ForEachUVE<WorldUVE, UVE::Scene::Path3DComponentUVE>(
+        [&](const UVE::Scene::EntityUVE e, const WorldUVE& w, const UVE::Scene::Path3DComponentUVE& path) {
+            if (!ShowsObjectGizmoUVE(entityManager, e) || path.points.size() < 2U) {
+                return;
+            }
+            const Vec3 color{0.42F, 0.72F, 1.0F};
+            const std::size_t count = std::min(path.points.size(), UVE::Scene::kMaximumPath3DPointsUVE);
+            const auto at = [&](const std::size_t i) {
+                const UVE::Math::Vector3UVE& p = path.points[i];
+                return ObjectGizmoBuilderUVE::Place(w, Vec3{p.x, p.y, p.z});
+            };
+            for (std::size_t i = 1; i < count; ++i) {
+                g.Line(at(i - 1), at(i), color, 2.0F);
+            }
+            if (path.closed && count > 2U) {
+                g.Line(at(count - 1), at(0), color, 2.0F);
+            }
+            for (std::size_t i = 0; i < count; ++i) {
+                g.Sphere(at(i), 0.06F, color);
+            }
+        });
+    return mesh;
+}
+
 // Bridges Engine/Editor/Viewport's real GL renderer (grid + orbit camera + transform/orientation
 // gizmos + one proxy cube per live scene entity) into EditorUVE's generic, viewport-agnostic
 // "Viewport" panel hook (EditorUVE::SetViewportPanelRendererUVE) - see that method's own doc
-// comment in editor_uve.h for why EditorCore itself stays free of any Viewport-module/GL/ImGui
+// comment in editor_uve.h for why EditorCore itself stays free of any Viewport-module/GL
 // types. Renders off-screen into an MSAA framebuffer, resolves into a plain 2D texture
-// ImGui::Image() can sample, and recreates both whenever the panel's reported size changes -
+// the editor's view can show, and recreates both whenever the panel's reported size changes -
 // the same multisample-then-resolve shape tools/headless_capture.cpp already uses (that file's
 // own comment explains why: the solid gizmo/cube geometry has nothing but MSAA to soften its
 // silhouettes) and the same resize-on-demand shape app/main.cpp's interactive demo already uses
-// for its own window-sized framebuffer, just driven by the ImGui panel's reported size instead of
+// for its own window-sized framebuffer, just driven by the view's reported size instead of
 // a GLFW framebuffer-resize callback.
+using VpInputUVE = UVE::Editor::EditorViewportInputUVE;
+using VpBtnUVE = VpInputUVE::ButtonUVE;
+using VpKeyUVE = VpInputUVE::KeyUVE;
+using VpCursorUVE = VpInputUVE::CursorUVE;
+
 class ViewportPanelBackendUVE final {
 public:
+    /// Draws the scene `services` hold: the level's, or a document scene's (the Entity Editor's).
     ViewportPanelBackendUVE(UVE::Editor::EditorUVE& editor, UVE::Core::EngineCoreUVE& engine,
+                            UVE::Core::EngineServicesUVE& services,
                             const UVE::Editor::EditorUVE::ViewportContextUVE context)
-        : editor_(editor), engine_(engine), entityManager_(engine.GetServicesUVE().GetEntityManagerUVE()),
-          meshLayer_(engine.GetServicesUVE()), context_(context) {
+        : editor_(editor), engine_(engine), services_(services), entityManager_(services.GetEntityManagerUVE()),
+          meshLayer_(services), context_(context) {
         camera_.Settings().allowFullOrbit = true;
     }
 
@@ -736,16 +1109,40 @@ public:
         if (uiFontAtlasTexture_ != 0U) {
             glDeleteTextures(1, &uiFontAtlasTexture_);
         }
+        if (uiOverlayVao_ != 0U) {
+            glDeleteVertexArrays(1, &uiOverlayVao_);
+        }
+        if (uiOverlayVbo_ != 0U) {
+            glDeleteBuffers(1, &uiOverlayVbo_);
+        }
     }
 
     ViewportPanelBackendUVE(const ViewportPanelBackendUVE&) = delete;
     ViewportPanelBackendUVE& operator=(const ViewportPanelBackendUVE&) = delete;
 
+    /// This frame's input for the view (see EditorViewportInputUVE); empty outside RenderUVE.
+    [[nodiscard]] const VpInputUVE& In() const noexcept {
+        static const VpInputUVE kNoInputUVE{};
+        return input_ != nullptr ? *input_ : kNoInputUVE;
+    }
+    const VpInputUVE* input_ = nullptr;
+
     [[nodiscard]] std::uint64_t RenderUVE(const UVE::Math::Vector2UVE& availableSize,
                                           UVE::Math::Vector2UVE& outUsedSize,
                                           const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+        input_ = &overlayState.input;
         if (!EnsureGlewInitializedUVE() || !EnsureRenderPassUVE()) {
             return 0U;
+        }
+        // The game's UI is drawn inside this view, so its buttons are hit where they are drawn:
+        // the pointer is measured from the view's corner, not the window's.
+        if (context_ == UVE::Editor::EditorUVE::ViewportContextUVE::Main) {
+            engine_.SetUIPointerOriginUVE(In().imageOrigin);
+            engine_.SetUIViewportSizeUVE(UVE::Math::Vector2UVE{std::floor(availableSize.x), std::floor(availableSize.y)});
+            if (!engine_.HasMouseCursorHandlerUVE()) {
+                // Set Show Mouse Cursor in Play frees the editor's view pointer for the game's UI.
+                engine_.SetMouseCursorHandlerUVE([this](const bool show) { editor_.SetGameMouseCapturedUVE(!show); });
+            }
         }
 
         const int width = std::max(1, static_cast<int>(availableSize.x));
@@ -773,7 +1170,7 @@ public:
             glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
             glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
             if (overlayState.gameWorkspaceActive) {
-                DrawUIOverlayUVE();
+                DrawUIOverlayUVE(width, height);
             }
             return static_cast<std::uint64_t>(resolveColorTexture_);
         }
@@ -787,38 +1184,94 @@ public:
         const bool wantPreview =
             !gameWorkspaceActive_ && !studioView_ &&
             ((previewCamera != UVE::Scene::kInvalidEntityUVE) || selectedIsCamera);
+        // Looking through a Camera3D flies the view into it, and back out to where it was: an
+        // animation of the editor camera, not a cut (the small Details preview cuts, it has no
+        // view of its own to fly from).
+        const bool flies = !inspectorCameraPreview && !selectedIsCamera;
         if (wantPreview && !previewing_) {
             poseBeforePreview_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
                                                camera_.IsOrthographic()};
+            fovBeforePreview_ = camera_.Settings().fovYRadians;
             previewing_ = true;
+            if (flies) {
+                if (const std::optional<CameraFlightPoseUVE> into = CameraEntityPoseUVE(previewCamera)) {
+                    camera_.CancelAnimation();
+                    flight_ = CameraFlightUVE{CurrentFlightPoseUVE(), *into, 0.0F, true};
+                    camera_.SetOrthographic(false);
+                }
+            }
         } else if (!wantPreview && previewing_) {
             if (poseBeforePreview_.has_value()) {
                 camera_.CancelAnimation();
-                camera_.SetTarget(poseBeforePreview_->target);
-                camera_.SetYawPitch(poseBeforePreview_->yaw, poseBeforePreview_->pitch);
-                camera_.SetDistance(poseBeforePreview_->distance);
+                const CameraFlightPoseUVE back{poseBeforePreview_->target, poseBeforePreview_->yaw,
+                                               poseBeforePreview_->pitch, poseBeforePreview_->distance, fovBeforePreview_};
+                const std::optional<CameraFlightPoseUVE> from =
+                    flight_.has_value() ? std::optional<CameraFlightPoseUVE>{CurrentFlightPoseUVE()}
+                                        : CameraEntityPoseUVE(lastPreviewCamera_);
+                if (flies && from.has_value()) {
+                    ApplyFlightPoseUVE(*from);
+                    flight_ = CameraFlightUVE{*from, back, 0.0F, false};
+                } else {
+                    flight_.reset();
+                    ApplyFlightPoseUVE(back);
+                }
                 camera_.SetOrthographic(poseBeforePreview_->orthographic);
                 poseBeforePreview_.reset();
             }
             previewing_ = false;
         }
-        renderPass_->Settings().viewGizmos = !studioView_ && !gameWorkspaceActive_ && !previewing_;
-        renderPass_->Settings().viewTransformGizmo = !studioView_ && !gameWorkspaceActive_ && !previewing_;
+        if (previewCamera != UVE::Scene::kInvalidEntityUVE) {
+            lastPreviewCamera_ = previewCamera;
+        }
+        if (flight_.has_value()) {
+            flight_->t = std::min(1.0F, flight_->t + In().deltaTime / kCameraFlightSecondsUVE);
+            const float t = flight_->t;
+            const float e = t * t * (3.0F - 2.0F * t);   // ease in and out
+            const CameraFlightPoseUVE& a = flight_->from;
+            const CameraFlightPoseUVE& b = flight_->to;
+            float yawDelta = b.yaw - a.yaw;
+            while (yawDelta > 3.14159265F) { yawDelta -= 6.2831853F; }
+            while (yawDelta < -3.14159265F) { yawDelta += 6.2831853F; }
+            ApplyFlightPoseUVE(CameraFlightPoseUVE{a.target + (b.target - a.target) * e, a.yaw + yawDelta * e,
+                                                   a.pitch + (b.pitch - a.pitch) * e,
+                                                   a.distance + (b.distance - a.distance) * e,
+                                                   a.fovY + (b.fovY - a.fovY) * e});
+            if (t >= 1.0F) {
+                if (!flight_->entering) {
+                    camera_.Settings().fovYRadians = fovBeforePreview_;
+                }
+                flight_.reset();
+            }
+        }
+        const bool hostGizmos = overlayState.hostDrawsGizmos;
+        renderPass_->Settings().viewGizmos = !hostGizmos && !studioView_ && !gameWorkspaceActive_ && !previewing_;
+        renderPass_->Settings().viewTransformGizmo = !hostGizmos && !studioView_ && !gameWorkspaceActive_ && !previewing_;
         if (studioView_) {
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
             renderPass_->Settings().viewTransformGizmo = false;
             renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
-            if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0F) {
-                camera_.Dolly(ImGui::GetIO().MouseWheel);
+            if (In().hovered && In().wheel != 0.0F) {
+                camera_.Dolly(In().wheel);
             }
         } else {
             UpdateSelectionGizmoUVE();
+            if (hostGizmos) {
+                // The shell draws and drives the gizmos; it hands the navigation gizmo's orbit
+                // drags over as pixels, the same units a mouse orbit uses.
+                renderPass_->Settings().viewTransformGizmo = false;
+                if (overlayState.orbitRequestX != 0.0F || overlayState.orbitRequestY != 0.0F) {
+                    camera_.Orbit(overlayState.orbitRequestX, overlayState.orbitRequestY);
+                    editor_.NotifyViewportOrbitedUVE();
+                }
+            }
             const bool navGizmoOwnsGesture =
-                previewing_ ? false : UpdateNavGizmoInteractionUVE(width, height);
+                (previewing_ || hostGizmos) ? false : UpdateNavGizmoInteractionUVE(width, height);
             // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
             // release, register as a click that selects whatever is behind the gizmo.
-            const bool gizmoOwnsGesture = !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
-            UpdateGizmoHoverHighlightUVE(width, height, navGizmoOwnsGesture);
+            const bool gizmoOwnsGesture = !hostGizmos && !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
+            if (!hostGizmos) {
+                UpdateGizmoHoverHighlightUVE(width, height, navGizmoOwnsGesture);
+            }
             const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
             UpdateSelectionFromMouseUVE(width, height, pointerTaken);
             UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
@@ -832,7 +1285,7 @@ public:
         // cancels it instead - see OrbitCamera.cpp) - without this the camera would flag itself
         // "animating" and then never actually move, since nothing else ticks it forward. Mirrors
         // app/main.cpp's own per-frame state.camera.Update(deltaSeconds) call in the standalone demo.
-        camera_.Update(ImGui::GetIO().DeltaTime);
+        camera_.Update(In().deltaTime);
         // Where a new object appears when its placement follows the view.
         const univex::math::Vec3 cameraFocus = camera_.Target();
         editor_.SetViewportCameraFocusUVE(UVE::Math::Vector3UVE{cameraFocus.x, cameraFocus.y, cameraFocus.z});
@@ -851,7 +1304,8 @@ public:
             lookThroughCamera = FindGameCameraEntityUVE(entityManager_);
         } else if (selectedIsCamera) {
             lookThroughCamera = selectedEntity;
-        } else if (wantPreview) {
+        } else if (wantPreview && !flight_.has_value()) {
+            // Through the camera itself once the view has flown into it.
             lookThroughCamera = previewCamera;
         }
         // ---- Editor preview lighting (Godot's "Preview Sun and Environment") -----------------
@@ -887,7 +1341,7 @@ public:
             const UVE::Scene::PreviewLightingFrameUVE previewFrame = UVE::Scene::ResolvePreviewLightingUVE(
                 hasAuthoredSun, hasAuthoredEnv, previewSettings);
             meshLayer_.SetPreviewLightingUVE(previewFrame);
-            engine_.GetServicesUVE().GetRenderer3DUVE().SetPreviewEnvironmentUVE(
+            services_.GetRenderer3DUVE().SetPreviewEnvironmentUVE(
                 previewFrame.environmentActive
                     ? std::optional<UVE::Scene::WorldEnvironmentFrameUVE>(previewFrame.environment)
                     : std::nullopt);
@@ -901,7 +1355,7 @@ public:
             const UVE::Scene::EntityUVE lookThrough = lookThroughCamera.value_or(UVE::Scene::kInvalidEntityUVE);
             const std::size_t entityCount = entityManager_.GetEntityCountUVE();
 
-            overlayRefreshTimerSeconds_ += ImGui::GetIO().DeltaTime;
+            overlayRefreshTimerSeconds_ += In().deltaTime;
             const bool timerElapsed = overlayRefreshTimerSeconds_ >= 0.10F;
             const bool stateChanged = !cachedOverlayActive_ ||
                                       std::fabs(aspect - cachedOverlayAspect_) > 0.001F ||
@@ -915,9 +1369,11 @@ public:
                 cachedLookThroughCamera_ = lookThrough;
                 cachedOverlayEntityCount_ = entityCount;
 
-                univex::gizmo::GizmoMesh overlay = BuildCameraFrustumMeshUVE(
-                    entityManager_, lookThrough, aspect);
-                univex::gizmo::GizmoMesh lights = BuildLightDirectionMeshUVE(entityManager_);
+                // The PRISM shell draws cameras and directional / spot lights with its own glyphs.
+                univex::gizmo::GizmoMesh overlay =
+                    hostGizmos ? univex::gizmo::GizmoMesh{} : BuildCameraFrustumMeshUVE(entityManager_, lookThrough, aspect);
+                univex::gizmo::GizmoMesh lights =
+                    hostGizmos ? univex::gizmo::GizmoMesh{} : BuildLightDirectionMeshUVE(entityManager_);
                 overlay.lines.insert(overlay.lines.end(), lights.lines.begin(), lights.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), lights.triangles.begin(), lights.triangles.end());
                 univex::gizmo::GizmoMesh fog = BuildFogVolumeMeshUVE(entityManager_);
@@ -935,17 +1391,29 @@ public:
                 univex::gizmo::GizmoMesh occluders = BuildOccluderMeshUVE(entityManager_);
                 overlay.lines.insert(overlay.lines.end(), occluders.lines.begin(), occluders.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), occluders.triangles.begin(), occluders.triangles.end());
+                univex::gizmo::GizmoMesh more = BuildMoreObjectGizmosMeshUVE(entityManager_, !hostGizmos);
+                overlay.lines.insert(overlay.lines.end(), more.lines.begin(), more.lines.end());
                 univex::gizmo::GizmoMesh colliders = BuildColliderMeshUVE(entityManager_);
+                const std::size_t colliderLinesFrom = overlay.lines.size();
                 overlay.lines.insert(overlay.lines.end(), colliders.lines.begin(), colliders.lines.end());
                 overlay.triangles.insert(overlay.triangles.end(), colliders.triangles.begin(), colliders.triangles.end());
-                renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
+                if (hostGizmos) {
+                    hostOverlayMesh_ = std::move(overlay);
+                    hostOverlayOccludedFrom_ = colliderLinesFrom;
+                    renderPass_->SetCameraFrustumMeshUVE({});
+                } else {
+                    hostOverlayMesh_.Clear();
+                    renderPass_->SetCameraFrustumMeshUVE(std::move(overlay));
+                }
             }
         } else {
+            hostOverlayMesh_.Clear();
             if (cachedOverlayActive_) {
                 renderPass_->SetCameraFrustumMeshUVE({});
                 cachedOverlayActive_ = false;
             }
         }
+        ExportViewForHostUVE(overlayState, width, height, wantOverlay);
         outUsedSize = UVE::Math::Vector2UVE{static_cast<float>(width), static_cast<float>(height)};
 
         // One framebuffer, one depth buffer, drawn back to front: backdrop, then the engine's
@@ -969,7 +1437,18 @@ public:
         if (studio != nullptr) {
             studio->DrawFloor(camera_, width, height);
         }
-        if (!previewing_) {
+        // The PRISM shell draws the grid and the selection outline itself (depth-tested against
+        // the scene depth exported below), from the settings and the mask this pass hands it.
+        overlayState.selectionMask.clear();
+        overlayState.selectionMaskWidth = overlayState.selectionMaskHeight = 0;
+        ExportGridForHostUVE(overlayState, hostGizmos && !previewing_ && !studioView_);
+        if (hostGizmos && !lookThroughCamera.has_value()) {
+            ExportSceneDepthForHostUVE(overlayState, width, height);
+        } else {
+            overlayState.sceneDepth.clear();
+            overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
+        }
+        if (!previewing_ && !hostGizmos) {
             renderPass_->RenderGridUVE(camera_, width, height);
         }
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
@@ -1009,7 +1488,46 @@ public:
                 }
             }
             if (!cachedSelectionTriangles_.empty()) {
-                renderPass_->RenderSelectionOutlineUVE(camera_, width, height, cachedSelectionTriangles_);
+                if (hostGizmos) {
+                    const univex::render::SelectionOutlineSettings& outline = renderPass_->SelectionOutlineSettingsUVE();
+                    // The mask is read back only when it can have changed: the camera, the view's size
+                    // or the selected objects' triangles. Otherwise last frame's is used again.
+                    std::uint64_t maskKey = 1469598103934665603ULL;
+                    const auto mixKey = [&maskKey](const void* data, const std::size_t size) {
+                        const auto* p = static_cast<const unsigned char*>(data);
+                        for (std::size_t i = 0U; i < size; ++i) {
+                            maskKey = (maskKey ^ p[i]) * 1099511628211ULL;
+                        }
+                    };
+                    const univex::math::Mat4 viewProjection = camera_.ViewProjection(
+                        static_cast<float>(width) / static_cast<float>(std::max(height, 1)));
+                    mixKey(&viewProjection, sizeof(viewProjection));
+                    const int sizes[2] = {width, height};
+                    mixKey(sizes, sizeof(sizes));
+                    mixKey(cachedSelectionTriangles_.data(), cachedSelectionTriangles_.size() * sizeof(cachedSelectionTriangles_.front()));
+                    bool maskRead = false;
+                    if (maskKey == lastMaskKey_ && !lastMask_.empty()) {
+                        overlayState.selectionMask = lastMask_;
+                        maskRead = true;
+                    } else if (renderPass_->ReadSelectionMaskUVE(camera_, width, height, cachedSelectionTriangles_,
+                                                                 overlayState.selectionMask)) {
+                        lastMask_ = overlayState.selectionMask;
+                        lastMaskKey_ = maskKey;
+                        maskRead = true;
+                    }
+                    if (maskRead) {
+                        overlayState.selectionMaskWidth = width;
+                        overlayState.selectionMaskHeight = height;
+                        overlayState.selectionOutlineRadius =
+                            static_cast<int>(std::lround(outline.thicknessPixels));
+                        overlayState.selectionOutlineRgb = {outline.r, outline.g, outline.b};
+                    }
+                    // ReadMask leaves its own framebuffer bound for reading; draw on into ours.
+                    glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+                    glViewport(0, 0, width, height);
+                } else {
+                    renderPass_->RenderSelectionOutlineUVE(camera_, width, height, cachedSelectionTriangles_);
+                }
             }
         }
         renderPass_->RenderOverlayUVE(camera_, width, height);
@@ -1019,11 +1537,10 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
 
         // Player-facing HUD content only shows during the Game workspace tab's "what a player
-        // would see" preview (matching the grid/transform-gizmo hiding above) - drawn via ImGui's
-        // own foreground overlay rather than baked into meshResult's texture; see this method's own
-        // DrawUIOverlayUVE() comment for why.
+        // would see" preview (matching the grid/transform-gizmo hiding above), drawn over the
+        // resolved image; see DrawUIOverlayUVE.
         if (gameWorkspaceActive_) {
-            DrawUIOverlayUVE();
+            DrawUIOverlayUVE(width, height);
         }
 
         return static_cast<std::uint64_t>(resolveColorTexture_);
@@ -1071,7 +1588,9 @@ private:
 
         GLint maxSamples = 0;
         glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
-        const GLsizei samples = std::min(maxSamples, 8);
+        // 4x is the sweet spot: 8x doubles the bandwidth of every overlay pass for edges few can tell
+        // apart, and integrated laptop GPUs feel it.
+        const GLsizei samples = std::min(maxSamples, 4);
 
         glGenFramebuffers(1, &msaaFbo_);
         glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
@@ -1186,41 +1705,92 @@ private:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    // Draws UIRuntimeUVE's current draw batch directly via ImGui's own foreground overlay draw
-    // list, in the same real-window pixel coordinates UIQuadUVE is authored in (matching
-    // IInputSystemUVE::GetMousePositionUVE()'s own convention - confirmed directly: hovering the
-    // real cursor at a button's authored positionPixels correctly sets isHovered, proving that
-    // space really is the whole application window, not this one panel's local render-target
-    // space). This is why UI content is NOT baked into meshLayer_'s own offscreen texture (see
-    // EditorMeshLayerUVE::RenderUVE()'s own call site comment) - a per-pixel depth-based compositor
-    // could never distinguish "UI was drawn here" from "nothing was drawn here" without real
-    // OpenGL depth WRITES, which require depth TESTING to also be enabled - exactly what a
-    // screen-space overlay must never have (it always draws on top, regardless of the 3D scene).
-    // Image quads referencing a real (non-zero) texture asset guid fall back to a flat tint here
-    // (this preview path does not resolve/upload arbitrary imported textures) - an honest, stated
-    // limitation, not a silent gap.
-    void DrawUIOverlayUVE() {
+    // Draws UIRuntimeUVE's current draw batch into the view's own resolved image, over the scene:
+    // the game's UI is laid out in the view's pixels (its pointer is measured from the view's
+    // corner, see RenderUVE), so it lands exactly where its buttons are hit. Drawn after the
+    // resolve with no depth test, so it is always on top of the 3D scene. Glyphs sample the UI font
+    // atlas; image quads that reference an imported texture fall back to their flat tint (this
+    // preview does not resolve arbitrary imported textures).
+    void DrawUIOverlayUVE(const int width, const int height) {
         const UVE::UI::UIDrawBatchUVE& batch = engine_.GetUIRuntimeUVE().GetDrawBatchUVE();
-        if (batch.quads.empty()) {
+        if (batch.quads.empty() || width <= 0 || height <= 0 || !EnsureUIOverlayResourcesUVE()) {
             return;
         }
         EnsureUIFontAtlasTextureUVE(engine_.GetUIRuntimeUVE().GetFontAtlasUVE());
-        // Window pixels, placed where the window is: with viewports on, ImGui draws in screen
-        // coordinates, so the main window's own screen position is added.
-        const ImVec2 origin = ImGui::GetMainViewport()->Pos;
-        ImDrawList* const drawList = ImGui::GetForegroundDrawList(ImGui::GetMainViewport());
+        // x, y (view pixels), u, v, r, g, b, a, textured
+        uiOverlayVertices_.clear();
+        uiOverlayVertices_.reserve(batch.quads.size() * 6U * 9U);
         for (const UVE::UI::UIQuadUVE& quad : batch.quads) {
-            const ImVec2 pMin{origin.x + quad.rect.position.x, origin.y + quad.rect.position.y};
-            const ImVec2 pMax{pMin.x + quad.rect.size.x, pMin.y + quad.rect.size.y};
-            const ImU32 tint = ImGui::ColorConvertFloat4ToU32(
-                ImVec4{quad.color.x, quad.color.y, quad.color.z, quad.alpha});
-            if (quad.kind == UVE::UI::UIDrawItemKindUVE::Glyph && uiFontAtlasTexture_ != 0U) {
-                drawList->AddImage(static_cast<ImTextureID>(static_cast<std::uintptr_t>(uiFontAtlasTexture_)), pMin,
-                                   pMax, ImVec2{quad.u0, quad.v0}, ImVec2{quad.u1, quad.v1}, tint);
-            } else {
-                drawList->AddRectFilled(pMin, pMax, tint);
-            }
+            const float x0 = quad.rect.position.x;
+            const float y0 = quad.rect.position.y;
+            const float x1 = x0 + quad.rect.size.x;
+            const float y1 = y0 + quad.rect.size.y;
+            const float textured = quad.kind == UVE::UI::UIDrawItemKindUVE::Glyph && uiFontAtlasTexture_ != 0U ? 1.0F : 0.0F;
+            const auto vertex = [&](const float x, const float y, const float u, const float v) {
+                uiOverlayVertices_.insert(uiOverlayVertices_.end(),
+                                          {x, y, u, v, quad.color.x, quad.color.y, quad.color.z, quad.alpha, textured});
+            };
+            vertex(x0, y0, quad.u0, quad.v0);
+            vertex(x1, y0, quad.u1, quad.v0);
+            vertex(x1, y1, quad.u1, quad.v1);
+            vertex(x0, y0, quad.u0, quad.v0);
+            vertex(x1, y1, quad.u1, quad.v1);
+            vertex(x0, y1, quad.u0, quad.v1);
         }
+        GLint previousFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+        GLint previousViewport[4] = {0, 0, 0, 0};
+        glGetIntegerv(GL_VIEWPORT, previousViewport);
+        glBindFramebuffer(GL_FRAMEBUFFER, resolveFbo_);
+        glViewport(0, 0, width, height);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        glEnable(GL_BLEND);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        uiOverlayProgram_->Use();
+        glUniform2f(uiOverlayProgram_->UniformLocation("uViewSize"), static_cast<float>(width), static_cast<float>(height));
+        glUniform1i(uiOverlayProgram_->UniformLocation("uAtlas"), 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, uiFontAtlasTexture_);
+        glBindVertexArray(uiOverlayVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, uiOverlayVbo_);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(uiOverlayVertices_.size() * sizeof(float)), uiOverlayVertices_.data(),
+                     GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(uiOverlayVertices_.size() / 9U));
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_BLEND);
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
+        glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+    }
+
+    [[nodiscard]] bool EnsureUIOverlayResourcesUVE() {
+        if (uiOverlayProgram_.has_value()) {
+            return true;
+        }
+        std::string error;
+        uiOverlayProgram_ = univex::render::ShaderProgram::Build(kUIOverlayVertexShaderUVE, kUIOverlayFragmentShaderUVE, error);
+        if (!uiOverlayProgram_.has_value()) {
+            UVE_ERROR("uve_editor_app: game UI overlay shader build failed: {}", error);
+            return false;
+        }
+        glGenVertexArrays(1, &uiOverlayVao_);
+        glGenBuffers(1, &uiOverlayVbo_);
+        glBindVertexArray(uiOverlayVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, uiOverlayVbo_);
+        constexpr GLsizei stride = 9 * sizeof(float);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(0));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(2 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(4 * sizeof(float)));
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<const void*>(8 * sizeof(float)));
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        return true;
     }
 
     // Applies EditorUVE's own generic overlay-toolbar state (see ViewportOverlayStateUVE's doc
@@ -1273,7 +1843,7 @@ private:
     }
 
     void ApplyOverlayStateUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
-        engine_.GetServicesUVE().GetRenderer3DUVE().SetShadingModeUVE(overlayState.shadingMode);
+        services_.GetRenderer3DUVE().SetShadingModeUVE(overlayState.shadingMode);
         auto& settings = renderPass_->Settings();
         settings.projection = overlayState.orthographic ? univex::viewport::ProjectionMode::Orthographic
                                                         : univex::viewport::ProjectionMode::Perspective;
@@ -1308,6 +1878,23 @@ private:
         const univex::math::Vec3 viewAxis = NamedViewDirectionUVE(overlayState.view);
         renderPass_->SetGridPlaneUVE(univex::render::GridPlaneFacing(viewAxis.x, viewAxis.y, viewAxis.z));
         gameWorkspaceActive_ = overlayState.gameWorkspaceActive;
+        // Play flies the editing camera (mouse look, WASD) when the scene has no camera of its own;
+        // Stop puts it back where it was, so the level is seen again as it was left - not from
+        // wherever the game's mouse look happened to turn it.
+        {
+            const bool inPlay = editor_.GetPlayModeStateUVE() != UVE::Editor::EditorPlayModeStateUVE::Edit;
+            if (inPlay && !poseBeforePlay_.has_value()) {
+                poseBeforePlay_ = CameraPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
+                                                camera_.IsOrthographic()};
+            } else if (!inPlay && poseBeforePlay_.has_value()) {
+                camera_.CancelAnimation();
+                camera_.SetTarget(poseBeforePlay_->target);
+                camera_.SetYawPitch(poseBeforePlay_->yaw, poseBeforePlay_->pitch);
+                camera_.SetDistance(poseBeforePlay_->distance);
+                camera_.SetOrthographic(poseBeforePlay_->orthographic);
+                poseBeforePlay_.reset();
+            }
+        }
         pointerOverOverlay_ = overlayState.pointerOverOverlay;
         ApplyStudioViewUVE(overlayState);
         // Axis colours drive the gizmo AND the grid's own axis lines, so they go through
@@ -1331,9 +1918,18 @@ private:
         for (const auto& bone : overlayState.bones) {
             bones.push_back(univex::gizmo::BoneOverlayUVE{toVec3(bone.head), toVec3(bone.tail), toVec3(bone.side),
                                                           bone.hasLink, toVec3(bone.linkFrom), bone.skeletonSelected,
-                                                          bone.boneSelected, bone.hasColour, toVec3(bone.colour)});
+                                                          bone.boneSelected, bone.hasColour, toVec3(bone.colour),
+                                                          bone.jointOnly, bone.helper});
         }
-        renderPass_->SetBonesUVE(std::move(bones));
+        if (overlayState.hostDrawsGizmos) {
+            // The shell draws them: keep the same bone shapes, built for the current view.
+            const univex::math::Vec3 view = univex::math::Normalize(camera_.Target() - camera_.Eye());
+            hostBonesMesh_ = univex::gizmo::BuildBoneMeshUVE(bones, view);
+            renderPass_->SetBonesUVE({});
+        } else {
+            hostBonesMesh_.Clear();
+            renderPass_->SetBonesUVE(std::move(bones));
+        }
         // Collision wireframes. One colour for every shape: the point of the overlay is WHERE the
         // collider is, and a per-shape palette would make two boxes on different entities read as
         // two different kinds of thing. The blue-green is deliberately not the selection orange, so
@@ -1359,7 +1955,13 @@ private:
                                              line.highlighted ? kColliderHighlightWidthPixelsUVE
                                                               : kColliderWireWidthPixelsUVE});
             }
-            renderPass_->SetColliderWireframesUVE(std::move(colliderLines));
+            if (overlayState.hostDrawsGizmos) {
+                hostColliderLines_ = std::move(colliderLines);
+                renderPass_->SetColliderWireframesUVE({});
+            } else {
+                hostColliderLines_.clear();
+                renderPass_->SetColliderWireframesUVE(std::move(colliderLines));
+            }
         }
         using UVE::Editor::EditorUVE;
         switch (overlayState.gizmoMode) {
@@ -1503,7 +2105,7 @@ private:
             renderPass_->SetHighlightedGizmoHandleUVE(dragHandle_);
             return;
         }
-        if (navGizmoOwnsGesture || pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
+        if (navGizmoOwnsGesture || pointerOverOverlay_ || !In().hovered) {
             renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
             return;
         }
@@ -1512,11 +2114,11 @@ private:
             renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
             return;
         }
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const ImGuiIO& io = ImGui::GetIO();
+        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
+        const UVE::Editor::EditorViewportInputUVE& io = In();
         univex::math::Vec3 rayOrigin{};
         univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
                      rayOrigin, rayDirection);
         const univex::gizmo::GizmoPickResultUVE pick = univex::gizmo::PickGizmoHandleUVE(
             renderPass_->Mode(), renderPass_->Style(), rayOrigin, rayDirection, placement->pivot,
@@ -1559,8 +2161,8 @@ private:
     }
 
     [[nodiscard]] bool TryBeginGizmoDragUVE(const int width, const int height) {
-        if (pointerOverOverlay_ || !ImGui::IsWindowHovered() ||
-            !ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (pointerOverOverlay_ || !In().hovered ||
+            !In().IsClickedUVE(VpBtnUVE::Left)) {
             return false;
         }
         const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
@@ -1573,11 +2175,11 @@ private:
             return false;
         }
 
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const ImGuiIO& io = ImGui::GetIO();
+        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
+        const UVE::Editor::EditorViewportInputUVE& io = In();
         univex::math::Vec3 rayOrigin{};
         univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
                      rayOrigin, rayDirection);
 
         const univex::gizmo::GizmoPickResultUVE pick = univex::gizmo::PickGizmoHandleUVE(
@@ -1738,12 +2340,12 @@ private:
 
     [[nodiscard]] bool ContinueGizmoDragUVE(const int width, const int height) {
         // Esc abandons the drag and puts the object back, the universal convention.
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+        if (In().IsKeyPressedUVE(VpKeyUVE::Escape)) {
             static_cast<void>(editor_.CancelTransformGestureUVE());
             EndGizmoDragUVE();
             return true;
         }
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (In().IsReleasedUVE(VpBtnUVE::Left)) {
             static_cast<void>(editor_.CommitTransformGestureUVE());
             EndGizmoDragUVE();
             return true;
@@ -1756,11 +2358,11 @@ private:
             return true;
         }
 
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const ImGuiIO& io = ImGui::GetIO();
+        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
+        const UVE::Editor::EditorViewportInputUVE& io = In();
         univex::math::Vec3 rayOrigin{};
         univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.MousePos.x - imageOrigin.x, io.MousePos.y - imageOrigin.y,
+        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
                      rayOrigin, rayDirection);
 
         // The pivot is frozen at the press: it moves with the object during a translate, and
@@ -1850,21 +2452,21 @@ private:
             return;
         }
 
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!pointerOverOverlay_ && ImGui::IsWindowHovered() &&
-            ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!pointerOverOverlay_ && In().hovered &&
+            In().IsClickedUVE(VpBtnUVE::Left)) {
+            const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
             selectionPressActive_ = true;
-            selectionPressX_ = io.MousePos.x - imageOrigin.x;
-            selectionPressY_ = io.MousePos.y - imageOrigin.y;
+            selectionPressX_ = io.mousePos.x - imageOrigin.x;
+            selectionPressY_ = io.mousePos.y - imageOrigin.y;
         }
 
-        if (!selectionPressActive_ || !ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (!selectionPressActive_ || !In().IsReleasedUVE(VpBtnUVE::Left)) {
             return;
         }
         selectionPressActive_ = false;
 
-        const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
+        const UVE::Math::Vector2UVE dragDelta = In().DragDeltaUVE(VpBtnUVE::Left);
         if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
             return; // that was an orbit, not a click
         }
@@ -1876,7 +2478,7 @@ private:
         // a plain click replaces it, and a plain click on nothing clears it. Ctrl-clicking empty
         // space deliberately does nothing rather than clearing, so a mis-aimed extend does not
         // throw away a selection the user spent time building.
-        const bool extend = io.KeyCtrl;
+        const bool extend = io.ctrl;
         if (!pick.hit) {
             if (!extend) {
                 editor_.ClearSelectionUVE();
@@ -1906,21 +2508,21 @@ private:
             return;
         }
 
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!pointerOverOverlay_ && ImGui::IsWindowHovered() &&
-            ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!pointerOverOverlay_ && In().hovered &&
+            In().IsClickedUVE(VpBtnUVE::Right)) {
+            const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
             contextToolbarPressActive_ = true;
-            contextToolbarPressX_ = io.MousePos.x - imageOrigin.x;
-            contextToolbarPressY_ = io.MousePos.y - imageOrigin.y;
+            contextToolbarPressX_ = io.mousePos.x - imageOrigin.x;
+            contextToolbarPressY_ = io.mousePos.y - imageOrigin.y;
         }
 
-        if (!contextToolbarPressActive_ || !ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+        if (!contextToolbarPressActive_ || !In().IsReleasedUVE(VpBtnUVE::Right)) {
             return;
         }
         contextToolbarPressActive_ = false;
 
-        const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right, 0.0F);
+        const UVE::Math::Vector2UVE dragDelta = In().DragDeltaUVE(VpBtnUVE::Right);
         if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
             return; // that was a pan, not a click - leave any existing toolbar state alone
         }
@@ -1951,10 +2553,9 @@ private:
     }
 
     // Mirrors app/main.cpp's own GLFW mouse-button/scroll wiring (left-drag orbits, middle/right
-    // drag pans, wheel dollies) but sourced from ImGui's IO instead of GLFW callbacks, since input
-    // flows through ImGui while the viewport is docked. Called from inside EditorUVE's own
-    // ImGui::Begin("Viewport")/End() block (via the render callback this class provides to
-    // SetViewportPanelRendererUVE), so ImGui::IsWindowHovered() here correctly reports hover over
+    // drag pans, wheel dollies) but sourced from the view's per-frame input (EditorViewportInputUVE)
+    // instead of GLFW callbacks, since the editor's UI routes input to the view. Called from the
+    // render callback this class provides to SetViewportPanelRendererUVE, so In().hovered here correctly reports hover over
     // the Viewport panel specifically. Known simplification versus the GLFW demo: a drag that
     // began inside the panel stops orbiting the moment the cursor leaves it, rather than
     // continuing to track a global drag - acceptable for this integration slice.
@@ -1969,13 +2570,13 @@ private:
         const bool isMouseCaptured = editor_.IsGameMouseCapturedUVE();
 
         if (isGamePlaying && isMouseCaptured) {
-            const ImGuiIO& io = ImGui::GetIO();
+            const UVE::Editor::EditorViewportInputUVE& io = In();
             const auto& prefs = editor_.GetExtendedPreferencesUVE();
             const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
 
             // Smooth free-look from mouse delta when captured in game mode
-            if (std::abs(io.MouseDelta.x) > 0.0F || std::abs(io.MouseDelta.y) > 0.0F) {
-                camera_.Orbit(io.MouseDelta.x * orbitSens, io.MouseDelta.y * orbitSens);
+            if (std::abs(io.mouseDelta.x) > 0.0F || std::abs(io.mouseDelta.y) > 0.0F) {
+                camera_.Orbit(io.mouseDelta.x * orbitSens, io.mouseDelta.y * orbitSens);
                 editor_.NotifyViewportOrbitedUVE();
             }
 
@@ -1999,17 +2600,17 @@ private:
                 univex::math::Vec3 right = univex::math::Normalize(univex::math::Cross(forward, up));
 
                 univex::math::Vec3 moveDir{0.0F, 0.0F, 0.0F};
-                if (ImGui::IsKeyDown(ImGuiKey_W)) { moveDir = moveDir + forward; }
-                if (ImGui::IsKeyDown(ImGuiKey_S)) { moveDir = moveDir - forward; }
-                if (ImGui::IsKeyDown(ImGuiKey_D)) { moveDir = moveDir + right; }
-                if (ImGui::IsKeyDown(ImGuiKey_A)) { moveDir = moveDir - right; }
-                if (ImGui::IsKeyDown(ImGuiKey_Space)) { moveDir = moveDir + up; }
-                if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_C)) { moveDir = moveDir - up; }
+                if (In().IsKeyDownUVE(VpKeyUVE::W)) { moveDir = moveDir + forward; }
+                if (In().IsKeyDownUVE(VpKeyUVE::S)) { moveDir = moveDir - forward; }
+                if (In().IsKeyDownUVE(VpKeyUVE::D)) { moveDir = moveDir + right; }
+                if (In().IsKeyDownUVE(VpKeyUVE::A)) { moveDir = moveDir - right; }
+                if (In().IsKeyDownUVE(VpKeyUVE::Space)) { moveDir = moveDir + up; }
+                if (In().IsKeyDownUVE(VpKeyUVE::LeftCtrl) || In().IsKeyDownUVE(VpKeyUVE::C)) { moveDir = moveDir - up; }
 
                 const float moveLen = univex::math::Length(moveDir);
                 if (moveLen > 0.001F) {
                     const float flySpeed =
-                        (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 22.0F : 8.0F) * std::max(0.001F, io.DeltaTime);
+                        (In().IsKeyDownUVE(VpKeyUVE::LeftShift) ? 22.0F : 8.0F) * std::max(0.001F, io.deltaTime);
                     moveDir = moveDir * (flySpeed / moveLen);
                     camera_.SetTarget(camera_.Target() + moveDir);
                 }
@@ -2019,7 +2620,7 @@ private:
 
         // Same overlay guard as selection and the handle drag: pressing a toolbar bubble must not
         // also start orbiting the scene behind it.
-        if (pointerOverOverlay_ || !ImGui::IsWindowHovered()) {
+        if (pointerOverOverlay_ || !In().hovered) {
             return;
         }
         const auto& prefs = editor_.GetExtendedPreferencesUVE();
@@ -2027,20 +2628,20 @@ private:
         const float panSens = static_cast<float>(std::clamp(prefs.panSensitivity, 0.05, 10.0));
         const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
 
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!suppressOrbit && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0F)) {
-            camera_.Orbit(io.MouseDelta.x * orbitSens, io.MouseDelta.y * orbitSens);
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!suppressOrbit && In().IsDraggingUVE(VpBtnUVE::Left, 0.0F)) {
+            camera_.Orbit(io.mouseDelta.x * orbitSens, io.mouseDelta.y * orbitSens);
             editor_.NotifyViewportOrbitedUVE();
-        } else if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0F) ||
-                   ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0F)) {
-            camera_.Pan(io.MouseDelta.x * panSens, io.MouseDelta.y * panSens, framebufferHeight);
+        } else if (In().IsDraggingUVE(VpBtnUVE::Middle, 0.0F) ||
+                   In().IsDraggingUVE(VpBtnUVE::Right, 0.0F)) {
+            camera_.Pan(io.mouseDelta.x * panSens, io.mouseDelta.y * panSens, framebufferHeight);
         }
-        if (io.MouseWheel != 0.0F) {
-            camera_.Dolly(io.MouseWheel * zoomSens);
+        if (io.wheel != 0.0F) {
+            camera_.Dolly(io.wheel * zoomSens);
         }
     }
 
-    // Unreal's Ctrl+digit (store) / digit (restore) viewport bookmarks, plus F-to-focus - the
+    // The standard Ctrl+digit (store) / digit (restore) viewport bookmarks, plus F-to-focus - the
     // live consumer of Marker3D in the real editor. Same hovered-panel routing
     // UpdateCameraFromMouseUVE() uses, and deliberately inert while a text field owns the
     // keyboard so typing a digit into an input never hijacks the camera. All bookmark state and
@@ -2051,24 +2652,24 @@ private:
     // have no keypad. Alt keeps them clear of the bookmarks, which own plain and Ctrl+digit.
     // Same hovered-panel and text-input routing as the bookmarks.
     void UpdateViewportViewHotkeysUVE() {
-        const ImGuiIO& io = ImGui::GetIO();
-        if (!ImGui::IsWindowHovered() || io.WantTextInput) {
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!In().hovered || io.wantTextInput) {
             return;
         }
         struct DigitKeysUVE {
             int digit;
-            ImGuiKey keypad;
-            ImGuiKey row;
+            VpKeyUVE keypad;
+            VpKeyUVE row;
         };
         static constexpr DigitKeysUVE kKeysUVE[] = {
-            {1, ImGuiKey_Keypad1, ImGuiKey_1},
-            {3, ImGuiKey_Keypad3, ImGuiKey_3},
-            {5, ImGuiKey_Keypad5, ImGuiKey_5},
-            {7, ImGuiKey_Keypad7, ImGuiKey_7},
+            {1, VpKeyUVE::Keypad1, VpKeyUVE::Num1},
+            {3, VpKeyUVE::Keypad3, VpKeyUVE::Num3},
+            {5, VpKeyUVE::Keypad5, VpKeyUVE::Num5},
+            {7, VpKeyUVE::Keypad7, VpKeyUVE::Num7},
         };
         for (const DigitKeysUVE& keys : kKeysUVE) {
-            const bool pressed = ImGui::IsKeyPressed(keys.keypad, false) ||
-                                 (io.KeyAlt && ImGui::IsKeyPressed(keys.row, false));
+            const bool pressed = In().IsKeyPressedUVE(keys.keypad) ||
+                                 (io.alt && In().IsKeyPressedUVE(keys.row));
             if (!pressed) {
                 continue;
             }
@@ -2076,28 +2677,28 @@ private:
                 editor_.SetViewportOrthographicUVE(!editor_.IsViewportOrthographicUVE());
                 continue;
             }
-            if (const auto view = UVE::Editor::EditorUVE::GetViewportViewForKeypadDigitUVE(keys.digit, io.KeyCtrl)) {
+            if (const auto view = UVE::Editor::EditorUVE::GetViewportViewForKeypadDigitUVE(keys.digit, io.ctrl)) {
                 editor_.RequestViewportViewUVE(*view);
             }
         }
     }
 
     void UpdateViewportBookmarkHotkeysUVE() {
-        const ImGuiIO& io = ImGui::GetIO();
+        const UVE::Editor::EditorViewportInputUVE& io = In();
         // Alt+digit belongs to the named views (UpdateViewportViewHotkeysUVE).
-        if (!ImGui::IsWindowHovered() || io.WantTextInput || io.KeyAlt) {
+        if (!In().hovered || io.wantTextInput || io.alt) {
             return;
         }
-        static constexpr ImGuiKey kDigitKeysUVE[] = {
-            ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5,
-            ImGuiKey_6, ImGuiKey_7, ImGuiKey_8, ImGuiKey_9, ImGuiKey_0,
+        static constexpr VpKeyUVE kDigitKeysUVE[] = {
+            VpKeyUVE::Num1, VpKeyUVE::Num2, VpKeyUVE::Num3, VpKeyUVE::Num4, VpKeyUVE::Num5,
+            VpKeyUVE::Num6, VpKeyUVE::Num7, VpKeyUVE::Num8, VpKeyUVE::Num9, VpKeyUVE::Num0,
         };
         for (std::size_t order = 0U; order < 10U; ++order) {
             const std::size_t slot = (order + 1U) % 10U; // 1..9,0 like a real keyboard row
-            if (!ImGui::IsKeyPressed(kDigitKeysUVE[order], false)) {
+            if (!In().IsKeyPressedUVE(kDigitKeysUVE[order])) {
                 continue;
             }
-            if (io.KeyCtrl) {
+            if (io.ctrl) {
                 const univex::math::Vec3 target = camera_.Target();
                 const bool stored = editor_.SetViewportBookmarkUVE(
                     slot, UVE::Editor::EditorViewportBookmarkUVE{
@@ -2112,7 +2713,7 @@ private:
             const std::optional<UVE::Editor::EditorViewportBookmarkUVE> bookmark =
                 editor_.GetViewportBookmarkUVE(slot);
             if (!bookmark.has_value()) {
-                continue; // an empty slot restores nothing - Unreal does the same
+                continue; // an empty slot restores nothing - other editors do the same
             }
             editor_.NotifyViewportOrbitedUVE(); // a restored pose is a free view, not a named one
             camera_.CancelAnimation();
@@ -2122,7 +2723,7 @@ private:
         }
         // Goes through the editor like the hierarchy's Focus in Viewport, so both share
         // FocusCameraOnEntityUVE() and the key does nothing for an object that cannot be focused.
-        if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl) {
+        if (In().IsKeyPressedUVE(VpKeyUVE::F) && !io.ctrl) {
             static_cast<void>(editor_.RequestViewportFocusUVE(editor_.GetSelectedEntityUVE()));
         }
     }
@@ -2146,7 +2747,7 @@ private:
 
     // Returns true and fills the nav-local position if the cursor is over the orientation gizmo -
     // ports app/main.cpp's own CursorOverNavGizmo() (the standalone GLFW demo, where this already
-    // works) into the ImGui-hosted real editor. `fbX`/`fbY` are pixel coordinates relative to the
+    // works) into the real editor. `fbX`/`fbY` are pixel coordinates relative to the
     // Viewport panel's own rendered image top-left, matching NavViewportRectFor()'s own convention.
     [[nodiscard]] bool CursorOverNavGizmoUVE(int width, int height, float fbX, float fbY,
                                             float& outLocalX, float& outLocalY) const {
@@ -2175,20 +2776,20 @@ private:
 
     // Handles both nav-gizmo gestures - drag-anywhere-on-it orbits exactly like dragging the scene,
     // click-a-ball snaps the camera to look down that axis - mirroring app/main.cpp's own
-    // OnMouseButton()/OnCursorPos() handling for the standalone demo, just driven by ImGui's per-
-    // frame IO instead of GLFW press/release/move callbacks. Returns true while this gesture owns
+    // OnMouseButton()/OnCursorPos() handling for the standalone demo, just driven by the view's per-
+    // frame input instead of GLFW press/release/move callbacks. Returns true while this gesture owns
     // the left mouse button, so UpdateCameraFromMouseUVE() knows to suppress its own generic orbit.
     [[nodiscard]] bool UpdateNavGizmoInteractionUVE(const int width, const int height) {
-        if (!ImGui::IsWindowHovered() && !navDragging_) {
+        if (!In().hovered && !navDragging_) {
             return false;
         }
-        const ImGuiIO& io = ImGui::GetIO();
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const float fbX = io.MousePos.x - imageOrigin.x;
-        const float fbY = io.MousePos.y - imageOrigin.y;
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
+        const float fbX = io.mousePos.x - imageOrigin.x;
+        const float fbY = io.mousePos.y - imageOrigin.y;
 
         if (!navDragging_) {
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            if (In().IsClickedUVE(VpBtnUVE::Left)) {
                 float localX = 0.0F;
                 float localY = 0.0F;
                 if (CursorOverNavGizmoUVE(width, height, fbX, fbY, localX, localY)) {
@@ -2207,17 +2808,17 @@ private:
         // matching the demo's own "press-relative slop" check exactly (not per-frame delta, which
         // would never exceed the threshold for a series of tiny frame-to-frame movements).
         if (!navDragMoved_) {
-            const ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0F);
+            const UVE::Math::Vector2UVE dragDelta = In().DragDeltaUVE(VpBtnUVE::Left);
             if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
                 navDragMoved_ = true;
             }
         }
         if (navDragMoved_) {
-            camera_.Orbit(io.MouseDelta.x, io.MouseDelta.y);
+            camera_.Orbit(io.mouseDelta.x, io.mouseDelta.y);
             editor_.NotifyViewportOrbitedUVE();
         }
 
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (In().IsReleasedUVE(VpBtnUVE::Left)) {
             if (!navDragMoved_) {
                 const univex::gizmo::NavPickResult pick = univex::gizmo::PickNavGizmo(
                     renderPass_->Style(), univex::app::ViewportRenderPass::NavViewMatrix(camera_),
@@ -2240,6 +2841,12 @@ private:
     // The last focus request applied; see ViewportOverlayStateUVE::focusRequestSerial.
     std::uint32_t appliedFocusRequestSerial_ = 0U;
     UVE::Core::EngineCoreUVE& engine_;
+
+public:
+    [[nodiscard]] const UVE::Core::EngineServicesUVE* ServicesUVE() const noexcept { return &services_; }
+
+private:
+    UVE::Core::EngineServicesUVE& services_;
     UVE::Scene::IEntityManagerUVE& entityManager_;
     univex::integration::EditorMeshLayerUVE meshLayer_;
     UVE::Editor::EditorUVE::ViewportContextUVE context_;
@@ -2259,8 +2866,72 @@ private:
         bool orthographic = false;
     };
     std::optional<CameraPoseUVE> poseBeforeStudio_;
+    /// The editing camera as Play found it; Stop restores it.
+    std::optional<CameraPoseUVE> poseBeforePlay_;
     std::optional<CameraPoseUVE> poseBeforePreview_;
     bool previewing_ = false;
+
+    // The fly into a Camera3D (and back out): the editor camera eased between two poses.
+    static constexpr float kCameraFlightSecondsUVE = 0.45F;
+    struct CameraFlightPoseUVE final {
+        univex::math::Vec3 target{};
+        float yaw = 0.0F;
+        float pitch = 0.0F;
+        float distance = 1.0F;
+        float fovY = 0.87F;
+    };
+    struct CameraFlightUVE final {
+        CameraFlightPoseUVE from;
+        CameraFlightPoseUVE to;
+        float t = 0.0F;
+        bool entering = true;
+    };
+    std::optional<CameraFlightUVE> flight_;
+    float fovBeforePreview_ = 0.87F;
+    UVE::Scene::EntityUVE lastPreviewCamera_ = UVE::Scene::kInvalidEntityUVE;
+
+    [[nodiscard]] CameraFlightPoseUVE CurrentFlightPoseUVE() const {
+        return CameraFlightPoseUVE{camera_.Target(), camera_.Yaw(), camera_.Pitch(), camera_.Distance(),
+                                   camera_.Settings().fovYRadians};
+    }
+    void ApplyFlightPoseUVE(const CameraFlightPoseUVE& pose) {
+        camera_.SetTarget(pose.target);
+        camera_.SetYawPitch(pose.yaw, pose.pitch);
+        camera_.SetDistance(pose.distance);
+        camera_.Settings().fovYRadians = pose.fovY;
+    }
+    /// The editor-camera pose that sees what `entity` (a Camera3D) sees: its eye at the camera,
+    /// looking down its -Z, with its field of view.
+    [[nodiscard]] std::optional<CameraFlightPoseUVE> CameraEntityPoseUVE(const UVE::Scene::EntityUVE entity) const {
+        if (entity == UVE::Scene::kInvalidEntityUVE || !entityManager_.IsAliveUVE(entity) ||
+            !entityManager_.HasComponentUVE<UVE::Scene::WorldTransformComponentUVE>(entity)) {
+            return std::nullopt;
+        }
+        const auto& world = entityManager_.GetComponentUVE<UVE::Scene::WorldTransformComponentUVE>(entity);
+        const UVE::Math::Vector3UVE f =
+            UVE::Math::RotateVectorUVE(world.worldRotation, UVE::Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+        const float length = std::sqrt(f.x * f.x + f.y * f.y + f.z * f.z);
+        if (!(length > 1e-5F)) {
+            return std::nullopt;
+        }
+        const univex::math::Vec3 forward{f.x / length, f.y / length, f.z / length};
+        const float distance = std::max(1.0F, camera_.Distance() * 0.25F);
+        const univex::math::Vec3 eye{world.worldPosition.x, world.worldPosition.y, world.worldPosition.z};
+        CameraFlightPoseUVE pose;
+        pose.target = eye + forward * distance;
+        pose.distance = distance;
+        // Eye = target + offset * distance with offset = -forward (OrbitCamera::Eye()).
+        pose.pitch = std::asin(std::clamp(-forward.y, -1.0F, 1.0F));
+        pose.yaw = std::atan2(-forward.z, -forward.x);
+        pose.fovY = camera_.Settings().fovYRadians;
+        if (entityManager_.HasComponentUVE<UVE::Scene::CameraComponentUVE>(entity)) {
+            const float degrees = entityManager_.GetComponentUVE<UVE::Scene::CameraComponentUVE>(entity).fieldOfViewDegrees;
+            if (degrees > 1.0F && degrees < 179.0F) {
+                pose.fovY = degrees * 3.14159265F / 180.0F;
+            }
+        }
+        return pose;
+    }
     // Set each frame by ApplyOverlayStateUVE(), read by UpdateSelectionGizmoUVE() so it can force
     // the transform gizmo off while the Game workspace tab is active (see ApplyOverlayStateUVE's
     // own comment - it already forces the grid off directly, but the gizmo's visibility is decided
@@ -2287,6 +2958,227 @@ private:
     // frozen at the press: the object moves during the drag, and re-reading them each frame would
     // make the gesture chase its own result.
     std::optional<univex::math::Vec3> gizmoPivot_;
+    // Gizmo geometry kept for a shell that draws the gizmos itself (overlayState.hostDrawsGizmos).
+    univex::gizmo::GizmoMesh hostOverlayMesh_;
+    univex::gizmo::GizmoMesh hostBonesMesh_;
+    std::vector<univex::gizmo::GizmoLine> hostColliderLines_;
+    std::size_t hostOverlayOccludedFrom_ = static_cast<std::size_t>(-1);
+
+    // Reports the view's camera, the selection gizmo pivot and the object gizmo geometry through the
+    // overlay state's output fields, so a shell can draw the gizmos over the image.
+    void ExportViewForHostUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState, const int width,
+                              const int height, const bool wantOverlay) {
+        auto& cam = overlayState.viewCamera;
+        const univex::math::Vec3 eye = camera_.Eye();
+        const univex::math::Vec3 forward = univex::math::Normalize(camera_.Target() - eye);
+        univex::math::Vec3 right = univex::math::Normalize(univex::math::Cross(forward, camera_.Up()));
+        const univex::math::Vec3 up = univex::math::Normalize(univex::math::Cross(right, forward));
+        cam.valid = true;
+        cam.eye = {eye.x, eye.y, eye.z};
+        cam.forward = {forward.x, forward.y, forward.z};
+        cam.right = {right.x, right.y, right.z};
+        cam.up = {up.x, up.y, up.z};
+        cam.fovYRadians = camera_.Settings().fovYRadians;
+        cam.nearPlane = camera_.NearPlane();
+        cam.orthographic = camera_.IsOrthographic();
+        cam.orthographicHalfHeight = camera_.OrthographicHalfHeight();
+        cam.width = static_cast<float>(width);
+        cam.height = static_cast<float>(height);
+        overlayState.gizmoPivotValid = gizmoPivot_.has_value();
+        if (gizmoPivot_.has_value()) {
+            overlayState.gizmoPivot = {gizmoPivot_->x, gizmoPivot_->y, gizmoPivot_->z};
+        }
+        overlayState.gizmoLines.clear();
+        overlayState.gizmoTriangles.clear();
+        if (!overlayState.hostDrawsGizmos || !wantOverlay) {
+            return;
+        }
+        const auto a3 = [](const univex::math::Vec3& v) { return std::array<float, 3>{v.x, v.y, v.z}; };
+        const auto append = [&](const univex::gizmo::GizmoMesh& mesh) {
+            for (const univex::gizmo::GizmoLine& line : mesh.lines) {
+                overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx});
+            }
+            for (const univex::gizmo::GizmoTriangle& tri : mesh.triangles) {
+                overlayState.gizmoTriangles.push_back({a3(tri.a), a3(tri.b), a3(tri.c), a3(tri.color), tri.alpha});
+            }
+        };
+        append(hostOverlayMesh_);
+        // Collision shapes hide behind the mesh they wrap, as in the GL path; a faint x-ray of every
+        // edge made a solid box read as glass.
+        for (std::size_t i = hostOverlayOccludedFrom_; i < hostOverlayMesh_.lines.size(); ++i) {
+            overlayState.gizmoLines[overlayState.gizmoLines.size() - hostOverlayMesh_.lines.size() + i].occluded = true;
+        }
+        append(hostBonesMesh_);
+        for (const univex::gizmo::GizmoLine& line : hostColliderLines_) {
+            overlayState.gizmoLines.push_back({a3(line.a), a3(line.b), a3(line.color), line.widthPx, true});
+        }
+    }
+    void ExportGridForHostUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState, const bool want) {
+        auto& out = overlayState.hostGrid;
+        const univex::render::GridSettings& grid = renderPass_->Grid().Settings();
+        out.visible = want && renderPass_->Settings().viewGrid;
+        out.plane = static_cast<int>(grid.plane);
+        out.baseSpacing = grid.baseSpacing;
+        out.targetCellPixels = grid.targetCellPixels;
+        out.lineWidth = grid.lineWidthPixels;
+        out.axisWidth = grid.axisWidthPixels;
+        const auto rgb = [](const univex::render::GridColor& c) { return std::array<float, 3>{c.r, c.g, c.b}; };
+        out.thin = rgb(grid.thinColor);
+        out.mid = rgb(grid.midColor);
+        out.thick = rgb(grid.thickColor);
+        out.thinIntensity = grid.thinIntensity;
+        out.midIntensity = grid.midIntensity;
+        out.thickIntensity = grid.thickIntensity;
+        out.axis = {rgb(grid.axisColorX), rgb(grid.axisColorY), rgb(grid.axisColorZ)};
+        out.fadeStart = grid.fadeStartDistanceScale;
+        out.fadeEnd = grid.fadeEndDistanceScale;
+        out.opacity = grid.opacity;
+    }
+
+    // The renderer's scene depth turned into what the shell tests against: the distance along the
+    // view's forward axis from the editor camera's eye, at half resolution (the nearest of each 2x2
+    // block, so thin geometry still hides what is behind it), read back top-down.
+    void ExportSceneDepthForHostUVE(const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+                                    const int width, const int height) {
+        overlayState.sceneDepth.clear();
+        overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
+        const UVE::Render::SceneDepthExportUVE depth =
+            services_.GetRenderer3DUVE().GetLastSceneDepthUVE();
+        auto* const glDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
+        if (!depth.valid || glDevice == nullptr || depth.width == 0U || depth.height == 0U || !EnsureHostDepthUVE(width, height)) {
+            return;
+        }
+        const GLuint depthTexture = static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture));
+        if (depthTexture == 0U) {
+            return;
+        }
+        GLint previousDrawFbo = 0;
+        GLint previousReadFbo = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousDrawFbo);
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFbo);
+        std::array<GLint, 4> previousViewport{};
+        glGetIntegerv(GL_VIEWPORT, previousViewport.data());
+        const GLboolean depthTest = glIsEnabled(GL_DEPTH_TEST);
+        const GLboolean blend = glIsEnabled(GL_BLEND);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, hostDepthFbo_);
+        glViewport(0, 0, hostDepthWidth_, hostDepthHeight_);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        hostDepthProgram_->Use();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, depthTexture);
+        glUniform1i(hostDepthProgram_->UniformLocation("uDepth"), 0);
+        glUniformMatrix4fv(hostDepthProgram_->UniformLocation("uInvViewProj"), 1, GL_TRUE,
+                           &depth.inverseViewProjection.m[0][0]);
+        const univex::math::Vec3 eye = camera_.Eye();
+        const univex::math::Vec3 forward = univex::math::Normalize(camera_.Target() - eye);
+        glUniform3f(hostDepthProgram_->UniformLocation("uEye"), eye.x, eye.y, eye.z);
+        glUniform3f(hostDepthProgram_->UniformLocation("uForward"), forward.x, forward.y, forward.z);
+        glUniform2f(hostDepthProgram_->UniformLocation("uOutSize"), static_cast<float>(hostDepthWidth_),
+                    static_cast<float>(hostDepthHeight_));
+        glBindVertexArray(meshBlitVao_);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        // Read back through two pixel-pack buffers in turn: this frame's depth is copied on the GPU
+        // into one while last frame's, long finished, is read from the other. The CPU never waits
+        // for the GPU, and the gizmos' occlusion is one frame behind, which nobody can see.
+        const std::size_t count = static_cast<std::size_t>(hostDepthWidth_) * static_cast<std::size_t>(hostDepthHeight_);
+        const auto bytes = static_cast<GLsizeiptr>(count * sizeof(float));
+        if (hostDepthPbo_[0] == 0U) {
+            glGenBuffers(2, hostDepthPbo_.data());
+        }
+        for (std::size_t i = 0U; i < 2U; ++i) {
+            if (hostDepthPboBytes_[i] != bytes) {
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, hostDepthPbo_[i]);
+                glBufferData(GL_PIXEL_PACK_BUFFER, bytes, nullptr, GL_STREAM_READ);
+                hostDepthPboBytes_[i] = bytes;
+                hostDepthPboFilled_[i] = false;
+            }
+        }
+        const std::size_t write = hostDepthPboNext_;
+        const std::size_t read = 1U - write;
+        GLint packAlignment = 4;
+        glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
+        glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, hostDepthFbo_);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, hostDepthPbo_[write]);
+        glReadPixels(0, 0, hostDepthWidth_, hostDepthHeight_, GL_RED, GL_FLOAT, nullptr);
+        hostDepthPboFilled_[write] = true;
+        glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
+        if (hostDepthPboFilled_[read]) {
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, hostDepthPbo_[read]);
+            if (const auto* const rows = static_cast<const float*>(glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, bytes, GL_MAP_READ_BIT))) {
+                overlayState.sceneDepth.resize(count);
+                const std::size_t stride = static_cast<std::size_t>(hostDepthWidth_);
+                for (int y = 0; y < hostDepthHeight_; ++y) {
+                    std::copy_n(rows + static_cast<std::size_t>(hostDepthHeight_ - 1 - y) * stride, stride,
+                                overlayState.sceneDepth.data() + static_cast<std::size_t>(y) * stride);
+                }
+                glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+                overlayState.sceneDepthWidth = hostDepthWidth_;
+                overlayState.sceneDepthHeight = hostDepthHeight_;
+            }
+        }
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        hostDepthPboNext_ = read;
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFbo));
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFbo));
+        glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+        if (depthTest == GL_TRUE) glEnable(GL_DEPTH_TEST);
+        if (blend == GL_TRUE) glEnable(GL_BLEND);
+    }
+
+    [[nodiscard]] bool EnsureHostDepthUVE(const int width, const int height) {
+        if (!hostDepthProgram_.has_value()) {
+            std::string error;
+            hostDepthProgram_ = univex::render::ShaderProgram::Build(kMeshBlitVertexShaderUVE,
+                                                                     kHostDepthFragmentShaderUVE, error);
+            if (!hostDepthProgram_.has_value()) {
+                UVE_ERROR("uve_editor_app: viewport depth export shader build failed: {}", error);
+                hostDepthFailed_ = true;
+            }
+        }
+        if (hostDepthFailed_ || !hostDepthProgram_.has_value() || meshBlitVao_ == 0U) {
+            return false;
+        }
+        const int w = std::max(1, (width + 1) / 2);
+        const int h = std::max(1, (height + 1) / 2);
+        if (hostDepthFbo_ != 0U && w == hostDepthWidth_ && h == hostDepthHeight_) {
+            return true;
+        }
+        if (hostDepthTexture_ == 0U) glGenTextures(1, &hostDepthTexture_);
+        if (hostDepthFbo_ == 0U) glGenFramebuffers(1, &hostDepthFbo_);
+        glBindTexture(GL_TEXTURE_2D, hostDepthTexture_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, w, h, 0, GL_RED, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        GLint previousFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, hostDepthFbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hostDepthTexture_, 0);
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
+        hostDepthWidth_ = complete ? w : 0;
+        hostDepthHeight_ = complete ? h : 0;
+        return complete;
+    }
+
+    std::optional<univex::render::ShaderProgram> hostDepthProgram_;
+    bool hostDepthFailed_ = false;
+    GLuint hostDepthFbo_ = 0U;
+    GLuint hostDepthTexture_ = 0U;
+    std::array<GLuint, 2> hostDepthPbo_{};
+    std::array<GLsizeiptr, 2> hostDepthPboBytes_{};
+    std::array<bool, 2> hostDepthPboFilled_{};
+    std::size_t hostDepthPboNext_ = 0U;
+    int hostDepthWidth_ = 0;
+    int hostDepthHeight_ = 0;
+
     univex::gizmo::GizmoHandleUVE dragHandle_ = univex::gizmo::GizmoHandleUVE::None;
     univex::gizmo::GizmoMode dragMode_ = univex::gizmo::GizmoMode::Move;
     univex::math::Vec3 dragPivot_{};
@@ -2306,6 +3198,10 @@ private:
     // one (created only inside its "UIOverlay" render-graph pass, which this panel deliberately
     // never runs - see EditorMeshLayerUVE::RenderUVE()'s own call site comment).
     GLuint uiFontAtlasTexture_ = 0U;
+    std::optional<univex::render::ShaderProgram> uiOverlayProgram_;
+    GLuint uiOverlayVao_ = 0U;
+    GLuint uiOverlayVbo_ = 0U;
+    std::vector<float> uiOverlayVertices_;
     std::optional<UVE::App::Viewport2DIntegration::Viewport2DHostUVE> viewport2dHost_;
 
     // Gizmo overlay geometry cache (WP-P4: eliminates per-frame heap churn while orbiting/swiping).
@@ -2319,6 +3215,9 @@ private:
     std::vector<UVE::Scene::EntityUVE> lastSelectedEntities_;
     UVE::Scene::EntityUVE lastSelectedEntity_ = UVE::Scene::kInvalidEntityUVE;
     std::vector<univex::render::SelectionOutlineVertex> cachedSelectionTriangles_;
+    /// The last selection mask read back, and what it was read for (camera, size, triangles).
+    std::vector<std::uint8_t> lastMask_;
+    std::uint64_t lastMaskKey_ = 0U;
     struct SelectedEntitySnapshotUVE {
         UVE::Scene::EntityUVE entity;
         UVE::Math::Vector3UVE position;
@@ -2352,13 +3251,12 @@ struct EditorViewportBackendsUVE::ImplUVE final {
     static constexpr std::size_t kContextCountUVE =
         static_cast<std::size_t>(Editor::EditorUVE::ViewportContextUVE::Count);
 
-    ImplUVE(Editor::EditorUVE& editor, Core::EngineCoreUVE& engine) {
-        for (std::size_t index = 0U; index < backends.size(); ++index) {
-            backends[index].emplace(editor, engine,
-                                    static_cast<Editor::EditorUVE::ViewportContextUVE>(index));
-        }
-    }
+    ImplUVE(Editor::EditorUVE& editor, Core::EngineCoreUVE& engine) : editor(editor), engine(engine) {}
 
+    Editor::EditorUVE& editor;
+    Core::EngineCoreUVE& engine;
+    // Built on first use, for the scene of the document active when the view is drawn, and built
+    // again when that changes (the Entity Editor's view draws the entity's own scene).
     std::array<std::optional<ViewportPanelBackendUVE>, kContextCountUVE> backends;
 };
 
@@ -2368,16 +3266,30 @@ EditorViewportBackendsUVE::EditorViewportBackendsUVE(Editor::EditorUVE& editor,
 
 EditorViewportBackendsUVE::~EditorViewportBackendsUVE() = default;
 
+void EditorViewportBackendsUVE::ForgetServicesUVE(const Core::EngineServicesUVE& services) {
+    for (std::optional<ViewportPanelBackendUVE>& backend : m_impl->backends) {
+        if (backend.has_value() && backend->ServicesUVE() == &services) {
+            backend.reset();
+        }
+    }
+}
+
 std::uint64_t EditorViewportBackendsUVE::RenderUVE(
     const Editor::EditorUVE::ViewportContextUVE context,
     const Math::Vector2UVE& availableSize,
     Math::Vector2UVE& outUsedSize,
     const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
     const std::size_t index = static_cast<std::size_t>(context);
-    if (index >= m_impl->backends.size() || !m_impl->backends[index].has_value()) {
+    if (index >= m_impl->backends.size()) {
         return 0U;
     }
-    return m_impl->backends[index]->RenderUVE(availableSize, outUsedSize, overlayState);
+    std::optional<ViewportPanelBackendUVE>& backend = m_impl->backends[index];
+    Core::EngineServicesUVE& services = m_impl->editor.GetActiveServicesUVE();
+    if (!backend.has_value() || backend->ServicesUVE() != &services) {
+        backend.reset();
+        backend.emplace(m_impl->editor, m_impl->engine, services, context);
+    }
+    return backend->RenderUVE(availableSize, outUsedSize, overlayState);
 }
 
 } // namespace UVE::App

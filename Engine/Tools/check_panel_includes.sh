@@ -1,6 +1,6 @@
 #!/bin/bash
 # Checks that every editor panel translation unit includes a standard header for each std::
-# facility it names, instead of relying on one arriving transitively through imgui.h or a
+# facility it names, instead of relying on one arriving transitively through a UI header or a
 # component header.
 #
 # WHY THIS EXISTS. Splitting editor_uve.cpp into per-panel files moved code away from the
@@ -21,7 +21,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 INC=$(find Engine -type d -name Expose | sed 's/^/-I/' | tr '\n' ' ')
 fail=0
-for f in Engine/Editor/EditorCore/Internal/editor_panel_*.cpp; do
+# The panel TUs, and the PRISM windows in shell/ and its per-editor folders (blueprint/,
+# anim_graph/, widget/, montage/, retarget/).
+for f in Engine/Editor/EditorCore/Internal/editor_panel_*.cpp $(find Engine/Editor/EditorCore/Internal/shell -name '*.cpp' | sort); do
   # list every std:: symbol used, and confirm a matching standard header is included
   while read -r sym hdr; do
     if grep -q "std::$sym\b" "$f" && ! grep -q "#include <$hdr>" "$f"; then

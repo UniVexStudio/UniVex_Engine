@@ -18,10 +18,10 @@
 //
 //   UVE_FRAMEDUMP         output path (.ppm). Several frames -> "<stem>_<frame>.ppm".
 //   UVE_FRAMEDUMP_FRAMES  1-based swap indices to dump: "8", "4,8,30" or "every:10". Default "3"
-//                         (ImGui docking layouts need a couple of frames to settle).
+//                         (the editor's layout needs a couple of frames to settle).
 //   UVE_FRAMEDUMP_CLOSE   after this swap call glfwSetWindowShouldClose(window, 1). Unset = never.
 //   UVE_FRAMEDUMP_WINDOWS "main" (default) counts and dumps only the first window that swaps - the
-//                         application window. ImGui multi-viewport mode swaps one extra GLFW window
+//                         application window. A multi-window editor swaps one extra GLFW window
 //                         per floating panel each frame; "all" dumps those too as "<stem>_w<N>.ppm"
 //                         (N = order of first appearance) on the same frames.
 //   UVE_FRAMEDUMP_QUIET   silence the per-dump stderr line.
@@ -233,7 +233,7 @@ void glfwSwapBuffers(GLFWwindow* window) {
         if (g.closeAfter > 0 && frame >= g.closeAfter) g.setShouldClose(window, 1);
         return;
     }
-    // Secondary (ImGui viewport) windows swap after the main one within the same frame, so they
+    // Secondary windows swap after the main one within the same frame, so they
     // belong to the frame the main window is about to start: report them as g.swapCount + 1.
     if (g.allWindows && windowIndex > 0 && WantsFrame(g.swapCount + 1)) Dump(window, g.swapCount + 1, windowIndex);
     g.realSwap(window);

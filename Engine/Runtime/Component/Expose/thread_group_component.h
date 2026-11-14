@@ -11,7 +11,7 @@ namespace UVE::Scene {
 /// The engine already has the machinery to run work off the main thread - ThreadPoolUVE,
 /// JobGraphUVE and its counters, FrameSchedulerUVE. What it had no way to express is which work is
 /// SAFE to move there, and that is not something a scheduler can infer: an entity that touches the
-/// renderer, the window or Dear ImGui must stay on the main thread no matter how independent its
+/// renderer, the window or the editor UI must stay on the main thread no matter how independent its
 /// work looks. This is the author saying so.
 enum class ThreadGroupModeUVE : std::uint8_t {
     /// Take the parent's answer, or MainThread at the top of the hierarchy - the safe default, so

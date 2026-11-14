@@ -161,11 +161,21 @@ struct MaterialAssetUVE {
     float anisotropyAmount = 0.0F;
     float subsurfaceStrength = 0.0F;
     float refractionAmount = 0.0F;
+    // UV1 is uvScale / uvOffset with the three triplanar fields below; UV2 is the same texture
+    // coordinates with their own scale, offset and triplanar mode (Godot's uv1 / uv2), used by AO
+    // and Emission when they are "on UV2".
     Math::Vector2UVE uv2Scale{1.0F, 1.0F};
     Math::Vector2UVE uv2Offset{0.0F, 0.0F};
+    /// UV1 triplanar: projected along the object's (or with worldSpaceTriplanar, the world's) axes.
     bool triplanarEnabled = false;
     bool worldSpaceTriplanar = false;
     float triplanarBlendSharpness = 1.0F;
+    bool uv2Triplanar = false;
+    bool uv2WorldTriplanar = false;
+    float uv2TriplanarSharpness = 1.0F;
+    /// The AO map and the emission map read UV2 instead of UV1.
+    bool aoOnUv2 = false;
+    bool emissionOnUv2 = false;
     float proximityFadeDistance = 0.0F;
     float distanceFadeNear = 0.0F;
     float distanceFadeFar = 0.0F;

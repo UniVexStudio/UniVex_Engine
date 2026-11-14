@@ -9,6 +9,7 @@
 
 #include "area_component.h"
 #include "animation_sequencer_component.h"
+#include "montage_player_component.h"
 #include "animation_graph_component.h"
 #include "auto_translate_component.h"
 #include "audio_source_component.h"
@@ -47,6 +48,7 @@
 #include "ui_image_component.h"
 #include "ui_layout_container_component.h"
 #include "ui_progress_bar_component.h"
+#include "ui_view_3d_component.h"
 #include "ui_scroll_container_component.h"
 #include "ui_scrollbar_component.h"
 #include "ui_slider_component.h"
@@ -441,9 +443,11 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     TypeMetadataEntryUVE primitive =
         MakeEntryUVE("component.primitive_mesh", "PrimitiveMeshComponentUVE", "PrimitiveMesh3D", kSectionOrderTypeSpecificUVE,
                      {
-                         DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
+                         // The object's kind is its shape (a BoxMesh3D is a box): kept in the
+                         // file, never offered, so a box cannot be turned into a sphere here.
+                         HiddenUVE(DeclareEnumUVE<&PrimitiveMeshComponentUVE::kind>(
                              "kind", "Shape",
-                             {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}}),
+                             {{0, "Cube"}, {1, "UV Sphere"}, {2, "Plane"}, {3, "Capsule"}, {4, "Cylinder"}})),
                          // Kept in the file, never offered: scenes saved while a primitive had its
                          // own tint still carry the value, and the renderer still honours it, but
                          // the Inspector no longer sets one. A surface has one colour - the
@@ -2213,6 +2217,33 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
             }));
 
+    // MontagePlayer: the montages its script can play, by file name.
+    using MP = MontagePlayerComponentUVE;
+    const auto montageSlot = [](auto property, const char* tip) {
+        return WithTooltipUVE(WithCustomDrawerUVE(std::move(property), "asset:uvmontage"), tip);
+    };
+    constexpr const char* kMontageTipUVE =
+        "An Animation Montage this object can play. Its script plays it by the file's name: "
+        "montage.play(\"Attack\") plays Attack.uvmontage.";
+    AddValidatedUVE<MontagePlayerComponentUVE, +[](const MontagePlayerComponentUVE&) noexcept { return true; }>(
+        entries,
+        MakeEntryUVE("component.montage_player", "MontagePlayerComponentUVE", "MontagePlayer", kSectionOrderTypeSpecificUVE,
+            {
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage1>("montage1", "Montage 1", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage2>("montage2", "Montage 2", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage3>("montage3", "Montage 3", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage4>("montage4", "Montage 4", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage5>("montage5", "Montage 5", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage6>("montage6", "Montage 6", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage7>("montage7", "Montage 7", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                InGroupUVE(montageSlot(DeclareUVE<&MP::montage8>("montage8", "Montage 8", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
+                WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MP::libraryRef>("libraryRef", "Library", kPropertyTypeAssetGuidUVE),
+                                                   "asset:uvmontagelib"),
+                               "A .uvmontagelib whose montages this player also plays by name, live: editing the file changes "
+                               "what it offers."),
+                InGroupUVE(DeclareRuntimeStateUVE<&MP::playingName>("playingName", "Playing", kPropertyTypeStringUVE), "State"),
+            }));
+
     using T = AnimationGraphComponentUVE;
     // The parameters and the graph are lists with their own add, remove and wiring, which a
     // property row cannot express, so each is one custom-drawn block.
@@ -2354,6 +2385,12 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                   kPropertyTypeBoolUVE),
                          DeclareUVE<&CanvasComponentUVE::sortOrder>("sortOrder", "Sort Order",
                                                                     kPropertyTypeInt32UVE),
+                         WithTooltipUVE(DeclareUVE<&CanvasComponentUVE::scaleWithScreen>("scaleWithScreen", "Scale With Screen",
+                                                                                        kPropertyTypeBoolUVE),
+                                        "Fit the canvas, laid out for its Reference Resolution, to any screen"),
+                         WithTooltipUVE(DeclareUVE<&CanvasComponentUVE::referenceResolution>(
+                                            "referenceResolution", "Reference Resolution", kPropertyTypeVector2UVE),
+                                        "The screen size the widgets were placed for (0 = this device's screen)"),
                      }));
 
     AddValidatedUVE<UITextComponentUVE, &IsUITextComponentValidUVE>(
@@ -2544,6 +2581,47 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          InGroupUVE(DeclareUVE<&UIProgressBarComponentUVE::fillColor>("fillColor", "Fill",
                                                                                      kPropertyTypeColorUVE),
                                     "Appearance"),
+                     }));
+    AddValidatedUVE<UIView3DComponentUVE, &IsUIView3DComponentValidUVE>(
+        entries,
+        MakeEntryUVE("component.ui_view_3d", "UIView3DComponentUVE", "UI 3D View", kSectionOrderTypeSpecificUVE,
+                     {
+                         DeclareUVE<&UIView3DComponentUVE::rect>("rect", "Rect", kPropertyTypeRectUVE),
+                         WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&UIView3DComponentUVE::assetPath>(
+                                                                "assetPath", "Shows", kPropertyTypeStringUVE),
+                                                            "file:uventity,uvprefab"),
+                                        "The entity asset shown in 3D: a character, a weapon, a car ..."),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::cameraDistance>("cameraDistance", "Distance",
+                                                                                     kPropertyTypeFloatUVE),
+                                    "Camera"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::lookAtHeight>("lookAtHeight", "Look At Height",
+                                                                                   kPropertyTypeFloatUVE),
+                                    "Camera"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::pitchDegrees>("pitchDegrees", "Pitch",
+                                                                                   kPropertyTypeFloatUVE),
+                                    "Camera"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::fieldOfViewDegrees>("fieldOfViewDegrees",
+                                                                                         "Field of View", kPropertyTypeFloatUVE),
+                                    "Camera"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::yawDegrees>("yawDegrees", "Turn", kPropertyTypeFloatUVE),
+                                    "Motion"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::spinDegreesPerSecond>("spinDegreesPerSecond",
+                                                                                           "Spin (deg/s)", kPropertyTypeFloatUVE),
+                                    "Motion"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::backgroundColor>("backgroundColor", "Background",
+                                                                                      kPropertyTypeColorUVE),
+                                    "Appearance"),
+                         InGroupUVE(DeclareUVE<&UIView3DComponentUVE::backgroundAlpha>("backgroundAlpha", "Background Alpha",
+                                                                                      kPropertyTypeFloatUVE),
+                                    "Appearance"),
+                         InGroupUVE(WithTooltipUVE(DeclareUVE<&UIView3DComponentUVE::useWidgetStage>(
+                                                       "useWidgetStage", "Use Widget Stage", kPropertyTypeBoolUVE),
+                                                   "Stand the asset on the widget's Stage (the Stage tab) and look through its StageCamera"),
+                                    "Stage"),
+                         InGroupUVE(WithTooltipUVE(DeclareUVE<&UIView3DComponentUVE::transparentBackground>(
+                                                       "transparentBackground", "Transparent Background", kPropertyTypeBoolUVE),
+                                                   "No sky behind the stage: the UI and the game show through"),
+                                    "Stage"),
                      }));
     AddUVE<UITweenComponentUVE>(
         entries,
@@ -2805,7 +2883,7 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
 /// The abstract 3D bases. Their sections appear on every concrete child, between what the child
 /// itself brings and the common Object section.
 // The gameplay-owned authored data: what the scene means to a game rather than to the renderer or
-// the solver. SpawnPoint3D is the first citizen here (Unreal's PlayerStart role - Godot ships no
+// the solver. SpawnPoint3D is the first citizen here (the standard PlayerStart role - Godot ships no
 // built-in counterpart), and the section is deliberately declarative: the query that consumes it
 // lives in uve_scene, and nothing in this file decides when a point fires.
 void DeclareGameplayUVE(std::vector<TypeMetadataEntryUVE>& entries) {

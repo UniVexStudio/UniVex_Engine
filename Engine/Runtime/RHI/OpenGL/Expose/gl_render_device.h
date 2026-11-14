@@ -107,7 +107,7 @@ public:
     /// backend): returns the raw GL texture object name behind `texture`, or 0 if the handle is
     /// unknown. Every other IRenderDeviceUVE consumer only ever sees the backend-agnostic
     /// TextureHandleUVE (per this class's own doc comment above) - this is a deliberate, narrowly
-    /// scoped exception for the one caller that must hand a real GLuint to ImGui::Image() to
+    /// scoped exception for the one caller that must hand a real GLuint to the editor's view to
     /// display a Renderer3DUVE::RenderFrameToTargetUVE() result inside an editor panel; it must
     /// never be used to justify leaking native GL types anywhere else.
     [[nodiscard]] std::uint32_t GetNativeTextureIdUVE(TextureHandleUVE texture) const noexcept;

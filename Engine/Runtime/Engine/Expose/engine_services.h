@@ -192,6 +192,15 @@ public:
     [[nodiscard]] Save::ICheckpointManagerUVE& GetCheckpointManagerUVE() const noexcept;
     [[nodiscard]] Window::IWindowManagerUVE& GetWindowManagerUVE() const noexcept;
 
+    /// These services with the scene half replaced: another scene's entities and graph, drawn by
+    /// its own renderer and render systems (see DocumentSceneUVE). Everything else is shared.
+    [[nodiscard]] EngineServicesUVE WithSceneUVE(Scene::IEntityManagerUVE& entityManager,
+                                                 Scene::ISceneGraphUVE& sceneGraph,
+                                                 Render::ICameraSystemUVE& cameraSystem,
+                                                 Render::IMeshRendererUVE& meshRenderer,
+                                                 Render::ILightSystemUVE& lightSystem,
+                                                 Render::IRenderer3DUVE& renderer3D) const noexcept;
+
 private:
     Debug::ILoggerUVE* m_logger;
     Utilities::ITimerUVE* m_timer;

@@ -4,8 +4,7 @@
 
 `liberation-sans-subset.ttf` is a subset of Liberation Sans Regular
 (`fonts-liberation` Debian package, version `1:2.1.5-3`), used as the
-editor's main UI text font in place of ImGui's own built-in low-resolution
-bitmap font (`ImGui::AddFontDefault()`). Upstream project:
+UI text font. Upstream project:
 <https://github.com/liberationfonts>.
 
 > **Note (2026-09-17 audit resolution):** the file itself no longer lives in
@@ -137,81 +136,4 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM OTHER
 DEALINGS IN THE FONT SOFTWARE.
-```
-
-## Liberation Mono (subsetted)
-
-`liberation-mono-subset.ttf` is a subset of Liberation Mono Regular (same
-`fonts-liberation` Debian package as Liberation Sans above), used for the
-editor's numeric fields (Inspector Transform X/Y/Z) in place of the main
-UI text font, matching a design mockup's own use of a monospace font
-(`"JetBrains Mono"`) for numeric values. JetBrains Mono itself is not
-installed anywhere in this build environment and was never fetched or
-verified, so Liberation Mono was chosen instead as an honest substitute
-that could actually be checked before use: same type family, same SIL
-Open Font License, and already vendored for Liberation Sans above.
-Upstream project: <https://github.com/liberationfonts>.
-
-Subsetted identically to Liberation Sans (same glyph range, same
-`pyftsubset` invocation with `LiberationMono-Regular.ttf` as input and
-`liberation-mono-subset.ttf` as output), then compiled into
-`Engine/Editor/EditorCore/Internal/uve_mono_font_bytes.inc` following the exact same
-byte-array convention as `uve_ui_font_bytes.inc`.
-
-### License
-
-Same SIL Open Font License 1.1 text as the Liberation Sans entry above
-(both fonts ship under the same license file in the `fonts-liberation`
-package) - not repeated here.
-
-## Tabler Icons (subsetted)
-
-`tabler-icons-subset.ttf` is a subset of the Tabler Icons webfont, built from
-the `@tabler/icons-webfont` npm package (version `3.46.0`,
-`https://registry.npmjs.org/@tabler/icons-webfont/-/icons-webfont-3.46.0.tgz`).
-Upstream project: <https://github.com/tabler/tabler-icons>.
-
-Only the 13 glyphs the editor chrome actually uses are kept, to avoid
-vendoring a multi-megabyte font for a dozen-odd icons. The subset was produced
-with `fonttools`'s `pyftsubset`:
-
-```
-pyftsubset tabler-icons.ttf \
-    --output-file=tabler-icons-subset.ttf \
-    --unicodes=EA03,EA45,EA54,EA98,EAA4,EAAD,EB2E,EBD9,EDBA,F91D,FA97,FAF7,FAFA \
-    --glyph-names --layout-features='*' --no-hinting --desubroutinize
-```
-
-`tools/generate_icon_font_bytes.py` compiles this file into
-`Engine/Editor/EditorCore/Internal/uve_icon_font_bytes.inc`, which is what the editor
-actually links against; the `.ttf` here is the checked-in source asset the
-generator reads, following the same source-asset-plus-generator convention
-already used for `engine/editor/assets/gizmos` and `engine/editor/assets/icons`.
-
-### License
-
-Tabler Icons is MIT licensed:
-
-```
-MIT License
-
-Copyright (c) 2020-2026 Paweł Kuna
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 ```

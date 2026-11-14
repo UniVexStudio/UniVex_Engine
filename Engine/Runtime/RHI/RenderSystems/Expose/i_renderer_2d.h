@@ -93,7 +93,7 @@ public:
 
     /// Renders the scene as seen by `cameraEntity` into `colorTarget`/`depthTarget`
     /// (caller-owned textures of `width` x `height` pixels — an editor viewport, or any other
-    /// host compositing the result itself, e.g. via ImGui::Image()). PresentUVE() is never
+    /// host compositing the result itself, e.g. as an image in the editor's view). PresentUVE() is never
     /// implied by this call. `cameraEntity` must have both WorldTransformComponentUVE and
     /// Camera2DComponentUVE (the same contract ICamera2DSystemUVE already enforces). A zero
     /// width/height records nothing; an invalid camera clears the target and records no

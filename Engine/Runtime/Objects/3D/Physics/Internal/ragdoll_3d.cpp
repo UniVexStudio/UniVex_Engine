@@ -33,7 +33,7 @@ constexpr std::size_t kMaximumRagdollEntitiesPerUpdateUVE = 64U;
 /// feet 2x1. The absolute number matters far less than the ratios - a solver is sensitive to the
 /// ratio between adjacent bodies, not to whether a character weighs 70 or 80 kg.
 ///
-/// Damping rises toward the extremities, which is Unreal's own advice for ragdoll stability: a hand
+/// Damping rises toward the extremities, which is the common advice for ragdoll stability: a hand
 /// that keeps spinning after the arm has stopped is the classic "floppy" tell.
 constexpr std::array<HumanoidRagdollProfileEntryUVE, 18U> kHumanoidProfileUVE{{
     {"lowerarm", 1.5F, 0.045F, 0.10F, 0.05F, 1.0F, 5.0F, 5.0F, 150.0F, true, -5.0F, 150.0F},
@@ -267,7 +267,7 @@ std::vector<RagdollBoneSetupUVE> BuildHumanoidRagdollBonesUVE(const std::vector<
         setup.swing2LimitDegrees = entry->swing2LimitDegrees;
         setup.twistLimitDegrees = entry->twistLimitDegrees;
         if (entry->hinge) {
-            // Unreal's "Swing1/Swing2 Locked, Twist Limited" is exactly a knee, an elbow or an ankle.
+            // The standard "Swing1/Swing2 Locked, Twist Limited" is exactly a knee, an elbow or an ankle.
             setup.swing1Motion = Physics::RagdollMotionUVE::Locked;
             setup.swing2Motion = Physics::RagdollMotionUVE::Locked;
             setup.twistMotion = Physics::RagdollMotionUVE::Limited;

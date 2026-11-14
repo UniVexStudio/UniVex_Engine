@@ -45,6 +45,7 @@
 #include "animation_driver_component.h"
 #include "animation_sequencer_component.h"
 #include "animation_graph_component.h"
+#include "montage_player_component.h"
 #include "area_component.h"
 #include "audio_source_component.h"
 #include "bone_modifier_component.h"
@@ -235,6 +236,22 @@ namespace {
                               {"regenPerSecond", attribute.regenPerSecond}});
     }
     return {{"attributes", std::move(attributes)}};
+}
+
+[[nodiscard]] nlohmann::json ToJsonUVE(const MontagePlayerComponentUVE& component) {
+    nlohmann::json montages = nlohmann::json::array();
+    for (std::size_t i = 0U; i < 8U; ++i) {
+        montages.push_back(component.MontageAtUVE(i).value);
+    }
+    nlohmann::json out = {{"montages", std::move(montages)}};
+    if (component.libraryRef != Asset::AssetGuidUVE{}) {
+        out["library"] = component.libraryRef.value;
+    }
+    return out;
+}
+
+[[nodiscard]] bool IsMontagePlayerComponentValidUVE(const MontagePlayerComponentUVE&) noexcept {
+    return true;
 }
 
 [[nodiscard]] nlohmann::json ToJsonUVE(const GameplayTagComponentUVE& component) {
@@ -476,9 +493,16 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
 [[nodiscard]] nlohmann::json ToJsonUVE(const AnimationGraphComponentUVE& component) {
     nlohmann::json parameters = nlohmann::json::array();
     for (const AnimationParameterUVE& parameter : component.parameters) {
-        parameters.push_back({{"name", parameter.name},
-                              {"type", static_cast<std::uint8_t>(parameter.type)},
-                              {"value", parameter.value}});
+        nlohmann::json entry = {{"name", parameter.name},
+                                {"type", static_cast<std::uint8_t>(parameter.type)},
+                                {"value", parameter.value}};
+        if (parameter.type == AnimationParameterTypeUVE::Vector3) {
+            entry["vector"] = {parameter.vector.x, parameter.vector.y, parameter.vector.z};
+        }
+        if (parameter.source != AnimationParameterSourceUVE::Script) {
+            entry["source"] = static_cast<std::uint8_t>(parameter.source);
+        }
+        parameters.push_back(std::move(entry));
     }
     nlohmann::json nodes = nlohmann::json::array();
     for (const AnimationGraphNodeUVE& object : component.nodes) {
@@ -536,12 +560,50 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
                          {"transitions", std::move(transitions)},
                          {"statePositions", std::move(statePositions)},
                          {"entryPosition", {object.entryPosition.x, object.entryPosition.y}},
-                         {"anyPosition", {object.anyPosition.x, object.anyPosition.y}}});
+                         {"anyPosition", {object.anyPosition.x, object.anyPosition.y}},
+                         {"stateNames", object.stateNames},
+                         {"owner", object.owner},
+                         {"ownerState", object.ownerState},
+                         {"gridX", object.gridX},
+                         {"gridY", object.gridY},
+                         {"snapToGrid", object.snapToGrid},
+                         {"axisNameX", object.axisNameX},
+                         {"axisNameY", object.axisNameY},
+                         {"target", {object.target.x, object.target.y, object.target.z}},
+                         {"pole", {object.pole.x, object.pole.y, object.pole.z}},
+                         {"rotationDegrees", {object.rotationDegrees.x, object.rotationDegrees.y, object.rotationDegrees.z}},
+                         {"boneScale", {object.boneScale.x, object.boneScale.y, object.boneScale.z}},
+                         {"targetSource", static_cast<std::uint8_t>(object.targetSource)},
+                         {"targetBone", object.targetBone},
+                         {"modifyMode", static_cast<std::uint8_t>(object.modifyMode)},
+                         {"space", static_cast<std::uint8_t>(object.space)},
+                         {"clampDegrees", object.clampDegrees},
+                         {"alphaParameter", object.alphaParameter},
+                         {"fadeBackSeconds", object.fadeBackSeconds},
+                         {"startSeconds", object.startSeconds},
+                         {"fadeOutSeconds", object.fadeOutSeconds},
+                         {"autoRestart", object.autoRestart},
+                         {"autoRestartDelaySeconds", object.autoRestartDelaySeconds}});
     }
     nlohmann::json root = {{"parameters", std::move(parameters)},
             {"nodes", std::move(nodes)}};
+    if (!component.comments.empty()) {
+        nlohmann::json comments = nlohmann::json::array();
+        for (const AnimationGraphCommentUVE& comment : component.comments) {
+            comments.push_back({{"title", comment.title},
+                                {"position", {comment.position.x, comment.position.y}},
+                                {"size", {comment.size.x, comment.size.y}},
+                                {"color", comment.color},
+                                {"owner", comment.owner},
+                                {"ownerState", comment.ownerState}});
+        }
+        root["comments"] = std::move(comments);
+    }
     if (component.sequencer != kInvalidEntityUVE) {
         root["sequencer"] = {{"index", component.sequencer.index}, {"generation", component.sequencer.generation}};
+    }
+    if (component.montagePlayer != kInvalidEntityUVE) {
+        root["montagePlayer"] = {{"index", component.montagePlayer.index}, {"generation", component.montagePlayer.generation}};
     }
     return root;
 }
@@ -554,6 +616,11 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
         tree.sequencer = EntityUVE{
             json["sequencer"].value("index", std::numeric_limits<std::uint32_t>::max()),
             json["sequencer"].value("generation", 0U)};
+    }
+    if (json.contains("montagePlayer") && json["montagePlayer"].is_object()) {
+        tree.montagePlayer = EntityUVE{
+            json["montagePlayer"].value("index", std::numeric_limits<std::uint32_t>::max()),
+            json["montagePlayer"].value("generation", 0U)};
     }
     if (!json.contains("nodes") && (json.contains("clipA") || json.contains("clipB"))) {
         tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, json.value("blend", 0.0F)}};
@@ -584,10 +651,16 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
     }
     tree.parameters.clear();
     for (const nlohmann::json& item : json.value("parameters", nlohmann::json::array())) {
-        tree.parameters.push_back(AnimationParameterUVE{item.at("name").get<std::string>(),
-                                                        static_cast<AnimationParameterTypeUVE>(
-                                                            item.value("type", std::uint8_t{0})),
-                                                        item.value("value", 0.0F)});
+        AnimationParameterUVE parameter;
+        parameter.name = item.at("name").get<std::string>();
+        parameter.type = static_cast<AnimationParameterTypeUVE>(item.value("type", std::uint8_t{0}));
+        parameter.value = item.value("value", 0.0F);
+        const std::vector<float> vector = item.value("vector", std::vector<float>{});
+        if (vector.size() == 3U) {
+            parameter.vector = Math::Vector3UVE{vector[0], vector[1], vector[2]};
+        }
+        parameter.source = static_cast<AnimationParameterSourceUVE>(item.value("source", std::uint8_t{0}));
+        tree.parameters.push_back(std::move(parameter));
     }
     if (json.contains("nodes")) {
         tree.nodes.clear();
@@ -690,6 +763,38 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
             }
             readPair("entryPosition", object.entryPosition);
             readPair("anyPosition", object.anyPosition);
+            const auto readTriple = [&item](const char* key, Math::Vector3UVE& out) {
+                if (const auto found = item.find(key); found != item.end() && found->is_array() && found->size() == 3U) {
+                    out = Math::Vector3UVE{(*found)[0].get<float>(), (*found)[1].get<float>(), (*found)[2].get<float>()};
+                }
+            };
+            readTriple("target", object.target);
+            readTriple("pole", object.pole);
+            readTriple("rotationDegrees", object.rotationDegrees);
+            readTriple("boneScale", object.boneScale);
+            object.targetSource = static_cast<AnimationGraphTargetSourceUVE>(item.value("targetSource", std::uint8_t{0}));
+            object.targetBone = item.value("targetBone", std::string{});
+            object.modifyMode = static_cast<AnimationBoneModifyModeUVE>(item.value("modifyMode", std::uint8_t{0}));
+            object.space = static_cast<AnimationBoneSpaceUVE>(item.value("space", std::uint8_t{0}));
+            object.clampDegrees = item.value("clampDegrees", 180.0F);
+            object.alphaParameter = item.value("alphaParameter", std::string{});
+            object.fadeBackSeconds = item.value("fadeBackSeconds", 0.2F);
+            object.startSeconds = item.value("startSeconds", 0.0F);
+            object.fadeOutSeconds = item.value("fadeOutSeconds", -1.0F);
+            object.autoRestart = item.value("autoRestart", false);
+            object.autoRestartDelaySeconds = item.value("autoRestartDelaySeconds", 1.0F);
+            if (const auto names = item.find("stateNames"); names != item.end() && names->is_array()) {
+                for (const nlohmann::json& name : *names) {
+                    object.stateNames.push_back(name.is_string() ? name.get<std::string>() : std::string{});
+                }
+            }
+            object.owner = item.value("owner", std::uint32_t{0});
+            object.ownerState = item.value("ownerState", std::uint32_t{0});
+            object.gridX = item.value("gridX", std::uint32_t{4});
+            object.gridY = item.value("gridY", std::uint32_t{4});
+            object.snapToGrid = item.value("snapToGrid", true);
+            object.axisNameX = item.value("axisNameX", std::string{});
+            object.axisNameY = item.value("axisNameY", std::string{});
             tree.nodes.push_back(std::move(object));
         }
         static_cast<void>(MigrateBlendSpaceInputsUVE(tree.nodes, legacyPositions));
@@ -709,6 +814,25 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
             const float marginY = std::max((hi.y - lo.y) * 0.15F, 0.5F);
             object.areaMin = Math::Vector2UVE{lo.x - marginX, lo.y - marginY};
             object.areaMax = Math::Vector2UVE{hi.x + marginX, hi.y + marginY};
+        }
+    }
+    if (json.contains("comments") && json["comments"].is_array()) {
+        for (const nlohmann::json& item : json["comments"]) {
+            if (!item.is_object()) {
+                continue;
+            }
+            AnimationGraphCommentUVE comment;
+            comment.title = item.value("title", std::string{"Comment"});
+            if (const auto p = item.find("position"); p != item.end() && p->is_array() && p->size() == 2U) {
+                comment.position = Math::Vector2UVE{(*p)[0].get<float>(), (*p)[1].get<float>()};
+            }
+            if (const auto z = item.find("size"); z != item.end() && z->is_array() && z->size() == 2U) {
+                comment.size = Math::Vector2UVE{(*z)[0].get<float>(), (*z)[1].get<float>()};
+            }
+            comment.color = item.value("color", comment.color);
+            comment.owner = item.value("owner", std::uint32_t{0});
+            comment.ownerState = item.value("ownerState", std::uint32_t{0});
+            tree.comments.push_back(std::move(comment));
         }
     }
     return tree;
@@ -2380,6 +2504,22 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                           }
                           return attributes;
                       }, IsGameplayAttributesComponentValidUVE));
+        table.emplace("MontagePlayerComponentUVE",
+                      MakeRegistrationUVE<MontagePlayerComponentUVE>([](const nlohmann::json& json) {
+                          MontagePlayerComponentUVE slot;
+                          Asset::AssetGuidUVE* const fields[] = {&slot.montage1, &slot.montage2, &slot.montage3,
+                                                                 &slot.montage4, &slot.montage5, &slot.montage6,
+                                                                 &slot.montage7, &slot.montage8};
+                          if (const auto list = json.find("montages"); list != json.end() && list->is_array()) {
+                              for (std::size_t i = 0U; i < list->size() && i < 8U; ++i) {
+                                  if ((*list)[i].is_number_unsigned()) {
+                                      fields[i]->value = (*list)[i].get<std::uint64_t>();
+                                  }
+                              }
+                          }
+                          slot.libraryRef = Asset::AssetGuidUVE{json.value("library", std::uint64_t{0})};
+                          return slot;
+                      }, IsMontagePlayerComponentValidUVE));
         table.emplace("GameplayTagComponentUVE",
                       MakeRegistrationUVE<GameplayTagComponentUVE>([](const nlohmann::json& json) {
                           GameplayTagComponentUVE tags;

@@ -73,7 +73,7 @@ LevelStreamer3DActionUVE ResolveLevelStreamer3DStreamingActionUVE(
         return LevelStreamer3DActionUVE::None;
     }
     if (!frame.enabled) {
-        // Disabling a loaded streamer ALWAYS unloads it - matching the Unreal convention where a
+        // Disabling a loaded streamer ALWAYS unloads it - matching the common convention where a
         // disabled streaming volume stops holding its level - no matter where the viewer stands.
         return frame.loaded ? LevelStreamer3DActionUVE::RequestUnload : LevelStreamer3DActionUVE::None;
     }

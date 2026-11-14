@@ -1,6 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 
+#include "animation_montage_asset.h"
+#include "animation_montage_editing.h"
+#include "montage_player_component.h"
 #include "engine_core.h"
 
 #include <algorithm>
@@ -1702,6 +1705,40 @@ TEST(EngineCoreUVETest, Renderer3D_ReachableAfterInit_NoActiveCameraStillNoOps) 
     engine.Shutdown();
 }
 
+TEST(EngineCoreUVETest, DocumentScene_IsSeparateFromTheEngineScene) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    EXPECT_EQ(engine.CreateDocumentSceneUVE(), nullptr); // not before Init()
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    EngineServicesUVE& level = engine.GetServicesUVE();
+    std::unique_ptr<DocumentSceneUVE> document = engine.CreateDocumentSceneUVE();
+    ASSERT_NE(document, nullptr);
+    EngineServicesUVE& services = document->GetServicesUVE();
+
+    // The scene half is its own; everything else is the engine's.
+    EXPECT_NE(&services.GetEntityManagerUVE(), &level.GetEntityManagerUVE());
+    EXPECT_NE(&services.GetSceneGraphUVE(), &level.GetSceneGraphUVE());
+    EXPECT_NE(&services.GetRenderer3DUVE(), &level.GetRenderer3DUVE());
+    EXPECT_NE(&services.GetMeshRendererUVE(), &level.GetMeshRendererUVE());
+    EXPECT_EQ(&services.GetAssetDatabaseUVE(), &level.GetAssetDatabaseUVE());
+    EXPECT_EQ(&services.GetRenderDeviceUVE(), &level.GetRenderDeviceUVE());
+    EXPECT_EQ(&services.GetPrefabSystemUVE(), &level.GetPrefabSystemUVE());
+
+    const std::size_t levelCount = level.GetEntityManagerUVE().GetEntityCountUVE();
+    const Scene::EntityUVE entity = document->GetEntityManagerUVE().CreateEntityUVE();
+    EXPECT_TRUE(document->GetEntityManagerUVE().IsAliveUVE(entity));
+    EXPECT_EQ(document->GetEntityManagerUVE().GetEntityCountUVE(), 1U);
+    EXPECT_EQ(level.GetEntityManagerUVE().GetEntityCountUVE(), levelCount);
+
+    document->GetEntityManagerUVE().DestroyEntityUVE(entity);
+    engine.TickFrameUVE();
+    EXPECT_EQ(level.GetEntityManagerUVE().GetEntityCountUVE(), levelCount);
+
+    document.reset();
+    engine.Shutdown();
+}
+
 TEST(EngineCoreUVETest, WindowedMode_NoActiveCameraStillClearsDefaultFramebuffer) {
     EngineConfigUVE config = MakeTestConfigUVE();
     config.headlessUVE = false;
@@ -2655,6 +2692,91 @@ TEST(EngineCoreUVETest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObject
     EXPECT_EQ(instance->GetFieldUVE("last"), UVScript::ValueUVE{std::string{"step_right"}});
 
     std::filesystem::remove(clipPath);
+    std::filesystem::remove_all(mountDirectory);
+    std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, MontagePlayer_PlaysAMontageFromTheScriptAndSendsItsNotifies) {
+    EngineCoreUVE engine(MakeTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    Asset::IAssetDatabaseUVE& assetDatabase = engine.GetServicesUVE().GetAssetDatabaseUVE();
+    Asset::IFileSystemUVE& fileSystem = engine.GetServicesUVE().GetFileSystemUVE();
+    const std::filesystem::path mountDirectory = "uve_engine_core_tests_montage_mount";
+    std::filesystem::remove_all(mountDirectory);
+    std::filesystem::create_directories(mountDirectory);
+    fileSystem.MountDirectoryUVE("", mountDirectory, 0);
+    const std::string script = "var hits = 0\nvar ended = \"\"\n\non ready:\n    montage.play(\"Attack\")\n\n"
+                               "on montage_notify(name):\n    if name == \"hit\":\n        hits += 1\n\n"
+                               "on montage_ended(name):\n    ended = name\n";
+    const auto* const bytes = reinterpret_cast<const std::byte*>(script.data());
+    ASSERT_TRUE(fileSystem.WriteFileUVE("fighter.uvs", std::vector<std::byte>(bytes, bytes + script.size())));
+
+    // A half-second swing of the hips, in a montage with one "hit" notify.
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "swing";
+    clip.durationSeconds = 0.5;
+    Asset::AnimationAssetSampleUVE start;
+    start.pose.position = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    Asset::AnimationAssetSampleUVE end = start;
+    end.timeSeconds = 0.5;
+    end.pose.position = Math::Vector3UVE{0.0F, 2.0F, 0.0F};
+    clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {start, end}}};
+    const std::filesystem::path clipPath = "uve_engine_core_tests_swing.uvanim";
+    ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
+    const Asset::AssetGuidUVE clipGuid = assetDatabase.RegisterUVE(clipPath);
+    Asset::AnimationMontageAssetUVE montage;
+    Asset::AddMontageSegmentUVE(montage, clipGuid, 0.5);
+    Asset::AddMontageNotifyUVE(montage, "hit", 0.2, 0U);
+    montage.blendInSeconds = 0.0;
+    montage.blendOutSeconds = 0.0;
+    const std::filesystem::path montagePath = "Attack.uvmontage";
+    ASSERT_TRUE(Asset::SaveAnimationMontageAssetUVE(montage, montagePath));
+    const Asset::AssetGuidUVE montageGuid = assetDatabase.RegisterUVE(montagePath);
+
+    const Scene::EntityUVE character = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, character, Scene::TransformComponentUVE{});
+    entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(character, Scene::ScriptComponentUVE{"fighter.uvs"});
+    const Scene::EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Scene::Skeleton3DObjectDefinitionUVE skeletonDefinition;
+    Scene::SkeletonBoneUVE hips;
+    hips.name = "Hips";
+    hips.localPosition = Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+    skeletonDefinition.skeleton.bones = {hips};
+    Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skeletonEntity, skeletonDefinition);
+    sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
+    const Scene::EntityUVE montages = entityManager.CreateEntityUVE();
+    sceneGraph.AttachTransformUVE(entityManager, montages, Scene::TransformComponentUVE{});
+    Scene::MontagePlayerComponentUVE slots;
+    slots.montage1 = montageGuid;
+    entityManager.AddComponentUVE<Scene::MontagePlayerComponentUVE>(montages, slots);
+    sceneGraph.SetParentUVE(entityManager, montages, character);
+
+    bool posedMidway = false;
+    const auto startedAt = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(10)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        engine.TickFrameUVE();
+        const auto& pose = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose;
+        posedMidway = posedMidway || (!pose.empty() && pose[0].position.y > 1.05F);
+        UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
+        if (instance != nullptr && instance->GetFieldUVE("ended") == UVScript::ValueUVE{std::string{"Attack"}}) {
+            break;
+        }
+    }
+    UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
+    ASSERT_NE(instance, nullptr);
+    EXPECT_EQ(instance->GetFieldUVE("ended"), UVScript::ValueUVE{std::string{"Attack"}});
+    EXPECT_EQ(instance->GetFieldUVE("hits"), UVScript::ValueUVE{std::int64_t{1}}) << "the hit notify once";
+    EXPECT_TRUE(posedMidway) << "the swing posed the skeleton while it played";
+    EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose.empty())
+        << "nothing else animates it, so it is back at rest";
+
+    std::filesystem::remove(clipPath);
+    std::filesystem::remove(montagePath);
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::remove(MakeTestConfigUVE().assetDatabaseFilePath);
     engine.Shutdown();
@@ -4409,7 +4531,7 @@ TEST(EngineCoreUVETest, LevelStreamer3D_CharacterControllerServesAsViewerWithout
 }
 
 TEST(EngineCoreUVETest, LevelStreamer3D_DisablingTheStreamerPullsItsContentWhileTheViewerWatches) {
-    // The authored toggle beats distance, matching the Unreal convention a disabled streaming
+    // The authored toggle beats distance, matching the common convention a disabled streaming
     // volume stops holding its level - measured while the camera stands inside the load radius.
     ASSERT_TRUE(WriteStreamerTestLevelFileUVE());
     StreamerTestCleanupUVE cleanup;
@@ -4559,7 +4681,7 @@ std::uint32_t TotalProbeGenerationsUVE(Scene::IEntityManagerUVE& entityManager,
 } // namespace
 
 TEST(EngineCoreUVETest, ReflectionProbe3D_OnceCapturesOnFirstTickThenStaysSilentForever) {
-    // The measurable answer to Unreal's "capture scene on load" convention: first Tick resolves
+    // The measurable answer to the standard "capture scene on load" convention: first Tick resolves
     // exactly one capture (capturedOnce flips, captureGeneration hits 1), every subsequent tick
     // touches nothing - no re-capture, no latch drift, cost paid exactly once.
     EngineConfigUVE config = MakeTestConfigUVE();

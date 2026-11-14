@@ -201,4 +201,60 @@ bool ShowsMorphKeyUVE(const Asset::AnimationAssetMorphTrackUVE& track, const std
            WeightsDifferUVE(samples[index].weights, samples[index + 1U].weights);
 }
 
+double EstimateTimelineFrameRateUVE(const Asset::AnimationClipAssetUVE& clip) {
+    std::size_t most = clip.samples.size();
+    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+        most = std::max(most, track.samples.size());
+    }
+    if (most < 2U || clip.durationSeconds <= 0.0) {
+        return 30.0;
+    }
+    const double rate = static_cast<double>(most - 1U) / clip.durationSeconds;
+    return rate < 10.0 ? 30.0 : std::clamp(std::round(rate), 1.0, 240.0);
+}
+
+double PickTimelineTickStepUVE(const double pixelsPerSecond, const double frameRate, const float minimumPixels) {
+    const double frame = 1.0 / std::max(1.0, frameRate);
+    for (const double step : {frame, frame * 2.0, frame * 5.0, frame * 10.0, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0}) {
+        if (step * pixelsPerSecond >= static_cast<double>(minimumPixels)) {
+            return step;
+        }
+    }
+    return 120.0;
+}
+
+bool TimelineChannelChangesUVE(const Asset::AnimationAssetPoseUVE& before, const Asset::AnimationAssetPoseUVE& after,
+                               const int channel) {
+    constexpr float kEpsilonUVE = 1.0e-5F;
+    const auto differs = [](const float a, const float b) { return std::abs(a - b) > kEpsilonUVE; };
+    switch (channel) {
+        case 0:
+            return differs(before.position.x, after.position.x) || differs(before.position.y, after.position.y) ||
+                   differs(before.position.z, after.position.z);
+        case 1:
+            return differs(before.rotation.x, after.rotation.x) || differs(before.rotation.y, after.rotation.y) ||
+                   differs(before.rotation.z, after.rotation.z) || differs(before.rotation.w, after.rotation.w);
+        default:
+            return differs(before.scale.x, after.scale.x) || differs(before.scale.y, after.scale.y) ||
+                   differs(before.scale.z, after.scale.z);
+    }
+}
+
+bool ShowsTimelineKeyUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples, const std::size_t index,
+                         const int channel) {
+    if (index >= samples.size()) {
+        return false;
+    }
+    if (samples.size() == 1U || index == 0U || index + 1U == samples.size()) {
+        return true;
+    }
+    for (int c = channel < 0 ? 0 : channel; c <= (channel < 0 ? 2 : channel); ++c) {
+        if (TimelineChannelChangesUVE(samples[index - 1U].pose, samples[index].pose, c) ||
+            TimelineChannelChangesUVE(samples[index].pose, samples[index + 1U].pose, c)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace UVE::Editor

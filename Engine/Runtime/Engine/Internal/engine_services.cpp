@@ -269,4 +269,20 @@ Window::IWindowManagerUVE& EngineServicesUVE::GetWindowManagerUVE() const noexce
     return *m_windowManager;
 }
 
+EngineServicesUVE EngineServicesUVE::WithSceneUVE(Scene::IEntityManagerUVE& entityManager,
+                                                  Scene::ISceneGraphUVE& sceneGraph,
+                                                  Render::ICameraSystemUVE& cameraSystem,
+                                                  Render::IMeshRendererUVE& meshRenderer,
+                                                  Render::ILightSystemUVE& lightSystem,
+                                                  Render::IRenderer3DUVE& renderer3D) const noexcept {
+    EngineServicesUVE copy = *this;
+    copy.m_entityManager = &entityManager;
+    copy.m_sceneGraph = &sceneGraph;
+    copy.m_cameraSystem = &cameraSystem;
+    copy.m_meshRenderer = &meshRenderer;
+    copy.m_lightSystem = &lightSystem;
+    copy.m_renderer3D = &renderer3D;
+    return copy;
+}
+
 } // namespace UVE::Core

@@ -14,9 +14,9 @@ namespace UVE::Asset {
 
 /// Bounds mirror the animation clip's caps — a library never needs more entries than a sequencer
 /// lists, and identifiers stay short enough for stable hashing and logging.
-inline constexpr std::size_t kMaximumAnimationLibraryEntriesUVE = 256U;
+inline constexpr std::size_t kMaximumAnimationLibraryEntriesUVE = 4096U;
 inline constexpr std::size_t kMaximumAnimationLibraryIdentifierBytesUVE = 128U;
-inline constexpr std::size_t kMaximumAnimationLibraryPayloadBytesUVE = 1U * 1024U * 1024U;
+inline constexpr std::size_t kMaximumAnimationLibraryPayloadBytesUVE = 16U * 1024U * 1024U;
 
 /// One clip in a library: the clip's GUID (how the sequencer resolves it) plus the display name
 /// the library window and the player's list show. Names ride with the entry rather than being

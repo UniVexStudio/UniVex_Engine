@@ -150,7 +150,21 @@ public:
                        std::span<const UVScript::ValueUVE> args) override;
     void PrintUVE(std::string_view text) override;
 
+    /// Makes a Widget Blueprint's widgets (its `.uvwbp` path) in the world, hidden until
+    /// `ui.add_to_viewport` shows them: the root Canvas, or none when the file cannot be made.
+    using WidgetFactoryUVE = std::function<Scene::EntityUVE(const std::string& path)>;
+    /// Without one, `ui.create` answers no object.
+    void SetWidgetFactoryUVE(WidgetFactoryUVE factory) { m_widgetFactory = std::move(factory); }
+    /// `ui.show_cursor(show)`: shows and frees the pointer for UI, or hides and captures it for the game.
+    using CursorHandlerUVE = std::function<void(bool show)>;
+    void SetCursorHandlerUVE(CursorHandlerUVE handler) { m_cursorHandler = std::move(handler); }
+
 private:
+    /// Widget Blueprints: `ui.*`. The widget named `name` under this object's Canvas (the whole
+    /// world when this object is no widget); none when there is no such widget.
+    [[nodiscard]] Scene::EntityUVE FindWidgetUVE(std::string_view name) const;
+    [[nodiscard]] UVScript::ValueUVE WidgetCallUVE(std::string_view name, std::span<const UVScript::ValueUVE> args);
+
     struct StagedRpcCallUVE final {
         std::string method;
         std::vector<UVScript::ValueUVE> args;
@@ -207,6 +221,8 @@ private:
     std::uint32_t m_nextLobbyCall = 1U;
     Network::NetworkRelayUVE* m_relay = nullptr;
     Network::NetworkSessionUVE* m_relaySession = nullptr;
+    WidgetFactoryUVE m_widgetFactory;
+    CursorHandlerUVE m_cursorHandler;
 };
 
 } // namespace UVE::Core

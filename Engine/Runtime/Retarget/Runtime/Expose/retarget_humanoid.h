@@ -38,6 +38,9 @@ struct HumanoidBoneInfoUVE final {
     std::int32_t aim = -1;
     /// An IK bone rests exactly on this bone; -1 for none.
     std::int32_t follows = -1;
+    /// Generated only when asked for (the corrective shape helpers): a rig that lacks it is still
+    /// complete.
+    bool optional = false;
 
     [[nodiscard]] bool operator==(const HumanoidBoneInfoUVE&) const = default;
 };

@@ -96,4 +96,16 @@ void ResetAnimationGraphUVE(AnimationGraphComponentUVE& tree);
 /// Sets a parameter by name. Returns false when the tree has none by that name.
 [[nodiscard]] bool SetAnimationGraphParameterUVE(AnimationGraphComponentUVE& tree, std::string_view name, float value);
 
+/// Writes the parameters the engine feeds from a character (see AnimationParameterSourceUVE): its
+/// ground speed (the velocity across `up`), its heading against `facing`'s forward (-Z) in degrees,
+/// -180..180 and positive to the right, and whether it is in the air or on the ground. Returns how
+/// many parameters it wrote.
+std::size_t WriteCharacterAnimationParametersUVE(AnimationGraphComponentUVE& tree, const Math::Vector3UVE& velocity,
+                                                 const Math::Vector3UVE& up, const Math::QuaternionUVE& facing, bool grounded);
+
+/// Sets the Vector3 parameter `name` (an IK effector, a look target, in the skeleton's space).
+/// False when there is no such Vector3 parameter or the value is not finite.
+[[nodiscard]] bool SetAnimationGraphVectorParameterUVE(AnimationGraphComponentUVE& tree, std::string_view name,
+                                                       const Math::Vector3UVE& value);
+
 } // namespace UVE::Scene

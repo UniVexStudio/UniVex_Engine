@@ -1,23 +1,32 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 // The Entity Editor: one entity asset (.uventity / .uvprefab) opened on its own, in its own OS
-// window. While it is open the entity is the document - the scene waits in a snapshot, exactly
-// the way Play keeps it - so the Scene tree, the Inspector, gizmos and undo all work on the
-// entity with no second set of tools, and the main window has nothing to draw.
+// window, in a scene of its own (Core::DocumentSceneUVE) beside the level. Inside an
+// EntityDocumentScopeUVE the entity is the document - its scene, selection, undo and dirty state
+// stand in for the level's - so the Scene tree, the Inspector, gizmos and undo all work on the
+// entity with no second set of tools, while the level stays open and editable in its own window.
 
 #include "editor.h"
+#include "transform_component.h"
+
+#include "blueprint_asset.h"
+#include "blueprint_nodes.h"
+#include "widget_blueprint_asset.h"
+#include "scene_object_registry.h"
+#include "scene_object_type.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cfloat>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
 
 #include "animation_sequencer_component.h"
 #include "animation_graph_component.h"
@@ -26,17 +35,43 @@
 #include "script_component.h"
 #include "uvscript_object_host.h"
 #include "uvscript_compiler.h"
+#include "uvscript_instance.h"
 #include "uvscript_parser.h"
+#include "uve_file_envelope.h"
+
+#include <nlohmann/json.hpp>
 
 namespace UVE::Editor {
 namespace {
 
+/// A script slot that holds a node graph: a Blueprint Class, or a Widget Blueprint's own graph.
+[[nodiscard]] bool IsGraphScriptPathUVE(const std::string_view path) noexcept {
+    return path.ends_with(".uvbp") || Asset::IsWidgetBlueprintPathUVE(path);
+}
+
+[[nodiscard]] std::optional<Asset::BlueprintAssetUVE> DecodeGraphScriptUVE(const std::string_view path, const std::vector<std::byte>& bytes) {
+    return Asset::IsWidgetBlueprintPathUVE(path) ? Asset::ReadWidgetBlueprintGraphUVE(bytes) : Asset::DecodeBlueprintAssetUVE(bytes);
+}
+
 [[nodiscard]] bool IsUVScriptFileUVE(const std::string_view path) noexcept { return path.ends_with(".uvs"); }
 
-constexpr ImVec4 kProblemColourUVE{0.95F, 0.62F, 0.35F, 1.0F};
-constexpr ImVec4 kCleanColourUVE{0.45F, 0.80F, 0.55F, 1.0F};
 
 } // namespace
+
+/// The Entity Editor's Simulate: each scripted object's compiled UVScript, and the entity as it
+/// was when Play was pressed.
+struct EntitySimulationUVE final {
+    struct ScriptUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        std::unique_ptr<Core::UVScriptObjectHostUVE> host;
+        std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
+        bool ready = false;
+    };
+    Scene::SceneSnapshotUVE snapshot;
+    bool dirtyBefore = false;
+    bool paused = false;
+    std::vector<ScriptUVE> scripts;
+};
 
 Scene::EntityUVE EditorUVE::LoadEntityIntoDocumentUVE(const Asset::AssetGuidUVE guid) {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -65,6 +100,60 @@ Scene::EntityUVE EditorUVE::LoadEntityIntoDocumentUVE(const Asset::AssetGuidUVE 
     return root;
 }
 
+EditorUVE::EntityDocumentScopeUVE::EntityDocumentScopeUVE(EditorUVE& editor) : m_editor(editor) {
+    if (m_editor.m_entityScene == nullptr || m_editor.m_entityDocumentActive) {
+        return;
+    }
+    m_editor.SwapDocumentStateUVE();
+    m_editor.m_entityDocumentActive = true;
+    m_entered = true;
+}
+
+EditorUVE::EntityDocumentScopeUVE::~EntityDocumentScopeUVE() {
+    if (!m_entered) {
+        return;
+    }
+    m_editor.SwapDocumentStateUVE();
+    m_editor.m_entityDocumentActive = false;
+    if (m_editor.m_entityLevelRefreshPending && m_editor.m_entityEditSession.has_value()) {
+        m_editor.m_entityLevelRefreshPending = false;
+        const std::string status = m_editor.m_contentStatusMessage;
+        if (m_editor.RefreshLevelCopiesUVE(m_editor.m_entityEditSession->guid, m_editor.m_entityEditSession->assetPath) == 0U) {
+            m_editor.m_contentStatusMessage = status;
+        }
+    }
+    if (m_editor.m_entityClosePending.has_value()) {
+        m_editor.m_entityClosePending.reset();
+        m_editor.FinishEntityEditorCloseUVE();
+    }
+}
+
+void EditorUVE::SwapDocumentStateUVE() {
+    DocumentStateUVE& other = m_otherDocument;
+    std::swap(m_services, other.services);
+    std::swap(m_selectedEntities, other.selectedEntities);
+    std::swap(m_selectedEntity, other.selectedEntity);
+    std::swap(m_undoHistory, other.undoHistory);
+    std::swap(m_redoHistory, other.redoHistory);
+    std::swap(m_sceneDirty, other.sceneDirty);
+    std::swap(m_lockedFolders, other.lockedFolders);
+    std::swap(m_lastUsedFolder, other.lastUsedFolder);
+    std::swap(m_pendingComponentChangeEntity, other.pendingComponentChangeEntity);
+    std::swap(m_hierarchyPendingRowOpen, other.hierarchyPendingRowOpen);
+    std::swap(m_previewCamera, other.previewCamera);
+    // A value still being dragged belongs to the document it was started in, and stays with it.
+    std::swap(m_componentPropertyPreview, other.componentPropertyPreview);
+    // Each document has its own view: camera requests, gizmo mode, grid, shading, preview lighting.
+    std::swap(m_viewportOverlayState, m_entityViewportOverlayState);
+    // The scene tree's caches and one-shot gestures describe the document they were made for.
+    m_hierarchyRenameEntity = Scene::kInvalidEntityUVE;
+    m_hierarchyRenameBuffer.clear();
+    m_hierarchyRevealedEntity = Scene::kInvalidEntityUVE;
+    m_hierarchyRevealAncestors.clear();
+    m_hierarchyRevealPending = false;
+    InvalidateHierarchyFilterCacheUVE();
+}
+
 bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
     if (m_entityEditSession.has_value() && m_entityEditSession->assetPath == assetPath) {
         m_entityEditSession->focusPending = true;
@@ -72,7 +161,11 @@ bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
     }
     std::error_code error;
     if (m_state != EditorStateUVE::Running || m_playModeState != EditorPlayModeStateUVE::Edit ||
-        !IsAuthoringCommandAllowedUVE() || !std::filesystem::is_regular_file(assetPath, error)) {
+        m_entityDocumentActive || !IsAuthoringCommandAllowedUVE() || !std::filesystem::is_regular_file(assetPath, error)) {
+        return false;
+    }
+    if (!m_documentSceneFactory) {
+        m_contentStatusMessage = "This editor cannot open entities: it has no scene for them.";
         return false;
     }
     if (m_entityEditSession.has_value() && !CloseEntityEditorUVE(true)) {
@@ -85,51 +178,41 @@ bool EditorUVE::OpenEntityEditorUVE(const std::filesystem::path& assetPath) {
     }
     static_cast<void>(CommitComponentPropertyPreviewUVE());
 
-    EntityEditSessionUVE session;
-    session.assetPath = assetPath;
-    const std::vector<Scene::EntityUVE> roots = GetDocumentRootsUVE();
-    session.sceneWasEmpty = roots.empty();
-    if (!session.sceneWasEmpty) {
-        const std::optional<Scene::SceneSnapshotUVE> snapshot = m_services->GetSceneSerializerUVE().CaptureUVE(
-            m_services->GetEntityManagerUVE(), roots, Asset::AssetKindUVE::Scene);
-        if (!snapshot.has_value()) {
-            return false;
-        }
-        session.sceneSnapshot = *snapshot;
-    }
-    session.sceneDirtyBefore = m_sceneDirty;
-    session.selectionBefore = CaptureSelectionPathsUVE(roots);
-    session.guid = m_services->GetAssetDatabaseUVE().RegisterUVE(assetPath);
-    if (session.guid == Asset::kInvalidAssetGuidUVE) {
+    const Asset::AssetGuidUVE guid = m_services->GetAssetDatabaseUVE().RegisterUVE(assetPath);
+    if (guid == Asset::kInvalidAssetGuidUVE) {
         return false;
     }
-
-    if (m_simulationControl != nullptr) {
-        session.simulationBefore = m_simulationControl->GetSimulationExecutionModeUVE();
-        static_cast<void>(m_simulationControl->SetSimulationExecutionModeUVE(Core::SimulationExecutionModeUVE::Paused));
+    // The entity gets a scene of its own: the level stays exactly as it is, open and editable.
+    m_entityScene = m_documentSceneFactory();
+    if (m_entityScene == nullptr) {
+        return false;
     }
+    m_otherDocument = DocumentStateUVE{};
+    m_otherDocument.services = &m_entityScene->GetServicesUVE();
+
+    EntityEditSessionUVE session;
+    session.assetPath = assetPath;
+    session.guid = guid;
     m_entityEditSession = std::move(session);
 
-    ClearDocumentSceneUVE();
-    const Scene::EntityUVE loadedRoot = LoadEntityIntoDocumentUVE(m_entityEditSession->guid);
+    Scene::EntityUVE loadedRoot = Scene::kInvalidEntityUVE;
+    {
+        const EntityDocumentScopeUVE scope(*this);
+        loadedRoot = LoadEntityIntoDocumentUVE(guid);
+        m_sceneDirty = false;
+    }
     if (loadedRoot == Scene::kInvalidEntityUVE) {
-        // Could not read the entity: put the scene back as it was.
-        ClearDocumentSceneUVE();
-        const EntityEditSessionUVE failedSession = std::move(*m_entityEditSession);
         m_entityEditSession.reset();
-        if (!failedSession.sceneWasEmpty) {
-            const std::vector<Scene::EntityUVE> restored =
-                m_services->GetSceneSerializerUVE().RestoreUVE(m_services->GetEntityManagerUVE(), failedSession.sceneSnapshot);
-            RestoreSelectionUVE(ResolveSelectionPathsUVE(failedSession.selectionBefore, restored));
+        m_otherDocument = DocumentStateUVE{};
+        if (m_documentSceneClosing) {
+            m_documentSceneClosing(m_entityScene->GetServicesUVE());
         }
-        m_sceneDirty = failedSession.sceneDirtyBefore;
-        InvalidateHierarchyFilterCacheUVE();
+        m_entityScene.reset();
+        m_contentStatusMessage = "Could not read " + assetPath.filename().string() + ".";
         return false;
     }
     m_entityEditSession->rootEntity = loadedRoot;
     m_entityEditSession->focusPending = true;
-    ClearHistoryUVE();
-    m_sceneDirty = false;
     // The script editor worked on scene objects; the entity brings its own.
     CloseOpenUVScriptUVE();
     return true;
@@ -147,6 +230,7 @@ Scene::EntityUVE EditorUVE::GetEntityEditorRootUVE() {
     if (!m_entityEditSession.has_value()) {
         return Scene::kInvalidEntityUVE;
     }
+    const EntityDocumentScopeUVE scope(*this);
     const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
     if (sceneRoot != Scene::kInvalidEntityUVE) {
         const std::vector<Scene::EntityUVE> children =
@@ -161,24 +245,42 @@ bool EditorUVE::SaveEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
+    if (m_saveOpenBlueprintUVE) {
+        m_saveOpenBlueprintUVE();   // Ctrl+S saves the graph and the entity together
+    }
+    // What a simulation did is not the entity: it is put back before anything is written.
+    static_cast<void>(StopEntitySimulationUVE());
+    const EntityDocumentScopeUVE scope(*this);
     static_cast<void>(CommitComponentPropertyPreviewUVE());
     const Scene::EntityUVE root = GetEntityEditorRootUVE();
     if (root == Scene::kInvalidEntityUVE) {
         m_contentStatusMessage = "An entity has exactly one root object: put the other top-level objects under it, then save.";
         return false;
     }
+    // A Widget Blueprint's graph lives in the same file: kept across the widgets being written.
+    const bool widget = Asset::IsWidgetBlueprintPathUVE(m_entityEditSession->assetPath.generic_string());
+    std::optional<Asset::BlueprintAssetUVE> widgetGraph;
+    if (widget) {
+        widgetGraph = Asset::LoadWidgetBlueprintGraphUVE(m_entityEditSession->assetPath);
+    }
     const Asset::AssetGuidUVE guid = m_services->GetPrefabSystemUVE().SavePrefabUVE(
         m_services->GetEntityManagerUVE(), m_services->GetAssetDatabaseUVE(), root, m_entityEditSession->assetPath);
+    if (guid != Asset::kInvalidAssetGuidUVE && widget && widgetGraph.has_value()) {
+        static_cast<void>(Asset::SaveWidgetBlueprintGraphUVE(m_entityEditSession->assetPath, *widgetGraph));
+    }
     if (guid == Asset::kInvalidAssetGuidUVE) {
         m_contentStatusMessage = "Could not save " + m_entityEditSession->assetPath.filename().string() + ".";
         return false;
     }
     m_entityEditSession->savedOnce = true;
     m_sceneDirty = false;
+    // The level's copies follow every save, not only the close (done once the level is active).
+    m_entityLevelRefreshPending = true;
     if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE() && !SaveOpenUVScriptUVE()) {
         m_contentStatusMessage = "Saved the entity, but could not write " + m_openUVScript->path + ".";
         return false;
     }
+    m_contentStatusMessage = "Saved " + m_entityEditSession->assetPath.filename().string() + ".";
     return true;
 }
 
@@ -186,6 +288,14 @@ bool EditorUVE::RevertEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
+    if (m_saveOpenBlueprintUVE) {
+        m_saveOpenBlueprintUVE();   // Revert is the entity's, not the Blueprint's edits
+    }
+    if (m_entityEditSession->simulation != nullptr) {
+        m_entityEditSession->simulation->scripts.clear();
+        m_entityEditSession->simulation.reset();
+    }
+    const EntityDocumentScopeUVE scope(*this);
     m_componentPropertyPreview.reset();
     ClearDocumentSceneUVE();
     const Scene::EntityUVE loadedRoot = LoadEntityIntoDocumentUVE(m_entityEditSession->guid);
@@ -212,56 +322,84 @@ bool EditorUVE::CloseEntityEditorUVE(const bool save) {
         m_contentStatusMessage = "Could not save entity changes before closing.";
         return false;
     }
+    // Asked from inside the entity's own scope (its window, its shortcuts): the scene it is using
+    // goes away once that scope hands the level back.
+    if (m_entityDocumentActive) {
+        m_entityClosePending = save;
+        return true;
+    }
+    FinishEntityEditorCloseUVE();
+    return true;
+}
+
+void EditorUVE::FinishEntityEditorCloseUVE() {
+    if (!m_entityEditSession.has_value() || m_entityDocumentActive) {
+        return;
+    }
     CloseOpenUVScriptUVE();
     m_componentPropertyPreview.reset();
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (m_entityEditSession->simulation != nullptr) {
+        m_entityEditSession->simulation->scripts.clear();   // before the scene they run on goes
+        m_entityEditSession->simulation.reset();
+    }
     const EntityEditSessionUVE session = std::move(*m_entityEditSession);
     m_entityEditSession.reset();
+    m_otherDocument = DocumentStateUVE{};
+    if (m_documentSceneClosing && m_entityScene != nullptr) {
+        m_documentSceneClosing(m_entityScene->GetServicesUVE());
+    }
+    m_entityScene.reset();
 
-    ClearDocumentSceneUVE();
-    std::vector<Scene::EntityUVE> restored;
-    if (!session.sceneWasEmpty) {
-        restored = m_services->GetSceneSerializerUVE().RestoreUVE(entityManager, session.sceneSnapshot);
-    }
-    if (restored.empty()) {
-        // Fallback recovery: Ensure the main level editor scene and viewport layout are fully restored
-        static_cast<void>(EnsureDocumentSceneRootUVE());
-        static_cast<void>(EnsureDocumentLayoutUVE());
-        m_contentStatusMessage = "Returned to Level Editor.";
-    } else {
-        RestoreSelectionUVE(ResolveSelectionPathsUVE(session.selectionBefore, restored));
-    }
-    m_sceneDirty = session.sceneDirtyBefore;
-    ClearHistoryUVE();
-    if (m_simulationControl != nullptr && session.simulationBefore.has_value()) {
-        static_cast<void>(m_simulationControl->SetSimulationExecutionModeUVE(*session.simulationBefore));
-    }
-    InvalidateHierarchyFilterCacheUVE();
-
-    // The file changed: instances of it in the scene that have no local changes follow it.
+    // The file changed: the copies of it in the level follow it.
     if (session.savedOnce) {
-        std::vector<Scene::EntityUVE> instances;
-        entityManager.ForEachUVE<Scene::PrefabInstanceComponentUVE>(
-            [&instances, &session](const Scene::EntityUVE entity, Scene::PrefabInstanceComponentUVE& instance) {
-                if (instance.sourcePrefabGuid == session.guid) {
-                    instances.push_back(entity);
-                }
-            });
-        std::size_t refreshed = 0U;
-        for (const Scene::EntityUVE instance : instances) {
-            const Scene::PrefabRefreshResultUVE result = m_services->GetPrefabSystemUVE().RefreshInstanceUVE(
-                entityManager, m_services->GetSceneGraphUVE(), m_services->GetAssetDatabaseUVE(), instance);
-            refreshed += result.code == Scene::PrefabRefreshCodeUVE::Refreshed ? 1U : 0U;
-        }
-        if (refreshed > 0U) {
-            m_sceneDirty = true;
-            InvalidateHierarchyFilterCacheUVE();
-            m_contentStatusMessage = "Applied changes to Level Editor: updated " + std::to_string(refreshed) +
-                                     " placed " + (refreshed == 1U ? "copy" : "copies") + " of " +
-                                     session.assetPath.filename().string() + " in the scene.";
-        }
+        RefreshLevelCopiesUVE(session.guid, session.assetPath);
     }
-    return true;
+}
+
+std::size_t EditorUVE::RefreshLevelCopiesUVE(const Asset::AssetGuidUVE guid, const std::filesystem::path& assetPath) {
+    if (m_entityDocumentActive || guid == Asset::kInvalidAssetGuidUVE) {
+        return 0U;   // only on the level's own scene
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    std::vector<Scene::EntityUVE> instances;
+    entityManager.ForEachUVE<Scene::PrefabInstanceComponentUVE>(
+        [&instances, guid](const Scene::EntityUVE entity, Scene::PrefabInstanceComponentUVE& instance) {
+            if (instance.sourcePrefabGuid == guid) {
+                instances.push_back(entity);
+            }
+        });
+    std::size_t refreshed = 0U;
+    for (const Scene::EntityUVE instance : instances) {
+        // Where the copy stands and what it is called are the level's, not the file's: kept.
+        const std::optional<Scene::TransformComponentUVE> placed =
+            entityManager.HasComponentUVE<Scene::TransformComponentUVE>(instance)
+                ? std::optional<Scene::TransformComponentUVE>{entityManager.GetComponentUVE<Scene::TransformComponentUVE>(instance)}
+                : std::nullopt;
+        const std::optional<std::string> name =
+            entityManager.HasComponentUVE<Scene::NameComponentUVE>(instance)
+                ? std::optional<std::string>{entityManager.GetComponentUVE<Scene::NameComponentUVE>(instance).name}
+                : std::nullopt;
+        const Scene::PrefabRefreshResultUVE result = m_services->GetPrefabSystemUVE().RefreshInstanceUVE(
+            entityManager, sceneGraph, m_services->GetAssetDatabaseUVE(), instance, true);
+        if (result.code != Scene::PrefabRefreshCodeUVE::Refreshed || !entityManager.IsAliveUVE(result.rootEntity)) {
+            continue;
+        }
+        if (placed.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(result.rootEntity)) {
+            sceneGraph.SetLocalTransformUVE(entityManager, result.rootEntity, *placed);
+        }
+        if (name.has_value() && entityManager.HasComponentUVE<Scene::NameComponentUVE>(result.rootEntity)) {
+            entityManager.GetComponentUVE<Scene::NameComponentUVE>(result.rootEntity).name = *name;
+        }
+        ++refreshed;
+    }
+    if (refreshed > 0U) {
+        m_sceneDirty = true;
+        InvalidateHierarchyFilterCacheUVE();
+        m_contentStatusMessage = "Updated " + std::to_string(refreshed) + " placed " + (refreshed == 1U ? "copy" : "copies") + " of " +
+                                 assetPath.filename().string() + " in the level.";
+    }
+    return refreshed;
 }
 
 EditorUVE::EntityEditorTabUVE EditorUVE::GetEntityEditorTabUVE() const noexcept {
@@ -276,7 +414,11 @@ void EditorUVE::SetEntityEditorTabUVE(const EntityEditorTabUVE tab) noexcept {
 }
 
 bool EditorUVE::HasEntityEditorUnsavedChangesUVE() const noexcept {
-    return m_entityEditSession.has_value() && (m_sceneDirty || (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()));
+    if (!m_entityEditSession.has_value()) {
+        return false;
+    }
+    const bool entityDirty = m_entityDocumentActive ? m_sceneDirty : m_otherDocument.sceneDirty;
+    return entityDirty || (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE());
 }
 
 std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorObjectsUVE() {
@@ -284,6 +426,7 @@ std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorObjectsUVE() {
     if (!m_entityEditSession.has_value()) {
         return objects;
     }
+    const EntityDocumentScopeUVE scope(*this);
     // Depth first, children in their authored order: the order the Scene tree shows.
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const Scene::EntityUVE sceneRoot = GetDocumentSceneRootUVE();
@@ -308,7 +451,7 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return 0U;
     }
-    static_cast<void>(CommitComponentPropertyPreviewUVE());
+    const EntityDocumentScopeUVE scope(*this);
     std::vector<EntityCompileProblemUVE> problems;
     const std::vector<Scene::EntityUVE> objects = CollectEntityEditorObjectsUVE();
     if (GetEntityEditorRootUVE() == Scene::kInvalidEntityUVE) {
@@ -330,6 +473,51 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
         base.entity = entity;
         base.objectName = GetEntityDisplayLabelUVE(entity);
         base.scriptPath = path;
+        if (IsGraphScriptPathUVE(path)) {
+            // A Blueprint Class: the graph being edited (or the file), translated and compiled
+            // against this object; each problem points at its node.
+            std::optional<Asset::BlueprintAssetUVE> blueprint =
+                m_openBlueprintProviderUVE ? m_openBlueprintProviderUVE(path) : std::optional<Asset::BlueprintAssetUVE>{};
+            if (!blueprint.has_value()) {
+                if (const std::optional<std::string> bytes = ReadProjectTextFileUVE(path); bytes.has_value()) {
+                    const auto* const data = reinterpret_cast<const std::byte*>(bytes->data());
+                    blueprint = DecodeGraphScriptUVE(path, std::vector<std::byte>(data, data + bytes->size()));
+                }
+            }
+            if (!blueprint.has_value()) {
+                base.message = "The Blueprint at " + path + " cannot be read.";
+                problems.push_back(std::move(base));
+                continue;
+            }
+            const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+                Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
+            const Asset::BlueprintTranslationUVE translated = Asset::TranslateBlueprintToUVScriptUVE(
+                *blueprint, std::filesystem::path(path).stem().string(), descriptor != nullptr ? descriptor->displayName : "Object3D");
+            const auto titled = [&blueprint](const std::uint32_t node, const std::string& message) {
+                for (const Asset::BlueprintNodeUVE& n : blueprint->nodes) {
+                    if (n.id == node) {
+                        const Asset::BlueprintNodeTypeUVE* const type = Asset::FindBlueprintNodeTypeUVE(n.type);
+                        const std::string title = type == nullptr ? n.type : n.variable.empty() ? type->title : type->title + " " + n.variable;
+                        return title + ": " + message;
+                    }
+                }
+                return message;
+            };
+            for (const auto& [node, message] : translated.problems) {
+                EntityCompileProblemUVE problem = base;
+                problem.blueprintNode = node;
+                problem.message = titled(node, message);
+                problems.push_back(std::move(problem));
+            }
+            Core::UVScriptObjectHostUVE host(entityManager, nullptr, entity);
+            for (const UVScript::DiagnosticUVE& diagnostic : UVScript::CompileUVScriptSourceUVE(translated.source, host).diagnostics) {
+                EntityCompileProblemUVE problem = base;
+                problem.blueprintNode = translated.NodeAtLineUVE(diagnostic.at.line);
+                problem.message = titled(problem.blueprintNode, diagnostic.message);
+                problems.push_back(std::move(problem));
+            }
+            continue;
+        }
         if (!IsUVScriptFileUVE(path)) {
             base.message = "The script is not a UVScript file (.uvs).";
             problems.push_back(std::move(base));
@@ -360,6 +548,131 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
     return m_entityEditSession->problems.size();
 }
 
+std::vector<EntityDiffRowUVE> EditorUVE::DiffEntityEditorUVE() {
+    if (!m_entityEditSession.has_value()) {
+        return {};
+    }
+    const EntityDocumentScopeUVE scope(*this);
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
+    const auto payloadText = [](const std::vector<std::byte>& payload) {
+        return std::string(reinterpret_cast<const char*>(payload.data()), payload.size());
+    };
+    std::string saved;
+    if (const auto file = Asset::ReadUveFileUVE(m_entityEditSession->assetPath); file.has_value()) {
+        saved = payloadText(file->second);
+    }
+    std::string current;
+    const Scene::EntityUVE root = GetEntityEditorRootUVE();
+    if (root != Scene::kInvalidEntityUVE) {
+        const std::optional<Scene::SceneSnapshotUVE> snapshot = m_services->GetSceneSerializerUVE().CaptureUVE(
+            m_services->GetEntityManagerUVE(), {root}, Asset::AssetKindUVE::Prefab);
+        if (snapshot.has_value()) {
+            if (const auto decoded = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes); decoded.has_value()) {
+                current = payloadText(decoded->second);
+            }
+        }
+    }
+    return DiffEntityPayloadsUVE(saved, current);
+}
+
+std::vector<EditorUVE::EntityFindRowUVE> EditorUVE::FindInEntityEditorUVE(const std::string_view query) {
+    std::vector<EntityFindRowUVE> rows;
+    if (!m_entityEditSession.has_value() || query.empty()) {
+        return rows;
+    }
+    const EntityDocumentScopeUVE scope(*this);
+    const auto lower = [](std::string text) {
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return text;
+    };
+    const std::string needle = lower(std::string(query));
+    const auto matches = [&](const std::string& text) { return lower(text).find(needle) != std::string::npos; };
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
+        const std::string object = GetEntityDisplayLabelUVE(entity);
+        if (matches(object)) {
+            rows.push_back(EntityFindRowUVE{entity, object, "Name", object});
+        }
+        const std::string type(GetObjectTypeNameUVE(entity));
+        if (matches(type)) {
+            rows.push_back(EntityFindRowUVE{entity, object, "Type", type});
+        }
+        // Its components as the file holds them: every property name and value can be found.
+        const std::optional<Scene::SceneSnapshotUVE> snapshot =
+            m_services->GetSceneSerializerUVE().CaptureUVE(entityManager, {entity}, Asset::AssetKindUVE::Prefab);
+        if (!snapshot.has_value()) {
+            continue;
+        }
+        const auto decoded = Asset::DecodeUveFileEnvelopeUVE(snapshot->bytes);
+        if (!decoded.has_value()) {
+            continue;
+        }
+        const nlohmann::json doc = nlohmann::json::parse(
+            std::string(reinterpret_cast<const char*>(decoded->second.data()), decoded->second.size()), nullptr, false);
+        if (doc.is_discarded() || !doc.contains("entities") || !doc["entities"].is_array()) {
+            continue;
+        }
+        for (const nlohmann::json& item : doc["entities"]) {
+            // The captured object itself (its descendants are listed as themselves).
+            const nlohmann::json& components = item.contains("components") ? item["components"] : nlohmann::json::object();
+            if (!components.is_object() || !components.contains("HierarchyComponentUVE") ||
+                components["HierarchyComponentUVE"].value("parentLocalId", static_cast<std::int64_t>(0)) >= 0) {
+                continue;
+            }
+            for (auto c = components.begin(); c != components.end(); ++c) {
+                std::string component = c.key();
+                if (component == "HierarchyComponentUVE" || component == "NameComponentUVE") {
+                    continue;
+                }
+                if (component.size() > 12U && component.ends_with("ComponentUVE")) {
+                    component.resize(component.size() - 12U);
+                }
+                if (matches(component)) {
+                    rows.push_back(EntityFindRowUVE{entity, object, component, component});
+                }
+                if (!c.value().is_object()) {
+                    continue;
+                }
+                for (auto p = c.value().begin(); p != c.value().end(); ++p) {
+                    const std::string value = p.value().is_string() ? p.value().get<std::string>() : p.value().dump();
+                    if (matches(p.key()) || (p.value().is_string() && matches(value))) {
+                        rows.push_back(EntityFindRowUVE{entity, object, component + "." + p.key(), value});
+                    }
+                }
+            }
+            break;
+        }
+    }
+    return rows;
+}
+
+std::optional<std::string> EditorUVE::ReadEntityScriptSourceUVE(const std::string& path, const Scene::EntityUVE entity) const {
+    if (IsGraphScriptPathUVE(path)) {
+        std::optional<Asset::BlueprintAssetUVE> blueprint =
+            m_openBlueprintProviderUVE ? m_openBlueprintProviderUVE(path) : std::optional<Asset::BlueprintAssetUVE>{};
+        if (!blueprint.has_value()) {
+            if (const std::optional<std::string> bytes = ReadProjectTextFileUVE(path); bytes.has_value()) {
+                const auto* const data = reinterpret_cast<const std::byte*>(bytes->data());
+                blueprint = DecodeGraphScriptUVE(path, std::vector<std::byte>(data, data + bytes->size()));
+            }
+        }
+        if (!blueprint.has_value()) {
+            return std::nullopt;
+        }
+        const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+        const Scene::Objects::SceneObjectDescriptorUVE* const descriptor =
+            Scene::Objects::FindSceneObjectDescriptorUVE(Scene::ResolveSceneObjectKindUVE(entityManager, entity));
+        return Asset::TranslateBlueprintToUVScriptUVE(*blueprint, std::filesystem::path(path).stem().string(),
+                                                      descriptor != nullptr ? descriptor->displayName : "Object3D")
+            .source;
+    }
+    if (m_openUVScript.has_value() && m_openUVScript->path == path) {
+        return m_openUVScript->text;
+    }
+    return ReadProjectTextFileUVE(path);
+}
+
 const std::vector<EditorUVE::EntityCompileProblemUVE>& EditorUVE::GetEntityEditorProblemsUVE() const noexcept {
     static const std::vector<EntityCompileProblemUVE> kNoneUVE;
     return m_entityEditSession.has_value() ? m_entityEditSession->problems : kNoneUVE;
@@ -371,18 +684,17 @@ bool EditorUVE::HasEntityEditorCompiledUVE() const noexcept {
 
 std::vector<EditorUVE::EntitySignalRowUVE> EditorUVE::GetEntityEditorSignalsUVE() {
     std::vector<EntitySignalRowUVE> rows;
+    const EntityDocumentScopeUVE scope(*this);
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
         if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
             continue;
         }
         const std::string path = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
-        if (!IsUVScriptFileUVE(path)) {
+        if (!IsUVScriptFileUVE(path) && !IsGraphScriptPathUVE(path)) {
             continue;
         }
-        const std::optional<std::string> text = m_openUVScript.has_value() && m_openUVScript->path == path
-                                                    ? std::optional<std::string>{m_openUVScript->text}
-                                                    : ReadProjectTextFileUVE(path);
+        const std::optional<std::string> text = ReadEntityScriptSourceUVE(path, entity);
         if (!text.has_value()) {
             continue;
         }
@@ -412,6 +724,7 @@ bool EditorUVE::GoToEntityScriptUVE(const Scene::EntityUVE entity, const std::ui
     if (!m_entityEditSession.has_value()) {
         return false;
     }
+    const EntityDocumentScopeUVE scope(*this);
     SelectEntityUVE(entity);
     if (!OpenUVScriptForEntityUVE(entity)) {
         return false;
@@ -423,518 +736,150 @@ bool EditorUVE::GoToEntityScriptUVE(const Scene::EntityUVE entity, const std::ui
     return true;
 }
 
-void EditorUVE::DrawEntityCompileBadgeUVE(const EntityEditSessionUVE& session) {
-    if (!session.compiled) {
-        ImGui::TextDisabled("Not compiled");
-    } else if (session.problems.empty()) {
-        ImGui::TextColored(kCleanColourUVE, "Compiled");
-    } else {
-        ImGui::TextColored(kProblemColourUVE, "%zu problem%s", session.problems.size(),
-                           session.problems.size() == 1U ? "" : "s");
-    }
-}
 
-void EditorUVE::DrawEntityEditorMiddleUVE(EntityEditSessionUVE& session) {
-    // Compile's list sits under the tabs while it has something to say.
-    const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
-    const bool showProblems = session.compiled && !session.problems.empty();
-    const float problemsHeight =
-        showProblems ? std::min(ImGui::GetContentRegionAvail().y * 0.3F,
-                                lineHeight * static_cast<float>(session.problems.size() + 2U) + 8.0F)
-                     : 0.0F;
-    const float tabsHeight = ImGui::GetContentRegionAvail().y - problemsHeight - (showProblems ? 4.0F : 0.0F);
+// ------------------------------------------------------------------------------------ simulate
 
-    ImGui::BeginChild("##entity-tabs", ImVec2{0.0F, tabsHeight}, false,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                          ImGuiWindowFlags_NoMove);
-    if (ImGui::BeginTabBar("##entity-middle-tabs")) {
-        const auto tab = [&session](const char* label, const EntityEditorTabUVE which) {
-            // The tab the session names is forced once; after that clicks decide.
-            const ImGuiTabItemFlags flags = session.tab == which && session.forceTab ? ImGuiTabItemFlags_SetSelected : 0;
-            const bool open = ImGui::BeginTabItem(label, nullptr, flags);
-            if (open && !session.forceTab) {
-                session.tab = which;
-            }
-            return open;
-        };
-        if (tab("Viewport", EntityEditorTabUVE::Viewport)) {
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
-            ImGui::BeginChild("##entity-view", ImVec2{0.0F, 0.0F}, true,
-                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                                  ImGuiWindowFlags_NoMove);
-            DrawViewportImageUVE(ViewportContextUVE::EntityEditor);
-            ImGui::EndChild();
-            ImGui::PopStyleVar();
-            ImGui::EndTabItem();
-        }
-        if (tab("Scripting", EntityEditorTabUVE::Scripting)) {
-            DrawEntityEditorScriptingTabUVE();
-            ImGui::EndTabItem();
-        }
-        if (tab("Events", EntityEditorTabUVE::Events)) {
-            DrawEntityEditorSignalsTabUVE();
-            ImGui::EndTabItem();
-        }
-        session.forceTab = false;
-        ImGui::EndTabBar();
-    }
-    ImGui::EndChild();
 
-    if (!showProblems) {
-        return;
+bool EditorUVE::PlayEntitySimulationUVE() {
+    if (!m_entityEditSession.has_value()) {
+        return false;
     }
-    ImGui::BeginChild("##entity-problems", ImVec2{0.0F, 0.0F}, true);
-    ImGui::TextColored(kProblemColourUVE, "Compile found %zu problem%s", session.problems.size(),
-                       session.problems.size() == 1U ? "" : "s");
-    ImGui::SameLine();
-    ImGui::TextDisabled("- click one to go there");
-    if (ImGui::BeginTable("##entity-problem-list", 3,
-                          ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings)) {
-        ImGui::TableSetupColumn("Object");
-        ImGui::TableSetupColumn("Where");
-        ImGui::TableSetupColumn("Problem", ImGuiTableColumnFlags_WidthStretch);
-        std::optional<std::size_t> clicked;
-        for (std::size_t index = 0U; index < session.problems.size(); ++index) {
-            const EntityCompileProblemUVE& problem = session.problems[index];
-            ImGui::PushID(static_cast<int>(index));
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0);
-            const std::string object = problem.objectName.empty() ? std::string{"(entity)"} : problem.objectName;
-            if (ImGui::Selectable(object.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
-                clicked = index;
-            }
-            ImGui::TableSetColumnIndex(1);
-            if (problem.scriptPath.empty()) {
-                ImGui::TextDisabled("-");
-            } else if (problem.at.line == 0U) {
-                ImGui::TextDisabled("%s", std::filesystem::path{problem.scriptPath}.filename().string().c_str());
-            } else {
-                ImGui::TextDisabled("%s:%u", std::filesystem::path{problem.scriptPath}.filename().string().c_str(),
-                                    problem.at.line);
-            }
-            ImGui::TableSetColumnIndex(2);
-            ImGui::TextWrapped("%s", problem.message.c_str());
-            ImGui::PopID();
-        }
-        ImGui::EndTable();
-        if (clicked.has_value()) {
-            const EntityCompileProblemUVE problem = session.problems[*clicked];
-            if (problem.entity != Scene::kInvalidEntityUVE && !GoToEntityScriptUVE(problem.entity, problem.at.line)) {
-                SelectEntityUVE(problem.entity);
-            }
-        }
+    if (m_entityEditSession->simulation == nullptr && m_saveOpenBlueprintUVE) {
+        m_saveOpenBlueprintUVE();   // the run and the editor read the same graph, and Stop keeps it
     }
-    ImGui::EndChild();
-}
-
-void EditorUVE::DrawEntityEditorDockUVE(EntityEditSessionUVE& session) {
-    if (!ImGui::BeginTabBar("##entity-dock-tabs")) {
-        return;
+    if (m_entityEditSession->simulation != nullptr) {
+        m_entityEditSession->simulation->paused = false;
+        return true;
     }
-    // The animation tabs belong to their object: the Timeline shows while an AnimationSequencer is
-    // selected, the Anim Graph while an AnimationGraph is. Anything else leaves Content alone.
+    const EntityDocumentScopeUVE scope(*this);
+    static_cast<void>(CommitComponentPropertyPreviewUVE());
+    const Scene::EntityUVE root = GetEntityEditorRootUVE();
+    if (root == Scene::kInvalidEntityUVE) {
+        m_contentStatusMessage = "An entity has exactly one root object: put the other top-level objects under it, then simulate.";
+        return false;
+    }
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const Scene::EntityUVE selected = m_selectedEntity;
-    const bool selectedAlive = selected != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(selected);
-    const bool hasPlayer = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(selected);
-    const bool hasTree = selectedAlive && entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(selected);
-    // Selecting one opens its tab once; after that the tab is the user's choice.
-    std::optional<EntityEditorDockTabUVE> follow;
-    if (selected != session.dockFollowed) {
-        session.dockFollowed = selected;
-        if (hasPlayer) {
-            follow = EntityEditorDockTabUVE::Timeline;
-        } else if (hasTree) {
-            follow = EntityEditorDockTabUVE::AnimGraph;
+    const std::optional<Scene::SceneSnapshotUVE> snapshot =
+        m_services->GetSceneSerializerUVE().CaptureUVE(entityManager, {root}, Asset::AssetKindUVE::Prefab);
+    if (!snapshot.has_value()) {
+        m_contentStatusMessage = "Could not take the entity's state to simulate it.";
+        return false;
+    }
+    auto simulation = std::make_shared<EntitySimulationUVE>();
+    simulation->snapshot = *snapshot;
+    simulation->dirtyBefore = m_sceneDirty;
+    std::size_t failed = 0U;
+    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
+        if (!entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+            continue;
         }
-        // Tracks and graphs need room: opening one grows a short dock (the layout keeps it
-        // inside the window); a taller one the user set is left alone.
-        if (follow.has_value()) {
-            session.dockHeight = std::max(session.dockHeight, 320.0F);
+        const Scene::ScriptComponentUVE& component = entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity);
+        if (!IsUVScriptFileUVE(component.scriptAssetPath) && !IsGraphScriptPathUVE(component.scriptAssetPath)) {
+            continue;
         }
-    }
-    const auto tab = [&session, &follow](const char* label, const EntityEditorDockTabUVE which) {
-        const ImGuiTabItemFlags flags =
-            follow.has_value() && *follow == which ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-        const bool open = ImGui::BeginTabItem(label, nullptr, flags);
-        if (open) {
-            session.dockTab = which;
+        std::optional<std::string> text = ReadEntityScriptSourceUVE(component.scriptAssetPath, entity);
+        if (!text.has_value()) {
+            ++failed;
+            continue;
         }
-        return open;
-    };
-    if (tab("Content", EntityEditorDockTabUVE::Content)) {
-        // The project's Content Browser, the same one as the main window's: drag an entity or
-        // model from here onto the tree to add it under the entity.
-        ImGui::BeginChild("##entity-dock-content", ImVec2{0.0F, 0.0F}, false);
-        DrawContentBrowserBodyUVE();
-        ImGui::EndChild();
-        // The item right-click menu; the main window's dock draws it only while that dock is shown.
-        DrawFilesystemContextPopupUVE();
-        ImGui::EndTabItem();
-    }
-    bool timelineShown = false;
-    if (hasPlayer && tab("Timeline", EntityEditorDockTabUVE::Timeline)) {
-        timelineShown = true;
-        // Its own child window, so "the Timeline has focus" means this panel, not the whole editor.
-        ImGui::BeginChild("##timeline", ImVec2{0.0F, 0.0F}, false, ImGuiWindowFlags_NoScrollbar);
-        DrawAnimationTimelineUVE();
-        ImGui::EndChild();
-        ImGui::EndTabItem();
-    }
-    if (!timelineShown) {
-        StopAnimationTimelinePreviewUVE();
-    }
-    bool graphShown = false;
-    if (hasTree && tab("Anim Graph", EntityEditorDockTabUVE::AnimGraph)) {
-        graphShown = true;
-        ImGui::BeginChild("##anim-graph", ImVec2{0.0F, 0.0F}, false, ImGuiWindowFlags_NoScrollbar);
-        DrawAnimationGraphCanvasUVE();
-        ImGui::EndChild();
-        ImGui::EndTabItem();
-    }
-    if (!graphShown) {
-        StopAnimationGraphPreviewUVE();
-    }
-    ImGui::EndTabBar();
-}
-
-void EditorUVE::DrawEntityEditorScriptingTabUVE() {
-    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-    const Scene::EntityUVE entity = m_selectedEntity;
-    const bool alive = entity != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(entity);
-    const std::string path = alive && entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity)
-                                 ? entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath
-                                 : std::string{};
-    // Follow the selection: the tab always shows the selected object's script.
-    if (alive && IsUVScriptFileUVE(path) && (!m_openUVScript.has_value() || m_openUVScript->entity != entity)) {
-        if (!m_openUVScript.has_value() || !m_openUVScript->IsDirtyUVE() || m_openUVScript->path == path) {
-            static_cast<void>(OpenUVScriptForEntityUVE(entity));
-            m_activeWorkspace = EditorWorkspaceUVE::Library;
+        EntitySimulationUVE::ScriptUVE script;
+        script.entity = entity;
+        EntitySimulationUVE* const raw = simulation.get();
+        script.host = std::make_unique<Core::UVScriptObjectHostUVE>(
+            entityManager, &m_services->GetInputSystemUVE(), entity, nullptr, nullptr,
+            [raw](const Scene::EntityUVE other) -> UVScript::ScriptInstanceUVE* {
+                for (EntitySimulationUVE::ScriptUVE& candidate : raw->scripts) {
+                    if (candidate.entity == other) {
+                        return candidate.instance.get();
+                    }
+                }
+                return nullptr;
+            });
+        const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(*text, *script.host);
+        if (!compiled.IsSuccessUVE()) {
+            ++failed;
+            continue;
         }
-    }
-    if (m_openUVScript.has_value() && alive && m_openUVScript->entity == entity) {
-        static_cast<void>(DrawUVScriptEditorBodyUVE(false));
-        return;
-    }
-
-    // Nothing to show: say why, and offer the one useful action.
-    const ImVec2 area = ImGui::GetContentRegionAvail();
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + area.y * 0.38F);
-    const auto centred = [&area](const std::string& text, const bool disabled) {
-        ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(text.c_str()).x) * 0.5F);
-        if (disabled) {
-            ImGui::TextDisabled("%s", text.c_str());
-        } else {
-            ImGui::TextUnformatted(text.c_str());
-        }
-    };
-    if (!alive) {
-        centred("Select an object to see its script.", true);
-        return;
-    }
-    const std::string name = GetEntityDisplayLabelUVE(entity);
-    if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE() && IsUVScriptFileUVE(path)) {
-        centred(std::filesystem::path{m_openUVScript->path}.filename().string() + " has unsaved text.", false);
-        centred("Save it (Ctrl+S) before switching to " + name + "'s script.", true);
-        return;
-    }
-    if (!path.empty() && !IsUVScriptFileUVE(path)) {
-        centred(name + " points at " + path + ", which is not a UVScript file.", false);
-        return;
-    }
-    centred(name + " has no script yet.", false);
-    centred("What it does on ready, every tick, and when things happen to it.", true);
-    ImGui::Spacing();
-    const bool canCreate = entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(entity) && path.empty();
-    ImGui::SetCursorPosX((area.x - 160.0F) * 0.5F);
-    ImGui::BeginDisabled(!canCreate);
-    if (ImGui::Button("New UVScript", ImVec2{160.0F, 0.0F})) {
-        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        const std::filesystem::path scriptsDir = project.contentRoot / "Scripts";
-        OpenCreateScriptModalUVE(scriptsDir, entity);
-    }
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip(canCreate ? "Write scripts/%s.uvs for this object and open it here" :
-                                      "This object has no Script slot",
-                          name.c_str());
-    }
-}
-
-void EditorUVE::DrawEntityEditorSignalsTabUVE() {
-    const std::vector<EntitySignalRowUVE> rows = GetEntityEditorSignalsUVE();
-    if (rows.empty()) {
-        ImGui::Spacing();
-        ImGui::TextDisabled("No object answers to anything yet.");
-        ImGui::TextDisabled("Add an `on <event>:` block to an object's script (Scripting tab) and it is listed here.");
-        return;
-    }
-    ImGui::TextDisabled("What each object answers to. Double-click a row to open the handler.");
-    if (!ImGui::BeginTable("##entity-signals", 4,
-                           ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY |
-                               ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings)) {
-        return;
-    }
-    ImGui::TableSetupScrollFreeze(0, 1);
-    ImGui::TableSetupColumn("Object");
-    ImGui::TableSetupColumn("Event");
-    ImGui::TableSetupColumn("Parameters", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Script");
-    ImGui::TableHeadersRow();
-    std::optional<std::size_t> opened;
-    for (std::size_t index = 0U; index < rows.size(); ++index) {
-        const EntitySignalRowUVE& row = rows[index];
-        ImGui::PushID(static_cast<int>(index));
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
-        // The object name only on its first row, so each object reads as one group.
-        const bool firstOfObject = index == 0U || rows[index - 1U].entity != row.entity;
-        if (ImGui::Selectable(firstOfObject ? row.objectName.c_str() : "", m_selectedEntity == row.entity,
-                              ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick) &&
-            ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-            opened = index;
-        }
-        ImGui::TableSetColumnIndex(1);
-        ImGui::TextColored(ImVec4{0.55F, 0.78F, 0.98F, 1.0F}, "on %s", row.event.c_str());
-        ImGui::TableSetColumnIndex(2);
-        ImGui::TextDisabled("%s", row.params.empty() ? "-" : row.params.c_str());
-        ImGui::TableSetColumnIndex(3);
-        ImGui::TextDisabled("%s:%u", std::filesystem::path{row.scriptPath}.filename().string().c_str(), row.line);
-        ImGui::PopID();
-    }
-    ImGui::EndTable();
-    if (opened.has_value()) {
-        static_cast<void>(GoToEntityScriptUVE(rows[*opened].entity, rows[*opened].line));
-    }
-}
-
-void EditorUVE::DrawEntityEditorPlaceholderUVE() {
-    // The main window stays out of the way while the entity is open: nothing to render or edit
-    // here, only where the work is and how to come back.
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + ImGui::GetFrameHeight() * 2.0F});
-    ImGui::SetNextWindowSize(ImVec2{mainViewport->WorkSize.x, mainViewport->WorkSize.y - ImGui::GetFrameHeight() * 2.0F});
-    constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
-    ImGui::Begin("##entity-editor-placeholder", nullptr, flags);
-    const std::string name = m_entityEditSession->assetPath.filename().string();
-    const std::string line1 = "Editing " + name + " in the Entity Editor window.";
-    const char* const line2 = "The scene waits here, untouched. Close the Entity Editor to come back to it.";
-    const ImVec2 area = ImGui::GetContentRegionAvail();
-    ImGui::SetCursorPos(ImVec2{(area.x - ImGui::CalcTextSize(line1.c_str()).x) * 0.5F, area.y * 0.42F});
-    ImGui::TextUnformatted(line1.c_str());
-    ImGui::SetCursorPosX((area.x - ImGui::CalcTextSize(line2).x) * 0.5F);
-    ImGui::TextDisabled("%s", line2);
-    ImGui::SetCursorPosX((area.x - 180.0F) * 0.5F);
-    if (ImGui::Button("Show the Entity Editor", ImVec2{180.0F, 0.0F})) {
-        ImGui::SetWindowFocus("###entity-editor");
-        m_entityEditSession->focusPending = true;
-    }
-    ImGui::End();
-}
-
-void EditorUVE::DrawEntityEditorWindowUVE() {
-    EntityEditSessionUVE& session = *m_entityEditSession;
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    ImGuiWindowClass windowClass;
-    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
-    windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
-    ImGui::SetNextWindowClass(&windowClass);
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->Pos.x + 60.0F, mainViewport->Pos.y + 60.0F}, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2{1180.0F, 720.0F}, ImGuiCond_FirstUseEver);
-    const bool unsaved = HasEntityEditorUnsavedChangesUVE();
-    const std::string title = "Entity Editor - " + session.assetPath.filename().string() + (unsaved ? " *" : "") +
-                              "###entity-editor";
-    ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
-    if (session.focusPending) {
-        session.focusPending = false;
-        ImGui::SetNextWindowFocus();
-    }
-    ImGui::Begin(title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
-
-    // Toolbar.
-    if (ImGui::Button("Compile")) {
-        static_cast<void>(CompileEntityEditorUVE());
-    }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Check the whole entity: one root, and every object's script against its object (F7)");
-    }
-    if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) {
-        static_cast<void>(CompileEntityEditorUVE());
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Save") ||
-        (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput &&
-         ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S))) {
-        static_cast<void>(SaveEntityEditorUVE());
-    }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Write the entity and its open script back to their files (Ctrl+S)");
-    }
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!unsaved);
-    if (ImGui::Button("Revert")) {
-        static_cast<void>(RevertEntityEditorUVE());
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::TextDisabled("|");
-    ImGui::SameLine();
-    DrawEntityCompileBadgeUVE(session);
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", unsaved ? "Unsaved changes" : session.savedOnce ? "Saved" : "No changes");
-    if (!m_contentStatusMessage.empty()) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("|  %s", m_contentStatusMessage.c_str());
-    }
-    ImGui::Separator();
-
-    // Scene tree | Viewport, Scripting, Events | Inspector, with Compile's problems under the
-    // middle once it has found any.
-    // The dock (Content, Timeline, Anim Graph) takes the bottom, resized by the bar above it.
-    constexpr float kSplitterUVE = 6.0F;
-    const float available = ImGui::GetContentRegionAvail().y;
-    session.dockHeight = std::clamp(session.dockHeight, 90.0F, std::max(90.0F, available - 160.0F));
-    const float height = std::max(80.0F, available - session.dockHeight - kSplitterUVE);
-    const float width = ImGui::GetContentRegionAvail().x;
-
-    // ---- Three columns with draggable seams -------------------------------------------------
-    // The tree and the Inspector used to be fitted to fixed fractions of the window on every
-    // frame, which made the only two lists in the window un-resizable: an author who needed more
-    // room for long object names had nowhere to get it from, and the same 22% / 28% split was
-    // handed to a 1180 px window and a 2560 px one. The level's Outliner and Inspector have been
-    // draggable seams since the chrome layout was written, so the entity window now keeps its two
-    // widths in the same shape that those keep m_scenePanelWidth - a 0 meaning "never dragged,
-    // use the default ratio", replaced by the author's width from the first drag on.
-    //
-    // The seam is its own inline widget between the children rather than a border on either one,
-    // because a border belongs to a window that ImGui also uses for hit-testing and scrolling;
-    // a 5 px button drawn in the parent's layout takes the drag without either column having to
-    // give up a pixel of its content.
-    constexpr float kColumnSeamUVE = 5.0F;
-    const float columnGap = ImGui::GetStyle().ItemSpacing.x;
-    const auto clampTree = [width](const float requested) {
-        return std::clamp(requested, 160.0F, std::max(160.0F, width * 0.45F));
-    };
-    const auto clampInspector = [width](const float requested) {
-        return std::clamp(requested, 220.0F, std::max(220.0F, width * 0.50F));
-    };
-    const auto drawColumnSeam = [&](const char* const id, const auto&& applyDelta) {
-        ImGui::SameLine();
-        ImGui::InvisibleButton(id, ImVec2{kColumnSeamUVE, height});
-        const bool active = ImGui::IsItemActive();
-        if (active) {
-            if (ImGui::GetIO().MouseDelta.x != 0.0F) {
-                applyDelta(ImGui::GetIO().MouseDelta.x);
+        script.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *script.host);
+        for (const UVScript::FieldInfoUVE& field : UVScript::GetProgramFieldsUVE(*compiled.program)) {
+            const auto stored = component.exportValues.find(field.name);
+            if (field.kind != UVScript::FieldKindUVE::Export || stored == component.exportValues.end()) {
+                continue;
             }
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-        } else if (ImGui::IsItemHovered()) {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            if (const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(stored->second, field.type)) {
+                static_cast<void>(script.instance->SetFieldUVE(field.name, *value));
+            }
         }
-        // A hairline down the seam, so the column edge reads as a handle rather than as the gap
-        // between two panels. It brightens under the pointer the same way the level's seams do.
-        const ImVec2 seamMin = ImGui::GetItemRectMin();
-        const ImVec2 seamMax = ImGui::GetItemRectMax();
-        const float seamX = (seamMin.x + seamMax.x) * 0.5F;
-        ImGui::GetWindowDrawList()->AddLine(
-            ImVec2{seamX, seamMin.y}, ImVec2{seamX, seamMax.y},
-            ImGui::GetColorU32(active || ImGui::IsItemHovered() ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator));
-    };
+        simulation->scripts.push_back(std::move(script));
+    }
+    m_entityEditSession->simulation = std::move(simulation);
+    const std::size_t running = m_entityEditSession->simulation->scripts.size();
+    m_contentStatusMessage = "Simulating: " + std::to_string(running) + (running == 1U ? " script" : " scripts") +
+                             (failed > 0U ? ", " + std::to_string(failed) + " did not compile (Compile lists them)" : "") + ".";
+    return true;
+}
 
-    float treeWidth = clampTree(session.treeWidth > 0.0F ? session.treeWidth : width * 0.22F);
-    ImGui::BeginChild("##entity-tree", ImVec2{treeWidth, height}, true);
-    DrawHierarchyBodyUVE();
-    ImGui::EndChild();
-    drawColumnSeam("##entity-tree-seam", [&](const float delta) {
-        treeWidth = clampTree(treeWidth + delta);
-        session.treeWidth = treeWidth;
-    });
+void EditorUVE::PauseEntitySimulationUVE() {
+    if (m_entityEditSession.has_value() && m_entityEditSession->simulation != nullptr) {
+        m_entityEditSession->simulation->paused = true;
+    }
+}
 
-    float inspectorWidth = clampInspector(session.inspectorWidth > 0.0F ? session.inspectorWidth : width * 0.28F);
-    const float middleWidth = std::max(120.0F, width - treeWidth - inspectorWidth - (2.0F * kColumnSeamUVE) -
-                                                    (4.0F * columnGap));
-    ImGui::SameLine();
-    ImGui::BeginChild("##entity-middle", ImVec2{middleWidth, height}, false,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    DrawEntityEditorMiddleUVE(session);
-    ImGui::EndChild();
-    drawColumnSeam("##entity-inspector-seam", [&](const float delta) {
-        inspectorWidth = clampInspector(inspectorWidth - delta);
-        session.inspectorWidth = inspectorWidth;
-    });
+bool EditorUVE::StopEntitySimulationUVE() {
+    if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr) {
+        return false;
+    }
+    const EntityDocumentScopeUVE scope(*this);
+    const std::shared_ptr<EntitySimulationUVE> simulation = std::move(m_entityEditSession->simulation);
+    m_entityEditSession->simulation.reset();
+    // The scripts go first: they hold the objects about to be replaced.
+    const Scene::SceneSnapshotUVE snapshot = simulation->snapshot;
+    const bool dirtyBefore = simulation->dirtyBefore;
+    simulation->scripts.clear();
+    m_componentPropertyPreview.reset();
+    ClearDocumentSceneUVE();
+    const std::vector<Scene::EntityUVE> restored =
+        m_services->GetSceneSerializerUVE().RestoreUVE(m_services->GetEntityManagerUVE(), snapshot);
+    if (restored.empty()) {
+        m_contentStatusMessage = "Could not put the entity back; Revert reads it from its file.";
+        return false;
+    }
+    m_entityEditSession->rootEntity = restored.front();
+    // The objects are new: what undo remembered named the old ones.
+    ClearHistoryUVE();
+    m_sceneDirty = dirtyBefore;
+    InvalidateHierarchyFilterCacheUVE();
+    SelectEntityUVE(restored.front());
+    m_contentStatusMessage = "Simulation stopped: the entity is as it was.";
+    return true;
+}
 
-    ImGui::SameLine();
-    ImGui::BeginChild("##entity-inspector", ImVec2{0.0F, height}, true);
-    DrawInspectorContentUVE();
-    ImGui::EndChild();
+EditorUVE::EntitySimulationStateUVE EditorUVE::GetEntitySimulationStateUVE() const noexcept {
+    if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr) {
+        return EntitySimulationStateUVE::Stopped;
+    }
+    return m_entityEditSession->simulation->paused ? EntitySimulationStateUVE::Paused : EntitySimulationStateUVE::Running;
+}
 
-    ImGui::InvisibleButton("##entity-dock-splitter", ImVec2{-FLT_MIN, kSplitterUVE});
-    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+void EditorUVE::TickEntitySimulationUVE(const double deltaSeconds) {
+    if (!m_entityEditSession.has_value() || m_entityEditSession->simulation == nullptr ||
+        m_entityEditSession->simulation->paused || !(deltaSeconds >= 0.0)) {
+        return;
     }
-    if (ImGui::IsItemActive()) {
-        session.dockHeight -= ImGui::GetIO().MouseDelta.y;
-    }
-    {
-        const ImVec2 min = ImGui::GetItemRectMin();
-        const ImVec2 max = ImGui::GetItemRectMax();
-        const float y = (min.y + max.y) * 0.5F;
-        ImGui::GetWindowDrawList()->AddLine(ImVec2{min.x, y}, ImVec2{max.x, y},
-                                            ImGui::GetColorU32(ImGui::IsItemActive() || ImGui::IsItemHovered()
-                                                                   ? ImGuiCol_SeparatorHovered
-                                                                   : ImGuiCol_Separator));
-    }
-    ImGui::BeginChild("##entity-dock", ImVec2{0.0F, 0.0F}, true);
-    DrawEntityEditorDockUVE(session);
-    ImGui::EndChild();
-
-    // The native OS window close button (X) or Escape triggers the close workflow.
-    ImGuiViewport* const currentViewport = ImGui::GetWindowViewport();
-    const bool osCloseRequested =
-        (currentViewport != nullptr && currentViewport != mainViewport && currentViewport->PlatformRequestClose);
-    const bool escapePressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
-    if (osCloseRequested || escapePressed) {
-        if (currentViewport != nullptr) {
-            currentViewport->PlatformRequestClose = false;
+    const EntityDocumentScopeUVE scope(*this);
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const double dt = std::min(deltaSeconds, 0.1);
+    for (EntitySimulationUVE::ScriptUVE& script : m_entityEditSession->simulation->scripts) {
+        if (script.instance == nullptr || !entityManager.IsAliveUVE(script.entity)) {
+            continue;
         }
-        if (unsaved) {
-            session.confirmClose = true;
-        } else {
-            static_cast<void>(CloseEntityEditorUVE(false));
-            ImGui::End();
-            return;
+        if (!script.ready) {
+            script.ready = true;
+            static_cast<void>(script.instance->RaiseEventUVE("ready"));
         }
-    }
-    if (session.confirmClose) {
-        ImGui::OpenPopup("Close Entity##entity-close");
-        session.confirmClose = false;
-    }
-    bool closeNow = false;
-    bool saveFirst = false;
-    if (ImGui::BeginPopupModal("Close Entity##entity-close", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Save the changes to %s?", session.assetPath.filename().string().c_str());
-        ImGui::Spacing();
-        if (ImGui::Button("Save", ImVec2{100.0F, 0.0F})) {
-            closeNow = true;
-            saveFirst = true;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Don't Save", ImVec2{100.0F, 0.0F})) {
-            closeNow = true;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2{100.0F, 0.0F}) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
-    ImGui::End();
-    if (closeNow) {
-        if (!CloseEntityEditorUVE(saveFirst)) {
-            static_cast<void>(CloseEntityEditorUVE(false));
-        }
+        const UVScript::ValueUVE args[] = {dt};
+        static_cast<void>(script.instance->RaiseEventUVE("tick", args));
+        script.instance->AdvanceUVE(dt);
     }
 }
 

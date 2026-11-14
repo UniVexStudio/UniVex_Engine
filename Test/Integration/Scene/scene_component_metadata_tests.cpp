@@ -735,11 +735,14 @@ TEST(SceneComponentMetadataUVETest, PrimitiveMeshIsDrawnByTheMeshSectionRatherTh
 
     // The rows the mesh section draws in its own shape. Resolved by name here so a rename that
     // silently stopped one of them being drawn anywhere would fail rather than pass.
-    for (const char* const name : {"kind", "materialGuid"}) {
-        const TypeMetadataPropertyUVE* const property = FindPropertyUVE(*primitive, name);
-        ASSERT_NE(property, nullptr) << name;
-        EXPECT_FALSE(property->flags.HasUVE(TypeMetadataPropertyFlagsUVE::Hidden)) << name;
-    }
+    const TypeMetadataPropertyUVE* const material = FindPropertyUVE(*primitive, "materialGuid");
+    ASSERT_NE(material, nullptr);
+    EXPECT_FALSE(material->flags.HasUVE(TypeMetadataPropertyFlagsUVE::Hidden));
+
+    // The shape is the object's kind (a BoxMesh3D is a box): stored, never offered as a choice.
+    const TypeMetadataPropertyUVE* const kind = FindPropertyUVE(*primitive, "kind");
+    ASSERT_NE(kind, nullptr);
+    EXPECT_TRUE(kind->flags.HasUVE(TypeMetadataPropertyFlagsUVE::Hidden));
 
     // A primitive has no colour of its own: its surface is its material, and the colour row that
     // used to sit under an empty material slot meant the same object had two answers. The property

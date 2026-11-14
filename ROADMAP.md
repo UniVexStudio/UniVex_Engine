@@ -462,7 +462,7 @@ status legend.
 - [ ] Vehicle physics (wheeled at minimum)
 - [x] Ragdoll physics (driven skeletal bodies + constraints layered over an animated
   skeleton) — `RagdollSolverUVE`: sequential-impulse articulated bodies at a 1/240 s fixed step,
-  Unreal's Free/Limited/Locked per-axis model (swing1/swing2 cone + signed twist, so a knee and an
+  the standard Free/Limited/Locked per-axis model (swing1/swing2 cone + signed twist, so a knee and an
   elbow are ranges rather than joint types), limit stiffness/damping, positional projection,
   capsule inertia from the shape, sleeping, and bit-exact determinism. `Ragdoll3DComponentUVE`
   builds one capsule per bone from the rig itself (length from the child bone, not a table),
@@ -1196,7 +1196,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   and main editor hierarchy popups.
 - [x] An Inspector panel with per-component drawers, add/remove/undo/redo authoring, and a
   contextual component list (only offers components relevant to what an entity already is)
-- [x] A merged Content Browser (file tree + thumbnail grid) with UE5-style rounded card thumbnails,
+- [x] A merged Content Browser (file tree + thumbnail grid) with rounded card thumbnails,
   dark inset previews, colored category badges (Cyan: Mesh, Orange: Texture, Green: Material,
   Purple: Animation, Gold: Scene), search, and favorites
 - [x] Content Browser layout: one toolbar (Add, Import, Save All, back/forward, a path whose

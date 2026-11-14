@@ -24,7 +24,7 @@ struct InspectorDrawerEntryUVE final {
 /// rejects empty identifiers, duplicate identifiers, and incomplete entries so a future drawer cannot
 /// silently replace or reorder existing Inspector behavior. DrawEligibleUVE() never mutates registry
 /// membership; it invokes every eligible entry in successful registration order. The registry owns
-/// callbacks only, not EngineServicesUVE, ECS components, Dear ImGui state, or scene data.
+/// callbacks only, not EngineServicesUVE, ECS components, UI toolkit state, or scene data.
 ///
 /// Thread-safety: main-thread only, matching EditorUVE and the ECS/UI services it composes.
 class InspectorDrawerRegistryUVE final {

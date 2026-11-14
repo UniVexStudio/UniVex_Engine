@@ -222,70 +222,34 @@ class EngineBuilder:
         self.modules = {}
         self.targets = {}
 
-    def _ensure_imgui_module_rules(self):
-        imgui_dir = self.repo_root / "ThirdParty" / "imgui"
-        imgui_bcs = imgui_dir / "ImGui.Build.cs"
-        if not imgui_bcs.exists():
-            imgui_dir.mkdir(parents=True, exist_ok=True)
-            content = """// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+    def _freetype_include_dirs(self):
+        dirs = []
+        try:
+            out = subprocess.run(["pkg-config", "--cflags-only-I", "freetype2"], stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True, check=False).stdout
+            dirs += [Path(tok[2:]) for tok in out.split() if tok.startswith("-I")]
+        except OSError:
+            pass
+        candidates = [Path("/usr/include/freetype2"), Path("/usr/local/include/freetype2")]
+        gxx = shutil.which(os.environ.get("CXX", "g++"))
+        if gxx:
+            candidates.append(Path(gxx).resolve().parent.parent / "include" / "freetype2")
+        for cand in candidates:
+            if cand.is_dir() and cand not in dirs:
+                dirs.append(cand)
+        return [d for d in dirs if d.is_dir()]
 
-using UniVexBuildTool;
-
-public class ImGuiModule : ModuleRules
-{
-    public ImGuiModule(ReadOnlyTargetRules Target) : base(Target)
-    {
-        Type = ModuleType.StaticLibrary;
-
-        PublicIncludePaths.AddRange(new string[] {
-            ".",
-            "backends"
-        });
-
-        ExtraSourceDirectories.AddRange(new string[] {
-            "backends"
-        });
-
-        ExcludedFiles.AddRange(new string[] {
-            "examples/",
-            "docs/",
-            "misc/",
-            "imgui_demo.cpp",
-            "imgui_impl_android.cpp",
-            "imgui_impl_dx9.cpp",
-            "imgui_impl_dx10.cpp",
-            "imgui_impl_dx11.cpp",
-            "imgui_impl_dx12.cpp",
-            "imgui_impl_metal.mm",
-            "imgui_impl_metal.cpp",
-            "imgui_impl_vulkan.cpp",
-            "imgui_impl_wgpu.cpp",
-            "imgui_impl_win32.cpp",
-            "imgui_impl_sdl2.cpp",
-            "imgui_impl_sdl3.cpp",
-            "imgui_impl_sdlrenderer2.cpp",
-            "imgui_impl_sdlrenderer3.cpp",
-            "imgui_impl_osx.mm",
-            "imgui_impl_allegro5.cpp",
-            "imgui_impl_glut.cpp",
-            "imgui_impl_null.cpp",
-            "imgui_impl_opengl2.cpp",
-            "imgui_impl_qnx.cpp",
-            "imgui_impl_sdlgpu3.cpp"
-        });
-
-        PublicSystemLibraries.AddRange(new string[] {
-            "GL",
-            "GLX",
-            "X11"
-        });
-    }
-}
-"""
-            imgui_bcs.write_text(content, encoding="utf-8")
+    def _ensure_uiautomation_import_lib(self, lib_dir: Path):
+        implib = lib_dir / "libuiautomationcore.a"
+        def_file = self.repo_root / "Engine" / "Runtime" / "Prism" / "Internal" / "windows" / "uiautomationcore.def"
+        if implib.exists() or not def_file.exists():
+            return
+        dlltool = shutil.which("dlltool") or shutil.which("x86_64-w64-mingw32-dlltool")
+        if not dlltool:
+            raise RuntimeError("[UVBT] dlltool not found: needed to build libuiautomationcore.a for PRISM on MinGW")
+        subprocess.run([dlltool, "-d", str(def_file), "-l", str(implib)], check=True)
 
     def discover(self):
-        self._ensure_imgui_module_rules()
         # Scan for *.Build.cs
         for root_dir, _, files in os.walk(self.repo_root):
             rpath = Path(root_dir)
@@ -341,19 +305,10 @@ public class ImGuiModule : ModuleRules
         if ui_src.exists() and (not ui_inc.exists() or ui_src.stat().st_mtime > ui_inc.stat().st_mtime):
             subprocess.run([sys.executable, str(embed_script), str(ui_src), str(ui_inc), "uve_ui_runtime_font_ttf_bytes"], check=True)
 
-        # 3. Editor fonts
         editor_gen = gen_dir / "EditorCore"
         editor_gen.mkdir(parents=True, exist_ok=True)
-        fonts = [
-            (self.repo_root / "Engine" / "Runtime" / "UI" / "assets" / "fonts" / "liberation-sans-subset.ttf", editor_gen / "uve_ui_font_bytes.inc", "uve_ui_font_ttf_bytes"),
-            (self.repo_root / "Engine" / "Editor" / "EditorCore" / "assets" / "fonts" / "liberation-mono-subset.ttf", editor_gen / "uve_mono_font_bytes.inc", "uve_mono_font_ttf_bytes"),
-            (self.repo_root / "Engine" / "Editor" / "EditorCore" / "assets" / "fonts" / "tabler-icons-subset.ttf", editor_gen / "uve_icon_font_bytes.inc", "uve_icon_font_ttf_bytes"),
-        ]
-        for src, dst, sym in fonts:
-            if src.exists() and (not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime):
-                subprocess.run([sys.executable, str(embed_script), str(src), str(dst), sym], check=True)
 
-        # 4. Editor icons
+        # 3. Editor icons
         editor_icons_inc = editor_gen / "uve_editor_icon_set.inc"
         embed_icons_script = self.repo_root / "Engine" / "Tools" / "editor_icons" / "embed_editor_icons.py"
         icons_dir = self.repo_root / "Engine" / "Editor" / "EditorCore" / "assets" / "icons"
@@ -450,7 +405,6 @@ public class ImGuiModule : ModuleRules
             ("ufbx", "https://github.com/ufbx/ufbx.git", "v0.23.0", "ufbx.h"),
             ("miniaudio", "https://github.com/mackron/miniaudio.git", "0.11.25", "miniaudio.h"),
             ("basis_universal", "https://github.com/BinomialLLC/basis_universal.git", "v2_50", "transcoder/basisu_transcoder.h"),
-            ("imgui", "https://github.com/ocornut/imgui.git", "docking", "imgui.h"),
         ]
         
         for name, url, tag, check_file in deps:
@@ -471,7 +425,6 @@ public class ImGuiModule : ModuleRules
                 for bcs_name, content in saved_bcs.items():
                     (dest / bcs_name).write_text(content, encoding="utf-8")
 
-        self._ensure_imgui_module_rules()
 
         tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / platform
         tp_lib_dir.mkdir(parents=True, exist_ok=True)
@@ -619,12 +572,16 @@ public class ImGuiModule : ModuleRules
             self.repo_root / "ThirdParty" / "basis_universal",
             self.repo_root / "ThirdParty" / "glfw" / "include",
             self.repo_root / "ThirdParty" / "glew" / "include",
-            self.repo_root / "ThirdParty" / "imgui",
-            self.repo_root / "ThirdParty" / "imgui" / "backends",
         ]
         for tp in third_party_dirs:
             if tp.is_dir():
                 global_includes.append(tp)
+
+        # System FreeType (PRISM text rendering). pkg-config first, then the usual install prefixes
+        # (Debian/Ubuntu /usr/include/freetype2, MSYS2 <prefix>/include/freetype2 next to g++).
+        for ft_inc in self._freetype_include_dirs():
+            if ft_inc not in global_includes:
+                global_includes.append(ft_inc)
 
         # Base compiler flags
         cxx = os.environ.get("CXX", "g++")
@@ -666,6 +623,18 @@ public class ImGuiModule : ModuleRules
         if configuration == "Sanitizers":
             base_cflags += ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
 
+        # Optional compiler launcher for the per-source compiles (UVBT_COMPILER_LAUNCHER=ccache):
+        # a content-hashed cache turns an unchanged file in a fresh checkout into a cache hit.
+        launcher = []
+        launcher_name = os.environ.get("UVBT_COMPILER_LAUNCHER", "").strip()
+        if launcher_name:
+            launcher_path = shutil.which(launcher_name)
+            if launcher_path:
+                launcher = [launcher_path]
+                print(f"[UVBT] Compiler launcher: {launcher_path}")
+            else:
+                print(f"[UVBT] Compiler launcher '{launcher_name}' not found; compiling without it")
+
         # Compile tasks
         compile_tasks = []
         module_objects = {}
@@ -703,7 +672,7 @@ public class ImGuiModule : ModuleRules
                 out_dep = mod_obj_dir / (src.stem + ".d")
                 module_objects[mod.name].append(out_obj)
 
-                cmd = [cxx] + base_cflags + inc_flags + def_flags + [
+                cmd = launcher + [cxx] + base_cflags + inc_flags + def_flags + [
                     "-MMD", "-MF", str(out_dep),
                     "-c", str(src),
                     "-o", str(out_obj)
@@ -821,7 +790,17 @@ public class ImGuiModule : ModuleRules
                 all_sys_libs.append("GLEW")
 
         for mod in ordered_modules:
-            all_sys_libs.extend(mod.public_sys_libs + mod.private_sys_libs)
+            for sys_lib in mod.public_sys_libs + mod.private_sys_libs:
+                # "win:<lib>" / "linux:<lib>" restrict a system library to one platform.
+                if sys_lib.startswith("win:"):
+                    if platform == "Windows":
+                        all_sys_libs.append(sys_lib[4:])
+                    continue
+                if sys_lib.startswith("linux:"):
+                    if platform == "Linux":
+                        all_sys_libs.append(sys_lib[6:])
+                    continue
+                all_sys_libs.append(sys_lib)
             lib_p = module_libs.get(mod.name)
             if lib_p and lib_p.exists():
                 all_libs.append(str(lib_p))
@@ -835,6 +814,10 @@ public class ImGuiModule : ModuleRules
                 unique_sys.append(s)
 
         link_cmd = [cxx] + base_cflags + ["-o", str(target_exe)]
+        if platform == "Windows" and "uiautomationcore" in unique_sys:
+            # MinGW ships no UIAutomationCore import library: build one from the exported names PRISM uses.
+            self._ensure_uiautomation_import_lib(lib_dir)
+            link_cmd.append(f"-L{lib_dir}")
         sys_flags = [f"-l{s}" for s in unique_sys]
         if target.target_type == "Test":
             root_test_libs = [str(module_libs[m]) for m in target.extra_modules if m in module_libs]
@@ -858,6 +841,12 @@ public class ImGuiModule : ModuleRules
             print(link_res.stdout)
             print(link_res.stderr)
             raise RuntimeError("[UVBT] Link failed.")
+
+        if any(m.name == "Prism" for m in ordered_modules):
+            # PRISM loads fonts / themes / locales from disk: ship them next to the binary.
+            prism_assets = self.repo_root / "Engine" / "Runtime" / "Prism" / "assets"
+            if prism_assets.is_dir():
+                shutil.copytree(prism_assets, bin_dir / "prism_assets", dirs_exist_ok=True)
 
         print(f"\033[92m[UVBT] BUILD SUCCESSFUL!\033[0m")
         print(f"[UVBT] Output Binary: {target_exe}")

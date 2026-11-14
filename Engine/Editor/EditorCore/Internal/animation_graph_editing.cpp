@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include <string>
+
 namespace UVE::Editor {
 namespace {
 
@@ -72,6 +74,11 @@ const char* AnimationGraphKindLabelUVE(const Kind kind) noexcept {
         case Kind::Select: return "Select";
         case Kind::LayeredBlend: return "Layered Blend";
         case Kind::TimeSeek: return "Time Seek";
+        case Kind::Slot: return "Slot";
+        case Kind::TwoBoneIK: return "Two Bone IK";
+        case Kind::ModifyBone: return "Modify Bone";
+        case Kind::LookAt: return "Look At";
+        case Kind::BlendByBool: return "Blend by Bool";
     }
     return "?";
 }
@@ -94,6 +101,12 @@ const char* AnimationGraphKindHelpUVE(const Kind kind) noexcept {
         case Kind::LayeredBlend:
             return "Lays the Layer over the Base on chosen bone branches only - shoot with the upper body while running.";
         case Kind::TimeSeek: return "Jumps its input to a time when its trigger fires, then plays on.";
+        case Kind::Slot: return "Where an Animation Montage plays: the montage on this slot is laid over the input.";
+        case Kind::TwoBoneIK:
+            return "Bends a two-bone chain (upper arm, forearm, hand) so its tip reaches a target - a hand on a rail, a foot on a step.";
+        case Kind::ModifyBone: return "Moves, turns and scales one bone, on top of the pose or instead of it.";
+        case Kind::LookAt: return "Turns one bone to face a target, no further than its clamp - a head following the camera.";
+        case Kind::BlendByBool: return "Plays True while a Bool is on and False while it is off, fading between them.";
     }
     return "";
 }
@@ -108,6 +121,10 @@ std::string AnimationGraphSlotLabelUVE(const Kind kind, const std::size_t slot) 
         case Kind::BlendSpace2D: return "Point " + std::to_string(slot + 1U);
         case Kind::Select: return "Option " + std::to_string(slot);
         case Kind::LayeredBlend: return slot == 0U ? "Base" : "Layer";
+        case Kind::BlendByBool: return slot == 0U ? "True" : "False";
+        case Kind::TwoBoneIK:
+        case Kind::ModifyBone:
+        case Kind::LookAt: return "Pose";
         default: return "Input";
     }
 }
@@ -155,6 +172,27 @@ std::uint32_t AddAnimationGraphNodeUVE(std::vector<AnimationGraphNodeUVE>& nodes
             added.inputs = {0U};
             added.value = 0.0F;
             break;
+        case Kind::Slot:
+            added.inputs = {0U};
+            added.parameter = "DefaultSlot";
+            break;
+        case Kind::TwoBoneIK:
+            added.inputs = {0U};
+            added.value = 1.0F;
+            added.pole = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
+            break;
+        case Kind::ModifyBone:
+            added.inputs = {0U};
+            added.value = 1.0F;
+            break;
+        case Kind::LookAt:
+            added.inputs = {0U};
+            added.value = 1.0F;
+            added.clampDegrees = 75.0F;
+            break;
+        case Kind::BlendByBool:
+            added.inputs = {0U, 0U};
+            break;
         default:
             break;
     }
@@ -197,7 +235,16 @@ bool DisconnectAnimationGraphInputUVE(std::vector<AnimationGraphNodeUVE>& nodes,
 }
 
 std::size_t DeleteAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nodes,
-                                         const std::vector<std::uint32_t>& ids) {
+                                         const std::vector<std::uint32_t>& given) {
+    // A State Machine goes with everything in its states.
+    std::vector<std::uint32_t> ids = given;
+    for (const std::uint32_t id : given) {
+        for (const std::uint32_t inside : AnimationGraphNodesInsideUVE(nodes, id)) {
+            if (std::ranges::find(ids, inside) == ids.end()) {
+                ids.push_back(inside);
+            }
+        }
+    }
     const auto doomed = [&ids](const AnimationGraphNodeUVE& node) {
         return node.kind != Kind::Output && std::ranges::find(ids, node.id) != ids.end();
     };
@@ -219,8 +266,19 @@ std::size_t DeleteAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nod
 }
 
 std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<AnimationGraphNodeUVE>& nodes,
-                                                           const std::vector<std::uint32_t>& ids,
+                                                           const std::vector<std::uint32_t>& given,
                                                            const Math::Vector2UVE offset) {
+    // A State Machine is copied with its states' graphs (the copies keep their places in them).
+    std::vector<std::uint32_t> ids = given;
+    std::vector<std::uint32_t> inside;
+    for (const std::uint32_t id : given) {
+        for (const std::uint32_t member : AnimationGraphNodesInsideUVE(nodes, id)) {
+            if (std::ranges::find(ids, member) == ids.end()) {
+                ids.push_back(member);
+                inside.push_back(member);
+            }
+        }
+    }
     std::unordered_map<std::uint32_t, std::uint32_t> copyOf;
     std::vector<AnimationGraphNodeUVE> copies;
     std::uint32_t nextId = Scene::NextAnimationGraphNodeIdUVE(nodes);
@@ -232,7 +290,9 @@ std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<Animation
         }
         AnimationGraphNodeUVE copy = *original;
         copy.id = nextId++;
-        copy.position = copy.position + offset;
+        if (std::ranges::find(inside, id) == inside.end()) {
+            copy.position = copy.position + offset;
+        }
         copyOf.emplace(id, copy.id);
         copies.push_back(std::move(copy));
     }
@@ -242,8 +302,15 @@ std::vector<std::uint32_t> DuplicateAnimationGraphNodesUVE(std::vector<Animation
             const auto it = copyOf.find(input);
             input = it == copyOf.end() ? 0U : it->second;
         }
-        created.push_back(copy.id);
+        if (const auto owner = copyOf.find(copy.owner); owner != copyOf.end()) {
+            copy.owner = owner->second;
+        }
         nodes.push_back(std::move(copy));
+    }
+    for (const std::uint32_t id : given) {
+        if (const auto copied = copyOf.find(id); copied != copyOf.end()) {
+            created.push_back(copied->second);
+        }
     }
     return created;
 }
@@ -265,9 +332,22 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
         node->inputs.size() <= 1U) {
         return false;
     }
+    // A state goes with its graph.
+    std::vector<std::uint32_t> inside;
+    if (node->kind == Kind::StateMachine) {
+        for (const std::uint32_t id : AnimationGraphScopeNodesUVE(nodes, AnimationGraphScopeUVE{target, static_cast<std::uint32_t>(slot)})) {
+            inside.push_back(id);
+            for (const std::uint32_t deeper : AnimationGraphNodesInsideUVE(nodes, id)) {
+                inside.push_back(deeper);
+            }
+        }
+    }
     node->inputs.erase(node->inputs.begin() + static_cast<std::ptrdiff_t>(slot));
     if (node->kind == Kind::StateMachine) {
         const auto state = static_cast<std::uint32_t>(slot);
+        if (slot < node->stateNames.size()) {
+            node->stateNames.erase(node->stateNames.begin() + static_cast<std::ptrdiff_t>(slot));
+        }
         std::erase_if(node->transitions, [state](const Scene::AnimationGraphTransitionUVE& transition) {
             return transition.fromState == state || transition.toState == state;
         });
@@ -282,6 +362,14 @@ bool RemoveAnimationGraphInputSlotUVE(std::vector<AnimationGraphNodeUVE>& nodes,
         node->entryState = std::min(node->entryState, static_cast<std::uint32_t>(node->inputs.size() - 1U));
         if (slot < node->statePositions.size()) {
             node->statePositions.erase(node->statePositions.begin() + static_cast<std::ptrdiff_t>(slot));
+        }
+        for (AnimationGraphNodeUVE& other : nodes) {
+            if (other.owner == target && other.ownerState > state) {
+                --other.ownerState;
+            }
+        }
+        if (!inside.empty()) {
+            static_cast<void>(DeleteAnimationGraphNodesUVE(nodes, inside));
         }
     }
     return true;
@@ -319,10 +407,9 @@ std::optional<std::size_t> AddAnimationStateUVE(std::vector<AnimationGraphNodeUV
         nodes.size() >= Scene::kMaximumAnimationGraphNodesUVE) {
         return std::nullopt;
     }
-    // A state plays something: it starts as a Clip, set beside the machine in the tree, whose
+    // A state plays something: its graph starts as a Clip feeding the state's result, whose
     // animation is picked next.
-    const Math::Vector2UVE beside{node->position.x - 240.0F, node->position.y + static_cast<float>(node->inputs.size()) * 70.0F};
-    const std::uint32_t clip = AddAnimationGraphNodeUVE(nodes, Kind::Clip, beside);
+    const std::uint32_t clip = AddAnimationGraphNodeUVE(nodes, Kind::Clip, Math::Vector2UVE{-320.0F, -40.0F});
     if (clip == 0U) {
         return std::nullopt;
     }
@@ -334,8 +421,26 @@ std::optional<std::size_t> AddAnimationStateUVE(std::vector<AnimationGraphNodeUV
         node->inputs.push_back(0U);
     }
     node->inputs[slot] = clip;
-    // Named for the state it plays, so the view and the tree read the same.
-    FindNodeUVE(nodes, clip)->name = "State " + std::to_string(slot + 1U);
+    if (node->stateNames.size() < node->inputs.size()) {
+        node->stateNames.resize(node->inputs.size());
+    }
+    // A name no other state has.
+    std::uint32_t number = static_cast<std::uint32_t>(slot) + 1U;
+    const auto taken = [&](const std::string& name) {
+        for (std::size_t other = 0U; other < node->inputs.size(); ++other) {
+            if (other != slot && AnimationStateNameUVE(nodes, *node, other) == name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    while (taken("State " + std::to_string(number))) {
+        ++number;
+    }
+    node->stateNames[slot] = "State " + std::to_string(number);
+    AnimationGraphNodeUVE* made = FindNodeUVE(nodes, clip);
+    made->owner = machine;
+    made->ownerState = static_cast<std::uint32_t>(slot);
     static_cast<void>(SetAnimationStatePositionUVE(nodes, machine, slot, position));
     return slot;
 }
@@ -474,6 +579,207 @@ bool MoveBlendSpacePointUVE(std::vector<AnimationGraphNodeUVE>& nodes, const std
     }
     points[slot].position = position;
     return true;
+}
+
+// ---------------------------------------------------------------------------- node parameters
+
+std::string UniqueParameterNameUVE(const Scene::AnimationGraphComponentUVE& graph, const std::string& base) {
+    const auto taken = [&graph](const std::string& name) {
+        return std::ranges::any_of(graph.parameters, [&name](const Scene::AnimationParameterUVE& p) { return p.name == name; });
+    };
+    if (!taken(base)) {
+        return base;
+    }
+    for (int i = 2; i < 1000; ++i) {
+        const std::string candidate = base + std::to_string(i);
+        if (!taken(candidate)) {
+            return candidate;
+        }
+    }
+    return base + "_";
+}
+
+/// The parameter a node is driven by: which field holds its name, and its type. Every node but
+/// Output and Slot has one (Godot's `parameters/<node>`): the gameplay (a Blueprint Class, a script)
+/// sets the node by that name.
+std::optional<AnimationNodeParameterUVE> NodeParameterOfUVE(const Kind kind) {
+    using Type = Scene::AnimationParameterTypeUVE;
+    using N = Scene::AnimationGraphNodeUVE;
+    switch (kind) {
+        case Kind::Clip:
+        case Kind::Blend2:
+        case Kind::Additive:
+        case Kind::LayeredBlend:
+        case Kind::BlendSpace1D:
+        case Kind::TimeScale:
+        case Kind::Select: return AnimationNodeParameterUVE{&N::parameter, Type::Float};
+        case Kind::BlendSpace2D: return AnimationNodeParameterUVE{&N::parameter, Type::Vector3};
+        case Kind::OneShot:
+        case Kind::TimeSeek:
+        case Kind::StateMachine: return AnimationNodeParameterUVE{&N::parameter, Type::Trigger};
+        case Kind::BlendByBool: return AnimationNodeParameterUVE{&N::parameter, Type::Bool};
+        case Kind::TwoBoneIK:
+        case Kind::LookAt:
+        case Kind::ModifyBone: return AnimationNodeParameterUVE{&N::alphaParameter, Type::Float};
+        case Kind::Output:
+        case Kind::Slot: break;
+    }
+    return std::nullopt;
+}
+
+/// A node's name as a parameter name: its words run together ("Blend Space 2D" -> "BlendSpace2D").
+std::string ParameterNameForNodeUVE(const std::string& nodeName) {
+    std::string name;
+    for (const char c : nodeName) {
+        if (c != ' ') {
+            name.push_back(c);
+        }
+    }
+    return name.empty() ? std::string{"Param"} : name;
+}
+
+/// Renames a parameter and every use of it: the nodes it drives and the transition conditions that
+/// read it (a Slot's name is not a parameter). False when `to` is empty or taken.
+bool RenameGraphParameterUVE(Scene::AnimationGraphComponentUVE& graph, const std::string& from, const std::string& to) {
+    if (to.empty() || to == from ||
+        std::ranges::any_of(graph.parameters, [&to](const Scene::AnimationParameterUVE& p) { return p.name == to; })) {
+        return false;
+    }
+    bool found = false;
+    for (Scene::AnimationParameterUVE& p : graph.parameters) {
+        if (p.name == from) {
+            p.name = to;
+            found = true;
+        }
+    }
+    for (Scene::AnimationGraphNodeUVE& node : graph.nodes) {
+        if (node.kind != Kind::Slot) {
+            for (std::string* field : {&node.parameter, &node.parameterY, &node.alphaParameter}) {
+                if (*field == from) {
+                    *field = to;
+                }
+            }
+        }
+        for (Scene::AnimationGraphTransitionUVE& t : node.transitions) {
+            for (Scene::AnimationTransitionConditionUVE& c : t.conditions) {
+                if (c.parameter == from) {
+                    c.parameter = to;
+                }
+            }
+        }
+    }
+    return found;
+}
+
+/// Every node made gets its parameter at once, named after the node ("Walk" for a Blend Space 2D
+/// called Walk), of the node's type, set to the node's current value, and bound to it.
+void BindNewNodeParametersUVE(Scene::AnimationGraphComponentUVE& graph, const std::uint32_t id) {
+    const auto node = std::ranges::find(graph.nodes, id, &Scene::AnimationGraphNodeUVE::id);
+    if (node == graph.nodes.end()) {
+        return;
+    }
+    const std::optional<AnimationNodeParameterUVE> spec = NodeParameterOfUVE(node->kind);
+    if (!spec.has_value() || !((*node).*(spec->field)).empty()) {
+        return;
+    }
+    Scene::AnimationParameterUVE parameter;
+    parameter.name = UniqueParameterNameUVE(graph, ParameterNameForNodeUVE(node->name));
+    parameter.type = spec->type;
+    switch (node->kind) {
+        case Kind::Clip:
+        case Kind::TimeScale: parameter.value = node->speed; break;
+        case Kind::BlendSpace2D: parameter.vector = Math::Vector3UVE{node->value, node->valueY, 0.0F}; break;
+        case Kind::OneShot:
+        case Kind::TimeSeek:
+        case Kind::StateMachine:
+        case Kind::BlendByBool: parameter.value = 0.0F; break;
+        default: parameter.value = node->value; break;
+    }
+    (*node).*(spec->field) = parameter.name;
+    if (node->kind == Kind::BlendSpace2D) {
+        node->parameterY.clear();
+    }
+    graph.parameters.push_back(std::move(parameter));
+}
+
+AnimationGraphScopeUVE AnimationGraphScopeOfUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t id) {
+    // Up the wires: the first State Machine met holds it, in the state that wire is.
+    std::uint32_t at = id;
+    for (std::size_t guard = 0U; guard <= nodes.size(); ++guard) {
+        const AnimationGraphNodeUVE* parent = nullptr;
+        std::size_t slot = 0U;
+        for (const AnimationGraphNodeUVE& node : nodes) {
+            const auto found = std::ranges::find(node.inputs, at);
+            if (at != 0U && found != node.inputs.end()) {
+                parent = &node;
+                slot = static_cast<std::size_t>(found - node.inputs.begin());
+                break;
+            }
+        }
+        if (parent == nullptr) {
+            const AnimationGraphNodeUVE* top = FindNodeUVE(nodes, at);
+            if (top == nullptr || top->owner == 0U || top->owner == top->id) {
+                return {};
+            }
+            const AnimationGraphNodeUVE* owner = FindNodeUVE(nodes, top->owner);
+            if (owner == nullptr || owner->kind != Kind::StateMachine || top->ownerState >= owner->inputs.size()) {
+                return {};
+            }
+            return AnimationGraphScopeUVE{owner->id, top->ownerState};
+        }
+        if (parent->kind == Kind::StateMachine) {
+            return AnimationGraphScopeUVE{parent->id, static_cast<std::uint32_t>(slot)};
+        }
+        at = parent->id;
+    }
+    return {};
+}
+
+std::vector<std::uint32_t> AnimationGraphScopeNodesUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const AnimationGraphScopeUVE scope) {
+    std::vector<std::uint32_t> shown;
+    for (const AnimationGraphNodeUVE& node : nodes) {
+        if (scope.machine != 0U && node.kind == Kind::Output) {
+            continue;
+        }
+        if (AnimationGraphScopeOfUVE(nodes, node.id) == scope) {
+            shown.push_back(node.id);
+        }
+    }
+    return shown;
+}
+
+std::vector<std::uint32_t> AnimationGraphNodesInsideUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const std::uint32_t id) {
+    std::vector<std::uint32_t> inside;
+    std::vector<std::uint32_t> machines{id};
+    while (!machines.empty()) {
+        const std::uint32_t machine = machines.back();
+        machines.pop_back();
+        const AnimationGraphNodeUVE* node = FindNodeUVE(nodes, machine);
+        if (node == nullptr || node->kind != Kind::StateMachine) {
+            continue;
+        }
+        for (std::size_t state = 0U; state < node->inputs.size(); ++state) {
+            for (const std::uint32_t member : AnimationGraphScopeNodesUVE(nodes, AnimationGraphScopeUVE{machine, static_cast<std::uint32_t>(state)})) {
+                if (std::ranges::find(inside, member) == inside.end() && member != id) {
+                    inside.push_back(member);
+                    machines.push_back(member);
+                }
+            }
+        }
+    }
+    return inside;
+}
+
+std::string AnimationStateNameUVE(const std::vector<AnimationGraphNodeUVE>& nodes, const AnimationGraphNodeUVE& machine, const std::size_t slot) {
+    if (slot < machine.stateNames.size() && !machine.stateNames[slot].empty()) {
+        return machine.stateNames[slot];
+    }
+    if (slot < machine.inputs.size() && machine.inputs[slot] != 0U) {
+        if (const AnimationGraphNodeUVE* child = FindNodeUVE(nodes, machine.inputs[slot]); child != nullptr && !child->name.empty()) {
+            return child->name;
+        }
+    }
+    return "State " + std::to_string(slot + 1U);
 }
 
 } // namespace UVE::Editor

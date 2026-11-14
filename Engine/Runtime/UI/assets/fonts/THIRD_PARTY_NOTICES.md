@@ -113,11 +113,8 @@ DEALINGS IN THE FONT SOFTWARE.
 ## stb_truetype.h (vendored font rasterizer)
 
 `thirdparty/stb_truetype.h` is `stb_truetype.h` v1.26 by Sean Barrett / RAD Game
-Tools (public domain / MIT dual-licensed), copied unmodified-in-API from Dear
-ImGui's own vendored copy (`imstb_truetype.h`, itself only carrying compiler-
-warning fixes over the upstream file - grep it for `[DEAR IMGUI]` to see the
-exact diffs) rather than fetched fresh, since this environment already has a
-verified, working copy of the same file and version. Upstream project:
+Tools (public domain / MIT dual-licensed), unmodified in API from the upstream
+file (only compiler-warning fixes). Upstream project:
 <https://github.com/nothings/stb>.
 
 Used by `UIFontAtlasUVE` (`Internal/ui_font_atlas_uve.cpp`) to bake the embedded

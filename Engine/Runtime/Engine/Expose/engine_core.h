@@ -24,6 +24,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "animation_montage_asset.h"
 #include "animation_clip_asset.h"
 #include "asset_handle.h"
 #include "i_asset_bundle.h"
@@ -46,6 +47,7 @@
 #include "engine_config.h"
 #include "raycast_audio_occlusion.h"
 #include "engine_services.h"
+#include "document_scene.h"
 #include "i_editor_viewport_host.h"
 #include "i_simulation_control.h"
 #include "engine_state.h"
@@ -419,6 +421,17 @@ public:
     /// runtime/test path that never calls this is unaffected. Set (or cleared) once per frame,
     /// before TickFrameUVE() - see EditorUVE::DrawViewportPanelUVE()'s own per-frame call.
     void SetEditorViewportRegionUVE(std::optional<Render::ViewportRectUVE> region) noexcept override;
+    /// Where, in window coordinates, the editor shows the game's view (its UI drawn from there):
+    /// the UI's pointer is measured from it. Nothing (the default) is the window's own corner.
+    void SetUIPointerOriginUVE(std::optional<Math::Vector2UVE> origin) noexcept { m_uiPointerOriginUVE = origin; }
+    /// The size of the editor's view the game's UI is drawn into; nothing outside the editor.
+    void SetUIViewportSizeUVE(std::optional<Math::Vector2UVE> size) noexcept { m_uiViewportSizeUVE = size; }
+    /// The device's own screen (its primary monitor): what "auto" screen size means.
+    [[nodiscard]] Math::Vector2UVE DeviceScreenSizeUVE();
+    /// Who answers a script's Set Show Mouse Cursor (the editor, for its own view). Without one the
+    /// window's pointer is shown or hidden.
+    void SetMouseCursorHandlerUVE(std::function<void(bool show)> handler) { m_mouseCursorHandlerUVE = std::move(handler); }
+    [[nodiscard]] bool HasMouseCursorHandlerUVE() const noexcept { return static_cast<bool>(m_mouseCursorHandlerUVE); }
 
     /// Registers a non-owning callback invoked after the renderer has submitted the frame's scene
     /// work but immediately before the window back buffer is presented. This is a generic
@@ -438,11 +451,13 @@ public:
     /// than dereferencing an empty std::optional.
     [[nodiscard]] EngineServicesUVE& GetServicesUVE();
 
+    /// A new scene beside the engine's (its own entities, graph, events and renderer, configured
+    /// like the engine's), for an editor document that must not touch the level. Null before Init().
+    [[nodiscard]] std::unique_ptr<DocumentSceneUVE> CreateDocumentSceneUVE();
+
     /// Returns the current UI draw batch/font atlas (SyncUIRuntimeUVE() ticks it once per real
     /// frame during Update()) - for a host that wants to composite authored Canvas/UIText/UIImage/
-    /// UIButton content itself (the editor's own Viewport panel draws it via ImGui's overlay draw
-    /// list, since UIQuadUVE positions are authored in real window pixel space, not any one
-    /// render target's local space - see EditorMeshLayerUVE::RenderUVE()'s own doc comment).
+    /// UIButton content itself (the editor's view draws it over its own image, in the view's pixels).
     [[nodiscard]] const UI::UIRuntimeUVE& GetUIRuntimeUVE() const noexcept { return m_uiRuntime; }
 
     /// The locale and string tables authored UI text is translated through. Owned here alongside
@@ -462,6 +477,12 @@ public:
     [[nodiscard]] static VersionUVE GetEngineVersionUVE() noexcept;
 
 private:
+    /// A Renderer3DUVE over the given render systems and event bus, configured from m_config the
+    /// same way for the engine's own scene and for every document scene.
+    [[nodiscard]] std::unique_ptr<Render::IRenderer3DUVE> MakeRenderer3DUVE(Render::IMeshRendererUVE& meshRenderer,
+                                                                          Render::ICameraSystemUVE& cameraSystem,
+                                                                          Render::ILightSystemUVE& lightSystem,
+                                                                          Events::IEventSystemUVE& eventSystem);
     /// Registers the built-in MeshAssetUVE/TextureAssetUVE/ShaderAssetUVE/MaterialAssetUVE/
     /// AudioAssetUVE/AnimationClipAssetUVE
     /// loaders with AssetManagerUVE (Part 7.2's rendering-facing asset types). Called once from
@@ -523,11 +544,30 @@ private:
     /// Runs every object's `.uvs` script for this frame (see SyncUVScriptsUVE). An object whose script
     /// path is not a `.uvs` file is reported once in m_scriptReconcileFailedEntities and skipped.
     void SyncScriptRuntimeUVE();
+    /// Makes a Widget Blueprint's widgets (hidden) for a script's `ui.create`.
+    [[nodiscard]] Scene::EntityUVE CreateWidgetUVE(const std::string& path);
+    /// Buttons clicked, sliders and check boxes changed, text boxes committed this frame: their
+    /// `ui_*` events, to every scripted object above them.
+    void RaiseWidgetScriptEventsUVE();
+    /// Stands each 3D View's asset on its own stage and turns it (UIView3DComponentUVE).
+    void SyncUIView3DStagesUVE(float deltaSeconds);
+    /// The reference resolution of the first shown widget that scales with the screen, if any.
+    [[nodiscard]] std::optional<Math::Vector2UVE> ScaledCanvasReferenceUVE();
+    /// A widget's Stage (the child named Stage of its root Canvas), or none.
+    [[nodiscard]] Scene::EntityUVE FindWidgetStageUVE(Scene::EntityUVE widget) const;
+    [[nodiscard]] Scene::EntityUVE FindNamedUnderUVE(Scene::EntityUVE root, std::string_view name) const;
+    /// `entity`'s position and rotation in `ancestor`'s space, from their local transforms.
+    [[nodiscard]] std::optional<std::pair<Math::Vector3UVE, Math::QuaternionUVE>> PoseUnderUVE(Scene::EntityUVE entity,
+                                                                                             Scene::EntityUVE ancestor) const;
+    /// Takes off a Stage what must not act from it: cameras, scripts, bodies, suns, environments.
+    void StripWidgetStageUVE(Scene::EntityUVE stage);
     /// Compiles each object's text script once, drops the
     void SyncUVScriptsUVE(bool simulationPaused);
     /// Reconciles script components with instances in m_uvScripts so event receivers are ready
     /// before any physics or animation step evaluates.
     void ReconcileUVScriptInstancesUVE();
+    /// A script slot's source: a .uvs file's text, or the UVScript a .uvbp Blueprint translates to.
+    [[nodiscard]] std::optional<std::string> ReadUVScriptSourceUVE(const std::string& path) const;
 
     /// Steps every Character3D (CharacterControllerComponentUVE) once per fixed step: velocity
     /// from the built-in movement when it is on (keyboard, with air control, coyote time and a
@@ -689,7 +729,7 @@ private:
     void SyncPerceptionUVE(float deltaSeconds);
 
     /// The interaction scan, new wiring for previously unconsumed authored data (the
-    /// Unreal-Lyra-style interactor/focus loop Godot leaves every game to hand-roll out of
+    /// Established interactor/focus loop Godot leaves every game to hand-roll out of
     /// Area3D signals): every frame, every character-controller entity that has a
     /// ColliderComponentUVE and a world transform is an interactor, a possessed Player3D is the
     /// PRIMARY interactor when one exists (else the first in (index,generation) order via
@@ -723,7 +763,7 @@ private:
     void SyncInteractionArea3DObjectsUVE();
 
     /// The LevelStreamer3D consumer: pure per-tick streaming verdicts on LevelStreamer3D objects
-    /// (Godot has no built-in counterpart at all; Unreal's streaming volumes are the inspiration).
+    /// (Godot has no built-in counterpart at all; the standard streaming volumes are the inspiration).
     /// Pass 1 (read-only) collects the viewer point cloud for the tick - the active camera's world
     /// position plus every character-controller entity's world position, finite poses only
     /// (Frostbite's listener-model multi-source). Pass 2 applies Scene::
@@ -758,7 +798,7 @@ private:
     void SyncReflectionProbe3DObjectsUVE();
 
     /// The WorldPartition3D consumer: cell-based visibility for a partition's own subtree
-    /// (Godot has no built-in equivalent at all; this is Unreal World Partition translated into
+    /// (Godot has no built-in equivalent at all; this is World Partition translated into
     /// an in-document budget). Pass 1 walks each enabled, valid partition's descendants
     /// breadth-first (a nested WorldPartition3D manages its own subtree - closest ancestor wins,
     /// so an inner partition is never re-partitioned by an outer one), marks every descendant
@@ -854,6 +894,11 @@ private:
     std::unique_ptr<Asset::IDerivedArtifactCacheUVE> m_derivedArtifactCache;
     std::unique_ptr<Asset::IProjectChangeWatcherUVE> m_projectChangeWatcher;
     std::unique_ptr<Scene::ISceneSerializerUVE> m_sceneSerializer;
+    std::optional<Math::Vector2UVE> m_uiPointerOriginUVE;
+    std::optional<Math::Vector2UVE> m_uiViewportSizeUVE;
+    std::optional<Math::Vector2UVE> m_deviceScreenSizeUVE;
+    std::function<void(bool)> m_mouseCursorHandlerUVE;
+    std::chrono::steady_clock::time_point m_uiView3DClockUVE{};
     std::unique_ptr<Scene::IPrefabSystemUVE> m_prefabSystem;
     std::unique_ptr<Asset::IHotReloadUVE> m_hotReload;
     std::unique_ptr<Asset::IAssetManagerUVE> m_assetManager;
@@ -932,6 +977,14 @@ private:
     /// release before the manager is destroyed; clips no object references any more are dropped
     /// each frame.
     std::unordered_map<std::uint64_t, Asset::AssetHandleUVE<Asset::AnimationClipAssetUVE>> m_animationClips;
+    /// The Animation Montages MontagePlayers play, by asset guid; reread when the file changes (the
+    /// Montage Editor saves while the game runs in the editor).
+    struct MontageCacheEntryUVE final {
+        std::filesystem::path path;
+        std::filesystem::file_time_type written{};
+        std::optional<Asset::AnimationMontageAssetUVE> montage;
+    };
+    std::unordered_map<std::uint64_t, MontageCacheEntryUVE> m_animationMontages;
     /// IK on a skeleton nothing animates (an editor authoring a rig, a prop with no clip). A modifier blends over
     /// the pose a driver wrote, so applying it to a pose that is not rewritten each frame would blend the same
     /// solve again every frame and creep. `base` is the pose the author left; `written` is what the modifiers

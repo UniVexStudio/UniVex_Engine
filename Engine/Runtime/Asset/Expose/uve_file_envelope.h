@@ -55,6 +55,11 @@ enum class AssetKindUVE : std::uint32_t {
     Skeleton = 13,
     AnimationLibrary = 14,
     Font = 15,
+    AnimationMontage = 16,
+    /// `.uvmontagelib`: a named list of montages a MontagePlayer can link to.
+    MontageLibrary = 17,
+    /// `.uvbp`: a Blueprint Class, an object's gameplay as a graph (runs as UVScript).
+    Blueprint = 18,
 };
 
 /// The fixed-size portion of a `.uve*` file's header, returned by ReadUveFileUVE() alongside the

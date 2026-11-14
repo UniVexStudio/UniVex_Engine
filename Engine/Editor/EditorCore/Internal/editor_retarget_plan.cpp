@@ -8,6 +8,7 @@
 #include "animation_clip_asset.h"
 #include "mesh_asset.h"
 #include "retarget_conform.h"
+#include "retarget_brain.h"
 #include "retarget_humanoid.h"
 
 namespace UVE::Editor {
@@ -74,7 +75,11 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
 
     if (resolvedRig.has_value()) {
         const Retarget::RetargetSkeletonUVE& rig = *resolvedRig;
-        const Retarget::HumanoidMatchUVE match = Retarget::MatchHumanoidUVE(rig, reference);
+        // Names first, and the Rig Brain once it is trained (it trains in the background).
+        const Retarget::HumanoidMatchUVE match = Retarget::IsDefaultRigBrainReadyUVE()
+                                                     ? Retarget::MatchHumanoidWithBrainUVE(rig, reference, Retarget::GetDefaultRigBrainUVE())
+                                                     : Retarget::MatchHumanoidUVE(rig, reference);
+        plan.usedBrain = Retarget::IsDefaultRigBrainReadyUVE();
         std::vector<std::string> names;
         for (const Retarget::RetargetBoneUVE& bone : rig.bones) {
             names.push_back(bone.name);
@@ -92,6 +97,12 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
             row.depth = depth[ref];
             row.status = match.joints[ref].status;
             row.reason = match.joints[ref].reason;
+            row.optional = reference.info[ref].optional;
+            row.byBrain = match.joints[ref].byBrain;
+            row.confidence = match.joints[ref].confidence;
+            if (row.status == Retarget::JointStatusUVE::Missing && !row.optional) {
+                ++plan.missingCore;
+            }
             if (match.joints[ref].bone >= 0) {
                 row.characterName = rig.bones[static_cast<std::size_t>(match.joints[ref].bone)].name;
             }
@@ -101,6 +112,20 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
             if (match.referenceOfBone[bone] < 0) {
                 plan.keptBones.push_back(rig.bones[bone].name);
             }
+        }
+        // What Generate will add: helpers it lacks, and body bones only when it lacks many.
+        const Retarget::BodyBoneCountUVE body = Retarget::CountBodyBonesUVE(match, reference);
+        plan.bonesToAdd = body.missingHelpers + (Retarget::IsRigVeryLackingUVE(match, reference) ? body.missing : 0U);
+        plan.renameOnly = plan.bonesToAdd == 0U;
+        const bool lacking = Retarget::IsRigVeryLackingUVE(match, reference);
+        for (RetargetJointRowUVE& row : plan.joints) {
+            if (row.status != Retarget::JointStatusUVE::Missing || row.optional || row.referenceBone < 0) {
+                continue;
+            }
+            const Retarget::HumanoidBoneKindUVE kind = reference.info[static_cast<std::size_t>(row.referenceBone)].kind;
+            const bool helper = kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::IK ||
+                                kind == Retarget::HumanoidBoneKindUVE::Socket;
+            row.willMake = helper || lacking;
         }
     }
 

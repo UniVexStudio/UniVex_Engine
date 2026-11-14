@@ -327,7 +327,7 @@ TEST_F(FbxImporterUVETest, FbxImportIsIdempotentAcrossReimport) {
 
 } // namespace
 TEST_F(FbxImporterUVETest, ARiggedModelPublishesItsRigBesideIt) {
-    // Unreal splits a Skeletal Mesh from its Skeleton for a reason: one rig, shared. The published
+    // Engines split a Skeletal Mesh from its Skeleton for a reason: one rig, shared. The published
     // `.uvskel` has to name the same joints, in the same order, with the same rest pose the model
     // carries - otherwise a clip made for one and played on the other finds nothing.
     const std::filesystem::path source = ScratchUVE("hero.fbx");

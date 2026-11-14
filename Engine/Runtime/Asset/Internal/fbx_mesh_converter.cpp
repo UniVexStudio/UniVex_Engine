@@ -2,6 +2,7 @@
 
 #include "fbx_mesh_converter.h"
 
+#include <limits>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -331,13 +332,39 @@ static bool ConvertFbxMeshImplUVE(const std::span<const std::byte> source, MeshA
             for (const ufbx_node* const object : mesh->instances) {
                 // A part with no skin of its own rides the nearest bone above it (or the first).
                 std::uint32_t rigidJoint = 0U;
+                bool rigidFound = false;
                 for (const ufbx_node* ancestor = object; skinned && ancestor != nullptr; ancestor = ancestor->parent) {
                     if (const auto found = jointOfObject.find(ancestor); found != jointOfObject.end()) {
                         rigidJoint = found->second;
+                        rigidFound = true;
                         break;
                     }
                 }
                 const ufbx_matrix toWorld = object->geometry_to_world;
+                // No bone above it (a "Geo" group beside the rig): the bone nearest to the part's middle,
+                // so a separate head follows the head rather than whatever bone came first.
+                if (skinned && !rigidFound && skin == nullptr && !jointOfObject.empty() && mesh->vertex_position.values.count > 0U) {
+                    ufbx_vec3 sum{0.0, 0.0, 0.0};
+                    const std::size_t count = mesh->vertex_position.values.count;
+                    for (std::size_t v = 0U; v < count; ++v) {
+                        const ufbx_vec3 at = ufbx_transform_position(&toWorld, mesh->vertex_position.values.data[v]);
+                        sum.x += at.x;
+                        sum.y += at.y;
+                        sum.z += at.z;
+                    }
+                    const double inv = 1.0 / static_cast<double>(count);
+                    const ufbx_vec3 middle{sum.x * inv, sum.y * inv, sum.z * inv};
+                    double best = std::numeric_limits<double>::max();
+                    for (const auto& [node, joint] : jointOfObject) {
+                        const ufbx_vec3 at = node->node_to_world.cols[3];
+                        const double dx = at.x - middle.x, dy = at.y - middle.y, dz = at.z - middle.z;
+                        const double d = dx * dx + dy * dy + dz * dz;
+                        if (d < best) {
+                            best = d;
+                            rigidJoint = joint;
+                        }
+                    }
+                }
                 const ufbx_matrix normalToWorld = ufbx_matrix_for_normals(&toWorld);
                 // A mirrored instance (negative scale) turns its triangles inside out; swapping two
                 // corners keeps them facing the way the surface does.

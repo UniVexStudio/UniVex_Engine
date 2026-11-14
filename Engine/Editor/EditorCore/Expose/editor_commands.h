@@ -10,8 +10,18 @@
 
 namespace UVE::Editor {
 
-/// A key and its modifiers. `key` is a Dear ImGui key value, 0 for none; it is stored and shown
-/// by the editor's own stable names (FormatEditorShortcutUVE), never by that value.
+/// The keys a shortcut may use. The editor's own, independent of any UI library; stored and shown
+/// by stable names (FormatEditorShortcutUVE), never by these values.
+enum class EditorKeyUVE : int {
+    None = 0,
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+    Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9,
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    Left, Right, Up, Down, Delete, Backspace, Insert, Home, End, PageUp, PageDown, Space, Enter, Tab,
+    Comma, Period, Slash, Minus, Equal, LeftBracket, RightBracket,
+};
+
+/// A key (an EditorKeyUVE value, 0 for none) and its modifiers.
 struct EditorShortcutUVE final {
     int key = 0;
     bool ctrl = false;

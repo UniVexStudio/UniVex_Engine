@@ -3,6 +3,7 @@
 #include "scene_object_type.h"
 
 #include "animation_sequencer_component.h"
+#include "montage_player_component.h"
 #include "animation_graph_component.h"
 #include "area_component.h"
 #include "audio_source_component.h"
@@ -126,6 +127,7 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<AudioSourceComponentUVE>{Kind::AudioSource3D},
                            OwnComponentUVE<ParticleEmitterComponentUVE>{Kind::ParticleEmitter3D},
                            OwnComponentUVE<AnimationSequencerComponentUVE>{Kind::AnimationSequencer},
+                           OwnComponentUVE<MontagePlayerComponentUVE>{Kind::MontagePlayer},
                            OwnComponentUVE<AnimationGraphComponentUVE>{Kind::AnimationGraph},
                            OwnComponentUVE<CanvasComponentUVE>{Kind::Canvas},
                            OwnComponentUVE<UITextComponentUVE>{Kind::UIText},

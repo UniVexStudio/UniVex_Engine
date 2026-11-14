@@ -225,16 +225,37 @@ TEST(RetargetHumanoidUVETest, GetHumanoidReferenceUVE_IsASymmetricAPoseStandingO
     ExpectNear(DirectionUVE(reference, world, "Hips", "Spine1"), {0.0F, 1.0F, 0.0F}, 1e-4F, "hips");
     ExpectNear(DirectionUVE(reference, world, "Spine5", "Neck1"), {0.0F, 1.0F, 0.0F}, 1e-4F, "chest");
     ExpectNear(DirectionUVE(reference, world, "Neck2", "Head"), {0.0F, 1.0F, 0.0F}, 1e-4F, "neck");
+    // The A-pose measured from a production rig: the upper arms about 55 degrees below level, the
+    // elbows bent forward, the legs a little apart.
     for (const auto& [side, x] : {std::pair{std::string{"_L"}, 1.0F}, std::pair{std::string{"_R"}, -1.0F}}) {
-        const Vector3UVE arm{kHalfRootTwoUVE * x, -kHalfRootTwoUVE, 0.0F};
-        ExpectNear(DirectionUVE(reference, world, "UpperArm" + side, "ForeArm" + side), arm, 1e-4F, "upper arm" + side);
-        ExpectNear(DirectionUVE(reference, world, "ForeArm" + side, "Hand" + side), arm, 1e-4F, "forearm" + side);
-        ExpectNear(DirectionUVE(reference, world, "Thigh" + side, "Shin" + side), {0.0F, -1.0F, 0.0F}, 1e-4F, "thigh" + side);
-        ExpectNear(DirectionUVE(reference, world, "Shin" + side, "Foot" + side), {0.0F, -1.0F, 0.0F}, 1e-4F, "shin" + side);
+        const Vector3UVE upper = DirectionUVE(reference, world, "UpperArm" + side, "ForeArm" + side);
+        ExpectNear(upper, Math::NormalizeUVE(Vector3UVE{0.576F * x, -0.817F, 0.023F}), 2e-3F, "upper arm" + side);
+        const float below = std::atan2(-upper.y, std::abs(upper.x)) * 57.29578F;
+        EXPECT_GT(below, 54.0F) << side;
+        EXPECT_LT(below, 56.0F) << side;
+        ExpectNear(DirectionUVE(reference, world, "ForeArm" + side, "Hand" + side),
+                   Math::NormalizeUVE(Vector3UVE{0.468F * x, -0.603F, 0.646F}), 2e-3F, "forearm" + side);
+        ExpectNear(DirectionUVE(reference, world, "Thigh" + side, "Shin" + side),
+                   Math::NormalizeUVE(Vector3UVE{0.055F * x, -0.999F, 0.001F}), 2e-3F, "thigh" + side);
+        ExpectNear(DirectionUVE(reference, world, "Shin" + side, "Foot" + side),
+                   Math::NormalizeUVE(Vector3UVE{0.042F * x, -0.996F, -0.085F}), 2e-3F, "shin" + side);
+        // The palm faces the body, the thumb side forward.
         const Vector3UVE knuckles = PositionOf(reference, world, "Index1" + side) - PositionOf(reference, world, "Pinky1" + side);
-        ExpectNear(Across(arm, knuckles), {0.0F, 0.0F, 1.0F}, 1e-3F, "palm" + side);
+        EXPECT_GT(knuckles.z, 0.0F) << "index ahead of pinky" + side;
         // Toes ahead of the heels.
         EXPECT_GT(PositionOf(reference, world, "Toe" + side).z, PositionOf(reference, world, "Foot" + side).z + 0.1F);
+    }
+    // The correctives are optional (generated only when asked for); every other bone is core.
+    for (std::size_t index = 0U; index < reference.info.size(); ++index) {
+        EXPECT_EQ(reference.info[index].optional, reference.info[index].kind == HumanoidBoneKindUVE::Corrective)
+            << reference.skeleton.bones[index].name;
+        if (reference.info[index].optional) {
+            const std::int32_t parent = reference.skeleton.bones[index].parent;
+            ASSERT_GE(parent, 0);
+            EXPECT_TRUE(reference.info[static_cast<std::size_t>(parent)].optional ||
+                        reference.info[static_cast<std::size_t>(parent)].kind != HumanoidBoneKindUVE::Corrective)
+                << reference.skeleton.bones[index].name;
+        }
     }
     // The head looks straight ahead, level.
     const Math::QuaternionUVE head = world[static_cast<std::size_t>(FindBoneUVE(reference.skeleton, "Head"))].rotation;

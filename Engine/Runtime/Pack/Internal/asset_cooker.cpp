@@ -1,4 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#include "model_animations.h"
+#include "animation_montage_asset.h"
 #include "asset_cooker.h"
 #include <algorithm>
 #include <cstdio>
@@ -12,6 +14,8 @@
 #include "font_asset.h"
 #include "skeleton_asset.h"
 #include "animation_library_asset.h"
+#include "blueprint_asset.h"
+#include "montage_library_asset.h"
 #include "data_table_asset.h"
 #include "asset_resident_size.h"
 #include "texture_mipmap.h"
@@ -35,9 +39,15 @@ std::string Extension(const std::filesystem::path& path) {
     std::transform(value.begin(),value.end(),value.begin(),[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return value;
 }
+/// A take kept inside a model ("Hero.uvmodel#Walk") is runtime content of its model.
+bool EmbeddedClip(const std::filesystem::path& path, std::filesystem::path& model) {
+    std::string take;
+    return Asset::SplitEmbeddedClipPathUVE(path, model, take);
+}
 bool RuntimePath(const std::filesystem::path& path) {
+    if (std::filesystem::path model; EmbeddedClip(path, model)) return Extension(model) == ".uvmodel";
     static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvshader", ".uvscene",
-        ".uvprefab", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvfont", ".uvtable",
+        ".uvprefab", ".uvwbp", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage", ".uvmontagelib", ".uvfont", ".uvtable",
         ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
     return extensions.contains(Extension(path));
 }
@@ -71,10 +81,10 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
     const std::map<std::string,Asset::AssetKindUVE> kinds{
         {".uvtex",Asset::AssetKindUVE::Texture},{".uvmodel",Asset::AssetKindUVE::Mesh},
         {".uvmat",Asset::AssetKindUVE::Material},{".uvshader",Asset::AssetKindUVE::Shader},
-        {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},
+        {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},{".uvwbp",Asset::AssetKindUVE::Prefab},
         {".uvaudio",Asset::AssetKindUVE::Audio},{".uvanim",Asset::AssetKindUVE::Animation},
         {".uvskel",Asset::AssetKindUVE::Skeleton},{".uvanimlib",Asset::AssetKindUVE::AnimationLibrary},
-        {".uvfont",Asset::AssetKindUVE::Font},{".uvtable",Asset::AssetKindUVE::DataTable}};
+        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbp",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable}};
     if (const auto it = kinds.find(extension); it == kinds.end() || it->second != envelope->first.assetType) return false;
     switch (envelope->first.assetType) {
     case Asset::AssetKindUVE::Texture: { Asset::TextureAssetUVE v; return Asset::LoadTextureAssetUVE(path,v); }
@@ -98,6 +108,20 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
     case Asset::AssetKindUVE::Font: { Asset::FontAssetUVE v; return Asset::LoadFontAssetUVE(path,v); }
     case Asset::AssetKindUVE::Skeleton: { Asset::SkeletonAssetUVE v; return Asset::LoadSkeletonAssetUVE(path,v); }
     case Asset::AssetKindUVE::DataTable: { Asset::DataTableUVE v; return Asset::LoadDataTableAssetUVE(path,v); }
+    case Asset::AssetKindUVE::AnimationMontage: {
+        Asset::AnimationMontageAssetUVE v;
+        if (!Asset::LoadAnimationMontageAssetUVE(path,v)) return false;
+        for (const auto& segment : v.segments) CheckGuid(segment.clip,db);
+        CheckGuid(v.previewEntity,db);
+        return true;
+    }
+    case Asset::AssetKindUVE::Blueprint: { Asset::BlueprintAssetUVE v; return Asset::LoadBlueprintAssetUVE(path,v); }
+    case Asset::AssetKindUVE::MontageLibrary: {
+        Asset::MontageLibraryAssetUVE v;
+        if (!Asset::LoadMontageLibraryAssetUVE(path,v)) return false;
+        for (const auto& entry : v.entries) CheckGuid(entry.montage,db);
+        return true;
+    }
     case Asset::AssetKindUVE::AnimationLibrary: {
         Asset::AnimationLibraryAssetUVE v;
         if (!Asset::LoadAnimationLibraryAssetUVE(path,v)) return false;
@@ -203,6 +227,21 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             // Editor registries can include authoring sources as well as imported outputs.
             // Omit those source records; a runtime reference to one is rejected by CheckGuid.
             if (!RuntimePath(record.path)) continue;
+            if (std::filesystem::path model; EmbeddedClip(record.path, model)) {
+                // The take ships inside its model; the catalog names it as the model and the take.
+                if (!model.is_absolute()) model = root/model;
+                model = Contained(root,model);
+                if (!Relative(model.lexically_relative(content))) throw std::runtime_error("Registered asset outside content");
+                Asset::AnimationClipAssetUVE clip;
+                if (!Asset::LoadAnimationClipAssetUVE(record.path.is_absolute() ? record.path : root/record.path,clip))
+                    throw std::runtime_error("Invalid registered native asset: " + record.path.string());
+                const auto relative = model.lexically_relative(root);
+                required.insert(relative);
+                char hex[17]; std::snprintf(hex,sizeof(hex),"%016llx",static_cast<unsigned long long>(record.guid.value));
+                if (record.guid.value == 0) throw std::runtime_error("Invalid zero GUID");
+                catalog[hex] = relative.generic_string() + record.path.generic_string().substr(record.path.generic_string().rfind('#'));
+                continue;
+            }
             std::filesystem::path source = record.path;
             if (!source.is_absolute()) source = root/source;
             source = Contained(root,source);
@@ -214,8 +253,8 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             if (record.guid.value == 0) throw std::runtime_error("Invalid zero GUID");
             catalog[hex] = relative.generic_string();
         }
-        const std::set<std::string> native{ ".uvtex",".uvmodel",".uvmat",".uvshader",".uvscene",".uvprefab",
-            ".uvaudio",".uvanim",".uvskel",".uvanimlib",".uvfont",".uvtable" };
+        const std::set<std::string> native{ ".uvtex",".uvmodel",".uvmat",".uvshader",".uvscene",".uvprefab",".uvwbp",
+            ".uvaudio",".uvanim",".uvskel",".uvanimlib",".uvmontage",".uvmontagelib",".uvfont",".uvtable" };
         const std::set<std::string> text{ ".uvs",".glsl",".vert",".frag",".comp",".glslinc" };
         for (const auto& entry : std::filesystem::recursive_directory_iterator(content)) {
             if (entry.is_symlink()) throw std::runtime_error("Cook does not accept symlinks");

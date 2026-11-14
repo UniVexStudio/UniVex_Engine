@@ -1343,6 +1343,7 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     transition.fadeSeconds = 0.05F;
     machine.transitions = {transition};
     machine.statePositions = {Math::Vector2UVE{40.0F, -20.0F}};
+    machine.stateNames = {"Idle", "Jump"};
     machine.entryPosition = Math::Vector2UVE{-300.0F, 10.0F};
     machine.anyPosition = Math::Vector2UVE{-300.0F, 90.0F};
     blend.nodes[0].inputs = {3U};
@@ -1360,6 +1361,13 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     space.valueY = 0.75F;
     space.blendMode = AnimationBlendModeUVE::NearestInStep;
     space.smoothingSeconds = 0.15F;
+    space.gridX = 6U;
+    space.gridY = 3U;
+    space.snapToGrid = false;
+    space.axisNameX = "Direction";
+    space.axisNameY = "Speed";
+    space.owner = 3U; // placed in the machine's second state's graph
+    space.ownerState = 1U;
     blend.nodes.push_back(space);
     AnimationGraphNodeUVE layered;
     layered.id = 5U;
@@ -1368,6 +1376,11 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_AnimationTargetsRemapToTheRestoredEnti
     layered.bones = {"Spine", "LeftShoulder"};
     layered.restart = false;
     blend.nodes.push_back(layered);
+    AnimationGraphCommentUVE note;
+    note.title = "Jump";
+    note.owner = 3U;
+    note.ownerState = 1U;
+    blend.comments.push_back(note);
     ASSERT_TRUE(IsAnimationGraphComponentValidUVE(blend)) << DescribeAnimationGraphProblemUVE(blend);
     entityManager.AddComponentUVE<AnimationGraphComponentUVE>(player, blend);
 
@@ -2588,13 +2601,15 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_LayoutContainer_RoundTripsExactly) {
     std::filesystem::remove(path);
 }
 
-TEST_F(SceneSerializerUVETest, MetadataPilot_CanvasWritesExactlyItsTwoPropertyKeys) {
+TEST_F(SceneSerializerUVETest, MetadataPilot_CanvasWritesExactlyItsPropertyKeys) {
     // The Tier 1.5 pilot: Canvas has no hand-written JSON on either side, so this pins the
     // generic property writer's exact output shape for it.
     const EntityUVE entity = entityManager.CreateEntityUVE();
     CanvasComponentUVE canvas{};
     canvas.visible = false;
     canvas.sortOrder = -5;
+    canvas.scaleWithScreen = true;
+    canvas.referenceResolution = Math::Vector2UVE{1280.0F, 720.0F};
     entityManager.AddComponentUVE<CanvasComponentUVE>(entity, canvas);
 
     const std::optional<SceneSnapshotUVE> snapshot =
@@ -2607,9 +2622,13 @@ TEST_F(SceneSerializerUVETest, MetadataPilot_CanvasWritesExactlyItsTwoPropertyKe
     const nlohmann::json payload = nlohmann::json::parse(payloadText);
     const nlohmann::json& canvasJson =
         payload.at("entities").at(0).at("components").at("CanvasComponentUVE");
-    EXPECT_EQ(canvasJson.size(), 2U);
+    // Visible, Sort Order, and the Scale With Screen pair a Widget Blueprint's root uses.
+    EXPECT_EQ(canvasJson.size(), 4U);
     EXPECT_EQ(canvasJson.at("visible").get<bool>(), false);
     EXPECT_EQ(canvasJson.at("sortOrder").get<std::int32_t>(), -5);
+    EXPECT_EQ(canvasJson.at("scaleWithScreen").get<bool>(), true);
+    EXPECT_FLOAT_EQ(canvasJson.at("referenceResolution").at(0).get<float>(), 1280.0F);
+    EXPECT_FLOAT_EQ(canvasJson.at("referenceResolution").at(1).get<float>(), 720.0F);
 }
 
 TEST_F(SceneSerializerUVETest, MetadataPilot_CanvasMissingKeysLoadFactoryDefaults) {

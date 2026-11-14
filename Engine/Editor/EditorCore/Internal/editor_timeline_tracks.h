@@ -1,11 +1,11 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Timeline's track list and its blend-shape preview, kept out of the panel's ImGui code.
+// The Timeline's track list and its blend-shape preview, kept out of the panel's drawing code.
 //
 // Two rules the dope sheet lives by are worth more than a screenshot: WHICH rows the tab shows for
 // a clip, and WHICH weights a playing clip puts on WHICH object. Both are pure decisions over asset
-// data and scene facts, so both live here - testable headlessly, without a window, a renderer or an
-// ImGui context - and the panel is left with what a panel should own: turning the rows into pixels.
+// data and scene facts, so both live here - testable headlessly, without a window, a renderer or a
+// UI - and the panel is left with what a panel should own: turning the rows into pixels.
 
 #pragma once
 
@@ -149,5 +149,21 @@ struct TimelineMorphPreviewUVE final {
 /// the track, or one whose weight vector differs from a neighbour's. A baked facial clip stores a
 /// key every frame; only the frames a shape actually moves on are keys an author can point at.
 [[nodiscard]] bool ShowsMorphKeyUVE(const Asset::AnimationAssetMorphTrackUVE& track, std::size_t index);
+
+/// Frames per second the clip was baked at, from its densest track; 30 when it cannot tell (a
+/// hand-made clip with a few keys was still made at 30).
+[[nodiscard]] double EstimateTimelineFrameRateUVE(const Asset::AnimationClipAssetUVE& clip);
+
+/// A ruler tick spacing, in seconds, that keeps labels at least `minimumPixels` apart.
+[[nodiscard]] double PickTimelineTickStepUVE(double pixelsPerSecond, double frameRate, float minimumPixels);
+
+/// True when `channel` (0 position, 1 rotation, 2 scale) differs between two poses.
+[[nodiscard]] bool TimelineChannelChangesUVE(const Asset::AnimationAssetPoseUVE& before,
+                                             const Asset::AnimationAssetPoseUVE& after, int channel);
+
+/// True when sample `index` is a key worth showing on a row: an end of the track, or a frame the
+/// channel (-1: any channel) moves into or out of. A baked clip stores every channel every frame.
+[[nodiscard]] bool ShowsTimelineKeyUVE(const std::vector<Asset::AnimationAssetSampleUVE>& samples, std::size_t index,
+                                       int channel);
 
 } // namespace UVE::Editor
