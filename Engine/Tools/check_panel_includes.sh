@@ -1,6 +1,6 @@
 #!/bin/bash
 # Checks that every editor panel translation unit includes a standard header for each std::
-# facility it names, instead of relying on one arriving transitively through imgui.h or a
+# facility it names, instead of relying on one arriving transitively through a UI header or a
 # component header.
 #
 # WHY THIS EXISTS. Splitting editor_uve.cpp into per-panel files moved code away from the

@@ -1,6 +1,5 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-
 #pragma once
 
 #include <cstddef>
@@ -93,7 +92,7 @@ public:
     void ShutdownUVE() noexcept;
 
     /// Renders `material` on the fixed preview sphere into a new `width` x `height` RGBA8 texture,
-    /// ready for direct use as an ImGui image id (exactly like
+    /// ready for direct use as a UI image id (exactly like
     /// EditorUiAssetsUVE::UploadDynamicTextureUVE()'s return value). Returns 0 if `width`/`height`
     /// is not positive, InitializeUVE() previously failed, or any GL step fails. The caller owns
     /// the returned texture's lifetime.

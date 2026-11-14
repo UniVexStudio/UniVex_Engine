@@ -12,12 +12,8 @@
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
-#include <imgui_internal.h>
-
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
-#include "editor_chrome_layout.h"
 
 namespace UVE::Editor {
 namespace {
@@ -79,35 +75,6 @@ void EditorUVE::RefreshAnimationLibraryWindowUVE(const std::filesystem::path& li
     window.library = std::move(fresh);
     window.status = "Added from Content.";
     window.statusIsError = false;
-}
-
-std::vector<std::filesystem::path> EditorUVE::AcceptAnimationLibraryDropPathsUVE() {
-    // Both Content drag shapes: one path NUL-terminated, or many NUL-joined. Only one fires per
-    // drop; both come back content-relative.
-    std::vector<std::filesystem::path> paths;
-    if (const ImGuiPayload* const single = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE);
-        single != nullptr && single->Data != nullptr && single->DataSize > 1) {
-        paths.emplace_back(
-            std::string(static_cast<const char*>(single->Data), static_cast<std::size_t>(single->DataSize - 1)));
-    }
-    if (const ImGuiPayload* const multi = ImGui::AcceptDragDropPayload(kContentItemsPayloadUVE);
-        multi != nullptr && multi->Data != nullptr && multi->DataSize > 0) {
-        const char* const bytes = static_cast<const char*>(multi->Data);
-        const std::size_t byteCount = static_cast<std::size_t>(multi->DataSize);
-        std::size_t at = 0U;
-        while (at < byteCount) {
-            const void* const found = std::memchr(bytes + at, '\0', byteCount - at);
-            if (found == nullptr) {
-                break;
-            }
-            const char* const end = static_cast<const char*>(found);
-            if (end != bytes + at) {
-                paths.emplace_back(std::string(bytes + at, end));
-            }
-            at += static_cast<std::size_t>(end - (bytes + at)) + 1U;
-        }
-    }
-    return paths;
 }
 
 std::size_t EditorUVE::AppendClipsToAnimationLibraryUVE(const std::filesystem::path& libraryAbsolute,

@@ -4,7 +4,6 @@ build-*/
 .ccache/
 .venv/
 ThirdParty/
-!ThirdParty/imgui/ImGui.Build.cs
 *.o
 *.obj
 compile_commands.json

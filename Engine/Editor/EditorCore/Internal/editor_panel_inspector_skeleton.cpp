@@ -34,7 +34,6 @@
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
 #include <nlohmann/json.hpp>
 
 #include "fbx_mesh_converter.h"
@@ -53,23 +52,6 @@
 
 namespace UVE::Editor {
 namespace {
-
-[[nodiscard]] bool BeginSkeletonRowsUVE(const char* const id) {
-    if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
-        return false;
-    }
-    ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.42F);
-    ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.58F);
-    return true;
-}
-
-void ReadOnlyRowUVE(const char* const label, const char* const value) {
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::TextUnformatted(label);
-    ImGui::TableSetColumnIndex(1);
-    ImGui::TextDisabled("%s", value);
-}
 
 // The skeleton in a model source, whichever format it is: a glTF skin, or an FBX's bones.
 [[nodiscard]] std::optional<Asset::GltfSkeletonUVE> ReadSkeletonSourceUVE(const std::filesystem::path& path,
@@ -505,147 +487,6 @@ bool EditorUVE::BindSelectedSkeletonSourceUVE(const std::filesystem::path& relat
     m_skeletonSourceStatus.clear();
     m_selectedSkeletonBone.clear();
     return SetSelectedComponentValueUVE(*entry, &next);
-}
-
-void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                              const Core::TypeMetadataPropertyUVE& property, const void* const instance) {
-    const auto& skeleton = *static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
-    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
-    if (!BeginSkeletonRowsUVE("##skeleton-source")) {
-        return;
-    }
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    // No revert icon: resetting the path alone would leave the bones behind.
-    static_cast<void>(DrawMetadataPropertyLabelUVE(entry, property, instance, false));
-    ImGui::TableSetColumnIndex(1);
-    ImGui::BeginDisabled(!writable);
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    const std::string preview = skeleton.skeletonAssetPath.empty()
-                                    ? std::string{"(none)"}
-                                    : std::filesystem::path{skeleton.skeletonAssetPath}.filename().string();
-    // Offered: every model source whose file declares a skeleton - the same test the Content
-    // Browser uses to label a file Model rather than Mesh.
-    std::filesystem::path chosen;
-    bool picked = false;
-    if (ImGui::BeginCombo("##skeleton-source", preview.c_str())) {
-        if (ImGui::Selectable("(none)", skeleton.skeletonAssetPath.empty()) && !skeleton.skeletonAssetPath.empty()) {
-            picked = true;
-        }
-        bool any = false;
-        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        for (const Asset::ProjectFileEntryUVE& file : project.entries) {
-            const EditorModelSourceInfoUVE* const source = FindModelSourceInfoUVE(file.relativePath);
-            if (file.kind == Asset::ProjectFileEntryKindUVE::Directory || source == nullptr || !source->hasSkeleton) {
-                continue;
-            }
-            any = true;
-            const std::string path = file.relativePath.generic_string();
-            if (ImGui::Selectable((file.relativePath.filename().string() + "##" + path).c_str(),
-                                  path == skeleton.skeletonAssetPath)) {
-                chosen = file.relativePath;
-                picked = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s", path.c_str());
-            }
-        }
-        if (!any) {
-            ImGui::TextDisabled("No rigged models yet. Export an armature from Blender as glTF (.glb) into the project.");
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
-    ImGui::EndTable();
-
-    // Reload re-reads the same file, for a rig edited and re-exported. There is no Clear: the bones belong
-    // to the Source, and a different Source replaces them.
-    if (!skeleton.skeletonAssetPath.empty()) {
-        ImGui::BeginDisabled(!writable);
-        if (ImGui::SmallButton("Reload Bones")) {
-            chosen = skeleton.skeletonAssetPath;
-            picked = true;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Read the bones again from %s, after the rig was edited and re-exported.",
-                              skeleton.skeletonAssetPath.c_str());
-        }
-        ImGui::EndDisabled();
-    }
-    if (!m_skeletonSourceStatus.empty()) {
-        ImGui::PushTextWrapPos(0.0F);
-        ImGui::TextColored(ImVec4{0.95F, 0.62F, 0.35F, 1.0F}, "%s", m_skeletonSourceStatus.c_str());
-        ImGui::PopTextWrapPos();
-    }
-    if (picked) {
-        static_cast<void>(BindSelectedSkeletonSourceUVE(chosen));
-    }
-}
-
-void EditorUVE::DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE&,
-                                             const Core::TypeMetadataPropertyUVE&, const void* const instance) {
-    const auto& skeleton = *static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
-    const std::string header = "Bones (" + std::to_string(skeleton.bones.size()) + ")##skeleton-bones";
-    constexpr ImGuiTreeNodeFlags kGroupFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
-    if (!DrawInspectorFoldUVE(header.c_str(), "group:skeleton-bones", true, false, kGroupFlags)) {
-        return;
-    }
-    if (skeleton.bones.empty()) {
-        ImGui::PushTextWrapPos(0.0F);
-        ImGui::TextDisabled("No bones. Pick a Source model with an armature; bones come from the DCC tool.");
-        ImGui::PopTextWrapPos();
-        ImGui::TreePop();
-        return;
-    }
-
-    // One flat column, in file order (parents come first). No nesting: a deep rig used to indent itself
-    // off the right edge of the inspector.
-    const float listHeight = std::min(220.0F, (static_cast<float>(skeleton.bones.size()) + 1.0F) *
-                                                  ImGui::GetTextLineHeightWithSpacing());
-    if (ImGui::BeginChild("##bone-list", ImVec2{0.0F, listHeight}, ImGuiChildFlags_Borders)) {
-        ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(skeleton.bones.size()));
-        while (clipper.Step()) {
-            for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
-                const Scene::SkeletonBoneUVE& bone = skeleton.bones[static_cast<std::size_t>(row)];
-                ImGui::PushID(row);
-                if (ImGui::Selectable(bone.name.c_str(), bone.name == m_selectedSkeletonBone)) {
-                    m_selectedSkeletonBone = bone.name;
-                }
-                ImGui::PopID();
-            }
-        }
-    }
-    ImGui::EndChild();
-
-    // The selected bone's rest pose, relative to its parent, as authored in the DCC tool.
-    const auto selected = std::find_if(skeleton.bones.begin(), skeleton.bones.end(),
-                                       [this](const Scene::SkeletonBoneUVE& bone) { return bone.name == m_selectedSkeletonBone; });
-    if (selected != skeleton.bones.end() && BeginSkeletonRowsUVE("##bone-rest")) {
-        constexpr float kDegrees = 180.0F / std::numbers::pi_v<float>;
-        Math::Vector3UVE euler{};
-        const bool haveEuler = Math::TryToEulerUVE(selected->localRotation, euler);
-        const std::string parent = selected->parentIndex < 0
-                                       ? std::string{"(root)"}
-                                       : skeleton.bones[static_cast<std::size_t>(selected->parentIndex)].name;
-        std::array<char, 96> text{};
-        ReadOnlyRowUVE("Parent", parent.c_str());
-        std::snprintf(text.data(), text.size(), "%.3f  %.3f  %.3f", static_cast<double>(selected->localPosition.x),
-                      static_cast<double>(selected->localPosition.y), static_cast<double>(selected->localPosition.z));
-        ReadOnlyRowUVE("Rest Position", text.data());
-        if (haveEuler) {
-            std::snprintf(text.data(), text.size(), "%.1f  %.1f  %.1f", static_cast<double>(euler.x * kDegrees),
-                          static_cast<double>(euler.y * kDegrees), static_cast<double>(euler.z * kDegrees));
-        } else {
-            std::snprintf(text.data(), text.size(), "-");
-        }
-        ReadOnlyRowUVE("Rest Rotation", text.data());
-        std::snprintf(text.data(), text.size(), "%.3f  %.3f  %.3f", static_cast<double>(selected->localScale.x),
-                      static_cast<double>(selected->localScale.y), static_cast<double>(selected->localScale.z));
-        ReadOnlyRowUVE("Rest Scale", text.data());
-        ImGui::EndTable();
-    }
-    ImGui::TreePop();
 }
 
 void EditorUVE::BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) const {

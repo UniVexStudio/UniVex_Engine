@@ -45,7 +45,7 @@ public:
 
     /// The interned text. Valid for the rest of the process (the table never shrinks).
     [[nodiscard]] std::string_view ToStringUVE() const;
-    /// The interned text as a null-terminated string, for `%s`/ImGui call sites. Valid forever.
+    /// The interned text as a null-terminated string, for `%s` call sites. Valid forever.
     [[nodiscard]] const char* ToCStringUVE() const;
 
     /// The integer identity. Stable within a process; meaningless across processes (arrival

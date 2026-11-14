@@ -360,7 +360,7 @@ public:
     /// Renders exactly like RenderFrameUVE(), except the final tone-mapped image is written into
     /// `colorTarget`/`depthTarget` (caller-owned offscreen textures) instead of the backend's
     /// presentation surface - an editor viewport (or any other host compositing the result itself,
-    /// e.g. via ImGui::Image()) rather than a real on-screen window region (that case is
+    /// e.g. as an image in the editor's view) rather than a real on-screen window region (that case is
     /// RenderFrameToRegionUVE() above). Both targets must be valid, matching-size textures created
     /// through this renderer's own IRenderDeviceUVE; PresentUVE() is never implied by this call.
     /// `width`/`height` name that matching size in pixels - TextureHandleUVE has no queryable size

@@ -20,8 +20,6 @@
 #include <variant>
 #include <vector>
 
-#include <imgui.h>
-
 #include "uvscript_object_host.h"
 #include "i_entity_manager.h"
 #include "uvscript_compiler.h"
@@ -124,94 +122,6 @@ bool EditorUVE::SetSelectedScriptExportUVE(const std::string& name, std::optiona
         values.erase(name);
     }
     return SetSelectedComponentPropertyUVE(*target.entry, *target.property, &values);
-}
-
-void EditorUVE::DrawScriptExportsPropertyUVE(const Core::TypeMetadataEntryUVE& /*entry*/,
-                                             const Core::TypeMetadataPropertyUVE& /*property*/,
-                                             const void* const instance) {
-    const auto& script = *static_cast<const Scene::ScriptComponentUVE*>(instance);
-    ScriptExportsCacheUVE& cache = m_scriptExportsCache;
-    const auto now = std::chrono::steady_clock::now();
-    if (cache.entity != m_selectedEntity || cache.path != script.scriptAssetPath || cache.values != script.exportValues ||
-        now - cache.builtAt > std::chrono::milliseconds(500)) {
-        cache.entity = m_selectedEntity;
-        cache.path = script.scriptAssetPath;
-        cache.values = script.exportValues;
-        cache.builtAt = now;
-        cache.rows = GetSelectedScriptExportsUVE();
-    }
-    if (cache.rows.empty()) {
-        return;
-    }
-    const bool writable = IsAuthoringCommandAllowedUVE();
-    if (!ImGui::BeginTable("##script-exports", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
-        return;
-    }
-    ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.42F);
-    ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.58F);
-    // Typed values commit on Enter, so one change is one undo step rather than one per keystroke.
-    constexpr ImGuiInputTextFlags kCommitOnEnter = ImGuiInputTextFlags_EnterReturnsTrue;
-    // Applied after the table: an edit replaces the rows this loop is walking.
-    std::optional<std::pair<std::string, std::optional<std::string>>> edit;
-    for (const ScriptExportRowUVE& row : cache.rows) {
-        ImGui::PushID(row.name.c_str());
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex(0);
-        // A changed value is marked, and right-clicking its name puts the script's default back.
-        if (row.overridden) {
-            ImGui::TextColored(ImVec4{0.55F, 0.78F, 1.0F, 1.0F}, "%s", row.name.c_str());
-        } else {
-            ImGui::TextUnformatted(row.name.c_str());
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s: %s\nScript default: %s%s", row.name.c_str(), row.type.NameUVE().c_str(),
-                              row.defaultText.c_str(), row.overridden ? "\nRight-click to reset." : "");
-        }
-        if (row.overridden && writable && ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-            edit.emplace(row.name, std::nullopt);
-        }
-        ImGui::TableSetColumnIndex(1);
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::BeginDisabled(!writable);
-        const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(row.valueText, row.type);
-        if (value.has_value()) {
-            if (const bool* const flag = std::get_if<bool>(&*value)) {
-                bool checked = *flag;
-                if (ImGui::Checkbox("##value", &checked)) {
-                    edit.emplace(row.name, checked ? "true" : "false");
-                }
-            } else if (const std::int64_t* const integer = std::get_if<std::int64_t>(&*value)) {
-                std::int64_t number = *integer;
-                if (ImGui::InputScalar("##value", ImGuiDataType_S64, &number, nullptr, nullptr, nullptr, kCommitOnEnter)) {
-                    edit.emplace(row.name, std::to_string(number));
-                }
-            } else if (const double* const real = std::get_if<double>(&*value)) {
-                double number = *real;
-                if (ImGui::InputScalar("##value", ImGuiDataType_Double, &number, nullptr, nullptr, "%.3f", kCommitOnEnter)) {
-                    edit.emplace(row.name, UVScript::FormatValueUVE(UVScript::ValueUVE{number}));
-                }
-            } else if (const auto* const vector = std::get_if<UVScript::Vec3ValueUVE>(&*value)) {
-                std::array<double, 3> parts{vector->x, vector->y, vector->z};
-                if (ImGui::InputScalarN("##value", ImGuiDataType_Double, parts.data(), 3, nullptr, nullptr, "%.3f",
-                                        kCommitOnEnter)) {
-                    edit.emplace(row.name, UVScript::FormatValueUVE(
-                                               UVScript::ValueUVE{UVScript::Vec3ValueUVE{parts[0], parts[1], parts[2]}}));
-                }
-            } else if (const std::string* const text = std::get_if<std::string>(&*value)) {
-                std::array<char, 256> buffer{};
-                text->copy(buffer.data(), buffer.size() - 1U);
-                if (ImGui::InputText("##value", buffer.data(), buffer.size(), kCommitOnEnter)) {
-                    edit.emplace(row.name, std::string{buffer.data()});
-                }
-            }
-        }
-        ImGui::EndDisabled();
-        ImGui::PopID();
-    }
-    ImGui::EndTable();
-    if (edit.has_value()) {
-        static_cast<void>(SetSelectedScriptExportUVE(edit->first, std::move(edit->second)));
-    }
 }
 
 } // namespace UVE::Editor

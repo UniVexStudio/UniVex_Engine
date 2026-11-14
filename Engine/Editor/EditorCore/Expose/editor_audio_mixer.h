@@ -19,7 +19,7 @@ namespace UVE::Editor {
 ///
 /// WHY THIS IS ITS OWN FILE, the same reason editor_render_stats_uve.h is: the numbers, the
 /// formatting and the "is this worth flagging" judgement are the parts that can be wrong, and none
-/// of them need ImGui. The dock draws what this returns, so a mixer bug is reproducible in a unit
+/// of them need a UI. The dock draws what this returns, so a mixer bug is reproducible in a unit
 /// test rather than only by opening the editor and watching a bar.
 
 /// One row of the mixer tree, ordered so the tree reads top to bottom.

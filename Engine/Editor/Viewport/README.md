@@ -132,7 +132,7 @@ away switches back (`autoOrthogonal`), because an axis view in perspective
 is almost never what "Front" means.
 
 What is *not* here is the dropdown widget itself — drawing menus needs a UI
-toolkit (ImGui, or UNIVEX's own), which this module deliberately does not
+toolkit (UNIVEX's own), which this module deliberately does not
 pull in. The modes are all real state on `ViewportSettings`; wiring them to
 a menu is the host application's job. The demo reports the live state in
 its window title.

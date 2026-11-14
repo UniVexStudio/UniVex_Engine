@@ -73,7 +73,7 @@ public:
     /// Renders the live scene's real mesh/material entities into a `width`x`height` offscreen
     /// target (created or resized as needed). Returns {0, 0} if nothing could be rendered this
     /// frame (e.g. a zero-sized request). The caller composites the color id directly via
-    /// ImGui::Image() or a custom shader, same as any other GL texture; the colour's alpha
+    /// a UI image or a custom shader, same as any other GL texture; the colour's alpha
     /// distinguishes real geometry from empty background per-pixel. See
     /// GlRenderDeviceUVE::GetNativeTextureIdUVE()'s own doc
     /// comment for why reading a native id out of a TextureHandleUVE is a deliberate, narrowly

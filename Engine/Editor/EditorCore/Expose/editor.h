@@ -262,9 +262,9 @@ enum class EditorEntityKindUVE {
 
 /// EditorUVE composes the existing engine services into a first editor foundation: an editor-owned
 /// camera, deterministic hierarchy and collider-backed viewport selection, a transform inspector
-/// mutation path, world-space Translate, Rotate, and Scale gizmos, scene-document save/load, and an editor-private
-/// Dear ImGui overlay. No Dear ImGui type appears in this public interface, so the UI backend remains
-/// an implementation detail of engine/editor.
+/// mutation path, world-space Translate, Rotate, and Scale gizmos, scene-document save/load, and the editor's
+/// own UI. No UI toolkit type appears in this public interface, so the UI remains an
+/// implementation detail of engine/editor.
 ///
 /// The supplied EngineServicesUVE reference must remain valid from InitUVE() through ShutdownUVE().
 /// EditorUVE is main-thread only, matching the scene, render, and window services it composes.
@@ -624,12 +624,9 @@ public:
         bool gameWorkspaceActive = false;
         // True while the pointer is over one of the overlay toolbar's own bubble buttons.
         //
-        // The bubbles float on top of the rendered image inside the same ImGui window, so the
-        // renderer's IsWindowHovered() is equally true over a button and over the scene - which
-        // made clicking "Move" also register as a click on empty space and clear the selection.
-        // The renderer callback runs BEFORE the bubbles are submitted each frame, so it cannot ask
-        // ImGui directly; this carries the answer to it instead. It is therefore one frame old,
-        // which is imperceptible for a hover state and exact for every frame of a press.
+        // The bubbles float on top of the rendered image, so the view's own hover is equally true
+        // over a button and over the scene - which made clicking "Move" also register as a click on
+        // empty space and clear the selection. This carries the answer to the renderer instead.
         bool pointerOverOverlay = false;
 
         // The entity context toolbar (right-click an entity -> a small "Scripting" bubble anchored
@@ -813,10 +810,10 @@ public:
 
     /// Render callback for the dockable "Viewport" panel: given the panel's current available
     /// content-region size and the overlay toolbar's current state (see ViewportOverlayStateUVE),
-    /// renders into the caller's own framebuffer at (at most) that size and returns an ImGui
-    /// texture ID (ImTextureID is ImU64 in the vendored ImGui version) to display via
-    /// ImGui::Image(), writing the actual rendered size back through outUsedSize. Returning 0
-    /// means "not ready yet" - nothing is drawn that frame. Deliberately free of any ImGui/GL/
+    /// renders into the caller's own framebuffer at (at most) that size and returns a GL texture
+    /// name for the editor's view to show, writing the actual rendered size back through
+    /// outUsedSize. Returning 0 means "not ready yet" - nothing is drawn that frame. Deliberately
+    /// free of any GL/
     /// viewport-module types so EditorCore stays engine/viewport-agnostic (this is an upper-layer
     /// module that may compose Engine/Runtime, not something that should link a sibling
     /// Engine/Editor module directly) - see Engine/App/src/editor/main.cpp for the concrete
@@ -944,7 +941,6 @@ public:
     void OpenFilePickerUVE(FilePickerRequestUVE request);
     [[nodiscard]] bool IsFilePickerOpenUVE() const noexcept { return m_filePicker.has_value(); }
     void CloseFilePickerUVE();
-    void DrawFilePickerUVE();
 
     /// Opens Entity Class over `directory` (absolute): the window that offers the bodies an entity can
     /// start as (Content "+ Add" -> Entity -> "Entity Class..."). Opening it writes nothing.
@@ -1072,10 +1068,6 @@ public:
     /// Re-reads the open library from `libraryAbsolute` when it is the open file; anything else is
     /// a no-op. Drops onto the file in Content call this so the window never shows stale entries.
     void RefreshAnimationLibraryWindowUVE(const std::filesystem::path& libraryAbsolute);
-    /// Accepts one Content drop (a single path or many) inside the caller's drag-drop target and
-    /// returns the content-relative paths. The call sites (a library row, the library window) own
-    /// their own target geometry; this only reads the payloads.
-    std::vector<std::filesystem::path> AcceptAnimationLibraryDropPathsUVE();
     /// Appends `clipAbsolutePaths` to the library file, writing once: only `.uvanim` files that
     /// load and whose GUIDs are not already listed join. Returns how many entries were added.
     std::size_t AppendClipsToAnimationLibraryUVE(const std::filesystem::path& libraryAbsolute,
@@ -1620,13 +1612,9 @@ public:
     [[nodiscard]] bool OpenUVScriptPathUVE(const std::filesystem::path& path);
     /// Opens the Godot-style "Create Script" modal dialog for configuring and creating a new UVScript.
     void OpenCreateScriptModalUVE(const std::filesystem::path& targetDirectory, Scene::EntityUVE entity = Scene::kInvalidEntityUVE);
-    /// Draws the Godot-style "Create Script" modal dialog when open.
-    void DrawCreateScriptModalUVE();
     /// Opens the Godot-style "Create Shader" modal dialog for configuring and creating a new shader.
     void OpenCreateShaderModalUVE(const std::filesystem::path& targetDirectory,
                                   std::function<void(const std::filesystem::path&)> onCreated = nullptr);
-    /// Draws the Godot-style "Create Shader" modal dialog when open.
-    void DrawCreateShaderModalUVE();
     /// Prompts the user to pick external asset files (models, textures, audio, scripts) and imports them.
     bool PromptImportFilesUVE(const std::filesystem::path& targetDirectory = {});
     /// Imports external files from disk into the project's content directory.
@@ -1822,7 +1810,6 @@ private:
         std::optional<EditorSelectionPathUVE> activePath;
     };
 
-
     struct EntityEditSessionUVE final {
         std::filesystem::path assetPath;
         Asset::AssetGuidUVE guid = Asset::kInvalidAssetGuidUVE;
@@ -1928,8 +1915,6 @@ private:
     std::shared_ptr<struct AnimationIconWorkerUVE> m_animationIconWorker;
     std::uint64_t m_animationIconGeneration = 0U;
     std::filesystem::path m_animationIconCacheDir;
-    /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).
-    void DrawOverlayWindowsUVE();
     /// Window > Network Capture / Audio Mixer (PRISM windows of their own, shown while set).
     bool m_showCaptureWindow = false;
     bool m_showAudioMixerWindow = false;
@@ -1973,7 +1958,6 @@ private:
     /// resolvers refuse - and a false return never fails play entry.
     [[nodiscard]] bool ApplyPlayEntrySpawnUVE();
     void BeginEditorPlayBootSplashUVE();
-    void DrawEditorPlayBootSplashOverlayUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
 
     /// Editor-only workspace labels. They do not alter document data, simulation state, or history.
     enum class EditorWorkspaceUVE {
@@ -2360,8 +2344,6 @@ private:
     /// Gives an object the recipe parts it was saved without - Visibility for a spatial object and the
     /// common Object section - so its Inspector always shows the full recipe.
     void RepairInspectorRecipeUVE(Scene::EntityUVE entity);
-    /// Registers the hand-drawn Transform section; called at Transform's place in section order.
-    void RegisterTransformInspectorDrawerUVE();
 
     /// Returns the document's scene root when one exists, else creates it (name + transform +
     /// marker via the SceneRoot ObjectDefinition). Idempotent: the one-root invariant every
@@ -2390,11 +2372,6 @@ private:
     /// Invalid when authoring is not allowed.
     Scene::EntityUVE AddPreviewSunToSceneUVE();
     Scene::EntityUVE AddPreviewEnvironmentToSceneUVE();
-    /// The rendered scene and its overlay, filling the rest of the current ImGui window (the Entity
-    /// Editor and the Retarget preview use it; the level editor's viewport is the PRISM shell's).
-    void DrawViewportImageUVE(ViewportContextUVE context);
-    void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
-    void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     // One settings window's view state (Editor Preferences, Project Settings). Session-only.
     struct SettingsWindowStateUVE final {
         bool visible = false;
@@ -2438,7 +2415,6 @@ private:
     };
     void RegisterEditorCommandsUVE();
     [[nodiscard]] EditorCommandUVE* FindEditorCommandUVE(std::string_view id) noexcept;
-    void DrawCommandMenuItemUVE(std::string_view id);
     /// Shortcut `slot` of command `id` set (and kept with the preferences); the defaults back.
     bool AssignCommandShortcutUVE(std::string_view id, std::size_t slot, const EditorShortcutUVE& shortcut);
     void ResetCommandShortcutsUVE(std::string_view id);
@@ -2451,33 +2427,10 @@ private:
     [[nodiscard]] bool SetShortcutSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
     // Sets the project's input map and registers it with the input system at once.
     void CommitInputMapUVE(std::vector<Input::InputActionUVE> actions);
-    /// The Scene tree with its "+" and search, filling the rest of the current window.
-    void DrawHierarchyBodyUVE();
-    void DrawHierarchyObjectContextMenuUVE(Scene::EntityUVE entity);
-    void DrawObjectPickerUVE();
-    // A collapsing header (`asHeader`) or tree object whose open state lives in m_inspectorFoldOpen.
-    bool DrawInspectorFoldUVE(const char* label, const std::string& key, bool defaultOpen, bool asHeader,
-                              int flags, std::uintptr_t iconTextureId = 0U);
-    void DrawHierarchyVisibilityToggleUVE(Scene::EntityUVE entity, bool rowHovered);
-    void DrawHierarchyFolderLockToggleUVE(Scene::EntityUVE entity, bool rowHovered);
-    // Right-click menu on an Inspector section header: Copy / Paste / Reset. `entry` null means
-    // the Transform section.
-    void DrawInspectorSectionMenuUVE(const Core::TypeMetadataEntryUVE* entry, const char* sectionName);
-    void DrawHierarchyRowBadgesUVE(const std::vector<std::string>& warnings, const std::optional<std::string>& script,
-                                   float eyeColumns);
-    void DrawHierarchyObjectUVE(Scene::EntityUVE entity);
     /// A double-click on a row that stands for a file opens it: an entity asset behind an instance
     /// (Entity Editor), or the .uvscene behind the level's Viewport. True when the row had something
     /// to open, so the Double-Click preference must not also act on it.
     [[nodiscard]] bool OpenHierarchyRowTargetUVE(Scene::EntityUVE entity);
-    void AcceptHierarchyDropTargetUVE(Scene::EntityUVE targetParent);
-    void DrawInspectorPanelUVE();
-    void DrawInspectorContentUVE();
-    void RegisterBuiltInInspectorDrawersUVE();
-    /// Registers one drawer per declared component type, from the metadata registry. This replaced
-    /// a hand-written registration and a per-type switch for each of them: a component that
-    /// declares its properties is inspectable without the inspector being told it exists.
-    void RegisterMetadataInspectorDrawersUVE();
     /// A type a section may draw inside itself, and the hosts that type prefers over this one.
     struct NestedMetadataSectionUVE final {
         const Core::TypeMetadataEntryUVE* entry = nullptr;
@@ -2486,40 +2439,6 @@ private:
     /// Applies the component add or remove a row asked for on the previous frame, before this
     /// frame's sections take any pointer into component storage. See m_pendingComponentChange.
     void ApplyPendingComponentChangeUVE();
-    /// Draws one component's section: a collapsible header (or, for a type presented inline, just
-    /// its rows), its properties, and the section of each type in `nested` the entity also carries
-    /// and no preferred host of it draws. Writes go through SetSelectedComponentPropertyUVE below.
-    void DrawMetadataComponentDrawerUVE(Scene::EntityUVE entity, const Core::TypeMetadataEntryUVE& entry,
-                                        const std::vector<NestedMetadataSectionUVE>& nested);
-    /// The collision rows a body authors on its own section: Layer and Mask, drawn from the
-    /// collider's declarations so the picker, the tooltip, the revert control and the undo entry are
-    /// the collider's own. Nothing is drawn when the body has no collider left to author them on.
-    void DrawCharacterCollisionRowsUVE(Scene::EntityUVE entity);
-    /// Draws the visible properties of one component as label/value rows. Runtime-owned rows appear
-    /// only during Play, where they describe something real; a row another property declares as its
-    /// resolved answer is shown beside that property instead of on its own.
-    void DrawMetadataPropertyRowsUVE(const Core::TypeMetadataEntryUVE& entry, const void* instance);
-    /// Draws one property row: label, tooltip, a revert control when the value differs from a new
-    /// component's, and the widget its declared value type calls for. `instance` points at the live
-    /// component on the selected entity.
-    void DrawMetadataPropertyRowUVE(const Core::TypeMetadataEntryUVE& entry,
-                                    const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// The label cell shared by generic and custom rows. Returns true when the author reverted the
-    /// property to its default this frame.
-    bool DrawMetadataPropertyLabelUVE(const Core::TypeMetadataEntryUVE& entry,
-                                      const Core::TypeMetadataPropertyUVE& property, const void* instance,
-                                      bool writable);
-    /// Dispatches a property that names a custom drawer. Returns false for an id with no drawer,
-    /// which the caller treats as "draw it generically".
-    bool DrawCustomPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                               const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    void DrawMultilineTextPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    void DrawScriptSlotPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                   const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// The rows under the script slot: one control per `export` field of a `.uvs` script.
-    void DrawScriptExportsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// A combo over the project's assets with `extension` (".uvanim"), with a Browse row that
     /// opens the floating picker. Returns the pick, if any; kInvalidAssetGuidUVE means "(none)"
     /// was picked. `title` names the picker window, defaulting to "Browse <extension>".
@@ -2552,84 +2471,20 @@ private:
     /// catches a light the way a surface does. An already derived map beside the albedo is reused
     /// rather than derived again. Empty when the texture cannot be read or the map cannot be saved.
     [[nodiscard]] std::optional<Asset::AssetGuidUVE> DeriveNormalMapForAlbedoUVE(Asset::AssetGuidUVE albedo);
-    /// Standardized material slot drawer offering new standard/ORM/shader materials, browsing both
-    /// .uvmat and .uvmaterial, quick import, clear, and inline PBR property editor when assigned.
-    /// `editInline` false shows the picker and its preview only: for a mesh with a dozen surfaces,
-    /// a full PBR editor under each row would bury the rows themselves, and the same materials are
-    /// already editable once in the mesh's own MATERIALS fold.
-    /// `deferInline` is for a slot drawn inside a narrow table cell (a component's property row): the
-    /// picker stays in the cell, and the PBR editor is queued to be drawn at full width under the table
-    /// (FlushPendingMaterialEditorsUVE). Drawn inside the value column it was squeezed into 58% of the
-    /// panel, with its own tables nested in the cell.
-    bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
-                                     std::string& inOutPath, bool editInline = true, bool deferInline = false);
-    bool DrawStandardMaterialSlotUVE(const char* label, const char* id,
-                                     Asset::AssetGuidUVE& inOutGuid, bool deferInline = false);
-    /// Draws a shader property slot with picker menu: [New Shader...], [Browse...], [Quick Import...], [Open/Edit], [Clear].
-    bool DrawStandardShaderSlotUVE(const char* label, const char* id, Asset::AssetGuidUVE& inOutGuid);
-    /// Draws the PBR editors queued by slots drawn with `deferInline`, once the table they were in is closed.
-    void FlushPendingMaterialEditorsUVE();
-    /// Inline expandable PBR property editor for an assigned material file. Saves immediately on edit.
-    void DrawMaterialPbrEditorInlineUVE(const std::filesystem::path& absolutePath, const char* idPrefix);
     struct PendingMaterialEditorUVE final {
         std::filesystem::path absolutePath;
         std::string id;
     };
     std::vector<PendingMaterialEditorUVE> m_pendingMaterialEditors;
-    /// Specialized MeshInstance3D inspector drawer: procedural shapes/models picker, expandable
-    /// Skeleton section with Skin slot and auto-populated bone binds, expandable Surface Material
-    /// Override section, and mesh material slot.
-    void DrawMeshInstance3DInspectorUVE(Scene::EntityUVE entity);
     /// Auto-populates a SkinComponentUVE from an entity's assigned model or attached Skeleton3D.
     bool AutoPopulateSkinFromModelUVE(Scene::EntityUVE entity, Scene::SkinComponentUVE& skin);
     /// The mesh asset an entity draws with, read through the `.uvmodel` the importer wrote beside a
     /// model source. Empty when nothing is assigned, the file will not read, or the entity draws a
     /// procedural primitive (which owns no asset).
     [[nodiscard]] std::optional<Asset::MeshAssetUVE> LoadEntityMeshAssetUVE(Scene::EntityUVE entity);
-    /// AnimationGraph's parameter table and its graph (objects, wiring, transitions). Every edit
-    /// writes the whole list back through SetSelectedComponentPropertyUVE, so it is one undo step
-    /// and the graph is re-validated before it lands.
-    void DrawAnimationParametersPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                            const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    void DrawAnimationGraphPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// Queues a parameter rename for the graph block drawn next, so the objects and transitions that
     /// read the old name follow it.
     void RenameAnimationParameterReferencesUVE(const std::string& from, const std::string& to);
-    void DrawObjectMetadataPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                     const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// Skeleton3D's Source row: which rigged model its bones come from, with Reload and Clear.
-    void DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// Skeleton3D's bone hierarchy, read-only: bones are authored in the DCC tool, not here.
-    void DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                      const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// A fixed-capacity list of entity references (RayCast3D's exclusions): one object picker per
-    /// slot, plus the add/remove rows. Every edit writes the whole list back through
-    /// SetSelectedComponentPropertyUVE, so it is one undo step and the component's own rule
-    /// (dense, no duplicates) is enforced before the write lands.
-    void DrawEntityReferenceListPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                            const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// FullBodyIK3D's effector list: one bone/target/weight pull per row, plus the add and remove
-    /// rows. Every edit writes the whole list back through SetSelectedComponentPropertyUVE, so it
-    /// is one undo step and the component's validator is the last word before the write lands.
-    void DrawFullBodyEffectorsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                          const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// MorphTargetComponentUVE's named blend-shape list: one shape-name/weight row per entry that is
-    /// off its default, plus add and remove. Shape names are typed rather than picked from an
-    /// asset, so the drawer performs no asset I/O - the component's resolver is what reports a name
-    /// the mesh does not carry, once, at the point the weights are actually evaluated.
-    void DrawMorphTargetWeightsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                           const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// LODGroup3D's distance chain: one threshold row per level in use, plus the distance the
-    /// object is culled past, which is the rule those thresholds add up to. One write for the whole
-    /// array, so an edit is one undo step.
-    void DrawLodGroupThresholdsPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                           const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// LODGroup3D's per-level meshes: one mesh picker per level in use. An unassigned level draws
-    /// the object's own Mesh component mesh, which is what the row shows until it is overridden.
-    void DrawLodGroupMeshesPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                       const Core::TypeMetadataPropertyUVE& property, const void* instance);
     /// Points the selected Skeleton3D at the model source `relativeSource` (content-relative) and
     /// loads its bones; an empty path clears both. One undo step. False, with the reason in
     /// m_skeletonSourceStatus, when the file has no readable skeleton.
@@ -2647,12 +2502,6 @@ private:
     /// when that cannot be known (no equality for the type), so a revert is offered rather than hidden.
     [[nodiscard]] bool IsPropertyAtDefaultUVE(const Core::TypeMetadataEntryUVE& entry,
                                               const Core::TypeMetadataPropertyUVE& property, const void* instance);
-    /// A text field that commits once, when the author finishes - Enter, or focus leaving after an
-    /// edit - rather than on every keystroke: one undo entry per edit, and no edit lost to a click
-    /// elsewhere. Input past `maximumBytes` is refused as it is typed. Returns the committed text.
-    [[nodiscard]] std::optional<std::string> DrawCommittedTextInputUVE(const char* id, const std::string& current,
-                                                                       bool multiline, float height,
-                                                                       std::size_t maximumBytes);
     /// Replaces the selected entity's whole component of `entry`'s type with `newInstance`, as one
     /// undo step, when the type's own rule accepts it. For edits that change several fields at once.
     bool SetSelectedComponentValueUVE(const Core::TypeMetadataEntryUVE& entry, const void* newInstance);
@@ -2679,12 +2528,6 @@ private:
     /// Commits the edit in flight only if it is of this property; any other is left alone.
     [[nodiscard]] bool CommitComponentPropertyPreviewForUVE(const Core::TypeMetadataEntryUVE& entry,
                                                             const Core::TypeMetadataPropertyUVE& property);
-    /// For a drag-style field just drawn: while it is held its value is previewed, and when it is
-    /// let go the whole drag becomes one undo step. A change made without holding it is recorded
-    /// at once. Returns whether anything was written.
-    bool ApplyContinuousPropertyEditUVE(const Core::TypeMetadataEntryUVE& entry,
-                                        const Core::TypeMetadataPropertyUVE& property, bool changed,
-                                        const void* newValue);
     /// Restores one property to the value a default-constructed component would have.
     [[nodiscard]] bool ResetSelectedComponentPropertyUVE(const Core::TypeMetadataEntryUVE& entry,
                                                          const Core::TypeMetadataPropertyUVE& property);
@@ -2694,18 +2537,6 @@ private:
     [[nodiscard]] bool ApplyComponentPropertySnapshotUVE(Scene::EntityUVE entity,
                                                          const Core::TypeMetadataEntryUVE* metadata,
                                                          const void* snapshot);
-    void DrawTransformInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawPrefabInspectorDrawerUVE(Scene::EntityUVE entity);
-    void DrawImportQueueMonitorUVE();
-    void DrawScriptingWorkspaceUVE();
-    /// The Scripting workspace while a `.uvs` file is open: toolbar, text, and the compiler's list.
-    void DrawUVScriptEditorUVE();
-    /// The editor's text, toolbar and problem list inside the current window; shared by the
-    /// Scripting workspace and the Entity Editor's Scripting tab. Returns true on Close.
-    bool DrawUVScriptEditorBodyUVE(bool offerClose);
-    /// The script's text box: line numbers in a gutter, and the text coloured by kind.
-    void DrawUVScriptTextBoxUVE(UVScriptDocumentUVE& document, float height);
-    void DrawContentAssetCardInspectorUVE(const Asset::ProjectFileEntryUVE& entry);
     [[nodiscard]] static ContentBrowserItemTypeUVE ClassifyContentBrowserEntryUVE(
         const Asset::ProjectFileEntryUVE& entry);
     [[nodiscard]] static const char* GetContentBrowserItemTypeLabelUVE(ContentBrowserItemTypeUVE type) noexcept;
@@ -2753,25 +2584,10 @@ private:
     /// the edit. `absolutePath` is the material file the Inspector wrote; it is matched against the
     /// project content root and ignored when outside it.
     void InvalidateMaterialThumbnailCacheUVE(const std::filesystem::path& absolutePath);
-    /// The Content Browser inside the current window: the bottom dock and the Entity Editor's dock.
-    void DrawContentBrowserBodyUVE();
     /// Refreshes the read-only project index after the engine-owned watcher observes a new
     /// filesystem baseline. It never schedules imports or mutates project files.
     void RefreshProjectFileIndexUVE();
-    void DrawFilesystemContextPopupUVE();
-    /// Places a draggable Content popup before BeginPopup: above the anchor while it is new, at
-    /// (x, y) after. `justOpened` restarts it at the pointer.
-    static void PlaceContentMenuUVE(bool justOpened, float& anchorX, float& anchorY, int frames, float x, float y);
-    /// After BeginPopup: counts the popup's frames and takes its position once it has settled.
-    static void SettleContentMenuUVE(int& frames, float& x, float& y);
-    /// The Content "+ Add" menu's body - also what right-clicking empty Content space opens.
-    void DrawContentCreateMenuUVE(const std::filesystem::path& contentRoot, const std::filesystem::path& directory);
-    /// Draws the inline name field over a card while it is being renamed; true while it is.
-    bool DrawContentRenameFieldUVE(const std::filesystem::path& contentRoot,
-                                   const Asset::ProjectFileEntryUVE& entry, float x, float y, float width);
     void BeginContentRenameUVE(const std::filesystem::path& relativePath);
-    /// A drop target for an entity asset dragged out of Content; places it under `parent`.
-    void AcceptContentEntityDropUVE(Scene::EntityUVE parent);
     /// Model sources (.glb/.gltf/.obj) are imported automatically: the source stays the thing an
     /// author sees and picks, and its converted mesh lives in the derived-data folder beside the
     /// import cache, never in the content folder.
@@ -2913,7 +2729,7 @@ private:
     std::optional<AnimationLibraryWindowStateUVE> m_animationLibraryWindow;
     std::optional<FilePickerStateUVE> m_filePicker;
     std::optional<EntityClassPickerStateUVE> m_entityClassPicker;
-    /// Browse picks waiting for their widget: widget id (ImGui::GetID, kept as uint32_t like
+    /// Browse picks waiting for their widget: widget id (kept as uint32_t like
     /// m_inspectorTextEdits) to the pick. Asset combos take GUIDs, file rows take paths; each is
     /// consumed by its own drawer on the next frame.
     std::unordered_map<std::uint32_t, Asset::AssetGuidUVE> m_assetPickerPendingPicks;
@@ -3062,8 +2878,7 @@ private:
     /// Material thumbnails invalidated during this frame. The Inspector saves a material on every
     /// edit - including every frame of a slider drag - so its preview is dropped from
     /// m_materialThumbnailCache immediately but the GL texture is only freed at the start of the
-    /// next Content Browser pass. ImGui submits the previous frame's draw lists at the end of that
-    /// frame, so freeing during the Inspector pass would pull a card's texture out from under it.
+    /// next Content Browser pass, so a card still drawn this frame keeps its texture.
     std::vector<std::uintptr_t> m_retiredMaterialThumbnailTextures;
     /// Why the last Skeleton3D source bind failed; shown under the Source row until the next bind.
     std::string m_skeletonSourceStatus;
@@ -3325,12 +3140,6 @@ private:
     [[nodiscard]] std::vector<Asset::AssetGuidUVE> GetSequencerClipsUVE(Scene::EntityUVE sequencerEntity) const;
     /// Resolves the active AnimationSequencer for an AnimationGraph: explicit reference, tree entity, target, parent, or timeline player.
     [[nodiscard]] Scene::EntityUVE ResolveActiveSequencerForGraphUVE(Scene::EntityUVE treeEntity) const;
-    /// Draws the picker slot for AnimationSequencer: shows "Empty" if none, or entity name, opening the picker modal.
-    void DrawAnimationSequencerPickerSlotUVE(const char* id, Scene::EntityUVE treeEntity, Scene::EntityUVE currentSequencer,
-                                            const std::function<void(Scene::EntityUVE)>& onPicked);
-    /// Draws the small picker modal listing all AnimationSequencer entities in the Outliner.
-    void DrawAnimationSequencerPickerModalUVE(Scene::EntityUVE currentSequencer,
-                                             const std::function<void(Scene::EntityUVE)>& onPicked);
     /// What the Animation Graph page shows: the entity's graphs, the one it shows, and the skeleton
     /// its preview runs on. Resolved by SyncAnimationGraphViewUVE, which also resets the view state
     /// when the graph shown changes.
@@ -3374,7 +3183,7 @@ private:
     /// row per frame.
     std::unordered_map<const Core::TypeMetadataEntryUVE*, Core::TypeInstanceUVE> m_inspectorDefaultInstances;
     /// Working copies of the text fields being edited (DrawCommittedTextInputUVE), keyed by widget
-    /// id. Dear ImGui owns the text while a field is active; this is where it lands so it can be
+    /// id. The text field owns the text while it is active; this is where it lands so it can be
     /// committed on the frame the field is let go. Per widget, because clicking from one field into
     /// another activates the second in the same frame the first reports it was let go.
     std::vector<std::pair<std::uint32_t, std::string>> m_inspectorTextEdits;
@@ -3444,8 +3253,6 @@ private:
                                                      bool preview = false);
     [[nodiscard]] bool WriteSelectedObjectMetadataValueUVE(const std::string& key, const Core::VariantUVE& value,
                                                          bool preview);
-    /// Draws an editor for one Variant; returns true when the value changed and should be committed.
-    bool DrawVariantValueEditorUVE(const char* id, Core::VariantUVE& value, int depth);
     std::string m_consoleFilter;
     std::string m_consoleCommand;
     static constexpr std::size_t kNoCaptureSelectionUVE = static_cast<std::size_t>(-1);

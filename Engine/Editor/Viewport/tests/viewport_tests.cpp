@@ -548,7 +548,7 @@ int main() {
 
         // Only the camera-facing half of each rotate ring is built. Three full circles through
         // one small area overlap into a mesh of arcs where no ring can be told from another,
-        // which is why every established editor (ImGuizmo, Maya and others) shows half rings. The
+        // which is why every established editor shows half rings. The
         // cut is free visually because it falls where the ring is edge-on to the eye.
         const auto rotate = BuildGizmoMesh(GizmoMode::Rotate, style, view, kUnitsPerPixel);
         int nearSide = 0;
