@@ -247,11 +247,19 @@ std::uint64_t EditorDetailsUVE::StructureSignatureUVE(const Scene::EntityUVE ent
         return h;
     }
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
-    for (const EntryUVE& snapshot : Scene::GetSceneComponentMetadataRegistryUVE().GetSnapshotUVE().entries) {
+    // The registry is copied (and sorted) only when it changed, not every frame.
+    static std::uint64_t s_registryGeneration = ~0ULL;
+    static Core::TypeMetadataSnapshotUVE s_registry;
+    const auto& registry = Scene::GetSceneComponentMetadataRegistryUVE();
+    if (registry.GetGenerationUVE() != s_registryGeneration) {
+        s_registry = registry.GetSnapshotUVE();
+        s_registryGeneration = registry.GetGenerationUVE();
+    }
+    for (const EntryUVE& snapshot : s_registry.entries) {
         if (!em.HasComponentUVE(entity, snapshot.typeIndex)) {
             continue;
         }
-        HashUVE(h, snapshot.typeId.ToStringUVE());
+        HashUVE(h, static_cast<std::uint64_t>(std::hash<std::type_index>{}(snapshot.typeIndex)));
         // Visibility rules read values (a field shown only for one mode): a change re-lays the rows.
         const void* const instance = em.GetComponentPointerUVE(entity, snapshot.typeIndex);
         for (const PropertyUVE& property : snapshot.properties) {

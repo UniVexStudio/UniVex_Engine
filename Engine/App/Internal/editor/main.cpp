@@ -186,6 +186,11 @@ int main(const int argc, char** argv) {
     config.headlessUVE = options.headless;
     config.windowBorderlessUVE = !options.decorated;
     config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
+    // The editor never needs more than the display shows: 60 frames a second at most while it has
+    // focus, 15 behind another window (a minimised one draws nothing at all), so a laptop's GPU and
+    // fan are not spent on a scene nobody is looking at.
+    config.focusedFrameRateCapUVE = 60U;
+    config.unfocusedFrameRateCapUVE = 15U;
     if (options.glMajor.has_value() && options.glMinor.has_value()) {
         config.windowGlVersionMajor = *options.glMajor;
         config.windowGlVersionMinor = *options.glMinor;

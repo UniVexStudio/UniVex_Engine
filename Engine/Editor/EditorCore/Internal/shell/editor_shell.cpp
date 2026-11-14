@@ -904,6 +904,20 @@ void EditorShellUVE::RefreshOutlinerUVE() {
     if (!m_outliner) {
         return;
     }
+    // Walking the whole level for its signature is done a dozen times a second, not every frame;
+    // a change of selection is taken at once (the tree shows it).
+    {
+        std::uint64_t selection = 1469598103934665603ULL;
+        for (const Scene::EntityUVE e : m_editor.m_selectedEntities) {
+            selection = (selection ^ ((static_cast<std::uint64_t>(e.index) << 32U) | e.generation)) * 1099511628211ULL;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (selection == m_outlinerSelection && now - m_outlinerCheckedAt < std::chrono::milliseconds(80)) {
+            return;
+        }
+        m_outlinerSelection = selection;
+        m_outlinerCheckedAt = now;
+    }
     const std::uint64_t signature = OutlinerSignatureUVE();
     if (signature == m_outlinerSignature) {
         return;
@@ -1060,6 +1074,29 @@ void EditorShellUVE::FrameUVE() {
     if (!m_host.IsReadyUVE()) {
         return;
     }
+    // The editor's own work per frame (UI, views, panels), logged every five seconds: what a slow
+    // machine pays for the editor itself, apart from waiting on the display.
+    const auto frameStart = std::chrono::steady_clock::now();
+    struct FrameTimerUVE final {
+        EditorShellUVE& shell;
+        std::chrono::steady_clock::time_point start;
+        ~FrameTimerUVE() {
+            const auto end = std::chrono::steady_clock::now();
+            shell.m_frameWorkSeconds += std::chrono::duration<double>(end - start).count();
+            ++shell.m_frameCount;
+            if (shell.m_frameReportAt == std::chrono::steady_clock::time_point{}) {
+                shell.m_frameReportAt = end;
+            }
+            if (end - shell.m_frameReportAt >= std::chrono::seconds(5) && shell.m_frameCount > 0U) {
+                const double seconds = std::chrono::duration<double>(end - shell.m_frameReportAt).count();
+                UVE_INFO("Editor: {:.1f} frames/s, {:.2f} ms of editor work per frame", static_cast<double>(shell.m_frameCount) / seconds,
+                         shell.m_frameWorkSeconds * 1000.0 / static_cast<double>(shell.m_frameCount));
+                shell.m_frameReportAt = end;
+                shell.m_frameWorkSeconds = 0.0;
+                shell.m_frameCount = 0U;
+            }
+        }
+    } frameTimer{*this, frameStart};
     RefreshOutlinerUVE();
     RefreshDetailsUVE();
     RefreshToolbarUVE();
@@ -1095,6 +1132,9 @@ void EditorShellUVE::FrameUVE() {
     // and then, more often each second, until it draws every frame (about three seconds), so the
     // device is not hit with the full scene the moment the editor appears.
     bool renderView = !m_startupCovered;
+    // While the Entity Editor's own window has focus its view is the one being looked at: the level
+    // view keeps its last frame instead of drawing the whole scene again behind it.
+    const bool entityEditorFocused = m_entityEditor.WindowIdUVE() != 0 && m_host.IsWindowFocusedUVE(m_entityEditor.WindowIdUVE());
     if (renderView) {
         const auto now = std::chrono::steady_clock::now();
         if (m_viewWarmBegan == std::chrono::steady_clock::time_point{}) {
@@ -1158,6 +1198,9 @@ void EditorShellUVE::FrameUVE() {
     m_host.BeginFrameUVE();
 
     std::vector<EditorHostUVE::ViewImageUVE> views;
+    if (entityEditorFocused && m_lastView.texture != 0U) {
+        renderView = false;
+    }
     if (!renderView && !m_startupCovered && m_viewport && m_viewport->visible() && m_lastView.texture != 0U) {
         views.push_back(m_lastView); // the last frame again, between warm-up frames
     } else if (renderView && m_viewport && m_viewport->visible() && m_editor.m_viewportPanelRenderer) {

@@ -8,6 +8,7 @@
 
 #include <array>
 #include <bitset>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -79,6 +80,8 @@ public:
     void ClearCloseRequestUVE(int id);
     /// Raises window `id` and gives it the keyboard.
     void FocusWindowUVE(int id);
+    /// True when the OS window of `id` (a secondary window) has the keyboard focus.
+    [[nodiscard]] bool IsWindowFocusedUVE(int id) const;
     /// Wraps everything window `id`'s input runs (its widgets' handlers and shortcuts): the
     /// editor makes that window's document the active one around it.
     using WindowScopeUVE = std::function<void(const std::function<void()>&)>;
@@ -152,6 +155,9 @@ private:
     bool m_ready = false;
     std::function<bool()> m_foreignMouse;
     std::function<bool()> m_foreignKeyboard;
+    /// The main window's UI was last painted at this paint generation and time (see RenderUVE).
+    std::uint64_t m_mainPaintedGen = ~0ULL;
+    std::chrono::steady_clock::time_point m_mainPaintedAt{};
 };
 
 } // namespace UVE::Editor

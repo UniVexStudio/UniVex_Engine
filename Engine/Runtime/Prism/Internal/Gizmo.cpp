@@ -699,6 +699,39 @@ bool clipNear(const GizmoCamera& cam, Vec3& a, Vec3& b) {
   return true;
 }
 
+// Where the scene has anything in the depth buffer, in tiles of 8x8 depth pixels, built once per grid draw: a
+// line whose screen box touches no such tile is in front of nothing and needs no depth test at all (most of a
+// grid is over empty ground or sky). Null outside a grid draw.
+struct DepthCoverage {
+  const GizmoDepth* depth = nullptr;
+  int tilesX = 0, tilesY = 0;
+  std::vector<uint8_t> tiles;
+  void build(const GizmoDepth& d) {
+    depth = &d;
+    tilesX = (d.width + 7) / 8;
+    tilesY = (d.height + 7) / 8;
+    tiles.assign(size_t(tilesX) * size_t(tilesY), 0);
+    for (int y = 0; y < d.height; ++y)
+      for (int x = 0; x < d.width; ++x)
+        if (d.data[size_t(y) * size_t(d.width) + size_t(x)] < d.farDepth) tiles[size_t(y / 8) * size_t(tilesX) + size_t(x / 8)] = 1;
+  }
+  // True when anything of the scene lies under the canvas box [lo, hi] (with a few pixels around it).
+  bool anyUnder(Vec2 lo, Vec2 hi) const {
+    const GizmoDepth& d = *depth;
+    const float pad = 4.f;
+    const float u0 = (std::min(lo.x, hi.x) - pad - d.area.x) / d.area.w, u1 = (std::max(lo.x, hi.x) + pad - d.area.x) / d.area.w;
+    const float v0 = (std::min(lo.y, hi.y) - pad - d.area.y) / d.area.h, v1 = (std::max(lo.y, hi.y) + pad - d.area.y) / d.area.h;
+    if (u1 < 0 || v1 < 0 || u0 >= 1 || v0 >= 1) return false;
+    const int x0 = std::clamp(int(u0 * float(d.width)) / 8, 0, tilesX - 1), x1 = std::clamp(int(u1 * float(d.width)) / 8, 0, tilesX - 1);
+    const int y0 = std::clamp(int(v0 * float(d.height)) / 8, 0, tilesY - 1), y1 = std::clamp(int(v1 * float(d.height)) / 8, 0, tilesY - 1);
+    for (int y = y0; y <= y1; ++y)
+      for (int x = x0; x <= x1; ++x)
+        if (tiles[size_t(y) * size_t(tilesX) + size_t(x)]) return true;
+    return false;
+  }
+};
+thread_local DepthCoverage* t_coverage = nullptr;
+
 // Draws a world segment in pieces a few pixels long. `alphaAt(point)` scales the alpha at a world point; pieces
 // behind the scene take `hiddenAlpha` more. Runs of equal look are joined into one line.
 template <class AlphaFn>
@@ -707,10 +740,29 @@ void drawPieces(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, fl
   if (!clipNear(cam, a, b)) return;
   Vec2 pa, pb;
   if (!cam.project(a, pa) || !cam.project(b, pb)) return;
-  const bool test = depth != nullptr && depth->valid();
+  // No depth test where the line passes over nothing of the scene (see DepthCoverage).
+  const bool test = depth != nullptr && depth->valid() &&
+                    (t_coverage == nullptr || t_coverage->depth != depth || t_coverage->anyUnder(pa, pb));
+  // Pieces only need to be short where they may pass behind the scene; elsewhere they only carry
+  // the fade, which a few times longer still shows smoothly.
+  const float coarse = pixelsPerPiece * 4.f;
   const float len = (pb - pa).length();
-  const int n = std::clamp(int(len / pixelsPerPiece) + 1, 1, 96);
-  std::vector<Vec2> run;
+  const int n = std::clamp(int(len / coarse) + 1, 1, 96);
+  // A piece is cut down to `pixelsPerPiece` only where the scene lies under it.
+  const auto pieceLimit = [&](Vec2 s0, Vec2 s1) {
+    if (!test) return coarse;
+    if (t_coverage != nullptr && t_coverage->depth == depth && !t_coverage->anyUnder(s0, s1)) return coarse;
+    return pixelsPerPiece;
+  };
+  // Scratch kept between calls: a grid is hundreds of lines a frame.
+  thread_local std::vector<Vec2> run;
+  thread_local std::vector<float> steps;
+  thread_local std::vector<std::pair<float, float>> todo;
+  thread_local std::vector<std::pair<float, bool>> cuts;
+  run.clear();
+  steps.clear();
+  todo.clear();
+  cuts.clear();
   int runAlpha = -1;
   const auto flush = [&]() {
     if (run.size() >= 2 && runAlpha > 0) {
@@ -726,22 +778,24 @@ void drawPieces(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, fl
     if (!test) return true;
     Vec2 p;
     float z = 0;
-    return !cam.project(a + (b - a) * t, p, &z) || (strict ? depth->visibleStrict(p, z) : depth->visible(p, z));
+    if (!cam.project(a + (b - a) * t, p, &z)) return true;
+    // Over a part of the view with nothing of the scene: in front, without reading the depth.
+    if (t_coverage != nullptr && t_coverage->depth == depth && !t_coverage->anyUnder(p, p)) return true;
+    return strict ? depth->visibleStrict(p, z) : depth->visible(p, z);
   };
   // The pieces, at most `pixelsPerPiece` long ON SCREEN (a long world line in perspective has pieces near
   // the eye far longer than those far off, so equal steps in world space would step over a whole mesh),
   // each cut where the line passes behind (or out from behind) the scene, found by bisection to well
   // under a pixel, so a line never pokes into a mesh.
   const auto screenAt = [&](const float t, Vec2& out) { return cam.project(a + (b - a) * t, out); };
-  std::vector<float> steps{0.f};
+  steps.push_back(0.f);
   {
-    std::vector<std::pair<float, float>> todo;
     for (int i = n - 1; i >= 0; --i) todo.push_back({float(i) / float(n), float(i + 1) / float(n)});
     while (!todo.empty()) {
       const auto [t0, t1] = todo.back();
       todo.pop_back();
       Vec2 s0, s1;
-      if (t1 - t0 > 1e-4f && screenAt(t0, s0) && screenAt(t1, s1) && (s1 - s0).length() > pixelsPerPiece && steps.size() < 2048) {
+      if (t1 - t0 > 1e-4f && screenAt(t0, s0) && screenAt(t1, s1) && (s1 - s0).length() > pieceLimit(s0, s1) && steps.size() < 2048) {
         const float tm = (t0 + t1) * 0.5f;
         todo.push_back({tm, t1});
         todo.push_back({t0, tm});
@@ -750,7 +804,7 @@ void drawPieces(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Color col, fl
       steps.push_back(t1);
     }
   }
-  std::vector<std::pair<float, bool>> cuts;   // (start t, visible) of each stretch
+  // cuts: (start t, visible) of each stretch
   bool prevSeen = seen(0.f);
   cuts.push_back({0.f, prevSeen});
   for (size_t i = 0; i + 1 < steps.size(); ++i) {
@@ -811,6 +865,14 @@ void drawWorldTriangle(Canvas& c, const GizmoCamera& cam, Vec3 a, Vec3 b, Vec3 c
 
 // ------------------------------------------------------------------ world grid
 void drawWorldGrid(Canvas& c, const GizmoCamera& cam, const WorldGrid& g, const GizmoDepth* depth) {
+  // Which parts of the view have anything of the scene, for this draw (see DepthCoverage).
+  thread_local DepthCoverage coverage;
+  struct CoverageScope {
+    explicit CoverageScope(const GizmoDepth* d) {
+      if (d != nullptr && d->valid()) { coverage.build(*d); t_coverage = &coverage; }
+    }
+    ~CoverageScope() { t_coverage = nullptr; }
+  } coverageScope(depth);
   if (g.opacity <= 0 || g.baseSpacing <= 0) return;
   // Plane basis: u, v in the plane, nrm its normal; axis ids of u and v for the axis lines.
   Vec3 u{1, 0, 0}, v{0, 0, 1}, nrm{0, 1, 0};
