@@ -600,7 +600,49 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
                 r->editing = false;
             }
         };
-        row->sync = [current, weakField, which](const void*) {
+        // Reset: Location and Rotation to zero, Scale to one (one undo step).
+        auto reset = prism::make<prism::Button>("", prism::Icon::Undo, prism::ButtonStyle::Flat);
+        reset->setTooltip(which == 2 ? "Reset the scale to 1, 1, 1" : which == 1 ? "Reset the rotation to 0, 0, 0" : "Reset the location to 0, 0, 0");
+        reset->setEnabled(authoring);
+        reset->onClick = [this, current, which] {
+            Scene::TransformComponentUVE t{};
+            if (!current(t)) {
+                return;
+            }
+            if (which == 0) {
+                t.localPosition = Math::Vector3UVE{};
+            } else if (which == 2) {
+                t.localScale = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+            } else {
+                t.localEulerRadians = Math::Vector3UVE{};
+                t.localRotation = Math::QuaternionUVE{};
+            }
+            static_cast<void>(m_editor.SetSelectedLocalTransformUVE(t));
+        };
+        // Key: shown only while the Animation Sequencer is open on this object; a filled diamond
+        // when the clip already has a key at the playhead.
+        auto key = prism::make<prism::Button>("", prism::Icon::Key, prism::ButtonStyle::Flat);
+        key->setTooltip("Key this object's transform at the Sequencer's playhead");
+        key->onClick = [this] { static_cast<void>(m_editor.KeyAnimationTimelineObjectUVE()); };
+        key->setVisible(false);
+        std::weak_ptr<prism::Button> weakKey = key;
+        auto line = prism::hbox(2.0F);
+        line->add(field, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        line->add(key, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        line->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        row->sync = [this, current, weakField, weakKey, which](const void*) {
+            if (auto k = weakKey.lock()) {
+                const bool keyable = m_editor.CanKeyAnimationTimelineObjectUVE(m_editor.GetSelectedEntityUVE());
+                if (k->visible() != keyable) {
+                    k->setVisible(keyable);
+                }
+                // Only when it changes: a new icon lays the row out again.
+                const bool keyed = keyable && m_editor.HasAnimationTimelineObjectKeyAtPlayheadUVE();
+                if (keyable && keyed != k->checked()) {
+                    k->setCheckable(true);
+                    k->setChecked(keyed);
+                }
+            }
             Scene::TransformComponentUVE t{};
             auto f = weakField.lock();
             if (!f || !current(t)) {
@@ -616,7 +658,7 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
         };
         row->sync(nullptr);
         m_rows.push_back(row);
-        m_grid->addRow(category, kRowsUVE[which].label, field);
+        m_grid->addRow(category, kRowsUVE[which].label, line);
     }
 }
 

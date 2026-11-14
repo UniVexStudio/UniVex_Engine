@@ -44,6 +44,10 @@ public:
 
     /// Shows the whole clip.
     void FitUVE();
+    /// Zooms the keys by `factor` (above 1 in), round the playhead when it is in view.
+    void ZoomUVE(double factor);
+    /// Scrolls (a page at a time) so the playhead stays in view; nothing when the whole clip shows.
+    void KeepPlayheadInViewUVE();
 
 private:
     struct RowUVE final {

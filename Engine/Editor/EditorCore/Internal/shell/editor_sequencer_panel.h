@@ -54,9 +54,9 @@ private:
     void ShowPlayerMenuUVE();
     void ShowClipMenuUVE();
     /// Load Library: import a project's .uvanimlib into this player's list (or link it live).
-    void ShowLoadLibraryMenuUVE();
     /// Export Library: this player's animations to a new .uvanimlib, named in a dialog.
     void ExportLibraryUVE();
+    void ShowSettingsMenuUVE();
     /// A file dropped on the panel: a library is loaded, a clip is added.
     bool AcceptDroppedUVE(const std::string& contentRelative);
 
@@ -65,10 +65,11 @@ private:
     std::shared_ptr<KeyframeViewUVE> m_keys;
     std::shared_ptr<prism::Button> m_playerButton;
     std::shared_ptr<prism::Button> m_clipButton;
-    std::shared_ptr<prism::Button> m_loadLibraryButton;
     std::shared_ptr<prism::Button> m_playButton;
     std::shared_ptr<prism::Button> m_loopButton;
     std::shared_ptr<prism::Button> m_keyButton;
+    std::shared_ptr<prism::Button> m_recordButton;
+    std::shared_ptr<prism::Button> m_settingsButton;
     std::shared_ptr<prism::Button> m_saveButton;
     std::shared_ptr<prism::Button> m_dopeButton;
     std::shared_ptr<prism::Button> m_curvesButton;

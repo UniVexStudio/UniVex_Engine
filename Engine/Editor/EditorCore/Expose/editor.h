@@ -2929,6 +2929,24 @@ private:
         std::vector<std::shared_ptr<const Asset::AnimationClipAssetUVE>> redo;
         /// Edited since it was loaded or saved.
         bool dirty = false;
+        /// Record: moving the animated object (gizmo or Details) keys its transform at the playhead.
+        bool recording = false;
+        /// Sequencer settings: the preview's speed, the view following the playhead while it plays,
+        /// scrubbing and key drags snapped to the clip's frames, and the clock in seconds or frames.
+        double playbackRate = 1.0;
+        bool followPlayhead = true;
+        bool snapToFrames = true;
+        bool clockInSeconds = false;
+        /// The Sequencer panel is on screen (keys and key buttons show only then).
+        bool panelShown = false;
+        /// The object the clip's Transform track moves, previewed at the playhead: its own pose from
+        /// before the preview (put back when the preview ends), the pose last written and when.
+        Scene::EntityUVE objectTarget = Scene::kInvalidEntityUVE;
+        Scene::TransformComponentUVE objectRest{};
+        bool objectApplied = false;
+        Scene::TransformComponentUVE objectLast{};
+        double objectLastTime = -1.0;
+        const void* objectLastClip = nullptr;
         /// A drag of the selected keys, from this mouse x.
         bool draggingKeys = false;
         float dragFromX = 0.0F;
@@ -3028,6 +3046,21 @@ private:
     void StopAnimationTimelinePlaybackUVE();
     void StepAnimationTimelineFrameUVE(int frames);
     void SetAnimationTimelineLoopUVE(bool loop);
+    /// The object the open clip's Transform track moves (the player's driver target, else its
+    /// parent), or none.
+    [[nodiscard]] Scene::EntityUVE AnimationTimelineObjectTargetUVE() const;
+    /// Whether `entity`'s transform can be keyed now: the Sequencer is shown with a clip open and
+    /// `entity` is the object it animates.
+    [[nodiscard]] bool CanKeyAnimationTimelineObjectUVE(Scene::EntityUVE entity) const;
+    /// Keys the animated object's transform, as it stands, at the playhead (replacing a key there).
+    bool KeyAnimationTimelineObjectUVE();
+    /// Whether the open clip has a Transform key at the playhead.
+    [[nodiscard]] bool HasAnimationTimelineObjectKeyAtPlayheadUVE() const;
+    /// Record on or off (see AnimationTimelineStateUVE::recording).
+    void SetAnimationTimelineRecordingUVE(bool recording);
+    /// Puts the animated object back to its own pose (the preview is over, or the entity is saved).
+    void RestoreAnimationTimelineObjectUVE();
+    void PreviewAnimationTimelineObjectUVE(const Asset::AnimationClipAssetUVE& clip);
     /// Every change to the open clip: one step of the clip's own undo history, shown at once.
     bool EditAnimationTimelineClipUVE(const std::function<void(Asset::AnimationClipAssetUVE&)>& change);
     void UndoAnimationTimelineUVE();
