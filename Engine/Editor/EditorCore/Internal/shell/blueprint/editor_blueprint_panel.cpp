@@ -232,6 +232,11 @@ prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
     m_graph->setNodeLibrary(LibraryUVE());
     // A widget pin lists the widget's own widgets of the kind the node acts on.
     m_graph->pinChoices = [this](const prism::BlueprintNode& node, const int pin) -> std::vector<std::string> {
+        // An Anim node's Parameter pin lists the entity's Animation Graph parameters.
+        if (animParametersProvider && NodeKeyUVE(node).rfind("anim_", 0U) == 0U && pin >= 0 &&
+            pin < static_cast<int>(node.inputs.size()) && node.inputs[static_cast<std::size_t>(pin)].name == "Parameter") {
+            return animParametersProvider();
+        }
         if (pin != WidgetPinOfUVE(node)) {
             return {};
         }

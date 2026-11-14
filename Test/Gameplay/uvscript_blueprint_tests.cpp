@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include "animation_graph_component.h"
 #include "audio_source_component.h"
 #include "blueprint_asset.h"
 #include "blueprint_nodes.h"
@@ -45,6 +46,13 @@ protected:
         entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, CharacterControllerComponentUVE{});
         entityManager.AddComponentUVE<AudioSourceComponentUVE>(entity, AudioSourceComponentUVE{});
         entityManager.AddComponentUVE<MontagePlayerComponentUVE>(entity, MontagePlayerComponentUVE{});
+        AnimationGraphComponentUVE graph;
+        graph.parameters.push_back(AnimationParameterUVE{"Jump", AnimationParameterTypeUVE::Trigger});
+        graph.parameters.push_back(AnimationParameterUVE{"IsJumping", AnimationParameterTypeUVE::Bool});
+        AnimationParameterUVE speed{"Speed", AnimationParameterTypeUVE::Float};
+        speed.source = AnimationParameterSourceUVE::CharacterSpeed;
+        graph.parameters.push_back(speed);
+        entityManager.AddComponentUVE<AnimationGraphComponentUVE>(entity, graph);
         GameplayAttributesComponentUVE pools;
         EXPECT_TRUE(AddGameplayAttributeUVE(pools, "stamina", 10.0F, 10.0F));
         entityManager.AddComponentUVE<GameplayAttributesComponentUVE>(entity, pools);
@@ -187,6 +195,23 @@ TEST_F(BlueprintUVETest, AFileRoundTripsAndABadOneIsRefused) {
     bad = blueprint;
     bad.variables.push_back(bad.variables.front());
     EXPECT_FALSE(Asset::IsBlueprintAssetValidUVE(bad)) << "two variables with one name";
+}
+
+TEST_F(BlueprintUVETest, BlueprintsSetAnimationGraphParameters) {
+    const EntityUVE entity = MakeEverythingUVE();
+    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entity};
+    const auto call = [&](const std::string_view name, std::vector<UVScript::ValueUVE> args) {
+        return host.CallFunctionUVE(name, args);
+    };
+    const auto& graph = entityManager.GetComponentUVE<AnimationGraphComponentUVE>(entity);
+    EXPECT_EQ(call("anim.set_bool", {std::string("IsJumping"), true}), UVScript::ValueUVE{true});
+    EXPECT_EQ(graph.parameters[1].value, 1.0F);
+    EXPECT_EQ(call("anim.get_bool", {std::string("IsJumping")}), UVScript::ValueUVE{true});
+    EXPECT_EQ(call("anim.trigger", {std::string("Jump")}), UVScript::ValueUVE{true});
+    EXPECT_EQ(graph.parameters[0].value, 1.0F);
+    // The character writes Speed every frame: a script may read it, not set it.
+    EXPECT_EQ(call("anim.set_float", {std::string("Speed"), 3.0}), UVScript::ValueUVE{false});
+    EXPECT_EQ(call("anim.set_float", {std::string("Missing"), 3.0}), UVScript::ValueUVE{false});
 }
 
 } // namespace

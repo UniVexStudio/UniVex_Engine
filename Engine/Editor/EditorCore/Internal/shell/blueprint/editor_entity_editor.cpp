@@ -274,6 +274,21 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     } else {
         m_blueprintPanel.widgetsProvider = nullptr;
     }
+    m_blueprintPanel.animParametersProvider = [this] {
+        std::vector<std::string> names;
+        const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+        for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
+            if (!em.HasComponentUVE<Scene::AnimationGraphComponentUVE>(object)) {
+                continue;
+            }
+            for (const Scene::AnimationParameterUVE& parameter : em.GetComponentUVE<Scene::AnimationGraphComponentUVE>(object).parameters) {
+                if (std::find(names.begin(), names.end(), parameter.name) == names.end()) {
+                    names.push_back(parameter.name);
+                }
+            }
+        }
+        return names;
+    };
 
     // Left: Components over Details (a split, like the level's Outliner and Details stacked);
     // centre: the view over the dock pages; the dock bar runs along the bottom, as in the level.
