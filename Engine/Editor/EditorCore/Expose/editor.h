@@ -1288,6 +1288,9 @@ public:
     /// Moves `entity` among its siblings, keeping its parent and transform, as one undoable edit.
     /// Returns false, changing nothing, when CanMoveDocumentEntityUVE does.
     [[nodiscard]] bool MoveDocumentEntityUVE(Scene::EntityUVE entity, EditorSiblingMoveUVE move);
+    /// Drag and drop in a tree: `entity` goes inside `target` (its last child), or just before or
+    /// after it among `target`'s siblings. Reparents when needed; undoable. where: 0 before, 1 inside, 2 after.
+    [[nodiscard]] bool PlaceDocumentEntityUVE(Scene::EntityUVE entity, Scene::EntityUVE target, int where);
     /// The hierarchy panel preferences in effect (Editor Preferences > Hierarchy).
     [[nodiscard]] const HierarchyViewSettingsUVE& GetHierarchyViewSettingsUVE() const noexcept { return m_hierarchyView; }
     /// The open state a hierarchy row will be given when it is next drawn, if one is pending.

@@ -3235,6 +3235,53 @@ bool EditorUVE::CanMoveDocumentEntityUVE(const Scene::EntityUVE entity, const Ed
     return move == EditorSiblingMoveUVE::Up || move == EditorSiblingMoveUVE::ToTop ? *index > 0U : *index < last;
 }
 
+bool EditorUVE::PlaceDocumentEntityUVE(const Scene::EntityUVE entity, const Scene::EntityUVE target, const int where) {
+    if (entity == target || !IsDocumentEntityUVE(entity) || !IsDocumentEntityUVE(target) || !IsAuthoringCommandAllowedUVE()) {
+        return false;
+    }
+    if (where == 1) {
+        return ReparentDocumentEntityUVE(entity, target);
+    }
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    if (!TryGetDocumentParentUVE(target, parent)) {
+        return false;
+    }
+    Scene::EntityUVE current = Scene::kInvalidEntityUVE;
+    static_cast<void>(TryGetDocumentParentUVE(entity, current));
+    if (current != parent && !ReparentDocumentEntityUVE(entity, parent)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const std::optional<std::size_t> from = sceneGraph.GetSiblingIndexUVE(entityManager, entity);
+    const std::optional<std::size_t> at = sceneGraph.GetSiblingIndexUVE(entityManager, target);
+    if (!from.has_value() || !at.has_value()) {
+        return false;
+    }
+    // The index the entity ends at, counted with it already out of the list.
+    std::size_t to = *at + (where == 2 ? 1U : 0U);
+    if (*from < to) {
+        --to;
+    }
+    if (to == *from) {
+        return true;
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    if (!sceneGraph.SetSiblingIndexUVE(entityManager, entity, to)) {
+        return false;
+    }
+    m_sceneDirty = true;
+    InvalidateHierarchyFilterCacheUVE();
+    const Scene::TransformComponentUVE local =
+        entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)
+            ? entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity)
+            : Scene::TransformComponentUVE{};
+    RecordHistoryUVE(ReparentHistoryEntryUVE{entity, parent, parent, local, local, selectionBefore,
+                                             CaptureSelectionSnapshotUVE(), dirtyBefore, true, *from, to});
+    return true;
+}
+
 bool EditorUVE::MoveDocumentEntityUVE(const Scene::EntityUVE entity, const EditorSiblingMoveUVE move) {
     if (!CanMoveDocumentEntityUVE(entity, move)) {
         return false;
