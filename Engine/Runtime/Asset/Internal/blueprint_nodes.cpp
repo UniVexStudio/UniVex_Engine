@@ -19,6 +19,39 @@ using Pin = BlueprintPinSpecUVE;
 
 [[nodiscard]] Pin Exec(std::string name = "") { return Pin{std::move(name), T::Exec, ""}; }
 
+/// Where each node belongs: an object's graph or a widget's, and the component it needs.
+void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
+    constexpr auto object = static_cast<std::uint8_t>(BlueprintGraphKindUVE::Object);
+    constexpr auto widget = static_cast<std::uint8_t>(BlueprintGraphKindUVE::Widget);
+    for (BlueprintNodeTypeUVE& n : all) {
+        const std::string& c = n.category;
+        if (c.starts_with("User Interface")) {
+            // A widget's own controls; creating a widget or the mouse cursor work from any graph.
+            const bool anywhere = n.key == "ui_create_widget" || n.key == "ui_add_to_viewport" || n.key == "ui_show_mouse_cursor";
+            n.graphs = anywhere ? (object | widget) : widget;
+        } else if (c == "Character" || c == "Physics" || c == "Animation" || c == "Audio" || c == "Transform" || c == "Rendering" ||
+                   c.starts_with("Gameplay") ||
+                   (c == "Events" && n.event != "ready" && n.event != "tick")) {
+            n.graphs = object;
+        }
+        if (c == "Character" || n.key == "is_grounded") {
+            n.needs = "CharacterController";
+        } else if (n.key.starts_with("apply_")) {
+            n.needs = "Rigid3D";
+        } else if (c == "Audio") {
+            n.needs = "AudioSource";
+        } else if (n.key.find("light") != std::string::npos) {
+            n.needs = "Light";
+        } else if (n.key.find("field_of_view") != std::string::npos) {
+            n.needs = "Camera";
+        } else if (n.key.starts_with("attr_")) {
+            n.needs = "GameplayAttributes";
+        } else if (n.key.starts_with("tag_")) {
+            n.needs = "GameplayTag";
+        }
+    }
+}
+
 [[nodiscard]] std::vector<BlueprintNodeTypeUVE> BuildCatalogueUVE() {
     std::vector<BlueprintNodeTypeUVE> all;
     const auto event = [&all](std::string key, std::string title, std::string ev, std::vector<Pin> data, std::string keywords,
@@ -135,11 +168,48 @@ using Pin = BlueprintPinSpecUVE;
     pure("is_grounded", "Is Grounded", "Physics", {}, {Pin{"Grounded", T::Bool, ""}}, {"grounded"}, "on floor falling", "A character");
 
     // ---- input
-    pure("input_pressed", "Is Action Pressed", "Input", {Pin{"Action", T::String, "jump"}}, {Pin{"Pressed", T::Bool, ""}}, {"input.pressed({0})"}, "key button just");
-    pure("input_held", "Is Action Held", "Input", {Pin{"Action", T::String, "jump"}}, {Pin{"Held", T::Bool, ""}}, {"input.held({0})"}, "key button down");
-    pure("input_released", "Was Action Released", "Input", {Pin{"Action", T::String, "jump"}}, {Pin{"Released", T::Bool, ""}}, {"input.released({0})"}, "key button up");
+    pure("input_pressed", "Is Action Pressed", "Input", {Pin{"Action", T::String, "Jump"}}, {Pin{"Pressed", T::Bool, ""}}, {"input.pressed({0})"}, "key button just");
+    pure("input_held", "Is Action Held", "Input", {Pin{"Action", T::String, "Jump"}}, {Pin{"Held", T::Bool, ""}}, {"input.held({0})"}, "key button down");
+    pure("input_released", "Was Action Released", "Input", {Pin{"Action", T::String, "Jump"}}, {Pin{"Released", T::Bool, ""}}, {"input.released({0})"}, "key button up");
     pure("input_axis", "Get Axis", "Input", {Pin{"Negative", T::String, "left"}, Pin{"Positive", T::String, "right"}}, {Pin{"Value", T::Float, ""}},
          {"input.axis({0}, {1})"}, "move stick");
+
+    pure("input_axis_value", "Get Axis Value", "Input", {Pin{"Action", T::String, "MoveForward"}}, {Pin{"Value", T::Float, ""}},
+         {"input.axis_value({0})"}, "move stick wasd forward right axis1d", "An Axis action from the Input Map (MoveForward, MoveHorizontal, LookHorizontal ...): -1 to 1");
+    pure("input_mouse_delta", "Get Mouse Delta", "Input", {}, {Pin{"X", T::Float, ""}, Pin{"Y", T::Float, ""}},
+         {"input.mouse_delta().x", "input.mouse_delta().y"}, "look turn camera mouse", "How far the mouse moved this frame, in pixels");
+
+    // ---- character (a Character Controller)
+    action("add_movement_input", "Add Movement Input", "Character", {Pin{"World Direction", T::Vector, "0,0,-1"}, Pin{"Scale", T::Float, "1.0"}},
+           "character.move({1} * {2})", "walk run wasd move", "Steers the character this frame (with its speed, acceleration and air control)");
+    action("character_jump", "Jump", "Character", {}, "character.jump()", "hop leap", "Jumps when it can (on the floor, or within coyote time)");
+    action("character_launch", "Launch Character", "Character", {Pin{"Velocity", T::Vector, "0,10,0"}}, "character.launch({1})", "knockback push",
+           "Adds to its velocity at once");
+    pure("character_is_falling", "Is Falling", "Character", {}, {Pin{"Falling", T::Bool, ""}}, {"character.falling()"}, "air midair");
+    pure("character_speed", "Get Speed", "Character", {}, {Pin{"Speed", T::Float, ""}}, {"character.speed()"}, "velocity ground",
+         "Its speed along the ground, metres per second");
+    action("set_max_walk_speed", "Set Max Walk Speed", "Character", {Pin{"Speed", T::Float, "5.0"}}, "max_speed = {1}", "run sprint");
+    pure("get_max_walk_speed", "Get Max Walk Speed", "Character", {}, {Pin{"Speed", T::Float, ""}}, {"max_speed"});
+    action("set_jump_height", "Set Jump Height", "Character", {Pin{"Height", T::Float, "1.5"}}, "jump_height = {1}");
+
+    // ---- transform: rotation and directions
+    pure("get_rotation", "Get Rotation", "Transform", {}, {Pin{"Rotation", T::Vector, ""}}, {"rotation"}, "euler angles", "Degrees: X pitch, Y yaw, Z roll");
+    action("set_rotation", "Set Rotation", "Transform", {Pin{"Rotation", T::Vector, "0,0,0"}}, "rotation = {1}", "euler angles turn");
+    action("add_yaw", "Add Yaw", "Transform", {Pin{"Degrees", T::Float, "0.0"}}, "transform.add_yaw({1})", "turn look horizontal", "Turns about the world's up");
+    action("add_pitch", "Add Pitch", "Transform", {Pin{"Degrees", T::Float, "0.0"}}, "transform.add_pitch({1})", "look vertical tilt");
+    action("look_at", "Look At", "Transform", {Pin{"Target", T::Vector, "0,0,0"}}, "transform.look_at({1})", "face aim", "Turns so it faces the point");
+    pure("get_forward_vector", "Get Forward Vector", "Transform", {}, {Pin{"Forward", T::Vector, ""}}, {"transform.forward()"}, "direction facing");
+    pure("get_right_vector", "Get Right Vector", "Transform", {}, {Pin{"Right", T::Vector, ""}}, {"transform.right()"}, "direction side");
+    pure("get_up_vector", "Get Up Vector", "Transform", {}, {Pin{"Up", T::Vector, ""}}, {"transform.up()"}, "direction");
+    pure("get_distance_to", "Get Distance To", "Transform", {Pin{"Target", T::Vector, "0,0,0"}}, {Pin{"Distance", T::Float, ""}},
+         {"transform.distance_to({0})"}, "range far near");
+
+    // ---- rendering: light and camera
+    action("set_light_intensity", "Set Light Intensity", "Rendering", {Pin{"Intensity", T::Float, "1.0"}}, "intensity = {1}", "brightness energy");
+    pure("get_light_intensity", "Get Light Intensity", "Rendering", {}, {Pin{"Intensity", T::Float, ""}}, {"intensity"});
+    action("set_light_color", "Set Light Color", "Rendering", {Pin{"Color", T::Vector, "1,1,1"}}, "light_color = {1}", "colour tint");
+    action("set_field_of_view", "Set Field Of View", "Rendering", {Pin{"Degrees", T::Float, "60.0"}}, "fov = {1}", "zoom camera fov");
+    pure("get_field_of_view", "Get Field Of View", "Rendering", {}, {Pin{"Degrees", T::Float, ""}}, {"fov"}, "zoom camera fov");
 
     // ---- audio
     action("audio_play", "Play Sound", "Audio", {}, "audio.play()", "sound sfx", "Its AudioSource");
@@ -322,6 +392,37 @@ using Pin = BlueprintPinSpecUVE;
          {"({0} * {1})"}, "multiply times");
     pure("vector_length", "Vector Length", "Math|Vector", {Pin{"Vector", T::Vector, "0,0,0"}}, {Pin{"Length", T::Float, ""}}, {"length({0})"}, "size magnitude");
     pure("vector_normalize", "Normalize", "Math|Vector", {Pin{"Vector", T::Vector, "0,0,0"}}, {Pin{"Result", T::Vector, ""}}, {"normalize({0})"}, "direction unit");
+    pure("random_float_range", "Random Float In Range", "Math|Random", {Pin{"Min", T::Float, "0.0"}, Pin{"Max", T::Float, "1.0"}},
+         {Pin{"Value", T::Float, ""}}, {"math.random_range({0}, {1})"}, "rand");
+    pure("random_int_range", "Random Integer In Range", "Math|Random", {Pin{"Min", T::Int, "0"}, Pin{"Max", T::Int, "10"}},
+         {Pin{"Value", T::Int, ""}}, {"math.random_int({0}, {1})"}, "rand");
+    pure("random_bool", "Random Bool", "Math|Random", {}, {Pin{"Value", T::Bool, ""}}, {"math.random_bool()"}, "rand coin");
+    pure("float_pow", "Power", "Math|Float", {Pin{"Base", T::Float, "2.0"}, Pin{"Exponent", T::Float, "2.0"}}, {Pin{"Result", T::Float, ""}},
+         {"math.pow({0}, {1})"}, "pow exponent square");
+    pure("float_mod", "Modulo (Float)", "Math|Float", {Pin{"A", T::Float, "0.0"}, Pin{"B", T::Float, "1.0"}}, {Pin{"Result", T::Float, ""}},
+         {"math.fmod({0}, {1})"}, "remainder fmod");
+    pure("float_atan2", "Atan2 (Degrees)", "Math|Trig", {Pin{"Y", T::Float, "0.0"}, Pin{"X", T::Float, "1.0"}}, {Pin{"Degrees", T::Float, ""}},
+         {"math.atan2({0}, {1})"}, "angle direction");
+    pure("degrees_to_radians", "Degrees To Radians", "Math|Trig", {Pin{"Degrees", T::Float, "0.0"}}, {Pin{"Radians", T::Float, ""}},
+         {"({0} * 0.017453292)"}, "convert");
+    pure("radians_to_degrees", "Radians To Degrees", "Math|Trig", {Pin{"Radians", T::Float, "0.0"}}, {Pin{"Degrees", T::Float, ""}},
+         {"({0} * 57.29578)"}, "convert");
+    pure("map_range_clamped", "Map Range Clamped", "Math|Float",
+         {Pin{"Value", T::Float, "0.0"}, Pin{"In Min", T::Float, "0.0"}, Pin{"In Max", T::Float, "1.0"}, Pin{"Out Min", T::Float, "0.0"},
+          Pin{"Out Max", T::Float, "1.0"}},
+         {Pin{"Result", T::Float, ""}}, {"lerp({3}, {4}, clamp(({0} - {1}) / ({2} - {1}), 0.0, 1.0))"}, "remap scale normalize");
+    pure("finterp_to", "Interp To (Float)", "Math|Float",
+         {Pin{"Current", T::Float, "0.0"}, Pin{"Target", T::Float, "1.0"}, Pin{"Delta Seconds", T::Float, "0.016"}, Pin{"Speed", T::Float, "5.0"}},
+         {Pin{"Result", T::Float, ""}}, {"lerp({0}, {1}, clamp({2} * {3}, 0.0, 1.0))"}, "smooth ease approach finterp");
+    pure("vinterp_to", "Interp To (Vector)", "Math|Vector",
+         {Pin{"Current", T::Vector, "0,0,0"}, Pin{"Target", T::Vector, "0,0,0"}, Pin{"Delta Seconds", T::Float, "0.016"}, Pin{"Speed", T::Float, "5.0"}},
+         {Pin{"Result", T::Vector, ""}}, {"({0} + ({1} - {0}) * clamp({2} * {3}, 0.0, 1.0))"}, "smooth ease approach vinterp");
+    pure("vector_lerp", "Lerp (Vector)", "Math|Vector", {Pin{"A", T::Vector, "0,0,0"}, Pin{"B", T::Vector, "0,0,0"}, Pin{"Alpha", T::Float, "0.5"}},
+         {Pin{"Result", T::Vector, ""}}, {"({0} + ({1} - {0}) * {2})"}, "mix blend");
+    pure("vector_distance", "Distance (Vector)", "Math|Vector", {Pin{"A", T::Vector, "0,0,0"}, Pin{"B", T::Vector, "0,0,0"}},
+         {Pin{"Distance", T::Float, ""}}, {"length({0} - {1})"}, "between far");
+    pure("vector_cross", "Cross Product", "Math|Vector", {Pin{"A", T::Vector, "1,0,0"}, Pin{"B", T::Vector, "0,1,0"}}, {Pin{"Result", T::Vector, ""}},
+         {"vec3({0}.y * {1}.z - {0}.z * {1}.y, {0}.z * {1}.x - {0}.x * {1}.z, {0}.x * {1}.y - {0}.y * {1}.x)"}, "cross normal perpendicular");
     pure("vector_dot", "Dot Product", "Math|Vector", {Pin{"A", T::Vector, "0,0,0"}, Pin{"B", T::Vector, "0,0,0"}}, {Pin{"Result", T::Float, ""}},
          {"({0}.x * {1}.x + {0}.y * {1}.y + {0}.z * {1}.z)"}, "dot");
 
@@ -341,6 +442,7 @@ using Pin = BlueprintPinSpecUVE;
     set.inputs = {Exec(), Pin{"Value", T::Float, ""}};
     set.outputs = {Exec(), Pin{"Value", T::Float, ""}};
     all.push_back(set);
+    AssignScopesUVE(all);
     return all;
 }
 

@@ -170,6 +170,7 @@ private:
         std::vector<UVScript::ValueUVE> args;
     };
 
+    [[nodiscard]] UVScript::ValueUVE GameplayCallUVE(std::string_view name, std::span<const UVScript::ValueUVE> args);
     [[nodiscard]] UVScript::ValueUVE RpcCallUVE(std::string_view name,
                                                std::span<const UVScript::ValueUVE> args);
     [[nodiscard]] std::uint32_t NextStagingIdUVE() noexcept;

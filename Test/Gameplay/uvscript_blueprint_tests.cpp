@@ -5,11 +5,16 @@
 
 #include <gtest/gtest.h>
 
+#include "camera_component.h"
+#include "light_component.h"
+
 #include "animation_graph_component.h"
 #include "audio_source_component.h"
 #include "blueprint_asset.h"
 #include "blueprint_nodes.h"
 #include "character_controller_component.h"
+#include "character_3d.h"
+#include "quaternion.h"
 #include "entity_manager.h"
 #include "event_system.h"
 #include "gameplay_attributes.h"
@@ -57,6 +62,8 @@ protected:
         EXPECT_TRUE(AddGameplayAttributeUVE(pools, "stamina", 10.0F, 10.0F));
         entityManager.AddComponentUVE<GameplayAttributesComponentUVE>(entity, pools);
         entityManager.AddComponentUVE<GameplayTagComponentUVE>(entity, GameplayTagComponentUVE{});
+        entityManager.AddComponentUVE<LightComponentUVE>(entity, LightComponentUVE{});
+        entityManager.AddComponentUVE<CameraComponentUVE>(entity, CameraComponentUVE{});
         return entity;
     }
 
@@ -143,7 +150,7 @@ TEST_F(BlueprintUVETest, FlowNodesNestTheirChains) {
     blueprint.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}, BlueprintWireUVE{6U, 0U, 2U, 1U}, BlueprintWireUVE{2U, 0U, 3U, 0U},
                        BlueprintWireUVE{2U, 1U, 4U, 0U}, BlueprintWireUVE{4U, 0U, 5U, 0U}};
     const Asset::BlueprintTranslationUVE translated = Asset::TranslateBlueprintToUVScriptUVE(blueprint, "BP", "Object3D");
-    EXPECT_NE(translated.source.find("if (input.pressed(\"jump\")):"), std::string::npos) << translated.source;
+    EXPECT_NE(translated.source.find("if (input.pressed(\"Jump\")):"), std::string::npos) << translated.source;
     EXPECT_NE(translated.source.find("else:"), std::string::npos);
     EXPECT_NE(translated.source.find("for i4 in 0..(9 + 1):"), std::string::npos) << "Last Index is inclusive";
     // The print inside the loop is attributed to its node.
@@ -171,6 +178,49 @@ TEST_F(BlueprintUVETest, AReadyBlueprintRunsAndMovesItsObject) {
     const TransformComponentUVE& transform = entityManager.GetComponentUVE<TransformComponentUVE>(entity);
     EXPECT_FLOAT_EQ(transform.localPosition.x, 1.0F);
     EXPECT_FLOAT_EQ(transform.localPosition.z, 3.0F);
+}
+
+TEST_F(BlueprintUVETest, AddMovementInputAndJumpSteerTheCharacter) {
+    // Event Tick -> Add Movement Input (its forward, scale 1) -> Jump.
+    BlueprintAssetUVE blueprint;
+    blueprint.nodes = {NodeUVE(1U, "event_tick"), NodeUVE(2U, "add_movement_input"), NodeUVE(3U, "get_forward_vector"),
+                       NodeUVE(4U, "character_jump")};
+    blueprint.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}, BlueprintWireUVE{3U, 0U, 2U, 1U}, BlueprintWireUVE{2U, 0U, 4U, 0U}};
+    const EntityUVE entity = MakeEverythingUVE();
+    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entity};
+    const UVScript::CompileResultUVE compiled =
+        UVScript::CompileUVScriptSourceUVE(Asset::TranslateBlueprintToUVScriptUVE(blueprint, "BP", "Character3D").source, host);
+    ASSERT_TRUE(compiled.IsSuccessUVE());
+    UVScript::ScriptInstanceUVE instance(compiled.program, host);
+    const UVScript::ValueUVE dt[] = {0.016};
+    ASSERT_TRUE(instance.RaiseEventUVE("tick", dt));
+    const CharacterControllerComponentUVE& body = entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity);
+    // Forward is -Z for an unturned object; the motion the step reads carries it, and the jump.
+    EXPECT_NEAR(body.scriptMove.z, -1.0F, 1e-5F);
+    EXPECT_TRUE(body.scriptJump);
+    const Physics::CharacterMotionInputUVE motion = ResolveCharacterMotionUVE(entityManager, entity);
+    EXPECT_NEAR(motion.move.z, -1.0F, 1e-5F);
+    EXPECT_TRUE(motion.jumpPressed);
+}
+
+TEST_F(BlueprintUVETest, RotationNodesTurnTheObject) {
+    BlueprintAssetUVE blueprint;
+    BlueprintNodeUVE yaw = NodeUVE(2U, "add_yaw");
+    yaw.inputValues = {"", "90"};
+    blueprint.nodes = {NodeUVE(1U, "event_ready"), yaw};
+    blueprint.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}};
+    const EntityUVE entity = MakeEverythingUVE();
+    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entity};
+    const UVScript::CompileResultUVE compiled =
+        UVScript::CompileUVScriptSourceUVE(Asset::TranslateBlueprintToUVScriptUVE(blueprint, "BP", "Object3D").source, host);
+    ASSERT_TRUE(compiled.IsSuccessUVE());
+    UVScript::ScriptInstanceUVE instance(compiled.program, host);
+    ASSERT_TRUE(instance.RaiseEventUVE("ready", {}));
+    // A quarter turn left about up: forward (-Z) now points along -X.
+    const Math::Vector3UVE forward = Math::RotateVectorUVE(entityManager.GetComponentUVE<TransformComponentUVE>(entity).localRotation,
+                                                          Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+    EXPECT_NEAR(forward.x, -1.0F, 1e-4F);
+    EXPECT_NEAR(forward.z, 0.0F, 1e-4F);
 }
 
 TEST_F(BlueprintUVETest, AFileRoundTripsAndABadOneIsRefused) {

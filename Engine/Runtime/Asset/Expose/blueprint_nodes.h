@@ -53,7 +53,17 @@ struct BlueprintNodeTypeUVE final {
     /// Pure: one expression per output.
     std::vector<std::string> outputCode;
     std::string tooltip;
+    /// The graphs it belongs in (BlueprintGraphKindUVE bits): an object's graph, a widget's, or both.
+    std::uint8_t graphs = 0x3U;
+    /// A component the object needs for it ("CharacterController", "Light", ...); empty: any object.
+    std::string needs;
 };
+
+/// Which graph a node is offered in.
+enum class BlueprintGraphKindUVE : std::uint8_t { Object = 0x1U, Widget = 0x2U };
+[[nodiscard]] constexpr bool IsBlueprintNodeForGraphUVE(const BlueprintNodeTypeUVE& type, const BlueprintGraphKindUVE graph) noexcept {
+    return (type.graphs & static_cast<std::uint8_t>(graph)) != 0U;
+}
 
 /// Every node type, in palette order.
 [[nodiscard]] const std::vector<BlueprintNodeTypeUVE>& GetBlueprintNodeTypesUVE();

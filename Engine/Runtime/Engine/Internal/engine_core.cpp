@@ -1966,6 +1966,9 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
 
 void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
     ReconcileUVScriptInstancesUVE();
+    // Add Movement Input is per frame: what the scripts ask for now replaces last frame's.
+    m_entityManager->ForEachUVE<Scene::CharacterControllerComponentUVE>(
+        [](const Scene::EntityUVE, Scene::CharacterControllerComponentUVE& body) { body.scriptMove = Math::Vector3UVE{}; });
 
     std::vector<Scene::EntityUVE> order;
     order.reserve(m_uvScripts.size());
@@ -2802,6 +2805,10 @@ void EngineCoreUVE::SyncCharacterControllersUVE(const float fixedDeltaTimeSecond
         const Physics::Character3DStepResultUVE report = Physics::StepCharacter3DUVE(
             *m_entityManager, *m_sceneGraph, *m_collisionSystem, entity, motion, m_config.gravity.y,
             fixedDeltaTimeSeconds);
+        // A script's jump is one press: the step that saw it took it.
+        if (m_entityManager->HasComponentUVE<Scene::CharacterControllerComponentUVE>(entity)) {
+            m_entityManager->GetComponentUVE<Scene::CharacterControllerComponentUVE>(entity).scriptJump = false;
+        }
         if (!report.stepped) {
             continue;
         }

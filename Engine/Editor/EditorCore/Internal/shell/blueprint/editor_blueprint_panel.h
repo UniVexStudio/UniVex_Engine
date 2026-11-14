@@ -6,6 +6,7 @@
 #include "blueprint_asset.h"
 #include "editor_widget_icons.h"
 #include <functional>
+#include <string_view>
 #include <utility>
 
 #include "prism/BlueprintGraph.h"
@@ -72,6 +73,9 @@ public:
     std::function<std::vector<std::pair<std::string, WidgetKindUVE>>()> widgetsProvider;
     /// The entity's Animation Graph parameters, offered on the Anim nodes' Parameter pin.
     std::function<std::vector<std::string>()> animParametersProvider;
+    /// Whether the object the graph runs on has a component ("CharacterController", "Light" ...):
+    /// a node that needs one it lacks is not offered. Unset: every node is offered.
+    std::function<bool(std::string_view)> hasComponent;
 private:
     /// The catalogue key of a graph node ("ui_set_text"), empty for one that is not the engine's.
     [[nodiscard]] static std::string NodeKeyUVE(const prism::BlueprintNode& node);
