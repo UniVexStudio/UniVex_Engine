@@ -157,6 +157,22 @@ using Pin = BlueprintPinSpecUVE;
     pure("montage_is_playing", "Is Montage Playing", "Animation", {}, {Pin{"Playing", T::Bool, ""}}, {"montage.is_playing()"});
     pure("montage_section", "Current Section", "Animation", {}, {Pin{"Section", T::String, ""}}, {"montage.section()"});
     pure("montage_curve", "Montage Curve", "Animation", {Pin{"Curve", T::String, ""}}, {Pin{"Value", T::Float, ""}}, {"montage.curve({0})"});
+    // Animation Graph parameters, by name, on its Animation Graph (or the one under it).
+    action("anim_set_float", "Set Anim Float", "Animation", {Pin{"Parameter", T::String, "Speed"}, Pin{"Value", T::Float, "0.0"}},
+           "anim.set_float({1}, {2})", "animation graph parameter", "A Float parameter of its Animation Graph");
+    action("anim_set_bool", "Set Anim Bool", "Animation", {Pin{"Parameter", T::String, "IsJumping"}, Pin{"Value", T::Bool, "true"}},
+           "anim.set_bool({1}, {2})", "animation graph parameter", "A Bool parameter of its Animation Graph");
+    action("anim_set_int", "Set Anim Int", "Animation", {Pin{"Parameter", T::String, "Weapon"}, Pin{"Value", T::Int, "0"}},
+           "anim.set_int({1}, {2})", "animation graph parameter", "A whole-number parameter (kept as a Float)");
+    action("anim_trigger", "Fire Anim Trigger", "Animation", {Pin{"Parameter", T::String, "Jump"}}, "anim.trigger({1})",
+           "animation graph trigger", "A Trigger parameter: set until a transition uses it");
+    action("anim_set_vector", "Set Anim Vector", "Animation",
+           {Pin{"Parameter", T::String, "LookAt"}, Pin{"X", T::Float, "0.0"}, Pin{"Y", T::Float, "0.0"}, Pin{"Z", T::Float, "0.0"}},
+           "anim.set_vector({1}, {2}, {3}, {4})", "animation graph ik target", "A Vector3 parameter (an IK or look target)");
+    pure("anim_get_float", "Get Anim Float", "Animation", {Pin{"Parameter", T::String, "Speed"}}, {Pin{"Value", T::Float, ""}},
+         {"anim.get_float({0})"});
+    pure("anim_get_bool", "Get Anim Bool", "Animation", {Pin{"Parameter", T::String, "IsJumping"}}, {Pin{"Value", T::Bool, ""}},
+         {"anim.get_bool({0})"});
 
     // ---- objects
     pure("find_object", "Find Object", "Objects", {Pin{"Name", T::String, ""}}, {Pin{"Object", T::Object, ""}}, {"node({0})"}, "get actor by name");

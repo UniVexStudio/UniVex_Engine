@@ -836,17 +836,8 @@ void EditorShellUVE::ShowAddMenuUVE() {
                           {SceneObjectKindUVE::Area3D, SceneObjectKindUVE::Collider3D, SceneObjectKindUVE::NavMeshVolume3D,
                            SceneObjectKindUVE::LevelStreamer3D, SceneObjectKindUVE::WorldPartition3D, SceneObjectKindUVE::Occluder3D,
                            SceneObjectKindUVE::VisibilityRegion3D}));
-    // Everything else a level holds (bodies, gameplay, sound, UI, 2D), so nothing is out of reach.
-    std::vector<prism::MenuItem> other;
-    for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
-        if (descriptor.kind != SceneObjectKindUVE::Folder && offered(descriptor.kind) &&
-            grouped.count(static_cast<int>(descriptor.kind)) == 0U) {
-            other.push_back(itemFor(descriptor.kind));
-        }
-    }
-    if (!other.empty()) {
-        items.push_back(prism::MenuItem::Sub("More", std::move(other), prism::Icon::Plus));
-    }
+    // Kept for what comes next; nothing in it yet.
+    items.push_back(prism::MenuItem::Sub("More", {prism::MenuItem::Item("Nothing here yet", {}).disabled()}, prism::Icon::Plus));
     if (!m_recentKinds.empty()) {
         items.push_back(prism::MenuItem::Header("RECENTLY PLACED"));
         for (const int key : m_recentKinds) {

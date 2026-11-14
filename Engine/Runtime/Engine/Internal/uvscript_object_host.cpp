@@ -31,6 +31,7 @@
 #include "gameplay_attributes.h"
 #include "gameplay_tags.h"
 #include "hierarchy_component.h"
+#include "animation_graph_component.h"
 #include "montage_player_component.h"
 #include "i_input_system.h"
 #include "logging_macros.h"
@@ -78,6 +79,33 @@ using UVScript::Vec3ValueUVE;
             }
         });
     return found;
+}
+
+/// The Animation Graph a script drives: the object's own, else one directly under it (a character's).
+[[nodiscard]] Scene::AnimationGraphComponentUVE* FindAnimationGraphUVE(Scene::IEntityManagerUVE& entities,
+                                                                     const Scene::EntityUVE entity) {
+    if (entities.HasComponentUVE<Scene::AnimationGraphComponentUVE>(entity)) {
+        return &entities.GetComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
+    }
+    Scene::AnimationGraphComponentUVE* found = nullptr;
+    entities.ForEachUVE<Scene::AnimationGraphComponentUVE>(
+        [&](const Scene::EntityUVE candidate, Scene::AnimationGraphComponentUVE& graph) {
+            if (found == nullptr && entities.HasComponentUVE<Scene::HierarchyComponentUVE>(candidate) &&
+                entities.GetComponentUVE<Scene::HierarchyComponentUVE>(candidate).parent == entity) {
+                found = &graph;
+            }
+        });
+    return found;
+}
+
+[[nodiscard]] Scene::AnimationParameterUVE* FindAnimationParameterUVE(Scene::AnimationGraphComponentUVE& graph,
+                                                                     const std::string_view name) {
+    for (Scene::AnimationParameterUVE& parameter : graph.parameters) {
+        if (parameter.name == name) {
+            return &parameter;
+        }
+    }
+    return nullptr;
 }
 
 void SetVisibleUVE(Scene::IEntityManagerUVE& entities, const Scene::EntityUVE entity, const bool shown) {
@@ -246,6 +274,31 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
     }
     if (name == "input.pressed" || name == "input.held" || name == "input.released") {
         return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+    }
+    // Animation Graph parameters: the object's graph, or the one under it, by parameter name.
+    if (name.starts_with("anim.") &&
+        FindAnimationGraphUVE(const_cast<Scene::IEntityManagerUVE&>(m_entityManager), m_entity) != nullptr) {
+        if (name == "anim.set_float") {
+            return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::FloatUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "anim.set_bool") {
+            return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::BoolUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "anim.set_int") {
+            return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::IntUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "anim.trigger") {
+            return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "anim.set_vector") {
+            return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::FloatUVE(), TypeUVE::FloatUVE(), TypeUVE::FloatUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "anim.get_float") {
+            return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::FloatUVE()};
+        }
+        if (name == "anim.get_bool") {
+            return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+        }
     }
     // Montages: the object's MontagePlayer, or the one under it. Plays by the montage file's name.
     if (name.starts_with("montage.") &&
@@ -628,6 +681,62 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
             name == "attributes.damage" ? Scene::DamageGameplayAttributeUVE(*found, amount)
                                         : Scene::HealGameplayAttributeUVE(*found, amount);
         return result.applied;
+    }
+    if (name.starts_with("anim.")) {
+        Scene::AnimationGraphComponentUVE* const graph = FindAnimationGraphUVE(m_entityManager, m_entity);
+        Scene::AnimationParameterUVE* const parameter =
+            graph != nullptr && !args.empty() ? FindAnimationParameterUVE(*graph, std::get<std::string>(args[0])) : nullptr;
+        if (name == "anim.get_float") {
+            return ValueUVE{parameter != nullptr ? static_cast<double>(parameter->value) : 0.0};
+        }
+        if (name == "anim.get_bool") {
+            return ValueUVE{parameter != nullptr && parameter->value != 0.0F};
+        }
+        if (parameter == nullptr) {
+            return ValueUVE{false};
+        }
+        // The engine writes a character parameter (speed, direction, in air, grounded) every frame:
+        // a script's value would be gone at once, so it is refused.
+        if (parameter->source != Scene::AnimationParameterSourceUVE::Script) {
+            UVE_WARNING("UVScript: animation parameter '{}' is set by the character, not by scripts", parameter->name);
+            return ValueUVE{false};
+        }
+        const auto number = [](const ValueUVE& value) {
+            if (const auto* d = std::get_if<double>(&value)) {
+                return static_cast<float>(*d);
+            }
+            if (const auto* i = std::get_if<std::int64_t>(&value)) {
+                return static_cast<float>(*i);
+            }
+            if (const auto* b = std::get_if<bool>(&value)) {
+                return *b ? 1.0F : 0.0F;
+            }
+            return 0.0F;
+        };
+        if (name == "anim.set_float" || name == "anim.set_int" || name == "anim.set_bool") {
+            const float value = number(args[1]);
+            if (!std::isfinite(value)) {
+                return ValueUVE{false};
+            }
+            parameter->value = value;
+            return ValueUVE{true};
+        }
+        if (name == "anim.trigger") {
+            parameter->value = 1.0F;
+            return ValueUVE{true};
+        }
+        if (name == "anim.set_vector") {
+            if (parameter->type != Scene::AnimationParameterTypeUVE::Vector3) {
+                return ValueUVE{false};
+            }
+            const Math::Vector3UVE value{number(args[1]), number(args[2]), number(args[3])};
+            if (!Math::IsFiniteUVE(value)) {
+                return ValueUVE{false};
+            }
+            parameter->vector = value;
+            return ValueUVE{true};
+        }
+        return ValueUVE{false};
     }
     if (name.starts_with("montage.")) {
         Scene::MontagePlayerComponentUVE* const player = FindMontagePlayerUVE(m_entityManager, m_entity);

@@ -70,6 +70,8 @@ public:
     /// A Widget Blueprint's widgets (name and kind): the palette's Widgets category lists each with
     /// the nodes it takes, its name already filled in.
     std::function<std::vector<std::pair<std::string, WidgetKindUVE>>()> widgetsProvider;
+    /// The entity's Animation Graph parameters, offered on the Anim nodes' Parameter pin.
+    std::function<std::vector<std::string>()> animParametersProvider;
 private:
     /// The catalogue key of a graph node ("ui_set_text"), empty for one that is not the engine's.
     [[nodiscard]] static std::string NodeKeyUVE(const prism::BlueprintNode& node);
