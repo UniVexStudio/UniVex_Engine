@@ -160,23 +160,27 @@ jobs:
           for apk in /tmp/apk-artifacts/${{ matrix.abi }}/*.apk; do
             echo "=== Inspecting $(basename "$apk") ==="
             ls -lh "$apk"
-            unzip -l "$apk" | grep -q "lib/${{ matrix.abi }}/libunivex_android.so"
-            unzip -l "$apk" | grep -q "lib/${{ matrix.abi }}/libc++_shared.so"
+            listing="$(unzip -l "$apk")"
+            grep -q "lib/${{ matrix.abi }}/libunivex_android.so" <<< "$listing"
+            grep -q "lib/${{ matrix.abi }}/libc++_shared.so" <<< "$listing"
             if [[ "$(basename "$apk")" != univex-demo-* ]]; then
-              unzip -l "$apk" | grep -q "assets/project-files.txt"
-              unzip -l "$apk" | grep -q "assets/project/.uvassetdb"
-              unzip -l "$apk" | grep -q "assets/project/cooked.json"
+              grep -q "assets/project-files.txt" <<< "$listing"
+              grep -q "assets/project/.uvassetdb" <<< "$listing"
+              grep -q "assets/project/cooked.json" <<< "$listing"
             fi
             tmp_so="$(mktemp -d)"
             unzip -o -j "$apk" "lib/${{ matrix.abi }}/libunivex_android.so" -d "$tmp_so" >/dev/null
-            "$ndk_bin/llvm-readelf" -h "$tmp_so/libunivex_android.so" | grep -q "$expected_arch"
-            load_segments="$("$ndk_bin/llvm-readelf" -l "$tmp_so/libunivex_android.so" | grep 'LOAD')"
-            echo "$load_segments" | grep -qE "0x4000[[:space:]]*$"
-            if echo "$load_segments" | grep -qvE "0x4000[[:space:]]*$"; then
+            elf_header="$("$ndk_bin/llvm-readelf" -h "$tmp_so/libunivex_android.so")"
+            grep -q "$expected_arch" <<< "$elf_header"
+            elf_phdrs="$("$ndk_bin/llvm-readelf" -l "$tmp_so/libunivex_android.so")"
+            load_segments="$(grep 'LOAD' <<< "$elf_phdrs")"
+            grep -qE "0x4000[[:space:]]*$" <<< "$load_segments"
+            if grep -qvE "0x4000[[:space:]]*$" <<< "$load_segments"; then
               echo "ERROR: Found LOAD segment not aligned to 16 KB (0x4000)"
               exit 1
             fi
-            "$ndk_bin/llvm-nm" -D "$tmp_so/libunivex_android.so" | grep -q "T ANativeActivity_onCreate"
+            dyn_syms="$("$ndk_bin/llvm-nm" -D "$tmp_so/libunivex_android.so")"
+            grep -q "T ANativeActivity_onCreate" <<< "$dyn_syms"
             rm -rf "$tmp_so"
           done
 
