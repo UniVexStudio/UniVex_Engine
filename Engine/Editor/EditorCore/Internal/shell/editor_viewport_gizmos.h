@@ -102,6 +102,8 @@ private:
     prism::Rect m_outlineRect{};
     std::array<int, 2> m_outlineSize{0, 0};
     Math::Vector3UVE m_baselineScale{1.0F, 1.0F, 1.0F};
+    /// What the overlay last painted, hashed (see SyncUVE): unchanged, it is not painted again.
+    std::uint64_t m_drawnHash = 0U;
 };
 
 } // namespace UVE::Editor

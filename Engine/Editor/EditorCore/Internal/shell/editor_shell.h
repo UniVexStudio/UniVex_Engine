@@ -148,6 +148,11 @@ private:
     int m_viewWarmFrame = 0;
     std::size_t m_renderLoadPeak = 0U;
     bool m_renderLoadDone = false;
+    std::uint64_t m_outlinerSelection = 0U;
+    double m_frameWorkSeconds = 0.0;
+    std::size_t m_frameCount = 0U;
+    std::chrono::steady_clock::time_point m_frameReportAt{};
+    std::chrono::steady_clock::time_point m_outlinerCheckedAt{};
     bool m_uploadBudgetSet = false;
     std::vector<std::string> m_renderLoadNames;
     EditorHostUVE::ViewImageUVE m_lastView{};

@@ -2,6 +2,7 @@
 
 #include "renderer_2d.h"
 
+#include <chrono>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -210,9 +211,12 @@ protected:
     void PollUntilTextureReadyUVE(Asset::AssetGuidUVE guid) {
         Asset::AssetHandleUVE<Asset::TextureAssetUVE> handle =
             assetManager.LoadUVE<Asset::TextureAssetUVE>(guid, assetDatabase);
-        for (int iteration = 0; iteration < kMaxPollIterationsUVE; ++iteration) {
-            if (handle.IsReadyUVE()) {
-                break;
+        // The load runs on the asset manager's worker: wait for it by the clock, not by a count of
+        // spins, which a busy machine can finish before the worker has run at all.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        for (int iteration = 0; !handle.IsReadyUVE() && std::chrono::steady_clock::now() < deadline; ++iteration) {
+            if (iteration >= kMaxPollIterationsUVE) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
         ASSERT_TRUE(handle.IsReadyUVE());

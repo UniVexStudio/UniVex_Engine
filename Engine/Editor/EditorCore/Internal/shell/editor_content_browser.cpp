@@ -740,14 +740,15 @@ void EditorContentBrowserUVE::RebuildFavoritesUVE() {
     if (!m_favorites) {
         return;
     }
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    std::uint64_t h = snapshot.refreshGeneration;
+    // The project listing is copied only when the favourites have to be built again.
+    std::uint64_t h = m_editor.m_services->GetProjectFileIndexUVE().GetRefreshGenerationUVE();
     for (const std::filesystem::path& p : m_editor.m_favoriteProjectPaths) {
         HashUVE(h, p.generic_string());
     }
     if (h == m_favoriteSignature) {
         return;
     }
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     m_favoriteSignature = h;
     m_syncingFolders = true;
     m_favorites->clear();
@@ -780,13 +781,13 @@ void EditorContentBrowserUVE::RebuildFavoritesUVE() {
 }
 
 void EditorContentBrowserUVE::RebuildFoldersUVE() {
-    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    std::uint64_t h = snapshot.refreshGeneration;
+    std::uint64_t h = m_editor.m_services->GetProjectFileIndexUVE().GetRefreshGenerationUVE();
     HashUVE(h, m_editor.m_contentTreeFilter);
     HashUVE(h, m_editor.m_contentBrowserDirectory.generic_string());
     if (h == m_folderSignature || !m_folders) {
         return;
     }
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     m_folderSignature = h;
     m_syncingFolders = true;
     if (m_shelves) {
@@ -847,10 +848,9 @@ void EditorContentBrowserUVE::RebuildItemsUVE() {
         return;
     }
     Asset::IProjectFileIndexUVE& index = m_editor.m_services->GetProjectFileIndexUVE();
-    const Asset::ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
-    m_editor.ReconcileContentBrowserDirectoryUVE(snapshot);
-    m_contentRoot = snapshot.contentRoot;
-    std::uint64_t h = snapshot.refreshGeneration;
+    // The project listing is copied only when the tiles (or the pick) have to change: an unchanged
+    // folder costs a few hashes a frame, not a copy of every file the project has.
+    std::uint64_t h = index.GetRefreshGenerationUVE();
     // Clip icons drawn in the background: the tiles take the new ones a few times a second at most.
     {
         const auto now = std::chrono::steady_clock::now();
@@ -882,10 +882,13 @@ void EditorContentBrowserUVE::RebuildItemsUVE() {
     if (h == m_tileSignature) {
         if (pick != m_pickSignature) {
             m_pickSignature = pick;
-            UpdatePickUVE(snapshot);
+            UpdatePickUVE(index.GetSnapshotUVE());
         }
         return;
     }
+    const Asset::ProjectFileSnapshotUVE snapshot = index.GetSnapshotUVE();
+    m_editor.ReconcileContentBrowserDirectoryUVE(snapshot);
+    m_contentRoot = snapshot.contentRoot;
     m_tileSignature = h;
     m_pickSignature = pick;
 

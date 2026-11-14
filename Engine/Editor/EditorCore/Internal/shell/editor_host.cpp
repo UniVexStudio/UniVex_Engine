@@ -1009,8 +1009,16 @@ void EditorHostUVE::RenderUVE(const std::span<const ViewImageUVE> views) {
     if (!m_ready) {
         return;
     }
-    // UI into the backend's own texture, then composited into the default framebuffer.
-    static_cast<void>(m_app->render());
+    // UI into the backend's own texture, then composited into the default framebuffer. Only when
+    // something in it changed (a widget invalidated, its layout or size moved) - and at least four
+    // times a second, for anything that changed without saying so; the texture keeps the last frame
+    // in between. No read-back: the frame never leaves the GPU.
+    const auto now = std::chrono::steady_clock::now();
+    if (m_app->needsRender() || m_app->paintGeneration() != m_mainPaintedGen || now - m_mainPaintedAt > std::chrono::milliseconds(250)) {
+        m_app->renderFrame();
+        m_mainPaintedGen = m_app->paintGeneration();
+        m_mainPaintedAt = now;
+    }
     CompositeUVE(*m_main, m_backend->colorTexture(), m_compositor->vao, views);
     EndInputFrameUVE(*m_main);
 }
@@ -1038,6 +1046,12 @@ void EditorHostUVE::RenderWindowUVE(const int id, const std::span<const ViewImag
     glfwSwapBuffers(w.window);
     glfwMakeContextCurrent(m_main->window);
     EndInputFrameUVE(w);
+}
+
+bool EditorHostUVE::IsWindowFocusedUVE(const int id) const {
+    const auto found = m_windows.find(id);
+    return m_ready && found != m_windows.end() && found->second->window != nullptr &&
+           glfwGetWindowAttrib(found->second->window, GLFW_FOCUSED) != 0;
 }
 
 bool EditorHostUVE::QuitRequestedUVE() const noexcept {

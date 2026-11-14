@@ -13,6 +13,7 @@
 #include "prism/Theme.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
 #include <functional>
 #include <array>
@@ -252,7 +253,42 @@ void EditorViewportGizmosUVE::SyncUVE() {
             visit(root);
         }
     }
-    invalidate();
+    // Repainted only when what it draws moved: the camera, the view, the gizmo, the lines and
+    // triangles, the billboards, the outline, or the scene depth the grid is hidden by. A still view
+    // costs the UI nothing.
+    std::uint64_t hash = 1469598103934665603ULL;
+    const auto mix = [&hash](const void* data, const std::size_t bytes) {
+        const auto* p = static_cast<const unsigned char*>(data);
+        for (std::size_t i = 0U; i < bytes; ++i) {
+            hash = (hash ^ p[i]) * 1099511628211ULL;
+        }
+    };
+    mix(&m_camera, sizeof(m_camera));
+    const prism::Rect view = rect();
+    mix(&view, sizeof(view));
+    mix(&state.gizmoPivot, sizeof(state.gizmoPivot));
+    mix(&state.gizmoMode, sizeof(state.gizmoMode));
+    const std::size_t counts[4] = {m_lines.size(), m_triangles.size(), m_billboards.size(), m_outlinePixels.size()};
+    mix(counts, sizeof(counts));
+    for (const BillboardUVE& board : m_billboards) {
+        mix(&board.position, sizeof(board.position));
+    }
+    if (!m_lines.empty()) {
+        mix(m_lines.data(), std::min<std::size_t>(m_lines.size(), 64U) * sizeof(m_lines.front()));
+    }
+    mix(&m_outlineRect, sizeof(m_outlineRect));
+    if (m_depth.data != nullptr) {
+        const std::size_t total = static_cast<std::size_t>(m_depth.width) * static_cast<std::size_t>(m_depth.height);
+        const std::size_t stride = std::max<std::size_t>(1U, total / 512U);
+        for (std::size_t i = 0U; i < total; i += stride) {
+            mix(&m_depth.data[i], sizeof(m_depth.data[i]));
+        }
+    }
+    mix(&m_gridVisible, sizeof(m_gridVisible));
+    if (hash != m_drawnHash) {
+        m_drawnHash = hash;
+        invalidate();
+    }
 }
 
 int EditorViewportGizmosUVE::BillboardAtUVE(const prism::Vec2 p) const {

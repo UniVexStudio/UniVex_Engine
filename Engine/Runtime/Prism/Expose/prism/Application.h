@@ -76,6 +76,8 @@ public:
   // Runs timers and layout. Returns true when the UI changed and a new frame should be rendered.
   bool tick();
   bool needsRender() const { return m_dirty || m_layoutDirty; }
+  // Bumped by every invalidate (any window's): a host that keeps the last frame repaints only when it moved.
+  uint64_t paintGeneration() const { return m_paintGen; }
   // --- rendering back ends. By default the built-in CPU canvas is used. With a backend set, frames are recorded
   // to a DrawList and submitted to it. Hosts with their own renderer can skip backends and call renderToDrawList().
   void setRenderBackend(std::shared_ptr<RenderBackend> backend);

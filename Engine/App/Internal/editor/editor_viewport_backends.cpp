@@ -1451,8 +1451,32 @@ public:
             if (!cachedSelectionTriangles_.empty()) {
                 if (hostGizmos) {
                     const univex::render::SelectionOutlineSettings& outline = renderPass_->SelectionOutlineSettingsUVE();
-                    if (renderPass_->ReadSelectionMaskUVE(camera_, width, height, cachedSelectionTriangles_,
-                                                          overlayState.selectionMask)) {
+                    // The mask is read back only when it can have changed: the camera, the view's size
+                    // or the selected objects' triangles. Otherwise last frame's is used again.
+                    std::uint64_t maskKey = 1469598103934665603ULL;
+                    const auto mixKey = [&maskKey](const void* data, const std::size_t size) {
+                        const auto* p = static_cast<const unsigned char*>(data);
+                        for (std::size_t i = 0U; i < size; ++i) {
+                            maskKey = (maskKey ^ p[i]) * 1099511628211ULL;
+                        }
+                    };
+                    const univex::math::Mat4 viewProjection = camera_.ViewProjection(
+                        static_cast<float>(width) / static_cast<float>(std::max(height, 1)));
+                    mixKey(&viewProjection, sizeof(viewProjection));
+                    const int sizes[2] = {width, height};
+                    mixKey(sizes, sizeof(sizes));
+                    mixKey(cachedSelectionTriangles_.data(), cachedSelectionTriangles_.size() * sizeof(cachedSelectionTriangles_.front()));
+                    bool maskRead = false;
+                    if (maskKey == lastMaskKey_ && !lastMask_.empty()) {
+                        overlayState.selectionMask = lastMask_;
+                        maskRead = true;
+                    } else if (renderPass_->ReadSelectionMaskUVE(camera_, width, height, cachedSelectionTriangles_,
+                                                                 overlayState.selectionMask)) {
+                        lastMask_ = overlayState.selectionMask;
+                        lastMaskKey_ = maskKey;
+                        maskRead = true;
+                    }
+                    if (maskRead) {
                         overlayState.selectionMaskWidth = width;
                         overlayState.selectionMaskHeight = height;
                         overlayState.selectionOutlineRadius =
@@ -1526,7 +1550,9 @@ private:
 
         GLint maxSamples = 0;
         glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
-        const GLsizei samples = std::min(maxSamples, 8);
+        // 4x is the sweet spot: 8x doubles the bandwidth of every overlay pass for edges few can tell
+        // apart, and integrated laptop GPUs feel it.
+        const GLsizei samples = std::min(maxSamples, 4);
 
         glGenFramebuffers(1, &msaaFbo_);
         glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
@@ -2968,21 +2994,48 @@ private:
         glBindVertexArray(0);
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        std::vector<float> rows(static_cast<std::size_t>(hostDepthWidth_) * static_cast<std::size_t>(hostDepthHeight_));
+        // Read back through two pixel-pack buffers in turn: this frame's depth is copied on the GPU
+        // into one while last frame's, long finished, is read from the other. The CPU never waits
+        // for the GPU, and the gizmos' occlusion is one frame behind, which nobody can see.
+        const std::size_t count = static_cast<std::size_t>(hostDepthWidth_) * static_cast<std::size_t>(hostDepthHeight_);
+        const auto bytes = static_cast<GLsizeiptr>(count * sizeof(float));
+        if (hostDepthPbo_[0] == 0U) {
+            glGenBuffers(2, hostDepthPbo_.data());
+        }
+        for (std::size_t i = 0U; i < 2U; ++i) {
+            if (hostDepthPboBytes_[i] != bytes) {
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, hostDepthPbo_[i]);
+                glBufferData(GL_PIXEL_PACK_BUFFER, bytes, nullptr, GL_STREAM_READ);
+                hostDepthPboBytes_[i] = bytes;
+                hostDepthPboFilled_[i] = false;
+            }
+        }
+        const std::size_t write = hostDepthPboNext_;
+        const std::size_t read = 1U - write;
         GLint packAlignment = 4;
         glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
         glPixelStorei(GL_PACK_ALIGNMENT, 4);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, hostDepthFbo_);
-        glReadPixels(0, 0, hostDepthWidth_, hostDepthHeight_, GL_RED, GL_FLOAT, rows.data());
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, hostDepthPbo_[write]);
+        glReadPixels(0, 0, hostDepthWidth_, hostDepthHeight_, GL_RED, GL_FLOAT, nullptr);
+        hostDepthPboFilled_[write] = true;
         glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
-        overlayState.sceneDepth.resize(rows.size());
-        const std::size_t stride = static_cast<std::size_t>(hostDepthWidth_);
-        for (int y = 0; y < hostDepthHeight_; ++y) {
-            std::copy_n(rows.data() + static_cast<std::size_t>(hostDepthHeight_ - 1 - y) * stride, stride,
-                        overlayState.sceneDepth.data() + static_cast<std::size_t>(y) * stride);
+        if (hostDepthPboFilled_[read]) {
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, hostDepthPbo_[read]);
+            if (const auto* const rows = static_cast<const float*>(glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, bytes, GL_MAP_READ_BIT))) {
+                overlayState.sceneDepth.resize(count);
+                const std::size_t stride = static_cast<std::size_t>(hostDepthWidth_);
+                for (int y = 0; y < hostDepthHeight_; ++y) {
+                    std::copy_n(rows + static_cast<std::size_t>(hostDepthHeight_ - 1 - y) * stride, stride,
+                                overlayState.sceneDepth.data() + static_cast<std::size_t>(y) * stride);
+                }
+                glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+                overlayState.sceneDepthWidth = hostDepthWidth_;
+                overlayState.sceneDepthHeight = hostDepthHeight_;
+            }
         }
-        overlayState.sceneDepthWidth = hostDepthWidth_;
-        overlayState.sceneDepthHeight = hostDepthHeight_;
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        hostDepthPboNext_ = read;
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(previousDrawFbo));
         glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousReadFbo));
@@ -3031,6 +3084,10 @@ private:
     bool hostDepthFailed_ = false;
     GLuint hostDepthFbo_ = 0U;
     GLuint hostDepthTexture_ = 0U;
+    std::array<GLuint, 2> hostDepthPbo_{};
+    std::array<GLsizeiptr, 2> hostDepthPboBytes_{};
+    std::array<bool, 2> hostDepthPboFilled_{};
+    std::size_t hostDepthPboNext_ = 0U;
     int hostDepthWidth_ = 0;
     int hostDepthHeight_ = 0;
 
@@ -3066,6 +3123,9 @@ private:
     std::vector<UVE::Scene::EntityUVE> lastSelectedEntities_;
     UVE::Scene::EntityUVE lastSelectedEntity_ = UVE::Scene::kInvalidEntityUVE;
     std::vector<univex::render::SelectionOutlineVertex> cachedSelectionTriangles_;
+    /// The last selection mask read back, and what it was read for (camera, size, triangles).
+    std::vector<std::uint8_t> lastMask_;
+    std::uint64_t lastMaskKey_ = 0U;
     struct SelectedEntitySnapshotUVE {
         UVE::Scene::EntityUVE entity;
         UVE::Math::Vector3UVE position;
