@@ -119,6 +119,9 @@ TimelineScaleUVE KeyframeViewUVE::ScaleUVE() const {
 }
 
 double KeyframeViewUVE::SnapUVE(const double seconds) const {
+    if (!m_panel.EditorRefUVE().m_timeline.snapToFrames) {
+        return seconds;
+    }
     const double rate = m_panel.ViewUVE().frameRate;
     return std::round(seconds * rate) / rate;
 }
@@ -159,6 +162,40 @@ void KeyframeViewUVE::FitUVE() {
     editor.m_timeline.pixelsPerSecond = 0.0F;
     editor.m_timeline.scrollSeconds = 0.0;
     invalidate();
+}
+
+void KeyframeViewUVE::ZoomUVE(const double factor) {
+    EditorUVE& editor = m_panel.EditorRefUVE();
+    const EditorUVE::AnimationTimelineViewUVE& view = m_panel.ResyncUVE();
+    if (view.clip == nullptr || !(factor > 0.0)) {
+        return;
+    }
+    const TimelineScaleUVE scale = ScaleUVE();
+    const prism::Rect keys = KeysRectUVE();
+    const double fit = static_cast<double>(keys.w) / std::max(1.0e-3, view.durationSeconds);
+    const double visible = static_cast<double>(keys.w) / scale.pixelsPerSecond;
+    const double playhead = editor.m_timeline.timeSeconds;
+    // Round the playhead while it is on screen, else round the middle of what is shown.
+    const double anchor = playhead >= scale.scrollSeconds && playhead <= scale.scrollSeconds + visible ? playhead
+                                                                                                        : scale.scrollSeconds + visible * 0.5;
+    const float anchorX = static_cast<float>(scale.left + (anchor - scale.scrollSeconds) * scale.pixelsPerSecond);
+    const double next = std::clamp(scale.pixelsPerSecond * factor, fit, 4000.0);
+    editor.m_timeline.pixelsPerSecond = next <= fit * 1.001 ? 0.0F : static_cast<float>(next);
+    editor.m_timeline.scrollSeconds = anchor - static_cast<double>(anchorX - keys.x) / next;
+    invalidate();
+}
+
+void KeyframeViewUVE::KeepPlayheadInViewUVE() {
+    EditorUVE& editor = m_panel.EditorRefUVE();
+    if (editor.m_timeline.pixelsPerSecond <= 0.0F) {
+        return;   // fitted: the whole clip is on screen
+    }
+    const TimelineScaleUVE scale = ScaleUVE();
+    const double visible = static_cast<double>(KeysRectUVE().w) / scale.pixelsPerSecond;
+    const double playhead = editor.m_timeline.timeSeconds;
+    if (playhead < scale.scrollSeconds || playhead > scale.scrollSeconds + visible * 0.95) {
+        editor.m_timeline.scrollSeconds = std::max(0.0, playhead - visible * 0.05);
+    }
 }
 
 // ---------------------------------------------------------------------------------------- paint

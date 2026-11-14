@@ -108,14 +108,22 @@ void DrawTimelineRowHeaderUVE(prism::Canvas& c, const prism::Rect header, const 
 
 void DrawTimelineKeyUVE(prism::Canvas& c, const prism::Vec2 centre, const float half, const prism::Color color,
                         const bool selected) {
-    if (selected) {
-        const float o = half + 2.0F;
-        const prism::Vec2 ring[] = {{centre.x, centre.y - o}, {centre.x + o, centre.y}, {centre.x, centre.y + o}, {centre.x - o, centre.y}};
-        c.fillPolygon(ring, prism::Color(255, 255, 255));
-    }
-    const prism::Vec2 diamond[] = {{centre.x, centre.y - half}, {centre.x + half, centre.y}, {centre.x, centre.y + half},
-                                   {centre.x - half, centre.y}};
-    c.fillPolygon(diamond, selected ? prism::Color(255, 226, 120) : color);
+    const auto diamond = [&c, centre](const float h, const prism::Color fill, const float dy = 0.0F) {
+        const prism::Vec2 points[] = {{centre.x, centre.y - h + dy}, {centre.x + h, centre.y + dy}, {centre.x, centre.y + h + dy},
+                                      {centre.x - h, centre.y + dy}};
+        c.fillPolygon(points, fill);
+    };
+    // A dark rim first, so a key reads on any row colour (and two touching keys stay two).
+    diamond(half + 1.5F, selected ? prism::Color(255, 255, 255) : prism::Color(12, 13, 16, 230));
+    const prism::Color fill = selected ? prism::Color(255, 186, 64) : color;
+    diamond(half, fill);
+    // A lighter cap on the upper half: the key looks cut, not flat.
+    const auto lighter = [](const std::uint8_t v) { return static_cast<std::uint8_t>(std::min(255, v + (255 - v) / 2)); };
+    const prism::Color cap{lighter(fill.r), lighter(fill.g), lighter(fill.b), 150};
+    const float h = half * 0.45F;
+    const prism::Vec2 top[] = {{centre.x, centre.y - half + 1.0F}, {centre.x + h, centre.y - half + 1.0F + h},
+                               {centre.x - h, centre.y - half + 1.0F + h}};
+    c.fillPolygon(top, cap);
 }
 
 } // namespace UVE::Editor

@@ -245,6 +245,9 @@ bool EditorUVE::SaveEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return false;
     }
+    // The entity is saved in its own pose, never the pose the Sequencer is previewing on it (the
+    // preview writes it again next frame).
+    RestoreAnimationTimelineObjectUVE();
     if (m_saveOpenBlueprintUVE) {
         m_saveOpenBlueprintUVE();   // Ctrl+S saves the graph and the entity together
     }

@@ -58,6 +58,7 @@ void EditorUVE::StopAnimationTimelinePreviewUVE() {
         player.currentTimeSeconds = 0.0F;
         player.hasStartPose = false;
     }
+    RestoreAnimationTimelineObjectUVE();
     m_timeline.player = Scene::kInvalidEntityUVE;
     if (m_timeline.previewSkeleton == Scene::kInvalidEntityUVE) {
         return;
@@ -327,7 +328,7 @@ void EditorUVE::StepAnimationTimelineUVE(const double deltaSeconds) {
     const double duration = view.durationSeconds;
     if (m_timeline.playing) {
         const double speed = std::isfinite(player.speed) && player.speed != 0.0F ? player.speed : 1.0;
-        m_timeline.timeSeconds += deltaSeconds * speed * static_cast<double>(driver.speedScale);
+        m_timeline.timeSeconds += deltaSeconds * speed * static_cast<double>(driver.speedScale) * m_timeline.playbackRate;
         if (m_timeline.loop) {
             m_timeline.timeSeconds = std::fmod(m_timeline.timeSeconds, duration);
             if (m_timeline.timeSeconds < 0.0) {
@@ -351,6 +352,191 @@ void EditorUVE::StepAnimationTimelineUVE(const double deltaSeconds) {
         }
     }
     PreviewAnimationTimelineMorphsUVE(*view.clip, view.previewRoot);
+    PreviewAnimationTimelineObjectUVE(*view.clip);
+}
+
+namespace {
+
+[[nodiscard]] bool SamePoseUVE(const Scene::TransformComponentUVE& a, const Scene::TransformComponentUVE& b) noexcept {
+    const auto near = [](const float x, const float y) { return std::abs(x - y) <= 1.0e-5F; };
+    return near(a.localPosition.x, b.localPosition.x) && near(a.localPosition.y, b.localPosition.y) &&
+           near(a.localPosition.z, b.localPosition.z) && near(a.localScale.x, b.localScale.x) && near(a.localScale.y, b.localScale.y) &&
+           near(a.localScale.z, b.localScale.z) && near(a.localRotation.x, b.localRotation.x) &&
+           near(a.localRotation.y, b.localRotation.y) && near(a.localRotation.z, b.localRotation.z) &&
+           near(a.localRotation.w, b.localRotation.w);
+}
+
+/// A key's pose as the object's transform (its authored Euler angles follow the rotation).
+void WritePoseToTransformUVE(const Asset::AnimationAssetPoseUVE& pose, Scene::TransformComponentUVE& transform) {
+    transform.localPosition = pose.position;
+    Math::QuaternionUVE rotation{};
+    if (Math::TryNormalizeUVE(pose.rotation, rotation)) {
+        transform.localRotation = rotation;
+        Math::Vector3UVE euler{};
+        if (Math::TryToEulerUVE(rotation, euler)) {
+            transform.localEulerRadians = euler;
+        }
+    }
+    transform.localScale = pose.scale;
+}
+
+/// Places a key with `pose` on the clip's Transform track at `seconds` (snapped to the clip's
+/// frames), replacing a key already there. The clip grows to reach a key past its end.
+void SetObjectKeyUVE(Asset::AnimationClipAssetUVE& clip, const double seconds, const double frameRate,
+                     const Asset::AnimationAssetPoseUVE& pose) {
+    const double rate = frameRate > 0.0 ? frameRate : 30.0;
+    const double time = std::max(0.0, std::round(seconds * rate) / rate);
+    auto& samples = clip.samples;
+    const auto at = std::find_if(samples.begin(), samples.end(), [time, rate](const Asset::AnimationAssetSampleUVE& s) {
+        return std::abs(s.timeSeconds - time) < 0.5 / rate;
+    });
+    if (at != samples.end()) {
+        at->pose = pose;
+    } else {
+        Asset::AnimationAssetSampleUVE sample;
+        sample.timeSeconds = time;
+        sample.pose = pose;
+        samples.insert(std::upper_bound(samples.begin(), samples.end(), time,
+                                        [](const double t, const Asset::AnimationAssetSampleUVE& s) { return t < s.timeSeconds; }),
+                       sample);
+    }
+    clip.durationSeconds = std::max(clip.durationSeconds, time);
+}
+
+} // namespace
+
+Scene::EntityUVE EditorUVE::AnimationTimelineObjectTargetUVE() const {
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE player = m_timeline.player;
+    if (player == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(player)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    // The same object the engine's player moves: the driver's target, else the player's parent.
+    Scene::EntityUVE target = entityManager.HasComponentUVE<Scene::AnimationDriverComponentUVE>(player)
+                                  ? entityManager.GetComponentUVE<Scene::AnimationDriverComponentUVE>(player).target
+                                  : Scene::kInvalidEntityUVE;
+    if (target == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(target)) {
+        target = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(player)
+                     ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(player).parent
+                     : Scene::kInvalidEntityUVE;
+    }
+    if (target == Scene::kInvalidEntityUVE || target == player || !entityManager.IsAliveUVE(target) ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(target)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    return target;
+}
+
+bool EditorUVE::CanKeyAnimationTimelineObjectUVE(const Scene::EntityUVE entity) const {
+    return m_timeline.panelShown && m_timeline.clip != nullptr && entity != Scene::kInvalidEntityUVE &&
+           entity == AnimationTimelineObjectTargetUVE();
+}
+
+bool EditorUVE::HasAnimationTimelineObjectKeyAtPlayheadUVE() const {
+    if (m_timeline.clip == nullptr) {
+        return false;
+    }
+    const double rate = std::max(1.0, EstimateTimelineFrameRateUVE(*m_timeline.clip));
+    const double time = m_timeline.timeSeconds;
+    return std::ranges::any_of(m_timeline.clip->samples,
+                               [time, rate](const Asset::AnimationAssetSampleUVE& s) { return std::abs(s.timeSeconds - time) < 0.5 / rate; });
+}
+
+bool EditorUVE::KeyAnimationTimelineObjectUVE() {
+    const Scene::EntityUVE target = AnimationTimelineObjectTargetUVE();
+    if (m_timeline.clip == nullptr || target == Scene::kInvalidEntityUVE) {
+        m_timeline.status = "Nothing to key: the player animates no object (set its Animation Driver's Target).";
+        return false;
+    }
+    const Scene::TransformComponentUVE& now = m_services->GetEntityManagerUVE().GetComponentUVE<Scene::TransformComponentUVE>(target);
+    Asset::AnimationAssetPoseUVE pose;
+    pose.position = now.localPosition;
+    pose.rotation = now.localRotation;
+    pose.scale = now.localScale;
+    const double at = m_timeline.timeSeconds;
+    const double rate = EstimateTimelineFrameRateUVE(*m_timeline.clip);
+    const bool changed = EditAnimationTimelineClipUVE([&](Asset::AnimationClipAssetUVE& next) { SetObjectKeyUVE(next, at, rate, pose); });
+    if (changed) {
+        // What is on the object now is what the clip says here: no edit left to detect.
+        m_timeline.objectLast = now;
+        m_timeline.objectLastTime = at;
+        m_timeline.objectLastClip = m_timeline.clip.get();
+        m_timeline.selectedKeys = {ClipKeyUVE{std::string{}, std::round(at * rate) / rate}};
+        m_timeline.status = "Transform keyed at " + std::to_string(static_cast<long>(std::lround(at * rate))) + " (frame)";
+    }
+    return changed;
+}
+
+void EditorUVE::SetAnimationTimelineRecordingUVE(const bool recording) {
+    m_timeline.recording = recording;
+    m_timeline.status = recording ? "Recording: move the animated object to key it at the playhead" : "Recording stopped";
+}
+
+void EditorUVE::RestoreAnimationTimelineObjectUVE() {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (m_timeline.objectApplied && m_timeline.objectTarget != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(m_timeline.objectTarget) &&
+        entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_timeline.objectTarget)) {
+        entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_timeline.objectTarget) = m_timeline.objectRest;
+        if (entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(m_timeline.objectTarget)) {
+            entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(m_timeline.objectTarget).dirty = true;
+        }
+    }
+    m_timeline.objectApplied = false;
+    m_timeline.objectTarget = Scene::kInvalidEntityUVE;
+    m_timeline.objectLastTime = -1.0;
+    m_timeline.objectLastClip = nullptr;
+}
+
+void EditorUVE::PreviewAnimationTimelineObjectUVE(const Asset::AnimationClipAssetUVE& clip) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE target = AnimationTimelineObjectTargetUVE();
+    if (target != m_timeline.objectTarget) {
+        RestoreAnimationTimelineObjectUVE();
+        m_timeline.objectTarget = target;
+    }
+    if (target == Scene::kInvalidEntityUVE) {
+        return;
+    }
+    Scene::TransformComponentUVE& transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(target);
+    if (!m_timeline.objectApplied) {
+        m_timeline.objectRest = transform;
+    }
+    // Moved by hand since the preview last wrote it (the gizmo, the Details fields): recording keys
+    // it at the playhead; otherwise it is the object's own new pose, kept as it is.
+    const bool moved = m_timeline.objectApplied && !SamePoseUVE(transform, m_timeline.objectLast);
+    if (moved && !m_timeline.playing) {
+        if (m_timeline.recording) {
+            static_cast<void>(KeyAnimationTimelineObjectUVE());
+        } else {
+            m_timeline.objectRest = transform;
+            m_timeline.objectLast = transform;
+        }
+        return;
+    }
+    if (clip.samples.empty()) {
+        // No keys yet: nothing to show, but watched, so the first move under Record keys it.
+        m_timeline.objectApplied = true;
+        m_timeline.objectLast = transform;
+        return;
+    }
+    // Written again only when it would change: the playhead moved, the keys changed, or playing.
+    if (m_timeline.objectApplied && !m_timeline.playing && m_timeline.objectLastTime == m_timeline.timeSeconds &&
+        m_timeline.objectLastClip == &clip) {
+        return;
+    }
+    const Core::TransformPoseUVE sampled = Scene::SampleAnimationTrackUVE(clip.samples, m_timeline.timeSeconds);
+    Asset::AnimationAssetPoseUVE pose;
+    pose.position = sampled.position;
+    pose.rotation = sampled.rotation;
+    pose.scale = sampled.scale;
+    WritePoseToTransformUVE(pose, transform);
+    if (entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(target)) {
+        entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(target).dirty = true;
+    }
+    m_timeline.objectApplied = true;
+    m_timeline.objectLast = transform;
+    m_timeline.objectLastTime = m_timeline.timeSeconds;
+    m_timeline.objectLastClip = &clip;
 }
 
 namespace {
