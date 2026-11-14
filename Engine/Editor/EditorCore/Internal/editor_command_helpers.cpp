@@ -6,56 +6,53 @@
 #include <string>
 #include <utility>
 
-#include <imgui.h>
-
 #include "editor_commands.h"
 
 namespace UVE::Editor {
 namespace {
 
-/// The keys a shortcut may use, with the names they are shown and stored by. Dear ImGui's own
-/// names are for debugging only and may change; these do not.
+/// The keys a shortcut may use, with the names they are shown and stored by.
 struct ShortcutKeyNameUVE final {
-    ImGuiKey key;
+    EditorKeyUVE key;
     std::string_view name;
 };
 
 constexpr std::array kShortcutKeysUVE{
-    ShortcutKeyNameUVE{ImGuiKey_A, "A"},           ShortcutKeyNameUVE{ImGuiKey_B, "B"},
-    ShortcutKeyNameUVE{ImGuiKey_C, "C"},           ShortcutKeyNameUVE{ImGuiKey_D, "D"},
-    ShortcutKeyNameUVE{ImGuiKey_E, "E"},           ShortcutKeyNameUVE{ImGuiKey_F, "F"},
-    ShortcutKeyNameUVE{ImGuiKey_G, "G"},           ShortcutKeyNameUVE{ImGuiKey_H, "H"},
-    ShortcutKeyNameUVE{ImGuiKey_I, "I"},           ShortcutKeyNameUVE{ImGuiKey_J, "J"},
-    ShortcutKeyNameUVE{ImGuiKey_K, "K"},           ShortcutKeyNameUVE{ImGuiKey_L, "L"},
-    ShortcutKeyNameUVE{ImGuiKey_M, "M"},           ShortcutKeyNameUVE{ImGuiKey_N, "N"},
-    ShortcutKeyNameUVE{ImGuiKey_O, "O"},           ShortcutKeyNameUVE{ImGuiKey_P, "P"},
-    ShortcutKeyNameUVE{ImGuiKey_Q, "Q"},           ShortcutKeyNameUVE{ImGuiKey_R, "R"},
-    ShortcutKeyNameUVE{ImGuiKey_S, "S"},           ShortcutKeyNameUVE{ImGuiKey_T, "T"},
-    ShortcutKeyNameUVE{ImGuiKey_U, "U"},           ShortcutKeyNameUVE{ImGuiKey_V, "V"},
-    ShortcutKeyNameUVE{ImGuiKey_W, "W"},           ShortcutKeyNameUVE{ImGuiKey_X, "X"},
-    ShortcutKeyNameUVE{ImGuiKey_Y, "Y"},           ShortcutKeyNameUVE{ImGuiKey_Z, "Z"},
-    ShortcutKeyNameUVE{ImGuiKey_0, "0"},           ShortcutKeyNameUVE{ImGuiKey_1, "1"},
-    ShortcutKeyNameUVE{ImGuiKey_2, "2"},           ShortcutKeyNameUVE{ImGuiKey_3, "3"},
-    ShortcutKeyNameUVE{ImGuiKey_4, "4"},           ShortcutKeyNameUVE{ImGuiKey_5, "5"},
-    ShortcutKeyNameUVE{ImGuiKey_6, "6"},           ShortcutKeyNameUVE{ImGuiKey_7, "7"},
-    ShortcutKeyNameUVE{ImGuiKey_8, "8"},           ShortcutKeyNameUVE{ImGuiKey_9, "9"},
-    ShortcutKeyNameUVE{ImGuiKey_F1, "F1"},         ShortcutKeyNameUVE{ImGuiKey_F2, "F2"},
-    ShortcutKeyNameUVE{ImGuiKey_F3, "F3"},         ShortcutKeyNameUVE{ImGuiKey_F4, "F4"},
-    ShortcutKeyNameUVE{ImGuiKey_F5, "F5"},         ShortcutKeyNameUVE{ImGuiKey_F6, "F6"},
-    ShortcutKeyNameUVE{ImGuiKey_F7, "F7"},         ShortcutKeyNameUVE{ImGuiKey_F8, "F8"},
-    ShortcutKeyNameUVE{ImGuiKey_F9, "F9"},         ShortcutKeyNameUVE{ImGuiKey_F10, "F10"},
-    ShortcutKeyNameUVE{ImGuiKey_F11, "F11"},       ShortcutKeyNameUVE{ImGuiKey_F12, "F12"},
-    ShortcutKeyNameUVE{ImGuiKey_LeftArrow, "Left"}, ShortcutKeyNameUVE{ImGuiKey_RightArrow, "Right"},
-    ShortcutKeyNameUVE{ImGuiKey_UpArrow, "Up"},    ShortcutKeyNameUVE{ImGuiKey_DownArrow, "Down"},
-    ShortcutKeyNameUVE{ImGuiKey_Delete, "Delete"}, ShortcutKeyNameUVE{ImGuiKey_Backspace, "Backspace"},
-    ShortcutKeyNameUVE{ImGuiKey_Insert, "Insert"}, ShortcutKeyNameUVE{ImGuiKey_Home, "Home"},
-    ShortcutKeyNameUVE{ImGuiKey_End, "End"},       ShortcutKeyNameUVE{ImGuiKey_PageUp, "PageUp"},
-    ShortcutKeyNameUVE{ImGuiKey_PageDown, "PageDown"}, ShortcutKeyNameUVE{ImGuiKey_Space, "Space"},
-    ShortcutKeyNameUVE{ImGuiKey_Enter, "Enter"},   ShortcutKeyNameUVE{ImGuiKey_Tab, "Tab"},
-    ShortcutKeyNameUVE{ImGuiKey_Comma, "Comma"},   ShortcutKeyNameUVE{ImGuiKey_Period, "Period"},
-    ShortcutKeyNameUVE{ImGuiKey_Slash, "Slash"},   ShortcutKeyNameUVE{ImGuiKey_Minus, "Minus"},
-    ShortcutKeyNameUVE{ImGuiKey_Equal, "Equal"},   ShortcutKeyNameUVE{ImGuiKey_LeftBracket, "LeftBracket"},
-    ShortcutKeyNameUVE{ImGuiKey_RightBracket, "RightBracket"},
+    ShortcutKeyNameUVE{EditorKeyUVE::A, "A"},           ShortcutKeyNameUVE{EditorKeyUVE::B, "B"},
+    ShortcutKeyNameUVE{EditorKeyUVE::C, "C"},           ShortcutKeyNameUVE{EditorKeyUVE::D, "D"},
+    ShortcutKeyNameUVE{EditorKeyUVE::E, "E"},           ShortcutKeyNameUVE{EditorKeyUVE::F, "F"},
+    ShortcutKeyNameUVE{EditorKeyUVE::G, "G"},           ShortcutKeyNameUVE{EditorKeyUVE::H, "H"},
+    ShortcutKeyNameUVE{EditorKeyUVE::I, "I"},           ShortcutKeyNameUVE{EditorKeyUVE::J, "J"},
+    ShortcutKeyNameUVE{EditorKeyUVE::K, "K"},           ShortcutKeyNameUVE{EditorKeyUVE::L, "L"},
+    ShortcutKeyNameUVE{EditorKeyUVE::M, "M"},           ShortcutKeyNameUVE{EditorKeyUVE::N, "N"},
+    ShortcutKeyNameUVE{EditorKeyUVE::O, "O"},           ShortcutKeyNameUVE{EditorKeyUVE::P, "P"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Q, "Q"},           ShortcutKeyNameUVE{EditorKeyUVE::R, "R"},
+    ShortcutKeyNameUVE{EditorKeyUVE::S, "S"},           ShortcutKeyNameUVE{EditorKeyUVE::T, "T"},
+    ShortcutKeyNameUVE{EditorKeyUVE::U, "U"},           ShortcutKeyNameUVE{EditorKeyUVE::V, "V"},
+    ShortcutKeyNameUVE{EditorKeyUVE::W, "W"},           ShortcutKeyNameUVE{EditorKeyUVE::X, "X"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Y, "Y"},           ShortcutKeyNameUVE{EditorKeyUVE::Z, "Z"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Digit0, "0"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit1, "1"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Digit2, "2"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit3, "3"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Digit4, "4"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit5, "5"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Digit6, "6"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit7, "7"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Digit8, "8"},           ShortcutKeyNameUVE{EditorKeyUVE::Digit9, "9"},
+    ShortcutKeyNameUVE{EditorKeyUVE::F1, "F1"},         ShortcutKeyNameUVE{EditorKeyUVE::F2, "F2"},
+    ShortcutKeyNameUVE{EditorKeyUVE::F3, "F3"},         ShortcutKeyNameUVE{EditorKeyUVE::F4, "F4"},
+    ShortcutKeyNameUVE{EditorKeyUVE::F5, "F5"},         ShortcutKeyNameUVE{EditorKeyUVE::F6, "F6"},
+    ShortcutKeyNameUVE{EditorKeyUVE::F7, "F7"},         ShortcutKeyNameUVE{EditorKeyUVE::F8, "F8"},
+    ShortcutKeyNameUVE{EditorKeyUVE::F9, "F9"},         ShortcutKeyNameUVE{EditorKeyUVE::F10, "F10"},
+    ShortcutKeyNameUVE{EditorKeyUVE::F11, "F11"},       ShortcutKeyNameUVE{EditorKeyUVE::F12, "F12"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Left, "Left"}, ShortcutKeyNameUVE{EditorKeyUVE::Right, "Right"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Up, "Up"},    ShortcutKeyNameUVE{EditorKeyUVE::Down, "Down"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Delete, "Delete"}, ShortcutKeyNameUVE{EditorKeyUVE::Backspace, "Backspace"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Insert, "Insert"}, ShortcutKeyNameUVE{EditorKeyUVE::Home, "Home"},
+    ShortcutKeyNameUVE{EditorKeyUVE::End, "End"},       ShortcutKeyNameUVE{EditorKeyUVE::PageUp, "PageUp"},
+    ShortcutKeyNameUVE{EditorKeyUVE::PageDown, "PageDown"}, ShortcutKeyNameUVE{EditorKeyUVE::Space, "Space"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Enter, "Enter"},   ShortcutKeyNameUVE{EditorKeyUVE::Tab, "Tab"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Comma, "Comma"},   ShortcutKeyNameUVE{EditorKeyUVE::Period, "Period"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Slash, "Slash"},   ShortcutKeyNameUVE{EditorKeyUVE::Minus, "Minus"},
+    ShortcutKeyNameUVE{EditorKeyUVE::Equal, "Equal"},   ShortcutKeyNameUVE{EditorKeyUVE::LeftBracket, "LeftBracket"},
+    ShortcutKeyNameUVE{EditorKeyUVE::RightBracket, "RightBracket"},
 };
 
 [[nodiscard]] char LowerUVE(const char c) noexcept {
