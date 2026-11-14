@@ -1,0 +1,222 @@
+# Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#
+# Dedicated Android APK build workflow on branch feature/android-apk-uvbt.
+# Kept separate from ci.yml so desktop/PR CI stays fast while Android demo and
+# cooked sample APKs can be built and downloaded cleanly as workflow artifacts.
+
+name: Android APK
+
+on:
+  push:
+    branches:
+      - feature/android-apk-uvbt
+  workflow_dispatch:
+    inputs:
+      abi:
+        description: 'Android ABI to build'
+        type: choice
+        default: 'all'
+        options:
+          - all
+          - arm64-v8a
+          - x86_64
+      run_smoke:
+        description: 'Boot x86_64 emulator and run smoke_runtime.py'
+        type: boolean
+        default: false
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-apk:
+    name: Android APK / ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        abi:
+          - arm64-v8a
+          - x86_64
+    env:
+      UVBT_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache-android-${{ matrix.abi }}
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_MAXSIZE: 3G
+      ANDROID_AVD_HOME: /tmp/univex-android-avds
+
+    steps:
+      - name: Check ABI filter
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             [ "${{ inputs.abi }}" != "all" ] && \
+             [ "${{ inputs.abi }}" != "${{ matrix.abi }}" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.filter.outputs.run == 'true'
+        uses: actions/checkout@v5
+
+      - name: Install build utilities
+        if: steps.filter.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build ccache
+
+      - name: Set up Java 17
+        if: steps.filter.outputs.run == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        if: steps.filter.outputs.run == 'true'
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - name: Install pinned Android platform, build-tools, and NDK 29
+        if: steps.filter.outputs.run == 'true'
+        run: |
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          set -o pipefail
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;29.0.14206865'
+
+      - name: Restore Android compiler cache
+        if: steps.filter.outputs.run == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache-android-${{ matrix.abi }}
+          key: ccache-android-${{ matrix.abi }}-${{ github.sha }}
+          restore-keys: ccache-android-${{ matrix.abi }}-
+
+      - name: Build built-in Demo APK
+        if: steps.filter.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          ccache -z
+          mkdir -p "/tmp/apk-artifacts/${{ matrix.abi }}"
+          python3 Engine/Tools/android/build_apk.py \
+            --sdk "$ANDROID_HOME" \
+            --build-dir /tmp/univex-android-demo \
+            --abi "${{ matrix.abi }}" \
+            --jobs "$(nproc)"
+          cp "/tmp/univex-android-demo/univex-runtime-${{ matrix.abi }}.apk" \
+            "/tmp/apk-artifacts/${{ matrix.abi }}/univex-demo-${{ matrix.abi }}.apk"
+
+      - name: Build Cooked Project APKs
+        if: steps.filter.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          cooked_count=0
+          while IFS= read -r -d '' cooked_json; do
+            proj_dir="$(dirname "$cooked_json")"
+            manifest="$(find "$proj_dir" -maxdepth 1 -name '*.uvproject' | head -n 1)"
+            if [ -z "$manifest" ]; then
+              continue
+            fi
+            cooked_count=$((cooked_count + 1))
+            slug="$(basename "$proj_dir" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+            build_dir="/tmp/univex-android-cooked-${slug}"
+            echo "Packaging cooked project: ${manifest} -> univex-${slug}-${{ matrix.abi }}.apk"
+            python3 Engine/Tools/android/build_apk.py \
+              --sdk "$ANDROID_HOME" \
+              --build-dir "$build_dir" \
+              --native-build-dir /tmp/univex-android-demo/native \
+              --cooked-project "$manifest" \
+              --abi "${{ matrix.abi }}" \
+              --jobs "$(nproc)"
+            cp "${build_dir}/univex-runtime-${{ matrix.abi }}.apk" \
+              "/tmp/apk-artifacts/${{ matrix.abi }}/univex-${slug}-${{ matrix.abi }}.apk"
+          done < <(find Samples -maxdepth 3 -name 'cooked.json' -print0 | sort -z)
+          echo "Packaged ${cooked_count} cooked project APK(s)."
+          ccache -s
+
+      - name: Save Android compiler cache
+        if: always() && steps.filter.outputs.run == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache-android-${{ matrix.abi }}
+          key: ccache-android-${{ matrix.abi }}-${{ github.sha }}
+
+      - name: Verify APK contents, ELF ABI, 16 KB alignment, and entry symbols
+        if: steps.filter.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          ndk_bin="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          expected_arch="AArch64"
+          if [ "${{ matrix.abi }}" = "x86_64" ]; then
+            expected_arch="Advanced Micro Devices X86-64"
+          fi
+          for apk in /tmp/apk-artifacts/${{ matrix.abi }}/*.apk; do
+            echo "=== Inspecting $(basename "$apk") ==="
+            ls -lh "$apk"
+            unzip -l "$apk" | grep -q "lib/${{ matrix.abi }}/libunivex_android.so"
+            unzip -l "$apk" | grep -q "lib/${{ matrix.abi }}/libc++_shared.so"
+            if [[ "$(basename "$apk")" != univex-demo-* ]]; then
+              unzip -l "$apk" | grep -q "assets/project-files.txt"
+              unzip -l "$apk" | grep -q "assets/project/.uvassetdb"
+              unzip -l "$apk" | grep -q "assets/project/cooked.json"
+            fi
+            tmp_so="$(mktemp -d)"
+            unzip -o -j "$apk" "lib/${{ matrix.abi }}/libunivex_android.so" -d "$tmp_so" >/dev/null
+            "$ndk_bin/llvm-readelf" -h "$tmp_so/libunivex_android.so" | grep -q "$expected_arch"
+            load_segments="$("$ndk_bin/llvm-readelf" -l "$tmp_so/libunivex_android.so" | grep 'LOAD')"
+            echo "$load_segments" | grep -qE "0x4000[[:space:]]*$"
+            if echo "$load_segments" | grep -qvE "0x4000[[:space:]]*$"; then
+              echo "ERROR: Found LOAD segment not aligned to 16 KB (0x4000)"
+              exit 1
+            fi
+            "$ndk_bin/llvm-nm" -D "$tmp_so/libunivex_android.so" | grep -q "T ANativeActivity_onCreate"
+            rm -rf "$tmp_so"
+          done
+
+      - name: Optional x86_64 emulator smoke test
+        if: >-
+          steps.filter.outputs.run == 'true' &&
+          matrix.abi == 'x86_64' &&
+          github.event_name == 'workflow_dispatch' &&
+          inputs.run_smoke == true
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+          sdkmanager 'emulator' 'system-images;android-29;default;x86_64'
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name univex-android \
+            --path "$ANDROID_AVD_HOME/univex-android.avd" \
+            --package 'system-images;android-29;default;x86_64'
+          "$ANDROID_HOME/emulator/emulator" -avd univex-android -no-window -no-audio \
+            -no-boot-anim -no-snapshot -gpu swiftshader -memory 2048 -cores 2 \
+            >/tmp/univex-emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'adb -s emulator-5554 emu kill || true; kill "$emulator_pid" 2>/dev/null || true' EXIT
+          timeout 120 adb -s emulator-5554 wait-for-device
+          for _ in $(seq 1 180); do
+            if [ "$(adb -s emulator-5554 shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; then
+              break
+            fi
+            sleep 2
+          done
+          python3 Engine/Tools/android/smoke_runtime.py \
+            --adb "$ANDROID_HOME/platform-tools/adb" --serial emulator-5554 \
+            --apk /tmp/univex-android-demo/univex-runtime-x86_64.apk \
+            --label demo --report /tmp/univex-android-demo-smoke.json
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        if: success() && steps.filter.outputs.run == 'true'
+        with:
+          name: UniVex-Android-${{ matrix.abi }}-APKs
+          path: /tmp/apk-artifacts/${{ matrix.abi }}/*.apk
+          if-no-files-found: error
+          retention-days: 14
