@@ -137,9 +137,10 @@ private:
   void accept() {
     if (m_sel < 0 || m_sel >= int(m_rows.size()) || m_rows[size_t(m_sel)].header) return;
     int spec = m_rows[size_t(m_sel)].spec;
+    // Everything needed is copied first: closing the popup can free this palette.
     auto pick = m_pick;
-    Application::get().closePopup(this);
     const BlueprintNodeSpec chosen = m_lib[size_t(spec)];
+    Application::get().closePopup(this);
     if (pick) pick(chosen);
   }
   bool allowed(const BlueprintNodeSpec& s) const {
@@ -218,9 +219,15 @@ void textPopup(Widget* refocus, Rect anchor, const std::string& initial, float m
   o.placement = PopupPlacement::AtPoint;
   o.anchor = {anchor.x, anchor.y, 0, 0};
   o.shadow = true;
-  if (refocus) o.onClose = [refocus] { Application::get().setFocus(refocus); };   // keep keyboard shortcuts working afterwards
+  // The widget that opened it is held weakly: it may be gone (its graph closed) before this commits,
+  // and then the edit has nowhere to go.
+  std::weak_ptr<Widget> owner;
+  if (refocus) owner = refocus->weak_from_this();
+  const bool hasOwner = refocus != nullptr;
+  if (refocus) o.onClose = [owner] { if (auto w = owner.lock()) Application::get().setFocus(w.get()); };   // keep keyboard shortcuts working afterwards
   Widget* raw = in.get();
-  in->onCommit = [raw, accept](const std::string& s) {
+  in->onCommit = [raw, accept, owner, hasOwner](const std::string& s) {
+    if (hasOwner && owner.expired()) { Application::get().closePopup(raw); return; }
     if (accept(s)) Application::get().closePopup(raw);
   };
   in->onCancel = [raw] { Application::get().closePopup(raw); };
@@ -512,7 +519,10 @@ void BlueprintGraph::editComment(BlueprintComment& c) {
   Vec2 o = worldToScreen(c.bounds.pos());
   int id = c.id;
   textPopup(this, {o.x + 8, o.y + 2, 0, 0}, c.title, 200, [this, id](const std::string& v) {
-    for (auto& cm : m_comments) if (cm.id == id) { cm.title = v; commit("Rename comment"); invalidate(); }
+    // A title fits the asset's limit; the commit comes after the loop (it may reach the host).
+    bool renamed = false;
+    for (auto& cm : m_comments) if (cm.id == id) { cm.title = v.substr(0, 256); renamed = true; }
+    if (renamed) { commit("Rename comment"); invalidate(); }
     return true;
   });
 }
@@ -528,7 +538,8 @@ void BlueprintGraph::addCommentAround(const std::vector<int>& ids, Vec2 fallback
   else {
     float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
     for (int id : ids) if (auto* n = findNode(id)) { x0 = std::min(x0, n->pos.x); y0 = std::min(y0, n->pos.y); x1 = std::max(x1, n->pos.x + n->size.x); y1 = std::max(y1, n->pos.y + n->size.y); }
-    c.bounds = {x0 - 24, y0 - 46, x1 - x0 + 48, y1 - y0 + 70};
+    // None of the ids is a node of this graph: the comment goes where it was asked for.
+    c.bounds = x0 <= x1 ? Rect{x0 - 24, y0 - 46, x1 - x0 + 48, y1 - y0 + 70} : Rect{fallback.x, fallback.y, 260, 160};
   }
   m_comments.push_back(c);
   commit("Add comment");
@@ -1090,7 +1101,9 @@ void BlueprintGraph::showCommentMenu(int commentId, Vec2 p) {
   for (const auto& [name, tint] : kTints) {
     const Color colour = tint;
     colours.push_back(MenuItem::Item(name, [this, commentId, colour] {
-      for (auto& c : m_comments) if (c.id == commentId) { c.color = colour; commit("Comment colour"); invalidate(); }
+      bool changed = false;
+      for (auto& c : m_comments) if (c.id == commentId) { c.color = colour; changed = true; }
+      if (changed) { commit("Comment colour"); invalidate(); }
     }));
   }
   items.push_back(MenuItem::Sub("Colour", std::move(colours)));

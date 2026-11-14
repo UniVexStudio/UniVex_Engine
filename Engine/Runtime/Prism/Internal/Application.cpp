@@ -502,10 +502,25 @@ void Application::dispatchMouseDown(MouseEvent e) {
     }
   }
 
-  // Bubble Phase (Leaf -> Root)
+  // Bubble Phase (Leaf -> Root). The path is held while it is dispatched: a handler may close the
+  // popup it lives in (a picked menu row), which would otherwise free the widget under this loop.
+  std::vector<Ref<Widget>> held;
   for (Widget* w = t; w; w = w->m_parent)
-    if (w->enabled() && w->onMouseDown(e)) { captureMouse(w); break; }
+    if (Ref<Widget> r = w->weak_from_this().lock()) held.push_back(std::move(r));
+  for (const Ref<Widget>& w : held) {
+    if (w->enabled() && w->onMouseDown(e)) {
+      // A widget its handler took out of the window (its popup closed) does not keep the mouse.
+      if (w->m_parent != nullptr || isPopupRoot(w.get())) captureMouse(w.get());
+      break;
+    }
+  }
   invalidate();
+}
+
+bool Application::isPopupRoot(const Widget* w) const {
+  for (const auto& p : m_popups)
+    if (p.widget.get() == w) return true;
+  return w == m_root.get();
 }
 
 void Application::dispatchMouseUp(MouseEvent e) {
