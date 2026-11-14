@@ -33,6 +33,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <random>
 #include <sstream>
 #include <tuple>
 #include <exception>
@@ -119,6 +120,7 @@
 #include "animation_graph_component.h"
 #include "animation_sequencer_component.h"
 #include "camera_component.h"
+#include "audio_source_component.h"
 #include "hierarchy_component.h"
 #include "canvas_component.h"
 #include "ui_view_3d_component.h"
@@ -1977,6 +1979,18 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
     if (!m_scriptServices.trace) {
         FillScriptServicesUVE();
     }
+    // Last frame's shake comes off first, so scripts see (and move) the camera where it really is.
+    if (m_cameraShakeTarget != Scene::kInvalidEntityUVE) {
+        if (m_entityManager->IsAliveUVE(m_cameraShakeTarget) && m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(m_cameraShakeTarget)) {
+            Scene::TransformComponentUVE& transform = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(m_cameraShakeTarget);
+            transform.localPosition = transform.localPosition - m_cameraShakeOffset;
+            if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_cameraShakeTarget)) {
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_cameraShakeTarget).dirty = true;
+            }
+        }
+        m_cameraShakeTarget = Scene::kInvalidEntityUVE;
+        m_cameraShakeOffset = Math::Vector3UVE{};
+    }
     ReconcileUVScriptInstancesUVE();
     // Add Movement Input is per frame: what the scripts ask for now replaces last frame's.
     m_entityManager->ForEachUVE<Scene::CharacterControllerComponentUVE>(
@@ -2028,6 +2042,7 @@ void EngineCoreUVE::ResetScriptGameStateUVE() {
     m_pendingScriptDestroys.clear();
     m_pendingLevel.reset();
     m_pendingQuit = false;
+    m_cameraShakeRemaining = 0.0;
     m_scriptServices.gameData.clear();
 }
 
@@ -2227,6 +2242,103 @@ void EngineCoreUVE::FillScriptServicesUVE() {
             m_pendingScriptEvents.emplace_back(target, name, payload);
         }
     };
+    s.playSound = [this, toEngine](const std::string& path, const UVScript::Vec3ValueUVE& position, const double volume, const bool spatial) {
+        if (m_audioSourceSystem == nullptr || m_audioSystem == nullptr || m_sceneGraph == nullptr) {
+            return false;
+        }
+        // A short-lived object of its own, removed once the sound is over.
+        const Scene::EntityUVE sound = m_entityManager->CreateEntityUVE();
+        Scene::TransformComponentUVE transform;
+        transform.localPosition = toEngine(position);
+        m_sceneGraph->AttachTransformUVE(*m_entityManager, sound, transform);
+        // Its world position before the voice is made, which reads it once.
+        m_sceneGraph->UpdateUVE(*m_entityManager);
+        Scene::AudioSourceComponentUVE source;
+        source.audioAssetPath = path;
+        source.volume = static_cast<float>(std::min(volume, 4.0));
+        source.spatial = spatial;
+        source.playOnAwake = false;
+        source.looping = false;
+        m_entityManager->AddComponentUVE<Scene::AudioSourceComponentUVE>(sound, source);
+        if (!m_audioSourceSystem->PlayEntityUVE(sound, *m_entityManager, *m_audioSystem)) {
+            m_entityManager->DestroyEntityUVE(sound);
+            return false;
+        }
+        m_oneShotSounds.push_back(sound);
+        return true;
+    };
+    s.burstParticles = [this](const Scene::EntityUVE emitter, const std::int64_t count) {
+        if (!m_entityManager->IsAliveUVE(emitter) || !m_entityManager->HasComponentUVE<Scene::ParticleEmitterComponentUVE>(emitter)) {
+            return false;
+        }
+        // Owed particles: the emitter's next step lets them out (up to its own cap).
+        m_particleEmitRemainder[emitter] += static_cast<float>(std::min<std::int64_t>(count, 10000));
+        return true;
+    };
+    s.activateCamera = [this](const Scene::EntityUVE camera) {
+        if (!m_entityManager->IsAliveUVE(camera) || !m_entityManager->HasComponentUVE<Scene::CameraComponentUVE>(camera)) {
+            return false;
+        }
+        m_entityManager->ForEachUVE<Scene::CameraComponentUVE>(
+            [camera](const Scene::EntityUVE entity, Scene::CameraComponentUVE& view) { view.current = entity == camera; });
+        return true;
+    };
+    s.cameraShake = [this](const double strength, const double seconds) {
+        // A stronger shake takes over; a weaker one never cuts a strong one short.
+        if (strength >= m_cameraShakeStrength * (m_cameraShakeDuration > 0.0 ? m_cameraShakeRemaining / m_cameraShakeDuration : 0.0)) {
+            m_cameraShakeStrength = strength;
+            m_cameraShakeDuration = seconds;
+            m_cameraShakeRemaining = seconds;
+        }
+    };
+    const auto currentCamera = [this] {
+        Scene::EntityUVE found = Scene::kInvalidEntityUVE;
+        m_entityManager->ForEachUVE<Scene::CameraComponentUVE>([&found](const Scene::EntityUVE entity, const Scene::CameraComponentUVE& view) {
+            if (found == Scene::kInvalidEntityUVE && view.current) {
+                found = entity;
+            }
+        });
+        return found;
+    };
+    s.cameraForward = [this, currentCamera, toScript] {
+        const Scene::EntityUVE camera = currentCamera();
+        if (camera == Scene::kInvalidEntityUVE || !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(camera)) {
+            return UVScript::Vec3ValueUVE{0.0, 0.0, -1.0};
+        }
+        return toScript(Math::RotateVectorUVE(m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(camera).worldRotation,
+                                              Math::Vector3UVE{0.0F, 0.0F, -1.0F}));
+    };
+    s.cameraLocation = [this, currentCamera, toScript] {
+        const Scene::EntityUVE camera = currentCamera();
+        if (camera == Scene::kInvalidEntityUVE || !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(camera)) {
+            return UVScript::Vec3ValueUVE{};
+        }
+        return toScript(m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(camera).worldPosition);
+    };
+    s.playAnimation = [this](const Scene::EntityUVE holder, const std::string& name) {
+        if (!m_entityManager->IsAliveUVE(holder) || !m_entityManager->HasComponentUVE<Scene::AnimationSequencerComponentUVE>(holder)) {
+            return false;
+        }
+        Scene::AnimationSequencerComponentUVE& player = m_entityManager->GetComponentUVE<Scene::AnimationSequencerComponentUVE>(holder);
+        if (!name.empty()) {
+            std::vector<Asset::AssetGuidUVE> candidates = player.library;
+            candidates.push_back(player.clip);
+            Asset::AssetGuidUVE chosen = Asset::kInvalidAssetGuidUVE;
+            for (const Asset::AssetGuidUVE guid : candidates) {
+                if (guid != Asset::kInvalidAssetGuidUVE && m_assetDatabase != nullptr && m_assetDatabase->ResolveUVE(guid).stem().string() == name) {
+                    chosen = guid;
+                    break;
+                }
+            }
+            if (chosen == Asset::kInvalidAssetGuidUVE) {
+                UVE_WARNING("EngineCoreUVE: Play Animation: no clip \"{}\" in the player's list", name);
+                return false;
+            }
+            player.clip = chosen;
+        }
+        player.playRequested = true;
+        return true;
+    };
     s.saveSlot = [this](const std::string& slot) {
         const std::string path = SaveSlotPathUVE(slot);
         if (path.empty()) {
@@ -2324,6 +2436,39 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
         for (const Scene::EntityUVE entity : doomed) {
             destroy(entity);
         }
+    }
+    // One-shot sounds that have finished go.
+    std::erase_if(m_oneShotSounds, [this](const Scene::EntityUVE sound) {
+        if (!m_entityManager->IsAliveUVE(sound)) {
+            return true;
+        }
+        if (m_audioSourceSystem != nullptr && m_audioSystem != nullptr && m_audioSourceSystem->IsEntityPlayingUVE(sound, *m_audioSystem)) {
+            return false;
+        }
+        m_entityManager->DestroyEntityUVE(sound);
+        return true;
+    });
+    // The shake, put on the current camera until the start of the next frame.
+    if (m_cameraShakeRemaining > 0.0 && m_cameraShakeDuration > 0.0) {
+        Scene::EntityUVE camera = Scene::kInvalidEntityUVE;
+        m_entityManager->ForEachUVE<Scene::CameraComponentUVE>([&camera](const Scene::EntityUVE entity, const Scene::CameraComponentUVE& view) {
+            if (camera == Scene::kInvalidEntityUVE && view.current) {
+                camera = entity;
+            }
+        });
+        if (camera != Scene::kInvalidEntityUVE && m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(camera)) {
+            static std::mt19937 random{1234U};
+            std::uniform_real_distribution<float> spread(-1.0F, 1.0F);
+            const float amplitude = static_cast<float>(m_cameraShakeStrength * (m_cameraShakeRemaining / m_cameraShakeDuration));
+            m_cameraShakeOffset = Math::Vector3UVE{spread(random) * amplitude, spread(random) * amplitude, spread(random) * amplitude * 0.3F};
+            m_cameraShakeTarget = camera;
+            Scene::TransformComponentUVE& transform = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(camera);
+            transform.localPosition = transform.localPosition + m_cameraShakeOffset;
+            if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(camera)) {
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(camera).dirty = true;
+            }
+        }
+        m_cameraShakeRemaining = std::max(0.0, m_cameraShakeRemaining - (m_scriptGameDelta > 0.0 ? m_scriptGameDelta : dt));
     }
     if (m_pendingQuit) {
         m_pendingQuit = false;
@@ -2823,7 +2968,11 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             }
             Scene::Skeleton3DComponentUVE& skeleton =
                 m_entityManager->GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity);
-            if (!player.hasStartPose && player.autoplay &&
+            if (player.playRequested) {
+                // A script's Play Animation: from the start, through the mixer's transition.
+                player.playRequested = false;
+                Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
+            } else if (!player.hasStartPose && player.autoplay &&
                 m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
                 Scene::PlayAnimationSequencerUVE(player, Scene::TransformComponentUVE{}, clip->durationSeconds);
             } else if (player.isPlaying && player.playingClip != player.clip) {
@@ -2847,7 +2996,10 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         if (target == nullptr) {
             continue;
         }
-        if (!player.hasStartPose && player.autoplay &&
+        if (player.playRequested) {
+            player.playRequested = false;
+            Scene::PlayAnimationSequencerUVE(player, *target, clip->durationSeconds);
+        } else if (!player.hasStartPose && player.autoplay &&
             m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
             Scene::PlayAnimationSequencerUVE(player, *target, clip->durationSeconds);
         }

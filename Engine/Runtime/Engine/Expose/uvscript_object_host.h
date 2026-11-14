@@ -99,6 +99,20 @@ struct ScriptServicesUVE final {
     std::function<std::string()> levelName;
     /// Raises `custom_event(name, payload)` on `target`'s script after the current handlers.
     std::function<void(Scene::EntityUVE target, const std::string& name, const std::string& payload)> emit;
+    /// A one-shot sound (an audio file): at `position` when spatial, else heard everywhere.
+    std::function<bool(const std::string& path, const UVScript::Vec3ValueUVE& position, double volume, bool spatial)> playSound;
+    /// Particles at once from `emitter`'s ParticleEmitter, on top of its rate.
+    std::function<bool(Scene::EntityUVE emitter, std::int64_t count)> burstParticles;
+    /// Makes `camera` the view (the others stop being current).
+    std::function<bool(Scene::EntityUVE camera)> activateCamera;
+    /// Shakes the view: `strength` metres at first, fading out over `seconds`.
+    std::function<void(double strength, double seconds)> cameraShake;
+    /// Where the view looks (unit), and where it is.
+    std::function<UVScript::Vec3ValueUVE()> cameraForward;
+    std::function<UVScript::Vec3ValueUVE()> cameraLocation;
+    /// Plays the AnimationSequencer `player`'s clip named `clip` (its file's name, from its own list;
+    /// empty: the one it has) from the start.
+    std::function<bool(Scene::EntityUVE player, const std::string& clip)> playAnimation;
     /// Save slots: the game data below, written to and read from a named slot.
     std::function<bool(const std::string& slot)> saveSlot;
     std::function<bool(const std::string& slot)> loadSlot;

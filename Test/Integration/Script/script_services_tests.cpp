@@ -3,6 +3,8 @@
 // The world a script reaches through the engine: traces against real colliders, messages to
 // other scripts, removal at the end of the frame (self-removal included), and save slots.
 
+#include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -11,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include "camera_component.h"
 #include "collider_component.h"
 #include "engine_core.h"
 #include "i_file_system.h"
@@ -122,6 +125,39 @@ TEST(ScriptServicesUVETest, TracesMessagesRemovalAndSaveSlotsWorkThroughTheEngin
     EXPECT_NEAR(hit.normal.y, 1.0, 1e-3);
 
     std::filesystem::remove_all(mount);
+    std::filesystem::remove(MakeServicesTestConfigUVE().assetDatabaseFilePath);
+    engine.Shutdown();
+}
+
+TEST(ScriptServicesUVETest, ACameraShakeFadesAndLeavesTheCameraWhereItWas) {
+    Core::EngineCoreUVE engine(MakeServicesTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    Scene::IEntityManagerUVE& entities = engine.GetServicesUVE().GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = engine.GetServicesUVE().GetSceneGraphUVE();
+    const Scene::EntityUVE camera = entities.CreateEntityUVE();
+    Scene::TransformComponentUVE transform;
+    transform.localPosition = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
+    sceneGraph.AttachTransformUVE(entities, camera, transform);
+    Scene::CameraComponentUVE view;
+    view.current = true;
+    entities.AddComponentUVE<Scene::CameraComponentUVE>(camera, view);
+    engine.TickFrameUVE();   // fills the services
+    engine.GetScriptServicesUVE().cameraShake(0.5, 0.05);
+    engine.TickFrameUVE();
+    const Math::Vector3UVE shaken = entities.GetComponentUVE<Scene::TransformComponentUVE>(camera).localPosition;
+    const float moved = std::abs(shaken.x - 1.0F) + std::abs(shaken.y - 2.0F) + std::abs(shaken.z - 3.0F);
+    EXPECT_GT(moved, 0.0F) << "the view shakes";
+    EXPECT_LE(std::abs(shaken.x - 1.0F), 0.5F);
+    const auto start = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(300)) {
+        engine.TickFrameUVE();
+    }
+    engine.TickFrameUVE();
+    const Math::Vector3UVE after = entities.GetComponentUVE<Scene::TransformComponentUVE>(camera).localPosition;
+    EXPECT_NEAR(after.x, 1.0F, 1e-5F);
+    EXPECT_NEAR(after.y, 2.0F, 1e-5F);
+    EXPECT_NEAR(after.z, 3.0F, 1e-5F);
     std::filesystem::remove(MakeServicesTestConfigUVE().assetDatabaseFilePath);
     engine.Shutdown();
 }

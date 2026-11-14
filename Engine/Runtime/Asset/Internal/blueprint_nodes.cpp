@@ -31,7 +31,8 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
             // A widget's own controls; creating a widget or the mouse cursor work from any graph.
             const bool anywhere = n.key == "ui_create_widget" || n.key == "ui_add_to_viewport" || n.key == "ui_show_mouse_cursor";
             n.graphs = anywhere ? (object | widget) : widget;
-        } else if (c == "Character" || c == "Physics" || c.starts_with("Physics|") || c == "World" || c == "Animation" || c == "Audio" || c == "Transform" || c == "Rendering" ||
+        } else if (c == "Character" || c == "Physics" || c.starts_with("Physics|") || c == "World" || c == "Effects" || c == "AI" ||
+                   c.starts_with("Animation|") || c.starts_with("Rendering|") || c == "Animation" || c == "Audio" || c == "Transform" || c == "Rendering" ||
                    c.starts_with("Gameplay") ||
                    (c == "Events" && n.event != "ready" && n.event != "tick")) {
             n.graphs = object;
@@ -42,6 +43,14 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
             n.needs = "Rigid3D";
         } else if (c == "Audio") {
             n.needs = "AudioSource";
+        } else if (c == "Effects") {
+            n.needs = "ParticleEmitter";
+        } else if (c == "Rendering|Material") {
+            n.needs = "SurfaceInstance";
+        } else if (c == "Animation|Sequencer") {
+            n.needs = "AnimationSequencer";
+        } else if (c == "AI") {
+            n.needs = "NavSeeker3D";
         } else if (n.key.find("light") != std::string::npos) {
             n.needs = "Light";
         } else if (n.key.find("field_of_view") != std::string::npos) {
@@ -418,6 +427,40 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     pure("does_save_exist", "Does Save Game Exist", "Game|Save", {Pin{"Slot", T::String, "Slot1"}}, {Pin{"Exists", T::Bool, ""}},
          {"save.exists({0})"}, "slot");
     action("delete_save", "Delete Save Game In Slot", "Game|Save", {Pin{"Slot", T::String, "Slot1"}}, "save.delete({1})", "remove slot");
+
+    // ---- sounds at a place, particles, the view
+    action("play_sound_at_location", "Play Sound At Location", "Audio|One Shot",
+           {Pin{"Sound", T::String, "Sounds/Hit.wav"}, Pin{"Location", T::Vector, "0,0,0"}, Pin{"Volume", T::Float, "1.0"}},
+           "audio.play_at({1}, {2}, {3})", "sfx one shot spawn sound 3d", "A sound file heard from a place, once");
+    action("play_sound_2d", "Play Sound 2D", "Audio|One Shot", {Pin{"Sound", T::String, "Sounds/Click.wav"}, Pin{"Volume", T::Float, "1.0"}},
+           "audio.play_2d({1}, {2})", "sfx one shot ui music", "A sound file heard everywhere, once (menus, music stings)");
+    action("set_particles_active", "Set Particles Active", "Effects", {Pin{"Active", T::Bool, "true"}}, "particles.set_active({1})",
+           "emitter vfx activate deactivate", "Starts or stops its Particle Emitter");
+    action("burst_particles", "Burst Particles", "Effects", {Pin{"Count", T::Int, "30"}}, "particles.burst({1})", "emitter vfx explosion spawn",
+           "Lets out so many particles at once, on top of its rate");
+    action("set_active_camera", "Set View Target", "Camera", {Pin{"Camera", T::Object, ""}}, "camera.activate({1})",
+           "camera switch view target blend", "Makes that camera the view");
+    action("camera_shake", "Camera Shake", "Camera", {Pin{"Strength", T::Float, "0.2"}, Pin{"Seconds", T::Float, "0.4"}}, "camera.shake({1}, {2})",
+           "shake impact explosion hit", "Shakes the view, fading out");
+    pure("get_camera_forward", "Get Camera Forward", "Camera", {}, {Pin{"Forward", T::Vector, ""}}, {"camera.forward()"}, "view direction aim");
+    pure("get_camera_location", "Get Camera Location", "Camera", {}, {Pin{"Location", T::Vector, ""}}, {"camera.location()"}, "view position eye");
+
+    // ---- its look, its clips, its walking
+    action("set_material", "Set Material", "Rendering|Material", {Pin{"Material", T::String, "Materials/Red.uvmat"}}, "render.set_material({1})",
+           "material swap override change", "Draws every surface with that material (empty: its own again)");
+    action("set_transparency", "Set Transparency", "Rendering|Material", {Pin{"Transparency", T::Float, "0.5"}}, "render.set_transparency({1})",
+           "fade opacity alpha see through", "0 solid, 1 invisible");
+    action("play_animation", "Play Animation", "Animation|Sequencer", {Pin{"Clip", T::String, ""}}, "sequencer.play({1})",
+           "play clip anim sequence", "Plays a clip of its Animation Sequencer from the start (by name; empty: the one it has)");
+    action("stop_animation", "Stop Animation", "Animation|Sequencer", {}, "sequencer.stop()", "stop clip pause anim");
+    action("set_animation_rate", "Set Play Rate", "Animation|Sequencer", {Pin{"Rate", T::Float, "1.0"}}, "sequencer.set_rate({1})",
+           "speed play rate reverse");
+    pure("is_animation_playing", "Is Animation Playing", "Animation|Sequencer", {}, {Pin{"Playing", T::Bool, ""}}, {"sequencer.is_playing()"});
+    action("ai_move_to", "AI Move To", "AI", {Pin{"Destination", T::Vector, "0,0,0"}}, "ai.move_to({1})", "navigate path pathfinding walk go",
+           "Its Nav Seeker walks it there over the navigation mesh");
+    action("ai_stop", "Stop Movement", "AI", {}, "ai.stop()", "halt stop navigation");
+    pure("ai_reached", "Has Reached Destination", "AI", {}, {Pin{"Reached", T::Bool, ""}}, {"ai.reached()"}, "arrived finished");
+    pure("ai_status", "Get Path Status", "AI", {}, {Pin{"Status", T::String, ""}}, {"ai.status()"}, "Idle Following Finished Failed");
 
     // ---- objects
     pure("find_object", "Find Object", "Objects", {Pin{"Name", T::String, ""}}, {Pin{"Object", T::Object, ""}}, {"node({0})"}, "get actor by name");

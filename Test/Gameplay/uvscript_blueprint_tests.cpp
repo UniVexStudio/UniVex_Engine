@@ -15,6 +15,10 @@
 #include "name_component.h"
 
 #include "animation_graph_component.h"
+#include "animation_sequencer_component.h"
+#include "nav_seeker_3d.h"
+#include "particle_emitter_component.h"
+#include "surface_instance_component.h"
 #include "audio_source_component.h"
 #include "blueprint_asset.h"
 #include "blueprint_nodes.h"
@@ -70,6 +74,10 @@ protected:
         entityManager.AddComponentUVE<GameplayTagComponentUVE>(entity, GameplayTagComponentUVE{});
         entityManager.AddComponentUVE<LightComponentUVE>(entity, LightComponentUVE{});
         entityManager.AddComponentUVE<CameraComponentUVE>(entity, CameraComponentUVE{});
+        entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(entity, ParticleEmitterComponentUVE{});
+        entityManager.AddComponentUVE<SurfaceInstanceComponentUVE>(entity, SurfaceInstanceComponentUVE{});
+        entityManager.AddComponentUVE<AnimationSequencerComponentUVE>(entity, AnimationSequencerComponentUVE{});
+        entityManager.AddComponentUVE<NavSeeker3DComponentUVE>(entity, NavSeeker3DComponentUVE{});
         return entity;
     }
 
@@ -532,6 +540,51 @@ TEST_F(BlueprintUVETest, ObjectsFindTheirTagsChildrenAndEachOther) {
               UVScript::ValueUVE{UVScript::ObjectRefUVE{}});
     EXPECT_EQ(call("game.quit", {}), UVScript::ValueUVE{false});
     EXPECT_EQ(call("math.select_string", {false, std::string("A"), std::string("B")}), UVScript::ValueUVE{std::string("B")});
+}
+
+TEST_F(BlueprintUVETest, EffectsLookClipsAndWalkingReachTheirComponents) {
+    Core::ScriptServicesUVE services;
+    std::int64_t burst = 0;
+    std::string sound;
+    double shake = 0.0;
+    services.burstParticles = [&](const EntityUVE, const std::int64_t count) {
+        burst += count;
+        return true;
+    };
+    services.playSound = [&](const std::string& path, const UVScript::Vec3ValueUVE&, double, const bool spatial) {
+        sound = path + (spatial ? "@3d" : "@2d");
+        return true;
+    };
+    services.cameraShake = [&](const double strength, double) { shake = strength; };
+    const EntityUVE self = MakeEverythingUVE();
+    Core::UVScriptObjectHostUVE host{entityManager, nullptr, self};
+    host.SetServicesUVE(&services);
+    const auto call = [&](const std::string_view name, std::vector<UVScript::ValueUVE> args) { return host.CallFunctionUVE(name, args); };
+    EXPECT_EQ(call("particles.set_active", {false}), UVScript::ValueUVE{true});
+    EXPECT_FALSE(entityManager.GetComponentUVE<ParticleEmitterComponentUVE>(self).emitting);
+    EXPECT_EQ(call("particles.burst", {std::int64_t{25}}), UVScript::ValueUVE{true});
+    EXPECT_EQ(burst, 25);
+    EXPECT_EQ(call("audio.play_at", {std::string("Sounds/Hit.wav"), UVScript::Vec3ValueUVE{1.0, 0.0, 0.0}, 1.0}), UVScript::ValueUVE{true});
+    EXPECT_EQ(sound, "Sounds/Hit.wav@3d");
+    EXPECT_EQ(call("camera.shake", {0.5, 1.0}), UVScript::ValueUVE{true});
+    EXPECT_DOUBLE_EQ(shake, 0.5);
+    EXPECT_EQ(call("render.set_material", {std::string("Materials/Red.uvmat")}), UVScript::ValueUVE{true});
+    EXPECT_EQ(entityManager.GetComponentUVE<SurfaceInstanceComponentUVE>(self).materialOverridePath, "Materials/Red.uvmat");
+    EXPECT_EQ(call("render.set_transparency", {2.0}), UVScript::ValueUVE{true});
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<SurfaceInstanceComponentUVE>(self).transparency, 1.0F) << "clamped";
+    // Without the game's files a clip is played by the one it has.
+    host.SetServicesUVE(nullptr);
+    EXPECT_EQ(call("sequencer.play", {std::string()}), UVScript::ValueUVE{true});
+    EXPECT_TRUE(entityManager.GetComponentUVE<AnimationSequencerComponentUVE>(self).playRequested);
+    EXPECT_EQ(call("sequencer.is_playing", {}), UVScript::ValueUVE{true});
+    EXPECT_EQ(call("sequencer.set_rate", {-1.0}), UVScript::ValueUVE{true});
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<AnimationSequencerComponentUVE>(self).speed, -1.0F);
+    EXPECT_EQ(call("sequencer.stop", {}), UVScript::ValueUVE{true});
+    EXPECT_EQ(call("sequencer.is_playing", {}), UVScript::ValueUVE{false});
+    EXPECT_EQ(call("ai.move_to", {UVScript::Vec3ValueUVE{4.0, 0.0, 2.0}}), UVScript::ValueUVE{true});
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<NavSeeker3DComponentUVE>(self).targetPosition.x, 4.0F);
+    EXPECT_EQ(call("ai.status", {}), UVScript::ValueUVE{std::string("Idle")});
+    EXPECT_EQ(call("camera.shake", {0.5, 1.0}), UVScript::ValueUVE{false}) << "no services: fails closed";
 }
 
 } // namespace
