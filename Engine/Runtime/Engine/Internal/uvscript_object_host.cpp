@@ -4,7 +4,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <map>
+#include <optional>
 #include <random>
+#include <sstream>
 #include <string>
 #include <type_traits>
 
@@ -172,6 +176,119 @@ inline constexpr std::uint32_t kMaxStagedRpcCallsUVE = 16U;
     return "none";
 }
 
+/// The world-facing calls every script may make (they fail closed without the game's services):
+/// messages, timers, other objects, traces, the game's state and saves.
+[[nodiscard]] std::optional<HostFunctionUVE> DescribeWorldFunctionUVE(const std::string_view name) {
+    const TypeUVE s = TypeUVE::StrUVE();
+    const TypeUVE f = TypeUVE::FloatUVE();
+    const TypeUVE i = TypeUVE::IntUVE();
+    const TypeUVE b = TypeUVE::BoolUVE();
+    const TypeUVE v = TypeUVE::Vec3UVE();
+    const TypeUVE o = TypeUVE::ObjectUVE("Object3D");
+    const TypeUVE list = TypeUVE::ListUVE(o);
+    static const std::map<std::string, std::pair<std::vector<std::string>, std::string>, std::less<>> kTable = {
+        {"events.emit", {{"s", "s"}, "b"}},
+        {"events.emit_to", {{"o", "s", "s"}, "b"}},
+        {"timers.set", {{"s", "f", "b"}, "b"}},
+        {"timers.clear", {{"s"}, "b"}},
+        {"timers.active", {{"s"}, "b"}},
+        {"timers.remaining", {{"s"}, "f"}},
+        {"world.self", {{}, "o"}},
+        {"world.spawn", {{"s", "v", "v"}, "o"}},
+        {"world.destroy", {{"o"}, "b"}},
+        {"world.destroy_self", {{}, "b"}},
+        {"world.set_life_span", {{"f"}, "b"}},
+        {"world.find_tag", {{"s"}, "o"}},
+        {"world.find_all_tag", {{"s"}, "l"}},
+        {"world.find_all_name", {{"s"}, "l"}},
+        {"world.is_valid", {{"o"}, "b"}},
+        {"object.name", {{"o"}, "s"}},
+        {"object.get_position", {{"o"}, "v"}},
+        {"object.set_position", {{"o", "v"}, "b"}},
+        {"object.get_rotation", {{"o"}, "v"}},
+        {"object.set_rotation", {{"o", "v"}, "b"}},
+        {"object.get_scale", {{"o"}, "v"}},
+        {"object.set_scale", {{"o", "v"}, "b"}},
+        {"object.set_visible", {{"o", "b"}, "b"}},
+        {"object.has_tag", {{"o", "s"}, "b"}},
+        {"object.add_tag", {{"o", "s"}, "b"}},
+        {"object.remove_tag", {{"o", "s"}, "b"}},
+        {"object.distance", {{"o", "o"}, "f"}},
+        {"object.attach", {{"o", "o"}, "b"}},
+        {"object.detach", {{"o"}, "b"}},
+        {"object.parent", {{"o"}, "o"}},
+        {"object.children", {{"o"}, "l"}},
+        {"trace.line", {{"v", "v"}, "b"}},
+        {"trace.sphere", {{"v", "v", "f"}, "b"}},
+        {"trace.location", {{}, "v"}},
+        {"trace.normal", {{}, "v"}},
+        {"trace.object", {{}, "o"}},
+        {"trace.distance", {{}, "f"}},
+        {"game.time", {{}, "f"}},
+        {"game.delta", {{}, "f"}},
+        {"game.time_scale", {{}, "f"}},
+        {"game.set_time_scale", {{"f"}, "b"}},
+        {"game.pause", {{}, "b"}},
+        {"game.resume", {{}, "b"}},
+        {"game.is_paused", {{}, "b"}},
+        {"game.quit", {{}, "b"}},
+        {"game.open_level", {{"s"}, "b"}},
+        {"game.level_name", {{}, "s"}},
+        {"save.set_float", {{"s", "f"}, "b"}},
+        {"save.set_int", {{"s", "i"}, "b"}},
+        {"save.set_bool", {{"s", "b"}, "b"}},
+        {"save.set_str", {{"s", "s"}, "b"}},
+        {"save.get_float", {{"s", "f"}, "f"}},
+        {"save.get_int", {{"s", "i"}, "i"}},
+        {"save.get_bool", {{"s", "b"}, "b"}},
+        {"save.get_str", {{"s", "s"}, "s"}},
+        {"save.has", {{"s"}, "b"}},
+        {"save.remove", {{"s"}, "b"}},
+        {"save.write", {{"s"}, "b"}},
+        {"save.read", {{"s"}, "b"}},
+        {"save.exists", {{"s"}, "b"}},
+        {"save.delete", {{"s"}, "b"}},
+    };
+    const auto found = kTable.find(name);
+    if (found == kTable.end()) {
+        return std::nullopt;
+    }
+    const auto type = [&](const std::string& code) {
+        return code == "s" ? s : code == "f" ? f : code == "i" ? i : code == "b" ? b : code == "v" ? v : code == "o" ? o : list;
+    };
+    HostFunctionUVE out{{}, type(found->second.second)};
+    for (const std::string& parameter : found->second.first) {
+        out.params.push_back(type(parameter));
+    }
+    return out;
+}
+
+/// Euler degrees (X pitch, Y yaw, Z roll) of a rotation, as the Details panel shows them.
+[[nodiscard]] Math::Vector3UVE DegreesOfUVE(const Math::QuaternionUVE& rotation) {
+    Math::Vector3UVE radians{};
+    static_cast<void>(Math::TryToEulerUVE(rotation, radians));
+    constexpr float kDegrees = 57.29578F;
+    return Math::Vector3UVE{radians.x * kDegrees, radians.y * kDegrees, radians.z * kDegrees};
+}
+
+[[nodiscard]] std::optional<Math::QuaternionUVE> RotationOfDegreesUVE(const Math::Vector3UVE& degrees) {
+    constexpr float kRadians = 0.017453292F;
+    Math::QuaternionUVE rotation{};
+    if (!Math::TryMakeEulerUVE(Math::Vector3UVE{degrees.x * kRadians, degrees.y * kRadians, degrees.z * kRadians}, rotation)) {
+        return std::nullopt;
+    }
+    return rotation;
+}
+
+/// The timer a life span runs on: no script can name it (`timers.set` refuses it).
+inline constexpr std::string_view kLifeSpanTimerUVE = "__life_span";
+
+void MarkMovedUVE(Scene::IEntityManagerUVE& entities, const Scene::EntityUVE entity) {
+    if (entities.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+        entities.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).dirty = true;
+    }
+}
+
 } // namespace
 
 static_assert(std::is_same_v<Network::RpcCallIdUVE, std::uint32_t>,
@@ -328,6 +445,13 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
     }
     if (name == "math.random_bool") {
         return HostFunctionUVE{{}, TypeUVE::BoolUVE()};
+    }
+    if (name == "math.select_float" || name == "math.select_int" || name == "math.select_vector" || name == "math.select_string") {
+        const TypeUVE value = name == "math.select_float" ? TypeUVE::FloatUVE()
+                              : name == "math.select_int" ? TypeUVE::IntUVE()
+                              : name == "math.select_vector" ? TypeUVE::Vec3UVE()
+                                                              : TypeUVE::StrUVE();
+        return HostFunctionUVE{{TypeUVE::BoolUVE(), value, value}, value};
     }
     if (name == "math.random_int") {
         return HostFunctionUVE{{TypeUVE::IntUVE(), TypeUVE::IntUVE()}, TypeUVE::IntUVE()};
@@ -549,7 +673,7 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
     if (name == "relay.poll") {
         return HostFunctionUVE{{}, TypeUVE::StrUVE()};
     }
-    return std::nullopt;
+    return DescribeWorldFunctionUVE(name);
 }
 
 std::optional<std::vector<TypeUVE>> UVScriptObjectHostUVE::DescribeEventUVE(const std::string_view event) const {
@@ -566,6 +690,18 @@ std::optional<std::vector<TypeUVE>> UVScriptObjectHostUVE::DescribeEventUVE(cons
     }
     if (event == "tick") {
         return std::vector<TypeUVE>{TypeUVE::FloatUVE()};
+    }
+    // A message another script (or this one) sent with `events.emit`: its name and payload.
+    if (event == "custom_event") {
+        return std::vector<TypeUVE>{TypeUVE::StrUVE(), TypeUVE::StrUVE()};
+    }
+    // One of this script's timers ran out (its id).
+    if (event == "timer") {
+        return std::vector<TypeUVE>{TypeUVE::StrUVE()};
+    }
+    // The object is about to be removed (`world.destroy`, a life span, or the end of play).
+    if (event == "destroyed") {
+        return std::vector<TypeUVE>{};
     }
     // An AnimationSequencer's clip passed one of its events: sent to the player's own script and to
     // the script of the object it animates (a character's script hears its footsteps).
@@ -910,6 +1046,10 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
     if (name.starts_with("character.") || name.starts_with("transform.") || name.starts_with("math.")) {
         return GameplayCallUVE(name, args);
     }
+    if (name.starts_with("events.") || name.starts_with("timers.") || name.starts_with("world.") || name.starts_with("object.") ||
+        name.starts_with("trace.") || name.starts_with("game.") || name.starts_with("save.")) {
+        return WorldCallUVE(name, args);
+    }
     // RPC, the lobby, and the relay need no input system, so they route before the
     // null-input early-out below.
     if (name.starts_with("rpc.")) {
@@ -952,6 +1092,9 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
 ValueUVE UVScriptObjectHostUVE::GameplayCallUVE(const std::string_view name, const std::span<const ValueUVE> args) {
     if (name.starts_with("math.")) {
         static std::mt19937 random{std::random_device{}()};
+        if (name.starts_with("math.select_")) {
+            return std::get<bool>(args[0]) ? args[1] : args[2];
+        }
         if (name == "math.random_bool") {
             return std::uniform_int_distribution<int>(0, 1)(random) == 1;
         }
@@ -1856,6 +1999,410 @@ ValueUVE UVScriptObjectHostUVE::WidgetCallUVE(const std::string_view name, const
                entities.GetComponentUVE<Scene::UICheckboxComponentUVE>(widget).checked;
     }
     return false;
+}
+
+Scene::EntityUVE UVScriptObjectHostUVE::EntityOfUVE(const ValueUVE& value) const {
+    const auto* ref = std::get_if<ObjectRefUVE>(&value);
+    if (ref == nullptr || ref->id == 0U) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const Scene::EntityUVE entity = UnpackEntityUVE(*ref);
+    return m_entityManager.IsAliveUVE(entity) ? entity : Scene::kInvalidEntityUVE;
+}
+
+std::vector<std::string> UVScriptObjectHostUVE::AdvanceTimersUVE(const double dt) {
+    std::vector<std::string> fired;
+    if (!(dt > 0.0) || !std::isfinite(dt)) {
+        return fired;
+    }
+    for (auto it = m_timers.begin(); it != m_timers.end();) {
+        TimerUVE& timer = it->second;
+        timer.remaining -= dt;
+        if (timer.remaining > 0.0) {
+            ++it;
+            continue;
+        }
+        if (it->first == kLifeSpanTimerUVE) {
+            // A life span: the object goes, through the deferred removal every script uses.
+            if (m_services != nullptr && m_services->destroy) {
+                m_services->destroy(m_entity);
+            }
+            it = m_timers.erase(it);
+            continue;
+        }
+        fired.push_back(it->first);
+        if (timer.loop && timer.period > 0.0) {
+            // Once per period, however long the frame: a hitch never fires a burst.
+            timer.remaining = std::max(timer.remaining + timer.period, 0.0);
+            ++it;
+        } else {
+            it = m_timers.erase(it);
+        }
+    }
+    return fired;
+}
+
+ValueUVE UVScriptObjectHostUVE::WorldCallUVE(const std::string_view name, const std::span<const ValueUVE> args) {
+    auto& entities = m_entityManager;
+    ScriptServicesUVE* const services = m_services;
+    const auto text = [&args](const std::size_t i) -> const std::string& { return std::get<std::string>(args[i]); };
+    const auto number = [&args](const std::size_t i) { return std::get<double>(args[i]); };
+    const auto object = [](const Scene::EntityUVE entity) {
+        return entity == Scene::kInvalidEntityUVE ? ValueUVE{ObjectRefUVE{}} : ValueUVE{ObjectRefUVE{PackEntityUVE(entity)}};
+    };
+    const auto objects = [&object](const std::vector<Scene::EntityUVE>& found) {
+        std::vector<ValueUVE> items;
+        items.reserve(found.size());
+        for (const Scene::EntityUVE entity : found) {
+            items.push_back(object(entity));
+        }
+        return UVScript::MakeListValueUVE(std::move(items));
+    };
+
+    // ---- messages
+    if (name == "events.emit" || name == "events.emit_to") {
+        const bool to = name == "events.emit_to";
+        const Scene::EntityUVE target = to ? EntityOfUVE(args[0]) : m_entity;
+        if (services == nullptr || !services->emit || target == Scene::kInvalidEntityUVE) {
+            return ValueUVE{false};
+        }
+        services->emit(target, text(to ? 1U : 0U), text(to ? 2U : 1U));
+        return ValueUVE{true};
+    }
+
+    // ---- timers (this script's own)
+    if (name == "timers.set") {
+        const double seconds = number(1U);
+        if (!std::isfinite(seconds) || seconds < 0.0 || text(0U).empty() || text(0U) == kLifeSpanTimerUVE) {
+            return ValueUVE{false};
+        }
+        m_timers[text(0U)] = TimerUVE{seconds, seconds, std::get<bool>(args[2])};
+        return ValueUVE{true};
+    }
+    if (name == "timers.clear") {
+        return ValueUVE{m_timers.erase(text(0U)) > 0U};
+    }
+    if (name == "timers.active") {
+        return ValueUVE{m_timers.contains(text(0U))};
+    }
+    if (name == "timers.remaining") {
+        const auto found = m_timers.find(text(0U));
+        return ValueUVE{found != m_timers.end() ? std::max(found->second.remaining, 0.0) : 0.0};
+    }
+
+    // ---- the world
+    if (name == "world.self") {
+        return object(m_entity);
+    }
+    if (name == "world.spawn") {
+        if (services == nullptr || !services->spawn) {
+            return object(Scene::kInvalidEntityUVE);
+        }
+        return object(services->spawn(text(0U), std::get<Vec3ValueUVE>(args[1]), std::get<Vec3ValueUVE>(args[2])));
+    }
+    if (name == "world.destroy" || name == "world.destroy_self") {
+        const Scene::EntityUVE target = name == "world.destroy" ? EntityOfUVE(args[0]) : m_entity;
+        if (services == nullptr || !services->destroy || target == Scene::kInvalidEntityUVE) {
+            return ValueUVE{false};
+        }
+        services->destroy(target);
+        return ValueUVE{true};
+    }
+    if (name == "world.set_life_span") {
+        const double seconds = number(0U);
+        if (!std::isfinite(seconds)) {
+            return ValueUVE{false};
+        }
+        if (seconds <= 0.0) {
+            return ValueUVE{m_timers.erase(std::string{kLifeSpanTimerUVE}) > 0U};
+        }
+        m_timers[std::string{kLifeSpanTimerUVE}] = TimerUVE{seconds, seconds, false};
+        return ValueUVE{true};
+    }
+    if (name == "world.find_tag" || name == "world.find_all_tag") {
+        std::vector<Scene::EntityUVE> found;
+        entities.ForEachUVE<Scene::GameplayTagComponentUVE>([&](const Scene::EntityUVE entity, const Scene::GameplayTagComponentUVE& tags) {
+            if (Scene::HasGameplayTagUVE(tags, text(0U))) {
+                found.push_back(entity);
+            }
+        });
+        if (name == "world.find_tag") {
+            return object(found.empty() ? Scene::kInvalidEntityUVE : found.front());
+        }
+        return objects(found);
+    }
+    if (name == "world.find_all_name") {
+        // By name, or a name's start ("Enemy" finds Enemy, Enemy2, Enemy_Boss).
+        std::vector<Scene::EntityUVE> found;
+        entities.ForEachUVE<Scene::NameComponentUVE>([&](const Scene::EntityUVE entity, const Scene::NameComponentUVE& named) {
+            if (named.name.starts_with(text(0U))) {
+                found.push_back(entity);
+            }
+        });
+        return objects(found);
+    }
+    if (name == "world.is_valid") {
+        return ValueUVE{EntityOfUVE(args[0]) != Scene::kInvalidEntityUVE};
+    }
+
+    // ---- another object
+    if (name.starts_with("object.")) {
+        const Scene::EntityUVE target = EntityOfUVE(args[0]);
+        const bool alive = target != Scene::kInvalidEntityUVE;
+        const bool placed = alive && entities.HasComponentUVE<Scene::TransformComponentUVE>(target);
+        if (name == "object.name") {
+            return ValueUVE{alive && entities.HasComponentUVE<Scene::NameComponentUVE>(target)
+                                ? entities.GetComponentUVE<Scene::NameComponentUVE>(target).name
+                                : std::string{}};
+        }
+        if (name == "object.get_position" || name == "object.get_rotation" || name == "object.get_scale") {
+            if (!placed) {
+                return ToScriptUVE(name == "object.get_scale" ? Math::Vector3UVE{1.0F, 1.0F, 1.0F} : Math::Vector3UVE{});
+            }
+            const Scene::TransformComponentUVE& transform = entities.GetComponentUVE<Scene::TransformComponentUVE>(target);
+            return ToScriptUVE(name == "object.get_position" ? transform.localPosition
+                               : name == "object.get_scale"  ? transform.localScale
+                                                             : DegreesOfUVE(transform.localRotation));
+        }
+        if (name == "object.set_position" || name == "object.set_rotation" || name == "object.set_scale") {
+            const Math::Vector3UVE value = ToEngineUVE(args[1]);
+            if (!placed || !std::isfinite(value.x) || !std::isfinite(value.y) || !std::isfinite(value.z)) {
+                return ValueUVE{false};
+            }
+            Scene::TransformComponentUVE& transform = entities.GetComponentUVE<Scene::TransformComponentUVE>(target);
+            if (name == "object.set_rotation") {
+                const std::optional<Math::QuaternionUVE> rotation = RotationOfDegreesUVE(value);
+                if (!rotation.has_value()) {
+                    return ValueUVE{false};
+                }
+                transform.localRotation = *rotation;
+            } else {
+                (name == "object.set_position" ? transform.localPosition : transform.localScale) = value;
+            }
+            MarkMovedUVE(entities, target);
+            return ValueUVE{true};
+        }
+        if (name == "object.set_visible") {
+            if (!alive) {
+                return ValueUVE{false};
+            }
+            SetVisibleUVE(entities, target, std::get<bool>(args[1]));
+            return ValueUVE{true};
+        }
+        if (name == "object.has_tag" || name == "object.add_tag" || name == "object.remove_tag") {
+            if (!alive) {
+                return ValueUVE{false};
+            }
+            if (!entities.HasComponentUVE<Scene::GameplayTagComponentUVE>(target)) {
+                if (name != "object.add_tag") {
+                    return ValueUVE{false};
+                }
+                entities.AddComponentUVE<Scene::GameplayTagComponentUVE>(target, Scene::GameplayTagComponentUVE{});
+            }
+            Scene::GameplayTagComponentUVE& tags = entities.GetComponentUVE<Scene::GameplayTagComponentUVE>(target);
+            if (name == "object.has_tag") {
+                return ValueUVE{Scene::HasGameplayTagUVE(tags, text(1U))};
+            }
+            if (name == "object.add_tag") {
+                return ValueUVE{Scene::AddGameplayTagUVE(tags, text(1U))};
+            }
+            return ValueUVE{Scene::RemoveGameplayTagUVE(tags, text(1U))};
+        }
+        if (name == "object.distance") {
+            const Scene::EntityUVE other = EntityOfUVE(args[1]);
+            const auto where = [&entities](const Scene::EntityUVE entity) {
+                if (entities.HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                    return entities.GetComponentUVE<Scene::WorldTransformComponentUVE>(entity).worldPosition;
+                }
+                return entities.GetComponentUVE<Scene::TransformComponentUVE>(entity).localPosition;
+            };
+            if (!placed || other == Scene::kInvalidEntityUVE || !entities.HasComponentUVE<Scene::TransformComponentUVE>(other)) {
+                return ValueUVE{0.0};
+            }
+            const Math::Vector3UVE a = where(target);
+            const Math::Vector3UVE b = where(other);
+            const double dx = a.x - b.x;
+            const double dy = a.y - b.y;
+            const double dz = a.z - b.z;
+            return ValueUVE{std::sqrt(dx * dx + dy * dy + dz * dz)};
+        }
+        if (name == "object.attach" || name == "object.detach") {
+            const Scene::EntityUVE parent = name == "object.attach" ? EntityOfUVE(args[1]) : Scene::kInvalidEntityUVE;
+            if (!alive || services == nullptr || !services->setParent || (name == "object.attach" && parent == Scene::kInvalidEntityUVE)) {
+                return ValueUVE{false};
+            }
+            return ValueUVE{services->setParent(target, parent)};
+        }
+        if (name == "object.parent") {
+            if (!alive || !entities.HasComponentUVE<Scene::HierarchyComponentUVE>(target)) {
+                return object(Scene::kInvalidEntityUVE);
+            }
+            const Scene::EntityUVE parent = entities.GetComponentUVE<Scene::HierarchyComponentUVE>(target).parent;
+            return object(entities.IsAliveUVE(parent) ? parent : Scene::kInvalidEntityUVE);
+        }
+        if (name == "object.children") {
+            std::vector<std::pair<std::int64_t, Scene::EntityUVE>> found;
+            if (alive) {
+                entities.ForEachUVE<Scene::HierarchyComponentUVE>([&](const Scene::EntityUVE entity, const Scene::HierarchyComponentUVE& link) {
+                    if (link.parent == target && entity != target) {
+                        found.emplace_back(link.siblingOrder, entity);
+                    }
+                });
+            }
+            std::ranges::sort(found, [](const auto& a, const auto& b) { return a.first < b.first; });
+            std::vector<Scene::EntityUVE> children;
+            for (const auto& [order, entity] : found) {
+                children.push_back(entity);
+            }
+            return objects(children);
+        }
+        return ValueUVE{false};
+    }
+
+    // ---- traces: the result stays for the trace.* readers
+    if (name == "trace.line" || name == "trace.sphere") {
+        m_lastTrace = ScriptServicesUVE::TraceHitUVE{};
+        if (services != nullptr && services->trace) {
+            const double radius = name == "trace.sphere" ? std::max(number(2U), 0.0) : 0.0;
+            m_lastTrace = services->trace(std::get<Vec3ValueUVE>(args[0]), std::get<Vec3ValueUVE>(args[1]), radius, m_entity);
+        }
+        return ValueUVE{m_lastTrace.hit};
+    }
+    if (name == "trace.location") {
+        return ValueUVE{m_lastTrace.point};
+    }
+    if (name == "trace.normal") {
+        return ValueUVE{m_lastTrace.normal};
+    }
+    if (name == "trace.object") {
+        return object(m_lastTrace.hit && entities.IsAliveUVE(m_lastTrace.entity) ? m_lastTrace.entity : Scene::kInvalidEntityUVE);
+    }
+    if (name == "trace.distance") {
+        return ValueUVE{m_lastTrace.distance};
+    }
+
+    // ---- the game
+    if (name.starts_with("game.")) {
+        if (name == "game.time") {
+            return ValueUVE{services != nullptr && services->time ? services->time() : 0.0};
+        }
+        if (name == "game.delta") {
+            return ValueUVE{services != nullptr && services->delta ? services->delta() : 0.0};
+        }
+        if (name == "game.time_scale") {
+            return ValueUVE{services != nullptr && services->timeScale ? services->timeScale() : 1.0};
+        }
+        if (name == "game.is_paused") {
+            return ValueUVE{services != nullptr && services->paused && services->paused()};
+        }
+        if (name == "game.level_name") {
+            return ValueUVE{services != nullptr && services->levelName ? services->levelName() : std::string{}};
+        }
+        if (name == "game.set_time_scale") {
+            const double scale = number(0U);
+            if (services == nullptr || !services->setTimeScale || !std::isfinite(scale) || scale < 0.0) {
+                return ValueUVE{false};
+            }
+            services->setTimeScale(scale);
+            return ValueUVE{true};
+        }
+        if (name == "game.pause" || name == "game.resume") {
+            if (services == nullptr || !services->setPaused) {
+                return ValueUVE{false};
+            }
+            services->setPaused(name == "game.pause");
+            return ValueUVE{true};
+        }
+        if (name == "game.quit") {
+            if (services == nullptr || !services->quit) {
+                return ValueUVE{false};
+            }
+            services->quit();
+            return ValueUVE{true};
+        }
+        if (name == "game.open_level") {
+            return ValueUVE{services != nullptr && services->openLevel && services->openLevel(text(0U))};
+        }
+        return ValueUVE{false};
+    }
+
+    // ---- saved game data
+    if (name.starts_with("save.")) {
+        if (services == nullptr) {
+            if (name == "save.get_float" || name == "save.get_int" || name == "save.get_bool" || name == "save.get_str") {
+                return args[1];
+            }
+            return ValueUVE{false};
+        }
+        std::map<std::string, std::string>& data = services->gameData;
+        if (name == "save.set_float" || name == "save.set_int" || name == "save.set_bool" || name == "save.set_str") {
+            if (text(0U).empty()) {
+                return ValueUVE{false};
+            }
+            std::string stored;
+            if (name == "save.set_float") {
+                const double value = number(1U);
+                if (!std::isfinite(value)) {
+                    return ValueUVE{false};
+                }
+                std::ostringstream out;
+                out.precision(17);
+                out << value;
+                stored = out.str();
+            } else if (name == "save.set_int") {
+                stored = std::to_string(std::get<std::int64_t>(args[1]));
+            } else if (name == "save.set_bool") {
+                stored = std::get<bool>(args[1]) ? "true" : "false";
+            } else {
+                stored = text(1U);
+            }
+            data[text(0U)] = std::move(stored);
+            return ValueUVE{true};
+        }
+        if (name == "save.get_float" || name == "save.get_int" || name == "save.get_bool" || name == "save.get_str") {
+            const auto found = data.find(text(0U));
+            if (found == data.end()) {
+                return args[1];
+            }
+            const std::string& stored = found->second;
+            try {
+                if (name == "save.get_float") {
+                    return ValueUVE{std::stod(stored)};
+                }
+                if (name == "save.get_int") {
+                    return ValueUVE{static_cast<std::int64_t>(std::stoll(stored))};
+                }
+            } catch (...) {
+                return args[1];
+            }
+            if (name == "save.get_bool") {
+                return ValueUVE{stored == "true" || stored == "1"};
+            }
+            return ValueUVE{stored};
+        }
+        if (name == "save.has") {
+            return ValueUVE{data.contains(text(0U))};
+        }
+        if (name == "save.remove") {
+            return ValueUVE{data.erase(text(0U)) > 0U};
+        }
+        const auto slot = [&](const std::function<bool(const std::string&)>& call) {
+            return ValueUVE{call && !text(0U).empty() && call(text(0U))};
+        };
+        if (name == "save.write") {
+            return slot(services->saveSlot);
+        }
+        if (name == "save.read") {
+            return slot(services->loadSlot);
+        }
+        if (name == "save.exists") {
+            return slot(services->slotExists);
+        }
+        if (name == "save.delete") {
+            return slot(services->deleteSlot);
+        }
+    }
+    return ValueUVE{false};
 }
 
 } // namespace UVE::Core

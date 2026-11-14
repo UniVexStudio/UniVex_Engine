@@ -25,11 +25,13 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     constexpr auto widget = static_cast<std::uint8_t>(BlueprintGraphKindUVE::Widget);
     for (BlueprintNodeTypeUVE& n : all) {
         const std::string& c = n.category;
-        if (c.starts_with("User Interface")) {
+        if (n.event == "custom_event" || n.event == "timer" || c.starts_with("Utilities") || c == "Game" || c.starts_with("Game|")) {
+            n.graphs = object | widget;
+        } else if (c.starts_with("User Interface")) {
             // A widget's own controls; creating a widget or the mouse cursor work from any graph.
             const bool anywhere = n.key == "ui_create_widget" || n.key == "ui_add_to_viewport" || n.key == "ui_show_mouse_cursor";
             n.graphs = anywhere ? (object | widget) : widget;
-        } else if (c == "Character" || c == "Physics" || c == "Animation" || c == "Audio" || c == "Transform" || c == "Rendering" ||
+        } else if (c == "Character" || c == "Physics" || c.starts_with("Physics|") || c == "World" || c == "Animation" || c == "Audio" || c == "Transform" || c == "Rendering" ||
                    c.starts_with("Gameplay") ||
                    (c == "Events" && n.event != "ready" && n.event != "tick")) {
             n.graphs = object;
@@ -128,6 +130,31 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     event("event_montage_notify_end", "On Montage Notify End", "montage_notify_end", {Pin{"Notify", T::String, ""}}, "notify state", "A montage left a notify state");
     event("event_montage_ended", "On Montage Ended", "montage_ended", {Pin{"Montage", T::String, ""}}, "finished", "A montage ended");
 
+    // Named events: the node names which one (empty: any), like a widget event.
+    const auto namedEvent = [&all](std::string key, std::string title, std::string category, std::string ev, std::string field,
+                                   std::string fieldDefault, std::vector<Pin> data, std::string keywords, std::string tip) {
+        BlueprintNodeTypeUVE n;
+        n.key = std::move(key);
+        n.title = std::move(title);
+        n.category = std::move(category);
+        n.keywords = std::move(keywords);
+        n.role = Role::Event;
+        n.event = std::move(ev);
+        n.inputs.push_back(Pin{std::move(field), T::String, std::move(fieldDefault)});
+        n.outputs.push_back(Exec());
+        for (Pin& p : data) {
+            n.outputs.push_back(std::move(p));
+        }
+        n.tooltip = std::move(tip);
+        all.push_back(std::move(n));
+    };
+    namedEvent("event_custom", "Custom Event", "Events", "custom_event", "Event", "MyEvent",
+               {Pin{"Event", T::String, ""}, Pin{"Payload", T::String, ""}}, "custom signal message dispatcher broadcast",
+               "Runs when Call Custom Event names it (here, or from another object)");
+    namedEvent("event_timer", "On Timer", "Events", "timer", "Timer", "Spawn", {Pin{"Timer", T::String, ""}}, "timer elapsed interval repeat",
+               "Runs when the timer Set Timer started (by its name) runs out");
+    event("event_destroyed", "On Destroyed", "destroyed", {}, "end play removed killed", "Just before the object is removed");
+
     // ---- flow control
     flow("branch", "Branch", Role::Branch, {Exec(), Pin{"Condition", T::Bool, "false"}}, {Exec("True"), Exec("False")}, "if else", "One way or the other");
     flow("sequence", "Sequence", Role::Sequence, {Exec()}, {Exec("Then 0"), Exec("Then 1"), Exec("Then 2"), Exec("Then 3")}, "then order", "Each output in turn");
@@ -137,6 +164,20 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     flow("do_once", "Do Once", Role::DoOnce, {Exec()}, {Exec("Completed")}, "single first", "Only the first time");
     flow("flip_flop", "Flip Flop", Role::FlipFlop, {Exec()}, {Exec("A"), Exec("B"), Pin{"Is A", T::Bool, ""}}, "toggle alternate", "A, then B, then A ...");
     flow("delay", "Delay", Role::Delay, {Exec(), Pin{"Duration", T::Float, "0.5"}}, {Exec("Completed")}, "wait timer seconds", "Waits, then goes on");
+    flow("gate", "Gate", Role::Gate, {Exec("Enter"), Exec("Open"), Exec("Close"), Exec("Toggle"), Pin{"Start Closed", T::Bool, "false"}},
+         {Exec("Exit")}, "open close door block", "Enter goes on only while the gate is open");
+    flow("multi_gate", "Multi Gate", Role::MultiGate, {Exec("Enter"), Exec("Reset"), Pin{"Loop", T::Bool, "true"}},
+         {Exec("Out 0"), Exec("Out 1"), Exec("Out 2"), Exec("Out 3")}, "cycle round robin each next", "Each time, the next output");
+    flow("do_n", "Do N", Role::DoN, {Exec("Enter"), Pin{"N", T::Int, "3"}, Exec("Reset")}, {Exec("Exit"), Pin{"Counter", T::Int, ""}},
+         "limit times count", "Goes on the first N times, until Reset");
+    flow("retriggerable_delay", "Retriggerable Delay", Role::RetriggerableDelay, {Exec(), Pin{"Duration", T::Float, "0.5"}}, {Exec("Completed")},
+         "wait debounce restart timer", "Waits; entering again starts the wait over");
+    flow("switch_int", "Switch on Int", Role::SwitchInt, {Exec(), Pin{"Selection", T::Int, "0"}},
+         {Exec("0"), Exec("1"), Exec("2"), Exec("3"), Exec("Default")}, "case select index", "The output of the number");
+    flow("switch_string", "Switch on String", Role::SwitchString,
+         {Exec(), Pin{"Selection", T::String, ""}, Pin{"Case 0", T::String, "A"}, Pin{"Case 1", T::String, "B"}, Pin{"Case 2", T::String, "C"},
+          Pin{"Case 3", T::String, "D"}},
+         {Exec("Case 0"), Exec("Case 1"), Exec("Case 2"), Exec("Case 3"), Exec("Default")}, "case select name", "The output of the matching case");
     flow("is_valid", "Is Valid", Role::IsValid, {Exec(), Pin{"Object", T::Object, ""}}, {Exec("Is Valid"), Exec("Is Not Valid")}, "none null exists", "Whether the object was found");
 
     // ---- utilities
@@ -243,6 +284,140 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
          {"anim.get_float({0})"});
     pure("anim_get_bool", "Get Anim Bool", "Animation", {Pin{"Parameter", T::String, "IsJumping"}}, {Pin{"Value", T::Bool, ""}},
          {"anim.get_bool({0})"});
+
+    // ---- events and timers
+    action("call_custom_event", "Call Custom Event", "Utilities|Events", {Pin{"Event", T::String, "MyEvent"}, Pin{"Payload", T::String, ""}},
+           "events.emit({1}, {2})", "send signal message fire broadcast", "Runs this object's Custom Event of that name, after the current one");
+    action("call_custom_event_on", "Call Custom Event On", "Utilities|Events",
+           {Pin{"Target", T::Object, ""}, Pin{"Event", T::String, "MyEvent"}, Pin{"Payload", T::String, ""}}, "events.emit_to({1}, {2}, {3})",
+           "send signal message other object", "Runs another object's Custom Event of that name");
+    action("set_timer", "Set Timer", "Utilities|Timers", {Pin{"Timer", T::String, "Spawn"}, Pin{"Seconds", T::Float, "1.0"}, Pin{"Looping", T::Bool, "false"}},
+           "timers.set({1}, {2}, {3})", "timer by event interval repeat", "On Timer of that name runs when it runs out (again and again when looping)");
+    action("clear_timer", "Clear Timer", "Utilities|Timers", {Pin{"Timer", T::String, "Spawn"}}, "timers.clear({1})", "stop cancel timer");
+    pure("is_timer_active", "Is Timer Active", "Utilities|Timers", {Pin{"Timer", T::String, "Spawn"}}, {Pin{"Active", T::Bool, ""}},
+         {"timers.active({0})"}, "running timer");
+    pure("get_timer_remaining", "Get Timer Remaining", "Utilities|Timers", {Pin{"Timer", T::String, "Spawn"}}, {Pin{"Seconds", T::Float, ""}},
+         {"timers.remaining({0})"}, "time left timer");
+
+    // ---- world: spawning, finding, removing
+    const auto valued = [&all](std::string key, std::string title, std::string category, std::vector<Pin> data, std::vector<Pin> values,
+                               std::vector<std::string> codes, std::string keywords, std::string tip) {
+        // An action with values, kept in fields for the nodes after it.
+        BlueprintNodeTypeUVE n;
+        n.key = std::move(key);
+        n.title = std::move(title);
+        n.category = std::move(category);
+        n.keywords = std::move(keywords);
+        n.role = Role::Action;
+        n.inputs.push_back(Exec());
+        for (Pin& p : data) {
+            n.inputs.push_back(std::move(p));
+        }
+        n.outputs.push_back(Exec());
+        for (Pin& p : values) {
+            n.outputs.push_back(std::move(p));
+        }
+        n.outputCode = std::move(codes);
+        n.tooltip = std::move(tip);
+        all.push_back(std::move(n));
+    };
+    valued("spawn_entity", "Spawn Entity", "World",
+           {Pin{"Entity", T::String, "Entities/Cube.uventity"}, Pin{"Location", T::Vector, "0,0,0"}, Pin{"Rotation", T::Vector, "0,0,0"}},
+           {Pin{"Return Value", T::Object, ""}}, {"world.spawn({1}, {2}, {3})"}, "spawn actor create instantiate prefab",
+           "Makes an entity or prefab file's objects at a place");
+    action("destroy_object", "Destroy Object", "World", {Pin{"Object", T::Object, ""}}, "world.destroy({1})", "destroy actor remove delete kill",
+           "Removes the object (and what is under it) at the end of the frame");
+    action("destroy_self", "Destroy Self", "World", {}, "world.destroy_self()", "destroy actor remove delete kill this");
+    action("set_life_span", "Set Life Span", "World", {Pin{"Seconds", T::Float, "5.0"}}, "world.set_life_span({1})", "lifetime expire auto destroy",
+           "Removes this object after so many seconds (0 keeps it)");
+    pure("get_self", "Self", "World", {}, {Pin{"Self", T::Object, ""}}, {"world.self()"}, "this me reference", "This object");
+    pure("find_object_with_tag", "Get Object With Tag", "World", {Pin{"Tag", T::String, "Enemy"}}, {Pin{"Object", T::Object, ""}},
+         {"world.find_tag({0})"}, "find first actor tag", "The first object carrying the tag (Gameplay Tags)");
+    pure("object_is_valid", "Is Valid Object", "World", {Pin{"Object", T::Object, ""}}, {Pin{"Valid", T::Bool, ""}}, {"world.is_valid({0})"},
+         "exists alive none null");
+
+    // ---- another object
+    pure("object_get_name", "Get Object Name", "Objects", {Pin{"Object", T::Object, ""}}, {Pin{"Name", T::String, ""}}, {"object.name({0})"},
+         "display name label");
+    pure("object_get_location", "Get Object Location", "Objects", {Pin{"Object", T::Object, ""}}, {Pin{"Location", T::Vector, ""}},
+         {"object.get_position({0})"}, "position actor location");
+    action("object_set_location", "Set Object Location", "Objects", {Pin{"Object", T::Object, ""}, Pin{"Location", T::Vector, "0,0,0"}},
+           "object.set_position({1}, {2})", "position actor teleport move");
+    pure("object_get_rotation", "Get Object Rotation", "Objects", {Pin{"Object", T::Object, ""}}, {Pin{"Rotation", T::Vector, ""}},
+         {"object.get_rotation({0})"}, "euler angles");
+    action("object_set_rotation", "Set Object Rotation", "Objects", {Pin{"Object", T::Object, ""}, Pin{"Rotation", T::Vector, "0,0,0"}},
+           "object.set_rotation({1}, {2})", "euler angles turn");
+    pure("object_get_scale", "Get Object Scale", "Objects", {Pin{"Object", T::Object, ""}}, {Pin{"Scale", T::Vector, ""}}, {"object.get_scale({0})"},
+         "size");
+    action("object_set_scale", "Set Object Scale", "Objects", {Pin{"Object", T::Object, ""}, Pin{"Scale", T::Vector, "1,1,1"}},
+           "object.set_scale({1}, {2})", "size");
+    action("object_set_visible", "Set Object Visible", "Objects", {Pin{"Object", T::Object, ""}, Pin{"Visible", T::Bool, "true"}},
+           "object.set_visible({1}, {2})", "hide show");
+    pure("object_has_tag", "Object Has Tag", "Objects", {Pin{"Object", T::Object, ""}, Pin{"Tag", T::String, "Enemy"}}, {Pin{"Has", T::Bool, ""}},
+         {"object.has_tag({0}, {1})"}, "actor has tag");
+    action("object_add_tag", "Add Tag To Object", "Objects", {Pin{"Object", T::Object, ""}, Pin{"Tag", T::String, "Enemy"}}, "object.add_tag({1}, {2})");
+    action("object_remove_tag", "Remove Tag From Object", "Objects", {Pin{"Object", T::Object, ""}, Pin{"Tag", T::String, "Enemy"}},
+           "object.remove_tag({1}, {2})");
+    pure("object_distance", "Get Distance Between", "Objects", {Pin{"A", T::Object, ""}, Pin{"B", T::Object, ""}}, {Pin{"Distance", T::Float, ""}},
+         {"object.distance({0}, {1})"}, "far near range");
+    action("object_attach", "Attach To Object", "Objects", {Pin{"Child", T::Object, ""}, Pin{"Parent", T::Object, ""}}, "object.attach({1}, {2})",
+           "parent socket attach actor", "Puts the child under the parent: it moves with it");
+    action("object_detach", "Detach From Parent", "Objects", {Pin{"Object", T::Object, ""}}, "object.detach({1})", "unparent detach");
+    pure("object_get_parent", "Get Parent", "Objects", {Pin{"Object", T::Object, ""}}, {Pin{"Parent", T::Object, ""}}, {"object.parent({0})"},
+         "owner attach parent");
+
+    // ---- traces
+    valued("line_trace", "Line Trace", "Physics|Traces", {Pin{"Start", T::Vector, "0,0,0"}, Pin{"End", T::Vector, "0,0,-10"}},
+           {Pin{"Hit", T::Bool, ""}, Pin{"Location", T::Vector, ""}, Pin{"Normal", T::Vector, ""}, Pin{"Hit Object", T::Object, ""},
+            Pin{"Distance", T::Float, ""}},
+           {"trace.line({1}, {2})", "trace.location()", "trace.normal()", "trace.object()", "trace.distance()"},
+           "raycast line trace by channel ray hit", "The first collider between Start and End (never this object)");
+    valued("sphere_trace", "Sphere Trace", "Physics|Traces",
+           {Pin{"Start", T::Vector, "0,0,0"}, Pin{"End", T::Vector, "0,0,-10"}, Pin{"Radius", T::Float, "0.5"}},
+           {Pin{"Hit", T::Bool, ""}, Pin{"Location", T::Vector, ""}, Pin{"Normal", T::Vector, ""}, Pin{"Hit Object", T::Object, ""},
+            Pin{"Distance", T::Float, ""}},
+           {"trace.sphere({1}, {2}, {3})", "trace.location()", "trace.normal()", "trace.object()", "trace.distance()"},
+           "sweep shape cast sphere trace", "A ball moved from Start to End: the first collider it touches");
+
+    // ---- game: time, pause, levels
+    pure("get_game_time", "Get Game Time In Seconds", "Game|Time", {}, {Pin{"Seconds", T::Float, ""}}, {"game.time()"}, "time seconds elapsed clock");
+    pure("get_delta_seconds", "Get World Delta Seconds", "Game|Time", {}, {Pin{"Seconds", T::Float, ""}}, {"game.delta()"}, "frame time dt");
+    pure("get_time_scale", "Get Global Time Dilation", "Game|Time", {}, {Pin{"Scale", T::Float, ""}}, {"game.time_scale()"}, "slow motion speed");
+    action("set_time_scale", "Set Global Time Dilation", "Game|Time", {Pin{"Scale", T::Float, "1.0"}}, "game.set_time_scale({1})",
+           "slow motion bullet time speed", "Slower (0.1) or faster (up to 32) game time");
+    action("pause_game", "Pause Game", "Game", {}, "game.pause()", "pause stop freeze", "Stops the world; a widget or object set to run while paused goes on");
+    action("resume_game", "Resume Game", "Game", {}, "game.resume()", "unpause continue");
+    pure("is_game_paused", "Is Game Paused", "Game", {}, {Pin{"Paused", T::Bool, ""}}, {"game.is_paused()"}, "paused");
+    action("quit_game", "Quit Game", "Game", {}, "game.quit()", "exit close end", "Ends the game (stops Play in the editor)");
+    action("open_level", "Open Level", "Game", {Pin{"Level", T::String, "Levels/Main.uvscene"}}, "game.open_level({1})",
+           "load map scene travel", "Loads another level once this frame is done");
+    pure("get_level_name", "Get Current Level Name", "Game", {}, {Pin{"Level", T::String, ""}}, {"game.level_name()"}, "map scene");
+
+    // ---- saved game data
+    action("save_set_float", "Set Game Data (Float)", "Game|Save", {Pin{"Key", T::String, "Score"}, Pin{"Value", T::Float, "0.0"}},
+           "save.set_float({1}, {2})", "save game variable store", "A value kept for the whole game, written by Save Game");
+    action("save_set_int", "Set Game Data (Int)", "Game|Save", {Pin{"Key", T::String, "Coins"}, Pin{"Value", T::Int, "0"}}, "save.set_int({1}, {2})",
+           "save game variable store");
+    action("save_set_bool", "Set Game Data (Bool)", "Game|Save", {Pin{"Key", T::String, "DoorOpen"}, Pin{"Value", T::Bool, "true"}},
+           "save.set_bool({1}, {2})", "save game variable store");
+    action("save_set_string", "Set Game Data (String)", "Game|Save", {Pin{"Key", T::String, "PlayerName"}, Pin{"Value", T::String, ""}},
+           "save.set_str({1}, {2})", "save game variable store");
+    pure("save_get_float", "Get Game Data (Float)", "Game|Save", {Pin{"Key", T::String, "Score"}, Pin{"Default", T::Float, "0.0"}},
+         {Pin{"Value", T::Float, ""}}, {"save.get_float({0}, {1})"}, "load game variable");
+    pure("save_get_int", "Get Game Data (Int)", "Game|Save", {Pin{"Key", T::String, "Coins"}, Pin{"Default", T::Int, "0"}}, {Pin{"Value", T::Int, ""}},
+         {"save.get_int({0}, {1})"}, "load game variable");
+    pure("save_get_bool", "Get Game Data (Bool)", "Game|Save", {Pin{"Key", T::String, "DoorOpen"}, Pin{"Default", T::Bool, "false"}},
+         {Pin{"Value", T::Bool, ""}}, {"save.get_bool({0}, {1})"}, "load game variable");
+    pure("save_get_string", "Get Game Data (String)", "Game|Save", {Pin{"Key", T::String, "PlayerName"}, Pin{"Default", T::String, ""}},
+         {Pin{"Value", T::String, ""}}, {"save.get_str({0}, {1})"}, "load game variable");
+    pure("save_has", "Has Game Data", "Game|Save", {Pin{"Key", T::String, "Score"}}, {Pin{"Has", T::Bool, ""}}, {"save.has({0})"}, "exists key");
+    action("save_game", "Save Game To Slot", "Game|Save", {Pin{"Slot", T::String, "Slot1"}}, "save.write({1})", "save game slot write disk",
+           "Writes all the game data to a slot");
+    action("load_game", "Load Game From Slot", "Game|Save", {Pin{"Slot", T::String, "Slot1"}}, "save.read({1})", "load game slot read disk",
+           "Reads the slot's game data back (Get Game Data reads it)");
+    pure("does_save_exist", "Does Save Game Exist", "Game|Save", {Pin{"Slot", T::String, "Slot1"}}, {Pin{"Exists", T::Bool, ""}},
+         {"save.exists({0})"}, "slot");
+    action("delete_save", "Delete Save Game In Slot", "Game|Save", {Pin{"Slot", T::String, "Slot1"}}, "save.delete({1})", "remove slot");
 
     // ---- objects
     pure("find_object", "Find Object", "Objects", {Pin{"Name", T::String, ""}}, {Pin{"Object", T::Object, ""}}, {"node({0})"}, "get actor by name");
@@ -423,6 +598,15 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
          {Pin{"Distance", T::Float, ""}}, {"length({0} - {1})"}, "between far");
     pure("vector_cross", "Cross Product", "Math|Vector", {Pin{"A", T::Vector, "1,0,0"}, Pin{"B", T::Vector, "0,1,0"}}, {Pin{"Result", T::Vector, ""}},
          {"vec3({0}.y * {1}.z - {0}.z * {1}.y, {0}.z * {1}.x - {0}.x * {1}.z, {0}.x * {1}.y - {0}.y * {1}.x)"}, "cross normal perpendicular");
+    const auto select = [&pure](const std::string& key, const std::string& title, T type, const std::string& a, const std::string& b,
+                                const std::string& fn) {
+        pure(key, title, "Utilities|Select", {Pin{"Pick A", T::Bool, "true"}, Pin{"A", type, a}, Pin{"B", type, b}}, {Pin{"Result", type, ""}},
+             {"math." + fn + "({0}, {1}, {2})"}, "select choose ternary if", "A when Pick A is true, else B");
+    };
+    select("select_float", "Select Float", T::Float, "0.0", "1.0", "select_float");
+    select("select_int", "Select Int", T::Int, "0", "1", "select_int");
+    select("select_vector", "Select Vector", T::Vector, "0,0,0", "1,1,1", "select_vector");
+    select("select_string", "Select String", T::String, "A", "B", "select_string");
     pure("vector_dot", "Dot Product", "Math|Vector", {Pin{"A", T::Vector, "0,0,0"}, Pin{"B", T::Vector, "0,0,0"}}, {Pin{"Result", T::Float, ""}},
          {"({0}.x * {1}.x + {0}.y * {1}.y + {0}.z * {1}.z)"}, "dot");
 
@@ -511,7 +695,8 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
             }
             return out + "\"";
         }
-        case T::Object: return "none";
+        // An unwired object pin means this object ("self"), as the palette's tooltips say.
+        case T::Object: return "world.self()";
         case T::Exec: break;
     }
     return "none";
@@ -537,6 +722,9 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     }
     return out;
 }
+
+/// The timer a Retriggerable Delay node waits on.
+[[nodiscard]] std::string RetriggerTimerUVE(const std::uint32_t id) { return "__delay" + std::to_string(id); }
 
 class TranslatorUVE final {
 public:
@@ -569,19 +757,29 @@ public:
                 }
                 byEvent[type->event].push_back(&node);
             }
+            if (type->role == Role::RetriggerableDelay) {
+                m_delays.push_back(node.id);
+            }
+        }
+        // A Retriggerable Delay's Completed runs when its timer does.
+        if (!m_delays.empty() && !byEvent.contains("timer")) {
+            order.push_back("timer");
+            byEvent["timer"];
         }
         // Body first (it declares the Do Once / Flip Flop fields), then fields, then the body.
         std::vector<std::pair<std::string, std::uint32_t>> body;
         std::swap(body, m_lines);
         for (const std::string& event : order) {
             const auto& nodes = byEvent[event];
-            const BlueprintNodeTypeUVE* const type = FindBlueprintNodeTypeUVE(nodes.front()->type);
+            const BlueprintNodeTypeUVE* const type =
+                nodes.empty() ? FindBlueprintNodeTypeUVE("event_timer") : FindBlueprintNodeTypeUVE(nodes.front()->type);
+            const std::uint32_t at = nodes.empty() ? m_delays.front() : nodes.front()->id;
             std::string params;
             for (std::size_t i = 1U; i < type->outputs.size(); ++i) {
                 params += (params.empty() ? "" : ", ") + std::string("arg") + std::to_string(i);
             }
             Line("", 0U);
-            Line("on " + event + (params.empty() ? std::string{} : "(" + params + ")") + ":", nodes.front()->id);
+            Line("on " + event + (params.empty() ? std::string{} : "(" + params + ")") + ":", at);
             const std::size_t before = m_lines.size();
             for (const BlueprintNodeUVE* node : nodes) {
                 // A widget event names its widget: only that one's (empty: every widget's).
@@ -593,8 +791,14 @@ public:
                     EmitFrom(node->id, 0U, 1);
                 }
             }
+            if (event == "timer") {
+                for (const std::uint32_t delay : m_delays) {
+                    Line("    if arg1 == \"" + RetriggerTimerUVE(delay) + "\":", delay);
+                    EmitBlock(delay, 0U, 2);
+                }
+            }
             if (m_lines.size() == before) {
-                Line("    pass", nodes.front()->id);
+                Line("    pass", at);
             }
         }
         std::vector<std::pair<std::string, std::uint32_t>> handlers;
@@ -615,6 +819,25 @@ public:
 
 private:
     void Line(std::string text, const std::uint32_t node) { m_lines.emplace_back(std::move(text), node); }
+    /// The field an action's value output `pin` is kept in (`ret7`, then `ret7_2` ...).
+    static std::string ReturnFieldUVE(const std::string& tag, const std::uint32_t pin) {
+        return pin <= 1U ? "ret" + tag : "ret" + tag + "_" + std::to_string(pin);
+    }
+    /// A field once per node, however many exec wires lead into it.
+    void FieldOnceUVE(const std::string& name, const std::string& declaration) {
+        if (m_declared.insert(name).second) {
+            m_fields.push_back(declaration);
+        }
+    }
+    /// An unwired input's typed value (a field's starting value cannot be an expression).
+    [[nodiscard]] std::string TypedValueUVE(const BlueprintNodeUVE& node, const std::uint32_t pin) const {
+        const BlueprintNodeTypeUVE* const type = FindBlueprintNodeTypeUVE(node.type);
+        if (type == nullptr || pin >= type->inputs.size()) {
+            return "none";
+        }
+        const std::string& typed = pin < node.inputValues.size() && !node.inputValues[pin].empty() ? node.inputValues[pin] : type->inputs[pin].defaultText;
+        return LiteralUVE(type->inputs[pin].type, typed);
+    }
     static std::string Indent(const int depth) { return std::string(static_cast<std::size_t>(depth) * 4U, ' '); }
 
     [[nodiscard]] const BlueprintWireUVE* WireFromOutput(const std::uint32_t node, const std::uint32_t pin) const {
@@ -637,7 +860,7 @@ private:
     /// Follows the exec wire out of `node`'s output `pin` and writes what it leads to.
     void EmitFrom(const std::uint32_t node, const std::uint32_t pin, const int depth) {
         if (const BlueprintWireUVE* wire = WireFromOutput(node, pin)) {
-            EmitNode(wire->toNode, depth);
+            EmitNode(wire->toNode, depth, wire->toPin);
         }
     }
 
@@ -650,7 +873,7 @@ private:
         }
     }
 
-    void EmitNode(const std::uint32_t id, const int depth) {
+    void EmitNode(const std::uint32_t id, const int depth, const std::uint32_t entry = 0U) {
         const auto found = m_nodes.find(id);
         if (found == m_nodes.end()) {
             return;
@@ -674,11 +897,17 @@ private:
                     args.push_back(type->inputs[i].type == T::Exec ? std::string{} : InputExpr(node, i));
                 }
                 if (!type->outputCode.empty() && type->outputs.size() > 1U) {
-                    // An action with a value: kept in a field for the nodes after it.
-                    const T valueType = type->outputs[1].type;
-                    m_fields.push_back("var ret" + tag + ": " + std::string(BlueprintPinTypeScriptNameUVE(valueType)) +
-                                       (valueType == T::Object ? std::string{} : " = " + LiteralUVE(valueType, "")));
-                    Line(pad + "ret" + tag + " = " + FormatUVE(type->outputCode[0], args), id);
+                    // An action with values: each kept in a field for the nodes after it, the
+                    // first from the call itself and the rest read right after it.
+                    for (std::uint32_t out = 1U; out < type->outputs.size() && out - 1U < type->outputCode.size(); ++out) {
+                        const T valueType = type->outputs[out].type;
+                        const std::string field = ReturnFieldUVE(tag, out);
+                        if (m_declared.insert(field).second) {
+                            m_fields.push_back("var " + field + ": " + std::string(BlueprintPinTypeScriptNameUVE(valueType)) +
+                                               (valueType == T::Object ? std::string{} : " = " + LiteralUVE(valueType, "")));
+                        }
+                        Line(pad + field + " = " + FormatUVE(type->outputCode[out - 1U], args), id);
+                    }
                 } else {
                     Line(pad + FormatUVE(type->code, args), id);
                 }
@@ -715,13 +944,13 @@ private:
                 EmitFrom(id, 1U, depth);
                 break;
             case Role::DoOnce:
-                m_fields.push_back("var once" + tag + " = false");
+                FieldOnceUVE("once" + tag, "var once" + tag + " = false");
                 Line(pad + "if not once" + tag + ":", id);
                 Line(pad + "    once" + tag + " = true", id);
                 EmitFrom(id, 0U, depth + 1);
                 break;
             case Role::FlipFlop:
-                m_fields.push_back("var flip" + tag + " = false");
+                FieldOnceUVE("flip" + tag, "var flip" + tag + " = false");
                 Line(pad + "flip" + tag + " = not flip" + tag, id);
                 Line(pad + "if flip" + tag + ":", id);
                 EmitBlock(id, 0U, depth + 1);
@@ -742,6 +971,84 @@ private:
                     EmitBlock(id, 1U, depth + 1);
                 }
                 break;
+            case Role::Gate: {
+                // Open unless "Start Closed": Enter passes only while open.
+                FieldOnceUVE("gate" + tag, std::string("var gate") + tag + " = " + (TypedValueUVE(node, 4U) == "true" ? "false" : "true"));
+                if (entry == 1U) {
+                    Line(pad + "gate" + tag + " = true", id);
+                } else if (entry == 2U) {
+                    Line(pad + "gate" + tag + " = false", id);
+                } else if (entry == 3U) {
+                    Line(pad + "gate" + tag + " = not gate" + tag, id);
+                } else {
+                    Line(pad + "if gate" + tag + ":", id);
+                    EmitBlock(id, 0U, depth + 1);
+                }
+                break;
+            }
+            case Role::DoN: {
+                FieldOnceUVE("count" + tag, "var count" + tag + ": int = 0");
+                if (entry == 2U) {
+                    Line(pad + "count" + tag + " = 0", id);
+                } else {
+                    Line(pad + "if count" + tag + " < " + InputExpr(node, 1U) + ":", id);
+                    Line(pad + "    count" + tag + " += 1", id);
+                    EmitFrom(id, 0U, depth + 1);
+                }
+                break;
+            }
+            case Role::MultiGate: {
+                FieldOnceUVE("step" + tag, "var step" + tag + ": int = 0");
+                const std::uint32_t outs = static_cast<std::uint32_t>(type->outputs.size());
+                if (entry == 1U) {
+                    Line(pad + "step" + tag + " = 0", id);
+                    break;
+                }
+                // Taken before it runs on, so a Delay further down cannot run an output twice.
+                Line(pad + "if " + InputExpr(node, 2U) + " and step" + tag + " >= " + std::to_string(outs) + ":", id);
+                Line(pad + "    step" + tag + " = 0", id);
+                Line(pad + "let at" + tag + " = step" + tag, id);
+                Line(pad + "step" + tag + " += 1", id);
+                bool first = true;
+                for (std::uint32_t out = 0U; out < outs; ++out) {
+                    if (WireFromOutput(id, out) == nullptr) {
+                        continue;
+                    }
+                    Line(pad + (first ? "if " : "elif ") + "at" + tag + " == " + std::to_string(out) + ":", id);
+                    EmitBlock(id, out, depth + 1);
+                    first = false;
+                }
+                break;
+            }
+            case Role::RetriggerableDelay:
+                // A timer of its own: entering again starts it over; what follows runs in `on timer`.
+                Line(pad + "timers.set(\"" + RetriggerTimerUVE(id) + "\", " + InputExpr(node, 1U) + ", false)", id);
+                break;
+            case Role::SwitchInt:
+            case Role::SwitchString: {
+                const bool text = type->role == Role::SwitchString;
+                const std::uint32_t cases = static_cast<std::uint32_t>(type->outputs.size()) - 1U;
+                Line(pad + "let pick" + tag + " = " + InputExpr(node, 1U), id);
+                bool first = true;
+                for (std::uint32_t out = 0U; out < cases; ++out) {
+                    if (WireFromOutput(id, out) == nullptr) {
+                        continue;
+                    }
+                    const std::string value = text ? InputExpr(node, 2U + out) : std::to_string(out);
+                    Line(pad + (first ? "if " : "elif ") + "pick" + tag + " == " + value + ":", id);
+                    EmitBlock(id, out, depth + 1);
+                    first = false;
+                }
+                if (WireFromOutput(id, cases) != nullptr) {
+                    if (first) {
+                        EmitFrom(id, cases, depth);
+                    } else {
+                        Line(pad + "else:", id);
+                        EmitBlock(id, cases, depth + 1);
+                    }
+                }
+                break;
+            }
             case Role::Event:
                 m_out.problems.emplace_back(id, "an event cannot be wired into");
                 break;
@@ -779,7 +1086,8 @@ private:
         const std::string tag = std::to_string(id);
         switch (type->role) {
             case Role::Event: return "arg" + std::to_string(pin);
-            case Role::Action: return type->outputCode.empty() ? std::string{"none"} : "ret" + tag;
+            case Role::Action: return type->outputCode.empty() ? std::string{"none"} : ReturnFieldUVE(tag, pin);
+            case Role::DoN: return "count" + tag;
             case Role::GetVariable:
             case Role::SetVariable: return IdentifierUVE(node.variable);
             case Role::ForLoop: return "i" + tag;
@@ -806,6 +1114,8 @@ private:
     std::vector<std::pair<std::string, std::uint32_t>> m_lines;
     std::vector<std::string> m_fields;
     std::set<std::uint32_t> m_active;
+    std::set<std::string> m_declared;
+    std::vector<std::uint32_t> m_delays;
     int m_pureDepth = 0;
     BlueprintTranslationUVE m_out;
 };
