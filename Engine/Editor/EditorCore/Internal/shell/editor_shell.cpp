@@ -151,6 +151,15 @@ bool EditorShellUVE::InitializeUVE(GLFWwindow* const window, const std::filesyst
     m_host.AppUVE().setShortcutHandler([this](const prism::Key key, const std::uint8_t mods) {
         return DispatchShortcutUVE(key, mods);
     });
+    // A game holding the mouse lets go on Escape, whatever has the keyboard, so the editor's own
+    // controls (Stop above all) can be reached again.
+    m_host.SetKeyHookUVE([this](const int key, const int action) {
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && m_editor.IsGameMouseCapturedUVE()) {
+            m_editor.SetGameMouseCapturedUVE(false);
+            return true;
+        }
+        return false;
+    });
     return true;
 }
 

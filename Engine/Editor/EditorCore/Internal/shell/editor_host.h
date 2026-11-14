@@ -111,9 +111,9 @@ public:
     bool SaveScreenshotUVE(const std::filesystem::path& path);
     /// Saves window `id`'s last frame as PNG.
     bool SaveWindowScreenshotUVE(int id, const std::filesystem::path& path);
-    /// Another UI drawn over the main window (windows not yet built with PRISM) says when it wants
-    /// the pointer or the keyboard; while it does, neither PRISM nor the viewport receives that input.
-    void SetForeignInputUVE(std::function<bool()> wantsMouse, std::function<bool()> wantsKeyboard);
+    /// Sees every key of the main window first (GLFW key and action); returning true keeps it from
+    /// the UI and the view.
+    void SetKeyHookUVE(std::function<bool(int key, int action)> hook);
 
     struct WindowUVE;
     // GLFW callback entry points (static trampolines route here).
@@ -142,8 +142,6 @@ private:
     void UpdateWindowDragUVE(WindowUVE& w);
     void CompositeUVE(WindowUVE& w, std::uint32_t uiTexture, std::uint32_t vao, std::span<const ViewImageUVE> views);
     void EndInputFrameUVE(WindowUVE& w);
-    [[nodiscard]] bool ForeignMouseUVE(const WindowUVE& w) const;
-    [[nodiscard]] bool ForeignKeyboardUVE(const WindowUVE& w) const;
 
     std::shared_ptr<PlatformUVE> m_platform;
     std::unique_ptr<prism::Application> m_app;
@@ -153,8 +151,7 @@ private:
     std::unique_ptr<WindowUVE> m_main;
     std::map<int, std::unique_ptr<WindowUVE>> m_windows;   // secondary windows by PRISM id
     bool m_ready = false;
-    std::function<bool()> m_foreignMouse;
-    std::function<bool()> m_foreignKeyboard;
+    std::function<bool(int, int)> m_keyHook;
     /// The main window's UI was last painted at this paint generation and time (see RenderUVE).
     std::uint64_t m_mainPaintedGen = ~0ULL;
     std::chrono::steady_clock::time_point m_mainPaintedAt{};

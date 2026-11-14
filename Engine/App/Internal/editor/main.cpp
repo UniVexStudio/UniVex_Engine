@@ -20,7 +20,6 @@
 #include <string_view>
 #include <vector>
 
-#include <imgui.h>
 
 #include "viewport_render_pass.h"
 #include "integration/editor_mesh_layer.h"
@@ -167,7 +166,7 @@ struct EditorLaunchOptionsUVE final {
 /// OpenGL version for an explicitly chosen platform capability (for example virtual-display CI).
 /// `--headless` keeps the editor's non-visual lifecycle usable in CI and defaults to a single frame.
 /// `--bridge-stdio` always implies headless mode and runs a framed JSON-RPC bridge server instead
-/// of constructing native ImGui/GLFW presentation for this process.
+/// of constructing native GLFW presentation for this process.
 ///
 /// The editor drives EngineCoreUVE's lifecycle by hand (Init()/Load()/TickFrameUVE()) rather than
 /// through RunUVE() — the one desktop entry point that does not automatically get RunUVE()'s
@@ -298,7 +297,7 @@ int main(const int argc, char** argv) {
         // EngineCoreUVE's own scene render stays a documented no-op (the editor doesn't own a
         // gameplay camera), so the Viewport panel's real content comes entirely from
         // EditorViewportBackendsUVE - grid, orbit camera, gizmos, and one proxy cube per live
-        // scene entity, composited via ImGui::Image() rather than EngineCoreUVE's own render
+        // scene entity, shown by the editor's view rather than EngineCoreUVE's own render
         // target. Only constructed in real windowed mode: it needs an actual current GL context,
         // which headless mode's NullRenderDeviceUVE never creates.
         // Three real backends, not three names routed through one mutable renderer.  In particular,

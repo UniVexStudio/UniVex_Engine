@@ -1632,10 +1632,6 @@ public:
     /// Imports external files from disk into the project's content directory.
     bool ImportExternalFilesUVE(const std::vector<std::filesystem::path>& sourceFiles,
                                 const std::filesystem::path& targetDirectory = {});
-    /// Opens the Quick Import modal dialog.
-    void OpenQuickImportModalUVE(const std::filesystem::path& targetDirectory = {});
-    /// Draws the Quick Import modal dialog when open.
-    void DrawQuickImportModalUVE();
     [[nodiscard]] const std::optional<UVScriptDocumentUVE>& GetOpenUVScriptUVE() const noexcept;
     /// Replaces the open script's text and re-checks it. No effect when nothing is open.
     void SetOpenUVScriptTextUVE(std::string text);
@@ -2936,6 +2932,7 @@ private:
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
     EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;
     bool m_gameMouseCaptured = false;
+    void ReleaseGameMouseOnFocusLossUVE();
     bool m_playFastForwardEnabled = false;
     float m_playFastForwardMultiplier = 2.0F;
     // 0 = plain Play triangle, 1 = Pause bars; eased toward the target each frame in
@@ -3408,15 +3405,6 @@ private:
         int templateIndex = 0;
     };
     CreateScriptModalStateUVE m_createScriptModal;
-    /// State of the Quick Import modal dialog.
-    struct QuickImportModalStateUVE final {
-        bool openRequested = false;
-        std::filesystem::path targetDirectory;
-        std::string sourcePath;
-        int filterPreset = 0;
-        std::string statusMessage;
-    };
-    QuickImportModalStateUVE m_quickImportModal;
     /// State of the Godot-style "Create Shader" dialog.
     struct CreateShaderModalStateUVE final {
         bool isOpen = false;

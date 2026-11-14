@@ -86,10 +86,20 @@ template <typename DrawIconUVE>
 }
 } // namespace
 
+void EditorUVE::ReleaseGameMouseOnFocusLossUVE() {
+    // A game holding the mouse lets go when its window loses focus (Escape is the shell's key
+    // hook), so the editor's own controls can be reached again.
+    if (m_gameMouseCaptured && m_services != nullptr && m_services->GetWindowManagerUVE().IsValidUVE() &&
+        !m_services->GetWindowManagerUVE().IsFocusedUVE()) {
+        SetGameMouseCapturedUVE(false);
+    }
+}
+
 void EditorUVE::RenderOverlayUVE() {
     if (m_state != EditorStateUVE::Running || !m_uiInitialized) {
         return;
     }
+    ReleaseGameMouseOnFocusLossUVE();
     if (m_levelShell != nullptr) {
         m_levelShell->FrameUVE();
     }
@@ -113,20 +123,12 @@ void EditorUVE::RenderOverlayUVE() {
 }
 
 void EditorUVE::DrawOverlayWindowsUVE() {
-    // A game holding the mouse lets go on Escape, or when its window loses focus, so the editor's
-    // own controls (Stop above all) can be reached again.
-    if (m_gameMouseCaptured &&
-        (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
-         (m_services != nullptr && m_services->GetWindowManagerUVE().IsValidUVE() && !m_services->GetWindowManagerUVE().IsFocusedUVE()))) {
-        SetGameMouseCapturedUVE(false);
-    }
     // The Entity Editor, Retarget and the Animation Library are PRISM windows of their own.
     if (m_filePicker.has_value()) {
         DrawFilePickerUVE();
     }
     DrawCreateScriptModalUVE();
     DrawCreateShaderModalUVE();
-    DrawQuickImportModalUVE();
 }
 
 

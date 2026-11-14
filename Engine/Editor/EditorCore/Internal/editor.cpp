@@ -420,12 +420,6 @@ void EditorUVE::InitUVE() {
             m_meshThumbnailRenderer.InitializeUVE();
             m_materialThumbnailRenderer.InitializeUVE();
             m_uiInitialized = true;
-            if (m_levelShell != nullptr) {
-                // While an overlay window has the pointer or the keyboard, the level editor does not.
-                m_levelShell->SetForeignInputUVE(
-                    [] { return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse; },
-                    [] { return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard; });
-            }
         } else {
             if (glfwInitialized) {
                 ImGui_ImplGlfw_Shutdown();
@@ -960,6 +954,7 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
         return;
     }
     m_gameMouseCaptured = captured;
+    UVE_INFO("Editor: {}", captured ? "the game holds the mouse (Esc releases it)" : "the mouse is the editor's again");
     if (m_services == nullptr) {
         return;
     }
