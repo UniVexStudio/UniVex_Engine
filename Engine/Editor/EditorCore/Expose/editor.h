@@ -1291,6 +1291,10 @@ public:
     /// Drag and drop in a tree: `entity` goes inside `target` (its last child), or just before or
     /// after it among `target`'s siblings. Reparents when needed; undoable. where: 0 before, 1 inside, 2 after.
     [[nodiscard]] bool PlaceDocumentEntityUVE(Scene::EntityUVE entity, Scene::EntityUVE target, int where);
+    /// Adds a Sky (gradient bands, atmosphere or a panorama) to a World Environment object, or
+    /// takes it off. The level is marked changed.
+    [[nodiscard]] bool AddSkyToEntityUVE(Scene::EntityUVE entity);
+    [[nodiscard]] bool RemoveSkyFromEntityUVE(Scene::EntityUVE entity);
     /// The hierarchy panel preferences in effect (Editor Preferences > Hierarchy).
     [[nodiscard]] const HierarchyViewSettingsUVE& GetHierarchyViewSettingsUVE() const noexcept { return m_hierarchyView; }
     /// The open state a hierarchy row will be given when it is next drawn, if one is pending.
