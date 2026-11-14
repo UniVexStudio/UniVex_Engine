@@ -14,5 +14,12 @@ public class RHIOpenGLModule : ModuleRules
             "Platform",
             "Logging",
         });
+
+        PublicSystemLibraries.AddRange(new string[] {
+            "android:EGL",
+            "android:GLESv3",
+            "android:log",
+            "android:dl"
+        });
     }
 }

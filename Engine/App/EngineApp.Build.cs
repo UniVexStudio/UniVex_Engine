@@ -15,7 +15,15 @@ public class EngineAppModule : ModuleRules
 
         ExcludedFiles.AddRange(new string[] {
             "editor/",
-            "Android/"
+            "!android:Android/",
+            "android:Internal/"
+        });
+
+        PublicSystemLibraries.AddRange(new string[] {
+            "android:android",
+            "android:log",
+            "android:EGL",
+            "android:GLESv3"
         });
     }
 }

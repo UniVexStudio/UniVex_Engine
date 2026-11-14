@@ -3,8 +3,10 @@
 import argparse
 import json
 from pathlib import Path
+import platform
 import shutil
 import subprocess
+import sys
 import zipfile
 
 
@@ -12,11 +14,32 @@ def run(*command):
     subprocess.run([str(part) for part in command], check=True)
 
 
+def detect_ndk_host_tag(ndk: Path) -> str:
+    prebuilt_root = ndk / 'toolchains/llvm/prebuilt'
+    if sys.platform.startswith('linux'):
+        candidates = ['linux-x86_64']
+    elif sys.platform == 'darwin':
+        machine = platform.machine().lower()
+        candidates = ['darwin-arm64', 'darwin-x86_64'] if ('arm' in machine or 'aarch64' in machine) else ['darwin-x86_64', 'darwin-arm64']
+    elif sys.platform in ('win32', 'cygwin'):
+        candidates = ['windows-x86_64']
+    else:
+        candidates = ['linux-x86_64']
+    for cand in candidates:
+        if (prebuilt_root / cand).is_dir():
+            return cand
+    if prebuilt_root.is_dir():
+        subdirs = sorted(p.name for p in prebuilt_root.iterdir() if p.is_dir())
+        if subdirs:
+            return subdirs[0]
+    return 'linux-x86_64'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sdk', type=Path, required=True)
     parser.add_argument('--build-dir', type=Path, required=True)
-    parser.add_argument('--dependency-source-cache', type=Path)
+    parser.add_argument('--dependency-source-cache', type=Path, help='Retained for CLI compatibility; UVBT shares ThirdParty/ caches automatically')
     parser.add_argument('--native-build-dir', type=Path)
     parser.add_argument('--cooked-project', type=Path, help='Cooked .uvproject file for native scene launch')
     parser.add_argument('--abi', choices=['arm64-v8a', 'x86_64'], default='arm64-v8a')
@@ -27,22 +50,20 @@ def main():
     build = args.build_dir.resolve()
     ndk = sdk / 'ndk/29.0.14206865'
     tools = sdk / 'build-tools/35.0.0'
+    host_tag = detect_ndk_host_tag(ndk)
+    llvm_strip = ndk / f'toolchains/llvm/prebuilt/{host_tag}/bin/llvm-strip'
+    uvbt_script = root / 'Engine/Tools/UVBT/uvbt.py'
     if args.jobs < 1:
         parser.error('--jobs must be positive')
-    for required in [ndk / 'build/cmake/android.toolchain.cmake', tools / 'aapt2', sdk / 'platforms/android-35/android.jar']:
+    for required in [uvbt_script, ndk / 'build/cmake/android.toolchain.cmake', llvm_strip,
+                     tools / 'aapt2', tools / 'zipalign', tools / 'apksigner',
+                     sdk / 'platforms/android-35/android.jar']:
         if not required.is_file():
-            parser.error(f'Missing Android tool: {required}')
+            parser.error(f'Missing required tool or script: {required}')
     build.mkdir(parents=True, exist_ok=True)
     native = args.native_build_dir.resolve() if args.native_build_dir else build / 'native'
-    cached_sources = []
-    if args.dependency_source_cache:
-        for source in args.dependency_source_cache.resolve().glob('*-src'):
-            cached_sources.append(f'-DFETCHCONTENT_SOURCE_DIR_{source.name[:-4].upper()}={source}')
-    run('cmake', '-S', root, '-B', native, '-G', 'Ninja',
-        f'-DCMAKE_TOOLCHAIN_FILE={ndk}/build/cmake/android.toolchain.cmake',
-        f'-DANDROID_ABI={args.abi}', '-DANDROID_PLATFORM=android-28',
-        '-DUVE_BUILD_TESTS=OFF', '-DCMAKE_BUILD_TYPE=Release', *cached_sources)
-    run('cmake', '--build', native, '--target', 'univex_android', '--parallel', args.jobs)
+    run(sys.executable, uvbt_script, 'build', 'UniVexAndroid', 'Android', 'Release',
+        '--abi', args.abi, '--android-sdk', sdk, '--out-dir', native, '--jobs', args.jobs)
     assets = build / 'assets'
     shutil.copytree(root / 'Engine/Runtime/RHI/Shader/built_in', assets / 'shaders', dirs_exist_ok=True)
     # Rebuild the staging assets to avoid shipping a previous project's stale content.
@@ -89,17 +110,19 @@ def main():
             lines.append(relative)
         index.write_text(manifest.name + '\n' + '\n'.join(lines) + '\n', encoding='utf-8')
     unsigned = build / 'unsigned.apk'
+    if unsigned.exists():
+        unsigned.unlink()
     run(tools / 'aapt2', 'link', '-I', sdk / 'platforms/android-35/android.jar',
         '--manifest', root / 'Engine/App/Android/AndroidManifest.xml', '-A', assets, '-o', unsigned)
-    library = native / 'Engine/App/Android/libunivex_android.so'
+    library = native / 'bin/Android' / args.abi / 'Release/libunivex_android.so'
     stripped = build / 'libunivex_android.so'
     shutil.copy2(library, stripped)
-    run(ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip', '--strip-unneeded', stripped)
+    run(llvm_strip, '--strip-unneeded', stripped)
     with zipfile.ZipFile(unsigned, 'a', compression=zipfile.ZIP_STORED) as package:
         package.write(stripped, f'lib/{args.abi}/libunivex_android.so')
         # Native C++ uses the shared libc++ runtime by default.
         runtime_abi = 'aarch64-linux-android' if args.abi == 'arm64-v8a' else 'x86_64-linux-android'
-        runtime = ndk / f'toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/{runtime_abi}/libc++_shared.so'
+        runtime = ndk / f'toolchains/llvm/prebuilt/{host_tag}/sysroot/usr/lib/{runtime_abi}/libc++_shared.so'
         package.write(runtime, f'lib/{args.abi}/libc++_shared.so')
         # aapt2 omits dotfiles such as the stable .uvassetdb catalog. Add every omitted
         # staged asset before alignment/signing, then verify the native extraction index.

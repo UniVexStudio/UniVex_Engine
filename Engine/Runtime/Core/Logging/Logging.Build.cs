@@ -15,5 +15,9 @@ public class LoggingModule : ModuleRules
         PrivateDependencyModuleNames.AddRange(new string[] {
 
         });
+
+        PublicSystemLibraries.AddRange(new string[] {
+            "android:log"
+        });
     }
 }

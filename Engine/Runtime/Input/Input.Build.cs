@@ -14,7 +14,11 @@ public class InputModule : ModuleRules
         });
 
         ExcludedFiles.AddRange(new string[] {
-            "android_motion_event.cpp"
+            "!android:android_motion_event.cpp"
+        });
+
+        PublicSystemLibraries.AddRange(new string[] {
+            "android:android"
         });
     }
 }

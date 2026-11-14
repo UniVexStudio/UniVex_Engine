@@ -15,8 +15,8 @@ adb shell am start -n com.univex.runtime/android.app.NativeActivity
 ```
 
 Use `--abi x86_64` for an x86 emulator. `--native-build-dir` reuses an existing native
-CMake build. `--dependency-source-cache` can point at another build's `_deps` directory
-so a second ABI reuses downloaded FetchContent sources. Each ABI still needs its own build.
+UVBT output directory (useful when packaging multiple cooked APKs against one native build).
+UVBT automatically caches `ThirdParty/` sources across ABIs. Each ABI still needs its own build.
 The script verifies APK signatures and 16 KB ZIP alignment. The generated debug key belongs
 to this build directory. This is local test signing, not store-ready release signing.
 
@@ -66,10 +66,10 @@ section is installed, and neither needs anything from CI.
 There is no Gradle in this project. `build_apk.py` is the whole build, and it is worth reading in the
 order it runs, because every step is a way an apk can come out wrong:
 
-1. **Native library.** CMake with the NDK's own toolchain file, `ANDROID_ABI` set from `--abi`,
-   `ANDROID_PLATFORM=android-28`, `UVE_BUILD_TESTS=OFF`, `CMAKE_BUILD_TYPE=Release`, building the one
-   target `univex_android`. The result is `libunivex_android.so`, which the manifest names through
-   `android.app.lib_name`.
+1. **Native library.** UVBT (`Engine/Tools/UVBT/uvbt.py`) invokes NDK 29 Clang for `Android` API 28
+   and `--abi` in `Release` configuration, building target `UniVexAndroid`. The result is
+   `<native-build-dir>/bin/Android/<abi>/Release/libunivex_android.so`, which the manifest names
+   through `android.app.lib_name`.
 2. **Assets.** `Engine/Runtime/RHI/Shader/built_in` is staged as `assets/shaders`, because the runtime
    loads its shader sources from files rather than from the binary. With `--cooked-project`, the
    project's `runtimeFiles` list is copied into `assets/project` and written to
