@@ -1628,9 +1628,6 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
 
     if (directory) {
         add(prism::MenuItem::Item("Open", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::FolderOpen));
-        add(prism::MenuItem::Item("Optimize Animations in Folder", [this, rel = entry.relativePath] {
-            m_editor.StartOptimizeAnimationsUVE(m_editor.CollectAnimationClipsUVE(rel));
-        }, "", prism::Icon::AnimClip), allowed && !m_editor.IsOptimizingAnimationsUVE());
     }
     if (!directory && IsEntityAssetUVE(entry.relativePath)) {
         // Opens the entity in the Entity Editor's own window; the level stays open beside it.
@@ -1667,8 +1664,6 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
     }
     // A clip becomes a montage: a .uvmontage beside it with the clip on its slot track, opened.
     if (extension == ".uvanim") {
-        add(prism::MenuItem::Item("Optimize Animation", [this, absolute] { m_editor.StartOptimizeAnimationsUVE({absolute}); }, "",
-                                  prism::Icon::AnimClip), allowed);
         add(prism::MenuItem::Item("Create Montage", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimMontage),
             allowed);
     }

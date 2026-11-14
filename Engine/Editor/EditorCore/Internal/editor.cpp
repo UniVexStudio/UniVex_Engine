@@ -11,7 +11,6 @@
 #include "gltf_metadata.h"
 #include "editor.h"
 #include "editor_entity_thumbnail.h"
-#include "animation_optimizer.h"
 #include "model_animations.h"
 
 #include "animation_graph_editing.h"
@@ -462,7 +461,6 @@ void EditorUVE::TickUVE() {
     if (m_state != EditorStateUVE::Running) {
         return;
     }
-    PollOptimizeAnimationsUVE();
 
     const Asset::ProjectChangeSnapshotUVE changeSnapshot = m_services->GetProjectChangeWatcherUVE().GetSnapshotUVE();
     const bool firstProjectIndexRefresh = !m_projectFileSnapshotInitialized;
@@ -6593,6 +6591,36 @@ namespace {
 
 } // namespace
 
+namespace {
+/// A loose take an earlier import reduced (its original is in the project's animation backup):
+/// it is written again from its source, every frame as the source has it.
+[[nodiscard]] bool WasReducedEarlierUVE(const std::filesystem::path& contentRoot, const std::filesystem::path& clip) {
+    static std::unordered_map<std::string, std::unordered_set<std::string>> s_reduced;
+    const std::filesystem::path backupRoot = contentRoot.parent_path() / ".uvcache" / "animation-backup";
+    auto [it, added] = s_reduced.try_emplace(backupRoot.generic_string());
+    if (added) {
+        std::error_code error;
+        for (std::filesystem::recursive_directory_iterator walk(backupRoot, error), end; !error && walk != end; walk.increment(error)) {
+            if (walk->is_regular_file(error) && walk->path().extension() == ".uvanim") {
+                const std::filesystem::path relative = std::filesystem::relative(walk->path(), backupRoot, error);
+                if (!error && relative.begin() != relative.end()) {
+                    // <stamp>/<path in Content>: the part after the stamp folder.
+                    std::filesystem::path inContent;
+                    for (auto part = std::next(relative.begin()); part != relative.end(); ++part) {
+                        inContent /= *part;
+                    }
+                    it->second.insert(inContent.generic_string());
+                }
+                error.clear();
+            }
+        }
+    }
+    std::error_code error;
+    const std::filesystem::path relative = std::filesystem::relative(clip, contentRoot, error);
+    return !error && it->second.contains(relative.generic_string());
+}
+} // namespace
+
 std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource) {
     std::vector<std::filesystem::path> written;
     std::error_code error;
@@ -6616,7 +6644,10 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     }
     const bool keepInModel = !relativeSource.empty() && !ReadModelSourceInfoForSourceUVE(relativeSource).animationOnly;
     const std::filesystem::path importedModel = keepInModel ? GetImportedModelPathUVE(relativeSource) : std::filesystem::path{};
-    const auto stamp = static_cast<std::uint64_t>(sourceTime.time_since_epoch().count());
+    // The version of the import is part of the stamp: takes kept by an earlier import (when they
+    // were reduced as they came in) are taken again from the source, every frame as it has them.
+    constexpr std::uint64_t kTakesImportVersionUVE = 0x7A00000000000000ULL;
+    const auto stamp = static_cast<std::uint64_t>(sourceTime.time_since_epoch().count()) ^ kTakesImportVersionUVE;
     if (keepInModel) {
         std::error_code modelError;
         if (!std::filesystem::is_regular_file(importedModel, modelError)) {
@@ -6725,7 +6756,6 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
                 continue;
             }
             clip.clipId = take;
-            static_cast<void>(Asset::OptimizeAnimationClipUVE(clip));
             names.push_back(take);
             kept.push_back(std::move(clip));
         }
@@ -6797,7 +6827,7 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         const std::filesystem::path destination = clipPath(clip.clipId);
         clip.clipId = destination.stem().string();
         const std::filesystem::file_time_type existing = std::filesystem::last_write_time(destination, error);
-        if (!error && existing >= sourceTime) {
+        if (!error && existing >= sourceTime && !WasReducedEarlierUVE(projectSnapshot.contentRoot, destination)) {
             allDestinations.push_back(destination);
             continue; // imported since the FBX last changed
         }
@@ -6810,10 +6840,6 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         }
     }
     s_importedAnimCache[cacheKey] = CachedAnimationImportUVE{sourceTime, std::move(allDestinations)};
-    // Freshly imported takes are every frame baked: optimised in the background.
-    if (!written.empty()) {
-        StartOptimizeAnimationsUVE(written);
-    }
     return written;
 }
 

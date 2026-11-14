@@ -680,6 +680,25 @@ TEST(AnimationSequencerUVETest, RootMotionPicksTheTravellingBone) {
         << "moving only up is not ground travel";
 }
 
+TEST(AnimationSequencerUVETest, RootMotionFindsTheRootBoneUnderANamespace) {
+    // A rig whose bones carry a namespace ("mixamorig:Hips") plays a clip naming them bare, and the
+    // other way round: root motion finds the bone the pose does.
+    Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
+    Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    skeleton.bones[0].name = "mixamorig:Hips";
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, ""), std::optional<std::size_t>{0U});
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, "hips"), std::optional<std::size_t>{0U});
+    clip.bones[1].bone = "mixamorig:Hips";
+    skeleton.bones[0].name = "Hips";
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, ""), std::optional<std::size_t>{0U});
+
+    AnimationDriverComponentUVE mixer;
+    mixer.rootMotion = AnimationRootMotionModeUVE::ApplyToTarget;
+    AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.25F, skeleton, mixer));
+    EXPECT_GT(player.rootMotionDelta.z, 0.1F) << "the namespaced track still gives root motion";
+}
+
 TEST(AnimationSequencerUVETest, RootMotionKeepsThePoseInPlaceAndReportsTravelAcrossTheLoop) {
     const Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
     Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
