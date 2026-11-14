@@ -168,11 +168,16 @@ using Role = Asset::BlueprintNodeRoleUVE;
     if (key == "ui_get_selected_option" || key == "ui_get_selected_index" || key == "ui_set_selected_index" || key == "ui_add_option")
         return {K::ComboBox};
     if (key == "ui_show_screen") return {K::Canvas};
+    if (key == "ui_on_hovered" || key == "ui_on_unhovered" || key == "ui_is_hovered") return {K::Button};
+    if (key == "ui_set_font_size") return {K::Text};
+    if (key == "ui_set_opacity") return {K::Text, K::Image};
     return {};
 }
 
 [[nodiscard]] bool IsWidgetNodeUVE(const std::string& key) {
-    return key == "ui_set_visibility" || key == "ui_set_color" || !WidgetKindsForUVE(key).empty();
+    return key == "ui_set_visibility" || key == "ui_set_color" || key == "ui_set_position" || key == "ui_set_size" ||
+           key == "ui_get_position" || key == "ui_get_size" || key == "ui_play_animation" || key == "ui_stop_animation" ||
+           !WidgetKindsForUVE(key).empty();
 }
 
 /// The node's widget input: its first input that is not an exec pin.
@@ -674,6 +679,13 @@ void EditorBlueprintPanelUVE::AddNodeDetailsUVE(prism::PropertyGrid& grid, const
     for (int i = 0; i < static_cast<int>(node.inputs.size()); ++i) {
         const prism::BlueprintPin& pin = node.inputs[static_cast<std::size_t>(i)];
         if (pin.type == PT::Exec) {
+            continue;
+        }
+        if (pin.type == PT::Array && !m_graph->isPinConnected(nodeId, i, true)) {
+            // Nothing to type: an array comes from a wire (empty when there is none).
+            auto empty = prism::make<prism::Label>("(wire an array)");
+            empty->setColor(prism::ThemeColor(&prism::Theme::textDim));
+            grid.addRow(cat, pin.name, empty, "Wire an array here, from a variable or a node");
             continue;
         }
         if (m_graph->isPinConnected(nodeId, i, true)) {

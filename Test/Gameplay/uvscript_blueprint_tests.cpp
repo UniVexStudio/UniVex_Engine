@@ -13,6 +13,9 @@
 #include "light_component.h"
 #include "hierarchy_component.h"
 #include "name_component.h"
+#include "ui_button_component.h"
+#include "ui_text_component.h"
+#include "ui_tween_component.h"
 
 #include "animation_graph_component.h"
 #include "animation_sequencer_component.h"
@@ -637,6 +640,39 @@ TEST_F(BlueprintUVETest, ForEachWalksASplitTextIntoAnArray) {
     EXPECT_EQ(call("text.substring", {std::string("hello"), std::int64_t{1}, std::int64_t{99}}), UVScript::ValueUVE{std::string("ello")});
     const UVScript::ValueUVE turned = call("math.rotate_about", {UVScript::Vec3ValueUVE{1.0, 0.0, 0.0}, UVScript::Vec3ValueUVE{0.0, 1.0, 0.0}, 90.0});
     EXPECT_NEAR(std::get<UVScript::Vec3ValueUVE>(turned).z, -1.0, 1e-5);
+}
+
+TEST_F(BlueprintUVETest, WidgetNodesMoveSizeFadeAndAnimateWidgets) {
+    const EntityUVE button = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<NameComponentUVE>(button, NameComponentUVE{"Play"});
+    entityManager.AddComponentUVE<UIButtonComponentUVE>(button, UIButtonComponentUVE{});
+    UITweenComponentUVE tween;
+    tween.playing = false;
+    tween.elapsed = 0.7F;
+    entityManager.AddComponentUVE<UITweenComponentUVE>(button, tween);
+    const EntityUVE label = entityManager.CreateEntityUVE();
+    entityManager.AddComponentUVE<NameComponentUVE>(label, NameComponentUVE{"Title"});
+    entityManager.AddComponentUVE<UITextComponentUVE>(label, UITextComponentUVE{});
+    Core::UVScriptObjectHostUVE host{entityManager, nullptr, MakeEverythingUVE()};
+    const auto call = [&](const std::string_view name, std::vector<UVScript::ValueUVE> args) { return host.CallFunctionUVE(name, args); };
+    EXPECT_EQ(call("ui.set_position", {std::string("Play"), UVScript::Vec3ValueUVE{40.0, 60.0, 0.0}}), UVScript::ValueUVE{true});
+    EXPECT_EQ(call("ui.set_size", {std::string("Play"), UVScript::Vec3ValueUVE{200.0, 50.0, 0.0}}), UVScript::ValueUVE{true});
+    const UIButtonComponentUVE& b = entityManager.GetComponentUVE<UIButtonComponentUVE>(button);
+    EXPECT_FLOAT_EQ(b.rect.position.y, 60.0F);
+    EXPECT_FLOAT_EQ(b.rect.size.x, 200.0F);
+    EXPECT_EQ(call("ui.get_size", {std::string("Play")}), (UVScript::ValueUVE{UVScript::Vec3ValueUVE{200.0, 50.0, 0.0}}));
+    EXPECT_EQ(call("ui.set_size", {std::string("Play"), UVScript::Vec3ValueUVE{-1.0, 5.0, 0.0}}), UVScript::ValueUVE{false}) << "no negative size";
+    EXPECT_EQ(call("ui.set_position", {std::string("Title"), UVScript::Vec3ValueUVE{5.0, 6.0, 0.0}}), UVScript::ValueUVE{true});
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<UITextComponentUVE>(label).positionPixels.x, 5.0F);
+    EXPECT_EQ(call("ui.set_opacity", {std::string("Title"), 0.25}), UVScript::ValueUVE{true});
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<UITextComponentUVE>(label).alpha, 0.25F);
+    EXPECT_EQ(call("ui.set_font_size", {std::string("Title"), 40.0}), UVScript::ValueUVE{true});
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<UITextComponentUVE>(label).fontSize, 40.0F);
+    EXPECT_EQ(call("ui.play_tween", {std::string("Play")}), UVScript::ValueUVE{true});
+    EXPECT_TRUE(entityManager.GetComponentUVE<UITweenComponentUVE>(button).playing);
+    EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<UITweenComponentUVE>(button).elapsed, 0.0F);
+    EXPECT_EQ(call("ui.is_hovered", {std::string("Play")}), UVScript::ValueUVE{false});
+    EXPECT_EQ(call("ui.set_opacity", {std::string("Nobody"), 0.5}), UVScript::ValueUVE{false});
 }
 
 } // namespace

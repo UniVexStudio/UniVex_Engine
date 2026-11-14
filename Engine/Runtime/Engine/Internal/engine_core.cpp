@@ -2540,11 +2540,24 @@ void EngineCoreUVE::RaiseWidgetScriptEventsUVE() {
     };
     std::vector<std::pair<Scene::EntityUVE, std::string_view>> used;
     std::vector<std::pair<Scene::EntityUVE, std::string>> committed;
-    m_entityManager->ForEachUVE<Scene::UIButtonComponentUVE>([&used](const Scene::EntityUVE entity, const Scene::UIButtonComponentUVE& button) {
+    std::unordered_set<Scene::EntityUVE> hovered;
+    m_entityManager->ForEachUVE<Scene::UIButtonComponentUVE>([&used, &hovered, this](const Scene::EntityUVE entity, const Scene::UIButtonComponentUVE& button) {
         if (button.wasClickedThisFrame) {
             used.emplace_back(entity, "ui_clicked");
         }
+        if (button.isHovered) {
+            hovered.insert(entity);
+            if (!m_hoveredButtons.contains(entity)) {
+                used.emplace_back(entity, "ui_hovered");
+            }
+        }
     });
+    for (const Scene::EntityUVE entity : m_hoveredButtons) {
+        if (!hovered.contains(entity) && m_entityManager->IsAliveUVE(entity)) {
+            used.emplace_back(entity, "ui_unhovered");
+        }
+    }
+    m_hoveredButtons = std::move(hovered);
     m_entityManager->ForEachUVE<Scene::UISliderComponentUVE>([&used](const Scene::EntityUVE entity, const Scene::UISliderComponentUVE& slider) {
         if (slider.wasChangedThisFrame) {
             used.emplace_back(entity, "ui_changed");

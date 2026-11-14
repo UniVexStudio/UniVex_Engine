@@ -26,6 +26,8 @@
 #include "ui_slider_component.h"
 #include "ui_text_component.h"
 #include "ui_text_input_component.h"
+#include "ui_tween_component.h"
+#include "ui_view_3d_component.h"
 #include "character_controller_component.h"
 #include "light_component.h"
 #include "name_component.h"
@@ -642,6 +644,18 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
     if (name == "ui.add_option") {
         return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
     }
+    if (name == "ui.set_position" || name == "ui.set_size") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::Vec3UVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.get_position" || name == "ui.get_size") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::Vec3UVE()};
+    }
+    if (name == "ui.set_opacity" || name == "ui.set_font_size") {
+        return HostFunctionUVE{{TypeUVE::StrUVE(), TypeUVE::FloatUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "ui.play_tween" || name == "ui.stop_tween" || name == "ui.is_hovered") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+    }
     // Ungated: any script may look another object up. The kind is only known when the script runs,
     // so every lookup answers the common root; a missing name answers no object (id 0).
     if (name == "node") {
@@ -772,6 +786,10 @@ std::optional<std::vector<TypeUVE>> UVScriptObjectHostUVE::DescribeEventUVE(cons
     // A widget under this object was used: a button clicked, a slider or check box changed (its
     // name), a text box committed (its name and text).
     if (event == "ui_clicked" || event == "ui_changed") {
+        return std::vector<TypeUVE>{TypeUVE::StrUVE()};
+    }
+    // The pointer came onto, or left, a button (its name).
+    if (event == "ui_hovered" || event == "ui_unhovered") {
         return std::vector<TypeUVE>{TypeUVE::StrUVE()};
     }
     if (event == "ui_committed") {
@@ -1973,6 +1991,86 @@ ValueUVE UVScriptObjectHostUVE::WidgetCallUVE(const std::string_view name, const
     }
     const Scene::EntityUVE widget = FindWidgetUVE(std::get<std::string>(args[0]));
     const bool alive = widget != Scene::kInvalidEntityUVE && entities.IsAliveUVE(widget);
+    // The widget's box, whichever kind of widget it is (none for a Text, which has a point and a box size).
+    const auto rectOf = [&entities, widget, alive]() -> Math::RectUVE* {
+        if (!alive) {
+            return nullptr;
+        }
+        if (entities.HasComponentUVE<Scene::UIButtonComponentUVE>(widget)) { return &entities.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).rect; }
+        if (entities.HasComponentUVE<Scene::UIImageComponentUVE>(widget)) { return &entities.GetComponentUVE<Scene::UIImageComponentUVE>(widget).rect; }
+        if (entities.HasComponentUVE<Scene::UISliderComponentUVE>(widget)) { return &entities.GetComponentUVE<Scene::UISliderComponentUVE>(widget).rect; }
+        if (entities.HasComponentUVE<Scene::UICheckboxComponentUVE>(widget)) { return &entities.GetComponentUVE<Scene::UICheckboxComponentUVE>(widget).rect; }
+        if (entities.HasComponentUVE<Scene::UIProgressBarComponentUVE>(widget)) { return &entities.GetComponentUVE<Scene::UIProgressBarComponentUVE>(widget).rect; }
+        if (entities.HasComponentUVE<Scene::UITextInputComponentUVE>(widget)) { return &entities.GetComponentUVE<Scene::UITextInputComponentUVE>(widget).rect; }
+        if (entities.HasComponentUVE<Scene::UIDropdownComponentUVE>(widget)) { return &entities.GetComponentUVE<Scene::UIDropdownComponentUVE>(widget).rect; }
+        if (entities.HasComponentUVE<Scene::UIView3DComponentUVE>(widget)) { return &entities.GetComponentUVE<Scene::UIView3DComponentUVE>(widget).rect; }
+        return nullptr;
+    };
+    if (name == "ui.set_position" || name == "ui.set_size" || name == "ui.get_position" || name == "ui.get_size") {
+        const bool position = name == "ui.set_position" || name == "ui.get_position";
+        const bool write = name.starts_with("ui.set_");
+        const Math::Vector3UVE value = write ? ToEngineUVE(args[1]) : Math::Vector3UVE{};
+        if (write && (!std::isfinite(value.x) || !std::isfinite(value.y) || (!position && (value.x < 0.0F || value.y < 0.0F)))) {
+            return false;
+        }
+        if (Math::RectUVE* const rect = rectOf()) {
+            Math::Vector2UVE& field = position ? rect->position : rect->size;
+            if (write) {
+                field = Math::Vector2UVE{value.x, value.y};
+                return true;
+            }
+            return ToScriptUVE(Math::Vector3UVE{field.x, field.y, 0.0F});
+        }
+        if (alive && entities.HasComponentUVE<Scene::UITextComponentUVE>(widget)) {
+            Scene::UITextComponentUVE& label = entities.GetComponentUVE<Scene::UITextComponentUVE>(widget);
+            Math::Vector2UVE& field = position ? label.positionPixels : label.boxSize;
+            if (write) {
+                field = Math::Vector2UVE{value.x, value.y};
+                return true;
+            }
+            return ToScriptUVE(Math::Vector3UVE{field.x, field.y, 0.0F});
+        }
+        return write ? ValueUVE{false} : ToScriptUVE(Math::Vector3UVE{});
+    }
+    if (name == "ui.set_opacity") {
+        const float alpha = static_cast<float>(std::get<double>(args[1]));
+        if (!std::isfinite(alpha)) {
+            return false;
+        }
+        const float clamped = std::clamp(alpha, 0.0F, 1.0F);
+        if (alive && entities.HasComponentUVE<Scene::UITextComponentUVE>(widget)) {
+            entities.GetComponentUVE<Scene::UITextComponentUVE>(widget).alpha = clamped;
+            return true;
+        }
+        if (alive && entities.HasComponentUVE<Scene::UIImageComponentUVE>(widget)) {
+            entities.GetComponentUVE<Scene::UIImageComponentUVE>(widget).alpha = clamped;
+            return true;
+        }
+        return false;
+    }
+    if (name == "ui.set_font_size") {
+        const float size = static_cast<float>(std::get<double>(args[1]));
+        if (!alive || !entities.HasComponentUVE<Scene::UITextComponentUVE>(widget) || !std::isfinite(size)) {
+            return false;
+        }
+        entities.GetComponentUVE<Scene::UITextComponentUVE>(widget).fontSize = Scene::ClampUIFontSizeUVE(size);
+        return true;
+    }
+    if (name == "ui.play_tween" || name == "ui.stop_tween") {
+        if (!alive || !entities.HasComponentUVE<Scene::UITweenComponentUVE>(widget)) {
+            return false;
+        }
+        Scene::UITweenComponentUVE& tween = entities.GetComponentUVE<Scene::UITweenComponentUVE>(widget);
+        if (name == "ui.play_tween") {
+            tween.elapsed = 0.0F;
+        }
+        tween.playing = name == "ui.play_tween";
+        return true;
+    }
+    if (name == "ui.is_hovered") {
+        return alive && entities.HasComponentUVE<Scene::UIButtonComponentUVE>(widget) &&
+               entities.GetComponentUVE<Scene::UIButtonComponentUVE>(widget).isHovered;
+    }
     if (name == "ui.set_text") {
         const std::string& text = std::get<std::string>(args[1]);
         if (alive && entities.HasComponentUVE<Scene::UITextComponentUVE>(widget)) {

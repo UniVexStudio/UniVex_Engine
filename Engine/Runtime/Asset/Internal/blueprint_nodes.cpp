@@ -590,6 +590,10 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
                 "A slider moved or a check box was ticked");
     widgetEvent("ui_on_committed", "On Text Committed", "ui_committed", "Text Box", {Pin{"Text Box", T::String, ""}, Pin{"Text", T::String, ""}},
                 "enter submit input", "A text box was submitted with Enter");
+    widgetEvent("ui_on_hovered", "On Hovered", "ui_hovered", "Button", {Pin{"Button", T::String, ""}}, "hover mouse enter over",
+                "The pointer came onto a button of the widget");
+    widgetEvent("ui_on_unhovered", "On Unhovered", "ui_unhovered", "Button", {Pin{"Button", T::String, ""}}, "hover mouse leave exit",
+                "The pointer left a button of the widget");
     {
         BlueprintNodeTypeUVE construct;
         construct.key = "ui_on_construct";
@@ -646,6 +650,24 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
         create.tooltip = "Makes a Widget Blueprint's widgets (its .uvwbp file); Add to Viewport shows them";
         all.push_back(std::move(create));
     }
+    action("ui_set_position", "Set Render Position", "User Interface|Layout", {Pin{"Widget", T::String, "Button"}, Pin{"Position", T::Vector, "0,0,0"}},
+           "ui.set_position({1}, {2})", "move translate offset slot", "Its top-left corner, in design pixels (X, Y)");
+    action("ui_set_size", "Set Size", "User Interface|Layout", {Pin{"Widget", T::String, "Button"}, Pin{"Size", T::Vector, "120,32,0"}},
+           "ui.set_size({1}, {2})", "width height resize", "Its width and height, in design pixels (X, Y)");
+    pure("ui_get_position", "Get Render Position", "User Interface|Layout", {Pin{"Widget", T::String, "Button"}}, {Pin{"Position", T::Vector, ""}},
+         {"ui.get_position({0})"}, "where location");
+    pure("ui_get_size", "Get Size", "User Interface|Layout", {Pin{"Widget", T::String, "Button"}}, {Pin{"Size", T::Vector, ""}},
+         {"ui.get_size({0})"}, "width height");
+    action("ui_set_opacity", "Set Opacity", "User Interface", {Pin{"Widget", T::String, "Text"}, Pin{"Opacity", T::Float, "1.0"}},
+           "ui.set_opacity({1}, {2})", "alpha fade transparency", "A Text's or an Image's opacity (0 to 1)");
+    action("ui_set_font_size", "Set Font Size", "User Interface", {Pin{"Widget", T::String, "Text"}, Pin{"Size", T::Float, "24.0"}},
+           "ui.set_font_size({1}, {2})", "text size bigger smaller");
+    action("ui_play_animation", "Play Widget Animation", "User Interface|Animation", {Pin{"Widget", T::String, "Panel"}},
+           "ui.play_tween({1})", "tween animate slide fade", "Plays the widget's Tween from its start");
+    action("ui_stop_animation", "Stop Widget Animation", "User Interface|Animation", {Pin{"Widget", T::String, "Panel"}},
+           "ui.stop_tween({1})", "tween pause");
+    pure("ui_is_hovered", "Is Hovered", "User Interface", {Pin{"Widget", T::String, "Button"}}, {Pin{"Hovered", T::Bool, ""}},
+         {"ui.is_hovered({0})"}, "mouse over");
     action("ui_add_to_viewport", "Add to Viewport", "User Interface", {Pin{"Widget", T::Object, ""}, Pin{"Z Order", T::Int, "0"}},
            "ui.add_to_viewport({1}, {2})", "show screen hud", "Shows a widget Create Widget made");
 
