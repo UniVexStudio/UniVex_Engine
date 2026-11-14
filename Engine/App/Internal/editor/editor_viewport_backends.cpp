@@ -107,6 +107,11 @@ void main() {
 // per-pixel depth, which in turn needs a depth-compare mode the RHI does not expose yet.
 constexpr std::string_view kMeshBlitFragmentShaderUVE = R"(#version 330 core
 uniform sampler2D uMeshColor;
+uniform sampler2D uSceneDepth;
+uniform int uHasDepth;
+uniform mat4 uSceneInvViewProj; // the renderer's, for its own depth
+uniform mat4 uViewProj;         // the editor camera's, which the grid and gizmos use
+uniform vec2 uOutSize;
 out vec4 FragColor;
 void main() {
     vec4 meshColor = texelFetch(uMeshColor, ivec2(gl_FragCoord.xy), 0);
@@ -114,7 +119,22 @@ void main() {
         discard; // the renderer drew nothing here; leave the backdrop and its depth alone
     }
     FragColor = vec4(meshColor.rgb, 1.0);
-    gl_FragDepth = 0.0; // every covered pixel hides the grid: an edge or a soft surface too, never the grid over it
+    if (uHasDepth == 0) {
+        gl_FragDepth = 0.0; // no scene depth: every covered pixel hides the grid
+        return;
+    }
+    // The scene's real depth, carried into the editor camera's depth range: the sky stays at the far
+    // plane (the grid shows over it), a mesh hides only what is behind it.
+    vec2 uv = gl_FragCoord.xy / uOutSize;
+    float d = texture(uSceneDepth, uv).r;
+    if (d >= 0.999999) {
+        gl_FragDepth = 1.0;
+        return;
+    }
+    vec4 world = uSceneInvViewProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    world /= world.w;
+    vec4 clip = uViewProj * vec4(world.xyz, 1.0);
+    gl_FragDepth = clamp((clip.z / clip.w) * 0.5 + 0.5, 0.0, 1.0);
 }
 )";
 
@@ -1142,6 +1162,9 @@ public:
             if (!engine_.HasMouseCursorHandlerUVE()) {
                 // Set Show Mouse Cursor in Play frees the editor's view pointer for the game's UI.
                 engine_.SetMouseCursorHandlerUVE([this](const bool show) { editor_.SetGameMouseCapturedUVE(!show); });
+                // The Entity Editor's window counts as the editor having focus: its sequencer and
+                // views keep the full frame rate instead of dropping to the background cap.
+                engine_.SetFocusProviderUVE([this] { return editor_.IsAnyEditorWindowFocusedUVE(); });
                 // Quit Game stops Play; Open Level plays the other level. Both wait for this view's
                 // next frame, outside the engine's own update.
                 engine_.SetQuitGameHandlerUVE([this] { gameRequest_ = GameRequestUVE{true, {}}; });
@@ -1452,23 +1475,24 @@ public:
             renderPass_->RenderBackgroundUVE(neutralMainFallback);
         }
         if (meshResult.colorTextureId != 0U && EnsureMeshBlitResourcesUVE()) {
-            BlitMeshLayerUVE(meshResult);
+            BlitMeshLayerUVE(meshResult, width, height);
         }
         if (studio != nullptr) {
             studio->DrawFloor(camera_, width, height);
         }
-        // The PRISM shell draws the grid and the selection outline itself (depth-tested against
-        // the scene depth exported below), from the settings and the mask this pass hands it.
+        // The grid is the GPU's (InfiniteGridRenderer, depth-tested against the scene in its shader):
+        // drawing it line by line on the CPU every frame the camera moved is what made orbiting lag.
+        // The PRISM shell still draws the selection outline from the mask this pass hands it.
         overlayState.selectionMask.clear();
         overlayState.selectionMaskWidth = overlayState.selectionMaskHeight = 0;
-        ExportGridForHostUVE(overlayState, hostGizmos && !previewing_ && !studioView_);
+        ExportGridForHostUVE(overlayState, false);
         if (hostGizmos && !lookThroughCamera.has_value()) {
             ExportSceneDepthForHostUVE(overlayState, width, height);
         } else {
             overlayState.sceneDepth.clear();
             overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
         }
-        if (!previewing_ && !hostGizmos) {
+        if (!previewing_ && (!hostGizmos || !studioView_)) {
             renderPass_->RenderGridUVE(camera_, width, height);
         }
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
@@ -1687,7 +1711,7 @@ private:
     // grid and gizmos that follow share one depth buffer with the engine's scene geometry. Depth
     // testing stays off: the mesh layer's own depth already resolved visibility between meshes,
     // and at this point in the frame only the backdrop is underneath.
-    void BlitMeshLayerUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult) {
+    void BlitMeshLayerUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult, const int width, const int height) {
         // GL_ALWAYS rather than disabling the test: OpenGL skips depth-buffer writes entirely
         // while GL_DEPTH_TEST is disabled, whatever the write mask says, and the depth this pass
         // writes is the whole reason it exists.
@@ -1699,6 +1723,22 @@ private:
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, meshResult.colorTextureId);
         glUniform1i(meshBlitProgram_->UniformLocation("uMeshColor"), 0);
+        // The renderer's own depth, so the GPU grid and gizmos are hidden exactly by what stands in
+        // front of them (and the sky hides nothing).
+        const UVE::Render::SceneDepthExportUVE depth = services_.GetRenderer3DUVE().GetLastSceneDepthUVE();
+        auto* const glDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
+        const GLuint depthTexture = depth.valid && glDevice != nullptr ? static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture)) : 0U;
+        glUniform1i(meshBlitProgram_->UniformLocation("uHasDepth"), depthTexture != 0U ? 1 : 0);
+        if (depthTexture != 0U) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, depthTexture);
+            glUniform1i(meshBlitProgram_->UniformLocation("uSceneDepth"), 1);
+            glUniformMatrix4fv(meshBlitProgram_->UniformLocation("uSceneInvViewProj"), 1, GL_TRUE, &depth.inverseViewProjection.m[0][0]);
+            const float aspect = static_cast<float>(width) / static_cast<float>(std::max(height, 1));
+            meshBlitProgram_->SetMat4("uViewProj", camera_.ViewProjection(aspect).Data());
+            glUniform2f(meshBlitProgram_->UniformLocation("uOutSize"), static_cast<float>(width), static_cast<float>(height));
+            glActiveTexture(GL_TEXTURE0);
+        }
         glBindVertexArray(meshBlitVao_);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(0);

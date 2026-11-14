@@ -433,6 +433,15 @@ public:
     /// Who answers a script's Set Show Mouse Cursor (the editor, for its own view). Without one the
     /// window's pointer is shown or hidden.
     void SetMouseCursorHandlerUVE(std::function<void(bool show)> handler) { m_mouseCursorHandlerUVE = std::move(handler); }
+    /// Whether the application has focus, when it has windows of its own besides the main one (the
+    /// editor's Entity Editor): the unfocused frame cap then applies only when none of them has it.
+    void SetFocusProviderUVE(std::function<bool()> provider) { m_focusProviderUVE = std::move(provider); }
+    /// Changes the frame-rate caps after Init (0: no cap of its own; vsync paces).
+    void SetFrameRateCapsUVE(const std::uint32_t focused, const std::uint32_t unfocused) noexcept {
+        m_config.focusedFrameRateCapUVE = focused;
+        m_config.unfocusedFrameRateCapUVE = unfocused;
+    }
+    [[nodiscard]] bool HasFocusProviderUVE() const noexcept { return static_cast<bool>(m_focusProviderUVE); }
     [[nodiscard]] bool HasMouseCursorHandlerUVE() const noexcept { return static_cast<bool>(m_mouseCursorHandlerUVE); }
     /// Who answers a script's Quit Game (the editor stops Play), once the frame's scripts are
     /// done. Without one the engine quits.
@@ -913,6 +922,7 @@ private:
     std::optional<Math::Vector2UVE> m_uiViewportSizeUVE;
     std::optional<Math::Vector2UVE> m_deviceScreenSizeUVE;
     std::function<void(bool)> m_mouseCursorHandlerUVE;
+    std::function<bool()> m_focusProviderUVE;
     std::chrono::steady_clock::time_point m_uiView3DClockUVE{};
     std::unique_ptr<Scene::IPrefabSystemUVE> m_prefabSystem;
     std::unique_ptr<Asset::IHotReloadUVE> m_hotReload;

@@ -530,6 +530,9 @@ public:
     /// A viewport is flying (right mouse held: mouse looks, WASD moves): the pointer is hidden and
     /// held, and keys drive the camera instead of the editor's shortcuts.
     void SetViewportFlyingUVE(bool flying);
+    /// Whether any editor window (the level's, the Entity Editor's, a tool window) has focus: the
+    /// editor counts as in use, and keeps its full frame rate, while any of them has.
+    [[nodiscard]] bool IsAnyEditorWindowFocusedUVE() const;
     [[nodiscard]] bool IsViewportFlyingUVE() const noexcept { return m_viewportFlying || m_viewportFlyHeld; }
     /// The right mouse is held on a viewport (flying, or about to): its keys are the camera's.
     void SetViewportFlyHeldUVE(const bool held) noexcept { m_viewportFlyHeld = held; }

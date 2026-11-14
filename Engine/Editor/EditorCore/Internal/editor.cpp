@@ -761,6 +761,10 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
     }
 }
 
+bool EditorUVE::IsAnyEditorWindowFocusedUVE() const {
+    return m_levelShell != nullptr && m_levelShell->IsAnyWindowFocusedUVE();
+}
+
 void EditorUVE::SetViewportFlyingUVE(const bool flying) {
     if (m_viewportFlying == flying) {
         return;
