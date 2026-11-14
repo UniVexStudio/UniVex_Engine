@@ -109,7 +109,11 @@ bool SelectionOutlineRenderer::EnsureMask(const int width, const int height) {
     if (maskTexture_ == 0) glGenTextures(1, &maskTexture_);
     if (maskFbo_ == 0) glGenFramebuffers(1, &maskFbo_);
     glBindTexture(GL_TEXTURE_2D, maskTexture_);
+#if defined(__ANDROID__)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+#else
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+#endif
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -169,9 +173,23 @@ bool SelectionOutlineRenderer::ReadMask(const univex::math::Mat4& viewProjection
     if (EnsureMask(width, height)) {
         DrawMaskPass(viewProjection, width, height, triangles);
         glBindVertexArray(0);
-        std::vector<std::uint8_t> rows(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
         glBindFramebuffer(GL_READ_FRAMEBUFFER, maskFbo_);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
+#if defined(__ANDROID__)
+        std::vector<std::uint8_t> rgba(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U);
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        // GL rows run bottom-up; the mask is handed over top-down.
+        outMask.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+        const std::size_t stride = static_cast<std::size_t>(width);
+        for (int y = 0; y < height; ++y) {
+            const std::size_t srcRow = static_cast<std::size_t>(height - 1 - y) * stride * 4U;
+            const std::size_t dstRow = static_cast<std::size_t>(y) * stride;
+            for (int x = 0; x < width; ++x) {
+                outMask[dstRow + static_cast<std::size_t>(x)] = rgba[srcRow + static_cast<std::size_t>(x) * 4U];
+            }
+        }
+#else
+        std::vector<std::uint8_t> rows(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
         glReadPixels(0, 0, width, height, GL_RED, GL_UNSIGNED_BYTE, rows.data());
         // GL rows run bottom-up; the mask is handed over top-down.
         outMask.resize(rows.size());
@@ -180,6 +198,7 @@ bool SelectionOutlineRenderer::ReadMask(const univex::math::Mat4& viewProjection
             std::copy_n(rows.data() + static_cast<std::size_t>(height - 1 - y) * stride, stride,
                         outMask.data() + static_cast<std::size_t>(y) * stride);
         }
+#endif
         ok = true;
     }
 

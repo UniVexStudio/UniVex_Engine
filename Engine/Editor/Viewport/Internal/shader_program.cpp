@@ -1,5 +1,7 @@
 #include "univex/render/shader_program.h"
 
+#include <cctype>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -7,10 +9,36 @@ namespace univex::render {
 
 namespace {
 
+#if defined(__ANDROID__)
+[[nodiscard]] std::string TranslateShaderToEs300(std::string_view source) {
+    const std::size_t lineEnd = source.find('\n');
+    std::string_view firstLine = lineEnd == std::string_view::npos ? source : source.substr(0U, lineEnd);
+    std::string_view rest = lineEnd == std::string_view::npos ? std::string_view{} : source.substr(lineEnd + 1U);
+
+    // Strip whitespace at start of first line and check for #version ...
+    std::size_t pos = 0U;
+    while (pos < firstLine.size() && std::isspace(static_cast<unsigned char>(firstLine[pos])) != 0) {
+        ++pos;
+    }
+    if (firstLine.substr(pos).starts_with("#version") && firstLine.find(" es") == std::string_view::npos) {
+        std::string out = "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n";
+        out.append(rest);
+        return out;
+    }
+    return std::string(source);
+}
+#endif
+
 GLuint CompileStage(GLenum stage, std::string_view source, std::string& outError) {
     const GLuint shader = glCreateShader(stage);
+#if defined(__ANDROID__)
+    const std::string translated = TranslateShaderToEs300(source);
+    const auto* data = translated.data();
+    const auto length = static_cast<GLint>(translated.size());
+#else
     const auto* data = source.data();
     const auto length = static_cast<GLint>(source.size());
+#endif
     glShaderSource(shader, 1, &data, &length);
     glCompileShader(shader);
 

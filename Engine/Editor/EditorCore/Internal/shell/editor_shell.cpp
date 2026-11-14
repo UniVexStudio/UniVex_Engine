@@ -26,7 +26,12 @@
 #include "prism/Theme.h"
 #include "prism/Views.h"
 
+#if defined(__ANDROID__)
+#include <android/input.h>
+#include <android/keycodes.h>
+#else
 #include <GLFW/glfw3.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -139,7 +144,7 @@ EditorShellUVE::~EditorShellUVE() {
     ShutdownUVE();
 }
 
-bool EditorShellUVE::InitializeUVE(GLFWwindow* const window, const std::filesystem::path& assetDir) {
+bool EditorShellUVE::InitializeUVE(void* const window, const std::filesystem::path& assetDir) {
     if (!m_host.InitializeUVE(window, assetDir)) {
         return false;
     }
@@ -154,10 +159,18 @@ bool EditorShellUVE::InitializeUVE(GLFWwindow* const window, const std::filesyst
     // A game holding the mouse lets go on Escape, whatever has the keyboard, so the editor's own
     // controls (Stop above all) can be reached again.
     m_host.SetKeyHookUVE([this](const int key, const int action) {
+#if defined(__ANDROID__)
+        if ((key == AKEYCODE_ESCAPE || key == AKEYCODE_BACK) && action == AKEY_EVENT_ACTION_DOWN &&
+            m_editor.IsGameMouseCapturedUVE()) {
+            m_editor.SetGameMouseCapturedUVE(false);
+            return true;
+        }
+#else
         if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && m_editor.IsGameMouseCapturedUVE()) {
             m_editor.SetGameMouseCapturedUVE(false);
             return true;
         }
+#endif
         return false;
     });
     return true;

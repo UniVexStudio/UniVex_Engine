@@ -37,9 +37,23 @@ public class EditorCoreModule : ModuleRules
             "Internal/shell/anim_library"
         });
 
+        ExcludedFiles.AddRange(new string[] {
+            "android:Internal/shell/editor_host.cpp",
+            "android:editor_host.cpp",
+            "desktop:Internal/shell/editor_host_android.cpp",
+            "desktop:editor_host_android.cpp"
+        });
+
         PublicDefinitions.AddRange(new string[] {
-            "GLEW_STATIC",
-            "GLEW_NO_GLU"
+            "desktop:GLEW_STATIC",
+            "desktop:GLEW_NO_GLU"
+        });
+
+        PublicSystemLibraries.AddRange(new string[] {
+            "android:EGL",
+            "android:GLESv3",
+            "android:android",
+            "android:log"
         });
     }
 }

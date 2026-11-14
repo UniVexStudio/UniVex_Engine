@@ -18,7 +18,9 @@
 #include <utility>
 #include <vector>
 
+#if !defined(__ANDROID__)
 #include <GLFW/glfw3.h>
+#endif
 
 #include "i_asset_import_queue.h"
 #include "light_emitter_component.h"

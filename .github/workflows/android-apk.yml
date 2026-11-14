@@ -139,6 +139,20 @@ jobs:
               "/tmp/apk-artifacts/${{ matrix.abi }}/univex-${slug}-${{ matrix.abi }}.apk"
           done < <(find Samples -maxdepth 3 -name 'cooked.json' -print0 | sort -z)
           echo "Packaged ${cooked_count} cooked project APK(s)."
+
+      - name: Build UniVex Editor APK
+        if: steps.filter.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          python3 Engine/Tools/android/build_apk.py \
+            --sdk "$ANDROID_HOME" \
+            --build-dir /tmp/univex-android-editor \
+            --native-build-dir /tmp/univex-android-demo/native \
+            --target editor \
+            --abi "${{ matrix.abi }}" \
+            --jobs "$(nproc)"
+          cp "/tmp/univex-android-editor/univex-editor-${{ matrix.abi }}.apk" \
+            "/tmp/apk-artifacts/${{ matrix.abi }}/univex-editor-${{ matrix.abi }}.apk"
           ccache -s
 
       - name: Save Android compiler cache
@@ -158,28 +172,37 @@ jobs:
             expected_arch="Advanced Micro Devices X86-64"
           fi
           for apk in /tmp/apk-artifacts/${{ matrix.abi }}/*.apk; do
-            echo "=== Inspecting $(basename "$apk") ==="
+            apk_name="$(basename "$apk")"
+            echo "=== Inspecting $apk_name ==="
             ls -lh "$apk"
             listing="$(unzip -l "$apk")"
-            grep -q "lib/${{ matrix.abi }}/libunivex_android.so" <<< "$listing"
             grep -q "lib/${{ matrix.abi }}/libc++_shared.so" <<< "$listing"
-            if [[ "$(basename "$apk")" != univex-demo-* ]]; then
-              grep -q "assets/project-files.txt" <<< "$listing"
-              grep -q "assets/project/.uvassetdb" <<< "$listing"
-              grep -q "assets/project/cooked.json" <<< "$listing"
+            if [[ "$apk_name" == univex-editor-* ]]; then
+              so_name="libunivex_editor_android.so"
+              grep -q "assets/prism-assets-files.txt" <<< "$listing"
+              grep -q "assets/prism_assets/fonts/Inter-Regular.otf" <<< "$listing"
+              grep -q "assets/shaders/basic_3d.glsl" <<< "$listing"
+            else
+              so_name="libunivex_android.so"
+              if [[ "$apk_name" != univex-demo-* ]]; then
+                grep -q "assets/project-files.txt" <<< "$listing"
+                grep -q "assets/project/.uvassetdb" <<< "$listing"
+                grep -q "assets/project/cooked.json" <<< "$listing"
+              fi
             fi
+            grep -q "lib/${{ matrix.abi }}/$so_name" <<< "$listing"
             tmp_so="$(mktemp -d)"
-            unzip -o -j "$apk" "lib/${{ matrix.abi }}/libunivex_android.so" -d "$tmp_so" >/dev/null
-            elf_header="$("$ndk_bin/llvm-readelf" -h "$tmp_so/libunivex_android.so")"
+            unzip -o -j "$apk" "lib/${{ matrix.abi }}/$so_name" -d "$tmp_so" >/dev/null
+            elf_header="$("$ndk_bin/llvm-readelf" -h "$tmp_so/$so_name")"
             grep -q "$expected_arch" <<< "$elf_header"
-            elf_phdrs="$("$ndk_bin/llvm-readelf" -l "$tmp_so/libunivex_android.so")"
+            elf_phdrs="$("$ndk_bin/llvm-readelf" -l "$tmp_so/$so_name")"
             load_segments="$(grep 'LOAD' <<< "$elf_phdrs")"
             grep -qE "0x4000[[:space:]]*$" <<< "$load_segments"
             if grep -qvE "0x4000[[:space:]]*$" <<< "$load_segments"; then
               echo "ERROR: Found LOAD segment not aligned to 16 KB (0x4000)"
               exit 1
             fi
-            dyn_syms="$("$ndk_bin/llvm-nm" -D "$tmp_so/libunivex_android.so")"
+            dyn_syms="$("$ndk_bin/llvm-nm" -D "$tmp_so/$so_name")"
             grep -q "T ANativeActivity_onCreate" <<< "$dyn_syms"
             rm -rf "$tmp_so"
           done

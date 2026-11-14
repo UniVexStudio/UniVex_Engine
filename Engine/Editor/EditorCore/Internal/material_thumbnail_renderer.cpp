@@ -16,11 +16,19 @@
 // loading itself is not hand-rolled - this class shares the engine's one contract loader, exactly
 // like MeshThumbnailRendererUVE. The GL surface stays confined to this .cpp: the public header
 // never includes a GL header.
+#if defined(__ANDROID__)
+#include <EGL/egl.h>
+#include <GLES3/gl32.h>
+#include <dlfcn.h>
+#include <string>
+#else
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <GLFW/glfw3.h>
+#endif
 
 #include "gl_functions.h"
+#include "editor_ui_assets.h"
 
 #include "material_asset.h"
 #include "matrix4x4.h"
@@ -341,7 +349,12 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
 /// void*-based signature - the same one-line adapter GlRenderDeviceUVE and
 /// MeshThumbnailRendererUVE pass.
 [[nodiscard]] void* GrabGlProcAddressUVE(const char* const name) noexcept {
+#if defined(__ANDROID__)
+    void* symbol = reinterpret_cast<void*>(eglGetProcAddress(name));
+    return symbol != nullptr ? symbol : dlsym(RTLD_DEFAULT, name);
+#else
     return reinterpret_cast<void*>(glfwGetProcAddress(name));
+#endif
 }
 
 [[nodiscard]] bool CompileShaderStageUVE(const Render::Detail::GlFunctionsUVE& table, const GLenum stage,
@@ -350,7 +363,20 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
     if (outShader == 0U) {
         return false;
     }
+#if defined(__ANDROID__)
+    std::string translated;
+    const char* effectiveSource = source;
+    if (source != nullptr && std::strncmp(source, "#version ", 9) == 0 && std::strstr(source, "300 es") == nullptr) {
+        if (const char* newline = std::strchr(source, '\n')) {
+            translated = "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n";
+            translated += (newline + 1);
+            effectiveSource = translated.c_str();
+        }
+    }
+    table.glShaderSource(outShader, 1, &effectiveSource, nullptr);
+#else
     table.glShaderSource(outShader, 1, &source, nullptr);
+#endif
     table.glCompileShader(outShader);
     GLint compiled = GL_FALSE;
     table.glGetShaderiv(outShader, GL_COMPILE_STATUS, &compiled);
@@ -436,10 +462,12 @@ struct MaterialThumbnailRendererUVE::GlStateUVE {
     GLuint previewIndexBuffer = 0U;
     GLsizei previewIndexCount = 0;
 
+#if !defined(__ANDROID__)
     /// GL 1.4, so it has no prototype in <GL/gl.h> and is not part of the shared table: resolved
     /// by name exactly like the table's own entries. Null only on a context that cannot exist here
     /// (the editor requires 3.3 core), in which case glBlendFunc stands in.
     PFNGLBLENDFUNCSEPARATEPROC blendFuncSeparate = nullptr;
+#endif
 
     GLuint scratchFramebuffer = 0U;
     GLuint scratchDepthRenderbuffer = 0U;
@@ -453,11 +481,16 @@ namespace {
 /// glBlendFunc (which a context without the 1.4 entry point cannot distinguish from it anyway).
 void SetBlendFactorsUVE(const MaterialThumbnailRendererUVE::GlStateUVE& gl, const GLenum sourceRgb,
                         const GLenum destinationRgb, const GLenum sourceAlpha, const GLenum destinationAlpha) noexcept {
+#if defined(__ANDROID__)
+    static_cast<void>(gl);
+    glBlendFuncSeparate(sourceRgb, destinationRgb, sourceAlpha, destinationAlpha);
+#else
     if (gl.blendFuncSeparate != nullptr) {
         gl.blendFuncSeparate(sourceRgb, destinationRgb, sourceAlpha, destinationAlpha);
     } else {
         glBlendFunc(sourceRgb, destinationRgb);
     }
+#endif
 }
 
 /// Creates (once) and resizes (as needed) the scratch framebuffer + depth-renderbuffer reused by
@@ -634,8 +667,10 @@ void MaterialThumbnailRendererUVE::InitializeUVE() {
 
     gl.table = Render::Detail::LoadGlFunctionsUVE(&GrabGlProcAddressUVE);
     gl.functionsLoaded = gl.table.IsCompleteUVE();
+#if !defined(__ANDROID__)
     gl.blendFuncSeparate =
         reinterpret_cast<PFNGLBLENDFUNCSEPARATEPROC>(GrabGlProcAddressUVE("glBlendFuncSeparate"));
+#endif
     if (!gl.functionsLoaded) {
         return;
     }
@@ -984,6 +1019,7 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         }
         return 0U;
     }
+    EditorUiAssetsUVE::RegisterDynamicTextureSizeUVE(static_cast<std::uintptr_t>(colorTexture), width, height);
     return static_cast<std::uintptr_t>(colorTexture);
 }
 

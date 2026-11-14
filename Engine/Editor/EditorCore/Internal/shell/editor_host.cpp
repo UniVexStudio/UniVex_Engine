@@ -584,7 +584,8 @@ EditorHostUVE::WindowUVE* EditorHostUVE::FindUVE(const int id) const {
     return it != m_windows.end() ? it->second.get() : nullptr;
 }
 
-bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesystem::path& assetDir) {
+bool EditorHostUVE::InitializeUVE(void* const windowHandle, const std::filesystem::path& assetDir) {
+    auto* const window = static_cast<GLFWwindow*>(windowHandle);
     if (m_ready || window == nullptr || g_activeHostUVE != nullptr) {
         return false;
     }

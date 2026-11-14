@@ -48,7 +48,9 @@
 #include <variant>
 #include <vector>
 
+#if !defined(__ANDROID__)
 #include <GLFW/glfw3.h>
+#endif
 
 #include "bmp_metadata.h"
 #include "jpeg_metadata.h"
@@ -264,8 +266,7 @@ void EditorUVE::InitUVE() {
     if (m_prismUiRequested && windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
         // The level editor is PRISM's.
         auto shell = std::make_unique<EditorShellUVE>(*this);
-        if (shell->InitializeUVE(static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()),
-                                 m_prismAssetDir)) {
+        if (shell->InitializeUVE(windowManager.GetNativeWindowHandleUVE(), m_prismAssetDir)) {
             m_levelShell = std::move(shell);
         } else {
             UVE_ERROR("EditorUVE: the PRISM editor UI could not start (assets: {})", m_prismAssetDir.string());
@@ -735,6 +736,7 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
     }
     m_gameMouseCaptured = captured;
     UVE_INFO("Editor: {}", captured ? "the game holds the mouse (Esc releases it)" : "the mouse is the editor's again");
+#if !defined(__ANDROID__)
     if (m_services == nullptr) {
         return;
     }
@@ -759,6 +761,7 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
             glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
         }
     }
+#endif
 }
 
 bool EditorUVE::SaveSceneUVE() {
@@ -6590,7 +6593,9 @@ namespace {
 [[nodiscard]] std::string SourceStampUVE(const std::filesystem::path& source) {
     std::error_code error;
     const std::filesystem::file_time_type time = std::filesystem::last_write_time(source, error);
-    return error ? std::string{} : std::to_string(time.time_since_epoch().count());
+    return error
+        ? std::string{}
+        : std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
 }
 
 } // namespace

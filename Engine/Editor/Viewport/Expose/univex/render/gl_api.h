@@ -16,6 +16,8 @@
 
 #if defined(UNIVEX_GL_LOADER_HEADER)
 #include UNIVEX_GL_LOADER_HEADER
+#elif defined(__ANDROID__)
+#include "univex/render/android_gles3_api.h"
 #else
 #ifndef GLEW_NO_GLU
 #define GLEW_NO_GLU

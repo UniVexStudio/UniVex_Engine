@@ -1,7 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "prism/GlBackend.h"
 #include "prism/GpuBatch.h"
+#if defined(__ANDROID__)
+#include <GLES3/gl32.h>
+#include <string>
+#else
 #include <GL/glcorearb.h>
+#endif
 #include <cstdio>
 #include <cstring>
 
@@ -51,7 +56,21 @@ struct GlBackend::Impl {
   }
   GLuint compile(GLenum type, const char* src, std::string* err) {
     GLuint s = glCreateShader(type);
+#if defined(__ANDROID__)
+    std::string esSrc;
+    const char* effectiveSrc = src;
+    if (src) {
+      const char* nl = std::strchr(src, '\n');
+      if (nl && std::strncmp(src, "#version ", 9) == 0 && !std::strstr(src, "300 es")) {
+        esSrc = "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n";
+        esSrc += (nl + 1);
+        effectiveSrc = esSrc.c_str();
+      }
+    }
+    glShaderSource(s, 1, &effectiveSrc, nullptr);
+#else
     glShaderSource(s, 1, &src, nullptr);
+#endif
     glCompileShader(s);
     GLint ok = 0;
     glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
@@ -215,9 +234,22 @@ PixelView GlBackend::readback() {
   g.flipped.resize(g.readbuf.size());
   g.glBindFramebuffer(GL_FRAMEBUFFER, g.fbo);
   g.glPixelStorei(GL_PACK_ALIGNMENT, 4);
+#if defined(__ANDROID__)
+  std::vector<uint8_t> rgba(size_t(g.w) * size_t(g.h) * 4U);
+  g.glReadPixels(0, 0, g.w, g.h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+  for (int y = 0; y < g.h; y++) {
+    const uint8_t* srcRow = rgba.data() + size_t(g.h - 1 - y) * size_t(g.w) * 4U;
+    uint32_t* dstRow = &g.flipped[size_t(y) * size_t(g.w)];
+    for (int x = 0; x < g.w; x++) {
+      const uint8_t* p = srcRow + size_t(x) * 4U;
+      dstRow[x] = (uint32_t(p[3]) << 24) | (uint32_t(p[0]) << 16) | (uint32_t(p[1]) << 8) | uint32_t(p[2]);
+    }
+  }
+#else
   g.glReadPixels(0, 0, g.w, g.h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, g.readbuf.data());
   for (int y = 0; y < g.h; y++)
     std::memcpy(&g.flipped[size_t(y) * size_t(g.w)], &g.readbuf[size_t(g.h - 1 - y) * size_t(g.w)], size_t(g.w) * 4);
+#endif
   return {g.flipped.data(), g.w, g.h, g.w};
 }
 

@@ -50,6 +50,12 @@ public:
     /// call with an already-zero id.
     static void DeleteDynamicTextureUVE(std::uintptr_t& textureId) noexcept;
 
+    /// Records dimensions for textures whose size may later be inspected without glGetTexLevelParameteriv
+    /// (e.g. OpenGL ES 3.0 thumbnail readback).
+    static void RegisterDynamicTextureSizeUVE(std::uintptr_t textureId, int width, int height) noexcept;
+    static void UnregisterDynamicTextureSizeUVE(std::uintptr_t textureId) noexcept;
+    [[nodiscard]] static bool TryGetDynamicTextureSizeUVE(std::uintptr_t textureId, int& width, int& height) noexcept;
+
 private:
     std::uintptr_t m_logoTextureId = 0U;
     std::array<std::uintptr_t, 2U> m_generalIconTextureIds{};

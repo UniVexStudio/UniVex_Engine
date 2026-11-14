@@ -1163,7 +1163,9 @@ public:
             GLint previousFbo = 0;
             glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
             glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+#ifdef GL_MULTISAMPLE
             glEnable(GL_MULTISAMPLE);
+#endif
             viewport2dHost_->RenderToBoundFramebufferUVE(width, height, overlayState);
             glBindFramebuffer(GL_READ_FRAMEBUFFER, msaaFbo_);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
@@ -1422,7 +1424,9 @@ public:
         GLint previousFbo = 0;
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
         glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
+#ifdef GL_MULTISAMPLE
         glEnable(GL_MULTISAMPLE);
+#endif
         renderPass_->ClearUVE(width, height);
         const univex::render::StudioBackdropRenderer* const studio = studioView_ ? StudioUVE() : nullptr;
         if (studio != nullptr) {
@@ -1551,6 +1555,10 @@ private:
         if (glewInitialized_) {
             return true;
         }
+#if defined(__ANDROID__)
+        glewInitialized_ = true;
+        return true;
+#else
         glewExperimental = GL_TRUE;
         if (const GLenum status = glewInit(); status != GLEW_OK) {
             UVE_ERROR("uve_editor_app: glewInit failed for the viewport panel: {}",
@@ -1560,6 +1568,7 @@ private:
         glGetError(); // discard GLEW's benign core-profile extension-probe error
         glewInitialized_ = true;
         return true;
+#endif
     }
 
     [[nodiscard]] bool EnsureRenderPassUVE() {
@@ -1596,11 +1605,19 @@ private:
         glBindFramebuffer(GL_FRAMEBUFFER, msaaFbo_);
         glGenRenderbuffers(1, &msaaColorRb_);
         glBindRenderbuffer(GL_RENDERBUFFER, msaaColorRb_);
-        glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, width, height);
+        if (samples > 1) {
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, width, height);
+        } else {
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
+        }
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaColorRb_);
         glGenRenderbuffers(1, &msaaDepthRb_);
         glBindRenderbuffer(GL_RENDERBUFFER, msaaDepthRb_);
-        glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, width, height);
+        if (samples > 1) {
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH24_STENCIL8, width, height);
+        } else {
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+        }
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepthRb_);
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
             UVE_ERROR("uve_editor_app: viewport MSAA framebuffer incomplete");
@@ -3042,6 +3059,11 @@ private:
                                     const int width, const int height) {
         overlayState.sceneDepth.clear();
         overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
+#if defined(__ANDROID__)
+        static_cast<void>(width);
+        static_cast<void>(height);
+        return;
+#else
         const UVE::Render::SceneDepthExportUVE depth =
             services_.GetRenderer3DUVE().GetLastSceneDepthUVE();
         auto* const glDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
@@ -3130,9 +3152,15 @@ private:
         glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
         if (depthTest == GL_TRUE) glEnable(GL_DEPTH_TEST);
         if (blend == GL_TRUE) glEnable(GL_BLEND);
+#endif
     }
 
     [[nodiscard]] bool EnsureHostDepthUVE(const int width, const int height) {
+#if defined(__ANDROID__)
+        static_cast<void>(width);
+        static_cast<void>(height);
+        return false;
+#else
         if (!hostDepthProgram_.has_value()) {
             std::string error;
             hostDepthProgram_ = univex::render::ShaderProgram::Build(kMeshBlitVertexShaderUVE,
@@ -3166,6 +3194,7 @@ private:
         hostDepthWidth_ = complete ? w : 0;
         hostDepthHeight_ = complete ? h : 0;
         return complete;
+#endif
     }
 
     std::optional<univex::render::ShaderProgram> hostDepthProgram_;

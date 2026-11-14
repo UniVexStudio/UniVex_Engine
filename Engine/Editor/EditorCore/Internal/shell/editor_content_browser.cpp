@@ -21,7 +21,9 @@
 
 #include "prism/Application.h"
 
+#if !defined(__ANDROID__)
 #include <GL/gl.h>
+#endif
 #include "prism/AssetBrowser.h"
 #include "prism/Containers.h"
 #include "prism/Controls.h"

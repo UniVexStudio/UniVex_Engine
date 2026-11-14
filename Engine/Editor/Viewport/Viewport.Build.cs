@@ -23,15 +23,25 @@ public class ViewportModule : ModuleRules
             "Internal"
         });
 
+        ExcludedFiles.AddRange(new string[] {
+            "android:app/main.cpp",
+            "android:tools/",
+            "android:tests/"
+        });
+
         PublicDefinitions.AddRange(new string[] {
-            "GLEW_STATIC",
-            "GLEW_NO_GLU"
+            "desktop:GLEW_STATIC",
+            "desktop:GLEW_NO_GLU"
         });
 
         PublicSystemLibraries.AddRange(new string[] {
-            "GL",
-            "GLX",
-            "X11"
+            "desktop:GL",
+            "desktop:GLX",
+            "desktop:X11",
+            "android:EGL",
+            "android:GLESv3",
+            "android:android",
+            "android:log"
         });
     }
 }

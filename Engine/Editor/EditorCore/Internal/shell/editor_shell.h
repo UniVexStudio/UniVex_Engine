@@ -36,7 +36,9 @@
 #include <string>
 #include <vector>
 
+#if !defined(__ANDROID__)
 struct GLFWwindow;
+#endif
 
 namespace prism {
 class Button;
@@ -74,7 +76,7 @@ public:
     EditorShellUVE(const EditorShellUVE&) = delete;
     EditorShellUVE& operator=(const EditorShellUVE&) = delete;
 
-    [[nodiscard]] bool InitializeUVE(GLFWwindow* window, const std::filesystem::path& assetDir);
+    [[nodiscard]] bool InitializeUVE(void* window, const std::filesystem::path& assetDir);
     void ShutdownUVE();
     [[nodiscard]] bool IsReadyUVE() const noexcept { return m_host.IsReadyUVE(); }
 

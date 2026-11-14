@@ -80,11 +80,27 @@ constexpr int kHeightUVE = 600;
     if (!content.empty() && content.has_parent_path() && content.parent_path() != content) {
         places.emplace_back("Project", content.parent_path());
     }
-#if defined(_WIN32)
+#if defined(__ANDROID__)
+    const std::filesystem::path appData = std::filesystem::current_path(error);
+    if (!error && !appData.empty() && std::filesystem::is_directory(appData, error)) {
+        places.emplace_back("App Data", appData);
+    }
+    for (const auto& [label, candidate] : {
+             std::pair<const char*, const char*>{"Device Storage", "/storage/emulated/0"},
+             std::pair<const char*, const char*>{"Downloads", "/storage/emulated/0/Download"},
+         }) {
+        const std::filesystem::path path{candidate};
+        if (std::filesystem::is_directory(path, error)) {
+            places.emplace_back(label, path);
+        }
+    }
+    return places;
+#elif defined(_WIN32)
     const char* home = std::getenv("USERPROFILE");
 #else
     const char* home = std::getenv("HOME");
 #endif
+#if !defined(__ANDROID__)
     if (home != nullptr && *home != '\0') {
         const std::filesystem::path h{home};
         places.emplace_back("Home", h);
@@ -105,6 +121,7 @@ constexpr int kHeightUVE = 600;
     places.emplace_back("Computer", std::filesystem::path{"/"});
 #endif
     return places;
+#endif
 }
 
 } // namespace

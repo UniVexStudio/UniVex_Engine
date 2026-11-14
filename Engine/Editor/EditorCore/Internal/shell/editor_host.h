@@ -17,7 +17,9 @@
 #include <span>
 #include <string>
 
+#if !defined(__ANDROID__)
 struct GLFWwindow;
+#endif
 
 namespace prism {
 class GlBackend;
@@ -25,19 +27,18 @@ class GlBackend;
 
 namespace UVE::Editor {
 
-/// Hosts PRISM inside the editor's GLFW windows: the engine owns the main window and the loop,
+/// Hosts PRISM inside the editor's window: the engine owns the main window and the loop,
 /// PRISM owns the UI trees.
 ///
 ///   * Platform: clock, clipboard, cursor shapes, window chrome (drag strips, minimize, maximize,
-///     close) and content scale, all through GLFW.
-///   * Input: GLFW callbacks forward pointer, wheel, keys and text of each window to its PRISM
-///     window, and keep that window's raw state for its viewport input frames. The main window's
-///     callbacks are chained to whatever was installed before.
-///   * Rendering: PRISM records a DrawList per window and an OpenGL backend renders it into that
+///     close) and content scale, through GLFW on desktop or NativeActivity/EGL on Android.
+///   * Input: platform callbacks forward pointer, wheel, keys and text of each window to its PRISM
+///     window, and keep that window's raw state for its viewport input frames.
+///   * Rendering: PRISM records a DrawList per window and an OpenGL/GLES backend renders it into that
 ///     window's own texture (in the main context); the host then draws the window's engine view
 ///     textures into their EngineView holes and blends the UI texture over the whole window.
-///   * Windows: window 0 is the engine's main window. OpenWindowUVE adds an undecorated window
-///     (PRISM draws its title bar) sharing the main context's textures, for an asset editor.
+///   * Windows: window 0 is the engine's main window. OpenWindowUVE adds a secondary window (an
+///     undecorated desktop window or an Android virtual overlay window) for asset editors.
 /// Platform caption ids from this one up name extra drag areas: kExtraCaptionIdUVE + 100 * window + n.
 inline constexpr int kExtraCaptionIdUVE = 100;
 [[nodiscard]] constexpr int ExtraCaptionIdUVE(const int window, const int n = 0) noexcept {
@@ -63,14 +64,14 @@ public:
     EditorHostUVE& operator=(const EditorHostUVE&) = delete;
 
     /// Needs the editor's GL context current. `assetDir` holds PRISM's fonts/themes/locales.
-    [[nodiscard]] bool InitializeUVE(GLFWwindow* window, const std::filesystem::path& assetDir);
+    [[nodiscard]] bool InitializeUVE(void* window, const std::filesystem::path& assetDir);
     void ShutdownUVE();
     [[nodiscard]] bool IsReadyUVE() const noexcept { return m_ready; }
 
     [[nodiscard]] prism::Application& AppUVE() noexcept { return *m_app; }
     void SetRootUVE(prism::Ref<prism::Widget> root);
 
-    /// Opens a native window showing `root` (its own title bar included); returns its PRISM
+    /// Opens a window showing `root` (its own title bar included); returns its PRISM
     /// window id, or 0 when the window could not be made. Main context current.
     [[nodiscard]] int OpenWindowUVE(prism::Ref<prism::Widget> root, const std::string& title, int width, int height);
     void CloseWindowUVE(int id);
@@ -111,11 +112,12 @@ public:
     bool SaveScreenshotUVE(const std::filesystem::path& path);
     /// Saves window `id`'s last frame as PNG.
     bool SaveWindowScreenshotUVE(int id, const std::filesystem::path& path);
-    /// Sees every key of the main window first (GLFW key and action); returning true keeps it from
+    /// Sees every key of the main window first (GLFW/Android keycode and action); returning true keeps it from
     /// the UI and the view.
     void SetKeyHookUVE(std::function<bool(int key, int action)> hook);
 
     struct WindowUVE;
+#if !defined(__ANDROID__)
     // GLFW callback entry points (static trampolines route here).
     void OnCursorPosUVE(WindowUVE& w, double x, double y);
     void OnMouseButtonUVE(WindowUVE& w, int button, int action, int mods);
@@ -123,14 +125,21 @@ public:
     void OnKeyUVE(WindowUVE& w, int key, int scancode, int action, int mods);
     void OnCharUVE(WindowUVE& w, unsigned int codepoint);
     void OnCursorEnterUVE(WindowUVE& w, int entered);
+#endif
 
 private:
     class PlatformUVE;
     struct CompositorUVE;
+#if !defined(__ANDROID__)
     struct ChainUVE;
+#endif
     friend class PlatformUVE;
+#if defined(__ANDROID__)
+    friend struct AndroidEditorHostBridgeUVE;
+#endif
 
     [[nodiscard]] WindowUVE* FindUVE(int id) const;
+#if !defined(__ANDROID__)
     [[nodiscard]] prism::Vec2 ToUiUVE(const WindowUVE& w, double x, double y) const;
     /// Runs `fn` (an input event routed from `source` to `target`) in `target`'s scope; false when it
     /// cannot (`source` is scoped and `target` is not).
@@ -138,8 +147,9 @@ private:
     /// While a PRISM drag is in flight: the other window under the pointer, if any, and the pointer
     /// in its UI coordinates.
     [[nodiscard]] WindowUVE* DragTargetUVE(const WindowUVE& source, prism::Vec2& local) const;
-    void SyncSizeUVE(WindowUVE& w);
     void UpdateWindowDragUVE(WindowUVE& w);
+#endif
+    void SyncSizeUVE(WindowUVE& w);
     void CompositeUVE(WindowUVE& w, std::uint32_t uiTexture, std::uint32_t vao, std::span<const ViewImageUVE> views);
     void EndInputFrameUVE(WindowUVE& w);
 
@@ -147,7 +157,9 @@ private:
     std::unique_ptr<prism::Application> m_app;
     std::shared_ptr<prism::GlBackend> m_backend;
     std::unique_ptr<CompositorUVE> m_compositor;
+#if !defined(__ANDROID__)
     std::unique_ptr<ChainUVE> m_chain;
+#endif
     std::unique_ptr<WindowUVE> m_main;
     std::map<int, std::unique_ptr<WindowUVE>> m_windows;   // secondary windows by PRISM id
     bool m_ready = false;

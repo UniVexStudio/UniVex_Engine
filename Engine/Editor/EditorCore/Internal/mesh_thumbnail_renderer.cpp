@@ -13,11 +13,20 @@
 // loading itself is NOT hand-rolled here anymore - this class shares the engine's one contract
 // loader (AUDIT 5.6, EditorCore half). The GL surface stays confined to this .cpp: the public
 // header below never includes a GL header.
+#if defined(__ANDROID__)
+#include <EGL/egl.h>
+#include <GLES3/gl32.h>
+#include <cstring>
+#include <dlfcn.h>
+#include <string>
+#else
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include <GLFW/glfw3.h>
+#endif
 
 #include "gl_functions.h"
+#include "editor_ui_assets.h"
 
 #include "mesh_asset.h"
 #include "material_thumbnail_renderer.h"
@@ -126,7 +135,12 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
 /// void*-based signature - the same one-line adapter GlRenderDeviceUVE passes (see
 /// gl_render_device_uve.cpp); all actual per-function loading lives in gl_functions_uve.cpp.
 [[nodiscard]] void* GrabGlProcAddressUVE(const char* const name) noexcept {
+#if defined(__ANDROID__)
+    void* symbol = reinterpret_cast<void*>(eglGetProcAddress(name));
+    return symbol != nullptr ? symbol : dlsym(RTLD_DEFAULT, name);
+#else
     return reinterpret_cast<void*>(glfwGetProcAddress(name));
+#endif
 }
 
 } // namespace
@@ -169,12 +183,25 @@ struct MeshThumbnailRendererUVE::GlStateUVE {
 namespace {
 
 [[nodiscard]] bool CompileShaderStageUVE(MeshThumbnailRendererUVE::GlStateUVE& gl, const GLenum stage,
-                                          const char* const source, GLuint& outShader) noexcept {
+                                         const char* const source, GLuint& outShader) noexcept {
     outShader = gl.table.glCreateShader(stage);
     if (outShader == 0U) {
         return false;
     }
+#if defined(__ANDROID__)
+    std::string translated;
+    const char* effectiveSource = source;
+    if (source != nullptr && std::strncmp(source, "#version ", 9) == 0 && std::strstr(source, "300 es") == nullptr) {
+        if (const char* newline = std::strchr(source, '\n')) {
+            translated = "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n";
+            translated += (newline + 1);
+            effectiveSource = translated.c_str();
+        }
+    }
+    gl.table.glShaderSource(outShader, 1, &effectiveSource, nullptr);
+#else
     gl.table.glShaderSource(outShader, 1, &source, nullptr);
+#endif
     gl.table.glCompileShader(outShader);
     GLint compiled = GL_FALSE;
     gl.table.glGetShaderiv(outShader, GL_COMPILE_STATUS, &compiled);
@@ -622,6 +649,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         }
         return 0U;
     }
+    EditorUiAssetsUVE::RegisterDynamicTextureSizeUVE(static_cast<std::uintptr_t>(colorTexture), width, height);
     return static_cast<std::uintptr_t>(colorTexture);
 }
 

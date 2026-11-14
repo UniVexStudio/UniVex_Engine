@@ -556,6 +556,7 @@ class EngineBuilder:
             deps.insert(0, ("googletest", "https://github.com/google/googletest.git", "v1.15.2", "googletest/include/gtest/gtest.h"))
         if platform == "Android":
             deps.append(("libjpeg-turbo", "https://github.com/libjpeg-turbo/libjpeg-turbo.git", "3.0.3", "jpeglib.h"))
+            deps.append(("freetype", "https://github.com/freetype/freetype.git", "VER-2-13-3", "include/ft2build.h"))
 
         for name, url, tag, check_file in deps:
             dest = tp_dir / name
@@ -703,6 +704,39 @@ class EngineBuilder:
             extra_includes.append(jpeg_inc)
             extra_libs.append(jpeg_lib)
 
+            # 7. Android static FreeType (NDK does not bundle FreeType; needed by PRISM)
+            ft_src = tp_dir / "freetype"
+            ft_install = tp_lib_dir / "freetype-install"
+            ft_lib = ft_install / "lib" / "libfreetype.a"
+            ft_inc = ft_install / "include" / "freetype2"
+            if not ft_lib.exists() or not (ft_inc / "ft2build.h").exists():
+                print(f"[UVBT] Building static FreeType for Android ({abi})...", flush=True)
+                ft_build = tp_lib_dir / "freetype-build"
+                ft_build.mkdir(parents=True, exist_ok=True)
+                cmake_gen = ["-G", "Ninja"] if shutil.which("ninja") else []
+                cmake_cfg = [
+                    "cmake", "-S", str(ft_src), "-B", str(ft_build), *cmake_gen,
+                    f"-DCMAKE_TOOLCHAIN_FILE={android_tc['toolchain_file']}",
+                    f"-DANDROID_ABI={abi}",
+                    "-DANDROID_PLATFORM=android-28",
+                    f"-DCMAKE_INSTALL_PREFIX={ft_install}",
+                    "-DCMAKE_INSTALL_LIBDIR=lib",
+                    f"-DCMAKE_BUILD_TYPE={configuration if configuration in ('Debug', 'Release') else 'Release'}",
+                    "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+                    "-DBUILD_SHARED_LIBS=OFF",
+                    "-DCMAKE_DEBUG_POSTFIX=",
+                    "-DFT_DISABLE_HARFBUZZ=ON",
+                    "-DFT_DISABLE_BZIP2=ON",
+                    "-DFT_DISABLE_PNG=ON",
+                    "-DFT_DISABLE_BROTLI=ON",
+                    "-DFT_DISABLE_ZLIB=ON",
+                ]
+                subprocess.run(cmake_cfg, check=True)
+                subprocess.run(["cmake", "--build", str(ft_build), "--parallel", str(jobs)], check=True)
+                subprocess.run(["cmake", "--install", str(ft_build)], check=True)
+            extra_includes.append(ft_inc)
+            extra_libs.append(ft_lib)
+
         return {
             "tp_lib_dir": tp_lib_dir,
             "extra_includes": extra_includes,
@@ -769,7 +803,8 @@ class EngineBuilder:
         ordered_modules = self.resolve_dependencies(target.extra_modules)
         print(f"[UVBT] Resolved {len(ordered_modules)} modules in dependency order:")
         for m in ordered_modules:
-            extra_count = 1 if (platform == "Android" and m.name == "EngineApp") else 0
+            is_android_entry = (platform == "Android" and m.name in ("EngineApp", "EditorApp") and m.name in target.extra_modules)
+            extra_count = 1 if is_android_entry else 0
             print(f"  -> {m.name} ({len(m.source_files) + extra_count} source files)")
 
         # Collect global include paths
@@ -906,7 +941,7 @@ class EngineBuilder:
 
             mod_sources = list(mod.source_files)
             external_c_sources = set()
-            if platform == "Android" and mod.name == "EngineApp":
+            if platform == "Android" and mod.name in ("EngineApp", "EditorApp") and mod.name in target.extra_modules:
                 mod_includes.append(android_tc["app_glue_dir"])
                 glue_c = android_tc["app_glue_c"]
                 mod_sources.append(glue_c)
@@ -950,7 +985,9 @@ class EngineBuilder:
                     compile_tasks.append((mod.name, src, out_obj, cmd, cmd_str))
 
         total_compiles = len(compile_tasks)
-        total_sources = sum(len(m.source_files) for m in ordered_modules) + (1 if platform == "Android" and any(m.name == "EngineApp" for m in ordered_modules) else 0)
+        total_sources = sum(len(m.source_files) for m in ordered_modules) + (
+            1 if platform == "Android" and any(m.name in ("EngineApp", "EditorApp") and m.name in target.extra_modules for m in ordered_modules) else 0
+        )
         print(f"[UVBT] Actions to compile: {total_compiles} (out of {total_sources} total sources)")
 
         # Execute compilations in parallel

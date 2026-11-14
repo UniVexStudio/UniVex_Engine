@@ -21,7 +21,9 @@
 #include <utility>
 #include <vector>
 
+#if !defined(__ANDROID__)
 #include <GLFW/glfw3.h>
+#endif
 
 #include "light_emitter_component.h"
 #include "transform_component.h"

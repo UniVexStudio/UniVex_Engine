@@ -7,7 +7,13 @@
 #include "prism/Canvas.h"
 #include "prism/Theme.h"
 
+#include "editor_ui_assets.h"
+
+#if defined(__ANDROID__)
+#include <GLES3/gl32.h>
+#else
 #include <GL/gl.h>
+#endif
 
 #include <algorithm>
 #include <system_error>
@@ -60,6 +66,39 @@ bool ReadTexturePixelsUVE(const std::uintptr_t texture, const bool bottomUp, int
     if (texture == 0U) {
         return false;
     }
+#if defined(__ANDROID__)
+    int w = 0;
+    int h = 0;
+    if (!EditorUiAssetsUVE::TryGetDynamicTextureSizeUVE(texture, w, h) || w <= 0 || h <= 0 || w > 4096 || h > 4096) {
+        return false;
+    }
+    GLint previousFramebuffer = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    GLint previousPack = 4;
+    glGetIntegerv(GL_PACK_ALIGNMENT, &previousPack);
+
+    GLuint scratchFbo = 0U;
+    glGenFramebuffers(1, &scratchFbo);
+    if (scratchFbo == 0U) {
+        return false;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, scratchFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, static_cast<GLuint>(texture), 0);
+    const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    std::vector<std::uint8_t> rgba;
+    if (complete) {
+        rgba.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4U);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    }
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, previousPack);
+    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer));
+    glDeleteFramebuffers(1, &scratchFbo);
+    if (!complete) {
+        return false;
+    }
+#else
     GLint previous = 0;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
@@ -78,6 +117,7 @@ bool ReadTexturePixelsUVE(const std::uintptr_t texture, const bool bottomUp, int
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
     glPixelStorei(GL_PACK_ALIGNMENT, previousPack);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous));
+#endif
     width = w;
     height = h;
     pixels.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(h));

@@ -5,13 +5,20 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
+#if defined(__ANDROID__)
+#include <GLES3/gl32.h>
+#else
 #include <GL/gl.h>
 #include <GL/glext.h>
+#endif
 
 #include "editor_icon_set.h"
 
@@ -269,12 +276,75 @@ std::uintptr_t EditorUiAssetsUVE::GetComponentIconTextureIdUVE(const std::string
     return FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::Component, key);
 }
 
+namespace {
+
+std::mutex& DynamicTextureSizeMutexUVE() noexcept {
+    static std::mutex mutex;
+    return mutex;
+}
+
+std::unordered_map<std::uintptr_t, std::pair<int, int>>& DynamicTextureSizeMapUVE() noexcept {
+    static std::unordered_map<std::uintptr_t, std::pair<int, int>> sizes;
+    return sizes;
+}
+
+} // namespace
+
+void EditorUiAssetsUVE::RegisterDynamicTextureSizeUVE(const std::uintptr_t textureId, const int width,
+                                                      const int height) noexcept {
+    if (textureId == 0U || width <= 0 || height <= 0) {
+        return;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(DynamicTextureSizeMutexUVE());
+        DynamicTextureSizeMapUVE()[textureId] = {width, height};
+    } catch (...) {
+    }
+}
+
+void EditorUiAssetsUVE::UnregisterDynamicTextureSizeUVE(const std::uintptr_t textureId) noexcept {
+    if (textureId == 0U) {
+        return;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(DynamicTextureSizeMutexUVE());
+        DynamicTextureSizeMapUVE().erase(textureId);
+    } catch (...) {
+    }
+}
+
+bool EditorUiAssetsUVE::TryGetDynamicTextureSizeUVE(const std::uintptr_t textureId, int& width,
+                                                    int& height) noexcept {
+    width = 0;
+    height = 0;
+    if (textureId == 0U) {
+        return false;
+    }
+    try {
+        std::lock_guard<std::mutex> lock(DynamicTextureSizeMutexUVE());
+        const auto it = DynamicTextureSizeMapUVE().find(textureId);
+        if (it == DynamicTextureSizeMapUVE().end()) {
+            return false;
+        }
+        width = it->second.first;
+        height = it->second.second;
+        return width > 0 && height > 0;
+    } catch (...) {
+        return false;
+    }
+}
+
 std::uintptr_t EditorUiAssetsUVE::UploadDynamicTextureUVE(const std::uint8_t* const pixels, const int width,
                                                            const int height) noexcept {
-    return UploadTextureUVE(pixels, width, height);
+    const std::uintptr_t textureId = UploadTextureUVE(pixels, width, height);
+    if (textureId != 0U) {
+        RegisterDynamicTextureSizeUVE(textureId, width, height);
+    }
+    return textureId;
 }
 
 void EditorUiAssetsUVE::DeleteDynamicTextureUVE(std::uintptr_t& textureId) noexcept {
+    UnregisterDynamicTextureSizeUVE(textureId);
     DeleteTextureUVE(textureId);
 }
 
