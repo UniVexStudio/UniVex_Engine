@@ -18,6 +18,7 @@
 #include "prism/Application.h"
 #include "prism/Menu.h"
 
+#include <cstddef>
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
