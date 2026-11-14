@@ -121,7 +121,7 @@ EditorShellUVE::EditorShellUVE(EditorUVE& editor)
                                   source.save = [&editor] { return editor.SaveProjectSettingsUVE(); };
                                   return source;
                               }),
-      m_shortcutsWindow(editor, m_host), m_montageEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
+      m_shortcutsWindow(editor, m_host), m_inputMapWindow(editor, m_host), m_captureWindow(editor, m_host), m_audioMixerWindow(editor, m_host), m_montageEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
         ShowDockPanelUVE(0, true);
@@ -162,7 +162,7 @@ void EditorShellUVE::ShutdownUVE() {
     if (m_host.IsReadyUVE() && m_entityEditor.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_entityEditor.WindowIdUVE());
     }
-    for (const int id : {m_preferencesWindow.WindowIdUVE(), m_projectSettingsWindow.WindowIdUVE(), m_shortcutsWindow.WindowIdUVE()}) {
+    for (const int id : {m_preferencesWindow.WindowIdUVE(), m_projectSettingsWindow.WindowIdUVE(), m_shortcutsWindow.WindowIdUVE(), m_inputMapWindow.WindowIdUVE(), m_captureWindow.WindowIdUVE(), m_audioMixerWindow.WindowIdUVE()}) {
         if (m_host.IsReadyUVE() && id != 0) {
             m_host.CloseWindowUVE(id);
         }
@@ -1308,6 +1308,9 @@ void EditorShellUVE::FrameUVE() {
     m_preferencesWindow.FrameUVE();
     m_projectSettingsWindow.FrameUVE();
     m_shortcutsWindow.FrameUVE();
+    m_inputMapWindow.FrameUVE();
+    m_captureWindow.FrameUVE();
+    m_audioMixerWindow.FrameUVE();
     if (m_editor.m_commandPalette.open) {
         m_editor.m_commandPalette.open = false;
         ShowCommandPaletteUVE();

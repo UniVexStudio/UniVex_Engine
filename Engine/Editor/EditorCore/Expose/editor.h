@@ -449,6 +449,12 @@ class EditorUVE final {
     friend class EditorBridgeUVE;
     friend class EditorShellUVE;
     friend class EditorShortcutsWindowUVE;
+    friend class EditorInputMapWindowUVE;
+    friend class EditorNetworkCaptureWindowUVE;
+    friend class EditorAudioMixerWindowUVE;
+    friend class PacketListUVE;
+    friend class PacketDetailUVE;
+    friend class MixerTableUVE;
     friend class EditorContentBrowserUVE;
     friend class EditorDetailsUVE;
     friend class EditorViewportGizmosUVE;
@@ -1928,11 +1934,9 @@ private:
     std::filesystem::path m_animationIconCacheDir;
     /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).
     void DrawOverlayWindowsUVE();
-    /// Window > Network Capture / Audio Mixer: the previous bottom dock's sections, as windows of
-    /// their own until they are built with PRISM.
+    /// Window > Network Capture / Audio Mixer (PRISM windows of their own, shown while set).
     bool m_showCaptureWindow = false;
     bool m_showAudioMixerWindow = false;
-    void DrawImportProgressModalUVE();
     /// Reloads every loaded asset whose file is one of `files`, under whichever path spelling it was
     /// registered (a relative and an absolute spelling are two GUIDs with two loaded copies).
     void ReloadRetargetedFilesUVE(const std::vector<std::filesystem::path>& files);
@@ -2395,7 +2399,6 @@ private:
     void DrawViewportImageUVE(ViewportContextUVE context);
     void DrawViewportOverlayBubblesUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
     void DrawEntityContextToolbarUVE(Math::Vector2UVE imageOrigin, Math::Vector2UVE imageSize);
-    void DrawPluginWindowUVE();
     // One settings window's view state (Editor Preferences, Project Settings). Session-only.
     struct SettingsWindowStateUVE final {
         bool visible = false;
@@ -2423,7 +2426,6 @@ private:
         bool listenNegative = false;
         std::optional<std::size_t> listenReplace;
     };
-    void DrawInputMapWindowUVE();
     // Commands (editor_commands_uve.cpp).
     struct CommandPaletteStateUVE final {
         bool open = false;
@@ -2451,17 +2453,8 @@ private:
     // Shortcuts as the hidden settings "editor.shortcuts.<command>.primary|alternate".
     [[nodiscard]] std::optional<Config::SettingValueUVE> GetShortcutSettingUVE(std::string_view id) const;
     [[nodiscard]] bool SetShortcutSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
-    void DrawInputBindingListUVE(std::vector<Input::InputActionUVE>& actions, std::size_t actionIndex, bool negative,
-                                 bool& changed);
     // Sets the project's input map and registers it with the input system at once.
     void CommitInputMapUVE(std::vector<Input::InputActionUVE> actions);
-    /// The Capture section: filter toolbar, packet list, and the selected decode.
-    void DrawCaptureBodyUVE();
-    /// The audio authoring section. The model is built by editor_audio_mixer_uve.h; these only draw.
-    void DrawAudioMixerBodyUVE();
-    void DrawAudioMixerBusTableUVE(Audio::IAudioSystemUVE& audioSystem,
-                                   const EditorAudioMixerSnapshotUVE& snapshot);
-    void DrawAudioAttenuationEditorUVE();
     /// The Scene tree with its "+" and search, filling the rest of the current window.
     void DrawHierarchyBodyUVE();
     void DrawHierarchyObjectContextMenuUVE(Scene::EntityUVE entity);
