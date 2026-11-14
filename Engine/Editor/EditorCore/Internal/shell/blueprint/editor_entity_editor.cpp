@@ -28,6 +28,7 @@
 #include "ui_image_component.h"
 #include "ui_progress_bar_component.h"
 #include "ui_slider_component.h"
+#include "ui_text.h"
 #include "ui_text_component.h"
 #include "ui_text_input_component.h"
 #include "visibility_component.h"
@@ -76,6 +77,17 @@
 
 namespace UVE::Editor {
 namespace {
+
+/// A widget's rect in design pixels (the box a Fill Parent text is laid out in), if it has one.
+[[nodiscard]] std::optional<Math::RectUVE> WidgetRectOfUVE(const Scene::IEntityManagerUVE& em, const Scene::EntityUVE entity) {
+    if (em.HasComponentUVE<Scene::UIButtonComponentUVE>(entity)) { return em.GetComponentUVE<Scene::UIButtonComponentUVE>(entity).rect; }
+    if (em.HasComponentUVE<Scene::UIImageComponentUVE>(entity)) { return em.GetComponentUVE<Scene::UIImageComponentUVE>(entity).rect; }
+    if (em.HasComponentUVE<Scene::UISliderComponentUVE>(entity)) { return em.GetComponentUVE<Scene::UISliderComponentUVE>(entity).rect; }
+    if (em.HasComponentUVE<Scene::UICheckboxComponentUVE>(entity)) { return em.GetComponentUVE<Scene::UICheckboxComponentUVE>(entity).rect; }
+    if (em.HasComponentUVE<Scene::UIProgressBarComponentUVE>(entity)) { return em.GetComponentUVE<Scene::UIProgressBarComponentUVE>(entity).rect; }
+    if (em.HasComponentUVE<Scene::UIView3DComponentUVE>(entity)) { return em.GetComponentUVE<Scene::UIView3DComponentUVE>(entity).rect; }
+    return std::nullopt;
+}
 
 using SceneObjectKindUVE = Scene::Objects::SceneObjectKindUVE;
 
@@ -1471,8 +1483,33 @@ void EditorEntityEditorUVE::RefreshDesignerUVE() {
                 item.text = t.text;
                 item.fontSize = t.fontSize;
                 item.color = toColor(t.color, t.alpha);
-                item.rect = prism::Rect{t.positionPixels.x, t.positionPixels.y,
-                                        std::max(8.0F, static_cast<float>(t.text.size()) * t.fontSize * 0.55F), t.fontSize * 1.25F};
+                // The box, as the runtime takes it: the parent widget's (Fill Parent), else its own.
+                Math::RectUVE box{t.positionPixels, t.boxSize};
+                if (t.fillParent && item.parent != Scene::kInvalidEntityUVE && em.IsAliveUVE(item.parent)) {
+                    if (const std::optional<Math::RectUVE> parentRect = WidgetRectOfUVE(em, item.parent)) {
+                        box = *parentRect;
+                    }
+                }
+                const std::vector<Scene::UITextUVE::LineUVE> lines = Scene::UITextUVE::LayoutLinesUVE(
+                    t, t.text, box, [&t](const std::string_view line) { return WidgetDesignerViewUVE::MeasureTextUVE(line, t.fontSize); });
+                float left = 1e9F, right = -1e9F;
+                for (const Scene::UITextUVE::LineUVE& line : lines) {
+                    item.lines.emplace_back(prism::Vec2{line.baseline.x, line.baseline.y}, line.text);
+                    left = std::min(left, line.baseline.x);
+                    right = std::max(right, line.baseline.x + line.width);
+                }
+                item.shadow = toColor(t.shadowColor, t.alpha * t.shadowAlpha);
+                item.shadowOffset = prism::Vec2{t.shadowOffset.x, t.shadowOffset.y};
+                item.outline = toColor(t.outlineColor, t.outlineWidth > 0.0F ? t.alpha : 0.0F);
+                item.outlineWidth = t.outlineWidth;
+                if (box.size.x > 0.0F && box.size.y > 0.0F) {
+                    item.rect = prism::Rect{box.position.x, box.position.y, box.size.x, box.size.y};
+                } else {
+                    const float lineCount = static_cast<float>(std::max<std::size_t>(1U, lines.size()));
+                    item.rect = prism::Rect{std::min(left, t.positionPixels.x), t.positionPixels.y,
+                                            std::max(8.0F, right - std::min(left, t.positionPixels.x)),
+                                            t.fontSize * (1.0F + (lineCount - 1.0F) * t.lineHeight) + t.fontSize * 0.25F};
+                }
                 break;
             }
             case WidgetKindUVE::Image:
@@ -1550,6 +1587,11 @@ void EditorEntityEditorUVE::RefreshDesignerUVE() {
         }
         HashUVE(signature, (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index);
         HashUVE(signature, item.text + "|" + item.name);
+        for (const auto& [baseline, line] : item.lines) {
+            HashUVE(signature, static_cast<std::uint64_t>(std::lround(baseline.x * 10.0F)) * 1000003ULL +
+                                   static_cast<std::uint64_t>(std::lround(baseline.y * 10.0F)));
+        }
+        HashUVE(signature, (static_cast<std::uint64_t>(item.shadow.a) << 8U) | static_cast<std::uint64_t>(item.outline.a));
         for (const float v : {item.rect.x, item.rect.y, item.rect.w, item.rect.h, item.value, item.fontSize}) {
             HashUVE(signature, static_cast<std::uint64_t>(std::lround(v * 100.0F)));
         }
@@ -2006,8 +2048,11 @@ void EditorEntityEditorUVE::ShowWidgetPaletteUVE() {
                 auto& text = entities.GetComponentUVE<Scene::UITextComponentUVE>(label);
                 text.text = "Button";
                 text.fontSize = 22.0F;
-                const float width = static_cast<float>(text.text.size()) * text.fontSize * 0.55F;
-                text.positionPixels = Math::Vector2UVE{at.x + (size.x - width) * 0.5F, at.y + (size.y - text.fontSize * 1.1F) * 0.5F};
+                // Laid out in the button's own rect, centred: it stays centred when the button is resized.
+                text.positionPixels = at;
+                text.fillParent = true;
+                text.horizontalAlign = Scene::UITextHorizontalAlignUVE::Center;
+                text.verticalAlign = Scene::UITextVerticalAlignUVE::Middle;
             }
         }
         m_editor.SelectEntityUVE(made);

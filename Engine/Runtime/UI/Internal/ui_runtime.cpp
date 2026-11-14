@@ -794,25 +794,55 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
                 translated = localization.service->TranslateUVE(text.text);
                 shown = &translated;
             }
-            const Math::Vector2UVE baselineCursor = Scene::UITextUVE::BaselineCursorPixelsUVE(text);
-            float cursorX = baselineCursor.x;
-            float cursorY = baselineCursor.y;
-            m_fontAtlas.AppendTextQuadsUVE(*shown, cursorX, cursorY, text.fontSize, glyphQuads);
-            std::vector<UIQuadUVE> quads;
-            quads.reserve(glyphQuads.size());
-            for (const UIGlyphQuadUVE& glyphQuad : glyphQuads) {
-                UIQuadUVE quad{};
-                quad.rect = Math::RectUVE{Math::Vector2UVE{glyphQuad.x0, glyphQuad.y0},
-                                           Math::Vector2UVE{glyphQuad.x1 - glyphQuad.x0, glyphQuad.y1 - glyphQuad.y0}};
-                quad.u0 = glyphQuad.u0;
-                quad.v0 = glyphQuad.v0;
-                quad.u1 = glyphQuad.u1;
-                quad.v1 = glyphQuad.v1;
-                quad.color = text.color;
-                quad.alpha = TweenedAlphaUVE(entityManager, entity, text.alpha);
-                quad.kind = UIDrawItemKindUVE::Glyph;
-                quads.push_back(quad);
+            // The box: the parent widget's rect (Fill Parent), else the text's own Box Size.
+            Math::RectUVE box{text.positionPixels, text.boxSize};
+            if (text.fillParent && entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+                const Scene::EntityUVE parent = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
+                if (parent != Scene::kInvalidEntityUVE && entityManager.IsAliveUVE(parent)) {
+                    if (const std::optional<Math::RectUVE> parentRect = TooltipAnchorRectUVE(entityManager, parent)) {
+                        box = *parentRect;
+                    }
+                }
             }
+            const std::vector<Scene::UITextUVE::LineUVE> lines = Scene::UITextUVE::LayoutLinesUVE(
+                text, *shown, box, [this, &text](const std::string_view line) { return m_fontAtlas.MeasureTextWidthUVE(line, text.fontSize); });
+            const float alpha = TweenedAlphaUVE(entityManager, entity, text.alpha);
+            std::vector<UIQuadUVE> quads;
+            // Shadow, then outline (the text drawn around itself), then the text: one glyph pass each.
+            const auto emit = [&](const Math::Vector2UVE offset, const Math::Vector3UVE& colour, const float quadAlpha) {
+                if (quadAlpha <= 0.0F) {
+                    return;
+                }
+                for (const Scene::UITextUVE::LineUVE& line : lines) {
+                    glyphQuads.clear();
+                    float cursorX = line.baseline.x + offset.x;
+                    float cursorY = line.baseline.y + offset.y;
+                    m_fontAtlas.AppendTextQuadsUVE(line.text, cursorX, cursorY, text.fontSize, glyphQuads);
+                    for (const UIGlyphQuadUVE& glyphQuad : glyphQuads) {
+                        UIQuadUVE quad{};
+                        quad.rect = Math::RectUVE{Math::Vector2UVE{glyphQuad.x0, glyphQuad.y0},
+                                                   Math::Vector2UVE{glyphQuad.x1 - glyphQuad.x0, glyphQuad.y1 - glyphQuad.y0}};
+                        quad.u0 = glyphQuad.u0;
+                        quad.v0 = glyphQuad.v0;
+                        quad.u1 = glyphQuad.u1;
+                        quad.v1 = glyphQuad.v1;
+                        quad.color = colour;
+                        quad.alpha = quadAlpha;
+                        quad.kind = UIDrawItemKindUVE::Glyph;
+                        quads.push_back(quad);
+                    }
+                }
+            };
+            emit(text.shadowOffset, text.shadowColor, alpha * text.shadowAlpha);
+            if (text.outlineWidth > 0.0F) {
+                const float w = text.outlineWidth;
+                for (const Math::Vector2UVE offset : {Math::Vector2UVE{-w, 0.0F}, Math::Vector2UVE{w, 0.0F}, Math::Vector2UVE{0.0F, -w},
+                                                      Math::Vector2UVE{0.0F, w}, Math::Vector2UVE{-w, -w}, Math::Vector2UVE{w, -w},
+                                                      Math::Vector2UVE{-w, w}, Math::Vector2UVE{w, w}}) {
+                    emit(offset, text.outlineColor, alpha);
+                }
+            }
+            emit(Math::Vector2UVE{}, text.color, alpha);
             RankWidgetUVE(entity, ResolveCanvasAncestryUVE(entityManager, entity), 2, std::move(quads), ranked);
         });
 
