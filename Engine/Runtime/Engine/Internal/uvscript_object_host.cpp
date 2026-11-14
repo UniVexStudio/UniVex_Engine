@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <cctype>
 #include <random>
 #include <sstream>
 #include <string>
@@ -273,13 +274,36 @@ inline constexpr std::uint32_t kMaxStagedRpcCallsUVE = 16U;
         {"camera.shake", {{"f", "f"}, "b"}},
         {"camera.forward", {{}, "v"}},
         {"camera.location", {{}, "v"}},
+        {"text.to_int", {{"s"}, "i"}},
+        {"text.to_float", {{"s"}, "f"}},
+        {"text.upper", {{"s"}, "s"}},
+        {"text.lower", {{"s"}, "s"}},
+        {"text.trim", {{"s"}, "s"}},
+        {"text.replace", {{"s", "s", "s"}, "s"}},
+        {"text.split", {{"s", "s"}, "L"}},
+        {"text.substring", {{"s", "i", "i"}, "s"}},
+        {"text.starts_with", {{"s", "s"}, "b"}},
+        {"text.format", {{"s", "s", "s"}, "s"}},
+        {"math.round", {{"f"}, "i"}},
+        {"math.ceil", {{"f"}, "i"}},
+        {"math.snap", {{"f", "f"}, "f"}},
+        {"math.wrap", {{"f", "f", "f"}, "f"}},
+        {"math.sign", {{"f"}, "f"}},
+        {"math.rotate_about", {{"v", "v", "f"}, "v"}},
+        {"math.random_unit_vector", {{}, "v"}},
+        {"math.random_in_box", {{"v", "v"}, "v"}},
+        {"array.empty_object", {{}, "l"}},
+        {"array.empty_int", {{}, "Li"}},
+        {"array.empty_float", {{}, "Lf"}},
+        {"array.empty_string", {{}, "L"}},
     };
     const auto found = kTable.find(name);
     if (found == kTable.end()) {
         return std::nullopt;
     }
     const auto type = [&](const std::string& code) {
-        return code == "s" ? s : code == "f" ? f : code == "i" ? i : code == "b" ? b : code == "v" ? v : code == "o" ? o : list;
+        return code == "s" ? s : code == "f" ? f : code == "i" ? i : code == "b" ? b : code == "v" ? v : code == "o" ? o
+               : code == "L" ? TypeUVE::ListUVE(s) : code == "Li" ? TypeUVE::ListUVE(i) : code == "Lf" ? TypeUVE::ListUVE(f) : list;
     };
     HostFunctionUVE out{{}, type(found->second.second)};
     for (const std::string& parameter : found->second.first) {
@@ -1107,6 +1131,13 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
             return ValueUVE{ObjectRefUVE{}};
         }
         return ValueUVE{ObjectRefUVE{PackEntityUVE(found)}};
+    }
+    if (name.starts_with("array.empty_")) {
+        return UVScript::MakeListValueUVE({});
+    }
+    if (name.starts_with("text.") || name == "math.round" || name == "math.ceil" || name == "math.snap" || name == "math.wrap" ||
+        name == "math.sign" || name == "math.rotate_about" || name == "math.random_unit_vector" || name == "math.random_in_box") {
+        return TextAndMathCallUVE(name, args);
     }
     if (name.starts_with("character.") || name.starts_with("transform.") || name.starts_with("math.")) {
         return GameplayCallUVE(name, args);
@@ -2107,6 +2138,151 @@ std::vector<std::string> UVScriptObjectHostUVE::AdvanceTimersUVE(const double dt
         }
     }
     return fired;
+}
+
+ValueUVE UVScriptObjectHostUVE::TextAndMathCallUVE(const std::string_view name, const std::span<const ValueUVE> args) {
+    const auto text = [&args](const std::size_t i) -> const std::string& { return std::get<std::string>(args[i]); };
+    const auto number = [&args](const std::size_t i) { return std::get<double>(args[i]); };
+    const auto whole = [](const double value) {
+        // Saturating: a NaN or a value past the range never becomes undefined behaviour.
+        if (!std::isfinite(value)) {
+            return std::int64_t{0};
+        }
+        return static_cast<std::int64_t>(std::clamp(value, -9.0e18, 9.0e18));
+    };
+    if (name == "text.to_int" || name == "text.to_float") {
+        // A text that is not a number reads 0.
+        try {
+            std::size_t used = 0U;
+            if (name == "text.to_int") {
+                const long long value = std::stoll(text(0U), &used);
+                return ValueUVE{static_cast<std::int64_t>(value)};
+            }
+            const double value = std::stod(text(0U), &used);
+            return ValueUVE{std::isfinite(value) ? value : 0.0};
+        } catch (...) {
+            return name == "text.to_int" ? ValueUVE{std::int64_t{0}} : ValueUVE{0.0};
+        }
+    }
+    if (name == "text.upper" || name == "text.lower") {
+        std::string out = text(0U);
+        for (char& c : out) {
+            c = static_cast<char>(name == "text.upper" ? std::toupper(static_cast<unsigned char>(c)) : std::tolower(static_cast<unsigned char>(c)));
+        }
+        return ValueUVE{std::move(out)};
+    }
+    if (name == "text.trim") {
+        const std::string& in = text(0U);
+        const std::size_t first = in.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) {
+            return ValueUVE{std::string{}};
+        }
+        return ValueUVE{in.substr(first, in.find_last_not_of(" \t\r\n") - first + 1U)};
+    }
+    if (name == "text.replace") {
+        std::string out = text(0U);
+        const std::string& from = text(1U);
+        if (from.empty()) {
+            return ValueUVE{std::move(out)};
+        }
+        for (std::size_t at = out.find(from); at != std::string::npos; at = out.find(from, at + text(2U).size())) {
+            out.replace(at, from.size(), text(2U));
+        }
+        return ValueUVE{std::move(out)};
+    }
+    if (name == "text.split") {
+        std::vector<ValueUVE> parts;
+        const std::string& in = text(0U);
+        const std::string& separator = text(1U);
+        if (separator.empty()) {
+            parts.emplace_back(in);
+        } else {
+            std::size_t start = 0U;
+            for (std::size_t at = in.find(separator); at != std::string::npos; at = in.find(separator, start)) {
+                parts.emplace_back(in.substr(start, at - start));
+                start = at + separator.size();
+            }
+            parts.emplace_back(in.substr(start));
+        }
+        return UVScript::MakeListValueUVE(std::move(parts));
+    }
+    if (name == "text.substring") {
+        const std::string& in = text(0U);
+        const std::int64_t start = std::clamp<std::int64_t>(std::get<std::int64_t>(args[1]), 0, static_cast<std::int64_t>(in.size()));
+        const std::int64_t count = std::max<std::int64_t>(std::get<std::int64_t>(args[2]), 0);
+        return ValueUVE{in.substr(static_cast<std::size_t>(start), static_cast<std::size_t>(count))};
+    }
+    if (name == "text.starts_with") {
+        return ValueUVE{text(0U).starts_with(text(1U))};
+    }
+    if (name == "text.format") {
+        std::string out;
+        const std::string& format = text(0U);
+        for (std::size_t i = 0U; i < format.size(); ++i) {
+            if (format[i] == '{' && i + 2U < format.size() && format[i + 2U] == '}' && (format[i + 1U] == '0' || format[i + 1U] == '1')) {
+                out += text(format[i + 1U] == '0' ? 1U : 2U);
+                i += 2U;
+                continue;
+            }
+            out.push_back(format[i]);
+        }
+        return ValueUVE{std::move(out)};
+    }
+    if (name == "math.round") {
+        return ValueUVE{whole(std::round(number(0U)))};
+    }
+    if (name == "math.ceil") {
+        return ValueUVE{whole(std::ceil(number(0U)))};
+    }
+    if (name == "math.snap") {
+        const double grid = number(1U);
+        return ValueUVE{grid > 0.0 && std::isfinite(grid) ? std::round(number(0U) / grid) * grid : number(0U)};
+    }
+    if (name == "math.wrap") {
+        const double low = number(1U);
+        const double span = number(2U) - low;
+        if (!(span > 0.0) || !std::isfinite(span) || !std::isfinite(number(0U))) {
+            return ValueUVE{low};
+        }
+        return ValueUVE{low + (number(0U) - low - std::floor((number(0U) - low) / span) * span)};
+    }
+    if (name == "math.sign") {
+        const double value = number(0U);
+        return ValueUVE{value > 0.0 ? 1.0 : value < 0.0 ? -1.0 : 0.0};
+    }
+    if (name == "math.rotate_about") {
+        const Math::Vector3UVE axis = ToEngineUVE(args[1]);
+        const float length = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+        const float degrees = static_cast<float>(number(2U));
+        if (!(length > 1e-6F) || !std::isfinite(degrees)) {
+            return args[0];
+        }
+        Math::QuaternionUVE turn{};
+        if (!Math::TryMakeAxisAngleUVE(Math::Vector3UVE{axis.x / length, axis.y / length, axis.z / length}, degrees * 0.017453292F, turn)) {
+            return args[0];
+        }
+        return ToScriptUVE(Math::RotateVectorUVE(turn, ToEngineUVE(args[0])));
+    }
+    static std::mt19937 random{std::random_device{}()};
+    if (name == "math.random_unit_vector") {
+        std::normal_distribution<double> gauss(0.0, 1.0);
+        for (int attempt = 0; attempt < 8; ++attempt) {
+            const double x = gauss(random);
+            const double y = gauss(random);
+            const double z = gauss(random);
+            const double length = std::sqrt(x * x + y * y + z * z);
+            if (length > 1e-9) {
+                return ValueUVE{Vec3ValueUVE{x / length, y / length, z / length}};
+            }
+        }
+        return ValueUVE{Vec3ValueUVE{0.0, 1.0, 0.0}};
+    }
+    // math.random_in_box
+    const Vec3ValueUVE& center = std::get<Vec3ValueUVE>(args[0]);
+    const Vec3ValueUVE& half = std::get<Vec3ValueUVE>(args[1]);
+    std::uniform_real_distribution<double> unit(-1.0, 1.0);
+    return ValueUVE{Vec3ValueUVE{center.x + unit(random) * std::abs(half.x), center.y + unit(random) * std::abs(half.y),
+                                 center.z + unit(random) * std::abs(half.z)}};
 }
 
 ValueUVE UVScriptObjectHostUVE::WorldCallUVE(const std::string_view name, const std::span<const ValueUVE> args) {

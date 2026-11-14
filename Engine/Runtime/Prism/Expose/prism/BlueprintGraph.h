@@ -35,6 +35,7 @@ enum class BlueprintPinType {
   Pose,     // animation pose (Animation Graph)
   Link,     // structural link: state-machine transitions, behavior-tree children, VFX module stack
   Audio,    // audio signal (Audio Graph)
+  Array,    // a list of values (gameplay blueprints)
 };
 
 enum class BlueprintPinKind { Input, Output };
