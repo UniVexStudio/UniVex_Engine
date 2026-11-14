@@ -28,11 +28,40 @@ constexpr float kMinimumElbowBendSineUVE = 0.1736482F;
     return Math::TryNormalizeUVE(value, out) ? out : Math::QuaternionUVE{};
 }
 
+/// cos(25 degrees): a direction this close to an axis is that axis.
+constexpr float kAxisSnapCosineUVE = 0.9063078F;
+
+/// The axis (+-X, +-Y, +-Z) `direction` points along, when it is within 25 degrees of one; itself
+/// otherwise. Rigs are authored standing along an axis: a spine that leans forward (the head ahead
+/// of the hips, as most game rigs have it) does not mean the rig is tilted, and reading it as a
+/// tilt turned the whole clip by a few degrees, so a run's root sank as it travelled forward.
+[[nodiscard]] Math::Vector3UVE SnapToAxisUVE(const Math::Vector3UVE& direction) {
+    const float length = Math::LengthUVE(direction);
+    if (!(length > 1e-6F)) {
+        return direction;
+    }
+    const Math::Vector3UVE unit = direction * (1.0F / length);
+    Math::Vector3UVE best = unit;
+    float bestDot = kAxisSnapCosineUVE;
+    for (const Math::Vector3UVE axis : {Math::Vector3UVE{1.0F, 0.0F, 0.0F}, Math::Vector3UVE{0.0F, 1.0F, 0.0F},
+                                        Math::Vector3UVE{0.0F, 0.0F, 1.0F}}) {
+        for (const float sign : {1.0F, -1.0F}) {
+            if (const float dot = Math::DotUVE(unit, axis * sign); dot >= bestDot) {
+                bestDot = dot;
+                best = axis * sign;
+            }
+        }
+    }
+    return best;
+}
+
 } // namespace
 
 /// The turn that stands a rig up +Y and turns its left side to +X, read from its own bones: up is
-/// hips to head (or the highest spine or neck bone), left is right thigh to left thigh. Identity
-/// when the rig already stands that way, or when it lacks the bones to tell.
+/// hips to head (or the highest spine or neck bone), left is right thigh to left thigh, each taken
+/// as the axis it is nearest when within 25 degrees of one (so the turn is a whole number of
+/// quarter turns for any rig authored along the axes). Identity when the rig already stands that
+/// way, or when it lacks the bones to tell.
 Math::QuaternionUVE OrientationOfRigUVE(const std::vector<WorldTransformUVE>& rigWorld,
                                                       const HumanoidMatchUVE& match, const HumanoidReferenceUVE& reference) {
     const auto positionOf = [&](const char* key) -> std::optional<Math::Vector3UVE> {
@@ -56,14 +85,16 @@ Math::QuaternionUVE OrientationOfRigUVE(const std::vector<WorldTransformUVE>& ri
     if (!hips.has_value() || !top.has_value()) {
         return Math::QuaternionUVE{};
     }
-    const Math::Vector3UVE up = *top - *hips;
+    const Math::Vector3UVE up = SnapToAxisUVE(*top - *hips);
     if (!(Math::LengthUVE(up) > 1e-6F)) {
         return Math::QuaternionUVE{};
     }
     const Math::QuaternionUVE stand = RotationBetweenUVE(up, kUpUVE);
     Math::QuaternionUVE yaw{};
     if (left.has_value() && right.has_value()) {
-        const Math::Vector3UVE across = Math::RotateVectorUVE(stand, *left - *right);
+        Math::Vector3UVE across = Math::RotateVectorUVE(stand, *left - *right);
+        across.y = 0.0F;
+        across = SnapToAxisUVE(across);
         if (across.x * across.x + across.z * across.z > 1e-10F &&
             !Math::TryMakeAxisAngleUVE(kUpUVE, std::atan2(across.z, across.x), yaw)) {
             yaw = Math::QuaternionUVE{};

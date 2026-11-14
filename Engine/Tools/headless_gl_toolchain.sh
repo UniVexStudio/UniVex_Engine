@@ -187,11 +187,11 @@ if [ ! -f "$UVE_TOOLCHAIN/lib/libOSMesa.so.8" ]; then
     ninja -C "$SRC/mesa/build" install >"$SRC/mesa-install.log" 2>&1
 fi
 # FindOpenGL (legacy path) wants libGL.so + GL/gl.h. OSMesa *is* a complete libGL minus GLX -
-# and that "minus GLX" matters: generic GL loaders (Dear ImGui's imgl3w in the editor, glad's
+# and that "minus GLX" matters: generic GL loaders (glad's
 # default Linux path, ...) dlopen("libGL.so.1") and refuse to work unless glXGetProcAddressARB()
 # exists. So libGL.so.1 is a 2-function shim forwarding to OSMesaGetProcAddress() with
 # libOSMesa.so.8 as DT_NEEDED, and libGL.so (the link-time name) is a GNU ld script that pulls
-# in both. Without the shim uve_editor's ImGui UI silently never initialises.
+# in both. Without the shim uve_editor's UI silently never initialises.
 if ! nm -D --defined-only "$UVE_TOOLCHAIN/lib/libGL.so.1" 2>/dev/null | grep -q glXGetProcAddressARB; then
     log "install libGL.so.1 GLX shim over OSMesa"
     mkdir -p "$SRC"

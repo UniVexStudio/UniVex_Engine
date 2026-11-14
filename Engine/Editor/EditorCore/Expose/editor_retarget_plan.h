@@ -27,6 +27,13 @@ struct RetargetJointRowUVE final {
     std::string reason;
     /// The character's own name for it, empty when it has none.
     std::string characterName;
+    /// A corrective the character may lack (it is not generated).
+    bool optional = false;
+    /// Missing, and Generate makes it (a helper, or a body bone of a rig that lacks many).
+    bool willMake = false;
+    /// Found by the Rig Brain (not by its name), and how sure it was.
+    bool byBrain = false;
+    float confidence = 1.0F;
 };
 
 struct RetargetAnimationRowUVE final {
@@ -38,12 +45,24 @@ struct RetargetAnimationRowUVE final {
 /// What conforming a character and some animations would do, worked out without touching a file.
 /// The Retarget window shows it; Generate carries it out.
 struct RetargetPlanUVE final {
+    /// Core bones the character lacks: what Generate adds (optional correctives are not made).
+    std::size_t missingCore = 0U;
+    /// The Rig Brain helped find the bones (it trains in the background when the window opens).
+    bool usedBrain = false;
     std::filesystem::path model;
     bool modelReadable = false;
     /// Why the character cannot be conformed, when it cannot.
     std::string modelError;
     /// The character already has the humanoid's bones: conforming again changes little.
     bool modelAlreadyConformed = false;
+    /// The editor retargeted this character already (its file is unchanged since): Generate
+    /// leaves it alone and only conforms animations.
+    bool alreadyRetargeted = false;
+    /// Bones Generate adds to the character: the root, IK targets and sockets it lacks, and body
+    /// bones only when it lacks many (else it is renamed, not rebuilt).
+    std::size_t bonesToAdd = 0U;
+    /// Nothing to add: Generate only gives the bones the engine's names.
+    bool renameOnly = false;
     /// One row per humanoid bone, parents first.
     std::vector<RetargetJointRowUVE> joints;
     /// The character's bones the humanoid has no place for: kept as they are.
@@ -60,7 +79,11 @@ struct RetargetPlanUVE final {
     [[nodiscard]] std::size_t ReadyAnimationsUVE() const noexcept;
     /// Generate needs a character it can conform and something to do.
     [[nodiscard]] bool CanGenerateUVE() const noexcept {
-        return modelReadable && (ReadyAnimationsUVE() > 0U || !modelAlreadyConformed);
+        return modelReadable && (ReadyAnimationsUVE() > 0U || !CharacterDoneUVE());
+    }
+    /// The character needs nothing more (named as the engine's, or retargeted already).
+    [[nodiscard]] bool CharacterDoneUVE() const noexcept {
+        return modelAlreadyConformed || alreadyRetargeted;
     }
 };
 

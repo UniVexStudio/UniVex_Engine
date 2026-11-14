@@ -7,6 +7,7 @@
 // is pointed at a rigged model, and pointing it again (Reload) picks up an edited rig.
 
 #include "editor.h"
+#include "model_animations.h"
 #include "skeleton_asset.h"
 #include "retarget_conform.h"
 #include "retarget_humanoid.h"
@@ -29,10 +30,10 @@
 #include <string>
 #include <system_error>
 #include <typeindex>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
 #include <nlohmann/json.hpp>
 
 #include "fbx_mesh_converter.h"
@@ -51,23 +52,6 @@
 
 namespace UVE::Editor {
 namespace {
-
-[[nodiscard]] bool BeginSkeletonRowsUVE(const char* const id) {
-    if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
-        return false;
-    }
-    ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthStretch, 0.42F);
-    ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch, 0.58F);
-    return true;
-}
-
-void ReadOnlyRowUVE(const char* const label, const char* const value) {
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    ImGui::TextUnformatted(label);
-    ImGui::TableSetColumnIndex(1);
-    ImGui::TextDisabled("%s", value);
-}
 
 // The skeleton in a model source, whichever format it is: a glTF skin, or an FBX's bones.
 [[nodiscard]] std::optional<Asset::GltfSkeletonUVE> ReadSkeletonSourceUVE(const std::filesystem::path& path,
@@ -89,6 +73,35 @@ void ReadOnlyRowUVE(const char* const label, const char* const value) {
         return std::nullopt;
     }
     return Asset::ReadFbxSkeletonUVE(std::as_bytes(std::span<const char>(bytes)), maximumBones);
+}
+
+/// A helper bone rather than a part of the body: the root on the ground, IK targets, sockets.
+/// Drawn as a joint alone - a blade to it would cut across the figure (from the floor to a hand).
+[[nodiscard]] bool IsHelperBoneUVE(const std::string& name) {
+    static const std::unordered_set<std::string> helpers = [] {
+        std::unordered_set<std::string> out;
+        const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
+        for (std::size_t bone = 0U; bone < reference.info.size() && bone < reference.skeleton.bones.size(); ++bone) {
+            const Retarget::HumanoidBoneKindUVE kind = reference.info[bone].kind;
+            if (kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::IK ||
+                kind == Retarget::HumanoidBoneKindUVE::Socket) {
+                out.insert(reference.skeleton.bones[bone].name);
+            }
+        }
+        return out;
+    }();
+    if (helpers.contains(name)) {
+        return true;
+    }
+    // The root under another name or case ("root", "ROOT"): the same marker before and after Retarget.
+    std::string lower = name;
+    std::ranges::transform(lower, lower.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (lower == "root") {
+        return true;
+    }
+    // Another tool's IK bones ("ik_foot_l", "IK_Hand_R").
+    return name.size() > 2U && (name[0] == 'i' || name[0] == 'I') && (name[1] == 'k' || name[1] == 'K') &&
+           (name[2] == '_' || std::isupper(static_cast<unsigned char>(name[2])) != 0);
 }
 
 } // namespace
@@ -120,8 +133,20 @@ std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const 
             std::filesystem::path skelPath = importedPath;
             skelPath.replace_extension(".uvskel");
             Asset::SkeletonAssetUVE skelAsset;
+            // Only while it still describes the mesh's joints (Retarget renames them).
+            const auto sameJoints = [&] {
+                if (meshPtr == nullptr || meshPtr->joints.size() != skelAsset.joints.size()) {
+                    return meshPtr == nullptr;
+                }
+                for (std::size_t joint = 0U; joint < skelAsset.joints.size(); ++joint) {
+                    if (skelAsset.joints[joint].name != meshPtr->joints[joint].name) {
+                        return false;
+                    }
+                }
+                return true;
+            };
             if (std::filesystem::is_regular_file(skelPath, ec) && Asset::LoadSkeletonAssetUVE(skelPath, skelAsset) &&
-                !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones) {
+                !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones && sameJoints()) {
                 Asset::GltfSkeletonUVE skeleton;
                 skeleton.skinCount = 1U;
                 skeleton.joints.reserve(skelAsset.joints.size());
@@ -216,11 +241,20 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         if (sourceInfo.animationCount > 0U) {
             static_cast<void>(ImportModelAnimationsUVE(source));
         }
+        // A model with a mesh keeps its takes inside it: those are its player's animations.
+        for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(GetImportedModelPathUVE(relativeSource))) {
+            clips.push_back(Asset::MakeEmbeddedClipPathUVE(GetImportedModelPathUVE(relativeSource), take.name));
+        }
         const std::string prefix = source.stem().string() + "_";
+        std::filesystem::path fragmentModel;
+        std::string fragmentTake;
         for (const std::filesystem::directory_entry& entry :
              std::filesystem::directory_iterator(source.parent_path(), error)) {
             const std::string name = entry.path().filename().string();
             // "<FBX>.uvanim" (one take) or "<FBX>_<take>.uvanim" (several).
+            if (!clips.empty() && Asset::SplitEmbeddedClipPathUVE(clips.front(), fragmentModel, fragmentTake)) {
+                break;   // the takes are in the model: no loose files to gather
+            }
             if (entry.path().extension() == ".uvanim" &&
                 (name.starts_with(prefix) || entry.path().stem() == source.stem())) {
                 clips.push_back(entry.path());
@@ -256,7 +290,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         parent != Scene::kInvalidEntityUVE &&
         (Scene::ResolveSceneObjectKindUVE(entityManager, parent) == Scene::Objects::SceneObjectKindUVE::Character3D ||
          Scene::ResolveSceneObjectKindUVE(entityManager, parent) == Scene::Objects::SceneObjectKindUVE::Player3D ||
-         (m_entityEditSession.has_value() && parent == GetEntityEditorRootUVE()));
+         (m_entityDocumentActive && parent == GetEntityEditorRootUVE()));
 
     Scene::EntityUVE root = Scene::kInvalidEntityUVE;
     if (!skeleton.has_value()) {
@@ -412,7 +446,7 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         return Scene::kInvalidEntityUVE;
     }
     InvalidateHierarchyFilterCacheUVE();
-    if (!m_entityEditSession.has_value()) {
+    if (!m_entityDocumentActive) {
         PlaceNewDocumentObjectUVE(root);
     }
     const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(root);
@@ -461,147 +495,6 @@ bool EditorUVE::BindSelectedSkeletonSourceUVE(const std::filesystem::path& relat
     return SetSelectedComponentValueUVE(*entry, &next);
 }
 
-void EditorUVE::DrawSkeletonSourcePropertyUVE(const Core::TypeMetadataEntryUVE& entry,
-                                              const Core::TypeMetadataPropertyUVE& property, const void* const instance) {
-    const auto& skeleton = *static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
-    const bool writable = property.IsAuthoringWritableUVE() && IsAuthoringCommandAllowedUVE();
-    if (!BeginSkeletonRowsUVE("##skeleton-source")) {
-        return;
-    }
-    ImGui::TableNextRow();
-    ImGui::TableSetColumnIndex(0);
-    // No revert icon: resetting the path alone would leave the bones behind.
-    static_cast<void>(DrawMetadataPropertyLabelUVE(entry, property, instance, false));
-    ImGui::TableSetColumnIndex(1);
-    ImGui::BeginDisabled(!writable);
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    const std::string preview = skeleton.skeletonAssetPath.empty()
-                                    ? std::string{"(none)"}
-                                    : std::filesystem::path{skeleton.skeletonAssetPath}.filename().string();
-    // Offered: every model source whose file declares a skeleton - the same test the Content
-    // Browser uses to label a file Model rather than Mesh.
-    std::filesystem::path chosen;
-    bool picked = false;
-    if (ImGui::BeginCombo("##skeleton-source", preview.c_str())) {
-        if (ImGui::Selectable("(none)", skeleton.skeletonAssetPath.empty()) && !skeleton.skeletonAssetPath.empty()) {
-            picked = true;
-        }
-        bool any = false;
-        const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        for (const Asset::ProjectFileEntryUVE& file : project.entries) {
-            const EditorModelSourceInfoUVE* const source = FindModelSourceInfoUVE(file.relativePath);
-            if (file.kind == Asset::ProjectFileEntryKindUVE::Directory || source == nullptr || !source->hasSkeleton) {
-                continue;
-            }
-            any = true;
-            const std::string path = file.relativePath.generic_string();
-            if (ImGui::Selectable((file.relativePath.filename().string() + "##" + path).c_str(),
-                                  path == skeleton.skeletonAssetPath)) {
-                chosen = file.relativePath;
-                picked = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s", path.c_str());
-            }
-        }
-        if (!any) {
-            ImGui::TextDisabled("No rigged models yet. Export an armature from Blender as glTF (.glb) into the project.");
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
-    ImGui::EndTable();
-
-    // Reload re-reads the same file, for a rig edited and re-exported. There is no Clear: the bones belong
-    // to the Source, and a different Source replaces them.
-    if (!skeleton.skeletonAssetPath.empty()) {
-        ImGui::BeginDisabled(!writable);
-        if (ImGui::SmallButton("Reload Bones")) {
-            chosen = skeleton.skeletonAssetPath;
-            picked = true;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Read the bones again from %s, after the rig was edited and re-exported.",
-                              skeleton.skeletonAssetPath.c_str());
-        }
-        ImGui::EndDisabled();
-    }
-    if (!m_skeletonSourceStatus.empty()) {
-        ImGui::PushTextWrapPos(0.0F);
-        ImGui::TextColored(ImVec4{0.95F, 0.62F, 0.35F, 1.0F}, "%s", m_skeletonSourceStatus.c_str());
-        ImGui::PopTextWrapPos();
-    }
-    if (picked) {
-        static_cast<void>(BindSelectedSkeletonSourceUVE(chosen));
-    }
-}
-
-void EditorUVE::DrawSkeletonBonesPropertyUVE(const Core::TypeMetadataEntryUVE&,
-                                             const Core::TypeMetadataPropertyUVE&, const void* const instance) {
-    const auto& skeleton = *static_cast<const Scene::Skeleton3DComponentUVE*>(instance);
-    const std::string header = "Bones (" + std::to_string(skeleton.bones.size()) + ")##skeleton-bones";
-    constexpr ImGuiTreeNodeFlags kGroupFlags = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
-    if (!DrawInspectorFoldUVE(header.c_str(), "group:skeleton-bones", true, false, kGroupFlags)) {
-        return;
-    }
-    if (skeleton.bones.empty()) {
-        ImGui::PushTextWrapPos(0.0F);
-        ImGui::TextDisabled("No bones. Pick a Source model with an armature; bones come from the DCC tool.");
-        ImGui::PopTextWrapPos();
-        ImGui::TreePop();
-        return;
-    }
-
-    // One flat column, in file order (parents come first). No nesting: a deep rig used to indent itself
-    // off the right edge of the inspector.
-    const float listHeight = std::min(220.0F, (static_cast<float>(skeleton.bones.size()) + 1.0F) *
-                                                  ImGui::GetTextLineHeightWithSpacing());
-    if (ImGui::BeginChild("##bone-list", ImVec2{0.0F, listHeight}, ImGuiChildFlags_Borders)) {
-        ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(skeleton.bones.size()));
-        while (clipper.Step()) {
-            for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
-                const Scene::SkeletonBoneUVE& bone = skeleton.bones[static_cast<std::size_t>(row)];
-                ImGui::PushID(row);
-                if (ImGui::Selectable(bone.name.c_str(), bone.name == m_selectedSkeletonBone)) {
-                    m_selectedSkeletonBone = bone.name;
-                }
-                ImGui::PopID();
-            }
-        }
-    }
-    ImGui::EndChild();
-
-    // The selected bone's rest pose, relative to its parent, as authored in the DCC tool.
-    const auto selected = std::find_if(skeleton.bones.begin(), skeleton.bones.end(),
-                                       [this](const Scene::SkeletonBoneUVE& bone) { return bone.name == m_selectedSkeletonBone; });
-    if (selected != skeleton.bones.end() && BeginSkeletonRowsUVE("##bone-rest")) {
-        constexpr float kDegrees = 180.0F / std::numbers::pi_v<float>;
-        Math::Vector3UVE euler{};
-        const bool haveEuler = Math::TryToEulerUVE(selected->localRotation, euler);
-        const std::string parent = selected->parentIndex < 0
-                                       ? std::string{"(root)"}
-                                       : skeleton.bones[static_cast<std::size_t>(selected->parentIndex)].name;
-        std::array<char, 96> text{};
-        ReadOnlyRowUVE("Parent", parent.c_str());
-        std::snprintf(text.data(), text.size(), "%.3f  %.3f  %.3f", static_cast<double>(selected->localPosition.x),
-                      static_cast<double>(selected->localPosition.y), static_cast<double>(selected->localPosition.z));
-        ReadOnlyRowUVE("Rest Position", text.data());
-        if (haveEuler) {
-            std::snprintf(text.data(), text.size(), "%.1f  %.1f  %.1f", static_cast<double>(euler.x * kDegrees),
-                          static_cast<double>(euler.y * kDegrees), static_cast<double>(euler.z * kDegrees));
-        } else {
-            std::snprintf(text.data(), text.size(), "-");
-        }
-        ReadOnlyRowUVE("Rest Rotation", text.data());
-        std::snprintf(text.data(), text.size(), "%.3f  %.3f  %.3f", static_cast<double>(selected->localScale.x),
-                      static_cast<double>(selected->localScale.y), static_cast<double>(selected->localScale.z));
-        ReadOnlyRowUVE("Rest Scale", text.data());
-        ImGui::EndTable();
-    }
-    ImGui::TreePop();
-}
-
 void EditorUVE::BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) const {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     const auto toArray = [](const Math::Vector3UVE& value) { return std::array<float, 3>{value.x, value.y, value.z}; };
@@ -641,72 +534,116 @@ void EditorUVE::BuildSkeletonOverlayUVE(std::vector<ViewportBoneUVE>& outBones) 
                 upAxes[index] = subtract(Math::TransformPointUVE(frames[index], Math::Vector3UVE{0.0F, 1.0F, 0.0F}),
                                          heads[index]);
             }
-            // A bone points along its own +Y (the convention DCC exporters use) and ends at the
-            // child that continues that line; a leaf gets a length from its parent.
-            std::vector<Math::Vector3UVE> tails(count);
-            std::vector<float> lengths(count, 0.0F);
+            // The skeleton is drawn connected, as one figure: a blade from each joint to every joint
+            // that hangs from it, so no bone floats apart from the next. A joint that sits on the way
+            // to a sibling (a twist bone half-way down the arm) is a joint on that blade, not a blade
+            // of its own; a bone with nothing below it goes on a short way the way its parent came.
+            // Only where each joint is matters - the numbers are the skeleton's own, untouched.
+            std::vector<std::vector<std::size_t>> children(count);
+            std::vector<float> fromParent(count, 0.0F);
             for (std::size_t index = 0U; index < count; ++index) {
-                const float upLength = length(upAxes[index]);
-                const Math::Vector3UVE up = upLength > 1.0e-6F
-                                                ? Math::Vector3UVE{upAxes[index].x / upLength, upAxes[index].y / upLength,
-                                                                   upAxes[index].z / upLength}
-                                                : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
-                float bestScore = 0.7F;
-                for (std::size_t child = index + 1U; child < count; ++child) {
-                    if (skeleton.bones[child].parentIndex != static_cast<std::int32_t>(index)) {
+                const std::int32_t parent = skeleton.bones[index].parentIndex;
+                if (parent >= 0 && static_cast<std::size_t>(parent) < count) {
+                    children[static_cast<std::size_t>(parent)].push_back(index);
+                    fromParent[index] = length(subtract(heads[index], heads[static_cast<std::size_t>(parent)]));
+                }
+            }
+            const auto dot = [](const Math::Vector3UVE& a, const Math::Vector3UVE& b) { return a.x * b.x + a.y * b.y + a.z * b.z; };
+            // Whether `child` lies on the way from `index` to one of its other children.
+            const auto onTheWay = [&](const std::size_t index, const std::size_t child) {
+                const Math::Vector3UVE to = subtract(heads[child], heads[index]);
+                for (const std::size_t other : children[index]) {
+                    if (other == child) {
                         continue;
                     }
-                    const Math::Vector3UVE offset = subtract(heads[child], heads[index]);
-                    const float offsetLength = length(offset);
-                    if (offsetLength < 1.0e-4F) {
+                    const Math::Vector3UVE way = subtract(heads[other], heads[index]);
+                    const float wayLength = length(way);
+                    if (wayLength < 1.0e-4F) {
                         continue;
                     }
-                    const float score = (offset.x * up.x + offset.y * up.y + offset.z * up.z) / offsetLength;
-                    if (score > bestScore) {
-                        bestScore = score;
-                        tails[index] = heads[child];
-                        lengths[index] = offsetLength;
+                    const float along = dot(to, way) / wayLength;
+                    const Math::Vector3UVE across = subtract(to, Math::Vector3UVE{way.x * along / wayLength, way.y * along / wayLength,
+                                                                                  way.z * along / wayLength});
+                    if (along > 0.0F && along < wayLength * 0.98F && length(across) < wayLength * 0.12F) {
+                        return true;
                     }
                 }
-                if (lengths[index] <= 0.0F) {
-                    const std::int32_t parent = skeleton.bones[index].parentIndex;
-                    const float fallback = parent >= 0 && lengths[static_cast<std::size_t>(parent)] > 0.0F
-                                               ? lengths[static_cast<std::size_t>(parent)] * 0.6F
-                                               : 0.1F;
-                    lengths[index] = fallback;
-                    tails[index] = Math::Vector3UVE{heads[index].x + up.x * fallback, heads[index].y + up.y * fallback,
-                                                    heads[index].z + up.z * fallback};
+                return false;
+            };
+            std::vector<bool> helper(count, false);
+            for (std::size_t index = 0U; index < count; ++index) {
+                helper[index] = IsHelperBoneUVE(skeleton.bones[index].name);
+            }
+            std::vector<bool> inline_(count, false);
+            for (std::size_t index = 0U; index < count; ++index) {
+                for (const std::size_t child : children[index]) {
+                    inline_[child] = inline_[child] || onTheWay(index, child);
                 }
             }
             const bool selected = entity == m_selectedEntity;
-            for (std::size_t index = 0U; index < count; ++index) {
+            const RetargetPreviewUVE* const retarget =
+                m_retargetSceneActive && m_retargetPreview.has_value() ? &*m_retargetPreview : nullptr;
+            const auto emit = [&](const std::size_t index, const Math::Vector3UVE& tail, const bool jointOnly) {
                 ViewportBoneUVE bone;
                 bone.head = toArray(heads[index]);
-                bone.tail = toArray(tails[index]);
-                bone.side = toArray(subtract(Math::TransformPointUVE(frames[index], Math::Vector3UVE{1.0F, 0.0F, 0.0F}),
-                                             heads[index]));
-                const std::int32_t parent = skeleton.bones[index].parentIndex;
-                if (parent >= 0 && length(subtract(tails[static_cast<std::size_t>(parent)], heads[index])) > 1.0e-4F) {
-                    bone.hasLink = true;
-                    bone.linkFrom = toArray(tails[static_cast<std::size_t>(parent)]);
-                }
+                bone.tail = toArray(tail);
+                bone.side = toArray(subtract(Math::TransformPointUVE(frames[index], Math::Vector3UVE{1.0F, 0.0F, 0.0F}), heads[index]));
+                bone.jointOnly = jointOnly;
                 bone.skeletonSelected = selected;
                 bone.boneSelected = selected && skeleton.bones[index].name == m_selectedSkeletonBone;
-                if (m_retargetPreview.has_value()) {
-                    // The Retarget preview colours joints by how the character answers the humanoid.
-                    const RetargetPreviewUVE& preview = *m_retargetPreview;
-                    if (entity == preview.sourceSkeleton && index < preview.sourceColours.size()) {
-                        bone.hasColour = true;
-                        bone.colour = preview.sourceColours[index];
-                    } else if (entity == preview.targetSkeleton) {
-                        if (const auto found = preview.targetColours.find(skeleton.bones[index].name);
-                            found != preview.targetColours.end()) {
+                if (retarget != nullptr) {
+                    // The Retarget preview colours joints by how the character answers the humanoid,
+                    // and lights the one picked in the window.
+                    if (entity == retarget->targetSkeleton) {
+                        if (const auto found = retarget->targetColours.find(skeleton.bones[index].name);
+                            found != retarget->targetColours.end()) {
                             bone.hasColour = true;
                             bone.colour = found->second;
+                        }
+                        if (!retarget->highlightBone.empty() && skeleton.bones[index].name == retarget->highlightBone) {
+                            bone.boneSelected = true;
+                            bone.hasColour = false;
                         }
                     }
                 }
                 outBones.push_back(bone);
+            };
+            for (std::size_t index = 0U; index < count; ++index) {
+                if (helper[index]) {
+                    // A marker where it is, tied to its parent by a dashed line (drawn by the viewport).
+                    emit(index, Math::Vector3UVE{heads[index].x, heads[index].y + 0.05F, heads[index].z}, true);
+                    ViewportBoneUVE& marker = outBones.back();
+                    marker.helper = true;
+                    const std::int32_t parent = skeleton.bones[index].parentIndex;
+                    if (parent >= 0 && fromParent[index] > 1.0e-4F) {
+                        marker.hasLink = true;
+                        marker.linkFrom = toArray(heads[static_cast<std::size_t>(parent)]);
+                    }
+                    continue;
+                }
+                bool drew = false;
+                for (const std::size_t child : children[index]) {
+                    if (!inline_[child] && !helper[child] && fromParent[child] >= 1.0e-4F) {
+                        emit(index, heads[child], false);
+                        drew = true;
+                    }
+                }
+                if (drew) {
+                    continue;
+                }
+                // Nothing below it to reach: on a short way the way it came (or along its own +Y).
+                const std::int32_t parent = skeleton.bones[index].parentIndex;
+                Math::Vector3UVE way = parent >= 0 ? subtract(heads[index], heads[static_cast<std::size_t>(parent)]) : upAxes[index];
+                float wayLength = length(way);
+                if (wayLength < 1.0e-6F) {
+                    way = upAxes[index];
+                    wayLength = length(way);
+                }
+                const Math::Vector3UVE dir = wayLength > 1.0e-6F ? Math::Vector3UVE{way.x / wayLength, way.y / wayLength, way.z / wayLength}
+                                                                 : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                const float reach = std::max(parent >= 0 ? fromParent[index] * 0.45F : 0.1F, 0.01F);
+                emit(index, Math::Vector3UVE{heads[index].x + dir.x * reach, heads[index].y + dir.y * reach, heads[index].z + dir.z * reach},
+                     inline_[index]);
             }
         });
 }

@@ -20,6 +20,7 @@
 // -----------------------------------------------------------------------
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -53,8 +54,16 @@ public:
     void Draw(const univex::math::Mat4& viewProjection, int width, int height,
               const std::vector<SelectionOutlineVertex>& triangles, const SelectionOutlineSettings& settings);
 
+    // Draws only the silhouette mask of `triangles` and reads it back: one byte of weight per pixel,
+    // row 0 at the top, `width` x `height`. For a host that draws the outline band itself. Puts back the
+    // GL state it changes. Returns false (and an empty mask) when there is nothing to draw.
+    [[nodiscard]] bool ReadMask(const univex::math::Mat4& viewProjection, int width, int height,
+                                const std::vector<SelectionOutlineVertex>& triangles, std::vector<std::uint8_t>& outMask);
+
 private:
     [[nodiscard]] bool EnsureMask(int width, int height);
+    void DrawMaskPass(const univex::math::Mat4& viewProjection, int width, int height,
+                      const std::vector<SelectionOutlineVertex>& triangles);
     void Destroy() noexcept;
 
     ShaderProgram maskProgram_;

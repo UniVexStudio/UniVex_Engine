@@ -14,10 +14,10 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
 
 #include "fbx_mesh_converter.h"
 #include "i_asset_database.h"
@@ -26,84 +26,19 @@
 #include "mesh_asset.h"
 #include "engine_services.h"
 #include "editor.h"
+#include "model_animations.h"
 #include "i_entity_manager.h"
 #include "skeleton_3d.h"
+#include "retarget_brain.h"
 #include "retarget_files.h"
 #include "retarget_humanoid.h"
 
 namespace UVE::Editor {
 namespace {
 
-// The joint colours come from GetRetargetStatusColourUVE, so the dots here and the bones in the viewport agree.
-[[nodiscard]] ImVec4 ColourOfUVE(const Retarget::JointStatusUVE status) {
-    const std::array<float, 3> colour = GetRetargetStatusColourUVE(status);
-    return ImVec4{colour[0], colour[1], colour[2], 1.0F};
-}
-
-const ImVec4 kGoodUVE = ColourOfUVE(Retarget::JointStatusUVE::Good);
-const ImVec4 kBrokenUVE = ColourOfUVE(Retarget::JointStatusUVE::Broken);
-const ImVec4 kMissingUVE = ColourOfUVE(Retarget::JointStatusUVE::Missing);
-constexpr ImVec4 kAccentUVE{0.357F, 0.478F, 0.600F, 1.0F};
-
-void DotUVE(const ImVec4& colour, const float diameter = 9.0F) {
-    ImDrawList& drawList = *ImGui::GetWindowDrawList();
-    const ImVec2 at = ImGui::GetCursorScreenPos();
-    const float lineHeight = ImGui::GetTextLineHeight();
-    drawList.AddCircleFilled(ImVec2{at.x + diameter * 0.5F, at.y + lineHeight * 0.5F}, diameter * 0.5F,
-                             ImGui::GetColorU32(colour), 12);
-    ImGui::Dummy(ImVec2{diameter + 4.0F, lineHeight});
-    ImGui::SameLine(0.0F, 2.0F);
-}
-
 [[nodiscard]] std::string LowerUVE(std::string text) {
     std::ranges::transform(text, text.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
-}
-
-/// Does this row pass the filter? The list is flat (one row per humanoid bone, parent-first), so a row
-/// is judged on its own: nothing nests under it any more.
-[[nodiscard]] bool RowShownUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std::string& filter,
-                               const bool problemsOnly) {
-    const RetargetJointRowUVE& row = plan.joints[static_cast<std::size_t>(bone)];
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-    const bool problem = row.status == Retarget::JointStatusUVE::Warning || row.status == Retarget::JointStatusUVE::Broken;
-    const bool matchesText =
-        filter.empty() || LowerUVE(reference.skeleton.bones[static_cast<std::size_t>(bone)].name).find(filter) != std::string::npos ||
-        LowerUVE(row.characterName).find(filter) != std::string::npos;
-    return matchesText && (!problemsOnly || problem);
-}
-
-void DrawBoneUVE(const RetargetPlanUVE& plan, const std::int32_t bone, const std::string& filter, const bool problemsOnly) {
-    if (!RowShownUVE(plan, bone, filter, problemsOnly)) {
-        return;
-    }
-    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
-    const auto index = static_cast<std::size_t>(bone);
-    const RetargetJointRowUVE& row = plan.joints[index];
-    ImGui::PushID(bone);
-    DotUVE(ColourOfUVE(row.status));
-    ImGui::TextUnformatted(reference.skeleton.bones[index].name.c_str());
-    if (!row.characterName.empty() && row.characterName != reference.skeleton.bones[index].name) {
-        ImGui::SameLine();
-        ImGui::TextDisabled("(%s)", row.characterName.c_str());
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s%s%s", GetRetargetStatusLabelUVE(row.status), row.reason.empty() ? "" : ": ",
-                          row.status == Retarget::JointStatusUVE::Missing ? "not in this character; Generate adds it"
-                                                                          : row.reason.c_str());
-    }
-    ImGui::PopID();
-}
-
-[[nodiscard]] const char* AnimationStateLabelUVE(const Retarget::RetargetAnimationStateUVE state) {
-    switch (state) {
-        case Retarget::RetargetAnimationStateUVE::Ready: return "ready (auto-generates missing bones)";
-        case Retarget::RetargetAnimationStateUVE::AlreadyConformed: return "already conformed";
-        case Retarget::RetargetAnimationStateUVE::NoSkeleton: return "no skeleton";
-        case Retarget::RetargetAnimationStateUVE::NoBones: return "moves no bones";
-        case Retarget::RetargetAnimationStateUVE::Unreadable: return "cannot read";
-    }
-    return "";
 }
 
 } // namespace
@@ -141,8 +76,9 @@ void EditorUVE::OpenRetargetWindowUVE(std::vector<std::filesystem::path> animati
     window.animations = std::move(animations);
     window.target = std::move(target);
     m_retargetWindow = std::move(window);
-    // The window's own world; without it (playing, an entity open) the window still works, minus the picture.
+    // The window's own world (the level is not touched), and the Rig Brain trained meanwhile.
     static_cast<void>(BeginRetargetPreviewUVE());
+    Retarget::WarmDefaultRigBrainUVE();
 }
 
 void EditorUVE::CloseRetargetWindowUVE() {
@@ -211,6 +147,37 @@ std::size_t EditorUVE::RefreshSkeletonsForRetargetedModelUVE(const std::filesyst
     return changed;
 }
 
+void EditorUVE::ReloadRetargetedFilesUVE(const std::vector<std::filesystem::path>& files) {
+    // A file can be registered under more than one spelling (relative to the working folder, or
+    // absolute), and each spelling is its own GUID with its own loaded copy: a character placed
+    // before Generate plays the clip it loaded then. Every GUID whose path is this file reloads.
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    Asset::IAssetManagerUVE& assets = m_services->GetAssetManagerUVE();
+    const auto identity = [](const std::filesystem::path& path) {
+        std::error_code error;
+        const std::filesystem::path absolute = std::filesystem::weakly_canonical(std::filesystem::absolute(path, error), error);
+        return error ? path.lexically_normal().generic_string() : absolute.generic_string();
+    };
+    std::unordered_set<std::string> wanted;
+    for (const std::filesystem::path& file : files) {
+        if (!file.empty()) {
+            wanted.insert(identity(file));
+            static_cast<void>(database.RegisterUVE(file));
+        }
+    }
+    if (wanted.empty()) {
+        return;
+    }
+    for (const Asset::AssetRecordUVE& record : database.GetRegisteredAssetsUVE()) {
+        if (record.guid == Asset::kInvalidAssetGuidUVE || !wanted.contains(identity(record.path))) {
+            continue;
+        }
+        if (assets.GetLoadStateUVE(record.guid) != Asset::AssetLoadStateUVE::NotLoaded) {
+            assets.ReloadUVE(record.guid, database);
+        }
+    }
+}
+
 void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::RetargetFilesResultUVE result) {
     window.statusIsError = !result.ok;
     if (!result.ok) {
@@ -219,22 +186,25 @@ void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::R
         return;
     }
     // The renderer and the animation players may hold the old files.
-    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    std::vector<std::filesystem::path> changedFiles;
     for (const Retarget::RetargetFileReportUVE& file : result.files) {
-        if (!file.changed) {
-            continue;
-        }
-        const Asset::AssetGuidUVE guid = database.RegisterUVE(file.file);
-        if (guid != Asset::kInvalidAssetGuidUVE) {
-            m_services->GetAssetManagerUVE().ReloadUVE(guid, database);
+        if (file.changed) {
+            changedFiles.push_back(file.file);
         }
     }
+    ReloadRetargetedFilesUVE(changedFiles);
     const std::size_t skeletons =
         window.jobModel.empty() ? 0U : RefreshSkeletonsForRetargetedModelUVE(window.jobModel);
     if (!window.jobModel.empty()) {
         window.changedModels.push_back(window.jobModel);
     }
     ClearMeshThumbnailCacheUVE();
+    if (!window.jobModel.empty()) {
+        MarkRetargetedModelUVE(window.target, true);
+    }
+    // The preview's world drew the files as they were (its own renderer caches them): a new one.
+    static_cast<void>(EndRetargetPreviewUVE());
+    static_cast<void>(BeginRetargetPreviewUVE());
     window.lastBackup = result.backupDir;
     std::size_t changed = 0U;
     for (const Retarget::RetargetFileReportUVE& file : result.files) {
@@ -247,248 +217,133 @@ void EditorUVE::FinishRetargetJobUVE(RetargetWindowStateUVE& window, Retarget::R
     window.planStale = true;
 }
 
-void EditorUVE::DrawRetargetWindowUVE() {
+void EditorUVE::TickRetargetWindowUVE() {
+    if (!m_retargetWindow.has_value()) {
+        return;
+    }
     RetargetWindowStateUVE& window = *m_retargetWindow;
     // A finished job hands its result back here, on the editor's thread.
     if (window.job.valid() && window.job.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
         FinishRetargetJobUVE(window, window.job.get());
     }
-    const bool running = window.job.valid();
-
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    // Its own OS window, like the Entity Editor: never merged into the main one, never docked.
-    ImGuiWindowClass windowClass;
-    windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_NoAutoMerge;
-    windowClass.ViewportFlagsOverrideClear = ImGuiViewportFlags_NoDecoration | ImGuiViewportFlags_NoTaskBarIcon;
-    ImGui::SetNextWindowClass(&windowClass);
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->GetCenter().x, mainViewport->GetCenter().y}, ImGuiCond_FirstUseEver,
-                            ImVec2{0.5F, 0.5F});
-    ImGui::SetNextWindowSize(ImVec2{1320.0F, 760.0F}, ImGuiCond_FirstUseEver);
-    if (window.focusPending) {
-        window.focusPending = false;
-        ImGui::SetNextWindowFocus();
+    const std::vector<std::filesystem::path> candidates = RetargetCandidatesUVE();
+    if (window.target.empty() && !candidates.empty() && window.animations.empty()) {
+        window.target = candidates.front();
+        window.planStale = true;
     }
-    ImGui::Begin("Retarget###retarget-window", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+    // The Rig Brain finished training: plan again with it.
+    if (!window.plan.usedBrain && window.plan.modelReadable && Retarget::IsDefaultRigBrainReadyUVE()) {
+        window.planStale = true;
+    }
+    if (window.planStale && !window.job.valid()) {
+        const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
+        window.plan = PlanRetargetUVE(modelFile, window.animations);
+        window.plan.alreadyRetargeted = !window.target.empty() && IsRetargetedModelCurrentUVE(window.target);
+        window.planStale = false;
+        ++window.planSerial;
+        // The picture follows the plan: a new character, or files that just changed.
+        RebuildRetargetPreviewUVE(window.plan, modelFile);
+    }
+}
 
-    // ---- The character ---------------------------------------------------------------------------
-    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+std::vector<std::filesystem::path> EditorUVE::RetargetCandidatesUVE() const {
     std::vector<std::filesystem::path> candidates;
     for (const auto& [path, info] : m_modelSources) {
         if (info.rigged) {
             candidates.emplace_back(path);
         }
     }
+    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
         if (entry.kind != Asset::ProjectFileEntryKindUVE::Directory && LowerUVE(entry.relativePath.extension().string()) == ".uvmodel") {
             candidates.push_back(entry.relativePath);
         }
     }
-    if (window.target.empty() && !candidates.empty()) {
-        window.target = candidates.front();
-        window.planStale = true;
+    std::ranges::sort(candidates);
+    return candidates;
+}
+
+bool EditorUVE::StartRetargetUVE() {
+    if (!m_retargetWindow.has_value()) {
+        return false;
     }
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Character");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(320.0F);
-    ImGui::BeginDisabled(running);
-    const std::string preview = window.target.empty() ? std::string{"Animation skeleton only (no mesh)"} : window.target.generic_string();
-    if (ImGui::BeginCombo("##retarget-target", preview.c_str())) {
-        if (candidates.empty()) {
-            ImGui::TextDisabled("No rigged character mesh in the project (conforming animations directly).");
-        }
-        for (const std::filesystem::path& candidate : candidates) {
-            const bool selected = candidate == window.target;
-            if (ImGui::Selectable(candidate.generic_string().c_str(), selected) && !selected) {
-                window.target = candidate;
-                window.planStale = true;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("The character the animations are for. Its bones, its rest pose and its skin are conformed to the UniVex humanoid (missing bones are auto-generated).");
-    }
-    if (window.planStale) {
-        const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
-        window.plan = PlanRetargetUVE(modelFile, window.animations);
-        window.planStale = false;
-        // The picture follows the plan: a new character, or files that just changed.
-        RebuildRetargetPreviewUVE(window.plan, modelFile);
-    }
+    RetargetWindowStateUVE& window = *m_retargetWindow;
     const RetargetPlanUVE& plan = window.plan;
-
-    // The four colours, counted: the summary of how the character stands.
-    if (plan.modelReadable) {
-        ImGui::SameLine(0.0F, 24.0F);
-        const std::array<std::pair<Retarget::JointStatusUVE, const char*>, 4> legend{{{Retarget::JointStatusUVE::Good, "good"},
-                                                                                       {Retarget::JointStatusUVE::Warning, "check"},
-                                                                                       {Retarget::JointStatusUVE::Broken, "broken"},
-                                                                                       {Retarget::JointStatusUVE::Missing, "missing (auto-generated)"}}};
-        for (const auto& [status, label] : legend) {
-            DotUVE(ColourOfUVE(status));
-            ImGui::Text("%zu %s", plan.CountUVE(status), label);
-            ImGui::SameLine(0.0F, 14.0F);
-        }
-        ImGui::NewLine();
-    } else {
-        ImGui::SameLine(0.0F, 24.0F);
-        ImGui::TextColored(window.target.empty() ? kMissingUVE : kBrokenUVE, "%s",
-                           window.target.empty() ? "Pick a character or animation to see how its bones compare." : plan.modelError.c_str());
+    if (window.job.valid() || !plan.CanGenerateUVE() || !IsAuthoringCommandAllowedUVE()) {
+        return false;
     }
-    ImGui::Separator();
-
-    // ---- Left: the animations. Middle: the viewport. Right: the humanoid's bones ---------------------
-    const float footer = 74.0F;
-    const float bodyHeight = std::max(120.0F, ImGui::GetContentRegionAvail().y - footer);
-    const float leftWidth = std::clamp(ImGui::GetContentRegionAvail().x * 0.18F, 200.0F, 280.0F);
-    const float rightWidth = std::clamp(ImGui::GetContentRegionAvail().x * 0.30F, 300.0F, 420.0F);
-    ImGui::BeginChild("##retarget-left", ImVec2{leftWidth, bodyHeight}, true);
-    ImGui::TextDisabled("Animations (%zu)", plan.animations.size());
-    for (const RetargetAnimationRowUVE& row : plan.animations) {
-        const bool ready = row.state == Retarget::RetargetAnimationStateUVE::Ready;
-        DotUVE(ready ? kGoodUVE : kMissingUVE);
-        ImGui::TextUnformatted(row.file.filename().string().c_str());
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", AnimationStateLabelUVE(row.state));
-        if (!ready && ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Left alone: %s", row.note.c_str());
-        }
-    }
-    if (!plan.keptBones.empty()) {
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::TextDisabled("Character bones the humanoid has no place for (%zu)", plan.keptBones.size());
-        ImGui::TextDisabled("They are kept as they are.");
-        for (const std::string& name : plan.keptBones) {
-            DotUVE(kMissingUVE);
-            ImGui::TextUnformatted(name.c_str());
-        }
-    }
-    ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0.0F, 0.0F});
-    ImGui::BeginChild("##retarget-view", ImVec2{ImGui::GetContentRegionAvail().x - rightWidth - ImGui::GetStyle().ItemSpacing.x, bodyHeight}, true,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    DrawRetargetPreviewUVE();
-    ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::SameLine();
-    ImGui::BeginChild("##retarget-right", ImVec2{0.0F, bodyHeight}, true);
-    ImGui::SetNextItemWidth(220.0F);
-    char filterText[96];
-    std::snprintf(filterText, sizeof(filterText), "%s", window.boneFilter.c_str());
-    if (ImGui::InputTextWithHint("##retarget-filter", "Filter bones", filterText, sizeof(filterText))) {
-        window.boneFilter = filterText;
-    }
-    ImGui::SameLine();
-    ImGui::Checkbox("Problems only", &window.problemsOnly);
-    ImGui::Separator();
-    if (plan.modelReadable) {
-        ImGui::BeginChild("##retarget-tree", ImVec2{0.0F, 0.0F}, false);
-        const std::string filter = LowerUVE(window.boneFilter);
-        for (std::size_t bone = 0U; bone < plan.joints.size(); ++bone) {
-            DrawBoneUVE(plan, static_cast<std::int32_t>(bone), filter, window.problemsOnly);
-        }
-        ImGui::EndChild();
-    } else {
-        ImGui::TextDisabled("The UniVex humanoid's bones appear here, coloured by how the character answers them.");
-    }
-    ImGui::EndChild();
-
-    // ---- Footer: Generate, Undo, progress, and what happened ----------------------------------------
-    ImGui::BeginDisabled(!plan.CanGenerateUVE() || running || !IsAuthoringCommandAllowedUVE());
-    ImGui::PushStyleColor(ImGuiCol_Button, kAccentUVE);
-    if (ImGui::Button("Generate Retarget", ImVec2{170.0F, 30.0F})) {
-        Retarget::RetargetFilesRequestUVE request;
-        request.model = plan.model;
-        request.animations = window.animations;
-        request.backupRoot = project.contentRoot.parent_path() / ".retarget-backup";
-        window.jobModel = plan.model;
-        window.status.clear();
-        window.progress->done = 0U;
-        window.progress->total = (request.model.empty() ? 0U : 1U) + request.animations.size();
-        window.job = std::async(std::launch::async, [request, progress = window.progress]() {
-            return Retarget::RetargetFilesUVE(request, Retarget::GetHumanoidReferenceUVE(),
-                                              [&progress](const std::size_t done, const std::size_t total, const std::string& what) {
-                                                  progress->done = done;
-                                                  progress->total = total;
-                                                  const std::scoped_lock lock(progress->mutex);
-                                                  progress->what = what;
-                                              });
-        });
-    }
-    ImGui::PopStyleColor();
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
-        ImGui::SetTooltip("Conform the character and the animations to the UniVex humanoid, in place (auto-generating any missing bones).\nThe originals are saved first; Undo puts them back.");
-    }
-    ImGui::SameLine();
-    ImGui::BeginDisabled(window.lastBackup.empty() || running);
-    if (ImGui::Button("Undo Last", ImVec2{100.0F, 30.0F})) {
-        std::string error;
-        if (Retarget::RestoreRetargetBackupUVE(window.lastBackup, &error)) {
-            Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
-            const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
-            for (const std::filesystem::path& file : [&] {
-                     std::vector<std::filesystem::path> files;
-                     if (!modelFile.empty()) {
-                         files.push_back(modelFile);
-                     }
-                     files.insert(files.end(), window.animations.begin(), window.animations.end());
-                     return files;
-                 }()) {
-                if (const Asset::AssetGuidUVE guid = database.RegisterUVE(file); guid != Asset::kInvalidAssetGuidUVE) {
-                    m_services->GetAssetManagerUVE().ReloadUVE(guid, database);
-                }
+    const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    Retarget::RetargetFilesRequestUVE request;
+    // A character done already is left alone: only the animations are conformed.
+    request.model = plan.CharacterDoneUVE() ? std::filesystem::path{} : plan.model;
+    request.animations = window.animations;
+    // The character's own takes, kept inside its model, are conformed with it.
+    if (!request.model.empty()) {
+        for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(request.model)) {
+            const std::filesystem::path embedded = Asset::MakeEmbeddedClipPathUVE(request.model, take.name);
+            if (std::ranges::find(request.animations, embedded) == request.animations.end()) {
+                request.animations.push_back(embedded);
             }
-            const std::size_t skeletons =
-                modelFile.empty() ? 0U : RefreshSkeletonsForRetargetedModelUVE(modelFile);
-            if (!modelFile.empty()) {
-                window.changedModels.push_back(modelFile);
-            }
-            ClearMeshThumbnailCacheUVE();
-            window.status = "Put the originals back (" + std::to_string(skeletons) + " skeleton" + (skeletons == 1U ? "" : "s") + " updated).";
-            window.statusIsError = false;
-            window.lastBackup.clear();
-            window.planStale = true;
-        } else {
-            window.status = error;
-            window.statusIsError = true;
         }
     }
-    ImGui::EndDisabled();
-    ImGui::SameLine(0.0F, 18.0F);
-    if (running) {
-        const std::size_t done = window.progress->done;
-        const std::size_t total = std::max<std::size_t>(1U, window.progress->total);
-        std::string what;
-        {
-            const std::scoped_lock lock(window.progress->mutex);
-            what = window.progress->what;
-        }
-        ImGui::ProgressBar(static_cast<float>(done) / static_cast<float>(total), ImVec2{240.0F, 18.0F}, what.c_str());
-    } else if (!window.status.empty()) {
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(window.statusIsError ? kBrokenUVE : kGoodUVE, "%s", window.status.c_str());
-    } else if (plan.modelReadable) {
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("%zu of %zu animations will be conformed; %zu missing humanoid bones will be auto-generated.", plan.ReadyAnimationsUVE(),
-                            plan.animations.size(), plan.CountUVE(Retarget::JointStatusUVE::Missing));
-    }
-    ImGuiViewport* const currentViewport = ImGui::GetWindowViewport();
-    const bool osCloseRequested =
-        (currentViewport != nullptr && currentViewport != mainViewport && currentViewport->PlatformRequestClose);
-    const bool escapePressed = ImGui::IsKeyPressed(ImGuiKey_Escape);
-    if (osCloseRequested && currentViewport != nullptr) {
-        currentViewport->PlatformRequestClose = false;
-    }
-    ImGui::End();
+    request.backupRoot = project.contentRoot.parent_path() / ".retarget-backup";
+    window.jobModel = request.model;
+    window.status.clear();
+    window.progress->done = 0U;
+    window.progress->total = (request.model.empty() ? 0U : 1U) + request.animations.size();
+    window.job = std::async(std::launch::async, [request, progress = window.progress]() {
+        return Retarget::RetargetFilesUVE(request, Retarget::GetHumanoidReferenceUVE(),
+                                          [&progress](const std::size_t done, const std::size_t total, const std::string& what) {
+                                              progress->done = done;
+                                              progress->total = total;
+                                              const std::scoped_lock lock(progress->mutex);
+                                              progress->what = what;
+                                          });
+    });
+    return true;
+}
 
-    if (osCloseRequested || escapePressed) {
-        CloseRetargetWindowUVE();
+bool EditorUVE::UndoLastRetargetUVE() {
+    if (!m_retargetWindow.has_value()) {
+        return false;
     }
+    RetargetWindowStateUVE& window = *m_retargetWindow;
+    if (window.lastBackup.empty() || window.job.valid()) {
+        return false;
+    }
+    std::string error;
+    if (!Retarget::RestoreRetargetBackupUVE(window.lastBackup, &error)) {
+        window.status = error;
+        window.statusIsError = true;
+        return false;
+    }
+    const std::filesystem::path modelFile = ResolveRetargetModelFileUVE(window.target);
+    std::vector<std::filesystem::path> files;
+    if (!modelFile.empty()) {
+        // The character and everything published beside it (parts, skeleton) came back.
+        files.push_back(modelFile);
+        std::error_code error;
+        const std::string prefix = modelFile.stem().string() + ".";
+        for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(modelFile.parent_path(), error)) {
+            const std::string name = entry.path().filename().string();
+            const std::string extension = LowerUVE(entry.path().extension().string());
+            if (entry.path() != modelFile && name.starts_with(prefix) && (extension == ".uvmodel" || extension == ".uvskel")) {
+                files.push_back(entry.path());
+            }
+        }
+    }
+    files.insert(files.end(), window.animations.begin(), window.animations.end());
+    ReloadRetargetedFilesUVE(files);
+    const std::size_t skeletons = modelFile.empty() ? 0U : RefreshSkeletonsForRetargetedModelUVE(modelFile);
+    MarkRetargetedModelUVE(window.target, false);
+    ClearMeshThumbnailCacheUVE();
+    static_cast<void>(EndRetargetPreviewUVE());
+    static_cast<void>(BeginRetargetPreviewUVE());
+    window.status = "Put the originals back (" + std::to_string(skeletons) + " skeleton" + (skeletons == 1U ? "" : "s") + " updated).";
+    window.statusIsError = false;
+    window.lastBackup.clear();
+    window.planStale = true;
+    return true;
 }
 
 } // namespace UVE::Editor

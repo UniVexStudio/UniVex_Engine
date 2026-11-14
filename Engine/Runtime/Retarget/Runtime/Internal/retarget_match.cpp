@@ -164,7 +164,21 @@ HumanoidMatchUVE MatchHumanoidUVE(const RetargetSkeletonUVE& rig, const Humanoid
     for (const RetargetBoneUVE& bone : rig.bones) {
         names.push_back(bone.name);
     }
-    HumanoidMatchUVE match = MatchHumanoidNamesUVE(names, reference);
+    return CheckHumanoidMatchUVE(rig, reference, MatchHumanoidNamesUVE(names, reference));
+}
+
+HumanoidMatchUVE CheckHumanoidMatchUVE(const RetargetSkeletonUVE& rig, const HumanoidReferenceUVE& reference, HumanoidMatchUVE match) {
+    // Pairs made elsewhere (the Rig Brain) start Good; the checks below judge them like any other.
+    for (std::size_t bone = 0U; bone < match.referenceOfBone.size() && bone < rig.bones.size(); ++bone) {
+        if (const std::int32_t ref = match.referenceOfBone[bone]; ref >= 0 && static_cast<std::size_t>(ref) < match.joints.size()) {
+            JointReportUVE& joint = match.joints[static_cast<std::size_t>(ref)];
+            if (joint.bone != static_cast<std::int32_t>(bone)) {
+                joint.bone = static_cast<std::int32_t>(bone);
+                joint.status = JointStatusUVE::Good;
+                joint.reason.clear();
+            }
+        }
+    }
     if (!IsRetargetSkeletonValidUVE(rig)) {
         return match;
     }

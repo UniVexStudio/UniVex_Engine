@@ -83,6 +83,9 @@ public:
         return IsFullscreenUVE() ? Platform::WindowModeUVE::Fullscreen : Platform::WindowModeUVE::Windowed;
     }
     virtual void SetWindowTitleUVE(std::string_view title) { static_cast<void>(title); }
+    /// Shows the pointer and frees it (a menu, a HUD with buttons), or hides and captures it for
+    /// the game (looking around). A window without a pointer ignores it.
+    virtual void SetCursorVisibleUVE(bool visible) { static_cast<void>(visible); }
     [[nodiscard]] virtual bool IsFocusedUVE() const noexcept { return true; }
     /// Content scale reported by the host, unless a positive descriptor override was requested.
     virtual void GetContentScaleUVE(float& outX, float& outY) const noexcept {

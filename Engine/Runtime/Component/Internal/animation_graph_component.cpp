@@ -46,7 +46,13 @@ struct InputRuleUVE final {
         case Kind::LayeredBlend:
             return {2U, false};
         case Kind::TimeSeek:
+        case Kind::Slot:
+        case Kind::TwoBoneIK:
+        case Kind::ModifyBone:
+        case Kind::LookAt:
             return {1U, false};
+        case Kind::BlendByBool:
+            return {2U, false};
     }
     return {0U, false};
 }
@@ -65,6 +71,11 @@ struct InputRuleUVE final {
         case Kind::Select: return "Select";
         case Kind::LayeredBlend: return "LayeredBlend";
         case Kind::TimeSeek: return "TimeSeek";
+        case Kind::Slot: return "Slot";
+        case Kind::TwoBoneIK: return "TwoBoneIK";
+        case Kind::ModifyBone: return "ModifyBone";
+        case Kind::LookAt: return "LookAt";
+        case Kind::BlendByBool: return "BlendByBool";
     }
     return "?";
 }
@@ -76,6 +87,15 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
     if (nodes.size() > kMaximumAnimationGraphNodesUVE) {
         return "too many nodes";
     }
+    if (component.comments.size() > 512U) {
+        return "too many comments";
+    }
+    for (const AnimationGraphCommentUVE& comment : component.comments) {
+        if (comment.title.size() > 256U || !std::isfinite(comment.position.x) || !std::isfinite(comment.position.y) ||
+            !std::isfinite(comment.size.x) || !std::isfinite(comment.size.y) || comment.size.x < 0.0F || comment.size.y < 0.0F) {
+            return "a comment has an invalid title or box";
+        }
+    }
     if (component.parameters.size() > kMaximumAnimationParametersUVE) {
         return "too many parameters";
     }
@@ -85,7 +105,9 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
         if (parameter.name.empty() || !IsNameValidUVE(parameter.name)) {
             return "a parameter has no name, or its name is too long";
         }
-        if (parameter.type > AnimationParameterTypeUVE::Trigger || !std::isfinite(parameter.value)) {
+        if (parameter.type > AnimationParameterTypeUVE::Vector3 || !std::isfinite(parameter.value) ||
+            !std::isfinite(parameter.vector.x) || !std::isfinite(parameter.vector.y) || !std::isfinite(parameter.vector.z) ||
+            parameter.source > AnimationParameterSourceUVE::CharacterGrounded) {
             return "parameter \"" + parameter.name + "\" has an invalid type or value";
         }
         if (!parameterTypes.emplace(parameter.name, parameter.type).second) {
@@ -100,7 +122,7 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
         if (node.id == 0U || !indexById.emplace(node.id, index).second) {
             return "node ids must be unique and non-zero";
         }
-        if (node.kind > Kind::TimeSeek || !IsNameValidUVE(node.name)) {
+        if (node.kind > Kind::BlendByBool || !IsNameValidUVE(node.name)) {
             return "a node has an invalid kind or name";
         }
         outputs += node.kind == Kind::Output ? 1U : 0U;
@@ -137,6 +159,18 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
             !IsFiniteNonNegativeUVE(node.smoothingSeconds) || node.blendMode > AnimationBlendModeUVE::NearestInStep ||
             !IsNameValidUVE(node.parameter) || !std::isfinite(node.valueY) || !IsNameValidUVE(node.parameterY)) {
             return label + ": invalid value";
+        }
+        const auto finite3 = [](const Math::Vector3UVE& v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); };
+        if (!finite3(node.target) || !finite3(node.pole) || !finite3(node.rotationDegrees) || !finite3(node.boneScale) ||
+            node.targetSource > AnimationGraphTargetSourceUVE::Bone || node.modifyMode > AnimationBoneModifyModeUVE::Replace ||
+            node.space > AnimationBoneSpaceUVE::Component || !std::isfinite(node.clampDegrees) || node.clampDegrees < 0.0F ||
+            !IsNameValidUVE(node.targetBone) || !IsNameValidUVE(node.alphaParameter) || !IsFiniteNonNegativeUVE(node.fadeBackSeconds) ||
+            !IsFiniteNonNegativeUVE(node.startSeconds) || !std::isfinite(node.fadeOutSeconds) ||
+            !IsFiniteNonNegativeUVE(node.autoRestartDelaySeconds)) {
+            return label + ": invalid value";
+        }
+        if (node.kind == Kind::TwoBoneIK && node.bones.size() > 3U) {
+            return label + ": a Two Bone IK names three bones: root, middle, tip";
         }
         if (!std::isfinite(node.areaMin.x) || !std::isfinite(node.areaMin.y) || !std::isfinite(node.areaMax.x) ||
             !std::isfinite(node.areaMax.y) || node.areaMax.x <= node.areaMin.x || node.areaMax.y <= node.areaMin.y) {
@@ -197,8 +231,16 @@ std::string DescribeAnimationGraphProblemUVE(const AnimationGraphComponentUVE& c
                 !std::isfinite(node.anyPosition.x) || !std::isfinite(node.anyPosition.y)) {
                 return label + ": a state's place in its view is invalid";
             }
-        } else if (!node.transitions.empty() || !node.statePositions.empty()) {
+            if (node.stateNames.size() > node.inputs.size() ||
+                std::ranges::any_of(node.stateNames, [](const std::string& name) { return !IsNameValidUVE(name); })) {
+                return label + ": a state's name is invalid";
+            }
+        } else if (!node.transitions.empty() || !node.statePositions.empty() || !node.stateNames.empty()) {
             return label + ": only a StateMachine has transitions";
+        }
+        if (node.gridX < 1U || node.gridX > 64U || node.gridY < 1U || node.gridY > 64U || !IsNameValidUVE(node.axisNameX) ||
+            !IsNameValidUVE(node.axisNameY)) {
+            return label + ": its grid or axis names are invalid";
         }
     }
 

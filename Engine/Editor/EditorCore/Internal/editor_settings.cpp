@@ -1,7 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "editor_settings.h"
-#include "editor_theme.h"
 
 #include <algorithm>
 #include <cctype>
@@ -1564,15 +1563,6 @@ bool EditorUVE::UnsubscribeUVE(const Config::SettingsObserverSubscriptionUVE sub
     return m_settingsObservers.UnsubscribeUVE(subscription);
 }
 
-void EditorUVE::NotifyEditorSettingChangedUVE(const std::string_view id,
-                                               const Config::SettingValueUVE& previousValue,
-                                               const Config::SettingValueUVE& newValue) {
-    m_settingsObservers.NotifyChangedUVE(id, previousValue, newValue);
-    if (id.starts_with("editor.interface.")) {
-        ApplyEditorVisualThemeUVE(&m_extendedPreferences);
-    }
-}
-
 namespace {
 
 [[nodiscard]] bool ContainsIgnoringCaseUVE(const std::string_view text, const std::string_view word) {
@@ -1738,9 +1728,6 @@ bool RegisterEditorSettingsUVE(Config::SettingsRegistryUVE& registry) {
 }
 
 #if defined(UVE_EDITOR_SETTINGS_STANDALONE_UVE)
-// Standalone CPU-only suites link without ImGui, so there is no visual theme to apply.
-// The full editor build uses the real implementation in editor_theme_uve.cpp.
-void ApplyEditorVisualThemeUVE(const EditorExtendedPreferencesUVE* const) noexcept {}
 
 void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences) {
     m_colorPickerPreferences = std::move(preferences);
@@ -1754,5 +1741,11 @@ bool EditorUVE::SetShortcutSettingUVE(const std::string_view, const Config::Sett
     return false;
 }
 #endif
+
+void EditorUVE::NotifyEditorSettingChangedUVE(const std::string_view id,
+                                               const Config::SettingValueUVE& previousValue,
+                                               const Config::SettingValueUVE& newValue) {
+    m_settingsObservers.NotifyChangedUVE(id, previousValue, newValue);
+}
 
 } // namespace UVE::Editor

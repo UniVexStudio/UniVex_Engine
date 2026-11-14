@@ -497,6 +497,34 @@ TEST(AnimationGraphUVETest, OneShotPlaysOverTheBaseAndHandsBack) {
     EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 4.5F, 1e-3F); // base alone again (1.45 s wrapped)
 }
 
+TEST(AnimationGraphUVETest, AClipStartsAtItsStartTime) {
+    GraphFixtureUVE fixture;
+    AnimationGraphComponentUVE tree;
+    AnimationGraphNodeUVE clip = GraphFixtureUVE::ClipNodeUVE(2U, fixture.AddClipUVE(10.0F));
+    clip.startSeconds = 0.5F;
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), clip};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 6.0F, 1e-4F) << "0.5 s in, then 0.1 s on";
+}
+
+TEST(AnimationGraphUVETest, OneShotRestartsOnItsOwnAfterItsDelay) {
+    GraphFixtureUVE fixture;
+    AnimationGraphComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"attack", AnimationParameterTypeUVE::Trigger, 0.0F}};
+    AnimationGraphNodeUVE shot = GraphFixtureUVE::NodeUVE(2U, Kind::OneShot, {3U, 4U});
+    shot.parameter = "attack";
+    shot.fadeSeconds = 0.0F;
+    shot.autoRestart = true;
+    shot.autoRestartDelaySeconds = 0.5F;
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), shot,
+                  GraphFixtureUVE::ClipNodeUVE(3U, fixture.AddClipUVE(10.0F)),
+                  GraphFixtureUVE::ClipNodeUVE(4U, fixture.AddClipUVE(100.0F), false)};
+    ASSERT_TRUE(SetAnimationGraphParameterUVE(tree, "attack", 1.0F));
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 50.0F, 1e-4F);
+    static_cast<void>(fixture.StepUVE(tree, 0.6F)); // the shot ends here
+    EXPECT_LT(fixture.StepUVE(tree, 0.2F), 20.0F) << "the base, while the delay runs";
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.4F), 40.0F, 1e-3F) << "fired again on its own, 0.4 s in";
+}
+
 TEST(AnimationGraphUVETest, AdditiveLayersAndTimeScaleRescales) {
     GraphFixtureUVE fixture;
     AnimationGraphComponentUVE tree;
@@ -650,6 +678,25 @@ TEST(AnimationSequencerUVETest, RootMotionPicksTheTravellingBone) {
     EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, "Tail"), std::nullopt) << "no such bone";
     EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, MakeLiftClipUVE(1.0F), ""), std::nullopt)
         << "moving only up is not ground travel";
+}
+
+TEST(AnimationSequencerUVETest, RootMotionFindsTheRootBoneUnderANamespace) {
+    // A rig whose bones carry a namespace ("mixamorig:Hips") plays a clip naming them bare, and the
+    // other way round: root motion finds the bone the pose does.
+    Asset::AnimationClipAssetUVE clip = MakeRunClipUVE();
+    Skeleton3DComponentUVE skeleton = MakeTwoBoneSkeletonUVE();
+    skeleton.bones[0].name = "mixamorig:Hips";
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, ""), std::optional<std::size_t>{0U});
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, "hips"), std::optional<std::size_t>{0U});
+    clip.bones[1].bone = "mixamorig:Hips";
+    skeleton.bones[0].name = "Hips";
+    EXPECT_EQ(ResolveRootMotionBoneUVE(skeleton, clip, ""), std::optional<std::size_t>{0U});
+
+    AnimationDriverComponentUVE mixer;
+    mixer.rootMotion = AnimationRootMotionModeUVE::ApplyToTarget;
+    AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, TransformComponentUVE{}, clip);
+    ASSERT_TRUE(StepSkeletalAnimationSequencerUVE(player, clip, 0.25F, skeleton, mixer));
+    EXPECT_GT(player.rootMotionDelta.z, 0.1F) << "the namespaced track still gives root motion";
 }
 
 TEST(AnimationSequencerUVETest, RootMotionKeepsThePoseInPlaceAndReportsTravelAcrossTheLoop) {
@@ -943,6 +990,31 @@ TEST(AnimationGraphUVETest, BlendSpace2DMixesInsideItsTriangleAndNeedsOne) {
     EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F);
     ASSERT_EQ(tree.nodeStates[1].triangles.size(), 1U) << "triangulated once and kept";
     EXPECT_NEAR(tree.nodeStates[1].pointWeights[1], 0.25F, 1e-5F);
+}
+
+TEST(AnimationGraphUVETest, BlendSpace2DTakesItsPositionFromOneVector3Parameter) {
+    GraphFixtureUVE fixture;
+    AnimationGraphComponentUVE tree;
+    AnimationParameterUVE walk{"Walk", AnimationParameterTypeUVE::Vector3, 0.0F};
+    walk.vector = Math::Vector3UVE{0.25F, 0.0F, 0.0F};
+    tree.parameters = {walk};
+    AnimationGraphNodeUVE space = GraphFixtureUVE::NodeUVE(2U, Kind::BlendSpace2D);
+    space.blendPoints = {AnimationBlendPointUVE{{0.0F, 0.0F}, fixture.AddClipUVE(0.0F)},
+                         AnimationBlendPointUVE{{1.0F, 0.0F}, fixture.AddClipUVE(40.0F)},
+                         AnimationBlendPointUVE{{0.0F, 1.0F}, fixture.AddClipUVE(0.0F)}};
+    space.parameter = "Walk";   // named after the node, as the editor makes it
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), space};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.5F), 5.0F, 1e-3F) << "x 0.25 of the way to the 40 m clip";
+}
+
+TEST(AnimationGraphUVETest, AClipPlaysAtItsParametersRate) {
+    GraphFixtureUVE fixture;
+    AnimationGraphComponentUVE tree;
+    tree.parameters = {AnimationParameterUVE{"Run", AnimationParameterTypeUVE::Float, 2.0F}};
+    AnimationGraphNodeUVE clip = GraphFixtureUVE::ClipNodeUVE(2U, fixture.AddClipUVE(10.0F));
+    clip.parameter = "Run";
+    tree.nodes = {GraphFixtureUVE::NodeUVE(1U, Kind::Output, {2U}), clip};
+    EXPECT_NEAR(fixture.StepUVE(tree, 0.1F), 2.0F, 1e-4F) << "0.1 s at double rate";
 }
 
 TEST(AnimationGraphUVETest, SmoothingEasesThePositionWithoutOvershoot) {

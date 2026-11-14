@@ -209,6 +209,7 @@ std::optional<HumanoidReferenceUVE> BuildHumanoidReferenceUVE(const RetargetSkel
         }
         const std::string follow = FollowKeyUVE(keys[index]);
         reference.info[index].follows = follow.empty() ? -1 : find(follow);
+        reference.info[index].optional = reference.info[index].kind == HumanoidBoneKindUVE::Corrective;
     }
 
     // The pose below is written for a rig standing up +Y with its left side toward +X (so facing
@@ -325,6 +326,9 @@ std::string WriteHumanoidReferenceUVE(const HumanoidReferenceUVE& reference) {
         if (info.follows >= 0) {
             entry["follows"] = nameOf(info.follows);
         }
+        if (info.optional) {
+            entry["optional"] = true;
+        }
         entry["position"] = {bone.position.x, bone.position.y, bone.position.z};
         entry["rotation"] = {bone.rotation.x, bone.rotation.y, bone.rotation.z, bone.rotation.w};
         bones.push_back(std::move(entry));
@@ -379,6 +383,7 @@ std::optional<HumanoidReferenceUVE> ParseHumanoidReferenceUVE(const std::string_
             }
             info.aim = indexOf(entry, "aim");
             info.follows = indexOf(entry, "follows");
+            info.optional = entry.value("optional", info.kind == HumanoidBoneKindUVE::Corrective);
             reference.skeleton.bones.push_back(std::move(bone));
             reference.info.push_back(std::move(info));
         }

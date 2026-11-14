@@ -144,6 +144,12 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t decalDrawsDropped = 0U;
     /// Skinned meshes posed by a skeleton and drawn from their own vertex buffer this frame.
     std::size_t skinnedMeshesDrawn = 0U;
+    /// Meshes sent to the GPU this frame, and those left for a later frame by the upload budget
+    /// (SetMeshUploadBudgetUVE): a scene that is still coming in shows here, mesh by mesh.
+    std::size_t meshUploads = 0U;
+    std::size_t meshUploadsDeferred = 0U;
+    /// The first meshes sent this frame (unused slots stay invalid), so a host can say what it is drawing.
+    std::array<Asset::AssetGuidUVE, 4U> uploadedMeshes{};
     std::size_t meshDrawCallsRecorded = 0U;
     /// How many of `meshDrawCallsRecorded` were instanced draws, and how many objects those draws
     /// covered. Both name what instancing ACTUALLY did this frame, not what it was offered: a
@@ -284,6 +290,18 @@ struct Renderer3DFrameDiagnosticsUVE final {
 /// engine thread only, after SceneGraphUVE::UpdateUVE() has run for this frame (it needs current
 /// WorldTransformComponentUVE data), matching EngineCoreUVE's single-threaded Update -> Render
 /// frame-loop contract.
+/// The scene depth of the last frame rendered, for an editor that draws its own overlays (grid, gizmos) and
+/// needs them hidden behind the scene's geometry. `depthTexture` is the renderer's own depth target (OpenGL
+/// convention: window depth 0..1, 1 where nothing was drawn); `inverseViewProjection` turns a pixel's NDC
+/// position and depth back into world space. Valid until the next frame is rendered or the targets resize.
+struct SceneDepthExportUVE final {
+    bool valid = false;
+    TextureHandleUVE depthTexture = kInvalidTextureHandleUVE;
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    Math::Matrix4x4UVE inverseViewProjection{};
+};
+
 class IRenderer3DUVE {
 public:
     virtual ~IRenderer3DUVE() = default;
@@ -342,7 +360,7 @@ public:
     /// Renders exactly like RenderFrameUVE(), except the final tone-mapped image is written into
     /// `colorTarget`/`depthTarget` (caller-owned offscreen textures) instead of the backend's
     /// presentation surface - an editor viewport (or any other host compositing the result itself,
-    /// e.g. via ImGui::Image()) rather than a real on-screen window region (that case is
+    /// e.g. as an image in the editor's view) rather than a real on-screen window region (that case is
     /// RenderFrameToRegionUVE() above). Both targets must be valid, matching-size textures created
     /// through this renderer's own IRenderDeviceUVE; PresentUVE() is never implied by this call.
     /// `width`/`height` name that matching size in pixels - TextureHandleUVE has no queryable size
@@ -411,6 +429,13 @@ public:
         static_cast<void>(shadingMode);
     }
 
+    /// How many new meshes a frame may send to the GPU; the rest wait for later frames and are not
+    /// drawn until then, so a scene comes in a few meshes at a time instead of all in one frame.
+    /// Zero (the default) means no limit.
+    virtual void SetMeshUploadBudgetUVE(std::size_t meshesPerFrame) noexcept {
+        static_cast<void>(meshesPerFrame);
+    }
+
     /// Sets the rendering scalability / quality preset (0: Low, 1: Medium, 2: High/Ultra).
     virtual void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept {
         static_cast<void>(scalabilityMode);
@@ -443,6 +468,9 @@ public:
     /// the behaviour it had, and nothing is required to opt in.
     virtual void SetPhysicsInterpolationAlphaUVE(float alpha) noexcept = 0;
     [[nodiscard]] virtual Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept = 0;
+    /// The scene depth of the last camera frame (see SceneDepthExportUVE). Renderers that keep no depth
+    /// target, and test doubles, report none.
+    [[nodiscard]] virtual SceneDepthExportUVE GetLastSceneDepthUVE() const noexcept { return {}; }
 };
 
 } // namespace UVE::Render

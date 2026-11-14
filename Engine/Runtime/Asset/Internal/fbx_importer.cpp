@@ -225,7 +225,7 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
         return false;
     }
 
-    // A rigged model also publishes its rig as its own `.uvskel` beside it - Unreal's split of a
+    // A rigged model also publishes its rig as its own `.uvskel` beside it - the standard split of a
     // Skeletal Mesh from its Skeleton, and for the same reason: one rig is shared by every clip
     // made for it and by every mesh skinned to it, instead of each consumer re-parsing the model
     // (a 30 MB FBX) to rediscover bones that were already read once here.

@@ -4,7 +4,7 @@
 
 // The parts of the Content Browser that are decisions rather than drawing: where it is looking,
 // the back/forward history, the user's shelves, and which files a folder or a search shows. Kept
-// free of ImGui and GL so the rules can be tested on their own, and so the editor bridge lists
+// free of UI code and GL so the rules can be tested on their own, and so the editor bridge lists
 // exactly what the panel shows.
 
 #include <chrono>

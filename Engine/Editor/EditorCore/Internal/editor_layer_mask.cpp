@@ -6,19 +6,6 @@
 #include <bit>
 #include <string>
 
-#if __has_include(<imgui.h>)
-#include <imgui.h>
-#define UVE_HAS_IMGUI_HEADER_UVE 1
-#else
-#define UVE_HAS_IMGUI_HEADER_UVE 0
-#endif
-
-#if UVE_HAS_IMGUI_HEADER_UVE
-#include "editor_centered_combo.h"
-#endif
-
-#include "editor_layer_mask_field.h"
-
 namespace UVE::Editor {
 namespace {
 
@@ -93,83 +80,7 @@ void LayerCollisionMatrixUVE::SetCollisionUVE(const std::size_t layerA, const st
 }
 
 #if UVE_HAS_IMGUI_HEADER_UVE
-LayerMaskFieldEventUVE DrawLayerMaskFieldUVE(const char* const id, std::uint32_t& mask, const LayerNamesUVE& names) {
-    LayerMaskFieldEventUVE event = LayerMaskFieldEventUVE::None;
-    const float fontSize = ImGui::GetFontSize();
-    // Wide enough for two columns of names, whatever the field's own width.
-    ImGui::SetNextWindowSizeConstraints(ImVec2{fontSize * 22.0F, 0.0F}, ImVec2{fontSize * 40.0F, fontSize * 40.0F});
-    const std::string summary = FormatLayerMaskSummaryUVE(mask, names);
-    if (BeginCenteredComboUVE(id, summary.c_str(), ImGuiComboFlags_HeightLargest)) {
-        std::uint32_t edited = mask;
-        if (ImGui::SmallButton("All")) {
-            edited = 0xFFFFFFFFU;
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("None")) {
-            edited = 0U;
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Invert")) {
-            edited = ~mask;
-        }
-        const char* editLabel = "Edit Names...";
-        const float editWidth = ImGui::CalcTextSize(editLabel).x + (ImGui::GetStyle().FramePadding.x * 2.0F);
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0F, ImGui::GetContentRegionAvail().x - editWidth));
-        if (ImGui::SmallButton(editLabel)) {
-            event = LayerMaskFieldEventUVE::EditNames;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::Separator();
-        // Two columns, 1-16 and 17-32, so every layer is in view at once. Unnamed layers are dimmed
-        // so the named ones - the ones a project uses - stand out.
-        constexpr std::size_t kRowsUVE = kLayerCountUVE / 2U;
-        if (ImGui::BeginTable("##layers", 2, ImGuiTableFlags_SizingStretchSame)) {
-            for (std::size_t row = 0U; row < kRowsUVE; ++row) {
-                ImGui::TableNextRow();
-                for (const std::size_t index : {row, row + kRowsUVE}) {
-                    ImGui::TableNextColumn();
-                    ImGui::PushID(static_cast<int>(index));
-                    bool on = IsLayerSetUVE(edited, index);
-                    const bool named = !names[index].empty();
-                    // "3  Enemies" for a named layer; just its number, dimmed, for one the project
-                    // has not named.
-                    const std::string label =
-                        std::to_string(index + 1U) + (named ? "  " + names[index] : std::string{});
-                    if (!named) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-                    }
-                    if (ImGui::Checkbox(label.c_str(), &on)) {
-                        edited = on ? (edited | (1U << index)) : (edited & ~(1U << index));
-                    }
-                    if (!named) {
-                        ImGui::PopStyleColor();
-                    }
-                    ImGui::PopID();
-                }
-            }
-            ImGui::EndTable();
-        }
-        if (edited != mask && event == LayerMaskFieldEventUVE::None) {
-            mask = edited;
-            event = LayerMaskFieldEventUVE::Changed;
-        }
-        ImGui::EndCombo();
-    } else if (ImGui::BeginItemTooltip()) {
-        // The full list, when the preview had to shorten it.
-        for (std::size_t index = 0U; index < kLayerCountUVE; ++index) {
-            if (IsLayerSetUVE(mask, index)) {
-                ImGui::Text("%zu  %s", index + 1U, GetLayerLabelUVE(names, index).c_str());
-            }
-        }
-        if (mask == 0U) {
-            ImGui::TextUnformatted("No layers");
-        }
-        ImGui::TextDisabled("0x%08X", mask);
-        ImGui::EndTooltip();
-    }
-    return event;
-}
+
 #endif // UVE_HAS_IMGUI_HEADER_UVE
 
 } // namespace UVE::Editor

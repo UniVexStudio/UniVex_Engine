@@ -11,6 +11,9 @@ out vec3 vWorldNormal;
 out vec3 vWorldTangent;
 out float vTangentHandedness;
 out vec2 vTexCoord;
+// Object-space position and normal for object-space triplanar mapping (UV1 / UV2 "Triplanar").
+out vec3 vObjectPosition;
+out vec3 vObjectNormal;
 out vec4 vLightSpacePosition;
 out vec4 vLightSpacePositions[3];
 
@@ -52,6 +55,7 @@ uniform mat4 uNormalMatrix;
 uniform mat4 uViewProjection;
 uniform mat4 uLightSpaceMatrix;
 uniform mat4 uLightSpaceMatrices[3];
+uniform float uShadowMapResolution;
 
 void main() {
 #if defined(UVE_INDIRECT_INSTANCED)
@@ -72,9 +76,20 @@ void main() {
     vWorldTangent = mat3(model) * aTangent.xyz;
     vTangentHandedness = aTangent.w;
     vTexCoord = aTexCoord;
+    vObjectPosition = aPosition;
+    vObjectNormal = aNormal;
     vLightSpacePosition = uLightSpaceMatrix * worldPosition;
+    // Normal offset: each cascade looks up the shadow a texel or so off the surface, along its
+    // normal, so a lit face never shadows itself (no acne) and contact shadows stay attached.
+    vec3 offsetNormal = normalize(mat3(normalMatrix) * aNormal);
     for (int cascadeIndex = 0; cascadeIndex < 3; ++cascadeIndex) {
-        vLightSpacePositions[cascadeIndex] = uLightSpaceMatrices[cascadeIndex] * worldPosition;
+        mat4 lightMatrix = uLightSpaceMatrices[cascadeIndex];
+        float texelWorld = 0.0;
+        float scale = length(vec3(lightMatrix[0][0], lightMatrix[1][0], lightMatrix[2][0]));
+        if (uShadowMapResolution > 1.0 && scale > 1.0e-6) {
+            texelWorld = 2.0 / (scale * uShadowMapResolution);
+        }
+        vLightSpacePositions[cascadeIndex] = lightMatrix * vec4(worldPosition.xyz + offsetNormal * texelWorld * 1.5, 1.0);
     }
     gl_Position = uViewProjection * worldPosition;
 }
@@ -86,6 +101,8 @@ in vec3 vWorldNormal;
 in vec3 vWorldTangent;
 in float vTangentHandedness;
 in vec2 vTexCoord;
+in vec3 vObjectPosition;
+in vec3 vObjectNormal;
 in vec4 vLightSpacePosition;
 in vec4 vLightSpacePositions[3];
 out vec4 FragColor;
@@ -156,6 +173,50 @@ uniform vec3 uUvScale = vec3(1.0, 1.0, 0.0);
 uniform vec3 uUvOffset;
 #else
 uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
+#endif
+// UV2: the mesh's texture coordinates with their own scale and offset (meshes carry one UV set),
+// used by AO and Emission when the material puts them "on UV2". Each set can instead be triplanar:
+// projected along the three axes of the object (or the world) and blended by the normal.
+// uUv*Triplanar: 0 off, 1 object space, 2 world space. Triplanar scale is (x, y, x).
+#if UVE_MOBILE
+uniform vec3 uUv2Scale;
+#else
+uniform vec3 uUv2Scale = vec3(1.0, 1.0, 1.0);
+#endif
+#if UVE_MOBILE
+uniform vec3 uUv2Offset;
+#else
+uniform vec3 uUv2Offset = vec3(0.0, 0.0, 0.0);
+#endif
+#if UVE_MOBILE
+uniform int uUv1Triplanar;
+#else
+uniform int uUv1Triplanar = 0;
+#endif
+#if UVE_MOBILE
+uniform float uUv1TriplanarSharpness;
+#else
+uniform float uUv1TriplanarSharpness = 1.0;
+#endif
+#if UVE_MOBILE
+uniform int uUv2Triplanar;
+#else
+uniform int uUv2Triplanar = 0;
+#endif
+#if UVE_MOBILE
+uniform float uUv2TriplanarSharpness;
+#else
+uniform float uUv2TriplanarSharpness = 1.0;
+#endif
+#if UVE_MOBILE
+uniform int uAoOnUv2;
+#else
+uniform int uAoOnUv2 = 0;
+#endif
+#if UVE_MOBILE
+uniform int uEmissionOnUv2;
+#else
+uniform int uEmissionOnUv2 = 0;
 #endif
 #if UVE_MOBILE
 uniform int uUnshaded;
@@ -464,7 +525,11 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         return 1.0;
     }
 
-    int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
+    // 0 Hard: one look-up. 1 Soft: a rotated 16-tap Poisson disc a few texels wide. 2 Softest: a
+    // blocker search first, so the penumbra widens with the distance from the caster (sharp where
+    // an object touches the ground, soft further away). The disc's rotation comes from the pixel's
+    // screen position, so it is the same every frame: no shimmer.
+    int filterMode = clamp(uShadowPcfKernelRadius, 0, 2);
     vec2 texelSize = cascadeIndex < 0 ? 1.0 / max(vec2(mapSize), vec2(1.0))
                                       : CascadeTexelSizeUVE(cascadeIndex);
     float currentDepth = projected.z;
@@ -472,18 +537,51 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
                      uShadowBias * 0.2);
     float visibleSamples = 0.0;
     int sampleCount = 0;
-
-    for (int offsetY = -2; offsetY <= 2; ++offsetY) {
-        for (int offsetX = -2; offsetX <= 2; ++offsetX) {
-            if (abs(offsetX) > kernelRadius || abs(offsetY) > kernelRadius) {
-                continue;
+    if (filterMode == 0) {
+        float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, projected.xy).r
+                                              : SampleCascadeDepthUVE(cascadeIndex, projected.xy);
+        visibleSamples = currentDepth - bias > sampledDepth ? 0.0 : 1.0;
+        sampleCount = 1;
+    } else {
+        const vec2 poisson[16] = vec2[16](
+            vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725), vec2(-0.09418410, -0.92938870),
+            vec2(0.34495938, 0.29387760), vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
+            vec2(-0.38277543, 0.27676845), vec2(0.97484398, 0.75648379), vec2(0.44323325, -0.97511554),
+            vec2(0.53742981, -0.47373420), vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
+            vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590), vec2(0.19984126, 0.78641367),
+            vec2(0.14383161, -0.14100790));
+        float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        float angle = noise * 6.2831853;
+        mat2 rotation = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+        float radius = 2.0;
+        if (filterMode == 2) {
+            float blockerSum = 0.0;
+            float blockers = 0.0;
+            for (int i = 0; i < 16; i += 2) {
+                vec2 coord = projected.xy + rotation * poisson[i] * texelSize * 6.0;
+                float depth = cascadeIndex < 0 ? texture(uShadowMapTexture, coord).r : SampleCascadeDepthUVE(cascadeIndex, coord);
+                if (depth < currentDepth - bias) {
+                    blockerSum += depth;
+                    blockers += 1.0;
+                }
             }
-            vec2 sampleCoord = projected.xy + vec2(offsetX, offsetY) * texelSize;
+            if (blockers > 0.0) {
+                float blocker = blockerSum / blockers;
+                radius = clamp(1.5 + (currentDepth - blocker) * 900.0, 1.5, 8.0);
+            } else {
+                radius = 1.5;
+            }
+        }
+        for (int i = 0; i < 16; ++i) {
+            vec2 sampleCoord = projected.xy + rotation * poisson[i] * texelSize * radius;
             float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, sampleCoord).r
                                                   : SampleCascadeDepthUVE(cascadeIndex, sampleCoord);
             visibleSamples += currentDepth - bias > sampledDepth ? 0.0 : 1.0;
             ++sampleCount;
         }
+        // A gentler edge: the coverage eased, so the penumbra reads as a gradient, not as steps.
+        float coverage = visibleSamples / float(sampleCount);
+        visibleSamples = smoothstep(0.0, 1.0, coverage) * float(sampleCount);
     }
 
     float factor = mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
@@ -761,9 +859,44 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
 vec4 ComposeFragmentUVE(vec3 color, float alpha) {
     return vec4(uPremultiplyAlpha != 0 ? color * alpha : color, alpha);
 }
+// One UV set: its scale, offset and triplanar mode.
+struct UvSetUVE {
+    vec2 uv;
+    int triplanar;
+    vec3 position;
+    vec3 weights;
+};
+UvSetUVE MakeUvSetUVE(vec3 scale, vec3 offset, int triplanar, float sharpness) {
+    UvSetUVE set;
+    set.triplanar = triplanar;
+    set.uv = vTexCoord * scale.xy + offset.xy;
+    set.position = vec3(0.0);
+    set.weights = vec3(0.0);
+    if (triplanar != 0) {
+        vec3 position = triplanar == 2 ? vWorldPosition : vObjectPosition;
+        vec3 normal = triplanar == 2 ? vWorldNormal : vObjectNormal;
+        set.position = position * vec3(scale.x, scale.y, scale.x) + offset;
+        vec3 weights = pow(abs(normal), vec3(max(sharpness, 0.001)));
+        set.weights = weights / max(dot(weights, vec3(1.0)), 0.00001);
+    }
+    return set;
+}
+vec4 SampleUvSetUVE(sampler2D map, UvSetUVE set) {
+    if (set.triplanar == 0) {
+        return texture(map, set.uv);
+    }
+    // Godot's triplanar: the three planar projections, each weighted by how much the surface faces it.
+    vec4 samples = vec4(0.0);
+    samples += texture(map, set.position.zy * vec2(1.0, -1.0)) * set.weights.x;
+    samples += texture(map, set.position.xz) * set.weights.y;
+    samples += texture(map, set.position.xy * vec2(1.0, -1.0)) * set.weights.z;
+    return samples;
+}
 void main() {
-    vec2 uv = vTexCoord * uUvScale.xy + uUvOffset.xy;
-    vec4 albedoSample = texture(uAlbedoTexture, uv);
+    UvSetUVE uv1 = MakeUvSetUVE(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
+    UvSetUVE uv2 = MakeUvSetUVE(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
+    vec2 uv = uv1.uv;
+    vec4 albedoSample = SampleUvSetUVE(uAlbedoTexture, uv1);
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
@@ -782,7 +915,7 @@ void main() {
         FragColor = ComposeFragmentUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
         return;
     }
-    float ambientOcclusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    float ambientOcclusion = mix(1.0, SampleUvSetUVE(uAOTexture, uAoOnUv2 != 0 ? uv2 : uv1).r, clamp(uOcclusionStrength, 0.0, 1.0));
     vec3 normal = SafeNormalizeUVE(vWorldNormal);
     // A few legacy/direct RHI callers do not provide a usable normal attribute. Keep those
     // materials lit instead of allowing a zero vector to poison the tangent frame and BRDF.
@@ -797,7 +930,7 @@ void main() {
     tangent = SafeNormalizeUVE(tangent);
     vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
     bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-    vec3 tangentSpaceNormal = texture(uNormalTexture, uv).xyz * 2.0 - 1.0;
+    vec3 tangentSpaceNormal = SampleUvSetUVE(uNormalTexture, uv1).xyz * 2.0 - 1.0;
     tangentSpaceNormal.xy *= uNormalScale;
     normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
 
@@ -818,7 +951,7 @@ void main() {
         albedo = vec3(0.82);
     }
 
-    vec3 metallicRoughnessSample = texture(uMetallicRoughnessTexture, uv).rgb;
+    vec3 metallicRoughnessSample = SampleUvSetUVE(uMetallicRoughnessTexture, uv1).rgb;
     float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
     float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
     // Ambient, split into diffuse and specular exactly as the direct term is.
@@ -865,7 +998,7 @@ void main() {
     // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
     // does not stop reflecting light in a way the sky can reach either.
     vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion +
-                    uEmissiveColor * max(uEmissiveEnergy, 0.0) * texture(uEmissiveTexture, uv).rgb;
+                    uEmissiveColor * max(uEmissiveEnergy, 0.0) * SampleUvSetUVE(uEmissiveTexture, uEmissionOnUv2 != 0 ? uv2 : uv1).rgb;
 
     for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
         LightUVE light = uLights[lightIndex];

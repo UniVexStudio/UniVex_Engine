@@ -73,6 +73,9 @@ void main() {
     vec3 colour = mix(uFloor, uLine, max(major, minor));
     float fog = smoothstep(uRadius * uFadeStart, uRadius, length(vFloor));
     fragColor = vec4(colour, 1.0 - fog);
+    // The floor is backdrop, not geometry: it shows only where nothing of the entity is drawn, so a
+    // mesh that reaches below y = 0 is never cut off by it and never flickers against it.
+    gl_FragDepth = 1.0;
 }
 )GLSL";
 

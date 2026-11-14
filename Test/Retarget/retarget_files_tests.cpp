@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -47,7 +48,7 @@ TEST(RetargetFilesUVETest, RetargetFilesUVE_ConformsTheModelAndEveryAnimationInP
     const RetargetFilesResultUVE result = RetargetFilesUVE(fixture.request, GetHumanoidReferenceUVE(),
                                                            [&steps](std::size_t, std::size_t, const std::string& what) { steps.push_back(what); });
     ASSERT_TRUE(result.ok) << result.error;
-    ASSERT_EQ(result.files.size(), 3U);
+    ASSERT_EQ(result.files.size(), 4U) << "the model, its skeleton and the two animations";
     for (const RetargetFileReportUVE& file : result.files) {
         EXPECT_TRUE(file.changed) << file.file << ": " << file.note;
     }
@@ -59,12 +60,23 @@ TEST(RetargetFilesUVETest, RetargetFilesUVE_ConformsTheModelAndEveryAnimationInP
     for ([[maybe_unused]] const fs::directory_entry& entry : fs::directory_iterator(fixture.dir)) {
         ++entries;
     }
-    EXPECT_EQ(entries, 4U);
+    EXPECT_EQ(entries, 5U) << "the two animations, the model, its skeleton (resting in the A-pose) and the backup folder";
 
     Asset::MeshAssetUVE mesh;
     ASSERT_TRUE(Asset::LoadMeshAssetUVE(fixture.request.model, mesh));
     ASSERT_TRUE(Asset::IsMeshSkinningDataValidUVE(mesh));
-    EXPECT_EQ(mesh.joints.size(), GetHumanoidReferenceUVE().skeleton.bones.size() + 1U);
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    EXPECT_EQ(mesh.joints.size(),
+              static_cast<std::size_t>(std::ranges::count_if(reference.info, [](const HumanoidBoneInfoUVE& info) { return !info.optional; })) + 1U);
+    // The character keeps its own rest pose: not one vertex moved.
+    const Asset::MeshAssetUVE original = MakeMeshUVE(fixture.rig);
+    ASSERT_EQ(mesh.vertices.size(), original.vertices.size());
+    for (std::size_t vertex = 0U; vertex < mesh.vertices.size(); ++vertex) {
+        EXPECT_EQ(mesh.vertices[vertex].position.x, original.vertices[vertex].position.x);
+        EXPECT_EQ(mesh.vertices[vertex].position.y, original.vertices[vertex].position.y);
+        EXPECT_EQ(mesh.vertices[vertex].position.z, original.vertices[vertex].position.z);
+    }
+    EXPECT_EQ(result.meshDistortion.maximumEdgeChange, 0.0F);
     EXPECT_EQ(mesh.joints[1].name, "Hips");
 
     for (const fs::path& path : fixture.request.animations) {
@@ -87,7 +99,7 @@ TEST(RetargetFilesUVETest, RetargetFilesUVE_ConformsTheMeshNodesPublishedBesideT
     ASSERT_TRUE(Asset::SaveMeshAssetUVE(MakeMeshUVE(fixture.rig), joints));
     const RetargetFilesResultUVE result = RetargetFilesUVE(fixture.request, GetHumanoidReferenceUVE(), {});
     ASSERT_TRUE(result.ok) << result.error;
-    ASSERT_EQ(result.files.size(), 5U) << "the model, its two mesh nodes and the two animations";
+    ASSERT_EQ(result.files.size(), 6U) << "the model, its skeleton, its two mesh nodes and the two animations";
     Asset::MeshAssetUVE model;
     ASSERT_TRUE(Asset::LoadMeshAssetUVE(fixture.request.model, model));
     for (const fs::path& path : {body, joints}) {
@@ -131,12 +143,13 @@ TEST(RetargetFilesUVETest, RetargetFilesUVE_LeavesAnimationsItCannotConformAlone
 
     const RetargetFilesResultUVE result = RetargetFilesUVE(fixture.request, GetHumanoidReferenceUVE());
     ASSERT_TRUE(result.ok) << result.error;
-    ASSERT_EQ(result.files.size(), 4U);
-    EXPECT_TRUE(result.files[1].changed);
-    EXPECT_FALSE(result.files[2].changed);
-    EXPECT_NE(result.files[2].note.find("no skeleton"), std::string::npos) << result.files[2].note;
+    ASSERT_EQ(result.files.size(), 5U);
+    EXPECT_TRUE(result.files[1].changed) << "the skeleton";
+    EXPECT_TRUE(result.files[2].changed);
     EXPECT_FALSE(result.files[3].changed);
-    EXPECT_NE(result.files[3].note.find("already conformed"), std::string::npos) << result.files[3].note;
+    EXPECT_NE(result.files[3].note.find("no skeleton"), std::string::npos) << result.files[3].note;
+    EXPECT_FALSE(result.files[4].changed);
+    EXPECT_NE(result.files[4].note.find("already conformed"), std::string::npos) << result.files[4].note;
     EXPECT_EQ(ReadAllUVE(fixture.request.animations[1]), walkBefore);
 }
 

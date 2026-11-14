@@ -16,7 +16,7 @@ class IEntityManagerUVE;
 /// A VisibilityRegion3D: an authored axis-aligned box (halfExtents around the object's world
 /// position) that owns the interior culling verdict for the meshes inside it - Godot has no
 /// built-in equivalent at all (Godot's VisibilityNotifier3D only says whether a box is on
-/// screen; Unreal's Precomputed Visibility Volume solves the same problem but needs an offline
+/// screen; the standard Precomputed Visibility Volume solves the same problem but needs an offline
 /// cook). This one is live and evaluated every tick.
 ///
 /// Semantics: the engine computes `active` each tick - true while at least one viewer (the

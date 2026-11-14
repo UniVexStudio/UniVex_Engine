@@ -4634,7 +4634,7 @@ TEST(EditorUVETest, PlayModeSandbox_InstantiatesDefaultPlayerAndUsesItsCamera) {
 }
 
 TEST(EditorUVETest, ViewportBookmarks_StoreRestoreClearAndRejectBadInput) {
-    // The session bookmark store itself: Unreal's Ctrl+digit/digit slots as editor-owned
+    // The session bookmark store itself: the standard Ctrl+digit/digit slots as editor-owned
     // transient state - isolated per slot, validated on the way in, honest about what is not
     // inside it (no document coupling, no scene dirty flag touched).
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());

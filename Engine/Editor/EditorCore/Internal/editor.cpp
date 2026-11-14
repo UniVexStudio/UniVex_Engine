@@ -1,23 +1,29 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include "montage_player_component.h"
+#include "shell/editor_shell.h"
+#include "shell/widget/editor_widget_icons.h"
+#include "logging_macros.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
+#include "montage_library_asset.h"
 #include "fbx_mesh_converter.h"
 #include "gltf_metadata.h"
 #include "editor.h"
+#include "editor_entity_thumbnail.h"
+#include "model_animations.h"
+
+#include "animation_graph_editing.h"
 #include "editor_settings.h"
 #include "editor_settings_binding.h"
 #include "editor_render_stats.h"
 #include "trs.h"
 
-#include "editor_chrome_layout.h"
 #include "editor_entity_label.h"
 #include "editor_text_search.h"
-#include "editor_fonts.h"
-#include "editor_object_icons.h"
-#include "editor_theme.h"
 #include <algorithm>
 #include <chrono>
+#include <unordered_map>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -43,13 +49,14 @@
 #include <vector>
 
 #include <GLFW/glfw3.h>
-#include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_opengl3.h>
 
 #include "bmp_metadata.h"
 #include "jpeg_metadata.h"
 #include "mesh_asset.h"
+#include "matrix4x4.h"
+#include "retarget_humanoid.h"
+#include "skeleton_asset.h"
+#include "mesh_skinning.h"
 #include "material_asset.h"
 #include "shader_asset.h"
 #include "png_metadata.h"
@@ -82,6 +89,11 @@
 #include "primitive_mesh_component.h"
 #include "prefab_instance_component.h"
 #include "script_component.h"
+#include "ui_button_component.h"
+#include "canvas_component.h"
+#include "ui_text_component.h"
+#include "widget_blueprint_asset.h"
+#include "blueprint_asset.h"
 #include "visibility_component.h"
 #include "world_transform_component.h"
 
@@ -90,51 +102,11 @@ namespace UVE::Editor {
 namespace {
 
 constexpr float kVectorEpsilonUVE = 0.00001F;
+/// The bottom dock's default height (Default Layout puts it back).
+constexpr float kAssetsPanelHeightUVE = 192.0F;
+/// The longest name the editor lets an object have (bytes).
+constexpr std::size_t kMaximumEditorEntityNameBytesUVE = 96U;
 constexpr float kMinimumLocalScaleUVE = 0.001F;
-
-// Subsetted Liberation Sans Regular (SIL OFL 1.1 licensed; see
-// engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md), the editor's main UI text font - replaces
-// ImGui::AddFontDefault()'s built-in low-resolution bitmap font with a real, legible sans-serif.
-#include "uve_ui_font_bytes.inc"
-
-// Subsetted Tabler Icons glyphs (MIT licensed; see
-// engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md) merged into the default ImGui font. These
-// back the menu bar and dock-panel titles below: ImGui::BeginMenu()/ImGui::Begin() only accept a
-// plain text label, so an inline ImGui::Image() glyph is not an option there the way it is for the
-// editor's existing RGBA-texture ImageButton icons (gizmo modes, Snap, object/component add popups).
-#include "uve_icon_font_bytes.inc"
-
-// Subsetted Liberation Mono Regular (SIL OFL 1.1 licensed; see
-// engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md) - a separate, non-merged font applied only to
-// the Inspector's numeric Transform fields, matching a design mockup's own use of a monospace font
-// for numeric values. Not merged into the main UI font's glyph atlas since it's selected per-widget
-// via ImGui::PushFont()/PopFont(), not blended into every string the main font already renders.
-#include "uve_mono_font_bytes.inc"
-
-constexpr float kUiFontSizePixelsUVE = 14.0F;
-
-
-constexpr ImWchar kIconFontGlyphRangesUVE[] = {
-    0xEA03, 0xEA03, // Inspector (adjustments)
-    0xEA45, 0xEA45, // Assets (box)
-    0xEA54, 0xEA54, // Viewport (camera)
-    0xEA98, 0xEA98, // Edit
-    0xEAA4, 0xEAA4, // File
-    0xEAAD, 0xEAAD, // Filesystem (folder)
-    0xEB2E, 0xEB2E, // Favorites (star)
-    0xEBD9, 0xEBD9, // Plugin
-    0xEDBA, 0xEDBA, // Window (layout-grid)
-    0xF91D, 0xF91D, // Help (help-circle)
-    0xFA97, 0xFA97, // GameObject (cube)
-    0xFAF7, 0xFAF7, // Contents (folder-open)
-    0xFAFA, 0xFAFA, // Scene (list-tree)
-    0,
-};
-
-// Full menu/panel labels, icon glyph baked in: ImGui::BeginMenu()/Begin() take a single string
-// literal-shaped argument, so these can't be built from a separate icon constant concatenated at
-// the call site the way adjacent string literals can (kMenuIconFileUVE is a runtime const char*,
-// not a literal token, so " File" adjacency wouldn't compile).
 
 [[nodiscard]] Math::Vector3UVE PrimitiveColliderHalfExtentsUVE(const Scene::PrimitiveMeshKindUVE kind) noexcept {
     // Sourced from the object policies rather than restated here. These half-extents are the same
@@ -177,15 +149,7 @@ void FitColliderToPrimitiveKindUVE(Scene::ColliderComponentUVE& collider,
         collider.radius = halfExtents.x;
     }
 }
-constexpr float kGizmoAxisLengthUVE = 1.25F;
-constexpr float kGizmoHandleRadiusPixelsUVE = 12.0F;
-constexpr float kTrackballRadiusPixelsUVE = 42.0F;
-constexpr float kTrackballAntipodalDotThresholdUVE = -0.999F;
-constexpr float kBottomDockTabHeightUVE = 24.0F;
-// Shrunk from 30 now that this row also hosts the Play/Pause/Stop transport buttons (moved out of
-// the old menu row) alongside the Scene/Scripting/Game workspace tabs, decluttering both rows
-// instead of leaving a tall strip that only ever held two small tab buttons.
-constexpr float kEditorViewportToolCanvasHeightUVE = 30.0F;
+
 /// Square resolution rendered for each Content Browser mesh thumbnail (see
 /// EditorUVE::GetMeshThumbnailUVE). Matches the content-type badge icons' own baked resolution
 /// (uve_content_type_icon_bytes.inc) - plenty of detail at the grid card's much smaller display
@@ -196,16 +160,7 @@ constexpr int kMeshThumbnailSizeUVE = 128;
 /// extra resolution is free 2x2 supersampling (and 4x4 in a 64 px tile), which a preview sphere's
 /// curved silhouette needs - a 1:1 render shows a stair-stepped edge on every card.
 constexpr int kMaterialThumbnailSizeUVE = 256;
-constexpr float kScriptCanvasLongPressThresholdSecondsUVE = 0.55F;
-constexpr float kScriptCanvasLongPressMaxMovementPixelsUVE = 8.0F;
-constexpr float kMinimumViewportDistanceUVE = 0.5F;
-constexpr float kMaximumViewportDistanceUVE = 500.0F;
-constexpr float kMaximumViewportPitchRadiansUVE = 1.4835299F; // 85 degrees.
-constexpr float kViewportOrbitRadiansPerPixelUVE = 0.008F;
-constexpr float kViewportZoomExponentPerWheelUnitUVE = 0.16F;
-constexpr float kViewportNavigationRadiusPixelsUVE = 32.0F;
-constexpr float kViewportNavigationHitRadiusPixelsUVE = 16.0F;
-constexpr float kViewportNavigationPlateRadiusPixelsUVE = 47.0F;
+
 constexpr float kMinimum2DCanvasZoomUVE = 0.10F;
 constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
 
@@ -214,8 +169,6 @@ constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
 // values at 1280, and the clamps keep both sensible on very small and very large windows. Narrower
 // than the previous 0.19/0.22 (243/281 at 1280) so the center viewport - the primary workspace -
 // keeps the majority of the width instead of being squeezed by the side panels.
-
-
 
 [[nodiscard]] bool IsWhitespaceOnlyUVE(const std::string_view value) noexcept {
     return std::all_of(value.begin(), value.end(), [](const char character) noexcept {
@@ -275,17 +228,7 @@ bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
     return Kind::Object3D;
 }
 
-} // namespace
-
-// Set once in InitUVE() after the atlas is built; has static storage duration for the life of the
-// process like the byte arrays above, so no lifetime/ownership tracking is needed beyond that.
-// A plain file-scope pointer (not a class member) keeps ImFont out of editor_uve.h, matching that
-// header's "no Dear ImGui type in this public interface" design.
-//
-// At namespace scope rather than in the anonymous namespace above, because the inspector panel
-// moved to its own translation unit and reads it. Declared in editor_fonts_uve.h - an INTERNAL
-// header, so the imgui type stays inside this library rather than reaching public consumers.
-ImFont* g_monoFontUVE = nullptr;
+}
 
 EditorUVE::EditorUVE(Core::EngineServicesUVE& services, std::filesystem::path activeScenePath,
                      const std::size_t historyCapacity, Core::ISimulationControlUVE* const simulationControl)
@@ -293,7 +236,6 @@ EditorUVE::EditorUVE(Core::EngineServicesUVE& services, std::filesystem::path ac
       m_simulationControl(simulationControl),
       m_activeScenePath(std::move(activeScenePath)),
       m_historyCapacity(std::max<std::size_t>(std::size_t{1U}, historyCapacity)) {
-    RegisterBuiltInInspectorDrawersUVE();
     if (!RegisterEditorSettingsUVE(m_settingsRegistry)) {
         throw std::logic_error("Failed to register the editor settings.");
     }
@@ -304,87 +246,37 @@ EditorUVE::~EditorUVE() {
     ShutdownUVE();
 }
 
+void EditorUVE::SetPrismUiEnabledUVE(const bool enabled, std::filesystem::path assetDir) {
+    m_prismUiRequested = enabled;
+    m_prismAssetDir = std::move(assetDir);
+}
+
+bool EditorUVE::SavePrismScreenshotUVE(const std::filesystem::path& path) {
+    return m_levelShell != nullptr && m_levelShell->SaveScreenshotUVE(path);
+}
+
 void EditorUVE::InitUVE() {
     if (m_state != EditorStateUVE::Uninitialized) {
         return;
     }
 
     Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
-    if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        // Viewports (multi-window), but deliberately NOT docking. A window may live in its own OS
-        // window - the Entity Editor does - and those extra windows share the main GL context's
-        // objects, so the viewport texture shows in them too.
-        //
-        // Docking is off because it laid a second layout over this editor's own: panels grew dock
-        // tabs and close buttons on top of headers that already named them, the bottom dock was cut
-        // from the screen edge rather than the editor frame, and imgui.ini remembered positions that
-        // then beat the computed ones. The editor's panels are regions of one fixed frame, so the
-        // frame computes them and nothing else is allowed to move them.
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-        ImGui::GetIO().ConfigViewportsNoDecoration = false;
-        // A NEW ini name, not a rename in place. The old imgui.ini still holds dock node ids and
-        // floating rects from the docking build, and ImGui would happily apply them to windows that
-        // no longer dock. Pointing at a fresh file means the first run after this change starts
-        // from the computed layout, and the old file is simply never read again.
-        ImGui::GetIO().IniFilename = "uve_editor_layout.ini";
-        ImGui::StyleColorsDark();
-        ApplyEditorVisualThemeUVE(&m_extendedPreferences);
-
-        // Font setup must happen before ImGui_ImplOpenGL3_Init() below: that call builds and
-        // uploads the font atlas texture immediately, so any fonts merged in afterward would be
-        // silently missing from what actually gets rendered.
-        ImGuiIO& io = ImGui::GetIO();
-        ImFontConfig uiFontConfig{};
-        // Same "static storage duration for the life of the process" reasoning as the icon font
-        // below - the .inc byte array must outlive the atlas and must not be freed by it.
-        uiFontConfig.FontDataOwnedByAtlas = false;
-        uiFontConfig.OversampleH = 3;
-        uiFontConfig.OversampleV = 1;
-        uiFontConfig.PixelSnapH = false;
-        io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_ui_font_ttf_bytes.data()),
-                                       static_cast<int>(uve_ui_font_ttf_bytes.size()),
-                                       kUiFontSizePixelsUVE, &uiFontConfig);
-        ImFontConfig iconFontConfig{};
-        iconFontConfig.MergeMode = true;
-        iconFontConfig.PixelSnapH = true;
-        // The .inc byte array has static storage duration for the life of the process; ImGui must
-        // not take ownership and free() it via its own allocator.
-        iconFontConfig.FontDataOwnedByAtlas = false;
-        io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_icon_font_ttf_bytes.data()),
-                                       static_cast<int>(uve_icon_font_ttf_bytes.size()), 0.0F,
-                                       &iconFontConfig, kIconFontGlyphRangesUVE);
-
-        ImFontConfig monoFontConfig{};
-        // Same "static storage duration for the life of the process" reasoning as the other two
-        // fonts above - the .inc byte array must outlive the atlas and must not be freed by it.
-        monoFontConfig.FontDataOwnedByAtlas = false;
-        monoFontConfig.OversampleH = 3;
-        monoFontConfig.OversampleV = 1;
-        monoFontConfig.PixelSnapH = false;
-        g_monoFontUVE = io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_mono_font_ttf_bytes.data()),
-                                                        static_cast<int>(uve_mono_font_ttf_bytes.size()),
-                                                        kUiFontSizePixelsUVE, &monoFontConfig);
-
-        auto* const nativeWindow = static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE());
-        // Install the backend's chained GLFW callbacks so the interactive overlay receives cursor
-        // and pointer-button events while WindowManagerUVE's existing close/resize/focus callbacks
-        // remain active. Engine input remains a separate service-level abstraction; overlay clicks
-        // consume ImGui pointer state and never leak into runtime action mappings.
-        const bool glfwInitialized = ImGui_ImplGlfw_InitForOpenGL(nativeWindow, true);
-        const bool openglInitialized = glfwInitialized && ImGui_ImplOpenGL3_Init("#version 450 core");
-        if (openglInitialized) {
-            static_cast<void>(m_uiAssets.InitializeUVE());
-            m_meshThumbnailRenderer.InitializeUVE();
-            m_materialThumbnailRenderer.InitializeUVE();
-            m_uiInitialized = true;
+    if (m_prismUiRequested && windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
+        // The level editor is PRISM's.
+        auto shell = std::make_unique<EditorShellUVE>(*this);
+        if (shell->InitializeUVE(static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()),
+                                 m_prismAssetDir)) {
+            m_levelShell = std::move(shell);
         } else {
-            if (glfwInitialized) {
-                ImGui_ImplGlfw_Shutdown();
-            }
-            ImGui::DestroyContext();
+            UVE_ERROR("EditorUVE: the PRISM editor UI could not start (assets: {})", m_prismAssetDir.string());
         }
+    }
+    // The editor's own UI assets and thumbnail renderers need the window's GL context.
+    if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
+        static_cast<void>(m_uiAssets.InitializeUVE());
+        m_meshThumbnailRenderer.InitializeUVE();
+        m_materialThumbnailRenderer.InitializeUVE();
+        m_uiInitialized = true;
     }
 
     m_state = EditorStateUVE::Running;
@@ -394,7 +286,7 @@ void EditorUVE::InitUVE() {
     // is trying to author around, and a level that starts shuffling under gravity the moment it is
     // opened cannot be placed in: a Rigid3D spawned above the ground is on the floor before the
     // next frame, with no snapshot to put it back and no undo entry that owns a simulation-driven
-    // transform. Unreal reaches the same place from the other direction - its physics ticks with a
+    // transform. Other engines reach the same place from the other direction - its physics ticks with a
     // zero delta in edit mode, so nothing integrates - and this is that answer stated plainly.
     // Play sets Running (EnterPlayModeUVE) and stopping Play restores this frozen state
     // (StopPlayModeUVE), so the only way simulation runs is when the author asked for it.
@@ -424,6 +316,11 @@ void EditorUVE::TickUVE() {
         RefreshProjectFileIndexUVE();
     }
     PollModelImportJobsUVE();
+    // Behind the loading screen nothing else is drawn, so the takes get most of the frame.
+    ProcessPendingModelAnimationImportsUVE(m_startupLoading ? 0.12 : 0.025);
+    if (m_startupLoading) {
+        UpdateStartupLoadingUVE();
+    }
 
     PruneSelectionUVE();
     if (m_hierarchyRenameEntity != Scene::kInvalidEntityUVE &&
@@ -445,7 +342,7 @@ void EditorUVE::TickUVE() {
 
 bool EditorUVE::EnterPlayModeUVE() {
     // The document is an entity while the Entity Editor is open; the scene plays, not it.
-    if (m_entityEditSession.has_value() || m_retargetPreview.has_value()) {
+    if (m_entityDocumentActive) {
         return false;
     }
     // A colour still being picked belongs to the document being played; finish it first.
@@ -627,77 +524,6 @@ void EditorUVE::BeginEditorPlayBootSplashUVE() {
         m_playBootSplashActive = false;
         m_playBootSplashImagePath.clear();
     }
-}
-
-void EditorUVE::DrawEditorPlayBootSplashOverlayUVE(const Math::Vector2UVE imageOrigin,
-                                                    const Math::Vector2UVE imageSize) {
-    if (!m_playBootSplashActive || m_playModeState == EditorPlayModeStateUVE::Edit || m_services == nullptr ||
-        imageSize.x <= 0.0F || imageSize.y <= 0.0F) {
-        return;
-    }
-
-    const double elapsed =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - m_playBootSplashStart).count();
-    const double minimum = m_playBootSplashMinimumSeconds;
-    if (m_playBootSplashSkippable &&
-        m_services->GetInputSystemUVE().WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Escape)) {
-        m_playBootSplashSkipRequested = true;
-    }
-    if (m_playBootSplashSkippable && m_playBootSplashSkipRequested && elapsed >= minimum) {
-        m_playBootSplashActive = false;
-        return;
-    }
-
-    const double holdEnd = std::max(m_playBootSplashFadeSeconds, minimum);
-    if (elapsed >= holdEnd + m_playBootSplashFadeSeconds) {
-        m_playBootSplashActive = false;
-        return;
-    }
-    double opacity = 1.0;
-    if (m_playBootSplashFadeSeconds > 0.0 && elapsed < m_playBootSplashFadeSeconds) {
-        opacity = elapsed / m_playBootSplashFadeSeconds;
-    } else if (m_playBootSplashFadeSeconds > 0.0 && elapsed >= holdEnd) {
-        opacity = 1.0 - (elapsed - holdEnd) / m_playBootSplashFadeSeconds;
-    }
-    const float clampedOpacity = static_cast<float>(std::clamp(opacity, 0.0, 1.0));
-    ImDrawList* const drawList = ImGui::GetWindowDrawList();
-    const ImVec2 min{imageOrigin.x, imageOrigin.y};
-    const ImVec2 max{imageOrigin.x + imageSize.x, imageOrigin.y + imageSize.y};
-    const ImVec4 backgroundColor{m_playBootSplashBackground[0], m_playBootSplashBackground[1],
-                                 m_playBootSplashBackground[2],
-                                 m_playBootSplashBackground[3] * clampedOpacity};
-    drawList->AddRectFilled(min, max, ImGui::ColorConvertFloat4ToU32(backgroundColor));
-
-    const char* const title = "UniVex Runtime";
-    const ImVec2 titleSize = ImGui::CalcTextSize(title);
-    float titleY = imageOrigin.y + (imageSize.y - titleSize.y) * 0.5F;
-    if (!m_playBootSplashImagePath.empty()) {
-        const std::uintptr_t textureId = GetTextureThumbnailUVE(m_playBootSplashImagePath);
-        if (textureId != 0U) {
-            const float aspectRatio = m_playBootSplashImageDimensions.x > 0.0F &&
-                                              m_playBootSplashImageDimensions.y > 0.0F
-                                          ? m_playBootSplashImageDimensions.x / m_playBootSplashImageDimensions.y
-                                          : 1.6F;
-            const float maxWidth = imageSize.x * 0.62F;
-            const float maxHeight = imageSize.y * 0.52F;
-            float logoWidth = maxWidth;
-            float logoHeight = maxWidth / aspectRatio;
-            if (logoHeight > maxHeight) {
-                logoHeight = maxHeight;
-                logoWidth = maxHeight * aspectRatio;
-            }
-            const float logoLeft = imageOrigin.x + (imageSize.x - logoWidth) * 0.5F;
-            const float logoTop = imageOrigin.y + imageSize.y * 0.34F - logoHeight * 0.5F;
-            const ImVec4 imageTint{1.0F, 1.0F, 1.0F, clampedOpacity};
-            drawList->AddImage(static_cast<ImTextureID>(textureId), ImVec2{logoLeft, logoTop},
-                               ImVec2{logoLeft + logoWidth, logoTop + logoHeight}, ImVec2{0.0F, 0.0F},
-                               ImVec2{1.0F, 1.0F}, ImGui::ColorConvertFloat4ToU32(imageTint));
-            titleY = logoTop + logoHeight + 22.0F;
-        }
-    }
-    const ImVec2 titlePosition{imageOrigin.x + (imageSize.x - titleSize.x) * 0.5F, titleY};
-    const ImVec4 titleColor{1.0F, 1.0F, 1.0F, clampedOpacity};
-    drawList->AddText(titlePosition, ImGui::ColorConvertFloat4ToU32(titleColor), title);
 }
 
 bool EditorUVE::ApplyPlayEntrySpawnUVE() {
@@ -908,6 +734,7 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
         return;
     }
     m_gameMouseCaptured = captured;
+    UVE_INFO("Editor: {}", captured ? "the game holds the mouse (Esc releases it)" : "the mouse is the editor's again");
     if (m_services == nullptr) {
         return;
     }
@@ -921,6 +748,8 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
     }
     if (captured) {
         glfwSetInputMode(nativeWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        // A quick Escape is kept until the editor looks, so letting go of the mouse never misses it.
+        glfwSetInputMode(nativeWindow, GLFW_STICKY_KEYS, GLFW_TRUE);
         if (glfwRawMouseMotionSupported()) {
             glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
@@ -932,11 +761,9 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
     }
 }
 
-
-
 bool EditorUVE::SaveSceneUVE() {
     // While the Entity Editor is open the document is the entity: saving writes the entity.
-    if (m_entityEditSession.has_value()) {
+    if (m_entityDocumentActive) {
         return SaveEntityEditorUVE();
     }
     if (!IsAuthoringCommandAllowedUVE() || m_activeScenePath.empty()) {
@@ -955,11 +782,31 @@ bool EditorUVE::SaveSceneUVE() {
 std::size_t EditorUVE::SaveAllUVE() {
     std::size_t saved = 0U;
     std::vector<std::string> failed;
-    if (m_sceneDirty && (!m_activeScenePath.empty() || m_entityEditSession.has_value())) {
+    if (m_sceneDirty && (!m_activeScenePath.empty() || m_entityDocumentActive)) {
         if (SaveSceneUVE()) {
             ++saved;
         } else {
-            failed.emplace_back(m_activeScenePath.filename().string());
+            failed.emplace_back(m_entityDocumentActive ? GetEntityEditorAssetPathUVE().filename().string()
+                                                       : m_activeScenePath.filename().string());
+        }
+    }
+    // The other document (the open entity while the level is active, or the level from the entity).
+    if (m_entityEditSession.has_value() && m_otherDocument.sceneDirty) {
+        const bool otherIsEntity = !m_entityDocumentActive;
+        const bool ok = otherIsEntity ? SaveEntityEditorUVE() : [this] {
+            // Leave the entity's scope for the level's save.
+            SwapDocumentStateUVE();
+            m_entityDocumentActive = false;
+            const bool levelSaved = !m_activeScenePath.empty() && SaveSceneUVE();
+            m_entityDocumentActive = true;
+            SwapDocumentStateUVE();
+            return levelSaved;
+        }();
+        if (ok) {
+            ++saved;
+        } else {
+            failed.emplace_back(otherIsEntity ? GetEntityEditorAssetPathUVE().filename().string()
+                                              : m_activeScenePath.filename().string());
         }
     }
     if (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE()) {
@@ -1008,13 +855,6 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
     std::error_code error;
     if (item == nullptr || !IsAuthoringCommandAllowedUVE() || directory.empty() ||
         !std::filesystem::is_directory(directory, error)) {
-        return std::nullopt;
-    }
-
-    // The Montage asks before it makes anything, so it makes nothing here: the body picked in its
-    // window is what gets written (OpenMontageBodyUVE). A file from this call would be a body chosen
-    // for the author.
-    if (item->action == ContentCatalogueActionUVE::Montage) {
         return std::nullopt;
     }
 
@@ -1097,6 +937,28 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         return saved ? std::optional<std::filesystem::path>{path} : std::nullopt;
     }
 
+    if (item->action == ContentCatalogueActionUVE::MontageAsset) {
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvmontage");
+        if (!Asset::SaveAnimationMontageAssetUVE(Asset::AnimationMontageAssetUVE{}, path)) {
+            return std::nullopt;
+        }
+        static_cast<void>(m_services->GetAssetDatabaseUVE().RegisterUVE(path));
+        return path;
+    }
+
+    if (item->action == ContentCatalogueActionUVE::MontageLibraryAsset) {
+        const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
+        const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvmontagelib");
+        Asset::MontageLibraryAssetUVE library;
+        library.libraryId = path.stem().generic_string().empty() ? std::string{"montages"} : path.stem().generic_string();
+        if (!Asset::SaveMontageLibraryAssetUVE(library, path)) {
+            return std::nullopt;
+        }
+        static_cast<void>(m_services->GetAssetDatabaseUVE().RegisterUVE(path));
+        return path;
+    }
+
     if (item->action == ContentCatalogueActionUVE::LibraryAsset) {
         const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
         const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvanimlib");
@@ -1159,6 +1021,111 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
     return path;
 }
 
+std::optional<std::filesystem::path> EditorUVE::CreateWidgetBlueprintAssetUVE(const std::filesystem::path& directory,
+                                                                             const std::string_view stem) {
+    if (!IsAuthoringCommandAllowedUVE()) {
+        return std::nullopt;
+    }
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvwbp");
+    // The script slot names the file as the engine reads it: relative to the project root.
+    std::string projectPath;
+    if (const std::filesystem::path probe = m_services->GetFileSystemUVE().ResolveRealPathUVE("uve_root_probe"); !probe.empty()) {
+        const std::filesystem::path root = std::filesystem::weakly_canonical(probe.parent_path(), error);
+        const std::filesystem::path relative = std::filesystem::weakly_canonical(path, error).lexically_relative(root);
+        if (!relative.empty() && *relative.begin() != "..") {
+            projectPath = relative.generic_string();
+        }
+    }
+    if (projectPath.empty()) {
+        const std::filesystem::path content = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        const std::filesystem::path relative = path.lexically_relative(content.parent_path());
+        projectPath = relative.empty() || *relative.begin() == ".." ? path.filename().generic_string() : relative.generic_string();
+    }
+
+    // Built in the live entity manager, saved and destroyed again here, like a catalogue item.
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const Scene::EntityUVE root = CreateSceneObjectEntityInternalUVE(Scene::Objects::SceneObjectKindUVE::Canvas);
+    if (root == Scene::kInvalidEntityUVE) {
+        return std::nullopt;
+    }
+    const auto make = [&](const Scene::Objects::SceneObjectKindUVE kind, const std::string& name, const Scene::EntityUVE parent) {
+        const Scene::EntityUVE entity = CreateSceneObjectEntityInternalUVE(kind);
+        if (entity != Scene::kInvalidEntityUVE) {
+            entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name = name;
+            sceneGraph.SetParentUVE(entityManager, entity, parent);
+        }
+        return entity;
+    };
+    entityManager.GetComponentUVE<Scene::NameComponentUVE>(root).name = path.stem().string();
+    if (entityManager.HasComponentUVE<Scene::CanvasComponentUVE>(root)) {
+        // Laid out on this device's screen, fitted to whatever screen it is shown on.
+        entityManager.GetComponentUVE<Scene::CanvasComponentUVE>(root).scaleWithScreen = true;
+    }
+    Scene::ScriptComponentUVE script;
+    script.scriptAssetPath = projectPath;
+    if (entityManager.HasComponentUVE<Scene::ScriptComponentUVE>(root)) {
+        entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(root) = script;
+    } else {
+        entityManager.AddComponentUVE<Scene::ScriptComponentUVE>(root, script);
+    }
+    const Scene::EntityUVE title = make(Scene::Objects::SceneObjectKindUVE::UIText, "Title", root);
+    if (title != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::UITextComponentUVE>(title)) {
+        Scene::UITextComponentUVE& text = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(title);
+        text.text = "Hello, Widget";
+        text.positionPixels = Math::Vector2UVE{80.0F, 60.0F};
+        text.fontSize = 36.0F;
+    }
+    const Scene::EntityUVE start = make(Scene::Objects::SceneObjectKindUVE::UIButton, "Start", root);
+    if (start != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::UIButtonComponentUVE>(start)) {
+        Scene::UIButtonComponentUVE& button = entityManager.GetComponentUVE<Scene::UIButtonComponentUVE>(start);
+        button.rect = Math::RectUVE{Math::Vector2UVE{80.0F, 130.0F}, Math::Vector2UVE{220.0F, 56.0F}};
+        button.normalColor = Math::Vector3UVE{0.16F, 0.42F, 0.86F};
+        button.hoverColor = Math::Vector3UVE{0.24F, 0.52F, 0.95F};
+        button.pressedColor = Math::Vector3UVE{0.10F, 0.30F, 0.66F};
+    }
+    const Scene::EntityUVE label = make(Scene::Objects::SceneObjectKindUVE::UIText, "StartLabel", start != Scene::kInvalidEntityUVE ? start : root);
+    if (label != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::UITextComponentUVE>(label)) {
+        Scene::UITextComponentUVE& text = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(label);
+        text.text = "Start";
+        text.positionPixels = Math::Vector2UVE{158.0F, 146.0F};
+        text.fontSize = 22.0F;
+    }
+
+    const Asset::AssetGuidUVE guid =
+        m_services->GetPrefabSystemUVE().SavePrefabUVE(entityManager, m_services->GetAssetDatabaseUVE(), root, path);
+    DestroyDocumentSubtreeUVE(root);
+    InvalidateHierarchyFilterCacheUVE();
+    if (guid == Asset::kInvalidAssetGuidUVE) {
+        return std::nullopt;
+    }
+    // Its graph: Event Construct, and a click on Start sets the title.
+    Asset::BlueprintAssetUVE graph;
+    graph.parentKind = "Canvas";
+    Asset::BlueprintNodeUVE construct;
+    construct.id = 1U;
+    construct.type = "ui_on_construct";
+    Asset::BlueprintNodeUVE clicked;
+    clicked.id = 2U;
+    clicked.type = "ui_on_clicked";
+    clicked.y = 180.0F;
+    clicked.inputValues = {"Start"};
+    Asset::BlueprintNodeUVE setText;
+    setText.id = 3U;
+    setText.type = "ui_set_text";
+    setText.x = 320.0F;
+    setText.y = 180.0F;
+    setText.inputValues = {"", "Title", "Clicked!"};
+    graph.nodes = {construct, clicked, setText};
+    graph.wires = {Asset::BlueprintWireUVE{2U, 0U, 3U, 0U}};
+    if (!Asset::SaveWidgetBlueprintGraphUVE(path, graph)) {
+        return std::nullopt;
+    }
+    return path;
+}
+
 Scene::EntityUVE EditorUVE::PlaceEntityAssetUVE(const std::filesystem::path& path, Scene::EntityUVE parent) {
     std::string extension = path.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -1190,7 +1157,7 @@ Scene::EntityUVE EditorUVE::PlaceEntityAssetUVE(const std::filesystem::path& pat
     // Without this an entity saved after a nudge in its editor landed that far from where it was dropped.
     // (Rotation and scale are the entity's own and stay. Inside an Entity Editor session the offset of a nested
     // entity is the author's layout, so it is left alone there.)
-    if (!m_entityEditSession.has_value() && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(root)) {
+    if (!m_entityDocumentActive && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(root)) {
         Scene::TransformComponentUVE rootTransform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(root);
         rootTransform.localPosition = Math::Vector3UVE{};
         m_services->GetSceneGraphUVE().SetLocalTransformUVE(entityManager, root, rootTransform);
@@ -1279,7 +1246,7 @@ bool EditorUVE::DiscardSelectedPrefabOverridesAndRefreshUVE() {
 }
 
 bool EditorUVE::LoadSceneUVE() {
-    if (m_entityEditSession.has_value() || m_retargetPreview.has_value()) {
+    if (m_entityDocumentActive) {
         return false;
     }
     static_cast<void>(CommitComponentPropertyPreviewUVE());
@@ -1507,6 +1474,83 @@ bool EditorUVE::SetSelectedPrimitiveMeshUVE(const Scene::PrimitiveMeshComponentU
     m_sceneDirty = true;
     RecordHistoryUVE(PrimitiveAppearanceHistoryEntryUVE{
         m_selectedEntity, before, primitive, selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    return true;
+}
+
+bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
+                                         const std::optional<Scene::PrimitiveMeshKindUVE> shape) {
+    if (!IsAuthoringCommandAllowedUVE() || !HasSingleDocumentSelectionUVE()) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity)) {
+        return false;
+    }
+    const Scene::MeshComponentUVE beforeMesh = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(m_selectedEntity);
+    std::optional<Scene::PrimitiveMeshComponentUVE> beforeShape;
+    if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(m_selectedEntity)) {
+        beforeShape = entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(m_selectedEntity);
+    }
+    Scene::MeshComponentUVE afterMesh = beforeMesh;
+    std::optional<Scene::PrimitiveMeshComponentUVE> afterShape;
+    if (shape.has_value()) {
+        afterMesh.meshGuid = Asset::kInvalidAssetGuidUVE;
+        Scene::PrimitiveMeshComponentUVE primitive = beforeShape.value_or(Scene::PrimitiveMeshComponentUVE{});
+        primitive.kind = *shape;
+        // The surface keeps the material the mesh had.
+        if (primitive.materialGuid == Asset::kInvalidAssetGuidUVE) {
+            primitive.materialGuid = beforeMesh.materialGuid;
+        }
+        afterShape = primitive;
+    } else {
+        afterMesh.meshGuid = model;
+        // The model keeps the material the shape had.
+        if (afterMesh.materialGuid == Asset::kInvalidAssetGuidUVE && beforeShape.has_value()) {
+            afterMesh.materialGuid = beforeShape->materialGuid;
+        }
+    }
+    const bool sameShape = beforeShape.has_value() == afterShape.has_value() &&
+                           (!afterShape.has_value() || beforeShape->kind == afterShape->kind);
+    if (afterMesh.meshGuid == beforeMesh.meshGuid && sameShape) {
+        return false;
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    if (!ApplyMeshSourceStateUVE(m_selectedEntity, afterMesh, afterShape)) {
+        return false;
+    }
+    // A skinned mesh takes the bones of the model it now draws.
+    if (!shape.has_value() && model != Asset::kInvalidAssetGuidUVE &&
+        entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
+        auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
+        AutoPopulateSkinFromModelUVE(m_selectedEntity, skin);
+        entityManager.AddComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity, skin);
+    }
+    m_sceneDirty = true;
+    RecordHistoryUVE(MeshSourceHistoryEntryUVE{m_selectedEntity, beforeMesh, beforeShape, afterMesh, afterShape,
+                                               selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    return true;
+}
+
+bool EditorUVE::ApplyMeshSourceStateUVE(const Scene::EntityUVE entity, const Scene::MeshComponentUVE& mesh,
+                                        const std::optional<Scene::PrimitiveMeshComponentUVE>& shape) {
+    if (!IsDocumentEntityUVE(entity)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+        return false;
+    }
+    entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity) = mesh;
+    if (shape.has_value()) {
+        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity, *shape);
+        if (entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(entity)) {
+            FitColliderToPrimitiveKindUVE(entityManager.GetComponentUVE<Scene::ColliderComponentUVE>(entity), shape->kind);
+        }
+    } else if (entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+        entityManager.RemoveComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
+    }
+    InvalidateHierarchyFilterCacheUVE();
     return true;
 }
 
@@ -2597,6 +2641,9 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::BoneAttachment3D:
             entity = createObjectWithComponent(Scene::BoneAttachment3DComponentUVE{});
             break;
+        case Scene::Objects::SceneObjectKindUVE::MontagePlayer:
+            entity = createObjectWithComponent(Scene::MontagePlayerComponentUVE{});
+            break;
         case Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::TwoBoneIK3DObjectDefinitionUVE{},
                                                             Scene::ApplyTwoBoneIK3DObjectDefinitionUVE);
@@ -2746,7 +2793,7 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
     // New objects join the hierarchy instead of becoming document roots, and are placed before the
     // snapshot below is taken, so undo and redo restore the same place.
     Scene::EntityUVE parentObject = explicitParent;
-    if (m_entityEditSession.has_value()) {
+    if (m_entityDocumentActive) {
         const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
         if (parentObject == Scene::kInvalidEntityUVE || !IsDocumentEntityUVE(parentObject) ||
             parentObject == GetDocumentSceneRootUVE()) {
@@ -2759,6 +2806,18 @@ Scene::EntityUVE EditorUVE::CreateDocumentSceneObjectUVE(
     const Scene::EntityUVE entity = CreateSceneObjectEntityInternalUVE(kind);
     if (entity == Scene::kInvalidEntityUVE) {
         return Scene::kInvalidEntityUVE;
+    }
+    // A new AnimationGraph's starting nodes get their parameters too, named after them, like every
+    // node added to it later (the gameplay sets a node by its name).
+    if (entityManager.HasComponentUVE<Scene::AnimationGraphComponentUVE>(entity)) {
+        Scene::AnimationGraphComponentUVE& graph = entityManager.GetComponentUVE<Scene::AnimationGraphComponentUVE>(entity);
+        std::vector<std::uint32_t> ids;
+        for (const Scene::AnimationGraphNodeUVE& node : graph.nodes) {
+            ids.push_back(node.id);
+        }
+        for (const std::uint32_t id : ids) {
+            BindNewNodeParametersUVE(graph, id);
+        }
     }
     if (parentObject != Scene::kInvalidEntityUVE) {
         m_services->GetSceneGraphUVE().SetParentUVE(entityManager, entity, parentObject);
@@ -2928,6 +2987,110 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
     return true;
 }
 
+std::string EditorUVE::ObjectActionBlockReasonUVE(const Scene::EntityUVE entity) {
+    if (!IsAuthoringCommandAllowedUVE()) {
+        return "Stop Play first: the scene is edited only while it is not running.";
+    }
+    if (!IsDocumentEntityUVE(entity)) {
+        return "This object is gone.";
+    }
+    if (IsSceneRootEntityUVE(entity)) {
+        return "The scene root holds the whole scene.";
+    }
+    if (entity == GetDocumentViewportUVE()) {
+        return "The Viewport is the level itself: every object lives in it.";
+    }
+    if (m_entityDocumentActive && entity == GetEntityEditorRootUVE()) {
+        return "This is the entity itself: it is the top of its own tree.";
+    }
+    if (ResolveHierarchyRowOwnerUVE(entity) != entity) {
+        return "It is inside a placed entity: open the entity to change what is inside it.";
+    }
+    if (!IsDocumentSubtreeUVE(entity)) {
+        return "Something under it is not part of this document.";
+    }
+    return {};
+}
+
+bool EditorUVE::CopySelectedObjectUVE() {
+    if (!IsLifecycleCommandAllowedUVE() || !ObjectActionBlockReasonUVE(m_selectedEntity).empty()) {
+        return false;
+    }
+    std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(m_selectedEntity);
+    if (!snapshot.has_value()) {
+        return false;
+    }
+    m_objectClipboard = std::move(*snapshot);
+    return true;
+}
+
+bool EditorUVE::CutSelectedObjectUVE() {
+    return CopySelectedObjectUVE() && DeleteSelectedEntityUVE();
+}
+
+bool EditorUVE::CanPasteObjectUVE() const noexcept {
+    return m_objectClipboard.has_value() && IsAuthoringCommandAllowedUVE();
+}
+
+Scene::EntityUVE EditorUVE::PasteObjectUVE(const bool asChild) {
+    if (!CanPasteObjectUVE()) {
+        return Scene::kInvalidEntityUVE;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const Scene::EntityUVE anchor = HasSingleDocumentSelectionUVE() && IsDocumentEntityUVE(m_selectedEntity)
+                                        ? m_selectedEntity
+                                        : Scene::kInvalidEntityUVE;
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    std::optional<std::size_t> index;
+    if (anchor == Scene::kInvalidEntityUVE) {
+        parent = m_entityDocumentActive ? GetEntityEditorRootUVE() : ResolveNewObjectParentUVE();
+    } else if (asChild || IsStructuralRootUVE(anchor)) {
+        // Into the row itself; a placed entity takes nothing in from the level.
+        if (IsSealedHierarchyRowUVE(anchor) || ResolveHierarchyRowOwnerUVE(anchor) != anchor) {
+            return Scene::kInvalidEntityUVE;
+        }
+        parent = anchor;
+    } else {
+        if (ResolveHierarchyRowOwnerUVE(anchor) != anchor || !TryGetDocumentParentUVE(anchor, parent)) {
+            return Scene::kInvalidEntityUVE;
+        }
+        index = sceneGraph.GetSiblingIndexUVE(entityManager, anchor).value_or(0U) + 1U;
+    }
+    if (parent != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(parent)) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const Scene::EntityUVE pasted = RestoreSubtreeUnderParentUVE(*m_objectClipboard, parent);
+    if (pasted == Scene::kInvalidEntityUVE) {
+        return Scene::kInvalidEntityUVE;
+    }
+    const std::size_t siblingIndex = index.has_value() ? *index : sceneGraph.GetSiblingIndexUVE(entityManager, pasted).value_or(0U);
+    if (index.has_value()) {
+        static_cast<void>(sceneGraph.SetSiblingIndexUVE(entityManager, pasted, siblingIndex));
+    }
+    std::optional<std::string> pastedName;
+    if (entityManager.HasComponentUVE<Scene::NameComponentUVE>(pasted)) {
+        const std::string sourceName = entityManager.GetComponentUVE<Scene::NameComponentUVE>(pasted).name;
+        if (IsEntityNameValidUVE(sourceName)) {
+            // The copy itself already holds the name; a fresh one is free of both.
+            static_cast<void>(ApplyEntityNameStateUVE(pasted, std::nullopt));
+            pastedName = MakeUniqueDocumentEntityNameUVE(sourceName);
+            if (!ApplyEntityNameStateUVE(pasted, pastedName)) {
+                DestroyDocumentSubtreeUVE(pasted);
+                return Scene::kInvalidEntityUVE;
+            }
+        }
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    SelectEntityUVE(pasted);
+    m_sceneDirty = true;
+    InvalidateHierarchyFilterCacheUVE();
+    RecordHistoryUVE(DuplicationHistoryEntryUVE{*m_objectClipboard, parent, pasted, std::move(pastedName), selectionBefore,
+                                                CaptureSelectionSnapshotUVE(), dirtyBefore, true, siblingIndex});
+    return pasted;
+}
+
 bool EditorUVE::ReparentSelectedEntityUVE(const Scene::EntityUVE newParent) {
     return ReparentDocumentEntityUVE(m_selectedEntity, newParent);
 }
@@ -3013,7 +3176,7 @@ bool EditorUVE::ReparentDocumentEntityUVE(const Scene::EntityUVE entity, const S
     };
     const Scene::EntityUVE effectiveParent =
         newParent != Scene::kInvalidEntityUVE ? newParent
-        : m_entityEditSession.has_value()     ? GetEntityEditorRootUVE()
+        : m_entityDocumentActive     ? GetEntityEditorRootUVE()
                                               : defaultParent();
     if (effectiveParent == Scene::kInvalidEntityUVE || entity == effectiveParent ||
         DoesSubtreeContainEntityUVE(entity, effectiveParent) || !IsAllowedOutlinerParentUVE(entity, effectiveParent)) {
@@ -3328,8 +3491,15 @@ std::string_view EditorUVE::GetObjectTypeNameUVE(const Scene::EntityUVE entity) 
     if (!IsDocumentEntityUVE(entity)) {
         return {};
     }
-    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(
-        Scene::ResolveSceneObjectKindUVE(m_services->GetEntityManagerUVE(), entity));
+    const Scene::Objects::SceneObjectKindUVE kind = Scene::ResolveSceneObjectKindUVE(m_services->GetEntityManagerUVE(), entity);
+    // A UI object reads as the widget it is (a Combo Box, a 3D View ...), not as the Image it was made from.
+    if (kind == Scene::Objects::SceneObjectKindUVE::UIImage || kind == Scene::Objects::SceneObjectKindUVE::UIText ||
+        kind == Scene::Objects::SceneObjectKindUVE::UIButton) {
+        if (const std::optional<WidgetKindUVE> widget = ClassifyWidgetUVE(m_services->GetEntityManagerUVE(), entity)) {
+            return WidgetKindLabelUVE(*widget);
+        }
+    }
+    const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
     return descriptor != nullptr ? descriptor->displayName : std::string_view{};
 }
 
@@ -3451,10 +3621,8 @@ bool EditorUVE::IsLifecycleCommandAllowedUVE() const noexcept {
 }
 
 bool EditorUVE::IsAuthoringCommandAllowedUVE() const noexcept {
-    // The Retarget preview stands in for the scene while its window is open: nothing is authored
-    // (or saved) into it.
-    return m_state == EditorStateUVE::Running && m_playModeState == EditorPlayModeStateUVE::Edit &&
-           !m_retargetPreview.has_value();
+    // The Retarget preview has a world of its own: the level stays authorable beside it.
+    return m_state == EditorStateUVE::Running && m_playModeState == EditorPlayModeStateUVE::Edit && !m_retargetSceneActive;
 }
 
 EditorUVE::EditorSelectionSnapshotUVE EditorUVE::CaptureSelectionSnapshotUVE() const {
@@ -3715,7 +3883,7 @@ Scene::EntityUVE EditorUVE::ResolveNewObjectParentUVE() {
     }
     // In the Entity Editor, new objects belong to the entity. Nothing is sealed there, so the root
     // is returned as it stands - that is the whole point of opening the entity.
-    if (m_entityEditSession.has_value()) {
+    if (m_entityDocumentActive) {
         const Scene::EntityUVE entityRoot = GetEntityEditorRootUVE();
         if (entityRoot != Scene::kInvalidEntityUVE) {
             return entityRoot;
@@ -3763,7 +3931,7 @@ Scene::EntityUVE EditorUVE::ResolvePlaceableParentUVE(const Scene::EntityUVE can
 }
 
 bool EditorUVE::IsOutlinerLayoutActiveUVE() const noexcept {
-    return !m_retargetPreview.has_value();
+    return !m_retargetSceneActive;
 }
 
 Scene::EntityUVE EditorUVE::GetDocumentViewportUVE() {
@@ -4017,6 +4185,13 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
+            } else if constexpr (std::is_same_v<EntryType, MeshSourceHistoryEntryUVE>) {
+                if (!ApplyMeshSourceStateUVE(typedEntry.entity, typedEntry.beforeMesh, typedEntry.beforeShape)) {
+                    return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionBefore);
+                m_sceneDirty = typedEntry.dirtyBefore;
+                return true;
             } else if constexpr (std::is_same_v<EntryType, SceneComponentHistoryEntryUVE>) {
                 if (!ApplySceneComponentStateUVE(typedEntry.entity, typedEntry.kind, typedEntry.before)) {
                     return false;
@@ -4125,6 +4300,13 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 return true;
             } else if constexpr (std::is_same_v<EntryType, PrimitiveAppearanceHistoryEntryUVE>) {
                 if (!ApplyPrimitiveMeshStateUVE(typedEntry.entity, typedEntry.after)) {
+                    return false;
+                }
+                RestoreSelectionUVE(typedEntry.selectionAfter);
+                m_sceneDirty = typedEntry.dirtyAfter;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, MeshSourceHistoryEntryUVE>) {
+                if (!ApplyMeshSourceStateUVE(typedEntry.entity, typedEntry.afterMesh, typedEntry.afterShape)) {
                     return false;
                 }
                 RestoreSelectionUVE(typedEntry.selectionAfter);
@@ -4243,7 +4425,7 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
 bool EditorUVE::IsStructuralRootUVE(const Scene::EntityUVE entity) {
     return IsSceneRootEntityUVE(entity) ||
            (entity != Scene::kInvalidEntityUVE && entity == GetDocumentViewportUVE()) ||
-           (m_entityEditSession.has_value() && entity != Scene::kInvalidEntityUVE && entity == GetEntityEditorRootUVE());
+           (m_entityDocumentActive && entity != Scene::kInvalidEntityUVE && entity == GetEntityEditorRootUVE());
 }
 
 bool EditorUVE::IsSceneRootEntityUVE(const Scene::EntityUVE entity) const {
@@ -4589,7 +4771,6 @@ std::optional<std::string> EditorUVE::ReadProjectTextFileUVE(const std::filesyst
     return buffer.str();
 }
 
-
 void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences) {
     const bool previousAdvancedOpen = m_colorPickerPreferences.advancedOpen;
     const auto sanitize = [](std::vector<EditorColorUVE>& colors, const std::size_t cap) {
@@ -4614,7 +4795,6 @@ void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferenc
 
 void EditorUVE::SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept {
     m_extendedPreferences = std::move(preferences);
-    ApplyEditorVisualThemeUVE(&m_extendedPreferences);
 }
 
 void EditorUVE::ShutdownUVE() {
@@ -4628,6 +4808,7 @@ void EditorUVE::ShutdownUVE() {
         static_cast<void>(CloseEntityEditorUVE(false));
     }
     CloseRetargetWindowUVE();
+    CloseMontageEditorUVE();
 
     // An interactive session keeps its editor preferences (panels, snapping, grid, Inspector folds,
     // favourites) without the author having to remember "Save Editor Preferences" first. Headless
@@ -4657,15 +4838,10 @@ void EditorUVE::ShutdownUVE() {
         m_meshThumbnailRenderer.ShutdownUVE();
         m_materialThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
-        if (ImGui::GetCurrentContext() != nullptr) {
-            const char* const iniFilename = ImGui::GetIO().IniFilename;
-            if (iniFilename != nullptr && iniFilename[0] != '\0') {
-                ImGui::SaveIniSettingsToDisk(iniFilename);
-            }
+        if (m_levelShell != nullptr) {
+            m_levelShell->ShutdownUVE();
+            m_levelShell.reset();
         }
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
         m_uiInitialized = false;
     }
 
@@ -4726,7 +4902,7 @@ std::optional<Scene::WorldTransformComponentUVE> EditorUVE::TryGetComposingParen
 }
 
 bool EditorUVE::IsEntityNameValidUVE(const std::string_view name) const noexcept {
-    return !name.empty() && name.size() <= kMaximumEntityNameBytesUVE && !IsWhitespaceOnlyUVE(name);
+    return !name.empty() && name.size() <= kMaximumEditorEntityNameBytesUVE && !IsWhitespaceOnlyUVE(name);
 }
 
 std::string EditorUVE::GetEntityDisplayLabelUVE(const Scene::EntityUVE entity) const {
@@ -5148,8 +5324,6 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     return config.SaveUVE();
 }
 
-
-
 bool EditorUVE::IsHierarchyFilterActiveUVE() const noexcept {
     return !m_hierarchyFilter.empty();
 }
@@ -5161,7 +5335,7 @@ bool EditorUVE::IsHierarchyEntityVisibleUVE(const Scene::EntityUVE entity) const
 }
 
 bool EditorUVE::IsSealedHierarchyRowUVE(const Scene::EntityUVE entity) const noexcept {
-    if (m_entityEditSession.has_value() || !IsDocumentEntityUVE(entity)) {
+    if (m_entityDocumentActive || !IsDocumentEntityUVE(entity)) {
         return false;
     }
     const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
@@ -5247,40 +5421,6 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
     }
 }
 
-void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent) {
-    if (!IsLifecycleCommandAllowedUVE() ||
-        (targetParent != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(targetParent)) ||
-        !ImGui::BeginDragDropTarget()) {
-        return;
-    }
-
-    const ImGuiPayload* const payload = ImGui::AcceptDragDropPayload(kHierarchyEntityPayloadUVE);
-    if (payload != nullptr && payload->DataSize == static_cast<int>(sizeof(Scene::EntityUVE))) {
-        Scene::EntityUVE source = Scene::kInvalidEntityUVE;
-        std::memcpy(&source, payload->Data, sizeof(source));
-        static_cast<void>(ReparentDocumentEntityUVE(source, targetParent));
-    }
-    // An entity asset dragged out of Content lands under the row, or in the scene for empty space.
-    const ImGuiPayload* const asset = ImGui::AcceptDragDropPayload(kContentEntityPayloadUVE);
-    if (asset != nullptr && asset->DataSize > 1) {
-        const std::string path(static_cast<const char*>(asset->Data), static_cast<std::size_t>(asset->DataSize - 1));
-        static_cast<void>(PlaceEntityAssetUVE(
-            path, ResolvePlaceableParentUVE(targetParent != Scene::kInvalidEntityUVE ? targetParent
-                                                                                   : ResolveNewObjectParentUVE())));
-    }
-    const ImGuiPayload* const item = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE);
-    if (item != nullptr && item->DataSize > 1) {
-        const std::string relativePath(static_cast<const char*>(item->Data), static_cast<std::size_t>(item->DataSize - 1));
-        const std::filesystem::path p{relativePath};
-        if (IsModelSourcePathUVE(p) || p.extension() == ".uvmodel") {
-            static_cast<void>(PlaceModelSourceUVE(
-                p, ResolvePlaceableParentUVE(targetParent != Scene::kInvalidEntityUVE ? targetParent
-                                                                                     : ResolveNewObjectParentUVE())));
-        }
-    }
-    ImGui::EndDragDropTarget();
-}
-
 EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     const Asset::ProjectFileEntryUVE& entry) {
     if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
@@ -5333,6 +5473,12 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvsave") {
         return ContentBrowserItemTypeUVE::Save;
     }
+    if (extension == ".uvbp") {
+        return ContentBrowserItemTypeUVE::Blueprint;
+    }
+    if (extension == ".uvwbp") {
+        return ContentBrowserItemTypeUVE::WidgetBlueprint;
+    }
     if (extension == ".uvs") {
         return ContentBrowserItemTypeUVE::Script;
     }
@@ -5344,6 +5490,12 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     // A library of clips: its own browser type so it opens in the Animation Library window.
     if (extension == ".uvanimlib") {
         return ContentBrowserItemTypeUVE::AnimationLibrary;
+    }
+    if (extension == ".uvmontage") {
+        return ContentBrowserItemTypeUVE::AnimationMontage;
+    }
+    if (extension == ".uvmontagelib") {
+        return ContentBrowserItemTypeUVE::MontageLibrary;
     }
     // The envelope the audio importer writes, and every source format an importer can turn into
     // one: WAV, plus the compressed Ogg/Vorbis, MP3 and FLAC streams RegisterCompressedAudioImportersUVE
@@ -5388,6 +5540,14 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Animation";
         case ContentBrowserItemTypeUVE::AnimationLibrary:
             return "Animation Library";
+        case ContentBrowserItemTypeUVE::AnimationMontage:
+            return "Animation Montage";
+        case ContentBrowserItemTypeUVE::MontageLibrary:
+            return "Montage Library";
+        case ContentBrowserItemTypeUVE::Blueprint:
+            return "Blueprint";
+        case ContentBrowserItemTypeUVE::WidgetBlueprint:
+            return "Widget Blueprint";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:
@@ -5714,96 +5874,246 @@ void EditorUVE::ClearTextureThumbnailCacheUVE() noexcept {
     m_textureThumbnailCache.clear();
 }
 
+namespace {
+
+/// A helper bone rather than a part of the body (the root on the ground, IK targets, sockets):
+/// left out of a thumbnail's skeleton, where a line to it would cut across the figure.
+[[nodiscard]] bool IsThumbnailHelperBoneUVE(const std::string& name) {
+    const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
+    for (std::size_t bone = 0U; bone < reference.info.size() && bone < reference.skeleton.bones.size(); ++bone) {
+        if (reference.skeleton.bones[bone].name == name) {
+            const Retarget::HumanoidBoneKindUVE kind = reference.info[bone].kind;
+            return kind == Retarget::HumanoidBoneKindUVE::Root || kind == Retarget::HumanoidBoneKindUVE::IK ||
+                   kind == Retarget::HumanoidBoneKindUVE::Socket;
+        }
+    }
+    return name.size() > 2U && (name[0] == 'i' || name[0] == 'I') && (name[1] == 'k' || name[1] == 'K') &&
+           (name[2] == '_' || std::isupper(static_cast<unsigned char>(name[2])) != 0);
+}
+
+/// Stands `mesh` in its skeleton's rest pose when it has one (`skeletonFile`, joints matched by
+/// name - a retargeted character rests in the A-pose there, its mesh still bound in its own pose),
+/// and lists its bones in that pose. A pose that would fling the skin off the model (another unit
+/// scale, say) is not used: the mesh then shows as bound, and its bones with it.
+void PoseMeshForThumbnailUVE(Asset::MeshAssetUVE& mesh, const std::filesystem::path& skeletonFile,
+                             std::vector<MeshThumbnailBoneUVE>& outBones) {
+    outBones.clear();
+    const std::size_t count = mesh.joints.size();
+    if (count == 0U) {
+        return;
+    }
+    // Each joint's own rest, from the binds (bind(parent)^-1 * bind(joint)).
+    std::vector<Math::Matrix4x4UVE> bind(count, Math::Matrix4x4UVE::IdentityUVE());
+    for (std::size_t joint = 0U; joint < count; ++joint) {
+        static_cast<void>(Math::TryInverseUVE(mesh.joints[joint].inverseBindMatrix, bind[joint]));
+    }
+    std::vector<Math::Matrix4x4UVE> locals(count);
+    for (std::size_t joint = 0U; joint < count; ++joint) {
+        const std::uint32_t parent = mesh.joints[joint].parentIndex;
+        locals[joint] = parent < joint ? mesh.joints[parent].inverseBindMatrix * bind[joint] : bind[joint];
+    }
+    std::vector<Math::Matrix4x4UVE> world = bind;
+    bool posed = false;
+    Asset::SkeletonAssetUVE skeleton;
+    std::error_code error;
+    if (!skeletonFile.empty() && std::filesystem::is_regular_file(skeletonFile, error) && Asset::LoadSkeletonAssetUVE(skeletonFile, skeleton)) {
+        std::unordered_map<std::string, std::size_t> byName;
+        for (std::size_t joint = 0U; joint < skeleton.joints.size(); ++joint) {
+            byName.emplace(skeleton.joints[joint].name, joint);
+        }
+        std::vector<Math::Matrix4x4UVE> poseLocals = locals;
+        std::size_t matched = 0U;
+        for (std::size_t joint = 0U; joint < count; ++joint) {
+            if (const auto found = byName.find(mesh.joints[joint].name); found != byName.end()) {
+                const Asset::SkeletonJointUVE& rest = skeleton.joints[found->second];
+                poseLocals[joint] = Math::Matrix4x4UVE::ComposeTrsUVE(rest.position, rest.rotation, rest.scale);
+                ++matched;
+            }
+        }
+        std::vector<Math::Matrix4x4UVE> skinning;
+        std::vector<Asset::MeshVertexUVE> vertices;
+        if (matched * 2U >= count && Asset::TryResolvePoseUVE(mesh.joints, poseLocals, skinning) &&
+            Asset::TrySkinMeshUVE(mesh, skinning, vertices) && !vertices.empty()) {
+            Math::AabbUVE bounds{vertices.front().position, vertices.front().position};
+            for (const Asset::MeshVertexUVE& vertex : vertices) {
+                bounds.min = Math::Vector3UVE{std::min(bounds.min.x, vertex.position.x), std::min(bounds.min.y, vertex.position.y),
+                                              std::min(bounds.min.z, vertex.position.z)};
+                bounds.max = Math::Vector3UVE{std::max(bounds.max.x, vertex.position.x), std::max(bounds.max.y, vertex.position.y),
+                                              std::max(bounds.max.z, vertex.position.z)};
+            }
+            const Math::Vector3UVE before = mesh.localBounds.GetExtentsUVE();
+            const Math::Vector3UVE after = bounds.GetExtentsUVE();
+            const float ratio = after.y / std::max(before.y, 1.0e-6F);
+            if (ratio > 0.6F && ratio < 1.6F) {
+                mesh.vertices = std::move(vertices);
+                mesh.localBounds = bounds;
+                for (std::size_t joint = 0U; joint < count; ++joint) {
+                    const std::uint32_t parent = mesh.joints[joint].parentIndex;
+                    world[joint] = parent < joint ? world[parent] * poseLocals[joint] : poseLocals[joint];
+                }
+                posed = true;
+            }
+        }
+    }
+    static_cast<void>(posed);
+    for (std::size_t joint = 0U; joint < count; ++joint) {
+        const std::uint32_t parent = mesh.joints[joint].parentIndex;
+        if (parent >= joint || IsThumbnailHelperBoneUVE(mesh.joints[joint].name) || IsThumbnailHelperBoneUVE(mesh.joints[parent].name)) {
+            continue;
+        }
+        const Math::Vector3UVE head = Math::TransformPointUVE(world[parent], Math::Vector3UVE{});
+        const Math::Vector3UVE tail = Math::TransformPointUVE(world[joint], Math::Vector3UVE{});
+        outBones.push_back(MeshThumbnailBoneUVE{{head.x, head.y, head.z}, {tail.x, tail.y, tail.z}});
+    }
+}
+
+} // namespace
+
 std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relativePath) {
     const std::string cacheKey = relativePath.generic_string();
-    const auto cachedIt = m_meshThumbnailCache.find(cacheKey);
-    if (cachedIt != m_meshThumbnailCache.end()) {
-        return cachedIt->second;
+    const auto now = std::chrono::steady_clock::now();
+    std::uintptr_t oldTexture = 0U;
+    if (const auto cachedIt = m_meshThumbnailCache.find(cacheKey); cachedIt != m_meshThumbnailCache.end()) {
+        MeshThumbnailEntryUVE& entry = cachedIt->second;
+        // Looked at again at most twice a second: drawn again when a file it came from changed,
+        // and tried again when there was nothing to draw yet.
+        if (now - entry.checkedAt < std::chrono::milliseconds{500}) {
+            return entry.texture;
+        }
+        entry.checkedAt = now;
+        bool stale = entry.texture == 0U;
+        for (const auto& [file, written] : entry.sources) {
+            std::error_code error;
+            const std::filesystem::file_time_type current = std::filesystem::last_write_time(file, error);
+            stale = stale || error || current != written;
+        }
+        if (!stale) {
+            return entry.texture;
+        }
+        // Freed only after the new picture is made, so it gets a new texture id and every view
+        // that copied the old picture by its id copies the new one.
+        oldTexture = entry.texture;
+        m_meshThumbnailCache.erase(cachedIt);
     }
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     // A model source previews its imported mesh; until that exists there is nothing to render yet.
     const std::filesystem::path absolutePath =
         IsModelSourcePathUVE(relativePath) ? GetImportedModelPathUVE(relativePath) : snapshot.contentRoot / relativePath;
+    MeshThumbnailEntryUVE entry;
+    entry.checkedAt = now;
+    const auto remember = [&entry](const std::filesystem::path& file) {
+        std::error_code error;
+        const std::filesystem::file_time_type written = std::filesystem::last_write_time(file, error);
+        if (!error) {
+            entry.sources.emplace_back(file, written);
+        }
+    };
+    remember(absolutePath);
     Asset::MeshAssetUVE mesh;
-    std::uintptr_t textureId = 0U;
-    if (Asset::LoadMeshAssetUVE(absolutePath, mesh)) {
-        MaterialThumbnailImageUVE albedoImage;
-        bool hasAlbedo = false;
+    std::string extension = relativePath.extension().string();
+    std::ranges::transform(extension, extension.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (extension == ".uventity" || extension == ".uvprefab") {
+        // An entity: its meshes and primitives where it puts them, seen by the thumbnail's own
+        // camera (its "Thumbnail Camera" when it has one) - never the viewport's.
         Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
-
-        // 1. Check mesh.materialGuids
-        for (const Asset::AssetGuidUVE& matGuid : mesh.materialGuids) {
-            if (matGuid != Asset::kInvalidAssetGuidUVE) {
-                const std::filesystem::path matPath = assetDatabase.ResolveUVE(matGuid);
-                Asset::MaterialAssetUVE mat;
-                if (!matPath.empty() && Asset::LoadMaterialAssetUVE(matPath, mat)) {
-                    if (mat.albedoTexture != Asset::kInvalidAssetGuidUVE) {
-                        const std::filesystem::path texPath = assetDatabase.ResolveUVE(mat.albedoTexture);
-                        if (!texPath.empty() && LoadMaterialPreviewImageUVE(texPath, true, albedoImage)) {
-                            hasAlbedo = true;
-                            break;
-                        }
-                    }
+        std::vector<std::unique_ptr<MaterialThumbnailImageUVE>> images;
+        const auto lookOf = [&](const Asset::AssetGuidUVE materialGuid) {
+            MeshThumbnailLookUVE look;
+            const std::filesystem::path materialPath = assetDatabase.ResolveUVE(materialGuid);
+            Asset::MaterialAssetUVE material;
+            if (materialPath.empty() || !Asset::LoadMaterialAssetUVE(materialPath, material)) {
+                return look;
+            }
+            remember(materialPath);
+            look.colour = {material.albedoColor.r, material.albedoColor.g, material.albedoColor.b};
+            if (material.albedoTexture != Asset::kInvalidAssetGuidUVE) {
+                const std::filesystem::path texturePath = assetDatabase.ResolveUVE(material.albedoTexture);
+                auto image = std::make_unique<MaterialThumbnailImageUVE>();
+                if (!texturePath.empty() && LoadMaterialPreviewImageUVE(texturePath, true, *image)) {
+                    remember(texturePath);
+                    look.albedo = image.get();
+                    images.push_back(std::move(image));
+                }
+            }
+            return look;
+        };
+        const auto pose = [&](Asset::MeshAssetUVE& model, const std::filesystem::path& file) {
+            std::filesystem::path skeletonFile = file;
+            skeletonFile.replace_extension(".uvskel");
+            std::vector<MeshThumbnailBoneUVE> unused;
+            PoseMeshForThumbnailUVE(model, skeletonFile, unused);
+            remember(skeletonFile);
+        };
+        EntityThumbnailSceneUVE scene;
+        if (BuildEntityThumbnailSceneUVE(absolutePath, assetDatabase, lookOf, pose, scene)) {
+            for (const std::filesystem::path& file : scene.sources) {
+                remember(file);
+            }
+            const float direction[3] = {scene.viewDirection ? scene.viewDirection->x : 0.0F, scene.viewDirection ? scene.viewDirection->y : 0.0F,
+                                        scene.viewDirection ? scene.viewDirection->z : 0.0F};
+            entry.texture = m_meshThumbnailRenderer.RenderThumbnailUVE(scene.mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, scene.looks, {},
+                                                                        scene.viewDirection ? direction : nullptr);
+        }
+    } else if (Asset::LoadMeshAssetUVE(absolutePath, mesh)) {
+        // In its skeleton's rest pose (the A-pose once retargeted), with its bones drawn over it.
+        std::filesystem::path skeletonFile = absolutePath;
+        skeletonFile.replace_extension(".uvskel");
+        std::vector<MeshThumbnailBoneUVE> bones;
+        PoseMeshForThumbnailUVE(mesh, skeletonFile, bones);
+        remember(skeletonFile);
+        // Each material slot as its material says: its albedo colour times its albedo map. A
+        // see-through slot (eyelashes, hair cards) is left out; a slot whose material cannot be
+        // read is a neutral grey - never some other file's texture.
+        Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
+        std::vector<MeshThumbnailLookUVE> looks(mesh.materialGuids.size());
+        std::vector<std::unique_ptr<MaterialThumbnailImageUVE>> images;
+        for (std::size_t slot = 0U; slot < mesh.materialGuids.size(); ++slot) {
+            const Asset::AssetGuidUVE materialGuid = mesh.materialGuids[slot];
+            if (materialGuid == Asset::kInvalidAssetGuidUVE) {
+                continue;
+            }
+            const std::filesystem::path materialPath = assetDatabase.ResolveUVE(materialGuid);
+            Asset::MaterialAssetUVE material;
+            if (materialPath.empty() || !Asset::LoadMaterialAssetUVE(materialPath, material)) {
+                continue;
+            }
+            remember(materialPath);
+            MeshThumbnailLookUVE& look = looks[slot];
+            look.colour = {material.albedoColor.r, material.albedoColor.g, material.albedoColor.b};
+            look.skip = material.isTransparent || material.alphaCutoff > 0.0F;
+            if (material.albedoTexture != Asset::kInvalidAssetGuidUVE) {
+                const std::filesystem::path texturePath = assetDatabase.ResolveUVE(material.albedoTexture);
+                auto image = std::make_unique<MaterialThumbnailImageUVE>();
+                if (!texturePath.empty() && LoadMaterialPreviewImageUVE(texturePath, true, *image)) {
+                    remember(texturePath);
+                    look.albedo = image.get();
+                    images.push_back(std::move(image));
                 }
             }
         }
-
-        // 2. If no texture from materials, check directory of imported model for .uvmat / .uvtex
-        if (!hasAlbedo) {
-            std::error_code ec;
-            const std::filesystem::path importedDir = absolutePath.parent_path();
-            if (std::filesystem::is_directory(importedDir, ec)) {
-                for (const auto& entry : std::filesystem::directory_iterator(importedDir, ec)) {
-                    const std::string ext = entry.path().extension().string();
-                    if (ext == ".uvmat" || ext == ".uvmaterial") {
-                        Asset::MaterialAssetUVE mat;
-                        if (Asset::LoadMaterialAssetUVE(entry.path(), mat)) {
-                            if (mat.albedoTexture != Asset::kInvalidAssetGuidUVE) {
-                                const std::filesystem::path texPath = assetDatabase.ResolveUVE(mat.albedoTexture);
-                                if (!texPath.empty() && LoadMaterialPreviewImageUVE(texPath, true, albedoImage)) {
-                                    hasAlbedo = true;
-                                    break;
-                                }
-                            }
-                        }
-                    } else if (ext == ".uvtex") {
-                        if (LoadMaterialPreviewImageUVE(entry.path(), true, albedoImage)) {
-                            hasAlbedo = true;
-                            break;
-                        }
-                    }
-                }
+        // Never draw nothing: when every slot is see-through, draw them all.
+        if (!looks.empty() && std::ranges::all_of(looks, [](const MeshThumbnailLookUVE& look) { return look.skip; })) {
+            for (MeshThumbnailLookUVE& look : looks) {
+                look.skip = false;
             }
         }
-
-        // 3. If still no texture, check source directory for raw image files (diffuse/albedo/textures)
-        if (!hasAlbedo) {
-            std::error_code ec;
-            const std::filesystem::path sourceDir = (snapshot.contentRoot / relativePath).parent_path();
-            if (std::filesystem::is_directory(sourceDir, ec)) {
-                for (const auto& entry : std::filesystem::directory_iterator(sourceDir, ec)) {
-                    if (IsRawSourceImagePathUVE(entry.path())) {
-                        if (LoadMaterialPreviewImageUVE(entry.path(), true, albedoImage)) {
-                            hasAlbedo = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        textureId = m_meshThumbnailRenderer.RenderThumbnailUVE(
-            mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, hasAlbedo ? &albedoImage : nullptr);
+        entry.texture = m_meshThumbnailRenderer.RenderThumbnailUVE(mesh, kMeshThumbnailSizeUVE, kMeshThumbnailSizeUVE, looks, bones);
     }
-    m_meshThumbnailCache.emplace(cacheKey, textureId);
-    return textureId;
+    const std::uintptr_t texture = entry.texture;
+    m_meshThumbnailCache.emplace(cacheKey, std::move(entry));
+    if (oldTexture != 0U) {
+        ++m_meshThumbnailGeneration;
+    }
+    EditorUiAssetsUVE::DeleteDynamicTextureUVE(oldTexture);
+    return texture;
 }
 
 void EditorUVE::ClearMeshThumbnailCacheUVE() noexcept {
-    for (auto& [path, textureId] : m_meshThumbnailCache) {
-        EditorUiAssetsUVE::DeleteDynamicTextureUVE(textureId);
+    for (auto& [path, entry] : m_meshThumbnailCache) {
+        EditorUiAssetsUVE::DeleteDynamicTextureUVE(entry.texture);
     }
     m_meshThumbnailCache.clear();
+    ++m_meshThumbnailGeneration;
 }
 
 std::uintptr_t EditorUVE::GetMaterialThumbnailUVE(const std::filesystem::path& relativePath) {
@@ -6006,6 +6316,36 @@ namespace {
 
 } // namespace
 
+namespace {
+/// A loose take an earlier import reduced (its original is in the project's animation backup):
+/// it is written again from its source, every frame as the source has it.
+[[nodiscard]] bool WasReducedEarlierUVE(const std::filesystem::path& contentRoot, const std::filesystem::path& clip) {
+    static std::unordered_map<std::string, std::unordered_set<std::string>> s_reduced;
+    const std::filesystem::path backupRoot = contentRoot.parent_path() / ".uvcache" / "animation-backup";
+    auto [it, added] = s_reduced.try_emplace(backupRoot.generic_string());
+    if (added) {
+        std::error_code error;
+        for (std::filesystem::recursive_directory_iterator walk(backupRoot, error), end; !error && walk != end; walk.increment(error)) {
+            if (walk->is_regular_file(error) && walk->path().extension() == ".uvanim") {
+                const std::filesystem::path relative = std::filesystem::relative(walk->path(), backupRoot, error);
+                if (!error && relative.begin() != relative.end()) {
+                    // <stamp>/<path in Content>: the part after the stamp folder.
+                    std::filesystem::path inContent;
+                    for (auto part = std::next(relative.begin()); part != relative.end(); ++part) {
+                        inContent /= *part;
+                    }
+                    it->second.insert(inContent.generic_string());
+                }
+                error.clear();
+            }
+        }
+    }
+    std::error_code error;
+    const std::filesystem::path relative = std::filesystem::relative(clip, contentRoot, error);
+    return !error && it->second.contains(relative.generic_string());
+}
+} // namespace
+
 std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource) {
     std::vector<std::filesystem::path> written;
     std::error_code error;
@@ -6019,6 +6359,29 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     };
     static std::unordered_map<std::string, CachedAnimationImportUVE> s_importedAnimCache;
     const std::string cacheKey = absoluteSource.generic_string();
+    // A model with a mesh keeps its takes inside its .uvmodel: none is written beside it as a
+    // loose file. Only a file of animations alone (no mesh) gives .uvanim files.
+    const Asset::ProjectFileSnapshotUVE projectSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::filesystem::path relativeSource = std::filesystem::relative(absoluteSource, projectSnapshot.contentRoot, error);
+    if (error) {
+        error.clear();
+        relativeSource.clear();
+    }
+    const bool keepInModel = !relativeSource.empty() && !ReadModelSourceInfoForSourceUVE(relativeSource).animationOnly;
+    const std::filesystem::path importedModel = keepInModel ? GetImportedModelPathUVE(relativeSource) : std::filesystem::path{};
+    // The version of the import is part of the stamp: takes kept by an earlier import (when they
+    // were reduced as they came in) are taken again from the source, every frame as it has them.
+    constexpr std::uint64_t kTakesImportVersionUVE = 0x7A00000000000000ULL;
+    const auto stamp = static_cast<std::uint64_t>(sourceTime.time_since_epoch().count()) ^ kTakesImportVersionUVE;
+    if (keepInModel) {
+        std::error_code modelError;
+        if (!std::filesystem::is_regular_file(importedModel, modelError)) {
+            return written;   // after its mesh is imported (the next refresh)
+        }
+        if (Asset::ReadModelAnimationStampUVE(importedModel) == stamp) {
+            return written;   // its takes came from this version of the source already
+        }
+    }
     if (const auto cacheIt = s_importedAnimCache.find(cacheKey);
         cacheIt != s_importedAnimCache.end() && cacheIt->second.sourceTime == sourceTime) {
         bool allPresent = true;
@@ -6038,12 +6401,15 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     const std::filesystem::path primaryDestination =
         absoluteSource.parent_path() / (stem + ".uvanim");
     const std::filesystem::file_time_type existingPrimary = std::filesystem::last_write_time(primaryDestination, error);
-    if (!error && existingPrimary >= sourceTime) {
+    if (!keepInModel && !error && existingPrimary >= sourceTime) {
         return written; // fast-path: primary clip already imported since FBX last changed
     }
     error.clear();
     for (const std::filesystem::directory_entry& entry :
          std::filesystem::directory_iterator(absoluteSource.parent_path(), error)) {
+        if (keepInModel) {
+            break;
+        }
         if (!entry.is_regular_file() || entry.path().extension() != ".uvanim") {
             continue;
         }
@@ -6093,6 +6459,59 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         takes.push_back(rawTakes.front());
     }
 
+    if (keepInModel) {
+        // Each take named as its file would have been (the take, or the model's own name for one),
+        // optimised, and kept in the model; loose files an earlier import left beside the source
+        // move in: their asset ids now name the take in the model, so whatever used them still does.
+        Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+        std::vector<Asset::AnimationClipAssetUVE> kept;
+        std::vector<std::string> names;
+        for (Asset::AnimationClipAssetUVE clip : takes) {
+            const std::size_t bar = clip.clipId.find_last_of('|');
+            std::string take = bar == std::string::npos ? clip.clipId : clip.clipId.substr(bar + 1U);
+            if (takes.size() == 1U || IsGenericTakeNameUVE(take)) {
+                take = stem;
+            }
+            for (char& character : take) {
+                const bool keep = (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+                                  (character >= '0' && character <= '9') || character == '-' || character == '_' || character == ' ';
+                character = keep ? character : '_';
+            }
+            if (std::ranges::find(names, take) != names.end()) {
+                continue;
+            }
+            clip.clipId = take;
+            names.push_back(take);
+            kept.push_back(std::move(clip));
+        }
+        if (!Asset::SaveModelAnimationsUVE(importedModel, kept, stamp)) {
+            UVE_WARNING("EditorUVE: could not keep the animations of {} in its model", absoluteSource.string());
+            return written;
+        }
+        const std::filesystem::path backup = projectSnapshot.contentRoot.parent_path() / ".uvcache" / "animation-backup" / "moved-into-models";
+        for (const std::string& take : names) {
+            const std::filesystem::path embedded = Asset::MakeEmbeddedClipPathUVE(importedModel, take);
+            const std::filesystem::path loose = absoluteSource.parent_path() / ((take == stem ? stem : stem + "_" + take) + ".uvanim");
+            std::error_code looseError;
+            if (std::filesystem::is_regular_file(loose, looseError)) {
+                const Asset::AssetGuidUVE guid = database.RegisterUVE(loose);
+                static_cast<void>(database.RelocateUVE(guid, embedded));
+                std::filesystem::create_directories(backup, looseError);
+                std::filesystem::rename(loose, backup / loose.filename(), looseError);
+                if (looseError) {
+                    looseError.clear();
+                    std::filesystem::copy_file(loose, backup / loose.filename(), std::filesystem::copy_options::overwrite_existing, looseError);
+                    std::filesystem::remove(loose, looseError);
+                }
+            } else {
+                static_cast<void>(database.RegisterUVE(embedded));
+            }
+            written.push_back(embedded);
+        }
+        static_cast<void>(database.SaveUVE());
+        return written;
+    }
+
     // Clean up any stale duplicate take001 files that might have been created previously
     {
         const std::filesystem::path p1 = absoluteSource.parent_path() / "take001.uvanim";
@@ -6133,7 +6552,7 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         const std::filesystem::path destination = clipPath(clip.clipId);
         clip.clipId = destination.stem().string();
         const std::filesystem::file_time_type existing = std::filesystem::last_write_time(destination, error);
-        if (!error && existing >= sourceTime) {
+        if (!error && existing >= sourceTime && !WasReducedEarlierUVE(projectSnapshot.contentRoot, destination)) {
             allDestinations.push_back(destination);
             continue; // imported since the FBX last changed
         }
@@ -6160,6 +6579,51 @@ EditorModelSourceInfoUVE EditorUVE::ReadModelSourceInfoForSourceUVE(const std::f
     return info;
 }
 
+namespace {
+
+[[nodiscard]] std::filesystem::path RetargetMarkerOfUVE(const std::filesystem::path& importedModel) {
+    std::filesystem::path marker = importedModel;
+    marker += ".retargeted";
+    return marker;
+}
+
+[[nodiscard]] std::string SourceStampUVE(const std::filesystem::path& source) {
+    std::error_code error;
+    const std::filesystem::file_time_type time = std::filesystem::last_write_time(source, error);
+    return error ? std::string{} : std::to_string(time.time_since_epoch().count());
+}
+
+} // namespace
+
+bool EditorUVE::IsRetargetedModelCurrentUVE(const std::filesystem::path& relativeSource) const {
+    const std::filesystem::path imported = GetImportedModelPathUVE(relativeSource);
+    std::error_code error;
+    if (imported.empty() || !std::filesystem::is_regular_file(imported, error)) {
+        return false;
+    }
+    std::ifstream in(RetargetMarkerOfUVE(imported));
+    std::string stamp;
+    if (!in || !std::getline(in, stamp)) {
+        return false;
+    }
+    const std::string current = SourceStampUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource);
+    return !current.empty() && stamp == current;
+}
+
+void EditorUVE::MarkRetargetedModelUVE(const std::filesystem::path& relativeSource, const bool retargeted) {
+    if (!IsModelSourcePathUVE(relativeSource)) {
+        return;
+    }
+    const std::filesystem::path marker = RetargetMarkerOfUVE(GetImportedModelPathUVE(relativeSource));
+    std::error_code error;
+    if (!retargeted) {
+        std::filesystem::remove(marker, error);
+        return;
+    }
+    std::ofstream out(marker, std::ios::trunc);
+    out << SourceStampUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource) << "\n";
+}
+
 void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
     Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
     m_modelSources.clear();
@@ -6172,13 +6636,20 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
         // An FBX's takes (the extension is compared as the model check compares it: any case).
         if (info.animationCount > 0U) {
-            static_cast<void>(ImportModelAnimationsUVE(source));
+            QueueModelAnimationImportUVE(source);
         }
         if (info.animationOnly) {
             continue; // Motion with nothing to draw: there is no mesh to import.
         }
         if (m_modelImportJobs.find(key) != m_modelImportJobs.end()) {
             continue; // Already queued or running; its completion is collected by PollModelImportJobsUVE.
+        }
+        // A character Retarget conformed keeps its conformed model until its source changes:
+        // importing it again would put the source's own bones back under clips made for the
+        // engine's.
+        if (IsRetargetedModelCurrentUVE(entry.relativePath)) {
+            static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(entry.relativePath)));
+            continue;
         }
         Asset::AssetImportRequestUVE request;
         request.sourcePath = source;
@@ -6226,6 +6697,124 @@ Asset::AssetGuidUVE EditorUVE::RegisterImportedModelArtifactsUVE(const std::file
     return meshGuid;
 }
 
+void EditorUVE::QueueModelAnimationImportUVE(const std::filesystem::path& absoluteSource) {
+    if (!m_prismUiRequested) {
+        static_cast<void>(ImportModelAnimationsUVE(absoluteSource));
+        return;
+    }
+    if (m_pendingModelAnimationKeys.insert(absoluteSource.generic_string()).second) {
+        m_pendingModelAnimations.push_back(absoluteSource);
+        ++m_modelAnimationBatchTotal;
+    }
+}
+
+void EditorUVE::ProcessPendingModelAnimationImportsUVE(const double budgetSeconds) {
+    const auto began = std::chrono::steady_clock::now();
+    while (!m_pendingModelAnimations.empty()) {
+        const std::filesystem::path source = std::move(m_pendingModelAnimations.front());
+        m_pendingModelAnimations.pop_front();
+        m_pendingModelAnimationKeys.erase(source.generic_string());
+        static_cast<void>(ImportModelAnimationsUVE(source));
+        ++m_modelAnimationBatchDone;
+        if (std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() >= budgetSeconds) {
+            break;
+        }
+    }
+    if (m_pendingModelAnimations.empty()) {
+        m_modelAnimationBatchTotal = 0U;
+        m_modelAnimationBatchDone = 0U;
+    }
+}
+
+void EditorUVE::UpdateStartupLoadingUVE() {
+    const auto now = std::chrono::steady_clock::now();
+    if (m_startupBegan == std::chrono::steady_clock::time_point{}) {
+        m_startupBegan = now;
+        m_startupStepBegan = now;
+    }
+    const auto advance = [this, now] {
+        ++m_startupStep;
+        m_startupStepBegan = now;
+    };
+    const double inStep = std::chrono::duration<double>(now - m_startupStepBegan).count();
+    switch (m_startupStep) {
+    case 0: // The project's files.
+        if (m_projectFileSnapshotInitialized) {
+            advance();
+        }
+        break;
+    case 1: // Its models and the takes inside them.
+        if (m_modelImportJobs.empty() && m_pendingModelAnimations.empty()) {
+            advance();
+        }
+        break;
+    case 2: // The first animation previews (a few frames for the browser to ask for them).
+        m_startupIconPeak = std::max(m_startupIconPeak, PendingAnimationIconCountUVE());
+        if ((inStep > 0.5 && PendingAnimationIconCountUVE() == 0U) || inStep > 8.0) {
+            advance();
+        }
+        break;
+    default:
+        m_startupLoading = false;
+        break;
+    }
+    // Never held longer than this: what is left goes on behind the editor.
+    if (std::chrono::duration<double>(now - m_startupBegan).count() > 180.0) {
+        m_startupLoading = false;
+    }
+}
+
+EditorUVE::EditorLoadingStateUVE EditorUVE::GetLoadingStateUVE() const {
+    EditorLoadingStateUVE state;
+    const std::size_t modelTotal = std::max(m_importBatchTotal, m_modelImportJobs.size() + m_importBatchCompleted);
+    const std::size_t total = modelTotal + m_modelAnimationBatchTotal;
+    const std::size_t done = m_importBatchCompleted + m_modelAnimationBatchDone;
+    const float work = total > 0U ? std::clamp(static_cast<float>(done) / static_cast<float>(total), 0.0F, 1.0F) : 1.0F;
+    const auto counted = [](const char* what, const std::size_t at, const std::size_t of) {
+        return std::string(what) + " " + std::to_string(std::min(at + 1U, of)) + " of " + std::to_string(of);
+    };
+    std::string workDetail;
+    if (!m_modelImportJobs.empty()) {
+        workDetail = counted("Importing model", m_importBatchCompleted, modelTotal);
+    } else if (!m_pendingModelAnimations.empty()) {
+        workDetail = counted("Storing animations of model", m_modelAnimationBatchDone, m_modelAnimationBatchTotal) +
+                     " (" + m_pendingModelAnimations.front().filename().string() + ")";
+    }
+    if (m_startupLoading && m_state == EditorStateUVE::Running) {
+        state.startup = true;
+        switch (m_startupStep) {
+        case 0:
+            state.step = "Scanning project files";
+            state.progress = 0.05F;
+            break;
+        case 1:
+            state.step = "Importing models";
+            state.detail = workDetail;
+            state.progress = 0.15F + 0.6F * work;
+            break;
+        case 2: {
+            state.step = "Preparing animation previews";
+            const std::size_t left = PendingAnimationIconCountUVE();
+            const std::size_t peak = std::max(m_startupIconPeak, left);
+            state.detail = left > 0U ? std::to_string(peak - left) + " of " + std::to_string(peak) : std::string{};
+            state.progress = 0.75F + 0.23F * (peak > 0U ? static_cast<float>(peak - left) / static_cast<float>(peak) : 1.0F);
+            break;
+        }
+        default:
+            state.step = "Opening the editor";
+            state.progress = 1.0F;
+            break;
+        }
+        return state;
+    }
+    if (!workDetail.empty()) {
+        state.busy = true;
+        state.step = workDetail;
+        state.progress = work;
+    }
+    return state;
+}
+
 void EditorUVE::PollModelImportJobsUVE() {
     if (m_modelImportJobs.empty()) {
         m_importBatchTotal = 0U;
@@ -6260,6 +6849,13 @@ void EditorUVE::PollModelImportJobsUVE() {
             // are registered here instead - this is the only place that knows a conversion is
             // accounted for whether or not it executed.
             static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
+            // Its takes go into the model now that the model is there.
+            if (const auto info = m_modelSources.find(it->first); info != m_modelSources.end() && info->second.animationCount > 0U) {
+                QueueModelAnimationImportUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / it->first);
+            }
+            // The GUIDs an import wrote into its materials and meshes are kept with the project, so
+            // the next session finds them (and the import cache stays valid instead of importing again).
+            static_cast<void>(m_services->GetAssetDatabaseUVE().SaveUVE());
             imported = imported || !job->cacheHit;
             m_modelImportFailures.erase(it->first);
             ++m_importBatchCompleted;
@@ -6294,30 +6890,6 @@ void EditorUVE::RefreshProjectFileIndexUVE() {
     } else {
         m_projectFileRefreshAttemptedForRescan = changesBeforeRefresh.rescanRequired;
     }
-}
-
-void EditorUVE::DrawScriptingWorkspaceUVE() {
-    if (m_openUVScript.has_value()) {
-        DrawUVScriptEditorUVE();
-        return;
-    }
-    // Nothing open: say how to get a script here rather than show an empty workspace.
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + kEditorTopChromeHeightUVE},
-                            ImGuiCond_Always);
-    ImGui::SetNextWindowSize(
-        ImVec2{mainViewport->WorkSize.x, std::max(120.0F, mainViewport->WorkSize.y - kEditorTopChromeHeightUVE)},
-        ImGuiCond_Always);
-    constexpr ImGuiWindowFlags windowFlags =
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar;
-    if (ImGui::Begin("Scripting Workspace##uve", nullptr, windowFlags)) {
-        ImGui::TextDisabled("No script is open.");
-        ImGui::TextDisabled("Select an object, then use its Script slot in the Inspector: New UVScript, or Open.");
-        if (ImGui::SmallButton("Back to the scene")) {
-            m_activeWorkspace = EditorWorkspaceUVE::Library;
-        }
-    }
-    ImGui::End();
 }
 
 } // namespace UVE::Editor

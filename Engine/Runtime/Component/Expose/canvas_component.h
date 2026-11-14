@@ -34,6 +34,12 @@ struct CanvasComponentUVE final {
     Math::Vector2UVE referencePixels{100.0F, 100.0F};
     /// When true in WorldSpace mode, automatically orients the canvas to face the camera.
     bool billboard = false;
+    /// Screen-space: the canvas was laid out for `referenceResolution` and is scaled to fit the
+    /// screen it is shown on (the window, a phone, the editor's view), centred - what a player sees
+    /// on any screen is what the Designer showed. Off: authored pixels are screen pixels.
+    bool scaleWithScreen = false;
+    /// The screen size the widgets were placed for. Zero: the device's own screen.
+    Math::Vector2UVE referenceResolution{0.0F, 0.0F};
 
     [[nodiscard]] bool operator==(const CanvasComponentUVE&) const = default;
 };

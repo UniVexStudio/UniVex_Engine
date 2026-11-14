@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -19,7 +20,6 @@
 #include <string_view>
 #include <vector>
 
-#include <imgui.h>
 
 #include "viewport_render_pass.h"
 #include "integration/editor_mesh_layer.h"
@@ -41,6 +41,8 @@
 #include "editor.h"
 #include "vector2.h"
 #include "camera_component.h"
+#include "light_component.h"
+#include "transform_component.h"
 #include "world_transform_component.h"
 #include "i_entity_manager.h"
 #include "camera_3d.h"
@@ -66,6 +68,15 @@ struct EditorLaunchOptionsUVE final {
     bool headless = false;
     bool bridgeStdio = false;
     bool decorated = false;
+    /// The PRISM editor shell instead of the previous UI backend.
+    // The editor's UI is PRISM; "--prism-ui" is still accepted (it was the opt-in while both existed).
+    bool prismUi = true;
+    /// After the last frame (--frames), save the PRISM editor frame as PNG here.
+    std::filesystem::path prismScreenshot;
+    /// Screenshot aid: put a folder, a sun, a camera and a box in the level and select the box, so the
+    /// panels and the viewport gizmos have content.
+    bool prismDemoObject = false;
+    bool prismDemoGizmos = false;
 };
 
 [[nodiscard]] bool ParseGlVersionUVE(const std::string_view value, std::uint32_t& major,
@@ -96,6 +107,23 @@ struct EditorLaunchOptionsUVE final {
         if (argument == "--bridge-stdio") {
             options.bridgeStdio = true;
             options.headless = true;
+            continue;
+        }
+        if (argument == "--prism-ui") {
+            options.prismUi = true;
+            continue;
+        }
+        if (argument == "--prism-demo-object") {
+            options.prismDemoObject = true;
+            continue;
+        }
+        if (argument == "--prism-demo-gizmos") {
+            options.prismDemoObject = true;
+            options.prismDemoGizmos = true;
+            continue;
+        }
+        if (argument == "--prism-screenshot" && index + 1 < argc) {
+            options.prismScreenshot = argv[++index];
             continue;
         }
         if (argument == "--decorated") {
@@ -138,7 +166,7 @@ struct EditorLaunchOptionsUVE final {
 /// OpenGL version for an explicitly chosen platform capability (for example virtual-display CI).
 /// `--headless` keeps the editor's non-visual lifecycle usable in CI and defaults to a single frame.
 /// `--bridge-stdio` always implies headless mode and runs a framed JSON-RPC bridge server instead
-/// of constructing native ImGui/GLFW presentation for this process.
+/// of constructing native GLFW presentation for this process.
 ///
 /// The editor drives EngineCoreUVE's lifecycle by hand (Init()/Load()/TickFrameUVE()) rather than
 /// through RunUVE() — the one desktop entry point that does not automatically get RunUVE()'s
@@ -157,6 +185,11 @@ int main(const int argc, char** argv) {
     config.headlessUVE = options.headless;
     config.windowBorderlessUVE = !options.decorated;
     config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
+    // The editor never needs more than the display shows: 60 frames a second at most while it has
+    // focus, 15 behind another window (a minimised one draws nothing at all), so a laptop's GPU and
+    // fan are not spent on a scene nobody is looking at.
+    config.focusedFrameRateCapUVE = 60U;
+    config.unfocusedFrameRateCapUVE = 15U;
     if (options.glMajor.has_value() && options.glMinor.has_value()) {
         config.windowGlVersionMajor = *options.glMajor;
         config.windowGlVersionMinor = *options.glMinor;
@@ -189,12 +222,66 @@ int main(const int argc, char** argv) {
         }
 
         UVE::Editor::EditorUVE editor(engine.GetServicesUVE(), options.scenePath, 100U, &engine);
+        if (options.prismUi && !options.headless) {
+            // PRISM's fonts / themes / locales ship next to the executable (UVBT copies them).
+            std::error_code assetError;
+            std::filesystem::path assetDir =
+                std::filesystem::absolute(std::filesystem::path(argv[0]), assetError).parent_path() / "prism_assets";
+            if (!std::filesystem::is_directory(assetDir, assetError)) {
+                assetDir = "prism_assets";
+            }
+            editor.SetPrismUiEnabledUVE(true, assetDir);
+        }
         editor.InitUVE();
 
         if (std::filesystem::exists(options.scenePath)) {
             static_cast<void>(editor.LoadSceneUVE());
         } else if (createDefaultViewport) {
             static_cast<void>(editor.SaveSceneUVE()); // the default Viewport asset exists from the start
+        }
+        if (options.prismDemoObject) {
+            static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Folder));
+            const UVE::Scene::EntityUVE sun =
+                editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::DirectionalLight3D);
+            const UVE::Scene::EntityUVE camera =
+                editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Camera3D);
+            if (options.prismDemoGizmos) {
+                // The sun and the camera beside the box rather than inside it.
+                UVE::Scene::IEntityManagerUVE& placed = engine.GetServicesUVE().GetEntityManagerUVE();
+                const auto place = [&placed](const UVE::Scene::EntityUVE entity, const UVE::Math::Vector3UVE at) {
+                    if (entity != UVE::Scene::kInvalidEntityUVE &&
+                        placed.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
+                        placed.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity).localPosition = at;
+                    }
+                };
+                place(sun, UVE::Math::Vector3UVE{2.5F, 2.0F, 2.5F});
+                place(camera, UVE::Math::Vector3UVE{-2.5F, 1.0F, 2.0F});
+                // One of each object with a gizmo of its own, spread out along X.
+                using KindUVE = UVE::Scene::Objects::SceneObjectKindUVE;
+                const std::array<KindUVE, 7> kinds{KindUVE::Light3D, KindUVE::Decal3D, KindUVE::Marker3D,
+                                                   KindUVE::SpawnPoint3D, KindUVE::RayCast3D, KindUVE::SpringArm3D,
+                                                   KindUVE::NavMeshVolume3D};
+                UVE::Scene::IEntityManagerUVE& entities = engine.GetServicesUVE().GetEntityManagerUVE();
+                float x = -6.0F;
+                for (const KindUVE kind : kinds) {
+                    const UVE::Scene::EntityUVE entity =
+                        editor.CreateDocumentSceneObjectUVE(kind, editor.GetDocumentViewportUVE());
+                    if (entity != UVE::Scene::kInvalidEntityUVE &&
+                        entities.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
+                        entities.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity).localPosition =
+                            UVE::Math::Vector3UVE{x, 1.0F, -3.0F};
+                    }
+                    // The light as a spot, so its cone shows.
+                    if (kind == KindUVE::Light3D && entities.HasComponentUVE<UVE::Scene::LightComponentUVE>(entity)) {
+                        auto& light = entities.GetComponentUVE<UVE::Scene::LightComponentUVE>(entity);
+                        light.type = UVE::Scene::LightTypeUVE::Spot;
+                        light.range = 4.0F;
+                        light.spotAngleDegrees = 30.0F;
+                    }
+                    x += 2.0F;
+                }
+            }
+            static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::BoxMesh3D));
         }
 
         if (options.bridgeStdio) {
@@ -210,7 +297,7 @@ int main(const int argc, char** argv) {
         // EngineCoreUVE's own scene render stays a documented no-op (the editor doesn't own a
         // gameplay camera), so the Viewport panel's real content comes entirely from
         // EditorViewportBackendsUVE - grid, orbit camera, gizmos, and one proxy cube per live
-        // scene entity, composited via ImGui::Image() rather than EngineCoreUVE's own render
+        // scene entity, shown by the editor's view rather than EngineCoreUVE's own render
         // target. Only constructed in real windowed mode: it needs an actual current GL context,
         // which headless mode's NullRenderDeviceUVE never creates.
         // Three real backends, not three names routed through one mutable renderer.  In particular,
@@ -218,6 +305,12 @@ int main(const int argc, char** argv) {
         // overwrite its camera; Retarget also keeps its fixed studio framing in its own backend.
         using ViewportContextUVE = UVE::Editor::EditorUVE::ViewportContextUVE;
         std::unique_ptr<UVE::App::EditorViewportBackendsUVE> viewportBackends;
+        editor.SetDocumentSceneFactoryUVE([&engine] { return engine.CreateDocumentSceneUVE(); });
+        editor.SetDocumentSceneClosingUVE([&viewportBackends](const UVE::Core::EngineServicesUVE& services) {
+            if (viewportBackends != nullptr) {
+                viewportBackends->ForgetServicesUVE(services);
+            }
+        });
         if (!options.headless) {
             viewportBackends = std::make_unique<UVE::App::EditorViewportBackendsUVE>(editor, engine);
             editor.SetViewportPanelRendererUVE(
@@ -238,6 +331,9 @@ int main(const int argc, char** argv) {
             ++framesRun;
         }
 
+        if (!options.prismScreenshot.empty() && !editor.SavePrismScreenshotUVE(options.prismScreenshot)) {
+            std::fprintf(stderr, "uve_editor: could not save the PRISM screenshot\n");
+        }
         engine.SetPostRenderCallbackUVE({});
         editor.SetViewportPanelRendererUVE({});
         // Destroyed here, before engine.Shutdown() tears down the window/GL context below - its

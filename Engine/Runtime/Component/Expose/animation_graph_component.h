@@ -61,6 +61,65 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
     LayeredBlend,
     /// Jumps its input to `value` seconds when its trigger fires, then plays on from there.
     TimeSeek,
+    /// Where an Animation Montage plays: its input passes through, and a montage playing on the
+    /// slot named `parameter` (default "DefaultSlot") is blended over it by the montage's weight.
+    Slot,
+    /// Bends a two-bone chain (`bones`: root, middle, tip - upper arm, forearm, hand) so the tip
+    /// reaches the effector (see `targetSource`), the middle joint bending toward `pole`, by `value`
+    /// (or the Float `alphaParameter`). In the skeleton's space.
+    TwoBoneIK,
+    /// Moves one bone (`bones[0]`): `target` translation, `rotationDegrees` and `boneScale`, added to
+    /// its pose or replacing it (`modifyMode`), in its parent's or the skeleton's space (`space`), by
+    /// `value` (or `alphaParameter`).
+    ModifyBone,
+    /// Turns one bone (`bones[0]`) so its `pole` axis points at the target (see `targetSource`), at
+    /// most `clampDegrees` from where the pose has it, by `value` (or `alphaParameter`).
+    LookAt,
+    /// Plays the first input while the Bool `parameter` is true, the second while it is false,
+    /// fading over `fadeSeconds` toward true and `fadeBackSeconds` back.
+    BlendByBool,
+};
+
+/// Where a Two Bone IK's effector or a Look At's target comes from.
+enum class AnimationGraphTargetSourceUVE : std::uint8_t {
+    /// `target`, as set on the node.
+    Fixed = 0,
+    /// The Vector3 parameter named `parameter` (a script sets it each frame).
+    Parameter,
+    /// Where the bone named `targetBone` is in this pose (a hand on a weapon's grip bone).
+    Bone,
+};
+
+/// How a Modify Bone node applies its transform.
+enum class AnimationBoneModifyModeUVE : std::uint8_t {
+    /// On top of the pose: the translation adds, the rotation turns, the scale multiplies.
+    Add = 0,
+    /// Instead of the pose.
+    Replace,
+};
+
+/// The space a Modify Bone node's transform is in.
+enum class AnimationBoneSpaceUVE : std::uint8_t {
+    /// The bone's parent's (its local pose).
+    Local = 0,
+    /// The skeleton's.
+    Component,
+};
+
+/// One bone of a montage's pose, handed to a Slot node (runtime only).
+struct AnimationGraphSlotBoneUVE final {
+    Math::Vector3UVE position{};
+    Math::QuaternionUVE rotation{};
+    Math::Vector3UVE scale{1.0F, 1.0F, 1.0F};
+    [[nodiscard]] bool operator==(const AnimationGraphSlotBoneUVE&) const = default;
+};
+
+/// What plays on one slot this step: the montage's pose (one entry per skeleton bone) and weight.
+struct AnimationGraphSlotPoseUVE final {
+    std::string slot;
+    float weight = 0.0F;
+    std::vector<AnimationGraphSlotBoneUVE> bones;
+    [[nodiscard]] bool operator==(const AnimationGraphSlotPoseUVE&) const = default;
 };
 
 enum class AnimationParameterTypeUVE : std::uint8_t {
@@ -68,6 +127,20 @@ enum class AnimationParameterTypeUVE : std::uint8_t {
     Bool,
     /// Set by a script or the Inspector; cleared by the first transition or one-shot that uses it.
     Trigger,
+    /// A point or direction (`vector`): an IK effector, a look target.
+    Vector3,
+};
+
+/// Who writes a parameter. Script parameters are set by scripts and the Inspector; the others are
+/// written by the engine every frame from the character the graph animates (its Character
+/// Controller): its ground speed, its heading against its facing in degrees (-180..180, positive to
+/// the right), and whether it is off or on the ground.
+enum class AnimationParameterSourceUVE : std::uint8_t {
+    Script = 0,
+    CharacterSpeed,
+    CharacterDirection,
+    CharacterInAir,
+    CharacterGrounded,
 };
 
 /// A named value the graph reads - speed, grounded, attack. Scripts and the Inspector set them;
@@ -76,6 +149,9 @@ struct AnimationParameterUVE final {
     std::string name;
     AnimationParameterTypeUVE type = AnimationParameterTypeUVE::Float;
     float value = 0.0F;
+    /// Vector3 parameters: the value.
+    Math::Vector3UVE vector{};
+    AnimationParameterSourceUVE source = AnimationParameterSourceUVE::Script;
 
     [[nodiscard]] bool operator==(const AnimationParameterUVE&) const = default;
 };
@@ -218,6 +294,46 @@ struct AnimationGraphNodeUVE final {
     std::vector<Math::Vector2UVE> statePositions;
     Math::Vector2UVE entryPosition{-240.0F, 0.0F};
     Math::Vector2UVE anyPosition{-240.0F, 120.0F};
+    /// StateMachine: each state's name, by slot (empty: named after what it plays).
+    std::vector<std::string> stateNames;
+    /// The graph the editor shows this node in when no wire says (a node not wired yet): a State
+    /// Machine's id and the state's slot; 0 is the top tree. A wired node goes where its wire leads.
+    std::uint32_t owner = 0U;
+    std::uint32_t ownerState = 0U;
+    /// Blend Space 1D / 2D: the lines its editor's grid has per axis (points snap to them when
+    /// `snapToGrid`), and each axis's name (its parameter's when empty).
+    std::uint32_t gridX = 4U;
+    std::uint32_t gridY = 4U;
+    bool snapToGrid = true;
+    std::string axisNameX;
+    std::string axisNameY;
+    /// TwoBoneIK / LookAt: the effector or target when `targetSource` is Fixed. ModifyBone: the
+    /// translation. In the skeleton's space (ModifyBone: in `space`).
+    Math::Vector3UVE target{};
+    /// TwoBoneIK: the direction the middle joint bends toward (zero: keep the pose's bend).
+    /// LookAt: the bone's own axis that points at the target.
+    Math::Vector3UVE pole{0.0F, 0.0F, 1.0F};
+    /// ModifyBone: rotation (XYZ Euler, degrees) and scale.
+    Math::Vector3UVE rotationDegrees{};
+    Math::Vector3UVE boneScale{1.0F, 1.0F, 1.0F};
+    AnimationGraphTargetSourceUVE targetSource = AnimationGraphTargetSourceUVE::Fixed;
+    std::string targetBone;
+    AnimationBoneModifyModeUVE modifyMode = AnimationBoneModifyModeUVE::Add;
+    AnimationBoneSpaceUVE space = AnimationBoneSpaceUVE::Local;
+    /// LookAt: the most the bone turns away from its pose.
+    float clampDegrees = 180.0F;
+    /// TwoBoneIK / ModifyBone / LookAt: a Float parameter for the alpha, instead of `value`.
+    std::string alphaParameter;
+    /// BlendByBool: seconds to fade back to the second input when the Bool turns false.
+    float fadeBackSeconds = 0.2F;
+    /// Clip: where in the clip it starts (and starts over), in seconds.
+    float startSeconds = 0.0F;
+    /// OneShot: seconds to fade back out at the shot's end (`fadeSeconds` is the fade in).
+    /// Negative: the same as the fade in.
+    float fadeOutSeconds = -1.0F;
+    /// OneShot: fires again on its own, `autoRestartDelaySeconds` after each shot ends.
+    bool autoRestart = false;
+    float autoRestartDelaySeconds = 1.0F;
 
     [[nodiscard]] bool operator==(const AnimationGraphNodeUVE&) const = default;
 };
@@ -242,6 +358,8 @@ struct AnimationGraphNodeStateUVE final {
     /// OneShot: playing, and for how long.
     bool shotActive = false;
     float shotElapsedSeconds = 0.0F;
+    /// OneShot with auto restart: seconds since the last shot ended (negative: no shot yet).
+    float sinceShotSeconds = -1.0F;
     bool started = false;
     /// Blend Space: each point's place in its clip, and whether it has played yet.
     std::vector<double> pointTimes;
@@ -272,12 +390,30 @@ struct AnimationGraphNodeStateUVE final {
 
 /// AnimationGraph's own state: an animation graph evaluated every frame. What it moves, which
 /// channels and whether it runs live in its AnimationDriver base (AnimationDriverComponentUVE).
+/// A comment box on the graph editor's canvas (editor only: the runtime never reads it).
+struct AnimationGraphCommentUVE final {
+    std::string title = "Comment";
+    Math::Vector2UVE position{};
+    Math::Vector2UVE size{260.0F, 160.0F};
+    /// RGBA, 0..255.
+    std::uint32_t color = 0x1E50822DU;
+    /// The graph it is drawn in: 0 the top tree, else a State Machine's id and the state's slot.
+    std::uint32_t owner = 0U;
+    std::uint32_t ownerState = 0U;
+    [[nodiscard]] bool operator==(const AnimationGraphCommentUVE&) const = default;
+};
+
 struct AnimationGraphComponentUVE final {
     /// Outliner entity with AnimationSequencerComponentUVE supplying clips to this graph.
     EntityUVE sequencer = kInvalidEntityUVE;
+    /// Optional: the MontagePlayer whose montages play on this graph's Slot nodes. Unset, any
+    /// MontagePlayer posing the same skeleton does.
+    EntityUVE montagePlayer = kInvalidEntityUVE;
     std::vector<AnimationParameterUVE> parameters;
     /// A new tree starts as Output fed by one Clip, so picking a clip is all it takes to play.
     std::vector<AnimationGraphNodeUVE> nodes = MakeDefaultAnimationGraphUVE();
+    /// The editor's comment boxes around groups of nodes.
+    std::vector<AnimationGraphCommentUVE> comments;
 
     // ---- Runtime state, written by the tree; never saved ----------------------------------------
     std::vector<AnimationGraphNodeStateUVE> nodeStates;
@@ -287,6 +423,10 @@ struct AnimationGraphComponentUVE final {
     Math::Vector3UVE rootMotionDelta{};
     /// Clip events the last step passed, in the clips that counted most (weight at least a half).
     std::vector<std::string> firedEvents;
+    /// Montages playing on this graph's Slot nodes, set by the engine before each step.
+    std::vector<AnimationGraphSlotPoseUVE> slotPoses;
+    /// True when the last step had a Slot node that took a montage's pose.
+    bool slotUsed = false;
 
     [[nodiscard]] static std::vector<AnimationGraphNodeUVE> MakeDefaultAnimationGraphUVE() {
         AnimationGraphNodeUVE output;
@@ -304,7 +444,8 @@ struct AnimationGraphComponentUVE final {
 
     /// Authored data only: runtime state is ignored.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationGraphComponentUVE& other) const {
-        return sequencer == other.sequencer && parameters == other.parameters && nodes == other.nodes;
+        return sequencer == other.sequencer && montagePlayer == other.montagePlayer && parameters == other.parameters &&
+               nodes == other.nodes && comments == other.comments;
     }
 
     [[nodiscard]] bool operator==(const AnimationGraphComponentUVE&) const = default;

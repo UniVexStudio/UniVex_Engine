@@ -16,7 +16,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <imgui.h>
 
 #include "viewport_2d/draw_util.h"
 #include "viewport_2d/i_viewport_renderer.h"
@@ -47,6 +46,11 @@
 #include "i_scene_graph.h"
 
 namespace UVE::App::Viewport2DIntegration {
+
+using VpInputUVE = UVE::Editor::EditorViewportInputUVE;
+using VpBtnUVE = VpInputUVE::ButtonUVE;
+using VpKeyUVE = VpInputUVE::KeyUVE;
+using VpCursorUVE = VpInputUVE::CursorUVE;
 
 // 5x7 ASCII bitmap font (codes 32..126), 5 columns per glyph, LSB = top row (row 0..6).
 inline const std::array<std::uint8_t, 5>& Glyph5x7UVE(const char ch) noexcept {
@@ -465,9 +469,9 @@ public:
         SyncOverlaySettingsUVE(overlayState);
         SyncSelectionToGizmoUVE();
         if (!overlayState.gameWorkspaceActive && !overlayState.studioView) {
-            PumpImGuiInputUVE(width, height, overlayState.pointerOverOverlay);
+            PumpViewportInputUVE(overlayState.input, width, height, overlayState.pointerOverOverlay);
         }
-        viewport_.update(ImGui::GetIO().DeltaTime);
+        viewport_.update(overlayState.input.deltaTime);
 
         const univex::viewport::Vec2 camCenter = viewport_.camera().center();
         editor_.SetViewportCameraFocusUVE(Math::Vector3UVE{camCenter.x, camCenter.y, 0.0F});
@@ -852,47 +856,48 @@ private:
         viewport_.setSelectionBox(BuildEntityBox2DUVE(selected));
     }
 
-    void PumpImGuiInputUVE(const int width, const int height, const bool pointerOverOverlay) {
-        const ImGuiIO& io = ImGui::GetIO();
-        const ImVec2 imageOrigin = ImGui::GetCursorScreenPos();
-        const univex::viewport::Vec2 localMouse{io.MousePos.x - imageOrigin.x,
-                                                io.MousePos.y - imageOrigin.y};
-        const bool hovered = ImGui::IsWindowHovered() && !pointerOverOverlay &&
+    void PumpViewportInputUVE(const Editor::EditorViewportInputUVE& input, const int width, const int height,
+                              const bool pointerOverOverlay) {
+        const UVE::Editor::EditorViewportInputUVE& io = input;
+        const UVE::Math::Vector2UVE imageOrigin = input.imageOrigin;
+        const univex::viewport::Vec2 localMouse{io.mousePos.x - imageOrigin.x,
+                                                io.mousePos.y - imageOrigin.y};
+        const bool hovered = input.hovered && !pointerOverOverlay &&
                              localMouse.x >= 0.0F && localMouse.y >= 0.0F &&
                              localMouse.x <= static_cast<float>(width) &&
                              localMouse.y <= static_cast<float>(height);
 
-        viewport_.setModifiers(univex::viewport::Modifiers{io.KeyShift, io.KeyCtrl, io.KeyAlt});
-        viewport_.setPanModifier(ImGui::IsKeyDown(ImGuiKey_Space));
+        viewport_.setModifiers(univex::viewport::Modifiers{io.shift, io.ctrl, io.alt});
+        viewport_.setPanModifier(input.IsKeyDownUVE(VpKeyUVE::Space));
 
         if (hovered || mouseButtonDown_[0] || mouseButtonDown_[1] || mouseButtonDown_[2]) {
             viewport_.onMouseMove(localMouse);
         }
 
-        const auto pumpButton = [&](const int idx, const ImGuiMouseButton imguiBtn,
+        const auto pumpButton = [&](const int idx, const VpBtnUVE button,
                                     const univex::viewport::MouseButton vpBtn) {
-            if (hovered && ImGui::IsMouseClicked(imguiBtn)) {
+            if (hovered && input.IsClickedUVE(button)) {
                 mouseButtonDown_[static_cast<std::size_t>(idx)] = true;
                 viewport_.onMouseDown(vpBtn, localMouse);
             }
-            if (mouseButtonDown_[static_cast<std::size_t>(idx)] && ImGui::IsMouseReleased(imguiBtn)) {
+            if (mouseButtonDown_[static_cast<std::size_t>(idx)] && input.IsReleasedUVE(button)) {
                 mouseButtonDown_[static_cast<std::size_t>(idx)] = false;
                 viewport_.onMouseUp(vpBtn, localMouse);
             }
         };
-        pumpButton(0, ImGuiMouseButton_Left, univex::viewport::MouseButton::Left);
-        pumpButton(1, ImGuiMouseButton_Middle, univex::viewport::MouseButton::Middle);
+        pumpButton(0, VpBtnUVE::Left, univex::viewport::MouseButton::Left);
+        pumpButton(1, VpBtnUVE::Middle, univex::viewport::MouseButton::Middle);
         // Right-button drag also pans smoothly in 2D
-        if (hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Right, 2.0F)) {
-            viewport_.onScrollPan(univex::viewport::Vec2{io.MouseDelta.x, io.MouseDelta.y});
+        if (hovered && input.IsDraggingUVE(VpBtnUVE::Right, 2.0F)) {
+            viewport_.onScrollPan(univex::viewport::Vec2{io.mouseDelta.x, io.mouseDelta.y});
         }
 
-        if (hovered && io.MouseWheel != 0.0F) {
-            viewport_.onWheel(io.MouseWheel, localMouse);
+        if (hovered && io.wheel != 0.0F) {
+            viewport_.onWheel(io.wheel, localMouse);
         }
 
-        if (hovered && !io.WantTextInput) {
-            if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+        if (hovered && !io.wantTextInput) {
+            if (input.IsKeyPressedUVE(VpKeyUVE::F)) {
                 const Scene::EntityUVE sel = editor_.GetSelectedEntityUVE();
                 if (sel != Scene::kInvalidEntityUVE && entityManager_.IsAliveUVE(sel)) {
                     viewport_.focusOn(ResolveEntityPose2DUVE(sel).position, true);
@@ -900,10 +905,10 @@ private:
                     viewport_.zoomToFit(univex::viewport::Rect{{0.0F, 0.0F}, {1280.0F, 720.0F}}, true);
                 }
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) {
+            if (input.IsKeyPressedUVE(VpKeyUVE::Home)) {
                 viewport_.zoomToFit(univex::viewport::Rect{{0.0F, 0.0F}, {1280.0F, 720.0F}}, true);
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_1, false) && io.KeyAlt) {
+            if (input.IsKeyPressedUVE(VpKeyUVE::Num1) && io.alt) {
                 viewport_.zoomTo100(true);
             }
         }
@@ -913,25 +918,25 @@ private:
             switch (viewport_.cursorHint()) {
                 case CursorHint::Pan:
                 case CursorHint::MoveAll:
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+                    input.RequestCursorUVE(VpCursorUVE::ResizeAll);
                     break;
                 case CursorHint::ResizeNS:
                 case CursorHint::GuideH:
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                    input.RequestCursorUVE(VpCursorUVE::ResizeNS);
                     break;
                 case CursorHint::ResizeEW:
                 case CursorHint::GuideV:
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                    input.RequestCursorUVE(VpCursorUVE::ResizeEW);
                     break;
                 case CursorHint::ResizeNWSE:
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
+                    input.RequestCursorUVE(VpCursorUVE::ResizeNWSE);
                     break;
                 case CursorHint::ResizeNESW:
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW);
+                    input.RequestCursorUVE(VpCursorUVE::ResizeNESW);
                     break;
                 case CursorHint::Rotate:
                 case CursorHint::Crosshair:
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                    input.RequestCursorUVE(VpCursorUVE::Hand);
                     break;
                 case CursorHint::Default:
                     break;

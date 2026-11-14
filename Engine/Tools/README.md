@@ -101,7 +101,7 @@ There is no Xvfb and no way to build one here (the X server needs libX11/libxcb,
 libXfont2, libxkbfile, libxcvt and a Mesa rebuilt with GLX - most of them autotools-only,
 hours of work, and it would only add real input events and multiple OS windows). It is also
 unnecessary for pictures: under the Null platform the window *is* an RGBA buffer in memory,
-so the full ImGui editor renders exactly as it would on screen, and `glfwSwapBuffers()` is the
+so the full editor renders exactly as it would on screen, and `glfwSwapBuffers()` is the
 one place every frame passes through. `headless_framedump.c` (built by the script into
 `~/toolchain/lib/libuve_framedump.so`) hooks it via `LD_PRELOAD`, writes the default
 framebuffer to a PPM on the frames you name, and can request a window close so programs
@@ -119,11 +119,9 @@ python3 -c "from PIL import Image; Image.open('/tmp/editor_run/editor.ppm').save
 etc.); `UVE_FRAMEDUMP_CLOSE=N` closes the window after swap N (for `univex_editor`,
 `univex_viewport_demo`, the runtime). Budget ~2 s per 1280x720 editor frame on softpipe; the
 first dumped frame should be >= 3, so the panels have drawn through a full frame and the
-viewport's render target has something in it. (It used to say "so ImGui's docking layout has
-settled" - there is no dock layout to settle now: the frame computes its own rects on frame
-one.) Two things the toolchain does to make this work, both in the script: `libGL.so.1` is a
-tiny GLX shim over OSMesa (`glXGetProcAddressARB` -> `OSMesaGetProcAddress`) because Dear
-ImGui's bundled loader refuses a `libGL` without it - the editor's UI silently never
+viewport's render target has something in it. Two things the toolchain does to make this work, both in the script: `libGL.so.1` is a
+tiny GLX shim over OSMesa (`glXGetProcAddressARB` -> `OSMesaGetProcAddress`) because generic GL
+loaders refuse a `libGL` without it - the editor's UI silently never
 initialised before that - and `libGL.so` is a GNU ld script that links both the shim and
 `libOSMesa.so.8`. For *driving* the editor rather than just looking at it,
 `uve_editor --bridge-stdio` already exposes the editor's commands over JSON-RPC without any

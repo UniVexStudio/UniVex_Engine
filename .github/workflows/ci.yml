@@ -2,14 +2,16 @@
 #
 # Everything this project checks, in one file, in the order a person would ask about it.
 #
-#   build-and-test   Linux, GCC, CMake + Ninja. Compiles the whole tree against real GL and Vulkan
-#                    drivers, runs every checker in Engine/Tools, then runs both GoogleTest suites
-#                    in two modes: a Debug build, and a Sanitizers build that fails on the things a
-#                    Debug build hides.
+#   build-and-test   Linux, GCC, UVBT, Debug. Runs the source checkers in Engine/Tools, builds the
+#                    whole tree, smoke-tests a cooked project, then runs UniVexTests (against real
+#                    software GL and Vulkan drivers) and PRISM's own test harness.
 #   windows-editor   Windows, MSYS2 UCRT64, g++. Builds the editor as an actual Windows application,
 #                    packages it with the DLLs its exes import, and starts those exes once so the
 #                    package is proven to be the thing that runs - the same editor that runs on the
 #                    laptop, built from the same tree.
+#
+# Both jobs compile through ccache (UVBT_COMPILER_LAUNCHER) with the cache kept between runs, so a
+# run recompiles only what changed since the last one instead of the whole tree.
 #
 # One file, because three files meant three trigger lists, three definitions of what CREATE_ARTIFACTS
 # means, and the same checkout boilerplate written out three times. A workflow is not a place to keep
@@ -28,9 +30,8 @@ name: CI
 # editor package. Set the repository variable to 'false' to stop it, or pass create_artifacts=false
 # on a manual run.
 #
-# DIAGNOSTIC_ARTIFACTS (off by default) gates the uploads that answer questions about a run instead
-# of giving anybody something to run: the test log, the asset workload measurements and the editor
-# process baseline. Nobody should pay for those on a change that has nothing to do with them.
+# DIAGNOSTIC_ARTIFACTS (off by default) gates the upload that answers questions about a failed run
+# instead of giving anybody something to run: the test log.
 env:
   UNIVEX_CREATE_ARTIFACTS: ${{ vars.CREATE_ARTIFACTS != 'false' }}
   UNIVEX_DIAGNOSTIC_ARTIFACTS: ${{ vars.DIAGNOSTIC_ARTIFACTS == 'true' }}
@@ -52,8 +53,8 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------------------------
-  # Linux: the tree compiles, and both GoogleTest suites pass, against real GL and Vulkan drivers.
-  # Two modes, because a Debug build and a Sanitizers build fail differently.
+  # Linux: the checks pass, the tree builds in Debug, and the tests pass against real GL and Vulkan
+  # drivers.
   # ---------------------------------------------------------------------------------------------
   build-and-test:
     name: Ubuntu / GCC / ${{ matrix.mode }}
@@ -67,10 +68,22 @@ jobs:
             sanitizers: 'OFF'
     env:
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      UVBT_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_MAXSIZE: 3G
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Restore the compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-linux-${{ matrix.mode }}-${{ github.sha }}
+          restore-keys: ccache-linux-${{ matrix.mode }}-
 
       - name: Install native dependencies
         # mesa-vulkan-drivers supplies lavapipe, the CPU Vulkan device the RHI tests
@@ -85,9 +98,11 @@ jobs:
             libglu1-mesa-dev \
             zlib1g-dev \
             libjpeg-dev \
+            libfreetype-dev \
             xvfb \
             libvulkan1 \
-            mesa-vulkan-drivers
+            mesa-vulkan-drivers \
+            ccache
 
       - name: Math boundary check
         run: python3 Engine/Tools/check_math_boundary.py
@@ -99,25 +114,35 @@ jobs:
 
       - name: Panel include check
         # Every editor panel TU must include a standard header for each std:: facility it names,
-        # instead of borrowing one transitively through imgui.h or a component header. Was 26
+        # instead of borrowing one transitively through a UI header or a component header. Was 26
         # violations deep; triaged and clean, so it is enforced now.
         run: bash Engine/Tools/check_panel_includes.sh
 
       - name: Build with UVBT
         run: |
           set -o pipefail
+          ccache -z
           ./uvbt build UniVexTests Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee build-output.log
           ./uvbt build UniVexRuntime Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexPack Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexAssetWorkload Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexEditor Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
+          ./uvbt build UniVexPrismTests Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
+          ccache -s
 
-      - name: Cooked project and asset residency workload
+      - name: Save the compiler cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-linux-${{ matrix.mode }}-${{ github.sha }}
+
+      - name: Cooked project smoke test
         run: |
           ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_asset_workload --create-fixture /tmp/uve-ci-cook-source
           ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_pack --project /tmp/uve-ci-cook-source/sample.uvproject --runtime ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_runtime --output /tmp/uve-ci-cooked --cook android
           mv /tmp/uve-ci-cook-source /tmp/uve-ci-cook-source-unavailable
-          python3 Engine/Tools/performance/measure_process.py --runs 3 --timeout 120 --output /tmp/uve-ci-asset-rss.json -- ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_asset_workload /tmp/uve-ci-cooked/.uvassetdb /tmp/uve-ci-cooked /tmp/uve-ci-asset-load.json
+          ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_asset_workload /tmp/uve-ci-cooked/.uvassetdb /tmp/uve-ci-cooked /tmp/uve-ci-asset-load.json
           cd /tmp/uve-ci-cooked
           ./uve_runtime --headless --project sample.uvproject --frames 3
 
@@ -153,6 +178,10 @@ jobs:
           fi
           python3 Engine/Tools/ci/annotate_ctest_failures.py test-output.txt
           exit "$status"
+
+      - name: PRISM UI tests
+        # PRISM's own harness: unit checks, fuzzing and golden visual regression (tests/golden).
+        run: ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_prism_tests Engine/Runtime/Prism/assets
 
       - name: Verify the Vulkan device tests actually ran
         run: |
@@ -194,34 +223,6 @@ jobs:
       - name: Validate the CI annotation helper
         run: python3 -m unittest discover -s Engine/Tools/ci -p 'test_*.py'
 
-      - name: Record headless editor process baseline
-        if: github.event_name == 'workflow_dispatch' && inputs.create_artifacts
-        run: >-
-          python3 Engine/Tools/performance/measure_process.py
-          --runs 3 --timeout 60 --output editor-process-baseline.json
-          -- ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_editor --headless --frames 300
-
-      - name: Upload asset workload measurements
-        if: always() && env.UNIVEX_DIAGNOSTIC_ARTIFACTS == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: asset-workload-${{ matrix.mode }}
-          path: |
-            /tmp/uve-ci-asset-rss.json
-            /tmp/uve-ci-asset-load.json
-            /tmp/uve-ci-cooked/cooked.json
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Upload process baseline
-        if: always() && env.UNIVEX_DIAGNOSTIC_ARTIFACTS == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: editor-process-baseline-${{ matrix.mode }}
-          path: editor-process-baseline.json
-          if-no-files-found: ignore
-          retention-days: 7
-
   # ---------------------------------------------------------------------------------------------
   # Windows: the editor is built as an actual Windows application, and the exe is started once with
   # a cooked project so the packaged DLLs are proven to be the ones it needs.
@@ -229,7 +230,10 @@ jobs:
   windows-editor:
     name: Windows / Editor
     runs-on: windows-latest
-    timeout-minutes: 60
+    # A cold MinGW build of five targets on the 4-core runner takes about an hour (master's runs were
+    # cut off at 60 minutes too); with the compiler cache warm it is minutes, but the first run after
+    # the cache is evicted still needs the room.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
@@ -246,13 +250,37 @@ jobs:
             mingw-w64-ucrt-x86_64-glew
             mingw-w64-ucrt-x86_64-zlib
             mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-freetype
+            mingw-w64-ucrt-x86_64-ccache
+      - name: Restore the compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-windows-release-${{ github.sha }}
+          restore-keys: ccache-windows-release-
       - name: Build editor with UVBT
         shell: msys2 {0}
+        env:
+          UVBT_COMPILER_LAUNCHER: ccache
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_COMPILERCHECK: content
+          CCACHE_MAXSIZE: 3G
         run: |
+          set -euo pipefail
+          ccache -z
           ./uvbt build UniVexEditor Windows Release -j4
           ./uvbt build UniVexRuntime Windows Release -j4
           ./uvbt build UniVexPack Windows Release -j4
           ./uvbt build UniVexAssetWorkload Windows Release -j4
+          ./uvbt build UniVexPrismTests Windows Release -j4
+          ccache -s
+      - name: Save the compiler cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-windows-release-${{ github.sha }}
       - name: Package editor and runtime DLLs
         shell: msys2 {0}
         run: |
@@ -262,6 +290,7 @@ jobs:
           cp .uvbt/bin/Windows/Release/uve_runtime.exe package/UniVex-Editor/
           cp .uvbt/bin/Windows/Release/uve_pack.exe package/UniVex-Editor/
           cp .uvbt/bin/Windows/Release/uve_asset_workload.exe package/UniVex-Editor/
+          cp -r .uvbt/bin/Windows/Release/prism_assets package/UniVex-Editor/
           python - <<'PY'
           import pathlib
           import re
@@ -284,6 +313,9 @@ jobs:
                   pending.append(target)
           PY
           printf '@echo off\r\ncd /d "%%~dp0"\r\nuve_editor.exe\r\n' > package/UniVex-Editor/Start-Editor.bat
+      - name: PRISM UI tests
+        shell: msys2 {0}
+        run: ./.uvbt/bin/Windows/Release/uve_prism_tests.exe Engine/Runtime/Prism/assets
       - name: Verify executable starts
         shell: msys2 {0}
         run: |

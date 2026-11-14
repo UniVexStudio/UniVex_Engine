@@ -6,7 +6,7 @@
 // of a light that lights nothing.
 //
 // Its own translation unit, and deliberately free of any OpenGL: this is pure scene logic that a
-// test can hold without a renderer, an ImGui context or a window.
+// test can hold without a renderer, a UI or a window.
 #include "integration/editor_mesh_layer.h"
 
 #include <cstddef>

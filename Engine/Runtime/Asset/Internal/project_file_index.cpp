@@ -122,4 +122,9 @@ ProjectFileSnapshotUVE ProjectFileIndexUVE::GetSnapshotUVE() const {
     return m_impl->snapshot;
 }
 
+std::uint64_t ProjectFileIndexUVE::GetRefreshGenerationUVE() const {
+    const std::lock_guard<std::mutex> lock(m_impl->mutex);
+    return m_impl->snapshot.refreshGeneration;
+}
+
 } // namespace UVE::Asset

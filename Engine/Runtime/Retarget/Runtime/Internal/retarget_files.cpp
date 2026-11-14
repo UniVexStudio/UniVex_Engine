@@ -1,6 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "retarget_files.h"
+#include "model_animations.h"
+
+#include "skeleton_asset.h"
 
 #include <chrono>
 #include <algorithm>
@@ -29,7 +32,9 @@ struct PlannedFileUVE final {
     fs::path file;
     std::optional<Asset::MeshAssetUVE> mesh;
     std::optional<Asset::AnimationClipAssetUVE> clip;
+    std::optional<Asset::SkeletonAssetUVE> skeleton;
     std::string note;
+    [[nodiscard]] bool WritesUVE() const noexcept { return mesh.has_value() || clip.has_value() || skeleton.has_value(); }
 };
 
 [[nodiscard]] std::string TimestampUVE() {
@@ -86,9 +91,29 @@ struct PlannedFileUVE final {
 }
 
 [[nodiscard]] bool WritePlannedFileUVE(const PlannedFileUVE& planned) {
+    // A take kept inside a model is written into the model itself (after the model, which keeps it).
+    fs::path model;
+    std::string take;
+    if (planned.clip.has_value() && Asset::SplitEmbeddedClipPathUVE(planned.file, model, take)) {
+        return Asset::SaveAnimationClipAssetUVE(*planned.clip, planned.file);
+    }
     const fs::path temporary = TemporaryPathUVE(planned.file);
-    const bool written = planned.mesh.has_value() ? Asset::SaveMeshAssetUVE(*planned.mesh, temporary)
+    bool written = planned.mesh.has_value()       ? Asset::SaveMeshAssetUVE(*planned.mesh, temporary)
+                   : planned.skeleton.has_value() ? Asset::SaveSkeletonAssetUVE(*planned.skeleton, temporary)
                                                   : Asset::SaveAnimationClipAssetUVE(*planned.clip, temporary);
+    // The model's own takes go with it into the new file.
+    if (written && planned.mesh.has_value()) {
+        std::vector<Asset::AnimationClipAssetUVE> takes;
+        for (const Asset::ModelAnimationEntryUVE& entry : Asset::ListModelAnimationsUVE(planned.file)) {
+            Asset::AnimationClipAssetUVE clip;
+            if (Asset::LoadModelAnimationUVE(planned.file, entry.name, clip)) {
+                takes.push_back(std::move(clip));
+            }
+        }
+        if (!takes.empty()) {
+            written = Asset::SaveModelAnimationsUVE(temporary, takes, Asset::ReadModelAnimationStampUVE(planned.file));
+        }
+    }
     if (!written) {
         std::error_code error;
         fs::remove(temporary, error);
@@ -108,6 +133,11 @@ struct PlannedFileUVE final {
     }
     nlohmann::json manifest{{"version", 1}, {"files", nlohmann::json::array()}};
     for (std::size_t index = 0U; index < files.size(); ++index) {
+        // A file the run will create (a skeleton the character had none of): Undo removes it.
+        if (std::error_code exists; !fs::exists(files[index], exists)) {
+            manifest["files"].push_back({{"created", true}, {"original", files[index].generic_string()}});
+            continue;
+        }
         const std::string name = std::to_string(index) + "_" + files[index].filename().string();
         fs::copy_file(files[index], dir / name, fs::copy_options::overwrite_existing, code);
         if (code) {
@@ -180,6 +210,12 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         return result;
     }
 
+    // Names first; the Rig Brain for the bones they cannot place.
+    const RigBrainUVE* const brain = !request.useBrain ? nullptr : (request.brain != nullptr ? request.brain : &GetDefaultRigBrainUVE());
+    const auto matchOf = [&](const RetargetSkeletonUVE& rig) {
+        return brain != nullptr ? MatchHumanoidWithBrainUVE(rig, reference, *brain) : MatchHumanoidUVE(rig, reference);
+    };
+
     // ---- 1. Read and conform everything in memory ----------------------------------------------
     std::vector<PlannedFileUVE> planned;
     if (hasModel) {
@@ -198,10 +234,15 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
             result.error = request.model.filename().string() + ": " + error;
             return result;
         }
-        const HumanoidMatchUVE match = MatchHumanoidUVE(*rig, reference);
-        const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error);
+        const HumanoidMatchUVE match = matchOf(*rig);
+        // An all-but-complete character is renamed, not rebuilt: body bones are added only when it
+        // lacks many of them.
+        ConformOptionsUVE options;
+        options.addBodyBonesOnlyWhenLacking = true;
+        const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(*rig, match, reference, &error, options);
         const Asset::MeshAssetUVE before = mesh;
-        if (!conformed.has_value() || !ConformMeshUVE(mesh, *conformed, &error)) {
+        // The character keeps its own rest pose: no vertex moves (the A-pose is where clips take it).
+        if (!conformed.has_value() || !ConformMeshUVE(mesh, *conformed, &error, SkinBlendUVE::DualQuaternion, ConformMeshModeUVE::KeepRestPose)) {
             result.error = request.model.filename().string() + ": " + error;
             return result;
         }
@@ -210,15 +251,36 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         char distortion[64];
         std::snprintf(distortion, sizeof(distortion), "; %.1f%% of edges changed by more than 10%%",
                       static_cast<double>(result.meshDistortion.fractionOverTenPercent) * 100.0);
-        model.note = std::to_string(conformed->skeleton.bones.size() - rig->bones.size()) + " bones added" + distortion;
+        const std::size_t added = conformed->skeleton.bones.size() > rig->bones.size() ? conformed->skeleton.bones.size() - rig->bones.size() : 0U;
+        model.note = (added == 0U ? std::string{"renamed only, no bone added"} : std::to_string(added) + " bones added") + distortion;
         model.mesh = std::move(mesh);
         planned.push_back(std::move(model));
+        // The character's skeleton beside the model (what the editor builds its Skeleton3D from):
+        // the engine's bones resting in the A-pose. The mesh stays bound where it was made, so the
+        // character stands in the A-pose without one vertex of its file moving, and clips conformed
+        // to the humanoid play on it exactly.
+        fs::path skeletonFile = request.model;
+        skeletonFile.replace_extension(".uvskel");
+        {
+            PlannedFileUVE skeleton;
+            skeleton.file = skeletonFile;
+            Asset::SkeletonAssetUVE asset;
+            asset.skeletonId = request.model.stem().string();
+            for (const RetargetBoneUVE& bone : conformed->skeleton.bones) {
+                asset.joints.push_back(Asset::SkeletonJointUVE{bone.name, bone.parent, bone.position, bone.rotation,
+                                                               Math::Vector3UVE{bone.scale, bone.scale, bone.scale}});
+            }
+            skeleton.skeleton = std::move(asset);
+            skeleton.note = "the character's skeleton: the engine's bones, resting in the A-pose";
+            planned.push_back(std::move(skeleton));
+        }
         for (const fs::path& partFile : partFiles) {
             PlannedFileUVE part;
             part.file = partFile;
             Asset::MeshAssetUVE partMesh;
             std::string partError;
-            if (!Asset::LoadMeshAssetUVE(partFile, partMesh) || !ConformMeshUVE(partMesh, *conformed, &partError)) {
+            if (!Asset::LoadMeshAssetUVE(partFile, partMesh) ||
+                !ConformMeshUVE(partMesh, *conformed, &partError, SkinBlendUVE::DualQuaternion, ConformMeshModeUVE::KeepRestPose)) {
                 result.error = partFile.filename().string() + ": " + (partError.empty() ? "cannot read it" : partError);
                 return result;
             }
@@ -241,7 +303,7 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         } else {
             std::string error;
             const RetargetSkeletonUVE rig = RigFromClipUVE(clip);
-            const HumanoidMatchUVE match = MatchHumanoidUVE(rig, reference);
+            const HumanoidMatchUVE match = matchOf(rig);
             const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(rig, match, reference, &error);
             std::optional<Asset::AnimationClipAssetUVE> converted;
             if (conformed.has_value()) {
@@ -264,7 +326,7 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
     // ---- 2. Back up what will change ---------------------------------------------------------------
     std::vector<fs::path> changing;
     for (const PlannedFileUVE& file : planned) {
-        if (file.mesh.has_value() || file.clip.has_value()) {
+        if (file.WritesUVE()) {
             changing.push_back(file.file);
         }
     }
@@ -285,7 +347,7 @@ RetargetFilesResultUVE RetargetFilesUVE(const RetargetFilesRequestUVE& request, 
         RetargetFileReportUVE entry;
         entry.file = file.file;
         entry.note = file.note;
-        if (file.mesh.has_value() || file.clip.has_value()) {
+        if (file.WritesUVE()) {
             report(index, file.file.filename().string());
             if (!WritePlannedFileUVE(file)) {
                 std::string restoreError;
@@ -319,9 +381,14 @@ bool RestoreRetargetBackupUVE(const fs::path& backupDir, std::string* error) {
         return fail("no backup manifest in " + backupDir.string());
     }
     std::vector<std::pair<fs::path, fs::path>> pairs;
+    std::vector<fs::path> created;
     try {
         const nlohmann::json manifest = nlohmann::json::parse(in);
         for (const nlohmann::json& file : manifest.at("files")) {
+            if (file.value("created", false)) {
+                created.emplace_back(file.at("original").get<std::string>());
+                continue;
+            }
             pairs.emplace_back(backupDir / file.at("backup").get<std::string>(),
                                fs::path{file.at("original").get<std::string>()});
         }
@@ -337,6 +404,10 @@ bool RestoreRetargetBackupUVE(const fs::path& backupDir, std::string* error) {
             allRestored = false;
             failures += (failures.empty() ? "" : "; ") + original.string() + ": " + code.message();
         }
+    }
+    for (const fs::path& file : created) {
+        std::error_code code;
+        fs::remove(file, code);
     }
     return allRestored || fail(failures);
 }

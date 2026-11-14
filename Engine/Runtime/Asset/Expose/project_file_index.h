@@ -24,6 +24,7 @@ public:
 
     bool RefreshUVE(const IAssetDatabaseUVE& assetDatabase) override;
     [[nodiscard]] ProjectFileSnapshotUVE GetSnapshotUVE() const override;
+    [[nodiscard]] std::uint64_t GetRefreshGenerationUVE() const override;
 
 private:
     struct ImplUVE;

@@ -16,6 +16,31 @@ namespace UVE::Editor {
 /// testable without a window. Every one leaves a valid graph valid: it refuses what would break it
 /// (a cycle, a second Output, deleting the Output) rather than repairing afterwards.
 
+/// A graph the editor shows: the top tree (machine 0), or the graph of a State Machine's state.
+struct AnimationGraphScopeUVE final {
+    std::uint32_t machine = 0U;
+    std::uint32_t state = 0U;
+    [[nodiscard]] bool operator==(const AnimationGraphScopeUVE&) const = default;
+};
+
+/// Where a node is shown: the state its wires lead into (up to the first State Machine), else
+/// where it was put (`owner`), else the top tree.
+[[nodiscard]] AnimationGraphScopeUVE AnimationGraphScopeOfUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                              std::uint32_t id);
+
+/// The nodes shown in `scope`, in graph order.
+[[nodiscard]] std::vector<std::uint32_t> AnimationGraphScopeNodesUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                                     AnimationGraphScopeUVE scope);
+
+/// Everything inside a node: a State Machine's states' nodes, and theirs (nested machines). Empty
+/// for other kinds.
+[[nodiscard]] std::vector<std::uint32_t> AnimationGraphNodesInsideUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                                      std::uint32_t id);
+
+/// A state's name: its own, else what it plays, else "State N".
+[[nodiscard]] std::string AnimationStateNameUVE(const std::vector<Scene::AnimationGraphNodeUVE>& nodes,
+                                                const Scene::AnimationGraphNodeUVE& machine, std::size_t slot);
+
 /// What a kind is called in the editor ("Blend Space" for BlendSpace1D...).
 [[nodiscard]] const char* AnimationGraphKindLabelUVE(Scene::AnimationGraphNodeKindUVE kind) noexcept;
 
@@ -112,5 +137,24 @@ bool RemoveBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, 
 /// land on another. Returns false, changing nothing, when it cannot move there.
 bool MoveBlendSpacePointUVE(std::vector<Scene::AnimationGraphNodeUVE>& nodes, std::uint32_t space, std::size_t slot,
                             Math::Vector2UVE position);
+
+/// The parameter a node is driven by: which field holds its name, and its type. Every node but
+/// Output and Slot has one (Godot's `parameters/<node>`): the gameplay (a Blueprint Class, a script)
+/// sets the node by that name.
+struct AnimationNodeParameterUVE final {
+    std::string Scene::AnimationGraphNodeUVE::*field = nullptr;
+    Scene::AnimationParameterTypeUVE type = Scene::AnimationParameterTypeUVE::Float;
+};
+[[nodiscard]] std::optional<AnimationNodeParameterUVE> NodeParameterOfUVE(Scene::AnimationGraphNodeKindUVE kind);
+/// A node's name as a parameter name: its words run together ("Blend Space 2D" -> "BlendSpace2D").
+[[nodiscard]] std::string ParameterNameForNodeUVE(const std::string& nodeName);
+/// `base`, or base2, base3 ... whichever no parameter of `graph` has.
+[[nodiscard]] std::string UniqueParameterNameUVE(const Scene::AnimationGraphComponentUVE& graph, const std::string& base);
+/// Renames a parameter and every use of it (the nodes it drives, the transition conditions that read
+/// it; a Slot's name is not a parameter). False when `to` is empty or taken.
+bool RenameGraphParameterUVE(Scene::AnimationGraphComponentUVE& graph, const std::string& from, const std::string& to);
+/// Gives node `id` its parameter, named after the node, of the node's type, set to its current value
+/// and bound to it. Nothing for a node that has none or is already bound.
+void BindNewNodeParametersUVE(Scene::AnimationGraphComponentUVE& graph, std::uint32_t id);
 
 } // namespace UVE::Editor

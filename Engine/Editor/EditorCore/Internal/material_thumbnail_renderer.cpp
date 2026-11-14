@@ -46,17 +46,15 @@ constexpr std::uint32_t kPreviewSphereSlicesUVE = 96U;
 constexpr std::uint32_t kPreviewSphereStacksUVE = 64U;
 constexpr float kPreviewSphereRadiusUVE = 0.5F;
 
-// A fixed three-light studio rig (directions point from the surface toward each light) plus a
-// hemisphere ambient. The rig is what makes the preview legible: a single key light leaves the
-// far side of the sphere black, which reads as "broken material" rather than "unlit".
+// One light, the sun (its direction points from the surface toward it), plus the sky's hemisphere
+// ambient, which keeps the far side of the sphere from going black. The fill and rim slots of the
+// shader stay, dark.
 constexpr float kKeyLightDirectionUVE[3] = {-0.45F, 0.85F, 0.55F};
-constexpr float kKeyLightColorUVE[3] = {3.12F, 3.02F, 2.88F};
-// From below the horizon: a cool bounce that keeps the underside readable without pretending the
-// sphere stands on a floor.
+constexpr float kKeyLightColorUVE[3] = {3.30F, 3.18F, 3.00F};
 constexpr float kFillLightDirectionUVE[3] = {0.75F, -0.15F, 0.65F};
-constexpr float kFillLightColorUVE[3] = {0.43F, 0.48F, 0.57F};
+constexpr float kFillLightColorUVE[3] = {0.0F, 0.0F, 0.0F};
 constexpr float kRimLightDirectionUVE[3] = {0.10F, 0.46F, -0.95F};
-constexpr float kRimLightColorUVE[3] = {1.62F, 1.62F, 1.68F};
+constexpr float kRimLightColorUVE[3] = {0.0F, 0.0F, 0.0F};
 constexpr float kSkyAmbientUVE[3] = {0.144F, 0.160F, 0.192F};
 constexpr float kGroundAmbientUVE[3] = {0.035F, 0.033F, 0.029F};
 

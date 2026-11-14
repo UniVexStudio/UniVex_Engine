@@ -1,9 +1,11 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -57,18 +59,23 @@ TEST(RetargetConformUVETest, ConformSkeletonUVE_GivesTheRigTheHumanoidsBonesName
     const ConformedFixtureUVE fixture;
     const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
     const ConformedRigUVE& conformed = fixture.conformed;
-    ASSERT_EQ(conformed.skeleton.bones.size(), reference.skeleton.bones.size() + 1U);
+    // The humanoid's core bones (the optional correctives the rig lacks are not made), then its own.
+    const std::size_t core = static_cast<std::size_t>(std::ranges::count_if(reference.info, [](const HumanoidBoneInfoUVE& info) { return !info.optional; }));
+    ASSERT_EQ(conformed.skeleton.bones.size(), core + 1U);
     ASSERT_TRUE(IsRetargetSkeletonValidUVE(conformed.skeleton));
     EXPECT_NEAR(conformed.heightScale, 1.1F, 1e-3F);
     const std::vector<WorldTransformUVE> referenceWorld = ComputeWorldTransformsUVE(reference.skeleton);
-    for (std::size_t index = 0U; index < reference.skeleton.bones.size(); ++index) {
+    for (std::size_t index = 0U; index < core; ++index) {
         const RetargetBoneUVE& bone = conformed.skeleton.bones[index];
-        EXPECT_EQ(bone.name, reference.skeleton.bones[index].name);
-        EXPECT_EQ(bone.parent, reference.skeleton.bones[index].parent) << bone.name;
-        EXPECT_EQ(conformed.referenceOfBone[index], static_cast<std::int32_t>(index));
+        const std::int32_t ref = conformed.referenceOfBone[index];
+        ASSERT_GE(ref, 0) << bone.name;
+        EXPECT_FALSE(reference.info[static_cast<std::size_t>(ref)].optional) << bone.name;
+        EXPECT_EQ(bone.name, reference.skeleton.bones[static_cast<std::size_t>(ref)].name);
+        const std::int32_t parent = reference.skeleton.bones[static_cast<std::size_t>(ref)].parent;
+        EXPECT_EQ(bone.parent < 0 ? -1 : conformed.referenceOfBone[static_cast<std::size_t>(bone.parent)], parent) << bone.name;
         // Every humanoid bone's frame is the reference's, whatever frame the rig used.
         const QuaternionUVE& a = fixture.world[index].rotation;
-        const QuaternionUVE& b = referenceWorld[index].rotation;
+        const QuaternionUVE& b = referenceWorld[static_cast<std::size_t>(ref)].rotation;
         EXPECT_NEAR(std::abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w), 1.0F, 1e-4F) << bone.name;
     }
     // The rig's own end bone is kept, under the head.
@@ -290,6 +297,31 @@ TEST(RetargetConformUVETest, ConformClipUVE_TurnsTheAnimationWithTheRig) {
     }
 }
 
+TEST(RetargetConformUVETest, ConformSkeletonUVE_ALeaningSpineDoesNotTiltTheRig) {
+    // Most game rigs carry the head ahead of the hips. That lean is the rig's shape, not a tilt: the
+    // rig still stands along its up axis, so a run's root keeps to the floor as it travels.
+    for (const auto& [what, turn] : std::vector<std::pair<std::string, QuaternionUVE>>{
+             {"Y up", QuaternionUVE{}}, {"Z up", AxisAngle({1.0F, 0.0F, 0.0F}, 1.5707964F)}}) {
+        const TPoseRigUVE upright(turn);
+        TPoseRigUVE leaning(turn);
+        std::vector<WorldTransformUVE> world = ComputeWorldTransformsUVE(leaning.skeleton);
+        const Vector3UVE forward = Math::RotateVectorUVE(turn, Vector3UVE{0.0F, 0.0F, 0.12F});
+        for (const char* name : {"Neck", "Head", "HeadTop_End"}) {
+            WorldTransformUVE& bone = world[static_cast<std::size_t>(FindBoneUVE(leaning.skeleton, name))];
+            bone.position = bone.position + forward;
+        }
+        leaning.skeleton = SkeletonFromWorldUVE(leaning.skeleton, world);
+        const ConformedRigUVE a = ConformUVE(upright);
+        const ConformedRigUVE b = ConformUVE(leaning);
+        const QuaternionUVE& p = a.orientation;
+        const QuaternionUVE& q = b.orientation;
+        EXPECT_NEAR(std::abs(p.x * q.x + p.y * q.y + p.z * q.z + p.w * q.w), 1.0F, 1e-6F) << what;
+        // Travel along the rig's forward stays level.
+        const Vector3UVE travelled = Math::RotateVectorUVE(b.orientation, Math::RotateVectorUVE(turn, Vector3UVE{0.0F, 0.0F, 3.0F}));
+        EXPECT_NEAR(travelled.y, 0.0F, 1e-5F) << what;
+    }
+}
+
 /// One vertex on every bone, bound to it alone, so the skin is exact and any difference is the
 /// animation's.
 [[nodiscard]] Asset::MeshAssetUVE MakeRigidMeshUVE(const TPoseRigUVE& rig) {
@@ -421,6 +453,107 @@ TEST(RetargetConformUVETest, ConformMeshUVE_DualQuaternionBlendingPinchesTheShou
         EXPECT_EQ(dual.skinningInfluences[vertex].weights[0], original.skinningInfluences[vertex].weights[0]);
     }
     EXPECT_FLOAT_EQ(MeasureMeshDistortionUVE(original, original).maximumEdgeChange, 0.0F);
+}
+
+
+TEST(RetargetConformUVETest, ConformSkeletonUVE_MakesOptionalBonesOnlyWhenAsked) {
+    const TPoseRigUVE rig;
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    const HumanoidMatchUVE match = MatchHumanoidUVE(rig.skeleton, reference);
+    const std::optional<ConformedRigUVE> all = ConformSkeletonUVE(rig.skeleton, match, reference, nullptr, ConformOptionsUVE{true});
+    ASSERT_TRUE(all.has_value());
+    EXPECT_EQ(all->skeleton.bones.size(), reference.skeleton.bones.size() + 1U);
+    EXPECT_GE(FindBoneUVE(all->skeleton, "UpperArmBicep_L"), 0);
+    const std::optional<ConformedRigUVE> core = ConformSkeletonUVE(rig.skeleton, match, reference);
+    ASSERT_TRUE(core.has_value());
+    EXPECT_LT(FindBoneUVE(core->skeleton, "UpperArmBicep_L"), 0);
+    // The core still has its twists, IK targets and sockets.
+    for (const char* name : {"UpperArmTwist1_L", "IKFoot_L", "IKHand_R", "IKFootRoot", "CenterOfMass", "Root"}) {
+        EXPECT_GE(FindBoneUVE(core->skeleton, name), 0) << name;
+    }
+}
+
+TEST(RetargetConformUVETest, ConformSkeletonUVE_AnAllButCompleteRigIsRenamedNotRebuilt) {
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    ConformOptionsUVE renameFirst;
+    renameFirst.addBodyBonesOnlyWhenLacking = true;
+    renameFirst.includeOptional = true;
+    // A rig with every bone, helper and IK target: nothing is added.
+    const RetargetSkeletonUVE complete = reference.skeleton;
+    const HumanoidMatchUVE all = MatchHumanoidUVE(complete, reference);
+    EXPECT_FALSE(IsRigVeryLackingUVE(all, reference));
+    EXPECT_EQ(CountBodyBonesUVE(all, reference).missing, 0U);
+    const std::optional<ConformedRigUVE> same = ConformSkeletonUVE(complete, all, reference, nullptr, renameFirst);
+    ASSERT_TRUE(same.has_value());
+    EXPECT_EQ(same->skeleton.bones.size(), complete.bones.size());
+    EXPECT_TRUE(std::ranges::none_of(same->added, [](const bool added) { return added; }));
+
+    // One twist bone short (a leaf): still renamed only - the twist is not made.
+    std::int32_t twist = -1;
+    for (std::size_t bone = 0U; bone < reference.info.size(); ++bone) {
+        const bool leaf = std::ranges::none_of(complete.bones, [bone](const RetargetBoneUVE& b) { return b.parent == static_cast<std::int32_t>(bone); });
+        if (reference.info[bone].kind == HumanoidBoneKindUVE::Twist && leaf) {
+            twist = static_cast<std::int32_t>(bone);
+            break;
+        }
+    }
+    ASSERT_GE(twist, 0);
+    RetargetSkeletonUVE short1;
+    for (std::size_t bone = 0U; bone < complete.bones.size(); ++bone) {
+        if (static_cast<std::int32_t>(bone) == twist) {
+            continue;
+        }
+        RetargetBoneUVE copy = complete.bones[bone];
+        copy.parent = copy.parent > twist ? copy.parent - 1 : copy.parent;
+        short1.bones.push_back(std::move(copy));
+    }
+    const HumanoidMatchUVE oneShort = MatchHumanoidUVE(short1, reference);
+    EXPECT_FALSE(IsRigVeryLackingUVE(oneShort, reference));
+    const std::optional<ConformedRigUVE> renamed = ConformSkeletonUVE(short1, oneShort, reference, nullptr, renameFirst);
+    ASSERT_TRUE(renamed.has_value());
+    EXPECT_EQ(renamed->skeleton.bones.size(), short1.bones.size()) << "no bone added";
+    EXPECT_LT(FindBoneUVE(renamed->skeleton, complete.bones[static_cast<std::size_t>(twist)].name), 0);
+    // Without the option the twist is made, as before.
+    ConformOptionsUVE rebuild;
+    rebuild.includeOptional = true;
+    const std::optional<ConformedRigUVE> rebuilt = ConformSkeletonUVE(short1, oneShort, reference, nullptr, rebuild);
+    ASSERT_TRUE(rebuilt.has_value());
+    EXPECT_GE(FindBoneUVE(rebuilt->skeleton, complete.bones[static_cast<std::size_t>(twist)].name), 0);
+
+    // A rig lacking much (the test rig has no fingers or twists) still gets them all.
+    const TPoseRigUVE sparse;
+    const HumanoidMatchUVE few = MatchHumanoidUVE(sparse.skeleton, reference);
+    if (IsRigVeryLackingUVE(few, reference)) {
+        const std::optional<ConformedRigUVE> grown = ConformSkeletonUVE(sparse.skeleton, few, reference, nullptr, renameFirst);
+        ASSERT_TRUE(grown.has_value());
+        EXPECT_GE(FindBoneUVE(grown->skeleton, "UpperArmTwist1_L"), 0);
+    }
+}
+
+TEST(RetargetConformUVETest, ConformMeshUVE_KeepingTheRestPoseMovesNoVertex) {
+    const TPoseRigUVE rig;
+    const HumanoidReferenceUVE& reference = GetHumanoidReferenceUVE();
+    const HumanoidMatchUVE match = MatchHumanoidUVE(rig.skeleton, reference);
+    const std::optional<ConformedRigUVE> conformed = ConformSkeletonUVE(rig.skeleton, match, reference);
+    ASSERT_TRUE(conformed.has_value());
+    ASSERT_EQ(conformed->restSkeleton.bones.size(), conformed->skeleton.bones.size());
+    // The rest skeleton is where the rig rests: each of its bones, in the humanoid's names.
+    const std::vector<WorldTransformUVE> rigWorld = ComputeWorldTransformsUVE(rig.skeleton);
+    const std::vector<WorldTransformUVE> restWorld = ComputeWorldTransformsUVE(conformed->restSkeleton);
+    for (std::size_t bone = 0U; bone < rig.skeleton.bones.size(); ++bone) {
+        const auto at = static_cast<std::size_t>(conformed->boneOfRigBone[bone]);
+        ExpectNear(restWorld[at].position, rigWorld[bone].position, 1e-4F, rig.skeleton.bones[bone].name);
+    }
+    // A clip at the humanoid's rest poses the mesh into the A-pose: each bone's skin turn is the
+    // move conforming measured for it.
+    const std::vector<WorldTransformUVE> poseWorld = ComputeWorldTransformsUVE(conformed->skeleton);
+    for (std::size_t bone = 0U; bone < rig.skeleton.bones.size(); ++bone) {
+        const auto at = static_cast<std::size_t>(conformed->boneOfRigBone[bone]);
+        const QuaternionUVE skin = Math::MultiplyUVE(poseWorld[at].rotation, Math::ConjugateUVE(restWorld[at].rotation));
+        const QuaternionUVE& move = conformed->moveOfRigBone[bone].rotation;
+        EXPECT_NEAR(std::abs(skin.x * move.x + skin.y * move.y + skin.z * move.z + skin.w * move.w), 1.0F, 1e-4F)
+            << rig.skeleton.bones[bone].name;
+    }
 }
 
 } // namespace

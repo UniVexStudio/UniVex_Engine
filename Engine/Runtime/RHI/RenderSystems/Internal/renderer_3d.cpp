@@ -5,6 +5,7 @@
 #include "bind_group.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <array>
 #include <chrono>
 #include <cstddef>
@@ -31,6 +32,7 @@
 #include "texture_compression.h"
 #include "camera_component.h"
 #include "canvas_component.h"
+#include "ui_view_3d_component.h"
 #include "hierarchy_component.h"
 #include "mesh_component.h"
 #include "primitive_mesh_component.h"
@@ -105,7 +107,12 @@ namespace {
 /// ordered and finite, yet hundreds of times the model's size or collapsed to a point, so the mesh
 /// is drawn off screen and the frustum test then rejects it. Bounds that are not ordered and finite,
 /// or that differ from the bind pose by more than animation plausibly explains, are not trusted.
-[[nodiscard]] bool IsPlausibleSkinnedBoundsUVE(const Math::AabbUVE& skinned, const Math::AabbUVE& rest) noexcept {
+/// `travel` is how far the skeleton's root joint has moved from its bind position, and
+/// `characterDiagonal` the size of the whole skeleton: a small part (a head, a hat) of a character
+/// that walks or jumps far is judged by where it is on the character, not by how far it went.
+[[nodiscard]] bool IsPlausibleSkinnedBoundsUVE(const Math::AabbUVE& skinned, const Math::AabbUVE& rest,
+                                               const Math::Vector3UVE travel = Math::Vector3UVE{},
+                                               const float characterDiagonal = 0.0F) noexcept {
     if (!IsOrderedFiniteAabbUVE(skinned)) {
         return false;
     }
@@ -124,8 +131,9 @@ namespace {
         skinnedDiagonal > restDiagonal * kMaximumSizeRatio) {
         return false;
     }
-    return Math::LengthUVE(skinned.GetCenterUVE() - rest.GetCenterUVE()) <=
-           restDiagonal * kMaximumCenterDriftInDiagonals;
+    const float scale = std::isfinite(characterDiagonal) ? std::max(restDiagonal, characterDiagonal) : restDiagonal;
+    const Math::Vector3UVE shift = Math::IsFiniteUVE(travel) ? travel : Math::Vector3UVE{};
+    return Math::LengthUVE(skinned.GetCenterUVE() - shift - rest.GetCenterUVE()) <= scale * kMaximumCenterDriftInDiagonals;
 }
 
 [[nodiscard]] Math::AabbUVE ComputeLightSpaceCameraBoundsUVE(const CameraFrustumCornersUVE& cameraCorners,
@@ -944,6 +952,9 @@ struct Renderer3DUVE::ImplUVE {
     /// Copied only through IRenderer3DUVE::GetLastFrameDiagnosticsUVE(). Recorded counts are
     /// CPU-side renderer facts; the OpenGL-issued count never asserts completed presentation.
     Renderer3DFrameDiagnosticsUVE lastFrameDiagnostics;
+    /// New meshes a frame may upload (0: no limit), and this frame's deferred ones (each counted once).
+    std::size_t meshUploadBudget = 0U;
+    std::vector<std::uint64_t> deferredMeshesThisFrame;
 
     /// Flat ambient term added to every rendered item every frame, regardless of whether an
     /// active light exists this frame (see EngineConfigUVE::ambientColor, Increment 23).
@@ -1043,6 +1054,8 @@ struct Renderer3DUVE::ImplUVE {
     Asset::AssetGuidUVE skyTextureGuid{};
     TextureHandleUVE skyTextureHandle = kInvalidTextureHandleUVE;
     bool skyTextureEnabled = false;
+    /// See IRenderer3DUVE::GetLastSceneDepthUVE().
+    SceneDepthExportUVE lastSceneDepth{};
     float environmentCameraNear = 0.1F;
     float environmentCameraFar = 250.0F;
     float environmentAspect = 1.0F;
@@ -1090,6 +1103,30 @@ struct Renderer3DUVE::ImplUVE {
     Math::QuaternionUVE probeCaptureRotation{};
     float probeCaptureNear = 0.05F;
     float probeCaptureFar = 50.0F;
+    /// A capture's vertical lens (a probe face is 90 degrees; a 3D View's is its own).
+    float probeCaptureFovY = Math::kPiUVE * 0.5F;
+    /// A 3D View capture: no sky, and alpha 0 wherever nothing was drawn.
+    bool captureTransparentBackground = false;
+    /// A 3D View is being captured (not a reflection probe).
+    bool uiViewCaptureActive = false;
+    /// Each 3D View's own picture (UIView3DComponentUVE), by its widget.
+    struct UIViewCaptureUVE final {
+        TextureHandleUVE color = kInvalidTextureHandleUVE;
+        TextureHandleUVE depth = kInvalidTextureHandleUVE;
+        std::uint32_t width = 0U;
+        std::uint32_t height = 0U;
+        bool ready = false;
+    };
+    std::unordered_map<std::uint64_t, UIViewCaptureUVE> uiViewCaptures;
+    void DestroyUIViewCaptureUVE(UIViewCaptureUVE& capture) {
+        if (capture.color != kInvalidTextureHandleUVE) {
+            renderDevice.DestroyTextureUVE(capture.color);
+        }
+        if (capture.depth != kInvalidTextureHandleUVE) {
+            renderDevice.DestroyTextureUVE(capture.depth);
+        }
+        capture = UIViewCaptureUVE{};
+    }
     int reflectionProbeEnabled = 0;
     Math::Vector3UVE reflectionProbePosition{};
     Math::Vector3UVE reflectionProbeAxisX{1.0F, 0.0F, 0.0F};
@@ -1351,6 +1388,8 @@ struct Renderer3DUVE::ImplUVE {
     TextureHandleUVE fallbackNormalTexture;
 
     std::unordered_map<Asset::AssetGuidUVE, MeshGpuResourcesUVE> meshCache;
+    /// Textures still loading, held so their loads are not dropped (ResolveTextureGpuHandleUVE).
+    std::unordered_map<Asset::AssetGuidUVE, Asset::AssetHandleUVE<Asset::TextureAssetUVE>> pendingTextureHandles;
     /// Per-entity vertex buffers of skinned meshes, re-skinned every frame. The index buffer is the
     /// mesh's shared one. Entries an extraction did not touch are released at the next one.
     struct SkinnedMeshGpuUVE final {
@@ -1856,6 +1895,19 @@ struct Renderer3DUVE::ImplUVE {
         if (existingIt != meshCache.end()) {
             return existingIt->second;
         }
+        // Over this frame's upload budget: drawn from a later frame, when its turn comes.
+        if (meshUploadBudget > 0U && lastFrameDiagnostics.meshUploads >= meshUploadBudget) {
+            if (std::find(deferredMeshesThisFrame.begin(), deferredMeshesThisFrame.end(), guid.value) == deferredMeshesThisFrame.end()) {
+                deferredMeshesThisFrame.push_back(guid.value);
+                ++lastFrameDiagnostics.meshUploadsDeferred;
+            }
+            static const MeshGpuResourcesUVE kNotYetUVE{};
+            return kNotYetUVE;
+        }
+        if (lastFrameDiagnostics.meshUploads < lastFrameDiagnostics.uploadedMeshes.size()) {
+            lastFrameDiagnostics.uploadedMeshes[lastFrameDiagnostics.meshUploads] = guid;
+        }
+        ++lastFrameDiagnostics.meshUploads;
 
         // Asset loaders derive tangents for legacy `.uvmodel` payloads, but runtime/custom mesh
         // loaders may construct MeshAssetUVE directly. Regenerate into this one-time GPU-upload copy
@@ -1935,8 +1987,17 @@ struct Renderer3DUVE::ImplUVE {
             return fallbackHandle;
         }
 
-        Asset::AssetHandleUVE<Asset::TextureAssetUVE> textureHandle =
-            assetManager.LoadUVE<Asset::TextureAssetUVE>(textureGuid, assetDatabase);
+        // The handle is kept while the texture loads: a load nobody holds is dropped when it
+        // finishes, so asking again every frame would start it over and over and a large texture
+        // would never arrive.
+        auto pendingIt = pendingTextureHandles.find(textureGuid);
+        if (pendingIt == pendingTextureHandles.end()) {
+            pendingIt = pendingTextureHandles.emplace(textureGuid, assetManager.LoadUVE<Asset::TextureAssetUVE>(textureGuid, assetDatabase)).first;
+        }
+        Asset::AssetHandleUVE<Asset::TextureAssetUVE> textureHandle = pendingIt->second;
+        if (textureHandle.HasFailedUVE() || textureHandle.IsReadyUVE()) {
+            pendingTextureHandles.erase(pendingIt);
+        }
         if (textureHandle.HasFailedUVE()) {
             failedTextureGuids.insert(textureGuid);
             ++lastFrameDiagnostics.textureFallbacks;
@@ -2491,7 +2552,33 @@ struct Renderer3DUVE::ImplUVE {
                                                  std::max(skinnedBounds.max.y, vertex.position.y),
                                                  std::max(skinnedBounds.max.z, vertex.position.z)};
         }
-        if (!verticesFinite || !IsPlausibleSkinnedBoundsUVE(skinnedBounds, mesh.localBounds)) {
+        // How far the character's root joint travelled, and how big the whole rig is (every joint's
+        // bind position), so a small part is judged as part of the character.
+        Math::Vector3UVE travel{};
+        float characterDiagonal = 0.0F;
+        {
+            Math::AabbUVE rig{};
+            bool any = false;
+            for (std::size_t j = 0U; j < mesh.joints.size() && j < skinning.size(); ++j) {
+                Math::Matrix4x4UVE bind;
+                if (!Math::TryInverseUVE(mesh.joints[j].inverseBindMatrix, bind)) {
+                    continue;
+                }
+                const Math::Vector3UVE at = Math::TransformPointUVE(bind, Math::Vector3UVE{});
+                if (!any) {
+                    rig = Math::AabbUVE{at, at};
+                    travel = Math::TransformPointUVE(skinning[j], at) - at;   // the first placed joint: the root
+                    any = true;
+                } else {
+                    rig.min = Math::Vector3UVE{std::min(rig.min.x, at.x), std::min(rig.min.y, at.y), std::min(rig.min.z, at.z)};
+                    rig.max = Math::Vector3UVE{std::max(rig.max.x, at.x), std::max(rig.max.y, at.y), std::max(rig.max.z, at.z)};
+                }
+            }
+            if (any) {
+                characterDiagonal = Math::LengthUVE(rig.max - rig.min);
+            }
+        }
+        if (!verticesFinite || !IsPlausibleSkinnedBoundsUVE(skinnedBounds, mesh.localBounds, travel, characterDiagonal)) {
             // NaN / infinite vertices, or a pose whose scale or translation disagrees with the mesh's
             // bind matrices and flings the skin far from (or collapses it onto) the model. Uploading
             // that buffer is what made a character vanish a frame after it first appeared, leaving only
@@ -2815,8 +2902,14 @@ struct Renderer3DUVE::ImplUVE {
                 // at extraction: the handle owns the reference that keeps the payload alive until
                 // the colour pass consumes it.
                 Asset::AssetGuidUVE materialGuid = Asset::kInvalidAssetGuidUVE;
-                if (Scene::HasAssignedPrimitiveMaterialUVE(primitive)) {
-                    materialGuid = primitive.materialGuid;
+                // A MeshInstance3D drawing a built-in shape keeps its material on the mesh slot (the
+                // one its Details show); the shape's own slot wins when both are set.
+                Asset::AssetGuidUVE chosenMaterial = primitive.materialGuid;
+                if (chosenMaterial == Asset::kInvalidAssetGuidUVE && entityManager.HasComponentUVE<Scene::MeshComponentUVE>(entity)) {
+                    chosenMaterial = entityManager.GetComponentUVE<Scene::MeshComponentUVE>(entity).materialGuid;
+                }
+                if (chosenMaterial != Asset::kInvalidAssetGuidUVE) {
+                    materialGuid = chosenMaterial;
                     namedPrimitiveMaterials[materialGuid] = true;
                     auto materialIt = primitiveMaterialHandles.find(materialGuid);
                     if (materialIt == primitiveMaterialHandles.end()) {
@@ -3214,6 +3307,7 @@ struct Renderer3DUVE::ImplUVE {
             }
         }
         program.SetIntUVE("uShadowPcfKernelRadius", frameUniforms.shadowPcfKernelRadius);
+        program.SetFloatUVE("uShadowMapResolution", static_cast<float>(shadowMapResolution));
         program.SetFloatUVE("uShadowBias", frameUniforms.shadowBias);
         program.SetFloatUVE("uShadowNormalBias", frameUniforms.shadowNormalBias);
         program.SetFloatUVE("uShadowOpacity", frameUniforms.shadowOpacity);
@@ -3226,6 +3320,14 @@ struct Renderer3DUVE::ImplUVE {
         program.SetFloatUVE("uOcclusionStrength", material.occlusionStrength);
         program.SetVector3UVE("uUvScale", Math::Vector3UVE{material.uvScale.x, material.uvScale.y, 0.0F});
         program.SetVector3UVE("uUvOffset", Math::Vector3UVE{material.uvOffset.x, material.uvOffset.y, 0.0F});
+        program.SetVector3UVE("uUv2Scale", Math::Vector3UVE{material.uv2Scale.x, material.uv2Scale.y, material.uv2Scale.x});
+        program.SetVector3UVE("uUv2Offset", Math::Vector3UVE{material.uv2Offset.x, material.uv2Offset.y, 0.0F});
+        program.SetIntUVE("uUv1Triplanar", !material.triplanarEnabled ? 0 : material.worldSpaceTriplanar ? 2 : 1);
+        program.SetFloatUVE("uUv1TriplanarSharpness", material.triplanarBlendSharpness);
+        program.SetIntUVE("uUv2Triplanar", !material.uv2Triplanar ? 0 : material.uv2WorldTriplanar ? 2 : 1);
+        program.SetFloatUVE("uUv2TriplanarSharpness", material.uv2TriplanarSharpness);
+        program.SetIntUVE("uAoOnUv2", material.aoOnUv2 ? 1 : 0);
+        program.SetIntUVE("uEmissionOnUv2", material.emissionOnUv2 ? 1 : 0);
         program.SetIntUVE("uUnshaded", material.unshaded ? 1 : 0);
         program.SetIntUVE("uShadingMode", shadingMode);
         program.SetFloatUVE("uAlphaCutoff", material.alphaCutoff);
@@ -3977,6 +4079,14 @@ struct Renderer3DUVE::ImplUVE {
                 }
                 texture = uiFontAtlasTexture;
                 break;
+            case UI::UIDrawItemKindUVE::View3D: {
+                const auto capture = uiViewCaptures.find(quad.viewKey);
+                if (capture == uiViewCaptures.end() || !capture->second.ready) {
+                    continue; // drawn from the next frame, once its stage has been captured
+                }
+                texture = capture->second.color;
+                break;
+            }
             }
             if (orderedTextureBatches.empty() || orderedTextureBatches.back().texture != texture ||
                 orderedTextureBatches.back().quads.size() >= kMaximumUIQuadsUVE) {
@@ -4461,10 +4571,103 @@ void Renderer3DUVE::CaptureDueReflectionProbesUVE(Scene::IEntityManagerUVE& enti
     static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
 }
 
+void Renderer3DUVE::CaptureUIViewsUVE(Scene::IEntityManagerUVE& entityManager, const Scene::EntityUVE cameraEntity) {
+    if (m_impl->uiRuntimeForFrame == nullptr || !entityManager.IsAliveUVE(cameraEntity) ||
+        !entityManager.HasComponentUVE<Scene::CameraComponentUVE>(cameraEntity) ||
+        !entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(cameraEntity)) {
+        return;
+    }
+    // Only the 3D Views the UI drew last: a hidden menu costs nothing.
+    std::vector<std::pair<std::uint64_t, Math::Vector2UVE>> shown;
+    for (const UI::UIQuadUVE& quad : m_impl->uiRuntimeForFrame->GetDrawBatchUVE().quads) {
+        if (quad.kind == UI::UIDrawItemKindUVE::View3D) {
+            shown.emplace_back(quad.viewKey, quad.rect.size);
+        }
+    }
+    for (auto it = m_impl->uiViewCaptures.begin(); it != m_impl->uiViewCaptures.end();) {
+        const bool stillShown = std::any_of(shown.begin(), shown.end(), [&it](const auto& view) { return view.first == it->first; });
+        if (!stillShown) {
+            m_impl->DestroyUIViewCaptureUVE(it->second);
+            it = m_impl->uiViewCaptures.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (shown.empty()) {
+        return;
+    }
+    const std::uint32_t savedWidth = m_impl->targetWidth;
+    const std::uint32_t savedHeight = m_impl->targetHeight;
+    const std::optional<ViewportRectUVE> savedRegion = m_impl->destinationViewportOverride;
+    m_impl->destinationViewportOverride.reset();
+    m_impl->probeCaptureViewActive = true;
+    m_impl->captureTransparentBackground = true;
+    m_impl->uiViewCaptureActive = true;
+    for (const auto& [key, size] : shown) {
+        const Scene::EntityUVE widget{static_cast<std::uint32_t>(key & 0xFFFFFFFFU), static_cast<std::uint32_t>(key >> 32U)};
+        if (!entityManager.IsAliveUVE(widget) || !entityManager.HasComponentUVE<Scene::UIView3DComponentUVE>(widget)) {
+            continue;
+        }
+        const Scene::UIView3DComponentUVE& view = entityManager.GetComponentUVE<Scene::UIView3DComponentUVE>(widget);
+        if (!entityManager.IsAliveUVE(view.stageRoot)) {
+            continue;
+        }
+        const std::uint32_t width = static_cast<std::uint32_t>(std::clamp(std::lround(size.x), 16L, 2048L));
+        const std::uint32_t height = static_cast<std::uint32_t>(std::clamp(std::lround(size.y), 16L, 2048L));
+        ImplUVE::UIViewCaptureUVE& capture = m_impl->uiViewCaptures[key];
+        if (capture.width != width || capture.height != height) {
+            m_impl->DestroyUIViewCaptureUVE(capture);
+            capture = ImplUVE::UIViewCaptureUVE{};
+            capture.color = m_impl->renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::RGBA8Unorm, 1});
+            capture.depth = m_impl->renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::Depth32Float, 1});
+            capture.width = width;
+            capture.height = height;
+        }
+        if (capture.color == kInvalidTextureHandleUVE || capture.depth == kInvalidTextureHandleUVE ||
+            !m_impl->ResizeTargetsUVE(width, height)) {
+            continue;
+        }
+        // The widget's camera, around its stage: back from the look-at point along its tilt.
+        const Math::Vector3UVE stage = Scene::UIView3DStagePositionUVE(view.stageSlot);
+        const Math::Vector3UVE target{stage.x, stage.y + view.lookAtHeight, stage.z};
+        const float pitch = view.pitchDegrees * (Math::kPiUVE / 180.0F);
+        Math::QuaternionUVE rotation{};
+        if (!Math::TryMakeAxisAngleUVE(Math::Vector3UVE{1.0F, 0.0F, 0.0F}, pitch, rotation)) {
+            continue;
+        }
+        const Math::Vector3UVE forward = Math::RotateVectorUVE(rotation, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+        m_impl->probeCapturePosition = target - forward * view.cameraDistance;
+        m_impl->probeCaptureRotation = rotation;
+        m_impl->probeCaptureFovY = view.fieldOfViewDegrees * (Math::kPiUVE / 180.0F);
+        if (view.useWidgetStage && view.stageCameraValid) {
+            // The widget's Stage: through its StageCamera, as the Stage tab frames it.
+            m_impl->probeCapturePosition = view.stageCameraPosition;
+            m_impl->probeCaptureRotation = view.stageCameraRotation;
+            m_impl->probeCaptureFovY = std::clamp(view.stageCameraFieldOfViewDegrees, 5.0F, 150.0F) * (Math::kPiUVE / 180.0F);
+        }
+        m_impl->captureTransparentBackground = view.transparentBackground;
+        m_impl->probeCaptureNear = 0.05F;
+        m_impl->probeCaptureFar = std::max(20.0F, view.cameraDistance * 6.0F);
+        m_impl->probeCaptureVisibilityLayers = 0xFFFFFFFFU;
+        RenderFrameToTargetUVE(entityManager, cameraEntity, capture.color, capture.depth, width, height, 0U);
+        capture.ready = true;
+    }
+    m_impl->probeCaptureViewActive = false;
+    m_impl->captureTransparentBackground = false;
+    m_impl->uiViewCaptureActive = false;
+    m_impl->probeCaptureFovY = Math::kPiUVE * 0.5F;
+    m_impl->destinationViewportOverride = savedRegion;
+    static_cast<void>(m_impl->ResizeTargetsUVE(savedWidth, savedHeight));
+}
+
 void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity) {
+    if (!m_impl->probeCaptureViewActive) {
+        CaptureUIViewsUVE(entityManager, cameraEntity);
+    }
     const bool capturingProbe = m_impl->probeCaptureViewActive;
     if (!capturingProbe) {
         m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
+        m_impl->deferredMeshesThisFrame.clear();
         // Reset here, not beside the main pass: the shadow cascades are recorded BEFORE it, so a reset
         // at the main pass would discard the count this counter exists to report.
         m_impl->shadowInstancedDrawCallsThisFrame = 0U;
@@ -4502,6 +4705,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     if (!capturingProbe) {
         CaptureDueReflectionProbesUVE(entityManager, cameraEntity);
         m_impl->lastFrameDiagnostics = Renderer3DFrameDiagnosticsUVE{};
+        m_impl->deferredMeshesThisFrame.clear();
         m_impl->shadowInstancedDrawCallsThisFrame = 0U;
         m_impl->indirectInstancedDrawCallsThisFrame = 0U;
         m_impl->nextIndirectCullIndex = 0U;
@@ -4574,10 +4778,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->humanEyeCenterScale = 1.0F;
         m_impl->environmentCameraNear = m_impl->probeCaptureNear;
         m_impl->environmentCameraFar = m_impl->probeCaptureFar;
-        viewProjection = Math::Matrix4x4UVE::PerspectiveUVE(kHalfPiUVE, aspectRatio, m_impl->probeCaptureNear,
+        viewProjection = Math::Matrix4x4UVE::PerspectiveUVE(m_impl->probeCaptureFovY, aspectRatio, m_impl->probeCaptureNear,
                                                             m_impl->probeCaptureFar) *
                          Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(viewPosition, viewRotation);
-        m_impl->skyTanHalfFov = 1.0F;
+        m_impl->skyTanHalfFov = std::tan(m_impl->probeCaptureFovY * 0.5F);
     } else {
         m_impl->humanEyeEnabled = camera.projection == Scene::CameraProjectionModeUVE::HumanEye;
         m_impl->humanEyeCenterScale =
@@ -4586,6 +4790,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         m_impl->environmentCameraFar = camera.farPlane;
         viewProjection = m_impl->cameraSystem.ComputeViewProjectionUVE(entityManager, cameraEntity, aspectRatio);
         viewPosition = m_impl->cameraSystem.GetWorldPositionUVE(entityManager, cameraEntity);
+        m_impl->lastSceneDepth = SceneDepthExportUVE{};
+        if (Math::TryInverseUVE(viewProjection, m_impl->lastSceneDepth.inverseViewProjection)) {
+            m_impl->lastSceneDepth.valid = m_impl->depthTarget != kInvalidTextureHandleUVE;
+            m_impl->lastSceneDepth.depthTexture = m_impl->depthTarget;
+            m_impl->lastSceneDepth.width = m_impl->targetWidth;
+            m_impl->lastSceneDepth.height = m_impl->targetHeight;
+        }
         const float skyFovY = camera.projection == Scene::CameraProjectionModeUVE::Orthographic
                                   ? 60.0F
                                   : Scene::VerticalFieldOfViewDegreesUVE(camera, aspectRatio);
@@ -4615,7 +4826,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     // perspective camera) just means SSAO is skipped this frame, not a fatal error.
     const Math::Matrix4x4UVE projection =
         capturingProbe
-            ? Math::Matrix4x4UVE::PerspectiveUVE(kHalfPiUVE, aspectRatio, m_impl->probeCaptureNear,
+            ? Math::Matrix4x4UVE::PerspectiveUVE(m_impl->probeCaptureFovY, aspectRatio, m_impl->probeCaptureNear,
                                                  m_impl->probeCaptureFar)
             : m_impl->cameraSystem.ComputeProjectionMatrixUVE(entityManager, cameraEntity, aspectRatio);
     Math::Matrix4x4UVE inverseProjection{};
@@ -5209,7 +5420,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const bool sunDiscActive = m_impl->sunEnergy > 0.0F &&
                                m_impl->sunDiscAngularDiameterDegrees > 0.0F &&
                                m_impl->sunDiscIntensity > 0.0F;
-    const bool skyActive = (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
+    const bool skyActive = !m_impl->captureTransparentBackground &&
+                           (m_impl->environmentFrame.hasEnvironment || sunDiscActive) &&
                            m_impl->proceduralSkyProgram && m_impl->proceduralSkyProgram->IsValidUVE();
     if (skyActive) {
         const std::array<RenderGraphResourceUseUVE, 5U> skyResources{
@@ -5769,8 +5981,12 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uFxaaTexelX", m_impl->humanEyeTexelX);
             m_impl->toneMappingProgram->SetFloatUVE("uFxaaTexelY", m_impl->humanEyeTexelY);
             m_impl->toneMappingProgram->SetIntUVE("uSceneDepthTexture", 1);
+            // A 3D View with a sky behind it is opaque; a probe or a see-through view keeps coverage.
             m_impl->toneMappingProgram->SetIntUVE("uWriteCoverageAlpha",
-                                                   m_impl->destinationTextureOverride.has_value() ? 1 : 0);
+                                                   m_impl->destinationTextureOverride.has_value() &&
+                                                           !(m_impl->uiViewCaptureActive && !m_impl->captureTransparentBackground)
+                                                       ? 1
+                                                       : 0);
             m_impl->toneMappingProgram->SetIntUVE("uHumanEye", m_impl->humanEyeEnabled ? 1 : 0);
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeTexelX", m_impl->humanEyeTexelX);
@@ -5787,7 +6003,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uCameraNear", m_impl->environmentCameraNear);
             m_impl->toneMappingProgram->SetFloatUVE("uCameraFar", m_impl->environmentCameraFar);
             m_impl->toneMappingProgram->SetFloatUVE("uFogSkyAffect", m_impl->environmentFrame.fogSkyAffect);
-            m_impl->toneMappingProgram->SetIntUVE("uSkyCovers", m_impl->environmentFrame.hasEnvironment ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE(
+                "uSkyCovers", m_impl->environmentFrame.hasEnvironment && !m_impl->captureTransparentBackground ? 1 : 0);
             m_impl->toneMappingProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
             m_impl->toneMappingProgram->SetFloatUVE("uOrthoHalfHeight", orthoHalfHeight);
             m_impl->toneMappingProgram->SetFloatUVE("uBrightness", m_impl->environmentFrame.brightness);
@@ -6158,6 +6375,10 @@ void Renderer3DUVE::SetShadingModeUVE(const std::int32_t shadingMode) noexcept {
     m_impl->shadingMode = std::clamp(shadingMode, 0, 4);
 }
 
+void Renderer3DUVE::SetMeshUploadBudgetUVE(const std::size_t meshesPerFrame) noexcept {
+    m_impl->meshUploadBudget = meshesPerFrame;
+}
+
 void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) noexcept {
     const std::int32_t clampedLevel = std::clamp(scalabilityMode, 0, 2);
     m_impl->scalabilityMode = clampedLevel;
@@ -6201,6 +6422,10 @@ void Renderer3DUVE::SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept 
     // drawing, and a non-finite value would otherwise reach a matrix compose.
     const float sanitized = std::isfinite(alpha) ? (alpha < 0.0F ? 0.0F : (alpha > 1.0F ? 1.0F : alpha)) : 0.0F;
     m_impl->visibilitySet.physicsInterpolationAlpha = sanitized;
+}
+
+SceneDepthExportUVE Renderer3DUVE::GetLastSceneDepthUVE() const noexcept {
+    return m_impl->lastSceneDepth;
 }
 
 Renderer3DFrameDiagnosticsUVE Renderer3DUVE::GetLastFrameDiagnosticsUVE() const noexcept {

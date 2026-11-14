@@ -35,6 +35,10 @@ struct AssetManagerRecordUVE {
     int refCount = 0;
     std::size_t residentBytes = 0;
     bool sizeKnown = false;
+    /// A reload asked for while a load was still running: the file may have changed after that
+    /// load read it, so it runs again (from `reloadPath`) as soon as the running one lands.
+    bool reloadQueued = false;
+    std::filesystem::path reloadPath;
 };
 
 } // namespace
@@ -128,6 +132,17 @@ void AssetManagerUVE::LoadErased(AssetGuidUVE guid, std::type_index type, IAsset
 }
 
 void AssetManagerUVE::ReloadUVE(AssetGuidUVE guid, IAssetDatabaseUVE& assetDatabase) {
+    // Resolved first, outside the manager's lock, so a reload that has to wait for a running load
+    // can be queued with the path it will read.
+    std::filesystem::path path;
+    std::string resolveError;
+    try {
+        path = assetDatabase.ResolveUVE(guid);
+    } catch (const std::exception& exception) {
+        resolveError = "asset database resolver threw: " + std::string(exception.what());
+    } catch (...) {
+        resolveError = "asset database resolver threw an unknown exception";
+    }
     std::type_index type(typeid(void));
     {
         const std::lock_guard<std::mutex> lock(m_impl->mutex);
@@ -137,23 +152,20 @@ void AssetManagerUVE::ReloadUVE(AssetGuidUVE guid, IAssetDatabaseUVE& assetDatab
             return;
         }
         if (it->second.state == AssetLoadStateUVE::Loading) {
-            UVE_WARNING("AssetManagerUVE: ReloadUVE() called for GUID {} while still loading - skipping",
-                        guid.value);
+            // Skipping it would keep whatever the running load read, which can be the file as it
+            // was before this change (a tool rewrote it while it was being loaded): run it again.
+            if (resolveError.empty()) {
+                it->second.reloadQueued = true;
+                it->second.reloadPath = path;
+            }
             return;
         }
         it->second.state = AssetLoadStateUVE::Loading;
         it->second.failureReason.clear();
         type = it->second.type;
     }
-
-    std::filesystem::path path;
-    try {
-        path = assetDatabase.ResolveUVE(guid);
-    } catch (const std::exception& exception) {
-        FailResolutionUVE(guid, "asset database resolver threw: " + std::string(exception.what()));
-        return;
-    } catch (...) {
-        FailResolutionUVE(guid, "asset database resolver threw an unknown exception");
+    if (!resolveError.empty()) {
+        FailResolutionUVE(guid, std::move(resolveError));
         return;
     }
     m_impl->threadPool.SubmitUVE([this, guid, type, path]() { ExecuteLoadUVE(guid, type, path); },
@@ -274,6 +286,28 @@ void AssetManagerUVE::ExecuteLoadUVE(AssetGuidUVE guid, std::type_index type, st
     if (oldData != nullptr && destroyFunc) destroyFunc(oldData);
 
     m_impl->eventSystem.QueueEvent(AssetLoadCompletedEventUVE{guid, success});
+
+    // A reload asked for while this load ran: load again, now that this one has landed.
+    std::filesystem::path again;
+    bool requeue = false;
+    {
+        const std::lock_guard<std::mutex> lock(m_impl->mutex);
+        const auto it = m_impl->records.find(guid);
+        if (it != m_impl->records.end() && it->second.reloadQueued) {
+            it->second.reloadQueued = false;
+            again = std::move(it->second.reloadPath);
+            it->second.reloadPath.clear();
+            if (it->second.state != AssetLoadStateUVE::Loading) {
+                it->second.state = AssetLoadStateUVE::Loading;
+                it->second.failureReason.clear();
+                requeue = true;
+            }
+        }
+    }
+    if (requeue) {
+        m_impl->threadPool.SubmitUVE([this, guid, type, again]() { ExecuteLoadUVE(guid, type, again); },
+                                      m_impl->pendingJobs);
+    }
 }
 
 void AssetManagerUVE::FailResolutionUVE(AssetGuidUVE guid, std::string failureReason) {

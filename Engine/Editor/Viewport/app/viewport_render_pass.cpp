@@ -157,6 +157,20 @@ void ViewportRenderPass::RenderSelectionOutlineUVE(const OrbitCamera& camera, co
                             selectionOutlineSettings_);
 }
 
+bool ViewportRenderPass::ReadSelectionMaskUVE(const OrbitCamera& camera, const int framebufferWidth,
+                                              const int framebufferHeight,
+                                              const std::vector<univex::render::SelectionOutlineVertex>& triangles,
+                                              std::vector<std::uint8_t>& outMask) {
+    outMask.clear();
+    if (!selectionOutline_.has_value() || framebufferWidth <= 0 || framebufferHeight <= 0 ||
+        !selectionOutlineSettings_.visible) {
+        return false;
+    }
+    const float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
+    return selectionOutline_->ReadMask(camera.ViewProjection(aspect), framebufferWidth, framebufferHeight, triangles,
+                                       outMask);
+}
+
 void ViewportRenderPass::SetGridCellSizeUVE(const float cellSize) {
     // The shader divides by this spacing; zero, negative or NaN would blank or corrupt the grid.
     if (std::isfinite(cellSize) && cellSize > 0.f) {

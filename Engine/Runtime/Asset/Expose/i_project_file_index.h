@@ -61,6 +61,10 @@ public:
 
     /// Returns a copied cached snapshot without filesystem I/O. Thread-safe.
     [[nodiscard]] virtual ProjectFileSnapshotUVE GetSnapshotUVE() const = 0;
+
+    /// The cached snapshot's refreshGeneration, without copying it: a caller that redraws only
+    /// when the project changed asks this every frame and copies the snapshot only when it moved.
+    [[nodiscard]] virtual std::uint64_t GetRefreshGenerationUVE() const { return GetSnapshotUVE().refreshGeneration; }
 };
 
 } // namespace UVE::Asset
