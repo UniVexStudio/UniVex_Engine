@@ -3238,6 +3238,28 @@ bool EditorUVE::CanMoveDocumentEntityUVE(const Scene::EntityUVE entity, const Ed
     return move == EditorSiblingMoveUVE::Up || move == EditorSiblingMoveUVE::ToTop ? *index > 0U : *index < last;
 }
 
+bool EditorUVE::AddSkyToEntityUVE(const Scene::EntityUVE entity) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(entity) || !IsAuthoringCommandAllowedUVE()) {
+        return false;
+    }
+    if (!entityManager.HasComponentUVE<Scene::Sky3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<Scene::Sky3DComponentUVE>(entity, Scene::Sky3DComponentUVE{});
+        m_sceneDirty = true;
+    }
+    return true;
+}
+
+bool EditorUVE::RemoveSkyFromEntityUVE(const Scene::EntityUVE entity) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(entity) || !IsAuthoringCommandAllowedUVE() || !entityManager.HasComponentUVE<Scene::Sky3DComponentUVE>(entity)) {
+        return false;
+    }
+    entityManager.RemoveComponentUVE<Scene::Sky3DComponentUVE>(entity);
+    m_sceneDirty = true;
+    return true;
+}
+
 bool EditorUVE::PlaceDocumentEntityUVE(const Scene::EntityUVE entity, const Scene::EntityUVE target, const int where) {
     if (entity == target || !IsDocumentEntityUVE(entity) || !IsDocumentEntityUVE(target) || !IsAuthoringCommandAllowedUVE()) {
         return false;

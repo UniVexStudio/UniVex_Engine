@@ -939,6 +939,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                     std::string v;
                     p->getValue(inst, &v);
                     const std::string text = v.empty() ? std::string("Empty") : std::filesystem::path{v}.stem().string();
+                    // (A sky slot says what an empty one means: the procedural sky, or the Sky below.)
                     if (b->text() != text) {
                         b->setText(text);
                     }
@@ -982,6 +983,16 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                     static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
                 };
                 actions.file = useFile;
+                if (skySlot) {
+                    // The sky is authored on this environment: bands, atmosphere or a panorama.
+                    const bool hasSky = em.HasComponentUVE<Scene::Sky3DComponentUVE>(selected);
+                    actions.extras.emplace_back(hasSky ? "Edit Sky (below)" : "New Sky", [this, selected] {
+                        static_cast<void>(m_editor.AddSkyToEntityUVE(selected));
+                    });
+                    if (hasSky) {
+                        actions.extras.emplace_back("Remove Sky", [this, selected] { static_cast<void>(m_editor.RemoveSkyFromEntityUVE(selected)); });
+                    }
+                }
                 if (auto b = weakPick.lock()) {
                     ShowPickerUVE(spec, std::move(actions), b->rect());
                 }

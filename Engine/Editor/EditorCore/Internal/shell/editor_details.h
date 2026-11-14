@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace prism {
@@ -75,6 +76,8 @@ private:
         std::function<void(Scene::PrimitiveMeshKindUVE)> shape;
         std::filesystem::path current;        ///< the file in the slot now (absolute), if any
         std::optional<Scene::PrimitiveMeshKindUVE> currentShape;
+        /// More commands at the top of the menu, after Empty (a sky slot's New Sky).
+        std::vector<std::pair<std::string, std::function<void()>>> extras;
     };
     [[nodiscard]] static PickerSpecUVE PickerSpecForUVE(const std::vector<std::string>& extensions);
     void ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE actions, prism::Rect anchor);

@@ -128,6 +128,9 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
             shared->empty();
         }
     })));
+    for (std::size_t index = 0U; index < shared->extras.size(); ++index) {
+        items.push_back(prism::MenuItem::Item(shared->extras[index].first, onTarget([shared, index] { shared->extras[index].second(); })));
+    }
     if (spec.newMaterial) {
         // A new material in the Content Browser's folder, of the kind asked for, assigned at once.
         struct KindUVE final { const char* label; const char* stem; Asset::MaterialKindUVE kind; };
