@@ -3,6 +3,7 @@
 
 #include "editor.h"
 #include "editor_icons.h"
+#include "material_asset.h"
 #include "primitive_mesh_component.h"
 #include "prism/Icons.h"
 
@@ -79,6 +80,9 @@ private:
     void ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE actions, prism::Rect anchor);
     /// The asset a picked file becomes for a slot: a model source its .uvmodel, an image its .uvtex.
     [[nodiscard]] Asset::AssetGuidUVE PublishPickedUVE(const std::filesystem::path& absolute);
+    /// Packs a material's separate Metallic / Roughness maps into the ORM map the shader reads.
+    void PackSeparateMapsUVE(Asset::MaterialAssetUVE& material, const std::filesystem::path& materialPath, bool metallicPicked,
+                             bool roughnessPicked);
     [[nodiscard]] std::filesystem::path PathOfGuidUVE(Asset::AssetGuidUVE guid) const;
 
     void RebuildUVE(Scene::EntityUVE entity);

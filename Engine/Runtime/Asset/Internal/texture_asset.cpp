@@ -610,4 +610,55 @@ bool DeriveNormalTextureUVE(const TextureAssetUVE& source, const float strength,
     return true;
 }
 
+bool PackOrmTextureUVE(const TextureAssetUVE* occlusion, const TextureAssetUVE* roughness, const TextureAssetUVE* metallic,
+                       TextureAssetUVE& outOrm) {
+    const std::array<const TextureAssetUVE*, 3> maps{occlusion, roughness, metallic};
+    std::uint32_t width = 0U;
+    std::uint32_t height = 0U;
+    for (const TextureAssetUVE* map : maps) {
+        if (map == nullptr) {
+            continue;
+        }
+        if (map->format != TextureAssetFormatUVE::RGBA8Unorm || map->payloadEncoding != TexturePayloadEncodingUVE::RawPixels ||
+            map->width == 0U || map->height == 0U ||
+            map->pixels.size() < static_cast<std::size_t>(map->width) * map->height * 4U) {
+            return false;
+        }
+        width = std::max(width, map->width);
+        height = std::max(height, map->height);
+    }
+    if (width == 0U || height == 0U) {
+        return false;
+    }
+    TextureAssetUVE orm;
+    orm.width = width;
+    orm.height = height;
+    orm.format = TextureAssetFormatUVE::RGBA8Unorm;
+    orm.colorSpace = TextureAssetColorSpaceUVE::Linear;
+    orm.usage = TextureUsageUVE::Data;
+    orm.pixels.resize(static_cast<std::size_t>(width) * height * 4U);
+    for (std::uint32_t y = 0U; y < height; ++y) {
+        for (std::uint32_t x = 0U; x < width; ++x) {
+            const std::size_t at = (static_cast<std::size_t>(y) * width + x) * 4U;
+            for (std::size_t channel = 0U; channel < maps.size(); ++channel) {
+                const TextureAssetUVE* const map = maps[channel];
+                std::byte value{255};
+                if (map != nullptr) {
+                    // Nearest texel of a smaller map, stretched over the whole.
+                    const std::uint32_t mx = static_cast<std::uint32_t>(static_cast<std::uint64_t>(x) * map->width / width);
+                    const std::uint32_t my = static_cast<std::uint32_t>(static_cast<std::uint64_t>(y) * map->height / height);
+                    value = map->pixels[(static_cast<std::size_t>(my) * map->width + mx) * 4U];
+                }
+                orm.pixels[at + channel] = value;
+            }
+            orm.pixels[at + 3U] = std::byte{255};
+        }
+    }
+    if (!IsTextureAssetValidUVE(orm) || !GenerateTextureMipmapsUVE(orm, TextureMipmapFilterUVE::Box, 0U)) {
+        return false;
+    }
+    outOrm = std::move(orm);
+    return true;
+}
+
 } // namespace UVE::Asset

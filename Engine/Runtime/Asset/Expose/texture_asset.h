@@ -130,4 +130,11 @@ struct TextureAssetUVE {
 [[nodiscard]] bool DeriveNormalTextureUVE(const TextureAssetUVE& source, float strength,
                                           TextureAssetUVE& outNormal);
 
+/// Packs separate grey maps into one ORM texture the lit shader reads: R occlusion, G roughness,
+/// B metallic, each taken from its map's red channel (white where a map is not given). Every map
+/// is RGBA8 raw pixels; the result is as large as the largest map, linear, usage Data, with a full
+/// box-filtered mip chain. Returns false when no map is given or one is not RGBA8 raw pixels.
+[[nodiscard]] bool PackOrmTextureUVE(const TextureAssetUVE* occlusion, const TextureAssetUVE* roughness,
+                                     const TextureAssetUVE* metallic, TextureAssetUVE& outOrm);
+
 } // namespace UVE::Asset
