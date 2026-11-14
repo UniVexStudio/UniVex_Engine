@@ -37,6 +37,10 @@
 #include "gameplay_tags.h"
 #include "hierarchy_component.h"
 #include "animation_graph_component.h"
+#include "animation_sequencer_component.h"
+#include "nav_seeker_3d.h"
+#include "particle_emitter_component.h"
+#include "surface_instance_component.h"
 #include "montage_player_component.h"
 #include "i_input_system.h"
 #include "logging_macros.h"
@@ -102,6 +106,21 @@ using UVScript::Vec3ValueUVE;
                 found = &graph;
             }
         });
+    return found;
+}
+
+/// The AnimationSequencer a script drives: the object's own, else one directly under it.
+[[nodiscard]] Scene::EntityUVE FindSequencerUVE(Scene::IEntityManagerUVE& entities, const Scene::EntityUVE entity) {
+    if (entities.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(entity)) {
+        return entity;
+    }
+    Scene::EntityUVE found = Scene::kInvalidEntityUVE;
+    entities.ForEachUVE<Scene::AnimationSequencerComponentUVE>([&](const Scene::EntityUVE candidate, Scene::AnimationSequencerComponentUVE&) {
+        if (found == Scene::kInvalidEntityUVE && entities.HasComponentUVE<Scene::HierarchyComponentUVE>(candidate) &&
+            entities.GetComponentUVE<Scene::HierarchyComponentUVE>(candidate).parent == entity) {
+            found = candidate;
+        }
+    });
     return found;
 }
 
@@ -248,6 +267,12 @@ inline constexpr std::uint32_t kMaxStagedRpcCallsUVE = 16U;
         {"save.read", {{"s"}, "b"}},
         {"save.exists", {{"s"}, "b"}},
         {"save.delete", {{"s"}, "b"}},
+        {"audio.play_at", {{"s", "v", "f"}, "b"}},
+        {"audio.play_2d", {{"s", "f"}, "b"}},
+        {"camera.activate", {{"o"}, "b"}},
+        {"camera.shake", {{"f", "f"}, "b"}},
+        {"camera.forward", {{}, "v"}},
+        {"camera.location", {{}, "v"}},
     };
     const auto found = kTable.find(name);
     if (found == kTable.end()) {
@@ -498,6 +523,46 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
         }
         if (name == "montage.curve") {
             return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::FloatUVE()};
+        }
+    }
+    // Its particles, its look, its clips and its walking (the object's own components).
+    if (name.starts_with("particles.") && m_entityManager.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(m_entity)) {
+        if (name == "particles.set_active") {
+            return HostFunctionUVE{{TypeUVE::BoolUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "particles.burst") {
+            return HostFunctionUVE{{TypeUVE::IntUVE()}, TypeUVE::BoolUVE()};
+        }
+    }
+    if (name.starts_with("render.") && m_entityManager.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(m_entity)) {
+        if (name == "render.set_material") {
+            return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "render.set_transparency") {
+            return HostFunctionUVE{{TypeUVE::FloatUVE()}, TypeUVE::BoolUVE()};
+        }
+    }
+    if (name.starts_with("sequencer.") &&
+        FindSequencerUVE(const_cast<Scene::IEntityManagerUVE&>(m_entityManager), m_entity) != Scene::kInvalidEntityUVE) {
+        if (name == "sequencer.play") {
+            return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "sequencer.stop" || name == "sequencer.is_playing") {
+            return HostFunctionUVE{{}, TypeUVE::BoolUVE()};
+        }
+        if (name == "sequencer.set_rate") {
+            return HostFunctionUVE{{TypeUVE::FloatUVE()}, TypeUVE::BoolUVE()};
+        }
+    }
+    if (name.starts_with("ai.") && m_entityManager.HasComponentUVE<Scene::NavSeeker3DComponentUVE>(m_entity)) {
+        if (name == "ai.move_to") {
+            return HostFunctionUVE{{TypeUVE::Vec3UVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "ai.stop" || name == "ai.reached") {
+            return HostFunctionUVE{{}, TypeUVE::BoolUVE()};
+        }
+        if (name == "ai.status") {
+            return HostFunctionUVE{{}, TypeUVE::StrUVE()};
         }
     }
     // Widget Blueprints, ungated: a widget's graph reaches its own widgets by name; any graph
@@ -1047,7 +1112,9 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
         return GameplayCallUVE(name, args);
     }
     if (name.starts_with("events.") || name.starts_with("timers.") || name.starts_with("world.") || name.starts_with("object.") ||
-        name.starts_with("trace.") || name.starts_with("game.") || name.starts_with("save.")) {
+        name.starts_with("trace.") || name.starts_with("game.") || name.starts_with("save.") || name.starts_with("camera.") ||
+        name.starts_with("particles.") || name.starts_with("render.") || name.starts_with("sequencer.") || name.starts_with("ai.") ||
+        name == "audio.play_at" || name == "audio.play_2d") {
         return WorldCallUVE(name, args);
     }
     // RPC, the lobby, and the relay need no input system, so they route before the
@@ -2324,6 +2391,113 @@ ValueUVE UVScriptObjectHostUVE::WorldCallUVE(const std::string_view name, const 
             return ValueUVE{services != nullptr && services->openLevel && services->openLevel(text(0U))};
         }
         return ValueUVE{false};
+    }
+
+    // ---- sounds, particles, the view, the look, clips, walking
+    if (name == "audio.play_at" || name == "audio.play_2d") {
+        const bool at = name == "audio.play_at";
+        const double volume = number(at ? 2U : 1U);
+        if (services == nullptr || !services->playSound || text(0U).empty() || !std::isfinite(volume) || volume < 0.0) {
+            return ValueUVE{false};
+        }
+        return ValueUVE{services->playSound(text(0U), at ? std::get<Vec3ValueUVE>(args[1]) : Vec3ValueUVE{}, volume, at)};
+    }
+    if (name == "particles.set_active") {
+        entities.GetComponentUVE<Scene::ParticleEmitterComponentUVE>(m_entity).emitting = std::get<bool>(args[0]);
+        return ValueUVE{true};
+    }
+    if (name == "particles.burst") {
+        const std::int64_t count = std::get<std::int64_t>(args[0]);
+        return ValueUVE{services != nullptr && services->burstParticles && count > 0 && services->burstParticles(m_entity, count)};
+    }
+    if (name.starts_with("camera.")) {
+        if (name == "camera.activate") {
+            const Scene::EntityUVE camera = EntityOfUVE(args[0]);
+            return ValueUVE{services != nullptr && services->activateCamera && camera != Scene::kInvalidEntityUVE &&
+                            services->activateCamera(camera)};
+        }
+        if (name == "camera.shake") {
+            const double strength = number(0U);
+            const double seconds = number(1U);
+            if (services == nullptr || !services->cameraShake || !std::isfinite(strength) || !std::isfinite(seconds) || strength < 0.0 ||
+                seconds <= 0.0) {
+                return ValueUVE{false};
+            }
+            services->cameraShake(std::min(strength, 10.0), std::min(seconds, 60.0));
+            return ValueUVE{true};
+        }
+        if (name == "camera.forward") {
+            return ValueUVE{services != nullptr && services->cameraForward ? services->cameraForward() : Vec3ValueUVE{0.0, 0.0, -1.0}};
+        }
+        return ValueUVE{services != nullptr && services->cameraLocation ? services->cameraLocation() : Vec3ValueUVE{}};
+    }
+    if (name.starts_with("render.")) {
+        Scene::SurfaceInstanceComponentUVE& surface = entities.GetComponentUVE<Scene::SurfaceInstanceComponentUVE>(m_entity);
+        if (name == "render.set_material") {
+            surface.materialOverridePath = text(0U);
+            return ValueUVE{true};
+        }
+        const double transparency = number(0U);
+        if (!std::isfinite(transparency)) {
+            return ValueUVE{false};
+        }
+        surface.transparency = static_cast<float>(std::clamp(transparency, 0.0, 1.0));
+        return ValueUVE{true};
+    }
+    if (name.starts_with("sequencer.")) {
+        const Scene::EntityUVE holder = FindSequencerUVE(entities, m_entity);
+        if (holder == Scene::kInvalidEntityUVE) {
+            return ValueUVE{false};
+        }
+        Scene::AnimationSequencerComponentUVE& player = entities.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(holder);
+        if (name == "sequencer.play") {
+            if (services != nullptr && services->playAnimation) {
+                return ValueUVE{services->playAnimation(holder, text(0U))};
+            }
+            if (!text(0U).empty()) {
+                return ValueUVE{false};   // finding a clip by its name needs the game's files
+            }
+            player.playRequested = true;
+            return ValueUVE{true};
+        }
+        if (name == "sequencer.stop") {
+            const bool playing = player.isPlaying || player.playRequested;
+            player.isPlaying = false;
+            player.playRequested = false;
+            return ValueUVE{playing};
+        }
+        if (name == "sequencer.is_playing") {
+            return ValueUVE{player.isPlaying || player.playRequested};
+        }
+        const double rate = number(0U);
+        if (!std::isfinite(rate) || std::abs(rate) > 100.0) {
+            return ValueUVE{false};
+        }
+        player.speed = static_cast<float>(rate);
+        return ValueUVE{true};
+    }
+    if (name.starts_with("ai.")) {
+        Scene::NavSeeker3DComponentUVE& seeker = entities.GetComponentUVE<Scene::NavSeeker3DComponentUVE>(m_entity);
+        if (name == "ai.move_to") {
+            seeker.enabled = true;
+            return ValueUVE{Scene::NavSeeker3DUVE::TrySetTargetPositionUVE(seeker, ToEngineUVE(args[0]))};
+        }
+        if (name == "ai.stop") {
+            const bool moving = seeker.enabled && seeker.pathStatus == Scene::NavigationAgentPathStatusUVE::Following;
+            seeker.enabled = false;
+            seeker.desiredVelocity = Math::Vector3UVE{};
+            return ValueUVE{moving};
+        }
+        if (name == "ai.reached") {
+            return ValueUVE{seeker.targetReached || seeker.pathStatus == Scene::NavigationAgentPathStatusUVE::Finished};
+        }
+        switch (seeker.pathStatus) {
+            case Scene::NavigationAgentPathStatusUVE::Following: return ValueUVE{std::string("Following")};
+            case Scene::NavigationAgentPathStatusUVE::Finished: return ValueUVE{std::string("Finished")};
+            case Scene::NavigationAgentPathStatusUVE::Failed: return ValueUVE{std::string("Failed")};
+            case Scene::NavigationAgentPathStatusUVE::Idle: break;
+        }
+        return ValueUVE{std::string("Idle")};
     }
 
     // ---- saved game data

@@ -7,6 +7,10 @@
 #include "editor_host.h"
 #include "editor_shell.h"
 #include "animation_graph_component.h"
+#include "animation_sequencer_component.h"
+#include "nav_seeker_3d.h"
+#include "particle_emitter_component.h"
+#include "surface_instance_component.h"
 #include "animation_sequencer.h"
 #include "scene_object_type.h"
 
@@ -304,6 +308,21 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
         if (needed == "Camera") { return em.HasComponentUVE<Scene::CameraComponentUVE>(root); }
         if (needed == "GameplayAttributes") { return em.HasComponentUVE<Scene::GameplayAttributesComponentUVE>(root); }
         if (needed == "GameplayTag") { return em.HasComponentUVE<Scene::GameplayTagComponentUVE>(root); }
+        if (needed == "ParticleEmitter") { return em.HasComponentUVE<Scene::ParticleEmitterComponentUVE>(root); }
+        if (needed == "SurfaceInstance") { return em.HasComponentUVE<Scene::SurfaceInstanceComponentUVE>(root); }
+        if (needed == "NavSeeker3D") { return em.HasComponentUVE<Scene::NavSeeker3DComponentUVE>(root); }
+        if (needed == "AnimationSequencer") {
+            // Its own, or one directly under it (a character's).
+            if (em.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(root)) {
+                return true;
+            }
+            for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
+                if (em.HasComponentUVE<Scene::AnimationSequencerComponentUVE>(object)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         return true;
     };
     m_blueprintPanel.animParametersProvider = [this] {

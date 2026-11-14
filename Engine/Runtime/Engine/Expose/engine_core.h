@@ -989,6 +989,14 @@ private:
     std::vector<Scene::EntityUVE> m_pendingScriptDestroys;
     std::optional<std::string> m_pendingLevel;
     bool m_pendingQuit = false;
+    /// Sounds Play Sound made, each removed when it is over.
+    std::vector<Scene::EntityUVE> m_oneShotSounds;
+    /// Camera Shake: how strong, how long, how long is left, and what is on the camera now.
+    double m_cameraShakeStrength = 0.0;
+    double m_cameraShakeDuration = 0.0;
+    double m_cameraShakeRemaining = 0.0;
+    Scene::EntityUVE m_cameraShakeTarget = Scene::kInvalidEntityUVE;
+    Math::Vector3UVE m_cameraShakeOffset{};
     double m_scriptGameTime = 0.0;
     double m_scriptGameDelta = 0.0;
     std::function<void()> m_quitGameHandlerUVE;
