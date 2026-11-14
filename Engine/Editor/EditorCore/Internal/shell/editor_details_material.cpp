@@ -20,6 +20,7 @@
 #include "prism/Theme.h"
 #include "prism/Views.h"
 
+#include <cstddef>
 #include <algorithm>
 #include <array>
 #include <cctype>
