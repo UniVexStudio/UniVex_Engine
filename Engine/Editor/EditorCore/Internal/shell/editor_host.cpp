@@ -1348,4 +1348,16 @@ void EditorHostUVE::OnCursorEnterUVE(WindowUVE& w, const int entered) {
     }
 }
 
+bool EditorHostUVE::IsAnyWindowFocusedUVE() const {
+    if (m_main != nullptr && m_main->window != nullptr && glfwGetWindowAttrib(m_main->window, GLFW_FOCUSED) == GLFW_TRUE) {
+        return true;
+    }
+    for (const auto& [id, window] : m_windows) {
+        if (window != nullptr && window->window != nullptr && glfwGetWindowAttrib(window->window, GLFW_FOCUSED) == GLFW_TRUE) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace UVE::Editor

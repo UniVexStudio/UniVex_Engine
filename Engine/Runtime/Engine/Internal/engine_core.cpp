@@ -4811,7 +4811,7 @@ void EngineCoreUVE::EndFrame() {
 void EngineCoreUVE::TickFrameUVE() {
     UVE_ASSERT(m_state == EngineStateUVE::Running);
     const bool windowedRenderingActive = m_windowedRenderingActiveUVE && m_windowManager != nullptr;
-    const bool focused = windowedRenderingActive && m_windowManager->IsFocusedUVE();
+    const bool focused = windowedRenderingActive && (m_windowManager->IsFocusedUVE() || (m_focusProviderUVE && m_focusProviderUVE()));
     const std::uint32_t frameRateCap = SelectFrameRateCapUVE(
         windowedRenderingActive, focused, m_config.focusedFrameRateCapUVE,
         m_config.unfocusedFrameRateCapUVE);
@@ -4823,7 +4823,17 @@ void EngineCoreUVE::TickFrameUVE() {
         m_lastFrameRateCapUVE = 0U;
     } else {
         if (pacingDecision.sleepUntil.has_value()) {
-            std::this_thread::sleep_until(*pacingDecision.sleepUntil);
+            // The OS wakes a sleeper late (a millisecond or more, far more on some systems): sleep to
+            // just short of the deadline, then yield the last stretch, so frames come evenly spaced
+            // instead of jittering around the cap - uneven frames read as stutter even at a high rate.
+            constexpr auto kSpinMarginUVE = std::chrono::microseconds(1500);
+            const auto deadline = *pacingDecision.sleepUntil;
+            if (deadline - now > kSpinMarginUVE) {
+                std::this_thread::sleep_until(deadline - kSpinMarginUVE);
+            }
+            while (std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::yield();
+            }
             now = std::chrono::steady_clock::now();
         }
         m_nextFrameDeadlineUVE = now + pacingDecision.framePeriod;

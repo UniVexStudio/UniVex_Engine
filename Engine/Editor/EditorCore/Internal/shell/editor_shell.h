@@ -129,6 +129,11 @@ private:
     // Outlives the host's widget tree (declared first, destroyed last): the TabViews it wires call back into it.
     std::unique_ptr<prism::DockSpace> m_dockSpace;
     EditorHostUVE m_host;
+
+public:
+    [[nodiscard]] bool IsAnyWindowFocusedUVE() const { return m_host.IsAnyWindowFocusedUVE(); }
+
+private:
     // The Entity Editor's window (opened while an entity is open); shares the host.
     EditorEntityEditorUVE m_entityEditor;
     // The file window every Load / Import opens.

@@ -68,6 +68,8 @@ public:
     [[nodiscard]] bool IsReadyUVE() const noexcept { return m_ready; }
 
     [[nodiscard]] prism::Application& AppUVE() noexcept { return *m_app; }
+    /// Whether any of the editor's windows (the main one or one it opened) has the keyboard focus.
+    [[nodiscard]] bool IsAnyWindowFocusedUVE() const;
     void SetRootUVE(prism::Ref<prism::Widget> root);
 
     /// Opens a native window showing `root` (its own title bar included); returns its PRISM
