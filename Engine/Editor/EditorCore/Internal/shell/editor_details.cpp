@@ -6,6 +6,7 @@
 #include "editor_content_browser.h"
 
 #include "color.h"
+#include "rect.h"
 #include "engine_project_settings.h"
 #include "scene_component_metadata.h"
 #include "scene_object_type.h"
@@ -203,6 +204,41 @@ public:
     }
     bool hitSelf() const override { return false; }
     std::array<std::shared_ptr<prism::NumberField>, 2> m_fields;
+};
+
+/// A rectangle as two rows: position (X, Y) above size (W, H), in pixels.
+class RectFieldUVE final : public prism::Widget {
+public:
+    RectFieldUVE() {
+        const std::array<const char*, 4> labels{"X", "Y", "W", "H"};
+        const std::array<prism::Color, 4> colours{prism::Color(214, 84, 84), prism::Color(110, 180, 90), prism::Color(150, 150, 160),
+                                                  prism::Color(150, 150, 160)};
+        for (std::size_t i = 0; i < m_fields.size(); ++i) {
+            m_fields[i] = prism::make<prism::NumberField>(0.0F, 1.0F, 0);
+            m_fields[i]->setAxisLabel(labels[i], colours[i]);
+            m_fields[i]->setDragSpeed(1.0F);
+            addChild(m_fields[i]);
+        }
+        m_fields[2]->setRange(0.0F, 100000.0F);
+        m_fields[3]->setRange(0.0F, 100000.0F);
+    }
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain({120.0F, prism::theme().controlH * 2.0F + 4.0F}); }
+    void arrange(prism::Rect r) override {
+        prism::Widget::arrange(r);
+        const float w = std::floor((r.w - 4.0F) * 0.5F);
+        const float h = prism::theme().controlH;
+        for (std::size_t i = 0; i < m_fields.size(); ++i) {
+            const float x = (i % 2U == 0U) ? r.x : r.x + w + 4.0F;
+            const float y = (i < 2U) ? r.y : r.y + h + 4.0F;
+            m_fields[i]->arrange(prism::Rect{x, y, i % 2U == 0U ? w : r.w - w - 4.0F, h});
+        }
+    }
+    bool hitSelf() const override { return false; }
+    [[nodiscard]] Math::RectUVE ValueUVE() const {
+        return Math::RectUVE{Math::Vector2UVE{m_fields[0]->value(), m_fields[1]->value()},
+                             Math::Vector2UVE{m_fields[2]->value(), m_fields[3]->value()}};
+    }
+    std::array<std::shared_ptr<prism::NumberField>, 4> m_fields;
 };
 
 } // namespace
@@ -418,7 +454,11 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
     entries = std::move(ordered);
 
     bool transformDone = false;
-    const bool hasTransform = em.HasComponentUVE<Scene::TransformComponentUVE>(entity);
+    // A widget is placed by its rect (and anchors), not by a 3D transform: the transform is not shown.
+    const bool widget = std::any_of(entries.begin(), entries.end(), [](const EntryUVE* const entry) {
+        return entry->typeId.ToStringUVE().starts_with("component.ui_");
+    });
+    const bool hasTransform = !widget && em.HasComponentUVE<Scene::TransformComponentUVE>(entity);
     for (const EntryUVE* const entry : entries) {
         const std::string_view typeId = entry->typeId.ToStringUVE();
         if (!transformDone && hasTransform && entry->order > Scene::kSectionOrderTransformUVE) {
@@ -772,6 +812,33 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
             n->onChange = [this, e, p, weak](float) {
                 if (auto f = weak.lock()) {
                     const Math::Vector2UVE v{f->m_fields[0]->value(), f->m_fields[1]->value()};
+                    static_cast<void>(m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, &v));
+                }
+            };
+            n->onCommit = [commit](float) { commit(); };
+        }
+        editor = field;
+    } else if (property.typeId == Scene::kPropertyTypeRectUVE) {
+        auto field = prism::make<RectFieldUVE>();
+        std::weak_ptr<RectFieldUVE> weak = field;
+        row->sync = [p, weak](const void* inst) {
+            auto f = weak.lock();
+            if (f && inst != nullptr) {
+                Math::RectUVE v{};
+                p->getValue(inst, &v);
+                const std::array<float, 4> values{v.position.x, v.position.y, v.size.x, v.size.y};
+                for (std::size_t i = 0; i < values.size(); ++i) {
+                    if (std::abs(f->m_fields[i]->value() - values[i]) > 1e-4F) {
+                        f->m_fields[i]->setValue(values[i]);
+                    }
+                }
+            }
+        };
+        for (auto& n : field->m_fields) {
+            n->onBegin = begin;
+            n->onChange = [this, e, p, weak](float) {
+                if (auto f = weak.lock()) {
+                    const Math::RectUVE v = f->ValueUVE();
                     static_cast<void>(m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, &v));
                 }
             };
