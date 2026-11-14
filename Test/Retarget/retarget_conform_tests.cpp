@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -293,6 +294,31 @@ TEST(RetargetConformUVETest, ConformClipUVE_TurnsTheAnimationWithTheRig) {
         const auto hips = static_cast<std::size_t>(FindBoneUVE(conformed.skeleton, "Hips"));
         const Vector3UVE travelled = playedWorld[hips].position - ComputeWorldTransformsUVE(conformed.skeleton)[hips].position;
         EXPECT_NEAR(Math::LengthUVE(travelled), std::sqrt(0.8F * 0.8F + 0.1F * 0.1F), 1e-3F) << what;
+    }
+}
+
+TEST(RetargetConformUVETest, ConformSkeletonUVE_ALeaningSpineDoesNotTiltTheRig) {
+    // Most game rigs carry the head ahead of the hips. That lean is the rig's shape, not a tilt: the
+    // rig still stands along its up axis, so a run's root keeps to the floor as it travels.
+    for (const auto& [what, turn] : std::vector<std::pair<std::string, QuaternionUVE>>{
+             {"Y up", QuaternionUVE{}}, {"Z up", AxisAngle({1.0F, 0.0F, 0.0F}, 1.5707964F)}}) {
+        const TPoseRigUVE upright(turn);
+        TPoseRigUVE leaning(turn);
+        std::vector<WorldTransformUVE> world = ComputeWorldTransformsUVE(leaning.skeleton);
+        const Vector3UVE forward = Math::RotateVectorUVE(turn, Vector3UVE{0.0F, 0.0F, 0.12F});
+        for (const char* name : {"Neck", "Head", "HeadTop_End"}) {
+            WorldTransformUVE& bone = world[static_cast<std::size_t>(FindBoneUVE(leaning.skeleton, name))];
+            bone.position = bone.position + forward;
+        }
+        leaning.skeleton = SkeletonFromWorldUVE(leaning.skeleton, world);
+        const ConformedRigUVE a = ConformUVE(upright);
+        const ConformedRigUVE b = ConformUVE(leaning);
+        const QuaternionUVE& p = a.orientation;
+        const QuaternionUVE& q = b.orientation;
+        EXPECT_NEAR(std::abs(p.x * q.x + p.y * q.y + p.z * q.z + p.w * q.w), 1.0F, 1e-6F) << what;
+        // Travel along the rig's forward stays level.
+        const Vector3UVE travelled = Math::RotateVectorUVE(b.orientation, Math::RotateVectorUVE(turn, Vector3UVE{0.0F, 0.0F, 3.0F}));
+        EXPECT_NEAR(travelled.y, 0.0F, 1e-5F) << what;
     }
 }
 

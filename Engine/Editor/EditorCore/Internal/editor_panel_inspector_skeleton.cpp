@@ -93,6 +93,12 @@ namespace {
     if (helpers.contains(name)) {
         return true;
     }
+    // The root under another name or case ("root", "ROOT"): the same marker before and after Retarget.
+    std::string lower = name;
+    std::ranges::transform(lower, lower.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (lower == "root") {
+        return true;
+    }
     // Another tool's IK bones ("ik_foot_l", "IK_Hand_R").
     return name.size() > 2U && (name[0] == 'i' || name[0] == 'I') && (name[1] == 'k' || name[1] == 'K') &&
            (name[2] == '_' || std::isupper(static_cast<unsigned char>(name[2])) != 0);
