@@ -465,7 +465,7 @@ void main() { fragColor = texture(uTex, vUv); })";
 
 // ------------------------------------------------------------------------------- GLFW callbacks
 
-/// The main window's callbacks, chained to what the engine (and ImGui) installed before.
+/// The main window's callbacks, chained to what the engine installed before.
 struct EditorHostUVE::ChainUVE final {
     GLFWcursorposfun cursorPos = nullptr;
     GLFWmousebuttonfun mouseButton = nullptr;

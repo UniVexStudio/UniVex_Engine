@@ -12,11 +12,11 @@ namespace UVE::Editor {
 
 /// Turns a frame's renderer diagnostics into rows a panel can print.
 ///
-/// WHY THIS IS ITS OWN FILE. The editor's debug dock formatted diagnostics inline, three
-/// ImGui::Text calls deep inside DrawBottomDockContentUVE, which meant the formatting could only
+/// WHY THIS IS ITS OWN FILE. The editor's debug dock once formatted diagnostics inline, deep in
+/// its drawing code, which meant the formatting could only
 /// be read by launching the editor and could not be tested at all. Reading a counter and deciding
 /// what it means is not drawing - it is the part most likely to be wrong, and the only part worth
-/// asserting - so it lives here, with no imgui dependency, and the dock just prints what it
+/// asserting - so it lives here, with no UI dependency, and the dock just prints what it
 /// returns.
 ///
 /// This is also the seam the renderer work connects to. The optimisation passes added counters

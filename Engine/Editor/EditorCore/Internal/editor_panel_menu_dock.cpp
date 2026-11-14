@@ -21,14 +21,7 @@
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
-#include <imgui_internal.h>
 #include <GLFW/glfw3.h>
-
-#include "editor_chrome_layout.h"
-#include "editor_color_field.h"
-#include "editor_fonts.h"
-#include "editor_object_icons.h"
 
 #include "light_emitter_component.h"
 #include "transform_component.h"
@@ -112,7 +105,6 @@ Scene::EntityUVE EditorUVE::AddPreviewEnvironmentToSceneUVE() {
     m_contentStatusMessage = "Added WorldEnvironment3D from Preview Environment.";
     return envEntity;
 }
-
 
 void EditorUVE::CapturePacketUVE(const std::vector<std::uint8_t>& datagram,
                                  const Network::PacketDirectionUVE direction,

@@ -252,7 +252,7 @@ struct EditorBridgeContentBrowserSnapshotUVE final {
 };
 
 /// Immutable bridge-visible state. A revision is incremented whenever any field observable through
-/// this snapshot changes, whether native ImGui or the bridge initiated that change.
+/// this snapshot changes, whether the editor's own UI or the bridge initiated that change.
 struct EditorBridgeDeveloperConsoleSnapshotUVE final {
     DeveloperConsoleSnapshotUVE console;
     [[nodiscard]] bool operator==(const EditorBridgeDeveloperConsoleSnapshotUVE&) const = default;
@@ -324,7 +324,7 @@ struct EditorBridgeSnapshotUVE final {
 };
 
 /// A value-only request. `expectedRevision` protects a future C# UI from applying a mutation based
-/// on a stale copied snapshot after native ImGui or another bridge request changed visible state.
+/// on a stale copied snapshot after the editor's own UI or another bridge request changed visible state.
 struct EditorBridgeRequestUVE final {
     std::uint32_t protocolVersion = kEditorBridgeProtocolVersionUVE;
     std::uint64_t requestId = 0U;
@@ -376,7 +376,7 @@ struct EditorBridgeResponseUVE final {
     std::optional<std::uint64_t> contentImportJobId;
 };
 
-/// Main-thread adapter over EditorUVE. It supports coexistence with the native ImGui editor: every
+/// Main-thread adapter over EditorUVE. It supports coexistence with the editor's own UI: every
 /// public entry synchronizes the bridge-visible snapshot before inspecting expectedRevision, so a
 /// C# client can observe native changes and cannot apply a stale mutation silently.
 class EditorBridgeUVE final {

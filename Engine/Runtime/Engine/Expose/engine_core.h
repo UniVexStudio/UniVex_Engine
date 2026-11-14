@@ -457,9 +457,7 @@ public:
 
     /// Returns the current UI draw batch/font atlas (SyncUIRuntimeUVE() ticks it once per real
     /// frame during Update()) - for a host that wants to composite authored Canvas/UIText/UIImage/
-    /// UIButton content itself (the editor's own Viewport panel draws it via ImGui's overlay draw
-    /// list, since UIQuadUVE positions are authored in real window pixel space, not any one
-    /// render target's local space - see EditorMeshLayerUVE::RenderUVE()'s own doc comment).
+    /// UIButton content itself (the editor's view draws it over its own image, in the view's pixels).
     [[nodiscard]] const UI::UIRuntimeUVE& GetUIRuntimeUVE() const noexcept { return m_uiRuntime; }
 
     /// The locale and string tables authored UI text is translated through. Owned here alongside

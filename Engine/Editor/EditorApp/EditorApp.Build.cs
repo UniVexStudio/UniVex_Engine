@@ -12,7 +12,6 @@ public class EditorAppModule : ModuleRules
             "EditorCore",
             "Viewport",
             "Engine",
-            "ImGui",
             "World"
         });
 

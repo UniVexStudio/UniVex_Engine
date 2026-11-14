@@ -5,7 +5,7 @@
 // are switched on.
 //
 // This is plain state plus keyboard bindings, not a menu widget. Drawing
-// an actual dropdown needs a UI toolkit (ImGui or the engine's own), which
+// an actual dropdown needs a UI toolkit (the engine's own), which
 // this module deliberately does not pull in; the modes themselves are all
 // live and switchable, and the demo reports the current state in its
 // window title.

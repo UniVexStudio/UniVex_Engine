@@ -3,7 +3,7 @@
 #pragma once
 //
 // Scope: the profiler panel's view model - the formatting and judgement the dock cannot
-// test from behind imgui. The dock prints rows; these builders decide them: durations
+// test from behind its drawing code. The dock prints rows; these builders decide them: durations
 // render human, spans sort by begin, counters collapse to latest-per-name. Zero uve/*
 // dependencies beyond the capture types themselves.
 //

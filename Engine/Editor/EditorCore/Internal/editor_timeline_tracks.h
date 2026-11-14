@@ -1,11 +1,11 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-// The Timeline's track list and its blend-shape preview, kept out of the panel's ImGui code.
+// The Timeline's track list and its blend-shape preview, kept out of the panel's drawing code.
 //
 // Two rules the dope sheet lives by are worth more than a screenshot: WHICH rows the tab shows for
 // a clip, and WHICH weights a playing clip puts on WHICH object. Both are pure decisions over asset
-// data and scene facts, so both live here - testable headlessly, without a window, a renderer or an
-// ImGui context - and the panel is left with what a panel should own: turning the rows into pixels.
+// data and scene facts, so both live here - testable headlessly, without a window, a renderer or a
+// UI - and the panel is left with what a panel should own: turning the rows into pixels.
 
 #pragma once
 

@@ -1,6 +1,5 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-
 #include "mesh_thumbnail_renderer.h"
 
 #include <algorithm>
@@ -388,7 +387,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     const float farPlane = distance + boundingRadius * 2.0F + nearPlane;
     Math::Matrix4x4UVE projection = Math::Matrix4x4UVE::PerspectiveUVE(
         kFieldOfViewYRadiansUVE, static_cast<float>(width) / static_cast<float>(height), nearPlane, farPlane);
-    // Invert Y in projection so OpenGL's bottom-up FBO maps right-side up to ImGui's top-down (0,0)-(1,1) UV coordinates!
+    // Invert Y in projection so OpenGL's bottom-up FBO maps right-side up to the UI's top-down (0,0)-(1,1) UV coordinates.
     projection.m[1][1] = -projection.m[1][1];
     const Math::Matrix4x4UVE viewProjection = projection * view;
     const Math::Vector3UVE lightDirection = Math::NormalizeUVE(Math::Vector3UVE{-0.5F, -1.0F, -0.35F});

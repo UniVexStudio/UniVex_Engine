@@ -11,7 +11,7 @@ namespace UVE::Editor {
 
 /// EditorBridgeStdioServerUVE exposes one EditorBridgeUVE through bounded length-prefixed UTF-8
 /// JSON-RPC frames on caller-owned streams. It is main-thread only and is used exclusively by the
-/// headless bridge-server process mode; native ImGui never shares this server's EditorUVE instance.
+/// headless bridge-server process mode; the editor's own UI never shares this server's EditorUVE instance.
 class EditorBridgeStdioServerUVE final {
 public:
     /// Frames larger than this are rejected before allocating a JSON body.

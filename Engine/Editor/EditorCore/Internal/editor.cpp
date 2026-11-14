@@ -19,12 +19,8 @@
 #include "editor_render_stats.h"
 #include "trs.h"
 
-#include "editor_chrome_layout.h"
 #include "editor_entity_label.h"
 #include "editor_text_search.h"
-#include "editor_fonts.h"
-#include "editor_object_icons.h"
-#include "editor_theme.h"
 #include <algorithm>
 #include <chrono>
 #include <unordered_map>
@@ -53,9 +49,6 @@
 #include <vector>
 
 #include <GLFW/glfw3.h>
-#include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_opengl3.h>
 
 #include "bmp_metadata.h"
 #include "jpeg_metadata.h"
@@ -109,51 +102,11 @@ namespace UVE::Editor {
 namespace {
 
 constexpr float kVectorEpsilonUVE = 0.00001F;
+/// The bottom dock's default height (Default Layout puts it back).
+constexpr float kAssetsPanelHeightUVE = 192.0F;
+/// The longest name the editor lets an object have (bytes).
+constexpr std::size_t kMaximumEditorEntityNameBytesUVE = 96U;
 constexpr float kMinimumLocalScaleUVE = 0.001F;
-
-// Subsetted Liberation Sans Regular (SIL OFL 1.1 licensed; see
-// engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md), the editor's main UI text font - replaces
-// ImGui::AddFontDefault()'s built-in low-resolution bitmap font with a real, legible sans-serif.
-#include "uve_ui_font_bytes.inc"
-
-// Subsetted Tabler Icons glyphs (MIT licensed; see
-// engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md) merged into the default ImGui font. These
-// back the menu bar and dock-panel titles below: ImGui::BeginMenu()/ImGui::Begin() only accept a
-// plain text label, so an inline ImGui::Image() glyph is not an option there the way it is for the
-// editor's existing RGBA-texture ImageButton icons (gizmo modes, Snap, object/component add popups).
-#include "uve_icon_font_bytes.inc"
-
-// Subsetted Liberation Mono Regular (SIL OFL 1.1 licensed; see
-// engine/editor/assets/fonts/THIRD_PARTY_NOTICES.md) - a separate, non-merged font applied only to
-// the Inspector's numeric Transform fields, matching a design mockup's own use of a monospace font
-// for numeric values. Not merged into the main UI font's glyph atlas since it's selected per-widget
-// via ImGui::PushFont()/PopFont(), not blended into every string the main font already renders.
-#include "uve_mono_font_bytes.inc"
-
-constexpr float kUiFontSizePixelsUVE = 14.0F;
-
-
-constexpr ImWchar kIconFontGlyphRangesUVE[] = {
-    0xEA03, 0xEA03, // Inspector (adjustments)
-    0xEA45, 0xEA45, // Assets (box)
-    0xEA54, 0xEA54, // Viewport (camera)
-    0xEA98, 0xEA98, // Edit
-    0xEAA4, 0xEAA4, // File
-    0xEAAD, 0xEAAD, // Filesystem (folder)
-    0xEB2E, 0xEB2E, // Favorites (star)
-    0xEBD9, 0xEBD9, // Plugin
-    0xEDBA, 0xEDBA, // Window (layout-grid)
-    0xF91D, 0xF91D, // Help (help-circle)
-    0xFA97, 0xFA97, // GameObject (cube)
-    0xFAF7, 0xFAF7, // Contents (folder-open)
-    0xFAFA, 0xFAFA, // Scene (list-tree)
-    0,
-};
-
-// Full menu/panel labels, icon glyph baked in: ImGui::BeginMenu()/Begin() take a single string
-// literal-shaped argument, so these can't be built from a separate icon constant concatenated at
-// the call site the way adjacent string literals can (kMenuIconFileUVE is a runtime const char*,
-// not a literal token, so " File" adjacency wouldn't compile).
 
 [[nodiscard]] Math::Vector3UVE PrimitiveColliderHalfExtentsUVE(const Scene::PrimitiveMeshKindUVE kind) noexcept {
     // Sourced from the object policies rather than restated here. These half-extents are the same
@@ -196,15 +149,7 @@ void FitColliderToPrimitiveKindUVE(Scene::ColliderComponentUVE& collider,
         collider.radius = halfExtents.x;
     }
 }
-constexpr float kGizmoAxisLengthUVE = 1.25F;
-constexpr float kGizmoHandleRadiusPixelsUVE = 12.0F;
-constexpr float kTrackballRadiusPixelsUVE = 42.0F;
-constexpr float kTrackballAntipodalDotThresholdUVE = -0.999F;
-constexpr float kBottomDockTabHeightUVE = 24.0F;
-// Shrunk from 30 now that this row also hosts the Play/Pause/Stop transport buttons (moved out of
-// the old menu row) alongside the Scene/Scripting/Game workspace tabs, decluttering both rows
-// instead of leaving a tall strip that only ever held two small tab buttons.
-constexpr float kEditorViewportToolCanvasHeightUVE = 30.0F;
+
 /// Square resolution rendered for each Content Browser mesh thumbnail (see
 /// EditorUVE::GetMeshThumbnailUVE). Matches the content-type badge icons' own baked resolution
 /// (uve_content_type_icon_bytes.inc) - plenty of detail at the grid card's much smaller display
@@ -215,16 +160,7 @@ constexpr int kMeshThumbnailSizeUVE = 128;
 /// extra resolution is free 2x2 supersampling (and 4x4 in a 64 px tile), which a preview sphere's
 /// curved silhouette needs - a 1:1 render shows a stair-stepped edge on every card.
 constexpr int kMaterialThumbnailSizeUVE = 256;
-constexpr float kScriptCanvasLongPressThresholdSecondsUVE = 0.55F;
-constexpr float kScriptCanvasLongPressMaxMovementPixelsUVE = 8.0F;
-constexpr float kMinimumViewportDistanceUVE = 0.5F;
-constexpr float kMaximumViewportDistanceUVE = 500.0F;
-constexpr float kMaximumViewportPitchRadiansUVE = 1.4835299F; // 85 degrees.
-constexpr float kViewportOrbitRadiansPerPixelUVE = 0.008F;
-constexpr float kViewportZoomExponentPerWheelUnitUVE = 0.16F;
-constexpr float kViewportNavigationRadiusPixelsUVE = 32.0F;
-constexpr float kViewportNavigationHitRadiusPixelsUVE = 16.0F;
-constexpr float kViewportNavigationPlateRadiusPixelsUVE = 47.0F;
+
 constexpr float kMinimum2DCanvasZoomUVE = 0.10F;
 constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
 
@@ -233,8 +169,6 @@ constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
 // values at 1280, and the clamps keep both sensible on very small and very large windows. Narrower
 // than the previous 0.19/0.22 (243/281 at 1280) so the center viewport - the primary workspace -
 // keeps the majority of the width instead of being squeezed by the side panels.
-
-
 
 [[nodiscard]] bool IsWhitespaceOnlyUVE(const std::string_view value) noexcept {
     return std::all_of(value.begin(), value.end(), [](const char character) noexcept {
@@ -294,17 +228,7 @@ bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
     return Kind::Object3D;
 }
 
-} // namespace
-
-// Set once in InitUVE() after the atlas is built; has static storage duration for the life of the
-// process like the byte arrays above, so no lifetime/ownership tracking is needed beyond that.
-// A plain file-scope pointer (not a class member) keeps ImFont out of editor_uve.h, matching that
-// header's "no Dear ImGui type in this public interface" design.
-//
-// At namespace scope rather than in the anonymous namespace above, because the inspector panel
-// moved to its own translation unit and reads it. Declared in editor_fonts_uve.h - an INTERNAL
-// header, so the imgui type stays inside this library rather than reaching public consumers.
-ImFont* g_monoFontUVE = nullptr;
+}
 
 EditorUVE::EditorUVE(Core::EngineServicesUVE& services, std::filesystem::path activeScenePath,
                      const std::size_t historyCapacity, Core::ISimulationControlUVE* const simulationControl)
@@ -312,7 +236,6 @@ EditorUVE::EditorUVE(Core::EngineServicesUVE& services, std::filesystem::path ac
       m_simulationControl(simulationControl),
       m_activeScenePath(std::move(activeScenePath)),
       m_historyCapacity(std::max<std::size_t>(std::size_t{1U}, historyCapacity)) {
-    RegisterBuiltInInspectorDrawersUVE();
     if (!RegisterEditorSettingsUVE(m_settingsRegistry)) {
         throw std::logic_error("Failed to register the editor settings.");
     }
@@ -339,8 +262,7 @@ void EditorUVE::InitUVE() {
 
     Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
     if (m_prismUiRequested && windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
-        // The level editor is PRISM's. Its GLFW callbacks go in first, so the overlay below chains
-        // in front of them (and is shut down first).
+        // The level editor is PRISM's.
         auto shell = std::make_unique<EditorShellUVE>(*this);
         if (shell->InitializeUVE(static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()),
                                  m_prismAssetDir)) {
@@ -349,83 +271,12 @@ void EditorUVE::InitUVE() {
             UVE_ERROR("EditorUVE: the PRISM editor UI could not start (assets: {})", m_prismAssetDir.string());
         }
     }
-    // ImGui: the windows not yet built with PRISM (Preferences, Input Map, the Entity Editor,
-    // Retarget, ...) draw over the PRISM level editor through it.
+    // The editor's own UI assets and thumbnail renderers need the window's GL context.
     if (windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        // Viewports (multi-window), but deliberately NOT docking. A window may live in its own OS
-        // window - the Entity Editor does - and those extra windows share the main GL context's
-        // objects, so the viewport texture shows in them too.
-        //
-        // Docking is off because it laid a second layout over this editor's own: panels grew dock
-        // tabs and close buttons on top of headers that already named them, the bottom dock was cut
-        // from the screen edge rather than the editor frame, and imgui.ini remembered positions that
-        // then beat the computed ones. The editor's panels are regions of one fixed frame, so the
-        // frame computes them and nothing else is allowed to move them.
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-        ImGui::GetIO().ConfigViewportsNoDecoration = false;
-        // A NEW ini name, not a rename in place. The old imgui.ini still holds dock node ids and
-        // floating rects from the docking build, and ImGui would happily apply them to windows that
-        // no longer dock. Pointing at a fresh file means the first run after this change starts
-        // from the computed layout, and the old file is simply never read again.
-        ImGui::GetIO().IniFilename = "uve_editor_layout.ini";
-        ImGui::StyleColorsDark();
-        ApplyEditorVisualThemeUVE(&m_extendedPreferences);
-
-        // Font setup must happen before ImGui_ImplOpenGL3_Init() below: that call builds and
-        // uploads the font atlas texture immediately, so any fonts merged in afterward would be
-        // silently missing from what actually gets rendered.
-        ImGuiIO& io = ImGui::GetIO();
-        ImFontConfig uiFontConfig{};
-        // Same "static storage duration for the life of the process" reasoning as the icon font
-        // below - the .inc byte array must outlive the atlas and must not be freed by it.
-        uiFontConfig.FontDataOwnedByAtlas = false;
-        uiFontConfig.OversampleH = 3;
-        uiFontConfig.OversampleV = 1;
-        uiFontConfig.PixelSnapH = false;
-        io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_ui_font_ttf_bytes.data()),
-                                       static_cast<int>(uve_ui_font_ttf_bytes.size()),
-                                       kUiFontSizePixelsUVE, &uiFontConfig);
-        ImFontConfig iconFontConfig{};
-        iconFontConfig.MergeMode = true;
-        iconFontConfig.PixelSnapH = true;
-        // The .inc byte array has static storage duration for the life of the process; ImGui must
-        // not take ownership and free() it via its own allocator.
-        iconFontConfig.FontDataOwnedByAtlas = false;
-        io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_icon_font_ttf_bytes.data()),
-                                       static_cast<int>(uve_icon_font_ttf_bytes.size()), 0.0F,
-                                       &iconFontConfig, kIconFontGlyphRangesUVE);
-
-        ImFontConfig monoFontConfig{};
-        // Same "static storage duration for the life of the process" reasoning as the other two
-        // fonts above - the .inc byte array must outlive the atlas and must not be freed by it.
-        monoFontConfig.FontDataOwnedByAtlas = false;
-        monoFontConfig.OversampleH = 3;
-        monoFontConfig.OversampleV = 1;
-        monoFontConfig.PixelSnapH = false;
-        g_monoFontUVE = io.Fonts->AddFontFromMemoryTTF(const_cast<std::uint8_t*>(uve_mono_font_ttf_bytes.data()),
-                                                        static_cast<int>(uve_mono_font_ttf_bytes.size()),
-                                                        kUiFontSizePixelsUVE, &monoFontConfig);
-
-        auto* const nativeWindow = static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE());
-        // Install the backend's chained GLFW callbacks so the interactive overlay receives cursor
-        // and pointer-button events while WindowManagerUVE's existing close/resize/focus callbacks
-        // remain active. Engine input remains a separate service-level abstraction; overlay clicks
-        // consume ImGui pointer state and never leak into runtime action mappings.
-        const bool glfwInitialized = ImGui_ImplGlfw_InitForOpenGL(nativeWindow, true);
-        const bool openglInitialized = glfwInitialized && ImGui_ImplOpenGL3_Init("#version 450 core");
-        if (openglInitialized) {
-            static_cast<void>(m_uiAssets.InitializeUVE());
-            m_meshThumbnailRenderer.InitializeUVE();
-            m_materialThumbnailRenderer.InitializeUVE();
-            m_uiInitialized = true;
-        } else {
-            if (glfwInitialized) {
-                ImGui_ImplGlfw_Shutdown();
-            }
-            ImGui::DestroyContext();
-        }
+        static_cast<void>(m_uiAssets.InitializeUVE());
+        m_meshThumbnailRenderer.InitializeUVE();
+        m_materialThumbnailRenderer.InitializeUVE();
+        m_uiInitialized = true;
     }
 
     m_state = EditorStateUVE::Running;
@@ -675,77 +526,6 @@ void EditorUVE::BeginEditorPlayBootSplashUVE() {
     }
 }
 
-void EditorUVE::DrawEditorPlayBootSplashOverlayUVE(const Math::Vector2UVE imageOrigin,
-                                                    const Math::Vector2UVE imageSize) {
-    if (!m_playBootSplashActive || m_playModeState == EditorPlayModeStateUVE::Edit || m_services == nullptr ||
-        imageSize.x <= 0.0F || imageSize.y <= 0.0F) {
-        return;
-    }
-
-    const double elapsed =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - m_playBootSplashStart).count();
-    const double minimum = m_playBootSplashMinimumSeconds;
-    if (m_playBootSplashSkippable &&
-        m_services->GetInputSystemUVE().WasKeyPressedThisFrameUVE(Input::KeyCodeUVE::Escape)) {
-        m_playBootSplashSkipRequested = true;
-    }
-    if (m_playBootSplashSkippable && m_playBootSplashSkipRequested && elapsed >= minimum) {
-        m_playBootSplashActive = false;
-        return;
-    }
-
-    const double holdEnd = std::max(m_playBootSplashFadeSeconds, minimum);
-    if (elapsed >= holdEnd + m_playBootSplashFadeSeconds) {
-        m_playBootSplashActive = false;
-        return;
-    }
-    double opacity = 1.0;
-    if (m_playBootSplashFadeSeconds > 0.0 && elapsed < m_playBootSplashFadeSeconds) {
-        opacity = elapsed / m_playBootSplashFadeSeconds;
-    } else if (m_playBootSplashFadeSeconds > 0.0 && elapsed >= holdEnd) {
-        opacity = 1.0 - (elapsed - holdEnd) / m_playBootSplashFadeSeconds;
-    }
-    const float clampedOpacity = static_cast<float>(std::clamp(opacity, 0.0, 1.0));
-    ImDrawList* const drawList = ImGui::GetWindowDrawList();
-    const ImVec2 min{imageOrigin.x, imageOrigin.y};
-    const ImVec2 max{imageOrigin.x + imageSize.x, imageOrigin.y + imageSize.y};
-    const ImVec4 backgroundColor{m_playBootSplashBackground[0], m_playBootSplashBackground[1],
-                                 m_playBootSplashBackground[2],
-                                 m_playBootSplashBackground[3] * clampedOpacity};
-    drawList->AddRectFilled(min, max, ImGui::ColorConvertFloat4ToU32(backgroundColor));
-
-    const char* const title = "UniVex Runtime";
-    const ImVec2 titleSize = ImGui::CalcTextSize(title);
-    float titleY = imageOrigin.y + (imageSize.y - titleSize.y) * 0.5F;
-    if (!m_playBootSplashImagePath.empty()) {
-        const std::uintptr_t textureId = GetTextureThumbnailUVE(m_playBootSplashImagePath);
-        if (textureId != 0U) {
-            const float aspectRatio = m_playBootSplashImageDimensions.x > 0.0F &&
-                                              m_playBootSplashImageDimensions.y > 0.0F
-                                          ? m_playBootSplashImageDimensions.x / m_playBootSplashImageDimensions.y
-                                          : 1.6F;
-            const float maxWidth = imageSize.x * 0.62F;
-            const float maxHeight = imageSize.y * 0.52F;
-            float logoWidth = maxWidth;
-            float logoHeight = maxWidth / aspectRatio;
-            if (logoHeight > maxHeight) {
-                logoHeight = maxHeight;
-                logoWidth = maxHeight * aspectRatio;
-            }
-            const float logoLeft = imageOrigin.x + (imageSize.x - logoWidth) * 0.5F;
-            const float logoTop = imageOrigin.y + imageSize.y * 0.34F - logoHeight * 0.5F;
-            const ImVec4 imageTint{1.0F, 1.0F, 1.0F, clampedOpacity};
-            drawList->AddImage(static_cast<ImTextureID>(textureId), ImVec2{logoLeft, logoTop},
-                               ImVec2{logoLeft + logoWidth, logoTop + logoHeight}, ImVec2{0.0F, 0.0F},
-                               ImVec2{1.0F, 1.0F}, ImGui::ColorConvertFloat4ToU32(imageTint));
-            titleY = logoTop + logoHeight + 22.0F;
-        }
-    }
-    const ImVec2 titlePosition{imageOrigin.x + (imageSize.x - titleSize.x) * 0.5F, titleY};
-    const ImVec4 titleColor{1.0F, 1.0F, 1.0F, clampedOpacity};
-    drawList->AddText(titlePosition, ImGui::ColorConvertFloat4ToU32(titleColor), title);
-}
-
 bool EditorUVE::ApplyPlayEntrySpawnUVE() {
     Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
@@ -980,8 +760,6 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
         }
     }
 }
-
-
 
 bool EditorUVE::SaveSceneUVE() {
     // While the Entity Editor is open the document is the entity: saving writes the entity.
@@ -4993,7 +4771,6 @@ std::optional<std::string> EditorUVE::ReadProjectTextFileUVE(const std::filesyst
     return buffer.str();
 }
 
-
 void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferences) {
     const bool previousAdvancedOpen = m_colorPickerPreferences.advancedOpen;
     const auto sanitize = [](std::vector<EditorColorUVE>& colors, const std::size_t cap) {
@@ -5018,7 +4795,6 @@ void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferenc
 
 void EditorUVE::SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept {
     m_extendedPreferences = std::move(preferences);
-    ApplyEditorVisualThemeUVE(&m_extendedPreferences);
 }
 
 void EditorUVE::ShutdownUVE() {
@@ -5062,16 +4838,6 @@ void EditorUVE::ShutdownUVE() {
         m_meshThumbnailRenderer.ShutdownUVE();
         m_materialThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
-        // The overlay first: its GLFW callbacks were chained in front of the PRISM shell's.
-        if (ImGui::GetCurrentContext() != nullptr) {
-            const char* const iniFilename = ImGui::GetIO().IniFilename;
-            if (iniFilename != nullptr && iniFilename[0] != '\0') {
-                ImGui::SaveIniSettingsToDisk(iniFilename);
-            }
-            ImGui_ImplOpenGL3_Shutdown();
-            ImGui_ImplGlfw_Shutdown();
-            ImGui::DestroyContext();
-        }
         if (m_levelShell != nullptr) {
             m_levelShell->ShutdownUVE();
             m_levelShell.reset();
@@ -5136,7 +4902,7 @@ std::optional<Scene::WorldTransformComponentUVE> EditorUVE::TryGetComposingParen
 }
 
 bool EditorUVE::IsEntityNameValidUVE(const std::string_view name) const noexcept {
-    return !name.empty() && name.size() <= kMaximumEntityNameBytesUVE && !IsWhitespaceOnlyUVE(name);
+    return !name.empty() && name.size() <= kMaximumEditorEntityNameBytesUVE && !IsWhitespaceOnlyUVE(name);
 }
 
 std::string EditorUVE::GetEntityDisplayLabelUVE(const Scene::EntityUVE entity) const {
@@ -5558,8 +5324,6 @@ bool EditorUVE::SaveSessionSettingsUVE() {
     return config.SaveUVE();
 }
 
-
-
 bool EditorUVE::IsHierarchyFilterActiveUVE() const noexcept {
     return !m_hierarchyFilter.empty();
 }
@@ -5655,40 +5419,6 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
     for (const Scene::EntityUVE root : GetDocumentRootsUVE()) {
         static_cast<void>(visit(visit, root));
     }
-}
-
-void EditorUVE::AcceptHierarchyDropTargetUVE(const Scene::EntityUVE targetParent) {
-    if (!IsLifecycleCommandAllowedUVE() ||
-        (targetParent != Scene::kInvalidEntityUVE && !IsDocumentEntityUVE(targetParent)) ||
-        !ImGui::BeginDragDropTarget()) {
-        return;
-    }
-
-    const ImGuiPayload* const payload = ImGui::AcceptDragDropPayload(kHierarchyEntityPayloadUVE);
-    if (payload != nullptr && payload->DataSize == static_cast<int>(sizeof(Scene::EntityUVE))) {
-        Scene::EntityUVE source = Scene::kInvalidEntityUVE;
-        std::memcpy(&source, payload->Data, sizeof(source));
-        static_cast<void>(ReparentDocumentEntityUVE(source, targetParent));
-    }
-    // An entity asset dragged out of Content lands under the row, or in the scene for empty space.
-    const ImGuiPayload* const asset = ImGui::AcceptDragDropPayload(kContentEntityPayloadUVE);
-    if (asset != nullptr && asset->DataSize > 1) {
-        const std::string path(static_cast<const char*>(asset->Data), static_cast<std::size_t>(asset->DataSize - 1));
-        static_cast<void>(PlaceEntityAssetUVE(
-            path, ResolvePlaceableParentUVE(targetParent != Scene::kInvalidEntityUVE ? targetParent
-                                                                                   : ResolveNewObjectParentUVE())));
-    }
-    const ImGuiPayload* const item = ImGui::AcceptDragDropPayload(kContentItemPayloadUVE);
-    if (item != nullptr && item->DataSize > 1) {
-        const std::string relativePath(static_cast<const char*>(item->Data), static_cast<std::size_t>(item->DataSize - 1));
-        const std::filesystem::path p{relativePath};
-        if (IsModelSourcePathUVE(p) || p.extension() == ".uvmodel") {
-            static_cast<void>(PlaceModelSourceUVE(
-                p, ResolvePlaceableParentUVE(targetParent != Scene::kInvalidEntityUVE ? targetParent
-                                                                                     : ResolveNewObjectParentUVE())));
-        }
-    }
-    ImGui::EndDragDropTarget();
 }
 
 EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
@@ -7160,30 +6890,6 @@ void EditorUVE::RefreshProjectFileIndexUVE() {
     } else {
         m_projectFileRefreshAttemptedForRescan = changesBeforeRefresh.rescanRequired;
     }
-}
-
-void EditorUVE::DrawScriptingWorkspaceUVE() {
-    if (m_openUVScript.has_value()) {
-        DrawUVScriptEditorUVE();
-        return;
-    }
-    // Nothing open: say how to get a script here rather than show an empty workspace.
-    const ImGuiViewport* const mainViewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2{mainViewport->WorkPos.x, mainViewport->WorkPos.y + kEditorTopChromeHeightUVE},
-                            ImGuiCond_Always);
-    ImGui::SetNextWindowSize(
-        ImVec2{mainViewport->WorkSize.x, std::max(120.0F, mainViewport->WorkSize.y - kEditorTopChromeHeightUVE)},
-        ImGuiCond_Always);
-    constexpr ImGuiWindowFlags windowFlags =
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar;
-    if (ImGui::Begin("Scripting Workspace##uve", nullptr, windowFlags)) {
-        ImGui::TextDisabled("No script is open.");
-        ImGui::TextDisabled("Select an object, then use its Script slot in the Inspector: New UVScript, or Open.");
-        if (ImGui::SmallButton("Back to the scene")) {
-            m_activeWorkspace = EditorWorkspaceUVE::Library;
-        }
-    }
-    ImGui::End();
 }
 
 } // namespace UVE::Editor

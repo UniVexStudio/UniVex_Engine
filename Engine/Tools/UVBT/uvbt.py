@@ -222,68 +222,6 @@ class EngineBuilder:
         self.modules = {}
         self.targets = {}
 
-    def _ensure_imgui_module_rules(self):
-        imgui_dir = self.repo_root / "ThirdParty" / "imgui"
-        imgui_bcs = imgui_dir / "ImGui.Build.cs"
-        if not imgui_bcs.exists():
-            imgui_dir.mkdir(parents=True, exist_ok=True)
-            content = """// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
-
-using UniVexBuildTool;
-
-public class ImGuiModule : ModuleRules
-{
-    public ImGuiModule(ReadOnlyTargetRules Target) : base(Target)
-    {
-        Type = ModuleType.StaticLibrary;
-
-        PublicIncludePaths.AddRange(new string[] {
-            ".",
-            "backends"
-        });
-
-        ExtraSourceDirectories.AddRange(new string[] {
-            "backends"
-        });
-
-        ExcludedFiles.AddRange(new string[] {
-            "examples/",
-            "docs/",
-            "misc/",
-            "imgui_demo.cpp",
-            "imgui_impl_android.cpp",
-            "imgui_impl_dx9.cpp",
-            "imgui_impl_dx10.cpp",
-            "imgui_impl_dx11.cpp",
-            "imgui_impl_dx12.cpp",
-            "imgui_impl_metal.mm",
-            "imgui_impl_metal.cpp",
-            "imgui_impl_vulkan.cpp",
-            "imgui_impl_wgpu.cpp",
-            "imgui_impl_win32.cpp",
-            "imgui_impl_sdl2.cpp",
-            "imgui_impl_sdl3.cpp",
-            "imgui_impl_sdlrenderer2.cpp",
-            "imgui_impl_sdlrenderer3.cpp",
-            "imgui_impl_osx.mm",
-            "imgui_impl_allegro5.cpp",
-            "imgui_impl_glut.cpp",
-            "imgui_impl_null.cpp",
-            "imgui_impl_opengl2.cpp",
-            "imgui_impl_qnx.cpp",
-            "imgui_impl_sdlgpu3.cpp"
-        });
-
-        PublicSystemLibraries.AddRange(new string[] {
-            "GL",
-            "GLX",
-            "X11"
-        });
-    }
-}
-"""
-            imgui_bcs.write_text(content, encoding="utf-8")
-
     def _freetype_include_dirs(self):
         dirs = []
         try:
@@ -312,7 +250,6 @@ public class ImGuiModule : ModuleRules
         subprocess.run([dlltool, "-d", str(def_file), "-l", str(implib)], check=True)
 
     def discover(self):
-        self._ensure_imgui_module_rules()
         # Scan for *.Build.cs
         for root_dir, _, files in os.walk(self.repo_root):
             rpath = Path(root_dir)
@@ -368,19 +305,10 @@ public class ImGuiModule : ModuleRules
         if ui_src.exists() and (not ui_inc.exists() or ui_src.stat().st_mtime > ui_inc.stat().st_mtime):
             subprocess.run([sys.executable, str(embed_script), str(ui_src), str(ui_inc), "uve_ui_runtime_font_ttf_bytes"], check=True)
 
-        # 3. Editor fonts
         editor_gen = gen_dir / "EditorCore"
         editor_gen.mkdir(parents=True, exist_ok=True)
-        fonts = [
-            (self.repo_root / "Engine" / "Runtime" / "UI" / "assets" / "fonts" / "liberation-sans-subset.ttf", editor_gen / "uve_ui_font_bytes.inc", "uve_ui_font_ttf_bytes"),
-            (self.repo_root / "Engine" / "Editor" / "EditorCore" / "assets" / "fonts" / "liberation-mono-subset.ttf", editor_gen / "uve_mono_font_bytes.inc", "uve_mono_font_ttf_bytes"),
-            (self.repo_root / "Engine" / "Editor" / "EditorCore" / "assets" / "fonts" / "tabler-icons-subset.ttf", editor_gen / "uve_icon_font_bytes.inc", "uve_icon_font_ttf_bytes"),
-        ]
-        for src, dst, sym in fonts:
-            if src.exists() and (not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime):
-                subprocess.run([sys.executable, str(embed_script), str(src), str(dst), sym], check=True)
 
-        # 4. Editor icons
+        # 3. Editor icons
         editor_icons_inc = editor_gen / "uve_editor_icon_set.inc"
         embed_icons_script = self.repo_root / "Engine" / "Tools" / "editor_icons" / "embed_editor_icons.py"
         icons_dir = self.repo_root / "Engine" / "Editor" / "EditorCore" / "assets" / "icons"
@@ -477,7 +405,6 @@ public class ImGuiModule : ModuleRules
             ("ufbx", "https://github.com/ufbx/ufbx.git", "v0.23.0", "ufbx.h"),
             ("miniaudio", "https://github.com/mackron/miniaudio.git", "0.11.25", "miniaudio.h"),
             ("basis_universal", "https://github.com/BinomialLLC/basis_universal.git", "v2_50", "transcoder/basisu_transcoder.h"),
-            ("imgui", "https://github.com/ocornut/imgui.git", "docking", "imgui.h"),
         ]
         
         for name, url, tag, check_file in deps:
@@ -498,7 +425,6 @@ public class ImGuiModule : ModuleRules
                 for bcs_name, content in saved_bcs.items():
                     (dest / bcs_name).write_text(content, encoding="utf-8")
 
-        self._ensure_imgui_module_rules()
 
         tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / platform
         tp_lib_dir.mkdir(parents=True, exist_ok=True)
@@ -646,8 +572,6 @@ public class ImGuiModule : ModuleRules
             self.repo_root / "ThirdParty" / "basis_universal",
             self.repo_root / "ThirdParty" / "glfw" / "include",
             self.repo_root / "ThirdParty" / "glew" / "include",
-            self.repo_root / "ThirdParty" / "imgui",
-            self.repo_root / "ThirdParty" / "imgui" / "backends",
         ]
         for tp in third_party_dirs:
             if tp.is_dir():

@@ -15,8 +15,6 @@
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
-
 #include "editor_commands.h"
 
 namespace UVE::Editor {
@@ -213,18 +211,6 @@ bool EditorUVE::SetShortcutSettingUVE(const std::string_view id, const Config::S
         }
     }
     return false;
-}
-
-void EditorUVE::DrawCommandMenuItemUVE(const std::string_view id) {
-    EditorCommandUVE* command = FindEditorCommandUVE(id);
-    if (command == nullptr) {
-        return;
-    }
-    const std::string shortcut = DisplayEditorShortcutUVE(command->shortcuts[0]);
-    if (ImGui::MenuItem(command->label.c_str(), shortcut.empty() ? nullptr : shortcut.c_str(), false,
-                        IsEnabledUVE(*command))) {
-        static_cast<void>(RunEditorCommandUVE(id));
-    }
 }
 
 void EditorUVE::OpenCommandPaletteUVE() noexcept {

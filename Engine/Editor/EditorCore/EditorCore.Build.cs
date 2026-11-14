@@ -19,7 +19,6 @@ public class EditorCoreModule : ModuleRules
             "Network",
             "Plugins",
             "Retarget",
-            "ImGui",
             "Prism",
             "Math",
             "Strings",

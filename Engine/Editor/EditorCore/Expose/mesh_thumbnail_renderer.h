@@ -1,6 +1,5 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-
 #pragma once
 
 #include <array>
@@ -69,7 +68,7 @@ public:
     void ShutdownUVE() noexcept;
 
     /// Renders `mesh` from a fixed default viewing angle chosen to frame its own local-space
-    /// bounding box into a new `width` x `height` RGBA8 texture, ready for direct use as an ImGui
+    /// bounding box into a new `width` x `height` RGBA8 texture, ready for direct use as a UI
     /// image id (exactly like EditorUiAssetsUVE::UploadDynamicTextureUVE()'s return value).
     /// Returns 0 if `mesh` has no vertices/indices, `width`/`height` is not positive, InitializeUVE()
     /// previously failed, or any GL step fails. The caller owns the returned texture's lifetime.

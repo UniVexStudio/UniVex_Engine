@@ -114,7 +114,7 @@ jobs:
 
       - name: Panel include check
         # Every editor panel TU must include a standard header for each std:: facility it names,
-        # instead of borrowing one transitively through imgui.h or a component header. Was 26
+        # instead of borrowing one transitively through a UI header or a component header. Was 26
         # violations deep; triaged and clean, so it is enforced now.
         run: bash Engine/Tools/check_panel_includes.sh
 

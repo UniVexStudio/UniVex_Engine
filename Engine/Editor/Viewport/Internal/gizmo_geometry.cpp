@@ -29,7 +29,7 @@ std::array<Axis, 3> AxesOf(const GizmoStyle& style) {
 
 // A rotation ring shows only the half curving toward the camera.
 //
-// This is the convention every established editor follows (ImGuizmo's DrawRotationGizmo emits a
+// This is the convention every established editor follows (a typical rotation gizmo emits a
 // half circle per axis; Maya and other editors read the same way), and the reason is not decoration:
 // three full circles through one point overlap into a ball of arcs where no ring can be told from
 // another. Half rings cannot overlap, so each one stays a readable curve.
