@@ -2,7 +2,10 @@
 
 #pragma once
 
+#include <functional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "entity.h"
 #include "ui_text_component.h"
@@ -54,6 +57,21 @@ public:
     /// Builds the screen-space bounding rectangle of `text` for a measured advance width in pixels.
     [[nodiscard]] static Math::RectUVE ResolveBoundingRectUVE(
         const UITextComponentUVE& text, float measuredWidthPixels) noexcept;
+
+    /// One laid-out line: its text and the pen position of its baseline start.
+    struct LineUVE final {
+        std::string text;
+        Math::Vector2UVE baseline{};
+        float width = 0.0F;
+    };
+
+    /// Lays `shown` out in `box` (or from the position when `box` is empty): lines split at
+    /// newlines, and at spaces when `wrap` is on and a line is wider than the box, each placed by
+    /// the horizontal and vertical alignment. `measure` gives a string's width at the text's size,
+    /// so the runtime and the editor's designer place the same text the same way.
+    [[nodiscard]] static std::vector<LineUVE> LayoutLinesUVE(const UITextComponentUVE& text, std::string_view shown,
+                                                            const Math::RectUVE& box,
+                                                            const std::function<float(std::string_view)>& measure);
 };
 
 } // namespace UVE::Scene

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace UVE::Scene {
@@ -16,7 +17,12 @@ namespace UVE::Scene {
            std::isfinite(component.fontSize) && component.fontSize >= kMinimumUIFontSizeUVE &&
            component.fontSize <= kMaximumUIFontSizeUVE && std::isfinite(component.color.x) &&
            std::isfinite(component.color.y) && std::isfinite(component.color.z) &&
-           std::isfinite(component.alpha) && component.alpha >= 0.0F && component.alpha <= 1.0F;
+           std::isfinite(component.alpha) && component.alpha >= 0.0F && component.alpha <= 1.0F &&
+           std::isfinite(component.boxSize.x) && std::isfinite(component.boxSize.y) && component.boxSize.x >= 0.0F &&
+           component.boxSize.y >= 0.0F && static_cast<std::uint8_t>(component.horizontalAlign) <= 2U &&
+           static_cast<std::uint8_t>(component.verticalAlign) <= 2U && std::isfinite(component.lineHeight) &&
+           component.lineHeight > 0.0F && std::isfinite(component.shadowAlpha) && component.shadowAlpha >= 0.0F &&
+           component.shadowAlpha <= 1.0F && std::isfinite(component.outlineWidth) && component.outlineWidth >= 0.0F;
 }
 
 float ClampUIFontSizeUVE(const float fontSize) noexcept {
@@ -52,6 +58,20 @@ UITextComponentUVE SanitizeUITextComponentUVE(const UITextComponentUVE& componen
         out.color.z = std::clamp(out.color.z, 0.0F, 1.0F);
     }
     out.alpha = std::isfinite(out.alpha) ? std::clamp(out.alpha, 0.0F, 1.0F) : 1.0F;
+    if (!std::isfinite(out.boxSize.x) || !std::isfinite(out.boxSize.y)) {
+        out.boxSize = Math::Vector2UVE{};
+    }
+    out.boxSize.x = std::max(0.0F, out.boxSize.x);
+    out.boxSize.y = std::max(0.0F, out.boxSize.y);
+    if (static_cast<std::uint8_t>(out.horizontalAlign) > 2U) {
+        out.horizontalAlign = UITextHorizontalAlignUVE::Left;
+    }
+    if (static_cast<std::uint8_t>(out.verticalAlign) > 2U) {
+        out.verticalAlign = UITextVerticalAlignUVE::Top;
+    }
+    out.lineHeight = std::isfinite(out.lineHeight) && out.lineHeight > 0.0F ? std::clamp(out.lineHeight, 0.5F, 4.0F) : 1.25F;
+    out.shadowAlpha = std::isfinite(out.shadowAlpha) ? std::clamp(out.shadowAlpha, 0.0F, 1.0F) : 0.0F;
+    out.outlineWidth = std::isfinite(out.outlineWidth) ? std::clamp(out.outlineWidth, 0.0F, 8.0F) : 0.0F;
     return out;
 }
 

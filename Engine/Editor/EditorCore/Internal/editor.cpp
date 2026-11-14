@@ -1090,8 +1090,11 @@ std::optional<std::filesystem::path> EditorUVE::CreateWidgetBlueprintAssetUVE(co
     if (label != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::UITextComponentUVE>(label)) {
         Scene::UITextComponentUVE& text = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(label);
         text.text = "Start";
-        text.positionPixels = Math::Vector2UVE{158.0F, 146.0F};
         text.fontSize = 22.0F;
+        // Centred on its button, however the button is sized.
+        text.fillParent = true;
+        text.horizontalAlign = Scene::UITextHorizontalAlignUVE::Center;
+        text.verticalAlign = Scene::UITextVerticalAlignUVE::Middle;
     }
 
     const Asset::AssetGuidUVE guid =
