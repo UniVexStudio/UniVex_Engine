@@ -691,14 +691,24 @@ std::optional<Asset::AnimationClipAssetUVE> ConformClipUVE(const Asset::Animatio
         SetErrorUVE(error, "the clip moves no bones");
         return std::nullopt;
     }
-    // Frames: the densest track's own times (an imported take samples every bone on the same frames).
-    const auto densest = std::ranges::max_element(clip.bones, {}, [](const Asset::AnimationAssetBoneTrackUVE& track) {
-        return track.samples.size();
-    });
+    // Frames: every time any track has a key. Tracks with their own key times (a reduced clip) keep
+    // every key: sampling only the densest track's times joined the hips' bob by straight lines
+    // between another bone's keys and lowered it.
     std::vector<double> times;
-    for (const Asset::AnimationAssetSampleUVE& sample : densest->samples) {
-        times.push_back(sample.timeSeconds);
+    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+        for (const Asset::AnimationAssetSampleUVE& sample : track.samples) {
+            times.push_back(sample.timeSeconds);
+        }
     }
+    std::ranges::sort(times);
+    std::vector<double> unique;
+    unique.reserve(times.size());
+    for (const double t : times) {
+        if (unique.empty() || t - unique.back() > 1.0e-4) {
+            unique.push_back(t);
+        }
+    }
+    times = std::move(unique);
     std::vector<const Asset::AnimationAssetBoneTrackUVE*> trackOfRigBone(rig.bones.size(), nullptr);
     for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
         if (track.samples.empty()) {

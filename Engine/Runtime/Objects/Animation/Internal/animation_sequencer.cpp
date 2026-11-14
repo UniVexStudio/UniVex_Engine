@@ -40,6 +40,20 @@ using PoseUVE = Core::TransformPoseUVE;
     return 1.0F - x * x * x * (x * (x * 6.0F - 15.0F) + 10.0F);
 }
 
+/// Two bone names name the same bone: equal once a namespace ("mixamorig:", "Rig|") is dropped,
+/// ignoring case - the rule posing uses, so root motion finds the bone the pose does.
+[[nodiscard]] bool SameBoneNameUVE(std::string_view a, std::string_view b) noexcept {
+    if (const auto pos = a.find_last_of(":|"); pos != std::string_view::npos) {
+        a = a.substr(pos + 1U);
+    }
+    if (const auto pos = b.find_last_of(":|"); pos != std::string_view::npos) {
+        b = b.substr(pos + 1U);
+    }
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+               return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+           });
+}
+
 [[nodiscard]] const Asset::AnimationAssetBoneTrackUVE* FindTrackForBoneUVE(
     const std::unordered_map<std::string_view, const Asset::AnimationAssetBoneTrackUVE*>& tracks,
     const std::string_view boneName) noexcept {
@@ -443,9 +457,8 @@ bool StepSkeletalAnimationSequencerUVE(AnimationSequencerComponentUVE& player, c
     player.rootMotionDelta = Math::Vector3UVE{};
     if (mixer.rootMotion != AnimationRootMotionModeUVE::Off && mixer.animatePosition) {
         if (const std::optional<std::size_t> rootIndex = ResolveRootMotionBoneUVE(skeleton, clip, mixer.rootMotionBone)) {
-            const auto found = tracks.find(skeleton.bones[*rootIndex].name);
-            if (found != tracks.end()) {
-                const auto& samples = found->second->samples;
+            if (const Asset::AnimationAssetBoneTrackUVE* const rootTrack = FindTrackForBoneUVE(tracks, skeleton.bones[*rootIndex].name)) {
+                const auto& samples = rootTrack->samples;
                 const std::string& rootName = skeleton.bones[*rootIndex].name;
                 const auto at = [&](const double t) {
                     return conformed.PositionUVE(rootName, SampleTrackUVE(samples, t).position, Math::Vector3UVE{});
@@ -485,12 +498,17 @@ std::optional<std::size_t> ResolveRootMotionBoneUVE(const Skeleton3DComponentUVE
                 return &track;
             }
         }
+        for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
+            if (!track.samples.empty() && SameBoneNameUVE(track.bone, name)) {
+                return &track;
+            }
+        }
         return nullptr;
     };
     if (!boneName.empty()) {
         for (std::size_t index = 0U; index < skeleton.bones.size(); ++index) {
-            if (skeleton.bones[index].name == boneName) {
-                return trackOf(boneName) != nullptr ? std::optional<std::size_t>{index} : std::nullopt;
+            if (SameBoneNameUVE(skeleton.bones[index].name, boneName)) {
+                return trackOf(skeleton.bones[index].name) != nullptr ? std::optional<std::size_t>{index} : std::nullopt;
             }
         }
         return std::nullopt;

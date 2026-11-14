@@ -106,7 +106,6 @@ struct EditorUVEAccessUVE;
 
 namespace UVE::Editor {
 struct AnimationIconWorkerUVE;
-struct AnimationOptimizeJobUVE;
 
 struct EditorSettingBindingUVE;
 
@@ -461,7 +460,6 @@ class EditorUVE final {
     friend class StateMachineViewUVE;
     friend class BlendSpaceViewUVE;
     friend struct AnimationIconWorkerUVE;
-    friend struct AnimationOptimizeJobUVE;
     friend class EditorFileDialogUVE;
     friend class AssetThumbnailUVE;
     friend class EditorObjectMenuUVE;
@@ -1925,17 +1923,6 @@ private:
     void BeginAnimationIconBatchUVE();
     std::unordered_map<std::string, AnimationIconUVE> m_animationIcons;
     std::shared_ptr<struct AnimationIconWorkerUVE> m_animationIconWorker;
-    /// Optimize Animations: rewrites clips with as few keys as keep every joint within a small
-    /// error of the original (Asset::OptimizeAnimationClipUVE), on a worker thread, a backup of each
-    /// first (<project>/.uvcache/animation-backup). Files given while one runs join it. Progress and
-    /// the result go to the Content Browser's status line.
-    void StartOptimizeAnimationsUVE(std::vector<std::filesystem::path> absoluteClips);
-    void CancelOptimizeAnimationsUVE();
-    [[nodiscard]] bool IsOptimizingAnimationsUVE() const;
-    void PollOptimizeAnimationsUVE();
-    /// Every .uvanim under `relativeFolder` (empty: the whole project), absolute.
-    [[nodiscard]] std::vector<std::filesystem::path> CollectAnimationClipsUVE(const std::filesystem::path& relativeFolder) const;
-    std::shared_ptr<AnimationOptimizeJobUVE> m_animationOptimizeJob;
     std::uint64_t m_animationIconGeneration = 0U;
     std::filesystem::path m_animationIconCacheDir;
     /// The windows drawn through ImGui over the PRISM level editor (those not yet built with PRISM).

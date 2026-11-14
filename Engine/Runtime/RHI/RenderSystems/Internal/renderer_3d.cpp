@@ -107,7 +107,12 @@ namespace {
 /// ordered and finite, yet hundreds of times the model's size or collapsed to a point, so the mesh
 /// is drawn off screen and the frustum test then rejects it. Bounds that are not ordered and finite,
 /// or that differ from the bind pose by more than animation plausibly explains, are not trusted.
-[[nodiscard]] bool IsPlausibleSkinnedBoundsUVE(const Math::AabbUVE& skinned, const Math::AabbUVE& rest) noexcept {
+/// `travel` is how far the skeleton's root joint has moved from its bind position, and
+/// `characterDiagonal` the size of the whole skeleton: a small part (a head, a hat) of a character
+/// that walks or jumps far is judged by where it is on the character, not by how far it went.
+[[nodiscard]] bool IsPlausibleSkinnedBoundsUVE(const Math::AabbUVE& skinned, const Math::AabbUVE& rest,
+                                               const Math::Vector3UVE travel = Math::Vector3UVE{},
+                                               const float characterDiagonal = 0.0F) noexcept {
     if (!IsOrderedFiniteAabbUVE(skinned)) {
         return false;
     }
@@ -126,8 +131,9 @@ namespace {
         skinnedDiagonal > restDiagonal * kMaximumSizeRatio) {
         return false;
     }
-    return Math::LengthUVE(skinned.GetCenterUVE() - rest.GetCenterUVE()) <=
-           restDiagonal * kMaximumCenterDriftInDiagonals;
+    const float scale = std::isfinite(characterDiagonal) ? std::max(restDiagonal, characterDiagonal) : restDiagonal;
+    const Math::Vector3UVE shift = Math::IsFiniteUVE(travel) ? travel : Math::Vector3UVE{};
+    return Math::LengthUVE(skinned.GetCenterUVE() - shift - rest.GetCenterUVE()) <= scale * kMaximumCenterDriftInDiagonals;
 }
 
 [[nodiscard]] Math::AabbUVE ComputeLightSpaceCameraBoundsUVE(const CameraFrustumCornersUVE& cameraCorners,
@@ -2546,7 +2552,33 @@ struct Renderer3DUVE::ImplUVE {
                                                  std::max(skinnedBounds.max.y, vertex.position.y),
                                                  std::max(skinnedBounds.max.z, vertex.position.z)};
         }
-        if (!verticesFinite || !IsPlausibleSkinnedBoundsUVE(skinnedBounds, mesh.localBounds)) {
+        // How far the character's root joint travelled, and how big the whole rig is (every joint's
+        // bind position), so a small part is judged as part of the character.
+        Math::Vector3UVE travel{};
+        float characterDiagonal = 0.0F;
+        {
+            Math::AabbUVE rig{};
+            bool any = false;
+            for (std::size_t j = 0U; j < mesh.joints.size() && j < skinning.size(); ++j) {
+                Math::Matrix4x4UVE bind;
+                if (!Math::TryInverseUVE(mesh.joints[j].inverseBindMatrix, bind)) {
+                    continue;
+                }
+                const Math::Vector3UVE at = Math::TransformPointUVE(bind, Math::Vector3UVE{});
+                if (!any) {
+                    rig = Math::AabbUVE{at, at};
+                    travel = Math::TransformPointUVE(skinning[j], at) - at;   // the first placed joint: the root
+                    any = true;
+                } else {
+                    rig.min = Math::Vector3UVE{std::min(rig.min.x, at.x), std::min(rig.min.y, at.y), std::min(rig.min.z, at.z)};
+                    rig.max = Math::Vector3UVE{std::max(rig.max.x, at.x), std::max(rig.max.y, at.y), std::max(rig.max.z, at.z)};
+                }
+            }
+            if (any) {
+                characterDiagonal = Math::LengthUVE(rig.max - rig.min);
+            }
+        }
+        if (!verticesFinite || !IsPlausibleSkinnedBoundsUVE(skinnedBounds, mesh.localBounds, travel, characterDiagonal)) {
             // NaN / infinite vertices, or a pose whose scale or translation disagrees with the mesh's
             // bind matrices and flings the skin far from (or collapses it onto) the model. Uploading
             // that buffer is what made a character vanish a frame after it first appeared, leaving only
