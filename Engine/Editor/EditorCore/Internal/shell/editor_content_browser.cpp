@@ -1,8 +1,10 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_content_browser.h"
+#include <functional>
 #include <iterator>
 #include <fstream>
 #include "blueprint_asset.h"
+#include "texture_procedural.h"
 
 #include "editor_asset_thumbnail.h"
 
@@ -1479,11 +1481,68 @@ std::vector<prism::MenuItem> EditorContentBrowserUVE::CatalogueMenuUVE() {
         material("Shader Material", "M_Shader", Asset::MaterialKindUVE::Shader),
         item("Shader", "shader_script", prism::Icon::Shader, "Shader"),
     }));
+    // Textures made here rather than imported: seamless noise (clouds, dirt, stone, a bumpy
+    // normal map) and gradients, baked to an ordinary 2D texture any material slot can take.
+    const auto generated = [this](const char* label, const char* stem, std::function<bool(Asset::TextureAssetUVE&)> make) {
+        return prism::MenuItem::Item(label, [this, stem, make = std::move(make)] { CreateGeneratedTextureUVE(stem, make); }, "",
+                                     prism::Icon::NodeTexture);
+    };
+    items.push_back(prism::MenuItem::Sub("Texture", {
+        generated("Noise Texture", "T_Noise", [](Asset::TextureAssetUVE& out) {
+            return Asset::GenerateNoiseTextureUVE(Asset::NoiseTextureSettingsUVE{}, out);
+        }),
+        generated("Cellular Noise Texture", "T_Cells", [](Asset::TextureAssetUVE& out) {
+            Asset::NoiseTextureSettingsUVE settings;
+            settings.type = Asset::NoiseTextureTypeUVE::Cellular;
+            settings.frequency = 8U;
+            settings.octaves = 2U;
+            return Asset::GenerateNoiseTextureUVE(settings, out);
+        }),
+        generated("Value Noise Texture", "T_ValueNoise", [](Asset::TextureAssetUVE& out) {
+            Asset::NoiseTextureSettingsUVE settings;
+            settings.type = Asset::NoiseTextureTypeUVE::Value;
+            return Asset::GenerateNoiseTextureUVE(settings, out);
+        }),
+        generated("Noise Normal Map", "T_NoiseNormal", [](Asset::TextureAssetUVE& out) {
+            Asset::NoiseTextureSettingsUVE settings;
+            settings.asNormalMap = true;
+            settings.frequency = 8U;
+            return Asset::GenerateNoiseTextureUVE(settings, out);
+        }),
+        generated("Gradient Texture", "T_Gradient", [](Asset::TextureAssetUVE& out) {
+            return Asset::GenerateGradientTextureUVE(Asset::GradientTextureSettingsUVE{}, out);
+        }),
+        generated("Radial Gradient Texture", "T_RadialGradient", [](Asset::TextureAssetUVE& out) {
+            Asset::GradientTextureSettingsUVE settings;
+            settings.radial = true;
+            settings.colorA = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+            settings.colorB = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+            return Asset::GenerateGradientTextureUVE(settings, out);
+        }),
+    }));
     items.push_back(prism::MenuItem::Sub("World", {
         item("Level", "viewport_3d", prism::Icon::SceneAsset, "Viewport3D"),
         item("Level 2D", "viewport_2d", prism::Icon::SceneAsset, "Viewport3D"),
     }));
     return items;
+}
+
+void EditorContentBrowserUVE::CreateGeneratedTextureUVE(const std::string& stem, const std::function<bool(Asset::TextureAssetUVE&)>& make) {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_contentBrowserDirectory;
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, stem, ".uvtex");
+    Asset::TextureAssetUVE texture;
+    if (!make(texture) || !Asset::SaveTextureAssetUVE(texture, path)) {
+        m_editor.m_contentStatusMessage = "Could not make the texture here.";
+        return;
+    }
+    static_cast<void>(m_editor.m_services->GetAssetDatabaseUVE().RegisterUVE(path));
+    m_editor.m_contentStatusMessage.clear();
+    m_editor.RefreshProjectFileIndexUVE();
+    m_folderSignature = 0;
+    ChangedUVE();
 }
 
 void EditorContentBrowserUVE::CreateMaterialUVE(const std::string& stem, const Asset::MaterialKindUVE kind) {
