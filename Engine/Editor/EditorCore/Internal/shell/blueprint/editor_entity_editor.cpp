@@ -50,6 +50,11 @@
 #include "transform_component.h"
 #include "primitive_mesh_component.h"
 #include "light_component.h"
+#include "gameplay_tags.h"
+#include "gameplay_attributes.h"
+#include "audio_source_component.h"
+#include "rigid_3d_component.h"
+#include "character_controller_component.h"
 #include "camera_component.h"
 #include "ui_scrollbar_component.h"
 #include <typeindex>
@@ -286,6 +291,21 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     } else {
         m_blueprintPanel.widgetsProvider = nullptr;
     }
+    m_blueprintPanel.hasComponent = [this](const std::string_view needed) {
+        const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+        const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+        if (root == Scene::kInvalidEntityUVE || !em.IsAliveUVE(root)) {
+            return true;
+        }
+        if (needed == "CharacterController") { return em.HasComponentUVE<Scene::CharacterControllerComponentUVE>(root); }
+        if (needed == "Rigid3D") { return em.HasComponentUVE<Scene::Rigid3DComponentUVE>(root); }
+        if (needed == "AudioSource") { return em.HasComponentUVE<Scene::AudioSourceComponentUVE>(root); }
+        if (needed == "Light") { return em.HasComponentUVE<Scene::LightComponentUVE>(root); }
+        if (needed == "Camera") { return em.HasComponentUVE<Scene::CameraComponentUVE>(root); }
+        if (needed == "GameplayAttributes") { return em.HasComponentUVE<Scene::GameplayAttributesComponentUVE>(root); }
+        if (needed == "GameplayTag") { return em.HasComponentUVE<Scene::GameplayTagComponentUVE>(root); }
+        return true;
+    };
     m_blueprintPanel.animParametersProvider = [this] {
         std::vector<std::string> names;
         const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();

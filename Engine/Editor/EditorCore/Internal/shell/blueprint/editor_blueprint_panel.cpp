@@ -1,6 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_blueprint_panel.h"
 
+#include "character_controller_component.h"
+
 #include "editor_fit_width.h"
 
 #include "blueprint_nodes.h"
@@ -268,8 +270,15 @@ std::vector<prism::BlueprintNodeSpec> EditorBlueprintPanelUVE::LibraryUVE() cons
     // The engine's palette, then a Get and a Set for each variable.
     std::vector<prism::BlueprintNodeSpec> library;
     const Asset::BlueprintAssetUVE blueprint = m_graph ? FromGraphUVE() : Asset::BlueprintAssetUVE{};
+    // Only what belongs in this graph: a widget's controls in a widget's graph, an object's
+    // movement and physics in an object's, and nothing the object lacks the component for.
+    const Asset::BlueprintGraphKindUVE graphKind =
+        Asset::IsWidgetBlueprintPathUVE(m_path) ? Asset::BlueprintGraphKindUVE::Widget : Asset::BlueprintGraphKindUVE::Object;
     for (const Asset::BlueprintNodeTypeUVE& type : Asset::GetBlueprintNodeTypesUVE()) {
         if (type.role == Role::GetVariable || type.role == Role::SetVariable) {
+            continue;
+        }
+        if (!Asset::IsBlueprintNodeForGraphUVE(type, graphKind) || (!type.needs.empty() && hasComponent && !hasComponent(type.needs))) {
             continue;
         }
         prism::BlueprintNodeSpec spec;
@@ -846,6 +855,54 @@ Scene::EntityUVE EditorBlueprintPanelUVE::FindUserUVE(const std::string& path) c
     return Scene::kInvalidEntityUVE;
 }
 
+namespace {
+
+/// A character's starting controls, on Event Tick (node 2): WASD moves it along its own forward
+/// and right (the Input Map's MoveForward and MoveHorizontal), Jump jumps. Ordinary nodes, so
+/// they can be changed like any others.
+void AddCharacterControlsUVE(Asset::BlueprintAssetUVE& blueprint) {
+    const auto node = [&blueprint](const std::uint32_t id, const char* type, const float x, const float y,
+                                   std::vector<std::string> values = {}) {
+        Asset::BlueprintNodeUVE n;
+        n.id = id;
+        n.type = type;
+        n.x = x;
+        n.y = y;
+        n.inputValues = std::move(values);
+        blueprint.nodes.push_back(std::move(n));
+    };
+    const auto wire = [&blueprint](const std::uint32_t from, const std::uint32_t fromPin, const std::uint32_t to, const std::uint32_t toPin) {
+        blueprint.wires.push_back(Asset::BlueprintWireUVE{from, fromPin, to, toPin});
+    };
+    // Forward and back.
+    node(3U, "add_movement_input", 420.0F, 200.0F);
+    node(4U, "vector_scale", 160.0F, 330.0F);
+    node(5U, "get_forward_vector", -120.0F, 330.0F);
+    node(6U, "input_axis_value", -120.0F, 420.0F, {"MoveForward"});
+    // Left and right.
+    node(7U, "add_movement_input", 760.0F, 200.0F);
+    node(8U, "vector_scale", 500.0F, 470.0F);
+    node(9U, "get_right_vector", 220.0F, 470.0F);
+    node(10U, "input_axis_value", 220.0F, 560.0F, {"MoveHorizontal"});
+    // Jump.
+    node(11U, "branch", 1100.0F, 200.0F);
+    node(12U, "input_pressed", 820.0F, 330.0F, {"Jump"});
+    node(13U, "character_jump", 1360.0F, 200.0F);
+    wire(2U, 0U, 3U, 0U);
+    wire(5U, 0U, 4U, 0U);
+    wire(6U, 0U, 4U, 1U);
+    wire(4U, 0U, 3U, 1U);
+    wire(3U, 0U, 7U, 0U);
+    wire(9U, 0U, 8U, 0U);
+    wire(10U, 0U, 8U, 1U);
+    wire(8U, 0U, 7U, 1U);
+    wire(7U, 0U, 11U, 0U);
+    wire(12U, 0U, 11U, 1U);
+    wire(11U, 0U, 13U, 0U);
+}
+
+} // namespace
+
 std::string EditorBlueprintPanelUVE::CreateForUVE(const Scene::EntityUVE target, const std::filesystem::path& absolutePath) {
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     if (!em.IsAliveUVE(target)) {
@@ -866,6 +923,9 @@ std::string EditorBlueprintPanelUVE::CreateForUVE(const Scene::EntityUVE target,
     tick.x = 0.0F;
     tick.y = 200.0F;
     blueprint.nodes = {ready, tick};
+    if (em.HasComponentUVE<Scene::CharacterControllerComponentUVE>(target)) {
+        AddCharacterControlsUVE(blueprint);
+    }
     std::error_code error;
     std::filesystem::create_directories(absolutePath.parent_path(), error);
     if (!Asset::SaveBlueprintAssetUVE(blueprint, absolutePath)) {

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 #include <string>
 #include <type_traits>
 
@@ -41,6 +42,8 @@
 #include "network_session.h"
 #include "rigid_3d.h"
 #include "uvscript_instance.h"
+#include "quaternion.h"
+#include "color.h"
 
 namespace UVE::Core {
 namespace {
@@ -236,6 +239,17 @@ std::optional<HostPropertyUVE> UVScriptObjectHostUVE::DescribePropertyUVE(const 
     if (name == "intensity" && m_entityManager.HasComponentUVE<Scene::LightComponentUVE>(m_entity)) {
         return HostPropertyUVE{TypeUVE::FloatUVE(), true};
     }
+    // Rotation as Euler angles in degrees (X pitch, Y yaw, Z roll), like the Details panel shows it.
+    if (name == "rotation" && m_entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_entity)) {
+        return HostPropertyUVE{TypeUVE::Vec3UVE(), true};
+    }
+    if ((name == "light_color") && m_entityManager.HasComponentUVE<Scene::LightComponentUVE>(m_entity)) {
+        return HostPropertyUVE{TypeUVE::Vec3UVE(), true};
+    }
+    if ((name == "max_speed" || name == "jump_height") &&
+        m_entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_entity)) {
+        return HostPropertyUVE{TypeUVE::FloatUVE(), true};
+    }
     if (name == "fov" && m_entityManager.HasComponentUVE<Scene::CameraComponentUVE>(m_entity)) {
         return HostPropertyUVE{TypeUVE::FloatUVE(), true};
     }
@@ -274,6 +288,49 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
     }
     if (name == "input.pressed" || name == "input.held" || name == "input.released") {
         return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
+    }
+    if (name == "input.axis_value") {
+        return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::FloatUVE()};
+    }
+    if (name == "input.mouse_delta") {
+        return HostFunctionUVE{{}, TypeUVE::Vec3UVE()};
+    }
+    // A character: steering, jumping, speed.
+    if (m_entityManager.HasComponentUVE<Scene::CharacterControllerComponentUVE>(m_entity)) {
+        if (name == "character.move" || name == "character.launch") {
+            return HostFunctionUVE{{TypeUVE::Vec3UVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "character.jump" || name == "character.falling") {
+            return HostFunctionUVE{{}, TypeUVE::BoolUVE()};
+        }
+        if (name == "character.speed") {
+            return HostFunctionUVE{{}, TypeUVE::FloatUVE()};
+        }
+    }
+    // Its own axes and turning, from its transform.
+    if (m_entityManager.HasComponentUVE<Scene::TransformComponentUVE>(m_entity)) {
+        if (name == "transform.forward" || name == "transform.right" || name == "transform.up") {
+            return HostFunctionUVE{{}, TypeUVE::Vec3UVE()};
+        }
+        if (name == "transform.add_yaw" || name == "transform.add_pitch") {
+            return HostFunctionUVE{{TypeUVE::FloatUVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "transform.look_at") {
+            return HostFunctionUVE{{TypeUVE::Vec3UVE()}, TypeUVE::BoolUVE()};
+        }
+        if (name == "transform.distance_to") {
+            return HostFunctionUVE{{TypeUVE::Vec3UVE()}, TypeUVE::FloatUVE()};
+        }
+    }
+    // Maths the language has no word for.
+    if (name == "math.random_range" || name == "math.pow" || name == "math.atan2" || name == "math.fmod") {
+        return HostFunctionUVE{{TypeUVE::FloatUVE(), TypeUVE::FloatUVE()}, TypeUVE::FloatUVE()};
+    }
+    if (name == "math.random_bool") {
+        return HostFunctionUVE{{}, TypeUVE::BoolUVE()};
+    }
+    if (name == "math.random_int") {
+        return HostFunctionUVE{{TypeUVE::IntUVE(), TypeUVE::IntUVE()}, TypeUVE::IntUVE()};
     }
     // Animation Graph parameters: the object's graph, or the one under it, by parameter name.
     if (name.starts_with("anim.") &&
@@ -582,6 +639,21 @@ ValueUVE UVScriptObjectHostUVE::GetPropertyUVE(const std::string_view name) {
         return static_cast<double>(
             m_entityManager.GetComponentUVE<Scene::CameraComponentUVE>(m_entity).fieldOfViewDegrees);
     }
+    if (name == "rotation") {
+        Math::Vector3UVE radians{};
+        static_cast<void>(Math::TryToEulerUVE(m_entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_entity).localRotation, radians));
+        constexpr float kDegrees = 57.29578F;
+        return ToScriptUVE(Math::Vector3UVE{radians.x * kDegrees, radians.y * kDegrees, radians.z * kDegrees});
+    }
+    if (name == "light_color") {
+        return ToScriptUVE(Math::DisplayFromColorUVE(m_entityManager.GetComponentUVE<Scene::LightComponentUVE>(m_entity).color));
+    }
+    if (name == "max_speed") {
+        return static_cast<double>(m_entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_entity).moveSpeed);
+    }
+    if (name == "jump_height") {
+        return static_cast<double>(m_entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_entity).jumpHeight);
+    }
     return m_entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_entity).grounded;
 }
 
@@ -618,6 +690,29 @@ void UVScriptObjectHostUVE::SetPropertyUVE(const std::string_view name, const Va
         const float updated = static_cast<float>(std::get<double>(value));
         if (std::isfinite(updated) && updated >= 0.0F) {
             m_entityManager.GetComponentUVE<Scene::LightComponentUVE>(m_entity).intensity = updated;
+        }
+    } else if (name == "rotation") {
+        const Math::Vector3UVE degrees = ToEngineUVE(value);
+        constexpr float kRadians = 0.017453292F;
+        Math::QuaternionUVE rotation{};
+        if (Math::TryMakeEulerUVE(Math::Vector3UVE{degrees.x * kRadians, degrees.y * kRadians, degrees.z * kRadians}, rotation)) {
+            m_entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_entity).localRotation = rotation;
+            if (m_entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(m_entity)) {
+                m_entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(m_entity).dirty = true;
+            }
+        }
+    } else if (name == "light_color") {
+        const Math::Vector3UVE colour = ToEngineUVE(value);
+        if (std::isfinite(colour.x) && std::isfinite(colour.y) && std::isfinite(colour.z)) {
+            // Given as a display colour (0..1, as a colour picker shows it), kept linear.
+            m_entityManager.GetComponentUVE<Scene::LightComponentUVE>(m_entity).color = Math::ColorFromDisplayUVE(
+                Math::Vector3UVE{std::clamp(colour.x, 0.0F, 1.0F), std::clamp(colour.y, 0.0F, 1.0F), std::clamp(colour.z, 0.0F, 1.0F)});
+        }
+    } else if (name == "max_speed" || name == "jump_height") {
+        const float updated = static_cast<float>(std::get<double>(value));
+        if (std::isfinite(updated) && updated >= 0.0F) {
+            auto& body = m_entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_entity);
+            (name == "max_speed" ? body.moveSpeed : body.jumpHeight) = updated;
         }
     } else if (name == "fov") {
         const float updated = static_cast<float>(std::get<double>(value));
@@ -812,6 +907,9 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
         }
         return ValueUVE{ObjectRefUVE{PackEntityUVE(found)}};
     }
+    if (name.starts_with("character.") || name.starts_with("transform.") || name.starts_with("math.")) {
+        return GameplayCallUVE(name, args);
+    }
     // RPC, the lobby, and the relay need no input system, so they route before the
     // null-input early-out below.
     if (name.starts_with("rpc.")) {
@@ -824,7 +922,17 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
         return RelayCallUVE(name, args);
     }
     if (m_input == nullptr) {
-        return name == "input.axis" ? ValueUVE{0.0} : ValueUVE{false};
+        if (name == "input.mouse_delta") {
+            return ToScriptUVE(Math::Vector3UVE{});
+        }
+        return name == "input.axis" || name == "input.axis_value" ? ValueUVE{0.0} : ValueUVE{false};
+    }
+    if (name == "input.axis_value") {
+        return static_cast<double>(m_input->GetAxisValueUVE(std::get<std::string>(args[0])));
+    }
+    if (name == "input.mouse_delta") {
+        const Math::Vector2UVE delta = m_input->GetMouseDeltaUVE();
+        return ToScriptUVE(Math::Vector3UVE{delta.x, delta.y, 0.0F});
     }
     if (name == "input.axis") {
         const bool negative = m_input->IsActionHeldUVE(std::get<std::string>(args[0]));
@@ -839,6 +947,110 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
         return m_input->IsActionReleasedUVE(action);
     }
     return m_input->IsActionHeldUVE(action);
+}
+
+ValueUVE UVScriptObjectHostUVE::GameplayCallUVE(const std::string_view name, const std::span<const ValueUVE> args) {
+    if (name.starts_with("math.")) {
+        static std::mt19937 random{std::random_device{}()};
+        if (name == "math.random_bool") {
+            return std::uniform_int_distribution<int>(0, 1)(random) == 1;
+        }
+        if (name == "math.random_int") {
+            const std::int64_t a = std::get<std::int64_t>(args[0]);
+            const std::int64_t b = std::get<std::int64_t>(args[1]);
+            return std::uniform_int_distribution<std::int64_t>(std::min(a, b), std::max(a, b))(random);
+        }
+        const double a = std::get<double>(args[0]);
+        const double b = std::get<double>(args[1]);
+        if (name == "math.random_range") {
+            return a == b ? a : std::uniform_real_distribution<double>(std::min(a, b), std::max(a, b))(random);
+        }
+        if (name == "math.pow") {
+            return std::pow(a, b);
+        }
+        if (name == "math.atan2") {
+            return std::atan2(a, b) * 57.29577951308232;   // degrees, as rotations are
+        }
+        return b == 0.0 ? 0.0 : std::fmod(a, b);
+    }
+    if (name.starts_with("character.")) {
+        auto& body = m_entityManager.GetComponentUVE<Scene::CharacterControllerComponentUVE>(m_entity);
+        if (name == "character.move") {
+            const Math::Vector3UVE direction = ToEngineUVE(args[0]);
+            if (!std::isfinite(direction.x) || !std::isfinite(direction.z)) {
+                return false;
+            }
+            Math::Vector3UVE move{body.scriptMove.x + direction.x, 0.0F, body.scriptMove.z + direction.z};
+            const float length = std::sqrt(move.x * move.x + move.z * move.z);
+            body.scriptMove = length > 1.0F ? Math::Vector3UVE{move.x / length, 0.0F, move.z / length} : move;
+            return true;
+        }
+        if (name == "character.jump") {
+            body.scriptJump = true;
+            return true;
+        }
+        if (name == "character.launch") {
+            const Math::Vector3UVE push = ToEngineUVE(args[0]);
+            if (!std::isfinite(push.x) || !std::isfinite(push.y) || !std::isfinite(push.z)) {
+                return false;
+            }
+            body.velocity = Math::Vector3UVE{body.velocity.x + push.x, body.velocity.y + push.y, body.velocity.z + push.z};
+            return true;
+        }
+        if (name == "character.falling") {
+            return !body.grounded && body.velocity.y < 0.0F;
+        }
+        return static_cast<double>(std::sqrt(body.velocity.x * body.velocity.x + body.velocity.z * body.velocity.z));
+    }
+    // transform.*
+    Scene::TransformComponentUVE& transform = m_entityManager.GetComponentUVE<Scene::TransformComponentUVE>(m_entity);
+    const auto touched = [this] {
+        if (m_entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(m_entity)) {
+            m_entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(m_entity).dirty = true;
+        }
+    };
+    if (name == "transform.forward" || name == "transform.right" || name == "transform.up") {
+        // The engine's forward is -Z, right +X, up +Y, turned by the object's rotation.
+        const Math::Vector3UVE axis = name == "transform.forward" ? Math::Vector3UVE{0.0F, 0.0F, -1.0F}
+                                      : name == "transform.right" ? Math::Vector3UVE{1.0F, 0.0F, 0.0F}
+                                                                  : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+        return ToScriptUVE(Math::RotateVectorUVE(transform.localRotation, axis));
+    }
+    if (name == "transform.distance_to") {
+        const Math::Vector3UVE to = ToEngineUVE(args[0]);
+        const Math::Vector3UVE d{to.x - transform.localPosition.x, to.y - transform.localPosition.y, to.z - transform.localPosition.z};
+        return static_cast<double>(std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z));
+    }
+    if (name == "transform.add_yaw" || name == "transform.add_pitch") {
+        const float degrees = static_cast<float>(std::get<double>(args[0]));
+        if (!std::isfinite(degrees)) {
+            return false;
+        }
+        Math::QuaternionUVE turn{};
+        const Math::Vector3UVE axis = name == "transform.add_yaw" ? Math::Vector3UVE{0.0F, 1.0F, 0.0F} : Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+        if (!Math::TryMakeAxisAngleUVE(axis, degrees * 0.017453292F, turn)) {
+            return false;
+        }
+        // Yaw turns about the world's up; pitch about the object's own right.
+        transform.localRotation = name == "transform.add_yaw" ? Math::MultiplyUVE(turn, transform.localRotation)
+                                                              : Math::MultiplyUVE(transform.localRotation, turn);
+        touched();
+        return true;
+    }
+    // transform.look_at: turn (about up) so forward points at the target.
+    const Math::Vector3UVE target = ToEngineUVE(args[0]);
+    const float dx = target.x - transform.localPosition.x;
+    const float dz = target.z - transform.localPosition.z;
+    if (!(dx * dx + dz * dz > 1e-8F)) {
+        return false;
+    }
+    Math::QuaternionUVE facing{};
+    if (!Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, std::atan2(-dx, -dz), facing)) {
+        return false;
+    }
+    transform.localRotation = facing;
+    touched();
+    return true;
 }
 
 ValueUVE UVScriptObjectHostUVE::RpcCallUVE(const std::string_view name,

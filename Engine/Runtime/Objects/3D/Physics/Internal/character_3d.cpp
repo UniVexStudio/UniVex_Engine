@@ -1199,22 +1199,34 @@ Physics::CharacterMotionInputUVE ResolveCharacterMotionUVE(IEntityManagerUVE& en
                                                            const EntityUVE entity) {
     Physics::CharacterMotionInputUVE motion{};
     const EntityUVE driver = FindPawnControllerUVE(entityManager, entity);
-    if (driver == kInvalidEntityUVE) {
-        return motion;
+    if (driver != kInvalidEntityUVE) {
+        const PawnComponentUVE& pawn = entityManager.GetComponentUVE<PawnComponentUVE>(entity);
+        if (IsPawnComponentValidUVE(pawn)) {
+            motion.move = pawn.input.move;
+            motion.rise = pawn.input.rise;
+            motion.jumpPressed = pawn.input.jumpPressed;
+            if (entityManager.GetComponentUVE<ControllerComponentUVE>(driver).kind ==
+                    ControllerKindUVE::Player &&
+                entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
+                motion.move = FaceMoveFromLookUVE(
+                    entityManager.GetComponentUVE<TransformComponentUVE>(entity).localRotation,
+                    pawn.input.move);
+            }
+        }
     }
-    const PawnComponentUVE& pawn = entityManager.GetComponentUVE<PawnComponentUVE>(entity);
-    if (!IsPawnComponentValidUVE(pawn)) {
-        return motion;
-    }
-    motion.move = pawn.input.move;
-    motion.rise = pawn.input.rise;
-    motion.jumpPressed = pawn.input.jumpPressed;
-    if (entityManager.GetComponentUVE<ControllerComponentUVE>(driver).kind ==
-            ControllerKindUVE::Player &&
-        entityManager.HasComponentUVE<TransformComponentUVE>(entity)) {
-        motion.move = FaceMoveFromLookUVE(
-            entityManager.GetComponentUVE<TransformComponentUVE>(entity).localRotation,
-            pawn.input.move);
+    // A script's steering (Add Movement Input, Jump) adds to the player's, in world space.
+    if (entityManager.HasComponentUVE<CharacterControllerComponentUVE>(entity)) {
+        const CharacterControllerComponentUVE& body = entityManager.GetComponentUVE<CharacterControllerComponentUVE>(entity);
+        if (std::isfinite(body.scriptMove.x) && std::isfinite(body.scriptMove.z) &&
+            (body.scriptMove.x != 0.0F || body.scriptMove.z != 0.0F)) {
+            Math::Vector3UVE move{motion.move.x + body.scriptMove.x, 0.0F, motion.move.z + body.scriptMove.z};
+            const float length = std::sqrt(move.x * move.x + move.z * move.z);
+            if (length > 1.0F) {
+                move = Math::Vector3UVE{move.x / length, 0.0F, move.z / length};
+            }
+            motion.move = move;
+        }
+        motion.jumpPressed = motion.jumpPressed || body.scriptJump;
     }
     return motion;
 }
