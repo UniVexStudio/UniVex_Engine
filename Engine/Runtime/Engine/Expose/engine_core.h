@@ -19,6 +19,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -991,6 +992,8 @@ private:
     bool m_pendingQuit = false;
     /// Sounds Play Sound made, each removed when it is over.
     std::vector<Scene::EntityUVE> m_oneShotSounds;
+    /// The buttons the pointer was over last frame, for On Hovered / On Unhovered.
+    std::unordered_set<Scene::EntityUVE> m_hoveredButtons;
     /// Camera Shake: how strong, how long, how long is left, and what is on the camera now.
     double m_cameraShakeStrength = 0.0;
     double m_cameraShakeDuration = 0.0;
