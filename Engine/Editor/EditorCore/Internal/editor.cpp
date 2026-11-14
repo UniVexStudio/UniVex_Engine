@@ -761,6 +761,28 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
     }
 }
 
+void EditorUVE::SetViewportFlyingUVE(const bool flying) {
+    if (m_viewportFlying == flying) {
+        return;
+    }
+    m_viewportFlying = flying;
+    // A game already holding the mouse keeps it: flying only hides the editor's own pointer.
+    if (m_gameMouseCaptured || m_services == nullptr) {
+        return;
+    }
+    Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
+    auto* const nativeWindow = windowManager.IsValidUVE() ? static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()) : nullptr;
+    if (nativeWindow == nullptr) {
+        return;
+    }
+    // Hidden and held where it was: the mouse can turn the view as far as it likes without
+    // leaving the viewport, and the pointer comes back where it went away.
+    glfwSetInputMode(nativeWindow, GLFW_CURSOR, flying ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    if (glfwRawMouseMotionSupported()) {
+        glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, flying ? GLFW_TRUE : GLFW_FALSE);
+    }
+}
+
 bool EditorUVE::SaveSceneUVE() {
     // While the Entity Editor is open the document is the entity: saving writes the entity.
     if (m_entityDocumentActive) {

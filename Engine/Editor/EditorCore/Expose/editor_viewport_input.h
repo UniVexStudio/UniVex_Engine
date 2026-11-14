@@ -31,7 +31,7 @@ struct EditorViewportInputUVE final {
     enum class KeyUVE : std::uint8_t {
         Num0 = 0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
         Keypad1, Keypad3, Keypad5, Keypad7,
-        A, C, D, F, S, W,
+        A, C, D, F, S, W, E, Q,
         Space, Home, Escape, LeftShift, LeftCtrl,
         Count
     };

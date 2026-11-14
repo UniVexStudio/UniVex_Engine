@@ -83,6 +83,8 @@ constexpr float kResizeBorderUVE = 5.0F;
         case GLFW_KEY_F: return ViewKeyUVE::F;
         case GLFW_KEY_S: return ViewKeyUVE::S;
         case GLFW_KEY_W: return ViewKeyUVE::W;
+        case GLFW_KEY_E: return ViewKeyUVE::E;
+        case GLFW_KEY_Q: return ViewKeyUVE::Q;
         case GLFW_KEY_SPACE: return ViewKeyUVE::Space;
         case GLFW_KEY_HOME: return ViewKeyUVE::Home;
         case GLFW_KEY_ESCAPE: return ViewKeyUVE::Escape;
