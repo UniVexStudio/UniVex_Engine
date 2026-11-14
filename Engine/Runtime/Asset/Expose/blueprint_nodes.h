@@ -34,6 +34,12 @@ enum class BlueprintNodeRoleUVE : std::uint8_t {
     IsValid,
     GetVariable,  ///< the node's `variable`
     SetVariable,
+    Gate,         ///< exec inputs Enter, Open, Close, Toggle: Enter passes while open
+    MultiGate,    ///< each Enter goes out the next output in turn (round again when Loop)
+    DoN,          ///< passes the first N times, until Reset
+    RetriggerableDelay, ///< waits, starting over each time it is entered
+    SwitchInt,    ///< one output per whole number, else Default
+    SwitchString, ///< one output per named case, else Default
 };
 
 /// One kind of node the engine can run: everything a blueprint can do is one of these.

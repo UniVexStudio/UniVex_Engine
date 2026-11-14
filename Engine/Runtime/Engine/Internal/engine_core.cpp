@@ -30,6 +30,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <functional>
+#include <map>
+#include <sstream>
+#include <tuple>
 #include <exception>
 #include <filesystem>
 #include <cstdio>
@@ -103,6 +108,9 @@
 #include "area_3d_runtime.h"
 #include "i_raycast_system.h"
 #include "raycast_query.h"
+#include "i_physics_query_system.h"
+#include "shape_cast_system.h"
+#include "raycast_hit.h"
 #include "area_overlap_events.h"
 #include "matrix4x4.h"
 #include "quaternion.h"
@@ -1924,6 +1932,7 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
                 *m_entityManager, m_inputSystem.get(), entity, m_audioSourceSystem.get(), m_audioSystem.get(),
                 [this](const Scene::EntityUVE other) { return FindUVScriptInstanceUVE(other); });
             host->SetWidgetFactoryUVE([this](const std::string& path) { return CreateWidgetUVE(path); });
+            host->SetServicesUVE(&m_scriptServices);
             host->SetCursorHandlerUVE([this](const bool show) {
                 // The editor frees or captures its own view's pointer; a game shows or hides the window's.
                 if (m_mouseCursorHandlerUVE) {
@@ -1965,6 +1974,9 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
 }
 
 void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
+    if (!m_scriptServices.trace) {
+        FillScriptServicesUVE();
+    }
     ReconcileUVScriptInstancesUVE();
     // Add Movement Input is per frame: what the scripts ask for now replaces last frame's.
     m_entityManager->ForEachUVE<Scene::CharacterControllerComponentUVE>(
@@ -2006,6 +2018,330 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
             transition.kind == Physics::CollisionTransitionKindUVE::Entered ? "collision_enter" : "collision_exit");
     }
     RaiseWidgetScriptEventsUVE();
+    FinishScriptFrameUVE(dt, simulationPaused);
+}
+
+void EngineCoreUVE::ResetScriptGameStateUVE() {
+    m_scriptGameTime = 0.0;
+    m_scriptGameDelta = 0.0;
+    m_pendingScriptEvents.clear();
+    m_pendingScriptDestroys.clear();
+    m_pendingLevel.reset();
+    m_pendingQuit = false;
+    m_scriptServices.gameData.clear();
+}
+
+namespace {
+
+/// A save slot's file: its name kept to letters, digits, '-' and '_'.
+[[nodiscard]] std::string SaveSlotPathUVE(const std::string& slot) {
+    std::string clean;
+    for (const char c : slot) {
+        if (std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '_') {
+            clean.push_back(c);
+        }
+    }
+    return clean.empty() ? std::string{} : "Saved/" + clean + ".uvsave";
+}
+
+/// Game data as text: a header line, then one `key<TAB>value` line each, with `\`, tab and
+/// newline escaped so any text round-trips.
+[[nodiscard]] std::string EncodeGameDataUVE(const std::map<std::string, std::string>& data) {
+    const auto escape = [](const std::string& text) {
+        std::string out;
+        for (const char c : text) {
+            if (c == '\\') {
+                out += "\\\\";
+            } else if (c == '\t') {
+                out += "\\t";
+            } else if (c == '\n') {
+                out += "\\n";
+            } else {
+                out.push_back(c);
+            }
+        }
+        return out;
+    };
+    std::string out = "UVSAVE 1\n";
+    for (const auto& [key, value] : data) {
+        out += escape(key) + "\t" + escape(value) + "\n";
+    }
+    return out;
+}
+
+[[nodiscard]] std::optional<std::map<std::string, std::string>> DecodeGameDataUVE(const std::string& text) {
+    const auto unescape = [](const std::string& field) {
+        std::string out;
+        for (std::size_t i = 0U; i < field.size(); ++i) {
+            if (field[i] == '\\' && i + 1U < field.size()) {
+                const char next = field[++i];
+                out.push_back(next == 't' ? '\t' : next == 'n' ? '\n' : next);
+            } else {
+                out.push_back(field[i]);
+            }
+        }
+        return out;
+    };
+    std::istringstream in(text);
+    std::string line;
+    if (!std::getline(in, line) || line != "UVSAVE 1") {
+        return std::nullopt;
+    }
+    std::map<std::string, std::string> data;
+    while (std::getline(in, line)) {
+        const std::size_t tab = line.find('\t');
+        if (tab == std::string::npos) {
+            continue;
+        }
+        data[unescape(line.substr(0U, tab))] = unescape(line.substr(tab + 1U));
+    }
+    return data;
+}
+
+} // namespace
+
+void EngineCoreUVE::FillScriptServicesUVE() {
+    ScriptServicesUVE& s = m_scriptServices;
+    const auto toEngine = [](const UVScript::Vec3ValueUVE& v) {
+        return Math::Vector3UVE{static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
+    };
+    const auto toScript = [](const Math::Vector3UVE& v) {
+        return UVScript::Vec3ValueUVE{static_cast<double>(v.x), static_cast<double>(v.y), static_cast<double>(v.z)};
+    };
+    s.trace = [this, toEngine, toScript](const UVScript::Vec3ValueUVE& from, const UVScript::Vec3ValueUVE& to, const double radius,
+                                         const Scene::EntityUVE ignore) {
+        ScriptServicesUVE::TraceHitUVE out;
+        const Math::Vector3UVE a = toEngine(from);
+        const Math::Vector3UVE b = toEngine(to);
+        const Math::Vector3UVE d{b.x - a.x, b.y - a.y, b.z - a.z};
+        const float length = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        if (!(length > 1e-6F) || !std::isfinite(length)) {
+            return out;
+        }
+        const Math::RayUVE ray{a, Math::Vector3UVE{d.x / length, d.y / length, d.z / length}};
+        if (radius > 0.0 && m_physicsQuerySystem != nullptr) {
+            Physics::SphereCastQueryUVE query;
+            query.ray = ray;
+            query.radius = static_cast<float>(radius);
+            query.maxDistance = length;
+            query.ignoreEntity = ignore;
+            if (const std::optional<Physics::SphereCastHitUVE> hit = m_physicsQuerySystem->SphereCastUVE(*m_entityManager, query)) {
+                out.hit = true;
+                out.entity = hit->entity;
+                out.point = toScript(hit->center);
+                out.normal = toScript(hit->normal);
+                out.distance = hit->distance;
+            }
+        } else if (m_raycastSystem != nullptr) {
+            Physics::RaycastQueryUVE query;
+            query.ray = ray;
+            query.maxDistance = length;
+            query.ignoreEntity = ignore;
+            if (const std::optional<Physics::RaycastHitUVE> hit = m_raycastSystem->RaycastUVE(*m_entityManager, query)) {
+                out.hit = true;
+                out.entity = hit->entity;
+                out.point = toScript(hit->point);
+                out.normal = toScript(hit->normal);
+                out.distance = hit->distance;
+            }
+        }
+        return out;
+    };
+    s.spawn = [this, toEngine](const std::string& path, const UVScript::Vec3ValueUVE& position, const UVScript::Vec3ValueUVE& rotation) {
+        if (m_sceneSerializer == nullptr || path.empty()) {
+            return Scene::kInvalidEntityUVE;
+        }
+        std::optional<std::vector<std::byte>> bytes = m_fileSystem->ReadFileUVE(path);
+        if (!bytes.has_value()) {
+            UVE_ERROR("EngineCoreUVE: Spawn: \"{}\" cannot be read", path);
+            return Scene::kInvalidEntityUVE;
+        }
+        const std::vector<Scene::EntityUVE> roots =
+            m_sceneSerializer->RestoreUVE(*m_entityManager, Scene::SceneSnapshotUVE{std::move(*bytes), Scene::SceneAssetTypeUVE::Prefab});
+        if (roots.size() != 1U) {
+            return Scene::kInvalidEntityUVE;
+        }
+        const Scene::EntityUVE root = roots.front();
+        if (m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(root)) {
+            Scene::TransformComponentUVE& transform = m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(root);
+            transform.localPosition = toEngine(position);
+            const Math::Vector3UVE degrees = toEngine(rotation);
+            constexpr float kRadians = 0.017453292F;
+            Math::QuaternionUVE turned{};
+            if (Math::TryMakeEulerUVE(Math::Vector3UVE{degrees.x * kRadians, degrees.y * kRadians, degrees.z * kRadians}, turned)) {
+                transform.localRotation = turned;
+            }
+            if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(root)) {
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(root).dirty = true;
+            }
+        }
+        return root;
+    };
+    s.destroy = [this](const Scene::EntityUVE entity) {
+        if (m_entityManager->IsAliveUVE(entity) && std::ranges::find(m_pendingScriptDestroys, entity) == m_pendingScriptDestroys.end()) {
+            m_pendingScriptDestroys.push_back(entity);
+        }
+    };
+    s.time = [this] { return m_scriptGameTime; };
+    s.delta = [this] { return m_scriptGameDelta; };
+    s.setParent = [this](const Scene::EntityUVE child, const Scene::EntityUVE parent) {
+        if (m_sceneGraph == nullptr || !m_entityManager->IsAliveUVE(child) || child == parent) {
+            return false;
+        }
+        // Never under its own child: that would make a loop.
+        for (Scene::EntityUVE up = parent; up != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(up);) {
+            if (up == child) {
+                return false;
+            }
+            if (!m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(up)) {
+                break;
+            }
+            const Scene::EntityUVE next = m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(up).parent;
+            if (next == up) {
+                break;
+            }
+            up = next;
+        }
+        m_sceneGraph->SetParentUVE(*m_entityManager, child, parent);
+        return true;
+    };
+    s.timeScale = [this] { return static_cast<double>(m_simulationSpeedScale); };
+    s.setTimeScale = [this](const double scale) { static_cast<void>(SetSimulationSpeedScaleUVE(std::clamp(static_cast<float>(scale), 0.1F, 32.0F))); };
+    s.paused = [this] { return m_simulationExecutionMode == SimulationExecutionModeUVE::Paused; };
+    s.setPaused = [this](const bool paused) {
+        static_cast<void>(SetSimulationExecutionModeUVE(paused ? SimulationExecutionModeUVE::Paused : SimulationExecutionModeUVE::Running));
+    };
+    // Once this frame's scripts are done: the handler may tear the whole level down.
+    s.quit = [this] { m_pendingQuit = true; };
+    s.openLevel = [this](const std::string& path) {
+        if (!m_openLevelHandlerUVE || path.empty() || !m_fileSystem->HasFileUVE(path)) {
+            return false;
+        }
+        m_pendingLevel = path;
+        return true;
+    };
+    s.levelName = [this] { return m_currentLevelNameUVE.empty() ? m_editorPlaySceneNameUVE : m_currentLevelNameUVE; };
+    s.emit = [this](const Scene::EntityUVE target, const std::string& name, const std::string& payload) {
+        // A runaway script that emits from its own handler is held to a sane number per frame.
+        if (m_pendingScriptEvents.size() < 4096U) {
+            m_pendingScriptEvents.emplace_back(target, name, payload);
+        }
+    };
+    s.saveSlot = [this](const std::string& slot) {
+        const std::string path = SaveSlotPathUVE(slot);
+        if (path.empty()) {
+            return false;
+        }
+        const std::string text = EncodeGameDataUVE(m_scriptServices.gameData);
+        std::vector<std::byte> bytes(text.size());
+        std::memcpy(bytes.data(), text.data(), text.size());
+        return m_fileSystem->WriteFileUVE(path, bytes);
+    };
+    s.loadSlot = [this](const std::string& slot) {
+        const std::string path = SaveSlotPathUVE(slot);
+        const std::optional<std::vector<std::byte>> bytes = path.empty() ? std::nullopt : m_fileSystem->ReadFileUVE(path);
+        if (!bytes.has_value()) {
+            return false;
+        }
+        std::optional<std::map<std::string, std::string>> data =
+            DecodeGameDataUVE(std::string(reinterpret_cast<const char*>(bytes->data()), bytes->size()));
+        if (!data.has_value()) {
+            return false;
+        }
+        m_scriptServices.gameData = std::move(*data);
+        return true;
+    };
+    s.slotExists = [this](const std::string& slot) {
+        const std::string path = SaveSlotPathUVE(slot);
+        return !path.empty() && m_fileSystem->HasFileUVE(path);
+    };
+    s.deleteSlot = [this](const std::string& slot) {
+        const std::string path = SaveSlotPathUVE(slot);
+        const std::filesystem::path real = path.empty() ? std::filesystem::path{} : m_fileSystem->ResolveRealPathUVE(path);
+        std::error_code error;
+        return !real.empty() && std::filesystem::remove(real, error);
+    };
+}
+
+void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationPaused) {
+    m_scriptGameDelta = simulationPaused ? 0.0 : dt * static_cast<double>(m_simulationSpeedScale);
+    m_scriptGameTime += m_scriptGameDelta;
+    const auto instanceOf = [this](const Scene::EntityUVE entity) -> UVScript::ScriptInstanceUVE* {
+        const auto slot = m_uvScripts.find(entity);
+        return slot != m_uvScripts.end() ? slot->second.instance.get() : nullptr;
+    };
+    // Timers run on game time, so a paused game's timers wait too.
+    if (m_scriptGameDelta > 0.0) {
+        std::vector<Scene::EntityUVE> timed;
+        for (const auto& [entity, slot] : m_uvScripts) {
+            if (slot.host != nullptr && slot.host->HasTimersUVE()) {
+                timed.push_back(entity);
+            }
+        }
+        for (const Scene::EntityUVE entity : timed) {
+            const auto slot = m_uvScripts.find(entity);
+            if (slot == m_uvScripts.end() || slot->second.host == nullptr) {
+                continue;
+            }
+            for (const std::string& id : slot->second.host->AdvanceTimersUVE(m_scriptGameDelta)) {
+                if (UVScript::ScriptInstanceUVE* const instance = instanceOf(entity)) {
+                    const UVScript::ValueUVE args[] = {id};
+                    static_cast<void>(instance->RaiseEventUVE("timer", args));
+                }
+            }
+        }
+    }
+    // Messages, in the order they were sent; one sent from a handler here runs in the next pass.
+    for (int pass = 0; pass < 8 && !m_pendingScriptEvents.empty(); ++pass) {
+        std::vector<std::tuple<Scene::EntityUVE, std::string, std::string>> events;
+        std::swap(events, m_pendingScriptEvents);
+        for (const auto& [target, name, payload] : events) {
+            if (UVScript::ScriptInstanceUVE* const instance = instanceOf(target); instance != nullptr && m_entityManager->IsAliveUVE(target)) {
+                const UVScript::ValueUVE args[] = {name, payload};
+                static_cast<void>(instance->RaiseEventUVE("custom_event", args));
+            }
+        }
+    }
+    // Messages still waiting (sent by the last pass) run next frame.
+    // Removals last: each removed object (and what is under it) hears `destroyed` first.
+    for (int pass = 0; pass < 4 && !m_pendingScriptDestroys.empty(); ++pass) {
+        std::vector<Scene::EntityUVE> doomed;
+        std::swap(doomed, m_pendingScriptDestroys);
+        const std::function<void(Scene::EntityUVE)> destroy = [this, &destroy, &instanceOf](const Scene::EntityUVE root) {
+            if (!m_entityManager->IsAliveUVE(root)) {
+                return;
+            }
+            for (const Scene::EntityUVE child : m_sceneGraph->GetChildrenUVE(*m_entityManager, root)) {
+                destroy(child);
+            }
+            if (UVScript::ScriptInstanceUVE* const instance = instanceOf(root)) {
+                static_cast<void>(instance->RaiseEventUVE("destroyed"));
+            }
+            // The script goes with its object, before the object: no handler outlives what it drives.
+            m_uvScripts.erase(root);
+            m_entityManager->DestroyEntityUVE(root);
+        };
+        for (const Scene::EntityUVE entity : doomed) {
+            destroy(entity);
+        }
+    }
+    if (m_pendingQuit) {
+        m_pendingQuit = false;
+        m_pendingLevel.reset();
+        if (m_quitGameHandlerUVE) {
+            m_quitGameHandlerUVE();
+        } else {
+            RequestQuitUVE();
+        }
+        return;
+    }
+    if (m_pendingLevel.has_value()) {
+        const std::string level = std::move(*m_pendingLevel);
+        m_pendingLevel.reset();
+        if (m_openLevelHandlerUVE) {
+            static_cast<void>(m_openLevelHandlerUVE(level));
+        }
+    }
 }
 
 Scene::EntityUVE EngineCoreUVE::CreateWidgetUVE(const std::string& path) {
@@ -4547,6 +4883,10 @@ bool EngineCoreUVE::RequestSingleSimulationStepUVE() noexcept {
 bool EngineCoreUVE::SetTransientSimulationSessionActiveUVE(const bool active) noexcept {
     if (m_state != EngineStateUVE::Running) {
         return false;
+    }
+    if (active && !m_transientSimulationSessionActive) {
+        // Play starts: a fresh clock, no messages from last time, the game data empty.
+        ResetScriptGameStateUVE();
     }
     m_transientSimulationSessionActive = active;
     return true;

@@ -1142,6 +1142,26 @@ public:
             if (!engine_.HasMouseCursorHandlerUVE()) {
                 // Set Show Mouse Cursor in Play frees the editor's view pointer for the game's UI.
                 engine_.SetMouseCursorHandlerUVE([this](const bool show) { editor_.SetGameMouseCapturedUVE(!show); });
+                // Quit Game stops Play; Open Level plays the other level. Both wait for this view's
+                // next frame, outside the engine's own update.
+                engine_.SetQuitGameHandlerUVE([this] { gameRequest_ = GameRequestUVE{true, {}}; });
+                engine_.SetOpenLevelHandlerUVE([this](const std::string& path) {
+                    gameRequest_ = GameRequestUVE{false, path};
+                    return true;
+                });
+            }
+            if (gameRequest_.has_value()) {
+                const GameRequestUVE request = std::move(*gameRequest_);
+                gameRequest_.reset();
+                if (editor_.GetPlayModeStateUVE() != UVE::Editor::EditorPlayModeStateUVE::Edit) {
+                    static_cast<void>(editor_.StopPlayModeUVE());
+                    if (!request.quit) {
+                        const std::filesystem::path level = engine_.GetServicesUVE().GetFileSystemUVE().ResolveRealPathUVE(request.level);
+                        if (!level.empty() && editor_.OpenSceneAssetUVE(level)) {
+                            static_cast<void>(editor_.EnterPlayModeUVE());
+                        }
+                    }
+                }
             }
         }
 
@@ -2870,6 +2890,12 @@ private:
     std::optional<CameraPoseUVE> poseBeforePlay_;
     std::optional<CameraPoseUVE> poseBeforePreview_;
     bool previewing_ = false;
+    /// A script's Quit Game or Open Level, carried out at the start of the next frame.
+    struct GameRequestUVE final {
+        bool quit = false;
+        std::string level;
+    };
+    std::optional<GameRequestUVE> gameRequest_;
 
     // The fly into a Camera3D (and back out): the editor camera eased between two poses.
     static constexpr float kCameraFlightSecondsUVE = 0.45F;
