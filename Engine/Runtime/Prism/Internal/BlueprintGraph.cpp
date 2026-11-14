@@ -70,7 +70,7 @@ Chrome chromeFor(BlueprintNodeCategory c) {
 bool blueprintTypesCompatible(PT from, PT to) {
   if (from == PT::Exec || to == PT::Exec) return from == to;
   if (from == PT::Wildcard || to == PT::Wildcard) return true;
-  auto special = [](PT t) { return t == PT::Pose || t == PT::Link || t == PT::Audio; };
+  auto special = [](PT t) { return t == PT::Pose || t == PT::Link || t == PT::Audio || t == PT::Array; };
   if (special(from) || special(to)) return from == to;
   if (from == to) return true;
   auto num = [](PT t) { return t == PT::Int || t == PT::Float || t == PT::Bool; };
@@ -96,6 +96,7 @@ const char* blueprintPinTypeName(PT t) {
     case PT::Pose: return "Pose";
     case PT::Link: return "Link";
     case PT::Audio: return "Audio Signal";
+    case PT::Array: return "Array";
   }
   return "";
 }
@@ -115,6 +116,7 @@ Color blueprintPinColor(PT t) {
     case PT::Pose:     return Color(110, 226, 232);
     case PT::Link:     return Color(176, 184, 232);
     case PT::Audio:    return Color(255, 188, 64);
+    case PT::Array:    return Color(120, 200, 255);
   }
   return Color(200, 200, 200);
 }

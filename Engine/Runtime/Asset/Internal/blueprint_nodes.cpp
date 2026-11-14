@@ -462,6 +462,103 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     pure("ai_reached", "Has Reached Destination", "AI", {}, {Pin{"Reached", T::Bool, ""}}, {"ai.reached()"}, "arrived finished");
     pure("ai_status", "Get Path Status", "AI", {}, {Pin{"Status", T::String, ""}}, {"ai.status()"}, "Idle Following Finished Failed");
 
+    // ---- arrays: For Each and the item nodes, one of each per item type
+    const std::vector<std::pair<T, std::string>> arrays = {
+        {T::ObjectArray, "Object"}, {T::IntArray, "Int"}, {T::FloatArray, "Float"}, {T::StringArray, "String"}};
+    for (const auto& [arrayType, word] : arrays) {
+        const T item = BlueprintArrayItemTypeUVE(arrayType);
+        const std::string suffix = " (" + word + ")";
+        const std::string key = "_" + word;
+        const std::string itemDefault = item == T::Int ? "0" : item == T::Float ? "0.0" : item == T::String ? "" : "";
+        flow("for_each" + key, "For Each" + suffix, Role::ForEach, {Exec(), Pin{"Array", arrayType, ""}},
+             {Exec("Loop Body"), Pin{"Element", item, ""}, Pin{"Index", T::Int, ""}, Exec("Completed")}, "loop array list foreach every",
+             "The Loop Body once for each item of the array");
+        pure("array_get" + key, "Get" + suffix, "Utilities|Array", {Pin{"Array", arrayType, ""}, Pin{"Index", T::Int, "0"}},
+             {Pin{"Item", item, ""}}, {"{0}[{1}]"}, "array item index element", "The item at that index (the first is 0)");
+        action("array_add" + key, "Add" + suffix, "Utilities|Array", {Pin{"Array", arrayType, ""}, Pin{"Item", item, itemDefault}},
+               "{1}.push({2})", "array append push insert", "Puts the item at the end (wire the array from its variable)");
+        pure("array_contains" + key, "Contains Item" + suffix, "Utilities|Array", {Pin{"Array", arrayType, ""}, Pin{"Item", item, itemDefault}},
+             {Pin{"Contains", T::Bool, ""}}, {"{0}.contains({1})"}, "array has find in");
+        pure("array_random" + key, "Random Item" + suffix, "Utilities|Array", {Pin{"Array", arrayType, ""}}, {Pin{"Item", item, ""}},
+             {"{0}[math.random_int(0, {0}.length() - 1)]"}, "array pick random any", "One of the items, at random (the array must not be empty)");
+        pure("array_length" + key, "Length" + suffix, "Utilities|Array", {Pin{"Array", arrayType, ""}}, {Pin{"Length", T::Int, ""}},
+             {"{0}.length()"}, "array count size num");
+        action("array_remove_index" + key, "Remove Index" + suffix, "Utilities|Array", {Pin{"Array", arrayType, ""}, Pin{"Index", T::Int, "0"}},
+               "{1}.remove({2})", "array delete erase", "Takes the item at that index out (wire the array from its variable)");
+        action("array_clear" + key, "Clear" + suffix, "Utilities|Array", {Pin{"Array", arrayType, ""}}, "{1} = array.empty_" + std::string(word == "Object" ? "object" : word == "Int" ? "int" : word == "Float" ? "float" : "string") + "()",
+               "array empty reset",
+               "Empties the array (wire it from its variable)");
+        pure("array_is_empty" + key, "Is Empty" + suffix, "Utilities|Array", {Pin{"Array", arrayType, ""}}, {Pin{"Empty", T::Bool, ""}},
+             {"({0}.length() == 0)"}, "array none");
+    }
+    pure("make_array_object", "Make Array (Object)", "Utilities|Array", {Pin{"0", T::Object, ""}, Pin{"1", T::Object, ""}},
+         {Pin{"Array", T::ObjectArray, ""}}, {"[{0}, {1}]"}, "array list new");
+    pure("make_array_string", "Make Array (String)", "Utilities|Array", {Pin{"0", T::String, "A"}, Pin{"1", T::String, "B"}, Pin{"2", T::String, "C"}},
+         {Pin{"Array", T::StringArray, ""}}, {"[{0}, {1}, {2}]"}, "array list new");
+    pure("make_array_float", "Make Array (Float)", "Utilities|Array", {Pin{"0", T::Float, "0.0"}, Pin{"1", T::Float, "1.0"}, Pin{"2", T::Float, "2.0"}},
+         {Pin{"Array", T::FloatArray, ""}}, {"[{0}, {1}, {2}]"}, "array list new");
+    pure("find_all_with_tag", "Get All Objects With Tag", "World", {Pin{"Tag", T::String, "Enemy"}}, {Pin{"Objects", T::ObjectArray, ""}},
+         {"world.find_all_tag({0})"}, "find all actors of tag every", "Every object carrying the tag");
+    pure("find_all_by_name", "Get All Objects Named", "World", {Pin{"Name Starts With", T::String, "Enemy"}}, {Pin{"Objects", T::ObjectArray, ""}},
+         {"world.find_all_name({0})"}, "find all actors name prefix", "Every object whose name starts so");
+    pure("object_get_children", "Get Children", "Objects", {Pin{"Object", T::Object, ""}}, {Pin{"Children", T::ObjectArray, ""}},
+         {"object.children({0})"}, "child attached components");
+
+    // ---- text
+    pure("string_append", "Append", "Utilities|String", {Pin{"A", T::String, ""}, Pin{"B", T::String, ""}}, {Pin{"Result", T::String, ""}},
+         {"({0} + {1})"}, "concat join add string text");
+    pure("int_to_string", "To String (Int)", "Utilities|String", {Pin{"Value", T::Int, "0"}}, {Pin{"Text", T::String, ""}}, {"str({0})"},
+         "convert text number");
+    pure("float_to_string", "To String (Float)", "Utilities|String", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Text", T::String, ""}}, {"str({0})"},
+         "convert text number");
+    pure("bool_to_string", "To String (Bool)", "Utilities|String", {Pin{"Value", T::Bool, "false"}}, {Pin{"Text", T::String, ""}}, {"str({0})"},
+         "convert text");
+    pure("vector_to_string", "To String (Vector)", "Utilities|String", {Pin{"Value", T::Vector, "0,0,0"}}, {Pin{"Text", T::String, ""}},
+         {"str({0})"}, "convert text");
+    pure("string_to_int", "To Int (String)", "Utilities|String", {Pin{"Text", T::String, "0"}}, {Pin{"Value", T::Int, ""}}, {"text.to_int({0})"},
+         "parse convert number");
+    pure("string_to_float", "To Float (String)", "Utilities|String", {Pin{"Text", T::String, "0.0"}}, {Pin{"Value", T::Float, ""}},
+         {"text.to_float({0})"}, "parse convert number");
+    pure("string_contains", "Contains (String)", "Utilities|String", {Pin{"Text", T::String, ""}, Pin{"Part", T::String, ""}},
+         {Pin{"Contains", T::Bool, ""}}, {"{0}.contains({1})"}, "find substring search");
+    pure("string_length", "Length (String)", "Utilities|String", {Pin{"Text", T::String, ""}}, {Pin{"Length", T::Int, ""}}, {"{0}.length()"},
+         "count characters len");
+    pure("string_upper", "To Upper", "Utilities|String", {Pin{"Text", T::String, ""}}, {Pin{"Result", T::String, ""}}, {"text.upper({0})"},
+         "uppercase capital");
+    pure("string_lower", "To Lower", "Utilities|String", {Pin{"Text", T::String, ""}}, {Pin{"Result", T::String, ""}}, {"text.lower({0})"},
+         "lowercase small");
+    pure("string_trim", "Trim", "Utilities|String", {Pin{"Text", T::String, ""}}, {Pin{"Result", T::String, ""}}, {"text.trim({0})"},
+         "spaces whitespace strip");
+    pure("string_replace", "Replace", "Utilities|String", {Pin{"Text", T::String, ""}, Pin{"From", T::String, ""}, Pin{"To", T::String, ""}},
+         {Pin{"Result", T::String, ""}}, {"text.replace({0}, {1}, {2})"}, "substitute swap");
+    pure("string_split", "Split", "Utilities|String", {Pin{"Text", T::String, "a,b,c"}, Pin{"Separator", T::String, ","}},
+         {Pin{"Parts", T::StringArray, ""}}, {"text.split({0}, {1})"}, "parse explode tokens");
+    pure("string_substring", "Substring", "Utilities|String", {Pin{"Text", T::String, ""}, Pin{"Start", T::Int, "0"}, Pin{"Length", T::Int, "1"}},
+         {Pin{"Result", T::String, ""}}, {"text.substring({0}, {1}, {2})"}, "mid slice part");
+    pure("string_starts_with", "Starts With", "Utilities|String", {Pin{"Text", T::String, ""}, Pin{"Start", T::String, ""}},
+         {Pin{"Result", T::Bool, ""}}, {"text.starts_with({0}, {1})"}, "prefix begins");
+    pure("format_text", "Format Text", "Utilities|String", {Pin{"Format", T::String, "Score: {0}"}, Pin{"0", T::String, ""}, Pin{"1", T::String, ""}},
+         {Pin{"Result", T::String, ""}}, {"text.format({0}, {1}, {2})"}, "format template placeholder",
+         "Puts each value where the format says {0} and {1}");
+
+    // ---- more maths
+    pure("float_round", "Round", "Math|Float", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Result", T::Int, ""}}, {"math.round({0})"}, "nearest integer");
+    pure("float_ceil", "Ceil", "Math|Float", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Result", T::Int, ""}}, {"math.ceil({0})"}, "round up");
+    pure("float_truncate", "Truncate", "Math|Float", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Result", T::Int, ""}}, {"int({0})"}, "integer whole");
+    pure("int_to_float", "To Float (Int)", "Math|Int", {Pin{"Value", T::Int, "0"}}, {Pin{"Result", T::Float, ""}}, {"float({0})"}, "convert");
+    pure("snap_to_grid", "Snap To Grid", "Math|Float", {Pin{"Value", T::Float, "0.0"}, Pin{"Grid", T::Float, "1.0"}}, {Pin{"Result", T::Float, ""}},
+         {"math.snap({0}, {1})"}, "round step");
+    pure("float_wrap", "Wrap", "Math|Float", {Pin{"Value", T::Float, "0.0"}, Pin{"Min", T::Float, "0.0"}, Pin{"Max", T::Float, "360.0"}},
+         {Pin{"Result", T::Float, ""}}, {"math.wrap({0}, {1}, {2})"}, "loop modulo angle");
+    pure("float_sign", "Sign", "Math|Float", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Result", T::Float, ""}}, {"math.sign({0})"}, "positive negative");
+    pure("vector_rotate_axis", "Rotate Vector Around Axis", "Math|Vector",
+         {Pin{"Vector", T::Vector, "1,0,0"}, Pin{"Axis", T::Vector, "0,1,0"}, Pin{"Degrees", T::Float, "90.0"}}, {Pin{"Result", T::Vector, ""}},
+         {"math.rotate_about({0}, {1}, {2})"}, "turn spin angle");
+    pure("random_unit_vector", "Random Unit Vector", "Math|Random", {}, {Pin{"Vector", T::Vector, ""}}, {"math.random_unit_vector()"},
+         "random direction");
+    pure("random_point_in_box", "Random Point In Box", "Math|Random", {Pin{"Center", T::Vector, "0,0,0"}, Pin{"Half Size", T::Vector, "5,0,5"}},
+         {Pin{"Point", T::Vector, ""}}, {"math.random_in_box({0}, {1})"}, "random location spawn area");
+
     // ---- objects
     pure("find_object", "Find Object", "Objects", {Pin{"Name", T::String, ""}}, {Pin{"Object", T::Object, ""}}, {"node({0})"}, "get actor by name");
     action("hide_object", "Hide Object", "Objects", {Pin{"Object", T::Object, ""}}, "{1}.hide()");
@@ -732,7 +829,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
                     out.push_back('\\');
                 }
                 if (c == '{' || c == '}') {
-                    continue;   // interpolation braces: a typed value is literal text
+                    out.push_back(c);   // doubled: a typed value is literal text, never interpolation
                 }
                 out.push_back(c == '\n' ? ' ' : c);
             }
@@ -740,6 +837,10 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
         }
         // An unwired object pin means this object ("self"), as the palette's tooltips say.
         case T::Object: return "world.self()";
+        case T::ObjectArray:
+        case T::IntArray:
+        case T::FloatArray:
+        case T::StringArray: return "[]";
         case T::Exec: break;
     }
     return "none";
@@ -1092,6 +1193,17 @@ private:
                 }
                 break;
             }
+            case Role::ForEach: {
+                // Over a copy taken once, so the body may change the array it walks.
+                const std::string items = "items" + tag;
+                FieldOnceUVE(items, "var " + items + ": " + std::string(BlueprintPinTypeScriptNameUVE(type->inputs[1].type)) + " = []");
+                Line(pad + items + " = " + InputExpr(node, 1U), id);
+                Line(pad + "for i" + tag + " in 0.." + items + ".length():", id);
+                Line(pad + "    let e" + tag + " = " + items + "[i" + tag + "]", id);
+                EmitFrom(id, 0U, depth + 1);
+                EmitFrom(id, 3U, depth);
+                break;
+            }
             case Role::Event:
                 m_out.problems.emplace_back(id, "an event cannot be wired into");
                 break;
@@ -1131,6 +1243,7 @@ private:
             case Role::Event: return "arg" + std::to_string(pin);
             case Role::Action: return type->outputCode.empty() ? std::string{"none"} : ReturnFieldUVE(tag, pin);
             case Role::DoN: return "count" + tag;
+            case Role::ForEach: return pin == 1U ? "e" + tag : "i" + tag;
             case Role::GetVariable:
             case Role::SetVariable: return IdentifierUVE(node.variable);
             case Role::ForLoop: return "i" + tag;
@@ -1187,6 +1300,10 @@ std::string_view BlueprintPinTypeScriptNameUVE(const BlueprintPinTypeUVE type) n
         case T::Vector: return "vec3";
         case T::String: return "str";
         case T::Object: return "Object3D";
+        case T::ObjectArray: return "list[Object3D]";
+        case T::IntArray: return "list[int]";
+        case T::FloatArray: return "list[float]";
+        case T::StringArray: return "list[str]";
         case T::Exec: break;
     }
     return "none";

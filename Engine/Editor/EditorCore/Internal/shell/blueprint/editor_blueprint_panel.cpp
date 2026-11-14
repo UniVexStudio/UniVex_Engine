@@ -53,6 +53,10 @@ using Role = Asset::BlueprintNodeRoleUVE;
         case T::Vector: return PT::Vector;
         case T::String: return PT::String;
         case T::Object: return PT::Object;
+        case T::ObjectArray:
+        case T::IntArray:
+        case T::FloatArray:
+        case T::StringArray: return PT::Array;
     }
     return PT::Float;
 }
@@ -113,7 +117,7 @@ using Role = Asset::BlueprintNodeRoleUVE;
         pin.kind = kind;
         pin.defaultValue = kind == prism::BlueprintPinKind::Input ? spec.defaultText : std::string{};
         // Text and numbers keep their box even when cleared, so they can always be typed into.
-        pin.editable = kind == prism::BlueprintPinKind::Input && spec.type != T::Exec && spec.type != T::Object;
+        pin.editable = kind == prism::BlueprintPinKind::Input && spec.type != T::Exec && spec.type != T::Object && !Asset::IsBlueprintArrayTypeUVE(spec.type);
         return pin;
     };
     for (const Asset::BlueprintPinSpecUVE& spec : pins.inputs) {
@@ -147,6 +151,7 @@ using Role = Asset::BlueprintNodeRoleUVE;
         case PT::String:
         case PT::Name: return "String";
         case PT::Object: return "Object";
+        case PT::Array: return "Array";
         default: return "Float";
     }
 }
@@ -366,7 +371,10 @@ Asset::BlueprintAssetUVE EditorBlueprintPanelUVE::FromGraphUVE() const {
         return out;
     }
     for (const prism::BlueprintVariable& variable : m_graph->variables()) {
-        out.variables.push_back(Asset::BlueprintVariableUVE{variable.name, FromPrismUVE(variable.type), variable.value, m_exposed.contains(variable.name)});
+        // An array's item type lives beside the graph (the graph knows only "Array").
+        const auto array = m_arrayTypes.find(variable.name);
+        const T type = variable.type == PT::Array ? (array != m_arrayTypes.end() ? array->second : T::ObjectArray) : FromPrismUVE(variable.type);
+        out.variables.push_back(Asset::BlueprintVariableUVE{variable.name, type, variable.value, m_exposed.contains(variable.name)});
     }
     std::map<std::string, std::string> byTitle;
     for (const Asset::BlueprintNodeTypeUVE& type : Asset::GetBlueprintNodeTypesUVE()) {
@@ -412,10 +420,14 @@ void EditorBlueprintPanelUVE::LoadIntoGraphUVE(const Asset::BlueprintAssetUVE& b
     m_loading = true;
     m_graph->clear();
     m_exposed.clear();
+    m_arrayTypes.clear();
     for (const Asset::BlueprintVariableUVE& variable : blueprint.variables) {
         static_cast<void>(m_graph->addVariable(variable.name, ToPrismUVE(variable.type), variable.defaultText));
         if (variable.exposed) {
             m_exposed.insert(variable.name);
+        }
+        if (Asset::IsBlueprintArrayTypeUVE(variable.type)) {
+            m_arrayTypes[variable.name] = variable.type;
         }
     }
     for (const Asset::BlueprintNodeUVE& node : blueprint.nodes) {
@@ -773,6 +785,11 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
             auto field = prism::make<prism::TextInput>(name, "Name");
             field->onCommit = [this, name](const std::string& to) {
                 if (m_graph && m_graph->renameVariable(name, to)) {
+                    if (const auto array = m_arrayTypes.find(name); array != m_arrayTypes.end()) {
+                        const T type = array->second;
+                        m_arrayTypes.erase(array);
+                        m_arrayTypes[to] = type;
+                    }
                     if (m_exposed.erase(name) > 0U) {
                         m_exposed.insert(to);
                     }
@@ -825,6 +842,18 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
                 }
             };
         };
+        const auto addArray = [this](const T type) {
+            return [this, type] {
+                if (m_graph == nullptr) {
+                    return;
+                }
+                if (const auto* variable = m_graph->addVariable("NewArray", PT::Array, {})) {
+                    m_arrayTypes[variable->name] = type;
+                    m_dirty = true;
+                    m_sideDirty = true;
+                }
+            };
+        };
         std::vector<prism::MenuItem> items{
             prism::MenuItem::Item("Float", addOf(PT::Float), "", prism::Icon::ParamFloat),
             prism::MenuItem::Item("Int", addOf(PT::Int), "", prism::Icon::ParamFloat),
@@ -832,6 +861,11 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
             prism::MenuItem::Item("Vector", addOf(PT::Vector), "", prism::Icon::ParamVector),
             prism::MenuItem::Item("String", addOf(PT::String), "", prism::Icon::Script),
             prism::MenuItem::Item("Object", addOf(PT::Object), "", prism::Icon::Object3D),
+            prism::MenuItem::Sep(),
+            prism::MenuItem::Item("Object Array", addArray(T::ObjectArray), "", prism::Icon::Object3D),
+            prism::MenuItem::Item("Int Array", addArray(T::IntArray), "", prism::Icon::ParamFloat),
+            prism::MenuItem::Item("Float Array", addArray(T::FloatArray), "", prism::Icon::ParamFloat),
+            prism::MenuItem::Item("String Array", addArray(T::StringArray), "", prism::Icon::Script),
         };
         if (auto b = weakAdd.lock()) {
             prism::showMenu(std::move(items), b->rect(), prism::PopupPlacement::Below);

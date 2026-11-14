@@ -13,6 +13,7 @@
 #include "prism/Widget.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -99,6 +100,8 @@ private:
     bool m_loading = false;
     /// Variables shown in Details as an object's export (the standard Instance Editable).
     std::set<std::string> m_exposed;
+    /// Array variables' item types, by name (the graph itself only says "Array").
+    std::map<std::string, Asset::BlueprintPinTypeUVE> m_arrayTypes;
     /// What the Details tab last showed, to rebuild it only when the variables change.
     std::vector<prism::BlueprintVariable> m_shownVariables;
     std::set<std::string> m_shownExposed;

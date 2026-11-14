@@ -139,6 +139,14 @@ TEST_F(BlueprintUVETest, EveryNodeOfThePaletteTranslatesToUVScriptThatCompiles) 
             continue;   // the next test
         }
         blueprint.nodes.push_back(NodeUVE(1U, "event_tick"));
+        // An array input is wired from a variable of its type (Add, Remove and Clear change it in place).
+        const std::uint32_t arrayPin = type.role == BlueprintNodeRoleUVE::Pure ? 0U : 1U;
+        const bool takesArray = arrayPin < type.inputs.size() && Asset::IsBlueprintArrayTypeUVE(type.inputs[arrayPin].type);
+        if (takesArray) {
+            blueprint.variables.push_back({"items", type.inputs[arrayPin].type, "", false});
+            blueprint.nodes.push_back(NodeUVE(9U, "get_variable", "items"));
+            blueprint.wires.push_back(BlueprintWireUVE{9U, 0U, 2U, arrayPin});
+        }
         const bool needsObject = type.key == "hide_object" || type.key == "show_object" || type.key == "is_valid" ||
                                  type.key == "ui_add_to_viewport";
         if (type.role == BlueprintNodeRoleUVE::Pure) {
@@ -146,10 +154,11 @@ TEST_F(BlueprintUVETest, EveryNodeOfThePaletteTranslatesToUVScriptThatCompiles) 
             blueprint.variables.push_back({"result", type.outputs.front().type, "", false});
             blueprint.nodes.push_back(NodeUVE(2U, type.key));
             blueprint.nodes.push_back(NodeUVE(3U, "set_variable", "result"));
-            blueprint.wires = {BlueprintWireUVE{1U, 0U, 3U, 0U}, BlueprintWireUVE{2U, 0U, 3U, 1U}};
+            blueprint.wires.push_back(BlueprintWireUVE{1U, 0U, 3U, 0U});
+            blueprint.wires.push_back(BlueprintWireUVE{2U, 0U, 3U, 1U});
         } else {
             blueprint.nodes.push_back(NodeUVE(2U, type.key));
-            blueprint.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}};
+            blueprint.wires.push_back(BlueprintWireUVE{1U, 0U, 2U, 0U});
             if (needsObject) {
                 BlueprintNodeUVE find = NodeUVE(3U, "find_object");
                 find.inputValues = {"Door"};
@@ -585,6 +594,49 @@ TEST_F(BlueprintUVETest, EffectsLookClipsAndWalkingReachTheirComponents) {
     EXPECT_FLOAT_EQ(entityManager.GetComponentUVE<NavSeeker3DComponentUVE>(self).targetPosition.x, 4.0F);
     EXPECT_EQ(call("ai.status", {}), UVScript::ValueUVE{std::string("Idle")});
     EXPECT_EQ(call("camera.shake", {0.5, 1.0}), UVScript::ValueUVE{false}) << "no services: fails closed";
+}
+
+TEST_F(BlueprintUVETest, ForEachWalksASplitTextIntoAnArray) {
+    // Ready -> For Each (String) over Split("red,green,blue", ",") -> Add the item to `seen`, and the
+    // index into `last`; Completed -> Set `label` = Format Text("{0} of {1}", Length(seen), "3").
+    BlueprintAssetUVE blueprint;
+    blueprint.variables = {{"seen", BlueprintPinTypeUVE::StringArray, "", false},
+                           {"last", BlueprintPinTypeUVE::Int, "-1", false},
+                           {"label", BlueprintPinTypeUVE::String, "", false}};
+    BlueprintNodeUVE split = NodeUVE(3U, "string_split");
+    split.inputValues = {"red,green,blue", ","};
+    BlueprintNodeUVE format = NodeUVE(9U, "format_text");
+    format.inputValues = {"{0} of {1}", "", "3"};
+    blueprint.nodes = {NodeUVE(1U, "event_ready"), NodeUVE(2U, "for_each_String"), split, NodeUVE(4U, "array_add_String"),
+                       NodeUVE(5U, "get_variable", "seen"), NodeUVE(6U, "set_variable", "last"), NodeUVE(7U, "set_variable", "label"),
+                       NodeUVE(8U, "array_length_String"), format, NodeUVE(10U, "int_to_string"), NodeUVE(11U, "get_variable", "seen")};
+    blueprint.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}, BlueprintWireUVE{3U, 0U, 2U, 1U},
+                       // body: Add(seen, Element) -> last = Index
+                       BlueprintWireUVE{2U, 0U, 4U, 0U}, BlueprintWireUVE{5U, 0U, 4U, 1U}, BlueprintWireUVE{2U, 1U, 4U, 2U},
+                       BlueprintWireUVE{4U, 0U, 6U, 0U}, BlueprintWireUVE{2U, 2U, 6U, 1U},
+                       // completed: label = Format(str(Length(seen)))
+                       BlueprintWireUVE{2U, 3U, 7U, 0U}, BlueprintWireUVE{11U, 0U, 8U, 0U}, BlueprintWireUVE{8U, 0U, 10U, 0U},
+                       BlueprintWireUVE{10U, 0U, 9U, 1U}, BlueprintWireUVE{9U, 0U, 7U, 1U}};
+    const RunningUVE run = RunUVE(blueprint, MakeEverythingUVE());
+    ASSERT_NE(run.instance, nullptr);
+    ASSERT_TRUE(run.instance->RaiseEventUVE("ready", {})) << run.instance->GetLastErrorUVE();
+    EXPECT_EQ(run.FieldUVE("last"), UVScript::ValueUVE{std::int64_t{2}});
+    EXPECT_EQ(run.FieldUVE("label"), UVScript::ValueUVE{std::string("3 of 3")});
+    const auto& seen = std::get<std::shared_ptr<const UVScript::CollectionValueUVE>>(run.FieldUVE("seen"));
+    ASSERT_EQ(seen->items.size(), 3U);
+    EXPECT_EQ(seen->items[1], UVScript::ValueUVE{std::string("green")});
+
+    Core::UVScriptObjectHostUVE host{entityManager, nullptr, MakeEverythingUVE()};
+    const auto call = [&](const std::string_view name, std::vector<UVScript::ValueUVE> args) { return host.CallFunctionUVE(name, args); };
+    EXPECT_EQ(call("math.wrap", {370.0, 0.0, 360.0}), UVScript::ValueUVE{10.0});
+    EXPECT_EQ(call("math.wrap", {-30.0, 0.0, 360.0}), UVScript::ValueUVE{330.0});
+    EXPECT_EQ(call("math.snap", {2.6, 0.5}), UVScript::ValueUVE{2.5});
+    EXPECT_EQ(call("math.round", {2.5}), UVScript::ValueUVE{std::int64_t{3}});
+    EXPECT_EQ(call("text.to_int", {std::string("x")}), UVScript::ValueUVE{std::int64_t{0}}) << "not a number reads 0";
+    EXPECT_EQ(call("text.replace", {std::string("a-b-c"), std::string("-"), std::string("--")}), UVScript::ValueUVE{std::string("a--b--c")});
+    EXPECT_EQ(call("text.substring", {std::string("hello"), std::int64_t{1}, std::int64_t{99}}), UVScript::ValueUVE{std::string("ello")});
+    const UVScript::ValueUVE turned = call("math.rotate_about", {UVScript::Vec3ValueUVE{1.0, 0.0, 0.0}, UVScript::Vec3ValueUVE{0.0, 1.0, 0.0}, 90.0});
+    EXPECT_NEAR(std::get<UVScript::Vec3ValueUVE>(turned).z, -1.0, 1e-5);
 }
 
 } // namespace

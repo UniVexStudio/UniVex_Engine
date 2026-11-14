@@ -239,6 +239,7 @@ private:
         double period = 0.0;
         bool loop = false;
     };
+    [[nodiscard]] UVScript::ValueUVE TextAndMathCallUVE(std::string_view name, std::span<const UVScript::ValueUVE> args);
     [[nodiscard]] UVScript::ValueUVE WorldCallUVE(std::string_view name, std::span<const UVScript::ValueUVE> args);
     /// The object a script reference names, or none when it names nothing alive.
     [[nodiscard]] Scene::EntityUVE EntityOfUVE(const UVScript::ValueUVE& value) const;

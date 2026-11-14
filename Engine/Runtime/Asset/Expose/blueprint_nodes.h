@@ -40,6 +40,7 @@ enum class BlueprintNodeRoleUVE : std::uint8_t {
     RetriggerableDelay, ///< waits, starting over each time it is entered
     SwitchInt,    ///< one output per whole number, else Default
     SwitchString, ///< one output per named case, else Default
+    ForEach,      ///< the Loop Body once per item of an array (Element, Index), then Completed
 };
 
 /// One kind of node the engine can run: everything a blueprint can do is one of these.

@@ -25,7 +25,28 @@ enum class BlueprintPinTypeUVE : std::uint8_t {
     Vector,
     String,
     Object,
+    /// Lists (UVScript `list[...]`), kept after the scalars so saved numbers never change.
+    ObjectArray,
+    IntArray,
+    FloatArray,
+    StringArray,
 };
+
+/// True for the list pin types.
+[[nodiscard]] constexpr bool IsBlueprintArrayTypeUVE(const BlueprintPinTypeUVE type) noexcept {
+    return type >= BlueprintPinTypeUVE::ObjectArray && type <= BlueprintPinTypeUVE::StringArray;
+}
+
+/// A list type's item type (Object, Int, Float or String); the type itself for the others.
+[[nodiscard]] constexpr BlueprintPinTypeUVE BlueprintArrayItemTypeUVE(const BlueprintPinTypeUVE type) noexcept {
+    switch (type) {
+        case BlueprintPinTypeUVE::ObjectArray: return BlueprintPinTypeUVE::Object;
+        case BlueprintPinTypeUVE::IntArray: return BlueprintPinTypeUVE::Int;
+        case BlueprintPinTypeUVE::FloatArray: return BlueprintPinTypeUVE::Float;
+        case BlueprintPinTypeUVE::StringArray: return BlueprintPinTypeUVE::String;
+        default: return type;
+    }
+}
 
 /// A variable of the blueprint: kept between frames. An exposed one shows in the object's Details
 /// (an `export`), so every object using the blueprint can set its own value.
