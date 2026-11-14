@@ -120,20 +120,6 @@ void EditorUVE::DrawOverlayWindowsUVE() {
          (m_services != nullptr && m_services->GetWindowManagerUVE().IsValidUVE() && !m_services->GetWindowManagerUVE().IsFocusedUVE()))) {
         SetGameMouseCapturedUVE(false);
     }
-    DrawPluginWindowUVE();
-    const auto sectionWindow = [](const char* const title, bool& open, auto&& body) {
-        if (!open) {
-            return;
-        }
-        ImGui::SetNextWindowSize(ImVec2{720.0F, 420.0F}, ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(title, &open, ImGuiWindowFlags_NoCollapse)) {
-            body();
-        }
-        ImGui::End();
-    };
-    sectionWindow("Network Capture", m_showCaptureWindow, [this] { DrawCaptureBodyUVE(); });
-    sectionWindow("Audio Mixer", m_showAudioMixerWindow, [this] { DrawAudioMixerBodyUVE(); });
-    DrawInputMapWindowUVE();
     // The Entity Editor, Retarget and the Animation Library are PRISM windows of their own.
     if (m_filePicker.has_value()) {
         DrawFilePickerUVE();
@@ -141,87 +127,8 @@ void EditorUVE::DrawOverlayWindowsUVE() {
     DrawCreateScriptModalUVE();
     DrawCreateShaderModalUVE();
     DrawQuickImportModalUVE();
-    DrawImportProgressModalUVE();
 }
 
-void EditorUVE::DrawImportProgressModalUVE() {
-    if (m_services == nullptr) {
-        return;
-    }
-    Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
-    const std::vector<Asset::AssetImportJobUVE> jobs = queue.GetJobsUVE();
-
-    std::vector<const Asset::AssetImportJobUVE*> activeJobs;
-    for (const Asset::AssetImportJobUVE& job : jobs) {
-        if (job.state == Asset::AssetImportJobStateUVE::Queued || job.state == Asset::AssetImportJobStateUVE::Running) {
-            activeJobs.push_back(&job);
-        }
-    }
-
-    const bool hasModelImports = !m_modelImportJobs.empty();
-    if (!hasModelImports && activeJobs.empty()) {
-        return;
-    }
-
-    // Determine current item being processed
-    std::string currentItem = "Processing assets...";
-    if (!m_modelImportJobs.empty()) {
-        currentItem = m_modelImportJobs.begin()->first;
-    } else if (!activeJobs.empty()) {
-        currentItem = activeJobs.front()->request.sourcePath.filename().string();
-    }
-
-    const ImGuiIO& io = ImGui::GetIO();
-    const ImVec2 center = ImVec2(io.DisplaySize.x * 0.5F, io.DisplaySize.y * 0.5F);
-    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5F, 0.5F));
-    ImGui::SetNextWindowSize(ImVec2(440.0F, 0.0F), ImGuiCond_Always);
-
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings;
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0F);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(22.0F, 18.0F));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08F, 0.10F, 0.14F, 0.96F));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.28F, 0.52F, 0.85F, 0.80F));
-
-    if (ImGui::Begin("Asset Pipeline & Importer##ImportProgressModal", nullptr, flags)) {
-        ImGui::TextColored(ImVec4(0.35F, 0.72F, 1.0F, 1.0F), "Importing & Converting Assets...");
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        ImGui::TextDisabled("Extracting textures, optimizing geometry, and publishing assets.");
-        ImGui::Spacing();
-
-        ImGui::Text("Current: %s", currentItem.c_str());
-        ImGui::Spacing();
-
-        // Calculate progress
-        const std::size_t total = std::max(m_importBatchTotal, m_modelImportJobs.size() + m_importBatchCompleted);
-        float fraction = 0.0F;
-        char progressBuf[64];
-        if (total > 0U) {
-            fraction = std::clamp(static_cast<float>(m_importBatchCompleted) / static_cast<float>(total), 0.0F, 0.95F);
-            std::snprintf(progressBuf, sizeof(progressBuf), "%zu / %zu (%d%%)",
-                          m_importBatchCompleted + 1U, total, static_cast<int>(fraction * 100.0F));
-        } else {
-            // Indeterminate animation pulse
-            fraction = std::sin(static_cast<float>(ImGui::GetTime()) * 3.0F) * 0.45F + 0.5F;
-            std::snprintf(progressBuf, sizeof(progressBuf), "Importing...");
-        }
-
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.22F, 0.55F, 0.95F, 1.0F));
-        ImGui::ProgressBar(fraction, ImVec2(-1.0F, 20.0F), progressBuf);
-        ImGui::PopStyleColor();
-
-        ImGui::Spacing();
-        const char* const dots[4] = {"", ".", "..", "..."};
-        const int dotIdx = static_cast<int>(ImGui::GetTime() * 2.5) % 4;
-        ImGui::TextDisabled("Engine pipeline active%s Please wait.", dots[dotIdx]);
-    }
-    ImGui::End();
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
-}
 
 void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
     m_viewportPanelRenderer = std::move(renderer);

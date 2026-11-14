@@ -16,6 +16,8 @@
 #include "editor_loading_screen.h"
 #include "editor_settings_window.h"
 #include "editor_shortcuts_window.h"
+#include "editor_input_map_window.h"
+#include "editor_tools_windows.h"
 #include "editor_view_toolbar.h"
 #include "editor_viewport_gizmos.h"
 
@@ -139,6 +141,9 @@ private:
     EditorSettingsWindowUVE m_preferencesWindow;
     EditorSettingsWindowUVE m_projectSettingsWindow;
     EditorShortcutsWindowUVE m_shortcutsWindow;
+    EditorInputMapWindowUVE m_inputMapWindow;
+    EditorNetworkCaptureWindowUVE m_captureWindow;
+    EditorAudioMixerWindowUVE m_audioMixerWindow;
     // The Montage Editor's window (opened while a montage is open).
     EditorMontageEditorUVE m_montageEditor;
     EditorRetargetWindowUVE m_retargetEditor;
