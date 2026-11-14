@@ -1727,6 +1727,7 @@ uniform mat4 uNormalMatrix;
 uniform mat4 uViewProjection;
 uniform mat4 uLightSpaceMatrix;
 uniform mat4 uLightSpaceMatrices[3];
+uniform float uShadowMapResolution;
 
 void main() {
 #if defined(UVE_INDIRECT_INSTANCED)
@@ -1750,8 +1751,17 @@ void main() {
     vObjectPosition = aPosition;
     vObjectNormal = aNormal;
     vLightSpacePosition = uLightSpaceMatrix * worldPosition;
+    // Normal offset: each cascade looks up the shadow a texel or so off the surface, along its
+    // normal, so a lit face never shadows itself (no acne) and contact shadows stay attached.
+    vec3 offsetNormal = normalize(mat3(normalMatrix) * aNormal);
     for (int cascadeIndex = 0; cascadeIndex < 3; ++cascadeIndex) {
-        vLightSpacePositions[cascadeIndex] = uLightSpaceMatrices[cascadeIndex] * worldPosition;
+        mat4 lightMatrix = uLightSpaceMatrices[cascadeIndex];
+        float texelWorld = 0.0;
+        float scale = length(vec3(lightMatrix[0][0], lightMatrix[1][0], lightMatrix[2][0]));
+        if (uShadowMapResolution > 1.0 && scale > 1.0e-6) {
+            texelWorld = 2.0 / (scale * uShadowMapResolution);
+        }
+        vLightSpacePositions[cascadeIndex] = lightMatrix * vec4(worldPosition.xyz + offsetNormal * texelWorld * 1.5, 1.0);
     }
     gl_Position = uViewProjection * worldPosition;
 }
@@ -2187,7 +2197,11 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         return 1.0;
     }
 
-    int kernelRadius = clamp(uShadowPcfKernelRadius, 0, 2);
+    // 0 Hard: one look-up. 1 Soft: a rotated 16-tap Poisson disc a few texels wide. 2 Softest: a
+    // blocker search first, so the penumbra widens with the distance from the caster (sharp where
+    // an object touches the ground, soft further away). The disc's rotation comes from the pixel's
+    // screen position, so it is the same every frame: no shimmer.
+    int filterMode = clamp(uShadowPcfKernelRadius, 0, 2);
     vec2 texelSize = cascadeIndex < 0 ? 1.0 / max(vec2(mapSize), vec2(1.0))
                                       : CascadeTexelSizeUVE(cascadeIndex);
     float currentDepth = projected.z;
@@ -2195,18 +2209,51 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
                      uShadowBias * 0.2);
     float visibleSamples = 0.0;
     int sampleCount = 0;
-
-    for (int offsetY = -2; offsetY <= 2; ++offsetY) {
-        for (int offsetX = -2; offsetX <= 2; ++offsetX) {
-            if (abs(offsetX) > kernelRadius || abs(offsetY) > kernelRadius) {
-                continue;
+    if (filterMode == 0) {
+        float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, projected.xy).r
+                                              : SampleCascadeDepthUVE(cascadeIndex, projected.xy);
+        visibleSamples = currentDepth - bias > sampledDepth ? 0.0 : 1.0;
+        sampleCount = 1;
+    } else {
+        const vec2 poisson[16] = vec2[16](
+            vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725), vec2(-0.09418410, -0.92938870),
+            vec2(0.34495938, 0.29387760), vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
+            vec2(-0.38277543, 0.27676845), vec2(0.97484398, 0.75648379), vec2(0.44323325, -0.97511554),
+            vec2(0.53742981, -0.47373420), vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
+            vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590), vec2(0.19984126, 0.78641367),
+            vec2(0.14383161, -0.14100790));
+        float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        float angle = noise * 6.2831853;
+        mat2 rotation = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+        float radius = 2.0;
+        if (filterMode == 2) {
+            float blockerSum = 0.0;
+            float blockers = 0.0;
+            for (int i = 0; i < 16; i += 2) {
+                vec2 coord = projected.xy + rotation * poisson[i] * texelSize * 6.0;
+                float depth = cascadeIndex < 0 ? texture(uShadowMapTexture, coord).r : SampleCascadeDepthUVE(cascadeIndex, coord);
+                if (depth < currentDepth - bias) {
+                    blockerSum += depth;
+                    blockers += 1.0;
+                }
             }
-            vec2 sampleCoord = projected.xy + vec2(offsetX, offsetY) * texelSize;
+            if (blockers > 0.0) {
+                float blocker = blockerSum / blockers;
+                radius = clamp(1.5 + (currentDepth - blocker) * 900.0, 1.5, 8.0);
+            } else {
+                radius = 1.5;
+            }
+        }
+        for (int i = 0; i < 16; ++i) {
+            vec2 sampleCoord = projected.xy + rotation * poisson[i] * texelSize * radius;
             float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, sampleCoord).r
                                                   : SampleCascadeDepthUVE(cascadeIndex, sampleCoord);
             visibleSamples += currentDepth - bias > sampledDepth ? 0.0 : 1.0;
             ++sampleCount;
         }
+        // A gentler edge: the coverage eased, so the penumbra reads as a gradient, not as steps.
+        float coverage = visibleSamples / float(sampleCount);
+        visibleSamples = smoothstep(0.0, 1.0, coverage) * float(sampleCount);
     }
 
     float factor = mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));

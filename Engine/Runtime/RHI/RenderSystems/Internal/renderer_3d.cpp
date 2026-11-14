@@ -3275,6 +3275,7 @@ struct Renderer3DUVE::ImplUVE {
             }
         }
         program.SetIntUVE("uShadowPcfKernelRadius", frameUniforms.shadowPcfKernelRadius);
+        program.SetFloatUVE("uShadowMapResolution", static_cast<float>(shadowMapResolution));
         program.SetFloatUVE("uShadowBias", frameUniforms.shadowBias);
         program.SetFloatUVE("uShadowNormalBias", frameUniforms.shadowNormalBias);
         program.SetFloatUVE("uShadowOpacity", frameUniforms.shadowOpacity);
