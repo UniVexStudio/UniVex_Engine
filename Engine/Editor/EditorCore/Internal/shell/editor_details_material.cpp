@@ -4,6 +4,8 @@
 // editor (DrawMaterialPbrEditorInlineUVE).
 #include "editor_details.h"
 
+#include "texture_asset.h"
+
 #include "editor_asset_thumbnail.h"
 
 #include "asset_guid.h"
@@ -51,6 +53,69 @@ using MaterialUVE = Asset::MaterialAssetUVE;
 }
 
 } // namespace
+
+/// The separate Metallic and Roughness maps (and the Occlusion map) packed into the one ORM texture
+/// the lit shader samples, kept beside the material as <material>_ORM.uvtex. An ORM the author
+/// picked themselves supplies any channel a separate map does not. Picking a first map sets its
+/// value to 1, since the shader multiplies the map by it (a 0 Metallic would hide the map).
+void EditorDetailsUVE::PackSeparateMapsUVE(Asset::MaterialAssetUVE& material, const std::filesystem::path& materialPath,
+                                           const bool metallicPicked, const bool roughnessPicked) {
+    EditorUVE& editor = m_editor;
+    Asset::IAssetDatabaseUVE& database = editor.m_services->GetAssetDatabaseUVE();
+    if (material.metallicTexture == Asset::AssetGuidUVE{} && material.roughnessTexture == Asset::AssetGuidUVE{}) {
+        return;
+    }
+    if (metallicPicked && material.metallicTexture != Asset::AssetGuidUVE{}) {
+        material.metallic = 1.0F;
+    }
+    if (roughnessPicked && material.roughnessTexture != Asset::AssetGuidUVE{}) {
+        material.roughness = 1.0F;
+    }
+    const std::filesystem::path ormPath = materialPath.parent_path() / (materialPath.stem().string() + "_ORM.uvtex");
+    const auto load = [&database](const Asset::AssetGuidUVE guid, Asset::TextureAssetUVE& out) {
+        if (guid == Asset::AssetGuidUVE{}) {
+            return false;
+        }
+        const std::filesystem::path path = database.ResolveUVE(guid);
+        return !path.empty() && Asset::LoadTextureAssetSourceUVE(path, out);
+    };
+    // A hand-picked ORM (not the one made here) gives the channels no separate map replaces.
+    Asset::TextureAssetUVE ownOrm;
+    const bool hasOwnOrm = material.metallicRoughnessTexture != Asset::AssetGuidUVE{} &&
+                           database.ResolveUVE(material.metallicRoughnessTexture) != ormPath &&
+                           load(material.metallicRoughnessTexture, ownOrm);
+    Asset::TextureAssetUVE metallic;
+    Asset::TextureAssetUVE roughness;
+    const bool hasMetallic = load(material.metallicTexture, metallic);
+    const bool hasRoughness = load(material.roughnessTexture, roughness);
+    // A channel of the hand-picked ORM as a grey map of its own.
+    const auto channelOf = [&ownOrm](const std::size_t channel) {
+        Asset::TextureAssetUVE grey = ownOrm;
+        grey.mipLevels.clear();
+        for (std::size_t at = 0U; at + 3U < grey.pixels.size(); at += 4U) {
+            grey.pixels[at] = ownOrm.pixels[at + channel];
+        }
+        return grey;
+    };
+    Asset::TextureAssetUVE roughnessFromOrm;
+    Asset::TextureAssetUVE metallicFromOrm;
+    if (hasOwnOrm) {
+        roughnessFromOrm = channelOf(1U);
+        metallicFromOrm = channelOf(2U);
+    }
+    Asset::TextureAssetUVE orm;
+    if (!Asset::PackOrmTextureUVE(nullptr, hasRoughness ? &roughness : (hasOwnOrm ? &roughnessFromOrm : nullptr),
+                                  hasMetallic ? &metallic : (hasOwnOrm ? &metallicFromOrm : nullptr), orm) ||
+        !Asset::SaveTextureAssetUVE(orm, ormPath)) {
+        editor.m_contentStatusMessage = "Could not pack the Metallic and Roughness maps (they must be images the editor can read).";
+        return;
+    }
+    editor.RefreshProjectFileIndexUVE();
+    const Asset::AssetGuidUVE guid = database.RegisterUVE(ormPath);
+    if (guid != Asset::AssetGuidUVE{}) {
+        material.metallicRoughnessTexture = guid;
+    }
+}
 
 void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolutePath, const std::string& slotLabel) {
     MaterialUVE loaded{};
@@ -138,22 +203,33 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
         }
         auto b = prism::make<prism::Button>(text, prism::Icon::None, prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = b;
-        b->onClick = [this, edit, field, weak, current = loaded.*field] {
+        b->onClick = [this, edit, field, weak, current = loaded.*field, absolutePath] {
             PickerActionsUVE actions;
             actions.current = PathOfGuidUVE(current);
-            actions.empty = [edit, field, weak] {
-                edit([&](MaterialUVE& m) { m.*field = Asset::AssetGuidUVE{}; });
+            actions.empty = [this, edit, field, weak, path = absolutePath] {
+                edit([&](MaterialUVE& m) {
+                    m.*field = Asset::AssetGuidUVE{};
+                    PackSeparateMapsUVE(m, path, false, false);
+                });
                 if (auto button = weak.lock()) {
                     button->setText("Empty");
                 }
             };
-            actions.file = [this, edit, field, weak](const std::filesystem::path& absolute) {
+            actions.file = [this, edit, field, weak, path = absolutePath](const std::filesystem::path& absolute) {
                 const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
                 if (guid == Asset::AssetGuidUVE{}) {
                     m_editor.m_contentStatusMessage = "Could not read " + absolute.filename().string() + " as a texture.";
                     return;
                 }
-                edit([&](MaterialUVE& m) { m.*field = guid; });
+                edit([&](MaterialUVE& m) {
+                    const bool metallicPicked = field == &MaterialUVE::metallicTexture && m.metallicTexture == Asset::AssetGuidUVE{};
+                    const bool roughnessPicked = field == &MaterialUVE::roughnessTexture && m.roughnessTexture == Asset::AssetGuidUVE{};
+                    m.*field = guid;
+                    if (field == &MaterialUVE::metallicTexture || field == &MaterialUVE::roughnessTexture ||
+                        field == &MaterialUVE::metallicRoughnessTexture) {
+                        PackSeparateMapsUVE(m, path, metallicPicked, roughnessPicked);
+                    }
+                });
                 if (auto button = weak.lock()) {
                     const std::filesystem::path path = PathOfGuidUVE(guid);
                     button->setText(path.empty() ? absolute.stem().string() : path.stem().string());
@@ -218,8 +294,8 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
     slider("Roughness", &MaterialUVE::roughness, 0.0F, 1.0F);
     slider("Specular", &MaterialUVE::dielectricSpecular, 0.0F, 1.0F, "Reflectance of non-metals (0.5 is about 4%).");
     texture("ORM / Metal-Rough", &MaterialUVE::metallicRoughnessTexture, "Packed map: G roughness, B metallic.");
-    texture("Metallic Map", &MaterialUVE::metallicTexture);
-    texture("Roughness Map", &MaterialUVE::roughnessTexture);
+    texture("Metallic Map", &MaterialUVE::metallicTexture, "A grey map (white = metal), packed into the ORM map the shader reads.");
+    texture("Roughness Map", &MaterialUVE::roughnessTexture, "A grey map (white = rough), packed into the ORM map the shader reads.");
     texture("Occlusion Map", &MaterialUVE::aoTexture);
     slider("Occlusion", &MaterialUVE::occlusionStrength, 0.0F, 1.0F, "How much the occlusion map darkens cavities.");
 

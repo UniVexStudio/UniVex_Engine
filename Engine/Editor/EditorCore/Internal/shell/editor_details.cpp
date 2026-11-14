@@ -1076,14 +1076,15 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
         auto button = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                  prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
-        row->sync = [this, p, weak](const void* inst) {
+        row->sync = [this, p, weak, material](const void* inst) {
             auto b = weak.lock();
             if (!b || inst == nullptr) {
                 return;
             }
             Asset::AssetGuidUVE value{};
             p->getValue(inst, &value);
-            std::string text = "Empty";
+            // An empty material slot says what a click does: make one (and its maps appear here) or pick one.
+            std::string text = material ? "Create or pick..." : "Empty";
             if (value != Asset::AssetGuidUVE{}) {
                 text = "Missing asset";
                 for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
