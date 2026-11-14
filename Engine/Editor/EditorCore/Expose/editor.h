@@ -448,6 +448,7 @@ class EditorUVE final {
     friend struct Tests::EditorUVEAccessUVE;
     friend class EditorBridgeUVE;
     friend class EditorShellUVE;
+    friend class EditorShortcutsWindowUVE;
     friend class EditorContentBrowserUVE;
     friend class EditorDetailsUVE;
     friend class EditorViewportGizmosUVE;
@@ -2407,17 +2408,6 @@ private:
         std::string activeKeyBindingId;
         std::unordered_map<std::string, Config::SettingValueUVE> restartRequiredBaseline;
     };
-    // Where a settings window reads and writes values: the live editor, or a settings document.
-    struct SettingsWindowSourceUVE final {
-        const Config::SettingsRegistryUVE* registry = nullptr;
-        std::function<std::optional<Config::SettingValueUVE>(std::string_view id)> get;
-        std::function<bool(std::string_view id, const Config::SettingValueUVE& value)> set;
-        // Where the changes go, shown in the footer, and any footer buttons beside Reset.
-        std::string footerNote;
-        std::function<void()> drawFooterActions;
-    };
-    void DrawEditorPreferencesWindowUVE();
-    void DrawProjectSettingsWindowUVE();
     // The Input Map window (editor_panel_input_map_uve.cpp). Session-only view state.
     struct InputMapWindowStateUVE final {
         bool visible = false;
@@ -2450,10 +2440,14 @@ private:
     };
     void RegisterEditorCommandsUVE();
     [[nodiscard]] EditorCommandUVE* FindEditorCommandUVE(std::string_view id) noexcept;
-    void DispatchEditorShortcutsUVE();
     void DrawCommandMenuItemUVE(std::string_view id);
-    void DrawCommandPaletteUVE();
-    void DrawKeyboardShortcutsWindowUVE();
+    /// Shortcut `slot` of command `id` set (and kept with the preferences); the defaults back.
+    bool AssignCommandShortcutUVE(std::string_view id, std::size_t slot, const EditorShortcutUVE& shortcut);
+    void ResetCommandShortcutsUVE(std::string_view id);
+    /// The commands (as "Category: Label") that also use `shortcut`, other than `exceptId`.
+    [[nodiscard]] std::vector<std::string> CommandsUsingShortcutUVE(const EditorShortcutUVE& shortcut, std::string_view exceptId) const;
+    [[nodiscard]] static std::string CommandTitleTextUVE(const EditorCommandUVE& command);
+    [[nodiscard]] static bool IsCommandEnabledUVE(const EditorCommandUVE& command);
     // Shortcuts as the hidden settings "editor.shortcuts.<command>.primary|alternate".
     [[nodiscard]] std::optional<Config::SettingValueUVE> GetShortcutSettingUVE(std::string_view id) const;
     [[nodiscard]] bool SetShortcutSettingUVE(std::string_view id, const Config::SettingValueUVE& value);
@@ -2461,9 +2455,6 @@ private:
                                  bool& changed);
     // Sets the project's input map and registers it with the input system at once.
     void CommitInputMapUVE(std::vector<Input::InputActionUVE> actions);
-    void DrawSettingsWindowBodyUVE(SettingsWindowStateUVE& state, const SettingsWindowSourceUVE& source);
-    void DrawSettingRowUVE(SettingsWindowStateUVE& state, const Config::SettingDescriptorUVE& descriptor,
-                           bool modified, const SettingsWindowSourceUVE& source);
     /// The Capture section: filter toolbar, packet list, and the selected decode.
     void DrawCaptureBodyUVE();
     /// The audio authoring section. The model is built by editor_audio_mixer_uve.h; these only draw.

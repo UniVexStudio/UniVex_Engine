@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_shell.h"
+#include "editor_shortcut_keys.h"
 #include "prism/AssetBrowser.h"
 #include "png_metadata.h"
 #include "editor_object_menu.h"
@@ -89,7 +90,38 @@ void LoadThumbnailBackdropUVE(const std::filesystem::path& file) {
 } // namespace
 
 EditorShellUVE::EditorShellUVE(EditorUVE& editor)
-    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_entityClassWindow(editor, m_host), m_montageEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
+    : m_editor(editor), m_entityEditor(editor, m_host), m_fileDialog(editor, m_host), m_entityClassWindow(editor, m_host),
+      m_preferencesWindow(editor, m_host, editor.m_preferencesWindow.visible,
+                          [&editor] {
+                              EditorSettingsWindowUVE::SourceUVE source;
+                              source.title = "Editor Preferences";
+                              source.registry = &editor.m_settingsRegistry;
+                              source.get = [&editor](const std::string_view id) { return editor.GetEditorSettingUVE(id); };
+                              source.set = [&editor](const std::string_view id, const Config::SettingValueUVE& value) {
+                                  return editor.SetEditorSettingUVE(id, value);
+                              };
+                              source.note = [] { return std::string("Changes apply at once and are kept with your editor session."); };
+                              return source;
+                          }),
+      m_projectSettingsWindow(editor, m_host, editor.m_projectSettingsWindow.visible,
+                              [&editor] {
+                                  Config::SettingsDocumentUVE& project = editor.m_services->GetProjectSettingsUVE();
+                                  EditorSettingsWindowUVE::SourceUVE source;
+                                  source.title = "Project Settings";
+                                  source.registry = &project.GetRegistryUVE();
+                                  source.get = [&project](const std::string_view id) { return project.GetValueUVE(id); };
+                                  source.set = [&project](const std::string_view id, const Config::SettingValueUVE& value) {
+                                      return project.SetValueUVE(id, value);
+                                  };
+                                  source.note = [&project] {
+                                      const std::string file = project.GetPathUVE().filename().string();
+                                      return project.IsDirtyUVE() ? "Unsaved changes to " + file + "." : "Saved in " + file + ", with the project.";
+                                  };
+                                  source.dirty = [&project] { return project.IsDirtyUVE(); };
+                                  source.save = [&editor] { return editor.SaveProjectSettingsUVE(); };
+                                  return source;
+                              }),
+      m_shortcutsWindow(editor, m_host), m_montageEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
         ShowDockPanelUVE(0, true);
@@ -129,6 +161,11 @@ void EditorShellUVE::ShutdownUVE() {
     }
     if (m_host.IsReadyUVE() && m_entityEditor.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_entityEditor.WindowIdUVE());
+    }
+    for (const int id : {m_preferencesWindow.WindowIdUVE(), m_projectSettingsWindow.WindowIdUVE(), m_shortcutsWindow.WindowIdUVE()}) {
+        if (m_host.IsReadyUVE() && id != 0) {
+            m_host.CloseWindowUVE(id);
+        }
     }
     if (m_host.IsReadyUVE() && m_entityClassWindow.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_entityClassWindow.WindowIdUVE());
@@ -217,39 +254,8 @@ std::vector<prism::MenuItem> EditorShellUVE::CommandItemsUVE(const std::initiali
 }
 
 bool EditorShellUVE::DispatchShortcutUVE(const prism::Key key, const std::uint8_t mods) {
-    // PRISM key + modifiers -> the editor's stable shortcut name ("Ctrl+S") -> its command.
-    std::string name;
-    const int k = static_cast<int>(key);
-    if (key >= prism::Key::A && key <= prism::Key::Z) {
-        name = std::string(1, static_cast<char>('A' + (k - static_cast<int>(prism::Key::A))));
-    } else if (key >= prism::Key::N0 && key <= prism::Key::N9) {
-        name = std::string(1, static_cast<char>('0' + (k - static_cast<int>(prism::Key::N0))));
-    } else if (key >= prism::Key::F1 && key <= prism::Key::F12) {
-        name = "F" + std::to_string(1 + (k - static_cast<int>(prism::Key::F1)));
-    } else {
-        switch (key) {
-            case prism::Key::Delete: name = "Delete"; break;
-            case prism::Key::Backspace: name = "Backspace"; break;
-            case prism::Key::Home: name = "Home"; break;
-            case prism::Key::End: name = "End"; break;
-            case prism::Key::PageUp: name = "PageUp"; break;
-            case prism::Key::PageDown: name = "PageDown"; break;
-            case prism::Key::Space: name = "Space"; break;
-            case prism::Key::Enter: name = "Enter"; break;
-            case prism::Key::Tab: name = "Tab"; break;
-            case prism::Key::Left: name = "Left"; break;
-            case prism::Key::Right: name = "Right"; break;
-            case prism::Key::Up: name = "Up"; break;
-            case prism::Key::Down: name = "Down"; break;
-            default: return false;
-        }
-    }
-    std::string text;
-    text += (mods & prism::ModCtrl) != 0 ? "Ctrl+" : "";
-    text += (mods & prism::ModShift) != 0 ? "Shift+" : "";
-    text += (mods & prism::ModAlt) != 0 ? "Alt+" : "";
-    text += name;
-    const std::optional<EditorShortcutUVE> pressed = ParseEditorShortcutUVE(text);
+    // PRISM key + modifiers -> the editor's stable shortcut ("Ctrl+S") -> its command.
+    const std::optional<EditorShortcutUVE> pressed = ShortcutFromPrismKeyUVE(key, mods);
     if (!pressed.has_value()) {
         return false;
     }
@@ -756,6 +762,47 @@ void EditorShellUVE::ShowDockPanelUVE(const int index, const bool forceVisible) 
 // ---------------------------------------------------------------------------------- add / filter
 
 
+void EditorShellUVE::ShowCommandPaletteUVE() {
+    const auto itemFor = [this](const EditorCommandUVE& command, const bool withCategory) {
+        const std::string id = command.id;
+        prism::MenuItem item = prism::MenuItem::Item(withCategory ? EditorUVE::CommandTitleTextUVE(command) : command.label,
+                                                     [this, id] { static_cast<void>(m_editor.RunEditorCommandUVE(id)); },
+                                                     DisplayEditorShortcutUVE(command.shortcuts[0]));
+        if (!EditorUVE::IsCommandEnabledUVE(command)) {
+            item.disabled();
+        }
+        return item;
+    };
+    std::vector<prism::MenuItem> items;
+    // The commands run last, most recent first; then every command by its category.
+    for (const std::string& recent : m_editor.m_recentCommandIds) {
+        if (const EditorCommandUVE* const command = m_editor.FindEditorCommandUVE(recent)) {
+            items.push_back(itemFor(*command, true));
+        }
+    }
+    if (!items.empty()) {
+        items.push_back(prism::MenuItem::Sep());
+    }
+    std::vector<std::string> categories;
+    for (const EditorCommandUVE& command : m_editor.GetEditorCommandsUVE()) {
+        if (std::find(categories.begin(), categories.end(), command.category) == categories.end()) {
+            categories.push_back(command.category);
+        }
+    }
+    for (const std::string& category : categories) {
+        std::vector<prism::MenuItem> group;
+        for (const EditorCommandUVE& command : m_editor.GetEditorCommandsUVE()) {
+            if (command.category == category) {
+                group.push_back(itemFor(command, false));
+            }
+        }
+        items.push_back(prism::MenuItem::Sub(category, std::move(group)));
+    }
+    const prism::Vec2 size = m_host.AppUVE().windowSize();
+    prism::showSearchMenu(std::move(items), prism::Rect{size.x * 0.5F - 240.0F, 70.0F, 480.0F, 1.0F}, prism::PopupPlacement::Below,
+                          "Run a command");
+}
+
 void EditorShellUVE::ShowAddMenuUVE() {
     // GET CONTENT, PLACE OBJECTS (a flyout per group) and RECENTLY PLACED; typing searches them all.
     // Only what a level holds: a character's parts are built in an Entity, and an entity of the
@@ -1258,6 +1305,13 @@ void EditorShellUVE::FrameUVE() {
     m_animationLibraryEditor.RenderUVE();
     m_fileDialog.FrameUVE();
     m_entityClassWindow.FrameUVE();
+    m_preferencesWindow.FrameUVE();
+    m_projectSettingsWindow.FrameUVE();
+    m_shortcutsWindow.FrameUVE();
+    if (m_editor.m_commandPalette.open) {
+        m_editor.m_commandPalette.open = false;
+        ShowCommandPaletteUVE();
+    }
 }
 
 } // namespace UVE::Editor

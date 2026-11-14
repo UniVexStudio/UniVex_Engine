@@ -133,10 +133,7 @@ void EditorUVE::DrawOverlayWindowsUVE() {
     };
     sectionWindow("Network Capture", m_showCaptureWindow, [this] { DrawCaptureBodyUVE(); });
     sectionWindow("Audio Mixer", m_showAudioMixerWindow, [this] { DrawAudioMixerBodyUVE(); });
-    DrawEditorPreferencesWindowUVE();
-    DrawProjectSettingsWindowUVE();
     DrawInputMapWindowUVE();
-    DrawKeyboardShortcutsWindowUVE();
     // The Entity Editor, Retarget and the Animation Library are PRISM windows of their own.
     if (m_filePicker.has_value()) {
         DrawFilePickerUVE();
@@ -144,7 +141,6 @@ void EditorUVE::DrawOverlayWindowsUVE() {
     DrawCreateScriptModalUVE();
     DrawCreateShaderModalUVE();
     DrawQuickImportModalUVE();
-    DrawCommandPaletteUVE();
     DrawImportProgressModalUVE();
 }
 

@@ -14,6 +14,8 @@
 #include "editor_host.h"
 #include "editor_icons.h"
 #include "editor_loading_screen.h"
+#include "editor_settings_window.h"
+#include "editor_shortcuts_window.h"
 #include "editor_view_toolbar.h"
 #include "editor_viewport_gizmos.h"
 
@@ -114,6 +116,8 @@ public:
 private:
 
     void ShowAddMenuUVE();
+    /// The command palette (Ctrl+Shift+P): every command, searchable, the recent ones first.
+    void ShowCommandPaletteUVE();
     void RefreshOutlinerUVE();
     void RefreshDetailsUVE();
     void RefreshToolbarUVE();
@@ -132,6 +136,9 @@ private:
     EditorFileDialogUVE m_fileDialog;
     // "+ Add > Entity > Entity Class...": the window that picks a new entity's class.
     EditorEntityClassWindowUVE m_entityClassWindow;
+    EditorSettingsWindowUVE m_preferencesWindow;
+    EditorSettingsWindowUVE m_projectSettingsWindow;
+    EditorShortcutsWindowUVE m_shortcutsWindow;
     // The Montage Editor's window (opened while a montage is open).
     EditorMontageEditorUVE m_montageEditor;
     EditorRetargetWindowUVE m_retargetEditor;
