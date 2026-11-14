@@ -81,6 +81,19 @@ void OrbitCamera::SetYawPitch(float yaw, float pitch) {
     pitch_ = std::clamp(pitch, settings_.pitchMin, settings_.pitchMax);
 }
 
+void OrbitCamera::Look(const float dxPixels, const float dyPixels) {
+    animating_ = false;
+    const Vec3 eye = Eye();
+    yaw_ += dxPixels * settings_.orbitRadiansPerPixel;
+    if (settings_.allowFullOrbit) {
+        constexpr float kTwoPi = 2.f * std::numbers::pi_v<float>;
+        yaw_ = std::remainder(yaw_, kTwoPi);
+    }
+    // Never past straight up or down while looking, even with a full orbit allowed.
+    pitch_ = std::clamp(pitch_ + dyPixels * settings_.orbitRadiansPerPixel, settings_.pitchMin, settings_.pitchMax);
+    target_ = target_ + (eye - Eye());
+}
+
 Vec3 OrbitCamera::Eye() const {
     const float cosPitch = std::cos(pitch_);
     const Vec3 offset{

@@ -1295,7 +1295,7 @@ public:
             const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
             UpdateSelectionFromMouseUVE(width, height, pointerTaken);
             UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
-            if (!previewing_) {
+            if (!previewing_ && !UpdateFlyCameraUVE(pointerTaken)) {
                 UpdateCameraFromMouseUVE(height, pointerTaken);
                 UpdateViewportViewHotkeysUVE();
                 UpdateViewportBookmarkHotkeysUVE();
@@ -2572,13 +2572,9 @@ private:
         }
     }
 
-    // Mirrors app/main.cpp's own GLFW mouse-button/scroll wiring (left-drag orbits, middle/right
-    // drag pans, wheel dollies) but sourced from the view's per-frame input (EditorViewportInputUVE)
-    // instead of GLFW callbacks, since the editor's UI routes input to the view. Called from the
-    // render callback this class provides to SetViewportPanelRendererUVE, so In().hovered here correctly reports hover over
-    // the Viewport panel specifically. Known simplification versus the GLFW demo: a drag that
-    // began inside the panel stops orbiting the moment the cursor leaves it, rather than
-    // continuing to track a global drag - acceptable for this integration slice.
+    // The view's mouse navigation, from its per-frame input (EditorViewportInputUVE): Alt+left
+    // drag orbits round the target, middle drag pans, the wheel dollies. Right-mouse flying is
+    // UpdateFlyCameraUVE()'s. A plain left drag never moves the view: it selects.
     //
     // `suppressOrbit` is true while UpdateNavGizmoInteractionUVE() below owns the current left-
     // button gesture (it started on the nav gizmo) - without it, this method's own
@@ -2649,16 +2645,87 @@ private:
         const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
 
         const UVE::Editor::EditorViewportInputUVE& io = In();
-        if (!suppressOrbit && In().IsDraggingUVE(VpBtnUVE::Left, 0.0F)) {
+        // The left button selects and drags gizmos; it never moves the view (Alt+left still
+        // orbits round the target). Middle drag pans; the wheel zooms.
+        if (!suppressOrbit && io.alt && In().IsDraggingUVE(VpBtnUVE::Left, 0.0F)) {
             camera_.Orbit(io.mouseDelta.x * orbitSens, io.mouseDelta.y * orbitSens);
             editor_.NotifyViewportOrbitedUVE();
-        } else if (In().IsDraggingUVE(VpBtnUVE::Middle, 0.0F) ||
-                   In().IsDraggingUVE(VpBtnUVE::Right, 0.0F)) {
+        } else if (In().IsDraggingUVE(VpBtnUVE::Middle, 0.0F)) {
             camera_.Pan(io.mouseDelta.x * panSens, io.mouseDelta.y * panSens, framebufferHeight);
         }
         if (io.wheel != 0.0F) {
             camera_.Dolly(io.wheel * zoomSens);
         }
+    }
+
+    // Right mouse held: the mouse turns the view where it stands and W/A/S/D (Q/E down and up)
+    // fly it, faster with Shift; the wheel sets the flying speed. A right click that never moved
+    // is still a click (the context toolbar), so flying starts only once the mouse moves or a
+    // movement key goes down. True while flying.
+    bool UpdateFlyCameraUVE(const bool suppressed) {
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!In().IsDownUVE(VpBtnUVE::Right)) {
+            if (flying_ || flyArmed_) {
+                flying_ = false;
+                flyArmed_ = false;
+                flyVelocity_ = univex::math::Vec3{0.0F, 0.0F, 0.0F};
+                editor_.SetViewportFlyingUVE(false);
+                editor_.SetViewportFlyHeldUVE(false);
+            }
+            return false;
+        }
+        if (!flying_ && !flyArmed_) {
+            if (suppressed || pointerOverOverlay_ || !io.hovered || !In().IsClickedUVE(VpBtnUVE::Right)) {
+                return false;
+            }
+            flyArmed_ = true;
+            editor_.SetViewportFlyHeldUVE(true);
+        }
+        const bool moveKey = In().IsKeyDownUVE(VpKeyUVE::W) || In().IsKeyDownUVE(VpKeyUVE::A) || In().IsKeyDownUVE(VpKeyUVE::S) ||
+                             In().IsKeyDownUVE(VpKeyUVE::D) || In().IsKeyDownUVE(VpKeyUVE::Q) || In().IsKeyDownUVE(VpKeyUVE::E);
+        if (!flying_) {
+            const UVE::Math::Vector2UVE drag = In().DragDeltaUVE(VpBtnUVE::Right);
+            if (!moveKey && std::fabs(drag.x) + std::fabs(drag.y) <= kNavClickSlopPixelsUVE) {
+                return false;
+            }
+            flying_ = true;
+            editor_.SetViewportFlyingUVE(true);
+        }
+        const auto& prefs = editor_.GetExtendedPreferencesUVE();
+        const float lookSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0)) * 0.8F;
+        if (io.mouseDelta.x != 0.0F || io.mouseDelta.y != 0.0F) {
+            camera_.Look(io.mouseDelta.x * lookSens, io.mouseDelta.y * lookSens);
+            editor_.NotifyViewportOrbitedUVE();
+        }
+        if (io.wheel != 0.0F) {
+            flySpeed_ = std::clamp(flySpeed_ * std::pow(1.25F, io.wheel), 0.25F, 500.0F);
+        }
+        univex::math::Vec3 forward = univex::math::Normalize(camera_.Target() - camera_.Eye());
+        if (univex::math::Length(forward) < 0.001F) {
+            forward = univex::math::Vec3{0.0F, 0.0F, -1.0F};
+        }
+        const univex::math::Vec3 up{0.0F, 1.0F, 0.0F};
+        univex::math::Vec3 right = univex::math::Cross(forward, up);
+        right = univex::math::Length(right) < 0.001F ? univex::math::Vec3{1.0F, 0.0F, 0.0F} : univex::math::Normalize(right);
+        univex::math::Vec3 wish{0.0F, 0.0F, 0.0F};
+        if (In().IsKeyDownUVE(VpKeyUVE::W)) { wish = wish + forward; }
+        if (In().IsKeyDownUVE(VpKeyUVE::S)) { wish = wish - forward; }
+        if (In().IsKeyDownUVE(VpKeyUVE::D)) { wish = wish + right; }
+        if (In().IsKeyDownUVE(VpKeyUVE::A)) { wish = wish - right; }
+        if (In().IsKeyDownUVE(VpKeyUVE::E)) { wish = wish + up; }
+        if (In().IsKeyDownUVE(VpKeyUVE::Q)) { wish = wish - up; }
+        const float wishLength = univex::math::Length(wish);
+        const float speed = flySpeed_ * (io.shift ? 3.0F : 1.0F);
+        const univex::math::Vec3 wanted = wishLength > 0.001F ? wish * (speed / wishLength) : univex::math::Vec3{0.0F, 0.0F, 0.0F};
+        // Eased towards the wanted velocity (about a tenth of a second), so starting and stopping
+        // glide instead of jerking, whatever the frame rate.
+        const float dt = std::clamp(io.deltaTime, 0.0F, 0.1F);
+        const float blend = 1.0F - std::exp(-dt * 14.0F);
+        flyVelocity_ = flyVelocity_ + (wanted - flyVelocity_) * blend;
+        if (univex::math::Length(flyVelocity_) > 0.0005F) {
+            camera_.Translate(flyVelocity_ * dt);
+        }
+        return true;
     }
 
     // The standard Ctrl+digit (store) / digit (restore) viewport bookmarks, plus F-to-focus - the
@@ -2890,6 +2957,11 @@ private:
     std::optional<CameraPoseUVE> poseBeforePlay_;
     std::optional<CameraPoseUVE> poseBeforePreview_;
     bool previewing_ = false;
+    /// Right-mouse flying: pressed and waiting to move, flying, the speed (m/s) and the eased velocity.
+    bool flyArmed_ = false;
+    bool flying_ = false;
+    float flySpeed_ = 6.0F;
+    univex::math::Vec3 flyVelocity_{0.0F, 0.0F, 0.0F};
     /// A script's Quit Game or Open Level, carried out at the start of the next frame.
     struct GameRequestUVE final {
         bool quit = false;

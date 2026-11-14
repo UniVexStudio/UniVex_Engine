@@ -527,6 +527,12 @@ public:
     [[nodiscard]] float GetPlayFastForwardMultiplierUVE() const noexcept { return m_playFastForwardMultiplier; }
     void SetGameMouseCapturedUVE(bool captured);
     [[nodiscard]] bool IsGameMouseCapturedUVE() const noexcept { return m_gameMouseCaptured; }
+    /// A viewport is flying (right mouse held: mouse looks, WASD moves): the pointer is hidden and
+    /// held, and keys drive the camera instead of the editor's shortcuts.
+    void SetViewportFlyingUVE(bool flying);
+    [[nodiscard]] bool IsViewportFlyingUVE() const noexcept { return m_viewportFlying || m_viewportFlyHeld; }
+    /// The right mouse is held on a viewport (flying, or about to): its keys are the camera's.
+    void SetViewportFlyHeldUVE(const bool held) noexcept { m_viewportFlyHeld = held; }
 
     /// Draws the private editor overlay. EngineCoreUVE invokes this from its post-render callback
     /// before PresentUVE(), after the HDR scene has passed through the standard tone-mapping path.
@@ -2755,6 +2761,8 @@ private:
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
     EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;
     bool m_gameMouseCaptured = false;
+    bool m_viewportFlying = false;
+    bool m_viewportFlyHeld = false;
     void ReleaseGameMouseOnFocusLossUVE();
     bool m_playFastForwardEnabled = false;
     float m_playFastForwardMultiplier = 2.0F;

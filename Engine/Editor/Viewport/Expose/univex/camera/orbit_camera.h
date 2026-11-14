@@ -59,6 +59,10 @@ public:
     // ---- input ----------------------------------------------------------
     // Pixel deltas from a drag. Pitch is clamped to the settings range.
     void Orbit(float dxPixels, float dyPixels);
+    // Turns the view where it stands (the eye stays put, the target moves): the right-mouse look.
+    void Look(float dxPixels, float dyPixels);
+    // Moves the eye and the target together (a fly step), in world units.
+    void Translate(const Vec3& offset) { target_ = target_ + offset; }
 
     // Slides the pivot in the camera's own right/up plane. The world
     // distance per pixel is derived from the orbit distance and vertical

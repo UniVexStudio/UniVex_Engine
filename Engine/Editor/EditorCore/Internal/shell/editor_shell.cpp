@@ -263,6 +263,10 @@ std::vector<prism::MenuItem> EditorShellUVE::CommandItemsUVE(const std::initiali
 }
 
 bool EditorShellUVE::DispatchShortcutUVE(const prism::Key key, const std::uint8_t mods) {
+    // Flying the viewport: W, A, S, D, Q and E move the camera, so no shortcut may take them.
+    if (m_editor.IsViewportFlyingUVE()) {
+        return true;
+    }
     // PRISM key + modifiers -> the editor's stable shortcut ("Ctrl+S") -> its command.
     const std::optional<EditorShortcutUVE> pressed = ShortcutFromPrismKeyUVE(key, mods);
     if (!pressed.has_value()) {
