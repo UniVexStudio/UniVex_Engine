@@ -54,7 +54,8 @@ public class CoreTestsModule : ModuleRules
             "Navigation",
             "Localization",
             "UI",
-            "Pack"
+            "Pack",
+            "VFX"
         });
 
         PrivateIncludePaths.AddRange(new string[] {

@@ -10,6 +10,7 @@
 #include "texture_compression.h"
 #include "uve_file_envelope.h"
 #include "editor_project_package.h"
+#include "particle_system_asset.h"
 namespace UVE::Pack::Tests {
 namespace {
 class AssetCookerUVETest : public ::testing::Test {
@@ -131,6 +132,45 @@ TEST_F(AssetCookerUVETest, RootedCatalogRefusesTraversalWithoutChangingRecords) 
     std::ofstream(root/"bad-db")<<"{\"0000000000000001\":\"../outside\"}";
     Asset::AssetDatabaseUVE db; ASSERT_TRUE(db.LoadUVE(root/"bad-db"));
     EXPECT_FALSE(db.RootPathsUVE(root));EXPECT_EQ(db.ResolveUVE({1}),std::filesystem::path("../outside"));
+}
+TEST_F(AssetCookerUVETest, ParticleSystemAssetsAndDependenciesAreValidatedDuringCook) {
+    Asset::ParticleSystemAssetUVE sys;
+    Asset::ParticleEmitterAssetUVE em;
+    em.name = "Sparks";
+    em.emitterUpdate.push_back(Asset::MakeDefaultParticleModuleUVE(1U, Asset::ParticleModuleTypeUVE::SpawnRate));
+    em.particleSpawn.push_back(Asset::MakeDefaultParticleModuleUVE(2U, Asset::ParticleModuleTypeUVE::ShapePoint));
+    auto sprite = Asset::MakeDefaultParticleModuleUVE(3U, Asset::ParticleModuleTypeUVE::SpriteRenderer);
+    sprite.strings["Texture"] = "hero.uvtex";
+    em.render.push_back(sprite);
+    sys.emitters.push_back(em);
+    ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(sys, root/"content/VFX_Sparks.uvfx"));
+
+    Asset::AssetDatabaseUVE db;
+    ASSERT_TRUE(db.LoadUVE(root/".uvassetdb"));
+    const auto vfxGuid = db.RegisterUVE("content/VFX_Sparks.uvfx");
+    ASSERT_TRUE(db.SaveUVE());
+
+    const auto cooked = CookProjectAssetsUVE(root/"game.uvproject", output, CookTargetUVE::Windows);
+    ASSERT_TRUE(cooked.success) << cooked.message;
+    EXPECT_TRUE(std::filesystem::exists(output/"content/VFX_Sparks.uvfx"));
+    Asset::AssetDatabaseUVE shipped;
+    ASSERT_TRUE(shipped.LoadUVE(output/".uvassetdb"));
+    EXPECT_TRUE(shipped.HasGuidUVE(vfxGuid));
+    std::filesystem::remove_all(output);
+
+    const auto sourceGuid = db.RegisterUVE("content/authoring.png");
+    ASSERT_TRUE(db.SaveUVE());
+    sys.emitters[0].render[0].strings["Texture"] = std::to_string(sourceGuid.value);
+    ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(sys, root/"content/VFX_Sparks.uvfx"));
+    const auto rejectedSource = CookProjectAssetsUVE(root/"game.uvproject", output, CookTargetUVE::Windows);
+    EXPECT_FALSE(rejectedSource.success);
+    EXPECT_NE(rejectedSource.message.find("authoring source"), std::string::npos);
+
+    sys.emitters[0].render[0].strings["Texture"] = "999999999999";
+    ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(sys, root/"content/VFX_Sparks.uvfx"));
+    const auto rejectedMissing = CookProjectAssetsUVE(root/"game.uvproject", output, CookTargetUVE::Windows);
+    EXPECT_FALSE(rejectedMissing.success);
+    EXPECT_NE(rejectedMissing.message.find("Missing asset GUID"), std::string::npos);
 }
 } // namespace
 } // namespace UVE::Pack::Tests

@@ -60,6 +60,8 @@ enum class AssetKindUVE : std::uint32_t {
     MontageLibrary = 17,
     /// `.uvbp`: a Blueprint Class, an object's gameplay as a graph (runs as UVScript).
     Blueprint = 18,
+    /// `.uvfx`: a Particle System asset defining emitters, module graphs, curves and renderers.
+    ParticleSystem = 19,
 };
 
 /// The fixed-size portion of a `.uve*` file's header, returned by ReadUveFileUVE() alongside the

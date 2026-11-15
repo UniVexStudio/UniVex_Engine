@@ -228,6 +228,10 @@ void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEnt
     AddUVE<ComponentT>(entries, std::move(entry));
 }
 
+[[nodiscard]] bool IsMontagePlayerComponentValidUVE(const MontagePlayerComponentUVE&) noexcept {
+    return true;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The declarations themselves. Each component states what it exposes exactly once, here, instead
 // of being re-described by every consumer that needs to know.
@@ -2225,7 +2229,7 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     constexpr const char* kMontageTipUVE =
         "An Animation Montage this object can play. Its script plays it by the file's name: "
         "montage.play(\"Attack\") plays Attack.uvmontage.";
-    AddValidatedUVE<MontagePlayerComponentUVE, +[](const MontagePlayerComponentUVE&) noexcept { return true; }>(
+    AddValidatedUVE<MontagePlayerComponentUVE, &IsMontagePlayerComponentValidUVE>(
         entries,
         MakeEntryUVE("component.montage_player", "MontagePlayerComponentUVE", "MontagePlayer", kSectionOrderTypeSpecificUVE,
             {
