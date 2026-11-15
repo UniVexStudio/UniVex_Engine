@@ -183,7 +183,7 @@ class PropertyGrid : public Widget {
 public:
   int addCategory(std::string name, bool expanded = true);
   void addRow(int category, std::string label, Ref<Widget> editor, std::string tip = "");
-  // `labelExtra` sits right after the label's text (small buttons: reset, a toggle), not with the value.
+  // `labelExtra` sits at the label column's right edge, by the divider (small buttons: reset, a toggle).
   void addRow(int category, std::string label, Ref<Widget> editor, std::string tip, Ref<Widget> labelExtra);
   void clear();
   Vec2 measure(Vec2 avail) override;

@@ -724,11 +724,10 @@ void PropertyGrid::arrange(Rect r) {
       float eh = std::min(row.h - 4, std::max(22.f, d.y));
       row.editor->arrange({ex, y + std::floor((row.h - eh) * 0.5f), std::max(10.f, ew), eh});
       if (row.extra) {
-        // Right after the label's text, kept inside the label column.
+        // At the label column's right edge, against the divider before the value.
         const Vec2 xd = row.extra->desired();
-        const float textW = theme().ui->width(row.label);
         const float xw = std::min(xd.x, std::max(0.f, lw - 30));
-        const float xx = std::min(r.x + 24 + textW + 6, r.x + lw - 4 - xw);
+        const float xx = r.x + lw - 4 - xw;
         const float xh = std::min(row.h - 4, std::max(18.f, xd.y));
         row.extra->arrange({xx, y + std::floor((row.h - xh) * 0.5f), xw, xh});
       }
