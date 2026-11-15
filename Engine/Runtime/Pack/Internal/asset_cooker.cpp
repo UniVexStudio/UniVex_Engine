@@ -3,8 +3,9 @@
 #include "animation_montage_asset.h"
 #include "asset_cooker.h"
 #include <algorithm>
-#include <cstdio>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <set>
 #include <map>
@@ -17,6 +18,7 @@
 #include "blueprint_asset.h"
 #include "montage_library_asset.h"
 #include "data_table_asset.h"
+#include "particle_system_asset.h"
 #include "asset_resident_size.h"
 #include "texture_mipmap.h"
 #include "texture_compression.h"
@@ -48,7 +50,7 @@ bool RuntimePath(const std::filesystem::path& path) {
     if (std::filesystem::path model; EmbeddedClip(path, model)) return Extension(model) == ".uvmodel";
     static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvshader", ".uvscene",
         ".uvprefab", ".uvwbp", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage", ".uvmontagelib", ".uvfont", ".uvtable",
-        ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
+        ".uvfx", ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
     return extensions.contains(Extension(path));
 }
 void CheckGuid(Asset::AssetGuidUVE guid, const Asset::AssetDatabaseUVE& db) {
@@ -56,6 +58,43 @@ void CheckGuid(Asset::AssetGuidUVE guid, const Asset::AssetDatabaseUVE& db) {
     if (!db.HasGuidUVE(guid)) throw std::runtime_error("Missing asset GUID dependency: " + std::to_string(guid.value));
     if (!RuntimePath(db.ResolveUVE(guid)))
         throw std::runtime_error("GUID dependency references authoring source; import a native asset first");
+}
+void CheckParticleDependency(const std::string& ref, const std::filesystem::path& sourcePath, const Asset::AssetDatabaseUVE& db) {
+    if (ref.empty()) return;
+    const bool isHexGuid = ref.size() == 16U && std::all_of(ref.begin(), ref.end(), [](unsigned char c) {
+        return std::isxdigit(c) != 0;
+    });
+    const bool isDecGuid = std::all_of(ref.begin(), ref.end(), [](unsigned char c) {
+        return std::isdigit(c) != 0;
+    });
+    if (isHexGuid || isDecGuid) {
+        const std::uint64_t val = std::strtoull(ref.c_str(), nullptr, isHexGuid ? 16 : 10);
+        if (val == 0ULL) throw std::runtime_error("Invalid zero asset GUID dependency in particle system");
+        CheckGuid({val}, db);
+        return;
+    }
+    const std::string normRef = std::filesystem::path(ref).lexically_normal().generic_string();
+    for (const auto& record : db.GetRegisteredAssetsUVE()) {
+        const std::string recPath = record.path.lexically_normal().generic_string();
+        if (recPath == normRef || recPath == ("content/" + normRef) ||
+            (normRef.starts_with("content/") && recPath == normRef.substr(8U))) {
+            CheckGuid(record.guid, db);
+            return;
+        }
+    }
+    if (!RuntimePath(normRef)) {
+        throw std::runtime_error("Particle dependency references authoring source; import a native asset first");
+    }
+    std::error_code ec;
+    for (std::filesystem::path probe = sourcePath.parent_path(); !probe.empty(); ) {
+        if (std::filesystem::is_regular_file(probe / normRef, ec) && !ec) {
+            return;
+        }
+        const auto parent = probe.parent_path();
+        if (parent == probe) break;
+        probe = parent;
+    }
+    throw std::runtime_error("Missing particle asset dependency: " + ref);
 }
 void CheckJsonGuids(const Json& json, const Asset::AssetDatabaseUVE& db, const std::string& key = {}) {
     if (json.is_object()) {
@@ -84,7 +123,7 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
         {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},{".uvwbp",Asset::AssetKindUVE::Prefab},
         {".uvaudio",Asset::AssetKindUVE::Audio},{".uvanim",Asset::AssetKindUVE::Animation},
         {".uvskel",Asset::AssetKindUVE::Skeleton},{".uvanimlib",Asset::AssetKindUVE::AnimationLibrary},
-        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbp",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable}};
+        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbp",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable},{".uvfx",Asset::AssetKindUVE::ParticleSystem}};
     if (const auto it = kinds.find(extension); it == kinds.end() || it->second != envelope->first.assetType) return false;
     switch (envelope->first.assetType) {
     case Asset::AssetKindUVE::Texture: { Asset::TextureAssetUVE v; return Asset::LoadTextureAssetUVE(path,v); }
@@ -126,6 +165,22 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
         Asset::AnimationLibraryAssetUVE v;
         if (!Asset::LoadAnimationLibraryAssetUVE(path,v)) return false;
         for (const auto& entry : v.entries) CheckGuid(entry.clip,db);
+        return true;
+    }
+    case Asset::AssetKindUVE::ParticleSystem: {
+        Asset::ParticleSystemAssetUVE v;
+        if (!Asset::LoadParticleSystemAssetUVE(path, v)) return false;
+        for (const auto& emitter : v.emitters) {
+            for (const auto* stage : {&emitter.emitterUpdate, &emitter.particleSpawn, &emitter.particleUpdate, &emitter.render}) {
+                for (const auto& mod : *stage) {
+                    for (const char* key : {"Texture", "Mesh", "Material"}) {
+                        if (const auto it = mod.strings.find(key); it != mod.strings.end()) {
+                            CheckParticleDependency(it->second, path, db);
+                        }
+                    }
+                }
+            }
+        }
         return true;
     }
     case Asset::AssetKindUVE::Scene:
@@ -254,7 +309,7 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             catalog[hex] = relative.generic_string();
         }
         const std::set<std::string> native{ ".uvtex",".uvmodel",".uvmat",".uvshader",".uvscene",".uvprefab",".uvwbp",
-            ".uvaudio",".uvanim",".uvskel",".uvanimlib",".uvmontage",".uvmontagelib",".uvfont",".uvtable" };
+            ".uvaudio",".uvanim",".uvskel",".uvanimlib",".uvmontage",".uvmontagelib",".uvfont",".uvtable",".uvfx" };
         const std::set<std::string> text{ ".uvs",".glsl",".vert",".frag",".comp",".glslinc" };
         for (const auto& entry : std::filesystem::recursive_directory_iterator(content)) {
             if (entry.is_symlink()) throw std::runtime_error("Cook does not accept symlinks");
