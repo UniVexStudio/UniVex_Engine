@@ -640,7 +640,9 @@ TEST_F(BlueprintUVETest, ForEachWalksASplitTextIntoAnArray) {
     ASSERT_TRUE(run.instance->RaiseEventUVE("ready", {})) << run.instance->GetLastErrorUVE();
     EXPECT_EQ(run.FieldUVE("last"), UVScript::ValueUVE{std::int64_t{2}});
     EXPECT_EQ(run.FieldUVE("label"), UVScript::ValueUVE{std::string("3 of 3")});
-    const auto& seen = std::get<std::shared_ptr<const UVScript::CollectionValueUVE>>(run.FieldUVE("seen"));
+    // Kept by value: FieldUVE returns a copy, and a reference into it would dangle.
+    const UVScript::ValueUVE seenValue = run.FieldUVE("seen");
+    const auto seen = std::get<std::shared_ptr<const UVScript::CollectionValueUVE>>(seenValue);
     ASSERT_EQ(seen->items.size(), 3U);
     EXPECT_EQ(seen->items[1], UVScript::ValueUVE{std::string("green")});
 
