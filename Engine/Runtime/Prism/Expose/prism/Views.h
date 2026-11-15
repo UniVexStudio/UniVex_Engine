@@ -183,6 +183,8 @@ class PropertyGrid : public Widget {
 public:
   int addCategory(std::string name, bool expanded = true);
   void addRow(int category, std::string label, Ref<Widget> editor, std::string tip = "");
+  // `labelExtra` sits right after the label's text (small buttons: reset, a toggle), not with the value.
+  void addRow(int category, std::string label, Ref<Widget> editor, std::string tip, Ref<Widget> labelExtra);
   void clear();
   Vec2 measure(Vec2 avail) override;
   void arrange(Rect r) override;
@@ -193,7 +195,7 @@ public:
   Cursor cursor() const override;
   const std::string& tooltipAt(Vec2 p) const override;
 private:
-  struct Row { std::string label, tip; Ref<Widget> editor; Rect rect; float h = 26; };
+  struct Row { std::string label, tip; Ref<Widget> editor; Ref<Widget> extra; Rect rect; float h = 26; };
   struct Cat { std::string name; bool expanded; std::vector<Row> rows; Rect header; };
   float labelW(float w) const { return std::clamp(std::floor(w * m_ratio), 90.f, std::max(90.f, w - 110)); }
   void applyVisibility();

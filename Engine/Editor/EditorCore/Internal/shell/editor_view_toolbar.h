@@ -4,6 +4,7 @@
 #include "prism/Widget.h"
 
 #include <memory>
+#include <string>
 
 namespace prism {
 class Button;
@@ -30,12 +31,15 @@ public:
     void RefreshUVE();
 
 private:
+    void ShowSnapLevelsUVE();
     void ShowPreviewSettingsUVE(prism::Rect anchor);
     [[nodiscard]] prism::Ref<prism::Widget> FinishBarUVE(const prism::Ref<prism::Box>& settings);
 
     EditorUVE& m_editor;
     std::shared_ptr<prism::Segmented> m_gizmoModes;
     std::shared_ptr<prism::Button> m_snapButton;
+    std::shared_ptr<prism::Button> m_snapLevelButton;
+    std::string m_shownSnapLevels;
     std::shared_ptr<prism::Button> m_gridButton;
     std::shared_ptr<prism::Button> m_projectionButton;
     std::shared_ptr<prism::Button> m_shadingButton;
