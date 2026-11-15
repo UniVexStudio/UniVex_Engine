@@ -342,9 +342,6 @@ void EditorDetailsUVE::RefreshUVE() {
         RebuildUVE(entity);
         return;
     }
-    if (auto magnet = m_scaleMagnet.lock(); magnet && magnet->checked() != m_editor.m_transformSnappingSettings.scaleEnabled) {
-        magnet->setChecked(m_editor.m_transformSnappingSettings.scaleEnabled);
-    }
     if (!m_editor.IsDocumentEntityUVE(entity)) {
         return;
     }
@@ -577,7 +574,19 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
             if (which == 0) {
                 (axis == 0 ? t.localPosition.x : axis == 1 ? t.localPosition.y : t.localPosition.z) = value;
             } else if (which == 2) {
-                (axis == 0 ? t.localScale.x : axis == 1 ? t.localScale.y : t.localScale.z) = value;
+                float& edited = axis == 0 ? t.localScale.x : axis == 1 ? t.localScale.y : t.localScale.z;
+                if (m_scaleLocked) {
+                    // All three together: in proportion, or all equal when the edited one was zero.
+                    const float before = edited;
+                    if (std::abs(before) > 1e-6F) {
+                        const float factor = value / before;
+                        t.localScale = Math::Vector3UVE{t.localScale.x * factor, t.localScale.y * factor, t.localScale.z * factor};
+                    } else {
+                        t.localScale = Math::Vector3UVE{value, value, value};
+                    }
+                } else {
+                    edited = value;
+                }
             } else {
                 // The authored Euler angles are the edited view of the rotation (see
                 // TransformComponentUVE::localEulerRadians); both are written together.
@@ -633,21 +642,23 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
         auto line = prism::hbox(2.0F);
         line->add(field, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         line->add(key, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-        // Beside the label: reset, and on Scale its own snap magnet (on/off).
+        // Beside the label: reset, and on Scale the lock (X, Y, Z together).
         auto labelTools = prism::hbox(2.0F);
         labelTools->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
         if (which == 2) {
-            auto magnet = prism::make<prism::Button>("", prism::Icon::Magnet, prism::ButtonStyle::Flat);
-            magnet->setCheckable(true);
-            magnet->setChecked(m_editor.m_transformSnappingSettings.scaleEnabled);
-            magnet->setTooltip("Snap scale to its step (set the step in the viewport's snap menu)");
-            magnet->onToggle = [this](const bool on) {
-                EditorTransformSnappingSettingsUVE snap = m_editor.m_transformSnappingSettings;
-                snap.scaleEnabled = on;
-                static_cast<void>(m_editor.SetTransformSnappingSettingsUVE(snap));
+            auto lock = prism::make<prism::Button>("", m_scaleLocked ? prism::Icon::Lock : prism::Icon::Unlock, prism::ButtonStyle::Flat);
+            lock->setCheckable(true);
+            lock->setChecked(m_scaleLocked);
+            lock->setTooltip("Lock: X, Y and Z scale together. Off: one axis at a time");
+            std::weak_ptr<prism::Button> weakLock = lock;
+            lock->onToggle = [this, weakLock](const bool on) {
+                m_scaleLocked = on;
+                if (auto l = weakLock.lock()) {
+                    l->setIcon(on ? prism::Icon::Lock : prism::Icon::Unlock);
+                }
             };
-            labelTools->add(magnet, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-            m_scaleMagnet = magnet;
+            labelTools->add(lock, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+            m_scaleLockButton = lock;
         }
         row->sync = [this, current, weakField, weakKey, weakReset, which](const void*) {
             if (auto k = weakKey.lock()) {
