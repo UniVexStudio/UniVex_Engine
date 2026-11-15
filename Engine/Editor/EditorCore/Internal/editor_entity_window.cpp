@@ -421,7 +421,9 @@ bool EditorUVE::HasEntityEditorUnsavedChangesUVE() const noexcept {
         return false;
     }
     const bool entityDirty = m_entityDocumentActive ? m_sceneDirty : m_otherDocument.sceneDirty;
-    return entityDirty || (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE());
+    // An unsaved Blueprint counts: closing must never drop the nodes made in it.
+    const bool blueprintDirty = m_openBlueprintDirtyUVE && m_openBlueprintDirtyUVE();
+    return entityDirty || blueprintDirty || (m_openUVScript.has_value() && m_openUVScript->IsDirtyUVE());
 }
 
 std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorObjectsUVE() {

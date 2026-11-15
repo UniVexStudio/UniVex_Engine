@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -170,6 +171,20 @@ TEST_F(BlueprintUVETest, EveryNodeOfThePaletteTranslatesToUVScriptThatCompiles) 
             }
         }
         ExpectCompilesUVE(blueprint, type.key);
+    }
+}
+
+TEST_F(BlueprintUVETest, EveryNodeHasItsOwnTitleAndKey) {
+    // The editor shows nodes by title and old files may be read back by it: two nodes with one
+    // title would save as whichever came last.
+    std::set<std::string> titles;
+    std::set<std::string> keys;
+    for (const Asset::BlueprintNodeTypeUVE& type : Asset::GetBlueprintNodeTypesUVE()) {
+        if (type.role == BlueprintNodeRoleUVE::GetVariable || type.role == BlueprintNodeRoleUVE::SetVariable) {
+            continue;
+        }
+        EXPECT_TRUE(titles.insert(type.title).second) << "two nodes are titled " << type.title;
+        EXPECT_TRUE(keys.insert(type.key).second) << "two nodes have the key " << type.key;
     }
 }
 

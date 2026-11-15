@@ -143,6 +143,7 @@ EditorEntityEditorUVE::EditorEntityEditorUVE(EditorUVE& editor, EditorHostUVE& h
 EditorEntityEditorUVE::~EditorEntityEditorUVE() {
     m_editor.m_openBlueprintProviderUVE = nullptr;
     m_editor.m_saveOpenBlueprintUVE = nullptr;
+    m_editor.m_openBlueprintDirtyUVE = nullptr;
     if (m_window != 0 && m_host.IsReadyUVE()) {
         m_host.CloseWindowUVE(m_window);
     }
@@ -274,6 +275,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     }
     // Compile reads the Blueprint being edited, saved or not.
     m_editor.m_openBlueprintProviderUVE = [this](const std::string& path) { return m_blueprintPanel.UnsavedForUVE(path); };
+    m_editor.m_openBlueprintDirtyUVE = [this] { return m_blueprintPanel.IsOpenUVE() && m_blueprintPanel.DirtyUVE(); };
     m_editor.m_saveOpenBlueprintUVE = [this] {
         if (m_blueprintPanel.IsOpenUVE() && m_blueprintPanel.DirtyUVE()) {
             static_cast<void>(m_blueprintPanel.SaveUVE());
@@ -1188,7 +1190,11 @@ void EditorEntityEditorUVE::OpenBlueprintUVE(const std::string& path, const Scen
     if (m_blueprintPanel.IsOpenUVE() && m_blueprintPanel.PathUVE() != path && m_blueprintPanel.DirtyUVE()) {
         static_cast<void>(m_blueprintPanel.SaveUVE());   // the one being left keeps its edits
     }
-    if (m_blueprintPanel.PathUVE() != path && !m_blueprintPanel.OpenUVE(path, target)) {
+    // The same file for another object (the entity was reloaded, so its handle changed) reopens it,
+    // unless it has unsaved edits.
+    const bool reopen = m_blueprintPanel.PathUVE() != path ||
+                        (m_blueprintPanel.TargetUVE() != target && !m_blueprintPanel.DirtyUVE());
+    if (reopen && !m_blueprintPanel.OpenUVE(path, target)) {
         return;
     }
     if (std::none_of(m_openBlueprints.begin(), m_openBlueprints.end(),

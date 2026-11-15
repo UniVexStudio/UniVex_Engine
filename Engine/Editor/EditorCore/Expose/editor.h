@@ -1127,6 +1127,8 @@ public:
     /// Writes the Entity Editor's open Blueprint graph when it has unsaved edits (set by its window):
     /// every save of the entity saves its graph too, and Simulate and Revert keep its edits.
     std::function<void()> m_saveOpenBlueprintUVE;
+    /// Whether the Blueprint open in the Entity Editor has edits not yet saved (closing asks first).
+    std::function<bool()> m_openBlueprintDirtyUVE;
     /// A Blueprint (project path) the Entity Editor opens once its entity is open (Content Browser open).
     std::string m_pendingBlueprintOpenUVE;
     /// Checks the whole open entity: one root, and every object's `.uvs` script (read from the
