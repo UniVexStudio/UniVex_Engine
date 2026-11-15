@@ -3,6 +3,8 @@
 #include <functional>
 #include <iterator>
 #include <fstream>
+#include <memory>
+#include <nlohmann/json.hpp>
 #include "blueprint_asset.h"
 #include "texture_procedural.h"
 
@@ -1569,32 +1571,216 @@ void EditorContentBrowserUVE::CreateMaterialUVE(const std::string& stem, const A
     ChangedUVE();
 }
 
+namespace {
+
+/// One object of an entity file, as the Logic Graph dialog lists it.
+struct EntityFileObjectUVE {
+    std::string name;
+    std::string graph;                 // the Logic Graph its Script slot names (and that exists), or ""
+    std::vector<std::string> path;     // names from the root down to it
+    int depth = 0;
+};
+
+/// The objects of an `.uventity`, root first, each followed by the objects under it.
+[[nodiscard]] std::vector<EntityFileObjectUVE> ReadEntityFileObjectsUVE(const std::filesystem::path& file,
+                                                                       const std::filesystem::path& projectRoot) {
+    std::ifstream in(file, std::ios::binary);
+    const std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::size_t start = bytes.find('{');
+    if (start == std::string::npos) {
+        return {};
+    }
+    const nlohmann::json document = nlohmann::json::parse(bytes.begin() + static_cast<std::ptrdiff_t>(start), bytes.end(), nullptr, false);
+    if (!document.is_object() || !document.contains("entities") || !document["entities"].is_array()) {
+        return {};
+    }
+    struct NodeUVE {
+        std::int64_t id = -1;
+        std::int64_t parent = -1;
+        std::string name;
+        std::string graph;
+    };
+    std::vector<NodeUVE> nodes;
+    for (const nlohmann::json& entity : document["entities"]) {
+        if (!entity.is_object() || !entity.contains("components") || !entity["components"].is_object()) {
+            continue;
+        }
+        const nlohmann::json& components = entity["components"];
+        NodeUVE node;
+        node.id = entity.value("localId", std::int64_t{-1});
+        if (const auto h = components.find("HierarchyComponentUVE"); h != components.end() && h->is_object()) {
+            node.parent = h->value("parentLocalId", std::int64_t{-1});
+        }
+        if (const auto n = components.find("NameComponentUVE"); n != components.end() && n->is_object()) {
+            node.name = n->value("name", std::string{});
+        }
+        if (const auto sc = components.find("ScriptComponentUVE"); sc != components.end() && sc->is_object()) {
+            const std::string path = sc->value("scriptAssetPath", std::string{});
+            std::error_code error;
+            if (path.ends_with(".uvbp") && std::filesystem::is_regular_file(projectRoot / path, error)) {
+                node.graph = path;
+            }
+        }
+        nodes.push_back(std::move(node));
+    }
+    std::vector<EntityFileObjectUVE> out;
+    const std::function<void(std::int64_t, std::vector<std::string>, int)> walk = [&](const std::int64_t parent,
+                                                                                       std::vector<std::string> path, const int depth) {
+        for (const NodeUVE& node : nodes) {
+            if (node.parent != parent || out.size() > 4096U) {
+                continue;
+            }
+            std::vector<std::string> here = path;
+            here.push_back(node.name);
+            out.push_back(EntityFileObjectUVE{node.name, node.graph, here, depth});
+            if (node.id >= 0) {
+                walk(node.id, here, depth + 1);
+            }
+        }
+    };
+    walk(-1, {}, 0);
+    return out;
+}
+
+[[nodiscard]] std::string GraphNameForUVE(const std::string& object) {
+    std::string name = "LG_";
+    for (const char c : object) {
+        name.push_back(std::isalnum(static_cast<unsigned char>(c)) != 0 ? c : '_');
+    }
+    return name.size() > 3U ? name : std::string("LG_New");
+}
+
+} // namespace
+
 void EditorContentBrowserUVE::CreateBlueprintUVE() {
-    // A Blueprint Class with the standard starting graph (Event Ready, Event Tick); an object's Script
-    // slot picks it, or the Entity Editor's Blueprint button makes one for an object directly.
+    // A Logic Graph runs on an object of an entity class: the class, then the object (None: the
+    // entity's root itself, else one of the objects under it). Create makes the graph in this
+    // folder and opens the entity with the graph on that object.
     const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_contentBrowserDirectory;
-    std::error_code error;
-    std::filesystem::create_directories(folder, error);
-    const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, "LG_New", ".uvbp");
-    Asset::BlueprintAssetUVE blueprint;
-    blueprint.parentKind = "Object3D";
-    Asset::BlueprintNodeUVE ready;
-    ready.id = 1U;
-    ready.type = "event_ready";
-    Asset::BlueprintNodeUVE tick;
-    tick.id = 2U;
-    tick.type = "event_tick";
-    tick.y = 200.0F;
-    blueprint.nodes = {ready, tick};
-    if (!Asset::SaveBlueprintAssetUVE(blueprint, path)) {
-        m_editor.m_contentStatusMessage = "Could not create a Logic Graph here.";
+    const std::filesystem::path projectRoot = snapshot.contentRoot.parent_path();
+    std::vector<std::filesystem::path> entities;
+    std::vector<std::string> labels;
+    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+        if (entry.kind == Asset::ProjectFileEntryKindUVE::File && LowerExtensionUVE(entry.relativePath) == ".uventity") {
+            entities.push_back(snapshot.contentRoot / entry.relativePath);
+            const std::string where = entry.relativePath.parent_path().generic_string();
+            labels.push_back(entry.relativePath.stem().string() + (where.empty() ? std::string{} : "   (" + where + ")"));
+        }
+    }
+    if (entities.empty()) {
+        m_editor.m_contentStatusMessage = "Make an Entity Class first: a Logic Graph runs on an object of an entity.";
         return;
     }
-    m_editor.m_contentStatusMessage.clear();
-    m_editor.RefreshProjectFileIndexUVE();
-    m_folderSignature = 0;
-    ChangedUVE();
+    struct StateUVE {
+        int entity = 0;
+        int object = 0;
+        std::vector<EntityFileObjectUVE> objects;
+    };
+    auto state = std::make_shared<StateUVE>();
+    auto name = prism::make<prism::TextInput>("LG_New", "Name");
+    auto entityCombo = prism::make<prism::ComboBox>(labels, 0);
+    auto objectsBox = prism::make<prism::WrapBox>(prism::Orientation::Horizontal, 4.0F, 4.0F);
+    auto note = prism::make<prism::Label>("", prism::FontRole::Small);
+    note->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    auto form = prism::make<prism::PropertyGrid>();
+    const int cat = form->addCategory("New Logic Graph");
+    form->addRow(cat, "Name", name, "The file's name");
+    form->addRow(cat, "Entity Class", entityCombo, "The entity whose object runs the graph");
+    form->addRow(cat, "Object", objectsBox, "None: the entity itself. Or one of the objects under it.");
+    form->addRow(cat, "", note, "");
+
+    auto rebuild = std::make_shared<std::function<void()>>();
+    std::weak_ptr<std::function<void()>> weakRebuild = rebuild;
+    std::weak_ptr<prism::WrapBox> weakBox = objectsBox;
+    std::weak_ptr<prism::TextInput> weakName = name;
+    std::weak_ptr<prism::Label> weakNote = note;
+    *rebuild = [state, entities, projectRoot, weakRebuild, weakBox, weakName, weakNote] {
+        const auto box = weakBox.lock();
+        if (!box) {
+            return;
+        }
+        box->clearChildren();
+        const auto& objects = state->objects;
+        // One graph per object: an object that has one cannot be picked again.
+        if (state->object < 0 || state->object >= static_cast<int>(objects.size()) ||
+            !objects[static_cast<std::size_t>(state->object)].graph.empty()) {
+            state->object = -1;
+            for (std::size_t i = 0U; i < objects.size(); ++i) {
+                if (objects[i].graph.empty()) {
+                    state->object = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+        for (std::size_t i = 0U; i < objects.size(); ++i) {
+            const EntityFileObjectUVE& object = objects[i];
+            std::string label = i == 0U ? "None (" + object.name + ")" : object.name;
+            if (!object.graph.empty()) {
+                label += "  (has " + std::filesystem::path(object.graph).stem().string() + ")";
+            }
+            auto button = prism::make<prism::Button>(label, i == 0U ? prism::Icon::Static3D : prism::Icon::Object3D);
+            button->setCheckable(true);
+            button->setChecked(static_cast<int>(i) == state->object);
+            button->setEnabled(object.graph.empty());
+            button->setTooltip(object.graph.empty() ? (i == 0U ? "The entity itself runs the graph, none of the objects under it"
+                                                               : "This object runs the graph")
+                                                    : "Already runs " + object.graph + ": one Logic Graph per object");
+            button->onClick = [state, i, weakRebuild, weakName] {
+                state->object = static_cast<int>(i);
+                if (const auto n = weakName.lock()) {
+                    n->setText(GraphNameForUVE(state->objects[i].name));
+                }
+                if (const auto again = weakRebuild.lock()) {
+                    (*again)();
+                }
+            };
+            box->add(button);
+        }
+        if (const auto n = weakNote.lock()) {
+            n->setText(state->object < 0 ? "Every object of this entity already has a Logic Graph."
+                                         : "Runs on: " + objects[static_cast<std::size_t>(state->object)].name);
+        }
+        if (prism::Application::exists()) {
+            prism::Application::get().invalidateLayout();
+        }
+    };
+    const auto load = [state, entities, projectRoot, weakName, rebuild](const int index) {
+        state->entity = std::clamp(index, 0, static_cast<int>(entities.size()) - 1);
+        state->objects = ReadEntityFileObjectsUVE(entities[static_cast<std::size_t>(state->entity)], projectRoot);
+        state->object = 0;
+        if (const auto n = weakName.lock(); n && !state->objects.empty()) {
+            n->setText(GraphNameForUVE(state->objects.front().name));
+        }
+        (*rebuild)();
+    };
+    load(0);
+    entityCombo->onChange = [load](const int index) { load(index); };
+
+    auto made = std::make_shared<bool>(false);
+    const auto create = [this, state, entities, folder, weakName, made, rebuild] {
+        const auto n = weakName.lock();
+        if (*made || !n || n->text().empty() || state->object < 0 ||
+            state->object >= static_cast<int>(state->objects.size())) {
+            return;
+        }
+        *made = true;
+        const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(folder, n->text(), ".uvbp");
+        m_editor.m_pendingLogicGraphCreateUVE =
+            EditorUVE::PendingLogicGraphUVE{file, state->objects[static_cast<std::size_t>(state->object)].path};
+        if (!m_editor.OpenEntityEditorUVE(entities[static_cast<std::size_t>(state->entity)])) {
+            m_editor.m_pendingLogicGraphCreateUVE.reset();
+            m_editor.m_contentStatusMessage = "Could not open " + entities[static_cast<std::size_t>(state->entity)].filename().string() + ".";
+        }
+        static_cast<void>(rebuild);
+    };
+    name->onCommit = [create](const std::string&) {
+        create();
+        if (prism::Application::exists()) {
+            prism::Application::get().closeAllPopups();
+        }
+    };
+    prism::showDialog("Logic Graph", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 520.0F);
 }
 
 void EditorContentBrowserUVE::CreateWidgetBlueprintUVE() {
