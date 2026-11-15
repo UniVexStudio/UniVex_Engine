@@ -699,4 +699,376 @@ void showColorPickerWindow(Color initialColor, Callback<Color> onApply, Callback
   Application::get().showPopup(root, o);
 }
 
+// ---------------------------------------------------------------- GradientEditor
+GradientEditor::GradientEditor() {
+  m_colorStops = {{0.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}};
+  m_alphaStops = {{0.0f, 1.0f}, {1.0f, 1.0f}};
+}
+
+void GradientEditor::setStops(std::vector<GradientColorStop> colorStops,
+                              std::vector<GradientAlphaStop> alphaStops,
+                              bool notify) {
+  m_colorStops = std::move(colorStops);
+  m_alphaStops = std::move(alphaStops);
+  if (m_colorStops.empty()) m_colorStops.push_back({0.0f, 1.0f, 1.0f, 1.0f});
+  if (m_alphaStops.empty()) m_alphaStops.push_back({0.0f, 1.0f});
+  sortStops();
+  if (m_selColor >= int(m_colorStops.size())) m_selColor = int(m_colorStops.size()) - 1;
+  if (m_selAlpha >= int(m_alphaStops.size())) m_selAlpha = int(m_alphaStops.size()) - 1;
+  invalidate();
+  if (notify && onChanged) onChanged();
+}
+
+void GradientEditor::sortStops(float keepColorT, float keepAlphaT) {
+  std::stable_sort(m_colorStops.begin(), m_colorStops.end(),
+                   [](const GradientColorStop& a, const GradientColorStop& b) { return a.t < b.t; });
+  std::stable_sort(m_alphaStops.begin(), m_alphaStops.end(),
+                   [](const GradientAlphaStop& a, const GradientAlphaStop& b) { return a.t < b.t; });
+  if (keepColorT >= 0.0f) {
+    int best = 0;
+    float bestD = 1e9f;
+    for (int i = 0; i < int(m_colorStops.size()); ++i) {
+      float d = std::fabs(m_colorStops[size_t(i)].t - keepColorT);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    m_selColor = best;
+  }
+  if (keepAlphaT >= 0.0f) {
+    int best = 0;
+    float bestD = 1e9f;
+    for (int i = 0; i < int(m_alphaStops.size()); ++i) {
+      float d = std::fabs(m_alphaStops[size_t(i)].t - keepAlphaT);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    m_selAlpha = best;
+  }
+}
+
+ColorHdr GradientEditor::evaluateLinear(float t) const {
+  float tc = std::clamp(t, 0.0f, 1.0f);
+  ColorHdr out{1.0f, 1.0f, 1.0f, 1.0f};
+  if (!m_colorStops.empty()) {
+    if (tc <= m_colorStops.front().t || m_colorStops.size() == 1) {
+      out.r = m_colorStops.front().r;
+      out.g = m_colorStops.front().g;
+      out.b = m_colorStops.front().b;
+    } else if (tc >= m_colorStops.back().t) {
+      out.r = m_colorStops.back().r;
+      out.g = m_colorStops.back().g;
+      out.b = m_colorStops.back().b;
+    } else {
+      for (size_t i = 0; i + 1 < m_colorStops.size(); ++i) {
+        const auto& a = m_colorStops[i];
+        const auto& b = m_colorStops[i + 1];
+        if (tc >= a.t && tc <= b.t) {
+          float span = b.t - a.t;
+          float u = span > 1e-6f ? (tc - a.t) / span : 0.0f;
+          out.r = a.r + (b.r - a.r) * u;
+          out.g = a.g + (b.g - a.g) * u;
+          out.b = a.b + (b.b - a.b) * u;
+          break;
+        }
+      }
+    }
+  }
+  if (!m_alphaStops.empty()) {
+    if (tc <= m_alphaStops.front().t || m_alphaStops.size() == 1) {
+      out.a = std::clamp(m_alphaStops.front().alpha, 0.0f, 1.0f);
+    } else if (tc >= m_alphaStops.back().t) {
+      out.a = std::clamp(m_alphaStops.back().alpha, 0.0f, 1.0f);
+    } else {
+      for (size_t i = 0; i + 1 < m_alphaStops.size(); ++i) {
+        const auto& a = m_alphaStops[i];
+        const auto& b = m_alphaStops[i + 1];
+        if (tc >= a.t && tc <= b.t) {
+          float span = b.t - a.t;
+          float u = span > 1e-6f ? (tc - a.t) / span : 0.0f;
+          out.a = std::clamp(a.alpha + (b.alpha - a.alpha) * u, 0.0f, 1.0f);
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+Color GradientEditor::evaluateDisplay(float t) const {
+  ColorHdr lin = evaluateLinear(t);
+  float sr = linearToSrgb(std::clamp(lin.r, 0.0f, 1.0f));
+  float sg = linearToSrgb(std::clamp(lin.g, 0.0f, 1.0f));
+  float sb = linearToSrgb(std::clamp(lin.b, 0.0f, 1.0f));
+  float c[3] = {sr, sg, sb};
+  return rgbF(c, lin.a);
+}
+
+int GradientEditor::addColorStop(float t, float r, float g, float b, bool notify) {
+  float tc = std::clamp(t, 0.0f, 1.0f);
+  m_colorStops.push_back({tc, r, g, b});
+  m_selAlpha = -1;
+  sortStops(tc, -1.0f);
+  invalidate();
+  if (onSelectionChanged) onSelectionChanged();
+  if (notify && onChanged) onChanged();
+  if (notify && onCommit) onCommit();
+  return m_selColor;
+}
+
+int GradientEditor::addAlphaStop(float t, float alpha, bool notify) {
+  float tc = std::clamp(t, 0.0f, 1.0f);
+  m_alphaStops.push_back({tc, std::clamp(alpha, 0.0f, 1.0f)});
+  m_selColor = -1;
+  sortStops(-1.0f, tc);
+  invalidate();
+  if (onSelectionChanged) onSelectionChanged();
+  if (notify && onChanged) onChanged();
+  if (notify && onCommit) onCommit();
+  return m_selAlpha;
+}
+
+bool GradientEditor::moveColorStop(int index, float newT, bool notify) {
+  if (index < 0 || index >= int(m_colorStops.size())) return false;
+  float tc = std::clamp(newT, 0.0f, 1.0f);
+  m_colorStops[size_t(index)].t = tc;
+  sortStops(tc, -1.0f);
+  invalidate();
+  if (notify && onChanged) onChanged();
+  return true;
+}
+
+bool GradientEditor::moveAlphaStop(int index, float newT, bool notify) {
+  if (index < 0 || index >= int(m_alphaStops.size())) return false;
+  float tc = std::clamp(newT, 0.0f, 1.0f);
+  m_alphaStops[size_t(index)].t = tc;
+  sortStops(-1.0f, tc);
+  invalidate();
+  if (notify && onChanged) onChanged();
+  return true;
+}
+
+bool GradientEditor::setColorStopValue(int index, float r, float g, float b, bool notify) {
+  if (index < 0 || index >= int(m_colorStops.size())) return false;
+  m_colorStops[size_t(index)].r = r;
+  m_colorStops[size_t(index)].g = g;
+  m_colorStops[size_t(index)].b = b;
+  invalidate();
+  if (notify && onChanged) onChanged();
+  return true;
+}
+
+bool GradientEditor::setAlphaStopValue(int index, float alpha, bool notify) {
+  if (index < 0 || index >= int(m_alphaStops.size())) return false;
+  m_alphaStops[size_t(index)].alpha = std::clamp(alpha, 0.0f, 1.0f);
+  invalidate();
+  if (notify && onChanged) onChanged();
+  return true;
+}
+
+bool GradientEditor::deleteColorStop(int index, bool notify) {
+  if (m_colorStops.size() <= 1 || index < 0 || index >= int(m_colorStops.size())) return false;
+  m_colorStops.erase(m_colorStops.begin() + index);
+  if (m_selColor >= int(m_colorStops.size())) m_selColor = int(m_colorStops.size()) - 1;
+  invalidate();
+  if (onSelectionChanged) onSelectionChanged();
+  if (notify && onChanged) onChanged();
+  if (notify && onCommit) onCommit();
+  return true;
+}
+
+bool GradientEditor::deleteAlphaStop(int index, bool notify) {
+  if (m_alphaStops.size() <= 1 || index < 0 || index >= int(m_alphaStops.size())) return false;
+  m_alphaStops.erase(m_alphaStops.begin() + index);
+  if (m_selAlpha >= int(m_alphaStops.size())) m_selAlpha = int(m_alphaStops.size()) - 1;
+  invalidate();
+  if (onSelectionChanged) onSelectionChanged();
+  if (notify && onChanged) onChanged();
+  if (notify && onCommit) onCommit();
+  return true;
+}
+
+bool GradientEditor::deleteSelectedStop(bool notify) {
+  if (m_selColor >= 0) return deleteColorStop(m_selColor, notify);
+  if (m_selAlpha >= 0) return deleteAlphaStop(m_selAlpha, notify);
+  return false;
+}
+
+void GradientEditor::selectColorStop(int index) {
+  m_selColor = (index >= 0 && index < int(m_colorStops.size())) ? index : -1;
+  if (m_selColor >= 0) m_selAlpha = -1;
+  invalidate();
+  if (onSelectionChanged) onSelectionChanged();
+}
+
+void GradientEditor::selectAlphaStop(int index) {
+  m_selAlpha = (index >= 0 && index < int(m_alphaStops.size())) ? index : -1;
+  if (m_selAlpha >= 0) m_selColor = -1;
+  invalidate();
+  if (onSelectionChanged) onSelectionChanged();
+}
+
+Vec2 GradientEditor::measure(Vec2 avail) {
+  float w = avail.x > 0 && avail.x < 1e5f ? avail.x : 180.0f;
+  return m_desired = constrain({w, 44.0f});
+}
+
+Rect GradientEditor::barRect() const {
+  return Rect{m_rect.x + 8.0f, m_rect.y + 11.0f, std::max(16.0f, m_rect.w - 16.0f), std::max(12.0f, m_rect.h - 22.0f)};
+}
+
+float GradientEditor::xToT(float x) const {
+  Rect b = barRect();
+  return b.w > 1.0f ? std::clamp((x - b.x) / b.w, 0.0f, 1.0f) : 0.0f;
+}
+
+float GradientEditor::tToX(float t) const {
+  Rect b = barRect();
+  return b.x + std::clamp(t, 0.0f, 1.0f) * b.w;
+}
+
+int GradientEditor::hitColorStop(Vec2 p) const {
+  Rect b = barRect();
+  if (p.y > b.y + 4.0f || p.y < m_rect.y - 4.0f) return -1;
+  for (int i = 0; i < int(m_colorStops.size()); ++i) {
+    float sx = tToX(m_colorStops[size_t(i)].t);
+    if (std::fabs(p.x - sx) <= 6.5f) return i;
+  }
+  return -1;
+}
+
+int GradientEditor::hitAlphaStop(Vec2 p) const {
+  Rect b = barRect();
+  if (p.y < b.bottom() - 4.0f || p.y > m_rect.bottom() + 4.0f) return -1;
+  for (int i = 0; i < int(m_alphaStops.size()); ++i) {
+    float sx = tToX(m_alphaStops[size_t(i)].t);
+    if (std::fabs(p.x - sx) <= 6.5f) return i;
+  }
+  return -1;
+}
+
+void GradientEditor::paint(Canvas& c) {
+  const Theme& t = theme();
+  Rect b = barRect();
+  checker(c, b, 5.0f);
+  constexpr int kSteps = 48;
+  float sw = b.w / float(kSteps);
+  for (int i = 0; i < kSteps; ++i) {
+    float u = (float(i) + 0.5f) / float(kSteps);
+    Color col = evaluateDisplay(u);
+    c.fillRect(Rect{b.x + float(i) * sw, b.y, sw + 0.8f, b.h}, col);
+  }
+  c.strokeRoundRect(b, 2.0f, m_focused ? t.accent : t.borderStrong);
+
+  // Colour stops above the bar (pointing down)
+  for (int i = 0; i < int(m_colorStops.size()); ++i) {
+    const auto& s = m_colorStops[size_t(i)];
+    float sx = tToX(s.t);
+    float sy = b.y - 1.0f;
+    float sr = linearToSrgb(std::clamp(s.r, 0.0f, 1.0f));
+    float sg = linearToSrgb(std::clamp(s.g, 0.0f, 1.0f));
+    float sb = linearToSrgb(std::clamp(s.b, 0.0f, 1.0f));
+    float cf[3] = {sr, sg, sb};
+    Color fill = rgbF(cf, 1.0f);
+    Color ring = (i == m_selColor) ? t.accent : t.borderStrong;
+    Rect box{sx - 4.5f, sy - 9.5f, 9.0f, 7.0f};
+    c.fillRoundRect(box, 1.5f, fill);
+    c.strokeRoundRect(box, 1.5f, ring, (i == m_selColor) ? 1.8f : 1.0f);
+    c.line({sx - 3.5f, sy - 2.5f}, {sx, sy + 1.0f}, ring, 1.4f);
+    c.line({sx + 3.5f, sy - 2.5f}, {sx, sy + 1.0f}, ring, 1.4f);
+  }
+
+  // Alpha stops below the bar (pointing up)
+  for (int i = 0; i < int(m_alphaStops.size()); ++i) {
+    const auto& s = m_alphaStops[size_t(i)];
+    float sx = tToX(s.t);
+    float sy = b.bottom() + 1.0f;
+    uint8_t g = uint8_t(std::lround(std::clamp(s.alpha, 0.0f, 1.0f) * 255.0f));
+    Color fill(g, g, g, 255);
+    Color ring = (i == m_selAlpha) ? t.accent : t.borderStrong;
+    Rect box{sx - 4.5f, sy + 2.5f, 9.0f, 7.0f};
+    c.fillRoundRect(box, 1.5f, fill);
+    c.strokeRoundRect(box, 1.5f, ring, (i == m_selAlpha) ? 1.8f : 1.0f);
+    c.line({sx - 3.5f, sy + 2.5f}, {sx, sy - 1.0f}, ring, 1.4f);
+    c.line({sx + 3.5f, sy + 2.5f}, {sx, sy - 1.0f}, ring, 1.4f);
+  }
+}
+
+bool GradientEditor::onMouseDown(const MouseEvent& e) {
+  if (e.button != MouseButton::Left) return false;
+  Rect b = barRect();
+  int hc = hitColorStop(e.pos);
+  if (hc >= 0) {
+    selectColorStop(hc);
+    m_draggingColor = true;
+    m_draggingAlpha = false;
+    if (e.clicks >= 2) {
+      const auto& s = m_colorStops[size_t(hc)];
+      float cf[3] = {linearToSrgb(std::clamp(s.r, 0.0f, 1.0f)),
+                     linearToSrgb(std::clamp(s.g, 0.0f, 1.0f)),
+                     linearToSrgb(std::clamp(s.b, 0.0f, 1.0f))};
+      Color init = rgbF(cf, 1.0f);
+      int idx = hc;
+      showColorPickerWindow(init,
+        [this, idx](Color col) {
+          setColorStopValue(idx, srgbToLinear(float(col.r) / 255.0f),
+                            srgbToLinear(float(col.g) / 255.0f),
+                            srgbToLinear(float(col.b) / 255.0f), true);
+          if (onCommit) onCommit();
+        },
+        nullptr,
+        [this, idx](Color col) {
+          setColorStopValue(idx, srgbToLinear(float(col.r) / 255.0f),
+                            srgbToLinear(float(col.g) / 255.0f),
+                            srgbToLinear(float(col.b) / 255.0f), true);
+        });
+    }
+    return true;
+  }
+  int ha = hitAlphaStop(e.pos);
+  if (ha >= 0) {
+    selectAlphaStop(ha);
+    m_draggingAlpha = true;
+    m_draggingColor = false;
+    return true;
+  }
+
+  float t = xToT(e.pos.x);
+  ColorHdr sample = evaluateLinear(t);
+  if (e.pos.y <= b.center().y) {
+    addColorStop(t, sample.r, sample.g, sample.b, true);
+    m_draggingColor = true;
+    m_draggingAlpha = false;
+  } else {
+    addAlphaStop(t, sample.a, true);
+    m_draggingAlpha = true;
+    m_draggingColor = false;
+  }
+  return true;
+}
+
+bool GradientEditor::onMouseMove(const MouseEvent& e) {
+  if (m_draggingColor && m_selColor >= 0) {
+    moveColorStop(m_selColor, xToT(e.pos.x), true);
+    return true;
+  }
+  if (m_draggingAlpha && m_selAlpha >= 0) {
+    moveAlphaStop(m_selAlpha, xToT(e.pos.x), true);
+    return true;
+  }
+  return false;
+}
+
+bool GradientEditor::onMouseUp(const MouseEvent&) {
+  bool wasDragging = m_draggingColor || m_draggingAlpha;
+  m_draggingColor = false;
+  m_draggingAlpha = false;
+  if (wasDragging && onCommit) onCommit();
+  return wasDragging;
+}
+
+bool GradientEditor::onKeyDown(const KeyEvent& e) {
+  if (e.key == Key::Delete || e.key == Key::Backspace) {
+    return deleteSelectedStop(true);
+  }
+  return false;
+}
+
 } // namespace prism

@@ -1,0 +1,873 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#include "editor_vfx_graph.h"
+
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <functional>
+#include <map>
+#include <optional>
+#include <set>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace UVE::Editor {
+namespace {
+
+using PT = prism::BlueprintPinType;
+using PK = prism::BlueprintPinKind;
+
+constexpr float kStageNodeXUVE = 780.0F;
+constexpr float kFirstModuleXUVE = 60.0F;
+constexpr float kModuleSpacingXUVE = 230.0F;
+
+[[nodiscard]] float StageRowYUVE(const Asset::ParticleStageUVE stage) noexcept {
+    switch (stage) {
+        case Asset::ParticleStageUVE::EmitterUpdate: return 40.0F;
+        case Asset::ParticleStageUVE::ParticleSpawn: return 220.0F;
+        case Asset::ParticleStageUVE::ParticleUpdate: return 400.0F;
+        case Asset::ParticleStageUVE::Render: return 580.0F;
+    }
+    return 40.0F;
+}
+
+[[nodiscard]] int StageNodeIdForUVE(const Asset::ParticleStageUVE stage) noexcept {
+    switch (stage) {
+        case Asset::ParticleStageUVE::EmitterUpdate: return kVfxStageNodeEmitterUpdateUVE;
+        case Asset::ParticleStageUVE::ParticleSpawn: return kVfxStageNodeParticleSpawnUVE;
+        case Asset::ParticleStageUVE::ParticleUpdate: return kVfxStageNodeParticleUpdateUVE;
+        case Asset::ParticleStageUVE::Render: return kVfxStageNodeRenderUVE;
+    }
+    return kVfxStageNodeEmitterUpdateUVE;
+}
+
+[[nodiscard]] std::string StageDisplayNameUVE(const Asset::ParticleStageUVE stage) {
+    switch (stage) {
+        case Asset::ParticleStageUVE::EmitterUpdate: return "Emitter Update";
+        case Asset::ParticleStageUVE::ParticleSpawn: return "Particle Spawn";
+        case Asset::ParticleStageUVE::ParticleUpdate: return "Particle Update";
+        case Asset::ParticleStageUVE::Render: return "Render";
+    }
+    return "Stage";
+}
+
+[[nodiscard]] std::string FormatFloatUVE(const float value) {
+    char buf[48];
+    std::snprintf(buf, sizeof(buf), "%.4g", static_cast<double>(value));
+    return buf;
+}
+
+[[nodiscard]] std::string FormatVec3UVE(const Math::Vector3UVE& v) {
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "%.4g,%.4g,%.4g",
+                  static_cast<double>(v.x),
+                  static_cast<double>(v.y),
+                  static_cast<double>(v.z));
+    return buf;
+}
+
+[[nodiscard]] std::string FormatColorUVE(const Math::ColorUVE& c, const float alpha) {
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "%.4g,%.4g,%.4g,%.4g",
+                  static_cast<double>(c.r),
+                  static_cast<double>(c.g),
+                  static_cast<double>(c.b),
+                  static_cast<double>(alpha));
+    return buf;
+}
+
+[[nodiscard]] bool TryParseFloatUVE(const std::string& text, float& out) noexcept {
+    if (text.empty()) {
+        return false;
+    }
+    char* end = nullptr;
+    const float v = std::strtof(text.c_str(), &end);
+    if (end == text.c_str() || !std::isfinite(v)) {
+        return false;
+    }
+    while (*end != '\0') {
+        if (std::isspace(static_cast<unsigned char>(*end)) == 0) {
+            return false;
+        }
+        ++end;
+    }
+    out = v;
+    return true;
+}
+
+[[nodiscard]] bool TryParseIntUVE(const std::string& text, std::int32_t& out) noexcept {
+    if (text.empty()) {
+        return false;
+    }
+    char* end = nullptr;
+    const long v = std::strtol(text.c_str(), &end, 10);
+    if (end == text.c_str()) {
+        return false;
+    }
+    while (*end != '\0') {
+        if (std::isspace(static_cast<unsigned char>(*end)) == 0) {
+            return false;
+        }
+        ++end;
+    }
+    out = static_cast<std::int32_t>(v);
+    return true;
+}
+
+[[nodiscard]] bool TryParseVec3UVE(const std::string& text, Math::Vector3UVE& out) noexcept {
+    float x = 0.0F;
+    float y = 0.0F;
+    float z = 0.0F;
+    if (std::sscanf(text.c_str(), " %f , %f , %f", &x, &y, &z) == 3 &&
+        std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) {
+        out = Math::Vector3UVE{x, y, z};
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]] bool TryParseColorUVE(const std::string& text, Math::ColorUVE& outColor, float& outAlpha) noexcept {
+    float r = 1.0F;
+    float g = 1.0F;
+    float b = 1.0F;
+    float a = 1.0F;
+    const int matched = std::sscanf(text.c_str(), " %f , %f , %f , %f", &r, &g, &b, &a);
+    if (matched >= 3 && std::isfinite(r) && std::isfinite(g) && std::isfinite(b) && std::isfinite(a)) {
+        outColor = Math::ColorUVE{r, g, b};
+        if (matched == 4) {
+            outAlpha = std::clamp(a, 0.0F, 1.0F);
+        }
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]] std::string FloatPinDisplayTextUVE(const Asset::ParticleFloatInputUVE& input) {
+    switch (input.kind) {
+        case Asset::ParticleValueKindUVE::Constant: return FormatFloatUVE(input.constant);
+        case Asset::ParticleValueKindUVE::RandomRange:
+            return FormatFloatUVE(input.min) + ".." + FormatFloatUVE(input.max);
+        case Asset::ParticleValueKindUVE::Curve: return "Curve x" + FormatFloatUVE(input.scale);
+        case Asset::ParticleValueKindUVE::UserParameter: return "$" + input.parameter;
+        case Asset::ParticleValueKindUVE::Wire: return FormatFloatUVE(input.constant);
+        case Asset::ParticleValueKindUVE::Gradient: break;
+    }
+    return FormatFloatUVE(input.constant);
+}
+
+[[nodiscard]] std::string VectorPinDisplayTextUVE(const Asset::ParticleVectorInputUVE& input) {
+    switch (input.kind) {
+        case Asset::ParticleValueKindUVE::Constant: return FormatVec3UVE(input.constant);
+        case Asset::ParticleValueKindUVE::RandomRange:
+            return FormatVec3UVE(input.min) + ".." + FormatVec3UVE(input.max);
+        case Asset::ParticleValueKindUVE::UserParameter: return "$" + input.parameter;
+        case Asset::ParticleValueKindUVE::Wire: return FormatVec3UVE(input.constant);
+        default: break;
+    }
+    return FormatVec3UVE(input.constant);
+}
+
+[[nodiscard]] std::string ColorPinDisplayTextUVE(const Asset::ParticleColorInputUVE& input) {
+    switch (input.kind) {
+        case Asset::ParticleValueKindUVE::Constant: return FormatColorUVE(input.constant, input.alpha);
+        case Asset::ParticleValueKindUVE::Gradient: return "Gradient";
+        case Asset::ParticleValueKindUVE::RandomRange: return "Range";
+        case Asset::ParticleValueKindUVE::UserParameter: return "$" + input.parameter;
+        default: break;
+    }
+    return FormatColorUVE(input.constant, input.alpha);
+}
+
+[[nodiscard]] prism::BlueprintNode MakeStageOutputNodeUVE(const Asset::ParticleStageUVE stage, const float posX, const float posY) {
+    prism::BlueprintNode node;
+    node.id = StageNodeIdForUVE(stage);
+    node.title = StageDisplayNameUVE(stage);
+    node.subtitle = "Stage Output";
+    node.category = prism::BlueprintNodeCategory::Event;
+    node.style = prism::BlueprintNodeStyle::Header;
+    node.pos = prism::Vec2{posX, posY};
+    node.icon = prism::Icon::VfxGraph;
+    node.typeKey = "vfx_stage:" + StageDisplayNameUVE(stage);
+    node.tooltip = "Fixed stage output node for " + StageDisplayNameUVE(stage) + ".";
+    prism::BlueprintPin inPin;
+    inPin.name = "Chain";
+    inPin.type = PT::Link;
+    inPin.kind = PK::Input;
+    inPin.hideLabel = false;
+    node.inputs.push_back(std::move(inPin));
+    return node;
+}
+
+[[nodiscard]] prism::BlueprintNode MakeModuleGraphNodeUVE(const Asset::ParticleModuleDescriptorUVE& desc,
+                                                          const Asset::ParticleModuleUVE* const instance) {
+    prism::BlueprintNode node;
+    node.id = instance != nullptr ? static_cast<int>(instance->id) : 0;
+    node.title = std::string(desc.displayName);
+    node.subtitle = StageDisplayNameUVE(desc.stage) +
+                    (instance != nullptr && !instance->enabled ? " (Disabled)" : "");
+    node.category = prism::BlueprintNodeCategory::Effect;
+    node.style = prism::BlueprintNodeStyle::Header;
+    node.icon = prism::Icon::VfxGraph;
+    node.typeKey = "vfx_module:" + std::string(desc.canonicalName);
+    node.tooltip = std::string(desc.description);
+    if (instance != nullptr) {
+        node.pos = prism::Vec2{instance->graphX, instance->graphY};
+    }
+
+    // Input 0: structural chain link from the previous module in the same stage.
+    {
+        prism::BlueprintPin inChain;
+        inChain.name = "In";
+        inChain.type = PT::Link;
+        inChain.kind = PK::Input;
+        node.inputs.push_back(std::move(inChain));
+    }
+
+    // Float inputs (excluding "Size" when a Vector "Size" also exists on InitialSize to avoid duplicate pin names).
+    for (const auto& [name, defVal] : desc.defaultFloats) {
+        if (name == "Size" && desc.defaultVectors.contains("Size")) {
+            // Keep float Size only when explicitly overridden or when Vector Size is not overridden.
+            const bool hasVecOverride = instance != nullptr && instance->vectors.contains("Size");
+            if (hasVecOverride) {
+                continue;
+            }
+        }
+        Asset::ParticleFloatInputUVE val = defVal;
+        if (instance != nullptr) {
+            if (const auto it = instance->floats.find(name); it != instance->floats.end()) {
+                val = it->second;
+            }
+        }
+        prism::BlueprintPin pin;
+        pin.name = name;
+        pin.type = PT::Float;
+        pin.kind = PK::Input;
+        pin.defaultValue = FloatPinDisplayTextUVE(val);
+        pin.editable = val.kind == Asset::ParticleValueKindUVE::Constant;
+        node.inputs.push_back(std::move(pin));
+    }
+
+    // Vector inputs.
+    for (const auto& [name, defVal] : desc.defaultVectors) {
+        if (name == "Size" && desc.defaultFloats.contains("Size")) {
+            const bool hasVecOverride = instance != nullptr && instance->vectors.contains("Size");
+            if (!hasVecOverride) {
+                continue;
+            }
+        }
+        Asset::ParticleVectorInputUVE val = defVal;
+        if (instance != nullptr) {
+            if (const auto it = instance->vectors.find(name); it != instance->vectors.end()) {
+                val = it->second;
+            }
+        }
+        prism::BlueprintPin pin;
+        pin.name = name;
+        pin.type = PT::Vector;
+        pin.kind = PK::Input;
+        pin.defaultValue = VectorPinDisplayTextUVE(val);
+        pin.editable = val.kind == Asset::ParticleValueKindUVE::Constant;
+        node.inputs.push_back(std::move(pin));
+    }
+
+    // Color inputs.
+    for (const auto& [name, defVal] : desc.defaultColors) {
+        Asset::ParticleColorInputUVE val = defVal;
+        if (instance != nullptr) {
+            if (const auto it = instance->colors.find(name); it != instance->colors.end()) {
+                val = it->second;
+            }
+        }
+        prism::BlueprintPin pin;
+        pin.name = name;
+        pin.type = PT::Color;
+        pin.kind = PK::Input;
+        pin.defaultValue = ColorPinDisplayTextUVE(val);
+        pin.editable = val.kind == Asset::ParticleValueKindUVE::Constant;
+        node.inputs.push_back(std::move(pin));
+    }
+
+    // Int inputs.
+    for (const auto& [name, defVal] : desc.defaultInts) {
+        std::int32_t val = defVal;
+        if (instance != nullptr) {
+            if (const auto it = instance->ints.find(name); it != instance->ints.end()) {
+                val = it->second;
+            }
+        }
+        prism::BlueprintPin pin;
+        pin.name = name;
+        pin.type = PT::Int;
+        pin.kind = PK::Input;
+        pin.defaultValue = std::to_string(val);
+        pin.editable = true;
+        node.inputs.push_back(std::move(pin));
+    }
+
+    // String inputs.
+    for (const auto& [name, defVal] : desc.defaultStrings) {
+        std::string val = defVal;
+        if (instance != nullptr) {
+            if (const auto it = instance->strings.find(name); it != instance->strings.end()) {
+                val = it->second;
+            }
+        }
+        prism::BlueprintPin pin;
+        pin.name = name;
+        pin.type = PT::String;
+        pin.kind = PK::Input;
+        pin.defaultValue = val;
+        pin.editable = true;
+        node.inputs.push_back(std::move(pin));
+    }
+
+    // Output 0: structural chain link to the next module or the stage output node.
+    {
+        prism::BlueprintPin outChain;
+        outChain.name = "Out";
+        outChain.type = PT::Link;
+        outChain.kind = PK::Output;
+        node.outputs.push_back(std::move(outChain));
+    }
+    return node;
+}
+
+struct MathOpSpecUVE final {
+    const char* op;
+    const char* title;
+    const char* description;
+    std::size_t arity;
+    PT outType;
+};
+
+constexpr std::array<MathOpSpecUVE, 21> kMathOpSpecsUVE{{
+    {"ValueFloat", "Value: Float", "Outputs a constant scalar value.", 0U, PT::Float},
+    {"ParticleAge", "Particle Age", "Current particle age in seconds.", 0U, PT::Float},
+    {"NormalizedAge", "Normalized Age", "Particle age divided by lifetime in [0, 1].", 0U, PT::Float},
+    {"ParticleSpeed", "Particle Speed", "Magnitude of the particle's velocity vector.", 0U, PT::Float},
+    {"EmitterAge", "Emitter Age", "Current emitter age in seconds.", 0U, PT::Float},
+    {"RandomPerParticle", "Random (Per Particle)", "Deterministic [0, 1) random value per particle.", 0U, PT::Float},
+    {"Add", "Add", "Adds two values (A + B).", 2U, PT::Float},
+    {"Subtract", "Subtract", "Subtracts B from A (A - B).", 2U, PT::Float},
+    {"Multiply", "Multiply", "Multiplies two values (A * B).", 2U, PT::Float},
+    {"Divide", "Divide", "Safely divides A by B (returns 0 when |B| < 1e-6).", 2U, PT::Float},
+    {"Lerp", "Lerp", "Linearly interpolates between A and B by T.", 3U, PT::Float},
+    {"Clamp", "Clamp", "Clamps Value to [Min, Max].", 3U, PT::Float},
+    {"Remap", "Remap", "Remaps Value from [In0, In1] to [Out0, Out1].", 5U, PT::Float},
+    {"Sin", "Sin", "Computes the sine of an angle in radians.", 1U, PT::Float},
+    {"Cos", "Cos", "Computes the cosine of an angle in radians.", 1U, PT::Float},
+    {"Abs", "Abs", "Computes the absolute value |X|.", 1U, PT::Float},
+    {"Min", "Min", "Returns the smaller of A and B.", 2U, PT::Float},
+    {"Max", "Max", "Returns the larger of A and B.", 2U, PT::Float},
+    {"Power", "Power", "Raises Base to Exponent.", 2U, PT::Float},
+    {"OneMinus", "One Minus", "Computes 1 - X.", 1U, PT::Float},
+    {"Step", "Step", "Returns 1 when X >= Edge, else 0.", 2U, PT::Float},
+}};
+
+[[nodiscard]] const MathOpSpecUVE* FindMathOpSpecUVE(const std::string_view op) noexcept {
+    for (const MathOpSpecUVE& spec : kMathOpSpecsUVE) {
+        if (op == spec.op) {
+            return &spec;
+        }
+    }
+    return nullptr;
+}
+
+[[nodiscard]] prism::BlueprintNode MakeMathGraphNodeUVE(const Asset::ParticleMathNodeUVE& mathNode) {
+    const MathOpSpecUVE* const spec = FindMathOpSpecUVE(mathNode.op);
+    prism::BlueprintNode node;
+    node.id = static_cast<int>(mathNode.id);
+    node.title = spec != nullptr ? std::string(spec->title) : mathNode.op;
+    node.subtitle = "Math / Value";
+    node.category = prism::BlueprintNodeCategory::PureMath;
+    node.style = prism::BlueprintNodeStyle::Header;
+    node.pos = prism::Vec2{mathNode.graphX, mathNode.graphY};
+    node.typeKey = "vfx_math:" + mathNode.op;
+    node.tooltip = spec != nullptr ? std::string(spec->description) : "VFX math / value node.";
+
+    if (mathNode.op == "ValueFloat" || mathNode.op.rfind("UserParam:", 0U) == 0U) {
+        prism::BlueprintPin valPin;
+        valPin.name = "Value";
+        valPin.type = PT::Float;
+        valPin.kind = PK::Input;
+        valPin.defaultValue = FormatFloatUVE(mathNode.constant);
+        valPin.editable = mathNode.op == "ValueFloat";
+        node.inputs.push_back(std::move(valPin));
+    } else {
+        const std::size_t arity = spec != nullptr ? spec->arity : mathNode.inputs.size();
+        static constexpr std::array<const char*, 5> kPinNames{"A", "B", "C", "D", "E"};
+        for (std::size_t i = 0U; i < arity; ++i) {
+            prism::BlueprintPin inPin;
+            inPin.name = i < kPinNames.size() ? kPinNames[i] : ("In" + std::to_string(i));
+            inPin.type = PT::Float;
+            inPin.kind = PK::Input;
+            inPin.defaultValue = FormatFloatUVE(i == 0U ? mathNode.constant : 0.0F);
+            inPin.editable = true;
+            node.inputs.push_back(std::move(inPin));
+        }
+    }
+
+    prism::BlueprintPin outPin;
+    outPin.name = "Result";
+    outPin.type = spec != nullptr ? spec->outType : PT::Float;
+    outPin.kind = PK::Output;
+    node.outputs.push_back(std::move(outPin));
+    return node;
+}
+
+} // namespace
+
+void BuildEmitterGraphUVE(const Asset::ParticleSystemAssetUVE& system,
+                          const std::size_t emitterIndex,
+                          prism::BlueprintGraph& graph) {
+    graph.clear();
+    if (emitterIndex >= system.emitters.size()) {
+        return;
+    }
+    const Asset::ParticleEmitterAssetUVE& emitter = system.emitters[emitterIndex];
+
+    const auto addStageChain = [&](const Asset::ParticleStageUVE stage,
+                                   const std::vector<Asset::ParticleModuleUVE>& modules) {
+        const float rowY = StageRowYUVE(stage);
+        float maxModuleX = kFirstModuleXUVE;
+        std::vector<int> chainNodeIds;
+        chainNodeIds.reserve(modules.size());
+
+        for (std::size_t i = 0U; i < modules.size(); ++i) {
+            const Asset::ParticleModuleUVE& mod = modules[i];
+            const Asset::ParticleModuleDescriptorUVE* const desc = Asset::FindParticleModuleDescriptorUVE(mod.type);
+            if (desc == nullptr) {
+                continue;
+            }
+            prism::BlueprintNode node = MakeModuleGraphNodeUVE(*desc, &mod);
+            if (std::abs(node.pos.x) < 1.0e-4F && std::abs(node.pos.y) < 1.0e-4F) {
+                node.pos = prism::Vec2{kFirstModuleXUVE + static_cast<float>(i) * kModuleSpacingXUVE, rowY};
+            }
+            maxModuleX = std::max(maxModuleX, node.pos.x + kModuleSpacingXUVE);
+            chainNodeIds.push_back(node.id);
+            graph.addNode(std::move(node));
+        }
+
+        const float stageX = std::max(kStageNodeXUVE, maxModuleX + 60.0F);
+        graph.addNode(MakeStageOutputNodeUVE(stage, stageX, rowY));
+
+        const int stageNodeId = StageNodeIdForUVE(stage);
+        for (std::size_t i = 0U; i < chainNodeIds.size(); ++i) {
+            const int fromId = chainNodeIds[i];
+            const int toId = (i + 1U < chainNodeIds.size()) ? chainNodeIds[i + 1U] : stageNodeId;
+            graph.connectPins(fromId, 0, toId, 0, PT::Link);
+        }
+    };
+
+    addStageChain(Asset::ParticleStageUVE::EmitterUpdate, emitter.emitterUpdate);
+    addStageChain(Asset::ParticleStageUVE::ParticleSpawn, emitter.particleSpawn);
+    addStageChain(Asset::ParticleStageUVE::ParticleUpdate, emitter.particleUpdate);
+    addStageChain(Asset::ParticleStageUVE::Render, emitter.render);
+
+    // Add any Math / Value nodes and connect their wires.
+    for (const Asset::ParticleMathNodeUVE& mathNode : emitter.mathNodes) {
+        graph.addNode(MakeMathGraphNodeUVE(mathNode));
+    }
+    for (const Asset::ParticleMathNodeUVE& mathNode : emitter.mathNodes) {
+        for (std::size_t pinIdx = 0U; pinIdx < mathNode.inputs.size(); ++pinIdx) {
+            const std::uint32_t srcId = mathNode.inputs[pinIdx];
+            if (srcId != 0U && graph.findNode(static_cast<int>(srcId)) != nullptr) {
+                graph.connectPins(static_cast<int>(srcId), 0, static_cast<int>(mathNode.id),
+                                  static_cast<int>(pinIdx), PT::Float);
+            }
+        }
+    }
+
+    // Connect Math/Value node wires into module inputs where `kind == ParticleValueKindUVE::Wire`.
+    const auto connectModuleWires = [&](const std::vector<Asset::ParticleModuleUVE>& modules) {
+        for (const Asset::ParticleModuleUVE& mod : modules) {
+            const prism::BlueprintNode* const gnode = graph.findNode(static_cast<int>(mod.id));
+            if (gnode == nullptr) {
+                continue;
+            }
+            for (const auto& [inputName, floatIn] : mod.floats) {
+                if (floatIn.kind != Asset::ParticleValueKindUVE::Wire || floatIn.wireNode == 0U) {
+                    continue;
+                }
+                for (std::size_t pinIdx = 1U; pinIdx < gnode->inputs.size(); ++pinIdx) {
+                    if (gnode->inputs[pinIdx].name == inputName) {
+                        graph.connectPins(static_cast<int>(floatIn.wireNode), 0, gnode->id,
+                                          static_cast<int>(pinIdx), PT::Float);
+                        break;
+                    }
+                }
+            }
+            for (const auto& [inputName, vecIn] : mod.vectors) {
+                if (vecIn.kind != Asset::ParticleValueKindUVE::Wire || vecIn.wireNode == 0U) {
+                    continue;
+                }
+                for (std::size_t pinIdx = 1U; pinIdx < gnode->inputs.size(); ++pinIdx) {
+                    if (gnode->inputs[pinIdx].name == inputName) {
+                        graph.connectPins(static_cast<int>(vecIn.wireNode), 0, gnode->id,
+                                          static_cast<int>(pinIdx), PT::Vector);
+                        break;
+                    }
+                }
+            }
+        }
+    };
+    connectModuleWires(emitter.emitterUpdate);
+    connectModuleWires(emitter.particleSpawn);
+    connectModuleWires(emitter.particleUpdate);
+    connectModuleWires(emitter.render);
+}
+
+bool ExtractEmitterFromGraphUVE(const prism::BlueprintGraph& graph,
+                                const Asset::ParticleSystemAssetUVE& currentSystem,
+                                const std::size_t emitterIndex,
+                                Asset::ParticleEmitterAssetUVE& outEmitter) {
+    if (emitterIndex >= currentSystem.emitters.size()) {
+        return false;
+    }
+    const Asset::ParticleEmitterAssetUVE& prevEmitter = currentSystem.emitters[emitterIndex];
+    outEmitter = prevEmitter;
+    outEmitter.emitterUpdate.clear();
+    outEmitter.particleSpawn.clear();
+    outEmitter.particleUpdate.clear();
+    outEmitter.render.clear();
+    outEmitter.mathNodes.clear();
+
+    // Index existing modules by id so curves, gradients, random ranges, and enabled states are preserved.
+    std::unordered_map<std::uint32_t, const Asset::ParticleModuleUVE*> prevModules;
+    const auto indexStage = [&](const std::vector<Asset::ParticleModuleUVE>& list) {
+        for (const Asset::ParticleModuleUVE& m : list) {
+            prevModules[m.id] = &m;
+        }
+    };
+    indexStage(prevEmitter.emitterUpdate);
+    indexStage(prevEmitter.particleSpawn);
+    indexStage(prevEmitter.particleUpdate);
+    indexStage(prevEmitter.render);
+
+    std::unordered_map<std::uint32_t, const Asset::ParticleMathNodeUVE*> prevMathNodes;
+    for (const Asset::ParticleMathNodeUVE& m : prevEmitter.mathNodes) {
+        prevMathNodes[m.id] = &m;
+    }
+
+    // Build lookup of incoming wires: (toNodeId, toPinIndex) -> fromNodeId.
+    std::map<std::pair<int, int>, int> incomingWire;
+    for (const prism::BlueprintWire& wire : graph.wires()) {
+        incomingWire[{wire.toNodeId, wire.toPinIndex}] = wire.fromNodeId;
+    }
+
+    // Build all module nodes present in `graph` and group them by stage.
+    std::unordered_map<int, Asset::ParticleModuleUVE> builtModules;
+    std::unordered_map<int, Asset::ParticleStageUVE> moduleStage;
+
+    for (const prism::BlueprintNode& gnode : graph.nodes()) {
+        if (IsVfxStageNodeIdUVE(gnode.id) || gnode.id <= 0) {
+            continue;
+        }
+        if (gnode.typeKey.rfind("vfx_math:", 0U) == 0U) {
+            Asset::ParticleMathNodeUVE mathNode;
+            mathNode.id = static_cast<std::uint32_t>(gnode.id);
+            mathNode.op = gnode.typeKey.substr(9U);
+            mathNode.graphX = gnode.pos.x;
+            mathNode.graphY = gnode.pos.y;
+            if (const auto it = prevMathNodes.find(mathNode.id); it != prevMathNodes.end()) {
+                mathNode.constant = it->second->constant;
+            }
+            if (!gnode.inputs.empty()) {
+                float parsed = 0.0F;
+                if (TryParseFloatUVE(gnode.inputs[0].defaultValue, parsed)) {
+                    mathNode.constant = parsed;
+                }
+            }
+            const MathOpSpecUVE* const spec = FindMathOpSpecUVE(mathNode.op);
+            const std::size_t arity = spec != nullptr ? spec->arity : gnode.inputs.size();
+            mathNode.inputs.assign(arity, 0U);
+            for (std::size_t pinIdx = 0U; pinIdx < arity; ++pinIdx) {
+                if (const auto wireIt = incomingWire.find({gnode.id, static_cast<int>(pinIdx)});
+                    wireIt != incomingWire.end() && wireIt->second > 0) {
+                    mathNode.inputs[pinIdx] = static_cast<std::uint32_t>(wireIt->second);
+                }
+            }
+            outEmitter.mathNodes.push_back(std::move(mathNode));
+            continue;
+        }
+
+        const Asset::ParticleModuleDescriptorUVE* desc = nullptr;
+        if (gnode.typeKey.rfind("vfx_module:", 0U) == 0U) {
+            desc = Asset::FindParticleModuleDescriptorByNameUVE(gnode.typeKey.substr(11U));
+        }
+        if (desc == nullptr) {
+            for (const Asset::ParticleModuleDescriptorUVE& candidate : Asset::GetParticleModuleCatalogUVE()) {
+                if (candidate.displayName == gnode.title || candidate.canonicalName == gnode.title) {
+                    desc = &candidate;
+                    break;
+                }
+            }
+        }
+        if (desc == nullptr) {
+            continue;
+        }
+
+        const auto prevIt = prevModules.find(static_cast<std::uint32_t>(gnode.id));
+        Asset::ParticleModuleUVE mod =
+            prevIt != prevModules.end() && prevIt->second->type == desc->type
+                ? *prevIt->second
+                : Asset::MakeDefaultParticleModuleUVE(static_cast<std::uint32_t>(gnode.id), desc->type,
+                                                     gnode.pos.x, gnode.pos.y);
+
+        // Preserve exact coordinates if the node was not dragged from its initial integer/float placement.
+        if (prevIt != prevModules.end() &&
+            std::abs(prevIt->second->graphX - gnode.pos.x) < 1.0e-3F &&
+            std::abs(prevIt->second->graphY - gnode.pos.y) < 1.0e-3F) {
+            mod.graphX = prevIt->second->graphX;
+            mod.graphY = prevIt->second->graphY;
+        } else {
+            mod.graphX = gnode.pos.x;
+            mod.graphY = gnode.pos.y;
+        }
+
+        // Update pins that were edited on the graph or wired to Math/Value nodes.
+        for (std::size_t pinIdx = 1U; pinIdx < gnode.inputs.size(); ++pinIdx) {
+            const prism::BlueprintPin& pin = gnode.inputs[pinIdx];
+            const auto wireIt = incomingWire.find({gnode.id, static_cast<int>(pinIdx)});
+            const std::uint32_t wiredNodeId =
+                (wireIt != incomingWire.end() && wireIt->second > 0) ? static_cast<std::uint32_t>(wireIt->second) : 0U;
+
+            if (desc->defaultFloats.contains(pin.name) && pin.type == PT::Float) {
+                const Asset::ParticleFloatInputUVE& defVal = desc->defaultFloats.at(pin.name);
+                Asset::ParticleFloatInputUVE currentVal = defVal;
+                if (const auto existing = mod.floats.find(pin.name); existing != mod.floats.end()) {
+                    currentVal = existing->second;
+                }
+                if (wiredNodeId != 0U) {
+                    currentVal.kind = Asset::ParticleValueKindUVE::Wire;
+                    currentVal.wireNode = wiredNodeId;
+                    mod.floats[pin.name] = currentVal;
+                } else {
+                    if (currentVal.kind == Asset::ParticleValueKindUVE::Wire) {
+                        currentVal.kind = Asset::ParticleValueKindUVE::Constant;
+                        currentVal.wireNode = 0U;
+                    }
+                    if (currentVal.kind == Asset::ParticleValueKindUVE::Constant) {
+                        float parsed = currentVal.constant;
+                        if (TryParseFloatUVE(pin.defaultValue, parsed) &&
+                            std::abs(parsed - currentVal.constant) > 1.0e-5F) {
+                            currentVal.constant = parsed;
+                            mod.floats[pin.name] = currentVal;
+                        }
+                    }
+                }
+            } else if (desc->defaultVectors.contains(pin.name) && pin.type == PT::Vector) {
+                const Asset::ParticleVectorInputUVE& defVal = desc->defaultVectors.at(pin.name);
+                Asset::ParticleVectorInputUVE currentVal = defVal;
+                if (const auto existing = mod.vectors.find(pin.name); existing != mod.vectors.end()) {
+                    currentVal = existing->second;
+                }
+                if (wiredNodeId != 0U) {
+                    currentVal.kind = Asset::ParticleValueKindUVE::Wire;
+                    currentVal.wireNode = wiredNodeId;
+                    mod.vectors[pin.name] = currentVal;
+                } else {
+                    if (currentVal.kind == Asset::ParticleValueKindUVE::Wire) {
+                        currentVal.kind = Asset::ParticleValueKindUVE::Constant;
+                        currentVal.wireNode = 0U;
+                    }
+                    if (currentVal.kind == Asset::ParticleValueKindUVE::Constant) {
+                        Math::Vector3UVE parsed = currentVal.constant;
+                        if (TryParseVec3UVE(pin.defaultValue, parsed) &&
+                            (std::abs(parsed.x - currentVal.constant.x) > 1.0e-5F ||
+                             std::abs(parsed.y - currentVal.constant.y) > 1.0e-5F ||
+                             std::abs(parsed.z - currentVal.constant.z) > 1.0e-5F)) {
+                            currentVal.constant = parsed;
+                            mod.vectors[pin.name] = currentVal;
+                        }
+                    }
+                }
+            } else if (desc->defaultColors.contains(pin.name) && pin.type == PT::Color) {
+                const Asset::ParticleColorInputUVE& defVal = desc->defaultColors.at(pin.name);
+                Asset::ParticleColorInputUVE currentVal = defVal;
+                if (const auto existing = mod.colors.find(pin.name); existing != mod.colors.end()) {
+                    currentVal = existing->second;
+                }
+                if (currentVal.kind == Asset::ParticleValueKindUVE::Constant) {
+                    Math::ColorUVE parsedColor = currentVal.constant;
+                    float parsedAlpha = currentVal.alpha;
+                    if (TryParseColorUVE(pin.defaultValue, parsedColor, parsedAlpha) &&
+                        (std::abs(parsedColor.r - currentVal.constant.r) > 1.0e-5F ||
+                         std::abs(parsedColor.g - currentVal.constant.g) > 1.0e-5F ||
+                         std::abs(parsedColor.b - currentVal.constant.b) > 1.0e-5F ||
+                         std::abs(parsedAlpha - currentVal.alpha) > 1.0e-5F)) {
+                        currentVal.constant = parsedColor;
+                        currentVal.alpha = parsedAlpha;
+                        mod.colors[pin.name] = currentVal;
+                    }
+                }
+            } else if (desc->defaultInts.contains(pin.name) && pin.type == PT::Int) {
+                const std::int32_t defVal = desc->defaultInts.at(pin.name);
+                std::int32_t currentVal = defVal;
+                if (const auto existing = mod.ints.find(pin.name); existing != mod.ints.end()) {
+                    currentVal = existing->second;
+                }
+                std::int32_t parsed = currentVal;
+                if (TryParseIntUVE(pin.defaultValue, parsed) && parsed != currentVal) {
+                    mod.ints[pin.name] = parsed;
+                }
+            } else if (desc->defaultStrings.contains(pin.name) && pin.type == PT::String) {
+                const std::string& defVal = desc->defaultStrings.at(pin.name);
+                std::string currentVal = defVal;
+                if (const auto existing = mod.strings.find(pin.name); existing != mod.strings.end()) {
+                    currentVal = existing->second;
+                }
+                if (pin.defaultValue != currentVal) {
+                    mod.strings[pin.name] = pin.defaultValue;
+                }
+            }
+        }
+
+        moduleStage[gnode.id] = desc->stage;
+        builtModules.emplace(gnode.id, std::move(mod));
+    }
+
+    // Reconstruct each stage's ordered chain by walking backward from the stage output node's pin 0
+    // through `PT::Link` wires, then appending any unchained modules of that stage sorted by X.
+    const auto extractStageChain = [&](const Asset::ParticleStageUVE stage,
+                                       std::vector<Asset::ParticleModuleUVE>& outStageList) {
+        const int stageNodeId = StageNodeIdForUVE(stage);
+        std::vector<int> chainRev;
+        std::set<int> visited;
+        int cursor = stageNodeId;
+        while (true) {
+            const auto wireIt = incomingWire.find({cursor, 0});
+            if (wireIt == incomingWire.end()) {
+                break;
+            }
+            const int prevNodeId = wireIt->second;
+            if (visited.contains(prevNodeId)) {
+                break;
+            }
+            const auto stageIt = moduleStage.find(prevNodeId);
+            if (stageIt == moduleStage.end() || stageIt->second != stage) {
+                break;
+            }
+            visited.insert(prevNodeId);
+            chainRev.push_back(prevNodeId);
+            cursor = prevNodeId;
+        }
+        std::reverse(chainRev.begin(), chainRev.end());
+        for (const int id : chainRev) {
+            outStageList.push_back(builtModules.at(id));
+        }
+
+        // Any module belonging to `stage` that wasn't wired into the stage output is appended in X order
+        // so freshly spawned nodes from the palette are never lost.
+        std::vector<int> unchained;
+        for (const auto& [id, st] : moduleStage) {
+            if (st == stage && !visited.contains(id)) {
+                unchained.push_back(id);
+            }
+        }
+        std::sort(unchained.begin(), unchained.end(), [&](const int a, const int b) {
+            const Asset::ParticleModuleUVE& ma = builtModules.at(a);
+            const Asset::ParticleModuleUVE& mb = builtModules.at(b);
+            if (std::abs(ma.graphX - mb.graphX) > 1.0e-3F) {
+                return ma.graphX < mb.graphX;
+            }
+            return a < b;
+        });
+        for (const int id : unchained) {
+            outStageList.push_back(builtModules.at(id));
+        }
+    };
+
+    extractStageChain(Asset::ParticleStageUVE::EmitterUpdate, outEmitter.emitterUpdate);
+    extractStageChain(Asset::ParticleStageUVE::ParticleSpawn, outEmitter.particleSpawn);
+    extractStageChain(Asset::ParticleStageUVE::ParticleUpdate, outEmitter.particleUpdate);
+    extractStageChain(Asset::ParticleStageUVE::Render, outEmitter.render);
+    return true;
+}
+
+std::vector<prism::BlueprintNodeSpec> BuildVfxGraphNodeLibraryUVE(
+    const Asset::ParticleSystemAssetUVE& system,
+    const bool includeMathNodes) {
+    static_cast<void>(system);
+    std::vector<prism::BlueprintNodeSpec> library;
+    const std::vector<Asset::ParticleModuleDescriptorUVE>& catalog = Asset::GetParticleModuleCatalogUVE();
+    library.reserve(catalog.size() + (includeMathNodes ? kMathOpSpecsUVE.size() : 0U));
+
+    for (const Asset::ParticleModuleDescriptorUVE& desc : catalog) {
+        prism::BlueprintNodeSpec spec;
+        spec.category = StageDisplayNameUVE(desc.stage);
+        spec.name = std::string(desc.displayName);
+        spec.keywords = std::string(desc.canonicalName) + " " + std::string(desc.description);
+        spec.make = [&desc] { return MakeModuleGraphNodeUVE(desc, nullptr); };
+        library.push_back(std::move(spec));
+    }
+
+    if (includeMathNodes) {
+        for (const MathOpSpecUVE& mathSpec : kMathOpSpecsUVE) {
+            prism::BlueprintNodeSpec spec;
+            spec.category = "Math / Value";
+            spec.name = mathSpec.title;
+            spec.keywords = std::string(mathSpec.op) + " " + mathSpec.description;
+            spec.make = [mathSpec] {
+                Asset::ParticleMathNodeUVE dummy;
+                dummy.op = mathSpec.op;
+                dummy.constant = 0.0F;
+                return MakeMathGraphNodeUVE(dummy);
+            };
+            library.push_back(std::move(spec));
+        }
+    }
+
+    return library;
+}
+
+void ApplyVfxCompileMessagesToGraphUVE(prism::BlueprintGraph& graph,
+                                       const std::vector<VFX::ParticleCompileMessageUVE>& messages) {
+    prism::BlueprintCompileReport report;
+    for (const VFX::ParticleCompileMessageUVE& msg : messages) {
+        const bool isError = msg.severity == VFX::ParticleCompileMessageUVE::Severity::Error;
+        if (isError) {
+            ++report.errors;
+        } else {
+            ++report.warnings;
+        }
+        report.messages.push_back((isError ? "[Error] " : "[Warning] ") + msg.text);
+
+        int targetNodeId = static_cast<int>(msg.moduleId);
+        if (targetNodeId <= 0 || graph.findNode(targetNodeId) == nullptr) {
+            // Attach emitter-level renderer errors to the fixed Render stage output node so the canvas
+            // always shows a visible badge when all renderers are removed or invalid.
+            if (msg.text.find("renderer") != std::string::npos ||
+                msg.text.find("Renderer") != std::string::npos) {
+                targetNodeId = kVfxStageNodeRenderUVE;
+            } else if (msg.text.find("Spawn") != std::string::npos ||
+                       msg.text.find("spawn") != std::string::npos) {
+                targetNodeId = kVfxStageNodeEmitterUpdateUVE;
+            } else {
+                targetNodeId = kVfxStageNodeParticleUpdateUVE;
+            }
+        }
+        if (graph.findNode(targetNodeId) != nullptr) {
+            auto& issue = report.nodeIssues[targetNodeId];
+            if (!issue.empty()) {
+                issue += "\n";
+            }
+            issue += msg.text;
+        }
+    }
+    graph.setCompileResult(std::move(report));
+}
+
+} // namespace UVE::Editor

@@ -3025,6 +3025,58 @@ static void testBlueprintPinValues(Application& app) {
   CHECK(g->pinChoices(*g->findNode(id), 0).size() == 2 && asked == 1);
 }
 
+static void testGradientEditor(Application& app) {
+  SECTION("gradient_editor");
+  app.hostResize(600, 200);
+  auto ge = make<GradientEditor>();
+  ge->setStops({{0.0f, 1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+               {{0.0f, 1.0f}, {1.0f, 0.0f}}, false);
+  app.setRoot(ge);
+  app.tick();
+  app.render();
+
+  ColorHdr mid = ge->evaluateLinear(0.5f);
+  CHECK(near(mid.r, 0.5f, 0.01f) && near(mid.g, 0.0f, 0.01f) && near(mid.b, 0.5f, 0.01f) && near(mid.a, 0.5f, 0.01f));
+
+  int changed = 0, committed = 0;
+  ge->onChanged = [&] { changed++; };
+  ge->onCommit = [&] { committed++; };
+
+  int cidx = ge->addColorStop(0.25f, 0.0f, 1.0f, 0.0f, true);
+  CHECK(cidx == 1 && ge->colorStops().size() == 3 && ge->selectedColorStop() == 1);
+  CHECK(changed >= 1 && committed >= 1);
+  CHECK(ge->moveColorStop(1, 0.75f, true));
+  CHECK(near(ge->colorStops()[1].t, 0.75f, 0.01f));
+
+  int aidx = ge->addAlphaStop(0.4f, 0.8f, true);
+  CHECK(aidx == 1 && ge->alphaStops().size() == 3 && ge->selectedAlphaStop() == 1 && ge->selectedColorStop() == -1);
+  CHECK(ge->moveAlphaStop(1, 0.6f, true));
+  CHECK(near(ge->alphaStops()[1].t, 0.6f, 0.01f));
+
+  KeyEvent delKey{};
+  delKey.key = Key::Delete;
+  CHECK(ge->onKeyDown(delKey));
+  CHECK(ge->alphaStops().size() == 2);
+
+  ge->selectColorStop(1);
+  CHECK(ge->onKeyDown(delKey));
+  CHECK(ge->colorStops().size() == 2);
+
+  auto nf = make<NumberField>(5.0f, 1.0f, 2);
+  nf->setScrubbable(false);
+  CHECK(!nf->scrubbable());
+  nf->arrange({0, 0, 80, 24});
+  MouseEvent md{};
+  md.button = MouseButton::Left;
+  md.pos = {20.0f, 12.0f};
+  CHECK(nf->onMouseDown(md));
+  MouseEvent mm{};
+  mm.pos = {60.0f, 12.0f};
+  CHECK(nf->onMouseMove(mm));
+  CHECK(near(nf->value(), 5.0f, 0.001f)); // did not scrub on drag
+  CHECK(nf->onMouseUp(mm));
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -3063,6 +3115,7 @@ int main(int argc, char** argv) {
   testCodeEditor();
   testAssetBrowser();
   testColorPicker();
+  testGradientEditor(app);
   testStyleSheet();
   testRuntimeProfile();
   testBlueprintGraph();
