@@ -55,7 +55,9 @@ public class CoreTestsModule : ModuleRules
             "Localization",
             "UI",
             "Pack",
-            "VFX"
+            "VFX",
+            "Prism",
+            "EditorCore"
         });
 
         PrivateIncludePaths.AddRange(new string[] {
@@ -63,7 +65,9 @@ public class CoreTestsModule : ModuleRules
             "Support",
             "../Engine/Runtime/Asset/Internal",
             "../Engine/Runtime/RHI/Shader/Internal",
-            "../Engine/Runtime/Entity/Internal"
+            "../Engine/Runtime/Entity/Internal",
+            "../Engine/Editor/EditorCore/Internal/shell",
+            "../Engine/Editor/EditorCore/Internal/shell/vfx"
         });
 
         PrivateDefinitions.AddRange(new string[] {

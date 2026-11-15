@@ -22,11 +22,14 @@ public class EditorCoreModule : ModuleRules
             "Prism",
             "Math",
             "Strings",
-            "Logging"
+            "Logging",
+            "VFX",
+            "RenderSystems",
+            "RHIOpenGL"
         });
 
         // The editor's PRISM windows: shared pieces in shell/, each kind of asset editor in a folder
-        // of its own (Blueprint Class, Animation Graph, Widget Blueprint, Montage, Retarget, Animation Library).
+        // of its own (Blueprint Class, Animation Graph, Widget Blueprint, Montage, Retarget, Animation Library, VFX).
         PrivateIncludePaths.AddRange(new string[] {
             "Internal/shell",
             "Internal/shell/blueprint",
@@ -34,7 +37,8 @@ public class EditorCoreModule : ModuleRules
             "Internal/shell/widget",
             "Internal/shell/montage",
             "Internal/shell/retarget",
-            "Internal/shell/anim_library"
+            "Internal/shell/anim_library",
+            "Internal/shell/vfx"
         });
 
         PublicDefinitions.AddRange(new string[] {

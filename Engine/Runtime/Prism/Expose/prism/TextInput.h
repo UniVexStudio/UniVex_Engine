@@ -90,6 +90,8 @@ public:
   void setDecimals(int d) { m_dec = d; invalidate(); }
   void setSuffix(std::string s) { m_suffix = std::move(s); invalidate(); }
   void setDragSpeed(float s) { m_speed = s; }
+  void setScrubbable(bool s) { m_scrubbable = s; invalidate(); }
+  bool scrubbable() const { return m_scrubbable; }
   void setAccentStrip(Color c) { m_strip = c; m_hasStrip = true; invalidate(); }
   void setAxisLabel(std::string label, Color c) { m_axisLabel = std::move(label); m_strip = c; m_hasStrip = true; invalidate(); }
 
@@ -103,7 +105,7 @@ public:
   bool onMouseDown(const MouseEvent& e) override;
   bool onMouseMove(const MouseEvent& e) override;
   bool onMouseUp(const MouseEvent& e) override;
-  Cursor cursor() const override { return m_editing ? Cursor::IBeam : Cursor::SizeWE; }
+  Cursor cursor() const override { return (m_editing || !m_scrubbable) ? Cursor::IBeam : Cursor::SizeWE; }
 private:
   void beginEdit();
   void endEdit(bool apply);
@@ -113,7 +115,7 @@ private:
   std::string m_suffix;
   std::string m_axisLabel;
   Color m_strip;
-  bool m_hasStrip = false, m_editing = false, m_dragging = false, m_down = false;
+  bool m_hasStrip = false, m_editing = false, m_dragging = false, m_down = false, m_scrubbable = true;
   float m_pressX = 0, m_startValue = 0;
   Ref<TextInput> m_edit;
 };
@@ -124,6 +126,8 @@ public:
   void setValue(float x, float y, float z, bool notify = false);
   float get(int i) const { return m_f[size_t(i)]->value(); }
   void setSuffix(const std::string& s) { for (auto& f : m_f) f->setSuffix(s); }
+  void setScrubbable(bool s) { for (auto& f : m_f) f->setScrubbable(s); }
+  bool scrubbable() const { return m_f[0]->scrubbable(); }
   Callback<int, float> onChange;
   Callback<> onCommit;
   Callback<> onBegin;
