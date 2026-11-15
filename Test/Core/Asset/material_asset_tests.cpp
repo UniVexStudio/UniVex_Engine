@@ -261,6 +261,50 @@ TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_WritesKindOnlyForNonStandardPres
     std::filesystem::remove(path);
 }
 
+TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsEachMapsOwnReading) {
+    const std::filesystem::path path = "uve_material_asset_tests_map_settings.uvmat";
+    std::filesystem::remove(path);
+    MaterialAssetUVE original = MakeTestMaterialUVE();
+    MaterialMapSettingsUVE& albedo = original.MapUVE(MaterialMapUVE::Albedo);
+    albedo.tiling = Math::Vector2UVE{4.0F, 2.0F};
+    albedo.offset = Math::Vector2UVE{0.25F, -0.5F};
+    MaterialMapSettingsUVE& roughness = original.MapUVE(MaterialMapUVE::Roughness);
+    roughness.channel = MaterialTextureChannelUVE::Green;
+    roughness.invert = true;
+    roughness.strength = 0.5F;
+    original.MapUVE(MaterialMapUVE::Occlusion).onUv2 = true;
+    ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
+
+    MaterialAssetUVE loaded;
+    ASSERT_TRUE(LoadMaterialAssetUVE(path, loaded));
+    EXPECT_EQ(loaded.maps, original.maps);
+    // The maps nobody touched read as authored.
+    EXPECT_EQ(loaded.MapUVE(MaterialMapUVE::Normal), MaterialMapSettingsUVE{});
+    std::filesystem::remove(path);
+}
+
+TEST(MaterialAssetUVETest, SaveMaterialAssetUVE_LeavesMapsOutWhenEveryMapReadsAsAuthored) {
+    const std::filesystem::path path = "uve_material_asset_tests_map_payload.uvmat";
+    std::filesystem::remove(path);
+    MaterialAssetUVE material = MakeTestMaterialUVE();
+    ASSERT_TRUE(SaveMaterialAssetUVE(material, path));
+    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+    ASSERT_TRUE(file.has_value());
+    const std::string payload(reinterpret_cast<const char*>(file->second.data()), file->second.size());
+    EXPECT_EQ(payload.find("\"maps\""), std::string::npos);
+    std::filesystem::remove(path);
+}
+
+TEST(MaterialAssetUVETest, IsMaterialAssetValidUVE_RejectsAMapStrengthOutsideZeroToOne) {
+    MaterialAssetUVE material = MakeTestMaterialUVE();
+    EXPECT_TRUE(IsMaterialAssetValidUVE(material));
+    material.MapUVE(MaterialMapUVE::Emissive).strength = 1.5F;
+    EXPECT_FALSE(IsMaterialAssetValidUVE(material));
+    material.MapUVE(MaterialMapUVE::Emissive).strength = 1.0F;
+    material.MapUVE(MaterialMapUVE::Albedo).tiling.x = std::numeric_limits<float>::infinity();
+    EXPECT_FALSE(IsMaterialAssetValidUVE(material));
+}
+
 TEST(MaterialAssetUVETest, LoadMaterialAssetUVE_RejectsUnknownKind) {
     const std::filesystem::path path = "uve_material_asset_tests_unknown_kind.uvmat";
     std::filesystem::remove(path);

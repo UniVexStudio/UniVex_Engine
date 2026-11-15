@@ -82,7 +82,9 @@ public:
 
 private:
   DrawCmd& push(DrawOp op) { m_list.cmds.emplace_back(); m_list.cmds.back().op = op; return m_list.cmds.back(); }
+  void recordImage(DrawOp op, const uint32_t* src, int sw, int sh, int stride, Rect dst);
   DrawList m_list;
+  std::vector<uint32_t> m_resampled;  // scratch for an image recorded at a size other than its own
 };
 
 } // namespace prism

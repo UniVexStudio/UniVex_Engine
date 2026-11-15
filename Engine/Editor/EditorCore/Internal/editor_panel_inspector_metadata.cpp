@@ -19,6 +19,7 @@
 // would be wrong rather than merely plain, and each says so at its exclusion below.
 
 #include "editor.h"
+#include "asset_import_sidecar.h"
 #include "model_animations.h"
 #include "logging_macros.h"
 #include "scalar.h"
@@ -169,7 +170,7 @@ Asset::AssetGuidUVE EditorUVE::PublishTextureSourceUVE(const std::filesystem::pa
         return database.RegisterUVE(publishedPath);
     }
     const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(
-        absolutePath, publishedPath, database, Asset::TextureImportSettingsUVE{});
+        absolutePath, publishedPath, database, LoadTextureImportSettingsUVE(absolutePath));
     if (imported == Asset::kInvalidAssetGuidUVE) {
         // No importer for this kind, or the decode refused it. Registering the source keeps the
         // slot showing the picture it was given - the runtime texture loader decodes a source
@@ -180,6 +181,114 @@ Asset::AssetGuidUVE EditorUVE::PublishTextureSourceUVE(const std::filesystem::pa
     // next rescan, or the author sees a slot pointing at something that does not appear to exist.
     RefreshProjectFileIndexUVE();
     return imported;
+}
+
+namespace {
+
+[[nodiscard]] bool IsTextureSourceImageUVE(const std::filesystem::path& path) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" || extension == ".tga";
+}
+
+} // namespace
+
+std::filesystem::path EditorUVE::FindTextureSourceUVE(const std::filesystem::path& texturePath) {
+    if (IsTextureSourceImageUVE(texturePath)) {
+        return texturePath;
+    }
+    std::error_code error;
+    for (const char* extension : {".png", ".jpg", ".jpeg", ".tga", ".bmp", ".PNG", ".JPG", ".JPEG", ".TGA", ".BMP"}) {
+        const std::filesystem::path candidate = texturePath.parent_path() / (texturePath.stem().string() + extension);
+        if (std::filesystem::is_regular_file(candidate, error)) {
+            return candidate;
+        }
+    }
+    return {};
+}
+
+Asset::TextureImportSettingsUVE EditorUVE::LoadTextureImportSettingsUVE(const std::filesystem::path& source) {
+    Asset::TextureImportSettingsUVE settings;
+    Asset::AssetImportSidecarUVE sidecar;
+    std::error_code error;
+    const std::filesystem::path sidecarPath = Asset::GetImportSidecarPathUVE(source);
+    if (!std::filesystem::is_regular_file(sidecarPath, error) || !Asset::LoadImportSidecarUVE(sidecarPath, sidecar)) {
+        return settings;
+    }
+    const auto option = [&sidecar](const char* key) -> const std::string* {
+        const auto found = sidecar.options.find(key);
+        return found == sidecar.options.end() ? nullptr : &found->second;
+    };
+    const auto flag = [&option](const char* key, bool& out) {
+        if (const std::string* value = option(key)) {
+            out = *value == "true";
+        }
+    };
+    const auto number = [&option](const char* key, std::uint32_t& out, const std::uint32_t hi) {
+        if (const std::string* value = option(key)) {
+            try {
+                out = static_cast<std::uint32_t>(std::min<unsigned long>(std::stoul(*value), hi));
+            } catch (...) {
+            }
+        }
+    };
+    if (const std::string* value = option("colorSpace")) {
+        settings.colorSpace = *value == "linear" ? Asset::TextureAssetColorSpaceUVE::Linear : Asset::TextureAssetColorSpaceUVE::Srgb;
+    }
+    if (const std::string* value = option("usage")) {
+        settings.usage = *value == "normal" ? Asset::TextureUsageUVE::Normal
+                         : *value == "data" ? Asset::TextureUsageUVE::Data
+                                            : Asset::TextureUsageUVE::Color;
+    }
+    if (const std::string* value = option("mipFilter")) {
+        settings.mipFilter = *value == "nearest" ? Asset::TextureMipmapFilterUVE::Nearest : Asset::TextureMipmapFilterUVE::Box;
+    }
+    if (const std::string* value = option("compression")) {
+        settings.compressionMode = *value == "etc1s" ? Asset::TextureCompressionModeUVE::BasisETC1S
+                                   : *value == "uastc" ? Asset::TextureCompressionModeUVE::BasisUASTC
+                                                       : Asset::TextureCompressionModeUVE::None;
+    }
+    flag("generateMipmaps", settings.generateMipmaps);
+    flag("invertGreen", settings.invertGreenChannel);
+    flag("premultiplyAlpha", settings.premultiplyAlpha);
+    number("maxSize", settings.maxResolutionClamp, 16384U);
+    return settings;
+}
+
+bool EditorUVE::ReimportTextureUVE(const std::filesystem::path& source, const Asset::TextureImportSettingsUVE& settings) {
+    Asset::AssetImportSidecarUVE sidecar;
+    std::error_code error;
+    const std::filesystem::path sidecarPath = Asset::GetImportSidecarPathUVE(source);
+    if (std::filesystem::is_regular_file(sidecarPath, error)) {
+        static_cast<void>(Asset::LoadImportSidecarUVE(sidecarPath, sidecar));
+    }
+    sidecar.options["colorSpace"] = settings.colorSpace == Asset::TextureAssetColorSpaceUVE::Linear ? "linear" : "srgb";
+    sidecar.options["usage"] = settings.usage == Asset::TextureUsageUVE::Normal ? "normal"
+                               : settings.usage == Asset::TextureUsageUVE::Data ? "data"
+                                                                                : "color";
+    sidecar.options["mipFilter"] = settings.mipFilter == Asset::TextureMipmapFilterUVE::Nearest ? "nearest" : "box";
+    sidecar.options["compression"] = settings.compressionMode == Asset::TextureCompressionModeUVE::BasisETC1S ? "etc1s"
+                                     : settings.compressionMode == Asset::TextureCompressionModeUVE::BasisUASTC ? "uastc"
+                                                                                                                  : "none";
+    sidecar.options["generateMipmaps"] = settings.generateMipmaps ? "true" : "false";
+    sidecar.options["invertGreen"] = settings.invertGreenChannel ? "true" : "false";
+    sidecar.options["premultiplyAlpha"] = settings.premultiplyAlpha ? "true" : "false";
+    sidecar.options["maxSize"] = std::to_string(settings.maxResolutionClamp);
+    sidecar.reimportNeeded = false;
+    if (!Asset::SaveImportSidecarUVE(sidecar, sidecarPath)) {
+        return false;
+    }
+    const std::filesystem::path publishedPath = source.parent_path() / (source.stem().string() + ".uvtex");
+    Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+    const Asset::AssetGuidUVE imported = m_services->GetAssetImporterUVE().ImportUVE(source, publishedPath, database, settings);
+    if (imported == Asset::kInvalidAssetGuidUVE) {
+        return false;
+    }
+    // Everything that drew the old import draws the new one: the previews now, the renderer on its reload.
+    ClearTextureThumbnailCacheUVE();
+    RefreshProjectFileIndexUVE();
+    return true;
 }
 
 Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path& absolutePath) {

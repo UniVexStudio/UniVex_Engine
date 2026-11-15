@@ -1,6 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "prism/Canvas.h"
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -396,17 +398,124 @@ void Canvas::blit(const uint32_t* src, int sw, int sh, Vec2 dst) {
   }
 }
 
+namespace {
+// Recent resamples, so a thumbnail painted every frame is averaged once, not on every paint. An entry is
+// matched by the source's address and sizes and a fingerprint of pixels spread over it, so new pixels in
+// the same buffer (a re-rendered preview) miss the cache.
+struct ResampleKey {
+  const uint32_t* src; int sw, sh, stride, dw, dh; uint64_t print;
+  bool operator==(const ResampleKey&) const = default;
+};
+struct ResampleEntry { ResampleKey key; std::vector<uint32_t> pixels; uint64_t used = 0; };
+constexpr size_t kResampleCacheEntries = 192;
+
+uint64_t fingerprint(const uint32_t* src, int sw, int sh, int stride) {
+  uint64_t h = 1469598103934665603ull;
+  constexpr int kSteps = 23;
+  for (int j = 0; j < kSteps; j++) {
+    const int y = int((int64_t(j) * (sh - 1)) / (kSteps - 1));
+    for (int i = 0; i < kSteps; i++) {
+      const int x = int((int64_t(i) * (sw - 1)) / (kSteps - 1));
+      h = (h ^ src[size_t(y) * size_t(stride) + size_t(x)]) * 1099511628211ull;
+    }
+  }
+  return h;
+}
+} // namespace
+
+void Canvas::resample(const uint32_t* src, int sw, int sh, int stride, int dw, int dh, std::vector<uint32_t>& out) {
+  out.assign(size_t(std::max(dw, 0)) * size_t(std::max(dh, 0)), 0u);
+  if (!src || sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) return;
+  thread_local std::vector<ResampleEntry> cache;
+  thread_local uint64_t clock = 0;
+  const ResampleKey key{src, sw, sh, stride, dw, dh, fingerprint(src, sw, sh, stride)};
+  ++clock;
+  for (ResampleEntry& e : cache) {
+    if (e.key == key) {
+      e.used = clock;
+      out = e.pixels;
+      return;
+    }
+  }
+  // Premultiplied channels of one source pixel, as floats.
+  auto at = [&](int x, int y, float* p) {
+    const uint32_t s = src[size_t(std::clamp(y, 0, sh - 1)) * size_t(stride) + size_t(std::clamp(x, 0, sw - 1))];
+    const float a = float(s >> 24) * (1.0f / 255.0f);
+    p[0] = float((s >> 16) & 255) * a; p[1] = float((s >> 8) & 255) * a; p[2] = float(s & 255) * a; p[3] = a;
+  };
+  auto pack = [](const float* p) -> uint32_t {
+    const float a = std::clamp(p[3], 0.0f, 1.0f);
+    if (a <= 0.0f) return 0u;
+    const auto ch = [a](float v) { return uint32_t(std::clamp(std::lround(v / a), 0L, 255L)); };
+    return (uint32_t(std::lround(a * 255.0f)) << 24) | (ch(p[0]) << 16) | (ch(p[1]) << 8) | ch(p[2]);
+  };
+  const float scaleX = float(sw) / float(dw), scaleY = float(sh) / float(dh);
+  for (int y = 0; y < dh; y++) {
+    for (int x = 0; x < dw; x++) {
+      float acc[4] = {0, 0, 0, 0};
+      if (scaleX > 1.0f || scaleY > 1.0f) {
+        // Shrinking (on either axis): average the source rectangle under this pixel, weighting each
+        // source pixel by the part of it the rectangle covers.
+        const float fx0 = float(x) * scaleX, fx1 = fx0 + scaleX, fy0 = float(y) * scaleY, fy1 = fy0 + scaleY;
+        float total = 0.0f;
+        for (int sy = int(fy0); sy < int(std::ceil(fy1)) && sy < sh; sy++) {
+          const float wy = std::min(fy1, float(sy + 1)) - std::max(fy0, float(sy));
+          if (wy <= 0.0f) continue;
+          for (int sx = int(fx0); sx < int(std::ceil(fx1)) && sx < sw; sx++) {
+            const float wx = std::min(fx1, float(sx + 1)) - std::max(fx0, float(sx));
+            if (wx <= 0.0f) continue;
+            float p[4];
+            at(sx, sy, p);
+            const float w = wx * wy;
+            for (int k = 0; k < 4; k++) acc[k] += p[k] * w;
+            total += w;
+          }
+        }
+        if (total > 0.0f) for (float& v : acc) v /= total;
+      } else {
+        // Growing: bilinear between the four nearest source pixel centres.
+        const float sx = (float(x) + 0.5f) * scaleX - 0.5f, sy = (float(y) + 0.5f) * scaleY - 0.5f;
+        const int ix = int(std::floor(sx)), iy = int(std::floor(sy));
+        const float tx = sx - float(ix), ty = sy - float(iy);
+        float p00[4], p10[4], p01[4], p11[4];
+        at(ix, iy, p00); at(ix + 1, iy, p10); at(ix, iy + 1, p01); at(ix + 1, iy + 1, p11);
+        for (int k = 0; k < 4; k++)
+          acc[k] = (p00[k] * (1 - tx) + p10[k] * tx) * (1 - ty) + (p01[k] * (1 - tx) + p11[k] * tx) * ty;
+      }
+      out[size_t(y) * size_t(dw) + size_t(x)] = pack(acc);
+    }
+  }
+  if (cache.size() >= kResampleCacheEntries) {
+    auto oldest = std::min_element(cache.begin(), cache.end(), [](const ResampleEntry& a, const ResampleEntry& b) { return a.used < b.used; });
+    cache.erase(oldest);
+  }
+  cache.push_back(ResampleEntry{key, out, clock});
+}
+
+namespace {
+// The source as it is drawn at dw x dh: itself when the sizes match, else a smooth resample held in `scratch`.
+const uint32_t* sizedSource(const uint32_t* src, int sw, int sh, int& stride, int dw, int dh, std::vector<uint32_t>& scratch) {
+  if (sw == dw && sh == dh) return src;
+  Canvas::resample(src, sw, sh, stride, dw, dh, scratch);
+  stride = dw;
+  return scratch.data();
+}
+} // namespace
+
 void Canvas::blitBlend(const uint32_t* src, int sw, int sh, int stride, Rect dst) {
   if (!src || sw <= 0 || sh <= 0 || dst.w < 1 || dst.h < 1) return;
   int dx0 = int(std::lround(dst.x)), dy0 = int(std::lround(dst.y));
   int dw = int(std::lround(dst.w)), dh = int(std::lround(dst.h));
   int y0 = std::max(dy0, m_cy0), y1 = std::min(dy0 + dh, m_cy1);
   int x0 = std::max(dx0, m_cx0), x1 = std::min(dx0 + dw, m_cx1);
+  if (x0 >= x1 || y0 >= y1) return;
+  std::vector<uint32_t> scratch;
+  const uint32_t* img = sizedSource(src, sw, sh, stride, dw, dh, scratch);
   for (int y = y0; y < y1; y++) {
-    const uint32_t* row = src + size_t(std::min(sh - 1, (y - dy0) * sh / dh)) * size_t(stride);
+    const uint32_t* row = img + size_t(y - dy0) * size_t(stride);
     uint32_t* out = &m_px[size_t(y) * m_w];
     for (int x = x0; x < x1; x++) {
-      const uint32_t s = row[std::min(sw - 1, (x - dx0) * sw / dw)];
+      const uint32_t s = row[x - dx0];
       const uint32_t a = s >> 24;
       if (a == 0) continue;
       if (a == 255) { out[x] = s; continue; }
@@ -427,11 +536,11 @@ void Canvas::blitScaled(const uint32_t* src, int sw, int sh, int stride, Rect ds
   int dw = int(std::lround(dst.w)), dh = int(std::lround(dst.h));
   int y0 = std::max(dy0, m_cy0), y1 = std::min(dy0 + dh, m_cy1);
   int x0 = std::max(dx0, m_cx0), x1 = std::min(dx0 + dw, m_cx1);
-  for (int y = y0; y < y1; y++) {
-    const uint32_t* row = src + size_t(std::min(sh - 1, (y - dy0) * sh / dh)) * size_t(stride);
-    uint32_t* out = &m_px[size_t(y) * m_w];
-    for (int x = x0; x < x1; x++) out[x] = row[std::min(sw - 1, (x - dx0) * sw / dw)];
-  }
+  if (x0 >= x1 || y0 >= y1) return;
+  std::vector<uint32_t> scratch;
+  const uint32_t* img = sizedSource(src, sw, sh, stride, dw, dh, scratch);
+  for (int y = y0; y < y1; y++)
+    std::memcpy(&m_px[size_t(y) * m_w + x0], img + size_t(y - dy0) * size_t(stride) + size_t(x0 - dx0), size_t(x1 - x0) * 4);
 }
 
 void Canvas::fillRaw(Rect r, uint32_t argb) {
