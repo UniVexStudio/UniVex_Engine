@@ -27,8 +27,6 @@
 #include "integration/selection_outline_geometry.h"
 #include "integration/entity_picker.h"
 #include "univex/camera/viewport_metrics.h"
-#include "univex/gizmo/gizmo_drag.h"
-#include "univex/gizmo/gizmo_picking.h"
 #include "integration/math_conversions.h"
 #include "univex/camera/orbit_camera.h"
 #include "univex/render/shader_program.h"

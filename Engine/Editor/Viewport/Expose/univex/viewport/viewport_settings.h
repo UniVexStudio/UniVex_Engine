@@ -89,8 +89,6 @@ struct ViewportSettings {
 
     bool viewEnvironment = true;      // background gradient
     bool viewGrid = true;             // the infinite ground grid
-    bool viewGizmos = true;           // the corner orientation gizmo
-    bool viewTransformGizmo = true;   // the move/rotate/scale widget
 
     void CycleDisplayMode() {
         switch (display) {

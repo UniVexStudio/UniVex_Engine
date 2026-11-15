@@ -11,9 +11,6 @@
 
 namespace univex::app {
 
-using univex::gizmo::BuildGizmoMesh;
-using univex::gizmo::BuildNavGizmoMeshes;
-using univex::gizmo::NavViewHalfExtent;
 using univex::math::Normalize;
 using univex::math::Vec3;
 using univex::render::GizmoDrawParams;
@@ -61,9 +58,7 @@ ViewportRenderPass::ViewportRenderPass(ViewportRenderPass&& other) noexcept
       backgroundVao_(std::exchange(other.backgroundVao_, 0)),
       backgroundVbo_(std::exchange(other.backgroundVbo_, 0)),
       settings_(other.settings_),
-      style_(other.style_),
-      gizmoMode_(other.gizmoMode_),
-      gizmoPivotOverride_(other.gizmoPivotOverride_) {}
+      style_(other.style_) {}
 
 ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) noexcept {
     if (this != &other) {
@@ -77,8 +72,6 @@ ViewportRenderPass& ViewportRenderPass::operator=(ViewportRenderPass&& other) no
         backgroundVbo_ = std::exchange(other.backgroundVbo_, 0);
         settings_ = other.settings_;
         style_ = other.style_;
-        gizmoMode_ = other.gizmoMode_;
-        gizmoPivotOverride_ = other.gizmoPivotOverride_;
     }
     return *this;
 }
@@ -182,34 +175,6 @@ univex::viewport::AxisPaletteUVE ViewportRenderPass::GetAxisPaletteUVE() const {
     return univex::viewport::AxisPaletteOfUVE(style_);
 }
 
-Mat4 ViewportRenderPass::NavViewMatrix(const OrbitCamera& camera) {
-    // Same orientation as the main camera, but always three units out from
-    // the origin: the widget shows which way the world is facing, not where
-    // the camera happens to be.
-    const Vec3 offset = Normalize(camera.Eye() - camera.Target());
-    return Mat4::LookAt(offset * 3.f, Vec3{0.f, 0.f, 0.f}, camera.Up());
-}
-
-Mat4 ViewportRenderPass::NavViewProjection(const GizmoStyle& style, const OrbitCamera& camera) {
-    const float halfExtent = NavViewHalfExtent(style);
-    // Always orthographic and always square: a perspective nav gizmo would
-    // make the near balls bigger than the far ones, which is exactly the
-    // depth cue you do not want when the point is comparing directions.
-    const Mat4 projection = Mat4::Orthographic(halfExtent, 1.f, -10.f, 10.f);
-    return Mat4::Multiply(projection, NavViewMatrix(camera));
-}
-
-NavViewportRect ViewportRenderPass::NavViewportRectFor(const GizmoStyle& style,
-                                                       int framebufferWidth,
-                                                       int framebufferHeight) {
-    NavViewportRect rect;
-    rect.size = static_cast<int>(style.navPixelSize);
-    const int margin = static_cast<int>(style.navMarginPx);
-    rect.x = framebufferWidth - rect.size - margin;
-    rect.y = framebufferHeight - rect.size - margin; // GL viewport origin is bottom-left
-    return rect;
-}
-
 void ViewportRenderPass::DrawBackground() const {
     const univex::render::SavedOverlayRasterState savedState =
         univex::render::SaveOverlayRasterState();
@@ -284,81 +249,6 @@ void ViewportRenderPass::DrawColliderWireframes(const OrbitCamera& camera, int w
     gizmos_.Draw(mesh, params);
 }
 
-void ViewportRenderPass::DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const {
-    const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
-    // Everything below is measured at the pivot the widget is actually drawn at, not at the
-    // camera's orbit target - they are the same point only right after a focus, and sizing from
-    // the wrong one is what made the gizmo's proportions wander as the view orbited.
-    const Vec3 pivot = gizmoPivotOverride_.value_or(camera.Target());
-    const float scale = univex::render::GizmoRenderer::ScaleForPixelRadius(
-        camera, height, style_.gizmoPixelRadius, pivot);
-    // Gizmo units per pixel: one pixel is worldPerPixel world units, and one
-    // gizmo unit is `scale` world units.
-    const float worldPerPixel =
-        univex::camera::WorldPerPixelAtPointUVE(camera, height, pivot);
-    const float unitsPerPixel = (scale > 0.f) ? worldPerPixel / scale : 1.f;
-    const auto mesh =
-        BuildGizmoMesh(gizmoMode_, style_, viewDirection, unitsPerPixel, highlightedGizmoHandle_);
-
-    GizmoDrawParams params;
-    params.viewProjection = camera.ViewProjection(static_cast<float>(width) / static_cast<float>(height));
-    params.origin = pivot;
-    params.scale = scale;
-    params.viewDirection = viewDirection;
-    params.viewportWidth = static_cast<float>(width);
-    params.viewportHeight = static_cast<float>(height);
-    // Clear depth first: the gizmo then draws over the whole scene (a handle
-    // hidden inside the object it moves is useless) while still depth-sorting
-    // against itself, so its own near arms occlude its far ones.
-    //
-    // Discarding scene depth is only safe because the overlay is the last pass
-    // of the frame - RenderOverlayUVE is documented as such, and RenderFrame
-    // calls it last. Anything that needs scene depth must run before it.
-    univex::render::EnableOverlayDepthWrite();
-    glClear(GL_DEPTH_BUFFER_BIT);
-    params.depthTest = true;
-    params.depthWrite = true;
-    gizmos_.Draw(mesh, params);
-}
-
-void ViewportRenderPass::DrawNavGizmo(const OrbitCamera& camera, int width, int height) const {
-    const NavViewportRect rect = NavViewportRectFor(style_, width, height);
-    if (rect.size <= 0 || rect.x < 0 || rect.y < 0) return;
-
-    const Vec3 viewDirection = Normalize(camera.Target() - camera.Eye());
-    const auto meshes = BuildNavGizmoMeshes(style_, viewDirection);
-
-    glViewport(rect.x, rect.y, rect.size, rect.size);
-
-    GizmoDrawParams params;
-    params.viewProjection = NavViewProjection(style_, camera);
-    params.origin = Vec3{0.f, 0.f, 0.f};
-    params.scale = 1.f;
-    params.viewportWidth = static_cast<float>(rect.size);
-    params.viewportHeight = static_cast<float>(rect.size);
-    params.viewDirection = viewDirection;
-    // The stubs underneath need no depth: they are always behind the balls.
-    params.depthTest = false;
-    gizmos_.Draw(meshes.underlay, params);
-
-    // The balls do. The renderer draws every stroke after every disc, so without depth a letter on
-    // a ball further back would print straight through the ball in front of it - two letters
-    // overlapping on one ball is what made the labels look scrambled. The opaque discs write
-    // depth, and each letter sits just in front of its own ball but behind any nearer one.
-    // Depth is cleared for this corner only, so the scene's depth elsewhere is untouched.
-    const GLboolean hadScissor = glIsEnabled(GL_SCISSOR_TEST);
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(rect.x, rect.y, rect.size, rect.size);
-    univex::render::EnableOverlayDepthWrite();
-    glClear(GL_DEPTH_BUFFER_BIT);
-    if (hadScissor == GL_FALSE) glDisable(GL_SCISSOR_TEST);
-    params.depthTest = true;
-    params.depthWrite = true;
-    gizmos_.Draw(meshes.overlay, params);
-
-    glViewport(0, 0, width, height);
-}
-
 void ViewportRenderPass::ClearUVE(int framebufferWidth, int framebufferHeight) const {
     if (framebufferWidth <= 0 || framebufferHeight <= 0) return;
     glViewport(0, 0, framebufferWidth, framebufferHeight);
@@ -404,13 +294,6 @@ void ViewportRenderPass::RenderOverlayUVE(const OrbitCamera& camera,
         DrawBones(camera, framebufferWidth, framebufferHeight);
     }
     DrawCameraFrustums(camera, framebufferWidth, framebufferHeight);
-    // Last pass of the frame - see DrawTransformGizmo on why that matters.
-    if (settings_.viewTransformGizmo && gizmoMode_ != GizmoMode::Select) {
-        DrawTransformGizmo(camera, framebufferWidth, framebufferHeight);
-    }
-    if (settings_.viewGizmos) {
-        DrawNavGizmo(camera, framebufferWidth, framebufferHeight);
-    }
 }
 
 void ViewportRenderPass::RenderFrame(const OrbitCamera& camera,
