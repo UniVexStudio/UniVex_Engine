@@ -33,8 +33,10 @@ namespace UVE::Editor {
 namespace {
 
 constexpr float kPiUVE = 3.14159265358979323846F;
-constexpr float kFieldOfViewYRadiansUVE = 0.6981317F; // 40 degrees, the same framing as mesh previews
-constexpr float kSphereFillFractionUVE = 0.86F;        // of the smaller render dimension
+// A 60 degree lens moved in to the sphere, not a narrow lens from far away: the sphere keeps a
+// natural perspective, and every preview frames it to the same fraction, so all are one size.
+constexpr float kFieldOfViewYRadiansUVE = 1.0471976F;  // 60 degrees
+constexpr float kSphereFillFractionUVE = 0.80F;        // of the smaller render dimension
 constexpr float kNearPlaneFractionUVE = 0.05F;
 
 // A preview never needs more detail than this from a source map: the sphere covers at most a few
