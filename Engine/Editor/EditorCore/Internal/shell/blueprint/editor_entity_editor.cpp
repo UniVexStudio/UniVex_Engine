@@ -144,6 +144,7 @@ EditorEntityEditorUVE::~EditorEntityEditorUVE() {
     m_editor.m_openBlueprintProviderUVE = nullptr;
     m_editor.m_saveOpenBlueprintUVE = nullptr;
     m_editor.m_openBlueprintDirtyUVE = nullptr;
+    m_editor.m_onContentDeletedUVE = nullptr;
     if (m_window != 0 && m_host.IsReadyUVE()) {
         m_host.CloseWindowUVE(m_window);
     }
@@ -276,6 +277,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     // Compile reads the Blueprint being edited, saved or not.
     m_editor.m_openBlueprintProviderUVE = [this](const std::string& path) { return m_blueprintPanel.UnsavedForUVE(path); };
     m_editor.m_openBlueprintDirtyUVE = [this] { return m_blueprintPanel.IsOpenUVE() && m_blueprintPanel.DirtyUVE(); };
+    m_editor.m_onContentDeletedUVE = [this](const std::filesystem::path& absolute) { ForgetDeletedContentUVE(absolute); };
     m_editor.m_saveOpenBlueprintUVE = [this] {
         if (m_blueprintPanel.IsOpenUVE() && m_blueprintPanel.DirtyUVE()) {
             static_cast<void>(m_blueprintPanel.SaveUVE());
@@ -1080,6 +1082,66 @@ void EditorEntityEditorUVE::SyncAnimationTabsUVE() {
 
 // ---------------------------------------------------------------------------------------- blueprint
 
+bool EditorEntityEditorUVE::BlueprintFileExistsUVE(const std::string& path) const {
+    std::filesystem::path real = m_editor.m_services->GetFileSystemUVE().ResolveRealPathUVE(path);
+    if (real.empty()) {
+        real = path;
+    }
+    std::error_code error;
+    return std::filesystem::is_regular_file(real, error);
+}
+
+void EditorEntityEditorUVE::ForgetDeletedContentUVE(const std::filesystem::path& absolute) {
+    std::error_code error;
+    const std::filesystem::path gone = std::filesystem::weakly_canonical(absolute, error);
+    const auto names = [this, &gone](const std::string& path) {
+        if (path.empty()) {
+            return false;
+        }
+        std::filesystem::path real = m_editor.m_services->GetFileSystemUVE().ResolveRealPathUVE(path);
+        if (real.empty()) {
+            real = path;
+        }
+        std::error_code ignored;
+        const std::filesystem::path canonical = std::filesystem::weakly_canonical(real, ignored);
+        // The file itself, or anything inside a deleted folder.
+        const auto [g, c] = std::mismatch(gone.begin(), gone.end(), canonical.begin(), canonical.end());
+        return g == gone.end();
+    };
+    // Its graph closes without saving (saving would write the deleted file back).
+    if (m_blueprintPanel.IsOpenUVE() && names(m_blueprintPanel.PathUVE())) {
+        m_blueprintPanel.CloseUVE();
+    }
+    std::erase_if(m_openBlueprints, [&names](const OpenBlueprintEntryUVE& entry) { return names(entry.path); });
+    if (m_blueprintMode && !m_blueprintPanel.IsOpenUVE()) {
+        if (m_openBlueprints.empty()) {
+            SetBlueprintModeUVE(false);
+        } else {
+            const OpenBlueprintEntryUVE next = m_openBlueprints.back();
+            OpenBlueprintUVE(next.path, next.target);
+        }
+    }
+    // The open entity's objects stop naming it.
+    if (!m_editor.m_entityEditSession.has_value()) {
+        return;
+    }
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    bool changed = false;
+    for (const Scene::EntityUVE entity : m_editor.CollectEntityEditorObjectsUVE()) {
+        if (em.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
+            std::string& path = em.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
+            if (names(path)) {
+                path.clear();
+                changed = true;
+            }
+        }
+    }
+    if (changed) {
+        m_editor.m_sceneDirty = true;
+        m_editor.m_contentStatusMessage = "Deleted " + absolute.filename().string() + "; the objects that ran it run nothing now.";
+    }
+}
+
 void EditorEntityEditorUVE::ShowBlueprintMenuUVE() {
     // Only this entity's own objects: its root, then the objects under it (a Player with nothing
     // under it lists just the Player).
@@ -1091,7 +1153,8 @@ void EditorEntityEditorUVE::ShowBlueprintMenuUVE() {
         std::string existing;
         if (em.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
             const std::string& path = em.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
-            if (path.ends_with(".uvbp")) {
+            // A file deleted since names nothing: the object gets a new one.
+            if (path.ends_with(".uvbp") && BlueprintFileExistsUVE(path)) {
                 existing = path;
             }
         }

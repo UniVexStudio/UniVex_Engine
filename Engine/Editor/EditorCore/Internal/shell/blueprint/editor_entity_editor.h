@@ -173,6 +173,11 @@ private:
     /// The sub row's Blueprint button: the entity's objects (the root and its children), each to
     /// open its Blueprint or make one.
     void ShowBlueprintMenuUVE();
+    /// Whether a Script slot's Logic Graph file is still there.
+    [[nodiscard]] bool BlueprintFileExistsUVE(const std::string& path) const;
+    /// The Asset Library deleted `absolute` (a file or folder): graphs from it close unsaved and
+    /// the open entity's Script slots that named it empty.
+    void ForgetDeletedContentUVE(const std::filesystem::path& absolute);
     /// The create dialog: the Blueprint's name and the folder it goes in.
     void ShowCreateBlueprintUVE(Scene::EntityUVE target);
     void OpenBlueprintUVE(const std::string& path, Scene::EntityUVE target);
