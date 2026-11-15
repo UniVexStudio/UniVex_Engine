@@ -120,7 +120,7 @@ void LocalizationService::registerDefaults() {
   en->set("menu.tools", "Tools");
   en->set("menu.help", "Help");
   en->set("tab.hierarchy", "Hierarchy");
-  en->set("tab.details", "Details");
+  en->set("tab.details", "Inspector");
   en->set("tab.console", "Console");
   en->set("tab.viewport", "Viewport");
   en->set("tab.assets", "Assets");

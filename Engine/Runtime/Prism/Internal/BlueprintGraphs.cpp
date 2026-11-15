@@ -94,11 +94,11 @@ void BlueprintGraph::loadStateMachinePreset() {
   addComment(box(921, "// Locomotion state machine", {30, 20, 1500, 400}, Color(50, 50, 120, 45)));
 
   placeNode(1, "Entry", 50, 100);
-  placeNode(2, "State", 270, 100, "Idle", "Blend Space: Idle");
+  placeNode(2, "State", 270, 100, "Idle", "Blend Grid: Idle");
   placeNode(3, "Transition Rule", 500, 100, "Speed > 3", "Idle -> Walk");
-  placeNode(4, "State", 760, 100, "Walk", "Blend Space: Walk");
+  placeNode(4, "State", 760, 100, "Walk", "Blend Grid: Walk");
   placeNode(5, "Transition Rule", 990, 100, "Speed > 300", "Walk -> Run");
-  placeNode(6, "State", 1250, 100, "Run", "Blend Space: Run");
+  placeNode(6, "State", 1250, 100, "Run", "Blend Grid: Run");
   placeNode(7, "Transition Rule", 1250, 260, "Is In Air", "Run -> Jump");
   placeNode(8, "State", 990, 280, "Jump", "Sequence: Jump_Loop");
   placeNode(9, "Transition Rule", 500, 280, "Landed", "Jump -> Idle");

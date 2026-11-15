@@ -209,7 +209,7 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildToolbarUVE() {
     clockBox->setContent(m_clock);
     row->add(clockBox, CentreSlotUVE());
     row->add(HSeparatorUVE(), CentreSlotUVE());
-    m_recordButton = ToolButtonUVE(prism::Icon::Dot, "Record: move the animated object (gizmo or Details) and its transform is keyed "
+    m_recordButton = ToolButtonUVE(prism::Icon::Dot, "Record: move the animated object (gizmo or Inspector) and its transform is keyed "
                                                      "at the playhead", "Rec");
     m_recordButton->setCheckable(true);
     m_recordButton->onClick = [this] { m_editor.SetAnimationTimelineRecordingUVE(!m_editor.m_timeline.recording); };

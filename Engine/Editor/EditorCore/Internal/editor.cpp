@@ -5640,13 +5640,13 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
         case ContentBrowserItemTypeUVE::AnimationLibrary:
             return "Animation Library";
         case ContentBrowserItemTypeUVE::AnimationMontage:
-            return "Animation Montage";
+            return "Action Clip";
         case ContentBrowserItemTypeUVE::MontageLibrary:
-            return "Montage Library";
+            return "Action Clip Library";
         case ContentBrowserItemTypeUVE::Blueprint:
-            return "Blueprint";
+            return "Logic Graph";
         case ContentBrowserItemTypeUVE::WidgetBlueprint:
-            return "Widget Blueprint";
+            return "UI Graph";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:

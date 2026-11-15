@@ -199,7 +199,7 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
     }
     if (montage.segments.empty()) {
         c.textIn(*t.small, prism::Rect{content.x + 8.0F, slotRow.y, content.w - 16.0F, slotRow.h},
-                 "Drop a clip here from the Content Browser or the Asset Browser, or right-click > Add Clip", t.textDim);
+                 "Drop a clip here from the Asset Library or the Asset Browser, or right-click > Add Clip", t.textDim);
     }
 
     // Notifies (diamonds) and notify states (bars), each on its track.

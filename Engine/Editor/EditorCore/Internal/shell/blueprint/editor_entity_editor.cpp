@@ -172,7 +172,7 @@ void EditorEntityEditorUVE::SyncUVE() {
         m_closeAsked = false;
         m_widgetMode = Asset::IsWidgetBlueprintPathUVE(path.generic_string());
         m_designerSignature = 0;
-        m_window = m_host.OpenWindowUVE(BuildUVE(), (m_widgetMode ? "Widget Blueprint - " : "Entity Editor - ") + path.filename().string(),
+        m_window = m_host.OpenWindowUVE(BuildUVE(), (m_widgetMode ? "UI Graph - " : "Entity Editor - ") + path.filename().string(),
                                         kWindowWidthUVE, kWindowHeightUVE);
         if (m_window == 0) {
             // No window: the entity cannot be edited here, so it is not left open unseen.
@@ -236,12 +236,12 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     window->add(BuildTitleBarUVE());
     window->add(BuildToolbarRowUVE());
     // Beside the gizmo settings: Blueprint - pick one of the entity's objects, open or make its class.
-    m_blueprintButton = prism::make<prism::Button>("Blueprint", prism::Icon::BlueprintClass, prism::ButtonStyle::Toolbar);
-    m_blueprintButton->setTooltip("Blueprint Class: open or create the Blueprint of one of this entity's objects");
+    m_blueprintButton = prism::make<prism::Button>("Logic Graph", prism::Icon::BlueprintClass, prism::ButtonStyle::Toolbar);
+    m_blueprintButton->setTooltip("Logic Graph: open or create the Logic Graph of one of this entity's objects");
     m_blueprintButton->onClick = [this] { ShowBlueprintMenuUVE(); };
     // Simulate beside it: one toggle (Simulate / Stop) in place of play, pause and stop.
     m_playButton = prism::make<prism::Button>("Simulate", prism::Icon::Play, prism::ButtonStyle::Toolbar);
-    m_playButton->setTooltip("Simulate the entity (its scripts and Blueprints run here, the level is untouched); Stop puts it back");
+    m_playButton->setTooltip("Simulate the entity (its scripts and Logic Graphs run here, the level is untouched); Stop puts it back");
     m_playButton->onClick = [this] {
         if (m_editor.GetEntitySimulationStateUVE() == EditorUVE::EntitySimulationStateUVE::Stopped) {
             m_lastTick = std::chrono::steady_clock::now();
@@ -350,7 +350,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     auto left = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     m_componentsPanel = BuildComponentsUVE();
     auto detailsTabs = prism::make<prism::TabView>();
-    detailsTabs->addTab("Details", prism::Icon::Properties, PanelUVE(m_details.BuildUVE()));
+    detailsTabs->addTab("Inspector", prism::Icon::Properties, PanelUVE(m_details.BuildUVE()));
     m_detailsPanel = detailsTabs;
     m_detailsTabs = detailsTabs;
     m_graphDetailsShown = false;
@@ -414,7 +414,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildTitleBarUVE() {
         prism::MenuItem revert = prism::MenuItem::Item("Revert", [this] { static_cast<void>(m_editor.RevertEntityEditorUVE()); });
         revert.enabled = m_editor.HasEntityEditorUnsavedChangesUVE();
         items.push_back(std::move(revert));
-        items.push_back(prism::MenuItem::Item("Show in Content Browser", [this] {
+        items.push_back(prism::MenuItem::Item("Show in Asset Library", [this] {
             if (onBrowse) {
                 onBrowse(m_openPath);
             }
@@ -435,7 +435,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildTitleBarUVE() {
                 m_componentsPanel->setVisible(!m_componentsPanel->visible());
             }
         }));
-        items.push_back(prism::MenuItem::Check("Details", m_detailsPanel && m_detailsPanel->visible(), [this] {
+        items.push_back(prism::MenuItem::Check("Inspector", m_detailsPanel && m_detailsPanel->visible(), [this] {
             if (m_detailsPanel) {
                 m_detailsPanel->setVisible(!m_detailsPanel->visible());
             }
@@ -521,7 +521,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildToolbarRowUVE() {
     row->add(m_revertButton, CentreUVE());
     row->add(HSeparatorUVE());
 
-    auto browse = ToolButtonUVE(prism::Icon::FolderOpen, "Show the entity in the Content Browser", "Browse");
+    auto browse = ToolButtonUVE(prism::Icon::FolderOpen, "Show the entity in the Asset Library", "Browse");
     browse->onClick = [this] {
         if (onBrowse) {
             onBrowse(m_openPath);
@@ -819,14 +819,14 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildDockBarUVE() {
     bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
     struct DockTabUVE { const char* label; prism::Icon icon; };
     static constexpr std::array<DockTabUVE, kDockPageCountUVE> kTabs{{
-        {"Animation Sequencer", prism::Icon::AnimSequencer},
-        {"Animation Graph", prism::Icon::AnimGraph},
+        {"Timeline", prism::Icon::AnimSequencer},
+        {"Motion Graph", prism::Icon::AnimGraph},
         {"Output Log", prism::Icon::OutputLog},
         {"Console", prism::Icon::Terminal},
         {"Compile Results", prism::Icon::CompileResults},
         {"Find Results", prism::Icon::FindResults},
         {"Diff", prism::Icon::DiffView},
-        {"Content Browser", prism::Icon::AssetBrowser},
+        {"Asset Library", prism::Icon::AssetBrowser},
     }};
     // The Content Drawer first, as the level's bottom bar has it.
     m_drawerButton = prism::make<prism::Button>("Content Drawer", prism::Icon::AssetBrowser, prism::ButtonStyle::Toolbar);
@@ -866,7 +866,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildContentFrameUVE() {
     // Header: what it is, and where it lives (drawer or dock); under it the Content Browser.
     auto header = prism::hbox(6.0F);
     header->setPadding(prism::Margin(8.0F, 3.0F, 6.0F, 3.0F));
-    auto title = prism::make<prism::Label>("Content Browser", prism::FontRole::Semibold);
+    auto title = prism::make<prism::Label>("Asset Library", prism::FontRole::Semibold);
     header->add(title, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     header->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     m_contentDockToggle = prism::make<prism::Button>(m_contentDocked ? "Undock to Drawer" : "Dock in Layout", prism::Icon::LayoutViewport,
@@ -1019,8 +1019,8 @@ void EditorEntityEditorUVE::SyncGraphDetailsUVE(const bool graphShown) {
         return;
     }
     if (graphShown) {
-        static_cast<void>(m_detailsTabs->insertTab(m_detailsTabs->count(), prism::TabView::Page{"Animation Graph", prism::Icon::AnimGraph, side, false}));
-    } else if (const int index = m_detailsTabs->indexOf("Animation Graph"); index >= 0) {
+        static_cast<void>(m_detailsTabs->insertTab(m_detailsTabs->count(), prism::TabView::Page{"Motion Graph", prism::Icon::AnimGraph, side, false}));
+    } else if (const int index = m_detailsTabs->indexOf("Motion Graph"); index >= 0) {
         static_cast<void>(m_detailsTabs->takeTab(index));
         m_detailsTabs->setCurrent(0);
     }
@@ -1200,14 +1200,14 @@ void EditorEntityEditorUVE::ShowCreateBlueprintUVE(const Scene::EntityUVE target
         const std::filesystem::path relative = folder.lexically_relative(snapshot.contentRoot);
         labels.push_back(relative.empty() || relative == "." ? std::string("Content") : "Content/" + relative.generic_string());
     }
-    std::string base = "BP_";
+    std::string base = "LG_";
     for (const char c : m_editor.GetEntityDisplayLabelUVE(target)) {
         base.push_back(std::isalnum(static_cast<unsigned char>(c)) != 0 ? c : '_');
     }
     auto name = prism::make<prism::TextInput>(base, "Name");
     auto folder = prism::make<prism::ComboBox>(labels, 0);
     auto form = prism::make<prism::PropertyGrid>();
-    const int cat = form->addCategory("New Blueprint Class");
+    const int cat = form->addCategory("New Logic Graph");
     form->addRow(cat, "Name", name, "The file's name: the class other objects use");
     form->addRow(cat, "Folder", folder, "Where the file goes in Content");
     form->addRow(cat, "Parent", prism::make<prism::Label>(std::string(m_editor.GetObjectTypeNameUVE(target))), "The object kind it drives");
@@ -1226,7 +1226,7 @@ void EditorEntityEditorUVE::ShowCreateBlueprintUVE(const Scene::EntityUVE target
         const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(dir, n->text(), ".uvbp");
         const std::string path = m_blueprintPanel.CreateForUVE(target, file);
         if (path.empty()) {
-            m_editor.m_contentStatusMessage = "Could not create the Blueprint.";
+            m_editor.m_contentStatusMessage = "Could not create the Logic Graph.";
             return;
         }
         OpenBlueprintUVE(path, target);
@@ -1243,7 +1243,7 @@ void EditorEntityEditorUVE::ShowCreateBlueprintUVE(const Scene::EntityUVE target
             prism::Application::get().closeAllPopups();
         }
     };
-    prism::showDialog("Blueprint Class", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 420.0F);
+    prism::showDialog("Logic Graph", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 420.0F);
     if (prism::Application::exists()) {
         prism::Application::get().setFocus(name.get());
     }
@@ -1419,11 +1419,11 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
         const bool atRoot = folderRelative.empty() || folderRelative == "." || *folderRelative.begin() == "..";
         auto folder = prism::make<prism::Button>(atRoot ? std::string("Content") : folderRelative.filename().string(), prism::Icon::Folder,
                                                  prism::ButtonStyle::Toolbar);
-        folder->setTooltip(atRoot ? std::string("Content: show it in the Content Browser")
-                                  : "Content/" + folderRelative.generic_string() + ": show it in the Content Browser");
+        folder->setTooltip(atRoot ? std::string("Content: show it in the Asset Library")
+                                  : "Content/" + folderRelative.generic_string() + ": show it in the Asset Library");
         folder->onClick = [this, folderRelative, atRoot] {
             m_editor.m_contentBrowserDirectory = atRoot ? std::filesystem::path{} : folderRelative;
-            m_editor.m_contentStatusMessage = "Content Browser: " + (atRoot ? std::string("Content") : "Content/" + folderRelative.generic_string());
+            m_editor.m_contentStatusMessage = "Asset Library: " + (atRoot ? std::string("Content") : "Content/" + folderRelative.generic_string());
         };
         m_crumbRow->add(folder, CentreUVE());
         for (const OpenBlueprintEntryUVE& entry : m_openBlueprints) {
@@ -1485,9 +1485,9 @@ void EditorEntityEditorUVE::SyncBlueprintTabUVE() {
     }
     if (shown) {
         static_cast<void>(m_detailsTabs->insertTab(m_detailsTabs->count(),
-                                                   prism::TabView::Page{"Blueprint", prism::Icon::BlueprintClass, m_blueprintPanel.SideUVE(), false}));
+                                                   prism::TabView::Page{"Logic Graph", prism::Icon::BlueprintClass, m_blueprintPanel.SideUVE(), false}));
         m_detailsTabs->setCurrent(m_detailsTabs->count() - 1);
-    } else if (const int index = m_detailsTabs->indexOf("Blueprint"); index >= 0) {
+    } else if (const int index = m_detailsTabs->indexOf("Logic Graph"); index >= 0) {
         static_cast<void>(m_detailsTabs->takeTab(index));
         m_detailsTabs->setCurrent(0);
     }

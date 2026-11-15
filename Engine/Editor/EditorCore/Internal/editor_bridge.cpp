@@ -413,7 +413,7 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             if (!m_editor->m_selectedProjectFile.has_value() ||
                 m_editor->m_selectedProjectFile->relativePath.generic_string() != *request.contentEntryPath) {
                 return MakeResponseUVE(request, false, "bridge.content.import.selection_mismatch",
-                                       "The import request must target the currently selected Content Browser entry.");
+                                       "The import request must target the currently selected Asset Library entry.");
             }
             const Asset::ProjectFileEntryUVE& selected = *m_editor->m_selectedProjectFile;
             if (selected.kind == Asset::ProjectFileEntryKindUVE::Directory) {
@@ -455,7 +455,7 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             }
             applied = true;
             code = "bridge.content.import.queued";
-            message = "The selected Content Browser entry was queued for native import.";
+            message = "The selected Asset Library entry was queued for native import.";
             responseContentImportJobId = jobId->value;
             break;
         }
@@ -938,7 +938,7 @@ EditorBridgeContentBrowserSnapshotUVE EditorBridgeUVE::CaptureContentBrowserUVE(
             snapshot.importAction.diagnostic = classification.diagnostic;
         }
     } else {
-        snapshot.importAction.diagnostic = "no Content Browser entry is selected";
+        snapshot.importAction.diagnostic = "no Asset Library entry is selected";
     }
     return snapshot;
 }
