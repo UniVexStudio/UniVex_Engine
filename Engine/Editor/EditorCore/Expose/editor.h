@@ -1134,6 +1134,13 @@ public:
     std::function<bool()> m_openBlueprintDirtyUVE;
     /// A Blueprint (project path) the Entity Editor opens once its entity is open (Content Browser open).
     std::string m_pendingBlueprintOpenUVE;
+    /// A Logic Graph to make once the Entity Editor has the entity open (the Asset Library's
+    /// Add > Logic Graph): the file, and the object it runs on as names from the root down.
+    struct PendingLogicGraphUVE {
+        std::filesystem::path file;
+        std::vector<std::string> objectPath;
+    };
+    std::optional<PendingLogicGraphUVE> m_pendingLogicGraphCreateUVE;
     /// Checks the whole open entity: one root, and every object's `.uvs` script (read from the
     /// open text editor when it has unsaved text, else from disk) compiled against that object.
     /// Returns the problem count; the list stays until the next Compile, Revert or close.

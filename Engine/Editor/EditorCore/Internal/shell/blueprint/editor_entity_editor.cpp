@@ -1142,6 +1142,44 @@ void EditorEntityEditorUVE::ForgetDeletedContentUVE(const std::filesystem::path&
     }
 }
 
+void EditorEntityEditorUVE::CreateLogicGraphOnUVE(const std::filesystem::path& file, const std::vector<std::string>& objectPath) {
+    const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    const auto nameOf = [&em](const Scene::EntityUVE entity) {
+        return em.HasComponentUVE<Scene::NameComponentUVE>(entity) ? em.GetComponentUVE<Scene::NameComponentUVE>(entity).name : std::string{};
+    };
+    Scene::EntityUVE target = Scene::kInvalidEntityUVE;
+    for (const Scene::EntityUVE entity : m_editor.CollectEntityEditorObjectsUVE()) {
+        // Its names from the root down must be the path asked for.
+        std::vector<std::string> path{nameOf(entity)};
+        Scene::EntityUVE cursor = entity;
+        Scene::EntityUVE up = Scene::kInvalidEntityUVE;
+        for (int depth = 0; depth < 256 && m_editor.TryGetDocumentParentUVE(cursor, up) && up != Scene::kInvalidEntityUVE && up != cursor;
+             ++depth) {
+            path.insert(path.begin(), nameOf(up));
+            cursor = up;
+        }
+        if (path == objectPath) {
+            target = entity;
+            break;
+        }
+    }
+    if (target == Scene::kInvalidEntityUVE) {
+        m_editor.m_contentStatusMessage = "Could not find the object for the new Logic Graph in this entity.";
+        return;
+    }
+    const std::string path = m_blueprintPanel.CreateForUVE(target, file);
+    if (path.empty()) {
+        m_editor.m_contentStatusMessage = "Could not create the Logic Graph.";
+        return;
+    }
+    OpenBlueprintUVE(path, target);
+    if (m_editor.SaveEntityEditorUVE()) {
+        m_editor.m_contentStatusMessage = "Made " + file.filename().string() + " and attached it to " +
+                                          m_editor.GetEntityDisplayLabelUVE(target) + ".";
+    }
+    m_editor.RefreshProjectFileIndexUVE();
+}
+
 void EditorEntityEditorUVE::ShowBlueprintMenuUVE() {
     // Only this entity's own objects: its root, then the objects under it (a Player with nothing
     // under it lists just the Player).
@@ -2875,6 +2913,12 @@ void EditorEntityEditorUVE::RefreshUVE() {
                     break;
                 }
             }
+        }
+        if (m_editor.m_pendingLogicGraphCreateUVE.has_value()) {
+            // Made from the Asset Library: the graph on the object it names, opened here.
+            const EditorUVE::PendingLogicGraphUVE pending = *m_editor.m_pendingLogicGraphCreateUVE;
+            m_editor.m_pendingLogicGraphCreateUVE.reset();
+            CreateLogicGraphOnUVE(pending.file, pending.objectPath);
         }
         SyncBlueprintTabUVE();
         if (m_widgetMode) {
