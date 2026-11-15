@@ -335,7 +335,7 @@ public:
         prism::paintAssetTile(c, r, record, m_selected, m_hot);
         if (m_type == ItemTypeUVE::Blueprint || m_type == ItemTypeUVE::WidgetBlueprint) {
             // A Blueprint's well is the word, not a glyph.
-            const prism::Rect well{r.x + 3.0F, r.y + 3.0F, r.w - 6.0F, 86.0F - 17.0F};
+            const prism::Rect well{r.x + 3.0F, r.y + 3.0F, r.w - 6.0F, prism::assetTileWellHeight(r) - 17.0F};
             c.fillRect(well, m_hot && !m_selected ? prism::Color(40, 41, 45) : prism::Color(30, 31, 34));
             c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Blueprint" : "Widget Blueprint", prism::Color(214, 220, 230),
                      prism::HAlign::Center, false);
@@ -982,8 +982,8 @@ void EditorContentBrowserUVE::BuildTilesUVE(const Asset::ProjectFileSnapshotUVE&
     const ViewMode view = m_editor.m_contentBrowserViewMode;
     const bool rows = view == ViewMode::List;
     const prism::Vec2 size = rows ? prism::Vec2(240.0F, 24.0F)
-                             : view == ViewMode::LargeTiles ? prism::Vec2(140.0F, 172.0F)
-                                                            : prism::Vec2(108.0F, 136.0F);
+                             : view == ViewMode::LargeTiles ? prism::Vec2(140.0F, 178.0F)
+                                                            : prism::Vec2(100.0F, 138.0F);   // square wells (see assetTileWellHeight)
     auto tiles = prism::make<TileGridUVE>(size, rows);
     m_tileWidgets.clear();
     m_editor.BeginAnimationIconBatchUVE();   // this folder's clips are drawn first, top-down
@@ -1270,7 +1270,7 @@ void EditorContentBrowserUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUV
         const std::size_t index = found == snapshot.entries.end() ? 0U
                                                                   : static_cast<std::size_t>(found - snapshot.entries.begin());
         preview->add(prism::make<TileUVE>(*this, index, DisplayNameUVE(entry), type, true, pixels, pw, ph, scale,
-                                          prism::Vec2(160.0F, 196.0F), false),
+                                          prism::Vec2(160.0F, 198.0F), false),
                      prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Top});
         const ContentFileFactsUVE disk = m_editor.GetContentFileFactsUVE(snapshot.contentRoot, entry, snapshot.refreshGeneration);
         for (const std::string& line : {std::string("Type: ") + EditorUVE::GetContentBrowserItemTypeLabelUVE(type),
