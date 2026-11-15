@@ -29,6 +29,7 @@
 
 
 #include "animation_sequencer_component.h"
+#include "collider_component.h"
 #include "animation_graph_component.h"
 #include "name_component.h"
 #include "prefab_instance_component.h"
@@ -452,6 +453,70 @@ std::vector<Scene::EntityUVE> EditorUVE::CollectEntityEditorObjectsUVE() {
     return objects;
 }
 
+std::vector<EditorUVE::EntityCompileProblemUVE> EditorUVE::CollectEntityStructureProblemsUVE() {
+    std::vector<EntityCompileProblemUVE> problems;
+    if (!m_entityEditSession.has_value()) {
+        return problems;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& graph = m_services->GetSceneGraphUVE();
+    using Kind = Scene::Objects::SceneObjectKindUVE;
+    for (const Scene::EntityUVE entity : CollectEntityEditorObjectsUVE()) {
+        const Kind kind = Scene::ResolveSceneObjectKindUVE(entityManager, entity);
+        if (kind != Kind::Character3D && kind != Kind::Player3D && kind != Kind::Static3D && kind != Kind::Rigid3D &&
+            kind != Kind::Kinematic3D) {
+            continue;
+        }
+        // A collider on the body itself or anywhere under it.
+        bool collides = false;
+        std::vector<Scene::EntityUVE> pending{entity};
+        for (std::size_t next = 0U; next < pending.size() && next < 4096U && !collides; ++next) {
+            collides = entityManager.HasComponentUVE<Scene::ColliderComponentUVE>(pending[next]);
+            const std::vector<Scene::EntityUVE> children = graph.GetChildrenUVE(entityManager, pending[next]);
+            pending.insert(pending.end(), children.begin(), children.end());
+        }
+        if (collides) {
+            continue;
+        }
+        EntityCompileProblemUVE problem;
+        problem.entity = entity;
+        problem.objectName = GetEntityDisplayLabelUVE(entity);
+        problem.message = std::string(GetObjectTypeNameUVE(entity)) + " '" + problem.objectName +
+                          "' has no Collider3D: add one so it can collide.";
+        problem.structural = true;
+        problems.push_back(std::move(problem));
+    }
+    return problems;
+}
+
+bool EditorUVE::RefreshEntityStructureProblemsUVE() {
+    if (!m_entityEditSession.has_value()) {
+        return false;
+    }
+    std::vector<EntityCompileProblemUVE> now;
+    {
+        const EntityDocumentScopeUVE scope(*this);
+        now = CollectEntityStructureProblemsUVE();
+    }
+    std::vector<EntityCompileProblemUVE>& problems = m_entityEditSession->problems;
+    std::vector<std::string> before;
+    for (const EntityCompileProblemUVE& problem : problems) {
+        if (problem.structural) {
+            before.push_back(problem.message);
+        }
+    }
+    std::vector<std::string> after;
+    for (const EntityCompileProblemUVE& problem : now) {
+        after.push_back(problem.message);
+    }
+    if (before == after) {
+        return false;
+    }
+    std::erase_if(problems, [](const EntityCompileProblemUVE& problem) { return problem.structural; });
+    problems.insert(problems.begin(), now.begin(), now.end());
+    return true;
+}
+
 std::size_t EditorUVE::CompileEntityEditorUVE() {
     if (!m_entityEditSession.has_value()) {
         return 0U;
@@ -547,6 +612,10 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
             problem.message = diagnostic.message;
             problems.push_back(std::move(problem));
         }
+    }
+    {
+        std::vector<EntityCompileProblemUVE> structure = CollectEntityStructureProblemsUVE();
+        problems.insert(problems.begin(), structure.begin(), structure.end());
     }
     m_entityEditSession->problems = std::move(problems);
     m_entityEditSession->compiled = true;

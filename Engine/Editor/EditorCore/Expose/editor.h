@@ -1120,7 +1120,14 @@ public:
         std::string message;
         /// A Blueprint's problem: the node it is on (0 for none).
         std::uint32_t blueprintNode = 0U;
+        /// About the entity's make-up (a body with no collider), kept current as it is edited.
+        bool structural = false;
     };
+    /// The entity's make-up problems: a Character3D, Player3D, Static3D, Rigid3D or Kinematic3D
+    /// with no collider on it or under it.
+    [[nodiscard]] std::vector<EntityCompileProblemUVE> CollectEntityStructureProblemsUVE();
+    /// Puts the make-up problems in the open entity's problem list. True when they changed.
+    bool RefreshEntityStructureProblemsUVE();
     /// The Blueprint panel's unsaved graph for a `.uvbp` path, so Compile checks what is being
     /// edited (like the open text editor for a `.uvs`). Unset or empty: the file on disk.
     std::function<std::optional<Asset::BlueprintAssetUVE>(const std::string& path)> m_openBlueprintProviderUVE;
