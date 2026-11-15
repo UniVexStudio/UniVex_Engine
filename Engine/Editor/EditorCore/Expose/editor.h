@@ -1729,8 +1729,6 @@ public:
     }
     void SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept;
 
-    void SetInspectorFoldOpenUVE(const std::string& key, bool open);
-    [[nodiscard]] bool IsInspectorFoldOpenUVE(const std::string& key, bool defaultOpen) const;
     static constexpr std::size_t kMaxRememberedInspectorFoldsUVE = 256U;
 
     /// Viewport projection and named views. Choosing a projection explicitly sticks until changed.
@@ -2379,9 +2377,6 @@ private:
     /// An object the tree is built on and that cannot be deleted, duplicated or moved: the scene
     /// root, and while the Entity Editor is open, the entity's own root.
     [[nodiscard]] bool IsStructuralRootUVE(Scene::EntityUVE entity);
-    /// Gives an object the recipe parts it was saved without - Visibility for a spatial object and the
-    /// common Object section - so its Inspector always shows the full recipe.
-    void RepairInspectorRecipeUVE(Scene::EntityUVE entity);
 
     /// Returns the document's scene root when one exists, else creates it (name + transform +
     /// marker via the SceneRoot ObjectDefinition). Idempotent: the one-root invariant every
@@ -2520,9 +2515,6 @@ private:
     /// model source. Empty when nothing is assigned, the file will not read, or the entity draws a
     /// procedural primitive (which owns no asset).
     [[nodiscard]] std::optional<Asset::MeshAssetUVE> LoadEntityMeshAssetUVE(Scene::EntityUVE entity);
-    /// Queues a parameter rename for the graph block drawn next, so the objects and transitions that
-    /// read the old name follow it.
-    void RenameAnimationParameterReferencesUVE(const std::string& from, const std::string& to);
     /// Points the selected Skeleton3D at the model source `relativeSource` (content-relative) and
     /// loads its bones; an empty path clears both. One undo step. False, with the reason in
     /// m_skeletonSourceStatus, when the file has no readable skeleton.
@@ -2838,7 +2830,7 @@ private:
     /// Save/LoadSessionSettingsUVE). An entry no longer present in the latest snapshot is simply
     /// not shown, never pruned from storage here, so a not-yet-scanned favorite is not lost.
     std::vector<std::filesystem::path> m_favoriteProjectPaths;
-    // Inspector fold states by key (see SetInspectorFoldOpenUVE); saved with the session.
+    // Inspector fold states by key; saved with the session.
     std::map<std::string, bool> m_inspectorFoldOpen;
     // Inspector section clipboard (see CopySelectedComponentUVE / CopySelectedTransformUVE).
     struct ComponentClipboardUVE final {
