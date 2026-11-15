@@ -72,6 +72,7 @@
 #include "shader_program_desc.h"
 #include "shader_program.h"
 #include "ui_runtime.h"
+#include "vfx_sprite_renderer.h"
 
 namespace UVE::Render {
 
@@ -1522,6 +1523,12 @@ struct Renderer3DUVE::ImplUVE {
     BufferHandleUVE uiVertexBuffer = kInvalidBufferHandleUVE;
     std::vector<UIVertexUVE> uiVertexStaging;
 
+    const VfxDrawListUVE* vfxDrawListForFrame = nullptr;
+    VfxSpriteRendererUVE vfxSpriteRenderer;
+    VfxSpriteFrameContextUVE vfxFrameContext{};
+    std::unordered_map<Asset::AssetGuidUVE, Asset::AssetHandleUVE<Asset::MaterialAssetUVE>> vfxMaterialHandles;
+    std::unordered_set<Asset::AssetGuidUVE> vfxReferencedTextureGuids;
+
     ImplUVE(IRenderDeviceUVE& renderDeviceIn, IRenderSystemUVE& renderSystemIn, IMeshRendererUVE& meshRendererIn,
             ICameraSystemUVE& cameraSystemIn, ILightSystemUVE& lightSystemIn,
             Shader::IShaderManagerUVE& shaderManagerIn, Asset::IAssetManagerUVE& assetManagerIn,
@@ -1758,6 +1765,11 @@ struct Renderer3DUVE::ImplUVE {
         if (skyTextureGuid != Asset::kInvalidAssetGuidUVE) {
             referencedTextureGuids.insert(skyTextureGuid);
         }
+        for (const Asset::AssetGuidUVE vfxTexGuid : vfxReferencedTextureGuids) {
+            if (vfxTexGuid != Asset::kInvalidAssetGuidUVE) {
+                referencedTextureGuids.insert(vfxTexGuid);
+            }
+        }
         for (auto textureIt = textureCache.begin(); textureIt != textureCache.end();) {
             if (!referencedTextureGuids.contains(textureIt->first)) {
                 DestroyTextureIfValidUVE(renderDevice, textureIt->second);
@@ -1768,12 +1780,84 @@ struct Renderer3DUVE::ImplUVE {
         }
     }
 
+    [[nodiscard]] VfxResolvedBatchAppearanceUVE ResolveVfxBatchAppearanceUVE(
+        const std::string_view texturePath,
+        const std::string_view materialPath) {
+        VfxResolvedBatchAppearanceUVE result{};
+        result.albedoTexture = fallbackWhiteTexture;
+        result.materialTint = Math::Vector4UVE{1.0F, 1.0F, 1.0F, 1.0F};
+        result.materialEmissive = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+        result.ready = true;
+
+        if (!materialPath.empty()) {
+            const Asset::AssetGuidUVE matGuid = assetDatabase.RegisterUVE(materialPath);
+            if (matGuid != Asset::kInvalidAssetGuidUVE) {
+                auto matIt = vfxMaterialHandles.find(matGuid);
+                if (matIt == vfxMaterialHandles.end()) {
+                    matIt = vfxMaterialHandles
+                                .emplace(matGuid,
+                                         assetManager.LoadUVE<Asset::MaterialAssetUVE>(matGuid, assetDatabase))
+                                .first;
+                }
+                const Asset::AssetHandleUVE<Asset::MaterialAssetUVE>& matHandle = matIt->second;
+                if (!matHandle.IsReadyUVE() && !matHandle.HasFailedUVE()) {
+                    result.ready = false;
+                    return result;
+                }
+                if (matHandle.IsReadyUVE()) {
+                    const Asset::MaterialAssetUVE* const mat = matHandle.TryGetUVE();
+                    if (mat != nullptr && Asset::IsMaterialAssetValidUVE(*mat)) {
+                        result.materialTint = Math::Vector4UVE{
+                            mat->albedoColor.r,
+                            mat->albedoColor.g,
+                            mat->albedoColor.b,
+                            std::clamp(mat->albedoAlpha, 0.0F, 1.0F),
+                        };
+                        const float emissiveEnergy = std::max(0.0F, mat->emissiveEnergy);
+                        result.materialEmissive = Math::Vector3UVE{
+                            mat->emissiveColor.r * emissiveEnergy,
+                            mat->emissiveColor.g * emissiveEnergy,
+                            mat->emissiveColor.b * emissiveEnergy,
+                        };
+                        if (mat->albedoTexture != Asset::kInvalidAssetGuidUVE) {
+                            vfxReferencedTextureGuids.insert(mat->albedoTexture);
+                            const std::optional<TextureHandleUVE> matTex =
+                                ResolveTextureGpuHandleUVE(mat->albedoTexture, fallbackWhiteTexture);
+                            if (!matTex.has_value()) {
+                                result.ready = false;
+                                return result;
+                            }
+                            result.albedoTexture = *matTex;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!texturePath.empty()) {
+            const Asset::AssetGuidUVE texGuid = assetDatabase.RegisterUVE(texturePath);
+            if (texGuid != Asset::kInvalidAssetGuidUVE) {
+                vfxReferencedTextureGuids.insert(texGuid);
+                const std::optional<TextureHandleUVE> resolvedTex =
+                    ResolveTextureGpuHandleUVE(texGuid, fallbackWhiteTexture);
+                if (!resolvedTex.has_value()) {
+                    result.ready = false;
+                    return result;
+                }
+                result.albedoTexture = *resolvedTex;
+            }
+        }
+
+        return result;
+    }
+
     /// True when anything this renderer has cached was derived from `guid`: the sky texture, a
     /// mesh's GPU buffers, a material's resolved program plus texture handles (or the shaders one
     /// of those materials is built from), a texture upload, or a failed-upload memo.
     [[nodiscard]] bool CachedStateDependsOnUVE(const Asset::AssetGuidUVE guid) const {
         if (guid == skyTextureGuid || meshCache.contains(guid) || textureCache.contains(guid) ||
-            failedTextureGuids.contains(guid) || materialCache.contains(guid)) {
+            failedTextureGuids.contains(guid) || materialCache.contains(guid) ||
+            vfxMaterialHandles.contains(guid) || vfxReferencedTextureGuids.contains(guid)) {
             return true;
         }
         // A shader asset has no cache entry of its own, but every material built from it does.
@@ -1792,6 +1876,7 @@ struct Renderer3DUVE::ImplUVE {
             skyTextureHandle = kInvalidTextureHandleUVE;
             skyTextureEnabled = false;
         }
+        vfxMaterialHandles.erase(guid);
         const auto meshIt = meshCache.find(guid);
         if (meshIt != meshCache.end()) {
             DestroyBufferIfValidUVE(renderDevice, meshIt->second.vertexBuffer);
@@ -4405,6 +4490,8 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     m_impl->uiVertexBuffer = renderDevice.CreateBufferUVE(
         BufferDescUVE{sizeof(UIVertexUVE) * kMaximumUIQuadsUVE * kUIVerticesPerQuadUVE, BufferUsageUVE::Vertex});
 
+    m_impl->vfxSpriteRenderer.InitializeUVE(renderDevice, shaderManager);
+
     ImplUVE* const implPtr = m_impl.get();
     static_cast<void>(m_impl->indirectCull.InitializeUVE());
     m_impl->reloadSubscription = eventSystem.Subscribe<Asset::AssetReloadedEventUVE>(
@@ -4416,6 +4503,9 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
 Renderer3DUVE::~Renderer3DUVE() {
     m_impl->eventSystem.Unsubscribe(m_impl->reloadSubscription);
     m_impl->eventSystem.Unsubscribe(m_impl->loadCompletedSubscription);
+    m_impl->vfxSpriteRenderer.DestroyUVE(m_impl->renderDevice);
+    m_impl->vfxMaterialHandles.clear();
+    m_impl->vfxReferencedTextureGuids.clear();
     m_impl->DestroyOcclusionProbesUVE();
     for (const auto& [guid, meshResources] : m_impl->meshCache) {
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.vertexBuffer);
@@ -5253,6 +5343,32 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.pendingAssetLoads = queue.pendingAssetLoads;
     m_impl->lastFrameDiagnostics.failedAssetLoads = queue.failedAssetLoads;
 
+    if (m_impl->vfxDrawListForFrame != nullptr && !capturingProbe) {
+        m_impl->vfxFrameContext = VfxSpriteFrameContextUVE{
+            viewProjection,
+            inverseProjection,
+            viewPosition,
+            m_impl->skyCameraRight,
+            m_impl->skyCameraUp,
+            m_impl->skyCameraForward,
+            m_impl->depthTarget,
+            m_impl->targetWidth,
+            m_impl->targetHeight,
+        };
+        m_impl->lastFrameDiagnostics.vfxBatchesExtracted =
+            m_impl->vfxDrawListForFrame->stats.batchesExtracted;
+        m_impl->lastFrameDiagnostics.vfxInstancesExtracted =
+            m_impl->vfxDrawListForFrame->stats.instancesExtracted;
+        m_impl->lastFrameDiagnostics.vfxInstancesTruncated =
+            m_impl->vfxDrawListForFrame->stats.instancesTruncated;
+        m_impl->vfxSpriteRenderer.PrepareFrameBatchesUVE(
+            m_impl->renderDevice, *m_impl->vfxDrawListForFrame, m_impl->vfxFrameContext);
+    } else if (!capturingProbe) {
+        m_impl->vfxFrameContext = VfxSpriteFrameContextUVE{};
+        m_impl->vfxSpriteRenderer.PrepareFrameBatchesUVE(
+            m_impl->renderDevice, VfxDrawListUVE{}, m_impl->vfxFrameContext);
+    }
+
     RenderGraphUVE& renderGraph = m_impl->renderGraph;
     renderGraph.ClearUVE();
     // +6 resources beyond the shadow cascades at the compatibility one-level setting: color, depth,
@@ -5402,6 +5518,18 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted > 0U ? 1U : 0U;
             m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +=
                 m_impl->RecordPrimitiveItemsUVE(m_impl->primitiveItems, frameUniforms, commandBuffer);
+            if (!m_impl->probeCaptureViewActive &&
+                m_impl->vfxSpriteRenderer.HasOpaqueBatchesUVE() &&
+                m_impl->vfxSpriteRenderer.AreOpaqueProgramsReadyUVE()) {
+                m_impl->lastFrameDiagnostics.vfxPassRecorded = true;
+                m_impl->lastFrameDiagnostics.vfxDrawCallsRecorded +=
+                    m_impl->vfxSpriteRenderer.RecordOpaqueBatchesUVE(
+                        commandBuffer, m_impl->vfxFrameContext,
+                        [this](const std::string_view texPath, const std::string_view matPath) {
+                            return m_impl->ResolveVfxBatchAppearanceUVE(texPath, matPath);
+                        },
+                        &m_impl->lastFrameDiagnostics.vfxInstancesDrawn);
+            }
             // WP3: the occlusion proxies go last, after every opaque writer of this pass, so a
             // zero-sample bracket means "behind everything that was drawn this frame".
             m_impl->lastFrameDiagnostics.occlusionQueriesIssued =
@@ -5412,6 +5540,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.particleDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.decalDrawCallsRecorded +
+                    m_impl->lastFrameDiagnostics.vfxDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.occlusionQueriesIssued;
             }
             commandBuffer.EndRenderPassUVE();
@@ -5531,6 +5660,36 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     }
                 }
                 commandBuffer.DrawUVE(3);
+                commandBuffer.EndRenderPassUVE();
+            });
+    }
+
+    if (!capturingProbe &&
+        m_impl->vfxSpriteRenderer.HasTranslucentBatchesUVE() &&
+        m_impl->vfxSpriteRenderer.AreTranslucentProgramsReadyUVE()) {
+        const std::array<RenderGraphResourceUseUVE, 2U> vfxPassResources{
+            RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
+            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
+        renderGraph.AddPassUVE(
+            "VfxParticles", vfxPassResources,
+            [this](ICommandBufferUVE& commandBuffer) {
+                RenderPassDescUVE passDesc;
+                passDesc.colorAttachment = m_impl->colorTarget;
+                passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                passDesc.colorLoadOp = LoadOpUVE::Load;
+                commandBuffer.BeginRenderPassUVE(passDesc);
+                m_impl->lastFrameDiagnostics.vfxPassRecorded = true;
+                const std::size_t translucentDraws =
+                    m_impl->vfxSpriteRenderer.RecordTranslucentBatchesUVE(
+                        commandBuffer, m_impl->vfxFrameContext,
+                        [this](const std::string_view texPath, const std::string_view matPath) {
+                            return m_impl->ResolveVfxBatchAppearanceUVE(texPath, matPath);
+                        },
+                        &m_impl->lastFrameDiagnostics.vfxInstancesDrawn);
+                m_impl->lastFrameDiagnostics.vfxDrawCallsRecorded += translucentDraws;
+                if (m_impl->renderDevice.GetBackendNameUVE() == "OpenGL") {
+                    m_impl->lastFrameDiagnostics.glDrawCallsIssued += translucentDraws;
+                }
                 commandBuffer.EndRenderPassUVE();
             });
     }
@@ -6411,6 +6570,10 @@ void Renderer3DUVE::SetSceneClearColorUVE(const std::array<float, 4U>& color) no
 
 void Renderer3DUVE::SetUIRuntimeUVE(const UI::UIRuntimeUVE* const uiRuntime) noexcept {
     m_impl->uiRuntimeForFrame = uiRuntime;
+}
+
+void Renderer3DUVE::SetVfxDrawListUVE(const VfxDrawListUVE* const vfxDrawList) noexcept {
+    m_impl->vfxDrawListForFrame = vfxDrawList;
 }
 
 void Renderer3DUVE::SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept {

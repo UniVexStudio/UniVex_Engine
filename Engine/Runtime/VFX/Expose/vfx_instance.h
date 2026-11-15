@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -129,6 +130,9 @@ public:
     [[nodiscard]] float GetWarmUpSecondsUVE() const noexcept { return m_warmUpSeconds; }
     [[nodiscard]] const Math::AabbUVE& GetFixedBoundsUVE() const noexcept { return m_fixedBounds; }
     [[nodiscard]] Math::AabbUVE GetLiveBoundsUVE() const noexcept;
+    [[nodiscard]] const Asset::ParticleScalabilityUVE& GetScalabilityUVE(std::uint8_t qualityLevel) const noexcept {
+        return m_scalability[std::min<std::size_t>(qualityLevel, 2U)];
+    }
 
 private:
     struct EmitterRuntimeUVE final {

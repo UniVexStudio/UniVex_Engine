@@ -115,4 +115,7 @@ extern const std::string_view kSsrSource;
 inline constexpr std::string_view kWaterVirtualPath = "shaders/water.glsl";
 extern const std::string_view kWaterSource;
 
+inline constexpr std::string_view kVfxSpriteVirtualPath = "shaders/vfx_sprite.glsl";
+extern const std::string_view kVfxSpriteSource;
+
 } // namespace UVE::Render::Shader::BuiltIn

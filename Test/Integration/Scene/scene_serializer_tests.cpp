@@ -1910,6 +1910,49 @@ TEST_F(SceneSerializerUVETest, RestoreUVE_ParticleEmitterSavedBeforeAutoEmitLoad
     EXPECT_TRUE(restored.emitting);
     EXPECT_FLOAT_EQ(restored.emissionRate, ParticleEmitterComponentUVE{}.emissionRate);
     EXPECT_FLOAT_EQ(restored.lifetimeSeconds, ParticleEmitterComponentUVE{}.lifetimeSeconds);
+    EXPECT_TRUE(restored.systemAssetPath.empty());
+    EXPECT_TRUE(restored.autoPlay);
+    EXPECT_EQ(restored.seed, 0U);
+}
+
+TEST(ParticleEmitterComponentUVE, IsParticleEmitterComponentValidUVE_RejectsUnsafeSystemAssetPath) {
+    ParticleEmitterComponentUVE component{};
+    component.systemAssetPath = "vfx/fountain.uvfx";
+    EXPECT_TRUE(IsParticleEmitterComponentValidUVE(component));
+
+    component.systemAssetPath = "../escape.uvfx";
+    EXPECT_FALSE(IsParticleEmitterComponentValidUVE(component));
+
+    component.systemAssetPath = std::string(kMaximumParticleSystemAssetPathBytesUVE + 1U, 'a');
+    EXPECT_FALSE(IsParticleEmitterComponentValidUVE(component));
+}
+
+TEST_F(SceneSerializerUVETest, CaptureThenRestore_ParticleEmitterPreservesVfxFields) {
+    const EntityUVE source = entityManager.CreateEntityUVE();
+    ParticleEmitterComponentUVE component{};
+    component.maxParticles = 512U;
+    component.emitting = false;
+    component.emissionRate = 45.0F;
+    component.lifetimeSeconds = 2.5F;
+    component.systemAssetPath = "VFX/VFX_Fountain.uvfx";
+    component.autoPlay = false;
+    component.seed = 918273U;
+    entityManager.AddComponentUVE<ParticleEmitterComponentUVE>(source, component);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {source}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(entityManager, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 1U);
+    const ParticleEmitterComponentUVE& restored =
+        entityManager.GetComponentUVE<ParticleEmitterComponentUVE>(restoredRoots.front());
+    EXPECT_EQ(restored.maxParticles, 512U);
+    EXPECT_FALSE(restored.emitting);
+    EXPECT_FLOAT_EQ(restored.emissionRate, 45.0F);
+    EXPECT_FLOAT_EQ(restored.lifetimeSeconds, 2.5F);
+    EXPECT_EQ(restored.systemAssetPath, "VFX/VFX_Fountain.uvfx");
+    EXPECT_FALSE(restored.autoPlay);
+    EXPECT_EQ(restored.seed, 918273U);
 }
 
 TEST_F(SceneSerializerUVETest, RestoreUVE_InvalidParticlePayload_RollsBackCreatedEntities) {

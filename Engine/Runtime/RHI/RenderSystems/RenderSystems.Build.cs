@@ -19,7 +19,8 @@ public class RenderSystemsModule : ModuleRules
             "RHI",
             "RHIShader",
             "UI",
-            "ObjectsCore"
+            "ObjectsCore",
+            "VFX"
         });
     }
 }

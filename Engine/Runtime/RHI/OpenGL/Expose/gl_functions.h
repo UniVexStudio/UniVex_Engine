@@ -74,6 +74,10 @@ struct GlFunctionsUVE {
     // a context without it leaves this null and DrawIndexedIndirectUVE warns once and skips
     // rather than calling through a null pointer.
     PFNGLDRAWELEMENTSINDIRECTPROC glDrawElementsIndirect = nullptr;
+    // V3a: instanced draw entry points (core since GL 3.1 / GLES 3.0). Optional like indirect draw;
+    // DrawUVE / DrawIndexedUVE call these whenever instanceCount > 1 and fall back cleanly if null.
+    PFNGLDRAWARRAYSINSTANCEDPROC glDrawArraysInstanced = nullptr;
+    PFNGLDRAWELEMENTSINSTANCEDPROC glDrawElementsInstanced = nullptr;
     // M5b: image-unit binding for storage images (GL 4.2+), same optional-null policy as the
     // compute pair — BindTextureUVE skips the image bind when it is null.
     PFNGLBINDIMAGETEXTUREPROC glBindImageTexture = nullptr;

@@ -35,7 +35,8 @@ public class EngineModule : ModuleRules
             "RHINull",
             "RenderSystems",
             "UVScript",
-            "Network"
+            "Network",
+            "VFX"
         });
 
         PublicDefinitions.AddRange(new string[] {
