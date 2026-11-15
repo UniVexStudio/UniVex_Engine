@@ -149,6 +149,24 @@ TEST(AnimationSequencerUVETest, AnEmptyClipStopsWithoutWriting) {
     EXPECT_FALSE(player.isPlaying);
 }
 
+TEST(AnimationSequencerUVETest, AClipOfOnlyOtherObjectsKeepsPlayingAndLeavesTheTargetAlone) {
+    Asset::AnimationClipAssetUVE clip = MakeSlideClipUVE();
+    Asset::AnimationAssetBoneTrackUVE wheel;
+    wheel.bone = "Wheel";
+    wheel.samples = clip.samples;
+    clip.objects = {wheel};
+    clip.samples.clear();
+    TransformComponentUVE target;
+    target.localPosition = Math::Vector3UVE{3.0F, 0.0F, 0.0F};
+    AnimationSequencerComponentUVE player = StartedUVE(AnimationSequencerComponentUVE{}, target, clip);
+    EXPECT_TRUE(StepAnimationSequencerUVE(player, clip, 0.5F, target));
+    EXPECT_TRUE(player.isPlaying);
+    EXPECT_NEAR(player.currentTimeSeconds, 0.5F, 1e-4F);
+    EXPECT_EQ(target.localPosition, (Math::Vector3UVE{3.0F, 0.0F, 0.0F}));
+    // What the engine writes on the object named Wheel at that time.
+    EXPECT_NEAR(SampleAnimationTrackUVE(clip.objects[0].samples, player.currentTimeSeconds).position.x, 5.0F, 1e-4F);
+}
+
 TEST(AnimationSequencerUVETest, ValidationRejectsBadSettings) {
     AnimationSequencerComponentUVE player;
     EXPECT_TRUE(IsAnimationSequencerComponentValidUVE(player));

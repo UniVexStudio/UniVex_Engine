@@ -91,7 +91,7 @@ std::vector<KeyframeViewUVE::RowUVE> KeyframeViewUVE::RowsUVE() const {
             case TimelineRowKindUVE::Transform:
             case TimelineRowKindUVE::TransformChannel: row.samples = &clip.samples; break;
             case TimelineRowKindUVE::Bone:
-            case TimelineRowKindUVE::BoneChannel: row.samples = &clip.bones[spec.trackIndex].samples; break;
+            case TimelineRowKindUVE::BoneChannel: row.samples = FindClipTrackSamplesUVE(clip, spec.track); break;
             case TimelineRowKindUVE::Morph: row.morph = &clip.morphWeights[spec.trackIndex]; break;
             case TimelineRowKindUVE::Events: break;
         }
@@ -234,7 +234,7 @@ void KeyframeViewUVE::paint(prism::Canvas& c) {
     PaintRowsUVE(c, rows);
     const prism::Rect corner{m_rect.x, m_rect.y, kTrackListUVE, kRulerUVE};
     DrawTimelineRowHeaderUVE(c, corner,
-                             std::to_string(view.clip->bones.size()) + " tracks  -  " + FrameTextUVE(view.durationSeconds, view.frameRate) +
+                             std::to_string(view.clip->bones.size() + view.clip->objects.size()) + " tracks  -  " + FrameTextUVE(view.durationSeconds, view.frameRate) +
                                  " frames",
                              t.textDim);
 

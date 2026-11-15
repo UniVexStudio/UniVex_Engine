@@ -95,6 +95,9 @@ struct AnimationClipAssetUVE final {
     std::vector<AnimationAssetSampleUVE> samples;
     std::vector<AnimationAssetEventUVE> events;
     std::vector<AnimationAssetBoneTrackUVE> bones;
+    /// Other objects the clip moves: one track per object under the animated one, matched by the
+    /// object's name (`bone` holds it), each in its own local space. Written only when present.
+    std::vector<AnimationAssetBoneTrackUVE> objects;
 
     /// The skeleton the tracks were made for, parents first; empty when the file did not say (older
     /// clips).
