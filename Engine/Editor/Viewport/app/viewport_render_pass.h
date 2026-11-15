@@ -4,17 +4,13 @@
 //
 //   background gradient  (View Environment)
 //   infinite ground grid (View Grid)
-//   transform gizmo      (View Transform Gizmo)   - on top, no depth test
-//   orientation gizmo    (View Gizmos)            - own corner viewport
+//   bones, collision wireframes and camera frustums
 //
 // Scene geometry is NOT drawn here: entities are rendered by the host
 // engine's own renderer (Renderer3DUVE, via EditorMeshLayerUVE) and
 // composited against this image. This pass owns only the things the
-// renderer has no concept of - the editor's grid, gizmos and backdrop.
-//
-// Both the interactive demo and the headless capture tool render through
-// this same function on purpose — a screenshot is only evidence about the
-// app if it came out of the same code path the app runs.
+// renderer has no concept of - the editor's grid, overlays and backdrop.
+// The transform and orientation gizmos are the editor shell's own.
 // -----------------------------------------------------------------------
 #pragma once
 
@@ -28,7 +24,6 @@
 #include "univex/gizmo/bone_shape.h"
 #include "univex/gizmo/gizmo_geometry.h"
 #include "univex/gizmo/gizmo_style.h"
-#include "univex/gizmo/nav_gizmo.h"
 #include "univex/render/gizmo_renderer.h"
 #include "univex/render/infinite_grid_renderer.h"
 #include "univex/render/selection_outline.h"
@@ -39,18 +34,9 @@
 namespace univex::app {
 
 using univex::camera::OrbitCamera;
-using univex::gizmo::GizmoMode;
 using univex::gizmo::GizmoStyle;
 using univex::math::Mat4;
 using univex::math::Vec3;
-
-// Where the orientation gizmo lives, in OpenGL viewport coordinates
-// (origin bottom-left).
-struct NavViewportRect {
-    int x = 0;
-    int y = 0;
-    int size = 0;
-};
 
 class ViewportRenderPass {
 public:
@@ -126,20 +112,8 @@ public:
     }
     [[nodiscard]] univex::viewport::AxisPaletteUVE GetAxisPaletteUVE() const;
 
-    void SetGizmoMode(GizmoMode mode) { gizmoMode_ = mode; }
-    [[nodiscard]] GizmoMode Mode() const { return gizmoMode_; }
-    void SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE handle) { highlightedGizmoHandle_ = handle; }
-    [[nodiscard]] univex::gizmo::GizmoHandleUVE HighlightedGizmoHandleUVE() const { return highlightedGizmoHandle_; }
-
-    // The transform gizmo's world-space pivot defaults to the camera's own orbit target - fine
-    // for this module's own standalone demo (there is no independent "selected object" concept
-    // there), but wrong once a host editor drives selection: orbiting the camera must not drag
-    // the gizmo along with it. When set, the gizmo draws at `pivot` regardless of where the
-    // camera is currently looking; pass nullopt to restore the original camera-target behavior.
-    void SetGizmoPivotOverride(std::optional<Vec3> pivot) { gizmoPivotOverride_ = pivot; }
-
     // The Skeleton3D bones to draw this frame, in world space (empty: none). Drawn over the
-    // scene, under the transform gizmo, so a rig inside its mesh is still visible and editable.
+    // scene, so a rig inside its mesh is still visible and editable.
     void SetBonesUVE(std::vector<univex::gizmo::BoneOverlayUVE> bones) { bones_ = std::move(bones); }
 
     void SetCameraFrustumMeshUVE(univex::gizmo::GizmoMesh mesh) { cameraFrustumMesh_ = std::move(mesh); }
@@ -152,21 +126,11 @@ public:
         colliderLines_ = std::move(lines);
     }
 
-    // ---- nav gizmo geometry, shared with input handling -------------------
-    // The nav gizmo's own camera: the main camera's rotation, no translation.
-    [[nodiscard]] static Mat4 NavViewMatrix(const OrbitCamera& camera);
-    [[nodiscard]] static Mat4 NavViewProjection(const GizmoStyle& style, const OrbitCamera& camera);
-    [[nodiscard]] static NavViewportRect NavViewportRectFor(const GizmoStyle& style,
-                                                            int framebufferWidth,
-                                                            int framebufferHeight);
-
 private:
     void DrawBackground() const;
-    void DrawTransformGizmo(const OrbitCamera& camera, int width, int height) const;
     void DrawBones(const OrbitCamera& camera, int width, int height) const;
     void DrawColliderWireframes(const OrbitCamera& camera, int width, int height) const;
     void DrawCameraFrustums(const OrbitCamera& camera, int width, int height) const;
-    void DrawNavGizmo(const OrbitCamera& camera, int width, int height) const;
     void Destroy() noexcept;
 
     univex::render::InfiniteGridRenderer grid_;
@@ -180,9 +144,6 @@ private:
 
     univex::viewport::ViewportSettings settings_{};
     GizmoStyle style_{};
-    GizmoMode gizmoMode_ = GizmoMode::Universal;
-    univex::gizmo::GizmoHandleUVE highlightedGizmoHandle_ = univex::gizmo::GizmoHandleUVE::None;
-    std::optional<Vec3> gizmoPivotOverride_;
     std::vector<univex::gizmo::BoneOverlayUVE> bones_;
     std::vector<univex::gizmo::GizmoLine> colliderLines_;
     univex::gizmo::GizmoMesh cameraFrustumMesh_;
