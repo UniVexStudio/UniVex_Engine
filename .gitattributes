@@ -4,3 +4,4 @@
 *.h text
 *.hpp text
 *.md text
+*.golden text eol=lf linguist-detectable=false

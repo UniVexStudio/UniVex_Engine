@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "texture_import_settings.h"
 #include <array>
 #include <chrono>
 #include <limits>
@@ -2487,6 +2488,14 @@ private:
     /// cook step does not accept: publishing on pick is what makes what the picker writes and what
     /// the project can ship the same thing.
     [[nodiscard]] Asset::AssetGuidUVE PublishTextureSourceUVE(const std::filesystem::path& absolutePath);
+    /// The source image a texture is made from: itself when it is one, else the image of the same name
+    /// beside a `.uvtex` (where publishing puts it). Empty when there is none.
+    [[nodiscard]] static std::filesystem::path FindTextureSourceUVE(const std::filesystem::path& texturePath);
+    /// How the source image `source` is imported: its `.uvimport` sidecar when it has one, else the defaults.
+    [[nodiscard]] static Asset::TextureImportSettingsUVE LoadTextureImportSettingsUVE(const std::filesystem::path& source);
+    /// Saves `settings` as `source`'s sidecar and imports it again to the `.uvtex` beside it, so every
+    /// material and slot using that texture shows the new import. False when the import fails.
+    [[nodiscard]] bool ReimportTextureUVE(const std::filesystem::path& source, const Asset::TextureImportSettingsUVE& settings);
     /// The mesh of a model file: a `.uvmodel` is registered as it stands, and a model source
     /// (.fbx/.glb/.gltf/.obj) is copied into Content when it is outside it and then converted, so
     /// the GUID a mesh slot receives is always one the mesh loader can actually read.

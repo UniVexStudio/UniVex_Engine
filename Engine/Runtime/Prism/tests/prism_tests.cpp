@@ -1768,7 +1768,7 @@ static std::string slurp(const std::string& path) { std::ifstream f(path, std::i
 
 // ---------------------------------------------------------------- golden visual regression
 // Each scene is rendered and reduced to a 48x27 grid of mean colours (robust to sub-pixel AA noise, sensitive to any
-// real layout / colour / icon change). The grid is compared with tests/golden/<name>.sig.
+// real layout / colour / icon change). The grid is compared with tests/golden/<name>.golden.
 //   PRISM_UPDATE_GOLDEN=1 ./prism_tests      re-records the goldens after an intentional visual change.
 // On failure the frame is written next to the test binary as golden_<name>.png for inspection.
 struct Sig { int w = 48, h = 27; std::vector<float> c; };
@@ -1785,7 +1785,7 @@ static Sig signatureOf(const uint32_t* px, int W, int H, int stride) {
 }
 static bool goldenCheck(const std::string& dir, const std::string& name, const uint32_t* px, int W, int H, int stride, double* meanOut = nullptr, bool report = true) {
   Sig now = signatureOf(px, W, H, stride);
-  std::string path = dir + "/" + name + ".sig";
+  std::string path = dir + "/" + name + ".golden";
   const char* upd = std::getenv("PRISM_UPDATE_GOLDEN");
   std::ifstream in(path);
   if (!in || (upd && upd[0] == '1')) {
@@ -2950,6 +2950,75 @@ static void testDialogButtonsReadFields(Application& app) {
 
 // A dialog moves when its title bar is dragged, and its close button still closes it. A combo box's
 // disabled items cannot be chosen.
+static void testSmoothImageScaling() {
+  SECTION("images drawn at another size are resampled smoothly");
+  // A 4x4 black/white checker shrunk to 1x1 is their average, not one of its pixels.
+  std::vector<uint32_t> checker(16);
+  for (int i = 0; i < 16; i++) checker[size_t(i)] = ((i % 4 + i / 4) % 2) ? 0xFFFFFFFFu : 0xFF000000u;
+  std::vector<uint32_t> out;
+  Canvas::resample(checker.data(), 4, 4, 4, 1, 1, out);
+  CHECK(out.size() == 1);
+  const int grey = int((out[0] >> 16) & 255);
+  CHECK(grey >= 126 && grey <= 129);
+  CHECK((out[0] >> 24) == 255);
+  // A red pixel beside a transparent one keeps its colour when shrunk: only its coverage halves.
+  const uint32_t edge[2] = {0xFFFF0000u, 0x00000000u};
+  Canvas::resample(edge, 2, 1, 2, 1, 1, out);
+  CHECK(((out[0] >> 16) & 255) == 255 && (out[0] & 0xFFFFu) == 0);
+  const int alpha = int(out[0] >> 24);
+  CHECK(alpha >= 127 && alpha <= 128);
+  // Growing blends between neighbours: the middle of a black-to-white pair is grey.
+  const uint32_t pair[2] = {0xFF000000u, 0xFFFFFFFFu};
+  Canvas::resample(pair, 2, 1, 2, 4, 1, out);
+  CHECK(out.size() == 4);
+  CHECK(((out[0] >> 16) & 255) < ((out[1] >> 16) & 255) && ((out[1] >> 16) & 255) < ((out[2] >> 16) & 255));
+  // The canvas draws a shrunk image averaged, through the recorder as well as directly.
+  Canvas c;
+  c.resize(8, 8);
+  c.clear(Color(0, 0, 0, 255));
+  c.blitScaled(checker.data(), 4, 4, 4, Rect(0, 0, 2, 2));
+  const int drawn = int((c.pixels()[0] >> 16) & 255);
+  CHECK(drawn >= 126 && drawn <= 129);
+  RecordingCanvas rec;
+  rec.resize(8, 8);
+  rec.beginFrame();
+  rec.blitBlend(checker.data(), 4, 4, 4, Rect(0, 0, 2, 2));
+  Canvas replayed;
+  replayed.resize(8, 8);
+  replayed.clear(Color(0, 0, 0, 255));
+  rec.list().replay(replayed);
+  const int replayedGrey = int((replayed.pixels()[0] >> 16) & 255);
+  CHECK(replayedGrey >= 126 && replayedGrey <= 129);
+}
+
+static void testTypedNumberField(Application& app) {
+  SECTION("a number field that is not scrubbable types instead of dragging");
+  app.hostResize(400, 200);
+  auto field = make<NumberField>(2.0f, 1.0f, 2);
+  field->setScrubbable(false);
+  float committed = -1.f;
+  field->onCommit = [&](float v) { committed = v; };
+  auto box = make<SizeBox>();
+  box->setWidthOverride(160).setHeightOverride(24);
+  box->setContent(field);
+  app.setRoot(box);
+  app.tick();
+  const Rect r = field->rect();
+  const Vec2 p{r.x + 20.f, r.y + r.h * 0.5f};
+  app.hostMouseMove(p);
+  app.hostMouseButton(p, MouseButton::Left, true);
+  app.hostMouseMove(Vec2{p.x + 80.f, p.y});
+  app.hostMouseButton(Vec2{p.x + 80.f, p.y}, MouseButton::Left, false);
+  app.tick();
+  CHECK(field->value() == 2.0f);          // the drag changed nothing
+  CHECK(field->cursor() == Cursor::IBeam);
+  app.hostText("7.5");
+  app.hostKey(Key::Enter, 0, true);
+  app.tick();
+  CHECK(std::fabs(field->value() - 7.5f) < 1e-4f);
+  CHECK(std::fabs(committed - 7.5f) < 1e-4f);
+}
+
 static void testDialogDragAndDisabledChoices(Application& app) {
   SECTION("dialogs drag by their title; disabled combo items cannot be picked");
   app.hostResize(900, 700);
@@ -3040,6 +3109,8 @@ int main(int argc, char** argv) {
   testHitAndRouting(app);
   testDialogButtonsReadFields(app);
   testDialogDragAndDisabledChoices(app);
+  testSmoothImageScaling();
+  testTypedNumberField(app);
   testDocking(app);
   testToastsAndTimers(app, *plat);
   testDrawList(app);

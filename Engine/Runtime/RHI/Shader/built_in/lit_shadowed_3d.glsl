@@ -174,6 +174,59 @@ uniform vec3 uUvOffset;
 #else
 uniform vec3 uUvOffset = vec3(0.0, 0.0, 0.0);
 #endif
+// Each map's own reading, on top of its UV set (see MaterialMapSettingsUVE). All zero reads the map
+// as authored: Transform is (tiling - 1, offset); Control is (channel: 0 RGB, 1 R, 2 G, 3 B, 4 A;
+// invert; 1 - strength; on UV2).
+#if UVE_MOBILE
+uniform vec4 uAlbedoMapTransform;
+#else
+uniform vec4 uAlbedoMapTransform = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uAlbedoMapControl;
+#else
+uniform vec4 uAlbedoMapControl = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uNormalMapTransform;
+#else
+uniform vec4 uNormalMapTransform = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uNormalMapControl;
+#else
+uniform vec4 uNormalMapControl = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uMetallicRoughnessMapTransform;
+#else
+uniform vec4 uMetallicRoughnessMapTransform = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uMetallicRoughnessMapControl;
+#else
+uniform vec4 uMetallicRoughnessMapControl = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uOcclusionMapTransform;
+#else
+uniform vec4 uOcclusionMapTransform = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uOcclusionMapControl;
+#else
+uniform vec4 uOcclusionMapControl = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uEmissiveMapTransform;
+#else
+uniform vec4 uEmissiveMapTransform = vec4(0.0);
+#endif
+#if UVE_MOBILE
+uniform vec4 uEmissiveMapControl;
+#else
+uniform vec4 uEmissiveMapControl = vec4(0.0);
+#endif
 // UV2: the mesh's texture coordinates with their own scale and offset (meshes carry one UV set),
 // used by AO and Emission when the material puts them "on UV2". Each set can instead be triplanar:
 // projected along the three axes of the object (or the world) and blended by the normal.
@@ -892,11 +945,29 @@ vec4 SampleUvSetUVE(sampler2D map, UvSetUVE set) {
     samples += texture(map, set.position.xy * vec2(1.0, -1.0)) * set.weights.z;
     return samples;
 }
+// One map read its own way: its UV set, tiling and offset, then the channel, invert and strength
+// (strength 0 is `neutral`: what the material looks like without the map).
+vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 control, vec4 neutral) {
+    UvSetUVE set = control.w > 0.5 ? uv2 : uv1;
+    vec2 tiling = vec2(1.0) + transform.xy;
+    set.uv = set.uv * tiling + transform.zw;
+    set.position = set.position * vec3(tiling.x, tiling.y, tiling.x) + vec3(transform.z, transform.w, transform.z);
+    vec4 value = SampleUvSetUVE(map, set);
+    int channel = int(control.x + 0.5);
+    if (channel >= 1) {
+        float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
+        value = vec4(grey, grey, grey, channel == 4 ? 1.0 : value.a);
+    }
+    if (control.y > 0.5) {
+        value.rgb = vec3(1.0) - value.rgb;
+    }
+    return mix(value, neutral, clamp(control.z, 0.0, 1.0));
+}
 void main() {
     UvSetUVE uv1 = MakeUvSetUVE(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
     UvSetUVE uv2 = MakeUvSetUVE(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
     vec2 uv = uv1.uv;
-    vec4 albedoSample = SampleUvSetUVE(uAlbedoTexture, uv1);
+    vec4 albedoSample = ReadMapUVE(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
@@ -915,7 +986,7 @@ void main() {
         FragColor = ComposeFragmentUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
         return;
     }
-    float ambientOcclusion = mix(1.0, SampleUvSetUVE(uAOTexture, uAoOnUv2 != 0 ? uv2 : uv1).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    float ambientOcclusion = mix(1.0, ReadMapUVE(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
     vec3 normal = SafeNormalizeUVE(vWorldNormal);
     // A few legacy/direct RHI callers do not provide a usable normal attribute. Keep those
     // materials lit instead of allowing a zero vector to poison the tangent frame and BRDF.
@@ -930,7 +1001,7 @@ void main() {
     tangent = SafeNormalizeUVE(tangent);
     vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
     bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-    vec3 tangentSpaceNormal = SampleUvSetUVE(uNormalTexture, uv1).xyz * 2.0 - 1.0;
+    vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
     tangentSpaceNormal.xy *= uNormalScale;
     normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
 
@@ -951,7 +1022,7 @@ void main() {
         albedo = vec3(0.82);
     }
 
-    vec3 metallicRoughnessSample = SampleUvSetUVE(uMetallicRoughnessTexture, uv1).rgb;
+    vec3 metallicRoughnessSample = ReadMapUVE(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
     float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
     float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
     // Ambient, split into diffuse and specular exactly as the direct term is.
@@ -998,7 +1069,7 @@ void main() {
     // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
     // does not stop reflecting light in a way the sky can reach either.
     vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion +
-                    uEmissiveColor * max(uEmissiveEnergy, 0.0) * SampleUvSetUVE(uEmissiveTexture, uEmissionOnUv2 != 0 ? uv2 : uv1).rgb;
+                    uEmissiveColor * max(uEmissiveEnergy, 0.0) * ReadMapUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
 
     for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
         LightUVE light = uLights[lightIndex];

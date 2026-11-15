@@ -88,6 +88,9 @@ private:
     void PackSeparateMapsUVE(Asset::MaterialAssetUVE& material, const std::filesystem::path& materialPath, bool metallicPicked,
                              bool roughnessPicked);
     [[nodiscard]] std::filesystem::path PathOfGuidUVE(Asset::AssetGuidUVE guid) const;
+    /// How the texture at `texturePath` is imported (colour space, usage, mipmaps, size...), applied by
+    /// re-importing its source image (editor_details_material.cpp).
+    void ShowTextureSettingsUVE(const std::filesystem::path& texturePath);
 
     void RebuildUVE(Scene::EntityUVE entity);
     // Rows some objects need beyond their properties (editor_details_objects.cpp).
@@ -128,6 +131,14 @@ private:
     std::vector<std::pair<std::filesystem::path, std::string>> m_pendingMaterials;
     // The camera Screen toggle (kept across selections).
     bool m_cameraScreenOpen = true;
+    // A row changed what the panel shows (a texture slot gained or lost its map): rebuild on the next refresh.
+    bool m_rebuildRequested = false;
 };
+
+/// Wraps an asset slot so a file dragged from the Asset Library onto it is used (`use`), when its
+/// extension is one of `kinds`. The slot highlights while a usable file is over it.
+[[nodiscard]] prism::Ref<prism::Widget> WithAssetDropUVE(std::function<std::filesystem::path()> contentRoot, prism::Ref<prism::Widget> slot,
+                                                         std::vector<std::string> kinds,
+                                                         std::function<void(const std::filesystem::path&)> use);
 
 } // namespace UVE::Editor

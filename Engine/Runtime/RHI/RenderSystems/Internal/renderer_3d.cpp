@@ -3328,6 +3328,25 @@ struct Renderer3DUVE::ImplUVE {
         program.SetFloatUVE("uUv2TriplanarSharpness", material.uv2TriplanarSharpness);
         program.SetIntUVE("uAoOnUv2", material.aoOnUv2 ? 1 : 0);
         program.SetIntUVE("uEmissionOnUv2", material.emissionOnUv2 ? 1 : 0);
+        // Each map's own reading (all zero: as authored). AO and Emission also follow the material's
+        // older "on UV2" switches.
+        const auto setMap = [&program, &material](const char* transformName, const char* controlName,
+                                                  const Asset::MaterialMapUVE map, const bool alsoOnUv2) {
+            const Asset::MaterialMapSettingsUVE& settings = material.MapUVE(map);
+            const float channel = settings.channel == Asset::MaterialTextureChannelUVE::Rgb
+                                      ? 0.0F
+                                      : static_cast<float>(static_cast<int>(settings.channel) + 1);
+            program.SetVector4UVE(transformName, Math::Vector4UVE{settings.tiling.x - 1.0F, settings.tiling.y - 1.0F,
+                                                                  settings.offset.x, settings.offset.y});
+            program.SetVector4UVE(controlName, Math::Vector4UVE{channel, settings.invert ? 1.0F : 0.0F,
+                                                                1.0F - std::clamp(settings.strength, 0.0F, 1.0F),
+                                                                (settings.onUv2 || alsoOnUv2) ? 1.0F : 0.0F});
+        };
+        setMap("uAlbedoMapTransform", "uAlbedoMapControl", Asset::MaterialMapUVE::Albedo, false);
+        setMap("uNormalMapTransform", "uNormalMapControl", Asset::MaterialMapUVE::Normal, false);
+        setMap("uMetallicRoughnessMapTransform", "uMetallicRoughnessMapControl", Asset::MaterialMapUVE::MetallicRoughness, false);
+        setMap("uOcclusionMapTransform", "uOcclusionMapControl", Asset::MaterialMapUVE::Occlusion, material.aoOnUv2);
+        setMap("uEmissiveMapTransform", "uEmissiveMapControl", Asset::MaterialMapUVE::Emissive, material.emissionOnUv2);
         program.SetIntUVE("uUnshaded", material.unshaded ? 1 : 0);
         program.SetIntUVE("uShadingMode", shadingMode);
         program.SetFloatUVE("uAlphaCutoff", material.alphaCutoff);

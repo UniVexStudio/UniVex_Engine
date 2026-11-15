@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 
@@ -80,14 +82,31 @@ enum class MaterialKindUVE : std::uint8_t {
     Shader = 2,
 };
 
-/// Per-slot texture binding with UV channel, source channel, tint, and UV scale/offset (Part 4.1).
-struct MaterialTextureSlotUVE final {
-    AssetGuidUVE texture;
-    std::uint8_t uvChannel = 0U;
-    MaterialTextureChannelUVE sourceChannel = MaterialTextureChannelUVE::Rgb;
-    Math::ColorUVE tint{1.0F, 1.0F, 1.0F};
-    Math::Vector2UVE scale{1.0F, 1.0F};
+/// How one texture map of a material is read, on top of the material's UV1/UV2 transform: its own
+/// tiling and offset, the channel it is read from, whether it is inverted, and how strongly it acts
+/// (0 leaves the map's neutral value - white, a flat normal or no emission - and 1 the map as authored).
+struct MaterialMapSettingsUVE final {
+    Math::Vector2UVE tiling{1.0F, 1.0F};
     Math::Vector2UVE offset{0.0F, 0.0F};
+    /// Rgb reads the map as it is; a single channel is read as grey (for a packed or mask map).
+    MaterialTextureChannelUVE channel = MaterialTextureChannelUVE::Rgb;
+    bool invert = false;
+    float strength = 1.0F;
+    /// The map reads UV2 instead of UV1.
+    bool onUv2 = false;
+    [[nodiscard]] bool operator==(const MaterialMapSettingsUVE&) const noexcept = default;
+};
+
+/// The maps whose reading MaterialMapSettingsUVE describes, in `MaterialAssetUVE::maps` order.
+enum class MaterialMapUVE : std::uint8_t {
+    Albedo = 0,
+    Normal = 1,
+    MetallicRoughness = 2,
+    Occlusion = 3,
+    Emissive = 4,
+    Metallic = 5,
+    Roughness = 6,
+    Count = 7,
 };
 
 /// The CPU-side, engine-native representation of a `.uvmat` asset (Part 2's file-format table):
@@ -194,6 +213,12 @@ struct MaterialAssetUVE {
     /// The preset this material was authored as (see MaterialKindUVE). Appended so existing
     /// aggregate initialisers stay valid.
     MaterialKindUVE kind = MaterialKindUVE::Standard;
+
+    /// Each map's own reading (tiling, offset, channel, invert, strength), by MaterialMapUVE. The
+    /// separate Metallic and Roughness maps apply theirs when they are packed into the ORM map.
+    std::array<MaterialMapSettingsUVE, static_cast<std::size_t>(MaterialMapUVE::Count)> maps{};
+    [[nodiscard]] MaterialMapSettingsUVE& MapUVE(const MaterialMapUVE map) noexcept { return maps[static_cast<std::size_t>(map)]; }
+    [[nodiscard]] const MaterialMapSettingsUVE& MapUVE(const MaterialMapUVE map) const noexcept { return maps[static_cast<std::size_t>(map)]; }
 };
 
 /// Returns true when the material should be bucketed into the transparent render pass (Part 3.7 / 4.1).

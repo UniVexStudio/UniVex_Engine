@@ -21,6 +21,7 @@
 #include "prism/Views.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -89,6 +90,28 @@ void EditorDetailsUVE::PackSeparateMapsUVE(Asset::MaterialAssetUVE& material, co
     Asset::TextureAssetUVE roughness;
     const bool hasMetallic = load(material.metallicTexture, metallic);
     const bool hasRoughness = load(material.roughnessTexture, roughness);
+    // A separate map's own reading (its channel, invert and strength) is baked into the grey value
+    // the packer takes from red; its tiling and offset are the ORM map's, which the shader applies.
+    const auto applySettings = [](Asset::TextureAssetUVE& map, const Asset::MaterialMapSettingsUVE& settings) {
+        const std::size_t source = settings.channel == Asset::MaterialTextureChannelUVE::Rgb
+                                       ? 0U
+                                       : static_cast<std::size_t>(settings.channel);
+        const float strength = std::clamp(settings.strength, 0.0F, 1.0F);
+        for (std::size_t at = 0U; at + 3U < map.pixels.size(); at += 4U) {
+            float value = static_cast<float>(std::to_integer<int>(map.pixels[at + source])) / 255.0F;
+            if (settings.invert) {
+                value = 1.0F - value;
+            }
+            value = 1.0F + (value - 1.0F) * strength;
+            map.pixels[at] = static_cast<std::byte>(std::lround(std::clamp(value, 0.0F, 1.0F) * 255.0F));
+        }
+    };
+    if (hasMetallic) {
+        applySettings(metallic, material.MapUVE(Asset::MaterialMapUVE::Metallic));
+    }
+    if (hasRoughness) {
+        applySettings(roughness, material.MapUVE(Asset::MaterialMapUVE::Roughness));
+    }
     // A channel of the hand-picked ORM as a grey map of its own.
     const auto channelOf = [&ownOrm](const std::size_t channel) {
         Asset::TextureAssetUVE grey = ownOrm;
@@ -189,66 +212,78 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
         c->onChange = [edit, apply](const int i) { edit([&](MaterialUVE& m) { apply(m, i); }); };
         add(label, c, tip);
     };
-    // A texture slot: picked from the project's registered images, never typed.
-    const auto texture = [&](const char* label, Asset::AssetGuidUVE MaterialUVE::*field, const char* tip = "") {
-        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        std::string text = "Empty";
-        if (loaded.*field != Asset::AssetGuidUVE{}) {
-            text = "Missing texture";
-            for (const Asset::ProjectFileEntryUVE& file : snapshot.entries) {
-                if (file.registeredAssetGuid.has_value() && *file.registeredAssetGuid == loaded.*field) {
-                    text = file.relativePath.stem().string();
-                    break;
-                }
+    // A texture slot: the map's own preview and name beside its picker (any image of the project, a
+    // published .uvtex or a source image, which is published on use), a drop target for the Asset
+    // Library, and under it how the map is read (MaterialMapSettingsUVE) once it holds one.
+    constexpr Asset::MaterialMapUVE kNoMapUVE = Asset::MaterialMapUVE::Count;
+    const auto texture = [&](const char* label, Asset::AssetGuidUVE MaterialUVE::*field, const Asset::MaterialMapUVE map,
+                             const char* tip = "") {
+        const bool packed = map == Asset::MaterialMapUVE::Metallic || map == Asset::MaterialMapUVE::Roughness;
+        const auto nameOf = [this](const Asset::AssetGuidUVE guid) {
+            if (guid == Asset::AssetGuidUVE{}) {
+                return std::string("Empty");
             }
-        }
-        auto b = prism::make<prism::Button>(text, prism::Icon::None, prism::ButtonStyle::Default);
+            const std::filesystem::path path = PathOfGuidUVE(guid);
+            return path.empty() ? std::string("Missing texture") : path.stem().string();
+        };
+        auto b = prism::make<prism::Button>(nameOf(loaded.*field), prism::Icon::None, prism::ButtonStyle::Default);
+        auto thumb = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Texture);
+        thumb->setAssetUVE(PathOfGuidUVE(loaded.*field));
         std::weak_ptr<prism::Button> weak = b;
-        b->onClick = [this, edit, field, weak, current = loaded.*field, absolutePath] {
+        std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;
+        // What the slot shows, right away: the name and the picture of the map it now holds.
+        const auto show = [this, weak, weakThumb, nameOf](const Asset::AssetGuidUVE guid) {
+            if (auto button = weak.lock()) {
+                button->setText(nameOf(guid));
+            }
+            if (auto t = weakThumb.lock()) {
+                t->setAssetUVE(PathOfGuidUVE(guid));
+            }
+            // A slot that gains or loses its map gains or loses its settings rows.
+            m_rebuildRequested = true;
+        };
+        const std::function<void(const std::filesystem::path&)> useFile = [this, edit, field, show, path = absolutePath](
+                                                                              const std::filesystem::path& absolute) {
+            const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
+            if (guid == Asset::AssetGuidUVE{}) {
+                m_editor.m_contentStatusMessage = "Could not read " + absolute.filename().string() + " as a texture.";
+                return;
+            }
+            edit([&](MaterialUVE& m) {
+                const bool metallicPicked = field == &MaterialUVE::metallicTexture && m.metallicTexture == Asset::AssetGuidUVE{};
+                const bool roughnessPicked = field == &MaterialUVE::roughnessTexture && m.roughnessTexture == Asset::AssetGuidUVE{};
+                m.*field = guid;
+                if (field == &MaterialUVE::metallicTexture || field == &MaterialUVE::roughnessTexture ||
+                    field == &MaterialUVE::metallicRoughnessTexture) {
+                    PackSeparateMapsUVE(m, path, metallicPicked, roughnessPicked);
+                }
+            });
+            show(guid);
+        };
+        b->onClick = [this, edit, field, weak, show, useFile, current = loaded.*field, absolutePath] {
             PickerActionsUVE actions;
             actions.current = PathOfGuidUVE(current);
-            actions.empty = [this, edit, field, weak, path = absolutePath] {
+            actions.empty = [edit, field, show, path = absolutePath, this] {
                 edit([&](MaterialUVE& m) {
                     m.*field = Asset::AssetGuidUVE{};
                     PackSeparateMapsUVE(m, path, false, false);
                 });
-                if (auto button = weak.lock()) {
-                    button->setText("Empty");
-                }
+                show(Asset::AssetGuidUVE{});
             };
-            actions.file = [this, edit, field, weak, path = absolutePath](const std::filesystem::path& absolute) {
-                const Asset::AssetGuidUVE guid = PublishPickedUVE(absolute);
-                if (guid == Asset::AssetGuidUVE{}) {
-                    m_editor.m_contentStatusMessage = "Could not read " + absolute.filename().string() + " as a texture.";
-                    return;
-                }
-                edit([&](MaterialUVE& m) {
-                    const bool metallicPicked = field == &MaterialUVE::metallicTexture && m.metallicTexture == Asset::AssetGuidUVE{};
-                    const bool roughnessPicked = field == &MaterialUVE::roughnessTexture && m.roughnessTexture == Asset::AssetGuidUVE{};
-                    m.*field = guid;
-                    if (field == &MaterialUVE::metallicTexture || field == &MaterialUVE::roughnessTexture ||
-                        field == &MaterialUVE::metallicRoughnessTexture) {
-                        PackSeparateMapsUVE(m, path, metallicPicked, roughnessPicked);
-                    }
-                });
-                if (auto button = weak.lock()) {
-                    const std::filesystem::path path = PathOfGuidUVE(guid);
-                    button->setText(path.empty() ? absolute.stem().string() : path.stem().string());
-                }
-            };
+            actions.file = useFile;
+            if (current != Asset::AssetGuidUVE{}) {
+                actions.extras.emplace_back("Texture Settings...", [this, current] { ShowTextureSettingsUVE(PathOfGuidUVE(current)); });
+            }
             if (auto button = weak.lock()) {
-                ShowPickerUVE(PickerSpecForUVE({".uvtex"}), std::move(actions), button->rect());
+                ShowPickerUVE(PickerSpecForUVE({".uvtex", ".png"}), std::move(actions), button->rect());
             }
         };
-        // The texture itself beside its picker, as editors show a slot.
-        auto thumb = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Texture);
-        thumb->setAssetUVE(PathOfGuidUVE(loaded.*field));
         auto slot = prism::hbox(6.0F);
         slot->add(thumb, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Top});
         slot->add(b, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Top});
         auto row = std::make_shared<RowUVE>();
-        std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;
         row->sync = [weakThumb](const void*) {
+            // A preview still being made shows up as soon as it is ready.
             if (auto t = weakThumb.lock()) {
                 t->refreshUVE();
             }
@@ -259,7 +294,64 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
         if (tip[0] != '\0') {
             b->setTooltip(tip);
         }
-        m_grid->addRow(category, label, slot, tip);
+        const prism::Ref<prism::Widget> dropTarget =
+            WithAssetDropUVE([this] { return m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot; }, slot,
+                             PickerSpecForUVE({".uvtex", ".png"}).loadable, useFile);
+        m_grid->addRow(category, label, dropTarget, tip);
+
+        // How the map is read, once the slot holds one.
+        if (map == kNoMapUVE || loaded.*field == Asset::AssetGuidUVE{}) {
+            return;
+        }
+        const Asset::MaterialMapSettingsUVE settings = loaded.MapUVE(map);
+        // A setting of a separate Metallic / Roughness map is baked into the ORM map it is packed into.
+        const auto editMap = [edit, map, packed, this, path = absolutePath](const std::function<void(Asset::MaterialMapSettingsUVE&)>& change) {
+            edit([&](MaterialUVE& m) {
+                change(m.MapUVE(map));
+                if (packed) {
+                    PackSeparateMapsUVE(m, path, false, false);
+                }
+            });
+        };
+        const std::string prefix = std::string("  ");
+        if (!packed) {
+            auto tiling = prism::hbox(4.0F);
+            auto offset = prism::hbox(4.0F);
+            for (int axis = 0; axis < 2; ++axis) {
+                const auto field2 = [&](const Math::Vector2UVE value, const float step, const bool isTiling) {
+                    auto n = prism::make<prism::NumberField>(axis == 0 ? value.x : value.y, step, 3);
+                    n->setAxisLabel(axis == 0 ? "X" : "Y", axis == 0 ? prism::Color(206, 72, 72) : prism::Color(92, 170, 70));
+                    n->onCommit = [editMap, axis, isTiling](const float v) {
+                        editMap([&](Asset::MaterialMapSettingsUVE& s) {
+                            Math::Vector2UVE& target = isTiling ? s.tiling : s.offset;
+                            (axis == 0 ? target.x : target.y) = v;
+                        });
+                    };
+                    n->setEnabled(writable);
+                    return n;
+                };
+                tiling->add(field2(settings.tiling, 0.05F, true), prism::Slot{1.0F});
+                offset->add(field2(settings.offset, 0.01F, false), prism::Slot{1.0F});
+            }
+            m_grid->addRow(category, prefix + "Tiling", tiling, "How many times the map repeats across the surface (on top of the material's UV scale).");
+            m_grid->addRow(category, prefix + "Offset", offset, "Slides the map across the surface.");
+            auto uv2 = prism::make<prism::CheckBox>("", settings.onUv2);
+            uv2->onChange = [editMap](const bool v) { editMap([&](Asset::MaterialMapSettingsUVE& s) { s.onUv2 = v; }); };
+            add((prefix + "On UV2").c_str(), uv2, "Read this map with the UV2 set instead of UV1.");
+        }
+        auto channel = prism::make<prism::ComboBox>(std::vector<std::string>{"Red", "Green", "Blue", "Alpha", "RGB"},
+                                                    static_cast<int>(settings.channel));
+        channel->onChange = [editMap](const int i) {
+            editMap([&](Asset::MaterialMapSettingsUVE& s) { s.channel = static_cast<Asset::MaterialTextureChannelUVE>(std::clamp(i, 0, 4)); });
+        };
+        add((prefix + "Channel").c_str(), channel, "RGB reads the map as it is; a single channel reads it as grey (a packed or mask map).");
+        auto invert = prism::make<prism::CheckBox>("", settings.invert);
+        invert->onChange = [editMap](const bool v) { editMap([&](Asset::MaterialMapSettingsUVE& s) { s.invert = v; }); };
+        add((prefix + "Invert").c_str(), invert, "Reads the map inverted (white becomes black).");
+        auto strength = prism::make<prism::Slider>(0.0F, 1.0F, settings.strength, 0.0F);
+        strength->setDecimals(2);
+        strength->onChange = [editMap](const float v) { editMap([&](Asset::MaterialMapSettingsUVE& s) { s.strength = v; }); };
+        add((prefix + "Strength").c_str(), strength, "How strongly the map acts: 0 is as if there were no map, 1 the map as authored.");
     };
 
     // Kind: a preset over the same physically based path; picking one applies the same defaults
@@ -282,11 +374,11 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
     section("Albedo");
     color("Color", &MaterialUVE::albedoColor, "The surface's base colour (multiplies the albedo texture).");
     slider("Alpha", &MaterialUVE::albedoAlpha, 0.0F, 1.0F, "Opacity, used by the alpha blend modes and the cutoff.");
-    texture("Texture", &MaterialUVE::albedoTexture);
+    texture("Texture", &MaterialUVE::albedoTexture, Asset::MaterialMapUVE::Albedo);
     check("Vertex Color", &MaterialUVE::useVertexColorAsAlbedo, "Use the mesh's vertex colours as albedo.");
 
     section("Normal");
-    texture("Normal Map", &MaterialUVE::normalTexture);
+    texture("Normal Map", &MaterialUVE::normalTexture, Asset::MaterialMapUVE::Normal);
     slider("Strength", &MaterialUVE::normalScale, 0.0F, 4.0F, "1 is the map as authored; 0 flattens it.");
     check("Flip Green", &MaterialUVE::normalFlipGreen, "For maps authored with the other green-channel convention.");
 
@@ -294,16 +386,16 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
     slider("Metallic", &MaterialUVE::metallic, 0.0F, 1.0F);
     slider("Roughness", &MaterialUVE::roughness, 0.0F, 1.0F);
     slider("Specular", &MaterialUVE::dielectricSpecular, 0.0F, 1.0F, "Reflectance of non-metals (0.5 is about 4%).");
-    texture("ORM / Metal-Rough", &MaterialUVE::metallicRoughnessTexture, "Packed map: G roughness, B metallic.");
-    texture("Metallic Map", &MaterialUVE::metallicTexture, "A grey map (white = metal), packed into the ORM map the shader reads.");
-    texture("Roughness Map", &MaterialUVE::roughnessTexture, "A grey map (white = rough), packed into the ORM map the shader reads.");
-    texture("Occlusion Map", &MaterialUVE::aoTexture);
+    texture("ORM / Metal-Rough", &MaterialUVE::metallicRoughnessTexture, Asset::MaterialMapUVE::MetallicRoughness, "Packed map: G roughness, B metallic.");
+    texture("Metallic Map", &MaterialUVE::metallicTexture, Asset::MaterialMapUVE::Metallic, "A grey map (white = metal), packed into the ORM map the shader reads.");
+    texture("Roughness Map", &MaterialUVE::roughnessTexture, Asset::MaterialMapUVE::Roughness, "A grey map (white = rough), packed into the ORM map the shader reads.");
+    texture("Occlusion Map", &MaterialUVE::aoTexture, Asset::MaterialMapUVE::Occlusion);
     slider("Occlusion", &MaterialUVE::occlusionStrength, 0.0F, 1.0F, "How much the occlusion map darkens cavities.");
 
     section("Emission");
     color("Color", &MaterialUVE::emissiveColor);
     slider("Energy", &MaterialUVE::emissiveEnergy, 0.0F, 16.0F);
-    texture("Texture", &MaterialUVE::emissiveTexture);
+    texture("Texture", &MaterialUVE::emissiveTexture, Asset::MaterialMapUVE::Emissive);
 
     section("Rendering");
     combo("Blend", {"Opaque", "Alpha Blend", "Premultiplied Alpha", "Additive", "Subtractive", "Multiply"},
@@ -358,8 +450,111 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
     slider("Anisotropy", &MaterialUVE::anisotropyAmount, -1.0F, 1.0F);
     slider("Subsurface", &MaterialUVE::subsurfaceStrength, 0.0F, 1.0F);
     slider("Refraction", &MaterialUVE::refractionAmount, 0.0F, 1.0F);
-    texture("Height Map", &MaterialUVE::heightTexture);
+    texture("Height Map", &MaterialUVE::heightTexture, kNoMapUVE);
     slider("Height Scale", &MaterialUVE::heightScale, 0.0F, 0.25F);
+}
+
+} // namespace UVE::Editor
+
+namespace UVE::Editor {
+
+/// The texture's import, edited and applied by importing its source image again: colour space and
+/// usage (a colour map, a normal map or a data mask), mipmaps and their filter, the largest size it
+/// is kept at, compression, and the per-image fixes (invert green for the other normal-map
+/// convention, premultiplied alpha). The choice is kept in the source's `.uvimport` sidecar, so a
+/// later re-import (or a fresh pick of the same image) imports it the same way.
+void EditorDetailsUVE::ShowTextureSettingsUVE(const std::filesystem::path& texturePath) {
+    const std::filesystem::path source = EditorUVE::FindTextureSourceUVE(texturePath);
+    if (source.empty()) {
+        auto note = prism::make<prism::Label>("'" + texturePath.filename().string() +
+                                              "' has no source image beside it, so it cannot be imported again.");
+        prism::showDialog("Texture Settings", note, {{"Close", true, nullptr}});
+        return;
+    }
+    auto settings = std::make_shared<Asset::TextureImportSettingsUVE>(EditorUVE::LoadTextureImportSettingsUVE(source));
+    auto body = prism::vbox(6.0F);
+    const auto row = [&body](const char* label, prism::Ref<prism::Widget> control, const char* tip) {
+        auto line = prism::hbox(8.0F);
+        auto name = prism::make<prism::Label>(label);
+        auto nameBox = prism::make<prism::SizeBox>();
+        nameBox->setWidthOverride(150.0F);
+        nameBox->setContent(name);
+        line->add(nameBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        control->setTooltip(tip);
+        line->add(control, prism::Slot{1.0F});
+        body->add(line);
+    };
+    auto heading = prism::make<prism::Label>(source.filename().string());
+    heading->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    body->add(heading);
+
+    auto colorSpace = prism::make<prism::ComboBox>(std::vector<std::string>{"sRGB (colour)", "Linear (data)"},
+                                                   settings->colorSpace == Asset::TextureAssetColorSpaceUVE::Linear ? 1 : 0);
+    colorSpace->onChange = [settings](const int i) {
+        settings->colorSpace = i == 1 ? Asset::TextureAssetColorSpaceUVE::Linear : Asset::TextureAssetColorSpaceUVE::Srgb;
+    };
+    row("Color Space", colorSpace, "sRGB for pictures and albedo; Linear for normal, roughness, metallic and other data maps.");
+    const int usageIndex = settings->usage == Asset::TextureUsageUVE::Normal ? 1 : settings->usage == Asset::TextureUsageUVE::Data ? 2 : 0;
+    auto usage = prism::make<prism::ComboBox>(std::vector<std::string>{"Color", "Normal Map", "Mask / Data"}, usageIndex);
+    usage->onChange = [settings, weakSpace = std::weak_ptr<prism::ComboBox>(colorSpace)](const int i) {
+        settings->usage = i == 1 ? Asset::TextureUsageUVE::Normal : i == 2 ? Asset::TextureUsageUVE::Data : Asset::TextureUsageUVE::Color;
+        // A normal map or a mask is data: read linear.
+        if (i != 0) {
+            settings->colorSpace = Asset::TextureAssetColorSpaceUVE::Linear;
+            if (auto space = weakSpace.lock()) {
+                space->setSelected(1);
+            }
+        }
+    };
+    row("Usage", usage, "What the image holds: a picture, a tangent-space normal map, or a mask of values.");
+    auto mipmaps = prism::make<prism::CheckBox>("", settings->generateMipmaps);
+    mipmaps->onChange = [settings](const bool v) { settings->generateMipmaps = v; };
+    row("Generate Mipmaps", mipmaps, "Smaller copies for distant surfaces: no shimmering, faster sampling.");
+    auto mipFilter = prism::make<prism::ComboBox>(std::vector<std::string>{"Smooth (box)", "Sharp (nearest)"},
+                                                  settings->mipFilter == Asset::TextureMipmapFilterUVE::Nearest ? 1 : 0);
+    mipFilter->onChange = [settings](const int i) {
+        settings->mipFilter = i == 1 ? Asset::TextureMipmapFilterUVE::Nearest : Asset::TextureMipmapFilterUVE::Box;
+    };
+    row("Mipmap Filter", mipFilter, "Sharp keeps hard pixel edges (pixel art); Smooth averages.");
+    static const std::vector<std::uint32_t> kSizes{256U, 512U, 1024U, 2048U, 4096U, 8192U};
+    int sizeIndex = 4;
+    for (std::size_t i = 0U; i < kSizes.size(); ++i) {
+        if (kSizes[i] == settings->maxResolutionClamp) {
+            sizeIndex = static_cast<int>(i);
+        }
+    }
+    auto maxSize = prism::make<prism::ComboBox>(std::vector<std::string>{"256", "512", "1024", "2048", "4096", "8192"}, sizeIndex);
+    maxSize->onChange = [settings](const int i) { settings->maxResolutionClamp = kSizes[static_cast<std::size_t>(std::clamp(i, 0, 5))]; };
+    row("Max Size", maxSize, "A larger image is scaled down to this on import (memory and download size).");
+    const int compressionIndex = settings->compressionMode == Asset::TextureCompressionModeUVE::BasisETC1S   ? 1
+                                 : settings->compressionMode == Asset::TextureCompressionModeUVE::BasisUASTC ? 2
+                                                                                                              : 0;
+    auto compression = prism::make<prism::ComboBox>(std::vector<std::string>{"None", "Small (ETC1S)", "High Quality (UASTC)"},
+                                                    compressionIndex);
+    compression->onChange = [settings](const int i) {
+        settings->compressionMode = i == 1 ? Asset::TextureCompressionModeUVE::BasisETC1S
+                                    : i == 2 ? Asset::TextureCompressionModeUVE::BasisUASTC
+                                             : Asset::TextureCompressionModeUVE::None;
+    };
+    row("Compression", compression, "Stored compressed: far smaller on disk and in memory, at some quality.");
+    auto invertGreen = prism::make<prism::CheckBox>("", settings->invertGreenChannel);
+    invertGreen->onChange = [settings](const bool v) { settings->invertGreenChannel = v; };
+    row("Invert Green", invertGreen, "For normal maps made with the other green-channel convention.");
+    auto premultiply = prism::make<prism::CheckBox>("", settings->premultiplyAlpha);
+    premultiply->onChange = [settings](const bool v) { settings->premultiplyAlpha = v; };
+    row("Premultiply Alpha", premultiply, "Multiplies colour by alpha on import (no dark fringes on cut-out edges).");
+
+    prism::showDialog("Texture Settings", body,
+                      {{"Cancel", false, nullptr},
+                       {"Apply", true, [this, source, settings] {
+                            if (!m_editor.ReimportTextureUVE(source, *settings)) {
+                                m_editor.m_contentStatusMessage = "Could not import " + source.filename().string() + " with these settings.";
+                                return;
+                            }
+                            m_editor.m_contentStatusMessage = "Imported " + source.filename().string() + " again.";
+                            m_rebuildRequested = true;
+                        }}},
+                      460.0F);
 }
 
 } // namespace UVE::Editor
