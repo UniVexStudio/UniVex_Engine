@@ -116,8 +116,10 @@ private:
     std::shared_ptr<prism::Label> m_title;
     std::shared_ptr<prism::Label> m_subtitle;
     std::shared_ptr<prism::PropertyGrid> m_grid;
-    /// The Scale row's snap magnet, kept in step with the setting (the viewport menu changes it too).
-    std::weak_ptr<prism::Button> m_scaleMagnet;
+    /// The Scale row's lock (X, Y and Z together).
+    std::weak_ptr<prism::Button> m_scaleLockButton;
+    /// Scale lock: on, a change to one axis of Scale takes the other two with it (in proportion).
+    bool m_scaleLocked = false;
     std::vector<std::shared_ptr<RowUVE>> m_rows;
     Scene::EntityUVE m_entity = Scene::kInvalidEntityUVE;
     std::uint64_t m_signature = 0;
