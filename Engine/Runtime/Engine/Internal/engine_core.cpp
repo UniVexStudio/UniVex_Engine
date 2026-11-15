@@ -2678,6 +2678,43 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         }
         return Scene::kInvalidEntityUVE;
     };
+    // A clip's tracks for other objects: each object under the animated one (or that object
+    // itself) whose name matches, posed in its own local space.
+    const auto poseObjectTracks = [this](const Scene::EntityUVE self, const Scene::EntityUVE target,
+                                         const Asset::AnimationClipAssetUVE& clip, const double timeSeconds) {
+        if (clip.objects.empty()) {
+            return;
+        }
+        Scene::EntityUVE root = target;
+        if (root == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(root)) {
+            root = m_entityManager->HasComponentUVE<Scene::HierarchyComponentUVE>(self)
+                       ? m_entityManager->GetComponentUVE<Scene::HierarchyComponentUVE>(self).parent
+                       : Scene::kInvalidEntityUVE;
+        }
+        if (root == Scene::kInvalidEntityUVE || !m_entityManager->IsAliveUVE(root)) {
+            return;
+        }
+        std::vector<Scene::EntityUVE> queue{root};
+        for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
+            const Scene::EntityUVE candidate = queue[next];
+            if (candidate != self && m_entityManager->HasComponentUVE<Scene::NameComponentUVE>(candidate) &&
+                m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(candidate)) {
+                const std::string& name = m_entityManager->GetComponentUVE<Scene::NameComponentUVE>(candidate).name;
+                for (const Asset::AnimationAssetBoneTrackUVE& track : clip.objects) {
+                    if (track.bone == name && !track.samples.empty()) {
+                        Scene::WriteAnimatedPoseUVE(Scene::SampleAnimationTrackUVE(track.samples, timeSeconds), true, true, true,
+                                                    m_entityManager->GetComponentUVE<Scene::TransformComponentUVE>(candidate));
+                        if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(candidate)) {
+                            m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(candidate).dirty = true;
+                        }
+                        break;
+                    }
+                }
+            }
+            const std::vector<Scene::EntityUVE> children = m_sceneGraph->GetChildrenUVE(*m_entityManager, candidate);
+            queue.insert(queue.end(), children.begin(), children.end());
+        }
+    };
     // Root motion is measured in the skeleton's space; the target moves in its parent's. Both go
     // through world space, composed from the local transforms up the hierarchy so a transform
     // edited this frame (not yet propagated to the world transform) still counts.
@@ -2997,6 +3034,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                                                                      skeleton, mixer);
             if (posed) {
                 posedSkeletons.push_back(skeletonEntity);
+                poseObjectTracks(entity, mixer.target, *clip, static_cast<double>(player.currentTimeSeconds));
             }
             raiseAnimationEvents(entity, mixer.target, player.firedEvents);
             if (posed && mixer.rootMotion == Scene::AnimationRootMotionModeUVE::ApplyToTarget) {
@@ -3016,8 +3054,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
             Scene::PlayAnimationSequencerUVE(player, *target, clip->durationSeconds);
         }
-        static_cast<void>(
-            Scene::StepAnimationSequencerUVE(player, *clip, animDeltaSeconds * mixer.speedScale, *target, mixer));
+        if (Scene::StepAnimationSequencerUVE(player, *clip, animDeltaSeconds * mixer.speedScale, *target, mixer)) {
+            poseObjectTracks(entity, mixer.target, *clip, static_cast<double>(player.currentTimeSeconds));
+        }
         raiseAnimationEvents(entity, mixer.target, player.firedEvents);
     }
 

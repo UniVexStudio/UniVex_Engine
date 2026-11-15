@@ -224,6 +224,22 @@ bool IsAnimationClipAssetValidUVE(const AnimationClipAssetUVE& clip) noexcept {
         }
         anyBoneSamples = anyBoneSamples || !track.samples.empty();
     }
+    if (clip.objects.size() > kMaximumAnimationAssetBonesUVE) {
+        return false;
+    }
+    for (std::size_t index = 0U; index < clip.objects.size(); ++index) {
+        const AnimationAssetBoneTrackUVE& track = clip.objects[index];
+        if (track.bone.empty() || track.bone.size() > kMaximumAnimationAssetIdentifierBytesUVE ||
+            track.bone.contains('\0') || !AreSamplesValidUVE(track.samples, clip.durationSeconds)) {
+            return false;
+        }
+        for (std::size_t other = 0U; other < index; ++other) {
+            if (clip.objects[other].bone == track.bone) {
+                return false; // one track per object
+            }
+        }
+        anyBoneSamples = anyBoneSamples || !track.samples.empty();
+    }
     // A facial clip on a static head legitimately has no object and no bone samples - the shapes
     // are the entire animation - so morph tracks count as movement too.
     if (clip.samples.empty() && !anyBoneSamples && clip.morphWeights.empty()) {
@@ -263,6 +279,13 @@ bool SerializeAnimationClipPayloadUVE(const AnimationClipAssetUVE& clip, std::ve
     document["samples"] = ToSamplesJsonUVE(clip.samples);
     for (const AnimationAssetBoneTrackUVE& track : clip.bones) {
         document["bones"].push_back({{"bone", track.bone}, {"samples", ToSamplesJsonUVE(track.samples)}});
+    }
+    if (!clip.objects.empty()) {
+        // Only when present: a clip without them stays byte-for-byte what it was.
+        document["objects"] = JsonUVE::array();
+        for (const AnimationAssetBoneTrackUVE& track : clip.objects) {
+            document["objects"].push_back({{"object", track.bone}, {"samples", ToSamplesJsonUVE(track.samples)}});
+        }
     }
     if (v4 || v3) {
         document["conformed"] = clip.conformed;
@@ -389,6 +412,25 @@ bool ParseAnimationClipPayloadUVE(const std::vector<std::byte>& payload, Animati
                     return false;
                 }
                 candidate.bones.push_back(std::move(track));
+            }
+        }
+        if (document.contains("objects")) {
+            const JsonUVE& objects = document.at("objects");
+            if (!objects.is_array() || objects.size() > kMaximumAnimationAssetBonesUVE) {
+                return false;
+            }
+            candidate.objects.reserve(objects.size());
+            for (const JsonUVE& value : objects) {
+                if (!value.is_object() || !value.contains("object") || !value.at("object").is_string() ||
+                    !value.contains("samples")) {
+                    return false;
+                }
+                AnimationAssetBoneTrackUVE track;
+                track.bone = value.at("object").get<std::string>();
+                if (!ReadSamplesJsonUVE(value.at("samples"), track.samples)) {
+                    return false;
+                }
+                candidate.objects.push_back(std::move(track));
             }
         }
         if (schema == kAnimationSchemaV3UVE || schema == kAnimationSchemaV4UVE) {

@@ -214,12 +214,11 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildToolbarUVE() {
     m_recordButton->setCheckable(true);
     m_recordButton->onClick = [this] { m_editor.SetAnimationTimelineRecordingUVE(!m_editor.m_timeline.recording); };
     row->add(m_recordButton, CentreSlotUVE());
-    m_keyButton = ToolButtonUVE(prism::Icon::Key, "Add a key at the playhead: the selected bone's, else the animated object's transform (K)", "Key");
+    m_keyButton = ToolButtonUVE(prism::Icon::Key, "Add a key at the playhead: the selected bone, else the selected object (the animated one or one under it) (K)", "Key");
     m_keyButton->onClick = [this] {
         // A bone's row selected keys that bone; otherwise the object the clip moves, as it stands.
-        if (m_editor.m_timeline.clip != nullptr && FindClipTrackSamplesUVE(*m_editor.m_timeline.clip, m_editor.m_selectedSkeletonBone) != nullptr &&
-            !m_editor.m_selectedSkeletonBone.empty()) {
-            m_editor.InsertAnimationTimelineKeyUVE();
+        if (m_editor.m_timeline.clip != nullptr && !m_editor.m_selectedSkeletonBone.empty()) {
+            static_cast<void>(m_editor.KeyAnimationTimelineBoneUVE(m_editor.m_selectedSkeletonBone));
         } else {
             static_cast<void>(m_editor.KeyAnimationTimelineObjectUVE());
         }
@@ -409,7 +408,7 @@ void EditorSequencerPanelUVE::RefreshUVE(const double deltaSeconds, const bool s
     if (view.clip != nullptr) {
         char text[160];
         std::snprintf(text, sizeof(text), "%.2f s  |  %ld frames  |  %.0f fps  |  %zu tracks", view.clip->durationSeconds,
-                      std::lround(view.durationSeconds * view.frameRate), view.frameRate, view.clip->bones.size());
+                      std::lround(view.durationSeconds * view.frameRate), view.frameRate, view.clip->bones.size() + view.clip->objects.size());
         info = text;
         if (view.clip->HasMorphTracksUVE()) {
             info += "  |  " + std::to_string(view.clip->morphWeights.size()) + " blend shapes";

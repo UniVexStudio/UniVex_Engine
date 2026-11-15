@@ -8,6 +8,7 @@
 #include <optional>
 #include <utility>
 
+#include "animation_clip_editing.h"
 #include "animation_sequencer.h"
 
 namespace UVE::Editor {
@@ -125,6 +126,25 @@ std::vector<TimelineRowUVE> BuildTimelineRowsUVE(const Asset::AnimationClipAsset
         }
     }
 
+    // Other objects the clip moves, by name, under the clip's own Transform. Their identity carries
+    // the object prefix so a bone and an object of the same name never answer to one row.
+    for (std::size_t index = 0U; index < clip.objects.size(); ++index) {
+        const Asset::AnimationAssetBoneTrackUVE& track = clip.objects[index];
+        if (!MatchesFilterUVE(track.bone, needle)) {
+            continue;
+        }
+        const std::string identity = std::string(1, kClipObjectTrackPrefixUVE) + track.bone;
+        TimelineRowUVE row;
+        row.kind = TimelineRowKindUVE::Bone;
+        row.label = track.bone;
+        row.track = identity;
+        row.trackIndex = index;
+        rows.push_back(row);
+        if (IsExpandedUVE(expandedTracks, identity)) {
+            PushChannelRowsUVE(rows, identity, index, false, 1);
+        }
+    }
+
     // Blend shapes last, in the clip's own order, so a 90-bone rig does not push the face off the
     // bottom of the tab.
     for (std::size_t index = 0U; index < clip.morphWeights.size(); ++index) {
@@ -203,6 +223,9 @@ bool ShowsMorphKeyUVE(const Asset::AnimationAssetMorphTrackUVE& track, const std
 
 double EstimateTimelineFrameRateUVE(const Asset::AnimationClipAssetUVE& clip) {
     std::size_t most = clip.samples.size();
+    for (const Asset::AnimationAssetBoneTrackUVE& track : clip.objects) {
+        most = std::max(most, track.samples.size());
+    }
     for (const Asset::AnimationAssetBoneTrackUVE& track : clip.bones) {
         most = std::max(most, track.samples.size());
     }

@@ -2952,6 +2952,15 @@ private:
         Scene::TransformComponentUVE objectLast{};
         double objectLastTime = -1.0;
         const void* objectLastClip = nullptr;
+        /// Objects under it the clip has their own tracks for (clip.objects), previewed the same way.
+        struct ChildPoseUVE {
+            Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+            Scene::TransformComponentUVE rest{};
+            Scene::TransformComponentUVE last{};
+        };
+        std::vector<ChildPoseUVE> children;
+        double childrenLastTime = -1.0;
+        const void* childrenLastClip = nullptr;
         /// A drag of the selected keys, from this mouse x.
         bool draggingKeys = false;
         float dragFromX = 0.0F;
@@ -3054,18 +3063,26 @@ private:
     /// The object the open clip's Transform track moves (the player's driver target, else its
     /// parent), or none.
     [[nodiscard]] Scene::EntityUVE AnimationTimelineObjectTargetUVE() const;
+    /// The clip track `entity` is keyed on: "" for the animated object itself, the object prefix
+    /// and its name for a named object under it (a mesh, a part), none for anything else.
+    [[nodiscard]] std::optional<std::string> AnimationTimelineTrackOfUVE(Scene::EntityUVE entity) const;
     /// Whether `entity`'s transform can be keyed now: the Sequencer is shown with a clip open and
-    /// `entity` is the object it animates.
+    /// `entity` is the object it animates or an object under it.
     [[nodiscard]] bool CanKeyAnimationTimelineObjectUVE(Scene::EntityUVE entity) const;
-    /// Keys the animated object's transform, as it stands, at the playhead (replacing a key there).
+    /// Keys the selected object's transform (the animated object, or one under it), as it stands, at
+    /// the playhead, replacing a key there. With nothing keyable selected, the animated object.
     bool KeyAnimationTimelineObjectUVE();
-    /// Whether the open clip has a Transform key at the playhead.
+    bool KeyAnimationTimelineObjectUVE(Scene::EntityUVE entity);
+    /// Keys the selected bone as it is posed now, starting its track when the clip has none.
+    bool KeyAnimationTimelineBoneUVE(const std::string& bone);
+    /// Whether the selected object's track has a key at the playhead.
     [[nodiscard]] bool HasAnimationTimelineObjectKeyAtPlayheadUVE() const;
     /// Record on or off (see AnimationTimelineStateUVE::recording).
     void SetAnimationTimelineRecordingUVE(bool recording);
     /// Puts the animated object back to its own pose (the preview is over, or the entity is saved).
     void RestoreAnimationTimelineObjectUVE();
     void PreviewAnimationTimelineObjectUVE(const Asset::AnimationClipAssetUVE& clip);
+    void PreviewAnimationTimelineChildrenUVE(const Asset::AnimationClipAssetUVE& clip);
     /// Every change to the open clip: one step of the clip's own undo history, shown at once.
     bool EditAnimationTimelineClipUVE(const std::function<void(Asset::AnimationClipAssetUVE&)>& change);
     void UndoAnimationTimelineUVE();

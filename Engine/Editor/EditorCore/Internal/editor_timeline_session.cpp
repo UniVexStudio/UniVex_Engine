@@ -383,10 +383,23 @@ void WritePoseToTransformUVE(const Asset::AnimationAssetPoseUVE& pose, Scene::Tr
 /// Places a key with `pose` on the clip's Transform track at `seconds` (snapped to the clip's
 /// frames), replacing a key already there. The clip grows to reach a key past its end.
 void SetObjectKeyUVE(Asset::AnimationClipAssetUVE& clip, const double seconds, const double frameRate,
-                     const Asset::AnimationAssetPoseUVE& pose) {
+                     const Asset::AnimationAssetPoseUVE& pose, const std::string& track = std::string{}) {
     const double rate = frameRate > 0.0 ? frameRate : 30.0;
     const double time = std::max(0.0, std::round(seconds * rate) / rate);
-    auto& samples = clip.samples;
+    // The clip's own track, another object's (started when it has none), or a bone's.
+    std::vector<Asset::AnimationAssetSampleUVE>* list = &clip.samples;
+    if (!track.empty()) {
+        list = FindClipTrackSamplesUVE(clip, track);
+        if (list == nullptr) {
+            const bool object = track.front() == kClipObjectTrackPrefixUVE;
+            auto& tracks = object ? clip.objects : clip.bones;
+            Asset::AnimationAssetBoneTrackUVE added;
+            added.bone = object ? track.substr(1U) : track;
+            tracks.push_back(std::move(added));
+            list = &tracks.back().samples;
+        }
+    }
+    auto& samples = *list;
     const auto at = std::find_if(samples.begin(), samples.end(), [time, rate](const Asset::AnimationAssetSampleUVE& s) {
         return std::abs(s.timeSeconds - time) < 0.5 / rate;
     });
@@ -427,42 +440,146 @@ Scene::EntityUVE EditorUVE::AnimationTimelineObjectTargetUVE() const {
     return target;
 }
 
+std::optional<std::string> EditorUVE::AnimationTimelineTrackOfUVE(const Scene::EntityUVE entity) const {
+    const Scene::EntityUVE target = AnimationTimelineObjectTargetUVE();
+    if (entity == Scene::kInvalidEntityUVE || target == Scene::kInvalidEntityUVE) {
+        return std::nullopt;
+    }
+    if (entity == target) {
+        return std::string{};
+    }
+    const Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!entityManager.IsAliveUVE(entity) || entity == m_timeline.player ||
+        !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity) ||
+        !entityManager.HasComponentUVE<Scene::NameComponentUVE>(entity)) {
+        return std::nullopt;
+    }
+    const std::string& name = entityManager.GetComponentUVE<Scene::NameComponentUVE>(entity).name;
+    if (name.empty()) {
+        return std::nullopt;
+    }
+    // Under the animated object, at any depth.
+    Scene::EntityUVE up = entity;
+    for (int depth = 0; depth < 256; ++depth) {
+        up = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(up)
+                 ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(up).parent
+                 : Scene::kInvalidEntityUVE;
+        if (up == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(up)) {
+            return std::nullopt;
+        }
+        if (up == target) {
+            return std::string(1, kClipObjectTrackPrefixUVE) + name;
+        }
+    }
+    return std::nullopt;
+}
+
 bool EditorUVE::CanKeyAnimationTimelineObjectUVE(const Scene::EntityUVE entity) const {
-    return m_timeline.panelShown && m_timeline.clip != nullptr && entity != Scene::kInvalidEntityUVE &&
-           entity == AnimationTimelineObjectTargetUVE();
+    return m_timeline.panelShown && m_timeline.clip != nullptr && AnimationTimelineTrackOfUVE(entity).has_value();
 }
 
 bool EditorUVE::HasAnimationTimelineObjectKeyAtPlayheadUVE() const {
     if (m_timeline.clip == nullptr) {
         return false;
     }
+    const std::string track = AnimationTimelineTrackOfUVE(GetSelectedEntityUVE()).value_or(std::string{});
+    const std::vector<Asset::AnimationAssetSampleUVE>* const samples =
+        track.empty() ? &m_timeline.clip->samples : FindClipTrackSamplesUVE(*m_timeline.clip, track);
+    if (samples == nullptr) {
+        return false;
+    }
     const double rate = std::max(1.0, EstimateTimelineFrameRateUVE(*m_timeline.clip));
     const double time = m_timeline.timeSeconds;
-    return std::ranges::any_of(m_timeline.clip->samples,
+    return std::ranges::any_of(*samples,
                                [time, rate](const Asset::AnimationAssetSampleUVE& s) { return std::abs(s.timeSeconds - time) < 0.5 / rate; });
 }
 
 bool EditorUVE::KeyAnimationTimelineObjectUVE() {
-    const Scene::EntityUVE target = AnimationTimelineObjectTargetUVE();
-    if (m_timeline.clip == nullptr || target == Scene::kInvalidEntityUVE) {
-        m_timeline.status = "Nothing to key: the player animates no object (set its Animation Driver's Target).";
+    const Scene::EntityUVE selected = GetSelectedEntityUVE();
+    return KeyAnimationTimelineObjectUVE(AnimationTimelineTrackOfUVE(selected).has_value() ? selected
+                                                                                            : AnimationTimelineObjectTargetUVE());
+}
+
+bool EditorUVE::KeyAnimationTimelineObjectUVE(const Scene::EntityUVE entity) {
+    const std::optional<std::string> track = AnimationTimelineTrackOfUVE(entity);
+    if (m_timeline.clip == nullptr || !track.has_value()) {
+        m_timeline.status = "Nothing to key: select the animated object or an object under it (set the Animation Driver's Target).";
         return false;
     }
-    const Scene::TransformComponentUVE& now = m_services->GetEntityManagerUVE().GetComponentUVE<Scene::TransformComponentUVE>(target);
+    const Scene::TransformComponentUVE now = m_services->GetEntityManagerUVE().GetComponentUVE<Scene::TransformComponentUVE>(entity);
     Asset::AnimationAssetPoseUVE pose;
     pose.position = now.localPosition;
     pose.rotation = now.localRotation;
     pose.scale = now.localScale;
     const double at = m_timeline.timeSeconds;
     const double rate = EstimateTimelineFrameRateUVE(*m_timeline.clip);
-    const bool changed = EditAnimationTimelineClipUVE([&](Asset::AnimationClipAssetUVE& next) { SetObjectKeyUVE(next, at, rate, pose); });
+    const std::string name = *track;
+    const bool changed = EditAnimationTimelineClipUVE([&](Asset::AnimationClipAssetUVE& next) { SetObjectKeyUVE(next, at, rate, pose, name); });
     if (changed) {
         // What is on the object now is what the clip says here: no edit left to detect.
-        m_timeline.objectLast = now;
-        m_timeline.objectLastTime = at;
-        m_timeline.objectLastClip = m_timeline.clip.get();
-        m_timeline.selectedKeys = {ClipKeyUVE{std::string{}, std::round(at * rate) / rate}};
-        m_timeline.status = "Transform keyed at " + std::to_string(static_cast<long>(std::lround(at * rate))) + " (frame)";
+        if (name.empty()) {
+            m_timeline.objectLast = now;
+            m_timeline.objectLastTime = at;
+            m_timeline.objectLastClip = m_timeline.clip.get();
+        } else {
+            m_timeline.childrenLastClip = nullptr;   // the preview takes the new track in
+            bool known = false;
+            for (AnimationTimelineStateUVE::ChildPoseUVE& child : m_timeline.children) {
+                if (child.entity == entity) {
+                    child.last = now;
+                    known = true;
+                }
+            }
+            if (!known) {
+                m_timeline.children.push_back(AnimationTimelineStateUVE::ChildPoseUVE{entity, now, now});
+            }
+        }
+        m_timeline.selectedKeys = {ClipKeyUVE{name, std::round(at * rate) / rate}};
+        m_timeline.status = (name.empty() ? std::string("Transform") : name.substr(1U)) + " keyed at " +
+                            std::to_string(static_cast<long>(std::lround(at * rate))) + " (frame)";
+    }
+    return changed;
+}
+
+bool EditorUVE::KeyAnimationTimelineBoneUVE(const std::string& bone) {
+    if (m_timeline.clip == nullptr || bone.empty()) {
+        return false;
+    }
+    if (FindClipTrackSamplesUVE(*m_timeline.clip, bone) != nullptr) {
+        InsertAnimationTimelineKeyUVE();
+        return true;
+    }
+    // No track yet: started from the bone as it is posed now.
+    const AnimationTimelineViewUVE view = SyncAnimationTimelineUVE();
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (view.skeleton == Scene::kInvalidEntityUVE || !entityManager.IsAliveUVE(view.skeleton) ||
+        !entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(view.skeleton)) {
+        m_timeline.status = "No skeleton to key " + bone + " on.";
+        return false;
+    }
+    const Scene::Skeleton3DComponentUVE& skeleton = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(view.skeleton);
+    const std::vector<Scene::SkeletonBonePoseUVE> posed = Scene::GetSkeletonCurrentPoseUVE(skeleton);
+    std::optional<std::size_t> index;
+    for (std::size_t i = 0U; i < skeleton.bones.size() && i < posed.size(); ++i) {
+        if (skeleton.bones[i].name == bone) {
+            index = i;
+            break;
+        }
+    }
+    if (!index.has_value()) {
+        m_timeline.status = "The skeleton has no bone " + bone + ".";
+        return false;
+    }
+    Asset::AnimationAssetPoseUVE pose;
+    pose.position = posed[*index].position;
+    pose.rotation = posed[*index].rotation;
+    pose.scale = posed[*index].scale;
+    const double at = m_timeline.timeSeconds;
+    const double rate = EstimateTimelineFrameRateUVE(*m_timeline.clip);
+    const bool changed = EditAnimationTimelineClipUVE([&](Asset::AnimationClipAssetUVE& next) { SetObjectKeyUVE(next, at, rate, pose, bone); });
+    if (changed) {
+        m_timeline.selectedKeys = {ClipKeyUVE{bone, std::round(at * rate) / rate}};
+        m_timeline.status = bone + " keyed at " + std::to_string(static_cast<long>(std::lround(at * rate))) + " (frame)";
     }
     return changed;
 }
@@ -481,6 +598,17 @@ void EditorUVE::RestoreAnimationTimelineObjectUVE() {
             entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(m_timeline.objectTarget).dirty = true;
         }
     }
+    for (const AnimationTimelineStateUVE::ChildPoseUVE& child : m_timeline.children) {
+        if (entityManager.IsAliveUVE(child.entity) && entityManager.HasComponentUVE<Scene::TransformComponentUVE>(child.entity)) {
+            entityManager.GetComponentUVE<Scene::TransformComponentUVE>(child.entity) = child.rest;
+            if (entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(child.entity)) {
+                entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(child.entity).dirty = true;
+            }
+        }
+    }
+    m_timeline.children.clear();
+    m_timeline.childrenLastTime = -1.0;
+    m_timeline.childrenLastClip = nullptr;
     m_timeline.objectApplied = false;
     m_timeline.objectTarget = Scene::kInvalidEntityUVE;
     m_timeline.objectLastTime = -1.0;
@@ -497,6 +625,7 @@ void EditorUVE::PreviewAnimationTimelineObjectUVE(const Asset::AnimationClipAsse
     if (target == Scene::kInvalidEntityUVE) {
         return;
     }
+    PreviewAnimationTimelineChildrenUVE(clip);
     Scene::TransformComponentUVE& transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(target);
     if (!m_timeline.objectApplied) {
         m_timeline.objectRest = transform;
@@ -537,6 +666,83 @@ void EditorUVE::PreviewAnimationTimelineObjectUVE(const Asset::AnimationClipAsse
     m_timeline.objectLast = transform;
     m_timeline.objectLastTime = m_timeline.timeSeconds;
     m_timeline.objectLastClip = &clip;
+}
+
+void EditorUVE::PreviewAnimationTimelineChildrenUVE(const Asset::AnimationClipAssetUVE& clip) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    // Under Record, the selected object under the animated one is watched even before it has a
+    // track, so its first move keys it.
+    if (m_timeline.recording) {
+        const Scene::EntityUVE selected = GetSelectedEntityUVE();
+        if (AnimationTimelineTrackOfUVE(selected).value_or(std::string{}).size() > 0U &&
+            std::none_of(m_timeline.children.begin(), m_timeline.children.end(),
+                         [selected](const AnimationTimelineStateUVE::ChildPoseUVE& c) { return c.entity == selected; })) {
+            const Scene::TransformComponentUVE& now = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(selected);
+            m_timeline.children.push_back(AnimationTimelineStateUVE::ChildPoseUVE{selected, now, now});
+        }
+    }
+    // A hand move of a tracked object (gizmo, Details) while paused: Record keys it at the
+    // playhead; otherwise it is the object's own new pose, kept.
+    bool keyedAny = false;
+    for (AnimationTimelineStateUVE::ChildPoseUVE& child : m_timeline.children) {
+        if (!entityManager.IsAliveUVE(child.entity) || !entityManager.HasComponentUVE<Scene::TransformComponentUVE>(child.entity)) {
+            continue;
+        }
+        const Scene::TransformComponentUVE& now = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(child.entity);
+        if (!m_timeline.playing && !SamePoseUVE(now, child.last)) {
+            if (m_timeline.recording) {
+                const Scene::EntityUVE moved = child.entity;
+                static_cast<void>(KeyAnimationTimelineObjectUVE(moved));
+                keyedAny = true;
+                break;   // the list may have changed
+            }
+            child.rest = now;
+            child.last = now;
+        }
+    }
+    if (keyedAny || clip.objects.empty()) {
+        return;
+    }
+    if (!m_timeline.playing && m_timeline.childrenLastTime == m_timeline.timeSeconds && m_timeline.childrenLastClip == &clip) {
+        return;
+    }
+    // Each tracked object under the animated one, found by name.
+    const Scene::EntityUVE target = AnimationTimelineObjectTargetUVE();
+    std::vector<Scene::EntityUVE> queue{target};
+    for (std::size_t next = 0U; next < queue.size() && next < 4096U; ++next) {
+        const Scene::EntityUVE candidate = queue[next];
+        if (next > 0U && entityManager.HasComponentUVE<Scene::NameComponentUVE>(candidate) &&
+            entityManager.HasComponentUVE<Scene::TransformComponentUVE>(candidate)) {
+            const std::string& name = entityManager.GetComponentUVE<Scene::NameComponentUVE>(candidate).name;
+            for (const Asset::AnimationAssetBoneTrackUVE& track : clip.objects) {
+                if (track.bone != name || track.samples.empty()) {
+                    continue;
+                }
+                Scene::TransformComponentUVE& transform = entityManager.GetComponentUVE<Scene::TransformComponentUVE>(candidate);
+                auto known = std::find_if(m_timeline.children.begin(), m_timeline.children.end(),
+                                          [candidate](const AnimationTimelineStateUVE::ChildPoseUVE& c) { return c.entity == candidate; });
+                if (known == m_timeline.children.end()) {
+                    m_timeline.children.push_back(AnimationTimelineStateUVE::ChildPoseUVE{candidate, transform, transform});
+                    known = std::prev(m_timeline.children.end());
+                }
+                const Core::TransformPoseUVE sampled = Scene::SampleAnimationTrackUVE(track.samples, m_timeline.timeSeconds);
+                Asset::AnimationAssetPoseUVE pose;
+                pose.position = sampled.position;
+                pose.rotation = sampled.rotation;
+                pose.scale = sampled.scale;
+                WritePoseToTransformUVE(pose, transform);
+                if (entityManager.HasComponentUVE<Scene::WorldTransformComponentUVE>(candidate)) {
+                    entityManager.GetComponentUVE<Scene::WorldTransformComponentUVE>(candidate).dirty = true;
+                }
+                known->last = transform;
+                break;
+            }
+        }
+        const std::vector<Scene::EntityUVE> children = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, candidate);
+        queue.insert(queue.end(), children.begin(), children.end());
+    }
+    m_timeline.childrenLastTime = m_timeline.timeSeconds;
+    m_timeline.childrenLastClip = &clip;
 }
 
 namespace {
@@ -662,6 +868,12 @@ void EditorUVE::InsertAnimationTimelineKeyUVE() {
     std::optional<std::string> chosen;
     if (FindClipTrackSamplesUVE(*m_timeline.clip, m_selectedSkeletonBone) != nullptr) {
         chosen = m_selectedSkeletonBone;
+    } else if (!m_selectedSkeletonBone.empty() && m_selectedSkeletonBone.front() != kClipObjectTrackPrefixUVE) {
+        static_cast<void>(KeyAnimationTimelineBoneUVE(m_selectedSkeletonBone));   // its track starts here
+        return;
+    } else if (AnimationTimelineTrackOfUVE(GetSelectedEntityUVE()).value_or(std::string{}).size() > 0U) {
+        static_cast<void>(KeyAnimationTimelineObjectUVE(GetSelectedEntityUVE()));   // an object under the animated one
+        return;
     } else if (!m_timeline.clip->samples.empty()) {
         chosen = std::string{};
     }
