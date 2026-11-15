@@ -2948,6 +2948,52 @@ static void testDialogButtonsReadFields(Application& app) {
   CHECK(weak.expired());   // and the dialog closed
 }
 
+// A dialog moves when its title bar is dragged, and its close button still closes it. A combo box's
+// disabled items cannot be chosen.
+static void testDialogDragAndDisabledChoices(Application& app) {
+  SECTION("dialogs drag by their title; disabled combo items cannot be picked");
+  app.hostResize(900, 700);
+  app.setRoot(make<Spacer>());
+  auto field = make<TextInput>("", "Name");
+  showDialog("Move Me", field, {{"Cancel", false, nullptr}});
+  app.tick();
+  Widget* root = field.get();
+  while (root->parent() != nullptr) root = root->parent();
+  const Rect before = root->rect();
+  const Vec2 grab{before.x + 60.f, before.y + 12.f};   // on the title, away from the X
+  app.hostMouseMove(grab);
+  app.hostMouseButton(grab, MouseButton::Left, true);
+  app.hostMouseMove(grab + Vec2(40.f, 30.f));
+  app.hostMouseButton(grab + Vec2(40.f, 30.f), MouseButton::Left, false);
+  app.tick();
+  CHECK(std::fabs(root->rect().x - (before.x + 40.f)) < 1.f && std::fabs(root->rect().y - (before.y + 30.f)) < 1.f);
+  std::weak_ptr<TextInput> weak = field;
+  field.reset();
+  Button* x = nullptr;
+  std::function<void(Widget*)> findX = [&](Widget* w) {
+    if (auto* b = dynamic_cast<Button*>(w); b && b->text().empty() && x == nullptr) x = b;
+    for (const Ref<Widget>& c : w->children()) findX(c.get());
+  };
+  findX(root);
+  CHECK(x != nullptr);
+  if (x != nullptr) {
+    const Vec2 p = x->rect().center();
+    app.hostMouseMove(p);
+    app.hostMouseButton(p, MouseButton::Left, true);
+    app.hostMouseButton(p, MouseButton::Left, false);
+  }
+  app.tick();
+  CHECK(weak.expired());
+
+  ComboBox combo({"None (Hero)", "  Collision  (has LG_Hero)", "  Camera"}, 0);
+  combo.setDisabledItems({false, true, false});
+  combo.setSelected(1);
+  CHECK(combo.selected() == 0);   // refused
+  combo.setSelected(2);
+  CHECK(combo.selected() == 2);
+  CHECK(combo.isItemDisabled(1) && !combo.isItemDisabled(2));
+}
+
 // A text input may be cleared and typed into again; a host sets a pin's value (one undo step) and
 // a value of the wrong type is refused.
 static void testBlueprintPinValues(Application& app) {
@@ -2993,6 +3039,7 @@ int main(int argc, char** argv) {
   testLayout(app);
   testHitAndRouting(app);
   testDialogButtonsReadFields(app);
+  testDialogDragAndDisabledChoices(app);
   testDocking(app);
   testToastsAndTimers(app, *plat);
   testDrawList(app);

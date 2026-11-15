@@ -839,6 +839,40 @@ bool ColorField::onMouseDown(const MouseEvent& e) {
 }
 
 // ------------------------------------------------------------------ Dialog
+namespace {
+
+/// A dialog's title bar: dragging it moves the dialog (its buttons, like the close X, still take
+/// their own clicks).
+class DialogTitleDrag : public Border {
+public:
+  std::weak_ptr<Widget> dialog;
+  bool onMouseDown(const MouseEvent& e) override {
+    const auto d = dialog.lock();
+    if (e.button != MouseButton::Left || !d) return false;
+    m_grab = e.pos - Vec2(d->rect().x, d->rect().y);
+    m_drag = true;
+    return true;
+  }
+  bool onMouseMove(const MouseEvent& e) override {
+    if (!m_drag) return false;
+    if (const auto d = dialog.lock()) Application::get().movePopup(d.get(), e.pos - m_grab);
+    return true;
+  }
+  bool onMouseUp(const MouseEvent&) override {
+    const bool was = m_drag;
+    m_drag = false;
+    return was;
+  }
+  Cursor cursor() const override { return Cursor::SizeAll; }
+  // The whole bar takes the press (a Border without a background would let it fall through).
+  bool hitSelf() const override { return true; }
+private:
+  Vec2 m_grab;
+  bool m_drag = false;
+};
+
+} // namespace
+
 void showDialog(const std::string& title, Ref<Widget> content, std::vector<DialogButton> buttons, float width) {
   const Theme& t = theme();
   auto root = make<Border>();
@@ -850,7 +884,8 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   auto close = [wr] { if (auto r = wr.lock()) Application::get().closePopup(r.get()); };
 
   auto col = vbox();
-  auto bar = make<Border>();
+  auto bar = make<DialogTitleDrag>();
+  bar->dialog = root;
   bar->setBorder(t.borderSoft, Margin(0, 0, 0, 1));
   bar->setPadding(Margin(16, 0, 8, 0));
   bar->setFixedHeight(38);

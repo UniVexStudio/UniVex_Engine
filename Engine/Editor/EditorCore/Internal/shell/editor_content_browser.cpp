@@ -1680,29 +1680,35 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
     auto state = std::make_shared<StateUVE>();
     auto name = prism::make<prism::TextInput>("LG_New", "Name");
     auto entityCombo = prism::make<prism::ComboBox>(labels, 0);
-    auto objectsBox = prism::make<prism::WrapBox>(prism::Orientation::Horizontal, 4.0F, 4.0F);
+    // One picker: the entity itself (None), then every object under it, indented by depth. An
+    // object that already runs a Logic Graph is listed but cannot be picked.
+    auto objectPicker = prism::make<prism::ComboBox>(std::vector<std::string>{}, 0);
     auto note = prism::make<prism::Label>("", prism::FontRole::Small);
     note->setColor(prism::ThemeColor(&prism::Theme::textDim));
     auto form = prism::make<prism::PropertyGrid>();
     const int cat = form->addCategory("New Logic Graph");
     form->addRow(cat, "Name", name, "The file's name");
     form->addRow(cat, "Entity Class", entityCombo, "The entity whose object runs the graph");
-    form->addRow(cat, "Object", objectsBox, "None: the entity itself. Or one of the objects under it.");
+    form->addRow(cat, "Object", objectPicker, "None: the entity itself. Or one of the objects under it.");
     form->addRow(cat, "", note, "");
 
     auto rebuild = std::make_shared<std::function<void()>>();
-    std::weak_ptr<std::function<void()>> weakRebuild = rebuild;
-    std::weak_ptr<prism::WrapBox> weakBox = objectsBox;
+    std::weak_ptr<prism::ComboBox> weakPicker = objectPicker;
     std::weak_ptr<prism::TextInput> weakName = name;
     std::weak_ptr<prism::Label> weakNote = note;
-    *rebuild = [state, entities, projectRoot, weakRebuild, weakBox, weakName, weakNote] {
-        const auto box = weakBox.lock();
-        if (!box) {
+    const auto showPick = [state, weakNote] {
+        if (const auto n = weakNote.lock()) {
+            n->setText(state->object < 0 ? "Every object of this entity already has a Logic Graph."
+                                         : "Runs on: " + state->objects[static_cast<std::size_t>(state->object)].name);
+        }
+    };
+    *rebuild = [state, weakPicker, showPick] {
+        const auto picker = weakPicker.lock();
+        if (!picker) {
             return;
         }
-        box->clearChildren();
         const auto& objects = state->objects;
-        // One graph per object: an object that has one cannot be picked again.
+        // One graph per object: the first free one is picked.
         if (state->object < 0 || state->object >= static_cast<int>(objects.size()) ||
             !objects[static_cast<std::size_t>(state->object)].graph.empty()) {
             state->object = -1;
@@ -1713,37 +1719,33 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
                 }
             }
         }
+        std::vector<std::string> items;
+        std::vector<bool> taken;
         for (std::size_t i = 0U; i < objects.size(); ++i) {
             const EntityFileObjectUVE& object = objects[i];
-            std::string label = i == 0U ? "None (" + object.name + ")" : object.name;
+            std::string label = i == 0U ? "None (" + object.name + ")" : std::string(static_cast<std::size_t>(object.depth) * 2U, ' ') + object.name;
             if (!object.graph.empty()) {
                 label += "  (has " + std::filesystem::path(object.graph).stem().string() + ")";
             }
-            auto button = prism::make<prism::Button>(label, i == 0U ? prism::Icon::Static3D : prism::Icon::Object3D);
-            button->setCheckable(true);
-            button->setChecked(static_cast<int>(i) == state->object);
-            button->setEnabled(object.graph.empty());
-            button->setTooltip(object.graph.empty() ? (i == 0U ? "The entity itself runs the graph, none of the objects under it"
-                                                               : "This object runs the graph")
-                                                    : "Already runs " + object.graph + ": one Logic Graph per object");
-            button->onClick = [state, i, weakRebuild, weakName] {
-                state->object = static_cast<int>(i);
-                if (const auto n = weakName.lock()) {
-                    n->setText(GraphNameForUVE(state->objects[i].name));
-                }
-                if (const auto again = weakRebuild.lock()) {
-                    (*again)();
-                }
-            };
-            box->add(button);
+            items.push_back(std::move(label));
+            taken.push_back(!object.graph.empty());
         }
-        if (const auto n = weakNote.lock()) {
-            n->setText(state->object < 0 ? "Every object of this entity already has a Logic Graph."
-                                         : "Runs on: " + objects[static_cast<std::size_t>(state->object)].name);
+        picker->setItems(std::move(items));
+        picker->setDisabledItems(std::move(taken));
+        if (state->object >= 0) {
+            picker->setSelected(state->object);
         }
-        if (prism::Application::exists()) {
-            prism::Application::get().invalidateLayout();
+        showPick();
+    };
+    objectPicker->onChange = [state, weakName, showPick](const int index) {
+        if (index < 0 || index >= static_cast<int>(state->objects.size())) {
+            return;
         }
+        state->object = index;
+        if (const auto n = weakName.lock()) {
+            n->setText(GraphNameForUVE(state->objects[static_cast<std::size_t>(index)].name));
+        }
+        showPick();
     };
     const auto load = [state, entities, projectRoot, weakName, rebuild](const int index) {
         state->entity = std::clamp(index, 0, static_cast<int>(entities.size()) - 1);
