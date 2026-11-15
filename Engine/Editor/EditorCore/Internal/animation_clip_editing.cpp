@@ -3,6 +3,7 @@
 #include "animation_clip_editing.h"
 
 #include <algorithm>
+#include <string_view>
 #include <cmath>
 #include <limits>
 
@@ -70,6 +71,15 @@ std::vector<Asset::AnimationAssetSampleUVE>* FindClipTrackSamplesUVE(Asset::Anim
                                                                     const std::string& track) {
     if (track.empty()) {
         return clip.samples.empty() ? nullptr : &clip.samples;
+    }
+    if (track.front() == kClipObjectTrackPrefixUVE) {
+        const std::string_view name = std::string_view(track).substr(1U);
+        for (Asset::AnimationAssetBoneTrackUVE& object : clip.objects) {
+            if (object.bone == name) {
+                return &object.samples;
+            }
+        }
+        return nullptr;
     }
     for (Asset::AnimationAssetBoneTrackUVE& bone : clip.bones) {
         if (bone.bone == track) {

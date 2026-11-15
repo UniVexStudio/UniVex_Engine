@@ -119,6 +119,13 @@ struct CharacterControllerComponentUVE final {
     /// `CharacterMotionResultUVE::contactsTruncated` says out loud.
     std::uint32_t maximumContacts = 64U;
 
+    // ---- Script steering (runtime, never saved) -----------------------------------------------------
+    /// Where a script asked the body to go this frame (world X/Z, at most unit length), on top of
+    /// any player input: Add Movement Input. Cleared each frame before the scripts run.
+    Math::Vector3UVE scriptMove{};
+    /// A script asked for a jump; the next step takes it (with the jump buffer and coyote time).
+    bool scriptJump = false;
+
     // ---- Runtime state, written by the controller every step ---------------------------------------
     /// Metres per second. With built-in movement off, set this and the body goes there, sliding
     /// along walls. With it on and Floating, Space rises and Left Ctrl sinks.

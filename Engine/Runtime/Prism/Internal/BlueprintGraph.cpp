@@ -70,7 +70,7 @@ Chrome chromeFor(BlueprintNodeCategory c) {
 bool blueprintTypesCompatible(PT from, PT to) {
   if (from == PT::Exec || to == PT::Exec) return from == to;
   if (from == PT::Wildcard || to == PT::Wildcard) return true;
-  auto special = [](PT t) { return t == PT::Pose || t == PT::Link || t == PT::Audio; };
+  auto special = [](PT t) { return t == PT::Pose || t == PT::Link || t == PT::Audio || t == PT::Array; };
   if (special(from) || special(to)) return from == to;
   if (from == to) return true;
   auto num = [](PT t) { return t == PT::Int || t == PT::Float || t == PT::Bool; };
@@ -96,6 +96,7 @@ const char* blueprintPinTypeName(PT t) {
     case PT::Pose: return "Pose";
     case PT::Link: return "Link";
     case PT::Audio: return "Audio Signal";
+    case PT::Array: return "Array";
   }
   return "";
 }
@@ -115,10 +116,13 @@ Color blueprintPinColor(PT t) {
     case PT::Pose:     return Color(110, 226, 232);
     case PT::Link:     return Color(176, 184, 232);
     case PT::Audio:    return Color(255, 188, 64);
+    case PT::Array:    return Color(120, 200, 255);
   }
   return Color(200, 200, 200);
 }
 
+// These names are keys too (saved graph files are named after them, and loading reads them back),
+// so they stay as they are; the editor shows its own names for the graphs.
 const char* blueprintPresetName(BlueprintGraphPreset p) {
   switch (p) {
     case BlueprintGraphPreset::MaterialShader: return "Material Graph";
@@ -289,11 +293,11 @@ std::vector<BlueprintNodeSpec> buildLibrary() {
   const auto An = BlueprintNodeCategory::Animation, St = BlueprintNodeCategory::State, Bh = BlueprintNodeCategory::Behavior,
              Fx = BlueprintNodeCategory::Effect, Au = BlueprintNodeCategory::Audio;
   add("Animation|Poses", "Sequence Player", "animation clip play", [=] { return mk("Sequence Player", "Animation Sequence", An, H, {I("Sequence", PT::Object, "Idle"), I("Play Rate", PT::Float, "1.0"), I("Loop", PT::Bool, "true")}, {O("Pose", PT::Pose)}); });
-  add("Animation|Poses", "Blend Space Player", "locomotion speed direction", [=] { return mk("Blend Space Player", "Blend Space 2D", An, H, {I("Blend Space", PT::Object, "Locomotion"), I("X (Direction)", PT::Float, "0.0"), I("Y (Speed)", PT::Float, "0.0")}, {O("Pose", PT::Pose)}); });
+  add("Animation|Poses", "Blend Grid Player", "locomotion speed direction", [=] { return mk("Blend Grid Player", "Blend Grid 2D", An, H, {I("Blend Grid", PT::Object, "Locomotion"), I("X (Direction)", PT::Float, "0.0"), I("Y (Speed)", PT::Float, "0.0")}, {O("Pose", PT::Pose)}); });
   add("Animation|Poses", "State Machine Pose", "locomotion states", [=] { return mk("State Machine", "Locomotion", An, H, {}, {O("Pose", PT::Pose)}, "Evaluates the state machine and outputs its pose."); });
   add("Animation|Blend", "Blend Poses by Bool", "switch select", [=] { return mk("Blend Poses by Bool", "", An, H, {I("Active Value", PT::Bool, "false"), I("True Pose", PT::Pose), I("False Pose", PT::Pose), I("Blend Time", PT::Float, "0.2")}, {O("Pose", PT::Pose)}); });
   add("Animation|Blend", "Layered Blend per Bone", "upper body mask additive", [=] { return mk("Layered Blend per Bone", "", An, H, {I("Base Pose", PT::Pose), I("Blend Pose 0", PT::Pose), I("Blend Weight 0", PT::Float, "1.0"), I("Bone Name", PT::Name, "spine_01")}, {O("Pose", PT::Pose)}); });
-  add("Animation|Blend", "Default Slot", "montage slot", [=] { return mk("Slot 'DefaultSlot'", "Montage Slot", An, H, {I("Source", PT::Pose)}, {O("Pose", PT::Pose)}); });
+  add("Animation|Blend", "Default Slot", "action clip slot", [=] { return mk("Slot 'DefaultSlot'", "Action Clip Slot", An, H, {I("Source", PT::Pose)}, {O("Pose", PT::Pose)}); });
   add("Animation|Skeletal Control", "Two Bone IK", "foot hand ik", [=] { return mk("Two Bone IK", "Skeletal Control", An, H, {I("Component Pose", PT::Pose), I("Effector Location", PT::Vector, "0,0,0"), I("Joint Target", PT::Vector, "0,50,0"), I("Alpha", PT::Float, "1.0")}, {O("Pose", PT::Pose)}); });
   add("Animation|Skeletal Control", "Modify Bone", "transform rotate bone", [=] { return mk("Transform (Modify) Bone", "Skeletal Control", An, H, {I("Component Pose", PT::Pose), I("Bone Name", PT::Name, "head"), I("Rotation", PT::Vector, "0,0,0"), I("Alpha", PT::Float, "1.0")}, {O("Pose", PT::Pose)}); });
   add("Animation|Output", "Output Pose", "result final", [=] { BlueprintNode n = mk("Output Pose", "Final Animation Pose", An, H, {I("Result", PT::Pose)}, {}); n.inputs[0].required = true; return n; });
@@ -312,7 +316,7 @@ std::vector<BlueprintNodeSpec> buildLibrary() {
   add("Behavior Tree|Composites", "BT Sequence", "and in order", [=] { return mk("Sequence", "Runs children until one fails", Bh, H, {I("Parent", PT::Link)}, {O("Child 0", PT::Link), O("Child 1", PT::Link), O("Child 2", PT::Link)}); });
   add("Behavior Tree|Decorators", "BT Blackboard Check", "decorator condition key", [=] { return mk("Blackboard", "Decorator", Bh, H, {I("Parent", PT::Link), I("Key", PT::Name, "HasTarget"), I("Is Set", PT::Bool, "true")}, {O("Child", PT::Link)}); });
   add("Behavior Tree|Tasks", "BT Move To", "navigate chase", [=] { return mk("Move To", "Task", Bh, H, {I("Parent", PT::Link), I("Target Key", PT::Name, "TargetActor"), I("Acceptable Radius", PT::Float, "120.0")}, {}); });
-  add("Behavior Tree|Tasks", "BT Attack", "melee shoot", [=] { return mk("Attack", "Task", Bh, H, {I("Parent", PT::Link), I("Montage", PT::Object, "Melee_01")}, {}); });
+  add("Behavior Tree|Tasks", "BT Attack", "melee shoot", [=] { return mk("Attack", "Task", Bh, H, {I("Parent", PT::Link), I("Action Clip", PT::Object, "Melee_01")}, {}); });
   add("Behavior Tree|Tasks", "BT Wait", "idle pause", [=] { return mk("Wait", "Task", Bh, H, {I("Parent", PT::Link), I("Duration", PT::Float, "2.0")}, {}); });
   add("Behavior Tree|Tasks", "BT Find Patrol Point", "random location", [=] { return mk("Find Patrol Point", "Task", Bh, H, {I("Parent", PT::Link), I("Radius", PT::Float, "800.0"), I("Result Key", PT::Name, "PatrolPoint")}, {}); });
 
@@ -814,19 +818,20 @@ bool parse(const std::string& text, Parsed& out) {
     } else if (k == "N") {
       BlueprintNode n;
       int st, cat;
-      if ((f.size() != 9 && f.size() != 11) || !toInt(f[1], n.id) || !toInt(f[2], st) || !toInt(f[3], cat) || !toFloat(f[4], n.pos.x) || !toFloat(f[5], n.pos.y)) return false;
+      if ((f.size() != 9 && f.size() != 11 && f.size() != 12) || !toInt(f[1], n.id) || !toInt(f[2], st) || !toInt(f[3], cat) || !toFloat(f[4], n.pos.x) || !toFloat(f[5], n.pos.y)) return false;
       if (st < 0 || st > 2 || cat < 0 || cat > int(BlueprintNodeCategory::Audio)) return false;
       n.style = BlueprintNodeStyle(st); n.category = BlueprintNodeCategory(cat);
       n.title = unesc(f[6]); n.subtitle = unesc(f[7]); n.tooltip = unesc(f[8]);
-      if (f.size() == 11) {
+      if (f.size() >= 11) {
         int pv;
         if (!toInt(f[9], pv) || pv < 0 || pv > 4) return false;
         n.preview = BlueprintNode::Preview(pv); n.previewValue = unesc(f[10]);
       }
+      if (f.size() == 12) n.typeKey = unesc(f[11]);
       out.nodes.push_back(std::move(n));
     } else if (k == "I" || k == "O") {
       int t, hide, req;
-      if (out.nodes.empty() || f.size() != 6 || !toInt(f[1], t) || !toInt(f[4], hide) || !toInt(f[5], req) || t < 0 || t > int(PT::Audio)) return false;
+      if (out.nodes.empty() || f.size() != 6 || !toInt(f[1], t) || !toInt(f[4], hide) || !toInt(f[5], req) || t < 0 || t > int(PT::Array)) return false;
       BlueprintPin p;
       p.type = PT(t); p.name = unesc(f[2]); p.defaultValue = unesc(f[3]); p.hideLabel = hide != 0; p.required = req != 0;
       p.kind = k == "I" ? PK::Input : PK::Output;
@@ -845,7 +850,7 @@ bool parse(const std::string& text, Parsed& out) {
       out.breaks.push_back(id);
     } else if (k == "X") {
       int t;
-      if (f.size() != 4 || !toInt(f[2], t) || t < 0 || t > int(PT::Audio)) return false;
+      if (f.size() != 4 || !toInt(f[2], t) || t < 0 || t > int(PT::Array)) return false;
       out.vars.push_back({unesc(f[1]), PT(t), unesc(f[3])});
     } else if (k == "C") {
       BlueprintComment c;
@@ -900,7 +905,7 @@ std::vector<std::string> BlueprintGraph::diffAgainst(const std::string& savedTex
 namespace {
 void writeNode(std::ostream& o, const BlueprintNode& n) {
   o << "N\t" << n.id << '\t' << int(n.style) << '\t' << int(n.category) << '\t' << n.pos.x << '\t' << n.pos.y << '\t'
-    << esc(n.title) << '\t' << esc(n.subtitle) << '\t' << esc(n.tooltip) << '\t' << int(n.preview) << '\t' << esc(n.previewValue) << '\n';
+    << esc(n.title) << '\t' << esc(n.subtitle) << '\t' << esc(n.tooltip) << '\t' << int(n.preview) << '\t' << esc(n.previewValue) << '\t' << esc(n.typeKey) << '\n';
   for (auto& p : n.inputs) o << "I\t" << int(p.type) << '\t' << esc(p.name) << '\t' << esc(p.defaultValue) << '\t' << p.hideLabel << '\t' << p.required << '\n';
   for (auto& p : n.outputs) o << "O\t" << int(p.type) << '\t' << esc(p.name) << '\t' << esc(p.defaultValue) << '\t' << p.hideLabel << '\t' << p.required << '\n';
 }

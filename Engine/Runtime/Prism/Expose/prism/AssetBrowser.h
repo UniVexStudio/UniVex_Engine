@@ -45,6 +45,8 @@ void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumbRect);
 // Paints one content tile (thumbnail, type tab, name, type, selection frame) into `tile`
 // (PRISM's tile size is 108 x 136).
 void paintAssetTile(Canvas& c, Rect tile, const AssetRecord& asset, bool selected, bool hovered);
+/// The height of a tile's thumbnail well: square to the tile's width, leaving the footer room.
+float assetTileWellHeight(Rect tile);
 
 struct FolderItem {
   std::string name;

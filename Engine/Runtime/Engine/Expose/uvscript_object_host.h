@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
+#include <span>
 #include <set>
 #include <string>
 #include <vector>
@@ -55,6 +57,70 @@ using LobbyResultSinkUVE = std::function<void(std::uint32_t, bool)>;
 /// the room id, spelled uint32_t so this header stays forward-declared (asserted equal
 /// where the peer is complete). The game installs it to raise `lobby_roster`.
 using LobbyRosterSinkUVE = std::function<void(std::uint32_t)>;
+
+/// The world a gameplay script reaches beyond its own object: traces, spawning, the clock, the
+/// game's state, saves, and messages to other scripts. One set is shared by every script of a game
+/// (the engine fills it); each entry may be empty, and a call to an empty one fails closed.
+/// Vectors are UVScript's, so this header stays free of engine maths.
+struct ScriptServicesUVE final {
+    /// What a trace hit: the first collider along the segment.
+    struct TraceHitUVE final {
+        bool hit = false;
+        UVScript::Vec3ValueUVE point{};
+        UVScript::Vec3ValueUVE normal{};
+        double distance = 0.0;
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+    };
+    /// A line (radius 0) or sphere trace from `from` to `to`, skipping `ignore`.
+    std::function<TraceHitUVE(const UVScript::Vec3ValueUVE& from, const UVScript::Vec3ValueUVE& to, double radius,
+                              Scene::EntityUVE ignore)>
+        trace;
+    /// Makes an entity or prefab file's objects at `position`, turned by `rotation` (degrees): the root, or none.
+    std::function<Scene::EntityUVE(const std::string& path, const UVScript::Vec3ValueUVE& position,
+                                   const UVScript::Vec3ValueUVE& rotation)>
+        spawn;
+    /// Removes an object (and what is under it) once every script has run this frame, so a script
+    /// may destroy itself; it hears `destroyed` first.
+    std::function<void(Scene::EntityUVE)> destroy;
+    /// Seconds of game time since play began (stops while paused, follows the time scale).
+    std::function<double()> time;
+    /// This frame's game seconds.
+    std::function<double()> delta;
+    /// Puts `child` under `parent` (none: back at the top of the level); false when it cannot be.
+    std::function<bool(Scene::EntityUVE child, Scene::EntityUVE parent)> setParent;
+    std::function<double()> timeScale;
+    std::function<void(double)> setTimeScale;
+    std::function<bool()> paused;
+    std::function<void(bool)> setPaused;
+    /// Ends the game (stops play in the editor).
+    std::function<void()> quit;
+    /// Loads a level file once this frame is done; false when there is no such file.
+    std::function<bool(const std::string& path)> openLevel;
+    std::function<std::string()> levelName;
+    /// Raises `custom_event(name, payload)` on `target`'s script after the current handlers.
+    std::function<void(Scene::EntityUVE target, const std::string& name, const std::string& payload)> emit;
+    /// A one-shot sound (an audio file): at `position` when spatial, else heard everywhere.
+    std::function<bool(const std::string& path, const UVScript::Vec3ValueUVE& position, double volume, bool spatial)> playSound;
+    /// Particles at once from `emitter`'s ParticleEmitter, on top of its rate.
+    std::function<bool(Scene::EntityUVE emitter, std::int64_t count)> burstParticles;
+    /// Makes `camera` the view (the others stop being current).
+    std::function<bool(Scene::EntityUVE camera)> activateCamera;
+    /// Shakes the view: `strength` metres at first, fading out over `seconds`.
+    std::function<void(double strength, double seconds)> cameraShake;
+    /// Where the view looks (unit), and where it is.
+    std::function<UVScript::Vec3ValueUVE()> cameraForward;
+    std::function<UVScript::Vec3ValueUVE()> cameraLocation;
+    /// Plays the AnimationSequencer `player`'s clip named `clip` (its file's name, from its own list;
+    /// empty: the one it has) from the start.
+    std::function<bool(Scene::EntityUVE player, const std::string& clip)> playAnimation;
+    /// Save slots: the game data below, written to and read from a named slot.
+    std::function<bool(const std::string& slot)> saveSlot;
+    std::function<bool(const std::string& slot)> loadSlot;
+    std::function<bool(const std::string& slot)> slotExists;
+    std::function<bool(const std::string& slot)> deleteSlot;
+    /// The game's own values by key (as text), kept across levels and written by `saveSlot`.
+    std::map<std::string, std::string> gameData;
+};
 
 /// What a `.uvs` script can reach on the object it is attached to. The object's components decide:
 /// - every object: `name` (read-only);
@@ -158,8 +224,26 @@ public:
     /// `ui.show_cursor(show)`: shows and frees the pointer for UI, or hides and captures it for the game.
     using CursorHandlerUVE = std::function<void(bool show)>;
     void SetCursorHandlerUVE(CursorHandlerUVE handler) { m_cursorHandler = std::move(handler); }
+    /// The game's services (traces, spawning, the clock, saves, messages). Without them those calls fail closed.
+    void SetServicesUVE(ScriptServicesUVE* services) noexcept { m_services = services; }
+
+    /// Moves this script's timers on by `dt` seconds: the ids of those that ran out, in order, for
+    /// the caller to raise `timer(id)`. A looping timer starts again; a one-shot one is gone.
+    /// A life span (`world.set_life_span`) that ran out destroys the object instead.
+    [[nodiscard]] std::vector<std::string> AdvanceTimersUVE(double dt);
+    [[nodiscard]] bool HasTimersUVE() const noexcept { return !m_timers.empty(); }
 
 private:
+    struct TimerUVE final {
+        double remaining = 0.0;
+        double period = 0.0;
+        bool loop = false;
+    };
+    [[nodiscard]] UVScript::ValueUVE TextAndMathCallUVE(std::string_view name, std::span<const UVScript::ValueUVE> args);
+    [[nodiscard]] UVScript::ValueUVE WorldCallUVE(std::string_view name, std::span<const UVScript::ValueUVE> args);
+    /// The object a script reference names, or none when it names nothing alive.
+    [[nodiscard]] Scene::EntityUVE EntityOfUVE(const UVScript::ValueUVE& value) const;
+
     /// Widget Blueprints: `ui.*`. The widget named `name` under this object's Canvas (the whole
     /// world when this object is no widget); none when there is no such widget.
     [[nodiscard]] Scene::EntityUVE FindWidgetUVE(std::string_view name) const;
@@ -170,6 +254,7 @@ private:
         std::vector<UVScript::ValueUVE> args;
     };
 
+    [[nodiscard]] UVScript::ValueUVE GameplayCallUVE(std::string_view name, std::span<const UVScript::ValueUVE> args);
     [[nodiscard]] UVScript::ValueUVE RpcCallUVE(std::string_view name,
                                                std::span<const UVScript::ValueUVE> args);
     [[nodiscard]] std::uint32_t NextStagingIdUVE() noexcept;
@@ -223,6 +308,10 @@ private:
     Network::NetworkSessionUVE* m_relaySession = nullptr;
     WidgetFactoryUVE m_widgetFactory;
     CursorHandlerUVE m_cursorHandler;
+    ScriptServicesUVE* m_services = nullptr;
+    std::map<std::string, TimerUVE> m_timers;
+    /// The last trace's result, read by `trace.location/normal/object/distance`.
+    ScriptServicesUVE::TraceHitUVE m_lastTrace;
 };
 
 } // namespace UVE::Core

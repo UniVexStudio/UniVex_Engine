@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace UVE::Editor {
@@ -31,6 +33,12 @@ public:
         std::string text;
         prism::Color color{255, 255, 255};
         float fontSize = 16.0F;
+        /// Text laid out as the runtime lays it out: each line's baseline start (design pixels).
+        std::vector<std::pair<prism::Vec2, std::string>> lines;
+        prism::Color shadow{0, 0, 0, 0};
+        prism::Vec2 shadowOffset{};
+        prism::Color outline{0, 0, 0, 0};
+        float outlineWidth = 0.0F;
         /// A bar's or slider's fraction, a check box's state.
         float value = 0.0F;
         bool checked = false;
@@ -38,6 +46,8 @@ public:
     };
 
     WidgetDesignerViewUVE();
+    /// The width of `text` at `fontSize` design pixels, in the Designer's own font.
+    [[nodiscard]] static float MeasureTextUVE(std::string_view text, float fontSize);
 
     void SetItemsUVE(std::vector<ItemUVE> items);
     [[nodiscard]] const std::vector<ItemUVE>& ItemsUVE() const noexcept { return m_items; }

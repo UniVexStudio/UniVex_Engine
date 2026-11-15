@@ -2,6 +2,7 @@
 #pragma once
 
 #include "material_asset.h"
+#include "texture_asset.h"
 
 #include "editor.h"
 #include "editor_content_browser_model.h"
@@ -16,6 +17,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -99,6 +101,7 @@ private:
     [[nodiscard]] std::vector<prism::MenuItem> CatalogueMenuUVE();
     void CreateCatalogueItemUVE(const std::string& id);
     /// A new material of `kind` in the current folder, named `stem` (made unique).
+    void CreateGeneratedTextureUVE(const std::string& stem, const std::function<bool(Asset::TextureAssetUVE&)>& make);
     void CreateMaterialUVE(const std::string& stem, Asset::MaterialKindUVE kind);
     void CreateBlueprintUVE();
     void CreateWidgetBlueprintUVE();

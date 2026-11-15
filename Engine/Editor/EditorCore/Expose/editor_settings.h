@@ -43,6 +43,7 @@ inline constexpr std::string_view kSnapEnabledUVE = "editor.viewport.snap.enable
 inline constexpr std::string_view kSnapTranslateStepUVE = "editor.viewport.snap.translateStep";
 inline constexpr std::string_view kSnapRotateStepDegreesUVE = "editor.viewport.snap.rotateStepDegrees";
 inline constexpr std::string_view kSnapScaleStepUVE = "editor.viewport.snap.scaleStep";
+inline constexpr std::string_view kSnapScaleEnabledUVE = "editor.viewport.snap.scaleEnabled";
 inline constexpr std::string_view kGridVisibleUVE = "editor.viewport.grid.visible";
 inline constexpr std::string_view kGridOpacityUVE = "editor.viewport.grid.opacity";
 inline constexpr std::string_view kGridCellSizeUVE = "editor.viewport.grid.cellSize";

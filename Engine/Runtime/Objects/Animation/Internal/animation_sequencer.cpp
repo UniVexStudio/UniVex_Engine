@@ -308,11 +308,13 @@ bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Ass
         return false;
     }
     const double duration = clip.durationSeconds;
-    if (clip.samples.empty() || !std::isfinite(duration) || duration <= 0.0 || !std::isfinite(deltaSeconds) ||
-        deltaSeconds < 0.0F) {
+    if ((clip.samples.empty() && clip.objects.empty()) || !std::isfinite(duration) || duration <= 0.0 ||
+        !std::isfinite(deltaSeconds) || deltaSeconds < 0.0F) {
         player.isPlaying = false;
         return false;
     }
+    // Only other objects' tracks: the clock runs (the caller poses them), the target stays put.
+    const bool movesTarget = !clip.samples.empty();
 
     const double eventsBefore = static_cast<double>(player.currentTimeSeconds);
     const bool eventsForward = player.speed * player.direction >= 0.0F;
@@ -328,10 +330,13 @@ bool StepAnimationSequencerUVE(AnimationSequencerComponentUVE& player, const Ass
     if (!stillPlaying) {
         player.isPlaying = false;
         player.finished = true;
-        if (player.onFinish == AnimationFinishActionUVE::ReturnToStart && player.hasStartPose) {
+        if (movesTarget && player.onFinish == AnimationFinishActionUVE::ReturnToStart && player.hasStartPose) {
             WritePoseUVE(mixer, StartPoseUVE(player), target);
             return true;
         }
+    }
+    if (!movesTarget) {
+        return true;
     }
 
     PoseUVE pose = SampleAnimationClipAssetUVE(clip, static_cast<double>(player.currentTimeSeconds));

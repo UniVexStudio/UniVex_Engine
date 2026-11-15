@@ -761,6 +761,32 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
     }
 }
 
+bool EditorUVE::IsAnyEditorWindowFocusedUVE() const {
+    return m_levelShell != nullptr && m_levelShell->IsAnyWindowFocusedUVE();
+}
+
+void EditorUVE::SetViewportFlyingUVE(const bool flying) {
+    if (m_viewportFlying == flying) {
+        return;
+    }
+    m_viewportFlying = flying;
+    // A game already holding the mouse keeps it: flying only hides the editor's own pointer.
+    if (m_gameMouseCaptured || m_services == nullptr) {
+        return;
+    }
+    Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
+    auto* const nativeWindow = windowManager.IsValidUVE() ? static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()) : nullptr;
+    if (nativeWindow == nullptr) {
+        return;
+    }
+    // Hidden and held where it was: the mouse can turn the view as far as it likes without
+    // leaving the viewport, and the pointer comes back where it went away.
+    glfwSetInputMode(nativeWindow, GLFW_CURSOR, flying ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    if (glfwRawMouseMotionSupported()) {
+        glfwSetInputMode(nativeWindow, GLFW_RAW_MOUSE_MOTION, flying ? GLFW_TRUE : GLFW_FALSE);
+    }
+}
+
 bool EditorUVE::SaveSceneUVE() {
     // While the Entity Editor is open the document is the entity: saving writes the entity.
     if (m_entityDocumentActive) {
@@ -1090,8 +1116,11 @@ std::optional<std::filesystem::path> EditorUVE::CreateWidgetBlueprintAssetUVE(co
     if (label != Scene::kInvalidEntityUVE && entityManager.HasComponentUVE<Scene::UITextComponentUVE>(label)) {
         Scene::UITextComponentUVE& text = entityManager.GetComponentUVE<Scene::UITextComponentUVE>(label);
         text.text = "Start";
-        text.positionPixels = Math::Vector2UVE{158.0F, 146.0F};
         text.fontSize = 22.0F;
+        // Centred on its button, however the button is sized.
+        text.fillParent = true;
+        text.horizontalAlign = Scene::UITextHorizontalAlignUVE::Center;
+        text.verticalAlign = Scene::UITextVerticalAlignUVE::Middle;
     }
 
     const Asset::AssetGuidUVE guid =
@@ -2096,7 +2125,7 @@ bool EditorUVE::ComputeGestureTransformUVE(const EditorToolSessionModeUVE mode,
             return true;
         }
         case EditorToolSessionModeUVE::Scale: {
-            const float snappedDelta = m_transformSnappingSettings.enabled
+            const float snappedDelta = m_transformSnappingSettings.scaleEnabled
                                            ? SnapScalarUVE(amount, m_transformSnappingSettings.scaleStep)
                                            : amount;
             if (axis == EditorTransformAxisUVE::None) {
@@ -2410,6 +2439,7 @@ bool EditorUVE::SetTransformSnappingSettingsUVE(const EditorTransformSnappingSet
                                   static_cast<double>(settings.rotateStepDegrees));
     NotifyEditorSettingChangedUVE(Id::kSnapScaleStepUVE, static_cast<double>(previous.scaleStep),
                                   static_cast<double>(settings.scaleStep));
+    NotifyEditorSettingChangedUVE(Id::kSnapScaleEnabledUVE, previous.scaleEnabled, settings.scaleEnabled);
     return true;
 }
 
@@ -3233,6 +3263,75 @@ bool EditorUVE::CanMoveDocumentEntityUVE(const Scene::EntityUVE entity, const Ed
     }
     const std::size_t last = m_services->GetSceneGraphUVE().GetChildrenUVE(entityManager, parent).size() - 1U;
     return move == EditorSiblingMoveUVE::Up || move == EditorSiblingMoveUVE::ToTop ? *index > 0U : *index < last;
+}
+
+bool EditorUVE::AddSkyToEntityUVE(const Scene::EntityUVE entity) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(entity) || !IsAuthoringCommandAllowedUVE()) {
+        return false;
+    }
+    if (!entityManager.HasComponentUVE<Scene::Sky3DComponentUVE>(entity)) {
+        entityManager.AddComponentUVE<Scene::Sky3DComponentUVE>(entity, Scene::Sky3DComponentUVE{});
+        m_sceneDirty = true;
+    }
+    return true;
+}
+
+bool EditorUVE::RemoveSkyFromEntityUVE(const Scene::EntityUVE entity) {
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    if (!IsDocumentEntityUVE(entity) || !IsAuthoringCommandAllowedUVE() || !entityManager.HasComponentUVE<Scene::Sky3DComponentUVE>(entity)) {
+        return false;
+    }
+    entityManager.RemoveComponentUVE<Scene::Sky3DComponentUVE>(entity);
+    m_sceneDirty = true;
+    return true;
+}
+
+bool EditorUVE::PlaceDocumentEntityUVE(const Scene::EntityUVE entity, const Scene::EntityUVE target, const int where) {
+    if (entity == target || !IsDocumentEntityUVE(entity) || !IsDocumentEntityUVE(target) || !IsAuthoringCommandAllowedUVE()) {
+        return false;
+    }
+    if (where == 1) {
+        return ReparentDocumentEntityUVE(entity, target);
+    }
+    Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+    if (!TryGetDocumentParentUVE(target, parent)) {
+        return false;
+    }
+    Scene::EntityUVE current = Scene::kInvalidEntityUVE;
+    static_cast<void>(TryGetDocumentParentUVE(entity, current));
+    if (current != parent && !ReparentDocumentEntityUVE(entity, parent)) {
+        return false;
+    }
+    Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+    const std::optional<std::size_t> from = sceneGraph.GetSiblingIndexUVE(entityManager, entity);
+    const std::optional<std::size_t> at = sceneGraph.GetSiblingIndexUVE(entityManager, target);
+    if (!from.has_value() || !at.has_value()) {
+        return false;
+    }
+    // The index the entity ends at, counted with it already out of the list.
+    std::size_t to = *at + (where == 2 ? 1U : 0U);
+    if (*from < to) {
+        --to;
+    }
+    if (to == *from) {
+        return true;
+    }
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    if (!sceneGraph.SetSiblingIndexUVE(entityManager, entity, to)) {
+        return false;
+    }
+    m_sceneDirty = true;
+    InvalidateHierarchyFilterCacheUVE();
+    const Scene::TransformComponentUVE local =
+        entityManager.HasComponentUVE<Scene::TransformComponentUVE>(entity)
+            ? entityManager.GetComponentUVE<Scene::TransformComponentUVE>(entity)
+            : Scene::TransformComponentUVE{};
+    RecordHistoryUVE(ReparentHistoryEntryUVE{entity, parent, parent, local, local, selectionBefore,
+                                             CaptureSelectionSnapshotUVE(), dirtyBefore, true, *from, to});
+    return true;
 }
 
 bool EditorUVE::MoveDocumentEntityUVE(const Scene::EntityUVE entity, const EditorSiblingMoveUVE move) {
@@ -5541,13 +5640,13 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
         case ContentBrowserItemTypeUVE::AnimationLibrary:
             return "Animation Library";
         case ContentBrowserItemTypeUVE::AnimationMontage:
-            return "Animation Montage";
+            return "Action Clip";
         case ContentBrowserItemTypeUVE::MontageLibrary:
-            return "Montage Library";
+            return "Action Clip Library";
         case ContentBrowserItemTypeUVE::Blueprint:
-            return "Blueprint";
+            return "Logic Graph";
         case ContentBrowserItemTypeUVE::WidgetBlueprint:
-            return "Widget Blueprint";
+            return "UI Graph";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:

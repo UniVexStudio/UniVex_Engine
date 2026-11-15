@@ -83,6 +83,8 @@ constexpr float kResizeBorderUVE = 5.0F;
         case GLFW_KEY_F: return ViewKeyUVE::F;
         case GLFW_KEY_S: return ViewKeyUVE::S;
         case GLFW_KEY_W: return ViewKeyUVE::W;
+        case GLFW_KEY_E: return ViewKeyUVE::E;
+        case GLFW_KEY_Q: return ViewKeyUVE::Q;
         case GLFW_KEY_SPACE: return ViewKeyUVE::Space;
         case GLFW_KEY_HOME: return ViewKeyUVE::Home;
         case GLFW_KEY_ESCAPE: return ViewKeyUVE::Escape;
@@ -1344,6 +1346,18 @@ void EditorHostUVE::OnCursorEnterUVE(WindowUVE& w, const int entered) {
     if (!w.mouseInside && w.dragMode == WindowUVE::DragModeUVE::None) {
         m_app->windowMouseLeave(w.id);
     }
+}
+
+bool EditorHostUVE::IsAnyWindowFocusedUVE() const {
+    if (m_main != nullptr && m_main->window != nullptr && glfwGetWindowAttrib(m_main->window, GLFW_FOCUSED) == GLFW_TRUE) {
+        return true;
+    }
+    for (const auto& [id, window] : m_windows) {
+        if (window != nullptr && window->window != nullptr && glfwGetWindowAttrib(window->window, GLFW_FOCUSED) == GLFW_TRUE) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace UVE::Editor

@@ -394,7 +394,7 @@ prism::Ref<prism::Widget> EditorAudioMixerWindowUVE::BuildUVE() {
     window->add(PanelUVE(m_table), prism::Slot{1.0F});
     auto hintRow = prism::hbox();
     hintRow->setPadding(prism::Margin(10.0F, 4.0F, 10.0F, 8.0F));
-    auto hint = prism::make<prism::Label>("A source's own volume and falloff are in its Details.", prism::FontRole::Small);
+    auto hint = prism::make<prism::Label>("A source's own volume and falloff are in its Inspector.", prism::FontRole::Small);
     hint->setColor(prism::ThemeColor(&prism::Theme::textDim));
     hintRow->add(hint, prism::Slot{1.0F});
     window->add(hintRow);

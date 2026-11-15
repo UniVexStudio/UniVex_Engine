@@ -459,8 +459,11 @@ void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke) {
   case Icon::Refresh:
     p.arc(8, 8, 5.2f, 5.2f, -40, 250, 22); p.poly({{9.2f, 1.8f}, {12.4f, 3.2f}, {9.8f, 5.8f}}); break;
   case Icon::Magnet:
-    p.arc(8, 7.5f, 5, 5, 180, 360, 14); p.line(3, 7.5f, 3, 13); p.line(13, 7.5f, 13, 13);
-    p.line(5.8f, 7.5f, 5.8f, 13); p.line(10.2f, 7.5f, 10.2f, 13); p.line(3, 13, 5.8f, 13); p.line(10.2f, 13, 13, 13); break;
+    // A horseshoe opening upward (a headset opens down): a thick U, its two poles filled at the top.
+    p.arc(8, 8.5f, 5.5f, 5.5f, 0, 180, 16); p.arc(8, 8.5f, 2.3f, 2.3f, 0, 180, 12);
+    p.line(2.5f, 8.5f, 2.5f, 3.6f); p.line(13.5f, 8.5f, 13.5f, 3.6f);
+    p.line(5.7f, 8.5f, 5.7f, 3.6f); p.line(10.3f, 8.5f, 10.3f, 3.6f);
+    p.fillRect(2.5f, 1.8f, 3.2f, 2.4f); p.fillRect(10.3f, 1.8f, 3.2f, 2.4f); break;
   case Icon::Terminal:
     p.rect(2, 3, 12, 10); p.poly({{4.8f, 6.2f}, {7, 8}, {4.8f, 9.8f}}); p.line(8.4f, 10, 11.4f, 10); break;
   case Icon::Frame:

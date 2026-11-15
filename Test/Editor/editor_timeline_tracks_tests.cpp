@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "animation_clip_editing.h"
 #include "editor_timeline_tracks.h"
 
 namespace UVE::Editor {
@@ -265,6 +266,35 @@ TEST(EditorTimelineTracksUVETest, ASceneWithNoAnswersResolvesToNothingAndCountsE
 
     EXPECT_TRUE(preview.writes.empty());
     EXPECT_EQ(preview.unresolvedTracks, 1U);
+}
+
+TEST(EditorTimelineTracksUVETest, OtherObjectsGetTheirOwnRowsAndAnswerByTheirPrefixedName) {
+    Asset::AnimationClipAssetUVE clip;
+    clip.clipId = "door";
+    clip.durationSeconds = 1.0;
+    clip.samples = {SampleUVE(0.0, 0.0F), SampleUVE(1.0, 1.0F)};
+    // A bone and an object may share a name: the object's row answers to the prefixed one.
+    clip.bones = {BoneTrackUVE("Hinge")};
+    clip.objects = {BoneTrackUVE("Hinge"), BoneTrackUVE("Handle")};
+    clip.objects[1].samples.back().pose.position.z = 5.0F;
+    const std::string handle = std::string(1, kClipObjectTrackPrefixUVE) + "Handle";
+    const std::vector<std::string> expanded{handle};
+
+    const std::vector<TimelineRowUVE> rows = BuildTimelineRowsUVE(clip, TimelineSkeletonUVE{}, {}, expanded);
+
+    EXPECT_EQ(LabelsUVE(rows), (std::vector<std::string>{"Events", "Transform", "Hinge", "Hinge", "Handle", "Position",
+                                                          "Rotation", "Scale"}));
+    EXPECT_EQ(rows[2].track, "Hinge");
+    EXPECT_EQ(rows[3].track, std::string(1, kClipObjectTrackPrefixUVE) + "Hinge");
+    EXPECT_EQ(rows[4].track, handle);
+    EXPECT_EQ(rows[5].track, handle) << "a channel row carries its object's identity";
+
+    const auto* const samples = FindClipTrackSamplesUVE(clip, handle);
+    ASSERT_NE(samples, nullptr);
+    EXPECT_FLOAT_EQ(samples->back().pose.position.z, 5.0F);
+    EXPECT_EQ(FindClipTrackSamplesUVE(clip, "Handle"), nullptr) << "no bone of that name";
+    EXPECT_TRUE(InsertClipKeyUVE(clip, handle, 0.5, 30.0));
+    EXPECT_EQ(clip.objects[1].samples.size(), 3U);
 }
 
 } // namespace

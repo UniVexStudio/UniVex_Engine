@@ -61,6 +61,8 @@ struct AnimationSequencerComponentUVE final {
     bool relative = false;
 
     // ---- Runtime state, written by the player; never saved --------------------------------------
+    /// A script asked for `clip` to play from its start: carried out by the next animation step.
+    bool playRequested = false;
     bool isPlaying = false;
     /// Seconds into the clip.
     float currentTimeSeconds = 0.0F;

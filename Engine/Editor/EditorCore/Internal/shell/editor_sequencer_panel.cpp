@@ -2,6 +2,7 @@
 #include "editor_sequencer_panel.h"
 #include "model_animations.h"
 
+#include "animation_clip_editing.h"
 #include "editor_chrome.h"
 #include "editor_keyframe_view.h"
 #include "editor_timeline_tracks.h"
@@ -172,18 +173,10 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildToolbarUVE() {
                                    "Player");
     m_playerButton->onClick = [this] { ShowPlayerMenuUVE(); };
     row->add(m_playerButton, CentreSlotUVE());
-    m_clipButton = ToolButtonUVE(prism::Icon::AnimClip, "This player's animations: switch, new, add, import, link, export, rename",
+    m_clipButton = ToolButtonUVE(prism::Icon::AnimClip, "This player's animations: switch, new, add, load or export a library, rename",
                                  "No animation");
     m_clipButton->onClick = [this] { ShowClipMenuUVE(); };
     row->add(m_clipButton, CentreSlotUVE());
-    // An Animation Library in and out, in plain sight (dropping a library on the panel loads it too).
-    m_loadLibraryButton = ToolButtonUVE(prism::Icon::AnimLibrary, "Load an Animation Library into this player (or link it live); "
-                                                                  "a library dropped on the panel loads too", "Load Library");
-    m_loadLibraryButton->onClick = [this] { ShowLoadLibraryMenuUVE(); };
-    row->add(m_loadLibraryButton, CentreSlotUVE());
-    auto exportLibrary = ToolButtonUVE(prism::Icon::Save, "Export this player's animations as a new Animation Library", "Export Library");
-    exportLibrary->onClick = [this] { ExportLibraryUVE(); };
-    row->add(exportLibrary, CentreSlotUVE());
     row->add(HSeparatorUVE(), CentreSlotUVE());
 
     const auto transport = [&](const prism::Icon icon, const char* tip, std::function<void()> action) {
@@ -216,9 +209,19 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildToolbarUVE() {
     clockBox->setContent(m_clock);
     row->add(clockBox, CentreSlotUVE());
     row->add(HSeparatorUVE(), CentreSlotUVE());
-    m_keyButton = ToolButtonUVE(prism::Icon::Key, "Add a key to the selected bone at the playhead (K)", "Key");
+    m_recordButton = ToolButtonUVE(prism::Icon::Dot, "Record: move the animated object (gizmo or Inspector) and its transform is keyed "
+                                                     "at the playhead", "Rec");
+    m_recordButton->setCheckable(true);
+    m_recordButton->onClick = [this] { m_editor.SetAnimationTimelineRecordingUVE(!m_editor.m_timeline.recording); };
+    row->add(m_recordButton, CentreSlotUVE());
+    m_keyButton = ToolButtonUVE(prism::Icon::Key, "Add a key at the playhead: the selected bone, else the selected object (the animated one or one under it) (K)", "Key");
     m_keyButton->onClick = [this] {
-        m_editor.InsertAnimationTimelineKeyUVE();
+        // A bone's row selected keys that bone; otherwise the object the clip moves, as it stands.
+        if (m_editor.m_timeline.clip != nullptr && !m_editor.m_selectedSkeletonBone.empty()) {
+            static_cast<void>(m_editor.KeyAnimationTimelineBoneUVE(m_editor.m_selectedSkeletonBone));
+        } else {
+            static_cast<void>(m_editor.KeyAnimationTimelineObjectUVE());
+        }
         if (m_keys) {
             m_keys->invalidate();
         }
@@ -261,16 +264,13 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildToolbarUVE() {
             m_keys->invalidate();
         }
     };
-    auto fit = ToolButtonUVE(prism::Icon::Frame, "Fit: show the whole clip (F). Ctrl + wheel zooms, Shift + wheel pans");
-    fit->onClick = [this] {
-        if (m_keys) {
-            m_keys->FitUVE();
-        }
-    };
     row->add(m_dopeButton, CentreSlotUVE());
     row->add(m_curvesButton, CentreSlotUVE());
     row->add(HSeparatorUVE(), CentreSlotUVE());
-    row->add(fit, CentreSlotUVE());
+    m_settingsButton = ToolButtonUVE(prism::Icon::Settings, "Sequencer settings: playback speed, follow the playhead, snapping, time display");
+    m_settingsButton->onClick = [this] { ShowSettingsMenuUVE(); };
+    row->add(m_settingsButton, CentreSlotUVE());
+
 
     auto bar = prism::make<prism::Border>();
     bar->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -300,6 +300,28 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildStatusBarUVE() {
     m_status = prism::make<prism::Label>("", prism::FontRole::Small);
     m_status->setColor(prism::ThemeColor(&prism::Theme::textDim));
     row->add(m_status, prism::Slot{1.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
+    // Zoom, at the keys' own edge: out, in, and the whole clip.
+    auto fit = ToolButtonUVE(prism::Icon::Frame, "Fit: show the whole clip (F). Ctrl + wheel zooms, Shift + wheel pans");
+    fit->onClick = [this] {
+        if (m_keys) {
+            m_keys->FitUVE();
+        }
+    };
+    auto zoomOut = ToolButtonUVE(prism::Icon::Minus, "Zoom out of the keys (Ctrl + wheel)");
+    zoomOut->onClick = [this] {
+        if (m_keys) {
+            m_keys->ZoomUVE(0.8);
+        }
+    };
+    auto zoomIn = ToolButtonUVE(prism::Icon::Plus, "Zoom in on the keys, round the playhead (Ctrl + wheel)");
+    zoomIn->onClick = [this] {
+        if (m_keys) {
+            m_keys->ZoomUVE(1.25);
+        }
+    };
+    row->add(zoomOut, CentreSlotUVE());
+    row->add(zoomIn, CentreSlotUVE());
+    row->add(fit, CentreSlotUVE());
     auto bar = prism::make<prism::Border>();
     bar->setBackground(prism::ThemeColor(&prism::Theme::statusBar));
     bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 0.0F));
@@ -310,6 +332,7 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildStatusBarUVE() {
 // -------------------------------------------------------------------------------------- refresh
 
 void EditorSequencerPanelUVE::RefreshUVE(const double deltaSeconds, const bool shown) {
+    m_editor.m_timeline.panelShown = shown;
     if (!shown) {
         if (m_editor.m_timeline.playing) {
             m_editor.ToggleAnimationTimelinePlayUVE();   // a hidden preview does not run on
@@ -354,6 +377,12 @@ void EditorSequencerPanelUVE::RefreshUVE(const double deltaSeconds, const bool s
     if (m_keyButton) {
         m_keyButton->setEnabled(view.clip != nullptr);
     }
+    if (m_recordButton) {
+        m_recordButton->setEnabled(view.clip != nullptr);
+        if (m_recordButton->checked() != state.recording) {
+            m_recordButton->setChecked(state.recording);
+        }
+    }
     if (m_dopeButton && m_dopeButton->checked() == state.curves) {
         m_dopeButton->setChecked(!state.curves);
     }
@@ -361,8 +390,16 @@ void EditorSequencerPanelUVE::RefreshUVE(const double deltaSeconds, const bool s
         m_curvesButton->setChecked(state.curves);
     }
     char clock[64];
-    std::snprintf(clock, sizeof(clock), "%ld / %ld   %.2f s", std::lround(state.timeSeconds * view.frameRate),
-                  std::lround(view.durationSeconds * view.frameRate), state.timeSeconds);
+    if (state.clockInSeconds) {
+        std::snprintf(clock, sizeof(clock), "%.2f / %.2f s", state.timeSeconds, view.durationSeconds);
+    } else {
+        std::snprintf(clock, sizeof(clock), "%ld / %ld   %.2f s", std::lround(state.timeSeconds * view.frameRate),
+                      std::lround(view.durationSeconds * view.frameRate), state.timeSeconds);
+    }
+    // While playing, the keys follow the playhead: a page on when it runs off the right edge.
+    if (state.playing && state.followPlayhead && m_keys) {
+        m_keys->KeepPlayheadInViewUVE();
+    }
     if (m_clock && m_shownClock != clock) {
         m_shownClock = clock;
         m_clock->setText(clock);
@@ -371,7 +408,7 @@ void EditorSequencerPanelUVE::RefreshUVE(const double deltaSeconds, const bool s
     if (view.clip != nullptr) {
         char text[160];
         std::snprintf(text, sizeof(text), "%.2f s  |  %ld frames  |  %.0f fps  |  %zu tracks", view.clip->durationSeconds,
-                      std::lround(view.durationSeconds * view.frameRate), view.frameRate, view.clip->bones.size());
+                      std::lround(view.durationSeconds * view.frameRate), view.frameRate, view.clip->bones.size() + view.clip->objects.size());
         info = text;
         if (view.clip->HasMorphTracksUVE()) {
             info += "  |  " + std::to_string(view.clip->morphWeights.size()) + " blend shapes";
@@ -537,13 +574,14 @@ void EditorSequencerPanelUVE::ShowClipMenuUVE() {
         libraryMenu.push_back(prism::MenuItem::Item("None", {}).disabled());
     }
     // A project may hold thousands of clips: a searchable list, not a submenu.
-    items.push_back(prism::MenuItem::Item("Add from Project...", [this, addMenu = std::move(addMenu)]() mutable {
+    items.push_back(prism::MenuItem::Item("Add Animation...", [this, addMenu = std::move(addMenu)]() mutable {
         if (m_clipButton) {
             const prism::Rect r = m_clipButton->rect();
             prism::showSearchMenu(std::move(addMenu), r, prism::PopupPlacement::Below, "Search animations");
         }
     }, "", prism::Icon::FolderOpen));
-    items.push_back(prism::MenuItem::Sub("Import Library", std::move(libraryMenu), prism::Icon::AnimLibrary));
+    items.push_back(prism::MenuItem::Sep());
+    items.push_back(prism::MenuItem::Sub("Load Library", std::move(libraryMenu), prism::Icon::AnimLibrary));
     if (component.libraryRef == Asset::AssetGuidUVE{}) {
         items.push_back(prism::MenuItem::Item("Link Library...", [this, player] {
             m_editor.BrowseAnimationTimelineUVE(player, EditorUVE::AnimationTimelineBrowseUVE::LinkLibrary);
@@ -553,50 +591,35 @@ void EditorSequencerPanelUVE::ShowClipMenuUVE() {
         items.push_back(prism::MenuItem::Item(linked.empty() ? std::string{"Unlink Library"} : "Unlink " + linked.stem().string(),
                                               [this, player] { static_cast<void>(m_editor.UnlinkAnimationLibraryFromSequencerUVE(player)); }));
     }
-    items.push_back(prism::MenuItem::Item("Export to Library...", [this, player] {
-        m_editor.BrowseAnimationTimelineUVE(player, EditorUVE::AnimationTimelineBrowseUVE::ExportLibrary);
-    }, "", prism::Icon::Save));
+    items.push_back(prism::MenuItem::Item("Export Library...", [this] { ExportLibraryUVE(); }, "", prism::Icon::Save));
     if (m_clipButton) {
         const prism::Rect r = m_clipButton->rect();
         prism::showContextMenu(std::move(items), prism::Vec2{r.x, r.bottom()});
     }
 }
 
-void EditorSequencerPanelUVE::ShowLoadLibraryMenuUVE() {
-    const EditorUVE::AnimationTimelineViewUVE& view = ResyncUVE();
-    if (view.player == Scene::kInvalidEntityUVE) {
-        return;
-    }
-    const Scene::EntityUVE player = view.player;
-    const Asset::ProjectFileSnapshotUVE project = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    std::vector<prism::MenuItem> load;
-    std::vector<prism::MenuItem> link;
-    for (const Asset::ProjectFileEntryUVE& entry : project.entries) {
-        if (entry.kind != Asset::ProjectFileEntryKindUVE::File || entry.relativePath.extension() != ".uvanimlib") {
-            continue;
-        }
-        const std::filesystem::path absolute = project.contentRoot / entry.relativePath;
-        const std::string folder = entry.relativePath.parent_path().generic_string();
-        load.push_back(prism::MenuItem::Item(entry.relativePath.stem().string(), [this, player, absolute] {
-            static_cast<void>(m_editor.ImportAnimationLibraryIntoSequencerUVE(player, absolute));
-        }, folder.empty() ? "Content" : folder, prism::Icon::AnimLibrary));
-        link.push_back(prism::MenuItem::Item(entry.relativePath.stem().string(), [this, player, absolute] {
-            static_cast<void>(m_editor.LinkAnimationLibraryToSequencerUVE(player, absolute));
-        }, folder.empty() ? "Content" : folder, prism::Icon::AnimLibrary));
+void EditorSequencerPanelUVE::ShowSettingsMenuUVE() {
+    EditorUVE::AnimationTimelineStateUVE& state = m_editor.m_timeline;
+    std::vector<prism::MenuItem> speeds;
+    for (const double rate : {0.1, 0.25, 0.5, 1.0, 1.5, 2.0}) {
+        char label[16];
+        std::snprintf(label, sizeof(label), "%gx", rate);
+        speeds.push_back(prism::MenuItem::Check(label, std::abs(state.playbackRate - rate) < 1e-6, [this, rate] { m_editor.m_timeline.playbackRate = rate; }));
     }
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Item("Browse...", [this, player] {
-        m_editor.BrowseAnimationTimelineUVE(player, EditorUVE::AnimationTimelineBrowseUVE::ImportLibrary);
-    }, "", prism::Icon::Browse));
-    if (load.empty()) {
-        items.push_back(prism::MenuItem::Item("No Animation Library in the project", {}).disabled());
-    } else {
-        items.push_back(prism::MenuItem::Sub("Load into the Player", std::move(load), prism::Icon::AnimLibrary));
-        items.push_back(prism::MenuItem::Sub("Link Live (follows the library)", std::move(link), prism::Icon::AnimLibrary));
-    }
-    if (m_loadLibraryButton) {
-        const prism::Rect r = m_loadLibraryButton->rect();
-        prism::showSearchMenu(std::move(items), r, prism::PopupPlacement::Below, "Search libraries");
+    items.push_back(prism::MenuItem::Sub("Playback Speed", std::move(speeds), prism::Icon::Play));
+    items.push_back(prism::MenuItem::Check("Follow Playhead", state.followPlayhead,
+                                           [this] { m_editor.m_timeline.followPlayhead = !m_editor.m_timeline.followPlayhead; }));
+    items.push_back(prism::MenuItem::Check("Snap to Frames", state.snapToFrames,
+                                           [this] { m_editor.m_timeline.snapToFrames = !m_editor.m_timeline.snapToFrames; }));
+    items.push_back(prism::MenuItem::Check("Show Time in Seconds", state.clockInSeconds,
+                                           [this] { m_editor.m_timeline.clockInSeconds = !m_editor.m_timeline.clockInSeconds; }));
+    items.push_back(prism::MenuItem::Sep());
+    items.push_back(prism::MenuItem::Check("Record (key what is moved)", state.recording,
+                                           [this] { m_editor.SetAnimationTimelineRecordingUVE(!m_editor.m_timeline.recording); }));
+    if (m_settingsButton) {
+        const prism::Rect r = m_settingsButton->rect();
+        prism::showContextMenu(std::move(items), prism::Vec2{r.x, r.bottom()});
     }
 }
 

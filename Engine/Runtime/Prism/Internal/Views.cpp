@@ -231,7 +231,72 @@ bool TreeView::onRowDown(int row, const MouseEvent& e, Rect r) {
     return true;
   }
   selectRow(row, &e);
+  if (onDropNode && !m_renaming) {
+    m_dragId = n->id;
+    m_dragFrom = e.pos;
+    m_dragging = false;
+    m_dropId = 0;
+  }
   return true;
+}
+
+bool TreeView::dropTarget(Vec2 p, TreeNode*& target, DropWhere& where) {
+  target = nullptr;
+  const int row = rowAt(p);
+  if (row < 0 || row >= rowCount()) return false;
+  TreeNode* dragged = find(m_dragId);
+  TreeNode* over = rows()[size_t(row)].n;
+  if (dragged == nullptr || over == nullptr) return false;
+  for (TreeNode* up = over; up != nullptr; up = up->parent)
+    if (up == dragged) return false;  // onto itself or below itself
+  const Rect r = rowRect(row);
+  const float t = (p.y - r.y) / std::max(1.f, r.h);
+  where = t < 0.25f ? DropWhere::Before : t > 0.75f ? DropWhere::After : DropWhere::Inside;
+  // A root row (the parent of everything) only takes children.
+  if (over->parent == &m_root || over->parent == nullptr) where = DropWhere::Inside;
+  if (canDropNode && !canDropNode(dragged, over, where)) return false;
+  target = over;
+  return true;
+}
+
+bool TreeView::onMouseMove(const MouseEvent& e) {
+  if (m_dragId != 0) {
+    if (!m_dragging && (std::abs(e.pos.x - m_dragFrom.x) > 5 || std::abs(e.pos.y - m_dragFrom.y) > 5)) m_dragging = true;
+    if (m_dragging) {
+      TreeNode* target = nullptr;
+      DropWhere where = DropWhere::Inside;
+      const int before = m_dropId;
+      const DropWhere beforeWhere = m_dropWhere;
+      m_dropId = dropTarget(e.pos, target, where) ? target->id : 0;
+      m_dropWhere = where;
+      if (m_dropId != before || m_dropWhere != beforeWhere) invalidate();
+      // Near the edges the list scrolls, so a far row can be reached.
+      if (e.pos.y < m_rect.y + 12) { m_scroll = std::max(0.f, m_scroll - 6); relayout(); }
+      else if (e.pos.y > m_rect.bottom() - 12) { m_scroll += 6; relayout(); }
+      return true;
+    }
+  }
+  return VirtualList::onMouseMove(e);
+}
+
+bool TreeView::onMouseUp(const MouseEvent& e) {
+  if (m_dragId != 0) {
+    const bool dragging = m_dragging;
+    TreeNode* dragged = find(m_dragId);
+    TreeNode* target = nullptr;
+    DropWhere where = DropWhere::Inside;
+    const bool ok = dragging && dropTarget(e.pos, target, where);
+    m_dragId = 0;
+    m_dragging = false;
+    m_dropId = 0;
+    invalidate();
+    if (ok && dragged != nullptr && target != nullptr && onDropNode) {
+      onDropNode(dragged, target, where);
+      return true;
+    }
+    if (dragging) return true;
+  }
+  return VirtualList::onMouseUp(e);
 }
 
 bool TreeView::onKeyDown(const KeyEvent& e) {
@@ -328,6 +393,21 @@ void TreeView::paintRow(Canvas& c, int row, Rect r, bool hover) {
 }
 
 void TreeView::paintOverlay(Canvas& c) {
+  if (m_dragging && m_dropId != 0) {
+    for (int i = 0; i < rowCount(); i++) {
+      if (rows()[size_t(i)].n->id != m_dropId) continue;
+      Rect rr = rowRect(i);
+      const float x = rr.x + 8 + float(rows()[size_t(i)].depth) * 14;
+      const Color accent = theme().accent;
+      if (m_dropWhere == DropWhere::Inside) {
+        c.strokeRoundRect(rr.deflated(1), 3, accent, 2);
+      } else {
+        const float y = m_dropWhere == DropWhere::Before ? rr.y : rr.bottom() - 2;
+        c.fillRect({x, y, rr.right() - x - 4, 2}, accent);
+        c.fillCircle({x, y + 1}, 3, accent);
+      }
+    }
+  }
   if (!m_renaming) return;
   int idx = -1;
   for (int i = 0; i < rowCount(); i++) if (rows()[size_t(i)].n == m_renaming) idx = i;
@@ -594,13 +674,25 @@ void PropertyGrid::addRow(int cat, std::string label, Ref<Widget> editor, std::s
   applyVisibility();
 }
 
+void PropertyGrid::addRow(int cat, std::string label, Ref<Widget> editor, std::string tip, Ref<Widget> labelExtra) {
+  addRow(cat, std::move(label), std::move(editor), std::move(tip));
+  if (labelExtra) {
+    m_cats[size_t(cat)].rows.back().extra = labelExtra;
+    addChild(std::move(labelExtra));
+    applyVisibility();
+  }
+}
+
 void PropertyGrid::clear() {
   m_cats.clear();
   clearChildren();
 }
 
 void PropertyGrid::applyVisibility() {
-  for (auto& c : m_cats) for (auto& r : c.rows) r.editor->setVisible(c.expanded);
+  for (auto& c : m_cats) for (auto& r : c.rows) {
+    r.editor->setVisible(c.expanded);
+    if (r.extra) r.extra->setVisible(c.expanded);
+  }
 }
 
 Vec2 PropertyGrid::measure(Vec2 avail) {
@@ -611,6 +703,7 @@ Vec2 PropertyGrid::measure(Vec2 avail) {
     for (auto& r : c.rows) {
       Vec2 d = r.editor->measure({w - lw - 16, 1e4f});
       r.h = std::max(26.f, d.y + 4);
+      if (r.extra) r.extra->measure({lw, r.h});
       h += r.h;
     }
   }
@@ -630,6 +723,14 @@ void PropertyGrid::arrange(Rect r) {
       Vec2 d = row.editor->desired();
       float eh = std::min(row.h - 4, std::max(22.f, d.y));
       row.editor->arrange({ex, y + std::floor((row.h - eh) * 0.5f), std::max(10.f, ew), eh});
+      if (row.extra) {
+        // At the label column's right edge, against the divider before the value.
+        const Vec2 xd = row.extra->desired();
+        const float xw = std::min(xd.x, std::max(0.f, lw - 30));
+        const float xx = r.x + lw - 4 - xw;
+        const float xh = std::min(row.h - 4, std::max(18.f, xd.y));
+        row.extra->arrange({xx, y + std::floor((row.h - xh) * 0.5f), xw, xh});
+      }
       y += row.h;
     }
   }
@@ -646,7 +747,8 @@ void PropertyGrid::paint(Canvas& c) {
     if (!cat.expanded) continue;
     for (auto& r : cat.rows) {
       c.fillRect({r.rect.x, r.rect.bottom() - 1, r.rect.w, 1}, Color(255, 255, 255, 7));
-      c.textIn(*t.ui, {r.rect.x + 24, r.rect.y, lw - 30, r.rect.h}, r.label, t.textDim);
+      const float extraW = r.extra && r.extra->visible() ? r.extra->rect().w + 8 : 0.f;
+      c.textIn(*t.ui, {r.rect.x + 24, r.rect.y, std::max(10.f, lw - 30 - extraW), r.rect.h}, r.label, t.textDim);
       c.fillRect({r.rect.x + lw, r.rect.y, 1, r.rect.h}, Color(255, 255, 255, m_dragDiv ? 40 : 10));
     }
   }
@@ -737,6 +839,40 @@ bool ColorField::onMouseDown(const MouseEvent& e) {
 }
 
 // ------------------------------------------------------------------ Dialog
+namespace {
+
+/// A dialog's title bar: dragging it moves the dialog (its buttons, like the close X, still take
+/// their own clicks).
+class DialogTitleDrag : public Border {
+public:
+  std::weak_ptr<Widget> dialog;
+  bool onMouseDown(const MouseEvent& e) override {
+    const auto d = dialog.lock();
+    if (e.button != MouseButton::Left || !d) return false;
+    m_grab = e.pos - Vec2(d->rect().x, d->rect().y);
+    m_drag = true;
+    return true;
+  }
+  bool onMouseMove(const MouseEvent& e) override {
+    if (!m_drag) return false;
+    if (const auto d = dialog.lock()) Application::get().movePopup(d.get(), e.pos - m_grab);
+    return true;
+  }
+  bool onMouseUp(const MouseEvent&) override {
+    const bool was = m_drag;
+    m_drag = false;
+    return was;
+  }
+  Cursor cursor() const override { return Cursor::SizeAll; }
+  // The whole bar takes the press (a Border without a background would let it fall through).
+  bool hitSelf() const override { return true; }
+private:
+  Vec2 m_grab;
+  bool m_drag = false;
+};
+
+} // namespace
+
 void showDialog(const std::string& title, Ref<Widget> content, std::vector<DialogButton> buttons, float width) {
   const Theme& t = theme();
   auto root = make<Border>();
@@ -748,7 +884,8 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   auto close = [wr] { if (auto r = wr.lock()) Application::get().closePopup(r.get()); };
 
   auto col = vbox();
-  auto bar = make<Border>();
+  auto bar = make<DialogTitleDrag>();
+  bar->dialog = root;
   bar->setBorder(t.borderSoft, Margin(0, 0, 0, 1));
   bar->setPadding(Margin(16, 0, 8, 0));
   bar->setFixedHeight(38);

@@ -399,6 +399,11 @@ void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
 
 // One content tile: thumbnail well, chamfered type tab + type underline, name + type footer, accent
 // frame with corner brackets when selected. Shared by AssetBrowser and host content browsers.
+float assetTileWellHeight(Rect tile) {
+  // Square, leaving the footer its two lines.
+  return std::max(0.0f, std::min(tile.w - 6.0f, tile.h - 44.0f));
+}
+
 void paintAssetTile(Canvas& c, Rect tr, const AssetRecord& asset, bool isSel, bool isHov) {
   const Theme& t = theme();
   const Color accent = t.accent;
@@ -406,8 +411,8 @@ void paintAssetTile(Canvas& c, Rect tr, const AssetRecord& asset, bool isSel, bo
   if (isSel) cardBg = Color(32, 32, 34).mix(accent, 0.18f);
   c.fillRoundRect(tr, 4.0f, cardBg);
 
-  // Thumbnail well (86px)
-  Rect thumbRect{tr.x + 3.0f, tr.y + 3.0f, tr.w - 6.0f, 86.0f};
+  // Thumbnail well: square, as the thumbnails are, so the picture fills it exactly.
+  Rect thumbRect{tr.x + 3.0f, tr.y + 3.0f, tr.w - 6.0f, assetTileWellHeight(tr)};
   c.pushClip(thumbRect);
   drawAssetThumbnail(c, asset, thumbRect);
   if (isHov && !isSel) c.fillRect(thumbRect, Color(255, 255, 255, 10));

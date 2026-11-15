@@ -6,6 +6,7 @@
 #include "editor_content_browser.h"
 
 #include "color.h"
+#include "rect.h"
 #include "engine_project_settings.h"
 #include "scene_component_metadata.h"
 #include "scene_object_type.h"
@@ -55,6 +56,21 @@ using TypeFlagsUVE = Core::TypeMetadataPropertyFlagsUVE;
 
 constexpr float kRadToDegUVE = 57.29577951F;
 constexpr float kDegToRadUVE = 0.01745329252F;
+
+/// The Euler angles Details shows: the authored ones while they still make the object's rotation,
+/// else read back from the rotation itself (the gizmo, a script or the Sequencer turned it).
+[[nodiscard]] Math::Vector3UVE ShownEulerUVE(const Scene::TransformComponentUVE& t) noexcept {
+    Math::QuaternionUVE fromEuler{};
+    if (Math::TryMakeEulerUVE(t.localEulerRadians, fromEuler)) {
+        const Math::QuaternionUVE& r = t.localRotation;
+        const float dot = fromEuler.x * r.x + fromEuler.y * r.y + fromEuler.z * r.z + fromEuler.w * r.w;
+        if (std::abs(dot) > 0.99999F) {
+            return t.localEulerRadians;
+        }
+    }
+    Math::Vector3UVE derived{};
+    return Math::TryToEulerUVE(t.localRotation, derived) ? derived : t.localEulerRadians;
+}
 
 /// The component types whose authoring is not a field write (see the Inspector's own list): the
 /// name routes through SetSelectedEntityNameUVE, the transform through the gesture API, and the
@@ -205,6 +221,41 @@ public:
     std::array<std::shared_ptr<prism::NumberField>, 2> m_fields;
 };
 
+/// A rectangle as two rows: position (X, Y) above size (W, H), in pixels.
+class RectFieldUVE final : public prism::Widget {
+public:
+    RectFieldUVE() {
+        const std::array<const char*, 4> labels{"X", "Y", "W", "H"};
+        const std::array<prism::Color, 4> colours{prism::Color(214, 84, 84), prism::Color(110, 180, 90), prism::Color(150, 150, 160),
+                                                  prism::Color(150, 150, 160)};
+        for (std::size_t i = 0; i < m_fields.size(); ++i) {
+            m_fields[i] = prism::make<prism::NumberField>(0.0F, 1.0F, 0);
+            m_fields[i]->setAxisLabel(labels[i], colours[i]);
+            m_fields[i]->setDragSpeed(1.0F);
+            addChild(m_fields[i]);
+        }
+        m_fields[2]->setRange(0.0F, 100000.0F);
+        m_fields[3]->setRange(0.0F, 100000.0F);
+    }
+    prism::Vec2 measure(prism::Vec2) override { return m_desired = constrain({120.0F, prism::theme().controlH * 2.0F + 4.0F}); }
+    void arrange(prism::Rect r) override {
+        prism::Widget::arrange(r);
+        const float w = std::floor((r.w - 4.0F) * 0.5F);
+        const float h = prism::theme().controlH;
+        for (std::size_t i = 0; i < m_fields.size(); ++i) {
+            const float x = (i % 2U == 0U) ? r.x : r.x + w + 4.0F;
+            const float y = (i < 2U) ? r.y : r.y + h + 4.0F;
+            m_fields[i]->arrange(prism::Rect{x, y, i % 2U == 0U ? w : r.w - w - 4.0F, h});
+        }
+    }
+    bool hitSelf() const override { return false; }
+    [[nodiscard]] Math::RectUVE ValueUVE() const {
+        return Math::RectUVE{Math::Vector2UVE{m_fields[0]->value(), m_fields[1]->value()},
+                             Math::Vector2UVE{m_fields[2]->value(), m_fields[3]->value()}};
+    }
+    std::array<std::shared_ptr<prism::NumberField>, 4> m_fields;
+};
+
 } // namespace
 
 EditorDetailsUVE::EditorDetailsUVE(EditorUVE& editor) : m_editor(editor) {}
@@ -214,7 +265,7 @@ EditorDetailsUVE::~EditorDetailsUVE() = default;
 prism::Ref<prism::Widget> EditorDetailsUVE::BuildUVE() {
     auto page = prism::vbox(4.0F);
     page->setPadding(prism::Margin(4.0F));
-    m_search = prism::make<prism::TextInput>("", "Search details");
+    m_search = prism::make<prism::TextInput>("", "Search the inspector");
     m_search->onChanged = [this](const std::string& text) {
         m_filter = LowerUVE(text);
         m_signature = 0;
@@ -418,7 +469,11 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
     entries = std::move(ordered);
 
     bool transformDone = false;
-    const bool hasTransform = em.HasComponentUVE<Scene::TransformComponentUVE>(entity);
+    // A widget is placed by its rect (and anchors), not by a 3D transform: the transform is not shown.
+    const bool widget = std::any_of(entries.begin(), entries.end(), [](const EntryUVE* const entry) {
+        return entry->typeId.ToStringUVE().starts_with("component.ui_");
+    });
+    const bool hasTransform = !widget && em.HasComponentUVE<Scene::TransformComponentUVE>(entity);
     for (const EntryUVE* const entry : entries) {
         const std::string_view typeId = entry->typeId.ToStringUVE();
         if (!transformDone && hasTransform && entry->order > Scene::kSectionOrderTransformUVE) {
@@ -534,11 +589,23 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
             if (which == 0) {
                 (axis == 0 ? t.localPosition.x : axis == 1 ? t.localPosition.y : t.localPosition.z) = value;
             } else if (which == 2) {
-                (axis == 0 ? t.localScale.x : axis == 1 ? t.localScale.y : t.localScale.z) = value;
+                float& edited = axis == 0 ? t.localScale.x : axis == 1 ? t.localScale.y : t.localScale.z;
+                if (m_scaleLocked) {
+                    // All three together: in proportion, or all equal when the edited one was zero.
+                    const float before = edited;
+                    if (std::abs(before) > 1e-6F) {
+                        const float factor = value / before;
+                        t.localScale = Math::Vector3UVE{t.localScale.x * factor, t.localScale.y * factor, t.localScale.z * factor};
+                    } else {
+                        t.localScale = Math::Vector3UVE{value, value, value};
+                    }
+                } else {
+                    edited = value;
+                }
             } else {
                 // The authored Euler angles are the edited view of the rotation (see
                 // TransformComponentUVE::localEulerRadians); both are written together.
-                Math::Vector3UVE e = t.localEulerRadians;
+                Math::Vector3UVE e = ShownEulerUVE(t);
                 (axis == 0 ? e.x : axis == 1 ? e.y : e.z) = value * kDegToRadUVE;
                 Math::QuaternionUVE q{};
                 if (!Math::TryMakeEulerUVE(e, q)) {
@@ -560,13 +627,81 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
                 r->editing = false;
             }
         };
-        row->sync = [current, weakField, which](const void*) {
+        // Reset: Location and Rotation to zero, Scale to one (one undo step).
+        auto reset = prism::make<prism::Button>("", prism::Icon::Undo, prism::ButtonStyle::Flat);
+        reset->setTooltip(which == 2 ? "Reset the scale to 1, 1, 1" : which == 1 ? "Reset the rotation to 0, 0, 0" : "Reset the location to 0, 0, 0");
+        reset->setEnabled(authoring);
+        reset->onClick = [this, current, which] {
+            Scene::TransformComponentUVE t{};
+            if (!current(t)) {
+                return;
+            }
+            if (which == 0) {
+                t.localPosition = Math::Vector3UVE{};
+            } else if (which == 2) {
+                t.localScale = Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+            } else {
+                t.localEulerRadians = Math::Vector3UVE{};
+                t.localRotation = Math::QuaternionUVE{};
+            }
+            static_cast<void>(m_editor.SetSelectedLocalTransformUVE(t));
+        };
+        // Key: shown only while the Animation Sequencer is open on this object; a filled diamond
+        // when the clip already has a key at the playhead.
+        auto key = prism::make<prism::Button>("", prism::Icon::Key, prism::ButtonStyle::Flat);
+        key->setTooltip("Key this object's transform at the Sequencer's playhead");
+        key->onClick = [this] { static_cast<void>(m_editor.KeyAnimationTimelineObjectUVE()); };
+        key->setVisible(false);
+        std::weak_ptr<prism::Button> weakKey = key;
+        std::weak_ptr<prism::Button> weakReset = reset;
+        auto line = prism::hbox(2.0F);
+        line->add(field, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        line->add(key, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        // Beside the label: reset, and on Scale the lock (X, Y, Z together).
+        auto labelTools = prism::hbox(2.0F);
+        labelTools->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        if (which == 2) {
+            auto lock = prism::make<prism::Button>("", m_scaleLocked ? prism::Icon::Lock : prism::Icon::Unlock, prism::ButtonStyle::Flat);
+            lock->setCheckable(true);
+            lock->setChecked(m_scaleLocked);
+            lock->setTooltip("Lock: X, Y and Z scale together. Off: one axis at a time");
+            std::weak_ptr<prism::Button> weakLock = lock;
+            lock->onToggle = [this, weakLock](const bool on) {
+                m_scaleLocked = on;
+                if (auto l = weakLock.lock()) {
+                    l->setIcon(on ? prism::Icon::Lock : prism::Icon::Unlock);
+                }
+            };
+            labelTools->add(lock, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+            m_scaleLockButton = lock;
+        }
+        row->sync = [this, current, weakField, weakKey, weakReset, which](const void*) {
+            if (auto k = weakKey.lock()) {
+                const bool keyable = m_editor.CanKeyAnimationTimelineObjectUVE(m_editor.GetSelectedEntityUVE());
+                if (k->visible() != keyable) {
+                    k->setVisible(keyable);
+                }
+                // Only when it changes: a new icon lays the row out again.
+                const bool keyed = keyable && m_editor.HasAnimationTimelineObjectKeyAtPlayheadUVE();
+                if (keyable && keyed != k->checked()) {
+                    k->setCheckable(true);
+                    k->setChecked(keyed);
+                }
+            }
             Scene::TransformComponentUVE t{};
             auto f = weakField.lock();
             if (!f || !current(t)) {
                 return;
             }
-            Math::Vector3UVE v = which == 0 ? t.localPosition : which == 2 ? t.localScale : t.localEulerRadians;
+            Math::Vector3UVE v = which == 0 ? t.localPosition : which == 2 ? t.localScale : ShownEulerUVE(t);
+            // Reset shows once the value is not its default (0, or 1 for scale), Sequencer or not.
+            if (auto r = weakReset.lock()) {
+                const float d = which == 2 ? 1.0F : 0.0F;
+                const bool changed = std::abs(v.x - d) > 1e-5F || std::abs(v.y - d) > 1e-5F || std::abs(v.z - d) > 1e-5F;
+                if (r->visible() != changed) {
+                    r->setVisible(changed);
+                }
+            }
             if (which == 1) {
                 v = Math::Vector3UVE{v.x * kRadToDegUVE, v.y * kRadToDegUVE, v.z * kRadToDegUVE};
             }
@@ -576,7 +711,7 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
         };
         row->sync(nullptr);
         m_rows.push_back(row);
-        m_grid->addRow(category, kRowsUVE[which].label, field);
+        m_grid->addRow(category, kRowsUVE[which].label, line, "", labelTools);
     }
 }
 
@@ -778,6 +913,33 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
             n->onCommit = [commit](float) { commit(); };
         }
         editor = field;
+    } else if (property.typeId == Scene::kPropertyTypeRectUVE) {
+        auto field = prism::make<RectFieldUVE>();
+        std::weak_ptr<RectFieldUVE> weak = field;
+        row->sync = [p, weak](const void* inst) {
+            auto f = weak.lock();
+            if (f && inst != nullptr) {
+                Math::RectUVE v{};
+                p->getValue(inst, &v);
+                const std::array<float, 4> values{v.position.x, v.position.y, v.size.x, v.size.y};
+                for (std::size_t i = 0; i < values.size(); ++i) {
+                    if (std::abs(f->m_fields[i]->value() - values[i]) > 1e-4F) {
+                        f->m_fields[i]->setValue(values[i]);
+                    }
+                }
+            }
+        };
+        for (auto& n : field->m_fields) {
+            n->onBegin = begin;
+            n->onChange = [this, e, p, weak](float) {
+                if (auto f = weak.lock()) {
+                    const Math::RectUVE v = f->ValueUVE();
+                    static_cast<void>(m_editor.PreviewSelectedComponentPropertyUVE(*e, *p, &v));
+                }
+            };
+            n->onCommit = [commit](float) { commit(); };
+        }
+        editor = field;
     } else if (property.typeId == Scene::kPropertyTypeColorUVE || property.typeId == Scene::kPropertyTypeLinearColorUVE) {
         const bool linear = property.typeId == Scene::kPropertyTypeLinearColorUVE;
         auto color = prism::make<prism::ColorField>();
@@ -864,7 +1026,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
             // One button, like an asset slot: the file's name, or (Empty); the menu has Empty too.
             auto pick = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                    prism::ButtonStyle::Default);
-            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Content Browser") : property.tooltip);
+            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Asset Library") : property.tooltip);
             std::weak_ptr<prism::Button> weakPick = pick;
             row->sync = [p, weakPick](const void* inst) {
                 auto b = weakPick.lock();
@@ -872,6 +1034,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                     std::string v;
                     p->getValue(inst, &v);
                     const std::string text = v.empty() ? std::string("Empty") : std::filesystem::path{v}.stem().string();
+                    // (A sky slot says what an empty one means: the procedural sky, or the Sky below.)
                     if (b->text() != text) {
                         b->setText(text);
                     }
@@ -896,7 +1059,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                 if (skySlot) {
                     spec.title = "Sky";
                 } else if (scriptSlot) {
-                    spec.title = "Blueprint";
+                    spec.title = "Logic Graph";
                 }
                 PickerActionsUVE actions;
                 const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -915,6 +1078,16 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                     static_cast<void>(m_editor.SetSelectedComponentPropertyUVE(*e, *p, &none));
                 };
                 actions.file = useFile;
+                if (skySlot) {
+                    // The sky is authored on this environment: bands, atmosphere or a panorama.
+                    const bool hasSky = em.HasComponentUVE<Scene::Sky3DComponentUVE>(selected);
+                    actions.extras.emplace_back(hasSky ? "Edit Sky (below)" : "New Sky", [this, selected] {
+                        static_cast<void>(m_editor.AddSkyToEntityUVE(selected));
+                    });
+                    if (hasSky) {
+                        actions.extras.emplace_back("Remove Sky", [this, selected] { static_cast<void>(m_editor.RemoveSkyFromEntityUVE(selected)); });
+                    }
+                }
                 if (auto b = weakPick.lock()) {
                     ShowPickerUVE(spec, std::move(actions), b->rect());
                 }
@@ -1009,14 +1182,15 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
         auto button = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                  prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
-        row->sync = [this, p, weak](const void* inst) {
+        row->sync = [this, p, weak, material](const void* inst) {
             auto b = weak.lock();
             if (!b || inst == nullptr) {
                 return;
             }
             Asset::AssetGuidUVE value{};
             p->getValue(inst, &value);
-            std::string text = "Empty";
+            // An empty material slot says what a click does: make one (and its maps appear here) or pick one.
+            std::string text = material ? "Create or pick..." : "Empty";
             if (value != Asset::AssetGuidUVE{}) {
                 text = "Missing asset";
                 for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {

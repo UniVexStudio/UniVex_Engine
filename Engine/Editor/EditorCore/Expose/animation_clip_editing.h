@@ -14,7 +14,9 @@ namespace UVE::Editor {
 /// window. A key is one sample of one track: every channel of a sample moves together, because a
 /// sample stores the whole pose.
 ///
-/// Tracks are named: a bone track by its bone, the clip's own object track by the empty string.
+/// Tracks are named: a bone track by its bone, the clip's own object track by the empty string,
+/// and another object's track (`clip.objects`) by this prefix and the object's name.
+inline constexpr char kClipObjectTrackPrefixUVE = '@';
 
 /// One key: a track and the time of its sample.
 struct ClipKeyUVE final {
