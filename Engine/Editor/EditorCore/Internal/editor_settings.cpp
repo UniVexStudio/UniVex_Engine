@@ -289,7 +289,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
         // legal here is one that setter accepts; it is assigned directly because loading happens
         // before authoring commands are allowed.
         {Config::MakeBoolSettingUVE(IdUVE(Id::kSnapEnabledUVE), snapping.enabled, "Snap", kSnappingCategoryUVE,
-                                    "Snap moves, rotations and scales to the steps below."),
+                                    "Snap moves and rotations to the steps below."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_transformSnappingSettings.enabled; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_transformSnappingSettings.enabled = std::get<bool>(value);
@@ -315,6 +315,13 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_transformSnappingSettings.rotateStepDegrees = FloatUVE(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kSnapScaleEnabledUVE), snapping.scaleEnabled, "Snap Scale", kSnappingCategoryUVE,
+                                    "Snap scales to the Scale Step (its own magnet in the view toolbar)."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_transformSnappingSettings.scaleEnabled; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_transformSnappingSettings.scaleEnabled = std::get<bool>(value);
              return true;
          }},
         {Config::MakeFloatSettingUVE(IdUVE(Id::kSnapScaleStepUVE), snapping.scaleStep, kMinimumTransformSnapStepUVE,

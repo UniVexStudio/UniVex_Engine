@@ -342,6 +342,9 @@ void EditorDetailsUVE::RefreshUVE() {
         RebuildUVE(entity);
         return;
     }
+    if (auto magnet = m_scaleMagnet.lock(); magnet && magnet->checked() != m_editor.m_transformSnappingSettings.scaleEnabled) {
+        magnet->setChecked(m_editor.m_transformSnappingSettings.scaleEnabled);
+    }
     if (!m_editor.IsDocumentEntityUVE(entity)) {
         return;
     }
@@ -626,11 +629,27 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
         key->onClick = [this] { static_cast<void>(m_editor.KeyAnimationTimelineObjectUVE()); };
         key->setVisible(false);
         std::weak_ptr<prism::Button> weakKey = key;
+        std::weak_ptr<prism::Button> weakReset = reset;
         auto line = prism::hbox(2.0F);
         line->add(field, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
         line->add(key, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-        line->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-        row->sync = [this, current, weakField, weakKey, which](const void*) {
+        // Beside the label: reset, and on Scale its own snap magnet (on/off).
+        auto labelTools = prism::hbox(2.0F);
+        labelTools->add(reset, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        if (which == 2) {
+            auto magnet = prism::make<prism::Button>("", prism::Icon::Magnet, prism::ButtonStyle::Flat);
+            magnet->setCheckable(true);
+            magnet->setChecked(m_editor.m_transformSnappingSettings.scaleEnabled);
+            magnet->setTooltip("Snap scale to its step (set the step in the viewport's snap menu)");
+            magnet->onToggle = [this](const bool on) {
+                EditorTransformSnappingSettingsUVE snap = m_editor.m_transformSnappingSettings;
+                snap.scaleEnabled = on;
+                static_cast<void>(m_editor.SetTransformSnappingSettingsUVE(snap));
+            };
+            labelTools->add(magnet, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+            m_scaleMagnet = magnet;
+        }
+        row->sync = [this, current, weakField, weakKey, weakReset, which](const void*) {
             if (auto k = weakKey.lock()) {
                 const bool keyable = m_editor.CanKeyAnimationTimelineObjectUVE(m_editor.GetSelectedEntityUVE());
                 if (k->visible() != keyable) {
@@ -649,6 +668,14 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
                 return;
             }
             Math::Vector3UVE v = which == 0 ? t.localPosition : which == 2 ? t.localScale : t.localEulerRadians;
+            // Reset shows once the value is not its default (0, or 1 for scale), Sequencer or not.
+            if (auto r = weakReset.lock()) {
+                const float d = which == 2 ? 1.0F : 0.0F;
+                const bool changed = std::abs(v.x - d) > 1e-5F || std::abs(v.y - d) > 1e-5F || std::abs(v.z - d) > 1e-5F;
+                if (r->visible() != changed) {
+                    r->setVisible(changed);
+                }
+            }
             if (which == 1) {
                 v = Math::Vector3UVE{v.x * kRadToDegUVE, v.y * kRadToDegUVE, v.z * kRadToDegUVE};
             }
@@ -658,7 +685,7 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
         };
         row->sync(nullptr);
         m_rows.push_back(row);
-        m_grid->addRow(category, kRowsUVE[which].label, line);
+        m_grid->addRow(category, kRowsUVE[which].label, line, "", labelTools);
     }
 }
 

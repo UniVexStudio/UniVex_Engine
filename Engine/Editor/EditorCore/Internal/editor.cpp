@@ -2125,7 +2125,7 @@ bool EditorUVE::ComputeGestureTransformUVE(const EditorToolSessionModeUVE mode,
             return true;
         }
         case EditorToolSessionModeUVE::Scale: {
-            const float snappedDelta = m_transformSnappingSettings.enabled
+            const float snappedDelta = m_transformSnappingSettings.scaleEnabled
                                            ? SnapScalarUVE(amount, m_transformSnappingSettings.scaleStep)
                                            : amount;
             if (axis == EditorTransformAxisUVE::None) {
@@ -2439,6 +2439,7 @@ bool EditorUVE::SetTransformSnappingSettingsUVE(const EditorTransformSnappingSet
                                   static_cast<double>(settings.rotateStepDegrees));
     NotifyEditorSettingChangedUVE(Id::kSnapScaleStepUVE, static_cast<double>(previous.scaleStep),
                                   static_cast<double>(settings.scaleStep));
+    NotifyEditorSettingChangedUVE(Id::kSnapScaleEnabledUVE, previous.scaleEnabled, settings.scaleEnabled);
     return true;
 }
 

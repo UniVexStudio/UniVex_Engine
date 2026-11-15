@@ -163,7 +163,10 @@ enum class EditorReparentTransformModeUVE {
 /// Session-local transform snapping settings. These values are editor-only and are not serialized
 /// into scene documents or runtime state.
 struct EditorTransformSnappingSettingsUVE final {
+    /// Moves and rotations snap to their steps.
     bool enabled = false;
+    /// Scales snap to `scaleStep`: switched on its own (its own magnet in the view toolbar).
+    bool scaleEnabled = false;
     float translateStep = 1.0F;
     float rotateStepDegrees = 15.0F;
     float scaleStep = 0.1F;
