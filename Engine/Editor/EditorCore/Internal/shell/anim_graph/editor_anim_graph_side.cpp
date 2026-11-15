@@ -432,6 +432,7 @@ void EditorAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, 
         grid.addRow(cat, "Name", name, "Shown along the axis");
         const auto areaField = [this, id, y](const float value, const bool high) {
             auto field = prism::make<prism::NumberField>(value, 0.05F, 2);
+            field->setScrubbable(false);
             field->onCommit = [this, id, y, high](const float v) {
                 EditNodeUVE(id, [y, high, v](NodeUVE& n) {
                     float& target = y ? (high ? n.areaMax.y : n.areaMin.y) : (high ? n.areaMax.x : n.areaMin.x);
@@ -444,6 +445,7 @@ void EditorAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, 
                     "The range the editor shows and the grid divides");
         auto divisions = prism::make<prism::NumberField>(static_cast<float>(y ? space.gridY : space.gridX), 1.0F, 0);
         divisions->setRange(1.0F, 64.0F);
+        divisions->setScrubbable(false);
         divisions->onCommit = [this, id, y](const float v) {
             const auto count = static_cast<std::uint32_t>(std::clamp(std::lround(v), 1L, 64L));
             EditNodeUVE(id, [y, count](NodeUVE& n) { (y ? n.gridY : n.gridX) = count; });
@@ -490,6 +492,7 @@ void EditorAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, 
     grid.addRow(cat, "Sync", sync, "The heaviest animation leads; the others follow its phase (feet together)");
     auto smoothing = prism::make<prism::NumberField>(space.smoothingSeconds, 0.01F, 2);
     smoothing->setRange(0.0F, 5.0F);
+    smoothing->setScrubbable(false);
     smoothing->setSuffix(" s");
     smoothing->setTooltip("How long the position takes to close half the gap to its parameters (0: at once)");
     smoothing->onCommit = [this, id](const float v) { EditNodeUVE(id, [v](NodeUVE& n) { n.smoothingSeconds = std::clamp(v, 0.0F, 5.0F); }); };
@@ -531,6 +534,7 @@ void EditorAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, 
         auto speedRow = prism::hbox(6.0F);
         auto speed = prism::make<prism::NumberField>(point.speed, 0.01F, 2);
         speed->setSuffix("x");
+        speed->setScrubbable(false);
         speed->onCommit = [editPoint](const float v) { editPoint([v](Scene::AnimationBlendPointUVE& p) { p.speed = v; }); };
         auto loop = prism::make<prism::CheckBox>("Loop", point.loop);
         loop->onChange = [editPoint](const bool v) { editPoint([v](Scene::AnimationBlendPointUVE& p) { p.loop = v; }); };
@@ -539,6 +543,7 @@ void EditorAnimGraphPanelUVE::BuildBlendSpaceSideUVE(prism::PropertyGrid& grid, 
         grid.addRow(cat, "", loop);
         const auto placeField = [this, id, slot, point](const bool y) {
             auto field = prism::make<prism::NumberField>(y ? point.position.y : point.position.x, 0.01F, 2);
+            field->setScrubbable(false);
             field->onCommit = [this, id, slot, point, y](const float v) {
                 const Math::Vector2UVE to = y ? Math::Vector2UVE{point.position.x, v} : Math::Vector2UVE{v, point.position.y};
                 EditUVE([id, slot, to](GraphUVE& g) { static_cast<void>(MoveBlendSpacePointUVE(g.nodes, id, slot, to)); });

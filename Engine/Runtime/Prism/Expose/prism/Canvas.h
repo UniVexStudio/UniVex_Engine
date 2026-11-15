@@ -57,12 +57,17 @@ public:
   void textIn(const Font& f, Rect r, std::string_view s, Color c, HAlign h = HAlign::Left, bool ellipsis = true);
 
   virtual void blit(const uint32_t* src, int sw, int sh, Vec2 dst);
-  // Nearest-neighbour scaled copy of an ARGB image (row stride in pixels) into dst, honouring the clip.
+  // Scaled copy of an ARGB image (row stride in pixels) into dst, honouring the clip. A different size is
+  // resampled smoothly (see resample), so a thumbnail shrunk or grown into its slot never looks blocky.
   virtual void blitScaled(const uint32_t* src, int sw, int sh, int stride, Rect dst);
   // Like blitScaled, but composites the straight-alpha source over what is there (icons, cut-out thumbnails).
   virtual void blitBlend(const uint32_t* src, int sw, int sh, int stride, Rect dst);
   // Writes `argb` directly (no blending). With alpha 0 this punches a transparent hole for host-drawn content.
   virtual void fillRaw(Rect r, uint32_t argb);
+  // Resamples a straight-alpha ARGB image to dw x dh: an area average when shrinking (every source pixel
+  // under a target pixel counts, by how much of it is covered), bilinear when growing. Colour is averaged
+  // premultiplied, so a cut-out's edge never picks up the transparent pixels' colour.
+  static void resample(const uint32_t* src, int sw, int sh, int stride, int dw, int dh, std::vector<uint32_t>& out);
   bool savePng(const std::string& path) const;
   static bool writePng(const std::string& path, const uint32_t* argb, int w, int h, int stride);
 
