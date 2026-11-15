@@ -1219,6 +1219,26 @@ static void testRuntimeProfile() {
 static void testBlueprintGraph() {
   SECTION("blueprint_graph");
   BlueprintGraph graph;
+  {
+    // A host's node keeps its key and its array pins through a save and a load (undo, paste),
+    // whatever it is called on screen.
+    BlueprintGraph keyed;
+    keyed.clear();
+    BlueprintNode n;
+    n.title = "Renamed By Hand";
+    n.typeKey = "for_each_Object";
+    BlueprintPin arrayIn;
+    arrayIn.name = "Array";
+    arrayIn.type = BlueprintPinType::Array;
+    arrayIn.kind = BlueprintPinKind::Input;
+    n.inputs.push_back(arrayIn);
+    keyed.addNode(n);
+    const std::string saved = keyed.serialize();
+    BlueprintGraph back;
+    CHECK(back.deserialize(saved));
+    CHECK(back.nodeCount() == 1 && back.nodes().front().typeKey == "for_each_Object");
+    CHECK(!back.nodes().front().inputs.empty() && back.nodes().front().inputs.front().type == BlueprintPinType::Array);
+  }
   CHECK(graph.preset() == BlueprintGraphPreset::WidgetBlueprint);   // default: the Get / Calc / SetVisible UI graph
   CHECK(graph.nodeCount() == 14 && graph.wireCount() == 17 && graph.commentCount() == 1);
   graph.setPreset(BlueprintGraphPreset::MaterialShader);

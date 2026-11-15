@@ -106,6 +106,7 @@ private:
     std::vector<prism::BlueprintVariable> m_shownVariables;
     std::set<std::string> m_shownExposed;
     bool m_sideDirty = true;
+    bool m_shownTargetAlive = false;   // whether Details last showed the target alive
 };
 
 } // namespace UVE::Editor

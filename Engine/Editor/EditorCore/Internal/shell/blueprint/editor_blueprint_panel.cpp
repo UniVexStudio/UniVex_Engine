@@ -91,6 +91,7 @@ using Role = Asset::BlueprintNodeRoleUVE;
     prism::BlueprintNode node;
     node.category = CategoryOfUVE(type);
     node.tooltip = type.tooltip;
+    node.typeKey = type.key;
     if (type.role == Role::GetVariable) {
         node.title = variable;
         node.style = prism::BlueprintNodeStyle::Compact;
@@ -226,6 +227,28 @@ std::vector<std::string> EditorBlueprintPanelUVE::WidgetChoicesUVE(const std::st
 }
 
 prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
+    // A rebuilt window keeps the open Blueprint: what the old graph held (unsaved edits too),
+    // else the file itself. A fresh graph alone would show it empty.
+    std::optional<Asset::BlueprintAssetUVE> keep;
+    if (IsOpenUVE()) {
+        if (m_graph) {
+            keep = FromGraphUVE();
+        } else {
+            Asset::BlueprintAssetUVE fromFile;
+            std::filesystem::path real = m_editor.m_services->GetFileSystemUVE().ResolveRealPathUVE(m_path);
+            if (real.empty()) {
+                real = m_path;
+            }
+            if (Asset::IsWidgetBlueprintPathUVE(m_path)) {
+                if (std::optional<Asset::BlueprintAssetUVE> graph = Asset::LoadWidgetBlueprintGraphUVE(real)) {
+                    keep = std::move(*graph);
+                }
+            } else if (Asset::LoadBlueprintAssetUVE(real, fromFile)) {
+                keep = std::move(fromFile);
+            }
+        }
+    }
+    const bool keepDirty = m_dirty;
     m_graph = prism::make<prism::BlueprintGraph>();
     // PRISM's whole blueprint design: its toolbar, minimap, comment boxes, watermark, shortcuts and
     // its own undo. The host owns the file and the compiler.
@@ -270,6 +293,13 @@ prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
         }
     };
 
+    if (keep) {
+        if (Asset::IsWidgetBlueprintPathUVE(m_path)) {
+            m_graph->setWatermark("Widget Blueprint", "UI graph", prism::Icon::BlueprintClass);
+        }
+        LoadIntoGraphUVE(*keep);
+        m_dirty = keepDirty;
+    }
     m_side = prism::make<prism::ScrollBox>();
     m_sidePanel = m_side;
     RebuildSideUVE();
@@ -392,9 +422,15 @@ Asset::BlueprintAssetUVE EditorBlueprintPanelUVE::FromGraphUVE() const {
         node.x = n.pos.x;
         node.y = n.pos.y;
         if (n.category == prism::BlueprintNodeCategory::Variable) {
-            const bool setter = n.title.rfind("Set ", 0U) == 0U;
+            const bool setter = n.typeKey == "set_variable" || (n.typeKey.empty() && n.title.rfind("Set ", 0U) == 0U);
             node.type = setter ? "set_variable" : "get_variable";
-            node.variable = setter ? n.title.substr(4U) : n.title;
+            // Which variable: the pin named after it (the title may have been renamed).
+            const std::vector<prism::BlueprintPin>& pins = setter ? n.inputs : n.outputs;
+            const auto named = std::find_if(pins.begin(), pins.end(), [](const prism::BlueprintPin& p) { return p.type != PT::Exec; });
+            node.variable = named != pins.end() && !named->name.empty() ? named->name : (setter ? n.title.substr(4U) : n.title);
+        } else if (!n.typeKey.empty() && Asset::FindBlueprintNodeTypeUVE(n.typeKey) != nullptr) {
+            // The catalogue key the node was made with: renaming the node never loses it.
+            node.type = n.typeKey;
         } else if (const auto found = byTitle.find(n.title); found != byTitle.end()) {
             node.type = found->second;
         } else {
@@ -635,12 +671,17 @@ void EditorBlueprintPanelUVE::RefreshUVE() {
             // The scene was rebuilt (Simulate stopped, Revert): the object whose Script slot names
             // this Blueprint is the same object under a new handle - the graph stays open on it.
             m_target = FindUserUVE(m_path);
+            m_sideDirty = true;   // Details shows the object under its new handle
             if (m_target == Scene::kInvalidEntityUVE) {
                 if (DirtyUVE()) {
                     static_cast<void>(SaveUVE());   // its edits are kept even when its object is gone
                 }
                 CloseUVE();
             }
+        }
+        // Its object came back (the Entity Editor reopened with the same handle): Details names it again.
+        if (em.IsAliveUVE(m_target) != m_shownTargetAlive) {
+            m_sideDirty = true;
         }
     }
     if (!m_graph) {
@@ -784,6 +825,7 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
     const int classCat = grid->addCategory("Class");
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     const std::string target = IsOpenUVE() && em.IsAliveUVE(m_target) ? m_editor.GetEntityDisplayLabelUVE(m_target) : std::string("None");
+    m_shownTargetAlive = IsOpenUVE() && em.IsAliveUVE(m_target);
     grid->addRow(classCat, "Target", prism::make<prism::Label>(target + "  (" + ParentKindUVE() + ")"), "The object this Blueprint drives");
     auto file = prism::make<prism::Label>(IsOpenUVE() ? m_path : std::string("None"));
     file->setColor(prism::ThemeColor(&prism::Theme::textDim));

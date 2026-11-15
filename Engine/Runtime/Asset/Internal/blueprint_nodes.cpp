@@ -467,7 +467,8 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
         {T::ObjectArray, "Object"}, {T::IntArray, "Int"}, {T::FloatArray, "Float"}, {T::StringArray, "String"}};
     for (const auto& [arrayType, word] : arrays) {
         const T item = BlueprintArrayItemTypeUVE(arrayType);
-        const std::string suffix = " (" + word + ")";
+        // "(Float Array)": never the same title as a scalar node ("Add (Float)" is the maths one).
+        const std::string suffix = " (" + word + " Array)";
         const std::string key = "_" + word;
         const std::string itemDefault = item == T::Int ? "0" : item == T::Float ? "0.0" : item == T::String ? "" : "";
         flow("for_each" + key, "For Each" + suffix, Role::ForEach, {Exec(), Pin{"Array", arrayType, ""}},
@@ -505,8 +506,6 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
          {"object.children({0})"}, "child attached components");
 
     // ---- text
-    pure("string_append", "Append", "Utilities|String", {Pin{"A", T::String, ""}, Pin{"B", T::String, ""}}, {Pin{"Result", T::String, ""}},
-         {"({0} + {1})"}, "concat join add string text");
     pure("int_to_string", "To String (Int)", "Utilities|String", {Pin{"Value", T::Int, "0"}}, {Pin{"Text", T::String, ""}}, {"str({0})"},
          "convert text number");
     pure("float_to_string", "To String (Float)", "Utilities|String", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Text", T::String, ""}}, {"str({0})"},
@@ -545,7 +544,6 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     pure("float_round", "Round", "Math|Float", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Result", T::Int, ""}}, {"math.round({0})"}, "nearest integer");
     pure("float_ceil", "Ceil", "Math|Float", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Result", T::Int, ""}}, {"math.ceil({0})"}, "round up");
     pure("float_truncate", "Truncate", "Math|Float", {Pin{"Value", T::Float, "0.0"}}, {Pin{"Result", T::Int, ""}}, {"int({0})"}, "integer whole");
-    pure("int_to_float", "To Float (Int)", "Math|Int", {Pin{"Value", T::Int, "0"}}, {Pin{"Result", T::Float, ""}}, {"float({0})"}, "convert");
     pure("snap_to_grid", "Snap To Grid", "Math|Float", {Pin{"Value", T::Float, "0.0"}, Pin{"Grid", T::Float, "1.0"}}, {Pin{"Result", T::Float, ""}},
          {"math.snap({0}, {1})"}, "round step");
     pure("float_wrap", "Wrap", "Math|Float", {Pin{"Value", T::Float, "0.0"}, Pin{"Min", T::Float, "0.0"}, Pin{"Max", T::Float, "360.0"}},

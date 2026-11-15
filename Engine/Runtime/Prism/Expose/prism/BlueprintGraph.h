@@ -92,6 +92,9 @@ struct BlueprintNode {
   // units, and the line shown in its place when the view is zoomed too far out for widgets.
   float bodyH = 0, bodyW = 0;
   std::string bodySummary;
+  // What the host's own node this is (its catalogue key), kept through renames, undo and paste:
+  // the title is only what it is called on screen.
+  std::string typeKey;
 };
 
 struct BlueprintVariable {

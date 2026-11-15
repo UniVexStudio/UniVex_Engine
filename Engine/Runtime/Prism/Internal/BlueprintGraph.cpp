@@ -816,19 +816,20 @@ bool parse(const std::string& text, Parsed& out) {
     } else if (k == "N") {
       BlueprintNode n;
       int st, cat;
-      if ((f.size() != 9 && f.size() != 11) || !toInt(f[1], n.id) || !toInt(f[2], st) || !toInt(f[3], cat) || !toFloat(f[4], n.pos.x) || !toFloat(f[5], n.pos.y)) return false;
+      if ((f.size() != 9 && f.size() != 11 && f.size() != 12) || !toInt(f[1], n.id) || !toInt(f[2], st) || !toInt(f[3], cat) || !toFloat(f[4], n.pos.x) || !toFloat(f[5], n.pos.y)) return false;
       if (st < 0 || st > 2 || cat < 0 || cat > int(BlueprintNodeCategory::Audio)) return false;
       n.style = BlueprintNodeStyle(st); n.category = BlueprintNodeCategory(cat);
       n.title = unesc(f[6]); n.subtitle = unesc(f[7]); n.tooltip = unesc(f[8]);
-      if (f.size() == 11) {
+      if (f.size() >= 11) {
         int pv;
         if (!toInt(f[9], pv) || pv < 0 || pv > 4) return false;
         n.preview = BlueprintNode::Preview(pv); n.previewValue = unesc(f[10]);
       }
+      if (f.size() == 12) n.typeKey = unesc(f[11]);
       out.nodes.push_back(std::move(n));
     } else if (k == "I" || k == "O") {
       int t, hide, req;
-      if (out.nodes.empty() || f.size() != 6 || !toInt(f[1], t) || !toInt(f[4], hide) || !toInt(f[5], req) || t < 0 || t > int(PT::Audio)) return false;
+      if (out.nodes.empty() || f.size() != 6 || !toInt(f[1], t) || !toInt(f[4], hide) || !toInt(f[5], req) || t < 0 || t > int(PT::Array)) return false;
       BlueprintPin p;
       p.type = PT(t); p.name = unesc(f[2]); p.defaultValue = unesc(f[3]); p.hideLabel = hide != 0; p.required = req != 0;
       p.kind = k == "I" ? PK::Input : PK::Output;
@@ -847,7 +848,7 @@ bool parse(const std::string& text, Parsed& out) {
       out.breaks.push_back(id);
     } else if (k == "X") {
       int t;
-      if (f.size() != 4 || !toInt(f[2], t) || t < 0 || t > int(PT::Audio)) return false;
+      if (f.size() != 4 || !toInt(f[2], t) || t < 0 || t > int(PT::Array)) return false;
       out.vars.push_back({unesc(f[1]), PT(t), unesc(f[3])});
     } else if (k == "C") {
       BlueprintComment c;
@@ -902,7 +903,7 @@ std::vector<std::string> BlueprintGraph::diffAgainst(const std::string& savedTex
 namespace {
 void writeNode(std::ostream& o, const BlueprintNode& n) {
   o << "N\t" << n.id << '\t' << int(n.style) << '\t' << int(n.category) << '\t' << n.pos.x << '\t' << n.pos.y << '\t'
-    << esc(n.title) << '\t' << esc(n.subtitle) << '\t' << esc(n.tooltip) << '\t' << int(n.preview) << '\t' << esc(n.previewValue) << '\n';
+    << esc(n.title) << '\t' << esc(n.subtitle) << '\t' << esc(n.tooltip) << '\t' << int(n.preview) << '\t' << esc(n.previewValue) << '\t' << esc(n.typeKey) << '\n';
   for (auto& p : n.inputs) o << "I\t" << int(p.type) << '\t' << esc(p.name) << '\t' << esc(p.defaultValue) << '\t' << p.hideLabel << '\t' << p.required << '\n';
   for (auto& p : n.outputs) o << "O\t" << int(p.type) << '\t' << esc(p.name) << '\t' << esc(p.defaultValue) << '\t' << p.hideLabel << '\t' << p.required << '\n';
 }
