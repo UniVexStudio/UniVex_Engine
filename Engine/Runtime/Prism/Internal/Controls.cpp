@@ -269,8 +269,10 @@ void Slider::paint(Canvas& c) {
 namespace {
 class ListPopup : public Widget {
 public:
-  ListPopup(std::vector<std::string> items, int sel, float minW, std::function<void(int)> pick)
-      : m_items(std::move(items)), m_sel(sel), m_hover(sel), m_minW(minW), m_pick(std::move(pick)) {}
+  ListPopup(std::vector<std::string> items, int sel, float minW, std::function<void(int)> pick,
+            std::vector<bool> disabled = {})
+      : m_items(std::move(items)), m_disabled(std::move(disabled)), m_sel(sel), m_hover(sel), m_minW(minW),
+        m_pick(std::move(pick)) {}
   Vec2 measure(Vec2) override {
     float w = m_minW;
     for (auto& s : m_items) w = std::max(w, std::ceil(theme().ui->width(s)) + 40);
@@ -282,10 +284,11 @@ public:
     c.strokeRoundRect(m_rect, 4, t.borderStrong);
     for (int i = 0; i < int(m_items.size()); i++) {
       Rect r = rowRect(i);
-      bool hot = i == m_hover;
+      const bool off = disabled(i);
+      bool hot = i == m_hover && !off;
       if (hot) c.fillRoundRect(r, 3, t.accent);
       if (i == m_sel) drawIcon(c, Icon::Check, {r.x + 4, r.y + 3, 16, 16}, hot ? t.accentText : t.accent);
-      c.textIn(*t.ui, {r.x + 26, r.y, r.w - 30, r.h}, m_items[size_t(i)], hot ? t.accentText : t.text);
+      c.textIn(*t.ui, {r.x + 26, r.y, r.w - 30, r.h}, m_items[size_t(i)], off ? t.textDisabled : hot ? t.accentText : t.text);
     }
   }
   bool onMouseMove(const MouseEvent& e) override {
@@ -296,14 +299,22 @@ public:
   bool onMouseDown(const MouseEvent& e) override { return e.button == MouseButton::Left; }
   bool onMouseUp(const MouseEvent& e) override {
     int i = rowAt(e.pos);
-    if (i >= 0) pick(i);
+    if (i >= 0 && !disabled(i)) pick(i);
     return true;
   }
   bool onKeyDown(const KeyEvent& e) override {
     int n = int(m_items.size());
-    if (e.key == Key::Down) m_hover = (m_hover + 1) % n;
-    else if (e.key == Key::Up) m_hover = (m_hover + n - 1) % n;
-    else if (e.key == Key::Enter) pick(m_hover);
+    if (n == 0) return false;
+    // The arrows step over the items that cannot be chosen.
+    const auto step = [&](int dir) {
+      for (int k = 0; k < n; k++) {
+        m_hover = (m_hover + dir + n) % n;
+        if (!disabled(m_hover)) break;
+      }
+    };
+    if (e.key == Key::Down) step(1);
+    else if (e.key == Key::Up) step(-1);
+    else if (e.key == Key::Enter) { if (!disabled(m_hover)) pick(m_hover); }
     else return false;
     invalidate();
     return true;
@@ -319,7 +330,9 @@ private:
     Application::get().closePopup(this);
     if (cb && i >= 0) cb(i);
   }
+  bool disabled(int i) const { return i >= 0 && i < int(m_disabled.size()) && m_disabled[size_t(i)]; }
   std::vector<std::string> m_items;
+  std::vector<bool> m_disabled;
   int m_sel, m_hover;
   float m_minW;
   std::function<void(int)> m_pick;
@@ -327,6 +340,7 @@ private:
 } // namespace
 
 void ComboBox::setSelected(int i, bool notify) {
+  if (isItemDisabled(i)) return;
   m_sel = i;
   invalidate();
   if (notify && onChange) onChange(i);
@@ -353,7 +367,7 @@ bool ComboBox::onMouseDown(const MouseEvent& e) {
   bool s = m_suppress;
   m_suppress = false;
   if (s && app.popupJustDismissed()) return true;
-  auto pop = make<ListPopup>(m_items, m_sel, m_rect.w, [this](int i) { setSelected(i, true); });
+  auto pop = make<ListPopup>(m_items, m_sel, m_rect.w, [this](int i) { setSelected(i, true); }, m_disabled);
   PopupOptions o;
   o.placement = PopupPlacement::Below;
   o.anchor = {m_rect.x, m_rect.bottom() + 2, m_rect.w, 0};
