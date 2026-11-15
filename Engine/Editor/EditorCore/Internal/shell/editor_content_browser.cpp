@@ -1860,6 +1860,9 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
             m_editor.m_contentStatusMessage = "Could not delete " + name + ".";
             return;
         }
+        if (m_editor.m_onContentDeletedUVE) {
+            m_editor.m_onContentDeletedUVE(absolute);
+        }
         if (m_editor.GetDefaultPlayerEntityUVE() == rel.generic_string()) {
             static_cast<void>(m_editor.SetDefaultPlayerEntityUVE({}));
         }

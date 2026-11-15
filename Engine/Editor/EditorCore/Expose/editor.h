@@ -1127,6 +1127,9 @@ public:
     /// Writes the Entity Editor's open Blueprint graph when it has unsaved edits (set by its window):
     /// every save of the entity saves its graph too, and Simulate and Revert keep its edits.
     std::function<void()> m_saveOpenBlueprintUVE;
+    /// Told when the Asset Library deletes a file (its absolute path): the Entity Editor closes a
+    /// graph it had open from that file and empties the Script slots that named it.
+    std::function<void(const std::filesystem::path& absolute)> m_onContentDeletedUVE;
     /// Whether the Blueprint open in the Entity Editor has edits not yet saved (closing asks first).
     std::function<bool()> m_openBlueprintDirtyUVE;
     /// A Blueprint (project path) the Entity Editor opens once its entity is open (Content Browser open).
