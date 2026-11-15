@@ -161,7 +161,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              IdUVE(Id::kContentBrowserViewModeUVE), static_cast<std::int64_t>(ViewMode::SmallTiles),
              {EntryUVE(ViewMode::SmallTiles, "Small Tiles"), EntryUVE(ViewMode::LargeTiles, "Large Tiles"),
               EntryUVE(ViewMode::List, "List")},
-             "Content Browser View", kSessionCategoryUVE)),
+             "Asset Library View", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_contentBrowserViewMode);
          },
@@ -174,7 +174,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              {EntryUVE(ContentBrowserModeUVE::Tiles, "Tiles"), EntryUVE(ContentBrowserModeUVE::Columns, "Columns"),
               EntryUVE(ContentBrowserModeUVE::Details, "Details"), EntryUVE(ContentBrowserModeUVE::Recent, "Recent"),
               EntryUVE(ContentBrowserModeUVE::Board, "Board")},
-             "Content Browser Mode", kSessionCategoryUVE)),
+             "Asset Library Mode", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_contentBrowserMode);
          },
@@ -289,7 +289,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
         // legal here is one that setter accepts; it is assigned directly because loading happens
         // before authoring commands are allowed.
         {Config::MakeBoolSettingUVE(IdUVE(Id::kSnapEnabledUVE), snapping.enabled, "Snap", kSnappingCategoryUVE,
-                                    "Snap moves, rotations and scales to the steps below."),
+                                    "Snap moves and rotations to the steps below."),
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_transformSnappingSettings.enabled; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_transformSnappingSettings.enabled = std::get<bool>(value);
@@ -315,6 +315,13 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_transformSnappingSettings.rotateStepDegrees = FloatUVE(value);
+             return true;
+         }},
+        {Config::MakeBoolSettingUVE(IdUVE(Id::kSnapScaleEnabledUVE), snapping.scaleEnabled, "Snap Scale", kSnappingCategoryUVE,
+                                    "Snap scales to the Scale Step (its own magnet in the view toolbar)."),
+         [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_transformSnappingSettings.scaleEnabled; },
+         [](EditorUVE& editor, const SettingValueUVE& value) {
+             editor.m_transformSnappingSettings.scaleEnabled = std::get<bool>(value);
              return true;
          }},
         {Config::MakeFloatSettingUVE(IdUVE(Id::kSnapScaleStepUVE), snapping.scaleStep, kMinimumTransformSnapStepUVE,

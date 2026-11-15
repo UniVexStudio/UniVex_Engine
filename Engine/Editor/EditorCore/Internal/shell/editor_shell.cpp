@@ -263,6 +263,10 @@ std::vector<prism::MenuItem> EditorShellUVE::CommandItemsUVE(const std::initiali
 }
 
 bool EditorShellUVE::DispatchShortcutUVE(const prism::Key key, const std::uint8_t mods) {
+    // Flying the viewport: W, A, S, D, Q and E move the camera, so no shortcut may take them.
+    if (m_editor.IsViewportFlyingUVE()) {
+        return true;
+    }
     // PRISM key + modifiers -> the editor's stable shortcut ("Ctrl+S") -> its command.
     const std::optional<EditorShortcutUVE> pressed = ShortcutFromPrismKeyUVE(key, mods);
     if (!pressed.has_value()) {
@@ -344,14 +348,14 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
             m_editor.m_scenePanelVisible = !m_editor.m_scenePanelVisible;
             UpdateDockColumnsUVE();
         }));
-        items.push_back(prism::MenuItem::Check("Details", m_editor.m_inspectorPanelVisible, [this] {
+        items.push_back(prism::MenuItem::Check("Inspector", m_editor.m_inspectorPanelVisible, [this] {
             m_editor.m_inspectorPanelVisible = !m_editor.m_inspectorPanelVisible;
             UpdateDockColumnsUVE();
         }));
         items.push_back(prism::MenuItem::Sub("Layout", {
             prism::MenuItem::Item("Default", [this] { ApplyLayoutPresetUVE(0); }),
-            prism::MenuItem::Item("Details under Outliner", [this] { ApplyLayoutPresetUVE(1); }),
-            prism::MenuItem::Item("Details beside Outliner", [this] { ApplyLayoutPresetUVE(2); }),
+            prism::MenuItem::Item("Inspector under Outliner", [this] { ApplyLayoutPresetUVE(1); }),
+            prism::MenuItem::Item("Inspector beside Outliner", [this] { ApplyLayoutPresetUVE(2); }),
             prism::MenuItem::Item("Wide Viewport", [this] { ApplyLayoutPresetUVE(3); }),
         }, prism::Icon::Frame));
         items.push_back(prism::MenuItem::Item("Reset Panel Layout", [this] { ApplyLayoutPresetUVE(0); }));
@@ -435,7 +439,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
 
     // #4 open folder, then #5 save beside #3 selection mode.
-    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Content Browser)");
+    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Asset Library)");
     openFolder->onClick = [this] { ShowDockPanelUVE(0, true); };
     row->add(openFolder, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     auto save = ToolButtonUVE(prism::Icon::Save, "Save all (Ctrl+Shift+S)");
@@ -456,10 +460,10 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     row->add(HSeparatorUVE());
 
 
-    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Blueprint editor (beta)");
+    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Logic Graph editor (beta)");
     blueprint->onClick = [] {
         if (prism::Application::exists()) {
-            prism::Application::get().notify("Blueprint editor (beta) - coming in the blueprint milestone",
+            prism::Application::get().notify("Logic Graph editor (beta) - coming in the logic graph milestone",
                                              prism::ToastLevel::Info);
         }
     };
@@ -569,6 +573,27 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildOutlinerUVE() {
         hooks.addChild = [this] { ShowAddMenuUVE(); };
         EditorObjectMenuUVE::ShowUVE(m_editor, entity, node, at, hooks);
     };
+    // Drag an object onto another: inside it (a child), or before / after it (a sibling).
+    m_outliner->canDropNode = [this](prism::TreeNode* dragged, prism::TreeNode* target, const prism::TreeView::DropWhere where) {
+        const Scene::EntityUVE entity = EntityForTreeIdUVE(dragged->id);
+        const Scene::EntityUVE onto = EntityForTreeIdUVE(target->id);
+        if (entity == Scene::kInvalidEntityUVE || onto == Scene::kInvalidEntityUVE || !m_editor.IsReparentableObjectUVE(entity)) {
+            return false;
+        }
+        if (where == prism::TreeView::DropWhere::Inside) {
+            return m_editor.IsAllowedOutlinerParentUVE(entity, onto);
+        }
+        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+        return m_editor.TryGetDocumentParentUVE(onto, parent) && m_editor.IsAllowedOutlinerParentUVE(entity, parent);
+    };
+    m_outliner->onDropNode = [this](prism::TreeNode* dragged, prism::TreeNode* target, const prism::TreeView::DropWhere where) {
+        const Scene::EntityUVE entity = EntityForTreeIdUVE(dragged->id);
+        const Scene::EntityUVE onto = EntityForTreeIdUVE(target->id);
+        const int place = where == prism::TreeView::DropWhere::Before ? 0 : where == prism::TreeView::DropWhere::Inside ? 1 : 2;
+        if (m_editor.PlaceDocumentEntityUVE(entity, onto, place)) {
+            m_editor.SelectEntityUVE(entity);
+        }
+    };
     // Double-click a placed entity: it opens in the Entity Editor (its inside is edited there).
     m_outliner->onActivate = [this](prism::TreeNode* node) {
         const Scene::EntityUVE entity = node != nullptr ? EntityForTreeIdUVE(node->id) : Scene::kInvalidEntityUVE;
@@ -615,7 +640,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDetailsUVE() {
     // #17 tab, #18 search, #20 the selected object's components (#21 scroll), drawn from the
     // engine's component metadata (EditorDetailsUVE).
     m_detailsTabs = prism::make<prism::TabView>();
-    m_detailsTabs->addTab("Details", prism::Icon::Properties, PanelUVE(m_details2.BuildUVE()));
+    m_detailsTabs->addTab("Inspector", prism::Icon::Properties, PanelUVE(m_details2.BuildUVE()));
     return m_detailsTabs;
 }
 
@@ -635,7 +660,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDockBarUVE() {
     bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
     struct DockTabUVE { const char* label; prism::Icon icon; };
     static constexpr std::array<DockTabUVE, 4> kTabs{{
-        {"Content Browser", prism::Icon::AssetBrowser},
+        {"Asset Library", prism::Icon::AssetBrowser},
         {"Output Log", prism::Icon::OutputLog},
         {"Console", prism::Icon::Terminal},
         {"Profiler", prism::Icon::Profiler},
@@ -692,7 +717,7 @@ void EditorShellUVE::ApplyLayoutPresetUVE(const int preset) {
         return;
     }
     const auto moveDetails = [this](const prism::TabView::DockZone zone) {
-        const int index = m_detailsTabs->indexOf("Details");
+        const int index = m_detailsTabs->indexOf("Inspector");
         if (index >= 0) {
             static_cast<void>(m_dockSpace->split(m_outlinerTabs.get(), zone, m_detailsTabs->takeTab(index)));
         }
@@ -741,7 +766,7 @@ void EditorShellUVE::ResetPanelLayoutUVE() {
         }
     };
     moveTo(*m_detailsTabs, *m_outlinerTabs, "Outliner");
-    moveTo(*m_outlinerTabs, *m_detailsTabs, "Details");
+    moveTo(*m_outlinerTabs, *m_detailsTabs, "Inspector");
     m_outlinerTabs->setCurrent(0);
     m_detailsTabs->setCurrent(0);
     m_editor.m_scenePanelVisible = true;

@@ -163,7 +163,10 @@ enum class EditorReparentTransformModeUVE {
 /// Session-local transform snapping settings. These values are editor-only and are not serialized
 /// into scene documents or runtime state.
 struct EditorTransformSnappingSettingsUVE final {
+    /// Moves and rotations snap to their steps.
     bool enabled = false;
+    /// Scales snap to `scaleStep`: switched on its own (its own magnet in the view toolbar).
+    bool scaleEnabled = false;
     float translateStep = 1.0F;
     float rotateStepDegrees = 15.0F;
     float scaleStep = 0.1F;
@@ -527,6 +530,15 @@ public:
     [[nodiscard]] float GetPlayFastForwardMultiplierUVE() const noexcept { return m_playFastForwardMultiplier; }
     void SetGameMouseCapturedUVE(bool captured);
     [[nodiscard]] bool IsGameMouseCapturedUVE() const noexcept { return m_gameMouseCaptured; }
+    /// A viewport is flying (right mouse held: mouse looks, WASD moves): the pointer is hidden and
+    /// held, and keys drive the camera instead of the editor's shortcuts.
+    void SetViewportFlyingUVE(bool flying);
+    /// Whether any editor window (the level's, the Entity Editor's, a tool window) has focus: the
+    /// editor counts as in use, and keeps its full frame rate, while any of them has.
+    [[nodiscard]] bool IsAnyEditorWindowFocusedUVE() const;
+    [[nodiscard]] bool IsViewportFlyingUVE() const noexcept { return m_viewportFlying || m_viewportFlyHeld; }
+    /// The right mouse is held on a viewport (flying, or about to): its keys are the camera's.
+    void SetViewportFlyHeldUVE(const bool held) noexcept { m_viewportFlyHeld = held; }
 
     /// Draws the private editor overlay. EngineCoreUVE invokes this from its post-render callback
     /// before PresentUVE(), after the HDR scene has passed through the standard tone-mapping path.
@@ -1108,15 +1120,34 @@ public:
         std::string message;
         /// A Blueprint's problem: the node it is on (0 for none).
         std::uint32_t blueprintNode = 0U;
+        /// About the entity's make-up (a body with no collider), kept current as it is edited.
+        bool structural = false;
     };
+    /// The entity's make-up problems: a Character3D, Player3D, Static3D, Rigid3D or Kinematic3D
+    /// with no collider on it or under it.
+    [[nodiscard]] std::vector<EntityCompileProblemUVE> CollectEntityStructureProblemsUVE();
+    /// Puts the make-up problems in the open entity's problem list. True when they changed.
+    bool RefreshEntityStructureProblemsUVE();
     /// The Blueprint panel's unsaved graph for a `.uvbp` path, so Compile checks what is being
     /// edited (like the open text editor for a `.uvs`). Unset or empty: the file on disk.
     std::function<std::optional<Asset::BlueprintAssetUVE>(const std::string& path)> m_openBlueprintProviderUVE;
     /// Writes the Entity Editor's open Blueprint graph when it has unsaved edits (set by its window):
     /// every save of the entity saves its graph too, and Simulate and Revert keep its edits.
     std::function<void()> m_saveOpenBlueprintUVE;
+    /// Told when the Asset Library deletes a file (its absolute path): the Entity Editor closes a
+    /// graph it had open from that file and empties the Script slots that named it.
+    std::function<void(const std::filesystem::path& absolute)> m_onContentDeletedUVE;
+    /// Whether the Blueprint open in the Entity Editor has edits not yet saved (closing asks first).
+    std::function<bool()> m_openBlueprintDirtyUVE;
     /// A Blueprint (project path) the Entity Editor opens once its entity is open (Content Browser open).
     std::string m_pendingBlueprintOpenUVE;
+    /// A Logic Graph to make once the Entity Editor has the entity open (the Asset Library's
+    /// Add > Logic Graph): the file, and the object it runs on as names from the root down.
+    struct PendingLogicGraphUVE {
+        std::filesystem::path file;
+        std::vector<std::string> objectPath;
+    };
+    std::optional<PendingLogicGraphUVE> m_pendingLogicGraphCreateUVE;
     /// Checks the whole open entity: one root, and every object's `.uvs` script (read from the
     /// open text editor when it has unsaved text, else from disk) compiled against that object.
     /// Returns the problem count; the list stays until the next Compile, Revert or close.
@@ -1288,6 +1319,13 @@ public:
     /// Moves `entity` among its siblings, keeping its parent and transform, as one undoable edit.
     /// Returns false, changing nothing, when CanMoveDocumentEntityUVE does.
     [[nodiscard]] bool MoveDocumentEntityUVE(Scene::EntityUVE entity, EditorSiblingMoveUVE move);
+    /// Drag and drop in a tree: `entity` goes inside `target` (its last child), or just before or
+    /// after it among `target`'s siblings. Reparents when needed; undoable. where: 0 before, 1 inside, 2 after.
+    [[nodiscard]] bool PlaceDocumentEntityUVE(Scene::EntityUVE entity, Scene::EntityUVE target, int where);
+    /// Adds a Sky (gradient bands, atmosphere or a panorama) to a World Environment object, or
+    /// takes it off. The level is marked changed.
+    [[nodiscard]] bool AddSkyToEntityUVE(Scene::EntityUVE entity);
+    [[nodiscard]] bool RemoveSkyFromEntityUVE(Scene::EntityUVE entity);
     /// The hierarchy panel preferences in effect (Editor Preferences > Hierarchy).
     [[nodiscard]] const HierarchyViewSettingsUVE& GetHierarchyViewSettingsUVE() const noexcept { return m_hierarchyView; }
     /// The open state a hierarchy row will be given when it is next drawn, if one is pending.
@@ -1691,8 +1729,6 @@ public:
     }
     void SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept;
 
-    void SetInspectorFoldOpenUVE(const std::string& key, bool open);
-    [[nodiscard]] bool IsInspectorFoldOpenUVE(const std::string& key, bool defaultOpen) const;
     static constexpr std::size_t kMaxRememberedInspectorFoldsUVE = 256U;
 
     /// Viewport projection and named views. Choosing a projection explicitly sticks until changed.
@@ -2341,9 +2377,6 @@ private:
     /// An object the tree is built on and that cannot be deleted, duplicated or moved: the scene
     /// root, and while the Entity Editor is open, the entity's own root.
     [[nodiscard]] bool IsStructuralRootUVE(Scene::EntityUVE entity);
-    /// Gives an object the recipe parts it was saved without - Visibility for a spatial object and the
-    /// common Object section - so its Inspector always shows the full recipe.
-    void RepairInspectorRecipeUVE(Scene::EntityUVE entity);
 
     /// Returns the document's scene root when one exists, else creates it (name + transform +
     /// marker via the SceneRoot ObjectDefinition). Idempotent: the one-root invariant every
@@ -2482,9 +2515,6 @@ private:
     /// model source. Empty when nothing is assigned, the file will not read, or the entity draws a
     /// procedural primitive (which owns no asset).
     [[nodiscard]] std::optional<Asset::MeshAssetUVE> LoadEntityMeshAssetUVE(Scene::EntityUVE entity);
-    /// Queues a parameter rename for the graph block drawn next, so the objects and transitions that
-    /// read the old name follow it.
-    void RenameAnimationParameterReferencesUVE(const std::string& from, const std::string& to);
     /// Points the selected Skeleton3D at the model source `relativeSource` (content-relative) and
     /// loads its bones; an empty path clears both. One undo step. False, with the reason in
     /// m_skeletonSourceStatus, when the file has no readable skeleton.
@@ -2748,6 +2778,8 @@ private:
     // can restore it - mirrors Unity's own Scene<->Game auto-switch on Play/Stop.
     EditorWorkspaceUVE m_workspaceBeforePlayMode = EditorWorkspaceUVE::Library;
     bool m_gameMouseCaptured = false;
+    bool m_viewportFlying = false;
+    bool m_viewportFlyHeld = false;
     void ReleaseGameMouseOnFocusLossUVE();
     bool m_playFastForwardEnabled = false;
     float m_playFastForwardMultiplier = 2.0F;
@@ -2798,7 +2830,7 @@ private:
     /// Save/LoadSessionSettingsUVE). An entry no longer present in the latest snapshot is simply
     /// not shown, never pruned from storage here, so a not-yet-scanned favorite is not lost.
     std::vector<std::filesystem::path> m_favoriteProjectPaths;
-    // Inspector fold states by key (see SetInspectorFoldOpenUVE); saved with the session.
+    // Inspector fold states by key; saved with the session.
     std::map<std::string, bool> m_inspectorFoldOpen;
     // Inspector section clipboard (see CopySelectedComponentUVE / CopySelectedTransformUVE).
     struct ComponentClipboardUVE final {
@@ -2911,6 +2943,33 @@ private:
         std::vector<std::shared_ptr<const Asset::AnimationClipAssetUVE>> redo;
         /// Edited since it was loaded or saved.
         bool dirty = false;
+        /// Record: moving the animated object (gizmo or Details) keys its transform at the playhead.
+        bool recording = false;
+        /// Sequencer settings: the preview's speed, the view following the playhead while it plays,
+        /// scrubbing and key drags snapped to the clip's frames, and the clock in seconds or frames.
+        double playbackRate = 1.0;
+        bool followPlayhead = true;
+        bool snapToFrames = true;
+        bool clockInSeconds = false;
+        /// The Sequencer panel is on screen (keys and key buttons show only then).
+        bool panelShown = false;
+        /// The object the clip's Transform track moves, previewed at the playhead: its own pose from
+        /// before the preview (put back when the preview ends), the pose last written and when.
+        Scene::EntityUVE objectTarget = Scene::kInvalidEntityUVE;
+        Scene::TransformComponentUVE objectRest{};
+        bool objectApplied = false;
+        Scene::TransformComponentUVE objectLast{};
+        double objectLastTime = -1.0;
+        const void* objectLastClip = nullptr;
+        /// Objects under it the clip has their own tracks for (clip.objects), previewed the same way.
+        struct ChildPoseUVE {
+            Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+            Scene::TransformComponentUVE rest{};
+            Scene::TransformComponentUVE last{};
+        };
+        std::vector<ChildPoseUVE> children;
+        double childrenLastTime = -1.0;
+        const void* childrenLastClip = nullptr;
         /// A drag of the selected keys, from this mouse x.
         bool draggingKeys = false;
         float dragFromX = 0.0F;
@@ -3010,6 +3069,29 @@ private:
     void StopAnimationTimelinePlaybackUVE();
     void StepAnimationTimelineFrameUVE(int frames);
     void SetAnimationTimelineLoopUVE(bool loop);
+    /// The object the open clip's Transform track moves (the player's driver target, else its
+    /// parent), or none.
+    [[nodiscard]] Scene::EntityUVE AnimationTimelineObjectTargetUVE() const;
+    /// The clip track `entity` is keyed on: "" for the animated object itself, the object prefix
+    /// and its name for a named object under it (a mesh, a part), none for anything else.
+    [[nodiscard]] std::optional<std::string> AnimationTimelineTrackOfUVE(Scene::EntityUVE entity) const;
+    /// Whether `entity`'s transform can be keyed now: the Sequencer is shown with a clip open and
+    /// `entity` is the object it animates or an object under it.
+    [[nodiscard]] bool CanKeyAnimationTimelineObjectUVE(Scene::EntityUVE entity) const;
+    /// Keys the selected object's transform (the animated object, or one under it), as it stands, at
+    /// the playhead, replacing a key there. With nothing keyable selected, the animated object.
+    bool KeyAnimationTimelineObjectUVE();
+    bool KeyAnimationTimelineObjectUVE(Scene::EntityUVE entity);
+    /// Keys the selected bone as it is posed now, starting its track when the clip has none.
+    bool KeyAnimationTimelineBoneUVE(const std::string& bone);
+    /// Whether the selected object's track has a key at the playhead.
+    [[nodiscard]] bool HasAnimationTimelineObjectKeyAtPlayheadUVE() const;
+    /// Record on or off (see AnimationTimelineStateUVE::recording).
+    void SetAnimationTimelineRecordingUVE(bool recording);
+    /// Puts the animated object back to its own pose (the preview is over, or the entity is saved).
+    void RestoreAnimationTimelineObjectUVE();
+    void PreviewAnimationTimelineObjectUVE(const Asset::AnimationClipAssetUVE& clip);
+    void PreviewAnimationTimelineChildrenUVE(const Asset::AnimationClipAssetUVE& clip);
     /// Every change to the open clip: one step of the clip's own undo history, shown at once.
     bool EditAnimationTimelineClipUVE(const std::function<void(Asset::AnimationClipAssetUVE&)>& change);
     void UndoAnimationTimelineUVE();

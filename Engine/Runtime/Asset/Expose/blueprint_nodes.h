@@ -34,6 +34,13 @@ enum class BlueprintNodeRoleUVE : std::uint8_t {
     IsValid,
     GetVariable,  ///< the node's `variable`
     SetVariable,
+    Gate,         ///< exec inputs Enter, Open, Close, Toggle: Enter passes while open
+    MultiGate,    ///< each Enter goes out the next output in turn (round again when Loop)
+    DoN,          ///< passes the first N times, until Reset
+    RetriggerableDelay, ///< waits, starting over each time it is entered
+    SwitchInt,    ///< one output per whole number, else Default
+    SwitchString, ///< one output per named case, else Default
+    ForEach,      ///< the Loop Body once per item of an array (Element, Index), then Completed
 };
 
 /// One kind of node the engine can run: everything a blueprint can do is one of these.
@@ -53,7 +60,17 @@ struct BlueprintNodeTypeUVE final {
     /// Pure: one expression per output.
     std::vector<std::string> outputCode;
     std::string tooltip;
+    /// The graphs it belongs in (BlueprintGraphKindUVE bits): an object's graph, a widget's, or both.
+    std::uint8_t graphs = 0x3U;
+    /// A component the object needs for it ("CharacterController", "Light", ...); empty: any object.
+    std::string needs;
 };
+
+/// Which graph a node is offered in.
+enum class BlueprintGraphKindUVE : std::uint8_t { Object = 0x1U, Widget = 0x2U };
+[[nodiscard]] constexpr bool IsBlueprintNodeForGraphUVE(const BlueprintNodeTypeUVE& type, const BlueprintGraphKindUVE graph) noexcept {
+    return (type.graphs & static_cast<std::uint8_t>(graph)) != 0U;
+}
 
 /// Every node type, in palette order.
 [[nodiscard]] const std::vector<BlueprintNodeTypeUVE>& GetBlueprintNodeTypesUVE();

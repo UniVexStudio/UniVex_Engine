@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "vector2.h"
@@ -15,6 +16,11 @@ inline constexpr std::size_t kMaximumUITextBytesUVE = 512U;
 inline constexpr float kMinimumUIFontSizeUVE = 1.0F;
 inline constexpr float kMaximumUIFontSizeUVE = 512.0F;
 inline constexpr float kDefaultUIFontSizeUVE = 16.0F;
+
+/// Where text sits across its box.
+enum class UITextHorizontalAlignUVE : std::uint8_t { Left = 0, Center = 1, Right = 2 };
+/// Where the lines sit down their box.
+enum class UITextVerticalAlignUVE : std::uint8_t { Top = 0, Middle = 1, Bottom = 2 };
 
 /// A single line of screen-space UI text, anchored at `positionPixels` (raw window pixel
 /// coordinates, top-left origin - the same convention IInputSystemUVE::GetMousePositionUVE()
@@ -28,6 +34,24 @@ struct UITextComponentUVE final {
     float fontSize = kDefaultUIFontSizeUVE;
     Math::Vector3UVE color{1.0F, 1.0F, 1.0F};
     float alpha = 1.0F;
+    /// The box the text is laid out in, from `positionPixels`. Zero keeps the old behaviour: the
+    /// first line starts at the position, left and top.
+    Math::Vector2UVE boxSize{};
+    /// The box is the parent widget's rect (a button's label stays centred on its button).
+    bool fillParent = false;
+    UITextHorizontalAlignUVE horizontalAlign = UITextHorizontalAlignUVE::Left;
+    UITextVerticalAlignUVE verticalAlign = UITextVerticalAlignUVE::Top;
+    /// Long lines break at spaces to stay inside the box's width.
+    bool wrap = false;
+    /// Distance between lines, in font sizes.
+    float lineHeight = 1.25F;
+    Math::Vector3UVE shadowColor{0.0F, 0.0F, 0.0F};
+    /// 0 draws no shadow.
+    float shadowAlpha = 0.0F;
+    Math::Vector2UVE shadowOffset{2.0F, 2.0F};
+    Math::Vector3UVE outlineColor{0.0F, 0.0F, 0.0F};
+    /// Pixels; 0 draws no outline.
+    float outlineWidth = 0.0F;
     [[nodiscard]] bool operator==(const UITextComponentUVE&) const = default;
 };
 

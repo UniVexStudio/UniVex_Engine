@@ -5,6 +5,7 @@
 // comment. Nothing else in this file currently drags in GLFW, but this ordering is cheap
 // insurance and matches every other translation unit in Engine/Editor/Viewport that mixes the two.
 #include "univex/render/gl_api.h"
+#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <array>
@@ -26,8 +27,6 @@
 #include "integration/selection_outline_geometry.h"
 #include "integration/entity_picker.h"
 #include "univex/camera/viewport_metrics.h"
-#include "univex/gizmo/gizmo_drag.h"
-#include "univex/gizmo/gizmo_picking.h"
 #include "integration/math_conversions.h"
 #include "univex/camera/orbit_camera.h"
 #include "univex/render/shader_program.h"
@@ -185,9 +184,10 @@ int main(const int argc, char** argv) {
     config.headlessUVE = options.headless;
     config.windowBorderlessUVE = !options.decorated;
     config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
-    // The editor never needs more than the display shows: 60 frames a second at most while it has
-    // focus, 15 behind another window (a minimised one draws nothing at all), so a laptop's GPU and
-    // fan are not spent on a scene nobody is looking at.
+    // The editor never needs more than the display shows: as many frames as the monitor refreshes
+    // while one of its windows has focus (set once the window exists, below), 15 behind another
+    // program's window (a minimised one draws nothing at all), so a laptop's GPU and fan are not
+    // spent on a scene nobody is looking at.
     config.focusedFrameRateCapUVE = 60U;
     config.unfocusedFrameRateCapUVE = 15U;
     if (options.glMajor.has_value() && options.glMinor.has_value()) {
@@ -201,6 +201,15 @@ int main(const int argc, char** argv) {
         if (!engine.Load()) {
             engine.Shutdown();
             return 1;
+        }
+        // Vsync paces the frames to the monitor (60, 120, 144 Hz ...); the cap sits a tenth above
+        // its refresh, only as a guard for when vsync cannot block (a covered window), so it never
+        // fights the display and adds no stutter of its own.
+        if (GLFWmonitor* const monitor = glfwGetPrimaryMonitor()) {
+            if (const GLFWvidmode* const mode = glfwGetVideoMode(monitor); mode != nullptr && mode->refreshRate >= 30) {
+                const auto refresh = static_cast<std::uint32_t>(std::min(mode->refreshRate, 360));
+                engine.SetFrameRateCapsUVE(refresh + refresh / 10U, 15U);
+            }
         }
 
         // The level is a Viewport asset in the Content Browser: Content/Viewport/Viewport.uvscene

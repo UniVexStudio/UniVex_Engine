@@ -141,6 +141,9 @@ class ComboBox : public Widget {
 public:
   explicit ComboBox(std::vector<std::string> items = {}, int sel = 0) : m_items(std::move(items)), m_sel(sel) {}
   void setItems(std::vector<std::string> v) { m_items = std::move(v); relayout(); }
+  // Items that are shown but cannot be chosen (dimmed in the list; setSelected refuses them).
+  void setDisabledItems(std::vector<bool> d) { m_disabled = std::move(d); invalidate(); }
+  bool isItemDisabled(int i) const { return i >= 0 && i < int(m_disabled.size()) && m_disabled[size_t(i)]; }
   void setSelected(int i, bool notify = false);
   int selected() const { return m_sel; }
   AccessRole accessRole() const override { return AccessRole::ComboBox; }
@@ -155,6 +158,7 @@ public:
   void onMouseLeave() override { m_suppress = false; }
 private:
   std::vector<std::string> m_items;
+  std::vector<bool> m_disabled;
   int m_sel;
   bool m_open = false, m_suppress = false;
 };

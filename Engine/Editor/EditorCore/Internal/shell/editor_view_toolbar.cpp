@@ -16,6 +16,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 #include <cstddef>
@@ -49,7 +50,7 @@ prism::Ref<prism::Widget> EditorViewToolbarUVE::BuildUVE(const bool gizmoOnly, p
     };
     settings->add(m_gizmoModes, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     settings->add(HSeparatorUVE());
-    m_snapButton = ToolButtonUVE(prism::Icon::Magnet, "Snap to grid");
+    m_snapButton = ToolButtonUVE(prism::Icon::Magnet, "Snap moves to the grid and rotations to their step");
     m_snapButton->setCheckable(true);
     m_snapButton->onToggle = [this](const bool on) {
         EditorTransformSnappingSettingsUVE snap = m_editor.m_transformSnappingSettings;
@@ -60,6 +61,11 @@ prism::Ref<prism::Widget> EditorViewToolbarUVE::BuildUVE(const bool gizmoOnly, p
     m_gridButton->setCheckable(true);
     m_gridButton->onToggle = [this](const bool on) { m_editor.m_viewportOverlayState.gridVisible = on; };
     settings->add(m_snapButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    // How far a snap steps: the grid for moves, the angle for rotations, and the scale step (whose
+    // own magnet sits beside Scale in Details).
+    m_snapLevelButton = ToolButtonUVE(prism::Icon::ChevronDown, "Snap levels: the grid step for moves, the angle for rotations, the scale step", "1");
+    m_snapLevelButton->onClick = [this] { ShowSnapLevelsUVE(); };
+    settings->add(m_snapLevelButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     settings->add(m_gridButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     if (gizmoOnly) {
         // The Entity Editor's view: the gizmo and its snapping only; the camera, shading and preview
@@ -251,9 +257,67 @@ void EditorViewToolbarUVE::ShowPreviewSettingsUVE(const prism::Rect anchor) {
     prism::Application::get().showPopup(panel, options);
 }
 
+void EditorViewToolbarUVE::ShowSnapLevelsUVE() {
+    const EditorTransformSnappingSettingsUVE now = m_editor.m_transformSnappingSettings;
+    const auto pick = [this](const int kind, const float value) {
+        EditorTransformSnappingSettingsUVE snap = m_editor.m_transformSnappingSettings;
+        if (kind == 0) {
+            snap.translateStep = value;
+            snap.enabled = true;
+        } else if (kind == 1) {
+            snap.rotateStepDegrees = value;
+            snap.enabled = true;
+        } else {
+            snap.scaleStep = value;
+            snap.scaleEnabled = true;
+        }
+        static_cast<void>(m_editor.SetTransformSnappingSettingsUVE(snap));
+    };
+    const auto section = [&](const int kind, const float current, const std::initializer_list<float> values, const char* unit) {
+        std::vector<prism::MenuItem> items;
+        for (const float value : values) {
+            char label[24];
+            std::snprintf(label, sizeof(label), "%g%s", static_cast<double>(value), unit);
+            items.push_back(prism::MenuItem::Check(label, std::abs(current - value) < 1e-5F, [pick, kind, value] { pick(kind, value); }));
+        }
+        return items;
+    };
+    std::vector<prism::MenuItem> items;
+    items.push_back(prism::MenuItem::Check("Snap Move and Rotate", now.enabled, [this] {
+        EditorTransformSnappingSettingsUVE snap = m_editor.m_transformSnappingSettings;
+        snap.enabled = !snap.enabled;
+        static_cast<void>(m_editor.SetTransformSnappingSettingsUVE(snap));
+    }));
+    items.push_back(prism::MenuItem::Check("Snap Scale", now.scaleEnabled, [this] {
+        EditorTransformSnappingSettingsUVE snap = m_editor.m_transformSnappingSettings;
+        snap.scaleEnabled = !snap.scaleEnabled;
+        static_cast<void>(m_editor.SetTransformSnappingSettingsUVE(snap));
+    }));
+    items.push_back(prism::MenuItem::Sep());
+    items.push_back(prism::MenuItem::Sub("Move (Grid)", section(0, now.translateStep, {0.01F, 0.05F, 0.1F, 0.25F, 0.5F, 1.0F, 2.0F, 5.0F, 10.0F}, " m"),
+                                         prism::Icon::Move));
+    items.push_back(prism::MenuItem::Sub("Rotate", section(1, now.rotateStepDegrees, {1.0F, 5.0F, 10.0F, 15.0F, 22.5F, 30.0F, 45.0F, 90.0F}, "\xC2\xB0"),
+                                         prism::Icon::Rotate));
+    items.push_back(prism::MenuItem::Sub("Scale", section(2, now.scaleStep, {0.01F, 0.05F, 0.1F, 0.25F, 0.5F, 1.0F}, ""), prism::Icon::Scale));
+    if (m_snapLevelButton) {
+        const prism::Rect r = m_snapLevelButton->rect();
+        prism::showContextMenu(std::move(items), prism::Vec2{r.x, r.bottom()});
+    }
+}
+
 void EditorViewToolbarUVE::RefreshUVE() {
     if (m_snapButton) {
         m_snapButton->setChecked(m_editor.m_transformSnappingSettings.enabled);
+    }
+    if (m_snapLevelButton) {
+        // The levels at a glance: the grid step and the angle.
+        char levels[32];
+        std::snprintf(levels, sizeof(levels), "%g  %g\xC2\xB0", static_cast<double>(m_editor.m_transformSnappingSettings.translateStep),
+                      static_cast<double>(m_editor.m_transformSnappingSettings.rotateStepDegrees));
+        if (m_shownSnapLevels != levels) {
+            m_shownSnapLevels = levels;
+            m_snapLevelButton->setText(levels);
+        }
     }
     if (m_gridButton) {
         m_gridButton->setChecked(m_editor.m_viewportOverlayState.gridVisible);

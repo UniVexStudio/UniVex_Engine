@@ -285,3 +285,40 @@ TEST(AnimationClipAssetUVETest, AClipWithNoMovementAtAllIsStillRejected) {
 }
 
 } // namespace UVE::Asset::Tests
+
+namespace UVE::Asset::Tests {
+
+TEST(AnimationClipAssetUVETest, OtherObjectTracksRoundTripAndOnlyAClipWithThemWritesThem) {
+    const std::filesystem::path path = TestPathUVE("object_tracks_round_trip.uvanim");
+    std::filesystem::remove(path);
+    AnimationClipAssetUVE clip = MakeValidClipUVE();
+    AnimationAssetBoneTrackUVE wheel;
+    wheel.bone = "Wheel";
+    wheel.samples = clip.samples;
+    clip.objects.push_back(wheel);
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(clip, path));
+    AnimationClipAssetUVE loaded;
+    ASSERT_TRUE(LoadAnimationClipAssetUVE(path, loaded));
+    ASSERT_EQ(loaded.objects.size(), 1U);
+    EXPECT_EQ(loaded.objects[0], wheel);
+    std::filesystem::remove(path);
+
+    // Only other objects move: still a clip.
+    AnimationClipAssetUVE onlyObjects = clip;
+    onlyObjects.samples.clear();
+    EXPECT_TRUE(IsAnimationClipAssetValidUVE(onlyObjects));
+    // One track per object.
+    AnimationClipAssetUVE twice = clip;
+    twice.objects.push_back(wheel);
+    EXPECT_FALSE(IsAnimationClipAssetValidUVE(twice));
+
+    // A clip without them: no "objects" in the file.
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(MakeValidClipUVE(), path));
+    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+    ASSERT_TRUE(file.has_value());
+    const std::string payload(reinterpret_cast<const char*>(file->second.data()), file->second.size());
+    EXPECT_EQ(payload.find("\"objects\""), std::string::npos);
+    std::filesystem::remove(path);
+}
+
+} // namespace UVE::Asset::Tests

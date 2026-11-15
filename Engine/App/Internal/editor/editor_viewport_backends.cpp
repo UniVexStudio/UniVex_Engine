@@ -22,8 +22,6 @@
 #include "integration/selection_outline_geometry.h"
 #include "integration/entity_picker.h"
 #include "univex/camera/viewport_metrics.h"
-#include "univex/gizmo/gizmo_drag.h"
-#include "univex/gizmo/gizmo_picking.h"
 #include "integration/math_conversions.h"
 #include "univex/camera/orbit_camera.h"
 #include "univex/render/shader_program.h"
@@ -107,6 +105,11 @@ void main() {
 // per-pixel depth, which in turn needs a depth-compare mode the RHI does not expose yet.
 constexpr std::string_view kMeshBlitFragmentShaderUVE = R"(#version 330 core
 uniform sampler2D uMeshColor;
+uniform sampler2D uSceneDepth;
+uniform int uHasDepth;
+uniform mat4 uSceneInvViewProj; // the renderer's, for its own depth
+uniform mat4 uViewProj;         // the editor camera's, which the grid and gizmos use
+uniform vec2 uOutSize;
 out vec4 FragColor;
 void main() {
     vec4 meshColor = texelFetch(uMeshColor, ivec2(gl_FragCoord.xy), 0);
@@ -114,7 +117,22 @@ void main() {
         discard; // the renderer drew nothing here; leave the backdrop and its depth alone
     }
     FragColor = vec4(meshColor.rgb, 1.0);
-    gl_FragDepth = 0.0; // every covered pixel hides the grid: an edge or a soft surface too, never the grid over it
+    if (uHasDepth == 0) {
+        gl_FragDepth = 0.0; // no scene depth: every covered pixel hides the grid
+        return;
+    }
+    // The scene's real depth, carried into the editor camera's depth range: the sky stays at the far
+    // plane (the grid shows over it), a mesh hides only what is behind it.
+    vec2 uv = gl_FragCoord.xy / uOutSize;
+    float d = texture(uSceneDepth, uv).r;
+    if (d >= 0.999999) {
+        gl_FragDepth = 1.0;
+        return;
+    }
+    vec4 world = uSceneInvViewProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    world /= world.w;
+    vec4 clip = uViewProj * vec4(world.xyz, 1.0);
+    gl_FragDepth = clamp((clip.z / clip.w) * 0.5 + 0.5, 0.0, 1.0);
 }
 )";
 
@@ -1142,6 +1160,29 @@ public:
             if (!engine_.HasMouseCursorHandlerUVE()) {
                 // Set Show Mouse Cursor in Play frees the editor's view pointer for the game's UI.
                 engine_.SetMouseCursorHandlerUVE([this](const bool show) { editor_.SetGameMouseCapturedUVE(!show); });
+                // The Entity Editor's window counts as the editor having focus: its sequencer and
+                // views keep the full frame rate instead of dropping to the background cap.
+                engine_.SetFocusProviderUVE([this] { return editor_.IsAnyEditorWindowFocusedUVE(); });
+                // Quit Game stops Play; Open Level plays the other level. Both wait for this view's
+                // next frame, outside the engine's own update.
+                engine_.SetQuitGameHandlerUVE([this] { gameRequest_ = GameRequestUVE{true, {}}; });
+                engine_.SetOpenLevelHandlerUVE([this](const std::string& path) {
+                    gameRequest_ = GameRequestUVE{false, path};
+                    return true;
+                });
+            }
+            if (gameRequest_.has_value()) {
+                const GameRequestUVE request = std::move(*gameRequest_);
+                gameRequest_.reset();
+                if (editor_.GetPlayModeStateUVE() != UVE::Editor::EditorPlayModeStateUVE::Edit) {
+                    static_cast<void>(editor_.StopPlayModeUVE());
+                    if (!request.quit) {
+                        const std::filesystem::path level = engine_.GetServicesUVE().GetFileSystemUVE().ResolveRealPathUVE(request.level);
+                        if (!level.empty() && editor_.OpenSceneAssetUVE(level)) {
+                            static_cast<void>(editor_.EnterPlayModeUVE());
+                        }
+                    }
+                }
             }
         }
 
@@ -1244,38 +1285,25 @@ public:
             }
         }
         const bool hostGizmos = overlayState.hostDrawsGizmos;
-        renderPass_->Settings().viewGizmos = !hostGizmos && !studioView_ && !gameWorkspaceActive_ && !previewing_;
-        renderPass_->Settings().viewTransformGizmo = !hostGizmos && !studioView_ && !gameWorkspaceActive_ && !previewing_;
+        // The transform and navigation gizmos are the shell's (PRISM draws and drives them); the
+        // renderer draws only the overlay meshes below.
         if (studioView_) {
             // Looked at, not edited: nothing is selected or moved, and the view does not turn.
-            renderPass_->Settings().viewTransformGizmo = false;
-            renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
             if (In().hovered && In().wheel != 0.0F) {
                 camera_.Dolly(In().wheel);
             }
         } else {
             UpdateSelectionGizmoUVE();
-            if (hostGizmos) {
-                // The shell draws and drives the gizmos; it hands the navigation gizmo's orbit
-                // drags over as pixels, the same units a mouse orbit uses.
-                renderPass_->Settings().viewTransformGizmo = false;
-                if (overlayState.orbitRequestX != 0.0F || overlayState.orbitRequestY != 0.0F) {
-                    camera_.Orbit(overlayState.orbitRequestX, overlayState.orbitRequestY);
-                    editor_.NotifyViewportOrbitedUVE();
-                }
+            if (hostGizmos && (overlayState.orbitRequestX != 0.0F || overlayState.orbitRequestY != 0.0F)) {
+                // The shell's navigation gizmo hands its orbit drags over as pixels, the same
+                // units a mouse orbit uses.
+                camera_.Orbit(overlayState.orbitRequestX, overlayState.orbitRequestY);
+                editor_.NotifyViewportOrbitedUVE();
             }
-            const bool navGizmoOwnsGesture =
-                (previewing_ || hostGizmos) ? false : UpdateNavGizmoInteractionUVE(width, height);
-            // A handle drag outranks both: grabbing an arrow must not also orbit the camera or, on
-            // release, register as a click that selects whatever is behind the gizmo.
-            const bool gizmoOwnsGesture = !hostGizmos && !navGizmoOwnsGesture && UpdateGizmoDragUVE(width, height);
-            if (!hostGizmos) {
-                UpdateGizmoHoverHighlightUVE(width, height, navGizmoOwnsGesture);
-            }
-            const bool pointerTaken = navGizmoOwnsGesture || gizmoOwnsGesture;
+            const bool pointerTaken = false;
             UpdateSelectionFromMouseUVE(width, height, pointerTaken);
             UpdateEntityContextToolbarFromMouseUVE(width, height, pointerTaken);
-            if (!previewing_) {
+            if (!previewing_ && !UpdateFlyCameraUVE(pointerTaken)) {
                 UpdateCameraFromMouseUVE(height, pointerTaken);
                 UpdateViewportViewHotkeysUVE();
                 UpdateViewportBookmarkHotkeysUVE();
@@ -1360,8 +1388,7 @@ public:
             const bool stateChanged = !cachedOverlayActive_ ||
                                       std::fabs(aspect - cachedOverlayAspect_) > 0.001F ||
                                       lookThrough != cachedLookThroughCamera_ ||
-                                      entityCount != cachedOverlayEntityCount_ ||
-                                      dragHandle_ != univex::gizmo::GizmoHandleUVE::None;
+                                      entityCount != cachedOverlayEntityCount_;
             if (stateChanged || timerElapsed) {
                 overlayRefreshTimerSeconds_ = 0.0F;
                 cachedOverlayActive_ = true;
@@ -1432,23 +1459,24 @@ public:
             renderPass_->RenderBackgroundUVE(neutralMainFallback);
         }
         if (meshResult.colorTextureId != 0U && EnsureMeshBlitResourcesUVE()) {
-            BlitMeshLayerUVE(meshResult);
+            BlitMeshLayerUVE(meshResult, width, height);
         }
         if (studio != nullptr) {
             studio->DrawFloor(camera_, width, height);
         }
-        // The PRISM shell draws the grid and the selection outline itself (depth-tested against
-        // the scene depth exported below), from the settings and the mask this pass hands it.
+        // The grid is the GPU's (InfiniteGridRenderer, depth-tested against the scene in its shader):
+        // drawing it line by line on the CPU every frame the camera moved is what made orbiting lag.
+        // The PRISM shell still draws the selection outline from the mask this pass hands it.
         overlayState.selectionMask.clear();
         overlayState.selectionMaskWidth = overlayState.selectionMaskHeight = 0;
-        ExportGridForHostUVE(overlayState, hostGizmos && !previewing_ && !studioView_);
+        ExportGridForHostUVE(overlayState, false);
         if (hostGizmos && !lookThroughCamera.has_value()) {
             ExportSceneDepthForHostUVE(overlayState, width, height);
         } else {
             overlayState.sceneDepth.clear();
             overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
         }
-        if (!previewing_ && !hostGizmos) {
+        if (!previewing_ && (!hostGizmos || !studioView_)) {
             renderPass_->RenderGridUVE(camera_, width, height);
         }
         // The selection outline sits over the scene and the grid, under the gizmos. The Game tab
@@ -1464,8 +1492,6 @@ public:
             } else {
                 bool needsRebuild = false;
                 if (selected != lastSelectedEntities_ || active != lastSelectedEntity_) {
-                    needsRebuild = true;
-                } else if (dragHandle_ != univex::gizmo::GizmoHandleUVE::None) {
                     needsRebuild = true;
                 } else if (AnySelectedEntityMoved()) {
                     needsRebuild = true;
@@ -1667,7 +1693,7 @@ private:
     // grid and gizmos that follow share one depth buffer with the engine's scene geometry. Depth
     // testing stays off: the mesh layer's own depth already resolved visibility between meshes,
     // and at this point in the frame only the backdrop is underneath.
-    void BlitMeshLayerUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult) {
+    void BlitMeshLayerUVE(const univex::integration::EditorMeshLayerResultUVE& meshResult, const int width, const int height) {
         // GL_ALWAYS rather than disabling the test: OpenGL skips depth-buffer writes entirely
         // while GL_DEPTH_TEST is disabled, whatever the write mask says, and the depth this pass
         // writes is the whole reason it exists.
@@ -1679,6 +1705,22 @@ private:
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, meshResult.colorTextureId);
         glUniform1i(meshBlitProgram_->UniformLocation("uMeshColor"), 0);
+        // The renderer's own depth, so the GPU grid and gizmos are hidden exactly by what stands in
+        // front of them (and the sky hides nothing).
+        const UVE::Render::SceneDepthExportUVE depth = services_.GetRenderer3DUVE().GetLastSceneDepthUVE();
+        auto* const glDevice = dynamic_cast<UVE::Render::GlRenderDeviceUVE*>(&services_.GetRenderDeviceUVE());
+        const GLuint depthTexture = depth.valid && glDevice != nullptr ? static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture)) : 0U;
+        glUniform1i(meshBlitProgram_->UniformLocation("uHasDepth"), depthTexture != 0U ? 1 : 0);
+        if (depthTexture != 0U) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, depthTexture);
+            glUniform1i(meshBlitProgram_->UniformLocation("uSceneDepth"), 1);
+            glUniformMatrix4fv(meshBlitProgram_->UniformLocation("uSceneInvViewProj"), 1, GL_TRUE, &depth.inverseViewProjection.m[0][0]);
+            const float aspect = static_cast<float>(width) / static_cast<float>(std::max(height, 1));
+            meshBlitProgram_->SetMat4("uViewProj", camera_.ViewProjection(aspect).Data());
+            glUniform2f(meshBlitProgram_->UniformLocation("uOutSize"), static_cast<float>(width), static_cast<float>(height));
+            glActiveTexture(GL_TEXTURE0);
+        }
         glBindVertexArray(meshBlitVao_);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(0);
@@ -1796,8 +1838,7 @@ private:
     // Applies EditorUVE's own generic overlay-toolbar state (see ViewportOverlayStateUVE's doc
     // comment on why it's plain enums/bools rather than any Viewport-module type) to the real
     // ViewportRenderPass each frame. Snap is no longer decorative: the bubble now writes through
-    // to EditorUVE's real snapping settings, which is what quantises a handle drag (see
-    // UpdateGizmoDragUVE).
+    // to EditorUVE's real snapping settings, which is what quantises a handle drag.
     using ViewportViewUVE = UVE::Editor::EditorUVE::ViewportViewUVE;
 
     // Looks at the orbit target along a world axis. The direction is where the eye sits relative
@@ -1963,21 +2004,6 @@ private:
                 renderPass_->SetColliderWireframesUVE(std::move(colliderLines));
             }
         }
-        using UVE::Editor::EditorUVE;
-        switch (overlayState.gizmoMode) {
-            case EditorUVE::ViewportGizmoModeUVE::Move:
-                renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Move);
-                break;
-            case EditorUVE::ViewportGizmoModeUVE::Rotate:
-                renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Rotate);
-                break;
-            case EditorUVE::ViewportGizmoModeUVE::Scale:
-                renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Scale);
-                break;
-            case EditorUVE::ViewportGizmoModeUVE::Universal:
-                renderPass_->SetGizmoMode(univex::gizmo::GizmoMode::Universal);
-                break;
-        }
     }
 
     // The studio view (the Retarget window): no grid, corner gizmo or dark backdrop, and a camera
@@ -1997,7 +2023,6 @@ private:
             poseBeforeStudio_.reset();
         }
         studioView_ = overlayState.studioView;
-        settings.viewGizmos = !studioView_;
         settings.viewEnvironment = !studioView_;
         if (studioView_) {
             settings.viewGrid = false;
@@ -2045,13 +2070,7 @@ private:
             toEditor(defaults.x), toEditor(defaults.y), toEditor(defaults.z)));
     }
 
-    // Only shows the transform gizmo (and its pivot dot) while a real entity is selected
-    // in EditorUVE, like a Object3D-style engine - the reference standalone demo always draws it at
-    // the camera's own orbit target since it has no independent "selected object" concept, which
-    // read as a stray gizmo floating with nothing selected once wired into a real editor.
-    // Repositions the gizmo to the selected entity's actual world transform via
-    // SetGizmoPivotOverride() (see that method's own comment on why camera.Target() alone isn't
-    // enough - orbiting the camera must not drag a selected object's gizmo along with it).
+    // Where the shell's transform gizmo sits: the centroid of the selected objects' world positions.
     void UpdateSelectionGizmoUVE() {
         // The pivot is the centroid of everything selected, not the active entity's own position.
         // With one object the two are identical; with several, using the active entity put the gizmo
@@ -2070,369 +2089,14 @@ private:
             ++contributing;
         }
 
-        const bool hasSelection = contributing > 0;
-        renderPass_->Settings().viewTransformGizmo = hasSelection && !gameWorkspaceActive_ && !previewing_;
-        if (hasSelection) {
+        // The shell draws its transform gizmo here (exported with the view, see ExportViewForHostUVE).
+        if (contributing > 0) {
             gizmoPivot_ = centroid * (1.0F / static_cast<float>(contributing));
-            renderPass_->SetGizmoPivotOverride(gizmoPivot_);
         } else {
             gizmoPivot_.reset();
-            renderPass_->SetGizmoPivotOverride(std::nullopt);
         }
     }
 
-    // Drags a transform handle.
-    //
-    // The gizmo has been drawable but not touchable: geometry was produced and nothing ever asked
-    // what the pointer was on. This closes that loop - pick a handle, project the cursor ray onto
-    // it each frame, and feed the result through EditorUVE's gesture API so the whole drag is one
-    // undo step.
-    //
-    // Every number here is the one the renderer drew with, taken from the same helpers
-    // (ScaleForPixelRadius / WorldPerPixelAtPointUVE at the gizmo's own pivot), so the region that
-    // responds is the region that is visible.
-    //
-    // Returns true while a drag owns the pointer, which suppresses both orbit and click-to-select.
-    [[nodiscard]] bool UpdateGizmoDragUVE(const int width, const int height) {
-        if (dragHandle_ != univex::gizmo::GizmoHandleUVE::None) {
-            return ContinueGizmoDragUVE(width, height);
-        }
-        return TryBeginGizmoDragUVE(width, height);
-    }
-
-    void UpdateGizmoHoverHighlightUVE(const int width, const int height, const bool navGizmoOwnsGesture) {
-        if (dragHandle_ != univex::gizmo::GizmoHandleUVE::None) {
-            renderPass_->SetHighlightedGizmoHandleUVE(dragHandle_);
-            return;
-        }
-        if (navGizmoOwnsGesture || pointerOverOverlay_ || !In().hovered) {
-            renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
-            return;
-        }
-        const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
-        if (!placement.has_value()) {
-            renderPass_->SetHighlightedGizmoHandleUVE(univex::gizmo::GizmoHandleUVE::None);
-            return;
-        }
-        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
-        const UVE::Editor::EditorViewportInputUVE& io = In();
-        univex::math::Vec3 rayOrigin{};
-        univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
-                     rayOrigin, rayDirection);
-        const univex::gizmo::GizmoPickResultUVE pick = univex::gizmo::PickGizmoHandleUVE(
-            renderPass_->Mode(), renderPass_->Style(), rayOrigin, rayDirection, placement->pivot,
-            placement->scale, placement->viewDirection, placement->unitsPerPixel);
-        renderPass_->SetHighlightedGizmoHandleUVE(pick.handle);
-    }
-
-    /// The gizmo's placement this frame: the pivot it is drawn at, the world size of one gizmo
-    /// unit, and how many gizmo units a pixel spans. Empty when no gizmo is on screen.
-    struct GizmoPlacementUVE final {
-        univex::math::Vec3 pivot{};
-        float scale = 1.0F;
-        float unitsPerPixel = 1.0F;
-        univex::math::Vec3 viewDirection{};
-    };
-
-    [[nodiscard]] std::optional<GizmoPlacementUVE> CurrentGizmoPlacementUVE(const int height) const {
-        if (!gizmoPivot_.has_value() || !renderPass_->Settings().viewTransformGizmo || height <= 0) {
-            return std::nullopt;
-        }
-        GizmoPlacementUVE placement;
-        placement.pivot = *gizmoPivot_;
-        placement.scale = univex::render::GizmoRenderer::ScaleForPixelRadius(
-            camera_, height, renderPass_->Style().gizmoPixelRadius, placement.pivot);
-        const float worldPerPixel =
-            univex::camera::WorldPerPixelAtPointUVE(camera_, height, placement.pivot);
-        placement.unitsPerPixel = (placement.scale > 0.0F) ? worldPerPixel / placement.scale : 1.0F;
-        placement.viewDirection = univex::math::Normalize(camera_.Target() - camera_.Eye());
-        return placement;
-    }
-
-    /// The cursor ray in the viewport's own math kit, for the gizmo code that lives in the
-    /// engine-agnostic core.
-    void CursorRayUVE(const int width, const int height, const float pixelX, const float pixelY,
-                      univex::math::Vec3& outOrigin, univex::math::Vec3& outDirection) const {
-        const UVE::Math::RayUVE ray =
-            univex::integration::BuildCursorRayUVE(camera_, width, height, pixelX, pixelY);
-        outOrigin = univex::integration::FromUveVector3UVE(ray.origin);
-        outDirection = univex::integration::FromUveVector3UVE(ray.direction);
-    }
-
-    [[nodiscard]] bool TryBeginGizmoDragUVE(const int width, const int height) {
-        if (pointerOverOverlay_ || !In().hovered ||
-            !In().IsClickedUVE(VpBtnUVE::Left)) {
-            return false;
-        }
-        const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
-        if (!placement.has_value()) {
-            return false;
-        }
-        const univex::gizmo::GizmoMode mode = renderPass_->Mode();
-        if (mode != univex::gizmo::GizmoMode::Move && mode != univex::gizmo::GizmoMode::Rotate &&
-            mode != univex::gizmo::GizmoMode::Scale && mode != univex::gizmo::GizmoMode::Universal) {
-            return false;
-        }
-
-        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
-        const UVE::Editor::EditorViewportInputUVE& io = In();
-        univex::math::Vec3 rayOrigin{};
-        univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
-                     rayOrigin, rayDirection);
-
-        const univex::gizmo::GizmoPickResultUVE pick = univex::gizmo::PickGizmoHandleUVE(
-            mode, renderPass_->Style(), rayOrigin, rayDirection, placement->pivot, placement->scale,
-            placement->viewDirection, placement->unitsPerPixel);
-        if (pick.handle == univex::gizmo::GizmoHandleUVE::None) {
-            return false;
-        }
-
-        univex::gizmo::GizmoMode effectiveMode = mode;
-        if (mode == univex::gizmo::GizmoMode::Universal) {
-            if (pick.handle == univex::gizmo::GizmoHandleUVE::Uniform) {
-                effectiveMode = univex::gizmo::GizmoMode::Scale;
-            } else {
-                // Disambiguate whether the click landed on the rotate ring, scale cube, or move arrow/shaft.
-                univex::gizmo::GizmoStyle universalStyle = renderPass_->Style();
-                universalStyle.ringRadius = universalStyle.universalRingRadius;
-                universalStyle.ringLineWidthPx = universalStyle.universalRingWidthPx;
-                const auto rotatePick = univex::gizmo::PickGizmoHandleUVE(
-                    univex::gizmo::GizmoMode::Rotate, universalStyle, rayOrigin, rayDirection,
-                    placement->pivot, placement->scale, placement->viewDirection, placement->unitsPerPixel);
-                if (rotatePick.handle == pick.handle) {
-                    effectiveMode = univex::gizmo::GizmoMode::Rotate;
-                } else {
-                    if (const auto axisDir = univex::gizmo::AxisDirectionForHandleUVE(pick.handle)) {
-                        const auto along = univex::gizmo::ProjectRayOntoAxisUVE(
-                            rayOrigin, rayDirection, placement->pivot, *axisDir);
-                        const float splitOffset =
-                            (universalStyle.universalShaftEnd + universalStyle.universalConeLength +
-                             universalStyle.universalScaleBoxOffset) *
-                            0.5f * placement->scale;
-                        effectiveMode = (along.has_value() && *along >= splitOffset)
-                                            ? univex::gizmo::GizmoMode::Scale
-                                            : univex::gizmo::GizmoMode::Move;
-                    } else {
-                        effectiveMode = univex::gizmo::GizmoMode::Move;
-                    }
-                }
-            }
-        }
-
-        UVE::Editor::EditorToolSessionModeUVE sessionMode{};
-        switch (effectiveMode) {
-            case univex::gizmo::GizmoMode::Move:
-                sessionMode = UVE::Editor::EditorToolSessionModeUVE::Translate;
-                break;
-            case univex::gizmo::GizmoMode::Rotate:
-                sessionMode = UVE::Editor::EditorToolSessionModeUVE::Rotate;
-                break;
-            default:
-                sessionMode = UVE::Editor::EditorToolSessionModeUVE::Scale;
-                break;
-        }
-
-        // Capture where the drag started, in the handle's own terms. Every later frame reports its
-        // value the same way and subtracts this one, so the amount fed to the gesture is always
-        // measured from the press rather than accumulated frame to frame.
-        if (!CaptureDragReferenceUVE(*placement, effectiveMode, pick.handle, rayOrigin, rayDirection,
-                                     dragPressValue_)) {
-            return false;
-        }
-        if (!editor_.BeginTransformGestureUVE(sessionMode)) {
-            return false;
-        }
-
-        dragHandle_ = pick.handle;
-        dragMode_ = effectiveMode;
-        dragPivot_ = placement->pivot;
-        return true;
-    }
-
-    /// One scalar and one point, enough to express every handle's press-time reference: the
-    /// distance along an axis, the world point on a plane, or the angle around a ring.
-    struct DragReferenceUVE final {
-        float scalar = 0.0F;
-        univex::math::Vec3 point{};
-    };
-
-    [[nodiscard]] bool CaptureDragReferenceUVE(const GizmoPlacementUVE& placement,
-                                               const univex::gizmo::GizmoMode mode,
-                                               const univex::gizmo::GizmoHandleUVE handle,
-                                               const univex::math::Vec3& rayOrigin,
-                                               const univex::math::Vec3& rayDirection,
-                                               DragReferenceUVE& outReference) const {
-        using univex::gizmo::GizmoHandleUVE;
-
-        if (const std::optional<univex::math::Vec3> axis =
-                univex::gizmo::AxisDirectionForHandleUVE(handle);
-            axis.has_value()) {
-            if (mode == univex::gizmo::GizmoMode::Rotate) {
-                const std::optional<float> angle = univex::gizmo::ProjectRayOntoRingAngleUVE(
-                    rayOrigin, rayDirection, placement.pivot, *axis);
-                if (!angle.has_value()) {
-                    return false;
-                }
-                outReference.scalar = *angle;
-                return true;
-            }
-            const std::optional<float> along = univex::gizmo::ProjectRayOntoAxisUVE(
-                rayOrigin, rayDirection, placement.pivot, *axis);
-            if (!along.has_value()) {
-                return false;
-            }
-            outReference.scalar = *along;
-            return true;
-        }
-
-        if (const std::optional<univex::math::Vec3> normal = PlaneHandleNormalUVE(handle);
-            normal.has_value()) {
-            const std::optional<univex::math::Vec3> point = univex::gizmo::ProjectRayOntoPlaneUVE(
-                rayOrigin, rayDirection, placement.pivot, *normal);
-            if (!point.has_value()) {
-                return false;
-            }
-            outReference.point = *point;
-            return true;
-        }
-
-        if (handle == GizmoHandleUVE::Uniform && mode == univex::gizmo::GizmoMode::Scale) {
-            // Uniform scale has no axis to run along, so it reads the cursor's distance from the
-            // pivot in the view plane - drag away from the object to grow it, toward it to shrink.
-            const std::optional<univex::math::Vec3> point = univex::gizmo::ProjectRayOntoPlaneUVE(
-                rayOrigin, rayDirection, placement.pivot, placement.viewDirection);
-            if (!point.has_value()) {
-                return false;
-            }
-            outReference.scalar = univex::math::Length(*point - placement.pivot);
-            return true;
-        }
-
-        // Anything else (the rotate gizmo's screen-space ring, a plane handle in Scale mode) has
-        // no single-axis command to drive yet, so it stays pickable but not draggable rather than
-        // being mapped onto an axis it does not mean.
-        return false;
-    }
-
-    [[nodiscard]] static std::optional<univex::math::Vec3> PlaneHandleNormalUVE(
-        const univex::gizmo::GizmoHandleUVE handle) {
-        using univex::gizmo::GizmoHandleUVE;
-        switch (handle) {
-            case GizmoHandleUVE::PlaneXY: return univex::math::Vec3{0.0F, 0.0F, 1.0F};
-            case GizmoHandleUVE::PlaneYZ: return univex::math::Vec3{1.0F, 0.0F, 0.0F};
-            case GizmoHandleUVE::PlaneZX: return univex::math::Vec3{0.0F, 1.0F, 0.0F};
-            default: return std::nullopt;
-        }
-    }
-
-    [[nodiscard]] static UVE::Editor::EditorTransformAxisUVE EditorAxisForHandleUVE(
-        const univex::gizmo::GizmoHandleUVE handle) {
-        using univex::gizmo::GizmoHandleUVE;
-        switch (handle) {
-            case GizmoHandleUVE::AxisX: return UVE::Editor::EditorTransformAxisUVE::X;
-            case GizmoHandleUVE::AxisY: return UVE::Editor::EditorTransformAxisUVE::Y;
-            case GizmoHandleUVE::AxisZ: return UVE::Editor::EditorTransformAxisUVE::Z;
-            default: return UVE::Editor::EditorTransformAxisUVE::None;
-        }
-    }
-
-    [[nodiscard]] bool ContinueGizmoDragUVE(const int width, const int height) {
-        // Esc abandons the drag and puts the object back, the universal convention.
-        if (In().IsKeyPressedUVE(VpKeyUVE::Escape)) {
-            static_cast<void>(editor_.CancelTransformGestureUVE());
-            EndGizmoDragUVE();
-            return true;
-        }
-        if (In().IsReleasedUVE(VpBtnUVE::Left)) {
-            static_cast<void>(editor_.CommitTransformGestureUVE());
-            EndGizmoDragUVE();
-            return true;
-        }
-
-        const std::optional<GizmoPlacementUVE> placement = CurrentGizmoPlacementUVE(height);
-        if (!placement.has_value()) {
-            static_cast<void>(editor_.CancelTransformGestureUVE());
-            EndGizmoDragUVE();
-            return true;
-        }
-
-        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
-        const UVE::Editor::EditorViewportInputUVE& io = In();
-        univex::math::Vec3 rayOrigin{};
-        univex::math::Vec3 rayDirection{};
-        CursorRayUVE(width, height, io.mousePos.x - imageOrigin.x, io.mousePos.y - imageOrigin.y,
-                     rayOrigin, rayDirection);
-
-        // The pivot is frozen at the press: it moves with the object during a translate, and
-        // re-reading it each frame would make the gizmo chase itself.
-        ApplyDragPreviewUVE(rayOrigin, rayDirection, placement->viewDirection);
-        return true;
-    }
-
-    void ApplyDragPreviewUVE(const univex::math::Vec3& rayOrigin,
-                             const univex::math::Vec3& rayDirection,
-                             const univex::math::Vec3& viewDirection) {
-        using univex::gizmo::GizmoHandleUVE;
-
-        if (const std::optional<univex::math::Vec3> normal = PlaneHandleNormalUVE(dragHandle_);
-            normal.has_value()) {
-            const std::optional<univex::math::Vec3> point =
-                univex::gizmo::ProjectRayOntoPlaneUVE(rayOrigin, rayDirection, dragPivot_, *normal);
-            if (!point.has_value()) {
-                return; // grazing the plane: hold the last good preview rather than jumping
-            }
-            const univex::math::Vec3 delta = *point - dragPressValue_.point;
-            static_cast<void>(editor_.PreviewTranslateGestureUVE(
-                univex::integration::ToUveVector3UVE(delta)));
-            return;
-        }
-
-        if (dragHandle_ == GizmoHandleUVE::Uniform) {
-            const std::optional<univex::math::Vec3> point = univex::gizmo::ProjectRayOntoPlaneUVE(
-                rayOrigin, rayDirection, dragPivot_, viewDirection);
-            if (!point.has_value()) {
-                return;
-            }
-            const float radius = univex::math::Length(*point - dragPivot_);
-            static_cast<void>(editor_.PreviewTransformGestureUVE(
-                UVE::Editor::EditorTransformAxisUVE::None, radius - dragPressValue_.scalar));
-            return;
-        }
-
-        const std::optional<univex::math::Vec3> axis =
-            univex::gizmo::AxisDirectionForHandleUVE(dragHandle_);
-        if (!axis.has_value()) {
-            return;
-        }
-        const UVE::Editor::EditorTransformAxisUVE editorAxis = EditorAxisForHandleUVE(dragHandle_);
-
-        if (dragMode_ == univex::gizmo::GizmoMode::Rotate) {
-            const std::optional<float> angle =
-                univex::gizmo::ProjectRayOntoRingAngleUVE(rayOrigin, rayDirection, dragPivot_, *axis);
-            if (!angle.has_value()) {
-                return;
-            }
-            // The ring's angle wraps at +-pi; a drag reads the short way round, which is the only
-            // way a pointer can have travelled between two frames.
-            static_cast<void>(editor_.PreviewTransformGestureUVE(
-                editorAxis, univex::gizmo::ShortestAngleDeltaUVE(dragPressValue_.scalar, *angle)));
-            return;
-        }
-
-        const std::optional<float> along =
-            univex::gizmo::ProjectRayOntoAxisUVE(rayOrigin, rayDirection, dragPivot_, *axis);
-        if (!along.has_value()) {
-            return;
-        }
-        static_cast<void>(
-            editor_.PreviewTransformGestureUVE(editorAxis, *along - dragPressValue_.scalar));
-    }
-
-    void EndGizmoDragUVE() {
-        dragHandle_ = univex::gizmo::GizmoHandleUVE::None;
-    }
 
     // Click-to-select. Until now selection came only from the Hierarchy panel, so the 3D view was
     // something to look at rather than something to work in.
@@ -2440,8 +2104,7 @@ private:
     // The whole difficulty is that the left button already means "orbit". A press is therefore not
     // committed to either meaning until release: travel more than the slop and it was a drag, so
     // the camera keeps it and nothing is selected; release within the slop and it was a click, so
-    // it picks. That is the same press-relative accumulation UpdateNavGizmoInteractionUVE uses,
-    // and the reason both read GetMouseDragDelta rather than the per-frame delta - a slow drag of
+    // it picks. That is a press-relative accumulation, and the reason it reads GetMouseDragDelta rather than the per-frame delta - a slow drag of
     // many tiny movements never exceeds a per-frame threshold.
     //
     // `suppressed` is true when the nav gizmo already owns this gesture, in which case the click
@@ -2552,13 +2215,9 @@ private:
         }
     }
 
-    // Mirrors app/main.cpp's own GLFW mouse-button/scroll wiring (left-drag orbits, middle/right
-    // drag pans, wheel dollies) but sourced from the view's per-frame input (EditorViewportInputUVE)
-    // instead of GLFW callbacks, since the editor's UI routes input to the view. Called from the
-    // render callback this class provides to SetViewportPanelRendererUVE, so In().hovered here correctly reports hover over
-    // the Viewport panel specifically. Known simplification versus the GLFW demo: a drag that
-    // began inside the panel stops orbiting the moment the cursor leaves it, rather than
-    // continuing to track a global drag - acceptable for this integration slice.
+    // The view's mouse navigation, from its per-frame input (EditorViewportInputUVE): Alt+left
+    // drag orbits round the target, middle drag pans, the wheel dollies. Right-mouse flying is
+    // UpdateFlyCameraUVE()'s. A plain left drag never moves the view: it selects.
     //
     // `suppressOrbit` is true while UpdateNavGizmoInteractionUVE() below owns the current left-
     // button gesture (it started on the nav gizmo) - without it, this method's own
@@ -2629,16 +2288,87 @@ private:
         const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
 
         const UVE::Editor::EditorViewportInputUVE& io = In();
-        if (!suppressOrbit && In().IsDraggingUVE(VpBtnUVE::Left, 0.0F)) {
+        // The left button selects and drags gizmos; it never moves the view (Alt+left still
+        // orbits round the target). Middle drag pans; the wheel zooms.
+        if (!suppressOrbit && io.alt && In().IsDraggingUVE(VpBtnUVE::Left, 0.0F)) {
             camera_.Orbit(io.mouseDelta.x * orbitSens, io.mouseDelta.y * orbitSens);
             editor_.NotifyViewportOrbitedUVE();
-        } else if (In().IsDraggingUVE(VpBtnUVE::Middle, 0.0F) ||
-                   In().IsDraggingUVE(VpBtnUVE::Right, 0.0F)) {
+        } else if (In().IsDraggingUVE(VpBtnUVE::Middle, 0.0F)) {
             camera_.Pan(io.mouseDelta.x * panSens, io.mouseDelta.y * panSens, framebufferHeight);
         }
         if (io.wheel != 0.0F) {
             camera_.Dolly(io.wheel * zoomSens);
         }
+    }
+
+    // Right mouse held: the mouse turns the view where it stands and W/A/S/D (Q/E down and up)
+    // fly it, faster with Shift; the wheel sets the flying speed. A right click that never moved
+    // is still a click (the context toolbar), so flying starts only once the mouse moves or a
+    // movement key goes down. True while flying.
+    bool UpdateFlyCameraUVE(const bool suppressed) {
+        const UVE::Editor::EditorViewportInputUVE& io = In();
+        if (!In().IsDownUVE(VpBtnUVE::Right)) {
+            if (flying_ || flyArmed_) {
+                flying_ = false;
+                flyArmed_ = false;
+                flyVelocity_ = univex::math::Vec3{0.0F, 0.0F, 0.0F};
+                editor_.SetViewportFlyingUVE(false);
+                editor_.SetViewportFlyHeldUVE(false);
+            }
+            return false;
+        }
+        if (!flying_ && !flyArmed_) {
+            if (suppressed || pointerOverOverlay_ || !io.hovered || !In().IsClickedUVE(VpBtnUVE::Right)) {
+                return false;
+            }
+            flyArmed_ = true;
+            editor_.SetViewportFlyHeldUVE(true);
+        }
+        const bool moveKey = In().IsKeyDownUVE(VpKeyUVE::W) || In().IsKeyDownUVE(VpKeyUVE::A) || In().IsKeyDownUVE(VpKeyUVE::S) ||
+                             In().IsKeyDownUVE(VpKeyUVE::D) || In().IsKeyDownUVE(VpKeyUVE::Q) || In().IsKeyDownUVE(VpKeyUVE::E);
+        if (!flying_) {
+            const UVE::Math::Vector2UVE drag = In().DragDeltaUVE(VpBtnUVE::Right);
+            if (!moveKey && std::fabs(drag.x) + std::fabs(drag.y) <= kNavClickSlopPixelsUVE) {
+                return false;
+            }
+            flying_ = true;
+            editor_.SetViewportFlyingUVE(true);
+        }
+        const auto& prefs = editor_.GetExtendedPreferencesUVE();
+        const float lookSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0)) * 0.8F;
+        if (io.mouseDelta.x != 0.0F || io.mouseDelta.y != 0.0F) {
+            camera_.Look(io.mouseDelta.x * lookSens, io.mouseDelta.y * lookSens);
+            editor_.NotifyViewportOrbitedUVE();
+        }
+        if (io.wheel != 0.0F) {
+            flySpeed_ = std::clamp(flySpeed_ * std::pow(1.25F, io.wheel), 0.25F, 500.0F);
+        }
+        univex::math::Vec3 forward = univex::math::Normalize(camera_.Target() - camera_.Eye());
+        if (univex::math::Length(forward) < 0.001F) {
+            forward = univex::math::Vec3{0.0F, 0.0F, -1.0F};
+        }
+        const univex::math::Vec3 up{0.0F, 1.0F, 0.0F};
+        univex::math::Vec3 right = univex::math::Cross(forward, up);
+        right = univex::math::Length(right) < 0.001F ? univex::math::Vec3{1.0F, 0.0F, 0.0F} : univex::math::Normalize(right);
+        univex::math::Vec3 wish{0.0F, 0.0F, 0.0F};
+        if (In().IsKeyDownUVE(VpKeyUVE::W)) { wish = wish + forward; }
+        if (In().IsKeyDownUVE(VpKeyUVE::S)) { wish = wish - forward; }
+        if (In().IsKeyDownUVE(VpKeyUVE::D)) { wish = wish + right; }
+        if (In().IsKeyDownUVE(VpKeyUVE::A)) { wish = wish - right; }
+        if (In().IsKeyDownUVE(VpKeyUVE::E)) { wish = wish + up; }
+        if (In().IsKeyDownUVE(VpKeyUVE::Q)) { wish = wish - up; }
+        const float wishLength = univex::math::Length(wish);
+        const float speed = flySpeed_ * (io.shift ? 3.0F : 1.0F);
+        const univex::math::Vec3 wanted = wishLength > 0.001F ? wish * (speed / wishLength) : univex::math::Vec3{0.0F, 0.0F, 0.0F};
+        // Eased towards the wanted velocity (about a tenth of a second), so starting and stopping
+        // glide instead of jerking, whatever the frame rate.
+        const float dt = std::clamp(io.deltaTime, 0.0F, 0.1F);
+        const float blend = 1.0F - std::exp(-dt * 14.0F);
+        flyVelocity_ = flyVelocity_ + (wanted - flyVelocity_) * blend;
+        if (univex::math::Length(flyVelocity_) > 0.0005F) {
+            camera_.Translate(flyVelocity_ * dt);
+        }
+        return true;
     }
 
     // The standard Ctrl+digit (store) / digit (restore) viewport bookmarks, plus F-to-focus - the
@@ -2745,95 +2475,6 @@ private:
         }
     }
 
-    // Returns true and fills the nav-local position if the cursor is over the orientation gizmo -
-    // ports app/main.cpp's own CursorOverNavGizmo() (the standalone GLFW demo, where this already
-    // works) into the real editor. `fbX`/`fbY` are pixel coordinates relative to the
-    // Viewport panel's own rendered image top-left, matching NavViewportRectFor()'s own convention.
-    [[nodiscard]] bool CursorOverNavGizmoUVE(int width, int height, float fbX, float fbY,
-                                            float& outLocalX, float& outLocalY) const {
-        if (!renderPass_.has_value() || !renderPass_->Settings().viewGizmos) {
-            return false;
-        }
-        const univex::app::NavViewportRect rect =
-            univex::app::ViewportRenderPass::NavViewportRectFor(renderPass_->Style(), width, height);
-        if (rect.size <= 0) {
-            return false;
-        }
-        // rect.y is a GL viewport origin (bottom-left); convert to top-left, matching fbY's own
-        // top-left-origin convention (the same one IInputSystemUVE::GetMousePositionUVE() uses).
-        const float top = static_cast<float>(height - rect.y - rect.size);
-        const float left = static_cast<float>(rect.x);
-        if (fbX < left || fbX > left + static_cast<float>(rect.size)) {
-            return false;
-        }
-        if (fbY < top || fbY > top + static_cast<float>(rect.size)) {
-            return false;
-        }
-        outLocalX = fbX - left;
-        outLocalY = fbY - top;
-        return true;
-    }
-
-    // Handles both nav-gizmo gestures - drag-anywhere-on-it orbits exactly like dragging the scene,
-    // click-a-ball snaps the camera to look down that axis - mirroring app/main.cpp's own
-    // OnMouseButton()/OnCursorPos() handling for the standalone demo, just driven by the view's per-
-    // frame input instead of GLFW press/release/move callbacks. Returns true while this gesture owns
-    // the left mouse button, so UpdateCameraFromMouseUVE() knows to suppress its own generic orbit.
-    [[nodiscard]] bool UpdateNavGizmoInteractionUVE(const int width, const int height) {
-        if (!In().hovered && !navDragging_) {
-            return false;
-        }
-        const UVE::Editor::EditorViewportInputUVE& io = In();
-        const UVE::Math::Vector2UVE imageOrigin = In().imageOrigin;
-        const float fbX = io.mousePos.x - imageOrigin.x;
-        const float fbY = io.mousePos.y - imageOrigin.y;
-
-        if (!navDragging_) {
-            if (In().IsClickedUVE(VpBtnUVE::Left)) {
-                float localX = 0.0F;
-                float localY = 0.0F;
-                if (CursorOverNavGizmoUVE(width, height, fbX, fbY, localX, localY)) {
-                    navDragging_ = true;
-                    navDragMoved_ = false;
-                    navPressX_ = localX;
-                    navPressY_ = localY;
-                    camera_.CancelAnimation();
-                }
-            }
-            return false;
-        }
-
-        // A gesture that started on the gizmo: still deciding click vs. drag, or already
-        // committed to orbiting. GetMouseDragDelta accumulates from the original press position,
-        // matching the demo's own "press-relative slop" check exactly (not per-frame delta, which
-        // would never exceed the threshold for a series of tiny frame-to-frame movements).
-        if (!navDragMoved_) {
-            const UVE::Math::Vector2UVE dragDelta = In().DragDeltaUVE(VpBtnUVE::Left);
-            if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
-                navDragMoved_ = true;
-            }
-        }
-        if (navDragMoved_) {
-            camera_.Orbit(io.mouseDelta.x, io.mouseDelta.y);
-            editor_.NotifyViewportOrbitedUVE();
-        }
-
-        if (In().IsReleasedUVE(VpBtnUVE::Left)) {
-            if (!navDragMoved_) {
-                const univex::gizmo::NavPickResult pick = univex::gizmo::PickNavGizmo(
-                    renderPass_->Style(), univex::app::ViewportRenderPass::NavViewMatrix(camera_),
-                    navPressX_, navPressY_, static_cast<float>(renderPass_->Style().navPixelSize));
-                if (pick.hit) {
-                    // Through the editor, like the toolbar menu, so the label, the projection and
-                    // the camera all agree; the snap itself happens when the request is applied.
-                    editor_.RequestViewportViewUVE(NamedViewForDirectionUVE(pick.direction));
-                }
-            }
-            navDragging_ = false;
-            navDragMoved_ = false;
-        }
-        return true;
-    }
 
     UVE::Editor::EditorUVE& editor_;
     // The last view request applied to the camera; see ViewportOverlayStateUVE::viewRequestSerial.
@@ -2870,6 +2511,17 @@ private:
     std::optional<CameraPoseUVE> poseBeforePlay_;
     std::optional<CameraPoseUVE> poseBeforePreview_;
     bool previewing_ = false;
+    /// Right-mouse flying: pressed and waiting to move, flying, the speed (m/s) and the eased velocity.
+    bool flyArmed_ = false;
+    bool flying_ = false;
+    float flySpeed_ = 6.0F;
+    univex::math::Vec3 flyVelocity_{0.0F, 0.0F, 0.0F};
+    /// A script's Quit Game or Open Level, carried out at the start of the next frame.
+    struct GameRequestUVE final {
+        bool quit = false;
+        std::string level;
+    };
+    std::optional<GameRequestUVE> gameRequest_;
 
     // The fly into a Camera3D (and back out): the editor camera eased between two poses.
     static constexpr float kCameraFlightSecondsUVE = 0.45F;
@@ -2941,11 +2593,6 @@ private:
     // window, so without this a click on one of its buttons also lands in the scene behind it.
     bool pointerOverOverlay_ = false;
     univex::camera::OrbitCamera camera_;
-    // Nav-gizmo click-vs-drag state - see UpdateNavGizmoInteractionUVE()'s own comment.
-    bool navDragging_ = false;
-    bool navDragMoved_ = false;
-    float navPressX_ = 0.0F;
-    float navPressY_ = 0.0F;
     // Click-vs-drag state for click-to-select - see UpdateSelectionFromMouseUVE().
     bool selectionPressActive_ = false;
     float selectionPressX_ = 0.0F;
@@ -2954,9 +2601,7 @@ private:
     bool contextToolbarPressActive_ = false;
     float contextToolbarPressX_ = 0.0F;
     float contextToolbarPressY_ = 0.0F;
-    // Transform-gizmo drag state - see UpdateGizmoDragUVE(). dragPivot_ and dragPressValue_ are
-    // frozen at the press: the object moves during the drag, and re-reading them each frame would
-    // make the gesture chase its own result.
+    // The selection's pivot, where the shell draws its transform gizmo.
     std::optional<univex::math::Vec3> gizmoPivot_;
     // Gizmo geometry kept for a shell that draws the gizmos itself (overlayState.hostDrawsGizmos).
     univex::gizmo::GizmoMesh hostOverlayMesh_;
@@ -3179,10 +2824,6 @@ private:
     int hostDepthWidth_ = 0;
     int hostDepthHeight_ = 0;
 
-    univex::gizmo::GizmoHandleUVE dragHandle_ = univex::gizmo::GizmoHandleUVE::None;
-    univex::gizmo::GizmoMode dragMode_ = univex::gizmo::GizmoMode::Move;
-    univex::math::Vec3 dragPivot_{};
-    DragReferenceUVE dragPressValue_{};
     bool glewInitialized_ = false;
     GLuint msaaFbo_ = 0U;
     GLuint msaaColorRb_ = 0U;

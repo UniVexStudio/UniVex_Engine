@@ -71,9 +71,51 @@ constexpr std::array<GroupUVE, 13> kGroupsUVE{{
 
 } // namespace
 
+EntityRootUVE EntityRootOfUVE(const Kind rootKind) noexcept {
+    switch (rootKind) {
+        case Kind::Character3D:
+        case Kind::Player3D:
+            return EntityRootUVE::Character;
+        case Kind::Static3D:
+        case Kind::Rigid3D:
+        case Kind::Kinematic3D:
+            return EntityRootUVE::Body;
+        default:
+            return EntityRootUVE::Any;
+    }
+}
+
+bool IsObjectOfferedForRootUVE(const Kind kind, const EntityRootUVE root) noexcept {
+    if (root == EntityRootUVE::Any) {
+        return true;
+    }
+    switch (kind) {
+        // One physics body per character or prop: its root.
+        case Kind::Static3D:
+        case Kind::Rigid3D:
+        case Kind::Kinematic3D:
+        case Kind::Character3D:
+        case Kind::Player3D:
+            return false;
+        // A character's own: its rig, its animation brain, its navigation and its camera arm.
+        case Kind::Skeleton3D:
+        case Kind::TwoBoneIK3D:
+        case Kind::FullBodyIK3D:
+        case Kind::BoneAttachment3D:
+        case Kind::AnimationGraph:
+        case Kind::MontagePlayer:
+        case Kind::NavSeeker3D:
+        case Kind::SpringArm3D:
+            return root == EntityRootUVE::Character;
+        default:
+            return true;
+    }
+}
+
 bool IsObjectOfferedUVE(const Kind kind, const AddObjectContextUVE context) noexcept {
     if (context == AddObjectContextUVE::Entity) {
-        return !IsLevelOnlyUVE(kind);
+        // An entity's objects get their behaviour from Logic Graphs, not script objects.
+        return !IsLevelOnlyUVE(kind) && kind != Kind::Script;
     }
     // A level takes everything of the world; a character's parts are built inside an Entity.
     return Scene::Objects::GetSceneObjectPlacementUVE(kind) == Scene::Objects::SceneObjectPlacementUVE::World;
@@ -108,7 +150,7 @@ prism::Icon ObjectKindGlyphUVE(const Kind kind) noexcept {
 
 std::vector<prism::MenuItem> BuildAddObjectMenuUVE(const AddObjectContextUVE context, EditorIconsUVE& icons,
                                                    const std::function<void(Kind)>& create,
-                                                   const std::vector<Kind>& favorites) {
+                                                   const std::vector<Kind>& favorites, const EntityRootUVE root) {
     const auto itemFor = [&](const Kind kind) {
         const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
         std::string label = descriptor != nullptr ? std::string(descriptor->displayName) : std::string("Object");
@@ -123,7 +165,7 @@ std::vector<prism::MenuItem> BuildAddObjectMenuUVE(const AddObjectContextUVE con
     };
     std::vector<prism::MenuItem> items;
     for (const Kind kind : favorites) {
-        if (IsObjectOfferedUVE(kind, context)) {
+        if (IsObjectOfferedUVE(kind, context) && IsObjectOfferedForRootUVE(kind, root)) {
             items.push_back(itemFor(kind));
         }
     }
@@ -135,7 +177,8 @@ std::vector<prism::MenuItem> BuildAddObjectMenuUVE(const AddObjectContextUVE con
         for (std::size_t i = 0U; i < group.count; ++i) {
             const Kind kind = group.kinds[i];
             const Scene::Objects::SceneObjectDescriptorUVE* const descriptor = Scene::Objects::FindSceneObjectDescriptorUVE(kind);
-            if (descriptor == nullptr || !descriptor->libraryCreatable || !IsObjectOfferedUVE(kind, context)) {
+            if (descriptor == nullptr || !descriptor->libraryCreatable || !IsObjectOfferedUVE(kind, context) ||
+                !IsObjectOfferedForRootUVE(kind, root)) {
                 continue;
             }
             sub.push_back(itemFor(kind));

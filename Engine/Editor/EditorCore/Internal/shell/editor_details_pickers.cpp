@@ -18,6 +18,7 @@
 #include "prism/Application.h"
 #include "prism/Menu.h"
 
+#include <cstddef>
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -66,11 +67,11 @@ EditorDetailsUVE::PickerSpecUVE EditorDetailsUVE::PickerSpecForUVE(const std::ve
         spec.listed = {".uvtex"};
         spec.loadable = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
     } else if (has(".uvmontagelib")) {
-        spec.title = "Montage Library";
+        spec.title = "Action Clip Library";
         spec.listed = {".uvmontagelib"};
         spec.loadable = {".uvmontagelib"};
     } else if (has(".uvmontage")) {
-        spec.title = "Montage";
+        spec.title = "Action Clip";
         spec.listed = {".uvmontage"};
         spec.loadable = {".uvmontage"};
     } else if (has(".uvaudio") || has(".wav")) {
@@ -128,6 +129,9 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
             shared->empty();
         }
     })));
+    for (std::size_t index = 0U; index < shared->extras.size(); ++index) {
+        items.push_back(prism::MenuItem::Item(shared->extras[index].first, onTarget([shared, index] { shared->extras[index].second(); })));
+    }
     if (spec.newMaterial) {
         // A new material in the Content Browser's folder, of the kind asked for, assigned at once.
         struct KindUVE final { const char* label; const char* stem; Asset::MaterialKindUVE kind; };
@@ -246,7 +250,7 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
         };
         m_editor.OpenFilePickerUVE(std::move(request));
     }));
-    prism::MenuItem show = prism::MenuItem::Item("Show in Content Browser", [this, shared] {
+    prism::MenuItem show = prism::MenuItem::Item("Show in Asset Library", [this, shared] {
         const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         std::error_code error;
         const std::filesystem::path relative = std::filesystem::relative(shared->current, now.contentRoot, error);

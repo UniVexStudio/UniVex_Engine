@@ -34,7 +34,7 @@ bool IsBlueprintAssetValidUVE(const BlueprintAssetUVE& blueprint) noexcept {
     std::set<std::string> names;
     for (const BlueprintVariableUVE& variable : blueprint.variables) {
         if (!NameOkUVE(variable.name) || variable.type == BlueprintPinTypeUVE::Exec ||
-            variable.type > BlueprintPinTypeUVE::Object || !names.insert(variable.name).second) {
+            variable.type > BlueprintPinTypeUVE::StringArray || !names.insert(variable.name).second) {
             return false;
         }
     }

@@ -228,7 +228,7 @@ void EditorMontageEditorUVE::SyncUVE() {
         m_closeAsked = false;
         m_shownValid = false;
         m_shownClipCount = static_cast<std::size_t>(-1);
-        m_window = m_host.OpenWindowUVE(BuildUVE(), "Montage Editor - " + path.filename().string(), kWindowWidthUVE,
+        m_window = m_host.OpenWindowUVE(BuildUVE(), "Action Clip Editor - " + path.filename().string(), kWindowWidthUVE,
                                         kWindowHeightUVE);
         if (m_window == 0) {
             m_editor.CloseMontageEditorUVE();
@@ -264,7 +264,7 @@ void EditorMontageEditorUVE::RequestCloseUVE() {
     const std::string name = m_openPath.filename().string();
     m_host.AppUVE().runInWindow(m_window, [this, name] {
         auto text = prism::make<prism::Label>("Save the changes to " + name + " before closing?");
-        prism::showDialog("Close Montage", text,
+        prism::showDialog("Close Action Clip", text,
                           {prism::DialogButton{"Save", true, [this] {
                                m_closeAsked = false;
                                if (m_editor.SaveMontageEditorUVE()) {
@@ -366,7 +366,7 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildUVE() {
     notifiesPage->add(m_curveList, prism::Splitter::Pane{220.0F, 100.0F, 1e9F, false});
 
     auto tabs = prism::make<prism::TabView>();
-    tabs->addTab("Details", prism::Icon::Properties, PanelUVE(m_details));
+    tabs->addTab("Inspector", prism::Icon::Properties, PanelUVE(m_details));
     tabs->addTab("Sections", prism::Icon::MontageSections, PanelUVE(m_sections));
     tabs->addTab("Notifies & Curves", prism::Icon::AnimEvent, PanelUVE(notifiesPage));
     tabs->addTab("Asset Browser", prism::Icon::AssetBrowser, PanelUVE(assetsPage));
@@ -391,7 +391,7 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildTitleBarUVE() {
     menus->addMenu("File", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Save", [this] { static_cast<void>(m_editor.SaveMontageEditorUVE()); }, "", prism::Icon::Save));
-        items.push_back(prism::MenuItem::Item("Show in Content Browser", [this] {
+        items.push_back(prism::MenuItem::Item("Show in Asset Library", [this] {
             const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             std::error_code error;
             const std::filesystem::path relative = std::filesystem::relative(m_openPath, now.contentRoot, error);
@@ -450,11 +450,11 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildTitleBarUVE() {
 prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildToolbarUVE() {
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
-    auto save = ToolButtonUVE(prism::Icon::Save, "Save the montage", "Save");
+    auto save = ToolButtonUVE(prism::Icon::Save, "Save the action clip", "Save");
     save->onClick = [this] { static_cast<void>(m_editor.SaveMontageEditorUVE()); };
     row->add(save, CentreUVE());
     row->add(HSeparatorUVE(), CentreUVE());
-    m_previewButton = ToolButtonUVE(prism::Icon::PreviewCharacter, "The character the montage is previewed on", "Preview");
+    m_previewButton = ToolButtonUVE(prism::Icon::PreviewCharacter, "The character the action clip is previewed on", "Preview");
     m_previewButton->onClick = [this] { ShowPreviewMenuUVE(); };
     row->add(m_previewButton, CentreUVE());
     row->add(HSeparatorUVE(), CentreUVE());
@@ -732,7 +732,7 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
         grid->addRow(cat, "Trigger Weight", number(m.notifies[i].minWeight, 0.05F, 2, [i](auto& mm, double v) {
                          mm.notifies[i].minWeight = static_cast<float>(std::clamp(v, 0.0, 1.0));
                      }),
-                     "Raised only while the montage weighs at least this much (0: also while it blends)");
+                     "Raised only while the action clip weighs at least this much (0: also while it blends)");
     } else if (selection.kind == Kind::State && i < m.notifyStates.size()) {
         cat = grid->addCategory(m.notifyStates[i].name);
         grid->addRow(cat, "Name", text(m.notifyStates[i].name, [i](auto& mm, const std::string& v) { mm.notifyStates[i].name = v; }));
@@ -790,10 +790,10 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
                 m_editor.SetMontagePreviewEntityUVE(guids[static_cast<std::size_t>(v)]);
             }
         };
-        grid->addRow(cat, "Preview", preview, "The character the montage is shown on (the game plays it on whoever asks)");
+        grid->addRow(cat, "Preview", preview, "The character the action clip is shown on (the game plays it on whoever asks)");
     }
 
-    cat = grid->addCategory("Montage");
+    cat = grid->addCategory("Action Clip");
     grid->addRow(cat, "Slot", text(m.slot, [](auto& mm, const std::string& v) { mm.slot = v.empty() ? std::string("DefaultSlot") : v; }));
     // A blend: its time, and the shape of its weight over that time.
     const auto blend = [this, &number](const double seconds, const Asset::MontageBlendCurveUVE curve,

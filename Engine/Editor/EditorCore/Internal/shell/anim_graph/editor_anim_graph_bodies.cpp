@@ -412,7 +412,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         case Kind::BlendSpace1D:
             body->add(RowUVE("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
             body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
-            body->add(RowUVE("", open("Open Blend Space")));
+            body->add(RowUVE("", open("Open Blend Grid")));
             break;
         case Kind::BlendSpace2D: {
             // One Vector3 parameter (x, y) drives both axes; or a Float for each.
@@ -434,7 +434,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
                 EditNodeUVE(id, [i](NodeUVE& n) { n.blendMode = static_cast<Scene::AnimationBlendModeUVE>(std::clamp(i, 0, 2)); });
             };
             body->add(RowUVE("Mode", mode));
-            body->add(RowUVE("", open("Open Blend Space")));
+            body->add(RowUVE("", open("Open Blend Grid")));
             break;
         }
         case Kind::OneShot:
@@ -640,7 +640,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         }
         case Kind::Slot: {
             auto name = prism::make<prism::TextInput>(node.parameter, "DefaultSlot");
-            name->setTooltip("The montage slot laid over the input here (a MontagePlayer plays into it)");
+            name->setTooltip("The action clip slot laid over the input here (a MontagePlayer plays into it)");
             name->onCommit = [this, id](const std::string& to) { EditNodeUVE(id, [&to](NodeUVE& n) { n.parameter = to; }); };
             body->add(RowUVE("Slot", name));
             // What the montages on this slot are, from the MontagePlayer(s) the graph takes.
@@ -650,7 +650,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
                 list += (list.empty() ? "" : ", ") + montage;
             }
             auto plays = prism::make<prism::Label>(list, prism::FontRole::Small);
-            plays->setTooltip("Montages that play over the input here");
+            plays->setTooltip("Action Clips that play over the input here");
             body->add(RowUVE("Plays", plays));
             break;
         }

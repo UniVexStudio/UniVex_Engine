@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -108,6 +109,12 @@ prism::Rect WidgetDesignerViewUVE::CanvasRectUVE() const {
     return prism::Rect{std::floor(r.x + (r.w - w) * 0.5F), std::floor(r.y + 18.0F + (r.h - 18.0F - h) * 0.5F), w, h};
 }
 
+float WidgetDesignerViewUVE::MeasureTextUVE(const std::string_view text, const float fontSize) {
+    // Measured at a large size and scaled, so small text is not rounded to whole pixels per glyph.
+    constexpr float kReferencePx = 64.0F;
+    return FontAtUVE(kReferencePx, false).width(text) * (fontSize / kReferencePx);
+}
+
 prism::Rect WidgetDesignerViewUVE::ToViewUVE(const prism::Rect& design) const {
     const prism::Rect canvas = CanvasRectUVE();
     const float s = ScaleUVE();
@@ -161,9 +168,27 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
         }
         const prism::Rect v = ToViewUVE(item.rect);
         switch (item.kind) {
-            case KindUVE::Text:
-                c.text(FontAtUVE(item.fontSize * s, false), prism::Vec2{v.x, v.y + item.fontSize * s * 0.95F}, item.text, item.color);
+            case KindUVE::Text: {
+                const prism::Font& font = FontAtUVE(item.fontSize * s, false);
+                const auto drawLines = [&](const prism::Vec2 offset, const prism::Color colour) {
+                    for (const auto& [baseline, line] : item.lines) {
+                        // `text` takes the line box's top: the baseline less the font's ascent.
+                        c.text(font, prism::Vec2{canvas.x + (baseline.x + offset.x) * s, canvas.y + (baseline.y + offset.y) * s - font.ascent()},
+                               line, colour);
+                    }
+                };
+                if (item.shadow.a > 0) {
+                    drawLines(item.shadowOffset, item.shadow);
+                }
+                if (item.outlineWidth > 0.0F && item.outline.a > 0) {
+                    const float w = item.outlineWidth;
+                    for (const prism::Vec2 o : {prism::Vec2{-w, 0.0F}, prism::Vec2{w, 0.0F}, prism::Vec2{0.0F, -w}, prism::Vec2{0.0F, w}}) {
+                        drawLines(o, item.outline);
+                    }
+                }
+                drawLines(prism::Vec2{}, item.color);
                 break;
+            }
             case KindUVE::Button: {
                 const prism::Color base = item.entity == m_hover ? MixUVE(item.color, prism::Color(255, 255, 255), 0.12F) : item.color;
                 c.fillRoundRect(v, 4.0F * s, base);
@@ -290,7 +315,7 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                     c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, prism::Rect{v.x + 4.0F, v.y + 4.0F, 16.0F, 16.0F});
                 }
                 c.textIn(*t.small, prism::Rect{v.x + 24.0F, v.y + 4.0F, std::max(0.0F, v.w - 28.0F), 16.0F},
-                         item.text.empty() ? std::string("3D View - pick what it shows in Details") : item.text, prism::Color(220, 228, 240),
+                         item.text.empty() ? std::string("3D View - pick what it shows in Inspector") : item.text, prism::Color(220, 228, 240),
                          prism::HAlign::Left, true);
                 c.textIn(*t.small, prism::Rect{v.x + 4.0F, v.bottom() - 18.0F, std::max(0.0F, v.w - 8.0F), 16.0F}, "Live 3D in the game",
                          prism::Color(150, 160, 178), prism::HAlign::Center, true);

@@ -19,8 +19,10 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
@@ -431,7 +433,29 @@ public:
     /// Who answers a script's Set Show Mouse Cursor (the editor, for its own view). Without one the
     /// window's pointer is shown or hidden.
     void SetMouseCursorHandlerUVE(std::function<void(bool show)> handler) { m_mouseCursorHandlerUVE = std::move(handler); }
+    /// Whether the application has focus, when it has windows of its own besides the main one (the
+    /// editor's Entity Editor): the unfocused frame cap then applies only when none of them has it.
+    void SetFocusProviderUVE(std::function<bool()> provider) { m_focusProviderUVE = std::move(provider); }
+    /// Changes the frame-rate caps after Init (0: no cap of its own; vsync paces).
+    void SetFrameRateCapsUVE(const std::uint32_t focused, const std::uint32_t unfocused) noexcept {
+        m_config.focusedFrameRateCapUVE = focused;
+        m_config.unfocusedFrameRateCapUVE = unfocused;
+    }
+    [[nodiscard]] bool HasFocusProviderUVE() const noexcept { return static_cast<bool>(m_focusProviderUVE); }
     [[nodiscard]] bool HasMouseCursorHandlerUVE() const noexcept { return static_cast<bool>(m_mouseCursorHandlerUVE); }
+    /// Who answers a script's Quit Game (the editor stops Play), once the frame's scripts are
+    /// done. Without one the engine quits.
+    void SetQuitGameHandlerUVE(std::function<void()> handler) { m_quitGameHandlerUVE = std::move(handler); }
+    /// Who answers a script's Open Level, after the frame it was asked in: true when the level
+    /// file exists and will load. Without one, Open Level answers false.
+    void SetOpenLevelHandlerUVE(std::function<bool(const std::string& path)> handler) { m_openLevelHandlerUVE = std::move(handler); }
+    /// The level the game is playing, as Get Current Level Name answers it.
+    void SetCurrentLevelNameUVE(std::string name) { m_currentLevelNameUVE = std::move(name); }
+    /// What scripts share across the game: the game data (Set/Get Game Data) and the clock.
+    [[nodiscard]] ScriptServicesUVE& GetScriptServicesUVE() noexcept { return m_scriptServices; }
+    /// Starts the game's script clock again and forgets queued messages, removals and saved
+    /// values: called when Play starts.
+    void ResetScriptGameStateUVE();
 
     /// Registers a non-owning callback invoked after the renderer has submitted the frame's scene
     /// work but immediately before the window back buffer is presented. This is a generic
@@ -898,6 +922,7 @@ private:
     std::optional<Math::Vector2UVE> m_uiViewportSizeUVE;
     std::optional<Math::Vector2UVE> m_deviceScreenSizeUVE;
     std::function<void(bool)> m_mouseCursorHandlerUVE;
+    std::function<bool()> m_focusProviderUVE;
     std::chrono::steady_clock::time_point m_uiView3DClockUVE{};
     std::unique_ptr<Scene::IPrefabSystemUVE> m_prefabSystem;
     std::unique_ptr<Asset::IHotReloadUVE> m_hotReload;
@@ -967,6 +992,32 @@ private:
         bool readyRaised = false;
     };
     std::unordered_map<Scene::EntityUVE, UVScriptSlotUVE> m_uvScripts;
+    /// What every script reaches beyond its object (filled in by FillScriptServicesUVE).
+    ScriptServicesUVE m_scriptServices;
+    /// Script messages waiting for the end of this frame's handlers: target, name, payload.
+    std::vector<std::tuple<Scene::EntityUVE, std::string, std::string>> m_pendingScriptEvents;
+    /// Objects scripts asked to remove, removed once every script has run.
+    std::vector<Scene::EntityUVE> m_pendingScriptDestroys;
+    std::optional<std::string> m_pendingLevel;
+    bool m_pendingQuit = false;
+    /// Sounds Play Sound made, each removed when it is over.
+    std::vector<Scene::EntityUVE> m_oneShotSounds;
+    /// The buttons the pointer was over last frame, for On Hovered / On Unhovered.
+    std::unordered_set<Scene::EntityUVE> m_hoveredButtons;
+    /// Camera Shake: how strong, how long, how long is left, and what is on the camera now.
+    double m_cameraShakeStrength = 0.0;
+    double m_cameraShakeDuration = 0.0;
+    double m_cameraShakeRemaining = 0.0;
+    Scene::EntityUVE m_cameraShakeTarget = Scene::kInvalidEntityUVE;
+    Math::Vector3UVE m_cameraShakeOffset{};
+    double m_scriptGameTime = 0.0;
+    double m_scriptGameDelta = 0.0;
+    std::function<void()> m_quitGameHandlerUVE;
+    std::function<bool(const std::string&)> m_openLevelHandlerUVE;
+    std::string m_currentLevelNameUVE;
+    void FillScriptServicesUVE();
+    /// Raises queued messages and timers, then removes what scripts destroyed.
+    void FinishScriptFrameUVE(double dt, bool simulationPaused);
     /// The text of each `.uvs` path that failed (none when it could not be read), so an edit to it -
     /// or the file appearing - is retried.
     std::unordered_map<std::string, std::optional<std::string>> m_uvScriptFailedSources;

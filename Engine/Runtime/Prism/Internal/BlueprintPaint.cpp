@@ -59,7 +59,7 @@ Icon nodeIconFor(const BlueprintNode& n) {
   // the animation graph's own spellings first
   if (n.category == BlueprintNodeCategory::Animation) {
     if (has("sequence player") || t == "clip" || word("clip")) return Icon::AnimClipNode;
-    if (has("blend space") || has("blendspace")) return Icon::NodeBlendSpace;
+    if (has("blend grid") || has("blendspace")) return Icon::NodeBlendSpace;
     if (has("layered blend")) return Icon::LayeredBlend;
     if (has("blend poses by bool") || has("by bool")) return Icon::BlendByBool;
     if (has("blend") || has("blend2")) return Icon::NodeBlend;
@@ -115,7 +115,7 @@ Icon nodeIconFor(const BlueprintNode& n) {
   if (n.category == BlueprintNodeCategory::PureMath && n.style == BlueprintNodeStyle::Compact) return Icon::NodeMath;
   // animation
   if (has("sequence player")) return Icon::NodeClip;
-  if (has("blend space")) return Icon::NodeBlendSpace;
+  if (has("blend grid")) return Icon::NodeBlendSpace;
   if (has("layered blend") || has("blend poses")) return Icon::NodeBlend;
   if (word("ik") || has("bone")) return Icon::NodeBone;
   if (has("slot")) return Icon::NodeSlot;
@@ -245,8 +245,11 @@ void BlueprintPaint::node(const BlueprintGraph& g, Canvas& c, const BlueprintNod
       if (n.subtitle.empty()) {
         c.textIn(tf, {tx, r.y, r.w - 44 * s, hh}, n.title, Color(255, 255, 255), HAlign::Left, true);
       } else {
-        c.textIn(tf, {tx, r.y + 4 * s, r.w - 44 * s, 20 * s}, n.title, Color(255, 255, 255), HAlign::Left, true);
-        c.textIn(font(kSubPx, Weight::Regular, s), {tx, r.y + 23 * s, r.w - 44 * s, 15 * s}, n.subtitle, ch.sub, HAlign::Left, true);
+        // Title over subtitle, the pair centred in the header like the icon beside it.
+        const float titleH = 18 * s, subH = 13 * s, gap = 1 * s;
+        const float top = r.y + std::max(0.f, (hh - (titleH + gap + subH)) * 0.5f);
+        c.textIn(tf, {tx, top, r.w - 44 * s, titleH}, n.title, Color(255, 255, 255), HAlign::Left, true);
+        c.textIn(font(kSubPx, Weight::Regular, s), {tx, top + titleH + gap, r.w - 44 * s, subH}, n.subtitle, ch.sub, HAlign::Left, true);
       }
     }
   } else if (n.style == BlueprintNodeStyle::Compact && !n.title.empty() && labels) {
@@ -326,8 +329,10 @@ void BlueprintPaint::node(const BlueprintGraph& g, Canvas& c, const BlueprintNod
         const Font& lf = font(kLabelPx, Weight::Regular, s);
         float lw = textWidth(p.name, kLabelPx, Weight::Regular) * s + 4 * s;
         Color lc = hot ? Color(255, 255, 255) : Color(222, 228, 238);
-        if (input) c.textIn(lf, {at.x + (kPinR + 7) * s + (t == PT::Exec ? 0 : 0.f), at.y - kRowH * 0.5f * s, lw, kRowH * s}, p.name, lc, HAlign::Left, false);
-        else c.textIn(lf, {at.x - (kPinR + 7) * s - lw, at.y - kRowH * 0.5f * s, lw, kRowH * s}, p.name, lc, HAlign::Right, false);
+        // Kept within the width the layout gave it (measured at zoom 1): a zoomed font a pixel wider
+        // ends in an ellipsis rather than running under the default-value box.
+        if (input) c.textIn(lf, {at.x + (kPinR + 7) * s, at.y - kRowH * 0.5f * s, lw, kRowH * s}, p.name, lc, HAlign::Left, true);
+        else c.textIn(lf, {at.x - (kPinR + 7) * s - lw, at.y - kRowH * 0.5f * s, lw, kRowH * s}, p.name, lc, HAlign::Right, true);
       }
       if (input && !conn && t != PT::Exec && (!p.defaultValue.empty() || p.editable)) {
         Rect lb = g.defaultBoxLocal(n, i);
@@ -658,7 +663,7 @@ void BlueprintGraph::paintToolbar(Canvas& c) {
   x -= 3;
   button("compile:opts", "", false, "Compile options: Save on Compile, Jump to Error Node", {}, 0, true, Icon::ChevronDown);
   button("save", "Save", false, "Save (Ctrl+S)", {}, 0, true, Icon::Save);
-  button("browse", "Browse", false, "Find this graph in the Content Browser", {}, 0, true, Icon::Browse);
+  button("browse", "Browse", false, "Find this graph in the Asset Library", {}, 0, true, Icon::Browse);
   sep();
   button("find", "Find", false, "Find nodes, pins and values (Ctrl+F). Ctrl+Shift+F searches every saved graph", {}, 0, true, Icon::Search);
   button("hide", "", m_hideUnrelated, "Hide Unrelated: fade nodes that are not selected or linked to the selection", {}, 0, true, Icon::EyeOff);

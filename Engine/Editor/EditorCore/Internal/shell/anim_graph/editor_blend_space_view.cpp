@@ -283,7 +283,7 @@ void BlendSpaceViewUVE::paint(prism::Canvas& c) {
     }
     PaintStripUVE(c);
     const char* hint = m_drag == DragUVE::Clip ? "Drop on the grid to put the animation there   |   Shift: no snapping"
-                                               : "Drag an animation from the list (or the Content Browser) onto the grid   |   Double-click: add here   |   "
+                                               : "Drag an animation from the list (or the Asset Library) onto the grid   |   Double-click: add here   |   "
                                                  "Drag the red cross to preview   |   Right-click: more";
     c.fillRect(prism::Rect{m_rect.x, m_rect.bottom() - kHintHUVE, m_rect.w, kHintHUVE}, prism::Color(18, 20, 24, 220));
     c.textIn(*t.small, prism::Rect{m_rect.x + 10.0F, m_rect.bottom() - kHintHUVE, m_rect.w - 20.0F, kHintHUVE}, hint, prism::Color(160, 168, 184));
@@ -572,7 +572,7 @@ void BlendSpaceViewUVE::ShowEmptyMenuUVE(const prism::Vec2 at, const Math::Vecto
         clips.push_back(prism::MenuItem::Item("No animations in the project", {}).disabled());
     }
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Header("Blend Space"));
+    items.push_back(prism::MenuItem::Header("Blend Grid"));
     items.push_back(prism::MenuItem::Sub("Add Animation Here", std::move(clips), prism::Icon::Plus));
     items.push_back(prism::MenuItem::Item("Empty Point Here", [this, position] { AddPointUVE(position, Asset::AssetGuidUVE{}); }));
     items.push_back(prism::MenuItem::Sep());

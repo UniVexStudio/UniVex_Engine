@@ -7,7 +7,6 @@
 
 #include "editor.h"
 
-#include "editor_uvscript_highlight.h"
 
 #include <algorithm>
 #include <cfloat>

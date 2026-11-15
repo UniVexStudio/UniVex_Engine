@@ -161,7 +161,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
         if (node->kind == Kind::StateMachine) {
             items.push_back(prism::MenuItem::Item("Open States", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::StateMachine));
         } else if (node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D) {
-            items.push_back(prism::MenuItem::Item("Open Blend Space", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::NodeBlendSpace));
+            items.push_back(prism::MenuItem::Item("Open Blend Grid", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::NodeBlendSpace));
         }
     };
     m_graph->canConnectHook = [this](const int fromNode, int, const int toNode, const int toPin, std::string* why) {
@@ -851,7 +851,7 @@ void EditorAnimGraphPanelUVE::SyncFocusUVE() {
         m_crumbSignature = signature;
         m_crumbRow->clearChildren();
         auto up = prism::make<prism::Button>("", prism::Icon::ChevronLeft, prism::ButtonStyle::Flat);
-        up->setTooltip("Up one level (Esc in a State Machine or Blend Space)");
+        up->setTooltip("Up one level (Esc in a State Machine or Blend Grid)");
         up->onClick = [this] { CloseFocusUVE(); };
         m_crumbRow->add(up, CentreSlotUVE());
         auto tree = prism::make<prism::Button>("Tree", prism::Icon::AnimTree, prism::ButtonStyle::Flat);
@@ -920,11 +920,11 @@ void EditorAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
                         [this](const prism::Vec2 at) { ShowSequencerMenuUVE(at); }),
                  "The AnimationSequencer whose animations the Clip nodes play");
     const Scene::EntityUVE linkedPlayer = graph.montagePlayer;
-    grid->addRow(graphCategory, "Montage Player",
+    grid->addRow(graphCategory, "Action Clip Player",
                  picker(linkedPlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(linkedPlayer) ? NameOfUVE(em, linkedPlayer, "MontagePlayer")
                                                                                                  : std::string{"None"},
                         [this](const prism::Vec2 at) { ShowMontagePlayerMenuUVE(at); }),
-                 "Optional: the MontagePlayer whose montages play on the Slot nodes. None: any MontagePlayer on the same skeleton.");
+                 "Optional: the MontagePlayer whose action clips play on the Slot nodes. None: any MontagePlayer on the same skeleton.");
 
     if (const NodeUVE* focus = FocusNodeUVE(); focus != nullptr && focus->kind == Kind::StateMachine) {
         BuildStateMachineSideUVE(*grid, graph, *focus);
