@@ -10,7 +10,7 @@ colour and code editors, transform gizmo), and the blueprint graph editor with i
   `Internal/windows/uiautomationcore.def` - MinGW import library source for the UI Automation bridge
 - `assets/` - fonts (Inter, DejaVu Sans Mono; licenses included), themes, locale tables.
   UVBT copies them next to every binary that links PRISM as `prism_assets/`.
-- `tests/` - unit, fuzz and golden visual regression tests (`tests/golden/*.sig`)
+- `tests/` - unit, fuzz and golden visual regression tests (`tests/golden/*.golden`)
 
 ## Build (UVBT)
 Requires FreeType (Debian/Ubuntu `libfreetype-dev`, MSYS2 `mingw-w64-ucrt-x86_64-freetype`).

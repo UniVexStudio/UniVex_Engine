@@ -3,6 +3,10 @@
 
 #include "material_asset.h"
 
+#include <array>
+
+#include <algorithm>
+
 #include <cmath>
 
 #include <nlohmann/json.hpp>
@@ -38,6 +42,10 @@ namespace {
 [[nodiscard]] bool IsFiniteUnitIntervalUVE(const float value) noexcept {
     return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
 }
+
+/// The JSON key of each MaterialMapUVE's settings, in order.
+constexpr std::array<const char*, static_cast<std::size_t>(MaterialMapUVE::Count)> kMaterialMapNamesUVE{
+    "albedo", "normal", "metallicRoughness", "occlusion", "emissive", "metallic", "roughness"};
 
 [[nodiscard]] bool IsFiniteNonNegativeColorUVE(const Math::ColorUVE& value) noexcept {
     return std::isfinite(value.r) && value.r >= 0.0F && std::isfinite(value.g) && value.g >= 0.0F &&
@@ -77,7 +85,12 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
            IsFiniteUnitIntervalUVE(material.anisotropyAmount) &&
            IsFiniteUnitIntervalUVE(material.subsurfaceStrength) &&
            IsFiniteUnitIntervalUVE(material.refractionAmount) &&
-           std::isfinite(material.textureTileX) && std::isfinite(material.textureTileY);
+           std::isfinite(material.textureTileX) && std::isfinite(material.textureTileY) &&
+           std::ranges::all_of(material.maps, [](const MaterialMapSettingsUVE& map) {
+               return std::isfinite(map.tiling.x) && std::isfinite(map.tiling.y) && std::isfinite(map.offset.x) &&
+                      std::isfinite(map.offset.y) && map.channel <= MaterialTextureChannelUVE::Rgb &&
+                      IsFiniteUnitIntervalUVE(map.strength);
+           });
 }
 
 bool TryMakeMaterialBillboardRotationUVE(const MaterialBillboardModeUVE mode,
@@ -286,6 +299,30 @@ bool LoadMaterialAssetUVE(const std::filesystem::path& path, MaterialAssetUVE& o
         if (payload.contains("textureTileY")) {
             material.textureTileY = payload.at("textureTileY").get<float>();
         }
+        // Each map's own reading, by name; a map the file leaves out reads as authored.
+        if (payload.contains("maps") && payload.at("maps").is_object()) {
+            const nlohmann::json& maps = payload.at("maps");
+            for (std::size_t index = 0U; index < material.maps.size(); ++index) {
+                const char* const name = kMaterialMapNamesUVE[index];
+                if (!maps.contains(name) || !maps.at(name).is_object()) {
+                    continue;
+                }
+                const nlohmann::json& entry = maps.at(name);
+                MaterialMapSettingsUVE& map = material.maps[index];
+                if (entry.contains("tiling")) {
+                    map.tiling = JsonToVector2UVE(entry.at("tiling"));
+                }
+                if (entry.contains("offset")) {
+                    map.offset = JsonToVector2UVE(entry.at("offset"));
+                }
+                if (entry.contains("channel")) {
+                    map.channel = static_cast<MaterialTextureChannelUVE>(entry.at("channel").get<std::uint8_t>());
+                }
+                map.invert = entry.value("invert", false);
+                map.strength = entry.value("strength", 1.0F);
+                map.onUv2 = entry.value("onUv2", false);
+            }
+        }
     } catch (const nlohmann::json::exception& fieldError) {
         UVE_ERROR("MaterialAssetUVE: \"{}\" is missing an expected field: {}", path.string(), fieldError.what());
         return false;
@@ -456,6 +493,23 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     }
     if (material.textureTileY != 1.0F) {
         payload["textureTileY"] = material.textureTileY;
+    }
+    // Only the maps read some other way than as authored, so an untouched material keeps its bytes.
+    nlohmann::json maps = nlohmann::json::object();
+    for (std::size_t index = 0U; index < material.maps.size(); ++index) {
+        const MaterialMapSettingsUVE& map = material.maps[index];
+        if (map == MaterialMapSettingsUVE{}) {
+            continue;
+        }
+        maps[kMaterialMapNamesUVE[index]] = {{"tiling", Vector2ToJsonUVE(map.tiling)},
+                                             {"offset", Vector2ToJsonUVE(map.offset)},
+                                             {"channel", static_cast<std::uint8_t>(map.channel)},
+                                             {"invert", map.invert},
+                                             {"strength", map.strength},
+                                             {"onUv2", map.onUv2}};
+    }
+    if (!maps.empty()) {
+        payload["maps"] = std::move(maps);
     }
 
     const std::string payloadText = payload.dump();

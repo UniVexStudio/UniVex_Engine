@@ -150,16 +150,14 @@ void FitColliderToPrimitiveKindUVE(Scene::ColliderComponentUVE& collider,
     }
 }
 
-/// Square resolution rendered for each Content Browser mesh thumbnail (see
-/// EditorUVE::GetMeshThumbnailUVE). Matches the content-type badge icons' own baked resolution
-/// (uve_content_type_icon_bytes.inc) - plenty of detail at the grid card's much smaller display
-/// size without being wasteful to render per mesh.
-constexpr int kMeshThumbnailSizeUVE = 128;
-/// Square resolution rendered for each Content Browser material thumbnail. Deliberately 2x the
-/// 128 px the column preview draws: the browser samples the texture with linear filtering, so the
-/// extra resolution is free 2x2 supersampling (and 4x4 in a 64 px tile), which a preview sphere's
-/// curved silhouette needs - a 1:1 render shows a stair-stepped edge on every card.
-constexpr int kMaterialThumbnailSizeUVE = 256;
+/// Square resolution rendered for each Asset Library mesh and entity thumbnail (see
+/// EditorUVE::GetMeshThumbnailUVE), and for each material thumbnail. Several times the size a tile or
+/// an Inspector slot shows: PRISM shrinks a picture by averaging the pixels under each screen pixel
+/// (Canvas::resample), so the extra resolution is supersampling - smooth silhouettes, no stair steps -
+/// and a Large tile or a high-DPI screen still has detail to spare.
+constexpr int kMeshThumbnailSizeUVE = 384;
+/// See kMeshThumbnailSizeUVE.
+constexpr int kMaterialThumbnailSizeUVE = 384;
 
 constexpr float kMinimum2DCanvasZoomUVE = 0.10F;
 constexpr float kMaximum2DCanvasZoomUVE = 4.00F;
