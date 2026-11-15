@@ -116,6 +116,8 @@
 #include "i_window_manager.h"
 #include "engine_project_settings.h"
 #include "config_manager.h"
+#include "particle_system_asset.h"
+#include "vfx_templates.h"
 
 namespace UVE::Core::Tests {
 namespace {
@@ -5643,6 +5645,686 @@ TEST(EngineCoreUVETest, LagShot_FractionalResolveSubmits) {
     engine.SubmitLagShotUVE(std::move(between));
     engine.TickFrameUVE();
     EXPECT_FLOAT_EQ(HealthOfUVE(entityManager, target), 99.0F);
+
+    engine.Shutdown();
+}
+
+namespace {
+
+[[nodiscard]] std::uint32_t ComputeCrc32ForPngUVE(const std::uint8_t* const data,
+                                                   const std::size_t length) noexcept {
+    std::uint32_t crc = 0xFFFFFFFFU;
+    for (std::size_t i = 0U; i < length; ++i) {
+        crc ^= static_cast<std::uint32_t>(data[i]);
+        for (int bit = 0; bit < 8; ++bit) {
+            const std::uint32_t mask = -(crc & 1U);
+            crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+        }
+    }
+    return ~crc;
+}
+
+[[nodiscard]] std::uint32_t ComputeAdler32ForPngUVE(const std::uint8_t* const data,
+                                                     const std::size_t length) noexcept {
+    std::uint32_t a = 1U;
+    std::uint32_t b = 0U;
+    constexpr std::uint32_t kModAdler = 65521U;
+    for (std::size_t i = 0U; i < length; ++i) {
+        a = (a + data[i]) % kModAdler;
+        b = (b + a) % kModAdler;
+    }
+    return (b << 16U) | a;
+}
+
+void AppendBigEndianUint32UVE(std::vector<std::uint8_t>& out, const std::uint32_t value) {
+    out.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+void AppendPngChunkUVE(std::vector<std::uint8_t>& out,
+                       const char (&type)[5],
+                       const std::vector<std::uint8_t>& payload) {
+    AppendBigEndianUint32UVE(out, static_cast<std::uint32_t>(payload.size()));
+    const std::size_t typeOffset = out.size();
+    out.push_back(static_cast<std::uint8_t>(type[0]));
+    out.push_back(static_cast<std::uint8_t>(type[1]));
+    out.push_back(static_cast<std::uint8_t>(type[2]));
+    out.push_back(static_cast<std::uint8_t>(type[3]));
+    out.insert(out.end(), payload.begin(), payload.end());
+    const std::uint32_t crc = ComputeCrc32ForPngUVE(out.data() + typeOffset, 4U + payload.size());
+    AppendBigEndianUint32UVE(out, crc);
+}
+
+[[nodiscard]] bool WriteGlBottomUpRgbaCropToPngUVE(const std::filesystem::path& filePath,
+                                                   const std::vector<std::uint8_t>& glBottomUpRgba,
+                                                   const std::uint32_t fullWidth,
+                                                   const std::uint32_t fullHeight,
+                                                   const std::uint32_t cropX,
+                                                   const std::uint32_t cropYTopDown,
+                                                   const std::uint32_t cropWidth,
+                                                   const std::uint32_t cropHeight) {
+    if (cropWidth == 0U || cropHeight == 0U || cropX + cropWidth > fullWidth ||
+        cropYTopDown + cropHeight > fullHeight ||
+        glBottomUpRgba.size() < static_cast<std::size_t>(fullWidth) * fullHeight * 4U) {
+        return false;
+    }
+
+    std::vector<std::uint8_t> rawScanlines;
+    const std::size_t rowBytes = static_cast<std::size_t>(cropWidth) * 4U;
+    rawScanlines.reserve((rowBytes + 1U) * cropHeight);
+    for (std::uint32_t rowTop = 0U; rowTop < cropHeight; ++rowTop) {
+        const std::uint32_t srcTopY = cropYTopDown + rowTop;
+        const std::uint32_t srcGlY = fullHeight - 1U - srcTopY;
+        rawScanlines.push_back(0U); // filter type 0 (None)
+        const std::size_t srcOffset =
+            (static_cast<std::size_t>(srcGlY) * fullWidth + cropX) * 4U;
+        rawScanlines.insert(rawScanlines.end(),
+                            glBottomUpRgba.begin() + static_cast<std::ptrdiff_t>(srcOffset),
+                            glBottomUpRgba.begin() + static_cast<std::ptrdiff_t>(srcOffset + rowBytes));
+    }
+
+    std::vector<std::uint8_t> zlibStream;
+    zlibStream.push_back(0x78U);
+    zlibStream.push_back(0x01U);
+    std::size_t pos = 0U;
+    while (pos < rawScanlines.size()) {
+        const std::size_t blockLen = std::min<std::size_t>(65535U, rawScanlines.size() - pos);
+        const bool isFinal = (pos + blockLen) == rawScanlines.size();
+        zlibStream.push_back(isFinal ? 0x01U : 0x00U);
+        const auto len16 = static_cast<std::uint16_t>(blockLen);
+        const auto nlen16 = static_cast<std::uint16_t>(~len16);
+        zlibStream.push_back(static_cast<std::uint8_t>(len16 & 0xFFU));
+        zlibStream.push_back(static_cast<std::uint8_t>((len16 >> 8U) & 0xFFU));
+        zlibStream.push_back(static_cast<std::uint8_t>(nlen16 & 0xFFU));
+        zlibStream.push_back(static_cast<std::uint8_t>((nlen16 >> 8U) & 0xFFU));
+        zlibStream.insert(zlibStream.end(),
+                          rawScanlines.begin() + static_cast<std::ptrdiff_t>(pos),
+                          rawScanlines.begin() + static_cast<std::ptrdiff_t>(pos + blockLen));
+        pos += blockLen;
+    }
+    const std::uint32_t adler = ComputeAdler32ForPngUVE(rawScanlines.data(), rawScanlines.size());
+    AppendBigEndianUint32UVE(zlibStream, adler);
+
+    std::vector<std::uint8_t> pngBytes = {0x89U, 0x50U, 0x4EU, 0x47U, 0x0DU, 0x0AU, 0x1AU, 0x0AU};
+    std::vector<std::uint8_t> ihdr;
+    AppendBigEndianUint32UVE(ihdr, cropWidth);
+    AppendBigEndianUint32UVE(ihdr, cropHeight);
+    ihdr.push_back(8U); // bit depth
+    ihdr.push_back(6U); // color type RGBA
+    ihdr.push_back(0U); // compression
+    ihdr.push_back(0U); // filter
+    ihdr.push_back(0U); // interlace
+    AppendPngChunkUVE(pngBytes, "IHDR", ihdr);
+    AppendPngChunkUVE(pngBytes, "IDAT", zlibStream);
+    AppendPngChunkUVE(pngBytes, "IEND", {});
+
+    std::error_code ec;
+    std::filesystem::create_directories(filePath.parent_path(), ec);
+    std::ofstream out(filePath, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+        return false;
+    }
+    out.write(reinterpret_cast<const char*>(pngBytes.data()),
+              static_cast<std::streamsize>(pngBytes.size()));
+    return out.good();
+}
+
+[[nodiscard]] Asset::ParticleFloatInputUVE MakeConstFloatInputUVE(const float value) noexcept {
+    Asset::ParticleFloatInputUVE input;
+    input.kind = Asset::ParticleValueKindUVE::Constant;
+    input.constant = value;
+    return input;
+}
+
+[[nodiscard]] Asset::ParticleFloatInputUVE MakeRandomFloatInputUVE(const float minVal,
+                                                                   const float maxVal) noexcept {
+    Asset::ParticleFloatInputUVE input;
+    input.kind = Asset::ParticleValueKindUVE::RandomRange;
+    input.min = minVal;
+    input.max = maxVal;
+    return input;
+}
+
+[[nodiscard]] Asset::ParticleVectorInputUVE MakeConstVectorInputUVE(
+    const Math::Vector3UVE& value) noexcept {
+    Asset::ParticleVectorInputUVE input;
+    input.kind = Asset::ParticleValueKindUVE::Constant;
+    input.constant = value;
+    return input;
+}
+
+[[nodiscard]] Asset::ParticleVectorInputUVE MakeRandomVectorInputUVE(
+    const Math::Vector3UVE& minVal,
+    const Math::Vector3UVE& maxVal) noexcept {
+    Asset::ParticleVectorInputUVE input;
+    input.kind = Asset::ParticleValueKindUVE::RandomRange;
+    input.min = minVal;
+    input.max = maxVal;
+    return input;
+}
+
+[[nodiscard]] Asset::ParticleColorInputUVE MakeConstColorInputUVE(const Math::ColorUVE& color,
+                                                                  const float alpha = 1.0F) noexcept {
+    Asset::ParticleColorInputUVE input;
+    input.kind = Asset::ParticleValueKindUVE::Constant;
+    input.constant = color;
+    input.alpha = alpha;
+    return input;
+}
+
+[[nodiscard]] Asset::ParticleColorInputUVE MakeGradientColorInputUVE(
+    const Asset::ParticleGradientUVE& gradient) {
+    Asset::ParticleColorInputUVE input;
+    input.kind = Asset::ParticleValueKindUVE::Gradient;
+    input.gradient = gradient;
+    return input;
+}
+
+} // namespace
+
+TEST(EngineCoreUVETest, VfxRuntime_ParticleEmitterWithSystemAssetPathSpawnsInVfxWorldNotLegacyRuntime) {
+    const std::filesystem::path scratchDir = UVE::Tests::MakeTestCaseDirectoryUVE("engine_vfx_emitter_sync");
+    const std::filesystem::path sparksPath = scratchDir / "Sparks.uvfx";
+    const Asset::ParticleSystemAssetUVE sparksAsset =
+        VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Sparks);
+    ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(sparksAsset, sparksPath));
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.projectRootDirectoryUVE = scratchDir;
+    EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    EngineServicesUVE& services = engine.GetServicesUVE();
+    ASSERT_NE(services.TryGetVfxWorldUVE(), nullptr);
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE camTransform{};
+    camTransform.localPosition = Math::Vector3UVE{0.0F, 1.0F, 5.0F};
+    sceneGraph.AttachTransformUVE(entityManager, camera, camTransform);
+    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
+    engine.SetActiveCameraUVE(camera);
+
+    const Scene::EntityUVE emitterEntity = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE emitterTransform{};
+    emitterTransform.localPosition = Math::Vector3UVE{0.0F, 0.5F, 0.0F};
+    sceneGraph.AttachTransformUVE(entityManager, emitterEntity, emitterTransform);
+    Scene::ParticleEmitterComponentUVE emitterComp{};
+    emitterComp.systemAssetPath = "Sparks.uvfx";
+    emitterComp.seed = 42U;
+    emitterComp.autoPlay = true;
+    emitterComp.emitting = true;
+    entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(emitterEntity, emitterComp);
+
+    for (int frame = 0; frame < 6; ++frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        engine.TickFrameUVE();
+    }
+
+    EXPECT_EQ(services.GetParticleRuntimeUVE().GetInstanceCountUVE(), 0U);
+    EXPECT_EQ(engine.GetVfxWorldUVE().GetStatsUVE().activeInstanceCount, 1U);
+    EXPECT_GT(engine.GetVfxWorldUVE().GetStatsUVE().totalLiveParticles, 0U);
+
+    entityManager.DestroyEntityUVE(emitterEntity);
+    engine.TickFrameUVE();
+    EXPECT_EQ(engine.GetVfxWorldUVE().GetStatsUVE().activeInstanceCount, 0U);
+
+    engine.Shutdown();
+}
+
+TEST(EngineCoreUVETest, WindowedMode_VfxSpritesRenderAdditiveAlphaSoftAndTemplateLevelWithScreenshots) {
+    const std::filesystem::path scratchDir = UVE::Tests::MakeTestCaseDirectoryUVE("engine_vfx_windowed_v3a");
+    constexpr std::uint32_t kWinW = 320U;
+    constexpr std::uint32_t kWinH = 240U;
+
+    EngineConfigUVE config = MakeTestConfigUVE();
+    config.headlessUVE = false;
+    config.windowWidth = kWinW;
+    config.windowHeight = kWinH;
+    config.renderTargetWidth = kWinW;
+    config.renderTargetHeight = kWinH;
+    config.vsyncEnabledUVE = false;
+    config.windowGlVersionMajor = 4U;
+    config.windowGlVersionMinor = 5U;
+    config.projectRootDirectoryUVE = scratchDir;
+    config.backgroundColorUVE = {0.04F, 0.05F, 0.08F, 1.0F};
+    config.ambientColor = Math::Vector3UVE{0.35F, 0.38F, 0.45F};
+    config.shaderCompilationModeUVE = ShaderCompilationModeUVE::SynchronousOnDemandUVE;
+
+    EngineCoreUVE engine(config);
+    engine.Init();
+    if (!engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
+        GTEST_SKIP() << "No display available for windowed EngineCoreUVE - skipping (run under "
+                        "xvfb-run to exercise this test)";
+    }
+    ASSERT_TRUE(engine.Load());
+
+    EngineServicesUVE& services = engine.GetServicesUVE();
+    Scene::IEntityManagerUVE& entityManager = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sceneGraph = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE camera = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE camTransform{};
+    camTransform.localPosition = Math::Vector3UVE{0.0F, 1.1F, 4.5F};
+    sceneGraph.AttachTransformUVE(entityManager, camera, camTransform);
+    entityManager.AddComponentUVE<Scene::CameraComponentUVE>(camera);
+    engine.SetActiveCameraUVE(camera);
+
+    const Scene::EntityUVE sun = entityManager.CreateEntityUVE();
+    Scene::TransformComponentUVE sunTransform{};
+    Math::QuaternionUVE sunRot{};
+    static_cast<void>(Math::TryMakeEulerUVE(Math::Vector3UVE{-0.8F, -0.4F, 0.0F}, sunRot));
+    sunTransform.localRotation = sunRot;
+    sceneGraph.AttachTransformUVE(entityManager, sun, sunTransform);
+    Scene::LightComponentUVE sunLight{};
+    sunLight.type = Scene::LightTypeUVE::Directional;
+    sunLight.color = Math::ColorUVE{1.0F, 0.96F, 0.90F};
+    sunLight.intensity = 1.6F;
+    entityManager.AddComponentUVE<Scene::LightComponentUVE>(sun, sunLight);
+
+    const std::filesystem::path shotsDir = UVE::Tests::RepositoryRootUVE() / "Docs/Plans/vfx_shots";
+
+    // -------------------------------------------------------------------------
+    // 1. Additive sparks (`v3a_additive_sparks.png`):
+    //    Verify overlapping additive particles accumulate brightness above a single particle.
+    // -------------------------------------------------------------------------
+    {
+        Asset::ParticleSystemAssetUVE additiveSystem =
+            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Sparks);
+        ASSERT_FALSE(additiveSystem.emitters.empty());
+        Asset::ParticleEmitterAssetUVE& em = additiveSystem.emitters[0];
+        em.maxParticles = 600U;
+        em.emitterUpdate.clear();
+        Asset::ParticleModuleUVE burstMod;
+        burstMod.id = 1U;
+        burstMod.type = Asset::ParticleModuleTypeUVE::SpawnBurst;
+        burstMod.floats["Time"] = MakeConstFloatInputUVE(0.0F);
+        burstMod.ints["Count"] = 90;
+        burstMod.ints["Cycles"] = 1;
+        burstMod.floats["Interval"] = MakeConstFloatInputUVE(1.0F);
+        em.emitterUpdate.push_back(burstMod);
+
+        Asset::ParticleModuleUVE rateMod;
+        rateMod.id = 2U;
+        rateMod.type = Asset::ParticleModuleTypeUVE::SpawnRate;
+        rateMod.floats["Rate"] = MakeConstFloatInputUVE(160.0F);
+        em.emitterUpdate.push_back(rateMod);
+
+        for (Asset::ParticleModuleUVE& mod : em.particleSpawn) {
+            if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
+                mod.floats["Size"] = MakeConstFloatInputUVE(0.32F);
+                mod.vectors["Size"] =
+                    MakeConstVectorInputUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+            }
+            if (mod.type == Asset::ParticleModuleTypeUVE::VelocityInCone) {
+                mod.floats["Angle"] = MakeConstFloatInputUVE(35.0F);
+                mod.floats["Speed"] = MakeRandomFloatInputUVE(1.5F, 3.8F);
+            }
+        }
+        for (Asset::ParticleModuleUVE& mod : em.render) {
+            if (mod.type == Asset::ParticleModuleTypeUVE::SpriteRenderer) {
+                mod.ints["Facing"] = 0; // CameraPlane so billboards are large and crisp
+                mod.ints["Blend"] = 0;  // Additive
+                mod.floats["Emissive"] = MakeConstFloatInputUVE(2.0F);
+            }
+        }
+
+        const std::filesystem::path additivePath = scratchDir / "AdditiveSparks.uvfx";
+        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(additiveSystem, additivePath));
+
+        const Scene::EntityUVE sparkEmitter = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE sparkTransform{};
+        sparkTransform.localPosition = Math::Vector3UVE{0.0F, 0.85F, 0.0F};
+        sceneGraph.AttachTransformUVE(entityManager, sparkEmitter, sparkTransform);
+        Scene::ParticleEmitterComponentUVE sparkComp{};
+        sparkComp.systemAssetPath = "AdditiveSparks.uvfx";
+        sparkComp.seed = 101U;
+        sparkComp.autoPlay = true;
+        sparkComp.emitting = true;
+        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(sparkEmitter, sparkComp);
+
+        engine.TickFrameUVE();
+        engine.GetVfxWorldUVE().TickUVE(0.18F);
+
+        std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kWinW) * kWinH * 4U, 0U);
+        engine.SetPostRenderCallbackUVE([&] {
+            glFinish();
+            glReadBuffer(GL_BACK);
+            glReadPixels(0, 0, static_cast<GLsizei>(kWinW), static_cast<GLsizei>(kWinH),
+                         GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        });
+        engine.TickFrameUVE();
+        engine.SetPostRenderCallbackUVE({});
+
+        std::uint32_t maxR = 0U;
+        std::uint32_t brightPixelCount = 0U;
+        for (std::size_t idx = 0U; idx < rgba.size(); idx += 4U) {
+            maxR = std::max<std::uint32_t>(maxR, rgba[idx]);
+            if (rgba[idx] > 80U || rgba[idx + 1U] > 60U) {
+                ++brightPixelCount;
+            }
+        }
+        EXPECT_GT(maxR, 180U);
+        EXPECT_GT(brightPixelCount, 40U);
+        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPngUVE(
+            shotsDir / "v3a_additive_sparks.png", rgba, kWinW, kWinH, 40U, 20U, 240U, 200U));
+
+        entityManager.DestroyEntityUVE(sparkEmitter);
+        engine.TickFrameUVE();
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Alpha-blended sorted smoke (`v3a_alpha_smoke.png`):
+    //    Rising alpha-blended colored smoke puffs sorted back-to-front by camera depth.
+    // -------------------------------------------------------------------------
+    {
+        Asset::ParticleSystemAssetUVE layeredSmoke =
+            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Smoke);
+        ASSERT_FALSE(layeredSmoke.emitters.empty());
+        Asset::ParticleEmitterAssetUVE& smokeEm = layeredSmoke.emitters[0];
+        smokeEm.maxParticles = 400U;
+        smokeEm.emitterUpdate.clear();
+        {
+            Asset::ParticleModuleUVE burst;
+            burst.id = 1U;
+            burst.type = Asset::ParticleModuleTypeUVE::SpawnBurst;
+            burst.floats["Time"] = MakeConstFloatInputUVE(0.0F);
+            burst.ints["Count"] = 45;
+            burst.ints["Cycles"] = 1;
+            smokeEm.emitterUpdate.push_back(burst);
+
+            Asset::ParticleModuleUVE rate;
+            rate.id = 2U;
+            rate.type = Asset::ParticleModuleTypeUVE::SpawnRate;
+            rate.floats["Rate"] = MakeConstFloatInputUVE(60.0F);
+            smokeEm.emitterUpdate.push_back(rate);
+        }
+        for (Asset::ParticleModuleUVE& mod : smokeEm.particleSpawn) {
+            if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
+                mod.vectors["Size"] =
+                    MakeRandomVectorInputUVE(Math::Vector3UVE{0.65F, 0.65F, 0.65F},
+                                             Math::Vector3UVE{1.10F, 1.10F, 1.10F});
+            }
+            if (mod.type == Asset::ParticleModuleTypeUVE::InitialColor) {
+                mod.colors["Color"] =
+                    MakeConstColorInputUVE(Math::ColorUVE{0.75F, 0.82F, 0.92F}, 0.75F);
+            }
+        }
+        for (Asset::ParticleModuleUVE& mod : smokeEm.particleUpdate) {
+            if (mod.type == Asset::ParticleModuleTypeUVE::ColorOverLife) {
+                Asset::ParticleGradientUVE grad;
+                grad.stops = {
+                    Asset::ParticleGradientStopUVE{0.0F, Math::ColorUVE{0.95F, 0.55F, 0.20F}, 0.80F},
+                    Asset::ParticleGradientStopUVE{0.5F, Math::ColorUVE{0.55F, 0.68F, 0.88F}, 0.65F},
+                    Asset::ParticleGradientStopUVE{1.0F, Math::ColorUVE{0.25F, 0.32F, 0.45F}, 0.0F},
+                };
+                mod.colors["Color"] = MakeGradientColorInputUVE(grad);
+            }
+        }
+        for (Asset::ParticleModuleUVE& mod : smokeEm.render) {
+            if (mod.type == Asset::ParticleModuleTypeUVE::SpriteRenderer) {
+                mod.ints["Blend"] = 1; // AlphaBlend
+                mod.floats["Emissive"] = MakeConstFloatInputUVE(1.2F);
+            }
+        }
+
+        const std::filesystem::path smokePath = scratchDir / "AlphaSmoke.uvfx";
+        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(layeredSmoke, smokePath));
+
+        const Scene::EntityUVE smokeEntity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE smokeTransform{};
+        smokeTransform.localPosition = Math::Vector3UVE{0.0F, 0.4F, 0.0F};
+        sceneGraph.AttachTransformUVE(entityManager, smokeEntity, smokeTransform);
+        Scene::ParticleEmitterComponentUVE smokeComp{};
+        smokeComp.systemAssetPath = "AlphaSmoke.uvfx";
+        smokeComp.seed = 202U;
+        smokeComp.autoPlay = true;
+        smokeComp.emitting = true;
+        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(smokeEntity, smokeComp);
+
+        engine.TickFrameUVE();
+        engine.GetVfxWorldUVE().TickUVE(0.35F);
+
+        std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kWinW) * kWinH * 4U, 0U);
+        engine.SetPostRenderCallbackUVE([&] {
+            glFinish();
+            glReadBuffer(GL_BACK);
+            glReadPixels(0, 0, static_cast<GLsizei>(kWinW), static_cast<GLsizei>(kWinH),
+                         GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        });
+        engine.TickFrameUVE();
+        engine.SetPostRenderCallbackUVE({});
+
+        std::uint32_t smokeChangedPixels = 0U;
+        for (std::size_t idx = 0U; idx < rgba.size(); idx += 4U) {
+            if (rgba[idx] > 40U || rgba[idx + 1U] > 40U || rgba[idx + 2U] > 50U) {
+                ++smokeChangedPixels;
+            }
+        }
+        EXPECT_GT(smokeChangedPixels, 200U);
+        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPngUVE(
+            shotsDir / "v3a_alpha_smoke.png", rgba, kWinW, kWinH, 40U, 15U, 240U, 210U));
+
+        entityManager.DestroyEntityUVE(smokeEntity);
+        engine.TickFrameUVE();
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Soft particles meeting a floor plane (`v3a_soft_particles.png`):
+    //    Place a visible floor plane and soft particles intersecting the floor with SoftDistance > 0.
+    // -------------------------------------------------------------------------
+    {
+        const Scene::EntityUVE floorEntity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE floorTransform{};
+        floorTransform.localPosition = Math::Vector3UVE{0.0F, 0.45F, 0.0F};
+        floorTransform.localScale = Math::Vector3UVE{5.0F, 0.25F, 5.0F};
+        sceneGraph.AttachTransformUVE(entityManager, floorEntity, floorTransform);
+        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+            floorEntity,
+            Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube,
+                                             Math::Vector3UVE{0.22F, 0.28F, 0.36F}});
+
+        Asset::ParticleSystemAssetUVE softSystem =
+            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Smoke);
+        ASSERT_FALSE(softSystem.emitters.empty());
+        Asset::ParticleEmitterAssetUVE& softEm = softSystem.emitters[0];
+        softEm.emitterUpdate.clear();
+        {
+            Asset::ParticleModuleUVE burst;
+            burst.id = 1U;
+            burst.type = Asset::ParticleModuleTypeUVE::SpawnBurst;
+            burst.floats["Time"] = MakeConstFloatInputUVE(0.0F);
+            burst.ints["Count"] = 35;
+            burst.ints["Cycles"] = 1;
+            softEm.emitterUpdate.push_back(burst);
+        }
+        for (Asset::ParticleModuleUVE& mod : softEm.particleSpawn) {
+            if (mod.type == Asset::ParticleModuleTypeUVE::ShapeSphere) {
+                mod.floats["Radius"] = MakeConstFloatInputUVE(0.85F);
+            }
+            if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
+                mod.vectors["Size"] =
+                    MakeConstVectorInputUVE(Math::Vector3UVE{1.15F, 1.15F, 1.15F});
+            }
+            if (mod.type == Asset::ParticleModuleTypeUVE::InitialColor) {
+                mod.colors["Color"] =
+                    MakeConstColorInputUVE(Math::ColorUVE{0.35F, 0.85F, 0.95F}, 0.80F);
+            }
+        }
+        for (Asset::ParticleModuleUVE& mod : softEm.particleUpdate) {
+            if (mod.type == Asset::ParticleModuleTypeUVE::ColorOverLife) {
+                Asset::ParticleGradientUVE grad;
+                grad.stops = {
+                    Asset::ParticleGradientStopUVE{0.0F, Math::ColorUVE{0.35F, 0.90F, 1.0F}, 0.85F},
+                    Asset::ParticleGradientStopUVE{1.0F, Math::ColorUVE{0.20F, 0.65F, 0.95F}, 0.55F},
+                };
+                mod.colors["Color"] = MakeGradientColorInputUVE(grad);
+            }
+        }
+        for (Asset::ParticleModuleUVE& mod : softEm.render) {
+            if (mod.type == Asset::ParticleModuleTypeUVE::SpriteRenderer) {
+                mod.ints["Blend"] = 1; // AlphaBlend
+                mod.floats["SoftDistance"] = MakeConstFloatInputUVE(1.25F);
+                mod.floats["Emissive"] = MakeConstFloatInputUVE(1.3F);
+            }
+        }
+
+        const std::filesystem::path softPath = scratchDir / "SoftParticles.uvfx";
+        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(softSystem, softPath));
+
+        const Scene::EntityUVE softEmitter = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE softTransform{};
+        softTransform.localPosition = Math::Vector3UVE{0.0F, 0.65F, 0.3F};
+        sceneGraph.AttachTransformUVE(entityManager, softEmitter, softTransform);
+        Scene::ParticleEmitterComponentUVE softComp{};
+        softComp.systemAssetPath = "SoftParticles.uvfx";
+        softComp.seed = 303U;
+        softComp.autoPlay = true;
+        softComp.emitting = true;
+        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(softEmitter, softComp);
+
+        engine.TickFrameUVE();
+        engine.GetVfxWorldUVE().TickUVE(0.15F);
+
+        std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kWinW) * kWinH * 4U, 0U);
+        engine.SetPostRenderCallbackUVE([&] {
+            glFinish();
+            glReadBuffer(GL_BACK);
+            glReadPixels(0, 0, static_cast<GLsizei>(kWinW), static_cast<GLsizei>(kWinH),
+                         GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        });
+        engine.TickFrameUVE();
+        engine.SetPostRenderCallbackUVE({});
+
+        const Render::Renderer3DFrameDiagnosticsUVE diag =
+            services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+        EXPECT_TRUE(diag.vfxPassRecorded);
+        EXPECT_GT(diag.vfxInstancesDrawn, 0U);
+        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPngUVE(
+            shotsDir / "v3a_soft_particles.png", rgba, kWinW, kWinH, 30U, 20U, 260U, 200U));
+
+        entityManager.DestroyEntityUVE(softEmitter);
+        entityManager.DestroyEntityUVE(floorEntity);
+        engine.TickFrameUVE();
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. Level with Fountain and Sparks templates (`v3a_fountain_sparks_level.png`):
+    //    Write Fountain.uvfx and Sparks.uvfx to disk, place two ParticleEmitter3D entities
+    //    in front of the camera above a floor plane, simulate, and capture screenshot.
+    // -------------------------------------------------------------------------
+    {
+        Asset::ParticleSystemAssetUVE fountainAsset =
+            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Fountain);
+        for (Asset::ParticleEmitterAssetUVE& em : fountainAsset.emitters) {
+            for (Asset::ParticleModuleUVE& mod : em.particleSpawn) {
+                if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
+                    mod.floats["Size"] = MakeConstFloatInputUVE(0.24F);
+                    mod.vectors["Size"] =
+                        MakeConstVectorInputUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+                }
+            }
+        }
+        Asset::ParticleSystemAssetUVE sparksAsset =
+            VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Sparks);
+        for (Asset::ParticleEmitterAssetUVE& em : sparksAsset.emitters) {
+            for (Asset::ParticleModuleUVE& mod : em.particleSpawn) {
+                if (mod.type == Asset::ParticleModuleTypeUVE::InitialSize) {
+                    mod.floats["Size"] = MakeConstFloatInputUVE(0.22F);
+                    mod.vectors["Size"] =
+                        MakeConstVectorInputUVE(Math::Vector3UVE{1.0F, 1.0F, 1.0F});
+                }
+            }
+            for (Asset::ParticleModuleUVE& mod : em.render) {
+                if (mod.type == Asset::ParticleModuleTypeUVE::SpriteRenderer) {
+                    mod.ints["Facing"] = 0;
+                    mod.floats["Emissive"] = MakeConstFloatInputUVE(2.2F);
+                }
+            }
+        }
+
+        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(fountainAsset, scratchDir / "Fountain.uvfx"));
+        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(sparksAsset, scratchDir / "Sparks.uvfx"));
+
+        const Scene::EntityUVE floorEntity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE floorTransform{};
+        floorTransform.localPosition = Math::Vector3UVE{0.0F, -0.35F, 0.0F};
+        floorTransform.localScale = Math::Vector3UVE{6.0F, 0.2F, 4.0F};
+        sceneGraph.AttachTransformUVE(entityManager, floorEntity, floorTransform);
+        entityManager.AddComponentUVE<Scene::PrimitiveMeshComponentUVE>(
+            floorEntity,
+            Scene::PrimitiveMeshComponentUVE{Scene::PrimitiveMeshKindUVE::Cube,
+                                             Math::Vector3UVE{0.18F, 0.22F, 0.28F}});
+
+        const Scene::EntityUVE fountainEntity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE fountainTransform{};
+        fountainTransform.localPosition = Math::Vector3UVE{-1.05F, 0.0F, 0.0F};
+        sceneGraph.AttachTransformUVE(entityManager, fountainEntity, fountainTransform);
+        Scene::ParticleEmitterComponentUVE fountainComp{};
+        fountainComp.systemAssetPath = "Fountain.uvfx";
+        fountainComp.seed = 11U;
+        fountainComp.autoPlay = true;
+        fountainComp.emitting = true;
+        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(fountainEntity, fountainComp);
+
+        const Scene::EntityUVE sparksEntity = entityManager.CreateEntityUVE();
+        Scene::TransformComponentUVE sparksTransform{};
+        sparksTransform.localPosition = Math::Vector3UVE{1.05F, 0.25F, 0.0F};
+        sceneGraph.AttachTransformUVE(entityManager, sparksEntity, sparksTransform);
+        Scene::ParticleEmitterComponentUVE sparksComp{};
+        sparksComp.systemAssetPath = "Sparks.uvfx";
+        sparksComp.seed = 22U;
+        sparksComp.autoPlay = true;
+        sparksComp.emitting = true;
+        entityManager.AddComponentUVE<Scene::ParticleEmitterComponentUVE>(sparksEntity, sparksComp);
+
+        engine.TickFrameUVE();
+        for (int step = 0; step < 8; ++step) {
+            engine.GetVfxWorldUVE().TickUVE(0.05F);
+        }
+
+        std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kWinW) * kWinH * 4U, 0U);
+        engine.SetPostRenderCallbackUVE([&] {
+            glFinish();
+            glReadBuffer(GL_BACK);
+            glReadPixels(0, 0, static_cast<GLsizei>(kWinW), static_cast<GLsizei>(kWinH),
+                         GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        });
+        engine.TickFrameUVE();
+        engine.SetPostRenderCallbackUVE({});
+
+        const Render::Renderer3DFrameDiagnosticsUVE diag =
+            services.GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
+        EXPECT_TRUE(diag.vfxPassRecorded);
+        EXPECT_GE(diag.vfxBatchesExtracted, 2U);
+        EXPECT_GT(diag.vfxInstancesDrawn, 20U);
+
+        // Verify both left half (Fountain, blue-cyan) and right half (Sparks, warm orange) rendered particles
+        std::uint32_t leftBluePixels = 0U;
+        std::uint32_t rightWarmPixels = 0U;
+        for (std::uint32_t y = 20U; y < kWinH - 20U; ++y) {
+            for (std::uint32_t x = 10U; x < kWinW / 2U; ++x) {
+                const std::size_t idx = (static_cast<std::size_t>(y) * kWinW + x) * 4U;
+                if (rgba[idx + 2U] > 90U && rgba[idx + 2U] > rgba[idx]) {
+                    ++leftBluePixels;
+                }
+            }
+            for (std::uint32_t x = kWinW / 2U; x < kWinW - 10U; ++x) {
+                const std::size_t idx = (static_cast<std::size_t>(y) * kWinW + x) * 4U;
+                if (rgba[idx] > 90U && rgba[idx] > rgba[idx + 2U]) {
+                    ++rightWarmPixels;
+                }
+            }
+        }
+        EXPECT_GT(leftBluePixels, 15U);
+        EXPECT_GT(rightWarmPixels, 15U);
+        EXPECT_TRUE(WriteGlBottomUpRgbaCropToPngUVE(
+            shotsDir / "v3a_fountain_sparks_level.png", rgba, kWinW, kWinH, 16U, 16U, 288U, 208U));
+    }
 
     engine.Shutdown();
 }

@@ -90,6 +90,8 @@
 #include "i_entity_manager.h"
 #include "skeleton_3d.h"
 #include "particle_runtime.h"
+#include "vfx_draw_list.h"
+#include "vfx_world.h"
 #include "i_prefab_system.h"
 #include "i_scene_graph.h"
 #include "i_scene_serializer.h"
@@ -358,6 +360,8 @@ public:
     [[nodiscard]] const EngineConfigUVE& GetConfigUVE() const noexcept { return m_config; }
     [[nodiscard]] const FrameStatsUVE& GetFrameStatsUVE() const noexcept;
     [[nodiscard]] Scene::ParticleRuntimeSnapshotUVE GetParticleRuntimeSnapshotUVE() const;
+    [[nodiscard]] VFX::VfxWorldUVE& GetVfxWorldUVE() noexcept;
+    [[nodiscard]] const VFX::VfxWorldUVE& GetVfxWorldUVE() const noexcept;
 
     /// Requests normal fixed simulation or a held simulation state. Frame maintenance and rendering
     /// continue in both modes. Returns false outside EngineStateUVE::Running.
@@ -554,6 +558,10 @@ private:
     /// runtime, auto-emits from each ticking emitter's world pose, simulates one frame under
     /// configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
+    /// Reconciles ParticleEmitterComponentUVE entities that reference a `.uvfx` particle system
+    /// asset with VfxWorldUVE, updates attached owner poses and velocities, polls `.uvfx` hot
+    /// reload when enabled, and steps VfxWorldUVE simulation when not paused.
+    void SyncVfxRuntimeUVE();
     /// Ages every decal by the step's simulated seconds and queues one Decal3DExpiredEventUVE per
     /// decal that runs out. Lifetime is simulation time, so a paused game freezes decals and the
     /// same scene expires the same decals on the same step.
@@ -948,6 +956,17 @@ private:
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
     /// Unused fraction of a particle per emitter, so a rate below the frame rate still emits.
     std::unordered_map<Scene::EntityUVE, float> m_particleEmitRemainder;
+    std::unique_ptr<VFX::VfxWorldUVE> m_vfxWorld;
+    Render::VfxDrawListUVE m_vfxDrawList;
+    struct VfxEntityInstanceStateUVE final {
+        VFX::VfxHandleUVE handle{};
+        std::string systemAssetPath;
+        std::uint32_t seed = 0U;
+        Math::Vector3UVE lastWorldPosition{};
+        bool hasLastWorldPosition = false;
+        bool wasEmitting = false;
+    };
+    std::unordered_map<Scene::EntityUVE, VfxEntityInstanceStateUVE> m_vfxEntityInstances;
 
     /// Baked navmeshes by region entity, and one steering state per agent entity. Owned here so the
     /// caches live exactly as long as the session that built them; a scene teardown clears them

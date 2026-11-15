@@ -1296,18 +1296,33 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
                   firstIndex, rangeEnd, indexCapacity);
         return;
     }
-    if (indexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE indexCount exceeds the GLsizei range");
+    if (indexCount == 0U || instanceCount == 0U) {
         return;
     }
-    if (instanceCount > 1) {
-        UVE_WARNING("GlCommandBufferUVE: DrawIndexedUVE instanceCount > 1 is not yet supported - drawing once");
+    if (indexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
+        instanceCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
+        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE count exceeds the GLsizei range");
+        return;
     }
     // GL takes a byte offset here, unlike every other API in this engine which speaks indices.
     const auto indexOffsetBytes =
         static_cast<std::uintptr_t>(firstIndex) * static_cast<std::uintptr_t>(sizeof(std::uint32_t));
-    glDrawElements(ToGlDrawModeUVE(pipelineRecord->topology), static_cast<GLsizei>(indexCount),
-                     GL_UNSIGNED_INT, reinterpret_cast<const void*>(indexOffsetBytes));
+    const GLenum drawMode = ToGlDrawModeUVE(pipelineRecord->topology);
+    if (instanceCount > 1U) {
+        if (m_state->gl.glDrawElementsInstanced != nullptr) {
+            m_state->gl.glDrawElementsInstanced(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
+                                                reinterpret_cast<const void*>(indexOffsetBytes),
+                                                static_cast<GLsizei>(instanceCount));
+        } else {
+            UVE_WARNING("GlCommandBufferUVE: DrawIndexedUVE instanceCount > 1 requires "
+                        "glDrawElementsInstanced - drawing once");
+            glDrawElements(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
+                           reinterpret_cast<const void*>(indexOffsetBytes));
+        }
+    } else {
+        glDrawElements(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
+                       reinterpret_cast<const void*>(indexOffsetBytes));
+    }
     UVE_GL_CHECK_ERROR_UVE("DrawIndexedUVE");
 }
 
@@ -1381,25 +1396,37 @@ void GlCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instan
             UVE_ERROR("GlCommandBufferUVE: DrawUVE has no valid bound vertex buffer");
             return;
         }
-        if (m_currentVertexStride == 0U ||
+        if (m_currentVertexStride > 0U &&
             static_cast<std::uint64_t>(vertexCount) >
                 vertexBufferIt->second.sizeBytes / static_cast<std::uint64_t>(m_currentVertexStride)) {
             UVE_ERROR("GlCommandBufferUVE: DrawUVE vertexCount exceeds the bound vertex buffer");
             return;
         }
     }
-    if (vertexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
-        UVE_ERROR("GlCommandBufferUVE: DrawUVE vertexCount exceeds the GLsizei range");
+    if (vertexCount == 0U || instanceCount == 0U) {
         return;
     }
-    if (instanceCount > 1) {
-        UVE_WARNING("GlCommandBufferUVE: DrawUVE instanceCount > 1 is not yet supported - drawing once");
+    if (vertexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
+        instanceCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
+        UVE_ERROR("GlCommandBufferUVE: DrawUVE count exceeds the GLsizei range");
+        return;
     }
     const auto* const drawPipelineRecord = FindCurrentPipelineUVE();
     const GLenum drawMode = drawPipelineRecord != nullptr
                                 ? ToGlDrawModeUVE(drawPipelineRecord->topology)
                                 : GL_TRIANGLES;
-    glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
+    if (instanceCount > 1U) {
+        if (m_state->gl.glDrawArraysInstanced != nullptr) {
+            m_state->gl.glDrawArraysInstanced(drawMode, 0, static_cast<GLsizei>(vertexCount),
+                                              static_cast<GLsizei>(instanceCount));
+        } else {
+            UVE_WARNING("GlCommandBufferUVE: DrawUVE instanceCount > 1 requires glDrawArraysInstanced "
+                        "- drawing once");
+            glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
+        }
+    } else {
+        glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
+    }
     UVE_GL_CHECK_ERROR_UVE("DrawUVE");
 }
 

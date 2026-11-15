@@ -17,6 +17,7 @@
 #include "world_environment_3d.h"
 #include "particle_runtime.h"
 #include "ui_runtime.h"
+#include "vfx_draw_list.h"
 
 namespace UVE::Render {
 
@@ -277,6 +278,14 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t shadowAtlasBatchesRecorded = 0U;
     std::size_t shadowAtlasBatchedItems = 0U;
     std::size_t shadowAtlasInstancedDrawCallsRecorded = 0U;
+
+    /// VFX / Particle Graph sprite pipeline diagnostics for this frame.
+    std::size_t vfxBatchesExtracted = 0U;
+    std::size_t vfxInstancesExtracted = 0U;
+    std::size_t vfxInstancesDrawn = 0U;
+    std::size_t vfxInstancesTruncated = 0U;
+    std::size_t vfxDrawCallsRecorded = 0U;
+    bool vfxPassRecorded = false;
 };
 
 /// IRenderer3DUVE is the engine's final per-frame render orchestrator (the spec's `Renderer3DUVE`,
@@ -455,6 +464,13 @@ public:
     /// is a no-op so non-Renderer3D test doubles need not own UI-overlay state.
     virtual void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept {
         static_cast<void>(uiRuntime);
+    }
+
+    /// Points the renderer at the frame's extracted VFX sprite draw list (`VfxDrawListUVE`),
+    /// drawn in `MainColor` (opaque cutout batches) and `VfxParticles` (translucent batches).
+    /// Pass `nullptr` (the default) to draw no VFX sprites this frame.
+    virtual void SetVfxDrawListUVE(const VfxDrawListUVE* vfxDrawList) noexcept {
+        static_cast<void>(vfxDrawList);
     }
 
     /// Returns the last frame's copied renderer evidence snapshot. The snapshot intentionally does

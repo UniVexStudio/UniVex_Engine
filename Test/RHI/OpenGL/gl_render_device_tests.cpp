@@ -4979,4 +4979,109 @@ TEST_F(GlRenderDeviceUVETest, FoundationQueriesMeasureRealVisibilityAndGpuTimest
     renderDevice->DestroyShaderUVE(fs);
 }
 
+TEST_F(GlRenderDeviceUVETest, DrawInstancedAndDrawIndexedInstanced_RenderEachInstanceViaGlInstanceId) {
+    constexpr const char* kInstancedVs =
+        "#version 330 core\n"
+        "layout(location = 0) in vec2 aPosition;\n"
+        "flat out int vInstanceId;\n"
+        "void main() {\n"
+        "    vInstanceId = gl_InstanceID;\n"
+        "    float offsetX = (gl_InstanceID == 0) ? -0.5 : 0.5;\n"
+        "    gl_Position = vec4(aPosition * 0.4 + vec2(offsetX, 0.0), 0.0, 1.0);\n"
+        "}\n";
+    constexpr const char* kInstancedFs =
+        "#version 330 core\n"
+        "flat in int vInstanceId;\n"
+        "out vec4 FragColor;\n"
+        "void main() {\n"
+        "    FragColor = (vInstanceId == 0) ? vec4(0.0, 1.0, 0.0, 1.0) : vec4(0.0, 0.0, 1.0, 1.0);\n"
+        "}\n";
+
+    const ShaderHandleUVE vs = renderDevice->CreateShaderUVE({ShaderStageUVE::Vertex, kInstancedVs});
+    const ShaderHandleUVE fs = renderDevice->CreateShaderUVE({ShaderStageUVE::Fragment, kInstancedFs});
+    ASSERT_NE(vs, kInvalidShaderHandleUVE);
+    ASSERT_NE(fs, kInvalidShaderHandleUVE);
+
+    PipelineDescUVE pipeDesc;
+    pipeDesc.vertexShader = vs;
+    pipeDesc.fragmentShader = fs;
+    pipeDesc.vertexLayout = {{"POSITION", VertexAttributeFormatUVE::Float2, 0}};
+    pipeDesc.vertexStride = 2U * sizeof(float);
+    pipeDesc.depthTestEnabled = false;
+    pipeDesc.depthWriteEnabled = false;
+    const PipelineHandleUVE pipeline = renderDevice->CreatePipelineUVE(pipeDesc);
+    ASSERT_NE(pipeline, kInvalidPipelineHandleUVE);
+
+    const std::array<float, 8> quadVerts{-1.0F, -1.0F, 1.0F, -1.0F, 1.0F, 1.0F, -1.0F, 1.0F};
+    const std::array<std::uint32_t, 6> quadIndices{0U, 1U, 2U, 0U, 2U, 3U};
+    const std::array<float, 12> triVerts{-1.0F, -1.0F, 1.0F, -1.0F, 1.0F, 1.0F,
+                                         -1.0F, -1.0F, 1.0F, 1.0F, -1.0F, 1.0F};
+
+    const BufferHandleUVE indexedVb = renderDevice->CreateBufferUVE(
+        {sizeof(quadVerts), BufferUsageUVE::Vertex}, std::as_bytes(std::span(quadVerts)));
+    const BufferHandleUVE ib = renderDevice->CreateBufferUVE(
+        {sizeof(quadIndices), BufferUsageUVE::Index}, std::as_bytes(std::span(quadIndices)));
+    const BufferHandleUVE nonIndexedVb = renderDevice->CreateBufferUVE(
+        {sizeof(triVerts), BufferUsageUVE::Vertex}, std::as_bytes(std::span(triVerts)));
+
+    TextureDescUVE colorDesc{16U, 8U, TextureFormatUVE::RGBA8Unorm};
+    colorDesc.usage = TextureUsageUVE::RenderTarget | TextureUsageUVE::Sampled;
+    const TextureHandleUVE target = renderDevice->CreateTextureUVE(colorDesc);
+    ASSERT_NE(target, kInvalidTextureHandleUVE);
+
+    // Verify DrawIndexedUVE with instanceCount = 2.
+    {
+        auto cmd = renderDevice->CreateCommandBufferUVE();
+        RenderPassDescUVE pass;
+        pass.colorAttachment = target;
+        pass.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        cmd->BeginRenderPassUVE(pass);
+        cmd->BindPipelineUVE(pipeline);
+        cmd->BindVertexBufferUVE(indexedVb);
+        cmd->BindIndexBufferUVE(ib);
+        cmd->DrawIndexedUVE(6U, 2U, 0U);
+        std::array<std::uint8_t, 4> leftPixel{};
+        std::array<std::uint8_t, 4> rightPixel{};
+        glReadPixels(4, 4, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, leftPixel.data());
+        glReadPixels(12, 4, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rightPixel.data());
+        EXPECT_GT(leftPixel[1], 200U);
+        EXPECT_LT(leftPixel[2], 20U);
+        EXPECT_GT(rightPixel[2], 200U);
+        EXPECT_LT(rightPixel[1], 20U);
+        cmd->EndRenderPassUVE();
+        renderDevice->SubmitUVE(std::move(cmd));
+    }
+
+    // Verify DrawUVE with instanceCount = 2.
+    {
+        auto cmd = renderDevice->CreateCommandBufferUVE();
+        RenderPassDescUVE pass;
+        pass.colorAttachment = target;
+        pass.clearColor = {0.0F, 0.0F, 0.0F, 1.0F};
+        cmd->BeginRenderPassUVE(pass);
+        cmd->BindPipelineUVE(pipeline);
+        cmd->BindVertexBufferUVE(nonIndexedVb);
+        cmd->DrawUVE(6U, 2U);
+        std::array<std::uint8_t, 4> leftPixel{};
+        std::array<std::uint8_t, 4> rightPixel{};
+        glReadPixels(4, 4, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, leftPixel.data());
+        glReadPixels(12, 4, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rightPixel.data());
+        EXPECT_GT(leftPixel[1], 200U);
+        EXPECT_LT(leftPixel[2], 20U);
+        EXPECT_GT(rightPixel[2], 200U);
+        EXPECT_LT(rightPixel[1], 20U);
+        cmd->EndRenderPassUVE();
+        renderDevice->SubmitUVE(std::move(cmd));
+    }
+
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
+    renderDevice->DestroyTextureUVE(target);
+    renderDevice->DestroyBufferUVE(nonIndexedVb);
+    renderDevice->DestroyBufferUVE(ib);
+    renderDevice->DestroyBufferUVE(indexedVb);
+    renderDevice->DestroyPipelineUVE(pipeline);
+    renderDevice->DestroyShaderUVE(vs);
+    renderDevice->DestroyShaderUVE(fs);
+}
+
 } // namespace UVE::Render::Tests

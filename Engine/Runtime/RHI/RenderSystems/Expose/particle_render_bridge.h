@@ -8,6 +8,8 @@
 
 #include "vector3.h"
 #include "particle_runtime.h"
+#include "vfx_draw_list.h"
+#include "vfx_world.h"
 
 namespace UVE::Render {
 
@@ -44,6 +46,17 @@ public:
     [[nodiscard]] static ParticleRenderSnapshotUVE ExtractUVE(
         const Scene::ParticleRuntimeUVE& runtime,
         std::size_t maximumItems = kMaximumParticleRenderItemsUVE);
+
+    /// Extracts all active VFX sprite batches from `world` into `outDrawList`, transforming local-space
+    /// emitters by their owner transform, computing signed view-space depth along `cameraForward`
+    /// (or distance to `cameraPosition` when `cameraForward` is zero), and capping total extracted
+    /// sprite instances at `maxInstances`.
+    static void ExtractVfxUVE(
+        const VFX::VfxWorldUVE& world,
+        VfxDrawListUVE& outDrawList,
+        const Math::Vector3UVE& cameraPosition = {},
+        const Math::Vector3UVE& cameraForward = {0.0F, 0.0F, -1.0F},
+        std::size_t maxInstances = kMaximumVfxSpriteInstancesPerFrameUVE);
 };
 
 } // namespace UVE::Render

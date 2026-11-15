@@ -226,6 +226,7 @@
 #include "montage_library_asset.h"
 #include "collider_component.h"
 #include "particle_emitter_component.h"
+#include "particle_render_bridge.h"
 #include "rigid_3d_component.h"
 #include "solid_body_component.h"
 #include "script_component.h"
@@ -1028,6 +1029,10 @@ void EngineCoreUVE::Init() {
     // ParticleRuntime fifteenth: owns only bounded authored-emitter runtime state; ECS remains
     // authoritative and EngineCore reconciles it before simulation/render extraction.
     m_particleRuntime = std::make_unique<Scene::ParticleRuntimeUVE>();
+    m_vfxWorld = std::make_unique<VFX::VfxWorldUVE>();
+    if (!m_config.projectRootDirectoryUVE.empty()) {
+        m_vfxWorld->SetProjectRootUVE(m_config.projectRootDirectoryUVE);
+    }
 
     // NavigationRuntime: owns the baked navmesh per region entity and one steering state per agent
     // entity. Nothing else in the engine keeps a navmesh, so a rebuild is this object's business.
@@ -1197,6 +1202,7 @@ void EngineCoreUVE::Init() {
                         *m_audioDevice, *m_audioSystem,
                         *m_audioSourceSystem, *m_saveGameSystem, *m_checkpointManager,
                         *m_windowManager);
+    m_services->SetVfxWorldUVE(m_vfxWorld.get());
 
     TransitionStateUVE(EngineStateUVE::Running);
     UVE_INFO("EngineCoreUVE: initialized");
@@ -1245,6 +1251,9 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
     m_entityManager->ForEachUVE<Scene::ParticleEmitterComponentUVE>(
         [this, &authoredEmitters, simulationPaused](const Scene::EntityUVE entity,
                                                     const Scene::ParticleEmitterComponentUVE& component) {
+            if (!component.systemAssetPath.empty()) {
+                return;
+            }
             authoredEmitters.push_back(entity);
             const Scene::ParticleRuntimeSnapshotUVE currentSnapshot = m_particleRuntime->GetSnapshotUVE();
             bool budgetMatches = false;
@@ -1337,6 +1346,127 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
                                                    component.lifetimeSeconds}));
         }
         static_cast<void>(m_particleRuntime->SimulateDetailedUVE(deltaSeconds, m_config.gravity, m_threadPool.get()));
+    }
+}
+
+void EngineCoreUVE::SyncVfxRuntimeUVE() {
+    if (m_vfxWorld == nullptr) {
+        return;
+    }
+
+    if (!m_config.projectRootDirectoryUVE.empty() &&
+        m_vfxWorld->GetProjectRootUVE() != m_config.projectRootDirectoryUVE) {
+        m_vfxWorld->SetProjectRootUVE(m_config.projectRootDirectoryUVE);
+    }
+
+    const bool simulationPaused = m_simulationExecutionMode == SimulationExecutionModeUVE::Paused;
+    const float rawDeltaSeconds = m_timer != nullptr ? static_cast<float>(m_timer->GetDeltaTimeUVE()) : 0.0F;
+    const float scaledDeltaSeconds =
+        simulationPaused ? 0.0F : std::max(0.0F, rawDeltaSeconds * m_simulationSpeedScale);
+
+    std::unordered_set<Scene::EntityUVE> activeVfxEntities;
+    m_entityManager->ForEachUVE<Scene::ParticleEmitterComponentUVE>(
+        [this, &activeVfxEntities, scaledDeltaSeconds](const Scene::EntityUVE entity,
+                                                       const Scene::ParticleEmitterComponentUVE& component) {
+            if (component.systemAssetPath.empty() || !Scene::IsParticleEmitterComponentValidUVE(component)) {
+                return;
+            }
+            activeVfxEntities.insert(entity);
+
+            VfxEntityInstanceStateUVE& state = m_vfxEntityInstances[entity];
+            VFX::VfxOwnerUVE owner{};
+            owner.qualityLevel = m_vfxWorld->GetQualityLevelUVE();
+            if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                const Scene::WorldTransformComponentUVE& world =
+                    m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+                if (!world.dirty && Math::IsFiniteUVE(world.worldPosition)) {
+                    owner.position = world.worldPosition;
+                    Math::QuaternionUVE rot = world.worldRotation;
+                    if (!Math::TryNormalizeUVE(rot, rot)) {
+                        rot = Math::QuaternionUVE{};
+                    }
+                    owner.rotation = rot;
+                    if (state.hasLastWorldPosition && scaledDeltaSeconds > 1e-6F) {
+                        owner.velocity =
+                            (world.worldPosition - state.lastWorldPosition) * (1.0F / scaledDeltaSeconds);
+                    }
+                    state.lastWorldPosition = world.worldPosition;
+                    state.hasLastWorldPosition = true;
+                }
+            }
+
+            const bool assetOrSeedChanged =
+                state.systemAssetPath != component.systemAssetPath || state.seed != component.seed;
+            if (assetOrSeedChanged && state.handle.IsValidUVE()) {
+                static_cast<void>(m_vfxWorld->KillUVE(state.handle));
+                state.handle = VFX::kInvalidVfxHandleUVE;
+                state.wasEmitting = false;
+            }
+            state.systemAssetPath = component.systemAssetPath;
+            state.seed = component.seed;
+
+            const bool shouldEmit = component.emitting && component.autoPlay;
+            const std::uint64_t attachKey =
+                (static_cast<std::uint64_t>(entity.generation) << 32ULL) |
+                static_cast<std::uint64_t>(entity.index);
+
+            if (shouldEmit) {
+                if (!state.handle.IsValidUVE() || !m_vfxWorld->IsAliveUVE(state.handle) || !state.wasEmitting) {
+                    if (state.handle.IsValidUVE() && m_vfxWorld->IsAliveUVE(state.handle)) {
+                        static_cast<void>(m_vfxWorld->KillUVE(state.handle));
+                    }
+                    state.handle =
+                        m_vfxWorld->SpawnUVE(component.systemAssetPath, owner, attachKey, component.seed);
+                } else {
+                    static_cast<void>(m_vfxWorld->SetOwnerUVE(state.handle, owner));
+                }
+                state.wasEmitting = true;
+            } else {
+                if (state.handle.IsValidUVE() && m_vfxWorld->IsAliveUVE(state.handle)) {
+                    if (state.wasEmitting) {
+                        static_cast<void>(m_vfxWorld->StopUVE(state.handle));
+                    }
+                    if (m_vfxWorld->IsAliveUVE(state.handle)) {
+                        static_cast<void>(m_vfxWorld->SetOwnerUVE(state.handle, owner));
+                    }
+                }
+                state.wasEmitting = false;
+            }
+        });
+
+    for (auto it = m_vfxEntityInstances.begin(); it != m_vfxEntityInstances.end();) {
+        if (!activeVfxEntities.contains(it->first)) {
+            if (it->second.handle.IsValidUVE()) {
+                static_cast<void>(m_vfxWorld->KillUVE(it->second.handle));
+            }
+            it = m_vfxEntityInstances.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    if (m_config.hotReloadEnabledUVE) {
+        static_cast<void>(m_vfxWorld->PollHotReloadUVE());
+    }
+
+    if (!simulationPaused && scaledDeltaSeconds > 0.0F) {
+        VFX::VfxFrameViewUVE frameView{};
+        if (m_activeCamera != Scene::kInvalidEntityUVE &&
+            m_entityManager->IsAliveUVE(m_activeCamera) &&
+            m_entityManager->HasComponentUVE<Scene::CameraComponentUVE>(m_activeCamera) &&
+            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+            const Scene::CameraComponentUVE& camComp =
+                m_entityManager->GetComponentUVE<Scene::CameraComponentUVE>(m_activeCamera);
+            const Scene::WorldTransformComponentUVE& camWorld =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera);
+            if (!camWorld.dirty && Math::IsFiniteUVE(camWorld.worldPosition)) {
+                frameView.hasCamera = true;
+                frameView.cameraPosition = camWorld.worldPosition;
+                frameView.frustum = Math::FrustumUVE::FromViewProjectionUVE(
+                    Scene::Camera3DUVE::BuildViewProjectionMatrixUVE(camComp, camWorld));
+            }
+        }
+        m_vfxWorld->TickUVE(scaledDeltaSeconds, frameView);
     }
 }
 
@@ -4595,6 +4725,7 @@ void EngineCoreUVE::Update() {
     // and it has been computed every frame since the timer was written - only ever logged.
     m_renderer3D->SetPhysicsInterpolationAlphaUVE(static_cast<float>(fixedStep.alpha));
     SyncParticleRuntimeUVE();
+    SyncVfxRuntimeUVE();
     SyncUIRuntimeUVE();
     // Decals age on the SIMULATED clock - the fixed step times the steps that actually ran - so a
     // frame that ran no step does not shorten a decal's life, and a paused simulation freezes it.
@@ -4754,6 +4885,25 @@ void EngineCoreUVE::Render() {
 
     m_renderer3D->SetUIRuntimeUVE(&m_uiRuntime);
     if (m_activeCamera != Scene::kInvalidEntityUVE) {
+        if (m_vfxWorld != nullptr) {
+            Math::Vector3UVE cameraPos{};
+            Math::Vector3UVE cameraForward{0.0F, 0.0F, -1.0F};
+            if (m_entityManager->IsAliveUVE(m_activeCamera) &&
+                m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+                const Scene::WorldTransformComponentUVE& camWorld =
+                    m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera);
+                cameraPos = camWorld.worldPosition;
+                Math::QuaternionUVE rot = camWorld.worldRotation;
+                if (Math::TryNormalizeUVE(rot, rot)) {
+                    cameraForward = Math::RotateVectorUVE(rot, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+                }
+            }
+            Render::ParticleRenderBridgeUVE::ExtractVfxUVE(*m_vfxWorld, m_vfxDrawList, cameraPos, cameraForward);
+            m_renderer3D->SetVfxDrawListUVE(&m_vfxDrawList);
+        } else {
+            m_vfxDrawList.ClearUVE();
+            m_renderer3D->SetVfxDrawListUVE(nullptr);
+        }
         const bool hasParticles = m_particleRuntime != nullptr && m_particleRuntime->GetInstanceCountUVE() > 0U;
         std::optional<Render::ViewportRectUVE> contentRegion = m_editorViewportRegionUVE;
         if (!contentRegion.has_value() && m_windowedRenderingActiveUVE &&
@@ -4976,6 +5126,8 @@ void EngineCoreUVE::Shutdown() {
     m_projectSettingsSubscriptions.clear();
     m_uvScriptFailedSources.clear();
     m_uvScripts.clear(); // hosts point into the entity manager, so they go first
+    m_vfxEntityInstances.clear();
+    m_vfxDrawList.ClearUVE();
     m_services.reset();
     m_checkpointManager.reset();
     m_saveGameSystem.reset();
@@ -4989,6 +5141,9 @@ void EngineCoreUVE::Shutdown() {
     m_mobileInputSystem.reset();
     m_gamepadInputSystem.reset();
     m_navigationRuntime.reset();
+    m_vfxWorld.reset();
+    m_particleRuntime.reset();
+    m_particleEmitRemainder.clear();
     m_raycastSystem.reset();
     m_physicsQuerySystem.reset();
     m_physicsSystem.reset();
@@ -5068,6 +5223,16 @@ const FrameStatsUVE& EngineCoreUVE::GetFrameStatsUVE() const noexcept {
 
 Scene::ParticleRuntimeSnapshotUVE EngineCoreUVE::GetParticleRuntimeSnapshotUVE() const {
     return m_particleRuntime != nullptr ? m_particleRuntime->GetSnapshotUVE() : Scene::ParticleRuntimeSnapshotUVE{};
+}
+
+VFX::VfxWorldUVE& EngineCoreUVE::GetVfxWorldUVE() noexcept {
+    UVE_ASSERT(m_vfxWorld != nullptr);
+    return *m_vfxWorld;
+}
+
+const VFX::VfxWorldUVE& EngineCoreUVE::GetVfxWorldUVE() const noexcept {
+    UVE_ASSERT(m_vfxWorld != nullptr);
+    return *m_vfxWorld;
 }
 
 bool EngineCoreUVE::SetSimulationExecutionModeUVE(const SimulationExecutionModeUVE mode) noexcept {

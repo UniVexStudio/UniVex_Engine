@@ -1681,7 +1681,10 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                        left.maxDistance == right.maxDistance && left.attenuationCurve == right.attenuationCurve &&
                        left.playOnAwake == right.playOnAwake;
             } else if constexpr (std::is_same_v<LeftType, Scene::ParticleEmitterComponentUVE>) {
-                return left.maxParticles == right.maxParticles;
+                return left.maxParticles == right.maxParticles && left.emitting == right.emitting &&
+                       left.emissionRate == right.emissionRate && left.lifetimeSeconds == right.lifetimeSeconds &&
+                       left.systemAssetPath == right.systemAssetPath && left.autoPlay == right.autoPlay &&
+                       left.seed == right.seed;
             } else if constexpr (std::is_same_v<LeftType, Scene::ScriptComponentUVE>) {
                 return left.scriptAssetPath == right.scriptAssetPath && left.exportValues == right.exportValues;
             } else if constexpr (std::is_same_v<LeftType, Scene::AnimationSequencerComponentUVE>) {

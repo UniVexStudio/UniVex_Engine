@@ -971,7 +971,16 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                             0.0, 1000000.0, 0.1),
                                WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::lifetimeSeconds>(
                                                 "lifetimeSeconds", "Lifetime", kPropertyTypeFloatUVE),
-                                            0.01, 3600.0, 0.01)}));
+                                            0.01, 3600.0, 0.01),
+                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::systemAssetPath>(
+                                                  "systemAssetPath", "Particle System", kPropertyTypeStringUVE),
+                                              "Optional .uvfx particle system asset. Empty keeps the simple built-in emitter."),
+                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::autoPlay>(
+                                                  "autoPlay", "Auto Play", kPropertyTypeBoolUVE),
+                                              "Start playing the Particle System automatically when the scene starts."),
+                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::seed>(
+                                                  "seed", "Seed", kPropertyTypeUInt32UVE),
+                                              "Random seed for deterministic playback (0 derives a per-entity seed).")}));
 
     // LODGroup3D's own section. The chain is declared as a prefix: `levelCount` says how many of
     // the two lists below are in use, and both lists are drawn by a block drawer that shows exactly

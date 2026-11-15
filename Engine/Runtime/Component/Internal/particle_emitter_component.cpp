@@ -4,8 +4,26 @@
 
 #include <cmath>
 #include <cstdint>
+#include <string_view>
 
 namespace UVE::Scene {
+
+namespace {
+
+[[nodiscard]] bool IsParticleSystemAssetPathValidUVE(const std::string_view path) noexcept {
+    if (path.empty()) {
+        return true;
+    }
+    if (path.size() > kMaximumParticleSystemAssetPathBytesUVE) {
+        return false;
+    }
+    if (path.find('\0') != std::string_view::npos) {
+        return false;
+    }
+    return path.find("..") == std::string_view::npos;
+}
+
+} // namespace
 
 [[nodiscard]] bool IsParticleEmitterComponentValidUVE(
     const ParticleEmitterComponentUVE& component) noexcept {
@@ -13,7 +31,8 @@ namespace UVE::Scene {
            std::isfinite(component.emissionRate) && component.emissionRate >= 0.0F &&
            component.emissionRate <= kMaximumParticleEmitterEmissionRateUVE &&
            std::isfinite(component.lifetimeSeconds) && component.lifetimeSeconds > 0.0F &&
-           component.lifetimeSeconds <= kMaximumParticleEmitterLifetimeSecondsUVE;
+           component.lifetimeSeconds <= kMaximumParticleEmitterLifetimeSecondsUVE &&
+           IsParticleSystemAssetPathValidUVE(component.systemAssetPath);
 }
 
 std::uint32_t ConsumeParticleEmitterAutoEmitCountUVE(float& remainder,

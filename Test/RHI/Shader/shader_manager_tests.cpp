@@ -505,7 +505,9 @@ INSTANTIATE_TEST_SUITE_P(
                        std::pair<std::string_view, std::string_view>{"ssr.glsl", BuiltIn::kSsrSource},
                         std::pair<std::string_view, std::string_view>{"water.glsl", BuiltIn::kWaterSource},
                        std::pair<std::string_view, std::string_view>{"ui_overlay.glsl",
-                                                                      BuiltIn::kUIOverlaySource}));
+                                                                      BuiltIn::kUIOverlaySource},
+                       std::pair<std::string_view, std::string_view>{"vfx_sprite.glsl",
+                                                                      BuiltIn::kVfxSpriteSource}));
 
 
 // ---------------------------------------------------------------------------
