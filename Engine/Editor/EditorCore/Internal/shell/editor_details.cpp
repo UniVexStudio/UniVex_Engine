@@ -57,6 +57,21 @@ using TypeFlagsUVE = Core::TypeMetadataPropertyFlagsUVE;
 constexpr float kRadToDegUVE = 57.29577951F;
 constexpr float kDegToRadUVE = 0.01745329252F;
 
+/// The Euler angles Details shows: the authored ones while they still make the object's rotation,
+/// else read back from the rotation itself (the gizmo, a script or the Sequencer turned it).
+[[nodiscard]] Math::Vector3UVE ShownEulerUVE(const Scene::TransformComponentUVE& t) noexcept {
+    Math::QuaternionUVE fromEuler{};
+    if (Math::TryMakeEulerUVE(t.localEulerRadians, fromEuler)) {
+        const Math::QuaternionUVE& r = t.localRotation;
+        const float dot = fromEuler.x * r.x + fromEuler.y * r.y + fromEuler.z * r.z + fromEuler.w * r.w;
+        if (std::abs(dot) > 0.99999F) {
+            return t.localEulerRadians;
+        }
+    }
+    Math::Vector3UVE derived{};
+    return Math::TryToEulerUVE(t.localRotation, derived) ? derived : t.localEulerRadians;
+}
+
 /// The component types whose authoring is not a field write (see the Inspector's own list): the
 /// name routes through SetSelectedEntityNameUVE, the transform through the gesture API, and the
 /// parent through reparenting in the Outliner.
@@ -590,7 +605,7 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
             } else {
                 // The authored Euler angles are the edited view of the rotation (see
                 // TransformComponentUVE::localEulerRadians); both are written together.
-                Math::Vector3UVE e = t.localEulerRadians;
+                Math::Vector3UVE e = ShownEulerUVE(t);
                 (axis == 0 ? e.x : axis == 1 ? e.y : e.z) = value * kDegToRadUVE;
                 Math::QuaternionUVE q{};
                 if (!Math::TryMakeEulerUVE(e, q)) {
@@ -678,7 +693,7 @@ void EditorDetailsUVE::AddTransformUVE(int category, const Scene::EntityUVE enti
             if (!f || !current(t)) {
                 return;
             }
-            Math::Vector3UVE v = which == 0 ? t.localPosition : which == 2 ? t.localScale : t.localEulerRadians;
+            Math::Vector3UVE v = which == 0 ? t.localPosition : which == 2 ? t.localScale : ShownEulerUVE(t);
             // Reset shows once the value is not its default (0, or 1 for scale), Sequencer or not.
             if (auto r = weakReset.lock()) {
                 const float d = which == 2 ? 1.0F : 0.0F;
