@@ -2613,9 +2613,15 @@ void EditorEntityEditorUVE::ShowStageAddMenuUVE() {
 
 void EditorEntityEditorUVE::ShowAddMenuUVE() {
     // What an entity is built from (no level environment, sky or streaming), grouped and searchable.
+    // Only what fits this entity's root: a character's parts, or a prop's.
+    const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+    const EntityRootUVE rootKind =
+        root == Scene::kInvalidEntityUVE
+            ? EntityRootUVE::Any
+            : EntityRootOfUVE(Scene::ResolveSceneObjectKindUVE(m_editor.m_services->GetEntityManagerUVE(), root));
     std::vector<prism::MenuItem> items = BuildAddObjectMenuUVE(
         AddObjectContextUVE::Entity, m_icons,
-        [this](const SceneObjectKindUVE kind) { static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind)); });
+        [this](const SceneObjectKindUVE kind) { static_cast<void>(m_editor.CreateDocumentSceneObjectUVE(kind)); }, {}, rootKind);
     prism::showSearchMenu(std::move(items), m_addButton ? m_addButton->rect() : prism::Rect{}, prism::PopupPlacement::Below,
                           "Search components");
 }
@@ -2796,6 +2802,11 @@ void EditorEntityEditorUVE::RefreshComponentsUVE() {
 void EditorEntityEditorUVE::RefreshProblemsUVE() {
     if (!m_problems || !m_problemsPanel) {
         return;
+    }
+    // What the entity's make-up is missing shows at once, without a Compile.
+    if (m_editor.RefreshEntityStructureProblemsUVE()) {
+        m_problemsShown = static_cast<std::size_t>(-1);
+        m_problems->setRowCount(0);
     }
     const std::vector<EditorUVE::EntityCompileProblemUVE>& problems = m_editor.GetEntityEditorProblemsUVE();
     const bool compiled = m_editor.HasEntityEditorCompiledUVE();

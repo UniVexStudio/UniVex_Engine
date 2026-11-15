@@ -20,6 +20,19 @@ namespace UVE::Editor {
 ///            environment, sky, streaming, navigation volumes or probes.
 enum class AddObjectContextUVE { Level, Entity };
 
+/// What an entity is built on, for its "+ Add": a character (Character3D, Player3D) takes its
+/// parts - meshes, skeleton, animation, colliders, hitboxes, camera rig; a body (Static3D,
+/// Rigid3D, Kinematic3D) takes what a prop has - meshes, colliders, lights, sounds, effects, a
+/// sequencer for moving parts - and no skeleton, IK, navigation or camera arm. Neither takes a
+/// second physics body. Any: everything an entity may hold.
+enum class EntityRootUVE { Any, Character, Body };
+
+/// The root category of an object kind (Any for the kinds that are neither).
+[[nodiscard]] EntityRootUVE EntityRootOfUVE(Scene::Objects::SceneObjectKindUVE rootKind) noexcept;
+
+/// True when `kind` fits an entity whose root is `root` (see EntityRootUVE).
+[[nodiscard]] bool IsObjectOfferedForRootUVE(Scene::Objects::SceneObjectKindUVE kind, EntityRootUVE root) noexcept;
+
 /// True when `kind` is offered in `context`.
 [[nodiscard]] bool IsObjectOfferedUVE(Scene::Objects::SceneObjectKindUVE kind, AddObjectContextUVE context) noexcept;
 
@@ -32,6 +45,6 @@ enum class AddObjectContextUVE { Level, Entity };
 [[nodiscard]] std::vector<prism::MenuItem> BuildAddObjectMenuUVE(
     AddObjectContextUVE context, EditorIconsUVE& icons,
     const std::function<void(Scene::Objects::SceneObjectKindUVE)>& create,
-    const std::vector<Scene::Objects::SceneObjectKindUVE>& favorites = {});
+    const std::vector<Scene::Objects::SceneObjectKindUVE>& favorites = {}, EntityRootUVE root = EntityRootUVE::Any);
 
 } // namespace UVE::Editor
