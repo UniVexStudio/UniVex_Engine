@@ -177,7 +177,7 @@ void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE enti
                                  }
                              }),
                              !source.empty()));
-        items.push_back(when(prism::MenuItem::Item("Show in Content Browser", [&editor, source] {
+        items.push_back(when(prism::MenuItem::Item("Show in Asset Library", [&editor, source] {
                                  const Asset::ProjectFileSnapshotUVE now = editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                                  std::error_code error;
                                  const std::filesystem::path relative = std::filesystem::relative(source, now.contentRoot, error);

@@ -265,7 +265,7 @@ EditorDetailsUVE::~EditorDetailsUVE() = default;
 prism::Ref<prism::Widget> EditorDetailsUVE::BuildUVE() {
     auto page = prism::vbox(4.0F);
     page->setPadding(prism::Margin(4.0F));
-    m_search = prism::make<prism::TextInput>("", "Search details");
+    m_search = prism::make<prism::TextInput>("", "Search the inspector");
     m_search->onChanged = [this](const std::string& text) {
         m_filter = LowerUVE(text);
         m_signature = 0;
@@ -1026,7 +1026,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
             // One button, like an asset slot: the file's name, or (Empty); the menu has Empty too.
             auto pick = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                    prism::ButtonStyle::Default);
-            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Content Browser") : property.tooltip);
+            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Asset Library") : property.tooltip);
             std::weak_ptr<prism::Button> weakPick = pick;
             row->sync = [p, weakPick](const void* inst) {
                 auto b = weakPick.lock();
@@ -1059,7 +1059,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                 if (skySlot) {
                     spec.title = "Sky";
                 } else if (scriptSlot) {
-                    spec.title = "Blueprint";
+                    spec.title = "Logic Graph";
                 }
                 PickerActionsUVE actions;
                 const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();

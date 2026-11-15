@@ -161,7 +161,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              IdUVE(Id::kContentBrowserViewModeUVE), static_cast<std::int64_t>(ViewMode::SmallTiles),
              {EntryUVE(ViewMode::SmallTiles, "Small Tiles"), EntryUVE(ViewMode::LargeTiles, "Large Tiles"),
               EntryUVE(ViewMode::List, "List")},
-             "Content Browser View", kSessionCategoryUVE)),
+             "Asset Library View", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_contentBrowserViewMode);
          },
@@ -174,7 +174,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              {EntryUVE(ContentBrowserModeUVE::Tiles, "Tiles"), EntryUVE(ContentBrowserModeUVE::Columns, "Columns"),
               EntryUVE(ContentBrowserModeUVE::Details, "Details"), EntryUVE(ContentBrowserModeUVE::Recent, "Recent"),
               EntryUVE(ContentBrowserModeUVE::Board, "Board")},
-             "Content Browser Mode", kSessionCategoryUVE)),
+             "Asset Library Mode", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE {
              return static_cast<std::int64_t>(editor.m_contentBrowserMode);
          },

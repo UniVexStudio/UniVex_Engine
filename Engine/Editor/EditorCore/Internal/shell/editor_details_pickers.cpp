@@ -67,11 +67,11 @@ EditorDetailsUVE::PickerSpecUVE EditorDetailsUVE::PickerSpecForUVE(const std::ve
         spec.listed = {".uvtex"};
         spec.loadable = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
     } else if (has(".uvmontagelib")) {
-        spec.title = "Montage Library";
+        spec.title = "Action Clip Library";
         spec.listed = {".uvmontagelib"};
         spec.loadable = {".uvmontagelib"};
     } else if (has(".uvmontage")) {
-        spec.title = "Montage";
+        spec.title = "Action Clip";
         spec.listed = {".uvmontage"};
         spec.loadable = {".uvmontage"};
     } else if (has(".uvaudio") || has(".wav")) {
@@ -250,7 +250,7 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
         };
         m_editor.OpenFilePickerUVE(std::move(request));
     }));
-    prism::MenuItem show = prism::MenuItem::Item("Show in Content Browser", [this, shared] {
+    prism::MenuItem show = prism::MenuItem::Item("Show in Asset Library", [this, shared] {
         const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         std::error_code error;
         const std::filesystem::path relative = std::filesystem::relative(shared->current, now.contentRoot, error);

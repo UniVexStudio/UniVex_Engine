@@ -234,10 +234,10 @@ std::pair<std::string, std::string> EditorContentBrowserUVE::DescribeUVE(const I
         case ItemTypeUVE::Save: return {"Save", "SAV"};
         case ItemTypeUVE::Animation: return {"Animation", "ANM"};
         case ItemTypeUVE::AnimationLibrary: return {"Animation Library", "LIB"};
-        case ItemTypeUVE::AnimationMontage: return {"Animation Montage", "MONT"};
-        case ItemTypeUVE::MontageLibrary: return {"Montage Library", "MLIB"};
-        case ItemTypeUVE::Blueprint: return {"Blueprint Class", "BP"};
-        case ItemTypeUVE::WidgetBlueprint: return {"Widget Blueprint", "WBP"};
+        case ItemTypeUVE::AnimationMontage: return {"Action Clip", "AC"};
+        case ItemTypeUVE::MontageLibrary: return {"Action Clip Library", "ACL"};
+        case ItemTypeUVE::Blueprint: return {"Logic Graph", "LG"};
+        case ItemTypeUVE::WidgetBlueprint: return {"UI Graph", "UI"};
         case ItemTypeUVE::Script: return {"Script", "UVS"};
         case ItemTypeUVE::Audio: return {"Audio", "AUD"};
         case ItemTypeUVE::Font: return {"Font", "FNT"};
@@ -337,7 +337,7 @@ public:
             // A Blueprint's well is the word, not a glyph.
             const prism::Rect well{r.x + 3.0F, r.y + 3.0F, r.w - 6.0F, prism::assetTileWellHeight(r) - 17.0F};
             c.fillRect(well, m_hot && !m_selected ? prism::Color(40, 41, 45) : prism::Color(30, 31, 34));
-            c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Blueprint" : "Widget Blueprint", prism::Color(214, 220, 230),
+            c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Logic Graph" : "UI Graph", prism::Color(214, 220, 230),
                      prism::HAlign::Center, false);
         }
     }
@@ -612,7 +612,7 @@ prism::Ref<prism::Widget> EditorContentBrowserUVE::BuildUVE() {
     m_viewButton->setTooltip("How items are shown: Tiles, Columns, Details, Recent, Board; size and sort");
     m_viewButton->onClick = [this] { ShowViewMenuUVE(); };
     m_splitButton = prism::make<prism::Button>("Split", prism::Icon::Frame, prism::ButtonStyle::Toolbar);
-    m_splitButton->setTooltip("How the sidebar and the items share the Content Browser");
+    m_splitButton->setTooltip("How the sidebar and the items share the Asset Library");
     m_splitButton->onClick = [this] { ShowSplitMenuUVE(); };
     m_filterButton = prism::make<prism::Button>("Filter", prism::Icon::Filter, prism::ButtonStyle::Toolbar);
     m_filterButton->onClick = [this] { ShowFilterMenuUVE(); };
@@ -1459,21 +1459,21 @@ std::vector<prism::MenuItem> EditorContentBrowserUVE::CatalogueMenuUVE() {
     items.push_back(entityClass());
     items.push_back(item("Level", "viewport_3d", prism::Icon::SceneAsset, "Viewport3D"));
     items.push_back(item("Material", "material", prism::Icon::Material, "Material"));
-    items.push_back(item("Animation Montage", "animation-montage", prism::Icon::AnimMontage, "Animation Montage"));
+    items.push_back(item("Action Clip", "animation-montage", prism::Icon::AnimMontage, "Action Clip"));
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Sub("Animation", {
         item("Animation Library", "animation-library", prism::Icon::AnimLibrary, "Animation Library"),
-        item("Animation Montage", "animation-montage", prism::Icon::AnimMontage, "Animation Montage"),
-        item("Montage Library", "montage-library", prism::Icon::MontageLibrary, "Montage Library"),
+        item("Action Clip", "animation-montage", prism::Icon::AnimMontage, "Action Clip"),
+        item("Action Clip Library", "montage-library", prism::Icon::MontageLibrary, "Action Clip Library"),
     }));
     // A Blueprint Class: gameplay as nodes (what an object's Script slot runs).
     prism::MenuItem blueprintClass =
-        prism::MenuItem::Item("Blueprint Class", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
-    items.push_back(prism::MenuItem::Sub("Blueprint", {blueprintClass, entityClass()}));
+        prism::MenuItem::Item("Logic Graph", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+    items.push_back(prism::MenuItem::Sub("Logic Graph", {blueprintClass, entityClass()}));
     items.push_back(prism::MenuItem::Sub("Gameplay", {blueprintClass}));
     // A Widget Blueprint: a screen of UI (text, buttons, bars ...) with its own graph.
     prism::MenuItem widgetBlueprint =
-        prism::MenuItem::Item("Widget Blueprint", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+        prism::MenuItem::Item("UI Graph", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
     items.push_back(prism::MenuItem::Sub("User Interface", {widgetBlueprint}));
     items.push_back(prism::MenuItem::Sub("Material", {
         material("Material", "M_Standard", Asset::MaterialKindUVE::Standard),
@@ -1576,7 +1576,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
     const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_contentBrowserDirectory;
     std::error_code error;
     std::filesystem::create_directories(folder, error);
-    const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, "BP_NewBlueprint", ".uvbp");
+    const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, "LG_New", ".uvbp");
     Asset::BlueprintAssetUVE blueprint;
     blueprint.parentKind = "Object3D";
     Asset::BlueprintNodeUVE ready;
@@ -1588,7 +1588,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
     tick.y = 200.0F;
     blueprint.nodes = {ready, tick};
     if (!Asset::SaveBlueprintAssetUVE(blueprint, path)) {
-        m_editor.m_contentStatusMessage = "Could not create a Blueprint here.";
+        m_editor.m_contentStatusMessage = "Could not create a Logic Graph here.";
         return;
     }
     m_editor.m_contentStatusMessage.clear();
@@ -1602,7 +1602,7 @@ void EditorContentBrowserUVE::CreateWidgetBlueprintUVE() {
     const std::optional<std::filesystem::path> made =
         m_editor.CreateWidgetBlueprintAssetUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
     if (!made.has_value()) {
-        m_editor.m_contentStatusMessage = "Could not create a Widget Blueprint here.";
+        m_editor.m_contentStatusMessage = "Could not create a UI Graph here.";
         return;
     }
     m_editor.m_contentStatusMessage.clear();
@@ -1636,7 +1636,7 @@ void EditorContentBrowserUVE::OpenBlueprintUVE(const std::filesystem::path& full
         m_editor.m_pendingBlueprintOpenUVE = stored;
         return;
     }
-    m_editor.m_contentStatusMessage = name + " is not on any object yet: pick it in an object's Script slot, or use the Entity Editor's Blueprint button.";
+    m_editor.m_contentStatusMessage = name + " is not on any object yet: pick it in an object's Script slot, or use the Entity Editor's Logic Graph button.";
 }
 
 void EditorContentBrowserUVE::CreateCatalogueItemUVE(const std::string& id) {
@@ -1726,7 +1726,7 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
     }
     // A clip becomes a montage: a .uvmontage beside it with the clip on its slot track, opened.
     if (extension == ".uvanim") {
-        add(prism::MenuItem::Item("Create Montage", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimMontage),
+        add(prism::MenuItem::Item("Create Action Clip", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimMontage),
             allowed);
     }
     // A montage joins a montage library, the way a clip joins an animation library.
@@ -1743,11 +1743,11 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
         if (!libraries.empty()) {
             libraries.push_back(prism::MenuItem::Sep());
         }
-        libraries.push_back(prism::MenuItem::Item("New Montage Library", [this, absolute] {
-            const std::filesystem::path library = absolute.parent_path() / "Montage Library.uvmontagelib";
+        libraries.push_back(prism::MenuItem::Item("New Action Clip Library", [this, absolute] {
+            const std::filesystem::path library = absolute.parent_path() / "Action Clip Library.uvmontagelib";
             AddMontageToLibraryUVE(absolute, library);
         }, "", prism::Icon::MontageLibrary));
-        add(prism::MenuItem::Sub("Add to Montage Library", std::move(libraries), prism::Icon::MontageLibrary), allowed);
+        add(prism::MenuItem::Sub("Add to Action Clip Library", std::move(libraries), prism::Icon::MontageLibrary), allowed);
     }
     if (type == ItemTypeUVE::MontageLibrary) {
         add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::MontageLibrary));
@@ -2044,7 +2044,7 @@ void EditorContentBrowserUVE::OpenEntryUVE(const std::size_t entryIndex) {
             break;
         case ItemTypeUVE::AnimationMontage:
             if (!m_editor.OpenMontageEditorUVE(full)) {
-                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Montage Editor.";
+                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Action Clip Editor.";
             }
             break;
         case ItemTypeUVE::MontageLibrary:
@@ -2111,10 +2111,10 @@ void EditorContentBrowserUVE::CreateMontageFromClipUVE(const std::filesystem::pa
     Asset::AnimationMontageAssetUVE montage;
     static_cast<void>(Asset::AddMontageSegmentUVE(montage, guid, clip.durationSeconds));
     // AM_<clip>, or AM_<clip>_2 ... beside the clip.
-    std::filesystem::path path = clipPath.parent_path() / ("AM_" + clipPath.stem().string() + ".uvmontage");
+    std::filesystem::path path = clipPath.parent_path() / ("AC_" + clipPath.stem().string() + ".uvmontage");
     std::error_code error;
     for (int n = 2; std::filesystem::exists(path, error) && n < 1000; ++n) {
-        path = clipPath.parent_path() / ("AM_" + clipPath.stem().string() + "_" + std::to_string(n) + ".uvmontage");
+        path = clipPath.parent_path() / ("AC_" + clipPath.stem().string() + "_" + std::to_string(n) + ".uvmontage");
     }
     if (!Asset::SaveAnimationMontageAssetUVE(montage, path)) {
         m_editor.m_contentStatusMessage = "Could not write " + path.filename().string();
@@ -2131,7 +2131,7 @@ void EditorContentBrowserUVE::AddMontageToLibraryUVE(const std::filesystem::path
     std::error_code error;
     if (std::filesystem::exists(libraryPath, error)) {
         if (!Asset::LoadMontageLibraryAssetUVE(libraryPath, library)) {
-            m_editor.m_contentStatusMessage = "Not a montage library: " + libraryPath.filename().string();
+            m_editor.m_contentStatusMessage = "Not an action clip library: " + libraryPath.filename().string();
             return;
         }
     } else {
@@ -2167,7 +2167,7 @@ void EditorContentBrowserUVE::ShowMontageLibraryUVE(const std::filesystem::path&
     auto list = prism::vbox(4.0F);
     list->setPadding(prism::Margin(4.0F));
     if (library.entries.empty()) {
-        auto hint = prism::make<prism::Label>("Empty. Right-click a montage > Add to Montage Library.", prism::FontRole::Small);
+        auto hint = prism::make<prism::Label>("Empty. Right-click an action clip > Add to Action Clip Library.", prism::FontRole::Small);
         hint->setColor(prism::ThemeColor(&prism::Theme::textDim));
         list->add(hint);
     }
@@ -2200,7 +2200,7 @@ void EditorContentBrowserUVE::ShowMontageLibraryUVE(const std::filesystem::path&
         row->add(remove);
         list->add(row);
     }
-    prism::showDialog("Montage Library - " + libraryPath.stem().string(), list, {prism::DialogButton{"Close", true, {}}}, 480.0F);
+    prism::showDialog("Action Clip Library - " + libraryPath.stem().string(), list, {prism::DialogButton{"Close", true, {}}}, 480.0F);
 }
 
 } // namespace UVE::Editor

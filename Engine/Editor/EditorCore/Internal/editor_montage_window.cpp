@@ -73,7 +73,7 @@ bool EditorUVE::OpenMontageEditorUVE(const std::filesystem::path& path) {
     }
     Asset::AnimationMontageAssetUVE montage;
     if (!Asset::LoadAnimationMontageAssetUVE(path, montage)) {
-        m_contentStatusMessage = "Could not read " + path.filename().string() + " as a montage.";
+        m_contentStatusMessage = "Could not read " + path.filename().string() + " as an action clip.";
         return false;
     }
     CloseMontageEditorUVE();
@@ -126,7 +126,7 @@ void EditorUVE::EditMontageUVE(const std::function<void(Asset::AnimationMontageA
         return;
     }
     if (!Asset::IsAnimationMontageAssetValidUVE(changed)) {
-        m_montageEdit->status = "That would make the montage invalid.";
+        m_montageEdit->status = "That would make the action clip invalid.";
         return;
     }
     const bool previewChanged = !(changed.previewEntity == m_montageEdit->montage.previewEntity) ||
@@ -198,7 +198,7 @@ void EditorUVE::RebuildMontagePreviewUVE() {
                                                                            session.montage.previewEntity, Scene::kInvalidEntityUVE);
         session.previewSkeleton = FindSkeletonUnderUVE(services, session.previewRoot);
         if (session.previewRoot != Scene::kInvalidEntityUVE && session.previewSkeleton == Scene::kInvalidEntityUVE) {
-            session.status = "The preview entity has no Skeleton3D: the montage has no bones to move.";
+            session.status = "The preview entity has no Skeleton3D: the action clip has no bones to move.";
         }
     }
     if (session.previewSkeleton == Scene::kInvalidEntityUVE) {

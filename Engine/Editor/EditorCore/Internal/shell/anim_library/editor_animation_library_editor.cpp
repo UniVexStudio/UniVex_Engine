@@ -96,7 +96,7 @@ void AnimationLibraryGridUVE::paint(prism::Canvas& c) {
     c.fillRect(rect(), t.window);
     if (m_tiles.empty()) {
         c.textIn(*t.ui, prism::Rect{rect().x, rect().y + rect().h * 0.4F, rect().w, 22.0F},
-                 "No clips yet: + Add Animation, or drop .uvanim files here from the Content Browser.", t.textDim,
+                 "No clips yet: + Add Animation, or drop .uvanim files here from the Asset Library.", t.textDim,
                  prism::HAlign::Center, true);
     }
     for (std::size_t i = 0U; i < m_tiles.size(); ++i) {
@@ -357,7 +357,7 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildTitleBarUVE() {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Add Animation...", [this] { ShowAddMenuUVE(m_addButton ? m_addButton->rect() : prism::Rect{}); }, "",
                                               prism::Icon::Plus));
-        items.push_back(prism::MenuItem::Item("Show in Content Browser", [this] {
+        items.push_back(prism::MenuItem::Item("Show in Asset Library", [this] {
             std::error_code error;
             const std::filesystem::path relative =
                 std::filesystem::relative(m_openPath, m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot, error);
@@ -381,7 +381,7 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildTitleBarUVE() {
     });
     menus->addMenu("Help", [] {
         return std::vector<prism::MenuItem>{
-            prism::MenuItem::Item("A library is a list of clips an Animation Sequencer can use by name.", {}).disabled(),
+            prism::MenuItem::Item("A library is a list of clips an Timeline can use by name.", {}).disabled(),
             prism::MenuItem::Item("Every edit is saved at once.", {}).disabled()};
     });
     row->add(menus, CentreUVE());
@@ -599,7 +599,7 @@ void EditorAnimationLibraryWindowUVE::ShowEntryMenuUVE(const std::size_t entry, 
     last.enabled = entry + 1U < count;
     items.push_back(std::move(first));
     items.push_back(std::move(last));
-    items.push_back(prism::MenuItem::Item("Show Clip in Content Browser", [this, entry] {
+    items.push_back(prism::MenuItem::Item("Show Clip in Asset Library", [this, entry] {
         std::error_code error;
         const std::filesystem::path relative =
             std::filesystem::relative(ClipPathUVE(entry), m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot, error);
