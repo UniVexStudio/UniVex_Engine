@@ -2645,8 +2645,13 @@ private:
     [[nodiscard]] bool ApplyComponentPropertySnapshotUVE(Scene::EntityUVE entity,
                                                          const Core::TypeMetadataEntryUVE* metadata,
                                                          const void* snapshot);
+    /// Extension-only fallback classification used before model-source metadata is available.
     [[nodiscard]] static ContentBrowserItemTypeUVE ClassifyContentBrowserEntryUVE(
         const Asset::ProjectFileEntryUVE& entry);
+    /// Classifies a browser entry using the source summary from the latest project refresh, so
+    /// animation-only FBX sources are not presented as static meshes and rigged sources as meshes.
+    [[nodiscard]] ContentBrowserItemTypeUVE GetContentBrowserEntryTypeUVE(
+        const Asset::ProjectFileEntryUVE& entry) const;
     [[nodiscard]] static const char* GetContentBrowserItemTypeLabelUVE(ContentBrowserItemTypeUVE type) noexcept;
     [[nodiscard]] static const char* GetContentBrowserFocusLabelUVE(ContentBrowserTypeFocusUVE focus) noexcept;
     [[nodiscard]] bool DoesContentBrowserEntryMatchFocusUVE(const Asset::ProjectFileEntryUVE& entry) const;
