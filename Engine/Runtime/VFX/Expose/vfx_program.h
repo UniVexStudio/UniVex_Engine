@@ -56,6 +56,8 @@ struct ParticleCompileMessageUVE final {
     Severity severity = Severity::Error;
     std::uint32_t moduleId = 0U;
     std::string text;
+    /// Index of the emitter the message belongs to (set by editors that compile a whole system).
+    std::uint32_t emitterIndex = 0U;
 };
 
 struct VfxEmitterUpdateOpUVE final {

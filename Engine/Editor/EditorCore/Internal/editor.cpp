@@ -842,6 +842,13 @@ std::size_t EditorUVE::SaveAllUVE() {
             failed.emplace_back(std::filesystem::path{m_openUVScript->path}.filename().string());
         }
     }
+    if (IsVfxEditorDirtyUVE()) {
+        if (SaveVfxEditorUVE()) {
+            ++saved;
+        } else {
+            failed.emplace_back(m_vfxEdit->path.filename().string());
+        }
+    }
     if (!failed.empty()) {
         std::string names;
         for (const std::string& name : failed) {
@@ -4937,6 +4944,8 @@ void EditorUVE::ShutdownUVE() {
         ClearTextureThumbnailCacheUVE();
         ClearMeshThumbnailCacheUVE();
         ClearMaterialThumbnailCacheUVE();
+        ClearVfxThumbnailCacheUVE();
+        CloseVfxEditorUVE();
         m_meshThumbnailRenderer.ShutdownUVE();
         m_materialThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
@@ -5593,6 +5602,9 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvanimlib") {
         return ContentBrowserItemTypeUVE::AnimationLibrary;
     }
+    if (extension == ".uvfx") {
+        return ContentBrowserItemTypeUVE::ParticleSystem;
+    }
     if (extension == ".uvmontage") {
         return ContentBrowserItemTypeUVE::AnimationMontage;
     }
@@ -5642,6 +5654,8 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Animation";
         case ContentBrowserItemTypeUVE::AnimationLibrary:
             return "Animation Library";
+        case ContentBrowserItemTypeUVE::ParticleSystem:
+            return "Particle System";
         case ContentBrowserItemTypeUVE::AnimationMontage:
             return "Action Clip";
         case ContentBrowserItemTypeUVE::MontageLibrary:

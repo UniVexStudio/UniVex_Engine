@@ -20,7 +20,6 @@
 #include "prism/EngineView.h"
 #include "prism/Layouts.h"
 #include "prism/Menu.h"
-#include "prism/PropertyGrid.h"
 #include "prism/TableView.h"
 #include "prism/Tabs.h"
 #include "prism/TextInput.h"
@@ -74,7 +73,7 @@ constexpr int kVfxWindowHeightUVE = 840;
 [[nodiscard]] std::string MakeUniqueParameterNameUVE(const Asset::ParticleSystemAssetUVE& sys,
                                                      const std::string& baseName) {
     const auto exists = [&sys](const std::string& candidate) {
-        return std::any_of(sys.userParameters.begin(), sys.userParameters.end(),
+        return std::any_of(sys.parameters.begin(), sys.parameters.end(),
                            [&candidate](const Asset::ParticleUserParameterUVE& p) { return p.name == candidate; });
     };
     if (!exists(baseName)) {
@@ -122,7 +121,7 @@ bool EditorVfxEditorUVE::SaveScreenshotUVE(const std::filesystem::path& path) {
 void EditorVfxEditorUVE::SelectModuleIdUVE(const std::uint32_t moduleId) {
     m_selectedModuleId = moduleId;
     if (m_graph && moduleId != 0U) {
-        m_graph->selectNode(static_cast<int>(moduleId));
+        m_graph->select(static_cast<int>(moduleId));
     }
     if (m_window != 0 && m_host.IsReadyUVE()) {
         m_host.AppUVE().runInWindow(m_window, [this] { RebuildInspectorUVE(); });
@@ -289,7 +288,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
 
     auto tabRow = prism::hbox();
     m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::Particles);
+    m_tab->setFallbackIcon(prism::Icon::Light);
     m_tab->setName(m_openPath.empty() && m_editor.VfxEditSessionPtrUVE() != nullptr
                        ? m_editor.VfxEditSessionPtrUVE()->path.stem().string()
                        : m_openPath.stem().string());
@@ -408,9 +407,10 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
 
     row->add(HSeparatorUVE(), CentreSlotUVE());
 
-    m_centerModeSeg = prism::make<prism::Segmented>(
-        std::vector<std::string>{"Split", "Preview", "Graph"}, 0);
-    m_centerModeSeg->onChange = [this](const int idx) {
+    m_centerModeSeg = prism::make<prism::Segmented>();
+    m_centerModeSeg->add("Split").add("Preview").add("Graph");
+    m_centerModeSeg->setSelected(0);
+    m_centerModeSeg->onSelect = [this](const int idx) {
         ApplyCenterModeUVE(idx == 1 ? CenterModeUVE::PreviewOnly
                            : idx == 2 ? CenterModeUVE::GraphOnly
                                       : CenterModeUVE::Split);
@@ -459,15 +459,15 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildLeftColumnUVE() {
     auto addParamBtn = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Default);
     addParamBtn->onClick = [this] {
         m_editor.EditVfxSystemUVE([](Asset::ParticleSystemAssetUVE& sys) {
-            if (sys.userParameters.size() >= Asset::kMaximumUserParametersUVE) {
+            if (sys.parameters.size() >= Asset::kMaximumParticleUserParametersUVE) {
                 return;
             }
             Asset::ParticleUserParameterUVE param{};
             param.name = MakeUniqueParameterNameUVE(sys, "Param");
             param.type = Asset::ParticleUserParameterTypeUVE::Float;
-            param.defaultValue = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-            param.defaultAlpha = 1.0F;
-            sys.userParameters.push_back(std::move(param));
+            param.value = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+            param.alpha = 1.0F;
+            sys.parameters.push_back(std::move(param));
         });
     };
     paramsHeader->add(addParamBtn, CentreSlotUVE());
@@ -515,13 +515,12 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
     m_previewPane = PanelUVE(viewportOverlay);
 
     m_graph = prism::make<prism::BlueprintGraph>();
-    m_graph->canDeleteNode = [](const int id) { return !IsVfxStageNodeIdUVE(id); };
-    m_graph->onSelectionChanged = [this] {
+    m_graph->onSelectionChanged = [this](const std::vector<int>& selectedIds) {
         if (m_syncingGraph || !m_graph) {
             return;
         }
         std::uint32_t picked = 0U;
-        for (const int id : m_graph->selectedNodes()) {
+        for (const int id : selectedIds) {
             if (!IsVfxStageNodeIdUVE(id) && id > 0) {
                 picked = static_cast<std::uint32_t>(id);
                 break;
@@ -532,7 +531,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
             RebuildInspectorUVE();
         }
     };
-    m_graph->onGraphChanged = [this] {
+    m_graph->onChanged = [this] {
         if (m_syncingGraph) {
             return;
         }
@@ -559,7 +558,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
         const VFX::ParticleCompileMessageUVE& msg = session->compileMessages[static_cast<std::size_t>(row)];
         switch (col) {
             case 0:
-                return msg.severity == VFX::ParticleCompileSeverityUVE::Error ? "ERROR" : "Warning";
+                return msg.severity == VFX::ParticleCompileMessageUVE::Severity::Error ? "ERROR" : "Warning";
             case 1:
                 if (msg.emitterIndex < session->system.emitters.size()) {
                     return session->system.emitters[msg.emitterIndex].name;
@@ -568,7 +567,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
             case 2:
                 return msg.moduleId != 0U ? std::to_string(msg.moduleId) : std::string("Stage");
             default:
-                return msg.message;
+                return msg.text;
         }
     };
     m_compileTable->onSelect = [this](const std::vector<int>& rows) {
@@ -588,7 +587,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
         if (msg.moduleId != 0U) {
             SelectModuleIdUVE(msg.moduleId);
         } else if (m_graph) {
-            m_graph->selectNode(kVfxStageNodeRenderUVE);
+            m_graph->select(kVfxStageNodeRenderUVE);
         }
     };
 
@@ -660,7 +659,7 @@ void EditorVfxEditorUVE::ShowAddEmitterMenuUVE(const prism::Rect anchor) {
                 }
                 m_selectedModuleId = 0U;
             });
-        }, "", prism::Icon::Particles));
+        }, "", prism::Icon::Light));
     }
     prism::showMenu(std::move(items), anchor, prism::PopupPlacement::Below);
 }
@@ -702,7 +701,7 @@ void EditorVfxEditorUVE::RebuildEmittersListUVE() {
 
         auto selectBtn = prism::make<prism::Button>(
             emitter.name.empty() ? ("Emitter " + std::to_string(i + 1U)) : emitter.name,
-            prism::Icon::Particles,
+            prism::Icon::Light,
             selected ? prism::ButtonStyle::Primary : prism::ButtonStyle::Flat);
         selectBtn->onClick = [this, i] {
             if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
@@ -838,7 +837,7 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
     auto list = prism::vbox(4.0F);
     list->setPadding(prism::Margin(6.0F));
 
-    if (session->system.userParameters.empty()) {
+    if (session->system.parameters.empty()) {
         auto emptyLabel = prism::make<prism::Label>(
             "No user parameters.\nClick + Add to expose a parameter to scripts and modules.",
             prism::FontRole::Small);
@@ -846,8 +845,8 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
         list->add(emptyLabel);
     }
 
-    for (std::size_t i = 0U; i < session->system.userParameters.size(); ++i) {
-        const Asset::ParticleUserParameterUVE& param = session->system.userParameters[i];
+    for (std::size_t i = 0U; i < session->system.parameters.size(); ++i) {
+        const Asset::ParticleUserParameterUVE& param = session->system.parameters[i];
         auto card = prism::make<prism::Border>();
         card->setBackground(prism::Color(30, 32, 37));
         card->setBorder(prism::theme().border, prism::Margin(1.0F));
@@ -862,18 +861,27 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
                 return;
             }
             m_editor.EditVfxSystemUVE([i, newName](Asset::ParticleSystemAssetUVE& sys) {
-                if (i >= sys.userParameters.size()) {
+                if (i >= sys.parameters.size()) {
                     return;
                 }
-                const std::string oldName = sys.userParameters[i].name;
-                sys.userParameters[i].name = newName;
+                const std::string oldName = sys.parameters[i].name;
+                sys.parameters[i].name = newName;
                 for (Asset::ParticleEmitterAssetUVE& em : sys.emitters) {
                     for (auto* stageVec : {&em.emitterUpdate, &em.particleSpawn, &em.particleUpdate, &em.render}) {
                         for (Asset::ParticleModuleUVE& mod : *stageVec) {
-                            for (Asset::ParticleModuleInputUVE& in : mod.inputs) {
-                                if (in.mode == Asset::ParticleValueModeUVE::UserParameter &&
-                                    in.userParameterName == oldName) {
-                                    in.userParameterName = newName;
+                            for (auto& [pin, in] : mod.floats) {
+                                if (in.kind == Asset::ParticleValueKindUVE::UserParameter && in.parameter == oldName) {
+                                    in.parameter = newName;
+                                }
+                            }
+                            for (auto& [pin, in] : mod.vectors) {
+                                if (in.kind == Asset::ParticleValueKindUVE::UserParameter && in.parameter == oldName) {
+                                    in.parameter = newName;
+                                }
+                            }
+                            for (auto& [pin, in] : mod.colors) {
+                                if (in.kind == Asset::ParticleValueKindUVE::UserParameter && in.parameter == oldName) {
+                                    in.parameter = newName;
                                 }
                             }
                         }
@@ -888,8 +896,8 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
             static_cast<int>(param.type));
         typeCombo->onChange = [this, i](const int typeIdx) {
             m_editor.EditVfxSystemUVE([i, typeIdx](Asset::ParticleSystemAssetUVE& sys) {
-                if (i < sys.userParameters.size() && typeIdx >= 0 && typeIdx <= 4) {
-                    sys.userParameters[i].type = static_cast<Asset::ParticleUserParameterTypeUVE>(typeIdx);
+                if (i < sys.parameters.size() && typeIdx >= 0 && typeIdx <= 4) {
+                    sys.parameters[i].type = static_cast<Asset::ParticleUserParameterTypeUVE>(typeIdx);
                 }
             });
         };
@@ -901,8 +909,8 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
         auto delBtn = prism::make<prism::Button>("", prism::Icon::Trash, prism::ButtonStyle::Flat);
         delBtn->onClick = [this, i] {
             m_editor.EditVfxSystemUVE([i](Asset::ParticleSystemAssetUVE& sys) {
-                if (i < sys.userParameters.size()) {
-                    sys.userParameters.erase(sys.userParameters.begin() + static_cast<std::ptrdiff_t>(i));
+                if (i < sys.parameters.size()) {
+                    sys.parameters.erase(sys.parameters.begin() + static_cast<std::ptrdiff_t>(i));
                 }
             });
         };
@@ -912,11 +920,11 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
         // Default value editor based on parameter type.
         switch (param.type) {
             case Asset::ParticleUserParameterTypeUVE::Float: {
-                auto nf = prism::make<prism::NumberField>(param.defaultValue.x, -1.0e6, 1.0e6, 0.05, 3);
-                nf->onChanged = [this, i](const double v) {
+                auto nf = prism::make<prism::NumberField>(param.value.x, 0.05F, 3);
+                nf->onChange = [this, i](const float v) {
                     m_editor.EditVfxSystemUVE([i, v](Asset::ParticleSystemAssetUVE& sys) {
-                        if (i < sys.userParameters.size()) {
-                            sys.userParameters[i].defaultValue.x = static_cast<float>(v);
+                        if (i < sys.parameters.size()) {
+                            sys.parameters[i].value.x = static_cast<float>(v);
                         }
                     });
                 };
@@ -925,11 +933,11 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
             }
             case Asset::ParticleUserParameterTypeUVE::Int: {
                 auto nf = prism::make<prism::NumberField>(
-                    std::round(static_cast<double>(param.defaultValue.x)), -1.0e6, 1.0e6, 1.0, 0);
-                nf->onChanged = [this, i](const double v) {
+                    std::round(param.value.x), 1.0F, 0);
+                nf->onChange = [this, i](const float v) {
                     m_editor.EditVfxSystemUVE([i, v](Asset::ParticleSystemAssetUVE& sys) {
-                        if (i < sys.userParameters.size()) {
-                            sys.userParameters[i].defaultValue.x = static_cast<float>( std::llround(v));
+                        if (i < sys.parameters.size()) {
+                            sys.parameters[i].value.x = static_cast<float>(std::llround(static_cast<double>(v)));
                         }
                     });
                 };
@@ -937,11 +945,11 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
                 break;
             }
             case Asset::ParticleUserParameterTypeUVE::Bool: {
-                auto cb = prism::make<prism::CheckBox>("Enabled by default", param.defaultValue.x >= 0.5F);
+                auto cb = prism::make<prism::CheckBox>("Enabled by default", param.value.x >= 0.5F);
                 cb->onChange = [this, i](const bool v) {
                     m_editor.EditVfxSystemUVE([i, v](Asset::ParticleSystemAssetUVE& sys) {
-                        if (i < sys.userParameters.size()) {
-                            sys.userParameters[i].defaultValue.x = v ? 1.0F : 0.0F;
+                        if (i < sys.parameters.size()) {
+                            sys.parameters[i].value.x = v ? 1.0F : 0.0F;
                         }
                     });
                 };
@@ -949,13 +957,17 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
                 break;
             }
             case Asset::ParticleUserParameterTypeUVE::Vector: {
-                auto vf = prism::make<prism::Vec3Field>(
-                    param.defaultValue.x, param.defaultValue.y, param.defaultValue.z);
-                vf->onChanged = [this, i](const double x, const double y, const double z) {
+                auto vf = prism::make<prism::Vec3Field>(0.05F, 3);
+                vf->setValue(param.value.x, param.value.y, param.value.z);
+                prism::Vec3Field* const rawVf = vf.get();
+                vf->onChange = [this, i, rawVf](const int, const float) {
+                    const float x = rawVf->get(0);
+                    const float y = rawVf->get(1);
+                    const float z = rawVf->get(2);
                     m_editor.EditVfxSystemUVE([i, x, y, z](Asset::ParticleSystemAssetUVE& sys) {
-                        if (i < sys.userParameters.size()) {
-                            sys.userParameters[i].defaultValue =
-                                Math::Vector3UVE{static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)};
+                        if (i < sys.parameters.size()) {
+                            sys.parameters[i].value =
+                                Math::Vector3UVE{x, y, z};
                         }
                     });
                 };
@@ -966,19 +978,19 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
                 const auto toByte = [](const float c) -> std::uint8_t {
                     return static_cast<std::uint8_t>(std::clamp(std::lround(c * 255.0F), 0L, 255L));
                 };
-                auto swatch = prism::make<prism::ColorSwatch>(prism::Color(
-                    toByte(param.defaultValue.x),
-                    toByte(param.defaultValue.y),
-                    toByte(param.defaultValue.z),
-                    toByte(param.defaultAlpha)));
-                swatch->onChanged = [this, i](const prism::Color c) {
+                auto swatch = prism::make<prism::ColorField>(prism::Color(
+                    toByte(param.value.x),
+                    toByte(param.value.y),
+                    toByte(param.value.z),
+                    toByte(param.alpha)));
+                swatch->onChange = [this, i](const prism::Color c) {
                     m_editor.EditVfxSystemUVE([i, c](Asset::ParticleSystemAssetUVE& sys) {
-                        if (i < sys.userParameters.size()) {
-                            sys.userParameters[i].defaultValue = Math::Vector3UVE{
+                        if (i < sys.parameters.size()) {
+                            sys.parameters[i].value = Math::Vector3UVE{
                                 static_cast<float>(c.r) / 255.0F,
                                 static_cast<float>(c.g) / 255.0F,
                                 static_cast<float>(c.b) / 255.0F};
-                            sys.userParameters[i].defaultAlpha = static_cast<float>(c.a) / 255.0F;
+                            sys.parameters[i].alpha = static_cast<float>(c.a) / 255.0F;
                         }
                     });
                 };
@@ -1006,7 +1018,7 @@ void EditorVfxEditorUVE::RebuildGraphFromAssetUVE() {
     BuildEmitterGraphUVE(session->system, session->selectedEmitter, *m_graph);
     ApplyVfxCompileMessagesToGraphUVE(*m_graph, session->compileMessages);
     if (m_selectedModuleId != 0U) {
-        m_graph->selectNode(static_cast<int>(m_selectedModuleId));
+        m_graph->select(static_cast<int>(m_selectedModuleId));
     }
     m_syncingGraph = false;
 }
@@ -1100,7 +1112,7 @@ void EditorVfxEditorUVE::RefreshUVE() {
     if (m_status) {
         std::size_t errorCount = 0U;
         for (const VFX::ParticleCompileMessageUVE& msg : session->compileMessages) {
-            if (msg.severity == VFX::ParticleCompileSeverityUVE::Error) {
+            if (msg.severity == VFX::ParticleCompileMessageUVE::Severity::Error) {
                 ++errorCount;
             }
         }

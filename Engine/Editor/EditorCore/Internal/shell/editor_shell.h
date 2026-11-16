@@ -8,6 +8,7 @@
 #include "editor_entity_editor.h"
 #include "editor_entity_class_window.h"
 #include "editor_montage_editor.h"
+#include "vfx/editor_vfx_editor.h"
 #include "editor_retarget_editor.h"
 #include "editor_animation_library_editor.h"
 #include "editor_file_dialog.h"
@@ -84,6 +85,7 @@ public:
     bool SaveScreenshotUVE(const std::filesystem::path& path) { return m_host.SaveScreenshotUVE(path); }
     /// Saves the Entity Editor window's frame (false while no entity is open).
     bool SaveEntityEditorScreenshotUVE(const std::filesystem::path& path);
+    bool SaveVfxEditorScreenshotUVE(const std::filesystem::path& path);
 
 private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildLayoutUVE();
@@ -148,6 +150,7 @@ private:
     EditorAudioMixerWindowUVE m_audioMixerWindow;
     // The Montage Editor's window (opened while a montage is open).
     EditorMontageEditorUVE m_montageEditor;
+    EditorVfxEditorUVE m_vfxEditor;
     EditorRetargetWindowUVE m_retargetEditor;
     EditorAnimationLibraryWindowUVE m_animationLibraryEditor;
     EditorContentBrowserUVE m_contentBrowser;

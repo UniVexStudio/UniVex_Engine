@@ -21,6 +21,7 @@
 #include "i_asset_database.h"
 #include "i_project_file_index.h"
 #include "material_asset.h"
+#include "vfx_templates.h"
 #include "montage_library_asset.h"
 
 #include "prism/Application.h"
@@ -210,6 +211,7 @@ prism::Icon EditorContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::Animation: return prism::Icon::AnimClip;
         case ItemTypeUVE::AnimationLibrary: return prism::Icon::AnimLibrary;
         case ItemTypeUVE::AnimationMontage: return prism::Icon::AnimMontage;
+        case ItemTypeUVE::ParticleSystem: return prism::Icon::Light;
         case ItemTypeUVE::MontageLibrary: return prism::Icon::MontageLibrary;
         case ItemTypeUVE::Blueprint: return prism::Icon::BlueprintClass;
         case ItemTypeUVE::WidgetBlueprint: return prism::Icon::BlueprintClass;
@@ -237,6 +239,7 @@ std::pair<std::string, std::string> EditorContentBrowserUVE::DescribeUVE(const I
         case ItemTypeUVE::Animation: return {"Animation", "ANM"};
         case ItemTypeUVE::AnimationLibrary: return {"Animation Library", "LIB"};
         case ItemTypeUVE::AnimationMontage: return {"Action Clip", "AC"};
+        case ItemTypeUVE::ParticleSystem: return {"Particle System", "VFX"};
         case ItemTypeUVE::MontageLibrary: return {"Action Clip Library", "ACL"};
         case ItemTypeUVE::Blueprint: return {"Logic Graph", "LG"};
         case ItemTypeUVE::WidgetBlueprint: return {"UI Graph", "UI"};
@@ -264,6 +267,7 @@ prism::Color EditorContentBrowserUVE::TintForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::AnimationLibrary:
         case ItemTypeUVE::AnimationMontage:
         case ItemTypeUVE::MontageLibrary: return prism::Color(90, 200, 200);
+        case ItemTypeUVE::ParticleSystem: return prism::Color(240, 130, 70);
         case ItemTypeUVE::Audio: return prism::Color(230, 190, 90);
         case ItemTypeUVE::Blueprint: return prism::Color(80, 150, 240);
         case ItemTypeUVE::WidgetBlueprint: return prism::Color(70, 190, 140);
@@ -1477,6 +1481,9 @@ std::vector<prism::MenuItem> EditorContentBrowserUVE::CatalogueMenuUVE() {
     prism::MenuItem widgetBlueprint =
         prism::MenuItem::Item("UI Graph", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
     items.push_back(prism::MenuItem::Sub("User Interface", {widgetBlueprint}));
+    items.push_back(prism::MenuItem::Sub("Visual Effects", {
+        prism::MenuItem::Item("Particle System", [this] { CreateParticleSystemUVE(); }, "", prism::Icon::Light),
+    }));
     items.push_back(prism::MenuItem::Sub("Material", {
         material("Material", "M_Standard", Asset::MaterialKindUVE::Standard),
         material("ORM Material", "M_ORM", Asset::MaterialKindUVE::Orm),
@@ -1785,6 +1792,55 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
     prism::showDialog("Logic Graph", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 520.0F);
 }
 
+void EditorContentBrowserUVE::CreateParticleSystemUVE() {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path folder = snapshot.contentRoot / m_editor.m_contentBrowserDirectory;
+    const std::vector<VFX::ParticleTemplateInfoUVE>& templates = VFX::GetParticleTemplatesUVE();
+    std::vector<std::string> labels;
+    labels.reserve(templates.size());
+    for (const VFX::ParticleTemplateInfoUVE& info : templates) {
+        labels.emplace_back(info.name);
+    }
+    auto name = prism::make<prism::TextInput>("VFX_NewEffect", "Name");
+    auto picker = prism::make<prism::ComboBox>(labels, 0);
+    auto form = prism::make<prism::PropertyGrid>();
+    const int cat = form->addCategory("New Particle System");
+    form->addRow(cat, "Name", name, "The file's name");
+    form->addRow(cat, "Template", picker, "The effect to start from");
+    std::weak_ptr<prism::TextInput> weakName = name;
+    std::weak_ptr<prism::ComboBox> weakPicker = picker;
+    auto made = std::make_shared<bool>(false);
+    const auto create = [this, folder, weakName, weakPicker, made] {
+        const auto n = weakName.lock();
+        const auto p = weakPicker.lock();
+        if (*made || !n || !p || n->text().empty()) {
+            return;
+        }
+        const std::vector<VFX::ParticleTemplateInfoUVE>& infos = VFX::GetParticleTemplatesUVE();
+        const int index = std::clamp(p->selected(), 0, static_cast<int>(infos.size()) - 1);
+        *made = true;
+        const std::filesystem::path path = m_editor.CreateParticleSystemAssetUVE(
+            folder, n->text(), infos[static_cast<std::size_t>(index)].kind);
+        if (path.empty()) {
+            m_editor.m_contentStatusMessage = "Could not create a Particle System here.";
+            return;
+        }
+        m_editor.m_contentStatusMessage.clear();
+        m_editor.RefreshProjectFileIndexUVE();
+        m_folderSignature = 0;
+        ChangedUVE();
+        static_cast<void>(m_editor.OpenVfxEditorUVE(path));
+    };
+    name->onCommit = [create](const std::string&) {
+        create();
+        if (prism::Application::exists()) {
+            prism::Application::get().closeAllPopups();
+        }
+    };
+    prism::showDialog("Particle System", form,
+                      {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 460.0F);
+}
+
 void EditorContentBrowserUVE::CreateWidgetBlueprintUVE() {
     const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     const std::optional<std::filesystem::path> made =
@@ -1911,6 +1967,10 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
     }
     if (type == ItemTypeUVE::AnimationLibrary) {
         add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::AnimLibrary));
+    }
+    if (type == ItemTypeUVE::ParticleSystem) {
+        add(prism::MenuItem::Item("Open in Particle System Editor", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "",
+                                  prism::Icon::Light));
     }
     // A clip becomes a montage: a .uvmontage beside it with the clip on its slot track, opened.
     if (extension == ".uvanim") {
@@ -2141,6 +2201,10 @@ const EditorContentBrowserUVE::PreviewUVE* EditorContentBrowserUVE::PreviewForUV
             texture = m_editor.GetMaterialThumbnailUVE(entry.relativePath);
             renderTarget = true;
             break;
+        case ItemTypeUVE::ParticleSystem:
+            texture = m_editor.GetVfxThumbnailUVE(entry.relativePath);
+            renderTarget = false;
+            break;
         case ItemTypeUVE::Animation: {
             // A clip's icon is drawn on the CPU already: copied as it is (again when it is redrawn).
             // The content root kept from the last listing: a snapshot copy per tile would cost a
@@ -2237,6 +2301,11 @@ void EditorContentBrowserUVE::OpenEntryUVE(const std::size_t entryIndex) {
             break;
         case ItemTypeUVE::MontageLibrary:
             ShowMontageLibraryUVE(full);
+            break;
+        case ItemTypeUVE::ParticleSystem:
+            if (!m_editor.OpenVfxEditorUVE(full)) {
+                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Particle System Editor.";
+            }
             break;
         case ItemTypeUVE::AnimationLibrary:
             if (!m_editor.OpenAnimationLibraryUVE(full)) {

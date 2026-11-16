@@ -43,18 +43,20 @@ constexpr float kCurveTimeEpsilonUVE = 1e-4F;
     std::function<void(float)> onCommit) {
     auto field = prism::make<prism::NumberField>(value, step, decimals);
     field->setScrubbable(false);
-    field->onChanged = std::move(onCommit);
+    field->onChange = std::move(onCommit);
     return field;
 }
 
 [[nodiscard]] prism::Ref<prism::Vec3Field> MakeTypedVec3FieldUVE(
     const Math::Vector3UVE& v,
     std::function<void(const Math::Vector3UVE&)> onCommit) {
-    auto field = prism::make<prism::Vec3Field>(v.x, v.y, v.z);
+    auto field = prism::make<prism::Vec3Field>(0.1F, 2);
     field->setScrubbable(false);
-    field->onChanged = [onCommit = std::move(onCommit)](const float x, const float y, const float z) {
+    field->setValue(v.x, v.y, v.z);
+    prism::Vec3Field* const raw = field.get();
+    field->onChange = [raw, onCommit = std::move(onCommit)](const int, const float) {
         if (onCommit) {
-            onCommit(Math::Vector3UVE{x, y, z});
+            onCommit(Math::Vector3UVE{raw->get(0), raw->get(1), raw->get(2)});
         }
     };
     return field;
@@ -319,18 +321,17 @@ void SyncGradientEditorFromAssetUVE(const Asset::ParticleGradientUVE& assetGrad,
             aStops.push_back({s.time, s.alpha});
         }
     }
-    widget.setColorStops(std::move(cStops));
-    widget.setAlphaStops(std::move(aStops));
+    widget.setStops(std::move(cStops), std::move(aStops));
 }
 
 void SyncAssetFromGradientEditorUVE(const prism::GradientEditor& widget,
                                     Asset::ParticleGradientUVE& outGrad) {
     std::vector<float> times;
     for (const prism::GradientColorStop& cs : widget.colorStops()) {
-        times.push_back(std::clamp(cs.time, 0.0F, 1.0F));
+        times.push_back(std::clamp(cs.t, 0.0F, 1.0F));
     }
     for (const prism::GradientAlphaStop& as : widget.alphaStops()) {
-        times.push_back(std::clamp(as.time, 0.0F, 1.0F));
+        times.push_back(std::clamp(as.t, 0.0F, 1.0F));
     }
     std::sort(times.begin(), times.end());
     std::vector<float> uniqueTimes;
@@ -350,11 +351,14 @@ void SyncAssetFromGradientEditorUVE(const prism::GradientEditor& widget,
     outGrad.stops.clear();
     outGrad.stops.reserve(uniqueTimes.size());
     for (const float t : uniqueTimes) {
-        const auto [r, g, b] = widget.evaluateColorLinear(t);
-        const float a = widget.evaluateAlpha(t);
+        const prism::ColorHdr linear = widget.evaluateLinear(t);
+        const float r = linear.r;
+        const float g = linear.g;
+        const float b = linear.b;
+        const float a = linear.a;
         Asset::ParticleGradientStopUVE stop{};
         stop.time = t;
-        stop.color = Math::ColorUVE{r, g, b, 1.0F};
+        stop.color = Math::ColorUVE{r, g, b};
         stop.alpha = a;
         outGrad.stops.push_back(stop);
     }
@@ -369,7 +373,7 @@ VfxCurveEditWidgetUVE::VfxCurveEditWidgetUVE(Asset::ParticleCurveUVE curve)
     if (m_curve.keys.empty()) {
         ApplyVfxCurvePresetUVE(m_curve, VfxCurvePresetUVE::Linear);
     }
-    m_minSize = {180.0F, 112.0F};
+    setMinSize(180.0F, 112.0F);
 }
 
 void VfxCurveEditWidgetUVE::setCurve(const Asset::ParticleCurveUVE& curve) {
@@ -412,7 +416,7 @@ VfxCurveEditWidgetUVE::ValueRangeUVE VfxCurveEditWidgetUVE::ComputeRangeUVE() co
 }
 
 prism::Rect VfxCurveEditWidgetUVE::PlotRectUVE() const noexcept {
-    return m_rect.inset(prism::Margin(8.0F, 8.0F, 8.0F, 8.0F));
+    return m_rect.deflated(8.0F);
 }
 
 prism::Vec2 VfxCurveEditWidgetUVE::KeyToScreenUVE(
@@ -456,8 +460,8 @@ void VfxCurveEditWidgetUVE::NotifyChangedUVE() {
 
 void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
-    c.fillRoundRect(m_rect, 4.0F, t.inputBg);
-    c.strokeRoundRect(m_rect, 4.0F, hasFocus() ? t.borderFocus : t.inputBorder, 1.0F);
+    c.fillRoundRect(m_rect, 4.0F, t.field);
+    c.strokeRoundRect(m_rect, 4.0F, focused() ? t.accent : t.border, 1.0F);
 
     const prism::Rect plot = PlotRectUVE();
     if (plot.w <= 4.0F || plot.h <= 4.0F) {
@@ -475,12 +479,12 @@ void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
     }
 
     // Sample curve across 64 segments.
-    c.pushClip(m_rect.inset(1.0F));
+    c.pushClip(m_rect.deflated(1.0F));
     constexpr int kSamples = 64;
     prism::Vec2 prevPt{};
     for (int s = 0; s <= kSamples; ++s) {
         const float u = static_cast<float>(s) / static_cast<float>(kSamples);
-        const float val = VFX::SampleCurveExactUVE(m_curve, u);
+        const float val = VFX::EvaluateVfxCurveExactUVE(m_curve, u);
         const prism::Vec2 curPt = KeyToScreenUVE(u, val, plot, range);
         if (s > 0) {
             c.line(prevPt, curPt, t.accent, 2.0F);
@@ -783,7 +787,7 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                             {"Fade Out", VfxCurvePresetUVE::FadeOut},
                         }};
                         for (const auto& [label, preset] : kPresets) {
-                            auto btn = prism::make<prism::Button>(label, prism::Icon::None, prism::ButtonStyle::Subtle);
+                            auto btn = prism::make<prism::Button>(label, prism::Icon::None, prism::ButtonStyle::Flat);
                             btn->onClick = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, preset, onAssetMutated] {
                                 editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
                                     if (selectedEmitterIndex < s.emitters.size()) {
@@ -1097,8 +1101,8 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                             static_cast<std::uint8_t>(std::clamp(cur.constant.g, 0.0F, 1.0F) * 255.0F + 0.5F),
                             static_cast<std::uint8_t>(std::clamp(cur.constant.b, 0.0F, 1.0F) * 255.0F + 0.5F),
                             static_cast<std::uint8_t>(std::clamp(cur.alpha, 0.0F, 1.0F) * 255.0F + 0.5F));
-                        auto swatch = prism::make<prism::ColorSwatch>(initCol);
-                        swatch->onChanged = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const prism::Color c) {
+                        auto swatch = prism::make<prism::ColorField>(initCol);
+                        swatch->onChange = [&editor, selectedEmitterIndex, selectedModuleId, pinName, defVal, onAssetMutated](const prism::Color c) {
                             editor.EditVfxSystemUVE([&](Asset::ParticleSystemAssetUVE& s) {
                                 if (selectedEmitterIndex < s.emitters.size()) {
                                     if (Asset::ParticleModuleUVE* m = FindMutableModuleInEmitterUVE(s.emitters[selectedEmitterIndex], selectedModuleId)) {
@@ -1106,8 +1110,7 @@ prism::Ref<prism::Widget> BuildVfxInspectorContentUVE(
                                         val.constant = Math::ColorUVE{
                                             static_cast<float>(c.r) / 255.0F,
                                             static_cast<float>(c.g) / 255.0F,
-                                            static_cast<float>(c.b) / 255.0F,
-                                            1.0F};
+                                            static_cast<float>(c.b) / 255.0F};
                                         val.alpha = static_cast<float>(c.a) / 255.0F;
                                         m->colors[pinName] = std::move(val);
                                     }
