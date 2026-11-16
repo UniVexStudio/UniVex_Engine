@@ -943,11 +943,11 @@ EditorBridgeContentBrowserSnapshotUVE EditorBridgeUVE::CaptureContentBrowserUVE(
     return snapshot;
 }
 
-EditorBridgeContentBrowserEntryUVE EditorBridgeUVE::ToContentEntryUVE(const Asset::ProjectFileEntryUVE& entry) {
+EditorBridgeContentBrowserEntryUVE EditorBridgeUVE::ToContentEntryUVE(const Asset::ProjectFileEntryUVE& entry) const {
     return EditorBridgeContentBrowserEntryUVE{
         BoundContentPathUVE(entry.relativePath.generic_string()),
         entry.kind == Asset::ProjectFileEntryKindUVE::Directory,
-        BoundPresentationTextUVE(EditorUVE::GetContentBrowserItemTypeLabelUVE(EditorUVE::ClassifyContentBrowserEntryUVE(entry))),
+        BoundPresentationTextUVE(EditorUVE::GetContentBrowserItemTypeLabelUVE(m_editor->GetContentBrowserEntryTypeUVE(entry))),
         entry.registeredAssetGuid.has_value() ? std::optional<std::uint64_t>{entry.registeredAssetGuid->value} : std::nullopt,
     };
 }

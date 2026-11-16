@@ -769,7 +769,7 @@ void EditorContentBrowserUVE::RebuildFavoritesUVE() {
             continue;
         }
         m_favoriteIds.push_back(favorite);
-        const ItemTypeUVE type = EditorUVE::ClassifyContentBrowserEntryUVE(*it);
+        const ItemTypeUVE type = m_editor.GetContentBrowserEntryTypeUVE(*it);
         prism::TreeNode* node = m_favorites->addNode(nullptr, favorite.filename().string(), IconForUVE(type),
                                                      static_cast<int>(m_favoriteIds.size()));
         node->toggles = false;
@@ -914,7 +914,7 @@ void EditorContentBrowserUVE::RebuildItemsUVE() {
     std::vector<std::size_t> candidates;
     for (const std::size_t i : listed) {
         // Gameplay is written as Blueprints: loose script files are not listed.
-        if (EditorUVE::ClassifyContentBrowserEntryUVE(snapshot.entries[i]) == ItemTypeUVE::Script) {
+        if (m_editor.GetContentBrowserEntryTypeUVE(snapshot.entries[i]) == ItemTypeUVE::Script) {
             continue;
         }
         if (m_editor.DoesContentBrowserEntryMatchFocusUVE(snapshot.entries[i])) {
@@ -928,7 +928,7 @@ void EditorContentBrowserUVE::RebuildItemsUVE() {
         const Asset::ProjectFileEntryUVE& entry = snapshot.entries[i];
         ContentItemFactsUVE f;
         f.name = entry.relativePath.filename().string();
-        f.type = EditorUVE::GetContentBrowserItemTypeLabelUVE(EditorUVE::ClassifyContentBrowserEntryUVE(entry));
+        f.type = EditorUVE::GetContentBrowserItemTypeLabelUVE(m_editor.GetContentBrowserEntryTypeUVE(entry));
         f.folder = entry.relativePath.parent_path().generic_string();
         f.isFolder = entry.kind == Asset::ProjectFileEntryKindUVE::Directory;
         if (!f.isFolder) {
@@ -1000,7 +1000,7 @@ void EditorContentBrowserUVE::BuildTilesUVE(const Asset::ProjectFileSnapshotUVE&
         const bool selected = m_editor.m_contentSelection.ContainsUVE(key) ||
                               (m_editor.m_contentSelection.IsEmptyUVE() && m_editor.m_selectedProjectFile.has_value() &&
                                m_editor.m_selectedProjectFile->relativePath == entry.relativePath);
-        const ItemTypeUVE type = EditorUVE::ClassifyContentBrowserEntryUVE(entry);
+        const ItemTypeUVE type = m_editor.GetContentBrowserEntryTypeUVE(entry);
         // The engine's own preview (real mesh, PBR material, texture) when it has one, else the
         // engine's icon for the type; PRISM only draws the tile around it. Folders have no preview.
         const std::uint32_t* pixels = nullptr;
@@ -1112,7 +1112,7 @@ void EditorContentBrowserUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE&
         float x = r.x + 6.0F;
         if (col == 0 && static_cast<std::size_t>(m_shown[static_cast<std::size_t>(row)]) < snap.entries.size()) {
             const ItemTypeUVE type =
-                EditorUVE::ClassifyContentBrowserEntryUVE(snap.entries[m_shown[static_cast<std::size_t>(row)]]);
+                m_editor.GetContentBrowserEntryTypeUVE(snap.entries[m_shown[static_cast<std::size_t>(row)]]);
             if (const EditorIconsUVE::ImageUVE icon = TypeIconUVE(type, 16); icon) {
                 c.blitBlend(icon.pixels, icon.size, icon.size, icon.size,
                             prism::Rect{x, std::floor(r.y + (r.h - 16.0F) * 0.5F), 16.0F, 16.0F});
@@ -1198,7 +1198,7 @@ void EditorContentBrowserUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUV
         int selectedId = 0;
         for (const std::size_t i : entries) {
             const Asset::ProjectFileEntryUVE& entry = snapshot.entries[i];
-            const ItemTypeUVE type = EditorUVE::ClassifyContentBrowserEntryUVE(entry);
+            const ItemTypeUVE type = m_editor.GetContentBrowserEntryTypeUVE(entry);
             ids.push_back(i);
             prism::TreeNode* node =
                 list->addNode(nullptr, DisplayNameUVE(entry), IconForUVE(type), static_cast<int>(ids.size()));
@@ -1256,7 +1256,7 @@ void EditorContentBrowserUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUV
     if (m_editor.m_selectedProjectFile.has_value() &&
         m_editor.m_selectedProjectFile->kind != Asset::ProjectFileEntryKindUVE::Directory) {
         const Asset::ProjectFileEntryUVE entry = *m_editor.m_selectedProjectFile;
-        const ItemTypeUVE type = EditorUVE::ClassifyContentBrowserEntryUVE(entry);
+        const ItemTypeUVE type = m_editor.GetContentBrowserEntryTypeUVE(entry);
         const std::uint32_t* pixels = nullptr;
         int pw = 0;
         int ph = 0;
@@ -1313,7 +1313,7 @@ void EditorContentBrowserUVE::BuildBoardUVE(const Asset::ProjectFileSnapshotUVE&
         for (const std::size_t m : members) {
             const std::size_t i = m_shown[m];
             const Asset::ProjectFileEntryUVE& entry = snapshot.entries[i];
-            const ItemTypeUVE type = EditorUVE::ClassifyContentBrowserEntryUVE(entry);
+            const ItemTypeUVE type = m_editor.GetContentBrowserEntryTypeUVE(entry);
             ids.push_back(i);
             prism::TreeNode* node = list->addNode(nullptr, DisplayNameUVE(entry), IconForUVE(type), static_cast<int>(ids.size()));
             node->toggles = false;
@@ -1922,7 +1922,7 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
     const std::string name = entry.relativePath.filename().string();
     const bool directory = entry.kind == Asset::ProjectFileEntryKindUVE::Directory;
     const bool allowed = m_editor.IsAuthoringCommandAllowedUVE();
-    const ItemTypeUVE type = EditorUVE::ClassifyContentBrowserEntryUVE(entry);
+    const ItemTypeUVE type = m_editor.GetContentBrowserEntryTypeUVE(entry);
     const std::string extension = LowerExtensionUVE(entry.relativePath);
     std::vector<prism::MenuItem> items;
     const auto add = [&items](prism::MenuItem item, const bool enabled = true) {
@@ -2176,7 +2176,7 @@ void EditorContentBrowserUVE::BeginDragUVE(const std::size_t entryIndex) {
     auto op = std::make_shared<prism::DragDropOperation>(kDragTagUVE);
     op->setPayload(entry.relativePath.generic_string());
     const std::string name = entry.relativePath.filename().string();
-    const EditorIconsUVE::ImageUVE icon = TypeIconUVE(EditorUVE::ClassifyContentBrowserEntryUVE(entry), 16);
+    const EditorIconsUVE::ImageUVE icon = TypeIconUVE(m_editor.GetContentBrowserEntryTypeUVE(entry), 16);
     op->setDecorator([name, icon](prism::Canvas& c, const prism::Vec2 mouse) {
         const prism::Theme& t = prism::theme();
         const prism::Rect card{mouse.x + 12.0F, mouse.y + 12.0F, std::min(260.0F, t.ui->width(name) + 40.0F), 26.0F};
@@ -2283,7 +2283,7 @@ void EditorContentBrowserUVE::OpenEntryUVE(const std::size_t entryIndex) {
         GoToFolderUVE(entry.relativePath);
         return;
     }
-    switch (EditorUVE::ClassifyContentBrowserEntryUVE(entry)) {
+    switch (m_editor.GetContentBrowserEntryTypeUVE(entry)) {
         case ItemTypeUVE::Entity:
             if (!m_editor.OpenEntityEditorUVE(full)) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " in the Entity Editor.";

@@ -434,8 +434,8 @@ private:
     [[nodiscard]] EditorBridgeHierarchySnapshotUVE CaptureHierarchyUVE();
     [[nodiscard]] EditorBridgeInspectorSnapshotUVE CaptureInspectorUVE() const;
     [[nodiscard]] EditorBridgeContentBrowserSnapshotUVE CaptureContentBrowserUVE();
-    [[nodiscard]] static EditorBridgeContentBrowserEntryUVE ToContentEntryUVE(
-        const Asset::ProjectFileEntryUVE& entry);
+    [[nodiscard]] EditorBridgeContentBrowserEntryUVE ToContentEntryUVE(
+        const Asset::ProjectFileEntryUVE& entry) const;
     [[nodiscard]] static std::optional<EditorUVE::ContentBrowserTypeFocusUVE> ParseContentBrowserFocusUVE(
         const std::string& focus) noexcept;
 

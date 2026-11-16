@@ -105,7 +105,7 @@ private:
     std::shared_ptr<prism::Button> m_addEmitterButton;
     std::shared_ptr<prism::ScrollBox> m_parametersScroll;
 
-    CenterModeUVE m_centerMode = CenterModeUVE::Split;
+    CenterModeUVE m_centerMode = CenterModeUVE::GraphOnly;
     std::shared_ptr<prism::Splitter> m_centerTopSplitter;
     std::shared_ptr<prism::Widget> m_previewPane;
     std::shared_ptr<prism::Widget> m_graphPane;

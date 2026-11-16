@@ -1,6 +1,9 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_vfx_editor.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #include "editor.h"
 #include "editor_chrome.h"
 #include "editor_fit_width.h"
@@ -230,6 +233,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildUVE() {
     frame->setBackground(prism::ThemeColor(&prism::Theme::window));
     frame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
     frame->setChild(window);
+    ApplyCenterModeUVE(m_centerMode);
     return frame;
 }
 
@@ -409,7 +413,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
 
     m_centerModeSeg = prism::make<prism::Segmented>();
     m_centerModeSeg->add("Split").add("Preview").add("Graph");
-    m_centerModeSeg->setSelected(0);
+    m_centerModeSeg->setSelected(2);
     m_centerModeSeg->onSelect = [this](const int idx) {
         ApplyCenterModeUVE(idx == 1 ? CenterModeUVE::PreviewOnly
                            : idx == 2 ? CenterModeUVE::GraphOnly
@@ -515,6 +519,10 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
     m_previewPane = PanelUVE(viewportOverlay);
 
     m_graph = prism::make<prism::BlueprintGraph>();
+    prism::BlueprintGraph::Features graphFeatures = m_graph->features();
+    graphFeatures.toolbar = false;
+    graphFeatures.crumbs = false;
+    m_graph->setFeatures(graphFeatures);
     m_graph->onSelectionChanged = [this](const std::vector<int>& selectedIds) {
         if (m_syncingGraph || !m_graph) {
             return;
