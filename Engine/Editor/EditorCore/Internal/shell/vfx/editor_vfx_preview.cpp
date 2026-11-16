@@ -28,12 +28,8 @@ constexpr float kTimelineRightPadUVE = 14.0F;
 }
 
 [[nodiscard]] float ReadBurstTimeInputUVE(const Asset::ParticleModuleUVE& mod) noexcept {
-    for (const Asset::ParticleModuleInputUVE& input : mod.inputs) {
-        if (input.name == "Time") {
-            return input.constant.x;
-        }
-    }
-    return 0.0F;
+    const auto it = mod.floats.find("Time");
+    return it != mod.floats.end() ? it->second.constant : 0.0F;
 }
 
 } // namespace

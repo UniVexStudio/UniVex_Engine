@@ -121,13 +121,17 @@ EditorShellUVE::EditorShellUVE(EditorUVE& editor)
                                   source.save = [&editor] { return editor.SaveProjectSettingsUVE(); };
                                   return source;
                               }),
-      m_shortcutsWindow(editor, m_host), m_inputMapWindow(editor, m_host), m_captureWindow(editor, m_host), m_audioMixerWindow(editor, m_host), m_montageEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
+      m_shortcutsWindow(editor, m_host), m_inputMapWindow(editor, m_host), m_captureWindow(editor, m_host), m_audioMixerWindow(editor, m_host), m_montageEditor(editor, m_host), m_vfxEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
         ShowDockPanelUVE(0, true);
         m_contentBrowser.RevealFileUVE(path);
         m_host.FocusWindowUVE(EditorHostUVE::kMainWindowUVE);
     };
+}
+
+bool EditorShellUVE::SaveVfxEditorScreenshotUVE(const std::filesystem::path& path) {
+    return m_vfxEditor.SaveScreenshotUVE(path);
 }
 
 bool EditorShellUVE::SaveEntityEditorScreenshotUVE(const std::filesystem::path& path) {
@@ -181,6 +185,9 @@ void EditorShellUVE::ShutdownUVE() {
     }
     if (m_host.IsReadyUVE() && m_montageEditor.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_montageEditor.WindowIdUVE());
+    }
+    if (m_host.IsReadyUVE() && m_vfxEditor.WindowIdUVE() != 0) {
+        m_host.CloseWindowUVE(m_vfxEditor.WindowIdUVE());
     }
     if (m_host.IsReadyUVE() && m_retargetEditor.WindowIdUVE() != 0) {
         m_host.CloseWindowUVE(m_retargetEditor.WindowIdUVE());
@@ -1189,6 +1196,7 @@ void EditorShellUVE::FrameUVE() {
     // The Entity Editor's window follows the entity session; its panels read the entity's document.
     m_entityEditor.SyncUVE();
     m_montageEditor.SyncUVE();
+    m_vfxEditor.SyncUVE();
     m_retargetEditor.SyncUVE();
     m_animationLibraryEditor.SyncUVE();
     {
@@ -1335,6 +1343,7 @@ void EditorShellUVE::FrameUVE() {
         m_entityEditor.RenderUVE();
     }
     m_montageEditor.RenderUVE();
+    m_vfxEditor.RenderUVE();
     m_retargetEditor.RenderUVE();
     m_animationLibraryEditor.RenderUVE();
     m_fileDialog.FrameUVE();

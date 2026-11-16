@@ -82,6 +82,11 @@
 #include "morph_target_component.h"
 #include "skin_component.h"
 #include "particle_emitter_component.h"
+#include "particle_system_asset.h"
+#include "vfx_program.h"
+#include "vfx_templates.h"
+#include "vfx_world.h"
+#include "vfx_draw_list.h"
 #include "physics_interpolation_component.h"
 #include "primitive_mesh_component.h"
 #include "rigid_3d_component.h"
@@ -464,6 +469,7 @@ class EditorUVE final {
     friend class EditorDockPanelsUVE;
     friend class EditorViewToolbarUVE;
     friend class EditorEntityEditorUVE;
+    friend class EditorVfxEditorUVE;
     friend class EditorSequencerPanelUVE;
     friend class KeyframeViewUVE;
     friend class EditorAnimGraphPanelUVE;
@@ -844,6 +850,8 @@ public:
         MontageEditor,
         /// The Widget Editor's Designer: a 3D View's asset, live, where the widget stands.
         WidgetPreview,
+        /// The VFX / Particle Graph Editor's live preview of its particle system.
+        VfxEditor,
         Count
     };
 
@@ -1556,6 +1564,74 @@ public:
     /// The Outliner's Viewport: the folder at the top of the level that every other folder lives in.
     /// Invalid while an entity or the Retarget preview stands in for the level.
     [[nodiscard]] Scene::EntityUVE GetDocumentViewportUVE();
+    /// One open VFX / Particle Graph Editor document: the particle system being authored, its
+    /// undo history, the last compile's diagnostics, and the live preview world it plays in.
+    struct VfxEditSessionUVE final {
+        std::filesystem::path path;
+        Asset::ParticleSystemAssetUVE system;
+        Asset::ParticleSystemAssetUVE savedSystem;
+        /// The most recent system that compiled without errors; the preview keeps running it
+        /// while the authored system has compile errors.
+        Asset::ParticleSystemAssetUVE lastGoodSystem;
+        bool hasGoodSystem = false;
+        std::vector<Asset::ParticleSystemAssetUVE> undo;
+        std::vector<Asset::ParticleSystemAssetUVE> redo;
+        std::size_t selectedEmitter = 0U;
+        std::optional<std::size_t> soloEmitter;
+        std::vector<VFX::ParticleCompileMessageUVE> compileMessages;
+        std::string status;
+        VFX::VfxWorldUVE previewWorld;
+        VFX::VfxHandleUVE previewHandle{};
+        Render::VfxDrawListUVE vfxDrawList;
+        bool playing = true;
+        bool loop = true;
+        bool fixedSeed = false;
+        bool showGrid = true;
+        bool showBounds = false;
+        bool focusPending = true;
+        bool confirmClose = false;
+        double speed = 1.0;
+        double playhead = 0.0;
+        std::uint32_t restartCounter = 0U;
+        std::vector<float> lastEmitterCpuMs;
+        std::size_t lastInstancesDrawn = 0U;
+    };
+
+    /// Opens the `.uvfx` at `absolutePath` in the VFX Editor (replacing any open document).
+    [[nodiscard]] bool OpenVfxEditorUVE(const std::filesystem::path& absolutePath);
+    [[nodiscard]] bool IsVfxEditorOpenUVE() const noexcept { return m_vfxEdit != nullptr; }
+    [[nodiscard]] bool IsVfxEditorDirtyUVE() const noexcept;
+    /// Writes the document (only when it is a valid particle system) and marks it clean.
+    [[nodiscard]] bool SaveVfxEditorUVE();
+    void CloseVfxEditorUVE();
+    /// One undoable edit: `edit` mutates a copy of the system, which then replaces it, is
+    /// recompiled, and (when it compiles) respawns the live preview. Returns false when no
+    /// document is open or the edit changed nothing.
+    bool EditVfxSystemUVE(const std::function<void(Asset::ParticleSystemAssetUVE&)>& edit);
+    [[nodiscard]] bool UndoVfxEditUVE();
+    [[nodiscard]] bool RedoVfxEditUVE();
+    /// Compiles every enabled emitter (only the solo emitter while one is soloed). Returns true
+    /// when there are no errors; only then does the preview switch to the new system.
+    [[nodiscard]] bool CompileVfxEditorUVE();
+    void PlayVfxPreviewUVE() noexcept;
+    void PauseVfxPreviewUVE() noexcept;
+    void RestartVfxPreviewUVE();
+    /// Moves the preview to `seconds`: restarts it and steps it forward deterministically.
+    void SetVfxPlayheadUVE(double seconds);
+    void TickVfxEditorUVE(double deltaSeconds);
+    /// Draws the live preview into the VFX Editor's view; 0 when nothing can be drawn.
+    [[nodiscard]] std::uint64_t RenderVfxPreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
+                                                    const EditorViewportInputUVE& input);
+    [[nodiscard]] VfxEditSessionUVE* VfxEditSessionPtrUVE() noexcept { return m_vfxEdit.get(); }
+    /// Creates a new `.uvfx` in `directory` from a built-in template; returns its path (empty on failure).
+    [[nodiscard]] std::filesystem::path CreateParticleSystemAssetUVE(const std::filesystem::path& directory,
+                                                                     const std::string& name,
+                                                                     VFX::ParticleTemplateKindUVE kind);
+    /// The Content Browser thumbnail of a `.uvfx`: its particles at 60% of the duration.
+    [[nodiscard]] std::uintptr_t GetVfxThumbnailUVE(const std::filesystem::path& relativePath);
+    void ClearVfxThumbnailCacheUVE() noexcept;
+    void InvalidateVfxThumbnailCacheUVE(const std::filesystem::path& absolutePath);
+
     [[nodiscard]] EditorStateUVE GetStateUVE() const noexcept;
     [[nodiscard]] Scene::EntityUVE GetSelectedEntityUVE() const noexcept;
 
@@ -2081,6 +2157,8 @@ private:
         Script,
         Audio,
         Font,
+        /// A Particle System (`.uvfx`): opens in the VFX / Particle Graph Editor.
+        ParticleSystem,
         File,
     };
 
@@ -3489,6 +3567,11 @@ private:
     std::array<char, 512> m_consoleInput{};
     bool m_consoleScrollToBottom = false;
     ViewportPanelRendererUVE m_viewportPanelRenderer;
+    /// The VFX Editor's open document, its preview world's scene, and the thumbnail cache.
+    std::unique_ptr<VfxEditSessionUVE> m_vfxEdit;
+    std::unique_ptr<Core::DocumentSceneUVE> m_vfxScene;
+    ViewportOverlayStateUVE m_vfxViewportOverlayState;
+    std::map<std::string, std::uintptr_t> m_vfxThumbnailCache;
     bool m_prismUiRequested = false;
     std::filesystem::path m_prismAssetDir;
     std::unique_ptr<EditorShellUVE> m_levelShell;

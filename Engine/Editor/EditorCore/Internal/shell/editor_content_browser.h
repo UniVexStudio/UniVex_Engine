@@ -104,6 +104,7 @@ private:
     void CreateGeneratedTextureUVE(const std::string& stem, const std::function<bool(Asset::TextureAssetUVE&)>& make);
     void CreateMaterialUVE(const std::string& stem, Asset::MaterialKindUVE kind);
     void CreateBlueprintUVE();
+    void CreateParticleSystemUVE();
     void CreateWidgetBlueprintUVE();
     void OpenBlueprintUVE(const std::filesystem::path& full);
     void OpenEntryUVE(std::size_t entryIndex);
