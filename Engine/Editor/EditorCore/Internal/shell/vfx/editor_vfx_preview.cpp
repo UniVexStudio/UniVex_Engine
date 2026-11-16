@@ -8,6 +8,7 @@
 #include "prism/Theme.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cmath>
 #include <cstdio>
 #include <string>
