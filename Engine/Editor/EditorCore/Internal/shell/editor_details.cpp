@@ -385,7 +385,7 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
         if (m_editor.m_selectedProjectFile.has_value() && !m_editor.m_selectedProjectFile->relativePath.empty()) {
             const auto& file = *m_editor.m_selectedProjectFile;
             m_title->setText(file.relativePath.filename().string());
-            m_subtitle->setText(EditorUVE::GetContentBrowserItemTypeLabelUVE(EditorUVE::ClassifyContentBrowserEntryUVE(file)));
+            m_subtitle->setText(EditorUVE::GetContentBrowserItemTypeLabelUVE(m_editor.GetContentBrowserEntryTypeUVE(file)));
             const int section = m_grid->addCategory("Asset");
             m_grid->addRow(section, "Path", prism::make<prism::Label>(file.relativePath.generic_string()));
             m_grid->addRow(section, "Registered",

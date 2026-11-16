@@ -5626,6 +5626,25 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     return ContentBrowserItemTypeUVE::File;
 }
 
+EditorUVE::ContentBrowserItemTypeUVE EditorUVE::GetContentBrowserEntryTypeUVE(
+    const Asset::ProjectFileEntryUVE& entry) const {
+    const ContentBrowserItemTypeUVE extensionType = ClassifyContentBrowserEntryUVE(entry);
+    if (entry.kind != Asset::ProjectFileEntryKindUVE::File || !IsModelSourcePathUVE(entry.relativePath)) {
+        return extensionType;
+    }
+    const EditorModelSourceInfoUVE* const source = FindModelSourceInfoUVE(entry.relativePath);
+    if (source == nullptr) {
+        return extensionType;
+    }
+    if (source->animationOnly) {
+        return ContentBrowserItemTypeUVE::Animation;
+    }
+    if (source->rigged) {
+        return ContentBrowserItemTypeUVE::Model;
+    }
+    return extensionType;
+}
+
 const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserItemTypeUVE type) noexcept {
     switch (type) {
         case ContentBrowserItemTypeUVE::Folder:
@@ -5707,7 +5726,7 @@ const char* EditorUVE::GetContentBrowserFocusLabelUVE(const ContentBrowserTypeFo
 }
 
 bool EditorUVE::DoesContentBrowserEntryMatchFocusUVE(const Asset::ProjectFileEntryUVE& entry) const {
-    const ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(entry);
+    const ContentBrowserItemTypeUVE type = GetContentBrowserEntryTypeUVE(entry);
     switch (m_contentBrowserTypeFocus) {
         case ContentBrowserTypeFocusUVE::All:
             return true;
@@ -6370,7 +6389,9 @@ namespace {
         if (!summary.has_value()) {
             return info;
         }
-        info.rigged = summary->hasSkin;
+        // A skin without any mesh geometry is not a Skeletal Mesh asset. Keep this tied to the
+        // source summary instead of using the skin flag alone; animation-only FBXs still have bones.
+        info.rigged = summary->meshCount > 0U && summary->hasSkin;
         info.hasSkeleton = summary->boneCount > 0U;
         info.animationOnly = summary->IsAnimationOnlyUVE();
         info.animationCount = summary->animationCount;
@@ -6389,8 +6410,8 @@ namespace {
         return info; // OBJ has no skeleton.
     }
     const std::optional<Asset::GltfMetadataUVE> metadata = Asset::ParseGltfMetadataUVE(json);
-    info.rigged = metadata.has_value() && metadata->skinCount > 0U;
-    info.hasSkeleton = info.rigged; // A glTF skeleton is read from its skin.
+    info.rigged = metadata.has_value() && metadata->meshCount > 0U && metadata->skinCount > 0U;
+    info.hasSkeleton = metadata.has_value() && metadata->skinCount > 0U; // A glTF skeleton is read from its skin.
     if (!timeError) {
         s_modelInfoCache[cacheKey] = CachedModelInfoUVE{writeTime, info};
     }
