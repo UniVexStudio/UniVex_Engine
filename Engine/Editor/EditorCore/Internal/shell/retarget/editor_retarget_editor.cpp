@@ -74,10 +74,7 @@ constexpr int kWindowHeightUVE = 800;
 void PaintDotCellUVE(prism::Canvas& c, const prism::Rect r, const prism::Color dot, const std::string& text, const bool dim) {
     const prism::Theme& t = prism::theme();
     c.fillCircle(prism::Vec2{r.x + 9.0F, r.y + r.h * 0.5F}, 4.0F, dot);
-    // Keep optional/missing-bone labels distinct without letting the dim theme token disappear
-    // against the Retarget table's dark row fill.
-    const prism::Color labelColor = dim ? prism::Color(185, 195, 210) : t.text;
-    c.textIn(*t.ui, prism::Rect{r.x + 20.0F, r.y, r.w - 22.0F, r.h}, text, labelColor, prism::HAlign::Left, true);
+    c.textIn(*t.ui, prism::Rect{r.x + 20.0F, r.y, r.w - 22.0F, r.h}, text, dim ? t.textDim : t.text, prism::HAlign::Left, true);
 }
 
 } // namespace
@@ -277,8 +274,7 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
             return;
         }
         const prism::Theme& t = prism::theme();
-        const prism::Color labelColor = joint.characterName.empty() ? prism::Color(185, 195, 210) : t.text;
-        c.textIn(*t.ui, prism::Rect{r.x + 6.0F, r.y, r.w - 8.0F, r.h}, text, labelColor,
+        c.textIn(*t.ui, prism::Rect{r.x + 6.0F, r.y, r.w - 8.0F, r.h}, text, joint.characterName.empty() ? t.textDim : t.text,
                  prism::HAlign::Left, true);
     };
     m_bones->onSelect = [this](const std::vector<int>& rows) {

@@ -34,13 +34,13 @@ enum class ContentCatalogueActionUVE : std::uint8_t {
     LibraryAsset,
     /// A `.uvs` script file.
     ScriptAsset,
-    /// A `.uvmontage` Motion Montage, empty until clips are put on its slot track.
+    /// A `.uvmontage` Animation Montage, empty until clips are put on its slot track.
     MontageAsset,
     /// A `.uvmaterial` material file.
     MaterialAsset,
     /// A `.uvshader` custom shader file.
     ShaderAsset,
-    /// A `.uvmontagelib` montage library: an empty list of montages MontageSequencers link to.
+    /// A `.uvmontagelib` montage library: an empty list of montages MontagePlayers link to.
     MontageLibraryAsset,
 };
 

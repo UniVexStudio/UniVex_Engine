@@ -19,8 +19,8 @@ namespace {
 using Kind = MontageEventUVE::KindUVE;
 
 /// Start 0-1, Attack 1-2, End 2-3; one clip per section.
-[[nodiscard]] Asset::MotionMontageAssetUVE MakeComboUVE() {
-    Asset::MotionMontageAssetUVE montage;
+[[nodiscard]] Asset::AnimationMontageAssetUVE MakeComboUVE() {
+    Asset::AnimationMontageAssetUVE montage;
     for (std::uint64_t clip = 1U; clip <= 3U; ++clip) {
         Asset::AddMontageSegmentUVE(montage, Asset::AssetGuidUVE{clip}, 1.0);
     }
@@ -43,8 +43,8 @@ using Kind = MontageEventUVE::KindUVE;
 
 } // namespace
 
-TEST(MotionMontageUVETest, PlaysThroughSectionsAndEnds) {
-    const Asset::MotionMontageAssetUVE montage = MakeComboUVE();
+TEST(AnimationMontageUVETest, PlaysThroughSectionsAndEnds) {
+    const Asset::AnimationMontageAssetUVE montage = MakeComboUVE();
     MontagePlaybackUVE playback;
     std::vector<MontageEventUVE> events;
     ASSERT_TRUE(StartMontageUVE(montage, playback));
@@ -59,8 +59,8 @@ TEST(MotionMontageUVETest, PlaysThroughSectionsAndEnds) {
     EXPECT_FALSE(StartMontageUVE(montage, playback, "Nowhere"));
 }
 
-TEST(MotionMontageUVETest, ALoopingSectionLoopsUntilJumpedOut) {
-    Asset::MotionMontageAssetUVE montage = MakeComboUVE();
+TEST(AnimationMontageUVETest, ALoopingSectionLoopsUntilJumpedOut) {
+    Asset::AnimationMontageAssetUVE montage = MakeComboUVE();
     ASSERT_TRUE(Asset::SetMontageSectionNextUVE(montage, "Attack", "Attack"));
     MontagePlaybackUVE playback;
     std::vector<MontageEventUVE> events;
@@ -75,8 +75,8 @@ TEST(MotionMontageUVETest, ALoopingSectionLoopsUntilJumpedOut) {
     EXPECT_EQ(playback.phase, MontagePhaseUVE::Stopped);
 }
 
-TEST(MotionMontageUVETest, BlendsInAndOut) {
-    Asset::MotionMontageAssetUVE montage = MakeComboUVE();
+TEST(AnimationMontageUVETest, BlendsInAndOut) {
+    Asset::AnimationMontageAssetUVE montage = MakeComboUVE();
     montage.blendInSeconds = 0.5;
     montage.blendOutSeconds = 0.5;
     MontagePlaybackUVE playback;
@@ -95,8 +95,8 @@ TEST(MotionMontageUVETest, BlendsInAndOut) {
     EXPECT_TRUE(HasEventUVE(events, Kind::Ended, ""));
 }
 
-TEST(MotionMontageUVETest, RaisesNotifiesAndNotifyStates) {
-    Asset::MotionMontageAssetUVE montage = MakeComboUVE();
+TEST(AnimationMontageUVETest, RaisesNotifiesAndNotifyStates) {
+    Asset::AnimationMontageAssetUVE montage = MakeComboUVE();
     Asset::AddMontageNotifyUVE(montage, "hit", 1.2, 0U);
     Asset::AddMontageNotifyStateUVE(montage, "hit_window", 1.1, 1.4, 0U);
     MontagePlaybackUVE playback;
@@ -113,12 +113,12 @@ TEST(MotionMontageUVETest, RaisesNotifiesAndNotifyStates) {
     EXPECT_TRUE(HasEventUVE(events, Kind::NotifyEnd, "hit_window"));
 }
 
-TEST(MotionMontageUVETest, ABlendCurveShapesTheWeight) {
+TEST(AnimationMontageUVETest, ABlendCurveShapesTheWeight) {
     EXPECT_FLOAT_EQ(Asset::MontageBlendCurveWeightUVE(Asset::MontageBlendCurveUVE::Linear, 0.5), 0.5F);
     EXPECT_FLOAT_EQ(Asset::MontageBlendCurveWeightUVE(Asset::MontageBlendCurveUVE::EaseIn, 0.5), 0.25F);
     EXPECT_FLOAT_EQ(Asset::MontageBlendCurveWeightUVE(Asset::MontageBlendCurveUVE::EaseOut, 0.5), 0.75F);
     EXPECT_FLOAT_EQ(Asset::MontageBlendCurveWeightUVE(Asset::MontageBlendCurveUVE::EaseInOut, 2.0), 1.0F) << "clamped";
-    Asset::MotionMontageAssetUVE montage = MakeComboUVE();
+    Asset::AnimationMontageAssetUVE montage = MakeComboUVE();
     montage.blendInSeconds = 1.0;
     montage.blendInCurve = Asset::MontageBlendCurveUVE::EaseIn;
     MontagePlaybackUVE playback;
@@ -128,8 +128,8 @@ TEST(MotionMontageUVETest, ABlendCurveShapesTheWeight) {
     EXPECT_NEAR(playback.weight, 0.25F, 1e-5) << "eased in: a quarter at half time";
 }
 
-TEST(MotionMontageUVETest, ANotifyKeepsToItsChanceAndWeight) {
-    Asset::MotionMontageAssetUVE montage = MakeComboUVE();
+TEST(AnimationMontageUVETest, ANotifyKeepsToItsChanceAndWeight) {
+    Asset::AnimationMontageAssetUVE montage = MakeComboUVE();
     Asset::AddMontageNotifyUVE(montage, "never", 1.2, 0U);
     Asset::AddMontageNotifyUVE(montage, "heavy", 1.3, 0U);
     montage.notifies[0].triggerChance = 0.0F;
@@ -143,16 +143,16 @@ TEST(MotionMontageUVETest, ANotifyKeepsToItsChanceAndWeight) {
     EXPECT_FALSE(HasEventUVE(events, Kind::Notify, "heavy")) << "passed at half weight: below its threshold";
     // Saved and read back.
     const std::filesystem::path file = std::filesystem::temp_directory_path() / "uve_montage_notify_chance_test.uvmontage";
-    ASSERT_TRUE(Asset::SaveMotionMontageAssetUVE(montage, file));
-    Asset::MotionMontageAssetUVE copy;
-    ASSERT_TRUE(Asset::LoadMotionMontageAssetUVE(file, copy));
+    ASSERT_TRUE(Asset::SaveAnimationMontageAssetUVE(montage, file));
+    Asset::AnimationMontageAssetUVE copy;
+    ASSERT_TRUE(Asset::LoadAnimationMontageAssetUVE(file, copy));
     std::error_code ignored;
     std::filesystem::remove(file, ignored);
     EXPECT_EQ(copy.notifies[0].triggerChance, 0.0F);
     EXPECT_EQ(copy.notifies[1].minWeight, 0.9F);
 }
 
-TEST(MotionMontageUVETest, BlendsItsPoseOverTheSkeleton) {
+TEST(AnimationMontageUVETest, BlendsItsPoseOverTheSkeleton) {
     Asset::AnimationClipAssetUVE clip;
     clip.durationSeconds = 1.0;
     Asset::AnimationAssetSampleUVE a;
@@ -160,7 +160,7 @@ TEST(MotionMontageUVETest, BlendsItsPoseOverTheSkeleton) {
     Asset::AnimationAssetSampleUVE b = a;
     b.timeSeconds = 1.0;
     clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {a, b}}};
-    Asset::MotionMontageAssetUVE montage;
+    Asset::AnimationMontageAssetUVE montage;
     Asset::AddMontageSegmentUVE(montage, Asset::AssetGuidUVE{7U}, 1.0);
 
     Skeleton3DComponentUVE skeleton;
@@ -177,7 +177,7 @@ TEST(MotionMontageUVETest, BlendsItsPoseOverTheSkeleton) {
 }
 
 
-TEST(MotionMontageUVETest, AGraphSlotNodeLaysTheMontageOverItsInput) {
+TEST(AnimationMontageUVETest, AGraphSlotNodeLaysTheMontageOverItsInput) {
     Asset::AnimationClipAssetUVE clip;
     clip.durationSeconds = 1.0;
     Asset::AnimationAssetSampleUVE a;

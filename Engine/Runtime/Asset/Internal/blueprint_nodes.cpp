@@ -269,7 +269,7 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     action("set_pitch", "Set Pitch", "Audio", {Pin{"Pitch", T::Float, "1.0"}}, "pitch = {1}");
 
     // ---- animation
-    action("montage_play", "Play Montage", "Animation", {Pin{"Montage", T::String, "Attack"}}, "montage.play({1})", "attack anim", "On its MontageSequencer, by the montage's name");
+    action("montage_play", "Play Montage", "Animation", {Pin{"Montage", T::String, "Attack"}}, "montage.play({1})", "attack anim", "On its MontagePlayer, by the montage's name");
     action("montage_play_section", "Play Montage Section", "Animation", {Pin{"Montage", T::String, "Attack"}, Pin{"Section", T::String, "Default"}},
            "montage.play_section({1}, {2})", "combo");
     action("montage_jump_to", "Jump To Section", "Animation", {Pin{"Section", T::String, "Default"}}, "montage.jump_to({1})", "combo next");

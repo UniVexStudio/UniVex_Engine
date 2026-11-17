@@ -27,7 +27,7 @@ enum class Icon : uint8_t {
   // timeline transport and keys
   SkipStart, SkipEnd, StepBack, StepForward, Key, Curve,
   // one glyph per concept: assets, objects, panels, animation nodes and parameters
-  AnimClip, AnimMontage, AnimLibrary, MontageLibrary, AnimSequencer, MontageSequencer, AnimTree, AnimClipNode,
+  AnimClip, AnimMontage, AnimLibrary, MontageLibrary, AnimSequencer, MontagePlayer, AnimTree, AnimClipNode,
   LayeredBlend, TwoBoneIK, LookAt, ModifyBone, OneShot, TimeScale, TimeSeek, AnimSelect, BlendByBool,
   StateMachine, AnimEvent, DopeSheet, BoneTrack, ParamFloat, ParamBool, ParamTrigger, ParamVector, Fire,
   PreviewPose, Components, OutputLog, CompileResults, FindResults, DiffView, Profiler, LayoutFull,

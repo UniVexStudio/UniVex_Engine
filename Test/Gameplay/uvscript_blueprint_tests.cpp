@@ -64,7 +64,7 @@ protected:
         entityManager.AddComponentUVE<Rigid3DComponentUVE>(entity, Rigid3DComponentUVE{});
         entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, CharacterControllerComponentUVE{});
         entityManager.AddComponentUVE<AudioSourceComponentUVE>(entity, AudioSourceComponentUVE{});
-        entityManager.AddComponentUVE<MontageSequencerComponentUVE>(entity, MontageSequencerComponentUVE{});
+        entityManager.AddComponentUVE<MontagePlayerComponentUVE>(entity, MontagePlayerComponentUVE{});
         AnimationGraphComponentUVE graph;
         graph.parameters.push_back(AnimationParameterUVE{"Jump", AnimationParameterTypeUVE::Trigger});
         graph.parameters.push_back(AnimationParameterUVE{"IsJumping", AnimationParameterTypeUVE::Bool});
@@ -295,7 +295,7 @@ TEST_F(BlueprintUVETest, AFileRoundTripsAndABadOneIsRefused) {
     blueprint.nodes[1].inputValues = {"", "tick"};
     blueprint.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}};
     blueprint.comments.push_back(Asset::BlueprintCommentUVE{"Movement", 10.0F, 20.0F, 300.0F, 200.0F, 0x112233FFU});
-    const std::filesystem::path file = std::filesystem::temp_directory_path() / "uve_blueprint_round_trip_test.uvbpc";
+    const std::filesystem::path file = std::filesystem::temp_directory_path() / "uve_blueprint_round_trip_test.uvbp";
     ASSERT_TRUE(Asset::SaveBlueprintAssetUVE(blueprint, file));
     BlueprintAssetUVE read;
     ASSERT_TRUE(Asset::LoadBlueprintAssetUVE(file, read));

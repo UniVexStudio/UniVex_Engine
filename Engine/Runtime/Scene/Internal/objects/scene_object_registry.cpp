@@ -8,7 +8,7 @@ namespace {
 constexpr std::array<std::string_view, 0U> kNoContracts{};
 constexpr std::array<std::string_view, 1U> kAnimationGraphContracts{"AnimationGraphComponentUVE"};
 constexpr std::array<std::string_view, 1U> kAnimationSequencerContracts{"AnimationSequencerComponentUVE"};
-constexpr std::array<std::string_view, 1U> kMontageSequencerContracts{"MontageSequencerComponentUVE"};
+constexpr std::array<std::string_view, 1U> kMontagePlayerContracts{"MontagePlayerComponentUVE"};
 constexpr std::array<std::string_view, 2U> kCharacterContracts{
     "TransformComponentUVE", "ColliderComponentUVE"};
 constexpr std::array<std::string_view, 3U> kPlayerContracts{
@@ -93,7 +93,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 54U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::WorldPartition3D, "world_partition_3d", "WorldPartition3D", "World", "Scene/WorldPartition3DComponentUVE", kPartitionContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::AnimationGraph, "animation_graph", "AnimationGraph", "Animation", "Scene/AnimationGraphComponentUVE", kAnimationGraphContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::AnimationSequencer, "animation_sequencer", "AnimationSequencer", "Animation", "Scene/AnimationSequencerComponentUVE", kAnimationSequencerContracts, true},
-    SceneObjectDescriptorUVE{SceneObjectKindUVE::MontageSequencer, "montage_sequencer", "Montage Sequencer", "Animation", "Scene/MontageSequencerComponentUVE", kMontageSequencerContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::MontagePlayer, "montage_player", "MontagePlayer", "Animation", "Scene/MontagePlayerComponentUVE", kMontagePlayerContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Character3D, "character_3d", "Character3D", "Physics", "Physics/CharacterControllerUVE", kCharacterContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Camera3D, "camera_3d", "Camera3D", "Rendering", "Render/CameraSystemUVE", kCameraContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::MeshInstance3D, "mesh_instance_3d", "MeshInstance3D", "Rendering", "Render/MeshRendererUVE", kMeshContracts, true},
@@ -186,7 +186,7 @@ SceneObjectPlacementUVE GetSceneObjectPlacementUVE(const SceneObjectKindUVE kind
         case SceneObjectKindUVE::Character3D:
         case SceneObjectKindUVE::Player3D:
         case SceneObjectKindUVE::AnimationSequencer:
-        case SceneObjectKindUVE::MontageSequencer:
+        case SceneObjectKindUVE::MontagePlayer:
         case SceneObjectKindUVE::AnimationGraph:
         case SceneObjectKindUVE::Skeleton3D:
         case SceneObjectKindUVE::TwoBoneIK3D:

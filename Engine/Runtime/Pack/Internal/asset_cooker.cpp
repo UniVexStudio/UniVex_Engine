@@ -123,7 +123,7 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
         {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},{".uvwbp",Asset::AssetKindUVE::Prefab},
         {".uvaudio",Asset::AssetKindUVE::Audio},{".uvanim",Asset::AssetKindUVE::Animation},
         {".uvskel",Asset::AssetKindUVE::Skeleton},{".uvanimlib",Asset::AssetKindUVE::AnimationLibrary},
-        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::MotionMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbpc",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable},{".uvfx",Asset::AssetKindUVE::ParticleSystem}};
+        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::AnimationMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbp",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable},{".uvfx",Asset::AssetKindUVE::ParticleSystem}};
     if (const auto it = kinds.find(extension); it == kinds.end() || it->second != envelope->first.assetType) return false;
     switch (envelope->first.assetType) {
     case Asset::AssetKindUVE::Texture: { Asset::TextureAssetUVE v; return Asset::LoadTextureAssetUVE(path,v); }
@@ -147,9 +147,9 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
     case Asset::AssetKindUVE::Font: { Asset::FontAssetUVE v; return Asset::LoadFontAssetUVE(path,v); }
     case Asset::AssetKindUVE::Skeleton: { Asset::SkeletonAssetUVE v; return Asset::LoadSkeletonAssetUVE(path,v); }
     case Asset::AssetKindUVE::DataTable: { Asset::DataTableUVE v; return Asset::LoadDataTableAssetUVE(path,v); }
-    case Asset::AssetKindUVE::MotionMontage: {
-        Asset::MotionMontageAssetUVE v;
-        if (!Asset::LoadMotionMontageAssetUVE(path,v)) return false;
+    case Asset::AssetKindUVE::AnimationMontage: {
+        Asset::AnimationMontageAssetUVE v;
+        if (!Asset::LoadAnimationMontageAssetUVE(path,v)) return false;
         for (const auto& segment : v.segments) CheckGuid(segment.clip,db);
         CheckGuid(v.previewEntity,db);
         return true;

@@ -28,7 +28,7 @@ EditorIconsUVE::ImageUVE EditorIconsUVE::ObjectUVE(const Scene::Objects::SceneOb
     }
     // Kinds with no picture of their own get their own glyph.
     switch (kind) {
-        case Scene::Objects::SceneObjectKindUVE::MontageSequencer: return GlyphUVE(prism::Icon::MontageSequencer, size);
+        case Scene::Objects::SceneObjectKindUVE::MontagePlayer: return GlyphUVE(prism::Icon::MontagePlayer, size);
         default: return {};
     }
 }

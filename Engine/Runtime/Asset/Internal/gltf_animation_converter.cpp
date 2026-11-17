@@ -6,8 +6,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
-#include <fstream>
 #include <limits>
 #include <set>
 #include <string>
@@ -20,9 +18,7 @@
 #include <nlohmann/json.hpp>
 
 #include "gltf_skeleton.h"
-#include "import_helpers.h"
 #include "mesh_asset.h"
-#include "skeleton_asset.h"
 #include "quaternion.h"
 #include "vector3.h"
 
@@ -517,8 +513,7 @@ bool ConvertGltfAnimationUVE(const GltfAnimationSourceUVE& source, const Skeleto
 }
 
 std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_view json,
-                                                                  const std::vector<std::byte>& buffer,
-                                                                  const std::size_t animationIndex) {
+                                                                  const std::vector<std::byte>& buffer) {
     nlohmann::json document;
     try {
         document = nlohmann::json::parse(json);
@@ -529,10 +524,10 @@ std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_vi
         return std::nullopt;
     }
     const auto animationsIt = document.find("animations");
-    if (animationsIt == document.end() || !animationsIt->is_array() || animationsIt->empty() || animationIndex >= animationsIt->size()) {
+    if (animationsIt == document.end() || !animationsIt->is_array() || animationsIt->empty()) {
         return std::nullopt;
     }
-    const nlohmann::json& animation = animationsIt->at(animationIndex);
+    const nlohmann::json& animation = animationsIt->at(0U);
     if (!animation.is_object()) {
         return std::nullopt;
     }
@@ -706,49 +701,6 @@ std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(std::string_vi
         return std::nullopt;
     }
     return source;
-}
-
-
-std::vector<AnimationClipAssetUVE> ReadGltfAnimationClipsUVE(const std::filesystem::path& sourcePath) {
-    std::vector<AnimationClipAssetUVE> clips;
-    std::ifstream input(sourcePath, std::ios::binary | std::ios::ate);
-    if (!input) return clips;
-    const auto end = input.tellg();
-    if (end <= 0 || static_cast<std::uint64_t>(end) > 512ULL * 1024ULL * 1024ULL) return clips;
-    std::vector<std::byte> bytes(static_cast<std::size_t>(end));
-    input.seekg(0);
-    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    if (!input) return clips;
-    std::string json;
-    std::vector<std::byte> binary;
-    if (sourcePath.extension() == ".glb") {
-        auto u32 = [&](std::size_t o) { return std::to_integer<std::uint32_t>(bytes[o]) | (std::to_integer<std::uint32_t>(bytes[o+1])<<8) | (std::to_integer<std::uint32_t>(bytes[o+2])<<16) | (std::to_integer<std::uint32_t>(bytes[o+3])<<24); };
-        if (bytes.size()<20 || u32(0)!=0x46546c67 || u32(4)!=2 || u32(8)!=bytes.size() || u32(16)!=0x4e4f534a || u32(12)>bytes.size()-20) return clips;
-        json.assign(reinterpret_cast<const char*>(bytes.data()+20),u32(12));
-        std::size_t offset=20+u32(12);
-        while(offset+8<=bytes.size()) { auto n=u32(offset), type=u32(offset+4); offset+=8; if(n>bytes.size()-offset)return {}; if(type==0x004e4942){binary.assign(bytes.begin()+offset,bytes.begin()+offset+n);break;} offset+=n; }
-    } else {
-        json.assign(reinterpret_cast<const char*>(bytes.data()),bytes.size());
-        try {
-            const auto doc=nlohmann::json::parse(json);
-            if(!doc.contains("buffers")||!doc["buffers"].is_array()||doc["buffers"].empty()) return clips;
-            const auto uri=doc["buffers"][0].value("uri", std::string{});
-            if(uri.empty() || uri.find(':')!=std::string::npos || uri.find("..")!=std::string::npos) return clips;
-            std::ifstream bin(sourcePath.parent_path()/uri,std::ios::binary|std::ios::ate); if(!bin)return clips;
-            auto n=bin.tellg(); if(n<=0||static_cast<std::uint64_t>(n)>512ULL*1024ULL*1024ULL)return clips;
-            binary.resize(static_cast<std::size_t>(n)); bin.seekg(0); bin.read(reinterpret_cast<char*>(binary.data()),n); if(!bin)return {};
-        } catch (...) { return clips; }
-    }
-    const auto sk=ParseGltfSkeletonUVE(json,kMaximumSkeletonAssetJointsUVE);
-    if(!sk)return clips;
-    SkeletonAssetUVE skeleton; skeleton.skeletonId=sourcePath.stem().string();
-    for(const auto& j:sk->joints){ SkeletonJointUVE b; b.name=j.name;b.parent=j.parentIndex;b.position=j.translation;b.rotation=j.rotation;b.scale=j.scale;skeleton.joints.push_back(std::move(b)); }
-    try {
-        const auto doc=nlohmann::json::parse(json);
-        if(!doc.contains("animations")||!doc["animations"].is_array())return clips;
-        for(std::size_t i=0;i<doc["animations"].size();++i){ auto source=ParseGltfAnimationSourceUVE(json,binary,i); if(!source)continue; AnimationClipAssetUVE clip; if(ConvertGltfAnimationUVE(*source,skeleton,clip))clips.push_back(std::move(clip)); }
-    } catch (...) { clips.clear(); }
-    return clips;
 }
 
 } // namespace UVE::Asset

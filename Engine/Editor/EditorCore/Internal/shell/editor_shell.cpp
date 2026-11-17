@@ -467,10 +467,10 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     row->add(HSeparatorUVE());
 
 
-    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Blueprint Class editor (beta)");
+    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Logic Graph editor (beta)");
     blueprint->onClick = [] {
         if (prism::Application::exists()) {
-            prism::Application::get().notify("Blueprint Class editor (beta) - coming in the blueprint graph milestone",
+            prism::Application::get().notify("Logic Graph editor (beta) - coming in the logic graph milestone",
                                              prism::ToastLevel::Info);
         }
     };
@@ -569,9 +569,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildOutlinerUVE() {
     m_outliner->onDelete = [this](prism::TreeNode* node) {
         const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
         if (entity != Scene::kInvalidEntityUVE) {
-            if (!m_editor.IsEntitySelectedUVE(entity)) {
-                m_editor.SelectEntityUVE(entity);
-            }
+            m_editor.SelectEntityUVE(entity);
             static_cast<void>(m_editor.DeleteSelectedEntityUVE());
         }
     };

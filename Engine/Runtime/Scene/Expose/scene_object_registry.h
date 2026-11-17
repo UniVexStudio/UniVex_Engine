@@ -80,9 +80,9 @@ enum class SceneObjectKindUVE : std::uint8_t {
     /// The sky over a scene: colour source, bands, and the panorama they replace. Appended so no
     /// existing kind's value moves.
     Sky,
-    /// Plays Motion Montages (attacks, reloads, emotes) on the character it is under, from its
+    /// Plays Animation Montages (attacks, reloads, emotes) on the character it is under, from its
     /// script. Appended so no existing kind's value moves.
-    MontageSequencer,
+    MontagePlayer,
 };
 
 struct SceneObjectDescriptorUVE final {

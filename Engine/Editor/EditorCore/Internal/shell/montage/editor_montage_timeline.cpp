@@ -134,7 +134,7 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
     if (session == nullptr) {
         return;
     }
-    const Asset::MotionMontageAssetUVE& montage = session->montage;
+    const Asset::AnimationMontageAssetUVE& montage = session->montage;
     const double length = Asset::MontageLengthUVE(montage);
     const std::size_t tracks = NotifyTracksUVE();
     const SelectionUVE picked = m_window.selection;
@@ -284,7 +284,7 @@ MontageTimelineUVE::HitUVE MontageTimelineUVE::HitTestUVE(const prism::Vec2 p) c
     if (session == nullptr || !m_rect.contains(p)) {
         return hit;
     }
-    const Asset::MotionMontageAssetUVE& montage = session->montage;
+    const Asset::AnimationMontageAssetUVE& montage = session->montage;
     if (RowRectUVE(RowUVE::Ruler).contains(p)) {
         hit.row = RowUVE::Ruler;
         return hit;
@@ -430,7 +430,7 @@ void MontageTimelineUVE::CommitDragUVE(const prism::Vec2 p) {
     const double moved = TimeAtUVE(p.x) - TimeAtUVE(m_dragFrom.x);
     switch (drag.item.kind) {
         case KindUVE::Section:
-            editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+            editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                 if (drag.item.index < m.sections.size()) {
                     const std::string name = m.sections[drag.item.index].name;
                     static_cast<void>(Asset::MoveMontageSectionUVE(m, name, time));
@@ -448,14 +448,14 @@ void MontageTimelineUVE::CommitDragUVE(const prism::Vec2 p) {
                     to = i;
                 }
             }
-            editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+            editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                 static_cast<void>(Asset::MoveMontageSegmentUVE(m, drag.item.index, to));
             });
             m_window.selection = SelectionUVE{KindUVE::Segment, to, 0U};
             break;
         }
         case KindUVE::Notify:
-            editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+            editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                 if (drag.item.index < m.notifies.size()) {
                     m.notifies[drag.item.index].time = std::clamp(time, 0.0, std::max(Asset::kMontageEmptyTimelineSecondsUVE, Asset::MontageLengthUVE(m)));
                     if (const std::optional<std::uint32_t> track = TrackAtUVE(p.y)) {
@@ -465,7 +465,7 @@ void MontageTimelineUVE::CommitDragUVE(const prism::Vec2 p) {
             });
             break;
         case KindUVE::State:
-            editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+            editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                 if (drag.item.index >= m.notifyStates.size()) {
                     return;
                 }
@@ -486,7 +486,7 @@ void MontageTimelineUVE::CommitDragUVE(const prism::Vec2 p) {
             });
             break;
         case KindUVE::CurveKey:
-            editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+            editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                 if (drag.item.index < m.curves.size() && drag.item.key < m.curves[drag.item.index].keys.size()) {
                     auto& keys = m.curves[drag.item.index].keys;
                     // Time and value both follow the mouse, on the scale the curve is drawn on.
@@ -552,7 +552,7 @@ bool MontageTimelineUVE::onKeyDown(const prism::KeyEvent& e) {
 void MontageTimelineUVE::DeleteSelectionUVE() {
     const SelectionUVE picked = m_window.selection;
     EditorUVE& editor = m_window.EditorRefUVE();
-    editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+    editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
         switch (picked.kind) {
             case KindUVE::Segment: static_cast<void>(Asset::RemoveMontageSegmentUVE(m, picked.index)); break;
             case KindUVE::Section:
@@ -598,7 +598,7 @@ void MontageTimelineUVE::ShowContextMenuUVE(const HitUVE& hit, const prism::Vec2
             items.push_back(prism::MenuItem::Item("Add Section Here...", [this, time] {
                 m_window.AskNameUVE("New Section", "Attack", [this, time](const std::string& name) {
                     m_window.EditorRefUVE().EditMontageUVE(
-                        [&](Asset::MotionMontageAssetUVE& m) { static_cast<void>(Asset::AddMontageSectionUVE(m, name, time)); });
+                        [&](Asset::AnimationMontageAssetUVE& m) { static_cast<void>(Asset::AddMontageSectionUVE(m, name, time)); });
                 });
             }, "", prism::Icon::Plus));
             if (hit.item.kind == KindUVE::Section) {
@@ -609,7 +609,7 @@ void MontageTimelineUVE::ShowContextMenuUVE(const HitUVE& hit, const prism::Vec2
                 items.push_back(prism::MenuItem::Item("Rename...", [this, name] {
                     m_window.AskNameUVE("Rename Section", name, [this, name](const std::string& to) {
                         m_window.EditorRefUVE().EditMontageUVE(
-                            [&](Asset::MotionMontageAssetUVE& m) { static_cast<void>(Asset::RenameMontageSectionUVE(m, name, to)); });
+                            [&](Asset::AnimationMontageAssetUVE& m) { static_cast<void>(Asset::RenameMontageSectionUVE(m, name, to)); });
                     });
                 }));
                 items.push_back(prism::MenuItem::Item("Preview From Here", [&editor, name] { editor.PlayMontagePreviewUVE(name); }, "",
@@ -642,18 +642,18 @@ void MontageTimelineUVE::ShowContextMenuUVE(const HitUVE& hit, const prism::Vec2
             items.push_back(prism::MenuItem::Item("Add Notify Here...", [this, time, track] {
                 m_window.AskNameUVE("New Notify", "hit", [this, time, track](const std::string& name) {
                     m_window.EditorRefUVE().EditMontageUVE(
-                        [&](Asset::MotionMontageAssetUVE& m) { static_cast<void>(Asset::AddMontageNotifyUVE(m, name, time, track)); });
+                        [&](Asset::AnimationMontageAssetUVE& m) { static_cast<void>(Asset::AddMontageNotifyUVE(m, name, time, track)); });
                 });
             }, "", prism::Icon::Plus));
             items.push_back(prism::MenuItem::Item("Add Notify State Here...", [this, time, track] {
                 m_window.AskNameUVE("New Notify State", "hit_window", [this, time, track](const std::string& name) {
-                    m_window.EditorRefUVE().EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+                    m_window.EditorRefUVE().EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                         static_cast<void>(Asset::AddMontageNotifyStateUVE(m, name, time, time + 0.3, track));
                     });
                 });
             }));
             items.push_back(prism::MenuItem::Item("Add Notify Track", [&editor] {
-                editor.EditMontageUVE([](Asset::MotionMontageAssetUVE& m) { m.notifyTracks = std::min(64U, m.notifyTracks + 1U); });
+                editor.EditMontageUVE([](Asset::AnimationMontageAssetUVE& m) { m.notifyTracks = std::min(64U, m.notifyTracks + 1U); });
             }));
             if (hit.item.kind == KindUVE::Notify || hit.item.kind == KindUVE::State) {
                 const bool isNotify = hit.item.kind == KindUVE::Notify;
@@ -666,7 +666,7 @@ void MontageTimelineUVE::ShowContextMenuUVE(const HitUVE& hit, const prism::Vec2
                     const std::string current = isNotify ? (index < session->montage.notifies.size() ? session->montage.notifies[index].name : "")
                                                          : (index < session->montage.notifyStates.size() ? session->montage.notifyStates[index].name : "");
                     m_window.AskNameUVE("Rename", current, [this, isNotify, index](const std::string& to) {
-                        m_window.EditorRefUVE().EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+                        m_window.EditorRefUVE().EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                             if (isNotify && index < m.notifies.size()) {
                                 m.notifies[index].name = to;
                             } else if (!isNotify && index < m.notifyStates.size()) {
@@ -687,7 +687,7 @@ void MontageTimelineUVE::ShowContextMenuUVE(const HitUVE& hit, const prism::Vec2
             const auto* session = editor.MontageEditSessionPtrUVE();
             const bool haveCurve = session != nullptr && m_window.activeCurve < session->montage.curves.size();
             items.push_back(prism::MenuItem::Item(haveCurve ? "Add Key Here" : "Add Curve and Key Here", [this, time, fraction] {
-                m_window.EditorRefUVE().EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
+                m_window.EditorRefUVE().EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
                     if (m_window.activeCurve >= m.curves.size()) {
                         m.curves.push_back(Asset::MontageCurveUVE{m_window.UniqueCurveNameUVE(m, "Curve"), {}});
                         m_window.activeCurve = m.curves.size() - 1U;
@@ -730,17 +730,17 @@ void MontageTimelineUVE::ShowHeaderMenuUVE(const HitUVE& hit, const prism::Vec2 
     if (hit.row == RowUVE::Notify) {
         const auto track = static_cast<std::uint32_t>(hit.track);
         items.push_back(prism::MenuItem::Item("Add Notify Track", [&editor] {
-            editor.EditMontageUVE([](Asset::MotionMontageAssetUVE& m) { m.notifyTracks = std::min(64U, m.notifyTracks + 1U); });
+            editor.EditMontageUVE([](Asset::AnimationMontageAssetUVE& m) { m.notifyTracks = std::min(64U, m.notifyTracks + 1U); });
         }, "", prism::Icon::Plus));
         items.push_back(prism::MenuItem::Item("Rename Track...", [this, track] {
             const auto* s = m_window.EditorRefUVE().MontageEditSessionPtrUVE();
             const std::string current = s != nullptr ? Asset::MontageNotifyTrackNameUVE(s->montage, track) : std::string();
             m_window.AskNameUVE("Rename Track", current, [this, track](const std::string& name) {
-                m_window.EditorRefUVE().EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) { Asset::SetMontageNotifyTrackNameUVE(m, track, name); });
+                m_window.EditorRefUVE().EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) { Asset::SetMontageNotifyTrackNameUVE(m, track, name); });
             });
         }));
         prism::MenuItem remove = prism::MenuItem::Item("Remove Track", [&editor, track] {
-            editor.EditMontageUVE([track](Asset::MotionMontageAssetUVE& m) { static_cast<void>(Asset::RemoveMontageNotifyTrackUVE(m, track)); });
+            editor.EditMontageUVE([track](Asset::AnimationMontageAssetUVE& m) { static_cast<void>(Asset::RemoveMontageNotifyTrackUVE(m, track)); });
         }, "", prism::Icon::Trash);
         remove.enabled = NotifyTracksUVE() > 1U;
         items.push_back(prism::MenuItem::Sep());

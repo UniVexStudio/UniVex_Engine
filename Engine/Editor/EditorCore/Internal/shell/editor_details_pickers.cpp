@@ -67,11 +67,11 @@ EditorDetailsUVE::PickerSpecUVE EditorDetailsUVE::PickerSpecForUVE(const std::ve
         spec.listed = {".uvtex"};
         spec.loadable = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
     } else if (has(".uvmontagelib")) {
-        spec.title = "Motion Montage Library";
+        spec.title = "Action Clip Library";
         spec.listed = {".uvmontagelib"};
         spec.loadable = {".uvmontagelib"};
     } else if (has(".uvmontage")) {
-        spec.title = "Motion Montage";
+        spec.title = "Action Clip";
         spec.listed = {".uvmontage"};
         spec.loadable = {".uvmontage"};
     } else if (has(".uvaudio") || has(".wav")) {

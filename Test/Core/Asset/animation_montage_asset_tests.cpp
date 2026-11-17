@@ -10,8 +10,8 @@
 namespace UVE::Asset::Tests {
 namespace {
 
-[[nodiscard]] MotionMontageAssetUVE MakeAttackUVE() {
-    MotionMontageAssetUVE montage;
+[[nodiscard]] AnimationMontageAssetUVE MakeAttackUVE() {
+    AnimationMontageAssetUVE montage;
     AddMontageSegmentUVE(montage, AssetGuidUVE{11U}, 1.0);   // 0.0 - 1.0
     AddMontageSegmentUVE(montage, AssetGuidUVE{22U}, 0.5);   // 1.0 - 1.5
     montage.segments[1].loops = 2U;                          // 1.0 - 2.0
@@ -20,8 +20,8 @@ namespace {
 
 } // namespace
 
-TEST(MotionMontageAssetUVETest, SegmentsPlayEndToEnd) {
-    MotionMontageAssetUVE montage = MakeAttackUVE();
+TEST(AnimationMontageAssetUVETest, SegmentsPlayEndToEnd) {
+    AnimationMontageAssetUVE montage = MakeAttackUVE();
     EXPECT_DOUBLE_EQ(MontageLengthUVE(montage), 2.0);
     EXPECT_DOUBLE_EQ(MontageSegmentStartUVE(montage, 1U), 1.0);
     ASSERT_EQ(montage.sections.size(), 1U) << "the first clip brings a Default section";
@@ -47,8 +47,8 @@ TEST(MotionMontageAssetUVETest, SegmentsPlayEndToEnd) {
     EXPECT_DOUBLE_EQ(MontageLengthUVE(montage), 0.5);
 }
 
-TEST(MotionMontageAssetUVETest, SectionsLinkRenameAndRemove) {
-    MotionMontageAssetUVE montage = MakeAttackUVE();
+TEST(AnimationMontageAssetUVETest, SectionsLinkRenameAndRemove) {
+    AnimationMontageAssetUVE montage = MakeAttackUVE();
     ASSERT_TRUE(RenameMontageSectionUVE(montage, "Default", "Start"));
     const std::string attack1 = AddMontageSectionUVE(montage, "Attack1", 0.5);
     const std::string attack2 = AddMontageSectionUVE(montage, "Attack2", 1.0);
@@ -70,8 +70,8 @@ TEST(MotionMontageAssetUVETest, SectionsLinkRenameAndRemove) {
     EXPECT_EQ(FindMontageSectionUVE(montage, "Start")->next, "Combo") << "what led to it now leads where it led";
 }
 
-TEST(MotionMontageAssetUVETest, CurvesAreLinearAndClamped) {
-    MotionMontageAssetUVE montage = MakeAttackUVE();
+TEST(AnimationMontageAssetUVETest, CurvesAreLinearAndClamped) {
+    AnimationMontageAssetUVE montage = MakeAttackUVE();
     SetMontageCurveKeyUVE(montage, "Damage", 0.0, 0.0F);
     SetMontageCurveKeyUVE(montage, "Damage", 1.0, 10.0F);
     SetMontageCurveKeyUVE(montage, "Damage", 1.0, 20.0F);   // replaces
@@ -80,10 +80,10 @@ TEST(MotionMontageAssetUVETest, CurvesAreLinearAndClamped) {
     EXPECT_FLOAT_EQ(EvaluateMontageCurveUVE(montage, "Missing", 0.5), 0.0F);
 }
 
-TEST(MotionMontageAssetUVETest, SaveThenLoadRoundTrips) {
+TEST(AnimationMontageAssetUVETest, SaveThenLoadRoundTrips) {
     const std::filesystem::path path = "uve_animation_montage_round_trip.uvmontage";
     std::filesystem::remove(path);
-    MotionMontageAssetUVE montage = MakeAttackUVE();
+    AnimationMontageAssetUVE montage = MakeAttackUVE();
     static_cast<void>(AddMontageSectionUVE(montage, "Attack", 1.0));
     ASSERT_TRUE(SetMontageSectionNextUVE(montage, "Attack", "Attack"));
     AddMontageNotifyUVE(montage, "hit", 1.2, 0U);
@@ -94,16 +94,16 @@ TEST(MotionMontageAssetUVETest, SaveThenLoadRoundTrips) {
     montage.autoBlendOut = false;
     montage.rootMotion = MontageRootMotionUVE::InPlace;
     montage.slot = "UpperBody";
-    ASSERT_TRUE(SaveMotionMontageAssetUVE(montage, path));
+    ASSERT_TRUE(SaveAnimationMontageAssetUVE(montage, path));
 
-    MotionMontageAssetUVE loaded;
-    ASSERT_TRUE(LoadMotionMontageAssetUVE(path, loaded));
+    AnimationMontageAssetUVE loaded;
+    ASSERT_TRUE(LoadAnimationMontageAssetUVE(path, loaded));
     EXPECT_EQ(loaded, montage);
     EXPECT_EQ(loaded.notifyTracks, 2U);
 
-    MotionMontageAssetUVE broken = montage;
+    AnimationMontageAssetUVE broken = montage;
     broken.sections.push_back(broken.sections.front());   // a duplicate name
-    EXPECT_FALSE(SaveMotionMontageAssetUVE(broken, path));
+    EXPECT_FALSE(SaveAnimationMontageAssetUVE(broken, path));
     std::filesystem::remove(path);
 }
 
@@ -111,16 +111,16 @@ TEST(MotionMontageAssetUVETest, SaveThenLoadRoundTrips) {
 
 namespace UVE::Asset::Tests {
 
-TEST(MotionMontageAssetUVETest, NotifiesCanBeLaidOutBeforeAnyClip) {
-    MotionMontageAssetUVE montage;
+TEST(AnimationMontageAssetUVETest, NotifiesCanBeLaidOutBeforeAnyClip) {
+    AnimationMontageAssetUVE montage;
     const std::size_t notify = AddMontageNotifyUVE(montage, "step", 0.6, 0U);
     EXPECT_DOUBLE_EQ(montage.notifies[notify].time, 0.6) << "not pulled back to 0 when the montage has no clip yet";
     AddMontageNotifyUVE(montage, "late", 5.0, 0U);
     EXPECT_DOUBLE_EQ(montage.notifies.back().time, kMontageEmptyTimelineSecondsUVE);
 }
 
-TEST(MotionMontageAssetUVETest, NotifyTracksAreNamedAndRemoved) {
-    MotionMontageAssetUVE montage = MakeAttackUVE();
+TEST(AnimationMontageAssetUVETest, NotifyTracksAreNamedAndRemoved) {
+    AnimationMontageAssetUVE montage = MakeAttackUVE();
     montage.notifyTracks = 3U;
     AddMontageNotifyUVE(montage, "a", 0.1, 0U);
     AddMontageNotifyUVE(montage, "b", 0.2, 1U);
@@ -138,15 +138,15 @@ TEST(MotionMontageAssetUVETest, NotifyTracksAreNamedAndRemoved) {
     EXPECT_FALSE(RemoveMontageNotifyTrackUVE(montage, 0U)) << "the last track stays";
 }
 
-TEST(MotionMontageAssetUVETest, NotifyColoursAndTrackNamesRoundTrip) {
-    MotionMontageAssetUVE montage = MakeAttackUVE();
+TEST(AnimationMontageAssetUVETest, NotifyColoursAndTrackNamesRoundTrip) {
+    AnimationMontageAssetUVE montage = MakeAttackUVE();
     AddMontageNotifyUVE(montage, "hit", 0.5, 0U);
     montage.notifies.front().colour = 0xE05A5AU;
     SetMontageNotifyTrackNameUVE(montage, 0U, "Combat");
     const std::filesystem::path path = std::filesystem::temp_directory_path() / "uve_montage_colour_test.uvmontage";
-    ASSERT_TRUE(SaveMotionMontageAssetUVE(montage, path));
-    MotionMontageAssetUVE read;
-    ASSERT_TRUE(LoadMotionMontageAssetUVE(path, read));
+    ASSERT_TRUE(SaveAnimationMontageAssetUVE(montage, path));
+    AnimationMontageAssetUVE read;
+    ASSERT_TRUE(LoadAnimationMontageAssetUVE(path, read));
     EXPECT_EQ(read, montage);
     std::filesystem::remove(path);
 }

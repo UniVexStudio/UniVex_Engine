@@ -9,12 +9,12 @@
 namespace UVE::Asset {
 namespace {
 
-void SortSectionsUVE(MotionMontageAssetUVE& montage) {
+void SortSectionsUVE(AnimationMontageAssetUVE& montage) {
     std::stable_sort(montage.sections.begin(), montage.sections.end(),
                      [](const MontageSectionUVE& a, const MontageSectionUVE& b) { return a.time < b.time; });
 }
 
-[[nodiscard]] double ClampTimeUVE(const MotionMontageAssetUVE& montage, const double time) noexcept {
+[[nodiscard]] double ClampTimeUVE(const AnimationMontageAssetUVE& montage, const double time) noexcept {
     // A montage with no clip yet still has its first second to lay notifies out on.
     return std::clamp(std::isfinite(time) ? time : 0.0, 0.0, std::max(kMontageEmptyTimelineSecondsUVE, MontageLengthUVE(montage)));
 }
@@ -27,7 +27,7 @@ double MontageSegmentDurationUVE(const MontageSegmentUVE& segment) noexcept {
     return segment.rate > 0.0 ? span * static_cast<double>(std::max(1U, segment.loops)) / segment.rate : 0.0;
 }
 
-double MontageSegmentStartUVE(const MotionMontageAssetUVE& montage, const std::size_t index) noexcept {
+double MontageSegmentStartUVE(const AnimationMontageAssetUVE& montage, const std::size_t index) noexcept {
     double start = 0.0;
     for (std::size_t i = 0U; i < index && i < montage.segments.size(); ++i) {
         start += MontageSegmentDurationUVE(montage.segments[i]);
@@ -35,11 +35,11 @@ double MontageSegmentStartUVE(const MotionMontageAssetUVE& montage, const std::s
     return start;
 }
 
-double MontageLengthUVE(const MotionMontageAssetUVE& montage) noexcept {
+double MontageLengthUVE(const AnimationMontageAssetUVE& montage) noexcept {
     return MontageSegmentStartUVE(montage, montage.segments.size());
 }
 
-std::optional<MontageClipTimeUVE> MapMontageTimeUVE(const MotionMontageAssetUVE& montage, const double time) noexcept {
+std::optional<MontageClipTimeUVE> MapMontageTimeUVE(const AnimationMontageAssetUVE& montage, const double time) noexcept {
     if (montage.segments.empty()) {
         return std::nullopt;
     }
@@ -63,7 +63,7 @@ std::optional<MontageClipTimeUVE> MapMontageTimeUVE(const MotionMontageAssetUVE&
     return std::nullopt;
 }
 
-std::size_t AddMontageSegmentUVE(MotionMontageAssetUVE& montage, const AssetGuidUVE clip, const double clipLength,
+std::size_t AddMontageSegmentUVE(AnimationMontageAssetUVE& montage, const AssetGuidUVE clip, const double clipLength,
                                  const std::size_t index) {
     MontageSegmentUVE segment;
     segment.clip = clip;
@@ -76,7 +76,7 @@ std::size_t AddMontageSegmentUVE(MotionMontageAssetUVE& montage, const AssetGuid
     return at;
 }
 
-bool RemoveMontageSegmentUVE(MotionMontageAssetUVE& montage, const std::size_t index) {
+bool RemoveMontageSegmentUVE(AnimationMontageAssetUVE& montage, const std::size_t index) {
     if (index >= montage.segments.size()) {
         return false;
     }
@@ -84,7 +84,7 @@ bool RemoveMontageSegmentUVE(MotionMontageAssetUVE& montage, const std::size_t i
     return true;
 }
 
-bool MoveMontageSegmentUVE(MotionMontageAssetUVE& montage, const std::size_t from, const std::size_t to) {
+bool MoveMontageSegmentUVE(AnimationMontageAssetUVE& montage, const std::size_t from, const std::size_t to) {
     if (from >= montage.segments.size() || to >= montage.segments.size()) {
         return false;
     }
@@ -94,7 +94,7 @@ bool MoveMontageSegmentUVE(MotionMontageAssetUVE& montage, const std::size_t fro
     return true;
 }
 
-std::string MakeUniqueMontageSectionNameUVE(const MotionMontageAssetUVE& montage, const std::string_view base) {
+std::string MakeUniqueMontageSectionNameUVE(const AnimationMontageAssetUVE& montage, const std::string_view base) {
     const std::string root = base.empty() ? std::string("Section") : std::string(base);
     if (FindMontageSectionUVE(montage, root) == nullptr) {
         return root;
@@ -107,7 +107,7 @@ std::string MakeUniqueMontageSectionNameUVE(const MotionMontageAssetUVE& montage
     }
 }
 
-MontageSectionUVE* FindMontageSectionUVE(MotionMontageAssetUVE& montage, const std::string_view name) noexcept {
+MontageSectionUVE* FindMontageSectionUVE(AnimationMontageAssetUVE& montage, const std::string_view name) noexcept {
     for (MontageSectionUVE& section : montage.sections) {
         if (section.name == name) {
             return &section;
@@ -116,7 +116,7 @@ MontageSectionUVE* FindMontageSectionUVE(MotionMontageAssetUVE& montage, const s
     return nullptr;
 }
 
-const MontageSectionUVE* FindMontageSectionUVE(const MotionMontageAssetUVE& montage, const std::string_view name) noexcept {
+const MontageSectionUVE* FindMontageSectionUVE(const AnimationMontageAssetUVE& montage, const std::string_view name) noexcept {
     for (const MontageSectionUVE& section : montage.sections) {
         if (section.name == name) {
             return &section;
@@ -125,7 +125,7 @@ const MontageSectionUVE* FindMontageSectionUVE(const MotionMontageAssetUVE& mont
     return nullptr;
 }
 
-std::string AddMontageSectionUVE(MotionMontageAssetUVE& montage, const std::string_view name, const double time) {
+std::string AddMontageSectionUVE(AnimationMontageAssetUVE& montage, const std::string_view name, const double time) {
     const std::string unique = MakeUniqueMontageSectionNameUVE(montage, name);
     const double at = ClampTimeUVE(montage, time);
     // The section it cuts into leads into it, the usual way of linking a new section after the one before.
@@ -141,7 +141,7 @@ std::string AddMontageSectionUVE(MotionMontageAssetUVE& montage, const std::stri
     return unique;
 }
 
-bool RenameMontageSectionUVE(MotionMontageAssetUVE& montage, const std::string_view from, const std::string_view to) {
+bool RenameMontageSectionUVE(AnimationMontageAssetUVE& montage, const std::string_view from, const std::string_view to) {
     if (to.empty() || to.size() > kMaximumMontageNameBytesUVE || FindMontageSectionUVE(montage, from) == nullptr ||
         (from != to && FindMontageSectionUVE(montage, to) != nullptr)) {
         return false;
@@ -158,7 +158,7 @@ bool RenameMontageSectionUVE(MotionMontageAssetUVE& montage, const std::string_v
     return true;
 }
 
-bool RemoveMontageSectionUVE(MotionMontageAssetUVE& montage, const std::string_view name) {
+bool RemoveMontageSectionUVE(AnimationMontageAssetUVE& montage, const std::string_view name) {
     const MontageSectionUVE* const found = FindMontageSectionUVE(montage, name);
     if (found == nullptr) {
         return false;
@@ -176,7 +176,7 @@ bool RemoveMontageSectionUVE(MotionMontageAssetUVE& montage, const std::string_v
     return true;
 }
 
-bool MoveMontageSectionUVE(MotionMontageAssetUVE& montage, const std::string_view name, const double time) {
+bool MoveMontageSectionUVE(AnimationMontageAssetUVE& montage, const std::string_view name, const double time) {
     MontageSectionUVE* const section = FindMontageSectionUVE(montage, name);
     if (section == nullptr) {
         return false;
@@ -186,7 +186,7 @@ bool MoveMontageSectionUVE(MotionMontageAssetUVE& montage, const std::string_vie
     return true;
 }
 
-bool SetMontageSectionNextUVE(MotionMontageAssetUVE& montage, const std::string_view name, const std::string_view next) {
+bool SetMontageSectionNextUVE(AnimationMontageAssetUVE& montage, const std::string_view name, const std::string_view next) {
     MontageSectionUVE* const section = FindMontageSectionUVE(montage, name);
     if (section == nullptr || (!next.empty() && FindMontageSectionUVE(montage, next) == nullptr)) {
         return false;
@@ -195,7 +195,7 @@ bool SetMontageSectionNextUVE(MotionMontageAssetUVE& montage, const std::string_
     return true;
 }
 
-const MontageSectionUVE* MontageSectionAtUVE(const MotionMontageAssetUVE& montage, const double time) noexcept {
+const MontageSectionUVE* MontageSectionAtUVE(const AnimationMontageAssetUVE& montage, const double time) noexcept {
     const MontageSectionUVE* found = nullptr;
     for (const MontageSectionUVE& section : montage.sections) {
         if (section.time <= time + 1e-9 && (found == nullptr || section.time >= found->time)) {
@@ -208,7 +208,7 @@ const MontageSectionUVE* MontageSectionAtUVE(const MotionMontageAssetUVE& montag
     return found;
 }
 
-double MontageSectionEndUVE(const MotionMontageAssetUVE& montage, const std::string_view name) noexcept {
+double MontageSectionEndUVE(const AnimationMontageAssetUVE& montage, const std::string_view name) noexcept {
     const MontageSectionUVE* const section = FindMontageSectionUVE(montage, name);
     const double length = MontageLengthUVE(montage);
     if (section == nullptr) {
@@ -223,7 +223,7 @@ double MontageSectionEndUVE(const MotionMontageAssetUVE& montage, const std::str
     return end;
 }
 
-std::size_t AddMontageNotifyUVE(MotionMontageAssetUVE& montage, const std::string_view name, const double time,
+std::size_t AddMontageNotifyUVE(AnimationMontageAssetUVE& montage, const std::string_view name, const double time,
                                 const std::uint32_t track) {
     montage.notifies.push_back(MontageNotifyUVE{name.empty() ? std::string("Notify") : std::string(name),
                                                 ClampTimeUVE(montage, time), track});
@@ -231,7 +231,7 @@ std::size_t AddMontageNotifyUVE(MotionMontageAssetUVE& montage, const std::strin
     return montage.notifies.size() - 1U;
 }
 
-std::size_t AddMontageNotifyStateUVE(MotionMontageAssetUVE& montage, const std::string_view name, const double begin,
+std::size_t AddMontageNotifyStateUVE(AnimationMontageAssetUVE& montage, const std::string_view name, const double begin,
                                      const double end, const std::uint32_t track) {
     const double b = ClampTimeUVE(montage, std::min(begin, end));
     const double e = ClampTimeUVE(montage, std::max(begin, end));
@@ -241,7 +241,7 @@ std::size_t AddMontageNotifyStateUVE(MotionMontageAssetUVE& montage, const std::
     return montage.notifyStates.size() - 1U;
 }
 
-void SetMontageCurveKeyUVE(MotionMontageAssetUVE& montage, const std::string_view curve, const double time,
+void SetMontageCurveKeyUVE(AnimationMontageAssetUVE& montage, const std::string_view curve, const double time,
                            const float value) {
     auto it = std::find_if(montage.curves.begin(), montage.curves.end(),
                            [curve](const MontageCurveUVE& c) { return c.name == curve; });
@@ -260,7 +260,7 @@ void SetMontageCurveKeyUVE(MotionMontageAssetUVE& montage, const std::string_vie
     std::sort(keys.begin(), keys.end(), [](const MontageCurveKeyUVE& a, const MontageCurveKeyUVE& b) { return a.time < b.time; });
 }
 
-bool RemoveMontageNotifyTrackUVE(MotionMontageAssetUVE& montage, const std::uint32_t track) {
+bool RemoveMontageNotifyTrackUVE(AnimationMontageAssetUVE& montage, const std::uint32_t track) {
     if (montage.notifyTracks <= 1U || track >= montage.notifyTracks) {
         return false;
     }
@@ -279,14 +279,14 @@ bool RemoveMontageNotifyTrackUVE(MotionMontageAssetUVE& montage, const std::uint
     return true;
 }
 
-std::string MontageNotifyTrackNameUVE(const MotionMontageAssetUVE& montage, const std::uint32_t track) {
+std::string MontageNotifyTrackNameUVE(const AnimationMontageAssetUVE& montage, const std::uint32_t track) {
     if (track < montage.notifyTrackNames.size() && !montage.notifyTrackNames[track].empty()) {
         return montage.notifyTrackNames[track];
     }
     return "Notify " + std::to_string(track + 1U);
 }
 
-void SetMontageNotifyTrackNameUVE(MotionMontageAssetUVE& montage, const std::uint32_t track, const std::string_view name) {
+void SetMontageNotifyTrackNameUVE(AnimationMontageAssetUVE& montage, const std::uint32_t track, const std::string_view name) {
     if (track >= 64U) {
         return;
     }
@@ -299,7 +299,7 @@ void SetMontageNotifyTrackNameUVE(MotionMontageAssetUVE& montage, const std::uin
     }
 }
 
-float EvaluateMontageCurveUVE(const MotionMontageAssetUVE& montage, const std::string_view curve, const double time) noexcept {
+float EvaluateMontageCurveUVE(const AnimationMontageAssetUVE& montage, const std::string_view curve, const double time) noexcept {
     for (const MontageCurveUVE& c : montage.curves) {
         if (c.name != curve || c.keys.empty()) {
             continue;

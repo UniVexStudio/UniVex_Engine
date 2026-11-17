@@ -172,7 +172,7 @@ void EditorEntityEditorUVE::SyncUVE() {
         m_closeAsked = false;
         m_widgetMode = Asset::IsWidgetBlueprintPathUVE(path.generic_string());
         m_designerSignature = 0;
-        m_window = m_host.OpenWindowUVE(BuildUVE(), (m_widgetMode ? "Widget Blueprint - " : "Entity Editor - ") + path.filename().string(),
+        m_window = m_host.OpenWindowUVE(BuildUVE(), (m_widgetMode ? "UI Graph - " : "Entity Editor - ") + path.filename().string(),
                                         kWindowWidthUVE, kWindowHeightUVE);
         if (m_window == 0) {
             // No window: the entity cannot be edited here, so it is not left open unseen.
@@ -236,12 +236,12 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     window->add(BuildTitleBarUVE());
     window->add(BuildToolbarRowUVE());
     // Beside the gizmo settings: Blueprint - pick one of the entity's objects, open or make its class.
-    m_blueprintButton = prism::make<prism::Button>("Blueprint Class", prism::Icon::BlueprintClass, prism::ButtonStyle::Toolbar);
-    m_blueprintButton->setTooltip("Blueprint Class: open or create the Blueprint Class of one of this entity's objects");
+    m_blueprintButton = prism::make<prism::Button>("Logic Graph", prism::Icon::BlueprintClass, prism::ButtonStyle::Toolbar);
+    m_blueprintButton->setTooltip("Logic Graph: open or create the Logic Graph of one of this entity's objects");
     m_blueprintButton->onClick = [this] { ShowBlueprintMenuUVE(); };
     // Simulate beside it: one toggle (Simulate / Stop) in place of play, pause and stop.
     m_playButton = prism::make<prism::Button>("Simulate", prism::Icon::Play, prism::ButtonStyle::Toolbar);
-    m_playButton->setTooltip("Simulate the entity (its scripts and Blueprint Classes run here, the level is untouched); Stop puts it back");
+    m_playButton->setTooltip("Simulate the entity (its scripts and Logic Graphs run here, the level is untouched); Stop puts it back");
     m_playButton->onClick = [this] {
         if (m_editor.GetEntitySimulationStateUVE() == EditorUVE::EntitySimulationStateUVE::Stopped) {
             m_lastTick = std::chrono::steady_clock::now();
@@ -633,9 +633,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildComponentsUVE() {
     m_components->onDelete = [this](prism::TreeNode* node) {
         const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
         if (entity != Scene::kInvalidEntityUVE && entity != m_editor.GetEntityEditorRootUVE()) {
-            if (!m_editor.IsEntitySelectedUVE(entity)) {
-                m_editor.SelectEntityUVE(entity);
-            }
+            m_editor.SelectEntityUVE(entity);
             static_cast<void>(m_editor.DeleteSelectedEntityUVE());
         }
     };
@@ -740,7 +738,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildCentreUVE() {
             m_editor.SelectEntityUVE(problem.entity);
         }
         // A Blueprint's problem: its graph, with the node picked.
-        if (problem.scriptPath.ends_with(".uvbpc")) {
+        if (problem.scriptPath.ends_with(".uvbp")) {
             OpenBlueprintUVE(problem.scriptPath, problem.entity);
             m_blueprintPanel.SelectNodeUVE(problem.blueprintNode);
         }
@@ -1166,12 +1164,12 @@ void EditorEntityEditorUVE::CreateLogicGraphOnUVE(const std::filesystem::path& f
         }
     }
     if (target == Scene::kInvalidEntityUVE) {
-        m_editor.m_contentStatusMessage = "Could not find the object for the new Blueprint Class in this entity.";
+        m_editor.m_contentStatusMessage = "Could not find the object for the new Logic Graph in this entity.";
         return;
     }
     const std::string path = m_blueprintPanel.CreateForUVE(target, file);
     if (path.empty()) {
-        m_editor.m_contentStatusMessage = "Could not create the Blueprint Class.";
+        m_editor.m_contentStatusMessage = "Could not create the Logic Graph.";
         return;
     }
     OpenBlueprintUVE(path, target);
@@ -1194,7 +1192,7 @@ void EditorEntityEditorUVE::ShowBlueprintMenuUVE() {
         if (em.HasComponentUVE<Scene::ScriptComponentUVE>(entity)) {
             const std::string& path = em.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath;
             // A file deleted since names nothing: the object gets a new one.
-            if (path.ends_with(".uvbpc") && BlueprintFileExistsUVE(path)) {
+            if (path.ends_with(".uvbp") && BlueprintFileExistsUVE(path)) {
                 existing = path;
             }
         }
@@ -1247,7 +1245,7 @@ void EditorEntityEditorUVE::ShowCreateBlueprintUVE(const Scene::EntityUVE target
     auto name = prism::make<prism::TextInput>(base, "Name");
     auto folder = prism::make<prism::ComboBox>(labels, 0);
     auto form = prism::make<prism::PropertyGrid>();
-    const int cat = form->addCategory("New Blueprint Class");
+    const int cat = form->addCategory("New Logic Graph");
     form->addRow(cat, "Name", name, "The file's name: the class other objects use");
     form->addRow(cat, "Folder", folder, "Where the file goes in Content");
     form->addRow(cat, "Parent", prism::make<prism::Label>(std::string(m_editor.GetObjectTypeNameUVE(target))), "The object kind it drives");
@@ -1263,10 +1261,10 @@ void EditorEntityEditorUVE::ShowCreateBlueprintUVE(const Scene::EntityUVE target
         }
         *made = true;
         const std::filesystem::path dir = folders[static_cast<std::size_t>(std::clamp(f->selected(), 0, static_cast<int>(folders.size()) - 1))];
-        const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(dir, n->text(), ".uvbpc");
+        const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(dir, n->text(), ".uvbp");
         const std::string path = m_blueprintPanel.CreateForUVE(target, file);
         if (path.empty()) {
-            m_editor.m_contentStatusMessage = "Could not create the Blueprint Class.";
+            m_editor.m_contentStatusMessage = "Could not create the Logic Graph.";
             return;
         }
         OpenBlueprintUVE(path, target);
@@ -1283,7 +1281,7 @@ void EditorEntityEditorUVE::ShowCreateBlueprintUVE(const Scene::EntityUVE target
             prism::Application::get().closeAllPopups();
         }
     };
-    prism::showDialog("Blueprint Class", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 420.0F);
+    prism::showDialog("Logic Graph", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 420.0F);
     if (prism::Application::exists()) {
         prism::Application::get().setFocus(name.get());
     }
@@ -1399,7 +1397,7 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
             m_crumbRow->add(designer, CentreUVE());
         }
         auto addScreen = prism::make<prism::Button>("", prism::Icon::Plus, prism::ButtonStyle::Toolbar);
-        addScreen->setTooltip("Add a screen: another Designer (Settings, Pause, Credits ...) run by this Widget Blueprint graph");
+        addScreen->setTooltip("Add a screen: another Designer (Settings, Pause, Credits ...) run by the same Graph");
         addScreen->onClick = [this] { AddWidgetScreenUVE(); };
         m_crumbRow->add(addScreen, CentreUVE());
         auto bar0 = prism::make<prism::Label>("|", prism::FontRole::Small);
@@ -1409,7 +1407,7 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
                                                 prism::ButtonStyle::Toolbar);
         graph->setCheckable(true);
         graph->setChecked(m_blueprintMode);
-        graph->setTooltip("Graph: what this Widget Blueprint does (On Button Clicked, Set Text ...)");
+        graph->setTooltip("Graph: what the widget does (On Button Clicked, Set Text ...)");
         graph->onClick = [this] { OpenWidgetGraphUVE(); };
         auto stage = prism::make<prism::Button>("Stage", prism::Icon::Cube, prism::ButtonStyle::Toolbar);
         stage->setCheckable(true);
@@ -1525,9 +1523,9 @@ void EditorEntityEditorUVE::SyncBlueprintTabUVE() {
     }
     if (shown) {
         static_cast<void>(m_detailsTabs->insertTab(m_detailsTabs->count(),
-                                                   prism::TabView::Page{"Blueprint Class", prism::Icon::BlueprintClass, m_blueprintPanel.SideUVE(), false}));
+                                                   prism::TabView::Page{"Logic Graph", prism::Icon::BlueprintClass, m_blueprintPanel.SideUVE(), false}));
         m_detailsTabs->setCurrent(m_detailsTabs->count() - 1);
-    } else if (const int index = m_detailsTabs->indexOf("Blueprint Class"); index >= 0) {
+    } else if (const int index = m_detailsTabs->indexOf("Logic Graph"); index >= 0) {
         static_cast<void>(m_detailsTabs->takeTab(index));
         m_detailsTabs->setCurrent(0);
     }

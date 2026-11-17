@@ -11,7 +11,7 @@ The goal is a production-grade particle system, not a demo. It has:
 - a CPU simulator (and later a GPU one) over structure-of-arrays data;
 - real renderers: sprite, ribbon, mesh and light;
 - an editor window with a live preview;
-- hooks into Motion Montages, Logic Graphs and levels.
+- hooks into Action Clips, Logic Graphs and levels.
 
 ---
 
@@ -117,20 +117,20 @@ DISPLAY=:99 xdotool mousemove X Y; xdotool mousedown 1; sleep 0.1; xdotool mouse
 | Particle drawing | `particle_draw_command.h`, `particle_render_bridge.h`, `renderer_3d.cpp` | a fixed 0.05 world-unit quad per particle, not camera-facing, flat colour, at most 16,384 |
 | Light budget | `kMaxLightsUVE = 4` in the renderer | four lights per draw |
 | Graph UI | `Engine/Runtime/Prism/Internal/BlueprintGraphs.cpp:147` `loadParticleGraphPreset()` | a demo graph style (colours and icons) for particle graphs, with no data behind it |
-| Motion Montage notify | `Engine/Runtime/Asset/Expose/animation_montage_asset.h` (`MontageNotifyUVE`, `MontageNotifyStateUVE`) | raised in `engine_core.cpp` (~2978) as the `montage_notify*` script events |
-| Motion Montage editor | `Engine/Editor/EditorCore/Internal/shell/montage/editor_montage_editor.*` | a separate native PRISM window with a preview and a timeline. **This is the model for the VFX editor window.** |
+| Action Clip notify | `Engine/Runtime/Asset/Expose/animation_montage_asset.h` (`MontageNotifyUVE`, `MontageNotifyStateUVE`) | raised in `engine_core.cpp` (~2978) as the `montage_notify*` script events |
+| Action Clip editor | `Engine/Editor/EditorCore/Internal/shell/montage/editor_montage_editor.*` | a separate native PRISM window with a preview and a timeline. **This is the model for the VFX editor window.** |
 | Logic Graph nodes | `Engine/Runtime/Asset/Expose/blueprint_nodes.h` and its `.cpp` | the node catalogue, translated to UVScript |
 | Asset envelope | `Engine/Runtime/Asset/Expose/uve_file_envelope.h` | `AssetKindUVE` enum (last value `Blueprint = 18`) and `WriteUveFileUVE`/`ReadUveFileUVE` |
 | JSON asset example | `Engine/Runtime/Asset/Internal/montage_library_asset.cpp` | a complete small asset: schema string, validation, save and load. **Copy this pattern.** |
 | Deterministic random | `Engine/Runtime/Core/Math/Expose/math_random.h` `Math::RandomUVE` | PCG32 with `NextFloatUVE`, `RangeUVE` and `ChanceUVE`; seed plus stream |
-| Asset Library | `Engine/Editor/EditorCore/Internal/shell/editor_content_browser.cpp` | the Add menu (`items.push_back(item("Motion Montage", "animation-montage", ...))` ~1468), tile badges (~239) and double-click to open |
+| Asset Library | `Engine/Editor/EditorCore/Internal/shell/editor_content_browser.cpp` | the Add menu (`items.push_back(item("Action Clip", "animation-montage", ...))` ~1468), tile badges (~239) and double-click to open |
 
 ---
 
 ## 2. The design
 
 ### 2.1 Words
-- **Particle System** (`.uvfx`): what a level, an Motion Montage or a Logic Graph plays. It has one
+- **Particle System** (`.uvfx`): what a level, an Action Clip or a Logic Graph plays. It has one
   or more emitters and a list of user parameters.
 - **Emitter**: one stream of particles. It has a graph with four stage outputs.
 - **Stages**, in the order they run:
@@ -607,7 +607,7 @@ studio preview scene, its timeline, its toolbar and its Save. Read that code fir
 ---
 
 ## 9. Hooks (V5)
-- **Motion Montage "Spawn VFX" notify:**
+- **Action Clip "Spawn VFX" notify:**
   - Add `kind` to `MontageNotifyUVE`: `Event` (today's), `SpawnVfx` or `PlaySound`. For a
     SpawnVfx notify, add `vfxAsset`, `bone` (string, empty = root), `offset` position and rotation,
     `attached` (bool) and the parameter overrides.
@@ -615,8 +615,8 @@ studio preview scene, its timeline, its toolbar and its Save. Read that code fir
   - Runtime: in `engine_core.cpp` where the notify is raised (~2978), a SpawnVfx notify calls
     `VfxWorldUVE::SpawnUVE` at the bone's world transform (attached: follows the bone each frame).
   - `MontageNotifyStateUVE` gets the same fields. It spawns at begin and calls `StopUVE` at end.
-  - The Motion Montage editor's notify inspector shows these fields, and a `.uvfx` dropped on a notify
-    track creates a SpawnVfx notify there. The Motion Montage preview plays the effect.
+  - The Action Clip editor's notify inspector shows these fields, and a `.uvfx` dropped on a notify
+    track creates a SpawnVfx notify there. The Action Clip preview plays the effect.
 - **Logic Graph nodes** (`blueprint_nodes.cpp`, translated like the existing nodes): Spawn VFX at
   Location, Spawn VFX Attached (object, bone), Set VFX Float, Set VFX Vector, Set VFX Colour,
   Stop VFX, Kill VFX and Is VFX Active. The handle is an int value. Add the `vfx.*` host functions
@@ -733,7 +733,7 @@ all of the following are true:
   - the notify state stops at its end;
   - the Logic Graph VFX nodes translate and compile;
   - `vfx.*` host calls round-trip a handle.
-- **xvfb:** an Motion Montage with a Spawn VFX notify on a hand bone plays in the Motion Montage preview;
+- **xvfb:** an Action Clip with a Spawn VFX notify on a hand bone plays in the Action Clip preview;
   the same in game (Play); a level ParticleEmitter3D with a `.uvfx` and a Tint override.
 
 ### V2c: GPU simulation and scalability

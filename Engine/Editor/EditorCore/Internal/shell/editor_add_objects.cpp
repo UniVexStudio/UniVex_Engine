@@ -30,7 +30,7 @@ constexpr std::array<GroupUVE, 13> kGroupsUVE{{
     {"Camera", {Kind::Camera3D, Kind::SpringArm3D}, 2},
     {"Physics", {Kind::Static3D, Kind::Rigid3D, Kind::Kinematic3D, Kind::Collider3D, Kind::Area3D, Kind::RayCast3D}, 6},
     {"Animation",
-     {Kind::Skeleton3D, Kind::AnimationSequencer, Kind::AnimationGraph, Kind::MontageSequencer, Kind::BoneAttachment3D,
+     {Kind::Skeleton3D, Kind::AnimationSequencer, Kind::AnimationGraph, Kind::MontagePlayer, Kind::BoneAttachment3D,
       Kind::TwoBoneIK3D, Kind::FullBodyIK3D},
      7},
     {"Gameplay", {Kind::SpawnPoint3D, Kind::InteractionArea3D, Kind::Hitbox3D, Kind::Hurtbox3D, Kind::Projectile3D}, 5},
@@ -103,7 +103,7 @@ bool IsObjectOfferedForRootUVE(const Kind kind, const EntityRootUVE root) noexce
         case Kind::FullBodyIK3D:
         case Kind::BoneAttachment3D:
         case Kind::AnimationGraph:
-        case Kind::MontageSequencer:
+        case Kind::MontagePlayer:
         case Kind::NavSeeker3D:
         case Kind::SpringArm3D:
             return root == EntityRootUVE::Character;
@@ -114,7 +114,7 @@ bool IsObjectOfferedForRootUVE(const Kind kind, const EntityRootUVE root) noexce
 
 bool IsObjectOfferedUVE(const Kind kind, const AddObjectContextUVE context) noexcept {
     if (context == AddObjectContextUVE::Entity) {
-        // An entity's objects get their behaviour from Blueprint Classes, not script objects.
+        // An entity's objects get their behaviour from Logic Graphs, not script objects.
         return !IsLevelOnlyUVE(kind) && kind != Kind::Script;
     }
     // A level takes everything of the world; a character's parts are built inside an Entity.
@@ -141,7 +141,7 @@ prism::Icon ObjectKindGlyphUVE(const Kind kind) noexcept {
         case Kind::Skeleton3D: return prism::Icon::Skeleton;
         case Kind::AnimationSequencer: return prism::Icon::AnimSequencer;
         case Kind::AnimationGraph: return prism::Icon::AnimGraph;
-        case Kind::MontageSequencer: return prism::Icon::MontageSequencer;
+        case Kind::MontagePlayer: return prism::Icon::MontagePlayer;
         case Kind::BoneAttachment3D: return prism::Icon::BoneAttachment;
         case Kind::TwoBoneIK3D: return prism::Icon::TwoBoneIK;
         default: return prism::Icon::None;

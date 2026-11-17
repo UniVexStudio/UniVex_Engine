@@ -27,7 +27,7 @@ struct MontageLibraryEntryUVE final {
 };
 
 /// A montage library (`.uvmontagelib`): a named, ordered collection of `.uvmontage` Animation
-/// Montages that MontageSequencers link to, beside their own slots - the montage counterpart of the
+/// Montages that MontagePlayers link to, beside their own slots - the montage counterpart of the
 /// AnimationSequencer's `.uvanimlib`.
 struct MontageLibraryAssetUVE final {
     std::string libraryId;

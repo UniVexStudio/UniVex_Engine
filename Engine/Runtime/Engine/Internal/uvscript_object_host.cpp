@@ -78,15 +78,15 @@ using UVScript::Vec3ValueUVE;
                             static_cast<std::uint32_t>(packed >> 32U)};
 }
 
-/// The MontageSequencer a script drives: the object's own, else one directly under it (a character's).
-[[nodiscard]] Scene::MontageSequencerComponentUVE* FindMontageSequencerUVE(Scene::IEntityManagerUVE& entities,
+/// The MontagePlayer a script drives: the object's own, else one directly under it (a character's).
+[[nodiscard]] Scene::MontagePlayerComponentUVE* FindMontagePlayerUVE(Scene::IEntityManagerUVE& entities,
                                                                    const Scene::EntityUVE entity) {
-    if (entities.HasComponentUVE<Scene::MontageSequencerComponentUVE>(entity)) {
-        return &entities.GetComponentUVE<Scene::MontageSequencerComponentUVE>(entity);
+    if (entities.HasComponentUVE<Scene::MontagePlayerComponentUVE>(entity)) {
+        return &entities.GetComponentUVE<Scene::MontagePlayerComponentUVE>(entity);
     }
-    Scene::MontageSequencerComponentUVE* found = nullptr;
-    entities.ForEachUVE<Scene::MontageSequencerComponentUVE>(
-        [&](const Scene::EntityUVE candidate, Scene::MontageSequencerComponentUVE& player) {
+    Scene::MontagePlayerComponentUVE* found = nullptr;
+    entities.ForEachUVE<Scene::MontagePlayerComponentUVE>(
+        [&](const Scene::EntityUVE candidate, Scene::MontagePlayerComponentUVE& player) {
             if (found == nullptr && entities.HasComponentUVE<Scene::HierarchyComponentUVE>(candidate) &&
                 entities.GetComponentUVE<Scene::HierarchyComponentUVE>(candidate).parent == entity) {
                 found = &player;
@@ -532,9 +532,9 @@ std::optional<HostFunctionUVE> UVScriptObjectHostUVE::DescribeFunctionUVE(const 
             return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
         }
     }
-    // Montages: the object's MontageSequencer, or the one under it. Plays by the montage file's name.
+    // Montages: the object's MontagePlayer, or the one under it. Plays by the montage file's name.
     if (name.starts_with("montage.") &&
-        FindMontageSequencerUVE(const_cast<Scene::IEntityManagerUVE&>(m_entityManager), m_entity) != nullptr) {
+        FindMontagePlayerUVE(const_cast<Scene::IEntityManagerUVE&>(m_entityManager), m_entity) != nullptr) {
         if (name == "montage.play" || name == "montage.jump_to") {
             return HostFunctionUVE{{TypeUVE::StrUVE()}, TypeUVE::BoolUVE()};
         }
@@ -1077,7 +1077,7 @@ ValueUVE UVScriptObjectHostUVE::CallFunctionUVE(const std::string_view name, con
         return ValueUVE{false};
     }
     if (name.starts_with("montage.")) {
-        Scene::MontageSequencerComponentUVE* const player = FindMontageSequencerUVE(m_entityManager, m_entity);
+        Scene::MontagePlayerComponentUVE* const player = FindMontagePlayerUVE(m_entityManager, m_entity);
         if (player == nullptr) {
             return name == "montage.section" ? ValueUVE{std::string{}} : name == "montage.curve" ? ValueUVE{0.0} : ValueUVE{false};
         }

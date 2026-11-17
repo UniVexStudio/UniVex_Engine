@@ -2699,7 +2699,7 @@ TEST(EngineCoreUVETest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObject
     engine.Shutdown();
 }
 
-TEST(EngineCoreUVETest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNotifies) {
+TEST(EngineCoreUVETest, MontagePlayer_PlaysAMontageFromTheScriptAndSendsItsNotifies) {
     EngineCoreUVE engine(MakeTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
@@ -2730,13 +2730,13 @@ TEST(EngineCoreUVETest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNo
     const std::filesystem::path clipPath = "uve_engine_core_tests_swing.uvanim";
     ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, clipPath));
     const Asset::AssetGuidUVE clipGuid = assetDatabase.RegisterUVE(clipPath);
-    Asset::MotionMontageAssetUVE montage;
+    Asset::AnimationMontageAssetUVE montage;
     Asset::AddMontageSegmentUVE(montage, clipGuid, 0.5);
     Asset::AddMontageNotifyUVE(montage, "hit", 0.2, 0U);
     montage.blendInSeconds = 0.0;
     montage.blendOutSeconds = 0.0;
     const std::filesystem::path montagePath = "Attack.uvmontage";
-    ASSERT_TRUE(Asset::SaveMotionMontageAssetUVE(montage, montagePath));
+    ASSERT_TRUE(Asset::SaveAnimationMontageAssetUVE(montage, montagePath));
     const Asset::AssetGuidUVE montageGuid = assetDatabase.RegisterUVE(montagePath);
 
     const Scene::EntityUVE character = entityManager.CreateEntityUVE();
@@ -2752,9 +2752,9 @@ TEST(EngineCoreUVETest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNo
     sceneGraph.SetParentUVE(entityManager, skeletonEntity, character);
     const Scene::EntityUVE montages = entityManager.CreateEntityUVE();
     sceneGraph.AttachTransformUVE(entityManager, montages, Scene::TransformComponentUVE{});
-    Scene::MontageSequencerComponentUVE slots;
+    Scene::MontagePlayerComponentUVE slots;
     slots.montage1 = montageGuid;
-    entityManager.AddComponentUVE<Scene::MontageSequencerComponentUVE>(montages, slots);
+    entityManager.AddComponentUVE<Scene::MontagePlayerComponentUVE>(montages, slots);
     sceneGraph.SetParentUVE(entityManager, montages, character);
 
     bool posedMidway = false;

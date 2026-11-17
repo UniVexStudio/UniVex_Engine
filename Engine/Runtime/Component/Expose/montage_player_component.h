@@ -37,11 +37,11 @@ enum class MontageRequestUVE : std::uint8_t {
     Stop,
 };
 
-/// MontageSequencer: the montages a character (or any object with a skeleton under it) can play - its
+/// MontagePlayer: the montages a character (or any object with a skeleton under it) can play - its
 /// attacks, reloads, emotes. A script plays one by its file name: `montage.play("Attack")` plays
 /// the montage file Attack.uvmontage set here. While it plays, its pose is blended over what the
 /// character's AnimationSequencer / AnimationGraph poses, and its notifies reach the script.
-struct MontageSequencerComponentUVE final {
+struct MontagePlayerComponentUVE final {
     Asset::AssetGuidUVE montage1;
     Asset::AssetGuidUVE montage2;
     Asset::AssetGuidUVE montage3;
@@ -70,7 +70,7 @@ struct MontageSequencerComponentUVE final {
     [[nodiscard]] bool IsPlayingUVE() const noexcept { return playback.phase != MontagePhaseUVE::Stopped; }
 
     /// Authored data only: a playing slot equals its saved self.
-    [[nodiscard]] bool operator==(const MontageSequencerComponentUVE& other) const noexcept {
+    [[nodiscard]] bool operator==(const MontagePlayerComponentUVE& other) const noexcept {
         return montage1 == other.montage1 && montage2 == other.montage2 && montage3 == other.montage3 &&
                montage4 == other.montage4 && montage5 == other.montage5 && montage6 == other.montage6 &&
                montage7 == other.montage7 && montage8 == other.montage8 && libraryRef == other.libraryRef;

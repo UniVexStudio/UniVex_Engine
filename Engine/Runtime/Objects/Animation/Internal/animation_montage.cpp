@@ -13,13 +13,13 @@
 namespace UVE::Scene {
 namespace {
 
-[[nodiscard]] double SectionStartUVE(const Asset::MotionMontageAssetUVE& montage, const std::string_view name) noexcept {
+[[nodiscard]] double SectionStartUVE(const Asset::AnimationMontageAssetUVE& montage, const std::string_view name) noexcept {
     const Asset::MontageSectionUVE* const section = Asset::FindMontageSectionUVE(montage, name);
     return section != nullptr ? section->time : 0.0;
 }
 
 /// Raises the notifies in [from, to) on the way.
-void CollectNotifiesUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback, const double from,
+void CollectNotifiesUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback, const double from,
                         const double to, std::vector<MontageEventUVE>& events) {
     if (!(to > from)) {
         return;
@@ -52,7 +52,7 @@ void CollectNotifiesUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlay
 }
 
 /// Raises the begin / end of every notify state whose inside-ness changed.
-void UpdateStatesUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
+void UpdateStatesUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback,
                      std::vector<MontageEventUVE>& events) {
     playback.activeStates.resize(montage.notifyStates.size(), false);
     const bool running = playback.phase != MontagePhaseUVE::Stopped;
@@ -67,7 +67,7 @@ void UpdateStatesUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybac
     }
 }
 
-void FinishUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
+void FinishUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback,
                std::vector<MontageEventUVE>& events) {
     playback.phase = MontagePhaseUVE::Stopped;
     playback.weight = 0.0F;
@@ -75,7 +75,7 @@ void FinishUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& 
     events.push_back(MontageEventUVE{MontageEventUVE::KindUVE::Ended, {}});
 }
 
-void BeginBlendOutUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
+void BeginBlendOutUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback,
                       std::vector<MontageEventUVE>& events) {
     if (playback.phase == MontagePhaseUVE::BlendOut || playback.phase == MontagePhaseUVE::Stopped) {
         return;
@@ -90,7 +90,7 @@ void BeginBlendOutUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlayba
 
 } // namespace
 
-bool StartMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
+bool StartMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback,
                      const std::string_view section) {
     if (montage.segments.empty() || Asset::MontageLengthUVE(montage) <= 0.0) {
         return false;
@@ -120,7 +120,7 @@ bool StartMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybac
     return true;
 }
 
-bool JumpToMontageSectionUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
+bool JumpToMontageSectionUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback,
                              const std::string_view section) {
     if (playback.phase == MontagePhaseUVE::Stopped || Asset::FindMontageSectionUVE(montage, section) == nullptr) {
         return false;
@@ -135,12 +135,12 @@ bool JumpToMontageSectionUVE(const Asset::MotionMontageAssetUVE& montage, Montag
     return true;
 }
 
-void StopMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback,
+void StopMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback,
                     std::vector<MontageEventUVE>& events) {
     BeginBlendOutUVE(montage, playback, events);
 }
 
-void StepMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlaybackUVE& playback, const double deltaSeconds,
+void StepMontageUVE(const Asset::AnimationMontageAssetUVE& montage, MontagePlaybackUVE& playback, const double deltaSeconds,
                     std::vector<MontageEventUVE>& events) {
     if (playback.phase == MontagePhaseUVE::Stopped || !(deltaSeconds >= 0.0)) {
         return;
@@ -205,7 +205,7 @@ void StepMontageUVE(const Asset::MotionMontageAssetUVE& montage, MontagePlayback
     }
 }
 
-std::vector<SkeletonBonePoseUVE> PoseMontageUVE(const Asset::MotionMontageAssetUVE& montage, const double time,
+std::vector<SkeletonBonePoseUVE> PoseMontageUVE(const Asset::AnimationMontageAssetUVE& montage, const double time,
                                                 const AnimationClipResolverUVE& clipFor, const Skeleton3DComponentUVE& skeleton) {
     if (skeleton.bones.empty() || !clipFor) {
         return {};
@@ -259,7 +259,7 @@ bool BlendBonePosesUVE(Skeleton3DComponentUVE& skeleton, const std::vector<Skele
     return true;
 }
 
-bool BlendMontagePoseUVE(const Asset::MotionMontageAssetUVE& montage, const double time, const float weight,
+bool BlendMontagePoseUVE(const Asset::AnimationMontageAssetUVE& montage, const double time, const float weight,
                          const AnimationClipResolverUVE& clipFor, Skeleton3DComponentUVE& skeleton) {
     if (!(weight > 0.0F)) {
         return false;
