@@ -22,8 +22,8 @@ bool ScriptUVE::HasScriptPathUVE(const ScriptComponentUVE& script) noexcept {
 }
 
 bool ScriptUVE::IsUVScriptPathUVE(const std::string_view scriptAssetPath) noexcept {
-    // A Blueprint Class (.uvbp) runs as the UVScript it translates to.
-    return scriptAssetPath.ends_with(kUVScriptExtensionUVE) || scriptAssetPath.ends_with(".uvbp") ||
+    // A Blueprint Class (.uvbpc) runs as the UVScript it translates to.
+    return scriptAssetPath.ends_with(kUVScriptExtensionUVE) || scriptAssetPath.ends_with(".uvbpc") ||
            scriptAssetPath.ends_with(".uvwbp");
 }
 

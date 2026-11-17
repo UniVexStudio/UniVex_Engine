@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -100,6 +101,11 @@ struct GltfAnimationSourceUVE final {
 /// output, a node name above the identifier cap, a node array above the naming cap, or anything
 /// above the bone cap.
 [[nodiscard]] std::optional<GltfAnimationSourceUVE> ParseGltfAnimationSourceUVE(
-    std::string_view json, const std::vector<std::byte>& buffer);
+    std::string_view json, const std::vector<std::byte>& buffer, std::size_t animationIndex = 0U);
+
+/// Reads, parses and converts every supported skeletal animation in a `.gltf` or `.glb` source
+/// into engine clips. Relative buffer resources are bounded to the source directory; malformed
+/// files or unsupported channels are skipped, and successful clips retain their source take names.
+[[nodiscard]] std::vector<AnimationClipAssetUVE> ReadGltfAnimationClipsUVE(const std::filesystem::path& sourcePath);
 
 } // namespace UVE::Asset

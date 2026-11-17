@@ -228,7 +228,7 @@ void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEnt
     AddUVE<ComponentT>(entries, std::move(entry));
 }
 
-[[nodiscard]] bool IsMontagePlayerComponentValidUVE(const MontagePlayerComponentUVE&) noexcept {
+[[nodiscard]] bool IsMontageSequencerComponentValidUVE(const MontageSequencerComponentUVE&) noexcept {
     return true;
 }
 
@@ -2230,17 +2230,17 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
             }));
 
-    // MontagePlayer: the montages its script can play, by file name.
-    using MP = MontagePlayerComponentUVE;
+    // MontageSequencer: the montages its script can play, by file name.
+    using MP = MontageSequencerComponentUVE;
     const auto montageSlot = [](auto property, const char* tip) {
         return WithTooltipUVE(WithCustomDrawerUVE(std::move(property), "asset:uvmontage"), tip);
     };
     constexpr const char* kMontageTipUVE =
-        "An Animation Montage this object can play. Its script plays it by the file's name: "
+        "A Motion Montage this object can play. Its script plays it by the file's name: "
         "montage.play(\"Attack\") plays Attack.uvmontage.";
-    AddValidatedUVE<MontagePlayerComponentUVE, &IsMontagePlayerComponentValidUVE>(
+    AddValidatedUVE<MontageSequencerComponentUVE, &IsMontageSequencerComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.montage_player", "MontagePlayerComponentUVE", "MontagePlayer", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.montage_sequencer", "MontageSequencerComponentUVE", "Montage Sequencer", kSectionOrderTypeSpecificUVE,
             {
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage1>("montage1", "Montage 1", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage2>("montage2", "Montage 2", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),

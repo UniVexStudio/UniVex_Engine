@@ -33,7 +33,7 @@ class EditorHostUVE;
 class DocumentTabUVE;
 class MontageTimelineUVE;
 
-/// The Montage Editor, the standard Animation Montage editor in a window of its own:
+/// The Montage Editor, the standard Motion Montage editor in a window of its own:
 ///
 ///   [#1 logo] [title bar: File Edit Window Help | drag strip | - [] x]
 ///   [       ] [#2 the montage's tab                                 ]
@@ -73,7 +73,7 @@ public:
     enum class AddKindUVE : std::uint8_t { Notify, State, Section, Curve, Track };
     void AddAtPlayheadUVE(AddKindUVE kind);
     /// A curve name not used yet: `base`, else "base 2", "base 3"...
-    [[nodiscard]] static std::string UniqueCurveNameUVE(const Asset::AnimationMontageAssetUVE& montage, const std::string& base);
+    [[nodiscard]] static std::string UniqueCurveNameUVE(const Asset::MotionMontageAssetUVE& montage, const std::string& base);
     /// Asks for a name in a small dialog of this window; `done` gets it.
     void AskNameUVE(const std::string& title, const std::string& initial, std::function<void(const std::string&)> done);
     /// The project's clips (content-relative .uvanim), for the Slot track's menus.
@@ -122,7 +122,7 @@ private:
     std::vector<std::filesystem::path> m_assetRows;
 
     /// What the panels last showed, so they are rebuilt only when it changes.
-    Asset::AnimationMontageAssetUVE m_shownMontage;
+    Asset::MotionMontageAssetUVE m_shownMontage;
     SelectionUVE m_shownSelection;
     bool m_shownValid = false;
     std::size_t m_shownClipCount = static_cast<std::size_t>(-1);

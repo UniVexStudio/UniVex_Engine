@@ -999,15 +999,15 @@ public:
     bool OpenEntityEditorUVE(const std::filesystem::path& assetPath);
 
     // ---- Montage Editor ---------------------------------------------------------------------------
-    /// An open Animation Montage (`.uvmontage`): the asset being edited, its undo, the preview's
+    /// An open Motion Montage (`.uvmontage`): the asset being edited, its undo, the preview's
     /// playhead and playback, and the preview character in a scene of its own.
     struct MontageEditSessionUVE final {
         std::filesystem::path path;
         Asset::AssetGuidUVE guid;
-        Asset::AnimationMontageAssetUVE montage;
-        Asset::AnimationMontageAssetUVE saved;
-        std::vector<Asset::AnimationMontageAssetUVE> undo;
-        std::vector<Asset::AnimationMontageAssetUVE> redo;
+        Asset::MotionMontageAssetUVE montage;
+        Asset::MotionMontageAssetUVE saved;
+        std::vector<Asset::MotionMontageAssetUVE> undo;
+        std::vector<Asset::MotionMontageAssetUVE> redo;
         double playhead = 0.0;
         bool playing = false;
         bool loop = true;
@@ -1033,7 +1033,7 @@ public:
     bool SaveMontageEditorUVE();
     void CloseMontageEditorUVE();
     /// Changes the open montage through `edit` as one undo step (nothing when it changes nothing).
-    void EditMontageUVE(const std::function<void(Asset::AnimationMontageAssetUVE&)>& edit);
+    void EditMontageUVE(const std::function<void(Asset::MotionMontageAssetUVE&)>& edit);
     bool UndoMontageEditUVE();
     bool RedoMontageEditUVE();
     /// Puts the preview on the entity asset `guid` (invalid: the skeleton of the first clip).
@@ -1136,7 +1136,7 @@ public:
     [[nodiscard]] std::vector<EntityCompileProblemUVE> CollectEntityStructureProblemsUVE();
     /// Puts the make-up problems in the open entity's problem list. True when they changed.
     bool RefreshEntityStructureProblemsUVE();
-    /// The Blueprint panel's unsaved graph for a `.uvbp` path, so Compile checks what is being
+    /// The Blueprint panel's unsaved graph for a `.uvbpc` path, so Compile checks what is being
     /// edited (like the open text editor for a `.uvs`). Unset or empty: the file on disk.
     std::function<std::optional<Asset::BlueprintAssetUVE>(const std::string& path)> m_openBlueprintProviderUVE;
     /// Writes the Entity Editor's open Blueprint graph when it has unsaved edits (set by its window):
@@ -1149,8 +1149,8 @@ public:
     std::function<bool()> m_openBlueprintDirtyUVE;
     /// A Blueprint (project path) the Entity Editor opens once its entity is open (Content Browser open).
     std::string m_pendingBlueprintOpenUVE;
-    /// A Logic Graph to make once the Entity Editor has the entity open (the Asset Library's
-    /// Add > Logic Graph): the file, and the object it runs on as names from the root down.
+    /// A Blueprint Class to make once the Entity Editor has the entity open (the Asset Library's
+    /// Add > Blueprint Class): the file, and the object it runs on as names from the root down.
     struct PendingLogicGraphUVE {
         std::filesystem::path file;
         std::vector<std::string> objectPath;
@@ -2146,11 +2146,11 @@ private:
         Animation,
         /// A named, ordered collection of animation clips (`.uvanimlib`) that sequencers load from.
         AnimationLibrary,
-        /// An Animation Montage (`.uvmontage`): opens in the Montage Editor.
-        AnimationMontage,
-        /// A named list of montages (`.uvmontagelib`) MontagePlayers link to.
+        /// An Motion Montage (`.uvmontage`): opens in the Montage Editor.
+        MotionMontage,
+        /// A named list of montages (`.uvmontagelib`) MontageSequencers link to.
         MontageLibrary,
-        /// A Blueprint Class (`.uvbp`): an object's gameplay as a node graph, edited in the Entity Editor.
+        /// A Blueprint Class (`.uvbpc`): an object's gameplay as a node graph, edited in the Entity Editor.
         Blueprint,
         /// A Widget Blueprint (`.uvwbp`): UI widgets and their graph, edited in the Widget Editor.
         WidgetBlueprint,
@@ -2289,6 +2289,14 @@ private:
         std::size_t siblingIndex = 0U;
     };
 
+    /// A multi-delete is one history action; its disjoint subtree snapshots are restored together.
+    struct BatchDeletionHistoryEntryUVE final {
+        std::vector<DeletionHistoryEntryUVE> deletions;
+        EditorSelectionSnapshotUVE selectionAfter;
+        bool dirtyBefore = false;
+        bool dirtyAfter = false;
+    };
+
     /// A hierarchy move restores its parent, place among its siblings and authored local
     /// Transform atomically on replay. A move up or down is one with the same parent.
     struct ReparentHistoryEntryUVE final {
@@ -2312,6 +2320,7 @@ private:
                      CreationHistoryEntryUVE, SceneObjectCreationHistoryEntryUVE,
                      DuplicationHistoryEntryUVE,
                      DeletionHistoryEntryUVE,
+                     BatchDeletionHistoryEntryUVE,
                      ReparentHistoryEntryUVE>;
 
     /// Writes `text` to a project file: through the VFS when a mount covers `path`, else at `path`
@@ -2321,7 +2330,7 @@ private:
     /// Reads a project file by the same rule as WriteProjectTextFileUVE.
     [[nodiscard]] std::optional<std::string> ReadProjectTextFileUVE(const std::filesystem::path& path) const;
     /// The UVScript an object's Script slot runs in the Entity Editor: a .uvs as edited (saved or
-    /// not), or a Blueprint (.uvbp, the open graph or the file) translated for that object.
+    /// not), or a Blueprint (.uvbpc, the open graph or the file) translated for that object.
     [[nodiscard]] std::optional<std::string> ReadEntityScriptSourceUVE(const std::string& path, Scene::EntityUVE entity) const;
     [[nodiscard]] bool IsDocumentEntityUVE(Scene::EntityUVE entity) const noexcept;
     [[nodiscard]] bool HasSceneGraphObjectUVE(Scene::EntityUVE entity) const noexcept;

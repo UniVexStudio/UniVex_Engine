@@ -8,6 +8,7 @@
 #include "animation_library_asset.h"
 #include "montage_library_asset.h"
 #include "fbx_mesh_converter.h"
+#include "gltf_animation_converter.h"
 #include "gltf_metadata.h"
 #include "editor.h"
 #include "editor_entity_thumbnail.h"
@@ -973,7 +974,7 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
     if (item->action == ContentCatalogueActionUVE::MontageAsset) {
         const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
         const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvmontage");
-        if (!Asset::SaveAnimationMontageAssetUVE(Asset::AnimationMontageAssetUVE{}, path)) {
+        if (!Asset::SaveMotionMontageAssetUVE(Asset::MotionMontageAssetUVE{}, path)) {
             return std::nullopt;
         }
         static_cast<void>(m_services->GetAssetDatabaseUVE().RegisterUVE(path));
@@ -2681,8 +2682,8 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::BoneAttachment3D:
             entity = createObjectWithComponent(Scene::BoneAttachment3DComponentUVE{});
             break;
-        case Scene::Objects::SceneObjectKindUVE::MontagePlayer:
-            entity = createObjectWithComponent(Scene::MontagePlayerComponentUVE{});
+        case Scene::Objects::SceneObjectKindUVE::MontageSequencer:
+            entity = createObjectWithComponent(Scene::MontageSequencerComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::TwoBoneIK3DObjectDefinitionUVE{},
@@ -2986,8 +2987,68 @@ Scene::EntityUVE EditorUVE::DuplicateSelectedEntityUVE() {
 }
 
 bool EditorUVE::DeleteSelectedEntityUVE() {
-    if (!IsLifecycleCommandAllowedUVE() || !IsDocumentEntityUVE(m_selectedEntity) ||
-        IsStructuralRootUVE(m_selectedEntity)) {
+    if (!IsLifecycleCommandAllowedUVE()) {
+        return false;
+    }
+
+    if (m_selectedEntities.size() > 1U) {
+        // Keep only deletable top-level selections. If a selected ancestor already contains a
+        // selected descendant, deleting both would duplicate snapshots and make Undo ambiguous.
+        std::vector<Scene::EntityUVE> roots;
+        roots.reserve(m_selectedEntities.size());
+        for (const Scene::EntityUVE candidate : m_selectedEntities) {
+            if (!IsDocumentEntityUVE(candidate) || IsStructuralRootUVE(candidate) ||
+                !ObjectActionBlockReasonUVE(candidate).empty()) {
+                continue;
+            }
+            const bool nested = std::ranges::any_of(m_selectedEntities, [this, candidate](const Scene::EntityUVE other) {
+                return other != candidate && IsDocumentEntityUVE(other) && DoesSubtreeContainEntityUVE(other, candidate);
+            });
+            if (!nested) {
+                roots.push_back(candidate);
+            }
+        }
+        if (roots.empty()) {
+            return false;
+        }
+
+        BatchDeletionHistoryEntryUVE batch;
+        batch.deletions.reserve(roots.size());
+        batch.dirtyBefore = m_sceneDirty;
+        for (const Scene::EntityUVE target : roots) {
+            std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(target);
+            Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+            if (!snapshot.has_value() || !TryGetDocumentParentUVE(target, parent)) {
+                return false;
+            }
+            batch.deletions.push_back(DeletionHistoryEntryUVE{
+                std::move(*snapshot), parent, target, {}, {}, batch.dirtyBefore, true,
+                m_services->GetSceneGraphUVE().GetSiblingIndexUVE(m_services->GetEntityManagerUVE(), target).value_or(0U)});
+        }
+
+        const Scene::EntityUVE firstParent = batch.deletions.front().originalParent;
+        for (const DeletionHistoryEntryUVE& deletion : batch.deletions) {
+            if (m_hierarchyRenameEntity == deletion.activeEntity) {
+                CancelHierarchyRenameUVE();
+            }
+            ClearEntityContextToolbarUVE();
+            m_hierarchyPendingRowOpen.erase(deletion.activeEntity);
+            DestroyDocumentSubtreeUVE(deletion.activeEntity);
+        }
+        const Scene::EntityUVE selectionAfter = IsDocumentEntityUVE(firstParent) ? firstParent : Scene::kInvalidEntityUVE;
+        batch.selectionAfter = EditorSelectionSnapshotUVE{
+            selectionAfter == Scene::kInvalidEntityUVE ? std::vector<Scene::EntityUVE>{}
+                                                        : std::vector<Scene::EntityUVE>{selectionAfter},
+            selectionAfter};
+        RestoreSelectionUVE(batch.selectionAfter);
+        m_sceneDirty = true;
+        batch.dirtyAfter = true;
+        InvalidateHierarchyFilterCacheUVE();
+        RecordHistoryUVE(std::move(batch));
+        return true;
+    }
+
+    if (!IsDocumentEntityUVE(m_selectedEntity) || IsStructuralRootUVE(m_selectedEntity)) {
         return false;
     }
 
@@ -4359,6 +4420,36 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
+            } else if constexpr (std::is_same_v<EntryType, BatchDeletionHistoryEntryUVE>) {
+                if (typedEntry.deletions.empty()) {
+                    return false;
+                }
+                for (const DeletionHistoryEntryUVE& deletion : typedEntry.deletions) {
+                    if (!IsDocumentEntityUVE(deletion.originalParent) ||
+                        (deletion.activeEntity != Scene::kInvalidEntityUVE &&
+                         m_services->GetEntityManagerUVE().IsAliveUVE(deletion.activeEntity))) {
+                        return false;
+                    }
+                }
+                std::vector<Scene::EntityUVE> restoredEntities;
+                restoredEntities.reserve(typedEntry.deletions.size());
+                for (DeletionHistoryEntryUVE& deletion : typedEntry.deletions) {
+                    const Scene::EntityUVE restored = RestoreSubtreeUnderParentUVE(deletion.snapshot, deletion.originalParent);
+                    if (restored == Scene::kInvalidEntityUVE) {
+                        for (const Scene::EntityUVE rollback : restoredEntities) {
+                            DestroyDocumentSubtreeUVE(rollback);
+                        }
+                        return false;
+                    }
+                    static_cast<void>(m_services->GetSceneGraphUVE().SetSiblingIndexUVE(
+                        m_services->GetEntityManagerUVE(), restored, deletion.siblingIndex));
+                    deletion.activeEntity = restored;
+                    restoredEntities.push_back(restored);
+                }
+                RestoreSelectionUVE(EditorSelectionSnapshotUVE{restoredEntities, restoredEntities.back()});
+                m_sceneDirty = typedEntry.dirtyBefore;
+                InvalidateHierarchyFilterCacheUVE();
+                return true;
             } else {
                 // A move among siblings keeps its parent, so it needs neither a reparent nor a
                 // transform - and a pure Object, which has no transform, can make one.
@@ -4502,6 +4593,26 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 typedEntry.activeEntity = Scene::kInvalidEntityUVE;
                 RestoreSelectionUVE(typedEntry.selectionAfter);
                 m_sceneDirty = typedEntry.dirtyAfter;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, BatchDeletionHistoryEntryUVE>) {
+                if (typedEntry.deletions.empty() ||
+                    std::ranges::any_of(typedEntry.deletions, [this](const DeletionHistoryEntryUVE& deletion) {
+                        return !IsDocumentEntityUVE(deletion.activeEntity);
+                    })) {
+                    return false;
+                }
+                for (DeletionHistoryEntryUVE& deletion : typedEntry.deletions) {
+                    if (m_hierarchyRenameEntity == deletion.activeEntity) {
+                        CancelHierarchyRenameUVE();
+                    }
+                    ClearEntityContextToolbarUVE();
+                    m_hierarchyPendingRowOpen.erase(deletion.activeEntity);
+                    DestroyDocumentSubtreeUVE(deletion.activeEntity);
+                    deletion.activeEntity = Scene::kInvalidEntityUVE;
+                }
+                RestoreSelectionUVE(typedEntry.selectionAfter);
+                m_sceneDirty = typedEntry.dirtyAfter;
+                InvalidateHierarchyFilterCacheUVE();
                 return true;
             } else {
                 const bool reparented = typedEntry.parentBefore != typedEntry.parentAfter;
@@ -5584,7 +5695,7 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     if (extension == ".uvsave") {
         return ContentBrowserItemTypeUVE::Save;
     }
-    if (extension == ".uvbp") {
+    if (extension == ".uvbpc") {
         return ContentBrowserItemTypeUVE::Blueprint;
     }
     if (extension == ".uvwbp") {
@@ -5606,7 +5717,7 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
         return ContentBrowserItemTypeUVE::ParticleSystem;
     }
     if (extension == ".uvmontage") {
-        return ContentBrowserItemTypeUVE::AnimationMontage;
+        return ContentBrowserItemTypeUVE::MotionMontage;
     }
     if (extension == ".uvmontagelib") {
         return ContentBrowserItemTypeUVE::MontageLibrary;
@@ -5629,7 +5740,32 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
 EditorUVE::ContentBrowserItemTypeUVE EditorUVE::GetContentBrowserEntryTypeUVE(
     const Asset::ProjectFileEntryUVE& entry) const {
     const ContentBrowserItemTypeUVE extensionType = ClassifyContentBrowserEntryUVE(entry);
-    if (entry.kind != Asset::ProjectFileEntryKindUVE::File || !IsModelSourcePathUVE(entry.relativePath)) {
+    if (entry.kind != Asset::ProjectFileEntryKindUVE::File) {
+        return extensionType;
+    }
+    if (entry.relativePath.extension() == ".uvmodel") {
+        struct CachedRiggedModelUVE final {
+            std::filesystem::file_time_type writeTime{};
+            bool rigged = false;
+        };
+        static std::unordered_map<std::string, CachedRiggedModelUVE> cache;
+        const auto snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const std::filesystem::path path = snapshot.contentRoot / entry.relativePath;
+        std::error_code error;
+        const auto writeTime = std::filesystem::last_write_time(path, error);
+        if (error) {
+            return extensionType;
+        }
+        const std::string key = path.generic_string();
+        auto found = cache.find(key);
+        if (found == cache.end() || found->second.writeTime != writeTime) {
+            Asset::MeshAssetUVE mesh;
+            const bool rigged = Asset::LoadMeshAssetUVE(path, mesh) && mesh.IsSkinnedUVE();
+            found = cache.insert_or_assign(key, CachedRiggedModelUVE{writeTime, rigged}).first;
+        }
+        return found->second.rigged ? ContentBrowserItemTypeUVE::Model : extensionType;
+    }
+    if (!IsModelSourcePathUVE(entry.relativePath)) {
         return extensionType;
     }
     const EditorModelSourceInfoUVE* const source = FindModelSourceInfoUVE(entry.relativePath);
@@ -5675,14 +5811,14 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
             return "Animation Library";
         case ContentBrowserItemTypeUVE::ParticleSystem:
             return "Particle System";
-        case ContentBrowserItemTypeUVE::AnimationMontage:
-            return "Action Clip";
+        case ContentBrowserItemTypeUVE::MotionMontage:
+            return "Motion Montage";
         case ContentBrowserItemTypeUVE::MontageLibrary:
-            return "Action Clip Library";
+            return "Motion Montage Library";
         case ContentBrowserItemTypeUVE::Blueprint:
-            return "Logic Graph";
+            return "Blueprint Class";
         case ContentBrowserItemTypeUVE::WidgetBlueprint:
-            return "UI Graph";
+            return "Widget Blueprint";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:
@@ -6570,7 +6706,9 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         return written;
     }
     const std::vector<Asset::AnimationClipAssetUVE> rawTakes =
-        Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE);
+        (absoluteSource.extension() == ".glb" || absoluteSource.extension() == ".gltf")
+            ? Asset::ReadGltfAnimationClipsUVE(absoluteSource)
+            : Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE);
 
     // Suppress generic exporter takes (e.g. "Take 001") if named takes exist in the FBX.
     // If only generic takes exist, keep only the first one to avoid duplicate files.

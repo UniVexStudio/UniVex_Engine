@@ -95,11 +95,11 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildBodyUVE(const NodeUVE& node);
     [[nodiscard]] std::vector<std::string> ParameterNamesUVE(std::initializer_list<Scene::AnimationParameterTypeUVE> types) const;
     [[nodiscard]] std::vector<Asset::AssetGuidUVE> ClipChoicesUVE() const;
-    /// The MontagePlayers whose montages reach this graph: the linked one, else every one in the
+    /// The MontageSequencers whose montages reach this graph: the linked one, else every one in the
     /// entity; and the names of their montages that play on `slot`.
-    [[nodiscard]] std::vector<Scene::EntityUVE> MontagePlayersUVE() const;
+    [[nodiscard]] std::vector<Scene::EntityUVE> MontageSequencersUVE() const;
     [[nodiscard]] std::vector<std::string> MontagesOnSlotUVE(const std::string& slot) const;
-    void ShowMontagePlayerMenuUVE(prism::Vec2 at);
+    void ShowMontageSequencerMenuUVE(prism::Vec2 at);
 
     // ---- edits ----------------------------------------------------------------------------------
     /// One undo step on the component; the view is rebuilt on the next refresh.

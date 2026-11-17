@@ -27,6 +27,7 @@
 #include "asset_import_sidecar.h"
 
 #include "gltf_mesh_converter.h"
+#include "gltf_skin_converter.h"
 #include "gltf_metadata.h"
 #include "mesh_asset.h"
 #include "logging_macros.h"
@@ -459,6 +460,21 @@ constexpr std::uint32_t kInvalidGltfMaterialIndexUVE = 0xFFFFFFFFU;
                                 surfaceMaterialIndices)) {
             UVE_ERROR("GltfImporterUVE: source \"{}\" failed bounded mesh conversion", sourcePath.string());
             return false;
+        }
+        // A skin is part of the same .uvmodel asset as its geometry. Do not silently publish a
+        // skinned source as a static mesh when the skin cannot be decoded: fail the import instead.
+        if (document.contains("skins")) {
+            const std::string json = document.dump();
+            const std::optional<GltfSkinSourceUVE> skinSource = ParseGltfSkinSourceUVE(json, buffer);
+            GltfSkinResultUVE skin;
+            if (!skinSource.has_value() || !ConvertGltfSkinUVE(*skinSource, skin) ||
+                skin.influences.size() != mesh.vertices.size()) {
+                UVE_ERROR("GltfImporterUVE: source \"{}\" has a skin that could not be matched to its mesh",
+                          sourcePath.string());
+                return false;
+            }
+            mesh.joints = std::move(skin.joints);
+            mesh.skinningInfluences = std::move(skin.influences);
         }
         // Materials and their textures are published BEFORE the mesh so a failure never leaves a
         // .uvmodel pointing at materials that do not exist. An unusable material is not a reason to

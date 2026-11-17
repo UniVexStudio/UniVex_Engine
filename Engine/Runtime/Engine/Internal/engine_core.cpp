@@ -53,6 +53,7 @@
 #include "asset_bundle.h"
 #include "asset_database.h"
 #include "asset_importer.h"
+#include "gltf_importer.h"
 #include "ttf_importer.h"
 #include "asset_import_queue.h"
 #include "asset_manager.h"
@@ -716,6 +717,7 @@ void EngineCoreUVE::Init() {
     Audio::RegisterWavImporterUVE(*m_assetImporter);
     Audio::RegisterCompressedAudioImportersUVE(*m_assetImporter);
     Asset::RegisterTtfImporterUVE(*m_assetImporter);
+    Asset::RegisterGltfImporterUVE(*m_assetImporter);
 
     // Compose the schema-driven Data Table importers and typed loader onto the existing generic
     // services. Registration owns no service or loaded asset state, so EngineCoreUVE remains the
@@ -1974,7 +1976,7 @@ std::optional<std::string> EngineCoreUVE::ReadUVScriptSourceUVE(const std::strin
     if (!bytes.has_value()) {
         return std::nullopt;
     }
-    if (path.ends_with(".uvbp")) {
+    if (path.ends_with(".uvbpc")) {
         // A Blueprint Class: the UVScript its graph translates to.
         const std::optional<Asset::BlueprintAssetUVE> blueprint = Asset::DecodeBlueprintAssetUVE(*bytes);
         if (!blueprint.has_value()) {
@@ -2947,7 +2949,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
         }
     };
 
-    // Montages, first half: a script asks through the MontagePlayer (montage.play / jump_to / stop);
+    // Montages, first half: a script asks through the MontageSequencer (montage.play / jump_to / stop);
     // the request is carried out here, where the montage files are, and the montage steps once a
     // frame. Its pose goes to the character's AnimationGraph when the graph has a Slot node for it
     // (the graph lays it where the slot is); otherwise it is blended over the whole body after the
@@ -2964,7 +2966,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     if (!physicsStep) {
         m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
             [](const Scene::EntityUVE, Scene::AnimationGraphComponentUVE& graph) { graph.slotPoses.clear(); });
-        const auto montageFor = [this](const Asset::AssetGuidUVE guid) -> const Asset::AnimationMontageAssetUVE* {
+        const auto montageFor = [this](const Asset::AssetGuidUVE guid) -> const Asset::MotionMontageAssetUVE* {
             if (guid == Asset::kInvalidAssetGuidUVE || !m_assetDatabase) {
                 return nullptr;
             }
@@ -2978,8 +2980,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             if (path != entry.path || written != entry.written) {
                 entry.path = path;
                 entry.written = written;
-                Asset::AnimationMontageAssetUVE loaded;
-                if (Asset::LoadAnimationMontageAssetUVE(path, loaded)) {
+                Asset::MotionMontageAssetUVE loaded;
+                if (Asset::LoadMotionMontageAssetUVE(path, loaded)) {
                     entry.montage = std::move(loaded);
                 } else {
                     entry.montage.reset();
@@ -2992,7 +2994,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                            [](const unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
             return text;
         };
-        // A montage event reaches the MontagePlayer's script and the script of the object it is under.
+        // A montage event reaches the MontageSequencer's script and the script of the object it is under.
         const auto raiseMontageEvent = [this](const Scene::EntityUVE self, const char* event, const std::string& name) {
             if (m_simulationExecutionMode != SimulationExecutionModeUVE::Running) {
                 return;
@@ -3010,8 +3012,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             }
         };
         for (const Scene::EntityUVE entity :
-             CollectFixedStepOrderUVE<Scene::MontagePlayerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-            Scene::MontagePlayerComponentUVE& player = m_entityManager->GetComponentUVE<Scene::MontagePlayerComponentUVE>(entity);
+             CollectFixedStepOrderUVE<Scene::MontageSequencerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+            Scene::MontageSequencerComponentUVE& player = m_entityManager->GetComponentUVE<Scene::MontageSequencerComponentUVE>(entity);
             std::vector<Scene::MontageEventUVE> events;
             if (player.request != Scene::MontageRequestUVE::None) {
                 const Scene::MontageRequestUVE request = player.request;
@@ -3033,7 +3035,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                         }
                     }
                     for (const auto& [guid, libraryName] : offered) {
-                        const Asset::AnimationMontageAssetUVE* const montage = montageFor(guid);
+                        const Asset::MotionMontageAssetUVE* const montage = montageFor(guid);
                         if (montage == nullptr || (lower(m_assetDatabase->ResolveUVE(guid).stem().string()) != wanted &&
                                                    lower(libraryName) != wanted)) {
                             continue;
@@ -3047,7 +3049,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                         }
                         break;
                     }
-                } else if (const Asset::AnimationMontageAssetUVE* const montage = montageFor(player.playing)) {
+                } else if (const Asset::MotionMontageAssetUVE* const montage = montageFor(player.playing)) {
                     if (request == Scene::MontageRequestUVE::JumpTo) {
                         static_cast<void>(Scene::JumpToMontageSectionUVE(*montage, player.playback, player.requestSection));
                     } else {
@@ -3055,7 +3057,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                     }
                 }
             }
-            const Asset::AnimationMontageAssetUVE* const montage = montageFor(player.playing);
+            const Asset::MotionMontageAssetUVE* const montage = montageFor(player.playing);
             const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, Scene::kInvalidEntityUVE);
             if (montage != nullptr && player.IsPlayingUVE()) {
                 Scene::StepMontageUVE(*montage, player.playback, animDeltaSeconds, events);
@@ -3078,7 +3080,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                                 resolveSkeleton(graphEntity, mixerOf(graphEntity).target) != skeletonEntity) {
                                 return;
                             }
-                            // A graph linked to another MontagePlayer leaves this one's montages alone.
+                            // A graph linked to another MontageSequencer leaves this one's montages alone.
                             if (graph.montagePlayer != Scene::kInvalidEntityUVE && graph.montagePlayer != entity &&
                                 m_entityManager->IsAliveUVE(graph.montagePlayer)) {
                                 return;

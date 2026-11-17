@@ -262,7 +262,7 @@ prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
     features.comments = true;
     m_graph->setFeatures(features);
     m_graph->setPreset(prism::BlueprintGraphPreset::EventBlueprint);   // not PRISM's demo Widget Blueprint
-    m_graph->setWatermark("Logic Graph", "Gameplay graph", prism::Icon::BlueprintClass);
+    m_graph->setWatermark("Blueprint Class", "Gameplay graph", prism::Icon::BlueprintClass);
     m_graph->clear();
     m_graph->setNodeLibrary(LibraryUVE());
     // A widget pin lists the widget's own widgets of the kind the node acts on.
@@ -295,7 +295,7 @@ prism::Ref<prism::Widget> EditorBlueprintPanelUVE::BuildUVE() {
 
     if (keep) {
         if (Asset::IsWidgetBlueprintPathUVE(m_path)) {
-            m_graph->setWatermark("UI Graph", "UI graph", prism::Icon::BlueprintClass);
+            m_graph->setWatermark("Widget Blueprint", "UI graph", prism::Icon::BlueprintClass);
         }
         LoadIntoGraphUVE(*keep);
         m_dirty = keepDirty;
@@ -548,20 +548,20 @@ bool EditorBlueprintPanelUVE::OpenUVE(const std::string& path, const Scene::Enti
         if (std::optional<Asset::BlueprintAssetUVE> graph = Asset::LoadWidgetBlueprintGraphUVE(real)) {
             blueprint = std::move(*graph);
         } else {
-            m_editor.m_contentStatusMessage = "Could not open the UI Graph " + path + ".";
+            m_editor.m_contentStatusMessage = "Could not open the Widget Blueprint " + path + ".";
             return false;
         }
     } else if (!Asset::LoadBlueprintAssetUVE(real, blueprint)) {
-        m_editor.m_contentStatusMessage = "Could not open the Logic Graph " + path + ".";
+        m_editor.m_contentStatusMessage = "Could not open the Blueprint Class " + path + ".";
         return false;
     }
     m_path = path;
     m_target = target;
     if (m_graph) {
         if (Asset::IsWidgetBlueprintPathUVE(path)) {
-            m_graph->setWatermark("UI Graph", "UI graph", prism::Icon::BlueprintClass);
+            m_graph->setWatermark("Widget Blueprint", "UI graph", prism::Icon::BlueprintClass);
         } else {
-            m_graph->setWatermark("Logic Graph", "Gameplay graph", prism::Icon::BlueprintClass);
+            m_graph->setWatermark("Blueprint Class", "Gameplay graph", prism::Icon::BlueprintClass);
         }
     }
     LoadIntoGraphUVE(blueprint);
@@ -826,7 +826,7 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     const std::string target = IsOpenUVE() && em.IsAliveUVE(m_target) ? m_editor.GetEntityDisplayLabelUVE(m_target) : std::string("None");
     m_shownTargetAlive = IsOpenUVE() && em.IsAliveUVE(m_target);
-    grid->addRow(classCat, "Target", prism::make<prism::Label>(target + "  (" + ParentKindUVE() + ")"), "The object this Logic Graph drives");
+    grid->addRow(classCat, "Target", prism::make<prism::Label>(target + "  (" + ParentKindUVE() + ")"), "The object this Blueprint Class drives");
     auto file = prism::make<prism::Label>(IsOpenUVE() ? m_path : std::string("None"));
     file->setColor(prism::ThemeColor(&prism::Theme::textDim));
     grid->addRow(classCat, "File", file, m_path);
@@ -859,7 +859,7 @@ void EditorBlueprintPanelUVE::RebuildSideUVE() {
                 }
             };
             auto exposed = prism::make<prism::CheckBox>("", m_exposed.contains(name));
-            exposed->setTooltip("Instance Editable: each object using this Logic Graph sets its own value in Inspector");
+            exposed->setTooltip("Instance Editable: each object using this Blueprint Class sets its own value in Inspector");
             exposed->onChange = [this, name](const bool on) {
                 if (on) {
                     m_exposed.insert(name);

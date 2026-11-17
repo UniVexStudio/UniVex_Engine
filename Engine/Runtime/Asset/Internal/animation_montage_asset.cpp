@@ -38,7 +38,7 @@ float MontageBlendCurveWeightUVE(const MontageBlendCurveUVE curve, const double 
     return x;
 }
 
-bool IsAnimationMontageAssetValidUVE(const AnimationMontageAssetUVE& montage) noexcept {
+bool IsMotionMontageAssetValidUVE(const MotionMontageAssetUVE& montage) noexcept {
     if (montage.slot.size() > kMaximumMontageNameBytesUVE || montage.segments.size() > kMaximumMontageSegmentsUVE ||
         montage.sections.size() > kMaximumMontageSectionsUVE ||
         montage.notifies.size() + montage.notifyStates.size() > kMaximumMontageNotifiesUVE ||
@@ -96,12 +96,12 @@ bool IsAnimationMontageAssetValidUVE(const AnimationMontageAssetUVE& montage) no
     return true;
 }
 
-bool SaveAnimationMontageAssetUVE(const AnimationMontageAssetUVE& montage, const std::filesystem::path& path) {
-    if (!IsAnimationMontageAssetValidUVE(montage)) {
-        UVE_ERROR("AnimationMontageAssetUVE: rejected an invalid montage before writing {}", path.string());
+bool SaveMotionMontageAssetUVE(const MotionMontageAssetUVE& montage, const std::filesystem::path& path) {
+    if (!IsMotionMontageAssetValidUVE(montage)) {
+        UVE_ERROR("MotionMontageAssetUVE: rejected an invalid montage before writing {}", path.string());
         return false;
     }
-    const AnimationMontageAssetUVE defaults{};
+    const MotionMontageAssetUVE defaults{};
     nlohmann::json payload;
     payload["format"] = "uve-montage-v1";
     if (montage.slot != defaults.slot) {
@@ -191,24 +191,24 @@ bool SaveAnimationMontageAssetUVE(const AnimationMontageAssetUVE& montage, const
     }
     const std::string text = payload.dump();
     const auto* const bytes = reinterpret_cast<const std::byte*>(text.data());
-    return WriteUveFileUVE(path, AssetKindUVE::AnimationMontage, std::vector<std::byte>(bytes, bytes + text.size()));
+    return WriteUveFileUVE(path, AssetKindUVE::MotionMontage, std::vector<std::byte>(bytes, bytes + text.size()));
 }
 
-bool LoadAnimationMontageAssetUVE(const std::filesystem::path& path, AnimationMontageAssetUVE& outMontage) {
+bool LoadMotionMontageAssetUVE(const std::filesystem::path& path, MotionMontageAssetUVE& outMontage) {
     const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
     if (!file.has_value()) {
         return false;
     }
-    if (file->first.assetType != AssetKindUVE::AnimationMontage) {
-        UVE_ERROR("AnimationMontageAssetUVE: \"{}\" is not a montage file", path.string());
+    if (file->first.assetType != AssetKindUVE::MotionMontage) {
+        UVE_ERROR("MotionMontageAssetUVE: \"{}\" is not a montage file", path.string());
         return false;
     }
     const std::string text(reinterpret_cast<const char*>(file->second.data()), file->second.size());
-    AnimationMontageAssetUVE montage;
+    MotionMontageAssetUVE montage;
     try {
         const nlohmann::json payload = nlohmann::json::parse(text);
         if (payload.value("format", std::string{}) != "uve-montage-v1") {
-            UVE_ERROR("AnimationMontageAssetUVE: \"{}\" has an unknown format", path.string());
+            UVE_ERROR("MotionMontageAssetUVE: \"{}\" has an unknown format", path.string());
             return false;
         }
         montage.slot = payload.value("slot", montage.slot);
@@ -257,11 +257,11 @@ bool LoadAnimationMontageAssetUVE(const std::filesystem::path& path, AnimationMo
         montage.rateScale = payload.value("rateScale", montage.rateScale);
         montage.rootMotion = static_cast<MontageRootMotionUVE>(payload.value("rootMotion", std::uint8_t{0}));
     } catch (const nlohmann::json::exception& error) {
-        UVE_ERROR("AnimationMontageAssetUVE: failed to read \"{}\": {}", path.string(), error.what());
+        UVE_ERROR("MotionMontageAssetUVE: failed to read \"{}\": {}", path.string(), error.what());
         return false;
     }
-    if (!IsAnimationMontageAssetValidUVE(montage)) {
-        UVE_ERROR("AnimationMontageAssetUVE: \"{}\" holds out-of-range values", path.string());
+    if (!IsMotionMontageAssetValidUVE(montage)) {
+        UVE_ERROR("MotionMontageAssetUVE: \"{}\" holds out-of-range values", path.string());
         return false;
     }
     outMontage = std::move(montage);

@@ -101,7 +101,7 @@ const char* AnimationGraphKindHelpUVE(const Kind kind) noexcept {
         case Kind::LayeredBlend:
             return "Lays the Layer over the Base on chosen bone branches only - shoot with the upper body while running.";
         case Kind::TimeSeek: return "Jumps its input to a time when its trigger fires, then plays on.";
-        case Kind::Slot: return "Where an Action Clip plays: the action clip on this slot is laid over the input.";
+        case Kind::Slot: return "Where an Motion Montage plays: the motion montage on this slot is laid over the input.";
         case Kind::TwoBoneIK:
             return "Bends a two-bone chain (upper arm, forearm, hand) so its tip reaches a target - a hand on a rail, a foot on a step.";
         case Kind::ModifyBone: return "Moves, turns and scales one bone, on top of the pose or instead of it.";

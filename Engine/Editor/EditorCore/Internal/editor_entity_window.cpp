@@ -47,7 +47,7 @@ namespace {
 
 /// A script slot that holds a node graph: a Blueprint Class, or a Widget Blueprint's own graph.
 [[nodiscard]] bool IsGraphScriptPathUVE(const std::string_view path) noexcept {
-    return path.ends_with(".uvbp") || Asset::IsWidgetBlueprintPathUVE(path);
+    return path.ends_with(".uvbpc") || Asset::IsWidgetBlueprintPathUVE(path);
 }
 
 [[nodiscard]] std::optional<Asset::BlueprintAssetUVE> DecodeGraphScriptUVE(const std::string_view path, const std::vector<std::byte>& bytes) {
@@ -555,7 +555,7 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
                 }
             }
             if (!blueprint.has_value()) {
-                base.message = "The Logic Graph at " + path + " cannot be read.";
+                base.message = "The Blueprint Class at " + path + " cannot be read.";
                 problems.push_back(std::move(base));
                 continue;
             }

@@ -27,7 +27,7 @@ class ScrollBox;
 
 namespace UVE::Editor {
 
-/// The Entity Editor's Blueprint page: one object's Blueprint Class (.uvbp) as a PRISM blueprint
+/// The Entity Editor's Blueprint page: one object's Blueprint Class (.uvbpc) as a PRISM blueprint
 /// graph - the full PRISM design: toolbar (Compile, Save, Find, Variables, Simulate, Undo ...),
 /// minimap, comment boxes (C), copy / paste, and the engine's complete node palette (Events,
 /// Flow Control, Variables, Math, Transform, Physics, Input, Audio, Animation, Objects, Gameplay,

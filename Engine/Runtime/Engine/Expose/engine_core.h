@@ -598,7 +598,7 @@ private:
     /// Reconciles script components with instances in m_uvScripts so event receivers are ready
     /// before any physics or animation step evaluates.
     void ReconcileUVScriptInstancesUVE();
-    /// A script slot's source: a .uvs file's text, or the UVScript a .uvbp Blueprint translates to.
+    /// A script slot's source: a .uvs file's text, or the UVScript a .uvbpc Blueprint translates to.
     [[nodiscard]] std::optional<std::string> ReadUVScriptSourceUVE(const std::string& path) const;
 
     /// Steps every Character3D (CharacterControllerComponentUVE) once per fixed step: velocity
@@ -1047,12 +1047,12 @@ private:
     /// release before the manager is destroyed; clips no object references any more are dropped
     /// each frame.
     std::unordered_map<std::uint64_t, Asset::AssetHandleUVE<Asset::AnimationClipAssetUVE>> m_animationClips;
-    /// The Animation Montages MontagePlayers play, by asset guid; reread when the file changes (the
+    /// The Motion Montages MontageSequencers play, by asset guid; reread when the file changes (the
     /// Montage Editor saves while the game runs in the editor).
     struct MontageCacheEntryUVE final {
         std::filesystem::path path;
         std::filesystem::file_time_type written{};
-        std::optional<Asset::AnimationMontageAssetUVE> montage;
+        std::optional<Asset::MotionMontageAssetUVE> montage;
     };
     std::unordered_map<std::uint64_t, MontageCacheEntryUVE> m_animationMontages;
     /// IK on a skeleton nothing animates (an editor authoring a rig, a prop with no clip). A modifier blends over

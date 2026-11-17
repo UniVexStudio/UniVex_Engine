@@ -127,7 +127,7 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<AudioSourceComponentUVE>{Kind::AudioSource3D},
                            OwnComponentUVE<ParticleEmitterComponentUVE>{Kind::ParticleEmitter3D},
                            OwnComponentUVE<AnimationSequencerComponentUVE>{Kind::AnimationSequencer},
-                           OwnComponentUVE<MontagePlayerComponentUVE>{Kind::MontagePlayer},
+                           OwnComponentUVE<MontageSequencerComponentUVE>{Kind::MontageSequencer},
                            OwnComponentUVE<AnimationGraphComponentUVE>{Kind::AnimationGraph},
                            OwnComponentUVE<CanvasComponentUVE>{Kind::Canvas},
                            OwnComponentUVE<UITextComponentUVE>{Kind::UIText},

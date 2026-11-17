@@ -210,7 +210,7 @@ prism::Icon EditorContentBrowserUVE::IconForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::Save: return prism::Icon::Save;
         case ItemTypeUVE::Animation: return prism::Icon::AnimClip;
         case ItemTypeUVE::AnimationLibrary: return prism::Icon::AnimLibrary;
-        case ItemTypeUVE::AnimationMontage: return prism::Icon::AnimMontage;
+        case ItemTypeUVE::MotionMontage: return prism::Icon::AnimMontage;
         case ItemTypeUVE::ParticleSystem: return prism::Icon::Light;
         case ItemTypeUVE::MontageLibrary: return prism::Icon::MontageLibrary;
         case ItemTypeUVE::Blueprint: return prism::Icon::BlueprintClass;
@@ -238,11 +238,11 @@ std::pair<std::string, std::string> EditorContentBrowserUVE::DescribeUVE(const I
         case ItemTypeUVE::Save: return {"Save", "SAV"};
         case ItemTypeUVE::Animation: return {"Animation", "ANM"};
         case ItemTypeUVE::AnimationLibrary: return {"Animation Library", "LIB"};
-        case ItemTypeUVE::AnimationMontage: return {"Action Clip", "AC"};
+        case ItemTypeUVE::MotionMontage: return {"Motion Montage", "MM"};
         case ItemTypeUVE::ParticleSystem: return {"Particle System", "VFX"};
-        case ItemTypeUVE::MontageLibrary: return {"Action Clip Library", "ACL"};
-        case ItemTypeUVE::Blueprint: return {"Logic Graph", "LG"};
-        case ItemTypeUVE::WidgetBlueprint: return {"UI Graph", "UI"};
+        case ItemTypeUVE::MontageLibrary: return {"Motion Montage Library", "ACL"};
+        case ItemTypeUVE::Blueprint: return {"Blueprint Class", "BP"};
+        case ItemTypeUVE::WidgetBlueprint: return {"Widget Blueprint", "WBP"};
         case ItemTypeUVE::Script: return {"Script", "UVS"};
         case ItemTypeUVE::Audio: return {"Audio", "AUD"};
         case ItemTypeUVE::Font: return {"Font", "FNT"};
@@ -265,7 +265,7 @@ prism::Color EditorContentBrowserUVE::TintForUVE(const ItemTypeUVE type) {
         case ItemTypeUVE::Shader: return prism::Color(170, 150, 230);
         case ItemTypeUVE::Animation:
         case ItemTypeUVE::AnimationLibrary:
-        case ItemTypeUVE::AnimationMontage:
+        case ItemTypeUVE::MotionMontage:
         case ItemTypeUVE::MontageLibrary: return prism::Color(90, 200, 200);
         case ItemTypeUVE::ParticleSystem: return prism::Color(240, 130, 70);
         case ItemTypeUVE::Audio: return prism::Color(230, 190, 90);
@@ -343,7 +343,7 @@ public:
             // A Blueprint's well is the word, not a glyph.
             const prism::Rect well{r.x + 3.0F, r.y + 3.0F, r.w - 6.0F, prism::assetTileWellHeight(r) - 17.0F};
             c.fillRect(well, m_hot && !m_selected ? prism::Color(40, 41, 45) : prism::Color(30, 31, 34));
-            c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Logic Graph" : "UI Graph", prism::Color(214, 220, 230),
+            c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Blueprint Class" : "Widget Blueprint", prism::Color(214, 220, 230),
                      prism::HAlign::Center, false);
         }
     }
@@ -1465,21 +1465,21 @@ std::vector<prism::MenuItem> EditorContentBrowserUVE::CatalogueMenuUVE() {
     items.push_back(entityClass());
     items.push_back(item("Level", "viewport_3d", prism::Icon::SceneAsset, "Viewport3D"));
     items.push_back(item("Material", "material", prism::Icon::Material, "Material"));
-    items.push_back(item("Action Clip", "animation-montage", prism::Icon::AnimMontage, "Action Clip"));
+    items.push_back(item("Motion Montage", "animation-montage", prism::Icon::AnimMontage, "Motion Montage"));
     items.push_back(prism::MenuItem::Sep());
     items.push_back(prism::MenuItem::Sub("Animation", {
         item("Animation Library", "animation-library", prism::Icon::AnimLibrary, "Animation Library"),
-        item("Action Clip", "animation-montage", prism::Icon::AnimMontage, "Action Clip"),
-        item("Action Clip Library", "montage-library", prism::Icon::MontageLibrary, "Action Clip Library"),
+        item("Motion Montage", "animation-montage", prism::Icon::AnimMontage, "Motion Montage"),
+        item("Motion Montage Library", "montage-library", prism::Icon::MontageLibrary, "Motion Montage Library"),
     }));
     // A Blueprint Class: gameplay as nodes (what an object's Script slot runs).
     prism::MenuItem blueprintClass =
-        prism::MenuItem::Item("Logic Graph", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
-    items.push_back(prism::MenuItem::Sub("Logic Graph", {blueprintClass, entityClass()}));
+        prism::MenuItem::Item("Blueprint Class", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+    items.push_back(prism::MenuItem::Sub("Blueprint Class", {blueprintClass, entityClass()}));
     items.push_back(prism::MenuItem::Sub("Gameplay", {blueprintClass}));
     // A Widget Blueprint: a screen of UI (text, buttons, bars ...) with its own graph.
     prism::MenuItem widgetBlueprint =
-        prism::MenuItem::Item("UI Graph", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+        prism::MenuItem::Item("Widget Blueprint", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
     items.push_back(prism::MenuItem::Sub("User Interface", {widgetBlueprint}));
     items.push_back(prism::MenuItem::Sub("Visual Effects", {
         prism::MenuItem::Item("Particle System", [this] { CreateParticleSystemUVE(); }, "", prism::Icon::Light),
@@ -1580,10 +1580,10 @@ void EditorContentBrowserUVE::CreateMaterialUVE(const std::string& stem, const A
 
 namespace {
 
-/// One object of an entity file, as the Logic Graph dialog lists it.
+/// One object of an entity file, as the Blueprint Class dialog lists it.
 struct EntityFileObjectUVE {
     std::string name;
-    std::string graph;                 // the Logic Graph its Script slot names (and that exists), or ""
+    std::string graph;                 // the Blueprint Class its Script slot names (and that exists), or ""
     std::vector<std::string> path;     // names from the root down to it
     int depth = 0;
 };
@@ -1624,7 +1624,7 @@ struct EntityFileObjectUVE {
         if (const auto sc = components.find("ScriptComponentUVE"); sc != components.end() && sc->is_object()) {
             const std::string path = sc->value("scriptAssetPath", std::string{});
             std::error_code error;
-            if (path.ends_with(".uvbp") && std::filesystem::is_regular_file(projectRoot / path, error)) {
+            if (path.ends_with(".uvbpc") && std::filesystem::is_regular_file(projectRoot / path, error)) {
                 node.graph = path;
             }
         }
@@ -1660,7 +1660,7 @@ struct EntityFileObjectUVE {
 } // namespace
 
 void EditorContentBrowserUVE::CreateBlueprintUVE() {
-    // A Logic Graph runs on an object of an entity class: the class, then the object (None: the
+    // A Blueprint Class runs on an object of an entity class: the class, then the object (None: the
     // entity's root itself, else one of the objects under it). Create makes the graph in this
     // folder and opens the entity with the graph on that object.
     const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -1676,7 +1676,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
         }
     }
     if (entities.empty()) {
-        m_editor.m_contentStatusMessage = "Make an Entity Class first: a Logic Graph runs on an object of an entity.";
+        m_editor.m_contentStatusMessage = "Make an Entity Class first: a Blueprint Class runs on an object of an entity.";
         return;
     }
     struct StateUVE {
@@ -1685,15 +1685,15 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
         std::vector<EntityFileObjectUVE> objects;
     };
     auto state = std::make_shared<StateUVE>();
-    auto name = prism::make<prism::TextInput>("LG_New", "Name");
+    auto name = prism::make<prism::TextInput>("BP_New", "Name");
     auto entityCombo = prism::make<prism::ComboBox>(labels, 0);
     // One picker: the entity itself (None), then every object under it, indented by depth. An
-    // object that already runs a Logic Graph is listed but cannot be picked.
+    // object that already runs a Blueprint Class is listed but cannot be picked.
     auto objectPicker = prism::make<prism::ComboBox>(std::vector<std::string>{}, 0);
     auto note = prism::make<prism::Label>("", prism::FontRole::Small);
     note->setColor(prism::ThemeColor(&prism::Theme::textDim));
     auto form = prism::make<prism::PropertyGrid>();
-    const int cat = form->addCategory("New Logic Graph");
+    const int cat = form->addCategory("New Blueprint Class");
     form->addRow(cat, "Name", name, "The file's name");
     form->addRow(cat, "Entity Class", entityCombo, "The entity whose object runs the graph");
     form->addRow(cat, "Object", objectPicker, "None: the entity itself. Or one of the objects under it.");
@@ -1705,7 +1705,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
     std::weak_ptr<prism::Label> weakNote = note;
     const auto showPick = [state, weakNote] {
         if (const auto n = weakNote.lock()) {
-            n->setText(state->object < 0 ? "Every object of this entity already has a Logic Graph."
+            n->setText(state->object < 0 ? "Every object of this entity already has a Blueprint Class."
                                          : "Runs on: " + state->objects[static_cast<std::size_t>(state->object)].name);
         }
     };
@@ -1774,7 +1774,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
             return;
         }
         *made = true;
-        const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(folder, n->text(), ".uvbp");
+        const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(folder, n->text(), ".uvbpc");
         m_editor.m_pendingLogicGraphCreateUVE =
             EditorUVE::PendingLogicGraphUVE{file, state->objects[static_cast<std::size_t>(state->object)].path};
         if (!m_editor.OpenEntityEditorUVE(entities[static_cast<std::size_t>(state->entity)])) {
@@ -1789,7 +1789,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
             prism::Application::get().closeAllPopups();
         }
     };
-    prism::showDialog("Logic Graph", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 520.0F);
+    prism::showDialog("Blueprint Class", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 520.0F);
 }
 
 void EditorContentBrowserUVE::CreateParticleSystemUVE() {
@@ -1846,7 +1846,7 @@ void EditorContentBrowserUVE::CreateWidgetBlueprintUVE() {
     const std::optional<std::filesystem::path> made =
         m_editor.CreateWidgetBlueprintAssetUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
     if (!made.has_value()) {
-        m_editor.m_contentStatusMessage = "Could not create a UI Graph here.";
+        m_editor.m_contentStatusMessage = "Could not create a Widget Blueprint here.";
         return;
     }
     m_editor.m_contentStatusMessage.clear();
@@ -1880,7 +1880,7 @@ void EditorContentBrowserUVE::OpenBlueprintUVE(const std::filesystem::path& full
         m_editor.m_pendingBlueprintOpenUVE = stored;
         return;
     }
-    m_editor.m_contentStatusMessage = name + " is not on any object yet: pick it in an object's Script slot, or use the Entity Editor's Logic Graph button.";
+    m_editor.m_contentStatusMessage = name + " is not on any object yet: pick it in an object's Script slot, or use the Entity Editor's Blueprint Class button.";
 }
 
 void EditorContentBrowserUVE::CreateCatalogueItemUVE(const std::string& id) {
@@ -1934,6 +1934,39 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
 
     if (directory) {
         add(prism::MenuItem::Item("Open", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::FolderOpen));
+
+        // Retarget every loose animation clip under this folder (including subfolders). The
+        // Retarget window previews the complete list and its worker processes the files in order.
+        std::vector<std::filesystem::path> folderAnimations;
+        std::filesystem::path folderTarget;
+        for (const Asset::ProjectFileEntryUVE& candidate : snapshot.entries) {
+            if (candidate.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                continue;
+            }
+            const std::filesystem::path relative = candidate.relativePath.lexically_relative(entry.relativePath);
+            if (relative.empty() || relative.is_absolute() || *relative.begin() == "..") {
+                continue;
+            }
+            if (LowerExtensionUVE(candidate.relativePath) == ".uvanim") {
+                folderAnimations.push_back(snapshot.contentRoot / candidate.relativePath);
+            } else if (folderTarget.empty() &&
+                       m_editor.GetContentBrowserEntryTypeUVE(candidate) == ItemTypeUVE::Model) {
+                // A bone-bearing .uvmodel or rigged model source can be the folder's Retarget root,
+                // even if this folder contains no animation clip of its own.
+                folderTarget = candidate.relativePath;
+            }
+        }
+        std::ranges::sort(folderAnimations);
+        if (!folderAnimations.empty() || !folderTarget.empty()) {
+            const std::string label = folderAnimations.empty()
+                                          ? "Retarget Skeletal Mesh in Folder..."
+                                          : "Retarget Animations in Folder (" +
+                                                std::to_string(folderAnimations.size()) + ")...";
+            add(prism::MenuItem::Item(label, [this, folderAnimations = std::move(folderAnimations),
+                                               folderTarget = std::move(folderTarget)]() mutable {
+                m_editor.OpenRetargetWindowUVE(std::move(folderAnimations), std::move(folderTarget));
+            }, "", prism::Icon::AnimClip), allowed);
+        }
     }
     if (!directory && IsEntityAssetUVE(entry.relativePath)) {
         // Opens the entity in the Entity Editor's own window; the level stays open beside it.
@@ -1974,11 +2007,11 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
     }
     // A clip becomes a montage: a .uvmontage beside it with the clip on its slot track, opened.
     if (extension == ".uvanim") {
-        add(prism::MenuItem::Item("Create Action Clip", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimMontage),
+        add(prism::MenuItem::Item("Create Motion Montage", [this, absolute] { CreateMontageFromClipUVE(absolute); }, "", prism::Icon::AnimMontage),
             allowed);
     }
     // A montage joins a montage library, the way a clip joins an animation library.
-    if (type == ItemTypeUVE::AnimationMontage) {
+    if (type == ItemTypeUVE::MotionMontage) {
         std::vector<prism::MenuItem> libraries;
         for (const Asset::ProjectFileEntryUVE& other : snapshot.entries) {
             if (other.kind != Asset::ProjectFileEntryKindUVE::File || LowerExtensionUVE(other.relativePath) != ".uvmontagelib") {
@@ -1991,11 +2024,11 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
         if (!libraries.empty()) {
             libraries.push_back(prism::MenuItem::Sep());
         }
-        libraries.push_back(prism::MenuItem::Item("New Action Clip Library", [this, absolute] {
-            const std::filesystem::path library = absolute.parent_path() / "Action Clip Library.uvmontagelib";
+        libraries.push_back(prism::MenuItem::Item("New Motion Montage Library", [this, absolute] {
+            const std::filesystem::path library = absolute.parent_path() / "Motion Montage Library.uvmontagelib";
             AddMontageToLibraryUVE(absolute, library);
         }, "", prism::Icon::MontageLibrary));
-        add(prism::MenuItem::Sub("Add to Action Clip Library", std::move(libraries), prism::Icon::MontageLibrary), allowed);
+        add(prism::MenuItem::Sub("Add to Motion Montage Library", std::move(libraries), prism::Icon::MontageLibrary), allowed);
     }
     if (type == ItemTypeUVE::MontageLibrary) {
         add(prism::MenuItem::Item("Open Library", [this, entryIndex] { OpenEntryUVE(entryIndex); }, "", prism::Icon::MontageLibrary));
@@ -2029,15 +2062,42 @@ void EditorContentBrowserUVE::ShowItemMenuUVE(const std::size_t entryIndex, cons
             static_cast<void>(m_editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Mesh, mesh));
         }), canAssign);
     }
-    const bool canRetarget = extension == ".uvanim" || uvmodel || (info != nullptr && (info->rigged || info->hasSkeleton));
-    if (canRetarget) {
-        add(prism::MenuItem::Item("Retarget...", [this, extension, absolute, rel = entry.relativePath] {
-            if (extension == ".uvanim") {
-                m_editor.OpenRetargetWindowUVE({absolute}, {});
-            } else {
-                m_editor.OpenRetargetWindowUVE({}, rel);
+    if (extension == ".uvanim") {
+        std::vector<std::filesystem::path> selectedAnimations;
+        if (m_editor.m_contentSelection.IsEmptyUVE()) {
+            selectedAnimations.push_back(absolute);
+        } else {
+            for (const std::string& selectedPath : m_editor.m_contentSelection.ItemsUVE()) {
+                const auto selected = std::ranges::find_if(snapshot.entries, [&selectedPath](const auto& candidate) {
+                    return candidate.kind == Asset::ProjectFileEntryKindUVE::File &&
+                           candidate.relativePath.generic_string() == selectedPath &&
+                           LowerExtensionUVE(candidate.relativePath) == ".uvanim";
+                });
+                if (selected != snapshot.entries.end()) {
+                    selectedAnimations.push_back(snapshot.contentRoot / selected->relativePath);
+                }
             }
-        }), allowed);
+        }
+        std::ranges::sort(selectedAnimations);
+        selectedAnimations.erase(std::unique(selectedAnimations.begin(), selectedAnimations.end()),
+                                 selectedAnimations.end());
+        if (!selectedAnimations.empty()) {
+            const std::string label = selectedAnimations.size() > 1U
+                                          ? "Retarget Selected Animations (" +
+                                                std::to_string(selectedAnimations.size()) + ")..."
+                                          : "Retarget...";
+            add(prism::MenuItem::Item(label, [this, selectedAnimations = std::move(selectedAnimations)]() mutable {
+                m_editor.OpenRetargetWindowUVE(std::move(selectedAnimations), {});
+            }), allowed);
+        }
+    } else {
+        const bool skeletalUvmodel = extension == ".uvmodel" && type == ItemTypeUVE::Model;
+        const bool sourceHasBones = info != nullptr && (info->rigged || info->hasSkeleton);
+        if (skeletalUvmodel || sourceHasBones) {
+            add(prism::MenuItem::Item("Retarget...", [this, rel = entry.relativePath] {
+                m_editor.OpenRetargetWindowUVE({}, rel);
+            }), allowed);
+        }
     }
     if (!items.empty()) {
         items.push_back(prism::MenuItem::Sep());
@@ -2294,9 +2354,9 @@ void EditorContentBrowserUVE::OpenEntryUVE(const std::size_t entryIndex) {
                 m_editor.m_contentStatusMessage = "Could not open " + name + " as a scene.";
             }
             break;
-        case ItemTypeUVE::AnimationMontage:
+        case ItemTypeUVE::MotionMontage:
             if (!m_editor.OpenMontageEditorUVE(full)) {
-                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Action Clip Editor.";
+                m_editor.m_contentStatusMessage = "Could not open " + name + " in the Motion Montage Editor.";
             }
             break;
         case ItemTypeUVE::MontageLibrary:
@@ -2365,7 +2425,7 @@ void EditorContentBrowserUVE::CreateMontageFromClipUVE(const std::filesystem::pa
     }
     Asset::IAssetDatabaseUVE& database = m_editor.m_services->GetAssetDatabaseUVE();
     const Asset::AssetGuidUVE guid = database.RegisterUVE(clipPath);
-    Asset::AnimationMontageAssetUVE montage;
+    Asset::MotionMontageAssetUVE montage;
     static_cast<void>(Asset::AddMontageSegmentUVE(montage, guid, clip.durationSeconds));
     // AM_<clip>, or AM_<clip>_2 ... beside the clip.
     std::filesystem::path path = clipPath.parent_path() / ("AC_" + clipPath.stem().string() + ".uvmontage");
@@ -2373,7 +2433,7 @@ void EditorContentBrowserUVE::CreateMontageFromClipUVE(const std::filesystem::pa
     for (int n = 2; std::filesystem::exists(path, error) && n < 1000; ++n) {
         path = clipPath.parent_path() / ("AC_" + clipPath.stem().string() + "_" + std::to_string(n) + ".uvmontage");
     }
-    if (!Asset::SaveAnimationMontageAssetUVE(montage, path)) {
+    if (!Asset::SaveMotionMontageAssetUVE(montage, path)) {
         m_editor.m_contentStatusMessage = "Could not write " + path.filename().string();
         return;
     }
@@ -2388,7 +2448,7 @@ void EditorContentBrowserUVE::AddMontageToLibraryUVE(const std::filesystem::path
     std::error_code error;
     if (std::filesystem::exists(libraryPath, error)) {
         if (!Asset::LoadMontageLibraryAssetUVE(libraryPath, library)) {
-            m_editor.m_contentStatusMessage = "Not an action clip library: " + libraryPath.filename().string();
+            m_editor.m_contentStatusMessage = "Not an motion montage library: " + libraryPath.filename().string();
             return;
         }
     } else {
@@ -2424,7 +2484,7 @@ void EditorContentBrowserUVE::ShowMontageLibraryUVE(const std::filesystem::path&
     auto list = prism::vbox(4.0F);
     list->setPadding(prism::Margin(4.0F));
     if (library.entries.empty()) {
-        auto hint = prism::make<prism::Label>("Empty. Right-click an action clip > Add to Action Clip Library.", prism::FontRole::Small);
+        auto hint = prism::make<prism::Label>("Empty. Right-click a Motion Montage > Add to Motion Montage Library.", prism::FontRole::Small);
         hint->setColor(prism::ThemeColor(&prism::Theme::textDim));
         list->add(hint);
     }
@@ -2457,7 +2517,7 @@ void EditorContentBrowserUVE::ShowMontageLibraryUVE(const std::filesystem::path&
         row->add(remove);
         list->add(row);
     }
-    prism::showDialog("Action Clip Library - " + libraryPath.stem().string(), list, {prism::DialogButton{"Close", true, {}}}, 480.0F);
+    prism::showDialog("Motion Montage Library - " + libraryPath.stem().string(), list, {prism::DialogButton{"Close", true, {}}}, 480.0F);
 }
 
 } // namespace UVE::Editor

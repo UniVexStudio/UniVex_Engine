@@ -3057,6 +3057,43 @@ TEST(EditorUVETest, DeleteSelectedEntityUVE_DeletesSubtreeAndSelectsLiveParent) 
     engine.Shutdown();
 }
 
+TEST(EditorUVETest, DeleteSelectedEntityUVE_MultiDeleteIsSingleUndoableAction) {
+    Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_delete_multi.uvscene");
+        editor.InitUVE();
+        Scene::IEntityManagerUVE& entityManager = engine.GetServicesUVE().GetEntityManagerUVE();
+        const Scene::EntityUVE first = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, first, Scene::TransformComponentUVE{});
+        const Scene::EntityUVE second = entityManager.CreateEntityUVE();
+        AttachRootUVE(engine, second, Scene::TransformComponentUVE{});
+        editor.SelectEntityUVE(first);
+        editor.ToggleEntitySelectionUVE(second);
+        ASSERT_EQ(editor.GetSelectedEntitiesUVE().size(), 2U);
+
+        ASSERT_TRUE(editor.DeleteSelectedEntityUVE());
+        EXPECT_FALSE(entityManager.IsAliveUVE(first));
+        EXPECT_FALSE(entityManager.IsAliveUVE(second));
+        ASSERT_TRUE(editor.UndoUVE());
+        const std::vector<Scene::EntityUVE> restored = editor.GetSelectedEntitiesUVE();
+        ASSERT_EQ(restored.size(), 2U);
+        EXPECT_TRUE(entityManager.IsAliveUVE(restored[0]));
+        EXPECT_TRUE(entityManager.IsAliveUVE(restored[1]));
+        EXPECT_NE(restored[0], first);
+        EXPECT_NE(restored[1], second);
+        ASSERT_TRUE(editor.RedoUVE());
+        EXPECT_FALSE(entityManager.IsAliveUVE(restored[0]));
+        EXPECT_FALSE(entityManager.IsAliveUVE(restored[1]));
+
+        editor.ShutdownUVE();
+    }
+
+    engine.Shutdown();
+}
+
 TEST(EditorUVETest, DeleteSelectedEntityUVE_RootClearsSelection) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();

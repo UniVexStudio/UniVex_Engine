@@ -920,11 +920,11 @@ void EditorAnimGraphPanelUVE::RebuildSideUVE(const GraphUVE& graph) {
                         [this](const prism::Vec2 at) { ShowSequencerMenuUVE(at); }),
                  "The AnimationSequencer whose animations the Clip nodes play");
     const Scene::EntityUVE linkedPlayer = graph.montagePlayer;
-    grid->addRow(graphCategory, "Action Clip Player",
-                 picker(linkedPlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(linkedPlayer) ? NameOfUVE(em, linkedPlayer, "MontagePlayer")
+    grid->addRow(graphCategory, "Motion Montage Sequencer",
+                 picker(linkedPlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(linkedPlayer) ? NameOfUVE(em, linkedPlayer, "MontageSequencer")
                                                                                                  : std::string{"None"},
-                        [this](const prism::Vec2 at) { ShowMontagePlayerMenuUVE(at); }),
-                 "Optional: the MontagePlayer whose action clips play on the Slot nodes. None: any MontagePlayer on the same skeleton.");
+                        [this](const prism::Vec2 at) { ShowMontageSequencerMenuUVE(at); }),
+                 "Optional: the MontageSequencer whose motion montages play on the Slot nodes. None: any MontageSequencer on the same skeleton.");
 
     if (const NodeUVE* focus = FocusNodeUVE(); focus != nullptr && focus->kind == Kind::StateMachine) {
         BuildStateMachineSideUVE(*grid, graph, *focus);
@@ -1320,7 +1320,7 @@ void EditorAnimGraphPanelUVE::ShowGraphMenuUVE() {
     }
 }
 
-void EditorAnimGraphPanelUVE::ShowMontagePlayerMenuUVE(const prism::Vec2 at) {
+void EditorAnimGraphPanelUVE::ShowMontageSequencerMenuUVE(const prism::Vec2 at) {
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     const GraphUVE* graph = GraphPtrUVE();
     const Scene::EntityUVE bound = graph != nullptr ? graph->montagePlayer : Scene::kInvalidEntityUVE;
@@ -1331,10 +1331,10 @@ void EditorAnimGraphPanelUVE::ShowMontagePlayerMenuUVE(const prism::Vec2 at) {
     }));
     items.push_back(prism::MenuItem::Sep());
     for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
-        if (!em.HasComponentUVE<Scene::MontagePlayerComponentUVE>(object)) {
+        if (!em.HasComponentUVE<Scene::MontageSequencerComponentUVE>(object)) {
             continue;
         }
-        items.push_back(prism::MenuItem::Check(NameOfUVE(em, object, "MontagePlayer"), bound == object, [this, object] {
+        items.push_back(prism::MenuItem::Check(NameOfUVE(em, object, "MontageSequencer"), bound == object, [this, object] {
             m_montageSlots.clear();
             EditUVE([object](GraphUVE& g) { g.montagePlayer = object; });
         }));

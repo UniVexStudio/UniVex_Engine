@@ -92,7 +92,7 @@ struct BlueprintCommentUVE final {
     [[nodiscard]] bool operator==(const BlueprintCommentUVE&) const = default;
 };
 
-/// A Blueprint Class (`.uvbp`): the gameplay of one kind of object, as a graph of the engine's own
+/// A Blueprint Class (`.uvbpc`): the gameplay of one kind of object, as a graph of the engine's own
 /// nodes. It runs as UVScript: the engine translates it (TranslateBlueprintToUVScriptUVE) and
 /// compiles the result, so a blueprint has every event, call and check a script has.
 struct BlueprintAssetUVE final {
@@ -109,7 +109,7 @@ struct BlueprintAssetUVE final {
 /// The payload as JSON text, and back (what the file holds inside its envelope).
 [[nodiscard]] std::string SerializeBlueprintAssetUVE(const BlueprintAssetUVE& blueprint);
 [[nodiscard]] std::optional<BlueprintAssetUVE> ParseBlueprintAssetUVE(const std::string& payload);
-/// A whole `.uvbp` file's bytes (envelope and payload), as read through a virtual file system.
+/// A whole `.uvbpc` file's bytes (envelope and payload), as read through a virtual file system.
 [[nodiscard]] std::optional<BlueprintAssetUVE> DecodeBlueprintAssetUVE(const std::vector<std::byte>& file);
 [[nodiscard]] bool SaveBlueprintAssetUVE(const BlueprintAssetUVE& blueprint, const std::filesystem::path& path);
 [[nodiscard]] bool LoadBlueprintAssetUVE(const std::filesystem::path& path, BlueprintAssetUVE& outBlueprint);

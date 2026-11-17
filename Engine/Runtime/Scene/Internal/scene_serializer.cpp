@@ -238,7 +238,7 @@ namespace {
     return {{"attributes", std::move(attributes)}};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const MontagePlayerComponentUVE& component) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const MontageSequencerComponentUVE& component) {
     nlohmann::json montages = nlohmann::json::array();
     for (std::size_t i = 0U; i < 8U; ++i) {
         montages.push_back(component.MontageAtUVE(i).value);
@@ -250,7 +250,7 @@ namespace {
     return out;
 }
 
-[[nodiscard]] bool IsMontagePlayerComponentValidUVE(const MontagePlayerComponentUVE&) noexcept {
+[[nodiscard]] bool IsMontageSequencerComponentValidUVE(const MontageSequencerComponentUVE&) noexcept {
     return true;
 }
 
@@ -2504,9 +2504,9 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                           }
                           return attributes;
                       }, IsGameplayAttributesComponentValidUVE));
-        table.emplace("MontagePlayerComponentUVE",
-                      MakeRegistrationUVE<MontagePlayerComponentUVE>([](const nlohmann::json& json) {
-                          MontagePlayerComponentUVE slot;
+        table.emplace("MontageSequencerComponentUVE",
+                      MakeRegistrationUVE<MontageSequencerComponentUVE>([](const nlohmann::json& json) {
+                          MontageSequencerComponentUVE slot;
                           Asset::AssetGuidUVE* const fields[] = {&slot.montage1, &slot.montage2, &slot.montage3,
                                                                  &slot.montage4, &slot.montage5, &slot.montage6,
                                                                  &slot.montage7, &slot.montage8};
@@ -2519,7 +2519,7 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                           }
                           slot.libraryRef = Asset::AssetGuidUVE{json.value("library", std::uint64_t{0})};
                           return slot;
-                      }, IsMontagePlayerComponentValidUVE));
+                      }, IsMontageSequencerComponentValidUVE));
         table.emplace("GameplayTagComponentUVE",
                       MakeRegistrationUVE<GameplayTagComponentUVE>([](const nlohmann::json& json) {
                           GameplayTagComponentUVE tags;
