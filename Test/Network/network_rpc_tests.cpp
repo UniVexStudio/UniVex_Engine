@@ -33,16 +33,16 @@ namespace {
 
 // Structural equality for values: plain == compares collections by shared-pointer identity,
 // so a decoded-then-rebuilt twin never matches. This walks both and compares by shape.
-[[nodiscard]] bool ValuesEqualUVE(const UVScript::ValueUVE& a, const UVScript::ValueUVE& b) {
+[[nodiscard]] bool ValuesEqualUVE(const Blueprint::ValueUVE& a, const Blueprint::ValueUVE& b) {
     if (a.index() != b.index()) {
         return false;
     }
     const auto* collectionA =
-        std::get_if<std::shared_ptr<const UVScript::CollectionValueUVE>>(&a);
+        std::get_if<std::shared_ptr<const Blueprint::CollectionValueUVE>>(&a);
     if (collectionA == nullptr) {
         return a == b;
     }
-    const auto& collectionB = std::get<std::shared_ptr<const UVScript::CollectionValueUVE>>(b);
+    const auto& collectionB = std::get<std::shared_ptr<const Blueprint::CollectionValueUVE>>(b);
     if ((*collectionA == nullptr) != (collectionB == nullptr)) {
         return false;
     }
@@ -110,13 +110,13 @@ struct RpcHarnessUVE final {
 }
 
 [[nodiscard]] RpcMethodHandlerUVE EchoHandlerUVE() {
-    return [](const std::span<const UVScript::ValueUVE> args) { return RpcOkUVE(args[0]); };
+    return [](const std::span<const Blueprint::ValueUVE> args) { return RpcOkUVE(args[0]); };
 }
 
 TEST(NetworkRpcUVETest, RegisterRules_DuplicatesAndEmptiesRejected) {
     RpcHarnessUVE harness = MakeRpcUVE();
-    const RpcMethodHandlerUVE handler = [](const std::span<const UVScript::ValueUVE>) {
-        return RpcOkUVE(UVScript::ValueUVE{});
+    const RpcMethodHandlerUVE handler = [](const std::span<const Blueprint::ValueUVE>) {
+        return RpcOkUVE(Blueprint::ValueUVE{});
     };
 
     EXPECT_TRUE(harness.b.RegisterMethodUVE("add", handler));
@@ -131,10 +131,10 @@ TEST(NetworkRpcUVETest, RegisterRules_DuplicatesAndEmptiesRejected) {
 TEST(NetworkRpcUVETest, Call_RoundTripAnswersResult) {
     RpcHarnessUVE harness = MakeRpcUVE();
     ASSERT_TRUE(harness.b.RegisterMethodUVE(
-        "add", [](const std::span<const UVScript::ValueUVE> args) {
+        "add", [](const std::span<const Blueprint::ValueUVE> args) {
             const std::int64_t x = std::get<std::int64_t>(args[0]);
             const std::int64_t y = std::get<std::int64_t>(args[1]);
-            return RpcOkUVE(UVScript::ValueUVE{x + y});
+            return RpcOkUVE(Blueprint::ValueUVE{x + y});
         }));
     // A down session sends nothing: zero means the call never went out.
     EXPECT_EQ(harness.a.CallUVE("add", {}, harness.FileAUVE()), kInvalidRpcCallIdUVE);
@@ -145,7 +145,7 @@ TEST(NetworkRpcUVETest, Call_RoundTripAnswersResult) {
 
     const RpcCallIdUVE callId =
         harness.a.CallUVE("add",
-                          {UVScript::ValueUVE{std::int64_t{1}}, UVScript::ValueUVE{std::int64_t{2}}},
+                          {Blueprint::ValueUVE{std::int64_t{1}}, Blueprint::ValueUVE{std::int64_t{2}}},
                           harness.FileAUVE());
     ASSERT_NE(callId, kInvalidRpcCallIdUVE);
     // One pump carries the call over and the response back; the second delivers it.
@@ -154,7 +154,7 @@ TEST(NetworkRpcUVETest, Call_RoundTripAnswersResult) {
 
     ASSERT_EQ(harness.doneA.size(), 1U);
     EXPECT_TRUE(harness.doneA[callId].ok);
-    EXPECT_EQ(harness.doneA[callId].value, UVScript::ValueUVE{std::int64_t{3}});
+    EXPECT_EQ(harness.doneA[callId].value, Blueprint::ValueUVE{std::int64_t{3}});
     EXPECT_EQ(harness.a.StatsUVE().responsesMatched, 1U);
     EXPECT_EQ(harness.b.StatsUVE().callsReceived, 1U);
     EXPECT_EQ(harness.b.StatsUVE().responsesSent, 1U);
@@ -165,38 +165,38 @@ TEST(NetworkRpcUVETest, Call_AllValueKindsRoundTrip) {
     ASSERT_TRUE(harness.b.RegisterMethodUVE("echo", EchoHandlerUVE()));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
-    const std::vector<UVScript::ValueUVE> values{
-        UVScript::ValueUVE{},
-        UVScript::ValueUVE{true},
-        UVScript::ValueUVE{false},
-        UVScript::ValueUVE{std::int64_t{INT64_MIN}},
-        UVScript::ValueUVE{std::int64_t{INT64_MAX}},
-        UVScript::ValueUVE{2.5},
-        UVScript::ValueUVE{std::string{}},
-        UVScript::ValueUVE{std::string{"hello"}},
+    const std::vector<Blueprint::ValueUVE> values{
+        Blueprint::ValueUVE{},
+        Blueprint::ValueUVE{true},
+        Blueprint::ValueUVE{false},
+        Blueprint::ValueUVE{std::int64_t{INT64_MIN}},
+        Blueprint::ValueUVE{std::int64_t{INT64_MAX}},
+        Blueprint::ValueUVE{2.5},
+        Blueprint::ValueUVE{std::string{}},
+        Blueprint::ValueUVE{std::string{"hello"}},
         // Embedded NUL: the codec is length-based, never C-string-based.
-        UVScript::ValueUVE{std::string{"a\0b", 3U}},
-        UVScript::ValueUVE{UVScript::Vec3ValueUVE{1.5, -2.5, 3.25}},
-        UVScript::MakeListValueUVE({UVScript::ValueUVE{std::int64_t{1}},
-                                    UVScript::MakeListValueUVE({UVScript::ValueUVE{std::int64_t{2}},
-                                                                UVScript::ValueUVE{std::string{"three"}}})}),
-        UVScript::MakeMapValueUVE({UVScript::ValueUVE{std::string{"a"}},
-                                   UVScript::ValueUVE{std::int64_t{1}},
-                                   UVScript::ValueUVE{std::string{"b"}},
-                                   UVScript::MakeListValueUVE({UVScript::ValueUVE{true},
-                                                               UVScript::ValueUVE{1.5}})}),
-        UVScript::MakeTupleValueUVE({UVScript::ValueUVE{std::int64_t{1}},
-                                     UVScript::ValueUVE{std::string{"two"}}}),
+        Blueprint::ValueUVE{std::string{"a\0b", 3U}},
+        Blueprint::ValueUVE{Blueprint::Vec3ValueUVE{1.5, -2.5, 3.25}},
+        Blueprint::MakeListValueUVE({Blueprint::ValueUVE{std::int64_t{1}},
+                                    Blueprint::MakeListValueUVE({Blueprint::ValueUVE{std::int64_t{2}},
+                                                                Blueprint::ValueUVE{std::string{"three"}}})}),
+        Blueprint::MakeMapValueUVE({Blueprint::ValueUVE{std::string{"a"}},
+                                   Blueprint::ValueUVE{std::int64_t{1}},
+                                   Blueprint::ValueUVE{std::string{"b"}},
+                                   Blueprint::MakeListValueUVE({Blueprint::ValueUVE{true},
+                                                               Blueprint::ValueUVE{1.5}})}),
+        Blueprint::MakeTupleValueUVE({Blueprint::ValueUVE{std::int64_t{1}},
+                                     Blueprint::ValueUVE{std::string{"two"}}}),
     };
     std::vector<RpcCallIdUVE> callIds;
-    for (const UVScript::ValueUVE& value : values) {
+    for (const Blueprint::ValueUVE& value : values) {
         const RpcCallIdUVE callId = harness.a.CallUVE("echo", {value}, harness.FileAUVE());
         ASSERT_NE(callId, kInvalidRpcCallIdUVE);
         callIds.push_back(callId);
     }
     // NaN rides separately: bit-exact through the codec, but never equal to itself.
     const RpcCallIdUVE nanId =
-        harness.a.CallUVE("echo", {UVScript::ValueUVE{std::numeric_limits<double>::quiet_NaN()}},
+        harness.a.CallUVE("echo", {Blueprint::ValueUVE{std::numeric_limits<double>::quiet_NaN()}},
                           harness.FileAUVE());
     ASSERT_NE(nanId, kInvalidRpcCallIdUVE);
 
@@ -209,7 +209,7 @@ TEST(NetworkRpcUVETest, Call_AllValueKindsRoundTrip) {
         EXPECT_TRUE(ValuesEqualUVE(harness.doneA[callIds[i]].value, values[i]));
     }
     ASSERT_TRUE(harness.doneA[nanId].ok);
-    const UVScript::ValueUVE& nanBack = harness.doneA[nanId].value;
+    const Blueprint::ValueUVE& nanBack = harness.doneA[nanId].value;
     ASSERT_TRUE(std::holds_alternative<double>(nanBack));
     EXPECT_EQ(std::bit_cast<std::uint64_t>(std::get<double>(nanBack)),
               std::bit_cast<std::uint64_t>(std::numeric_limits<double>::quiet_NaN()));
@@ -222,12 +222,12 @@ TEST(NetworkRpcUVETest, Call_ObjectRefArgumentRefused) {
 
     // Object refs name host-local objects: meaningless across the wire, refused at the door -
     // nested inside a collection, too.
-    EXPECT_EQ(harness.a.CallUVE("echo", {UVScript::ValueUVE{UVScript::ObjectRefUVE{42U}}},
+    EXPECT_EQ(harness.a.CallUVE("echo", {Blueprint::ValueUVE{Blueprint::ObjectRefUVE{42U}}},
                                 harness.FileAUVE()),
               kInvalidRpcCallIdUVE);
     EXPECT_EQ(harness.a
                   .CallUVE("echo",
-                           {UVScript::MakeListValueUVE({UVScript::ValueUVE{UVScript::ObjectRefUVE{7U}}})},
+                           {Blueprint::MakeListValueUVE({Blueprint::ValueUVE{Blueprint::ObjectRefUVE{7U}}})},
                            harness.FileAUVE()),
               kInvalidRpcCallIdUVE);
     EXPECT_EQ(harness.a.StatsUVE().callsSent, 0U);
@@ -254,11 +254,11 @@ TEST(NetworkRpcUVETest, Call_UnknownMethodAnswersError) {
 TEST(NetworkRpcUVETest, Call_HandlerErrorAndThrowBecomeErrorResponses) {
     RpcHarnessUVE harness = MakeRpcUVE();
     ASSERT_TRUE(harness.b.RegisterMethodUVE(
-        "fail", [](const std::span<const UVScript::ValueUVE>) {
+        "fail", [](const std::span<const Blueprint::ValueUVE>) {
             return RpcErrorUVE("custom refusal");
         }));
     ASSERT_TRUE(harness.b.RegisterMethodUVE(
-        "boom", [](const std::span<const UVScript::ValueUVE>) -> RpcOutcomeUVE {
+        "boom", [](const std::span<const Blueprint::ValueUVE>) -> RpcOutcomeUVE {
             throw std::runtime_error{"handler bug"};
         }));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
@@ -285,7 +285,7 @@ TEST(NetworkRpcUVETest, Unregister_MethodStopsServing) {
     // Dispatch looks the method up when the call arrives: unregistering first means even an
     // already-queued call answers unknown-method.
     const RpcCallIdUVE callId =
-        harness.a.CallUVE("echo", {UVScript::ValueUVE{std::int64_t{1}}}, harness.FileAUVE());
+        harness.a.CallUVE("echo", {Blueprint::ValueUVE{std::int64_t{1}}}, harness.FileAUVE());
     ASSERT_NE(callId, kInvalidRpcCallIdUVE);
     EXPECT_TRUE(harness.b.UnregisterMethodUVE("echo"));
     harness.UpdateBothUVE(1000U);
@@ -362,7 +362,7 @@ TEST(NetworkRpcUVETest, Cancel_PendingCallNeverCompletes) {
     EXPECT_FALSE(harness.a.CancelUVE(999U));
 
     const RpcCallIdUVE callId =
-        harness.a.CallUVE("echo", {UVScript::ValueUVE{std::int64_t{1}}}, harness.FileAUVE());
+        harness.a.CallUVE("echo", {Blueprint::ValueUVE{std::int64_t{1}}}, harness.FileAUVE());
     ASSERT_NE(callId, kInvalidRpcCallIdUVE);
     // The server dispatches and answers before the cancel lands: the response crosses, then
     // dies stale on a peer that stopped waiting.
@@ -383,7 +383,7 @@ TEST(NetworkRpcUVETest, Malformed_ForeignFramesIgnored) {
 
     // Steal a real call frame off the wire to mutate: no codec duplicated in the test.
     const RpcCallIdUVE callId =
-        harness.a.CallUVE("echo", {UVScript::ValueUVE{std::int64_t{1}}}, harness.FileAUVE());
+        harness.a.CallUVE("echo", {Blueprint::ValueUVE{std::int64_t{1}}}, harness.FileAUVE());
     ASSERT_NE(callId, kInvalidRpcCallIdUVE);
     const std::optional<std::vector<std::uint8_t>> wire = harness.link.b.TryReceiveUVE();
     ASSERT_TRUE(wire.has_value());
@@ -415,7 +415,7 @@ TEST(NetworkRpcUVETest, Response_DroppedWhenTransportFull) {
         ASSERT_TRUE(harness.link.b.SendUVE(BytesUVE("junk")));
     }
     const RpcCallIdUVE callId =
-        harness.a.CallUVE("echo", {UVScript::ValueUVE{std::int64_t{1}}}, harness.FileAUVE(), 100U);
+        harness.a.CallUVE("echo", {Blueprint::ValueUVE{std::int64_t{1}}}, harness.FileAUVE(), 100U);
     ASSERT_NE(callId, kInvalidRpcCallIdUVE);
     harness.b.UpdateUVE(1000U);
     EXPECT_EQ(harness.b.StatsUVE().responsesDropped, 1U);
@@ -431,21 +431,21 @@ TEST(NetworkRpcUVETest, Response_DroppedWhenTransportFull) {
 TEST(NetworkRpcUVETest, Stats_CountersExactAfterAMixedExchange) {
     RpcHarnessUVE harness = MakeRpcUVE();
     ASSERT_TRUE(harness.a.RegisterMethodUVE(
-        "double", [](const std::span<const UVScript::ValueUVE> args) {
-            return RpcOkUVE(UVScript::ValueUVE{std::get<std::int64_t>(args[0]) * 2});
+        "double", [](const std::span<const Blueprint::ValueUVE> args) {
+            return RpcOkUVE(Blueprint::ValueUVE{std::get<std::int64_t>(args[0]) * 2});
         }));
     ASSERT_TRUE(harness.b.RegisterMethodUVE("echo", EchoHandlerUVE()));
     ASSERT_TRUE(harness.b.RegisterMethodUVE(
-        "fail", [](const std::span<const UVScript::ValueUVE>) {
+        "fail", [](const std::span<const Blueprint::ValueUVE>) {
             return RpcErrorUVE("custom refusal");
         }));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
-    ASSERT_NE(harness.a.CallUVE("echo", {UVScript::ValueUVE{std::int64_t{1}}}, harness.FileAUVE()),
+    ASSERT_NE(harness.a.CallUVE("echo", {Blueprint::ValueUVE{std::int64_t{1}}}, harness.FileAUVE()),
               kInvalidRpcCallIdUVE);
     ASSERT_NE(harness.a.CallUVE("missing", {}, harness.FileAUVE()), kInvalidRpcCallIdUVE);
     ASSERT_NE(harness.a.CallUVE("fail", {}, harness.FileAUVE()), kInvalidRpcCallIdUVE);
-    ASSERT_NE(harness.b.CallUVE("double", {UVScript::ValueUVE{std::int64_t{21}}}, harness.FileBUVE()),
+    ASSERT_NE(harness.b.CallUVE("double", {Blueprint::ValueUVE{std::int64_t{21}}}, harness.FileBUVE()),
               kInvalidRpcCallIdUVE);
     ASSERT_TRUE(harness.link.a.SendUVE(
         TaggedUVE(static_cast<std::uint8_t>(SessionMessageTagUVE::Data), "junk")));
@@ -467,7 +467,7 @@ TEST(NetworkRpcUVETest, Results_RetainedPeekedForgottenAndEvicted) {
 
     // A completed call stays readable past its callback - and peeking never consumes.
     const RpcCallIdUVE callId =
-        harness.a.CallUVE("echo", {UVScript::ValueUVE{std::int64_t{7}}}, harness.FileAUVE());
+        harness.a.CallUVE("echo", {Blueprint::ValueUVE{std::int64_t{7}}}, harness.FileAUVE());
     ASSERT_NE(callId, kInvalidRpcCallIdUVE);
     EXPECT_FALSE(harness.a.ResultUVE(callId).has_value());
     EXPECT_FALSE(harness.a.ForgetResultUVE(callId));
@@ -478,7 +478,7 @@ TEST(NetworkRpcUVETest, Results_RetainedPeekedForgottenAndEvicted) {
     const std::optional<RpcOutcomeUVE> peeked = harness.a.ResultUVE(callId);
     ASSERT_TRUE(peeked.has_value());
     EXPECT_TRUE(peeked->ok);
-    EXPECT_EQ(peeked->value, UVScript::ValueUVE{std::int64_t{7}});
+    EXPECT_EQ(peeked->value, Blueprint::ValueUVE{std::int64_t{7}});
     EXPECT_TRUE(harness.a.ResultUVE(callId).has_value());
     EXPECT_TRUE(harness.a.ForgetResultUVE(callId));
     EXPECT_FALSE(harness.a.ResultUVE(callId).has_value());
@@ -489,7 +489,7 @@ TEST(NetworkRpcUVETest, Results_RetainedPeekedForgottenAndEvicted) {
     std::vector<RpcCallIdUVE> flood;
     for (std::size_t i = 0U; i < kRpcMaximumRetainedResultsUVE + 1U; ++i) {
         const RpcCallIdUVE id =
-            harness.a.CallUVE("echo", {UVScript::ValueUVE{static_cast<std::int64_t>(i)}},
+            harness.a.CallUVE("echo", {Blueprint::ValueUVE{static_cast<std::int64_t>(i)}},
                               harness.FileAUVE());
         ASSERT_NE(id, kInvalidRpcCallIdUVE);
         flood.push_back(id);

@@ -9,16 +9,16 @@
 #include <gtest/gtest.h>
 
 #include "entity.h"
-#include "uvscript_object_host.h"
+#include "blueprint_object_host.h"
 #include "entity_manager.h"
 #include "event_system.h"
 #include "memory_manager.h"
 #include "network_relay.h"
 #include "network_session.h"
 #include "network_transport.h"
-#include "uvscript_compiler.h"
-#include "uvscript_instance.h"
-#include "uvscript_value.h"
+#include "blueprint_compiler.h"
+#include "blueprint_instance.h"
+#include "blueprint_value.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -129,8 +129,8 @@ fn poll() -> str:
 
 struct RelaySignatureUVE final {
     const char* name;
-    std::vector<UVScript::TypeUVE> params;
-    UVScript::TypeUVE result;
+    std::vector<Blueprint::TypeUVE> params;
+    Blueprint::TypeUVE result;
 };
 
 class UVScriptRelayBindingsUVETest : public ::testing::Test {
@@ -139,62 +139,62 @@ protected:
     Events::EventSystemUVE eventSystem;
     EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
 
-    [[nodiscard]] std::shared_ptr<const UVScript::ProgramUVE> CompileOrFailUVE(
-        const std::string& source, Core::UVScriptObjectHostUVE& host) {
-        const UVScript::CompileResultUVE result = UVScript::CompileUVScriptSourceUVE(source, host);
-        for (const UVScript::DiagnosticUVE& d : result.diagnostics) {
+    [[nodiscard]] std::shared_ptr<const Blueprint::ProgramUVE> CompileOrFailUVE(
+        const std::string& source, Core::BlueprintObjectHostUVE& host) {
+        const Blueprint::CompileResultUVE result = Blueprint::CompileUVScriptSourceUVE(source, host);
+        for (const Blueprint::DiagnosticUVE& d : result.diagnostics) {
             ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
         }
         return result.program;
     }
 
-    [[nodiscard]] std::int64_t CallIntUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::int64_t CallIntUVE(Blueprint::ScriptInstanceUVE& instance,
                                           const std::string& function) {
         return std::get<std::int64_t>(*instance.CallUVE(function));
     }
 
-    [[nodiscard]] std::int64_t CallIntUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::int64_t CallIntUVE(Blueprint::ScriptInstanceUVE& instance,
                                           const std::string& function, const std::int64_t id) {
-        const std::array<UVScript::ValueUVE, 1> args{UVScript::ValueUVE{id}};
+        const std::array<Blueprint::ValueUVE, 1> args{Blueprint::ValueUVE{id}};
         return std::get<std::int64_t>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] std::string CallStrUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::string CallStrUVE(Blueprint::ScriptInstanceUVE& instance,
                                          const std::string& function) {
         return std::get<std::string>(*instance.CallUVE(function));
     }
 
-    [[nodiscard]] std::string CallStrUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::string CallStrUVE(Blueprint::ScriptInstanceUVE& instance,
                                          const std::string& function, const std::int64_t id) {
-        const std::array<UVScript::ValueUVE, 1> args{UVScript::ValueUVE{id}};
+        const std::array<Blueprint::ValueUVE, 1> args{Blueprint::ValueUVE{id}};
         return std::get<std::string>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] bool CallBoolUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] bool CallBoolUVE(Blueprint::ScriptInstanceUVE& instance,
                                    const std::string& function, const std::int64_t id) {
-        const std::array<UVScript::ValueUVE, 1> args{UVScript::ValueUVE{id}};
+        const std::array<Blueprint::ValueUVE, 1> args{Blueprint::ValueUVE{id}};
         return std::get<bool>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] bool CallBool2UVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] bool CallBool2UVE(Blueprint::ScriptInstanceUVE& instance,
                                     const std::string& function, const std::int64_t first,
                                     const std::int64_t second) {
-        const std::array<UVScript::ValueUVE, 2> args{UVScript::ValueUVE{first},
-                                                     UVScript::ValueUVE{second}};
+        const std::array<Blueprint::ValueUVE, 2> args{Blueprint::ValueUVE{first},
+                                                     Blueprint::ValueUVE{second}};
         return std::get<bool>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] bool CallBool3UVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] bool CallBool3UVE(Blueprint::ScriptInstanceUVE& instance,
                                     const std::string& function, const std::int64_t first,
                                     const std::int64_t second, const bool third) {
-        const std::array<UVScript::ValueUVE, 3> args{
-            UVScript::ValueUVE{first}, UVScript::ValueUVE{second}, UVScript::ValueUVE{third}};
+        const std::array<Blueprint::ValueUVE, 3> args{
+            Blueprint::ValueUVE{first}, Blueprint::ValueUVE{second}, Blueprint::ValueUVE{third}};
         return std::get<bool>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] bool CallBoolStrUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] bool CallBoolStrUVE(Blueprint::ScriptInstanceUVE& instance,
                                       const std::string& function, const std::string& text) {
-        const std::array<UVScript::ValueUVE, 1> args{UVScript::ValueUVE{text}};
+        const std::array<Blueprint::ValueUVE, 1> args{Blueprint::ValueUVE{text}};
         return std::get<bool>(*instance.CallUVE(function, args));
     }
 };
@@ -202,30 +202,30 @@ protected:
 TEST_F(UVScriptRelayBindingsUVETest, Host_DescribesRelaySurfaceUngated) {
     // Ungated means ungated: a bare entity with neither attachment still describes every
     // name, and every call through them fails closed at run time instead.
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
     const RelaySignatureUVE cases[] = {
-        {"relay.peer_count", {}, UVScript::TypeUVE::IntUVE()},
+        {"relay.peer_count", {}, Blueprint::TypeUVE::IntUVE()},
         {"relay.set_room",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::BoolUVE()},
-        {"relay.room", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::IntUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::BoolUVE()},
+        {"relay.room", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::IntUVE()},
         {"relay.set_interest",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE(),
-          UVScript::TypeUVE::BoolUVE()},
-         UVScript::TypeUVE::BoolUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE(),
+          Blueprint::TypeUVE::BoolUVE()},
+         Blueprint::TypeUVE::BoolUVE()},
         {"relay.interested",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::BoolUVE()},
-        {"relay.remove", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::BoolUVE()},
-        {"relay.stat_received", {}, UVScript::TypeUVE::IntUVE()},
-        {"relay.stat_forwarded", {}, UVScript::TypeUVE::IntUVE()},
-        {"relay.stat_dropped", {}, UVScript::TypeUVE::IntUVE()},
-        {"relay.peer_state", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::StrUVE()},
-        {"relay.send", {UVScript::TypeUVE::StrUVE()}, UVScript::TypeUVE::BoolUVE()},
-        {"relay.poll", {}, UVScript::TypeUVE::StrUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::BoolUVE()},
+        {"relay.remove", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::BoolUVE()},
+        {"relay.stat_received", {}, Blueprint::TypeUVE::IntUVE()},
+        {"relay.stat_forwarded", {}, Blueprint::TypeUVE::IntUVE()},
+        {"relay.stat_dropped", {}, Blueprint::TypeUVE::IntUVE()},
+        {"relay.peer_state", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::StrUVE()},
+        {"relay.send", {Blueprint::TypeUVE::StrUVE()}, Blueprint::TypeUVE::BoolUVE()},
+        {"relay.poll", {}, Blueprint::TypeUVE::StrUVE()},
     };
     for (const RelaySignatureUVE& expected : cases) {
-        const std::optional<UVScript::HostFunctionUVE> described =
+        const std::optional<Blueprint::HostFunctionUVE> described =
             host.DescribeFunctionUVE(expected.name);
         ASSERT_TRUE(described.has_value()) << expected.name;
         EXPECT_EQ(described->params, expected.params) << expected.name;
@@ -234,26 +234,26 @@ TEST_F(UVScriptRelayBindingsUVETest, Host_DescribesRelaySurfaceUngated) {
 }
 
 TEST_F(UVScriptRelayBindingsUVETest, Host_FailsClosedWithoutAttachments) {
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
-    const std::span<const UVScript::ValueUVE> noArgs{};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
+    const std::span<const Blueprint::ValueUVE> noArgs{};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("relay.peer_count", noArgs)), 0);
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("relay.stat_received", noArgs)), 0);
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("relay.stat_forwarded", noArgs)), 0);
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("relay.stat_dropped", noArgs)), 0);
     EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("relay.poll", noArgs)), "");
-    const std::array<UVScript::ValueUVE, 1> id{UVScript::ValueUVE{std::int64_t{1}}};
+    const std::array<Blueprint::ValueUVE, 1> id{Blueprint::ValueUVE{std::int64_t{1}}};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("relay.room", id)), 0);
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("relay.remove", id)));
     EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("relay.peer_state", id)), "unknown");
-    const std::array<UVScript::ValueUVE, 2> pair{UVScript::ValueUVE{std::int64_t{1}},
-                                                 UVScript::ValueUVE{std::int64_t{0}}};
+    const std::array<Blueprint::ValueUVE, 2> pair{Blueprint::ValueUVE{std::int64_t{1}},
+                                                 Blueprint::ValueUVE{std::int64_t{0}}};
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("relay.set_room", pair)));
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("relay.interested", pair)));
-    const std::array<UVScript::ValueUVE, 3> triple{UVScript::ValueUVE{std::int64_t{1}},
-                                                   UVScript::ValueUVE{std::int64_t{2}},
-                                                   UVScript::ValueUVE{true}};
+    const std::array<Blueprint::ValueUVE, 3> triple{Blueprint::ValueUVE{std::int64_t{1}},
+                                                   Blueprint::ValueUVE{std::int64_t{2}},
+                                                   Blueprint::ValueUVE{true}};
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("relay.set_interest", triple)));
-    const std::array<UVScript::ValueUVE, 1> text{UVScript::ValueUVE{std::string{"hi"}}};
+    const std::array<Blueprint::ValueUVE, 1> text{Blueprint::ValueUVE{std::string{"hi"}}};
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("relay.send", text)));
 }
 
@@ -263,12 +263,12 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_ManagesRoomsAndRoutes) {
     harness.AddClientUVE();
     harness.AddClientUVE();
     ASSERT_TRUE(harness.EstablishUVE(1000U));
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      nullptr,
@@ -278,7 +278,7 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_ManagesRoomsAndRoutes) {
                                      &harness.clients[0]};
     const auto program = CompileOrFailUVE(kRelayScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     EXPECT_EQ(CallIntUVE(instance, "peer_count"), 3);
     const std::int64_t moved = harness.ids[2];
@@ -304,12 +304,12 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_ManagesInterestMutes) {
     harness.AddClientUVE();
     harness.AddClientUVE();
     ASSERT_TRUE(harness.EstablishUVE(1000U));
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      nullptr,
@@ -319,7 +319,7 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_ManagesInterestMutes) {
                                      &harness.clients[0]};
     const auto program = CompileOrFailUVE(kRelayScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     const std::int64_t muted = harness.ids[1];
     const std::int64_t speaker = harness.ids[0];
@@ -346,12 +346,12 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_RemovesPeersAndReadsStates) {
     harness.AddClientUVE();
     harness.AddClientUVE();
     ASSERT_TRUE(harness.EstablishUVE(1000U));
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      nullptr,
@@ -361,7 +361,7 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_RemovesPeersAndReadsStates) {
                                      &harness.clients[0]};
     const auto program = CompileOrFailUVE(kRelayScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     EXPECT_EQ(CallIntUVE(instance, "peer_count"), 2);
     EXPECT_EQ(CallStrUVE(instance, "peer_state", harness.ids[0]), "established");
@@ -379,12 +379,12 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_ReadsStats) {
     harness.AddClientUVE();
     harness.AddClientUVE();
     ASSERT_TRUE(harness.EstablishUVE(1000U));
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      nullptr,
@@ -394,7 +394,7 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_ReadsStats) {
                                      &harness.clients[0]};
     const auto program = CompileOrFailUVE(kRelayScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     EXPECT_TRUE(CallBoolStrUVE(instance, "send_text", "a"));
     harness.UpdateAllUVE(1100U);
@@ -412,12 +412,12 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_SendsAndPolls) {
     harness.AddClientUVE();
     harness.AddClientUVE();
     ASSERT_TRUE(harness.EstablishUVE(1000U));
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      nullptr,
@@ -427,7 +427,7 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_SendsAndPolls) {
                                      &harness.clients[0]};
     const auto program = CompileOrFailUVE(kRelayScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     EXPECT_EQ(CallStrUVE(instance, "poll"), "");
     EXPECT_TRUE(CallBoolStrUVE(instance, "send_text", "hi"));
@@ -447,12 +447,12 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_RefusesOutOfRangeIds) {
     ScriptRelayHarnessUVE harness;
     harness.AddClientUVE();
     ASSERT_TRUE(harness.EstablishUVE(1000U));
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      nullptr,
@@ -462,7 +462,7 @@ TEST_F(UVScriptRelayBindingsUVETest, Script_RefusesOutOfRangeIds) {
                                      &harness.clients[0]};
     const auto program = CompileOrFailUVE(kRelayScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     constexpr std::int64_t kPastU32 = 4294967296LL;
     EXPECT_FALSE(CallBool2UVE(instance, "set_room", -1, 0));

@@ -363,20 +363,33 @@ class EngineBuilder:
                     cmd = [cxx, "-std=c++23", "-fPIC", "-shared", f"-I{plugin_inc}", str(src), "-o", str(dst)]
                     subprocess.run(cmd, check=True)
 
-            # Build uvsc compiler tool
+            # Build Blueprint native compiler tool
             uvsc_exe = bin_dir / "uvsc"
-            uvsc_main = self.repo_root / "Engine" / "Runtime" / "UVScript" / "Tool" / "uvsc_main.cpp"
-            uvscript_dir = self.repo_root / "Engine" / "Runtime" / "UVScript"
-            uvscript_srcs = list((uvscript_dir / "Internal").glob("*.cpp"))
+            bp_dir = self.repo_root / "Editor" / "Blueprint"
+            uvsc_main = bp_dir / "Compiler" / "Backend" / "blueprint_compiler_main.cpp"
+            bp_srcs = [
+                p for sub in ("Compiler", "Runtime")
+                for p in (bp_dir / sub).rglob("*.cpp")
+                if p.name != "blueprint_compiler_main.cpp"
+            ]
+            bp_incs = [
+                bp_dir / "Compiler" / "Frontend",
+                bp_dir / "Compiler" / "Intermediate",
+                bp_dir / "Compiler" / "Backend",
+                bp_dir / "Runtime" / "VirtualMachine",
+                bp_dir / "Runtime" / "Variables",
+                bp_dir / "Runtime" / "ObjectBinding",
+            ]
 
             rebuild_uvsc = not uvsc_exe.exists()
             if not rebuild_uvsc:
                 uvsc_mtime = uvsc_exe.stat().st_mtime
-                if uvsc_main.stat().st_mtime > uvsc_mtime or any(s.stat().st_mtime > uvsc_mtime for s in uvscript_srcs):
+                if uvsc_main.stat().st_mtime > uvsc_mtime or any(s.stat().st_mtime > uvsc_mtime for s in bp_srcs):
                     rebuild_uvsc = True
 
             if rebuild_uvsc and uvsc_main.exists():
-                cmd = [cxx, "-std=c++23", "-O2", f"-I{gen_dir}", f"-I{uvscript_dir / 'Expose'}"] + [str(s) for s in uvscript_srcs] + [str(uvsc_main), "-o", str(uvsc_exe)]
+                inc_flags = [f"-I{gen_dir}"] + [f"-I{d}" for d in bp_incs]
+                cmd = [cxx, "-std=c++23", "-O2"] + inc_flags + [str(s) for s in bp_srcs] + [str(uvsc_main), "-o", str(uvsc_exe)]
                 subprocess.run(cmd, check=True)
 
             # Generate native script sources

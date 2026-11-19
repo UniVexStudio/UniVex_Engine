@@ -133,7 +133,7 @@ bool NetworkReplicatorUVE::UnregisterPropertyUVE(const NetworkEntityIdUVE netId,
 
 bool NetworkReplicatorUVE::SetPropertyUVE(const NetworkEntityIdUVE netId,
                                           const ReplicationPropertyIdUVE propId,
-                                          const UVScript::ValueUVE& value) {
+                                          const Blueprint::ValueUVE& value) {
     if (m_entries.find(netId) == m_entries.end()) {
         return false;
     }
@@ -489,7 +489,7 @@ void NetworkReplicatorUVE::HandlePropertiesUVE(const std::vector<std::byte>& buf
         ++m_stats.messagesIgnoredMalformed;
         return;
     }
-    std::vector<std::tuple<NetworkEntityIdUVE, ReplicationPropertyIdUVE, UVScript::ValueUVE>> parsed;
+    std::vector<std::tuple<NetworkEntityIdUVE, ReplicationPropertyIdUVE, Blueprint::ValueUVE>> parsed;
     parsed.reserve(entryCount);
     for (std::uint16_t i = 0U; i < entryCount; ++i) {
         NetworkEntityIdUVE netId = 0U;
@@ -500,7 +500,7 @@ void NetworkReplicatorUVE::HandlePropertiesUVE(const std::vector<std::byte>& buf
         }
         const ReplicationPropertyIdUVE propId =
             std::to_integer<ReplicationPropertyIdUVE>(buffer[offset++]);
-        std::optional<UVScript::ValueUVE> value = ReadWireValueUVE(buffer, offset, 0U);
+        std::optional<Blueprint::ValueUVE> value = ReadWireValueUVE(buffer, offset, 0U);
         if (!value.has_value()) {
             ++m_stats.messagesIgnoredMalformed;
             return;

@@ -38,7 +38,7 @@ enum class WireValueTagUVE : std::uint8_t {
 // One value onto the wire: a tag byte plus the payload (counts and lengths u16,
 // integers and doubles little-endian). False when the value cannot cross - an object
 // ref, an over-deep nesting, an over-long string, or a map with an unpaired item.
-bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& value,
+bool AppendWireValueUVE(std::vector<std::byte>& out, const Blueprint::ValueUVE& value,
                        const std::size_t depth) {
     return std::visit(
         [&](const auto& held) -> bool {
@@ -68,24 +68,24 @@ bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& v
                     Utilities::AppendBytesUVE(out, held.data(), held.size());
                 }
                 return true;
-            } else if constexpr (std::is_same_v<HeldUVE, UVScript::Vec3ValueUVE>) {
+            } else if constexpr (std::is_same_v<HeldUVE, Blueprint::Vec3ValueUVE>) {
                 out.push_back(TagByteUVE(WireValueTagUVE::Vec3));
                 Utilities::AppendUint64LeUVE(out, std::bit_cast<std::uint64_t>(held.x));
                 Utilities::AppendUint64LeUVE(out, std::bit_cast<std::uint64_t>(held.y));
                 Utilities::AppendUint64LeUVE(out, std::bit_cast<std::uint64_t>(held.z));
                 return true;
-            } else if constexpr (std::is_same_v<HeldUVE, UVScript::ObjectRefUVE>) {
+            } else if constexpr (std::is_same_v<HeldUVE, Blueprint::ObjectRefUVE>) {
                 // An object ref names a host-local object; the far side's ids differ, so the
                 // value is meaningless there. Refuse to send rather than send confusion.
                 return false;
             } else {
                 static_assert(
-                    std::is_same_v<HeldUVE, std::shared_ptr<const UVScript::CollectionValueUVE>>);
+                    std::is_same_v<HeldUVE, std::shared_ptr<const Blueprint::CollectionValueUVE>>);
                 if (held == nullptr || depth == kWireValueMaxDepthUVE) {
                     return false;
                 }
-                const bool isMap = held->kind == UVScript::CollectionValueUVE::KindUVE::Map;
-                const bool isTuple = held->kind == UVScript::CollectionValueUVE::KindUVE::Tuple;
+                const bool isMap = held->kind == Blueprint::CollectionValueUVE::KindUVE::Map;
+                const bool isTuple = held->kind == Blueprint::CollectionValueUVE::KindUVE::Tuple;
                 if (isMap && held->items.size() % 2U != 0U) {
                     return false;
                 }
@@ -96,7 +96,7 @@ bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& v
                 out.push_back(TagByteUVE(isMap ? WireValueTagUVE::Map
                                               : (isTuple ? WireValueTagUVE::Tuple : WireValueTagUVE::List)));
                 Utilities::AppendUint16LeUVE(out, static_cast<std::uint16_t>(count));
-                for (const UVScript::ValueUVE& item : held->items) {
+                for (const Blueprint::ValueUVE& item : held->items) {
                     if (!AppendWireValueUVE(out, item, depth + 1U)) {
                         return false;
                     }
@@ -125,7 +125,7 @@ bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& v
 
 // One value off the wire. Mirrors the encoder tag for tag; any truncation, unknown tag, or
 // over-deep nesting fails the whole frame - values never decode partially.
-[[nodiscard]] std::optional<UVScript::ValueUVE> ReadWireValueUVE(const std::vector<std::byte>& in,
+[[nodiscard]] std::optional<Blueprint::ValueUVE> ReadWireValueUVE(const std::vector<std::byte>& in,
                                                                 std::size_t& offset,
                                                                 const std::size_t depth) {
     if (offset >= in.size()) {
@@ -134,34 +134,34 @@ bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& v
     const auto tag = static_cast<WireValueTagUVE>(std::to_integer<std::uint8_t>(in[offset++]));
     switch (tag) {
         case WireValueTagUVE::Nil:
-            return UVScript::ValueUVE{};
+            return Blueprint::ValueUVE{};
         case WireValueTagUVE::Bool: {
             if (offset >= in.size()) {
                 return std::nullopt;
             }
             const bool value = in[offset++] != static_cast<std::byte>(0x00);
-            return UVScript::ValueUVE{value};
+            return Blueprint::ValueUVE{value};
         }
         case WireValueTagUVE::Int: {
             std::uint64_t bits = 0U;
             if (!Utilities::ReadUint64LeFromBufferUVE(in, offset, bits)) {
                 return std::nullopt;
             }
-            return UVScript::ValueUVE{static_cast<std::int64_t>(bits)};
+            return Blueprint::ValueUVE{static_cast<std::int64_t>(bits)};
         }
         case WireValueTagUVE::Float: {
             std::uint64_t bits = 0U;
             if (!Utilities::ReadUint64LeFromBufferUVE(in, offset, bits)) {
                 return std::nullopt;
             }
-            return UVScript::ValueUVE{std::bit_cast<double>(bits)};
+            return Blueprint::ValueUVE{std::bit_cast<double>(bits)};
         }
         case WireValueTagUVE::Str: {
             std::optional<std::string> text = ReadWireStringUVE(in, offset);
             if (!text.has_value()) {
                 return std::nullopt;
             }
-            return UVScript::ValueUVE{std::move(*text)};
+            return Blueprint::ValueUVE{std::move(*text)};
         }
         case WireValueTagUVE::Vec3: {
             std::uint64_t x = 0U, y = 0U, z = 0U;
@@ -170,7 +170,7 @@ bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& v
                 !Utilities::ReadUint64LeFromBufferUVE(in, offset, z)) {
                 return std::nullopt;
             }
-            return UVScript::ValueUVE{UVScript::Vec3ValueUVE{
+            return Blueprint::ValueUVE{Blueprint::Vec3ValueUVE{
                 std::bit_cast<double>(x), std::bit_cast<double>(y), std::bit_cast<double>(z)}};
         }
         case WireValueTagUVE::List:
@@ -182,18 +182,18 @@ bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& v
             if (!Utilities::ReadUint16LeFromBufferUVE(in, offset, count)) {
                 return std::nullopt;
             }
-            std::vector<UVScript::ValueUVE> items;
+            std::vector<Blueprint::ValueUVE> items;
             for (std::uint16_t i = 0U; i < count; ++i) {
-                std::optional<UVScript::ValueUVE> item = ReadWireValueUVE(in, offset, depth + 1U);
+                std::optional<Blueprint::ValueUVE> item = ReadWireValueUVE(in, offset, depth + 1U);
                 if (!item.has_value()) {
                     return std::nullopt;
                 }
                 items.push_back(std::move(*item));
             }
             if (tag == WireValueTagUVE::List) {
-                return UVScript::MakeListValueUVE(std::move(items));
+                return Blueprint::MakeListValueUVE(std::move(items));
             }
-            return UVScript::MakeTupleValueUVE(std::move(items));
+            return Blueprint::MakeTupleValueUVE(std::move(items));
         }
         case WireValueTagUVE::Map: {
             if (depth == kWireValueMaxDepthUVE) {
@@ -203,17 +203,17 @@ bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& v
             if (!Utilities::ReadUint16LeFromBufferUVE(in, offset, pairs)) {
                 return std::nullopt;
             }
-            std::vector<UVScript::ValueUVE> items;
+            std::vector<Blueprint::ValueUVE> items;
             for (std::uint16_t i = 0U; i < pairs; ++i) {
-                std::optional<UVScript::ValueUVE> key = ReadWireValueUVE(in, offset, depth + 1U);
-                std::optional<UVScript::ValueUVE> item = ReadWireValueUVE(in, offset, depth + 1U);
+                std::optional<Blueprint::ValueUVE> key = ReadWireValueUVE(in, offset, depth + 1U);
+                std::optional<Blueprint::ValueUVE> item = ReadWireValueUVE(in, offset, depth + 1U);
                 if (!key.has_value() || !item.has_value()) {
                     return std::nullopt;
                 }
                 items.push_back(std::move(*key));
                 items.push_back(std::move(*item));
             }
-            return UVScript::MakeMapValueUVE(std::move(items));
+            return Blueprint::MakeMapValueUVE(std::move(items));
         }
     }
     return std::nullopt;

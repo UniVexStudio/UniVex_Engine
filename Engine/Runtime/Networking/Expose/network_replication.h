@@ -34,7 +34,7 @@
 
 #include "vector3.h"
 #include "network_session.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace UVE::Network {
 
@@ -52,7 +52,7 @@ using RelevancyCheckUVE = std::function<bool()>;
 using ReplicationPropertyIdUVE = std::uint8_t;
 /// Writes a received property value for a registered (entity, property) pair. Called while
 /// pumping, in (net-id, property-id) order.
-using PropertyApplierUVE = std::function<void(const UVScript::ValueUVE&)>;
+using PropertyApplierUVE = std::function<void(const Blueprint::ValueUVE&)>;
 
 /// Ownership-handoff outcomes, reported through the transfer handler: Requested means the
 /// peer asks for one of my owned entities (answer with Accept or Deny); Completed means a
@@ -234,7 +234,7 @@ public:
     /// (storing nothing) unless the entity is registered and the value encodes within the
     /// property budget.
     [[nodiscard]] bool SetPropertyUVE(NetworkEntityIdUVE netId, ReplicationPropertyIdUVE propId,
-                                      const UVScript::ValueUVE& value);
+                                      const Blueprint::ValueUVE& value);
     /// Pumps the session, applies every queued snapshot, then sends one when established and due -
     /// plus a property frame when dirty (or full-timed) properties are waiting.
     /// A zero interval sends on every update; a full transport queue skips the send and retries

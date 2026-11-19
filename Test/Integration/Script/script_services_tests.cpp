@@ -21,8 +21,8 @@
 #include "scene_graph.h"
 #include "script_component.h"
 #include "transform_component.h"
-#include "uvscript_instance.h"
-#include "uvscript_value.h"
+#include "blueprint_instance.h"
+#include "blueprint_value.h"
 #include "vector3.h"
 
 namespace UVE::Integration::Tests {
@@ -102,10 +102,10 @@ TEST(ScriptServicesUVETest, TracesMessagesRemovalAndSaveSlotsWorkThroughTheEngin
     EXPECT_FALSE(entities.IsAliveUVE(shooter)) << "a script may remove its own object";
     EXPECT_FALSE(entities.IsAliveUVE(doomed));
     EXPECT_EQ(engine.FindUVScriptInstanceUVE(shooter), nullptr);
-    UVScript::ScriptInstanceUVE* const heard = engine.FindUVScriptInstanceUVE(listener);
+    Blueprint::ScriptInstanceUVE* const heard = engine.FindUVScriptInstanceUVE(listener);
     ASSERT_NE(heard, nullptr);
-    EXPECT_EQ(heard->GetFieldUVE("heard"), UVScript::ValueUVE{std::string("Bye")}) << "the doomed object heard `destroyed`";
-    EXPECT_EQ(heard->GetFieldUVE("from"), UVScript::ValueUVE{std::string("Doomed")});
+    EXPECT_EQ(heard->GetFieldUVE("heard"), Blueprint::ValueUVE{std::string("Bye")}) << "the doomed object heard `destroyed`";
+    EXPECT_EQ(heard->GetFieldUVE("from"), Blueprint::ValueUVE{std::string("Doomed")});
 
     // The save slot holds the coins: clear them, then read the slot back.
     ASSERT_EQ(engine.GetScriptServicesUVE().gameData["Coins"], "12");
@@ -118,7 +118,7 @@ TEST(ScriptServicesUVETest, TracesMessagesRemovalAndSaveSlotsWorkThroughTheEngin
 
     // A real trace: straight down onto the floor box's top (a unit box at y = -2: top at -1.5).
     const Core::ScriptServicesUVE::TraceHitUVE hit = engine.GetScriptServicesUVE().trace(
-        UVScript::Vec3ValueUVE{0.0, 5.0, 0.0}, UVScript::Vec3ValueUVE{0.0, -5.0, 0.0}, 0.0, Scene::kInvalidEntityUVE);
+        Blueprint::Vec3ValueUVE{0.0, 5.0, 0.0}, Blueprint::Vec3ValueUVE{0.0, -5.0, 0.0}, 0.0, Scene::kInvalidEntityUVE);
     ASSERT_TRUE(hit.hit);
     EXPECT_EQ(hit.entity, floor);
     EXPECT_NEAR(hit.point.y, -1.5, 1e-3);

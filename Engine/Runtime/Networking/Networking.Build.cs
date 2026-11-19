@@ -10,7 +10,7 @@ public class NetworkingModule : ModuleRules
 
         PublicDependencyModuleNames.AddRange(new string[] {
             "Math",
-            "UVScript",
+            "Blueprint",
             "Diagnostics",
         });
 

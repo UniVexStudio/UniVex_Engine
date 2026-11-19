@@ -9,13 +9,13 @@
 #include <variant>
 #include <vector>
 
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace UVE::Network {
 namespace {
 
 // Reads an int64 value as a u32 within [low, high]; false on wrong type or out of range.
-[[nodiscard]] bool AsUint32UVE(const UVScript::ValueUVE& value, const std::int64_t low,
+[[nodiscard]] bool AsUint32UVE(const Blueprint::ValueUVE& value, const std::int64_t low,
                                const std::int64_t high, std::uint32_t& out) {
     const std::int64_t* number = std::get_if<std::int64_t>(&value);
     if (number == nullptr || *number < low || *number > high) {
@@ -27,10 +27,10 @@ namespace {
 
 // Reads a collection value's items; false unless the value holds that kind.
 [[nodiscard]] bool AsCollectionItemsUVE(
-    const UVScript::ValueUVE& value, const UVScript::CollectionValueUVE::KindUVE kind,
-    const std::vector<UVScript::ValueUVE>*& items) {
+    const Blueprint::ValueUVE& value, const Blueprint::CollectionValueUVE::KindUVE kind,
+    const std::vector<Blueprint::ValueUVE>*& items) {
     const auto* collection =
-        std::get_if<std::shared_ptr<const UVScript::CollectionValueUVE>>(&value);
+        std::get_if<std::shared_ptr<const Blueprint::CollectionValueUVE>>(&value);
     if (collection == nullptr || *collection == nullptr || (*collection)->kind != kind) {
         return false;
     }
@@ -38,14 +38,14 @@ namespace {
     return true;
 }
 
-[[nodiscard]] bool ParseRosterUVE(const UVScript::ValueUVE& value,
+[[nodiscard]] bool ParseRosterUVE(const Blueprint::ValueUVE& value,
                                   std::vector<std::string>& roster) {
-    const std::vector<UVScript::ValueUVE>* items = nullptr;
-    if (!AsCollectionItemsUVE(value, UVScript::CollectionValueUVE::KindUVE::List, items)) {
+    const std::vector<Blueprint::ValueUVE>* items = nullptr;
+    if (!AsCollectionItemsUVE(value, Blueprint::CollectionValueUVE::KindUVE::List, items)) {
         return false;
     }
     std::vector<std::string> parsed;
-    for (const UVScript::ValueUVE& item : *items) {
+    for (const Blueprint::ValueUVE& item : *items) {
         const std::string* name = std::get_if<std::string>(&item);
         if (name == nullptr) {
             return false;
@@ -58,16 +58,16 @@ namespace {
 
 // One room descriptor: exactly the four known keys, any order, duplicates refused. Strict
 // both ways - a skewed descriptor fails loud instead of half-parsing.
-[[nodiscard]] bool ParseRoomListUVE(const UVScript::ValueUVE& value,
+[[nodiscard]] bool ParseRoomListUVE(const Blueprint::ValueUVE& value,
                                     std::vector<LobbyRoomInfoUVE>& rooms) {
-    const std::vector<UVScript::ValueUVE>* items = nullptr;
-    if (!AsCollectionItemsUVE(value, UVScript::CollectionValueUVE::KindUVE::List, items)) {
+    const std::vector<Blueprint::ValueUVE>* items = nullptr;
+    if (!AsCollectionItemsUVE(value, Blueprint::CollectionValueUVE::KindUVE::List, items)) {
         return false;
     }
     std::vector<LobbyRoomInfoUVE> parsed;
-    for (const UVScript::ValueUVE& entry : *items) {
-        const std::vector<UVScript::ValueUVE>* pairs = nullptr;
-        if (!AsCollectionItemsUVE(entry, UVScript::CollectionValueUVE::KindUVE::Map, pairs) ||
+    for (const Blueprint::ValueUVE& entry : *items) {
+        const std::vector<Blueprint::ValueUVE>* pairs = nullptr;
+        if (!AsCollectionItemsUVE(entry, Blueprint::CollectionValueUVE::KindUVE::Map, pairs) ||
             pairs->size() != 8U) {
             return false;
         }
@@ -117,25 +117,25 @@ namespace {
     return true;
 }
 
-[[nodiscard]] UVScript::ValueUVE RoomInfoValueUVE(const LobbyRoomIdUVE id, const std::string& name,
+[[nodiscard]] Blueprint::ValueUVE RoomInfoValueUVE(const LobbyRoomIdUVE id, const std::string& name,
                                                  const std::uint32_t players,
                                                  const std::uint32_t maxPlayers) {
-    return UVScript::MakeMapValueUVE(
-        {UVScript::ValueUVE{std::string{"id"}}, UVScript::ValueUVE{static_cast<std::int64_t>(id)},
-         UVScript::ValueUVE{std::string{"name"}}, UVScript::ValueUVE{name},
-         UVScript::ValueUVE{std::string{"players"}},
-         UVScript::ValueUVE{static_cast<std::int64_t>(players)},
-         UVScript::ValueUVE{std::string{"max"}},
-         UVScript::ValueUVE{static_cast<std::int64_t>(maxPlayers)}});
+    return Blueprint::MakeMapValueUVE(
+        {Blueprint::ValueUVE{std::string{"id"}}, Blueprint::ValueUVE{static_cast<std::int64_t>(id)},
+         Blueprint::ValueUVE{std::string{"name"}}, Blueprint::ValueUVE{name},
+         Blueprint::ValueUVE{std::string{"players"}},
+         Blueprint::ValueUVE{static_cast<std::int64_t>(players)},
+         Blueprint::ValueUVE{std::string{"max"}},
+         Blueprint::ValueUVE{static_cast<std::int64_t>(maxPlayers)}});
 }
 
-[[nodiscard]] UVScript::ValueUVE RosterValueUVE(
+[[nodiscard]] Blueprint::ValueUVE RosterValueUVE(
     const std::map<LobbyClientIdUVE, std::string>& members) {
-    std::vector<UVScript::ValueUVE> names;
+    std::vector<Blueprint::ValueUVE> names;
     for (const auto& member : members) {
-        names.push_back(UVScript::ValueUVE{member.second});
+        names.push_back(Blueprint::ValueUVE{member.second});
     }
-    return UVScript::MakeListValueUVE(std::move(names));
+    return Blueprint::MakeListValueUVE(std::move(names));
 }
 
 } // namespace
@@ -195,23 +195,23 @@ void NetworkLobbyUVE::RegisterPeerHandlersUVE(NetworkRpcUVE& peer,
     static_cast<void>(peer.UnregisterMethodUVE(kLobbyLeaveMethodUVE));
     static_cast<void>(peer.UnregisterMethodUVE(kLobbyRosterMethodUVE));
     static_cast<void>(peer.RegisterMethodUVE(kLobbyListMethodUVE,
-                                             [this](std::span<const UVScript::ValueUVE> args) {
+                                             [this](std::span<const Blueprint::ValueUVE> args) {
                                                  return HandleListUVE(args);
                                              }));
     static_cast<void>(peer.RegisterMethodUVE(
-        kLobbyCreateMethodUVE, [this, id](std::span<const UVScript::ValueUVE> args) {
+        kLobbyCreateMethodUVE, [this, id](std::span<const Blueprint::ValueUVE> args) {
             return HandleCreateUVE(id, args);
         }));
     static_cast<void>(peer.RegisterMethodUVE(
-        kLobbyJoinMethodUVE, [this, id](std::span<const UVScript::ValueUVE> args) {
+        kLobbyJoinMethodUVE, [this, id](std::span<const Blueprint::ValueUVE> args) {
             return HandleJoinUVE(id, args);
         }));
     static_cast<void>(peer.RegisterMethodUVE(
-        kLobbyLeaveMethodUVE, [this, id](std::span<const UVScript::ValueUVE> args) {
+        kLobbyLeaveMethodUVE, [this, id](std::span<const Blueprint::ValueUVE> args) {
             return HandleLeaveUVE(id, args);
         }));
     static_cast<void>(peer.RegisterMethodUVE(kLobbyRosterMethodUVE,
-                                             [this](std::span<const UVScript::ValueUVE> args) {
+                                             [this](std::span<const Blueprint::ValueUVE> args) {
                                                  return HandleRosterUVE(args);
                                              }));
 }
@@ -254,21 +254,21 @@ LobbyRoomIdUVE NetworkLobbyUVE::ClientRoomUVE(const LobbyClientIdUVE id) const n
 }
 
 RpcOutcomeUVE NetworkLobbyUVE::HandleListUVE(
-    const std::span<const UVScript::ValueUVE> args) const {
+    const std::span<const Blueprint::ValueUVE> args) const {
     if (!args.empty()) {
         return RpcErrorUVE("lobby.list takes no arguments");
     }
-    std::vector<UVScript::ValueUVE> rooms;
+    std::vector<Blueprint::ValueUVE> rooms;
     for (const auto& [id, room] : m_rooms) {
         rooms.push_back(RoomInfoValueUVE(id, room.name,
                                          static_cast<std::uint32_t>(room.members.size()),
                                          room.maxPlayers));
     }
-    return RpcOkUVE(UVScript::MakeListValueUVE(std::move(rooms)));
+    return RpcOkUVE(Blueprint::MakeListValueUVE(std::move(rooms)));
 }
 
 RpcOutcomeUVE NetworkLobbyUVE::HandleCreateUVE(const LobbyClientIdUVE caller,
-                                               const std::span<const UVScript::ValueUVE> args) {
+                                               const std::span<const Blueprint::ValueUVE> args) {
     if (args.size() != 3U) {
         ++m_stats.createsRejected;
         return RpcErrorUVE("lobby.create takes (name, player, max)");
@@ -306,11 +306,11 @@ RpcOutcomeUVE NetworkLobbyUVE::HandleCreateUVE(const LobbyClientIdUVE caller,
     m_rooms.emplace(id, std::move(room));
     m_clientRoom[caller] = id;
     ++m_stats.roomsCreated;
-    return RpcOkUVE(UVScript::ValueUVE{static_cast<std::int64_t>(id)});
+    return RpcOkUVE(Blueprint::ValueUVE{static_cast<std::int64_t>(id)});
 }
 
 RpcOutcomeUVE NetworkLobbyUVE::HandleJoinUVE(const LobbyClientIdUVE caller,
-                                             const std::span<const UVScript::ValueUVE> args) {
+                                             const std::span<const Blueprint::ValueUVE> args) {
     if (args.size() != 2U) {
         ++m_stats.joinsRejected;
         return RpcErrorUVE("lobby.join takes (room id, player)");
@@ -374,7 +374,7 @@ RpcOutcomeUVE NetworkLobbyUVE::HandleJoinUVE(const LobbyClientIdUVE caller,
 }
 
 RpcOutcomeUVE NetworkLobbyUVE::HandleLeaveUVE(const LobbyClientIdUVE caller,
-                                              const std::span<const UVScript::ValueUVE> args) {
+                                              const std::span<const Blueprint::ValueUVE> args) {
     if (!args.empty()) {
         ++m_stats.leavesRejected;
         return RpcErrorUVE("lobby.leave takes no arguments");
@@ -383,11 +383,11 @@ RpcOutcomeUVE NetworkLobbyUVE::HandleLeaveUVE(const LobbyClientIdUVE caller,
         ++m_stats.leavesRejected;
         return RpcErrorUVE("not in a room");
     }
-    return RpcOkUVE(UVScript::ValueUVE{true});
+    return RpcOkUVE(Blueprint::ValueUVE{true});
 }
 
 RpcOutcomeUVE NetworkLobbyUVE::HandleRosterUVE(
-    const std::span<const UVScript::ValueUVE> args) const {
+    const std::span<const Blueprint::ValueUVE> args) const {
     if (args.size() != 1U || std::get_if<std::int64_t>(&args[0]) == nullptr) {
         return RpcErrorUVE("lobby.roster takes (room id)");
     }
@@ -429,7 +429,7 @@ void NetworkLobbyUVE::NotifyRoomUVE(const LobbyRoomIdUVE roomId,
     if (room == m_rooms.end()) {
         return;
     }
-    const UVScript::ValueUVE roster = RosterValueUVE(room->second.members);
+    const Blueprint::ValueUVE roster = RosterValueUVE(room->second.members);
     for (const auto& member : room->second.members) {
         if (member.first == exceptClient) {
             continue;
@@ -442,7 +442,7 @@ void NetworkLobbyUVE::NotifyRoomUVE(const LobbyRoomIdUVE roomId,
         // tolerated, not punished), and retention self-evicts past the cap.
         const RpcCallIdUVE call = peer->second.CallUVE(
             kLobbyRosterChangedMethodUVE,
-            {UVScript::ValueUVE{static_cast<std::int64_t>(roomId)}, roster},
+            {Blueprint::ValueUVE{static_cast<std::int64_t>(roomId)}, roster},
             [](RpcCallIdUVE, const RpcOutcomeUVE&) {});
         if (call == kInvalidRpcCallIdUVE) {
             ++m_stats.notificationsDropped;
@@ -456,7 +456,7 @@ NetworkLobbyClientUVE::NetworkLobbyClientUVE(NetworkSessionUVE&& session)
     : m_rpc(std::move(session)), m_state(std::make_shared<ClientStateUVE>()) {
     static_cast<void>(m_rpc.RegisterMethodUVE(
         kLobbyRosterChangedMethodUVE,
-        [state = m_state](std::span<const UVScript::ValueUVE> args) {
+        [state = m_state](std::span<const Blueprint::ValueUVE> args) {
             return HandleRosterChangedUVE(*state, args);
         }));
 }
@@ -497,8 +497,8 @@ void NetworkLobbyClientUVE::CreateRoomUVE(const std::string& roomName,
     }
     const RpcCallIdUVE call = m_rpc.CallUVE(
         kLobbyCreateMethodUVE,
-        {UVScript::ValueUVE{roomName}, UVScript::ValueUVE{playerName},
-         UVScript::ValueUVE{static_cast<std::int64_t>(maxPlayers)}},
+        {Blueprint::ValueUVE{roomName}, Blueprint::ValueUVE{playerName},
+         Blueprint::ValueUVE{static_cast<std::int64_t>(maxPlayers)}},
         [state = m_state, callback, playerName](const RpcCallIdUVE callId,
                                                 const RpcOutcomeUVE& outcome) {
             state->pending.erase(callId);
@@ -530,7 +530,7 @@ void NetworkLobbyClientUVE::JoinRoomUVE(const LobbyRoomIdUVE roomId,
     }
     const RpcCallIdUVE call = m_rpc.CallUVE(
         kLobbyJoinMethodUVE,
-        {UVScript::ValueUVE{static_cast<std::int64_t>(roomId)}, UVScript::ValueUVE{playerName}},
+        {Blueprint::ValueUVE{static_cast<std::int64_t>(roomId)}, Blueprint::ValueUVE{playerName}},
         [state = m_state, callback, roomId](const RpcCallIdUVE callId,
                                             const RpcOutcomeUVE& outcome) {
             state->pending.erase(callId);
@@ -589,7 +589,7 @@ void NetworkLobbyClientUVE::QueryRosterUVE(const LobbyRoomIdUVE roomId,
         return;
     }
     const RpcCallIdUVE call = m_rpc.CallUVE(
-        kLobbyRosterMethodUVE, {UVScript::ValueUVE{static_cast<std::int64_t>(roomId)}},
+        kLobbyRosterMethodUVE, {Blueprint::ValueUVE{static_cast<std::int64_t>(roomId)}},
         [state = m_state, callback](const RpcCallIdUVE callId,
                                     const RpcOutcomeUVE& outcome) {
             state->pending.erase(callId);
@@ -629,7 +629,7 @@ void NetworkLobbyClientUVE::UpdateUVE(const std::uint64_t nowMs) {
 }
 
 RpcOutcomeUVE NetworkLobbyClientUVE::HandleRosterChangedUVE(
-    ClientStateUVE& state, const std::span<const UVScript::ValueUVE> args) {
+    ClientStateUVE& state, const std::span<const Blueprint::ValueUVE> args) {
     if (args.size() != 2U) {
         return RpcErrorUVE("lobby.rosterChanged takes (room id, roster)");
     }
@@ -639,13 +639,13 @@ RpcOutcomeUVE NetworkLobbyClientUVE::HandleRosterChangedUVE(
         return RpcErrorUVE("lobby.rosterChanged takes (room id, roster)");
     }
     if (roomId != state.currentRoom) {
-        return RpcOkUVE(UVScript::ValueUVE{});
+        return RpcOkUVE(Blueprint::ValueUVE{});
     }
     state.cachedRoster = roster;
     if (state.handler != nullptr) {
         state.handler(roomId, roster);
     }
-    return RpcOkUVE(UVScript::ValueUVE{});
+    return RpcOkUVE(Blueprint::ValueUVE{});
 }
 
 } // namespace UVE::Network

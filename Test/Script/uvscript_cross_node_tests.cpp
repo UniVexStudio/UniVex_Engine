@@ -10,20 +10,20 @@
 #include "entity.h"
 #include "name_component.h"
 #include "visibility_component.h"
-#include "uvscript_object_host.h"
+#include "blueprint_object_host.h"
 #include "entity_manager.h"
 #include "event_system.h"
 #include "memory_manager.h"
-#include "uvscript_compiler.h"
-#include "uvscript_instance.h"
-#include "uvscript_value.h"
+#include "blueprint_compiler.h"
+#include "blueprint_instance.h"
+#include "blueprint_value.h"
 
 namespace UVE::Scene::Tests {
 namespace {
 
 struct ScriptSlotUVE final {
-    std::unique_ptr<Core::UVScriptObjectHostUVE> host;
-    std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
+    std::unique_ptr<Core::BlueprintObjectHostUVE> host;
+    std::unique_ptr<Blueprint::ScriptInstanceUVE> instance;
 };
 
 class UVScriptCrossNodeUVETest : public ::testing::Test {
@@ -39,30 +39,30 @@ protected:
         NameComponentUVE named;
         named.name = name;
         entityManager.AddComponentUVE<NameComponentUVE>(entity, named);
-        auto host = std::make_unique<Core::UVScriptObjectHostUVE>(
+        auto host = std::make_unique<Core::BlueprintObjectHostUVE>(
             entityManager, nullptr, entity, nullptr, nullptr,
-            [this](const EntityUVE other) -> UVScript::ScriptInstanceUVE* {
+            [this](const EntityUVE other) -> Blueprint::ScriptInstanceUVE* {
                 const auto it = scripts.find(other);
                 return it == scripts.end() ? nullptr : it->second.instance.get();
             });
-        const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(source, *host);
+        const Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(source, *host);
         lastDiagnostics.clear();
-        for (const UVScript::DiagnosticUVE& diagnostic : compiled.diagnostics) {
+        for (const Blueprint::DiagnosticUVE& diagnostic : compiled.diagnostics) {
             lastDiagnostics.push_back(std::to_string(diagnostic.at.line) + ": " + diagnostic.message);
         }
         if (!compiled.IsSuccessUVE()) {
             return kInvalidEntityUVE;
         }
-        auto instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *host);
+        auto instance = std::make_unique<Blueprint::ScriptInstanceUVE>(compiled.program, *host);
         scripts.emplace(entity, ScriptSlotUVE{std::move(host), std::move(instance)});
         return entity;
     }
 
-    UVScript::ScriptInstanceUVE& InstanceUVE(const EntityUVE entity) {
+    Blueprint::ScriptInstanceUVE& InstanceUVE(const EntityUVE entity) {
         return *scripts.find(entity)->second.instance;
     }
 
-    Core::UVScriptObjectHostUVE& HostUVE(const EntityUVE entity) {
+    Core::BlueprintObjectHostUVE& HostUVE(const EntityUVE entity) {
         return *scripts.find(entity)->second.host;
     }
 
@@ -71,7 +71,7 @@ protected:
     }
 
     void RaiseTickUVE(const EntityUVE entity) {
-        const UVScript::ValueUVE args[] = {0.016};
+        const Blueprint::ValueUVE args[] = {0.016};
         ASSERT_TRUE(InstanceUVE(entity).RaiseEventUVE("tick", args))
             << InstanceUVE(entity).GetLastErrorUVE();
     }
@@ -104,9 +104,9 @@ TEST_F(UVScriptCrossNodeUVETest, HideAndShowReachObjectsWithoutScripts) {
     ASSERT_TRUE(entityManager.HasComponentUVE<VisibilityComponentUVE>(prop));
     EXPECT_FALSE(entityManager.GetComponentUVE<VisibilityComponentUVE>(prop).visible);
 
-    const UVScript::ValueUVE name[] = {UVScript::ValueUVE{std::string{"Prop"}}};
-    const UVScript::ObjectRefUVE ref =
-        std::get<UVScript::ObjectRefUVE>(HostUVE(caller).CallFunctionUVE("node", name));
+    const Blueprint::ValueUVE name[] = {Blueprint::ValueUVE{std::string{"Prop"}}};
+    const Blueprint::ObjectRefUVE ref =
+        std::get<Blueprint::ObjectRefUVE>(HostUVE(caller).CallFunctionUVE("node", name));
     EXPECT_NE(ref.id, 0U);
     HostUVE(caller).CallMethodUVE(ref, "show", {});
     EXPECT_TRUE(entityManager.GetComponentUVE<VisibilityComponentUVE>(prop).visible);
@@ -116,9 +116,9 @@ TEST_F(UVScriptCrossNodeUVETest, HideAndShowReachObjectsWithoutScripts) {
     NameComponentUVE plainly;
     plainly.name = "Plain";
     entityManager.AddComponentUVE<NameComponentUVE>(plain, plainly);
-    const UVScript::ValueUVE plainName[] = {UVScript::ValueUVE{std::string{"Plain"}}};
-    const UVScript::ObjectRefUVE plainRef =
-        std::get<UVScript::ObjectRefUVE>(HostUVE(caller).CallFunctionUVE("node", plainName));
+    const Blueprint::ValueUVE plainName[] = {Blueprint::ValueUVE{std::string{"Plain"}}};
+    const Blueprint::ObjectRefUVE plainRef =
+        std::get<Blueprint::ObjectRefUVE>(HostUVE(caller).CallFunctionUVE("node", plainName));
     HostUVE(caller).CallMethodUVE(plainRef, "show", {});
     EXPECT_FALSE(entityManager.HasComponentUVE<VisibilityComponentUVE>(plain));
 }
@@ -137,14 +137,14 @@ TEST_F(UVScriptCrossNodeUVETest, MissingTargetsAndMethodsFailClosed) {
     EXPECT_EQ(FieldUVE(target, "hp"), 100);
 
     // No object, and a handle whose entity is gone, are equally silent.
-    HostUVE(caller).CallMethodUVE(UVScript::ObjectRefUVE{}, "hide", {});
+    HostUVE(caller).CallMethodUVE(Blueprint::ObjectRefUVE{}, "hide", {});
     const EntityUVE doomed = entityManager.CreateEntityUVE();
     NameComponentUVE doomedName;
     doomedName.name = "Doomed";
     entityManager.AddComponentUVE<NameComponentUVE>(doomed, doomedName);
-    const UVScript::ValueUVE doomedArg[] = {UVScript::ValueUVE{std::string{"Doomed"}}};
-    const UVScript::ObjectRefUVE stale =
-        std::get<UVScript::ObjectRefUVE>(HostUVE(caller).CallFunctionUVE("node", doomedArg));
+    const Blueprint::ValueUVE doomedArg[] = {Blueprint::ValueUVE{std::string{"Doomed"}}};
+    const Blueprint::ObjectRefUVE stale =
+        std::get<Blueprint::ObjectRefUVE>(HostUVE(caller).CallFunctionUVE("node", doomedArg));
     entityManager.DestroyEntityUVE(doomed);
     const EntityUVE recycled = entityManager.CreateEntityUVE();
     HostUVE(caller).CallMethodUVE(stale, "hide", {});

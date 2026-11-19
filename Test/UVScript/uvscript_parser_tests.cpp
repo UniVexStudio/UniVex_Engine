@@ -4,9 +4,9 @@
 
 #include <gtest/gtest.h>
 
-#include "uvscript_parser.h"
+#include "blueprint_parser.h"
 
-namespace UVE::UVScript::Tests {
+namespace UVE::Blueprint::Tests {
 namespace {
 
 constexpr const char* kPlayerUVE = R"(entity Player : Character3D
@@ -156,4 +156,4 @@ TEST(UVScriptParserUVETest, JoinsLinesInsideBracketsAndReadsUnits) {
 }
 
 } // namespace
-} // namespace UVE::UVScript::Tests
+} // namespace UVE::Blueprint::Tests

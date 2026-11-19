@@ -12,14 +12,14 @@
 #include <gtest/gtest.h>
 
 #include "entity.h"
-#include "uvscript_object_host.h"
+#include "blueprint_object_host.h"
 #include "entity_manager.h"
 #include "event_system.h"
 #include "memory_manager.h"
 #include "network_rpc.h"
-#include "uvscript_compiler.h"
-#include "uvscript_instance.h"
-#include "uvscript_value.h"
+#include "blueprint_compiler.h"
+#include "blueprint_instance.h"
+#include "blueprint_value.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -57,13 +57,13 @@ struct ScriptRpcPairUVE final {
 }
 
 [[nodiscard]] Network::RpcMethodHandlerUVE AddHandlerUVE() {
-    return [](const std::span<const UVScript::ValueUVE> args) {
+    return [](const std::span<const Blueprint::ValueUVE> args) {
         if (args.size() < 2) {
             return Network::RpcErrorUVE("add requires 2 arguments");
         }
         const std::int64_t lhs = std::get<std::int64_t>(args[0]);
         const std::int64_t rhs = std::get<std::int64_t>(args[1]);
-        return Network::RpcOkUVE(UVScript::ValueUVE{lhs + rhs});
+        return Network::RpcOkUVE(Blueprint::ValueUVE{lhs + rhs});
     };
 }
 
@@ -100,8 +100,8 @@ fn release(id: int) -> bool:
 
 struct RpcSignatureUVE final {
     const char* name;
-    std::vector<UVScript::TypeUVE> params;
-    UVScript::TypeUVE result;
+    std::vector<Blueprint::TypeUVE> params;
+    Blueprint::TypeUVE result;
 };
 
 class UVScriptRpcBindingsUVETest : public ::testing::Test {
@@ -110,23 +110,23 @@ protected:
     Events::EventSystemUVE eventSystem;
     EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
 
-    [[nodiscard]] std::shared_ptr<const UVScript::ProgramUVE> CompileOrFailUVE(
-        const std::string& source, Core::UVScriptObjectHostUVE& host) {
-        const UVScript::CompileResultUVE result = UVScript::CompileUVScriptSourceUVE(source, host);
-        for (const UVScript::DiagnosticUVE& d : result.diagnostics) {
+    [[nodiscard]] std::shared_ptr<const Blueprint::ProgramUVE> CompileOrFailUVE(
+        const std::string& source, Core::BlueprintObjectHostUVE& host) {
+        const Blueprint::CompileResultUVE result = Blueprint::CompileUVScriptSourceUVE(source, host);
+        for (const Blueprint::DiagnosticUVE& d : result.diagnostics) {
             ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
         }
         return result.program;
     }
 
-    [[nodiscard]] std::int64_t CallIntUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::int64_t CallIntUVE(Blueprint::ScriptInstanceUVE& instance,
                                           const std::string& function) {
         return std::get<std::int64_t>(*instance.CallUVE(function));
     }
 
-    [[nodiscard]] std::int64_t CallIntUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::int64_t CallIntUVE(Blueprint::ScriptInstanceUVE& instance,
                                           const std::string& function, const std::int64_t id) {
-        const std::array<UVScript::ValueUVE, 1> args{UVScript::ValueUVE{id}};
+        const std::array<Blueprint::ValueUVE, 1> args{Blueprint::ValueUVE{id}};
         return std::get<std::int64_t>(*instance.CallUVE(function, args));
     }
 };
@@ -134,59 +134,59 @@ protected:
 TEST_F(UVScriptRpcBindingsUVETest, Host_DescribesRpcSurfaceUngated) {
     // Ungated means ungated: a bare entity with no peer at all still describes every name,
     // and every call through them fails closed at run time instead.
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
     const RpcSignatureUVE cases[] = {
-        {"rpc.begin", {UVScript::TypeUVE::StrUVE()}, UVScript::TypeUVE::IntUVE()},
+        {"rpc.begin", {Blueprint::TypeUVE::StrUVE()}, Blueprint::TypeUVE::IntUVE()},
         {"rpc.push_bool",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::BoolUVE()},
-         UVScript::TypeUVE::BoolUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::BoolUVE()},
+         Blueprint::TypeUVE::BoolUVE()},
         {"rpc.push_int",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::BoolUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::BoolUVE()},
         {"rpc.push_float",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::FloatUVE()},
-         UVScript::TypeUVE::BoolUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::FloatUVE()},
+         Blueprint::TypeUVE::BoolUVE()},
         {"rpc.push_str",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::StrUVE()},
-         UVScript::TypeUVE::BoolUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::StrUVE()},
+         Blueprint::TypeUVE::BoolUVE()},
         {"rpc.push_vec3",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::Vec3UVE()},
-         UVScript::TypeUVE::BoolUVE()},
-        {"rpc.send", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::IntUVE()},
-        {"rpc.abort", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::BoolUVE()},
-        {"rpc.cancel", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::BoolUVE()},
-        {"rpc.release", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::BoolUVE()},
-        {"rpc.result_kind", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::StrUVE()},
-        {"rpc.error", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::StrUVE()},
-        {"rpc.result_bool", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::BoolUVE()},
-        {"rpc.result_int", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::IntUVE()},
-        {"rpc.result_float", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::FloatUVE()},
-        {"rpc.result_str", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::StrUVE()},
-        {"rpc.result_vec3", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::Vec3UVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::Vec3UVE()},
+         Blueprint::TypeUVE::BoolUVE()},
+        {"rpc.send", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::IntUVE()},
+        {"rpc.abort", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::BoolUVE()},
+        {"rpc.cancel", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::BoolUVE()},
+        {"rpc.release", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::BoolUVE()},
+        {"rpc.result_kind", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::StrUVE()},
+        {"rpc.error", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::StrUVE()},
+        {"rpc.result_bool", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::BoolUVE()},
+        {"rpc.result_int", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::IntUVE()},
+        {"rpc.result_float", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::FloatUVE()},
+        {"rpc.result_str", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::StrUVE()},
+        {"rpc.result_vec3", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::Vec3UVE()},
     };
     for (const RpcSignatureUVE& expected : cases) {
-        const std::optional<UVScript::HostFunctionUVE> described =
+        const std::optional<Blueprint::HostFunctionUVE> described =
             host.DescribeFunctionUVE(expected.name);
         ASSERT_TRUE(described.has_value()) << expected.name;
         EXPECT_EQ(described->params, expected.params) << expected.name;
         EXPECT_EQ(described->result, expected.result) << expected.name;
     }
 
-    const std::optional<std::vector<UVScript::TypeUVE>> event =
+    const std::optional<std::vector<Blueprint::TypeUVE>> event =
         host.DescribeEventUVE("rpc_response");
     ASSERT_TRUE(event.has_value());
-    EXPECT_EQ(*event, (std::vector<UVScript::TypeUVE>{UVScript::TypeUVE::IntUVE(),
-                                                      UVScript::TypeUVE::BoolUVE()}));
+    EXPECT_EQ(*event, (std::vector<Blueprint::TypeUVE>{Blueprint::TypeUVE::IntUVE(),
+                                                      Blueprint::TypeUVE::BoolUVE()}));
 }
 
 TEST_F(UVScriptRpcBindingsUVETest, Host_FailsClosedWithoutPeer) {
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
-    const std::array<UVScript::ValueUVE, 1> begin{UVScript::ValueUVE{std::string{"add"}}};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
+    const std::array<Blueprint::ValueUVE, 1> begin{Blueprint::ValueUVE{std::string{"add"}}};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("rpc.begin", begin)), 0);
-    const std::array<UVScript::ValueUVE, 2> push{UVScript::ValueUVE{std::int64_t{1}},
-                                                 UVScript::ValueUVE{std::int64_t{2}}};
+    const std::array<Blueprint::ValueUVE, 2> push{Blueprint::ValueUVE{std::int64_t{1}},
+                                                 Blueprint::ValueUVE{std::int64_t{2}}};
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("rpc.push_int", push)));
-    const std::array<UVScript::ValueUVE, 1> id{UVScript::ValueUVE{std::int64_t{1}}};
+    const std::array<Blueprint::ValueUVE, 1> id{Blueprint::ValueUVE{std::int64_t{1}}};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("rpc.send", id)), 0);
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("rpc.abort", id)));
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("rpc.cancel", id)));
@@ -196,8 +196,8 @@ TEST_F(UVScriptRpcBindingsUVETest, Host_FailsClosedWithoutPeer) {
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("rpc.result_int", id)), 0);
     EXPECT_EQ(std::get<double>(host.CallFunctionUVE("rpc.result_float", id)), 0.0);
     EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("rpc.result_str", id)), "");
-    EXPECT_EQ(std::get<UVScript::Vec3ValueUVE>(host.CallFunctionUVE("rpc.result_vec3", id)),
-              UVScript::Vec3ValueUVE{});
+    EXPECT_EQ(std::get<Blueprint::Vec3ValueUVE>(host.CallFunctionUVE("rpc.result_vec3", id)),
+              Blueprint::Vec3ValueUVE{});
     EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("rpc.error", id)), "");
 }
 
@@ -209,26 +209,26 @@ TEST_F(UVScriptRpcBindingsUVETest, Script_SendsCallAndReadsResult) {
     // The game loop in miniature: the sink records the completion and raises the event on
     // the instance, exactly as a running game would from its own response sink.
     std::vector<std::pair<std::uint32_t, bool>> responses;
-    UVScript::ScriptInstanceUVE* live = nullptr;
+    Blueprint::ScriptInstanceUVE* live = nullptr;
     Core::RpcResponseSinkUVE sink = [&](const std::uint32_t id, const bool ok) {
         responses.emplace_back(id, ok);
         if (live != nullptr) {
-            const std::array<UVScript::ValueUVE, 2> args{UVScript::ValueUVE{static_cast<std::int64_t>(id)},
-                                                         UVScript::ValueUVE{ok}};
+            const std::array<Blueprint::ValueUVE, 2> args{Blueprint::ValueUVE{static_cast<std::int64_t>(id)},
+                                                         Blueprint::ValueUVE{ok}};
             static_cast<void>(live->RaiseEventUVE("rpc_response", args));
         }
     };
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      &pair.client,
                                      std::move(sink)};
     const auto program = CompileOrFailUVE(kRpcScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
     live = &instance;
 
     const std::int64_t call = CallIntUVE(instance, "send");
@@ -241,13 +241,13 @@ TEST_F(UVScriptRpcBindingsUVETest, Script_SendsCallAndReadsResult) {
     EXPECT_TRUE(responses[0].second);
     EXPECT_EQ(CallIntUVE(instance, "answer", call), 42);
 
-    const std::array<UVScript::ValueUVE, 1> kindArgs{UVScript::ValueUVE{call}};
+    const std::array<Blueprint::ValueUVE, 1> kindArgs{Blueprint::ValueUVE{call}};
     EXPECT_EQ(std::get<std::string>(*instance.CallUVE("kind", kindArgs)), "int");
 
     // The handler from the shared script ran on the sink's raise (a print, so the log owns
     // the proof); raising again directly still finds it.
-    const std::array<UVScript::ValueUVE, 2> eventArgs{UVScript::ValueUVE{call},
-                                                      UVScript::ValueUVE{true}};
+    const std::array<Blueprint::ValueUVE, 2> eventArgs{Blueprint::ValueUVE{call},
+                                                      Blueprint::ValueUVE{true}};
     EXPECT_TRUE(instance.RaiseEventUVE("rpc_response", eventArgs));
 }
 
@@ -257,23 +257,23 @@ TEST_F(UVScriptRpcBindingsUVETest, Script_SeesErrorsPendingAndCancel) {
     ASSERT_TRUE(pair.EstablishUVE(1000U));
 
     std::vector<std::pair<std::uint32_t, bool>> responses;
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      &pair.client,
                                      [&](const std::uint32_t id, const bool ok) {
                                          responses.emplace_back(id, ok);
                                      }};
     const auto program = CompileOrFailUVE(kRpcScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     const std::int64_t bad = CallIntUVE(instance, "send_bad");
     EXPECT_NE(bad, 0);
-    const std::array<UVScript::ValueUVE, 1> badArgs{UVScript::ValueUVE{bad}};
+    const std::array<Blueprint::ValueUVE, 1> badArgs{Blueprint::ValueUVE{bad}};
     EXPECT_EQ(std::get<std::string>(*instance.CallUVE("kind", badArgs)), "pending");
     pair.UpdateBothUVE(1000U);
     pair.UpdateBothUVE(1000U);
@@ -291,7 +291,7 @@ TEST_F(UVScriptRpcBindingsUVETest, Script_SeesErrorsPendingAndCancel) {
     // A cancelled call never completes: no sink fire, no retained outcome, and the late
     // response lands as stale instead of resurrecting it.
     const std::int64_t doomed = CallIntUVE(instance, "send_bad");
-    const std::array<UVScript::ValueUVE, 1> doomedArgs{UVScript::ValueUVE{doomed}};
+    const std::array<Blueprint::ValueUVE, 1> doomedArgs{Blueprint::ValueUVE{doomed}};
     EXPECT_TRUE(std::get<bool>(*instance.CallUVE("cancel", doomedArgs)));
     EXPECT_EQ(std::get<std::string>(*instance.CallUVE("kind", doomedArgs)), "none");
     pair.UpdateBothUVE(1000U);
@@ -310,30 +310,30 @@ TEST_F(UVScriptRpcBindingsUVETest, Host_CancelsPendingCallsOnDestruction) {
     std::vector<std::pair<std::uint32_t, bool>> responses;
     std::int64_t call = 0;
     {
-        Core::UVScriptObjectHostUVE host{entityManager,
+        Core::BlueprintObjectHostUVE host{entityManager,
                                          nullptr,
                                          entityManager.CreateEntityUVE(),
                                          nullptr,
                                          nullptr,
-                                         Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                         Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                          &pair.client,
                                          [&](const std::uint32_t id, const bool ok) {
                                              responses.emplace_back(id, ok);
                                          }};
-        const std::array<UVScript::ValueUVE, 1> begin{UVScript::ValueUVE{std::string{"add"}}};
+        const std::array<Blueprint::ValueUVE, 1> begin{Blueprint::ValueUVE{std::string{"add"}}};
         const std::int64_t staged =
             std::get<std::int64_t>(host.CallFunctionUVE("rpc.begin", begin));
         ASSERT_NE(staged, 0);
-        const std::array<UVScript::ValueUVE, 2> push1{UVScript::ValueUVE{staged},
-                                                     UVScript::ValueUVE{std::int64_t{1}}};
+        const std::array<Blueprint::ValueUVE, 2> push1{Blueprint::ValueUVE{staged},
+                                                     Blueprint::ValueUVE{std::int64_t{1}}};
         ASSERT_TRUE(std::get<bool>(host.CallFunctionUVE("rpc.push_int", push1)));
-        const std::array<UVScript::ValueUVE, 2> push2{UVScript::ValueUVE{staged},
-                                                     UVScript::ValueUVE{std::int64_t{2}}};
+        const std::array<Blueprint::ValueUVE, 2> push2{Blueprint::ValueUVE{staged},
+                                                     Blueprint::ValueUVE{std::int64_t{2}}};
         ASSERT_TRUE(std::get<bool>(host.CallFunctionUVE("rpc.push_int", push2)));
-        const std::array<UVScript::ValueUVE, 1> send{UVScript::ValueUVE{staged}};
+        const std::array<Blueprint::ValueUVE, 1> send{Blueprint::ValueUVE{staged}};
         call = std::get<std::int64_t>(host.CallFunctionUVE("rpc.send", send));
         ASSERT_NE(call, 0);
-        const std::array<UVScript::ValueUVE, 1> kind{UVScript::ValueUVE{call}};
+        const std::array<Blueprint::ValueUVE, 1> kind{Blueprint::ValueUVE{call}};
         EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("rpc.result_kind", kind)), "pending");
     }
 

@@ -9,14 +9,14 @@
 #include <gtest/gtest.h>
 
 #include "entity.h"
-#include "uvscript_object_host.h"
+#include "blueprint_object_host.h"
 #include "entity_manager.h"
 #include "event_system.h"
 #include "memory_manager.h"
 #include "network_lobby.h"
-#include "uvscript_compiler.h"
-#include "uvscript_instance.h"
-#include "uvscript_value.h"
+#include "blueprint_compiler.h"
+#include "blueprint_instance.h"
+#include "blueprint_value.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -154,8 +154,8 @@ fn my_roster_name(index: int) -> str:
 
 struct LobbySignatureUVE final {
     const char* name;
-    std::vector<UVScript::TypeUVE> params;
-    UVScript::TypeUVE result;
+    std::vector<Blueprint::TypeUVE> params;
+    Blueprint::TypeUVE result;
 };
 
 class UVScriptLobbyBindingsUVETest : public ::testing::Test {
@@ -164,51 +164,51 @@ protected:
     Events::EventSystemUVE eventSystem;
     EntityManagerUVE entityManager{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
 
-    [[nodiscard]] std::shared_ptr<const UVScript::ProgramUVE> CompileOrFailUVE(
-        const std::string& source, Core::UVScriptObjectHostUVE& host) {
-        const UVScript::CompileResultUVE result = UVScript::CompileUVScriptSourceUVE(source, host);
-        for (const UVScript::DiagnosticUVE& d : result.diagnostics) {
+    [[nodiscard]] std::shared_ptr<const Blueprint::ProgramUVE> CompileOrFailUVE(
+        const std::string& source, Core::BlueprintObjectHostUVE& host) {
+        const Blueprint::CompileResultUVE result = Blueprint::CompileUVScriptSourceUVE(source, host);
+        for (const Blueprint::DiagnosticUVE& d : result.diagnostics) {
             ADD_FAILURE() << d.at.line << ":" << d.at.column << " " << d.message;
         }
         return result.program;
     }
 
-    [[nodiscard]] std::int64_t CallIntUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::int64_t CallIntUVE(Blueprint::ScriptInstanceUVE& instance,
                                           const std::string& function) {
         return std::get<std::int64_t>(*instance.CallUVE(function));
     }
 
-    [[nodiscard]] std::int64_t CallIntUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::int64_t CallIntUVE(Blueprint::ScriptInstanceUVE& instance,
                                           const std::string& function, const std::int64_t id) {
-        const std::array<UVScript::ValueUVE, 1> args{UVScript::ValueUVE{id}};
+        const std::array<Blueprint::ValueUVE, 1> args{Blueprint::ValueUVE{id}};
         return std::get<std::int64_t>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] std::int64_t CallInt2UVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::int64_t CallInt2UVE(Blueprint::ScriptInstanceUVE& instance,
                                            const std::string& function, const std::int64_t first,
                                            const std::int64_t second) {
-        const std::array<UVScript::ValueUVE, 2> args{UVScript::ValueUVE{first},
-                                                     UVScript::ValueUVE{second}};
+        const std::array<Blueprint::ValueUVE, 2> args{Blueprint::ValueUVE{first},
+                                                     Blueprint::ValueUVE{second}};
         return std::get<std::int64_t>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] std::string CallStrUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::string CallStrUVE(Blueprint::ScriptInstanceUVE& instance,
                                          const std::string& function, const std::int64_t id) {
-        const std::array<UVScript::ValueUVE, 1> args{UVScript::ValueUVE{id}};
+        const std::array<Blueprint::ValueUVE, 1> args{Blueprint::ValueUVE{id}};
         return std::get<std::string>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] std::string CallStr2UVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] std::string CallStr2UVE(Blueprint::ScriptInstanceUVE& instance,
                                           const std::string& function, const std::int64_t first,
                                           const std::int64_t second) {
-        const std::array<UVScript::ValueUVE, 2> args{UVScript::ValueUVE{first},
-                                                     UVScript::ValueUVE{second}};
+        const std::array<Blueprint::ValueUVE, 2> args{Blueprint::ValueUVE{first},
+                                                     Blueprint::ValueUVE{second}};
         return std::get<std::string>(*instance.CallUVE(function, args));
     }
 
-    [[nodiscard]] bool CallBoolUVE(UVScript::ScriptInstanceUVE& instance,
+    [[nodiscard]] bool CallBoolUVE(Blueprint::ScriptInstanceUVE& instance,
                                    const std::string& function, const std::int64_t id) {
-        const std::array<UVScript::ValueUVE, 1> args{UVScript::ValueUVE{id}};
+        const std::array<Blueprint::ValueUVE, 1> args{Blueprint::ValueUVE{id}};
         return std::get<bool>(*instance.CallUVE(function, args));
     }
 };
@@ -216,86 +216,86 @@ protected:
 TEST_F(UVScriptLobbyBindingsUVETest, Host_DescribesLobbySurfaceUngated) {
     // Ungated means ungated: a bare entity with no peer at all still describes every name,
     // and every call through them fails closed at run time instead.
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
     const LobbySignatureUVE cases[] = {
-        {"lobby.list", {}, UVScript::TypeUVE::IntUVE()},
+        {"lobby.list", {}, Blueprint::TypeUVE::IntUVE()},
         {"lobby.create",
-         {UVScript::TypeUVE::StrUVE(), UVScript::TypeUVE::StrUVE(),
-          UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::IntUVE()},
+         {Blueprint::TypeUVE::StrUVE(), Blueprint::TypeUVE::StrUVE(),
+          Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::IntUVE()},
         {"lobby.join",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::StrUVE()},
-         UVScript::TypeUVE::IntUVE()},
-        {"lobby.leave", {}, UVScript::TypeUVE::IntUVE()},
-        {"lobby.roster", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::IntUVE()},
-        {"lobby.result_kind", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::StrUVE()},
-        {"lobby.error", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::StrUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::StrUVE()},
+         Blueprint::TypeUVE::IntUVE()},
+        {"lobby.leave", {}, Blueprint::TypeUVE::IntUVE()},
+        {"lobby.roster", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::IntUVE()},
+        {"lobby.result_kind", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::StrUVE()},
+        {"lobby.error", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::StrUVE()},
         {"lobby.result_room_count",
-         {UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::IntUVE()},
+         {Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::IntUVE()},
         {"lobby.result_room_id",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::IntUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::IntUVE()},
         {"lobby.result_room_name",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::StrUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::StrUVE()},
         {"lobby.result_room_players",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::IntUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::IntUVE()},
         {"lobby.result_room_max",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::IntUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::IntUVE()},
         {"lobby.result_created_room",
-         {UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::IntUVE()},
+         {Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::IntUVE()},
         {"lobby.result_roster_count",
-         {UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::IntUVE()},
+         {Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::IntUVE()},
         {"lobby.result_roster_name",
-         {UVScript::TypeUVE::IntUVE(), UVScript::TypeUVE::IntUVE()},
-         UVScript::TypeUVE::StrUVE()},
-        {"lobby.result_left", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::BoolUVE()},
-        {"lobby.release", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::BoolUVE()},
-        {"lobby.cancel_all", {}, UVScript::TypeUVE::IntUVE()},
-        {"lobby.room", {}, UVScript::TypeUVE::IntUVE()},
-        {"lobby.roster_count", {}, UVScript::TypeUVE::IntUVE()},
-        {"lobby.roster_name", {UVScript::TypeUVE::IntUVE()}, UVScript::TypeUVE::StrUVE()},
+         {Blueprint::TypeUVE::IntUVE(), Blueprint::TypeUVE::IntUVE()},
+         Blueprint::TypeUVE::StrUVE()},
+        {"lobby.result_left", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::BoolUVE()},
+        {"lobby.release", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::BoolUVE()},
+        {"lobby.cancel_all", {}, Blueprint::TypeUVE::IntUVE()},
+        {"lobby.room", {}, Blueprint::TypeUVE::IntUVE()},
+        {"lobby.roster_count", {}, Blueprint::TypeUVE::IntUVE()},
+        {"lobby.roster_name", {Blueprint::TypeUVE::IntUVE()}, Blueprint::TypeUVE::StrUVE()},
     };
     for (const LobbySignatureUVE& expected : cases) {
-        const std::optional<UVScript::HostFunctionUVE> described =
+        const std::optional<Blueprint::HostFunctionUVE> described =
             host.DescribeFunctionUVE(expected.name);
         ASSERT_TRUE(described.has_value()) << expected.name;
         EXPECT_EQ(described->params, expected.params) << expected.name;
         EXPECT_EQ(described->result, expected.result) << expected.name;
     }
 
-    const std::optional<std::vector<UVScript::TypeUVE>> result =
+    const std::optional<std::vector<Blueprint::TypeUVE>> result =
         host.DescribeEventUVE("lobby_result");
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(*result, (std::vector<UVScript::TypeUVE>{UVScript::TypeUVE::IntUVE(),
-                                                       UVScript::TypeUVE::BoolUVE()}));
-    const std::optional<std::vector<UVScript::TypeUVE>> roster =
+    EXPECT_EQ(*result, (std::vector<Blueprint::TypeUVE>{Blueprint::TypeUVE::IntUVE(),
+                                                       Blueprint::TypeUVE::BoolUVE()}));
+    const std::optional<std::vector<Blueprint::TypeUVE>> roster =
         host.DescribeEventUVE("lobby_roster");
     ASSERT_TRUE(roster.has_value());
-    EXPECT_EQ(*roster, (std::vector<UVScript::TypeUVE>{UVScript::TypeUVE::IntUVE()}));
+    EXPECT_EQ(*roster, (std::vector<Blueprint::TypeUVE>{Blueprint::TypeUVE::IntUVE()}));
 }
 
 TEST_F(UVScriptLobbyBindingsUVETest, Host_FailsClosedWithoutPeer) {
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
-    const std::span<const UVScript::ValueUVE> noArgs{};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, entityManager.CreateEntityUVE()};
+    const std::span<const Blueprint::ValueUVE> noArgs{};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.list", noArgs)), 0);
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.leave", noArgs)), 0);
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.cancel_all", noArgs)), 0);
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.room", noArgs)), 0);
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.roster_count", noArgs)), 0);
-    const std::array<UVScript::ValueUVE, 3> create{UVScript::ValueUVE{std::string{"r"}},
-                                                   UVScript::ValueUVE{std::string{"p"}},
-                                                   UVScript::ValueUVE{std::int64_t{4}}};
+    const std::array<Blueprint::ValueUVE, 3> create{Blueprint::ValueUVE{std::string{"r"}},
+                                                   Blueprint::ValueUVE{std::string{"p"}},
+                                                   Blueprint::ValueUVE{std::int64_t{4}}};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.create", create)), 0);
-    const std::array<UVScript::ValueUVE, 2> join{UVScript::ValueUVE{std::int64_t{1}},
-                                                 UVScript::ValueUVE{std::string{"p"}}};
+    const std::array<Blueprint::ValueUVE, 2> join{Blueprint::ValueUVE{std::int64_t{1}},
+                                                 Blueprint::ValueUVE{std::string{"p"}}};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.join", join)), 0);
-    const std::array<UVScript::ValueUVE, 1> id{UVScript::ValueUVE{std::int64_t{1}}};
+    const std::array<Blueprint::ValueUVE, 1> id{Blueprint::ValueUVE{std::int64_t{1}}};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.roster", id)), 0);
     EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("lobby.result_kind", id)), "none");
     EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("lobby.error", id)), "");
@@ -305,8 +305,8 @@ TEST_F(UVScriptLobbyBindingsUVETest, Host_FailsClosedWithoutPeer) {
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("lobby.result_left", id)));
     EXPECT_FALSE(std::get<bool>(host.CallFunctionUVE("lobby.release", id)));
     EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("lobby.roster_name", id)), "");
-    const std::array<UVScript::ValueUVE, 2> indexed{UVScript::ValueUVE{std::int64_t{1}},
-                                                    UVScript::ValueUVE{std::int64_t{0}}};
+    const std::array<Blueprint::ValueUVE, 2> indexed{Blueprint::ValueUVE{std::int64_t{1}},
+                                                    Blueprint::ValueUVE{std::int64_t{0}}};
     EXPECT_EQ(std::get<std::int64_t>(host.CallFunctionUVE("lobby.result_room_id", indexed)), 0);
     EXPECT_EQ(std::get<std::string>(host.CallFunctionUVE("lobby.result_room_name", indexed)),
               "");
@@ -326,29 +326,29 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_ListsCreatesAndReadsRooms) {
     // exactly as a running game would from its own response sinks.
     std::vector<std::pair<std::uint32_t, bool>> results;
     std::vector<std::uint32_t> pushes;
-    UVScript::ScriptInstanceUVE* live = nullptr;
+    Blueprint::ScriptInstanceUVE* live = nullptr;
     Core::LobbyResultSinkUVE resultSink = [&](const std::uint32_t id, const bool ok) {
         results.emplace_back(id, ok);
         if (live != nullptr) {
-            const std::array<UVScript::ValueUVE, 2> args{
-                UVScript::ValueUVE{static_cast<std::int64_t>(id)}, UVScript::ValueUVE{ok}};
+            const std::array<Blueprint::ValueUVE, 2> args{
+                Blueprint::ValueUVE{static_cast<std::int64_t>(id)}, Blueprint::ValueUVE{ok}};
             static_cast<void>(live->RaiseEventUVE("lobby_result", args));
         }
     };
     Core::LobbyRosterSinkUVE rosterSink = [&](const std::uint32_t room) {
         pushes.push_back(room);
         if (live != nullptr) {
-            const std::array<UVScript::ValueUVE, 1> args{
-                UVScript::ValueUVE{static_cast<std::int64_t>(room)}};
+            const std::array<Blueprint::ValueUVE, 1> args{
+                Blueprint::ValueUVE{static_cast<std::int64_t>(room)}};
             static_cast<void>(live->RaiseEventUVE("lobby_roster", args));
         }
     };
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      &harness.facades[0],
@@ -356,7 +356,7 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_ListsCreatesAndReadsRooms) {
                                      std::move(rosterSink)};
     const auto program = CompileOrFailUVE(kLobbyScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
     live = &instance;
 
     const std::int64_t listed = CallIntUVE(instance, "do_list");
@@ -369,9 +369,9 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_ListsCreatesAndReadsRooms) {
     EXPECT_EQ(CallStrUVE(instance, "kind", listed), "rooms");
     EXPECT_EQ(CallIntUVE(instance, "room_count", listed), 0);
 
-    const std::array<UVScript::ValueUVE, 3> create{UVScript::ValueUVE{std::string{"arena"}},
-                                                   UVScript::ValueUVE{std::string{"amy"}},
-                                                   UVScript::ValueUVE{std::int64_t{4}}};
+    const std::array<Blueprint::ValueUVE, 3> create{Blueprint::ValueUVE{std::string{"arena"}},
+                                                   Blueprint::ValueUVE{std::string{"amy"}},
+                                                   Blueprint::ValueUVE{std::int64_t{4}}};
     const std::int64_t made = std::get<std::int64_t>(*instance.CallUVE("do_create", create));
     EXPECT_NE(made, 0);
     harness.SettleUVE(1200U);
@@ -401,8 +401,8 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_ListsCreatesAndReadsRooms) {
 
     // The handler from the shared script ran on the sink's raise (a print, so the log owns
     // the proof); raising again directly still finds it.
-    const std::array<UVScript::ValueUVE, 2> eventArgs{UVScript::ValueUVE{relisted},
-                                                      UVScript::ValueUVE{true}};
+    const std::array<Blueprint::ValueUVE, 2> eventArgs{Blueprint::ValueUVE{relisted},
+                                                      Blueprint::ValueUVE{true}};
     EXPECT_TRUE(instance.RaiseEventUVE("lobby_result", eventArgs));
 
     EXPECT_TRUE(CallBoolUVE(instance, "release", listed));
@@ -427,12 +427,12 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_JoinsLeavesAndSeesErrors) {
     ASSERT_TRUE(made);
 
     std::vector<std::pair<std::uint32_t, bool>> results;
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      &harness.facades[0],
@@ -442,11 +442,11 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_JoinsLeavesAndSeesErrors) {
                                      Core::LobbyRosterSinkUVE{}};
     const auto program = CompileOrFailUVE(kLobbyScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     auto joinAs = [&](const std::int64_t room, const std::string& player) {
-        const std::array<UVScript::ValueUVE, 2> args{UVScript::ValueUVE{room},
-                                                     UVScript::ValueUVE{player}};
+        const std::array<Blueprint::ValueUVE, 2> args{Blueprint::ValueUVE{room},
+                                                     Blueprint::ValueUVE{player}};
         return std::get<std::int64_t>(*instance.CallUVE("do_join", args));
     };
     const std::int64_t joined = joinAs(1, "amy");
@@ -504,13 +504,13 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_ReceivesRosterPushes) {
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
     std::vector<std::uint32_t> pushes;
-    UVScript::ScriptInstanceUVE* live = nullptr;
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Blueprint::ScriptInstanceUVE* live = nullptr;
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      &harness.facades[0],
@@ -518,8 +518,8 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_ReceivesRosterPushes) {
                                      [&](const std::uint32_t room) {
                                          pushes.push_back(room);
                                          if (live != nullptr) {
-                                             const std::array<UVScript::ValueUVE, 1> args{
-                                                 UVScript::ValueUVE{
+                                             const std::array<Blueprint::ValueUVE, 1> args{
+                                                 Blueprint::ValueUVE{
                                                      static_cast<std::int64_t>(room)}};
                                              static_cast<void>(
                                                  live->RaiseEventUVE("lobby_roster", args));
@@ -527,12 +527,12 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_ReceivesRosterPushes) {
                                      }};
     const auto program = CompileOrFailUVE(kLobbyScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
     live = &instance;
 
-    const std::array<UVScript::ValueUVE, 3> create{UVScript::ValueUVE{std::string{"arena"}},
-                                                   UVScript::ValueUVE{std::string{"amy"}},
-                                                   UVScript::ValueUVE{std::int64_t{4}}};
+    const std::array<Blueprint::ValueUVE, 3> create{Blueprint::ValueUVE{std::string{"arena"}},
+                                                   Blueprint::ValueUVE{std::string{"amy"}},
+                                                   Blueprint::ValueUVE{std::int64_t{4}}};
     const std::int64_t made = std::get<std::int64_t>(*instance.CallUVE("do_create", create));
     EXPECT_NE(made, 0);
     harness.SettleUVE(1100U);
@@ -554,7 +554,7 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_ReceivesRosterPushes) {
     EXPECT_EQ(CallIntUVE(instance, "my_roster_count"), 2);
     EXPECT_EQ(CallStrUVE(instance, "my_roster_name", 1), "cat");
 
-    const std::array<UVScript::ValueUVE, 1> eventArgs{UVScript::ValueUVE{std::int64_t{1}}};
+    const std::array<Blueprint::ValueUVE, 1> eventArgs{Blueprint::ValueUVE{std::int64_t{1}}};
     EXPECT_TRUE(instance.RaiseEventUVE("lobby_roster", eventArgs));
 
     bool left = false;
@@ -580,12 +580,12 @@ TEST_F(UVScriptLobbyBindingsUVETest, Host_AbandonsAndUnhooksOnDestruction) {
     std::vector<std::pair<std::uint32_t, bool>> results;
     std::vector<std::uint32_t> pushes;
     {
-        Core::UVScriptObjectHostUVE host{entityManager,
+        Core::BlueprintObjectHostUVE host{entityManager,
                                          nullptr,
                                          entityManager.CreateEntityUVE(),
                                          nullptr,
                                          nullptr,
-                                         Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                         Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                          nullptr,
                                          Core::RpcResponseSinkUVE{},
                                          &harness.facades[0],
@@ -595,7 +595,7 @@ TEST_F(UVScriptLobbyBindingsUVETest, Host_AbandonsAndUnhooksOnDestruction) {
                                          [&](const std::uint32_t room) {
                                              pushes.push_back(room);
                                          }};
-        const std::span<const UVScript::ValueUVE> noArgs{};
+        const std::span<const Blueprint::ValueUVE> noArgs{};
         const std::int64_t listed =
             std::get<std::int64_t>(host.CallFunctionUVE("lobby.list", noArgs));
         EXPECT_NE(listed, 0);
@@ -666,12 +666,12 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_QueriesRostersWithoutJoining) {
     ASSERT_TRUE(joined);
 
     std::vector<std::uint32_t> pushes;
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      &harness.facades[0],
@@ -679,7 +679,7 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_QueriesRostersWithoutJoining) {
                                      [&](const std::uint32_t room) { pushes.push_back(room); }};
     const auto program = CompileOrFailUVE(kLobbyScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     const std::int64_t queried = CallIntUVE(instance, "do_roster", 1);
     EXPECT_NE(queried, 0);
@@ -704,12 +704,12 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_SendFailuresAnswerZero) {
 
     std::vector<std::pair<std::uint32_t, bool>> results;
     std::vector<std::uint32_t> pushes;
-    Core::UVScriptObjectHostUVE host{entityManager,
+    Core::BlueprintObjectHostUVE host{entityManager,
                                      nullptr,
                                      entityManager.CreateEntityUVE(),
                                      nullptr,
                                      nullptr,
-                                     Core::UVScriptObjectHostUVE::InstanceResolverUVE{},
+                                     Core::BlueprintObjectHostUVE::InstanceResolverUVE{},
                                      nullptr,
                                      Core::RpcResponseSinkUVE{},
                                      &harness.facades[0],
@@ -719,15 +719,15 @@ TEST_F(UVScriptLobbyBindingsUVETest, Script_SendFailuresAnswerZero) {
                                      [&](const std::uint32_t room) { pushes.push_back(room); }};
     const auto program = CompileOrFailUVE(kLobbyScriptUVE, host);
     ASSERT_NE(program, nullptr);
-    UVScript::ScriptInstanceUVE instance(program, host);
+    Blueprint::ScriptInstanceUVE instance(program, host);
 
     EXPECT_EQ(CallIntUVE(instance, "do_list"), 0);
-    const std::array<UVScript::ValueUVE, 3> create{UVScript::ValueUVE{std::string{"arena"}},
-                                                   UVScript::ValueUVE{std::string{"amy"}},
-                                                   UVScript::ValueUVE{std::int64_t{4}}};
+    const std::array<Blueprint::ValueUVE, 3> create{Blueprint::ValueUVE{std::string{"arena"}},
+                                                   Blueprint::ValueUVE{std::string{"amy"}},
+                                                   Blueprint::ValueUVE{std::int64_t{4}}};
     EXPECT_EQ(std::get<std::int64_t>(*instance.CallUVE("do_create", create)), 0);
-    const std::array<UVScript::ValueUVE, 2> join{UVScript::ValueUVE{std::int64_t{1}},
-                                                 UVScript::ValueUVE{std::string{"amy"}}};
+    const std::array<Blueprint::ValueUVE, 2> join{Blueprint::ValueUVE{std::int64_t{1}},
+                                                 Blueprint::ValueUVE{std::string{"amy"}}};
     EXPECT_EQ(std::get<std::int64_t>(*instance.CallUVE("do_join", join)), 0);
     EXPECT_EQ(CallIntUVE(instance, "do_leave"), 0);
     EXPECT_EQ(CallIntUVE(instance, "do_roster", 1), 0);

@@ -23,7 +23,7 @@
 #include "bone_attachment_3d.h"
 #include "core_variant.h"
 #include "object_metadata_component.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 #include "prism/Application.h"
 #include "prism/Containers.h"
@@ -1383,7 +1383,7 @@ void EditorDetailsUVE::AddScriptExportsUVE(const int category, const bool writab
     // One row per `export` field of the object's script, typed; a changed value is marked, and its
     // tooltip has the script's default (the reset button puts it back).
     for (const EditorUVE::ScriptExportRowUVE& row : m_editor.GetSelectedScriptExportsUVE()) {
-        const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(row.valueText, row.type);
+        const std::optional<Blueprint::ValueUVE> value = Blueprint::ParseValueTextUVE(row.valueText, row.type);
         if (!value.has_value()) {
             continue;
         }
@@ -1400,16 +1400,16 @@ void EditorDetailsUVE::AddScriptExportsUVE(const int category, const bool writab
             editor = number;
         } else if (const double* const real = std::get_if<double>(&*value)) {
             auto number = prism::make<prism::NumberField>(static_cast<float>(*real), 0.05F, 3);
-            number->onCommit = [set](const float v) { set(UVScript::FormatValueUVE(UVScript::ValueUVE{static_cast<double>(v)})); };
+            number->onCommit = [set](const float v) { set(Blueprint::FormatValueUVE(Blueprint::ValueUVE{static_cast<double>(v)})); };
             editor = number;
-        } else if (const auto* const vector = std::get_if<UVScript::Vec3ValueUVE>(&*value)) {
+        } else if (const auto* const vector = std::get_if<Blueprint::Vec3ValueUVE>(&*value)) {
             auto parts = std::make_shared<std::array<double, 3>>(std::array<double, 3>{vector->x, vector->y, vector->z});
             auto box = prism::hbox(4.0F);
             for (std::size_t axis = 0U; axis < 3U; ++axis) {
                 auto number = prism::make<prism::NumberField>(static_cast<float>((*parts)[axis]), 0.05F, 3);
                 number->onCommit = [set, parts, axis](const float v) {
                     (*parts)[axis] = static_cast<double>(v);
-                    set(UVScript::FormatValueUVE(UVScript::ValueUVE{UVScript::Vec3ValueUVE{(*parts)[0], (*parts)[1], (*parts)[2]}}));
+                    set(Blueprint::FormatValueUVE(Blueprint::ValueUVE{Blueprint::Vec3ValueUVE{(*parts)[0], (*parts)[1], (*parts)[2]}}));
                 };
                 box->add(number, prism::Slot{1.0F});
             }

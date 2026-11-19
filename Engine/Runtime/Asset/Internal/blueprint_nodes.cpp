@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "blueprint_nodes.h"
+#include "blueprint_networking_nodes.h"
 
 #include <algorithm>
 #include <cctype>
@@ -786,6 +787,39 @@ void AssignScopesUVE(std::vector<BlueprintNodeTypeUVE>& all) {
     set.inputs = {Exec(), Pin{"Value", T::Float, ""}};
     set.outputs = {Exec(), Pin{"Value", T::Float, ""}};
     all.push_back(set);
+    // ---- networking (delegates exclusively to Engine/Runtime/Networking/ host bindings)
+    {
+        const auto toPinType = [](const Blueprint::Nodes::Networking::NetworkingPinTypeUVE t) {
+            using NT = Blueprint::Nodes::Networking::NetworkingPinTypeUVE;
+            switch (t) {
+                case NT::Bool: return T::Bool;
+                case NT::Int: return T::Int;
+                case NT::Float: return T::Float;
+                case NT::String: return T::String;
+                case NT::Vector: return T::Vector;
+            }
+            return T::Int;
+        };
+        for (const auto& spec : Blueprint::Nodes::Networking::GetNetworkingBlueprintNodesUVE()) {
+            std::vector<Pin> inPins;
+            for (const auto& p : spec.inputs) {
+                inPins.push_back(Pin{std::string(p.name), toPinType(p.type), std::string(p.defaultText)});
+            }
+            if (spec.kind == Blueprint::Nodes::Networking::NetworkingNodeKindUVE::Action) {
+                action(std::string(spec.key), std::string(spec.title), std::string(spec.category),
+                       std::move(inPins), std::string(spec.expression), std::string(spec.keywords),
+                       std::string(spec.tooltip));
+            } else {
+                std::vector<Pin> outPins;
+                for (const auto& p : spec.outputs) {
+                    outPins.push_back(Pin{std::string(p.name), toPinType(p.type), std::string(p.defaultText)});
+                }
+                pure(std::string(spec.key), std::string(spec.title), std::string(spec.category),
+                     std::move(inPins), std::move(outPins), {std::string(spec.expression)},
+                     std::string(spec.keywords), std::string(spec.tooltip));
+            }
+        }
+    }
     AssignScopesUVE(all);
     return all;
 }

@@ -36,7 +36,7 @@
 
 #include "process_component.h"
 #include "transform_component.h"
-#include "uvscript_instance.h"
+#include "blueprint_instance.h"
 
 #include "Support/test_scratch.h"
 
@@ -1506,10 +1506,10 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     engine.TickFrameUVE();
     engine.TickFrameUVE();
     engine.TickFrameUVE();
-    UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(entity);
+    Blueprint::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(entity);
     ASSERT_NE(instance, nullptr);
-    EXPECT_EQ(instance->GetFieldUVE("readies"), UVScript::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(instance->GetFieldUVE("ticks"), UVScript::ValueUVE{std::int64_t{3}});
+    EXPECT_EQ(instance->GetFieldUVE("readies"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(instance->GetFieldUVE("ticks"), Blueprint::ValueUVE{std::int64_t{3}});
     EXPECT_EQ(engine.GetActiveScriptInstanceCountUVE(), 1U);
 
     // An unknown name does not compile: no instance, and it is not retried every frame.
@@ -1522,7 +1522,7 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "counter.uvs";
     engine.TickFrameUVE();
     ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("ticks"), UVScript::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("ticks"), Blueprint::ValueUVE{std::int64_t{1}});
 
     // Saving new text restarts the script within half a second - no path change needed. The same
     // goes for a script that failed: fixing the file is enough.
@@ -1531,7 +1531,7 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     engine.TickFrameUVE();
     engine.TickFrameUVE();
     ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("version"), UVScript::ValueUVE{std::int64_t{2}});
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("version"), Blueprint::ValueUVE{std::int64_t{2}});
 
     entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(entity).scriptAssetPath = "broken.uvs";
     engine.TickFrameUVE();
@@ -1541,7 +1541,7 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
     engine.TickFrameUVE();
     engine.TickFrameUVE();
     ASSERT_NE(engine.FindUVScriptInstanceUVE(entity), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("fixed"), UVScript::ValueUVE{true});
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(entity)->GetFieldUVE("fixed"), Blueprint::ValueUVE{true});
 
     entityManager.RemoveComponentUVE<Scene::ScriptComponentUVE>(entity);
     engine.TickFrameUVE();
@@ -1554,11 +1554,11 @@ TEST(EngineCoreUVETest, UVScriptEntity_CompilesOnceRaisesReadyThenTicksEveryFram
         exporter, Scene::ScriptComponentUVE{"exports.uvs", {{"speed", "7.5"}, {"gone", "1"}}});
     engine.TickFrameUVE();
     ASSERT_NE(engine.FindUVScriptInstanceUVE(exporter), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), UVScript::ValueUVE{7.5});
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), Blueprint::ValueUVE{7.5});
     entityManager.GetComponentUVE<Scene::ScriptComponentUVE>(exporter).exportValues["speed"] = "2.0";
     engine.TickFrameUVE();
     ASSERT_NE(engine.FindUVScriptInstanceUVE(exporter), nullptr);
-    EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), UVScript::ValueUVE{2.0});
+    EXPECT_EQ(engine.FindUVScriptInstanceUVE(exporter)->GetFieldUVE("seen"), Blueprint::ValueUVE{2.0});
 
     // Release builds: the running programs are written out as C++, one file per distinct program.
     {
@@ -2688,10 +2688,10 @@ TEST(EngineCoreUVETest, AnimationSequencer_SendsClipEventsToTheScriptOfTheObject
         engine.TickFrameUVE();
     }
     ASSERT_TRUE(entityManager.GetComponentUVE<Scene::AnimationSequencerComponentUVE>(player).finished);
-    UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
+    Blueprint::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
     ASSERT_NE(instance, nullptr);
-    EXPECT_EQ(instance->GetFieldUVE("steps"), UVScript::ValueUVE{std::int64_t{2}}) << "each footstep once";
-    EXPECT_EQ(instance->GetFieldUVE("last"), UVScript::ValueUVE{std::string{"step_right"}});
+    EXPECT_EQ(instance->GetFieldUVE("steps"), Blueprint::ValueUVE{std::int64_t{2}}) << "each footstep once";
+    EXPECT_EQ(instance->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{"step_right"}});
 
     std::filesystem::remove(clipPath);
     std::filesystem::remove_all(mountDirectory);
@@ -2764,15 +2764,15 @@ TEST(EngineCoreUVETest, MontageSequencer_PlaysAMontageFromTheScriptAndSendsItsNo
         engine.TickFrameUVE();
         const auto& pose = entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose;
         posedMidway = posedMidway || (!pose.empty() && pose[0].position.y > 1.05F);
-        UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
-        if (instance != nullptr && instance->GetFieldUVE("ended") == UVScript::ValueUVE{std::string{"Attack"}}) {
+        Blueprint::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
+        if (instance != nullptr && instance->GetFieldUVE("ended") == Blueprint::ValueUVE{std::string{"Attack"}}) {
             break;
         }
     }
-    UVScript::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
+    Blueprint::ScriptInstanceUVE* const instance = engine.FindUVScriptInstanceUVE(character);
     ASSERT_NE(instance, nullptr);
-    EXPECT_EQ(instance->GetFieldUVE("ended"), UVScript::ValueUVE{std::string{"Attack"}});
-    EXPECT_EQ(instance->GetFieldUVE("hits"), UVScript::ValueUVE{std::int64_t{1}}) << "the hit notify once";
+    EXPECT_EQ(instance->GetFieldUVE("ended"), Blueprint::ValueUVE{std::string{"Attack"}});
+    EXPECT_EQ(instance->GetFieldUVE("hits"), Blueprint::ValueUVE{std::int64_t{1}}) << "the hit notify once";
     EXPECT_TRUE(posedMidway) << "the swing posed the skeleton while it played";
     EXPECT_TRUE(entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(skeletonEntity).pose.empty())
         << "nothing else animates it, so it is back at rest";

@@ -98,8 +98,8 @@
 #include "scene_object_registry.h"
 #include "entity.h"
 #include "i_scene_serializer.h"
-#include "uvscript_ast.h"
-#include "uvscript_value.h"
+#include "blueprint_ast.h"
+#include "blueprint_value.h"
 
 namespace UVE::Asset {
 struct AnimationClipAssetUVE;
@@ -1124,7 +1124,7 @@ public:
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
         std::string objectName;
         std::string scriptPath;
-        UVScript::SourceLocationUVE at;
+        Blueprint::SourceLocationUVE at;
         std::string message;
         /// A Blueprint's problem: the node it is on (0 for none).
         std::uint32_t blueprintNode = 0U;
@@ -1715,7 +1715,7 @@ public:
         std::string text;
         std::string savedText;
         /// Every problem the compiler found in `text`, in source order; empty when it compiles.
-        std::vector<UVScript::DiagnosticUVE> diagnostics;
+        std::vector<Blueprint::DiagnosticUVE> diagnostics;
 
         [[nodiscard]] bool IsDirtyUVE() const noexcept { return text != savedText; }
     };
@@ -1745,7 +1745,7 @@ public:
     /// One `export` field of the selected object's `.uvs` script, as the Inspector shows it.
     struct ScriptExportRowUVE final {
         std::string name;
-        UVScript::TypeUVE type;
+        Blueprint::TypeUVE type;
         /// The script's own initial value, as UVScript text.
         std::string defaultText;
         /// What this object runs with: its stored value when it has a valid one, else the default.

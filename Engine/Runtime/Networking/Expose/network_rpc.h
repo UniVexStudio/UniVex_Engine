@@ -32,7 +32,7 @@
 
 #include "network_session.h"
 #include "network_value_codec.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace UVE::Network {
 
@@ -55,14 +55,14 @@ inline constexpr std::size_t kRpcMaximumRetainedResultsUVE = 64U;
 /// How a call ended. Exactly one side is set: a result on ok, a message otherwise.
 struct RpcOutcomeUVE final {
     bool ok = false;
-    UVScript::ValueUVE value;
+    Blueprint::ValueUVE value;
     std::string error;
 
     [[nodiscard]] bool operator==(const RpcOutcomeUVE&) const noexcept = default;
 };
 
 /// A result to hand a caller.
-[[nodiscard]] inline RpcOutcomeUVE RpcOkUVE(UVScript::ValueUVE value) {
+[[nodiscard]] inline RpcOutcomeUVE RpcOkUVE(Blueprint::ValueUVE value) {
     RpcOutcomeUVE outcome;
     outcome.ok = true;
     outcome.value = std::move(value);
@@ -83,7 +83,7 @@ using RpcResponseCallbackUVE = std::function<void(RpcCallIdUVE, const RpcOutcome
 /// Serves one method: takes the call's arguments, returns its outcome. Handlers must not
 /// throw, but the peer catches everything anyway - a throwing handler answers an error
 /// response instead of killing the pump.
-using RpcMethodHandlerUVE = std::function<RpcOutcomeUVE(std::span<const UVScript::ValueUVE>)>;
+using RpcMethodHandlerUVE = std::function<RpcOutcomeUVE(std::span<const Blueprint::ValueUVE>)>;
 
 /// The peer's own ledger: calls and responses each way, completions by cause, and every
 /// way a frame or outcome dies (malformed, stale, dropped, handler-refused, evicted).
@@ -135,7 +135,7 @@ public:
     /// session not established, empty method or callback, or unencodable arguments
     /// (object refs, over-deep nesting, or a frame past the session payload budget).
     [[nodiscard]] RpcCallIdUVE CallUVE(const std::string& method,
-                                       const std::vector<UVScript::ValueUVE>& args,
+                                       const std::vector<Blueprint::ValueUVE>& args,
                                        RpcResponseCallbackUVE callback,
                                        std::uint64_t timeoutMs = kDefaultRpcTimeoutMsUVE);
     /// Gives up on a pending call: the callback never fires, nothing is retained, and a

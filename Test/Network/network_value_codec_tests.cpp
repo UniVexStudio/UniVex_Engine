@@ -8,7 +8,7 @@
 #include <vector>
 #include <gtest/gtest.h>
 
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace {
 
@@ -16,13 +16,13 @@ using UVE::Network::AppendWireValueUVE;
 using UVE::Network::kWireValueMaxDepthUVE;
 using UVE::Network::ReadWireStringUVE;
 using UVE::Network::ReadWireValueUVE;
-using UVE::UVScript::FormatValueUVE;
-using UVE::UVScript::MakeListValueUVE;
-using UVE::UVScript::MakeMapValueUVE;
-using UVE::UVScript::MakeTupleValueUVE;
-using UVE::UVScript::ObjectRefUVE;
-using UVE::UVScript::ValueUVE;
-using UVE::UVScript::Vec3ValueUVE;
+using UVE::Blueprint::FormatValueUVE;
+using UVE::Blueprint::MakeListValueUVE;
+using UVE::Blueprint::MakeMapValueUVE;
+using UVE::Blueprint::MakeTupleValueUVE;
+using UVE::Blueprint::ObjectRefUVE;
+using UVE::Blueprint::ValueUVE;
+using UVE::Blueprint::Vec3ValueUVE;
 
 std::vector<std::byte> EncodeOrDie(const ValueUVE& value, std::size_t depth = 0U) {
     std::vector<std::byte> out;

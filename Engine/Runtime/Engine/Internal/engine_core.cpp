@@ -78,8 +78,8 @@
 #include "config_manager.h"
 #include "engine_project_settings.h"
 #include "shader_cache_path_policy.h"
-#include "uvscript_codegen.h"
-#include "uvscript_compiler.h"
+#include "blueprint_codegen.h"
+#include "blueprint_compiler.h"
 #include "engine_assert.h"
 #include "log_sink.h"
 #include "logger.h"
@@ -2060,7 +2060,7 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
                 return;
             }
             const std::string& source = *read;
-            auto host = std::make_unique<UVScriptObjectHostUVE>(
+            auto host = std::make_unique<BlueprintObjectHostUVE>(
                 *m_entityManager, m_inputSystem.get(), entity, m_audioSourceSystem.get(), m_audioSystem.get(),
                 [this](const Scene::EntityUVE other) { return FindUVScriptInstanceUVE(other); });
             host->SetWidgetFactoryUVE([this](const std::string& path) { return CreateWidgetUVE(path); });
@@ -2073,9 +2073,9 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
                     m_windowManager->SetCursorVisibleUVE(show);
                 }
             });
-            const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(source, *host);
+            const Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(source, *host);
             if (!compiled.IsSuccessUVE()) {
-                for (const UVScript::DiagnosticUVE& diagnostic : compiled.diagnostics) {
+                for (const Blueprint::DiagnosticUVE& diagnostic : compiled.diagnostics) {
                     UVE_ERROR("{}:{}:{}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.at.column,
                               diagnostic.message);
                 }
@@ -2087,16 +2087,16 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
             slot.path = component.scriptAssetPath;
             slot.source = source;
             slot.program = compiled.program;
-            slot.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *host);
+            slot.instance = std::make_unique<Blueprint::ScriptInstanceUVE>(compiled.program, *host);
             // The object's own values for the script's exports, before `ready` sees them. A value
             // for a field the script no longer exports, or of the wrong type, is skipped.
             slot.exportValues = component.exportValues;
-            for (const UVScript::FieldInfoUVE& field : UVScript::GetProgramFieldsUVE(*compiled.program)) {
+            for (const Blueprint::FieldInfoUVE& field : Blueprint::GetProgramFieldsUVE(*compiled.program)) {
                 const auto stored = component.exportValues.find(field.name);
-                if (field.kind != UVScript::FieldKindUVE::Export || stored == component.exportValues.end()) {
+                if (field.kind != Blueprint::FieldKindUVE::Export || stored == component.exportValues.end()) {
                     continue;
                 }
-                if (const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(stored->second, field.type)) {
+                if (const std::optional<Blueprint::ValueUVE> value = Blueprint::ParseValueTextUVE(stored->second, field.type)) {
                     static_cast<void>(slot.instance->SetFieldUVE(field.name, *value));
                 }
             }
@@ -2142,12 +2142,12 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
             !Scene::IsTickingUVE(ResolvedTickModeUVE(*m_sceneGraph, entity), simulationPaused)) {
             continue;
         }
-        UVScript::ScriptInstanceUVE& instance = *it->second.instance;
+        Blueprint::ScriptInstanceUVE& instance = *it->second.instance;
         if (!it->second.readyRaised) {
             it->second.readyRaised = true;
             static_cast<void>(instance.RaiseEventUVE("ready"));
         }
-        const UVScript::ValueUVE args[] = {dt};
+        const Blueprint::ValueUVE args[] = {dt};
         static_cast<void>(instance.RaiseEventUVE("tick", args));
         instance.AdvanceUVE(dt);
     }
@@ -2247,13 +2247,13 @@ namespace {
 
 void EngineCoreUVE::FillScriptServicesUVE() {
     ScriptServicesUVE& s = m_scriptServices;
-    const auto toEngine = [](const UVScript::Vec3ValueUVE& v) {
+    const auto toEngine = [](const Blueprint::Vec3ValueUVE& v) {
         return Math::Vector3UVE{static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
     };
     const auto toScript = [](const Math::Vector3UVE& v) {
-        return UVScript::Vec3ValueUVE{static_cast<double>(v.x), static_cast<double>(v.y), static_cast<double>(v.z)};
+        return Blueprint::Vec3ValueUVE{static_cast<double>(v.x), static_cast<double>(v.y), static_cast<double>(v.z)};
     };
-    s.trace = [this, toEngine, toScript](const UVScript::Vec3ValueUVE& from, const UVScript::Vec3ValueUVE& to, const double radius,
+    s.trace = [this, toEngine, toScript](const Blueprint::Vec3ValueUVE& from, const Blueprint::Vec3ValueUVE& to, const double radius,
                                          const Scene::EntityUVE ignore) {
         ScriptServicesUVE::TraceHitUVE out;
         const Math::Vector3UVE a = toEngine(from);
@@ -2292,7 +2292,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
         }
         return out;
     };
-    s.spawn = [this, toEngine](const std::string& path, const UVScript::Vec3ValueUVE& position, const UVScript::Vec3ValueUVE& rotation) {
+    s.spawn = [this, toEngine](const std::string& path, const Blueprint::Vec3ValueUVE& position, const Blueprint::Vec3ValueUVE& rotation) {
         if (m_sceneSerializer == nullptr || path.empty()) {
             return Scene::kInvalidEntityUVE;
         }
@@ -2372,7 +2372,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
             m_pendingScriptEvents.emplace_back(target, name, payload);
         }
     };
-    s.playSound = [this, toEngine](const std::string& path, const UVScript::Vec3ValueUVE& position, const double volume, const bool spatial) {
+    s.playSound = [this, toEngine](const std::string& path, const Blueprint::Vec3ValueUVE& position, const double volume, const bool spatial) {
         if (m_audioSourceSystem == nullptr || m_audioSystem == nullptr || m_sceneGraph == nullptr) {
             return false;
         }
@@ -2433,7 +2433,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
     s.cameraForward = [this, currentCamera, toScript] {
         const Scene::EntityUVE camera = currentCamera();
         if (camera == Scene::kInvalidEntityUVE || !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(camera)) {
-            return UVScript::Vec3ValueUVE{0.0, 0.0, -1.0};
+            return Blueprint::Vec3ValueUVE{0.0, 0.0, -1.0};
         }
         return toScript(Math::RotateVectorUVE(m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(camera).worldRotation,
                                               Math::Vector3UVE{0.0F, 0.0F, -1.0F}));
@@ -2441,7 +2441,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
     s.cameraLocation = [this, currentCamera, toScript] {
         const Scene::EntityUVE camera = currentCamera();
         if (camera == Scene::kInvalidEntityUVE || !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(camera)) {
-            return UVScript::Vec3ValueUVE{};
+            return Blueprint::Vec3ValueUVE{};
         }
         return toScript(m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(camera).worldPosition);
     };
@@ -2508,7 +2508,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
 void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationPaused) {
     m_scriptGameDelta = simulationPaused ? 0.0 : dt * static_cast<double>(m_simulationSpeedScale);
     m_scriptGameTime += m_scriptGameDelta;
-    const auto instanceOf = [this](const Scene::EntityUVE entity) -> UVScript::ScriptInstanceUVE* {
+    const auto instanceOf = [this](const Scene::EntityUVE entity) -> Blueprint::ScriptInstanceUVE* {
         const auto slot = m_uvScripts.find(entity);
         return slot != m_uvScripts.end() ? slot->second.instance.get() : nullptr;
     };
@@ -2526,8 +2526,8 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
                 continue;
             }
             for (const std::string& id : slot->second.host->AdvanceTimersUVE(m_scriptGameDelta)) {
-                if (UVScript::ScriptInstanceUVE* const instance = instanceOf(entity)) {
-                    const UVScript::ValueUVE args[] = {id};
+                if (Blueprint::ScriptInstanceUVE* const instance = instanceOf(entity)) {
+                    const Blueprint::ValueUVE args[] = {id};
                     static_cast<void>(instance->RaiseEventUVE("timer", args));
                 }
             }
@@ -2538,8 +2538,8 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
         std::vector<std::tuple<Scene::EntityUVE, std::string, std::string>> events;
         std::swap(events, m_pendingScriptEvents);
         for (const auto& [target, name, payload] : events) {
-            if (UVScript::ScriptInstanceUVE* const instance = instanceOf(target); instance != nullptr && m_entityManager->IsAliveUVE(target)) {
-                const UVScript::ValueUVE args[] = {name, payload};
+            if (Blueprint::ScriptInstanceUVE* const instance = instanceOf(target); instance != nullptr && m_entityManager->IsAliveUVE(target)) {
+                const Blueprint::ValueUVE args[] = {name, payload};
                 static_cast<void>(instance->RaiseEventUVE("custom_event", args));
             }
         }
@@ -2556,7 +2556,7 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
             for (const Scene::EntityUVE child : m_sceneGraph->GetChildrenUVE(*m_entityManager, root)) {
                 destroy(child);
             }
-            if (UVScript::ScriptInstanceUVE* const instance = instanceOf(root)) {
+            if (Blueprint::ScriptInstanceUVE* const instance = instanceOf(root)) {
                 static_cast<void>(instance->RaiseEventUVE("destroyed"));
             }
             // The script goes with its object, before the object: no handler outlives what it drives.
@@ -2648,7 +2648,7 @@ Scene::EntityUVE EngineCoreUVE::CreateWidgetUVE(const std::string& path) {
 void EngineCoreUVE::RaiseWidgetScriptEventsUVE() {
     // A widget that was used tells every scripted object above it (and itself): a Widget
     // Blueprint's graph sits on its root Canvas and hears each of its buttons by name.
-    const auto raise = [this](Scene::EntityUVE widget, const std::string_view event, const std::span<const UVScript::ValueUVE> args) {
+    const auto raise = [this](Scene::EntityUVE widget, const std::string_view event, const std::span<const Blueprint::ValueUVE> args) {
         for (int depth = 0; depth < 256 && m_entityManager->IsAliveUVE(widget); ++depth) {
             if (const auto slot = m_uvScripts.find(widget); slot != m_uvScripts.end() && slot->second.instance != nullptr) {
                 static_cast<void>(slot->second.instance->RaiseEventUVE(event, args));
@@ -2709,11 +2709,11 @@ void EngineCoreUVE::RaiseWidgetScriptEventsUVE() {
         }
     });
     for (const auto& [entity, event] : used) {
-        const UVScript::ValueUVE args[] = {nameOf(entity)};
+        const Blueprint::ValueUVE args[] = {nameOf(entity)};
         raise(entity, event, args);
     }
     for (const auto& [entity, text] : committed) {
-        const UVScript::ValueUVE args[] = {nameOf(entity), text};
+        const Blueprint::ValueUVE args[] = {nameOf(entity), text};
         raise(entity, "ui_committed", args);
     }
 }
@@ -2723,7 +2723,7 @@ std::optional<std::size_t> EngineCoreUVE::WriteNativeUVScriptsUVE(const std::fil
     std::filesystem::create_directories(directory, error);
     std::unordered_set<std::uint64_t> written;
     for (const auto& [entity, slot] : m_uvScripts) {
-        const std::uint64_t fingerprint = UVScript::GetProgramFingerprintUVE(*slot.program);
+        const std::uint64_t fingerprint = Blueprint::GetProgramFingerprintUVE(*slot.program);
         if (!written.insert(fingerprint).second) {
             continue;
         }
@@ -2732,7 +2732,7 @@ std::optional<std::size_t> EngineCoreUVE::WriteNativeUVScriptsUVE(const std::fil
         const std::filesystem::path file =
             directory / (std::filesystem::path{slot.path}.stem().string() + suffix + ".uvs.cpp");
         std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        out << UVScript::GenerateUVScriptNativeCppUVE(*slot.program, slot.path);
+        out << Blueprint::GenerateUVScriptNativeCppUVE(*slot.program, slot.path);
         if (!out) {
             UVE_ERROR("EngineCoreUVE: could not write native script \"{}\"", file.generic_string());
             return std::nullopt;
@@ -2741,7 +2741,7 @@ std::optional<std::size_t> EngineCoreUVE::WriteNativeUVScriptsUVE(const std::fil
     return written.size();
 }
 
-UVScript::ScriptInstanceUVE* EngineCoreUVE::FindUVScriptInstanceUVE(const Scene::EntityUVE entity) noexcept {
+Blueprint::ScriptInstanceUVE* EngineCoreUVE::FindUVScriptInstanceUVE(const Scene::EntityUVE entity) noexcept {
     const auto it = m_uvScripts.find(entity);
     return it == m_uvScripts.end() ? nullptr : it->second.instance.get();
 }
@@ -2941,7 +2941,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 continue;
             }
             for (const std::string& name : events) {
-                const UVScript::ValueUVE args[] = {UVScript::ValueUVE{name}};
+                const Blueprint::ValueUVE args[] = {Blueprint::ValueUVE{name}};
                 static_cast<void>(slot->second.instance->RaiseEventUVE("animation_event", args));
             }
         }
@@ -3005,7 +3005,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 if (listener == Scene::kInvalidEntityUVE || slot == m_uvScripts.end() || slot->second.instance == nullptr) {
                     continue;
                 }
-                const UVScript::ValueUVE args[] = {UVScript::ValueUVE{name}};
+                const Blueprint::ValueUVE args[] = {Blueprint::ValueUVE{name}};
                 static_cast<void>(slot->second.instance->RaiseEventUVE(event, args));
             }
         };
@@ -3541,7 +3541,7 @@ void EngineCoreUVE::RaiseContactScriptEventUVE(const Scene::EntityUVE first, con
         }
         const bool otherNamed = others[i] != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(others[i]) &&
                                 m_entityManager->HasComponentUVE<Scene::NameComponentUVE>(others[i]);
-        const UVScript::ValueUVE args[] = {UVScript::ValueUVE{
+        const Blueprint::ValueUVE args[] = {Blueprint::ValueUVE{
             otherNamed ? m_entityManager->GetComponentUVE<Scene::NameComponentUVE>(others[i]).name
                        : std::string{}}};
         static_cast<void>(slot->second.instance->RaiseEventUVE(event, args));
