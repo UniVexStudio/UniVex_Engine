@@ -80,20 +80,20 @@ TEST(NetworkMultiplexUVETest, Shared_ReplicationSnapshotsAndPropertiesFlow) {
         [&positionsB](const Math::Vector3UVE& position) { positionsB[7U] = position; }));
     positionsA[7U] = Math::Vector3UVE{1.0F, 2.0F, 3.0F};
     positionsB[7U] = Math::Vector3UVE{9.0F, 9.0F, 9.0F};
-    UVScript::ValueUVE applied{std::int64_t{0}};
+    Blueprint::ValueUVE applied{std::int64_t{0}};
     int applyCalls = 0;
     ASSERT_TRUE(replB.RegisterPropertyUVE(
-        7U, 3U, [&applied, &applyCalls](const UVScript::ValueUVE& value) {
+        7U, 3U, [&applied, &applyCalls](const Blueprint::ValueUVE& value) {
             applied = value;
             ++applyCalls;
         }));
-    ASSERT_TRUE(replA.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{83}}));
+    ASSERT_TRUE(replA.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{83}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
     replA.UpdateUVE(1100U);
     replB.UpdateUVE(1100U);
     EXPECT_EQ(positionsB[7U], (Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
-    EXPECT_EQ(applied, UVScript::ValueUVE{std::int64_t{83}});
+    EXPECT_EQ(applied, Blueprint::ValueUVE{std::int64_t{83}});
     EXPECT_EQ(applyCalls, 1);
     replA.UpdateUVE(1200U);
     replB.UpdateUVE(1200U);
@@ -109,16 +109,16 @@ TEST(NetworkMultiplexUVETest, Shared_RpcCallCompletesOnChannelZero) {
     NetworkRpcUVE rpcA(harness.sessionA, 0U);
     NetworkRpcUVE rpcB(harness.sessionB, 0U);
     ASSERT_TRUE(rpcB.RegisterMethodUVE(
-        "add", [](const std::span<const UVScript::ValueUVE> args) {
+        "add", [](const std::span<const Blueprint::ValueUVE> args) {
             const std::int64_t x = std::get<std::int64_t>(args[0]);
             const std::int64_t y = std::get<std::int64_t>(args[1]);
-            return RpcOkUVE(UVScript::ValueUVE{x + y});
+            return RpcOkUVE(Blueprint::ValueUVE{x + y});
         }));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
     std::map<RpcCallIdUVE, RpcOutcomeUVE> doneA;
     const RpcCallIdUVE callId = rpcA.CallUVE(
-        "add", {UVScript::ValueUVE{std::int64_t{20}}, UVScript::ValueUVE{std::int64_t{22}}},
+        "add", {Blueprint::ValueUVE{std::int64_t{20}}, Blueprint::ValueUVE{std::int64_t{22}}},
         [&doneA](const RpcCallIdUVE id, const RpcOutcomeUVE& outcome) {
             doneA.emplace(id, outcome);
         });
@@ -130,7 +130,7 @@ TEST(NetworkMultiplexUVETest, Shared_RpcCallCompletesOnChannelZero) {
 
     ASSERT_EQ(doneA.size(), 1U);
     EXPECT_TRUE(doneA[callId].ok);
-    EXPECT_EQ(doneA[callId].value, UVScript::ValueUVE{std::int64_t{42}});
+    EXPECT_EQ(doneA[callId].value, Blueprint::ValueUVE{std::int64_t{42}});
     EXPECT_EQ(rpcB.StatsUVE().callsReceived, 1U);
 }
 
@@ -189,20 +189,20 @@ TEST(NetworkMultiplexUVETest, Shared_AllThreeCoexistOnOneSession) {
         7U, [&positionsB]() { return positionsB[7U]; },
         [&positionsB](const Math::Vector3UVE& position) { positionsB[7U] = position; }));
     positionsA[7U] = Math::Vector3UVE{4.0F, 5.0F, 6.0F};
-    UVScript::ValueUVE applied{std::int64_t{0}};
+    Blueprint::ValueUVE applied{std::int64_t{0}};
     ASSERT_TRUE(replB.RegisterPropertyUVE(
-        7U, 9U, [&applied](const UVScript::ValueUVE& value) { applied = value; }));
-    ASSERT_TRUE(replA.SetPropertyUVE(7U, 9U, UVScript::ValueUVE{std::int64_t{7}}));
+        7U, 9U, [&applied](const Blueprint::ValueUVE& value) { applied = value; }));
+    ASSERT_TRUE(replA.SetPropertyUVE(7U, 9U, Blueprint::ValueUVE{std::int64_t{7}}));
     ASSERT_TRUE(rpcB.RegisterMethodUVE(
-        "add", [](const std::span<const UVScript::ValueUVE> args) {
-            return RpcOkUVE(UVScript::ValueUVE{std::get<std::int64_t>(args[0]) +
+        "add", [](const std::span<const Blueprint::ValueUVE> args) {
+            return RpcOkUVE(Blueprint::ValueUVE{std::get<std::int64_t>(args[0]) +
                                                std::get<std::int64_t>(args[1])});
         }));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
     std::map<RpcCallIdUVE, RpcOutcomeUVE> doneA;
     const RpcCallIdUVE callId = rpcA.CallUVE(
-        "add", {UVScript::ValueUVE{std::int64_t{1}}, UVScript::ValueUVE{std::int64_t{2}}},
+        "add", {Blueprint::ValueUVE{std::int64_t{1}}, Blueprint::ValueUVE{std::int64_t{2}}},
         [&doneA](const RpcCallIdUVE id, const RpcOutcomeUVE& outcome) {
             doneA.emplace(id, outcome);
         });
@@ -216,10 +216,10 @@ TEST(NetworkMultiplexUVETest, Shared_AllThreeCoexistOnOneSession) {
     }
 
     EXPECT_EQ(positionsB[7U], (Math::Vector3UVE{4.0F, 5.0F, 6.0F}));
-    EXPECT_EQ(applied, UVScript::ValueUVE{std::int64_t{7}});
+    EXPECT_EQ(applied, Blueprint::ValueUVE{std::int64_t{7}});
     ASSERT_EQ(doneA.size(), 1U);
     EXPECT_TRUE(doneA[callId].ok);
-    EXPECT_EQ(doneA[callId].value, UVScript::ValueUVE{std::int64_t{3}});
+    EXPECT_EQ(doneA[callId].value, Blueprint::ValueUVE{std::int64_t{3}});
     EXPECT_EQ(predClient.LastAckedTickUVE(), 2U);
     EXPECT_EQ(predServer.LastAppliedTickUVE(), 2U);
     EXPECT_EQ(replA.StatsUVE().messagesIgnoredMalformed, 0U);

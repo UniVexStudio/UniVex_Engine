@@ -13,12 +13,12 @@
 
 #include <gtest/gtest.h>
 
-#include "uvscript_codegen.h"
-#include "uvscript_compiler.h"
-#include "uvscript_host_description.h"
-#include "uvscript_instance.h"
+#include "blueprint_codegen.h"
+#include "blueprint_compiler.h"
+#include "blueprint_host_description.h"
+#include "blueprint_instance.h"
 
-namespace UVE::UVScript::Tests {
+namespace UVE::Blueprint::Tests {
 namespace {
 
 /// A Character3D-like object: a velocity, a read-only floor flag, input, and three events.
@@ -26,7 +26,7 @@ class FakeHostUVE final : public UVScriptHostUVE {
 public:
     std::optional<HostPropertyUVE> DescribePropertyUVE(const std::string_view name) const override {
         if (name == "velocity") return HostPropertyUVE{TypeUVE::Vec3UVE(), true};
-        // Mirrors UVScriptObjectHostUVE: "grounded" is the name, "is_on_floor" still reads.
+        // Mirrors BlueprintObjectHostUVE: "grounded" is the name, "is_on_floor" still reads.
         if (name == "grounded" || name == "is_on_floor") return HostPropertyUVE{TypeUVE::BoolUVE(), false};
         if (name == "health") return HostPropertyUVE{TypeUVE::IntUVE(), true};
         return std::nullopt;
@@ -561,4 +561,4 @@ TEST(UVScriptNativeUVETest, HostDescriptionsParseAndReportTheirMistakes) {
 }
 
 } // namespace
-} // namespace UVE::UVScript::Tests
+} // namespace UVE::Blueprint::Tests

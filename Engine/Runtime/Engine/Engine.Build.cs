@@ -34,7 +34,7 @@ public class EngineModule : ModuleRules
             "RHIVulkan",
             "RHINull",
             "RenderSystems",
-            "UVScript",
+            "Blueprint",
             "Networking",
             "VFX"
         });

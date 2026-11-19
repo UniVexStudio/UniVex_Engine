@@ -55,8 +55,8 @@
 #include "engine_state.h"
 #include "frame_stats.h"
 #include "dynamic_render_resolution.h"
-#include "uvscript_object_host.h"
-#include "uvscript_instance.h"
+#include "blueprint_object_host.h"
+#include "blueprint_instance.h"
 #include "engine_version.h"
 #include "i_logger.h"
 #include "i_event_system.h"
@@ -321,7 +321,7 @@ public:
 
     /// Test/diagnostic hook: the `.uvs` instance running on `entity`, or null when it has none
     /// (no script, not compiled yet, or compile failed).
-    [[nodiscard]] UVScript::ScriptInstanceUVE* FindUVScriptInstanceUVE(Scene::EntityUVE entity) noexcept;
+    [[nodiscard]] Blueprint::ScriptInstanceUVE* FindUVScriptInstanceUVE(Scene::EntityUVE entity) noexcept;
 
     /// Release builds: writes the C++ for every distinct `.uvs` program running right now into
     /// `directory` (`<script>_<fingerprint>.uvs.cpp`), compiled against each object's real host, so
@@ -1005,9 +1005,9 @@ private:
         std::string source;
         /// The object's export values it started with; changing them restarts the script.
         std::map<std::string, std::string> exportValues;
-        std::shared_ptr<const UVScript::ProgramUVE> program;
-        std::unique_ptr<UVScriptObjectHostUVE> host;
-        std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
+        std::shared_ptr<const Blueprint::ProgramUVE> program;
+        std::unique_ptr<BlueprintObjectHostUVE> host;
+        std::unique_ptr<Blueprint::ScriptInstanceUVE> instance;
         bool readyRaised = false;
     };
     std::unordered_map<Scene::EntityUVE, UVScriptSlotUVE> m_uvScripts;

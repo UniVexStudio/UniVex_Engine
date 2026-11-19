@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "binary_buffer.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace UVE::Network {
 namespace {
@@ -130,7 +130,7 @@ enum class InspectorValueTagUVE : std::uint8_t {
     return text;
 }
 
-[[nodiscard]] std::optional<UVScript::ValueUVE> ReadInspectorValueUVE(
+[[nodiscard]] std::optional<Blueprint::ValueUVE> ReadInspectorValueUVE(
     const std::vector<std::byte>& in, std::size_t& offset, const std::size_t depth) {
     if (offset >= in.size()) {
         return std::nullopt;
@@ -139,34 +139,34 @@ enum class InspectorValueTagUVE : std::uint8_t {
         static_cast<InspectorValueTagUVE>(std::to_integer<std::uint8_t>(in[offset++]));
     switch (tag) {
         case InspectorValueTagUVE::Nil:
-            return UVScript::ValueUVE{};
+            return Blueprint::ValueUVE{};
         case InspectorValueTagUVE::Bool: {
             if (offset >= in.size()) {
                 return std::nullopt;
             }
             const bool value = in[offset++] != static_cast<std::byte>(0x00);
-            return UVScript::ValueUVE{value};
+            return Blueprint::ValueUVE{value};
         }
         case InspectorValueTagUVE::Int: {
             std::uint64_t bits = 0U;
             if (!Utilities::ReadUint64LeFromBufferUVE(in, offset, bits)) {
                 return std::nullopt;
             }
-            return UVScript::ValueUVE{static_cast<std::int64_t>(bits)};
+            return Blueprint::ValueUVE{static_cast<std::int64_t>(bits)};
         }
         case InspectorValueTagUVE::Float: {
             std::uint64_t bits = 0U;
             if (!Utilities::ReadUint64LeFromBufferUVE(in, offset, bits)) {
                 return std::nullopt;
             }
-            return UVScript::ValueUVE{std::bit_cast<double>(bits)};
+            return Blueprint::ValueUVE{std::bit_cast<double>(bits)};
         }
         case InspectorValueTagUVE::Str: {
             std::optional<std::string> text = ReadInspectorStringUVE(in, offset);
             if (!text.has_value()) {
                 return std::nullopt;
             }
-            return UVScript::ValueUVE{std::move(*text)};
+            return Blueprint::ValueUVE{std::move(*text)};
         }
         case InspectorValueTagUVE::Vec3: {
             std::uint64_t x = 0U, y = 0U, z = 0U;
@@ -175,7 +175,7 @@ enum class InspectorValueTagUVE : std::uint8_t {
                 !Utilities::ReadUint64LeFromBufferUVE(in, offset, z)) {
                 return std::nullopt;
             }
-            return UVScript::ValueUVE{UVScript::Vec3ValueUVE{
+            return Blueprint::ValueUVE{Blueprint::Vec3ValueUVE{
                 std::bit_cast<double>(x), std::bit_cast<double>(y), std::bit_cast<double>(z)}};
         }
         case InspectorValueTagUVE::List:
@@ -187,9 +187,9 @@ enum class InspectorValueTagUVE : std::uint8_t {
             if (!Utilities::ReadUint16LeFromBufferUVE(in, offset, count)) {
                 return std::nullopt;
             }
-            std::vector<UVScript::ValueUVE> items;
+            std::vector<Blueprint::ValueUVE> items;
             for (std::uint16_t i = 0U; i < count; ++i) {
-                std::optional<UVScript::ValueUVE> item =
+                std::optional<Blueprint::ValueUVE> item =
                     ReadInspectorValueUVE(in, offset, depth + 1U);
                 if (!item.has_value()) {
                     return std::nullopt;
@@ -197,9 +197,9 @@ enum class InspectorValueTagUVE : std::uint8_t {
                 items.push_back(std::move(*item));
             }
             if (tag == InspectorValueTagUVE::List) {
-                return UVScript::MakeListValueUVE(std::move(items));
+                return Blueprint::MakeListValueUVE(std::move(items));
             }
-            return UVScript::MakeTupleValueUVE(std::move(items));
+            return Blueprint::MakeTupleValueUVE(std::move(items));
         }
         case InspectorValueTagUVE::Map: {
             if (depth == kRpcMaximumValueDepthUVE) {
@@ -209,11 +209,11 @@ enum class InspectorValueTagUVE : std::uint8_t {
             if (!Utilities::ReadUint16LeFromBufferUVE(in, offset, pairs)) {
                 return std::nullopt;
             }
-            std::vector<UVScript::ValueUVE> items;
+            std::vector<Blueprint::ValueUVE> items;
             for (std::uint16_t i = 0U; i < pairs; ++i) {
-                std::optional<UVScript::ValueUVE> key =
+                std::optional<Blueprint::ValueUVE> key =
                     ReadInspectorValueUVE(in, offset, depth + 1U);
-                std::optional<UVScript::ValueUVE> item =
+                std::optional<Blueprint::ValueUVE> item =
                     ReadInspectorValueUVE(in, offset, depth + 1U);
                 if (!key.has_value() || !item.has_value()) {
                     return std::nullopt;
@@ -221,7 +221,7 @@ enum class InspectorValueTagUVE : std::uint8_t {
                 items.push_back(std::move(*key));
                 items.push_back(std::move(*item));
             }
-            return UVScript::MakeMapValueUVE(std::move(items));
+            return Blueprint::MakeMapValueUVE(std::move(items));
         }
     }
     return std::nullopt;
@@ -254,7 +254,7 @@ enum class InspectorValueTagUVE : std::uint8_t {
         }
         const ReplicationPropertyIdUVE propId =
             std::to_integer<ReplicationPropertyIdUVE>(in[offset++]);
-        std::optional<UVScript::ValueUVE> value = ReadInspectorValueUVE(in, offset, 0U);
+        std::optional<Blueprint::ValueUVE> value = ReadInspectorValueUVE(in, offset, 0U);
         if (!value.has_value()) {
             return std::nullopt;
         }
@@ -304,7 +304,7 @@ struct DecodedRpcUVE final {
         frame.call.callId = callId;
         frame.call.method = std::move(*method);
         for (std::uint16_t i = 0U; i < argCount; ++i) {
-            std::optional<UVScript::ValueUVE> arg = ReadInspectorValueUVE(in, offset, 0U);
+            std::optional<Blueprint::ValueUVE> arg = ReadInspectorValueUVE(in, offset, 0U);
             if (!arg.has_value()) {
                 return std::nullopt;
             }
@@ -318,7 +318,7 @@ struct DecodedRpcUVE final {
         if (status != kOkStatus && status != kErrorStatus) {
             return std::nullopt;
         }
-        std::optional<UVScript::ValueUVE> value = ReadInspectorValueUVE(in, offset, 0U);
+        std::optional<Blueprint::ValueUVE> value = ReadInspectorValueUVE(in, offset, 0U);
         if (!value.has_value()) {
             return std::nullopt;
         }
@@ -456,7 +456,7 @@ struct DecodedRpcUVE final {
 // Positions print the way script values print - "(1, 2, 3)" - so a capture reads like the
 // values the game itself logs.
 [[nodiscard]] std::string FormatPositionUVE(const Math::Vector3UVE& position) {
-    return UVScript::FormatValueUVE(UVScript::Vec3ValueUVE{
+    return Blueprint::FormatValueUVE(Blueprint::Vec3ValueUVE{
         static_cast<double>(position.x), static_cast<double>(position.y),
         static_cast<double>(position.z)});
 }
@@ -624,7 +624,7 @@ InspectedPacketUVE InspectPacketUVE(const std::vector<std::uint8_t>& datagram,
                                  frame->call.method + "\" (";
                 for (std::size_t i = 0U; i < frame->call.args.size(); ++i) {
                     packet.summary +=
-                        (i == 0U ? "" : ", ") + UVScript::FormatValueUVE(frame->call.args[i]);
+                        (i == 0U ? "" : ", ") + Blueprint::FormatValueUVE(frame->call.args[i]);
                 }
                 packet.summary += ")";
                 packet.data = std::move(frame->call);
@@ -632,7 +632,7 @@ InspectedPacketUVE InspectPacketUVE(const std::vector<std::uint8_t>& datagram,
                 packet.dataKind = "response";
                 packet.summary = "response #" + std::to_string(frame->response.callId);
                 if (frame->response.ok) {
-                    packet.summary += " ok " + UVScript::FormatValueUVE(frame->response.value);
+                    packet.summary += " ok " + Blueprint::FormatValueUVE(frame->response.value);
                 } else {
                     packet.summary += " error \"" + frame->response.error + "\"";
                 }

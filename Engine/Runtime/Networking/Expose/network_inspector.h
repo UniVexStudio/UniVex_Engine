@@ -16,7 +16,7 @@
 #include "network_replication.h"
 #include "network_rpc.h"
 #include "network_session.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace UVE::Network {
 
@@ -48,7 +48,7 @@ struct OwnershipTransferViewUVE final {
 struct ReplicationPropertyEntryUVE final {
     NetworkEntityIdUVE netId = 0U;
     ReplicationPropertyIdUVE propId = 0U;
-    UVScript::ValueUVE value;
+    Blueprint::ValueUVE value;
 };
 
 // One property frame: the declared entry count plus every (entity, property, value) triple.
@@ -61,7 +61,7 @@ struct ReplicationPropertiesViewUVE final {
 struct RpcCallViewUVE final {
     RpcCallIdUVE callId = kInvalidRpcCallIdUVE;
     std::string method;
-    std::vector<UVScript::ValueUVE> args;
+    std::vector<Blueprint::ValueUVE> args;
 };
 
 // One RPC response frame: which call it answers, whether it succeeded, and the result value -
@@ -70,7 +70,7 @@ struct RpcCallViewUVE final {
 struct RpcResponseViewUVE final {
     RpcCallIdUVE callId = kInvalidRpcCallIdUVE;
     bool ok = false;
-    UVScript::ValueUVE value;
+    Blueprint::ValueUVE value;
     std::string error;
 };
 

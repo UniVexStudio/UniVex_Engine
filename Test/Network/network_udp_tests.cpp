@@ -351,10 +351,10 @@ TEST(UdpTransportUVE, RpcRoundTripsOverRealUdp) {
                                     std::make_unique<UdpTransportEndpointUVE>(pair->b));
     NetworkRpcUVE client(std::move(clientSession));
     NetworkRpcUVE server(std::move(serverSession));
-    ASSERT_TRUE(server.RegisterMethodUVE("add", [](const std::span<const UVScript::ValueUVE> args) {
+    ASSERT_TRUE(server.RegisterMethodUVE("add", [](const std::span<const Blueprint::ValueUVE> args) {
         const std::int64_t lhs = std::get<std::int64_t>(args[0]);
         const std::int64_t rhs = std::get<std::int64_t>(args[1]);
-        return RpcOkUVE(UVScript::ValueUVE{lhs + rhs});
+        return RpcOkUVE(Blueprint::ValueUVE{lhs + rhs});
     }));
     ASSERT_TRUE(client.SessionUVE().ConnectUVE(0U));
 
@@ -373,7 +373,7 @@ TEST(UdpTransportUVE, RpcRoundTripsOverRealUdp) {
     std::optional<RpcOutcomeUVE> result;
     const RpcCallIdUVE call =
         client.CallUVE("add",
-                       {UVScript::ValueUVE{std::int64_t{20}}, UVScript::ValueUVE{std::int64_t{22}}},
+                       {Blueprint::ValueUVE{std::int64_t{20}}, Blueprint::ValueUVE{std::int64_t{22}}},
                        [&](const RpcCallIdUVE /*id*/, const RpcOutcomeUVE& outcome) {
                            result = outcome;
                        });
@@ -386,7 +386,7 @@ TEST(UdpTransportUVE, RpcRoundTripsOverRealUdp) {
     });
     ASSERT_TRUE(answered);
     EXPECT_TRUE(result->ok);
-    EXPECT_EQ(result->value, UVScript::ValueUVE{std::int64_t{42}});
+    EXPECT_EQ(result->value, Blueprint::ValueUVE{std::int64_t{42}});
 }
 
 } // namespace

@@ -144,7 +144,7 @@ ALLOWED_PREFIXES = (
     # The live object host keeps `is_on_floor` as a read alias for scripts written against the
     # old name - a second spelling of one property, not a second property. That string is the
     # point of the line, so the file is allowlisted rather than rewritten.
-    "Engine/Runtime/Engine/Internal/uvscript_object_host.cpp",
+    "Engine/Runtime/Engine/Internal/blueprint_object_host.cpp",
     # ...and the test that proves that alias reads, reports read-only, and is NOT described.
     "Test/UVScript/uvscript_vm_tests.cpp",
     # This tool's own denylist obviously names what it forbids.

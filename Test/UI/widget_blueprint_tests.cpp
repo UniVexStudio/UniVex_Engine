@@ -20,9 +20,9 @@
 #include "ui_progress_bar_component.h"
 #include "ui_text_component.h"
 #include "ui_view_3d_component.h"
-#include "uvscript_compiler.h"
-#include "uvscript_instance.h"
-#include "uvscript_object_host.h"
+#include "blueprint_compiler.h"
+#include "blueprint_instance.h"
+#include "blueprint_object_host.h"
 #include "widget_blueprint_asset.h"
 
 namespace UVE::Scene::Tests {
@@ -71,11 +71,11 @@ protected:
         return node;
     }
 
-    [[nodiscard]] UVScript::CompileResultUVE CompileUVE(const BlueprintAssetUVE& graph, Core::UVScriptObjectHostUVE& host) {
+    [[nodiscard]] Blueprint::CompileResultUVE CompileUVE(const BlueprintAssetUVE& graph, Core::BlueprintObjectHostUVE& host) {
         const Asset::BlueprintTranslationUVE translated = Asset::TranslateBlueprintToUVScriptUVE(graph, "WBP_Hud", "Canvas");
         EXPECT_TRUE(translated.problems.empty()) << translated.source;
-        UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(translated.source, host);
-        for (const UVScript::DiagnosticUVE& d : compiled.diagnostics) {
+        Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(translated.source, host);
+        for (const Blueprint::DiagnosticUVE& d : compiled.diagnostics) {
             ADD_FAILURE() << "line " << d.at.line << ": " << d.message << "\n" << translated.source;
         }
         return compiled;
@@ -99,17 +99,17 @@ TEST_F(WidgetBlueprintUVETest, AButtonClickRunsOnlyItsOwnEvent) {
     graph.nodes = {NodeUVE(1U, "ui_on_clicked", {"Start"}), NodeUVE(2U, "ui_set_text", {"", "Score", "Go!"}),
                    NodeUVE(3U, "ui_set_percent", {"", "Health", "0.25"})};
     graph.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}, BlueprintWireUVE{2U, 0U, 3U, 0U}};
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, root};
-    const UVScript::CompileResultUVE compiled = CompileUVE(graph, host);
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, root};
+    const Blueprint::CompileResultUVE compiled = CompileUVE(graph, host);
     ASSERT_TRUE(compiled.IsSuccessUVE());
-    UVScript::ScriptInstanceUVE instance(compiled.program, host);
+    Blueprint::ScriptInstanceUVE instance(compiled.program, host);
     static_cast<void>(instance.RaiseEventUVE("ready"));
 
-    const UVScript::ValueUVE other[] = {std::string{"Quit"}};
+    const Blueprint::ValueUVE other[] = {std::string{"Quit"}};
     static_cast<void>(instance.RaiseEventUVE("ui_clicked", other));
     EXPECT_EQ(TextOfUVE("Score"), "0") << "another button's click is not this event's";
 
-    const UVScript::ValueUVE start[] = {std::string{"Start"}};
+    const Blueprint::ValueUVE start[] = {std::string{"Start"}};
     EXPECT_TRUE(instance.RaiseEventUVE("ui_clicked", start));
     EXPECT_EQ(TextOfUVE("Score"), "Go!");
     float health = -1.0F;
@@ -125,10 +125,10 @@ TEST_F(WidgetBlueprintUVETest, AWidgetReachesOnlyItsOwnWidgetsByName) {
     graph.parentKind = "Canvas";
     graph.nodes = {NodeUVE(1U, "ui_on_construct"), NodeUVE(2U, "ui_set_text", {"", "Score", "mine"})};
     graph.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}};
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, second};
-    const UVScript::CompileResultUVE compiled = CompileUVE(graph, host);
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, second};
+    const Blueprint::CompileResultUVE compiled = CompileUVE(graph, host);
     ASSERT_TRUE(compiled.IsSuccessUVE());
-    UVScript::ScriptInstanceUVE instance(compiled.program, host);
+    Blueprint::ScriptInstanceUVE instance(compiled.program, host);
     static_cast<void>(instance.RaiseEventUVE("ready"));
     int mine = 0;
     int untouched = 0;
@@ -145,7 +145,7 @@ TEST_F(WidgetBlueprintUVETest, CreateWidgetThenAddToViewportShowsIt) {
     const EntityUVE player = MakeUVE("Player", kInvalidEntityUVE);
     EntityUVE made = kInvalidEntityUVE;
     std::string asked;
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, player};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, player};
     host.SetWidgetFactoryUVE([this, &made, &asked](const std::string& path) {
         asked = path;
         made = MakeWidgetUVE();
@@ -158,9 +158,9 @@ TEST_F(WidgetBlueprintUVETest, CreateWidgetThenAddToViewportShowsIt) {
                    NodeUVE(3U, "ui_add_to_viewport", {"", "", "5"})};
     graph.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}, BlueprintWireUVE{2U, 0U, 3U, 0U}, BlueprintWireUVE{2U, 1U, 3U, 1U}};
     const Asset::BlueprintTranslationUVE translated = Asset::TranslateBlueprintToUVScriptUVE(graph, "BP_Player", "Object3D");
-    const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(translated.source, host);
+    const Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(translated.source, host);
     ASSERT_TRUE(compiled.IsSuccessUVE()) << translated.source;
-    UVScript::ScriptInstanceUVE instance(compiled.program, host);
+    Blueprint::ScriptInstanceUVE instance(compiled.program, host);
     static_cast<void>(instance.RaiseEventUVE("ready"));
     EXPECT_EQ(asked, "Content/UI/WBP_Hud.uvwbp");
     ASSERT_NE(made, kInvalidEntityUVE);
@@ -177,7 +177,7 @@ TEST_F(WidgetBlueprintUVETest, ShowMouseCursorAndAComboBoxChoiceReachTheGame) {
     box.selectedIndex = 0;
     entityManager.AddComponentUVE<UIDropdownComponentUVE>(combo, box);
     std::vector<bool> shown;
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, root};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, root};
     host.SetCursorHandlerUVE([&shown](const bool show) { shown.push_back(show); });
     BlueprintAssetUVE graph;
     graph.parentKind = "Canvas";
@@ -187,15 +187,15 @@ TEST_F(WidgetBlueprintUVETest, ShowMouseCursorAndAComboBoxChoiceReachTheGame) {
                    NodeUVE(7U, "ui_set_text", {"", "Score", ""})};
     graph.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}, BlueprintWireUVE{2U, 0U, 3U, 0U}, BlueprintWireUVE{3U, 0U, 4U, 0U},
                    BlueprintWireUVE{5U, 0U, 7U, 0U}, BlueprintWireUVE{6U, 0U, 7U, 2U}};
-    const UVScript::CompileResultUVE compiled = CompileUVE(graph, host);
+    const Blueprint::CompileResultUVE compiled = CompileUVE(graph, host);
     ASSERT_TRUE(compiled.IsSuccessUVE());
-    UVScript::ScriptInstanceUVE instance(compiled.program, host);
+    Blueprint::ScriptInstanceUVE instance(compiled.program, host);
     static_cast<void>(instance.RaiseEventUVE("ready"));
     ASSERT_EQ(shown.size(), 1U);
     EXPECT_TRUE(shown.front());
     EXPECT_EQ(entityManager.GetComponentUVE<UIDropdownComponentUVE>(combo).options, "Low\nHigh\nUltra");
     EXPECT_EQ(entityManager.GetComponentUVE<UIDropdownComponentUVE>(combo).selectedIndex, 2);
-    const UVScript::ValueUVE changed[] = {std::string{"Quality"}};
+    const Blueprint::ValueUVE changed[] = {std::string{"Quality"}};
     static_cast<void>(instance.RaiseEventUVE("ui_changed", changed));
     EXPECT_EQ(TextOfUVE("Score"), "Ultra");
 }
@@ -217,11 +217,11 @@ TEST_F(WidgetBlueprintUVETest, ShowScreenShowsOneScreenAndHidesTheOthers) {
     graph.parentKind = "Canvas";
     graph.nodes = {NodeUVE(1U, "ui_on_clicked", {"Open"}), NodeUVE(2U, "ui_show_screen", {"", "Settings"})};
     graph.wires = {BlueprintWireUVE{1U, 0U, 2U, 0U}};
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, root};
-    const UVScript::CompileResultUVE compiled = CompileUVE(graph, host);
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, root};
+    const Blueprint::CompileResultUVE compiled = CompileUVE(graph, host);
     ASSERT_TRUE(compiled.IsSuccessUVE());
-    UVScript::ScriptInstanceUVE instance(compiled.program, host);
-    const UVScript::ValueUVE clicked[] = {std::string{"Open"}};
+    Blueprint::ScriptInstanceUVE instance(compiled.program, host);
+    const Blueprint::ValueUVE clicked[] = {std::string{"Open"}};
     static_cast<void>(instance.RaiseEventUVE("ui_clicked", clicked));
     EXPECT_FALSE(entityManager.GetComponentUVE<CanvasComponentUVE>(main).visible);
     EXPECT_TRUE(entityManager.GetComponentUVE<CanvasComponentUVE>(settings).visible);

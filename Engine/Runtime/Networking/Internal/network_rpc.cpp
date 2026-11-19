@@ -29,9 +29,9 @@ struct DecodedFrameUVE final {
     RpcFrameKindUVE kind = RpcFrameKindUVE::Call;
     RpcCallIdUVE callId = kInvalidRpcCallIdUVE;
     std::string method;
-    std::vector<UVScript::ValueUVE> args;
+    std::vector<Blueprint::ValueUVE> args;
     bool ok = false;
-    UVScript::ValueUVE value;
+    Blueprint::ValueUVE value;
     std::string error;
 };
 
@@ -70,7 +70,7 @@ struct DecodedFrameUVE final {
         }
         frame.method = std::move(*method);
         for (std::uint16_t i = 0U; i < argCount; ++i) {
-            std::optional<UVScript::ValueUVE> arg = ReadWireValueUVE(in, offset, 0U);
+            std::optional<Blueprint::ValueUVE> arg = ReadWireValueUVE(in, offset, 0U);
             if (!arg.has_value()) {
                 return std::nullopt;
             }
@@ -84,7 +84,7 @@ struct DecodedFrameUVE final {
         if (status != 0x00U && status != 0x01U) {
             return std::nullopt;
         }
-        std::optional<UVScript::ValueUVE> value = ReadWireValueUVE(in, offset, 0U);
+        std::optional<Blueprint::ValueUVE> value = ReadWireValueUVE(in, offset, 0U);
         if (!value.has_value()) {
             return std::nullopt;
         }
@@ -107,7 +107,7 @@ struct DecodedFrameUVE final {
 // call cannot cross - unencodable arguments, or a frame past the session payload budget.
 [[nodiscard]] std::optional<std::vector<std::byte>> EncodeCallFrameUVE(
     const RpcCallIdUVE callId, const std::string& method,
-    const std::vector<UVScript::ValueUVE>& args) {
+    const std::vector<Blueprint::ValueUVE>& args) {
     if (method.size() > 0xFFFFU || args.size() > 0xFFFFU) {
         return std::nullopt;
     }
@@ -122,7 +122,7 @@ struct DecodedFrameUVE final {
         Utilities::AppendBytesUVE(frame, method.data(), method.size());
     }
     Utilities::AppendUint16LeUVE(frame, static_cast<std::uint16_t>(args.size()));
-    for (const UVScript::ValueUVE& arg : args) {
+    for (const Blueprint::ValueUVE& arg : args) {
         if (!AppendWireValueUVE(frame, arg, 0U)) {
             return std::nullopt;
         }
@@ -136,7 +136,7 @@ struct DecodedFrameUVE final {
 // Frames one response: the same head, then a status byte plus the result - or the error
 // text as a string value, so errors need no second value codec.
 [[nodiscard]] std::optional<std::vector<std::byte>> EncodeResponseFrameUVE(
-    const RpcCallIdUVE callId, const bool ok, const UVScript::ValueUVE& value,
+    const RpcCallIdUVE callId, const bool ok, const Blueprint::ValueUVE& value,
     const std::string& error) {
     std::vector<std::byte> frame;
     frame.push_back(kRpcMagic0UVE);
@@ -145,7 +145,7 @@ struct DecodedFrameUVE final {
     frame.push_back(static_cast<std::byte>(static_cast<std::uint8_t>(RpcFrameKindUVE::Response)));
     Utilities::AppendUint32LeUVE(frame, callId);
     frame.push_back(ok ? static_cast<std::byte>(0x00) : static_cast<std::byte>(0x01));
-    const UVScript::ValueUVE& body = ok ? value : UVScript::ValueUVE{error};
+    const Blueprint::ValueUVE& body = ok ? value : Blueprint::ValueUVE{error};
     if (!AppendWireValueUVE(frame, body, 0U)) {
         return std::nullopt;
     }
@@ -196,7 +196,7 @@ bool NetworkRpcUVE::UnregisterMethodUVE(const std::string& method) noexcept {
 }
 
 RpcCallIdUVE NetworkRpcUVE::CallUVE(const std::string& method,
-                                    const std::vector<UVScript::ValueUVE>& args,
+                                    const std::vector<Blueprint::ValueUVE>& args,
                                     RpcResponseCallbackUVE callback, const std::uint64_t timeoutMs) {
     if (SessionUVE().StateUVE() != SessionStateUVE::Established || method.empty() ||
         callback == nullptr) {
@@ -281,11 +281,11 @@ void NetworkRpcUVE::HandleFrameUVE(const std::vector<std::uint8_t>& payload) {
             wire = EncodeResponseFrameUVE(frame->callId, true, outcome.value, {});
             if (!wire.has_value()) {
                 ++m_stats.handlerErrors;
-                wire = EncodeResponseFrameUVE(frame->callId, false, UVScript::ValueUVE{},
+                wire = EncodeResponseFrameUVE(frame->callId, false, Blueprint::ValueUVE{},
                                               "result of '" + frame->method + "' could not be sent");
             }
         } else {
-            wire = EncodeResponseFrameUVE(frame->callId, false, UVScript::ValueUVE{}, outcome.error);
+            wire = EncodeResponseFrameUVE(frame->callId, false, Blueprint::ValueUVE{}, outcome.error);
         }
         if (!wire.has_value() || !SendFrameUVE(*wire)) {
             ++m_stats.responsesDropped;
@@ -318,7 +318,7 @@ void NetworkRpcUVE::FailDownCallsUVE() {
     failed.swap(m_pending);
     for (auto& [callId, pending] : failed) {
         ++m_stats.callsFailedSessionDown;
-        RpcOutcomeUVE outcome{false, UVScript::ValueUVE{},
+        RpcOutcomeUVE outcome{false, Blueprint::ValueUVE{},
                               "session down during call to '" + pending.method + "'"};
         RetainResultUVE(callId, outcome);
         pending.callback(callId, outcome);
@@ -340,7 +340,7 @@ void NetworkRpcUVE::ExpireCallsUVE(const std::uint64_t nowMs) {
             std::string method = std::move(pending.method);
             it = m_pending.erase(it);
             ++m_stats.callsTimedOut;
-            RpcOutcomeUVE outcome{false, UVScript::ValueUVE{}, "call to '" + method + "' timed out"};
+            RpcOutcomeUVE outcome{false, Blueprint::ValueUVE{}, "call to '" + method + "' timed out"};
             RetainResultUVE(callId, outcome);
             callback(callId, outcome);
         } else {

@@ -4,7 +4,7 @@
 
 #include "network_rpc.h"
 #include "network_session.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 #include <cstdint>
 #include <memory>
@@ -114,12 +114,12 @@ struct LobbyHarnessUVE final {
     return harness;
 }
 
-[[nodiscard]] UVScript::ValueUVE IntUVE(const std::int64_t number) {
-    return UVScript::ValueUVE{number};
+[[nodiscard]] Blueprint::ValueUVE IntUVE(const std::int64_t number) {
+    return Blueprint::ValueUVE{number};
 }
 
-[[nodiscard]] UVScript::ValueUVE TextUVE(const std::string& text) {
-    return UVScript::ValueUVE{text};
+[[nodiscard]] Blueprint::ValueUVE TextUVE(const std::string& text) {
+    return Blueprint::ValueUVE{text};
 }
 
 struct RoomsResultUVE final {
@@ -149,7 +149,7 @@ struct LeaveResultUVE final {
 struct RawResultUVE final {
     bool fired = false;
     bool ok = false;
-    UVScript::ValueUVE value;
+    Blueprint::ValueUVE value;
     std::string error;
 };
 
@@ -529,7 +529,7 @@ TEST(NetworkLobbyUVETest, Notify_MembersWithoutTheHandlerStillPlay) {
     EXPECT_EQ(created.id, 1U);
 
     auto callRaw = [&](const std::string& method,
-                       const std::vector<UVScript::ValueUVE>& args,
+                       const std::vector<Blueprint::ValueUVE>& args,
                        const std::uint64_t nowMs) {
         RawResultUVE result;
         const RpcCallIdUVE call = harness.raw[0].CallUVE(
@@ -647,7 +647,7 @@ TEST(NetworkLobbyUVETest, Protocol_RawShapesAreRejected) {
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
     auto callRaw = [&](const std::string& method,
-                       const std::vector<UVScript::ValueUVE>& args,
+                       const std::vector<Blueprint::ValueUVE>& args,
                        const std::uint64_t nowMs) {
         RawResultUVE result;
         const RpcCallIdUVE call = harness.raw[0].CallUVE(
@@ -664,7 +664,7 @@ TEST(NetworkLobbyUVETest, Protocol_RawShapesAreRejected) {
 
     std::uint64_t nowMs = 1100U;
     auto attempt = [&](const std::string& method,
-                       const std::vector<UVScript::ValueUVE>& args) {
+                       const std::vector<Blueprint::ValueUVE>& args) {
         RawResultUVE result = callRaw(method, args, nowMs);
         nowMs += 100U;
         return result;
@@ -900,7 +900,7 @@ TEST(NetworkLobbyUVETest, Notify_StalePushesAreSwallowed) {
     ASSERT_TRUE(harness.facades[0].CachedRosterUVE().empty());
 
     auto pushRaw = [&](const LobbyClientIdUVE target,
-                       const std::vector<UVScript::ValueUVE>& args,
+                       const std::vector<Blueprint::ValueUVE>& args,
                        const std::uint64_t nowMs) {
         RawResultUVE result;
         NetworkRpcUVE* server = harness.lobby.ClientRpcUVE(target);
@@ -917,11 +917,11 @@ TEST(NetworkLobbyUVETest, Notify_StalePushesAreSwallowed) {
         return result;
     };
     auto rosterArg = [](const std::vector<std::string>& names) {
-        std::vector<UVScript::ValueUVE> items;
+        std::vector<Blueprint::ValueUVE> items;
         for (const std::string& name : names) {
-            items.push_back(UVScript::ValueUVE{name});
+            items.push_back(Blueprint::ValueUVE{name});
         }
-        return UVScript::MakeListValueUVE(std::move(items));
+        return Blueprint::MakeListValueUVE(std::move(items));
     };
 
     const RawResultUVE staleAmy =

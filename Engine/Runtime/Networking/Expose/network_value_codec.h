@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace UVE::Network {
 
@@ -28,7 +28,7 @@ inline constexpr std::size_t kWireValueMaxDepthUVE = 64U;
 /// object ref, over-deep nesting, an over-long string, or a map with an unpaired item. On
 /// false the buffer may hold a partial value: the caller must discard the frame, never
 /// send it.
-bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& value,
+bool AppendWireValueUVE(std::vector<std::byte>& out, const Blueprint::ValueUVE& value,
                         const std::size_t depth);
 /// Reads a u16 length plus that many raw bytes as a string. Strings are opaque UTF-8 -
 /// never validated, only bounded.
@@ -36,7 +36,7 @@ bool AppendWireValueUVE(std::vector<std::byte>& out, const UVScript::ValueUVE& v
                                                            std::size_t& offset);
 /// Reads one value, tag for tag what the encoder wrote. Any truncation, unknown tag, or
 /// over-deep nesting fails the whole read - values never decode partially.
-[[nodiscard]] std::optional<UVScript::ValueUVE> ReadWireValueUVE(const std::vector<std::byte>& in,
+[[nodiscard]] std::optional<Blueprint::ValueUVE> ReadWireValueUVE(const std::vector<std::byte>& in,
                                                                  std::size_t& offset,
                                                                  const std::size_t depth);
 

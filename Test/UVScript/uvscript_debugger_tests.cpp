@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "uvscript_instance.h"
+#include "blueprint_instance.h"
 
 #include <array>
 #include <cstdint>
@@ -13,10 +13,10 @@
 
 #include <gtest/gtest.h>
 
-#include "uvscript_compiler.h"
-#include "uvscript_host.h"
+#include "blueprint_compiler.h"
+#include "blueprint_host.h"
 
-namespace UVE::UVScript::Tests {
+namespace UVE::Blueprint::Tests {
 namespace {
 
 class DebuggerHostUVE final : public UVScriptHostUVE {
@@ -307,4 +307,4 @@ TEST(UVScriptDebuggerUVETest, NativeExecutionRejectsDebuggerAndExplicitInterpret
 }
 
 } // namespace
-} // namespace UVE::UVScript::Tests
+} // namespace UVE::Blueprint::Tests

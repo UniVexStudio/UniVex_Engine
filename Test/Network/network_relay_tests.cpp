@@ -251,13 +251,13 @@ TEST(NetworkRelayUVETest, Rpc_BroadcastIsFirstAnswerWins) {
     NetworkRpcUVE rpcB(std::move(harness.clients[1]));
     NetworkRpcUVE rpcC(std::move(harness.clients[2]));
     ASSERT_TRUE(rpcB.RegisterMethodUVE(
-        "add", [](const std::span<const UVScript::ValueUVE> args) {
-            return RpcOkUVE(UVScript::ValueUVE{std::get<std::int64_t>(args[0]) +
+        "add", [](const std::span<const Blueprint::ValueUVE> args) {
+            return RpcOkUVE(Blueprint::ValueUVE{std::get<std::int64_t>(args[0]) +
                                                std::get<std::int64_t>(args[1])});
         }));
     std::map<RpcCallIdUVE, RpcOutcomeUVE> doneA;
     const RpcCallIdUVE callId = rpcA.CallUVE(
-        "add", {UVScript::ValueUVE{std::int64_t{1}}, UVScript::ValueUVE{std::int64_t{2}}},
+        "add", {Blueprint::ValueUVE{std::int64_t{1}}, Blueprint::ValueUVE{std::int64_t{2}}},
         [&doneA](const RpcCallIdUVE id, const RpcOutcomeUVE& outcome) {
             doneA.emplace(id, outcome);
         });
@@ -273,7 +273,7 @@ TEST(NetworkRelayUVETest, Rpc_BroadcastIsFirstAnswerWins) {
     // answer and C's error landed stale - broadcast RPC, honestly pinned.
     ASSERT_EQ(doneA.size(), 1U);
     EXPECT_TRUE(doneA[callId].ok);
-    EXPECT_EQ(doneA[callId].value, UVScript::ValueUVE{std::int64_t{3}});
+    EXPECT_EQ(doneA[callId].value, Blueprint::ValueUVE{std::int64_t{3}});
     EXPECT_EQ(rpcB.StatsUVE().callsReceived, 1U);
     EXPECT_EQ(rpcC.StatsUVE().callsReceived, 1U);
     EXPECT_EQ(rpcB.StatsUVE().responsesSent, 1U);

@@ -6,12 +6,12 @@
 
 #include <gtest/gtest.h>
 
-#include "uvscript_codegen.h"
-#include "uvscript_compiler.h"
-#include "uvscript_instance.h"
-#include "uvscript_parser.h"
+#include "blueprint_codegen.h"
+#include "blueprint_compiler.h"
+#include "blueprint_instance.h"
+#include "blueprint_parser.h"
 
-namespace UVE::UVScript::Tests {
+namespace UVE::Blueprint::Tests {
 namespace {
 
 /// A host with no properties and three tuple-shaped functions: `triple` and `notuple` lie about
@@ -591,4 +591,4 @@ TEST(UVScriptCollectionsUVETest, NativeCodegenCoversCollectionsAndStrLength) {
 }
 
 } // namespace
-} // namespace UVE::UVScript::Tests
+} // namespace UVE::Blueprint::Tests

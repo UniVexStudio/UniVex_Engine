@@ -17,16 +17,16 @@ namespace {
 
 // Structural equality for values: plain == compares collections by shared-pointer identity,
 // so a decoded-then-rebuilt twin never matches. This walks both and compares by shape.
-[[nodiscard]] bool ValuesEqualUVE(const UVScript::ValueUVE& a, const UVScript::ValueUVE& b) {
+[[nodiscard]] bool ValuesEqualUVE(const Blueprint::ValueUVE& a, const Blueprint::ValueUVE& b) {
     if (a.index() != b.index()) {
         return false;
     }
     const auto* collectionA =
-        std::get_if<std::shared_ptr<const UVScript::CollectionValueUVE>>(&a);
+        std::get_if<std::shared_ptr<const Blueprint::CollectionValueUVE>>(&a);
     if (collectionA == nullptr) {
         return a == b;
     }
-    const auto& collectionB = std::get<std::shared_ptr<const UVScript::CollectionValueUVE>>(b);
+    const auto& collectionB = std::get<std::shared_ptr<const Blueprint::CollectionValueUVE>>(b);
     if ((*collectionA == nullptr) != (collectionB == nullptr)) {
         return false;
     }
@@ -391,16 +391,16 @@ TEST(NetworkInspectorUVETest, Replication_StrictFramingRejectsShortAndPadded) {
 TEST(NetworkInspectorUVETest, Rpc_TappedCallAndResponseDecodeAndStillComplete) {
     RpcTapUVE tap = MakeRpcTapUVE();
     ASSERT_TRUE(tap.b.RegisterMethodUVE(
-        "add", [](const std::span<const UVScript::ValueUVE> args) {
+        "add", [](const std::span<const Blueprint::ValueUVE> args) {
             const std::int64_t x = std::get<std::int64_t>(args[0]);
             const std::int64_t y = std::get<std::int64_t>(args[1]);
-            return RpcOkUVE(UVScript::ValueUVE{x + y});
+            return RpcOkUVE(Blueprint::ValueUVE{x + y});
         }));
     ASSERT_TRUE(tap.EstablishUVE(1000U));
 
     const RpcCallIdUVE callId =
-        tap.a.CallUVE("add", {UVScript::ValueUVE{std::int64_t{20}},
-                              UVScript::ValueUVE{std::int64_t{22}}},
+        tap.a.CallUVE("add", {Blueprint::ValueUVE{std::int64_t{20}},
+                              Blueprint::ValueUVE{std::int64_t{22}}},
                       tap.FileAUVE());
     ASSERT_NE(callId, kInvalidRpcCallIdUVE);
     const std::optional<std::vector<std::uint8_t>> wire = tap.link.b.TryReceiveUVE();
@@ -414,8 +414,8 @@ TEST(NetworkInspectorUVETest, Rpc_TappedCallAndResponseDecodeAndStillComplete) {
     EXPECT_EQ(call.callId, callId);
     EXPECT_EQ(call.method, "add");
     ASSERT_EQ(call.args.size(), 2U);
-    EXPECT_EQ(call.args[0], UVScript::ValueUVE{std::int64_t{20}});
-    EXPECT_EQ(call.args[1], UVScript::ValueUVE{std::int64_t{22}});
+    EXPECT_EQ(call.args[0], Blueprint::ValueUVE{std::int64_t{20}});
+    EXPECT_EQ(call.args[1], Blueprint::ValueUVE{std::int64_t{22}});
     EXPECT_EQ(tappedCall.summary,
               "call #" + std::to_string(callId) + " \"add\" (20, 22)");
     EXPECT_FALSE(tappedCall.malformed);
@@ -434,7 +434,7 @@ TEST(NetworkInspectorUVETest, Rpc_TappedCallAndResponseDecodeAndStillComplete) {
     const RpcResponseViewUVE& response = std::get<RpcResponseViewUVE>(tappedResponse.data);
     EXPECT_EQ(response.callId, callId);
     EXPECT_TRUE(response.ok);
-    EXPECT_EQ(response.value, UVScript::ValueUVE{std::int64_t{42}});
+    EXPECT_EQ(response.value, Blueprint::ValueUVE{std::int64_t{42}});
     EXPECT_TRUE(response.error.empty());
     EXPECT_EQ(tappedResponse.summary, "response #" + std::to_string(callId) + " ok 42");
     EXPECT_FALSE(tappedResponse.malformed);
@@ -443,21 +443,21 @@ TEST(NetworkInspectorUVETest, Rpc_TappedCallAndResponseDecodeAndStillComplete) {
     tap.a.UpdateUVE(1000U);
     ASSERT_EQ(tap.doneA.count(callId), 1U);
     EXPECT_TRUE(tap.doneA.at(callId).ok);
-    EXPECT_EQ(tap.doneA.at(callId).value, UVScript::ValueUVE{std::int64_t{42}});
+    EXPECT_EQ(tap.doneA.at(callId).value, Blueprint::ValueUVE{std::int64_t{42}});
 }
 
 TEST(NetworkInspectorUVETest, Rpc_TappedCollectionsDecodeBranchForBranch) {
     RpcTapUVE tap = MakeRpcTapUVE();
     ASSERT_TRUE(tap.b.RegisterMethodUVE(
-        "echo", [](const std::span<const UVScript::ValueUVE> args) { return RpcOkUVE(args[0]); }));
+        "echo", [](const std::span<const Blueprint::ValueUVE> args) { return RpcOkUVE(args[0]); }));
     ASSERT_TRUE(tap.EstablishUVE(1000U));
 
-    const UVScript::ValueUVE list = UVScript::MakeListValueUVE(
-        {UVScript::ValueUVE{std::int64_t{1}}, UVScript::ValueUVE{"two"}, UVScript::ValueUVE{2.5}});
-    const UVScript::ValueUVE tuple =
-        UVScript::MakeTupleValueUVE({UVScript::ValueUVE{std::int64_t{1}}});
-    const UVScript::ValueUVE map = UVScript::MakeMapValueUVE(
-        {UVScript::ValueUVE{"a"}, UVScript::ValueUVE{std::int64_t{1}}});
+    const Blueprint::ValueUVE list = Blueprint::MakeListValueUVE(
+        {Blueprint::ValueUVE{std::int64_t{1}}, Blueprint::ValueUVE{"two"}, Blueprint::ValueUVE{2.5}});
+    const Blueprint::ValueUVE tuple =
+        Blueprint::MakeTupleValueUVE({Blueprint::ValueUVE{std::int64_t{1}}});
+    const Blueprint::ValueUVE map = Blueprint::MakeMapValueUVE(
+        {Blueprint::ValueUVE{"a"}, Blueprint::ValueUVE{std::int64_t{1}}});
     const RpcCallIdUVE callId = tap.a.CallUVE("echo", {list, tuple, map}, tap.FileAUVE());
     ASSERT_NE(callId, kInvalidRpcCallIdUVE);
     const std::optional<std::vector<std::uint8_t>> wire = tap.link.b.TryReceiveUVE();
@@ -523,9 +523,9 @@ TEST(NetworkInspectorUVETest, Rpc_TappedErrorResponseDecodes) {
 TEST(NetworkInspectorUVETest, Rpc_MutatedFramesAreMalformed) {
     RpcTapUVE tap = MakeRpcTapUVE();
     ASSERT_TRUE(tap.b.RegisterMethodUVE(
-        "echo", [](const std::span<const UVScript::ValueUVE> args) { return RpcOkUVE(args[0]); }));
+        "echo", [](const std::span<const Blueprint::ValueUVE> args) { return RpcOkUVE(args[0]); }));
     ASSERT_TRUE(tap.EstablishUVE(1000U));
-    ASSERT_NE(tap.a.CallUVE("echo", {UVScript::ValueUVE{std::int64_t{1}}}, tap.FileAUVE()),
+    ASSERT_NE(tap.a.CallUVE("echo", {Blueprint::ValueUVE{std::int64_t{1}}}, tap.FileAUVE()),
               kInvalidRpcCallIdUVE);
     const std::optional<std::vector<std::uint8_t>> wire = tap.link.b.TryReceiveUVE();
     ASSERT_TRUE(wire.has_value());
@@ -708,7 +708,7 @@ TEST(NetworkInspectorUVETest, UnknownChannel_PayloadStaysOpaque) {
     // Even a perfectly good call frame stays opaque when the channel is unknown.
     RpcTapUVE tap = MakeRpcTapUVE();
     ASSERT_TRUE(tap.EstablishUVE(1000U));
-    ASSERT_NE(tap.a.CallUVE("echo", {UVScript::ValueUVE{std::int64_t{1}}}, tap.FileAUVE()),
+    ASSERT_NE(tap.a.CallUVE("echo", {Blueprint::ValueUVE{std::int64_t{1}}}, tap.FileAUVE()),
               kInvalidRpcCallIdUVE);
     const std::optional<std::vector<std::uint8_t>> wire = tap.link.b.TryReceiveUVE();
     ASSERT_TRUE(wire.has_value());
@@ -857,20 +857,20 @@ TEST(NetworkInspectorUVETest, Replication_TappedPropertiesDecode) {
                                         [](const Math::Vector3UVE&) {}));
     ASSERT_TRUE(tap.b.RegisterEntityUVE(7U, [] { return Math::Vector3UVE{}; },
                                         [](const Math::Vector3UVE&) {}));
-    UVScript::ValueUVE applied{std::int64_t{0}};
+    Blueprint::ValueUVE applied{std::int64_t{0}};
     int applyCalls = 0;
     ASSERT_TRUE(tap.b.RegisterPropertyUVE(
-        7U, 1U, [&applied, &applyCalls](const UVScript::ValueUVE& value) {
+        7U, 1U, [&applied, &applyCalls](const Blueprint::ValueUVE& value) {
             applied = value;
             ++applyCalls;
         }));
-    UVScript::ValueUVE appliedList{std::int64_t{0}};
+    Blueprint::ValueUVE appliedList{std::int64_t{0}};
     ASSERT_TRUE(tap.b.RegisterPropertyUVE(
-        7U, 2U, [&appliedList](const UVScript::ValueUVE& value) { appliedList = value; }));
+        7U, 2U, [&appliedList](const Blueprint::ValueUVE& value) { appliedList = value; }));
     ASSERT_TRUE(tap.EstablishUVE(1000U));
-    const UVScript::ValueUVE health{std::int64_t{83}};
-    const UVScript::ValueUVE tags = UVScript::MakeListValueUVE(
-        {UVScript::ValueUVE{std::int64_t{1}}, UVScript::ValueUVE{std::string{"two"}}});
+    const Blueprint::ValueUVE health{std::int64_t{83}};
+    const Blueprint::ValueUVE tags = Blueprint::MakeListValueUVE(
+        {Blueprint::ValueUVE{std::int64_t{1}}, Blueprint::ValueUVE{std::string{"two"}}});
     ASSERT_TRUE(tap.a.SetPropertyUVE(7U, 1U, health));
     ASSERT_TRUE(tap.a.SetPropertyUVE(7U, 2U, tags));
     tap.a.UpdateUVE(1100U);

@@ -2,7 +2,7 @@
 
 #include "network_replication.h"
 
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 #include <cstdint>
 #include <limits>
@@ -998,12 +998,12 @@ TEST(NetworkReplicationUVETest, Ownership_MalformedControlFramesIgnored) {
 
 // Captures received property values by (entity, property), with per-pair call counts.
 struct PropertySinkUVE final {
-    std::map<std::pair<NetworkEntityIdUVE, ReplicationPropertyIdUVE>, UVScript::ValueUVE> received;
+    std::map<std::pair<NetworkEntityIdUVE, ReplicationPropertyIdUVE>, Blueprint::ValueUVE> received;
     std::map<std::pair<NetworkEntityIdUVE, ReplicationPropertyIdUVE>, int> calls;
 
     [[nodiscard]] PropertyApplierUVE ApplierFor(const NetworkEntityIdUVE netId,
                                                 const ReplicationPropertyIdUVE propId) {
-        return [this, netId, propId](const UVScript::ValueUVE& value) {
+        return [this, netId, propId](const Blueprint::ValueUVE& value) {
             received[{netId, propId}] = value;
             ++calls[{netId, propId}];
         };
@@ -1015,10 +1015,10 @@ TEST(NetworkReplicationUVETest, Property_RoundTripsToApplier) {
     harness.RegisterMirroredUVE(7U);
     PropertySinkUVE sink;
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 3U, sink.ApplierFor(7U, 3U)));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{83}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{83}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
-    EXPECT_EQ(sink.received.at({7U, 3U}), UVScript::ValueUVE{std::int64_t{83}});
+    EXPECT_EQ(sink.received.at({7U, 3U}), Blueprint::ValueUVE{std::int64_t{83}});
     EXPECT_EQ(sink.calls.at({7U, 3U}), 1);
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 1U);
     EXPECT_EQ(harness.b.StatsUVE().propertyFramesReceived, 1U);
@@ -1037,11 +1037,11 @@ TEST(NetworkReplicationUVETest, Property_RegistrationGuards) {
     EXPECT_FALSE(harness.b.RegisterPropertyUVE(7U, 3U, sink.ApplierFor(7U, 3U)));
     EXPECT_FALSE(harness.b.UnregisterPropertyUVE(7U, 4U));
     EXPECT_FALSE(
-        harness.a.SetPropertyUVE(9U, 3U, UVScript::ValueUVE{std::int64_t{1}}));
+        harness.a.SetPropertyUVE(9U, 3U, Blueprint::ValueUVE{std::int64_t{1}}));
     EXPECT_FALSE(harness.a.SetPropertyUVE(
-        7U, 3U, UVScript::ValueUVE{UVScript::ObjectRefUVE{42U}}));
-    EXPECT_FALSE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::string(65536U, 'x')}));
-    EXPECT_FALSE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::string(2000U, 'y')}));
+        7U, 3U, Blueprint::ValueUVE{Blueprint::ObjectRefUVE{42U}}));
+    EXPECT_FALSE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::string(65536U, 'x')}));
+    EXPECT_FALSE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::string(2000U, 'y')}));
     EXPECT_EQ(harness.a.StatsUVE().propertiesSkippedOversized, 3U);
 }
 
@@ -1052,17 +1052,17 @@ TEST(NetworkReplicationUVETest, Property_UnchangedSetDoesNotResend) {
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 3U, sink.ApplierFor(7U, 3U)));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{83}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{83}}));
     harness.UpdateBothUVE(1100U);
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 1U);
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{83}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{83}}));
     harness.UpdateBothUVE(1200U);
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 1U); // Byte-identical: no re-ship.
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{84}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{84}}));
     harness.UpdateBothUVE(1300U);
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 2U);
     EXPECT_EQ(harness.b.StatsUVE().propertiesApplied, 2U);
-    EXPECT_EQ(sink.received.at({7U, 3U}), UVScript::ValueUVE{std::int64_t{84}});
+    EXPECT_EQ(sink.received.at({7U, 3U}), Blueprint::ValueUVE{std::int64_t{84}});
 }
 
 TEST(NetworkReplicationUVETest, Property_FullTickRecarriesClean) {
@@ -1071,7 +1071,7 @@ TEST(NetworkReplicationUVETest, Property_FullTickRecarriesClean) {
     ASSERT_TRUE(harness.a.SetFullSnapshotPeriodUVE(1U));
     PropertySinkUVE sink;
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 3U, sink.ApplierFor(7U, 3U)));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{83}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{83}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
     harness.UpdateBothUVE(1100U);
 
@@ -1086,7 +1086,7 @@ TEST(NetworkReplicationUVETest, Property_ProxyHoldsUntilFlip) {
     ASSERT_TRUE(RegisterOwnerProxyUVE(harness, 7U));
     PropertySinkUVE sink;
     ASSERT_TRUE(harness.a.RegisterPropertyUVE(7U, 3U, sink.ApplierFor(7U, 3U)));
-    EXPECT_TRUE(harness.b.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{11}}));
+    EXPECT_TRUE(harness.b.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{11}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
     harness.UpdateBothUVE(1100U);
     EXPECT_EQ(harness.b.StatsUVE().propertyFramesSent, 0U);
@@ -1096,7 +1096,7 @@ TEST(NetworkReplicationUVETest, Property_ProxyHoldsUntilFlip) {
     harness.UpdateBothUVE(1200U);
     harness.a.UpdateUVE(1200U); // Deliver B's last send; A's cadence just ran, so A sends nothing.
     EXPECT_EQ(harness.b.StatsUVE().propertyFramesSent, 1U);
-    EXPECT_EQ(sink.received.at({7U, 3U}), UVScript::ValueUVE{std::int64_t{11}});
+    EXPECT_EQ(sink.received.at({7U, 3U}), Blueprint::ValueUVE{std::int64_t{11}});
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 0U);
 }
 
@@ -1106,7 +1106,7 @@ TEST(NetworkReplicationUVETest, Property_OwnerIgnoresInbound) {
     ASSERT_TRUE(harness.a.SetAuthorityUVE(7U, ReplicationAuthorityUVE::Owner));
     PropertySinkUVE sink;
     ASSERT_TRUE(harness.a.RegisterPropertyUVE(7U, 3U, sink.ApplierFor(7U, 3U)));
-    ASSERT_TRUE(harness.b.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{5}}));
+    ASSERT_TRUE(harness.b.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{5}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
     EXPECT_EQ(harness.a.StatsUVE().propertiesIgnoredOwned, 1U);
@@ -1122,8 +1122,8 @@ TEST(NetworkReplicationUVETest, Property_UnknownPairsIgnored) {
         [&harness](const Math::Vector3UVE& position) { harness.positionsA[9U] = position; }));
     PropertySinkUVE sink;
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 6U, sink.ApplierFor(7U, 6U)));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 5U, UVScript::ValueUVE{std::int64_t{1}}));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(9U, 5U, UVScript::ValueUVE{std::int64_t{2}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 5U, Blueprint::ValueUVE{std::int64_t{1}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(9U, 5U, Blueprint::ValueUVE{std::int64_t{2}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
     EXPECT_EQ(harness.b.StatsUVE().propertyFramesReceived, 1U);
@@ -1144,7 +1144,7 @@ TEST(NetworkReplicationUVETest, Property_IrrelevantSkipsAndRunsPredicateOnce) {
         ++relevancyCalls;
         return relevant;
     }));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{9}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{9}}));
     harness.UpdateBothUVE(1100U);
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 0U);
     EXPECT_EQ(relevancyCalls, 1);
@@ -1152,7 +1152,7 @@ TEST(NetworkReplicationUVETest, Property_IrrelevantSkipsAndRunsPredicateOnce) {
     harness.UpdateBothUVE(1200U);
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 1U);
     EXPECT_EQ(relevancyCalls, 2);
-    EXPECT_EQ(sink.received.at({7U, 3U}), UVScript::ValueUVE{std::int64_t{9}});
+    EXPECT_EQ(sink.received.at({7U, 3U}), Blueprint::ValueUVE{std::int64_t{9}});
 }
 
 TEST(NetworkReplicationUVETest, Property_TruncationPacksInOrderAndLosersSurface) {
@@ -1161,8 +1161,8 @@ TEST(NetworkReplicationUVETest, Property_TruncationPacksInOrderAndLosersSurface)
     PropertySinkUVE sink;
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 1U, sink.ApplierFor(7U, 1U)));
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 2U, sink.ApplierFor(7U, 2U)));
-    const UVScript::ValueUVE first{std::string(600U, 'a')};
-    const UVScript::ValueUVE second{std::string(600U, 'b')};
+    const Blueprint::ValueUVE first{std::string(600U, 'a')};
+    const Blueprint::ValueUVE second{std::string(600U, 'b')};
     ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 1U, first));
     ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 2U, second));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
@@ -1182,7 +1182,7 @@ TEST(NetworkReplicationUVETest, Property_UnregisterEntityDropsRow) {
     harness.RegisterMirroredUVE(7U);
     PropertySinkUVE sink;
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 3U, sink.ApplierFor(7U, 3U)));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{1}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{1}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 1U);
 
@@ -1190,10 +1190,10 @@ TEST(NetworkReplicationUVETest, Property_UnregisterEntityDropsRow) {
     harness.RegisterMirroredUVE(7U); // A re-registers; B's duplicate is ignored.
     harness.UpdateBothUVE(1100U);
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 1U); // Cache dropped: nothing to send.
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{2}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{2}}));
     harness.UpdateBothUVE(1200U);
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 2U);
-    EXPECT_EQ(sink.received.at({7U, 3U}), UVScript::ValueUVE{std::int64_t{2}});
+    EXPECT_EQ(sink.received.at({7U, 3U}), Blueprint::ValueUVE{std::int64_t{2}});
 }
 
 TEST(NetworkReplicationUVETest, Property_MalformedFramesIgnoredWhole) {
@@ -1232,16 +1232,16 @@ TEST(NetworkReplicationUVETest, Property_FlipReversesDirection) {
     PropertySinkUVE sinkB;
     ASSERT_TRUE(harness.a.RegisterPropertyUVE(7U, 3U, sinkA.ApplierFor(7U, 3U)));
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 3U, sinkB.ApplierFor(7U, 3U)));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{21}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{21}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
-    EXPECT_EQ(sinkB.received.at({7U, 3U}), UVScript::ValueUVE{std::int64_t{21}});
+    EXPECT_EQ(sinkB.received.at({7U, 3U}), Blueprint::ValueUVE{std::int64_t{21}});
 
     ASSERT_TRUE(harness.a.SetAuthorityUVE(7U, ReplicationAuthorityUVE::Proxy));
     ASSERT_TRUE(harness.b.SetAuthorityUVE(7U, ReplicationAuthorityUVE::Owner));
-    ASSERT_TRUE(harness.b.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{22}}));
+    ASSERT_TRUE(harness.b.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{22}}));
     harness.UpdateBothUVE(1100U);
     harness.a.UpdateUVE(1100U); // Deliver B's last send; A's cadence just ran, so A sends nothing.
-    EXPECT_EQ(sinkA.received.at({7U, 3U}), UVScript::ValueUVE{std::int64_t{22}});
+    EXPECT_EQ(sinkA.received.at({7U, 3U}), Blueprint::ValueUVE{std::int64_t{22}});
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 1U);
     EXPECT_EQ(harness.b.StatsUVE().propertyFramesSent, 1U);
     EXPECT_EQ(harness.b.StatsUVE().propertiesIgnoredOwned, 0U);
@@ -1254,12 +1254,12 @@ TEST(NetworkReplicationUVETest, Property_SharedBothDirections) {
     PropertySinkUVE sinkB;
     ASSERT_TRUE(harness.a.RegisterPropertyUVE(7U, 1U, sinkA.ApplierFor(7U, 1U)));
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 1U, sinkB.ApplierFor(7U, 1U)));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 1U, UVScript::ValueUVE{std::int64_t{100}}));
-    ASSERT_TRUE(harness.b.SetPropertyUVE(7U, 1U, UVScript::ValueUVE{std::int64_t{200}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 1U, Blueprint::ValueUVE{std::int64_t{100}}));
+    ASSERT_TRUE(harness.b.SetPropertyUVE(7U, 1U, Blueprint::ValueUVE{std::int64_t{200}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
 
-    EXPECT_EQ(sinkA.received.at({7U, 1U}), UVScript::ValueUVE{std::int64_t{200}});
-    EXPECT_EQ(sinkB.received.at({7U, 1U}), UVScript::ValueUVE{std::int64_t{100}});
+    EXPECT_EQ(sinkA.received.at({7U, 1U}), Blueprint::ValueUVE{std::int64_t{200}});
+    EXPECT_EQ(sinkB.received.at({7U, 1U}), Blueprint::ValueUVE{std::int64_t{100}});
     EXPECT_EQ(harness.a.StatsUVE().propertyFramesSent, 1U);
     EXPECT_EQ(harness.b.StatsUVE().propertyFramesSent, 1U);
 }
@@ -1269,12 +1269,12 @@ TEST(NetworkReplicationUVETest, Property_UnregisterPropertyStopsBothWays) {
     harness.RegisterMirroredUVE(7U);
     PropertySinkUVE sink;
     ASSERT_TRUE(harness.b.RegisterPropertyUVE(7U, 3U, sink.ApplierFor(7U, 3U)));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{1}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{1}}));
     ASSERT_TRUE(harness.EstablishUVE(1000U));
     EXPECT_EQ(sink.calls.at({7U, 3U}), 1);
 
     EXPECT_TRUE(harness.b.UnregisterPropertyUVE(7U, 3U));
-    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, UVScript::ValueUVE{std::int64_t{2}}));
+    ASSERT_TRUE(harness.a.SetPropertyUVE(7U, 3U, Blueprint::ValueUVE{std::int64_t{2}}));
     harness.UpdateBothUVE(1100U);
     EXPECT_EQ(harness.b.StatsUVE().propertiesIgnoredUnknown, 1U);
     EXPECT_EQ(sink.calls.at({7U, 3U}), 1);

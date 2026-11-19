@@ -113,15 +113,15 @@ private:
     };
 
     [[nodiscard]] RpcOutcomeUVE HandleListUVE(
-        std::span<const UVScript::ValueUVE> args) const;
+        std::span<const Blueprint::ValueUVE> args) const;
     [[nodiscard]] RpcOutcomeUVE HandleCreateUVE(LobbyClientIdUVE caller,
-                                                std::span<const UVScript::ValueUVE> args);
+                                                std::span<const Blueprint::ValueUVE> args);
     [[nodiscard]] RpcOutcomeUVE HandleJoinUVE(LobbyClientIdUVE caller,
-                                              std::span<const UVScript::ValueUVE> args);
+                                              std::span<const Blueprint::ValueUVE> args);
     [[nodiscard]] RpcOutcomeUVE HandleLeaveUVE(LobbyClientIdUVE caller,
-                                               std::span<const UVScript::ValueUVE> args);
+                                               std::span<const Blueprint::ValueUVE> args);
     [[nodiscard]] RpcOutcomeUVE HandleRosterUVE(
-        std::span<const UVScript::ValueUVE> args) const;
+        std::span<const Blueprint::ValueUVE> args) const;
     /// Leaves the caller's room, notifying survivors and removing the room when emptied.
     /// False when the caller was in no room.
     bool LeaveRoomUVE(LobbyClientIdUVE caller);
@@ -215,7 +215,7 @@ private:
     };
 
     [[nodiscard]] static RpcOutcomeUVE
-    HandleRosterChangedUVE(ClientStateUVE& state, std::span<const UVScript::ValueUVE> args);
+    HandleRosterChangedUVE(ClientStateUVE& state, std::span<const Blueprint::ValueUVE> args);
 
     NetworkRpcUVE m_rpc;
     std::shared_ptr<ClientStateUVE> m_state;

@@ -25,8 +25,8 @@
 #include "entity_manager.h"
 #include "vector3.h"
 #include "scene_graph.h"
-#include "uvscript_instance.h"
-#include "uvscript_value.h"
+#include "blueprint_instance.h"
+#include "blueprint_value.h"
 
 namespace UVE::Integration::Tests {
 namespace {
@@ -83,19 +83,19 @@ TEST(ContactScriptEventsUVETest, CollisionScriptEvents_BothBodiesHearEnterThenEx
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(5)) {
         engine.TickFrameUVE();
-        UVScript::ScriptInstanceUVE* const a = engine.FindUVScriptInstanceUVE(boxA);
-        if (a != nullptr && a->GetFieldUVE("enters") == UVScript::ValueUVE{std::int64_t{1}}) {
+        Blueprint::ScriptInstanceUVE* const a = engine.FindUVScriptInstanceUVE(boxA);
+        if (a != nullptr && a->GetFieldUVE("enters") == Blueprint::ValueUVE{std::int64_t{1}}) {
             break;
         }
     }
-    UVScript::ScriptInstanceUVE* const a = engine.FindUVScriptInstanceUVE(boxA);
-    UVScript::ScriptInstanceUVE* const b = engine.FindUVScriptInstanceUVE(boxB);
+    Blueprint::ScriptInstanceUVE* const a = engine.FindUVScriptInstanceUVE(boxA);
+    Blueprint::ScriptInstanceUVE* const b = engine.FindUVScriptInstanceUVE(boxB);
     ASSERT_NE(a, nullptr);
     ASSERT_NE(b, nullptr);
-    EXPECT_EQ(a->GetFieldUVE("enters"), UVScript::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(a->GetFieldUVE("last"), UVScript::ValueUVE{std::string{}});
-    EXPECT_EQ(b->GetFieldUVE("enters"), UVScript::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(b->GetFieldUVE("last"), UVScript::ValueUVE{std::string{"BoxA"}});
+    EXPECT_EQ(a->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(a->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{}});
+    EXPECT_EQ(b->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(b->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{"BoxA"}});
 
     entityManager.GetComponentUVE<Scene::TransformComponentUVE>(boxB).localPosition =
         Math::Vector3UVE{5.0F, 0.0F, 0.0F};
@@ -103,13 +103,13 @@ TEST(ContactScriptEventsUVETest, CollisionScriptEvents_BothBodiesHearEnterThenEx
     const auto exitStartedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - exitStartedAt < std::chrono::seconds(5)) {
         engine.TickFrameUVE();
-        if (a->GetFieldUVE("exits") == UVScript::ValueUVE{std::int64_t{1}}) {
+        if (a->GetFieldUVE("exits") == Blueprint::ValueUVE{std::int64_t{1}}) {
             break;
         }
     }
-    EXPECT_EQ(a->GetFieldUVE("exits"), UVScript::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(b->GetFieldUVE("exits"), UVScript::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(a->GetFieldUVE("enters"), UVScript::ValueUVE{std::int64_t{1}}) << "no double-enter";
+    EXPECT_EQ(a->GetFieldUVE("exits"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(b->GetFieldUVE("exits"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(a->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}}) << "no double-enter";
 
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::remove(MakeHeadlessTestConfigUVE().assetDatabaseFilePath);
@@ -149,19 +149,19 @@ TEST(ContactScriptEventsUVETest, OverlapScriptEvents_AreaAndBodyHearEnterThenExi
     const auto startedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - startedAt < std::chrono::seconds(5)) {
         engine.TickFrameUVE();
-        UVScript::ScriptInstanceUVE* const z = engine.FindUVScriptInstanceUVE(zone);
-        if (z != nullptr && z->GetFieldUVE("enters") == UVScript::ValueUVE{std::int64_t{1}}) {
+        Blueprint::ScriptInstanceUVE* const z = engine.FindUVScriptInstanceUVE(zone);
+        if (z != nullptr && z->GetFieldUVE("enters") == Blueprint::ValueUVE{std::int64_t{1}}) {
             break;
         }
     }
-    UVScript::ScriptInstanceUVE* const z = engine.FindUVScriptInstanceUVE(zone);
-    UVScript::ScriptInstanceUVE* const p = engine.FindUVScriptInstanceUVE(player);
+    Blueprint::ScriptInstanceUVE* const z = engine.FindUVScriptInstanceUVE(zone);
+    Blueprint::ScriptInstanceUVE* const p = engine.FindUVScriptInstanceUVE(player);
     ASSERT_NE(z, nullptr);
     ASSERT_NE(p, nullptr);
-    EXPECT_EQ(z->GetFieldUVE("enters"), UVScript::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(z->GetFieldUVE("last"), UVScript::ValueUVE{std::string{"Player"}});
-    EXPECT_EQ(p->GetFieldUVE("enters"), UVScript::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(p->GetFieldUVE("last"), UVScript::ValueUVE{std::string{"Zone"}});
+    EXPECT_EQ(z->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(z->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{"Player"}});
+    EXPECT_EQ(p->GetFieldUVE("enters"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(p->GetFieldUVE("last"), Blueprint::ValueUVE{std::string{"Zone"}});
 
     entityManager.GetComponentUVE<Scene::TransformComponentUVE>(player).localPosition =
         Math::Vector3UVE{5.0F, 0.0F, 0.0F};
@@ -169,12 +169,12 @@ TEST(ContactScriptEventsUVETest, OverlapScriptEvents_AreaAndBodyHearEnterThenExi
     const auto exitStartedAt = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - exitStartedAt < std::chrono::seconds(5)) {
         engine.TickFrameUVE();
-        if (z->GetFieldUVE("exits") == UVScript::ValueUVE{std::int64_t{1}}) {
+        if (z->GetFieldUVE("exits") == Blueprint::ValueUVE{std::int64_t{1}}) {
             break;
         }
     }
-    EXPECT_EQ(z->GetFieldUVE("exits"), UVScript::ValueUVE{std::int64_t{1}});
-    EXPECT_EQ(p->GetFieldUVE("exits"), UVScript::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(z->GetFieldUVE("exits"), Blueprint::ValueUVE{std::int64_t{1}});
+    EXPECT_EQ(p->GetFieldUVE("exits"), Blueprint::ValueUVE{std::int64_t{1}});
 
     std::filesystem::remove_all(mountDirectory);
     std::filesystem::remove(MakeHeadlessTestConfigUVE().assetDatabaseFilePath);

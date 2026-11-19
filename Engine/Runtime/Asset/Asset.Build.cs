@@ -15,7 +15,8 @@ public class AssetModule : ModuleRules
             "Math",
             "Threading",
             "Events",
-            "Utilities"
+            "Utilities",
+            "Blueprint"
         });
 
         ExcludedFiles.AddRange(new string[] {

@@ -46,7 +46,7 @@ public class CoreTestsModule : ModuleRules
             "Networking",
             "Plugins",
             "ProjectCheck",
-            "UVScript",
+            "Blueprint",
             "World",
             "Engine",
             "Audio",

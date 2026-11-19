@@ -8,13 +8,13 @@
 #include "character_controller_component.h"
 #include "entity.h"
 #include "rigid_3d_component.h"
-#include "uvscript_object_host.h"
+#include "blueprint_object_host.h"
 #include "entity_manager.h"
 #include "event_system.h"
 #include "vector3.h"
 #include "memory_manager.h"
 #include "rigid_3d.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 namespace UVE::Scene::Tests {
 namespace {
@@ -35,8 +35,8 @@ protected:
         return entity;
     }
 
-    static UVScript::ValueUVE Vec3ArgUVE(const double x, const double y, const double z) {
-        return UVScript::ValueUVE{UVScript::Vec3ValueUVE{x, y, z}};
+    static Blueprint::ValueUVE Vec3ArgUVE(const double x, const double y, const double z) {
+        return Blueprint::ValueUVE{Blueprint::Vec3ValueUVE{x, y, z}};
     }
 };
 
@@ -104,20 +104,20 @@ TEST_F(UVScriptPhysicsForcesUVETest, IntegrateLinearVelocityUVE_AddsUnscaledForc
 
 TEST_F(UVScriptPhysicsForcesUVETest, Host_DescribesPhysicsSurfaceOnlyOnRigidBodies) {
     const EntityUVE body = MakeRigidUVE(1.0F, false, Math::Vector3UVE{});
-    const Core::UVScriptObjectHostUVE host{entityManager, nullptr, body};
+    const Core::BlueprintObjectHostUVE host{entityManager, nullptr, body};
     for (const char* name : {"physics.apply_force", "physics.apply_impulse", "physics.apply_torque"}) {
-        const std::optional<UVScript::HostFunctionUVE> described = host.DescribeFunctionUVE(name);
+        const std::optional<Blueprint::HostFunctionUVE> described = host.DescribeFunctionUVE(name);
         ASSERT_TRUE(described.has_value()) << name;
         ASSERT_EQ(described->params.size(), 1U);
-        EXPECT_EQ(described->params[0].kind, UVScript::TypeUVE::KindUVE::Vec3);
-        EXPECT_EQ(described->result.kind, UVScript::TypeUVE::KindUVE::Bool);
+        EXPECT_EQ(described->params[0].kind, Blueprint::TypeUVE::KindUVE::Vec3);
+        EXPECT_EQ(described->result.kind, Blueprint::TypeUVE::KindUVE::Bool);
     }
-    const std::optional<UVScript::HostPropertyUVE> velocity = host.DescribePropertyUVE("velocity");
+    const std::optional<Blueprint::HostPropertyUVE> velocity = host.DescribePropertyUVE("velocity");
     ASSERT_TRUE(velocity.has_value());
-    EXPECT_EQ(velocity->type.kind, UVScript::TypeUVE::KindUVE::Vec3);
+    EXPECT_EQ(velocity->type.kind, Blueprint::TypeUVE::KindUVE::Vec3);
     EXPECT_TRUE(velocity->writable);
 
-    const Core::UVScriptObjectHostUVE bare{entityManager, nullptr, entityManager.CreateEntityUVE()};
+    const Core::BlueprintObjectHostUVE bare{entityManager, nullptr, entityManager.CreateEntityUVE()};
     EXPECT_FALSE(bare.DescribeFunctionUVE("physics.apply_force").has_value());
     EXPECT_FALSE(bare.DescribeFunctionUVE("physics.apply_impulse").has_value());
     EXPECT_FALSE(bare.DescribeFunctionUVE("physics.apply_torque").has_value());
@@ -126,19 +126,19 @@ TEST_F(UVScriptPhysicsForcesUVETest, Host_DescribesPhysicsSurfaceOnlyOnRigidBodi
 
 TEST_F(UVScriptPhysicsForcesUVETest, Host_CallFunction_AppliesForcesWithoutInput) {
     const EntityUVE body = MakeRigidUVE(2.0F, false, Math::Vector3UVE{});
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, body};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, body};
 
-    std::array<UVScript::ValueUVE, 1U> forceArgs{Vec3ArgUVE(1.0, 0.0, 0.0)};
+    std::array<Blueprint::ValueUVE, 1U> forceArgs{Vec3ArgUVE(1.0, 0.0, 0.0)};
     EXPECT_TRUE(std::get<bool>(host.CallFunctionUVE("physics.apply_force", forceArgs)));
     EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).force,
               (Math::Vector3UVE{1.0F, 0.0F, 0.0F}));
 
-    std::array<UVScript::ValueUVE, 1U> impulseArgs{Vec3ArgUVE(4.0, 0.0, 0.0)};
+    std::array<Blueprint::ValueUVE, 1U> impulseArgs{Vec3ArgUVE(4.0, 0.0, 0.0)};
     EXPECT_TRUE(std::get<bool>(host.CallFunctionUVE("physics.apply_impulse", impulseArgs)));
     EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).velocity,
               (Math::Vector3UVE{2.0F, 0.0F, 0.0F}));
 
-    std::array<UVScript::ValueUVE, 1U> torqueArgs{Vec3ArgUVE(0.0, 0.0, 5.0)};
+    std::array<Blueprint::ValueUVE, 1U> torqueArgs{Vec3ArgUVE(0.0, 0.0, 5.0)};
     EXPECT_TRUE(std::get<bool>(host.CallFunctionUVE("physics.apply_torque", torqueArgs)));
     EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).torque,
               (Math::Vector3UVE{0.0F, 0.0F, 5.0F}));
@@ -146,11 +146,11 @@ TEST_F(UVScriptPhysicsForcesUVETest, Host_CallFunction_AppliesForcesWithoutInput
 
 TEST_F(UVScriptPhysicsForcesUVETest, Host_VelocityProperty_RoundTripsWithCharacterPriority) {
     const EntityUVE body = MakeRigidUVE(1.0F, false, Math::Vector3UVE{});
-    Core::UVScriptObjectHostUVE host{entityManager, nullptr, body};
+    Core::BlueprintObjectHostUVE host{entityManager, nullptr, body};
     host.SetPropertyUVE("velocity", Vec3ArgUVE(1.0, 2.0, 3.0));
     EXPECT_EQ(entityManager.GetComponentUVE<Rigid3DComponentUVE>(body).velocity,
               (Math::Vector3UVE{1.0F, 2.0F, 3.0F}));
-    const UVScript::Vec3ValueUVE readBack = std::get<UVScript::Vec3ValueUVE>(host.GetPropertyUVE("velocity"));
+    const Blueprint::Vec3ValueUVE readBack = std::get<Blueprint::Vec3ValueUVE>(host.GetPropertyUVE("velocity"));
     EXPECT_DOUBLE_EQ(readBack.x, 1.0);
     EXPECT_DOUBLE_EQ(readBack.y, 2.0);
     EXPECT_DOUBLE_EQ(readBack.z, 3.0);
@@ -159,9 +159,9 @@ TEST_F(UVScriptPhysicsForcesUVETest, Host_VelocityProperty_RoundTripsWithCharact
     CharacterControllerComponentUVE character;
     character.velocity = Math::Vector3UVE{9.0F, 9.0F, 9.0F};
     entityManager.AddComponentUVE<CharacterControllerComponentUVE>(hybrid, character);
-    Core::UVScriptObjectHostUVE hybridHost{entityManager, nullptr, hybrid};
-    const UVScript::Vec3ValueUVE hybridRead =
-        std::get<UVScript::Vec3ValueUVE>(hybridHost.GetPropertyUVE("velocity"));
+    Core::BlueprintObjectHostUVE hybridHost{entityManager, nullptr, hybrid};
+    const Blueprint::Vec3ValueUVE hybridRead =
+        std::get<Blueprint::Vec3ValueUVE>(hybridHost.GetPropertyUVE("velocity"));
     EXPECT_DOUBLE_EQ(hybridRead.x, 9.0);
     hybridHost.SetPropertyUVE("velocity", Vec3ArgUVE(7.0, 7.0, 7.0));
     EXPECT_EQ(entityManager.GetComponentUVE<CharacterControllerComponentUVE>(hybrid).velocity,
