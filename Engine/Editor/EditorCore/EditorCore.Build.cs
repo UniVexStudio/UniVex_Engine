@@ -45,5 +45,9 @@ public class EditorCoreModule : ModuleRules
             "GLEW_STATIC",
             "GLEW_NO_GLU"
         });
+
+        ExcludedFiles.AddRange(new string[] {
+            "Blueprint/"
+        });
     }
 }

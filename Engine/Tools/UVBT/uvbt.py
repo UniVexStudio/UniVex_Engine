@@ -351,9 +351,9 @@ class EngineBuilder:
             text = text.replace("@UNIVEX_SELECTION_OUTLINE_FRAG@", (vp_shaders / "selection_outline.frag").read_text(encoding="utf-8"))
             sel_out.write_text(text, encoding="utf-8")
 
-        # 6. Test artifacts (co-located inside module Tests/ and Editor/Blueprint/Testing/)
+        # 6. Test artifacts (co-located inside module Tests/ and Engine/Editor/EditorCore/Blueprint/Testing/)
         plugin_fixtures_dir = self.repo_root / "Engine" / "Runtime" / "Plugins" / "Tests" / "Fixtures"
-        bp_native_dir = self.repo_root / "Editor" / "Blueprint" / "Testing" / "Compiler" / "native"
+        bp_native_dir = self.repo_root / "Engine" / "Editor" / "EditorCore" / "Blueprint" / "Testing" / "Compiler" / "native"
         if (plugin_fixtures_dir.is_dir() or bp_native_dir.is_dir()) and bin_dir is not None:
             # Build test plugins
             plugin_fixtures = [
@@ -369,7 +369,7 @@ class EngineBuilder:
 
             # Build Blueprint native compiler tool
             uvsc_exe = bin_dir / "uvsc"
-            bp_dir = self.repo_root / "Editor" / "Blueprint"
+            bp_dir = self.repo_root / "Engine" / "Editor" / "EditorCore" / "Blueprint"
             uvsc_main = bp_dir / "Compiler" / "Backend" / "blueprint_compiler_main.cpp"
             bp_srcs = [
                 p for sub in ("Compiler", "Runtime")
@@ -554,7 +554,7 @@ class EngineBuilder:
                 f'UVE_TEST_PLUGIN_VALID_PATH="{bin_dir / "libuve_test_plugin_valid.so"}"',
                 f'UVE_TEST_PLUGIN_BAD_PROTOCOL_PATH="{bin_dir / "libuve_test_plugin_bad_protocol.so"}"',
                 f'UVE_TEST_PLUGIN_NO_ENTRY_PATH="{bin_dir / "libuve_test_plugin_no_entry.so"}"',
-                f'UVE_UVSCRIPT_NATIVE_DIR="{self.repo_root / "Editor" / "Blueprint" / "Testing" / "Compiler" / "native"}"',
+                f'UVE_UVSCRIPT_NATIVE_DIR="{self.repo_root / "Engine" / "Editor" / "EditorCore" / "Blueprint" / "Testing" / "Compiler" / "native"}"',
             ])
 
         print(f"\n[UVBT] ================================================================")
