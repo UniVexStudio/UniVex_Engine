@@ -90,7 +90,9 @@ public:
   void setDecimals(int d) { m_dec = d; invalidate(); }
   void setSuffix(std::string s) { m_suffix = std::move(s); invalidate(); }
   void setDragSpeed(float s) { m_speed = s; }
-  void setScrubbable(bool s) { m_scrubbable = s; invalidate(); }
+  // Off: the field is a plain value box. A press starts typing at once and dragging changes nothing
+  // (for settings whose value is typed, not scrubbed).
+  void setScrubbable(bool on) { m_scrubbable = on; invalidate(); }
   bool scrubbable() const { return m_scrubbable; }
   void setAccentStrip(Color c) { m_strip = c; m_hasStrip = true; invalidate(); }
   void setAxisLabel(std::string label, Color c) { m_axisLabel = std::move(label); m_strip = c; m_hasStrip = true; invalidate(); }

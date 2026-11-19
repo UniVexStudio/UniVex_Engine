@@ -285,6 +285,10 @@ void NumberField::paint(Canvas& c) {
 
 bool NumberField::onMouseDown(const MouseEvent& e) {
   if (e.button != MouseButton::Left || m_editing) return false;
+  if (!m_scrubbable) {
+    if (enabled()) beginEdit();
+    return true;
+  }
   m_down = true;
   m_dragging = false;
   m_pressX = e.pos.x;

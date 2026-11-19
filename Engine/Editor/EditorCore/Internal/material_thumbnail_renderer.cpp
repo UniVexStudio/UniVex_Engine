@@ -118,6 +118,13 @@ uniform sampler2D uNormalTexture;
 uniform sampler2D uMetallicRoughnessTexture;
 uniform sampler2D uAOTexture;
 uniform sampler2D uEmissiveTexture;
+// Each map's own reading, as the runtime lit shader reads it (see its ReadMapUVE): per map
+// (albedo, normal, metallic-roughness, AO, emissive) Transform is (tiling - 1, offset) and Control
+// is (channel: 0 RGB, 1-4 R/G/B/A; invert; 1 - strength; on UV2). All zero reads it as authored.
+uniform vec4 uMapTransform[5];
+uniform vec4 uMapControl[5];
+uniform vec2 uUv2Scale;
+uniform vec2 uUv2Offset;
 
 uniform vec3 uKeyDirection;
 uniform vec3 uKeyColor;
@@ -217,13 +224,28 @@ PreviewUvSetUVE BuildPreviewUvSetUVE() {
     return set;
 }
 
-vec4 SamplePreviewTextureUVE(sampler2D map, PreviewUvSetUVE set) {
-    if (set.triplanar == 0) {
-        return texture(map, set.uv);
+vec4 ReadMapUVE(sampler2D map, int slot, PreviewUvSetUVE set, vec4 neutral) {
+    const vec4 transform = uMapTransform[slot];
+    const vec4 control = uMapControl[slot];
+    const vec2 scale = vec2(1.0) + transform.xy;
+    vec4 value;
+    if (control.w <= 0.5 && set.triplanar != 0) {
+        value = texture(map, set.uvX * scale + transform.zw) * set.weights.x +
+                texture(map, set.uvY * scale + transform.zw) * set.weights.y +
+                texture(map, set.uvZ * scale + transform.zw) * set.weights.z;
+    } else {
+        const vec2 base = control.w > 0.5 ? vTexCoord * uUv2Scale + uUv2Offset : set.uv;
+        value = texture(map, base * scale + transform.zw);
     }
-    return texture(map, set.uvX) * set.weights.x +
-           texture(map, set.uvY) * set.weights.y +
-           texture(map, set.uvZ) * set.weights.z;
+    const int channel = int(control.x + 0.5);
+    if (channel >= 1) {
+        const float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
+        value = vec4(grey, grey, grey, channel == 4 ? 1.0 : value.a);
+    }
+    if (control.y > 0.5) {
+        value.rgb = vec3(1.0) - value.rgb;
+    }
+    return mix(value, neutral, clamp(control.z, 0.0, 1.0));
 }
 
 vec3 SamplePreviewTriplanarNormalUVE(sampler2D normalMap, PreviewUvSetUVE set) {
@@ -252,7 +274,7 @@ void main() {
     const PreviewUvSetUVE uvSet = BuildPreviewUvSetUVE();
     vec4 albedoSample = vec4(1.0);
     if (uHasAlbedoTexture) {
-        albedoSample = SamplePreviewTextureUVE(uAlbedoTexture, uvSet);
+        albedoSample = ReadMapUVE(uAlbedoTexture, 0, uvSet, vec4(1.0));
     }
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
@@ -277,7 +299,7 @@ void main() {
             }
             tangent = normalize(tangent);
             vec3 bitangent = normalize(cross(shadingNormal, tangent));
-            vec3 tangentSpaceNormal = texture(uNormalTexture, uvSet.uv).xyz * 2.0 - 1.0;
+            vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, 1, uvSet, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
             if (uFlipGreen) {
                 tangentSpaceNormal.y = -tangentSpaceNormal.y;
             }
@@ -296,7 +318,7 @@ void main() {
     float metallic = uMetallic;
     float roughness = uRoughness;
     if (uHasMetallicRoughnessTexture) {
-        const vec3 metallicRoughness = SamplePreviewTextureUVE(uMetallicRoughnessTexture, uvSet).rgb;
+        const vec3 metallicRoughness = ReadMapUVE(uMetallicRoughnessTexture, 2, uvSet, vec4(1.0)).rgb;
         metallic *= metallicRoughness.b;
         roughness *= metallicRoughness.g;
     }
@@ -307,7 +329,7 @@ void main() {
 
     float occlusion = 1.0;
     if (uHasAOTexture) {
-        occlusion = mix(1.0, SamplePreviewTextureUVE(uAOTexture, uvSet).r, clamp(uOcclusionStrength, 0.0, 1.0));
+        occlusion = mix(1.0, ReadMapUVE(uAOTexture, 3, uvSet, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
     }
 
     const float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
@@ -335,7 +357,7 @@ void main() {
     color += diffuseAmbient + specularAmbient;
 
     if (uHasEmissiveTexture) {
-        color += SamplePreviewTextureUVE(uEmissiveTexture, uvSet).rgb * uEmissiveColor * uEmissiveEnergy;
+        color += ReadMapUVE(uEmissiveTexture, 4, uvSet, vec4(1.0)).rgb * uEmissiveColor * uEmissiveEnergy;
     } else {
         color += uEmissiveColor * uEmissiveEnergy;
     }
@@ -391,6 +413,10 @@ enum class PreviewUniformUVE : std::size_t {
     RimColor,
     SkyAmbient,
     GroundAmbient,
+    MapTransform,
+    MapControl,
+    Uv2Scale,
+    Uv2Offset,
     Count,
 };
 
@@ -405,7 +431,8 @@ constexpr std::array<const char*, kPreviewUniformCountUVE> kPreviewUniformNamesU
     "uHasNormalTexture",     "uHasMetallicRoughnessTexture", "uHasAOTexture", "uHasEmissiveTexture",
     "uAlbedoTexture",        "uNormalTexture",    "uMetallicRoughnessTexture", "uAOTexture", "uEmissiveTexture",
     "uKeyDirection",         "uKeyColor",         "uFillDirection",     "uFillColor",        "uRimDirection",
-    "uRimColor",             "uSkyAmbient",       "uGroundAmbient",
+    "uRimColor",             "uSkyAmbient",       "uGroundAmbient",     "uMapTransform",     "uMapControl",
+    "uUv2Scale",             "uUv2Offset",
 };
 
 void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexcept {
@@ -1007,6 +1034,37 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         SetVector3UVE(gl, PreviewUniformUVE::RimColor, kRimLightColorUVE);
         SetVector3UVE(gl, PreviewUniformUVE::SkyAmbient, kSkyAmbientUVE);
         SetVector3UVE(gl, PreviewUniformUVE::GroundAmbient, kGroundAmbientUVE);
+
+        // Each map read as the runtime reads it: its own tiling, offset, channel, invert and strength.
+        const float uv2Scale[2] = {material.uv2Scale.x, material.uv2Scale.y};
+        const float uv2Offset[2] = {material.uv2Offset.x, material.uv2Offset.y};
+        SetVector2UVE(gl, PreviewUniformUVE::Uv2Scale, uv2Scale);
+        SetVector2UVE(gl, PreviewUniformUVE::Uv2Offset, uv2Offset);
+        constexpr std::array<Asset::MaterialMapUVE, 5> kPreviewMapsUVE{
+            Asset::MaterialMapUVE::Albedo, Asset::MaterialMapUVE::Normal, Asset::MaterialMapUVE::MetallicRoughness,
+            Asset::MaterialMapUVE::Occlusion, Asset::MaterialMapUVE::Emissive};
+        std::array<float, 20> mapTransforms{};
+        std::array<float, 20> mapControls{};
+        for (std::size_t slot = 0U; slot < kPreviewMapsUVE.size(); ++slot) {
+            const Asset::MaterialMapSettingsUVE& settings = material.MapUVE(kPreviewMapsUVE[slot]);
+            const bool onUv2 = settings.onUv2 || (slot == 3U && material.aoOnUv2) || (slot == 4U && material.emissionOnUv2);
+            mapTransforms[slot * 4U + 0U] = settings.tiling.x - 1.0F;
+            mapTransforms[slot * 4U + 1U] = settings.tiling.y - 1.0F;
+            mapTransforms[slot * 4U + 2U] = settings.offset.x;
+            mapTransforms[slot * 4U + 3U] = settings.offset.y;
+            mapControls[slot * 4U + 0U] = settings.channel == Asset::MaterialTextureChannelUVE::Rgb
+                                              ? 0.0F
+                                              : static_cast<float>(static_cast<int>(settings.channel) + 1);
+            mapControls[slot * 4U + 1U] = settings.invert ? 1.0F : 0.0F;
+            mapControls[slot * 4U + 2U] = 1.0F - std::clamp(settings.strength, 0.0F, 1.0F);
+            mapControls[slot * 4U + 3U] = onUv2 ? 1.0F : 0.0F;
+        }
+        if (const GLint location = UniformLocationUVE(gl, PreviewUniformUVE::MapTransform); location >= 0) {
+            gl.table.glUniform4fv(location, 5, mapTransforms.data());
+        }
+        if (const GLint location = UniformLocationUVE(gl, PreviewUniformUVE::MapControl); location >= 0) {
+            gl.table.glUniform4fv(location, 5, mapControls.data());
+        }
 
         gl.table.glBindVertexArray(gl.previewVertexArray);
         glDrawElements(GL_TRIANGLES, gl.previewIndexCount, GL_UNSIGNED_INT, nullptr);

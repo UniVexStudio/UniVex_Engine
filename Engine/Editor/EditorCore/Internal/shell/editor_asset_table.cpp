@@ -917,6 +917,10 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
         if (m_editor.GetAssetTableEntryTypeUVE(snapshot.entries[i]) == ItemTypeUVE::Script) {
             continue;
         }
+        // An image's import settings (<image>.uvimport) belong to the image, not beside it as a file.
+        if (snapshot.entries[i].relativePath.extension() == ".uvimport") {
+            continue;
+        }
         if (m_editor.DoesAssetTableEntryMatchFocusUVE(snapshot.entries[i])) {
             candidates.push_back(i);
         }
