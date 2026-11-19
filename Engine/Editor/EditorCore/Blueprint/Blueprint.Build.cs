@@ -8,13 +8,27 @@ public class BlueprintModule : ModuleRules
     {
         Type = ModuleType.StaticLibrary;
 
+        PublicDependencyModuleNames.AddRange(new string[] {
+            "Asset",
+            "Logging",
+        });
+
         PublicIncludePaths.AddRange(new string[] {
+            "Assets",
+            "Core",
+            "Debug",
+            "Nodes",
+            "Nodes/Networking",
+            "Platform",
+            "Plugins",
+            "Profiling",
+            "Resources",
+            "Serialization",
             "Compiler/Frontend",
             "Compiler/Backend",
             "Runtime/VirtualMachine",
             "Runtime/Variables",
             "Runtime/ObjectBinding",
-            "Nodes/Networking",
         });
 
         PrivateIncludePaths.AddRange(new string[] {
@@ -23,6 +37,7 @@ public class BlueprintModule : ModuleRules
 
         ExcludedFiles.AddRange(new string[] {
             "blueprint_compiler_main.cpp",
+            "Editor/",
         });
     }
 }

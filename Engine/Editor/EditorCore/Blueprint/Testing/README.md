@@ -1,3 +1,3 @@
 # Engine/Editor/EditorCore/Blueprint/Testing
 
-Blueprint automated tests (Unit, Integration, Compiler, Runtime, Editor, Serialization, Plugins, Performance).
+Blueprint automated tests covering all subsystems: `Unit/`, `Compiler/`, `Runtime/`, `Integration/`, `Serialization/`, `Plugins/`, `Performance/`, and `Editor/`.

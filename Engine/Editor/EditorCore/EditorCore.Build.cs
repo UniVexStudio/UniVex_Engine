@@ -24,15 +24,17 @@ public class EditorCoreModule : ModuleRules
             "Strings",
             "Logging",
             "VFX",
+            "Blueprint",
             "RenderSystems",
             "RHIOpenGL"
         });
 
         // The editor's PRISM windows: shared pieces in shell/, each kind of asset editor in a folder
-        // of its own (Blueprint Class, Animation Graph, Widget Blueprint, Montage, Retarget, Animation Library, VFX).
+        // of its own (Blueprint Class in Blueprint/Editor, Animation Graph, Widget Blueprint, Montage,
+        // Retarget, Animation Library, VFX).
         PrivateIncludePaths.AddRange(new string[] {
             "Internal/shell",
-            "Internal/shell/blueprint",
+            "Blueprint/Editor",
             "Internal/shell/anim_graph",
             "Internal/shell/widget",
             "Internal/shell/montage",
@@ -46,8 +48,21 @@ public class EditorCoreModule : ModuleRules
             "GLEW_NO_GLU"
         });
 
+        // Exclude BlueprintModule's non-Editor directories (compiled by Blueprint/Blueprint.Build.cs).
+        // Blueprint/Editor/ remains compiled as part of EditorCore so it can use EditorCore & PRISM UI.
         ExcludedFiles.AddRange(new string[] {
-            "Blueprint/"
+            "Blueprint/Assets/",
+            "Blueprint/Compiler/",
+            "Blueprint/Core/",
+            "Blueprint/Debug/",
+            "Blueprint/Nodes/",
+            "Blueprint/Platform/",
+            "Blueprint/Plugins/",
+            "Blueprint/Profiling/",
+            "Blueprint/Resources/",
+            "Blueprint/Runtime/",
+            "Blueprint/Serialization/",
+            "Blueprint/Testing/"
         });
     }
 }
