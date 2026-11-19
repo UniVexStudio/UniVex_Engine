@@ -645,7 +645,11 @@ std::vector<int> BlueprintGraph::selectedIds() const {
 }
 void BlueprintGraph::removeSelected() {
   bool any = false;
-  for (int id : selectedIds()) { removeNode(id); any = true; }
+  for (int id : selectedIds()) {
+    if (nodeLocked && nodeLocked(id)) continue;
+    removeNode(id);
+    any = true;
+  }
   size_t cn = m_comments.size();
   std::erase_if(m_comments, [](const BlueprintComment& c) { return c.selected; });
   any |= cn != m_comments.size();
@@ -934,7 +938,7 @@ std::string BlueprintGraph::serialize(bool selOnly) const {
   if (!selOnly) o << "V\t" << m_pan.x << '\t' << m_pan.y << '\t' << m_zoom << '\n';
   std::set<int> ids;
   for (auto& n : m_nodes) {
-    if (selOnly && !n.selected) continue;
+    if (selOnly && (!n.selected || (nodeLocked && nodeLocked(n.id)))) continue;
     ids.insert(n.id);
     writeNode(o, n);
   }
