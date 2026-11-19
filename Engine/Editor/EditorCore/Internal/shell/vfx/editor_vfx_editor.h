@@ -20,14 +20,12 @@
 
 namespace prism {
 class BlueprintGraph;
+class Border;
 class Button;
 class ComboBox;
 class EngineView;
 class Label;
 class ScrollBox;
-class Segmented;
-class Splitter;
-class StackSwitcher;
 class TableView;
 } // namespace prism
 
@@ -42,8 +40,8 @@ class VfxTimelineWidgetUVE;
 ///
 ///   [#1 logo] [title bar: File Edit Window Help | drag strip | - [] x]
 ///   [       ] [#2 the particle system's document tab                 ]
-///   [ Save | Undo Redo | Compile | Play Pause Restart Speed Loop FixedSeed Grid Bounds | Split/Preview/Graph | status ]
-///   [ Left: Emitters + User Parameters | Centre: 3D Preview + Particle Graph + Compile Results + Timeline | Right: Inspector ]
+///   [ Save | Undo Redo | Compile | FixedSeed Grid Bounds | status    ]
+///   [ Left: 3D Preview + Transport + Timeline / Emitters | Centre: Particle Graph / Compile Results | Right: Inspector / User Parameters ]
 class EditorVfxEditorUVE final {
 public:
     EditorVfxEditorUVE(EditorUVE& editor, EditorHostUVE& host);
@@ -62,8 +60,6 @@ public:
     [[nodiscard]] prism::BlueprintGraph* GraphWidgetUVE() noexcept { return m_graph.get(); }
 
 private:
-    enum class CenterModeUVE : std::uint8_t { Split = 0, PreviewOnly, GraphOnly };
-
     [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildTitleBarUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildToolbarUVE();
@@ -79,7 +75,6 @@ private:
     void SyncGraphToAssetUVE();
     void RebuildInspectorUVE();
     void RebuildCompileTableUVE();
-    void ApplyCenterModeUVE(CenterModeUVE mode);
     void ShowAddEmitterMenuUVE(prism::Rect anchor);
 
     EditorUVE& m_editor;
@@ -92,23 +87,22 @@ private:
 
     std::shared_ptr<DocumentTabUVE> m_tab;
     std::shared_ptr<prism::Button> m_playButton;
-    std::shared_ptr<prism::Button> m_pauseButton;
+    std::shared_ptr<prism::Button> m_stopButton;
     std::shared_ptr<prism::Button> m_loopButton;
     std::shared_ptr<prism::Button> m_seedButton;
     std::shared_ptr<prism::Button> m_gridButton;
     std::shared_ptr<prism::Button> m_boundsButton;
     std::shared_ptr<prism::ComboBox> m_speedCombo;
-    std::shared_ptr<prism::Segmented> m_centerModeSeg;
+    std::shared_ptr<prism::Border> m_previewStatePill;
+    std::shared_ptr<prism::Label> m_previewStateBadge;
+    std::shared_ptr<prism::Label> m_timecodeLabel;
+    std::shared_ptr<prism::Label> m_compileSummaryLabel;
     std::shared_ptr<prism::Label> m_status;
 
     std::shared_ptr<prism::ScrollBox> m_emittersScroll;
     std::shared_ptr<prism::Button> m_addEmitterButton;
     std::shared_ptr<prism::ScrollBox> m_parametersScroll;
 
-    CenterModeUVE m_centerMode = CenterModeUVE::GraphOnly;
-    std::shared_ptr<prism::Splitter> m_centerTopSplitter;
-    std::shared_ptr<prism::Widget> m_previewPane;
-    std::shared_ptr<prism::Widget> m_graphPane;
     std::shared_ptr<prism::EngineView> m_viewport;
     std::shared_ptr<prism::Label> m_statsOverlayLabel;
     std::shared_ptr<prism::BlueprintGraph> m_graph;
@@ -124,6 +118,9 @@ private:
     std::optional<std::size_t> m_shownSoloEmitter;
     std::uint32_t m_shownModuleId = 0U;
     std::size_t m_shownCompileCount = static_cast<std::size_t>(-1);
+    std::uint8_t m_shownPreviewState = 0xFFU;
+    bool m_shownPlaying = false;
+    bool m_shownPlayingInit = false;
     bool m_shownValid = false;
 };
 

@@ -453,7 +453,9 @@ void BuildEmitterGraphUVE(const Asset::ParticleSystemAssetUVE& system,
                 continue;
             }
             prism::BlueprintNode node = MakeModuleGraphNodeUVE(*desc, &mod);
-            if (std::abs(node.pos.x) < 1.0e-4F && std::abs(node.pos.y) < 1.0e-4F) {
+            const bool unplaced = !mod.graphPosAtOrigin &&
+                                  std::abs(node.pos.x) < 1.0e-4F && std::abs(node.pos.y) < 1.0e-4F;
+            if (unplaced) {
                 node.pos = prism::Vec2{kFirstModuleXUVE + static_cast<float>(i) * kModuleSpacingXUVE, rowY};
             }
             maxModuleX = std::max(maxModuleX, node.pos.x + kModuleSpacingXUVE);
@@ -461,8 +463,11 @@ void BuildEmitterGraphUVE(const Asset::ParticleSystemAssetUVE& system,
             graph.addNode(std::move(node));
         }
 
-        const float stageX = std::max(kStageNodeXUVE, maxModuleX + 60.0F);
-        graph.addNode(MakeStageOutputNodeUVE(stage, stageX, rowY));
+        const std::size_t stageIdx = static_cast<std::size_t>(stage);
+        const Asset::ParticleStageNodePosUVE& savedStagePos = emitter.stageNodePositions[stageIdx];
+        const float stageX = savedStagePos.placed ? savedStagePos.x : std::max(kStageNodeXUVE, maxModuleX + 60.0F);
+        const float stageY = savedStagePos.placed ? savedStagePos.y : rowY;
+        graph.addNode(MakeStageOutputNodeUVE(stage, stageX, stageY));
 
         const int stageNodeId = StageNodeIdForUVE(stage);
         for (std::size_t i = 0U; i < chainNodeIds.size(); ++i) {
@@ -477,21 +482,41 @@ void BuildEmitterGraphUVE(const Asset::ParticleSystemAssetUVE& system,
     addStageChain(Asset::ParticleStageUVE::ParticleUpdate, emitter.particleUpdate);
     addStageChain(Asset::ParticleStageUVE::Render, emitter.render);
 
-    // Detached modules are real nodes that simply are not wired into a stage chain.
+    // Detached modules are real nodes that simply are not wired into a stage output node.
     {
         std::size_t slot = 0U;
+        std::set<std::uint32_t> detachedIds;
         for (const Asset::ParticleModuleUVE& mod : emitter.detached) {
             const Asset::ParticleModuleDescriptorUVE* const desc = Asset::FindParticleModuleDescriptorUVE(mod.type);
             if (desc == nullptr || graph.findNode(static_cast<int>(mod.id)) != nullptr) {
                 continue;
             }
             prism::BlueprintNode node = MakeModuleGraphNodeUVE(*desc, &mod);
-            if (std::abs(node.pos.x) < 1.0e-4F && std::abs(node.pos.y) < 1.0e-4F) {
+            const bool unplaced = !mod.graphPosAtOrigin &&
+                                  std::abs(node.pos.x) < 1.0e-4F && std::abs(node.pos.y) < 1.0e-4F;
+            if (unplaced) {
                 node.pos = prism::Vec2{kFirstModuleXUVE + static_cast<float>(slot) * kModuleSpacingXUVE,
                                        kDetachedRowYUVE};
             }
             ++slot;
+            detachedIds.insert(mod.id);
             graph.addNode(std::move(node));
+        }
+
+        // Restore any preserved chain wires between detached modules so cutting one wire does not
+        // wipe remaining upstream connections.
+        for (const Asset::ParticleDetachedLinkUVE& link : emitter.detachedLinks) {
+            if (link.fromModuleId == 0U || link.toModuleId == 0U || link.fromModuleId == link.toModuleId) {
+                continue;
+            }
+            if (!detachedIds.contains(link.fromModuleId) || !detachedIds.contains(link.toModuleId)) {
+                continue;
+            }
+            const int fromId = static_cast<int>(link.fromModuleId);
+            const int toId = static_cast<int>(link.toModuleId);
+            if (graph.findNode(fromId) != nullptr && graph.findNode(toId) != nullptr) {
+                graph.connectPins(fromId, 0, toId, 0, PT::Link);
+            }
         }
     }
 
@@ -563,6 +588,8 @@ bool ExtractEmitterFromGraphUVE(const prism::BlueprintGraph& graph,
     outEmitter.particleUpdate.clear();
     outEmitter.render.clear();
     outEmitter.detached.clear();
+    outEmitter.detachedLinks.clear();
+    outEmitter.stageNodePositions = {};
     outEmitter.mathNodes.clear();
 
     // Index existing modules by id so curves, gradients, random ranges, and enabled states are preserved.
@@ -594,7 +621,29 @@ bool ExtractEmitterFromGraphUVE(const prism::BlueprintGraph& graph,
     std::unordered_map<int, Asset::ParticleStageUVE> moduleStage;
 
     for (const prism::BlueprintNode& gnode : graph.nodes()) {
-        if (IsVfxStageNodeIdUVE(gnode.id) || gnode.id <= 0) {
+        if (IsVfxStageNodeIdUVE(gnode.id)) {
+            std::optional<Asset::ParticleStageUVE> stageOpt;
+            switch (gnode.id) {
+                case kVfxStageNodeEmitterUpdateUVE: stageOpt = Asset::ParticleStageUVE::EmitterUpdate; break;
+                case kVfxStageNodeParticleSpawnUVE: stageOpt = Asset::ParticleStageUVE::ParticleSpawn; break;
+                case kVfxStageNodeParticleUpdateUVE: stageOpt = Asset::ParticleStageUVE::ParticleUpdate; break;
+                case kVfxStageNodeRenderUVE: stageOpt = Asset::ParticleStageUVE::Render; break;
+                default: break;
+            }
+            if (stageOpt.has_value()) {
+                const std::size_t stageIdx = static_cast<std::size_t>(*stageOpt);
+                const Asset::ParticleStageNodePosUVE& prevPos = prevEmitter.stageNodePositions[stageIdx];
+                if (prevPos.placed &&
+                    std::abs(prevPos.x - gnode.pos.x) < 1.0e-3F &&
+                    std::abs(prevPos.y - gnode.pos.y) < 1.0e-3F) {
+                    outEmitter.stageNodePositions[stageIdx] = prevPos;
+                } else {
+                    outEmitter.stageNodePositions[stageIdx] = Asset::ParticleStageNodePosUVE{true, gnode.pos.x, gnode.pos.y};
+                }
+            }
+            continue;
+        }
+        if (gnode.id <= 0) {
             continue;
         }
         if (gnode.typeKey.rfind("vfx_math:", 0U) == 0U) {
@@ -658,6 +707,7 @@ bool ExtractEmitterFromGraphUVE(const prism::BlueprintGraph& graph,
             mod.graphX = gnode.pos.x;
             mod.graphY = gnode.pos.y;
         }
+        mod.graphPosAtOrigin = (std::abs(mod.graphX) < 1.0e-4F && std::abs(mod.graphY) < 1.0e-4F);
 
         // Update pins that were edited on the graph or wired to Math/Value nodes.
         for (std::size_t pinIdx = 1U; pinIdx < gnode.inputs.size(); ++pinIdx) {
@@ -769,7 +819,8 @@ bool ExtractEmitterFromGraphUVE(const prism::BlueprintGraph& graph,
 
     // The graph is the source of truth: a stage's module list is exactly the chain that reaches the
     // stage output node, walked backward through `PT::Link` wires (pin 0 of every node). A module that
-    // is not on a chain contributes nothing; it is kept in `detached` so it is not lost from the graph.
+    // is not on a chain contributes nothing; it is kept in `detached` (along with any chain wires
+    // between detached modules in `detachedLinks`) so authoring work is never lost.
     std::set<int> chained;
     const auto extractStageChain = [&](const Asset::ParticleStageUVE stage,
                                        std::vector<Asset::ParticleModuleUVE>& outStageList) {
@@ -814,9 +865,38 @@ bool ExtractEmitterFromGraphUVE(const prism::BlueprintGraph& graph,
         }
     }
     std::sort(unchained.begin(), unchained.end());
+    std::set<int> unchainedSet(unchained.begin(), unchained.end());
     for (const int id : unchained) {
         outEmitter.detached.push_back(builtModules.at(id));
     }
+
+    // Preserve chain wires (`Out` pin 0 -> `In` pin 0) connecting detached modules of the same stage.
+    std::set<std::pair<std::uint32_t, std::uint32_t>> seenDetachedLinks;
+    for (const prism::BlueprintWire& wire : graph.wires()) {
+        if (wire.fromPinIndex != 0 || wire.toPinIndex != 0 || wire.fromNodeId == wire.toNodeId) {
+            continue;
+        }
+        if (!unchainedSet.contains(wire.fromNodeId) || !unchainedSet.contains(wire.toNodeId)) {
+            continue;
+        }
+        const auto fromStageIt = moduleStage.find(wire.fromNodeId);
+        const auto toStageIt = moduleStage.find(wire.toNodeId);
+        if (fromStageIt == moduleStage.end() || toStageIt == moduleStage.end() ||
+            fromStageIt->second != toStageIt->second) {
+            continue;
+        }
+        const auto key = std::make_pair(static_cast<std::uint32_t>(wire.fromNodeId),
+                                        static_cast<std::uint32_t>(wire.toNodeId));
+        if (seenDetachedLinks.insert(key).second &&
+            outEmitter.detachedLinks.size() < Asset::kMaximumParticleDetachedLinksUVE) {
+            outEmitter.detachedLinks.push_back(Asset::ParticleDetachedLinkUVE{key.first, key.second});
+        }
+    }
+    std::sort(outEmitter.detachedLinks.begin(), outEmitter.detachedLinks.end(),
+              [](const Asset::ParticleDetachedLinkUVE& a, const Asset::ParticleDetachedLinkUVE& b) {
+                  return a.fromModuleId != b.fromModuleId ? a.fromModuleId < b.fromModuleId
+                                                          : a.toModuleId < b.toModuleId;
+              });
     return true;
 }
 

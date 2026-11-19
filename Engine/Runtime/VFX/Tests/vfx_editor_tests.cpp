@@ -76,12 +76,14 @@ TEST(VfxEditorGraphUVETest, BuildThenExtract_RoundTripsEveryTemplateEmitter) {
                     for (Asset::ParticleModuleUVE& m : *stage) {
                         m.graphX = 0.0F;
                         m.graphY = 0.0F;
+                        m.graphPosAtOrigin = false;
                     }
                 }
                 for (Asset::ParticleMathNodeUVE& m : e.mathNodes) {
                     m.graphX = 0.0F;
                     m.graphY = 0.0F;
                 }
+                e.stageNodePositions = {};
                 return e;
             };
             const Asset::ParticleEmitterAssetUVE ref = stripPlacement(system.emitters[i]);
@@ -216,6 +218,43 @@ TEST_F(VfxEditorSessionUVETest, CreateFromTemplate_WritesAValidUvfxThatOpens) {
     ASSERT_NE(m_editor->VfxEditSessionPtrUVE(), nullptr);
     EXPECT_FALSE(m_editor->VfxEditSessionPtrUVE()->system.emitters.empty());
     EXPECT_TRUE(m_editor->VfxEditSessionPtrUVE()->previewHandle.IsValidUVE());
+    EXPECT_FALSE(m_editor->VfxEditSessionPtrUVE()->playing)
+        << "preview simulation must start stopped when opening a particle system";
+}
+
+TEST_F(VfxEditorSessionUVETest, PlaybackControls_StartStoppedAndStopResetsPlayhead) {
+    ASSERT_TRUE(m_editor->OpenVfxEditorUVE(CreateSparksUVE()));
+    EditorUVE::VfxEditSessionUVE* const session = m_editor->VfxEditSessionPtrUVE();
+    ASSERT_NE(session, nullptr);
+
+    EXPECT_FALSE(session->playing);
+    EXPECT_DOUBLE_EQ(session->playhead, 0.0);
+
+    // Ticking while stopped must not advance the playhead.
+    m_editor->TickVfxEditorUVE(0.1);
+    EXPECT_DOUBLE_EQ(session->playhead, 0.0);
+
+    // Play advances the playhead.
+    m_editor->PlayVfxPreviewUVE();
+    EXPECT_TRUE(session->playing);
+    m_editor->TickVfxEditorUVE(0.1);
+    EXPECT_GT(session->playhead, 0.0);
+    const double afterPlay = session->playhead;
+
+    // Pause freezes the playhead at its current time.
+    m_editor->PauseVfxPreviewUVE();
+    EXPECT_FALSE(session->playing);
+    m_editor->TickVfxEditorUVE(0.1);
+    EXPECT_DOUBLE_EQ(session->playhead, afterPlay);
+
+    // Stop pauses and resets the playhead back to t = 0.
+    m_editor->PlayVfxPreviewUVE();
+    m_editor->TickVfxEditorUVE(0.05);
+    EXPECT_GT(session->playhead, afterPlay);
+    m_editor->StopVfxPreviewUVE();
+    EXPECT_FALSE(session->playing);
+    EXPECT_DOUBLE_EQ(session->playhead, 0.0);
+    EXPECT_TRUE(session->previewHandle.IsValidUVE());
 }
 
 TEST_F(VfxEditorSessionUVETest, EditUndoRedoSave_TracksDirtyStateAndPersists) {

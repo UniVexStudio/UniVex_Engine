@@ -353,6 +353,85 @@ TEST(ParticleSystemAssetUVETest, RejectsEachInvalidCase) {
         s.emitters[0].render[0].strings["UnknownStringKey"] = "bad";
         EXPECT_FALSE(IsParticleSystemAssetValidUVE(s));
     }
+
+    // 9. Detached links and stage node positions validation
+    {
+        auto s = makeMinimalValid();
+        s.emitters[0].detachedLinks.push_back({0U, 2U});
+        EXPECT_FALSE(IsParticleSystemAssetValidUVE(s));
+    }
+    {
+        auto s = makeMinimalValid();
+        s.emitters[0].detachedLinks.push_back({5U, 5U});
+        EXPECT_FALSE(IsParticleSystemAssetValidUVE(s));
+    }
+    {
+        auto s = makeMinimalValid();
+        s.emitters[0].detachedLinks.assign(kMaximumParticleDetachedLinksUVE + 1U, {1U, 2U});
+        EXPECT_FALSE(IsParticleSystemAssetValidUVE(s));
+    }
+    {
+        auto s = makeMinimalValid();
+        s.emitters[0].stageNodePositions[0] = {true, std::numeric_limits<float>::quiet_NaN(), 10.0F};
+        EXPECT_FALSE(IsParticleSystemAssetValidUVE(s));
+    }
+    {
+        auto s = makeMinimalValid();
+        s.emitters[0].stageNodePositions[2] = {true, 100.0F, std::numeric_limits<float>::infinity()};
+        EXPECT_FALSE(IsParticleSystemAssetValidUVE(s));
+    }
+}
+
+TEST(ParticleSystemAssetUVETest, RoundTripsStageNodePositionsDetachedLinksAndOriginPlacement) {
+    const auto dir = ::UVE::Tests::MakeTestCaseDirectoryUVE("stage-detached-links");
+    const std::filesystem::path assetPath = dir / "VFX_GraphLayout.uvfx";
+
+    ParticleSystemAssetUVE original;
+    ParticleEmitterAssetUVE em;
+    em.name = "LayoutEmitter";
+    ParticleModuleUVE rate = MakeDefaultParticleModuleUVE(1U, ParticleModuleTypeUVE::SpawnRate);
+    rate.graphX = 0.0F;
+    rate.graphY = 0.0F;
+    rate.graphPosAtOrigin = true;
+    em.emitterUpdate.push_back(std::move(rate));
+    em.render.push_back(MakeDefaultParticleModuleUVE(2U, ParticleModuleTypeUVE::SpriteRenderer, 400.0F, 600.0F));
+    em.detached.push_back(MakeDefaultParticleModuleUVE(10U, ParticleModuleTypeUVE::ShapeSphere, 100.0F, 200.0F));
+    em.detached.push_back(MakeDefaultParticleModuleUVE(11U, ParticleModuleTypeUVE::InitialVelocity, 360.0F, 200.0F));
+    em.detachedLinks = {{10U, 11U}};
+    em.stageNodePositions[0] = {true, 920.0F, 20.0F};
+    em.stageNodePositions[1] = {false, 0.0F, 0.0F};
+    em.stageNodePositions[2] = {true, 1040.0F, 440.0F};
+    em.stageNodePositions[3] = {true, 1100.0F, 680.0F};
+    original.emitters.push_back(std::move(em));
+
+    ASSERT_TRUE(IsParticleSystemAssetValidUVE(original));
+    ASSERT_TRUE(SaveParticleSystemAssetUVE(original, assetPath));
+
+    ParticleSystemAssetUVE loaded;
+    ASSERT_TRUE(LoadParticleSystemAssetUVE(assetPath, loaded));
+    EXPECT_EQ(loaded, original);
+    EXPECT_TRUE(loaded.emitters[0].emitterUpdate[0].graphPosAtOrigin);
+    EXPECT_EQ(loaded.emitters[0].detachedLinks.size(), 1U);
+    EXPECT_TRUE(loaded.emitters[0].stageNodePositions[0].placed);
+    EXPECT_FALSE(loaded.emitters[0].stageNodePositions[1].placed);
+    EXPECT_TRUE(loaded.emitters[0].stageNodePositions[2].placed);
+    EXPECT_TRUE(loaded.emitters[0].stageNodePositions[3].placed);
+
+    // Legacy JSON without stageNodes / detachedLinks / at still loads cleanly with defaults.
+    const std::filesystem::path legacyPath = dir / "VFX_Legacy.uvfx";
+    const std::string legacyJson =
+        R"({"schema":"uve-particle-system-v1","emitters":[{"name":"Legacy","emitterUpdate":[{"id":1,"type":"SpawnRate"}],"render":[{"id":2,"type":"SpriteRenderer"}]}]})";
+    const auto* bytes = reinterpret_cast<const std::byte*>(legacyJson.data());
+    ASSERT_TRUE(WriteUveFileUVE(legacyPath, AssetKindUVE::ParticleSystem, {bytes, bytes + legacyJson.size()}));
+    ParticleSystemAssetUVE legacyLoaded;
+    ASSERT_TRUE(LoadParticleSystemAssetUVE(legacyPath, legacyLoaded));
+    EXPECT_FALSE(legacyLoaded.emitters[0].emitterUpdate[0].graphPosAtOrigin);
+    EXPECT_TRUE(legacyLoaded.emitters[0].detachedLinks.empty());
+    for (const ParticleStageNodePosUVE& p : legacyLoaded.emitters[0].stageNodePositions) {
+        EXPECT_FALSE(p.placed);
+    }
+
+    std::filesystem::remove_all(dir);
 }
 
 TEST(ParticleSystemAssetUVETest, RejectsWrongSchemaAndKind) {

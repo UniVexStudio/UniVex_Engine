@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "Support/test_scratch.h"
@@ -419,6 +420,169 @@ TEST(VfxGraphAuthorityUVETest, DetachedModulesSurviveSaveLoadAndGraphRebuild) {
     ParticleSystemAssetUVE bad = system;
     bad.emitters[0].detached[0].floats["NotAnInput"] = Asset::ParticleFloatInputUVE{};
     EXPECT_FALSE(Asset::IsParticleSystemAssetValidUVE(bad));
+}
+
+TEST(VfxGraphAuthorityUVETest, DeletingOneWirePreservesRemainingUpstreamDetachedChain) {
+    EnsurePrismHostedUVE();
+    const ParticleSystemAssetUVE system = VFX::CreateParticleTemplateUVE(ParticleTemplateKindUVE::Fountain);
+    const Asset::ParticleEmitterAssetUVE& emitter = system.emitters[0];
+    ASSERT_GE(emitter.particleSpawn.size(), 4U);
+
+    const auto hasChainWire = [](const prism::BlueprintGraph& graph, const std::uint32_t fromId, const std::uint32_t toId) {
+        return std::any_of(graph.wires().begin(), graph.wires().end(), [&](const prism::BlueprintWire& w) {
+            return w.type == PT::Link &&
+                   w.fromNodeId == static_cast<int>(fromId) && w.fromPinIndex == 0 &&
+                   w.toNodeId == static_cast<int>(toId) && w.toPinIndex == 0;
+        });
+    };
+
+    // Case 1: Delete a single middle wire in Particle Spawn (S1 -> S2).
+    // Upstream link S0 -> S1 must stay intact across extract, rebuild, and save/load.
+    {
+        prism::BlueprintGraph graph;
+        InstallRulesUVE(graph);
+        BuildEmitterGraphUVE(system, 0U, graph);
+
+        const std::uint32_t s0 = emitter.particleSpawn[0].id;
+        const std::uint32_t s1 = emitter.particleSpawn[1].id;
+        const std::uint32_t s2 = emitter.particleSpawn[2].id;
+        ASSERT_TRUE(hasChainWire(graph, s0, s1));
+        ASSERT_TRUE(hasChainWire(graph, s1, s2));
+
+        ASSERT_TRUE(graph.disconnectPin(static_cast<int>(s1), 0, false));
+        const ParticleSystemAssetUVE edited = ApplyGraphUVE(system, graph);
+        ASSERT_EQ(edited.emitters[0].detached.size(), 2U);
+        ASSERT_EQ(edited.emitters[0].detachedLinks.size(), 1U);
+        EXPECT_EQ(edited.emitters[0].detachedLinks[0].fromModuleId, s0);
+        EXPECT_EQ(edited.emitters[0].detachedLinks[0].toModuleId, s1);
+
+        // Rebuild graph from extracted asset: S0 -> S1 survives; S1 -> S2 stays disconnected.
+        prism::BlueprintGraph rebuilt;
+        InstallRulesUVE(rebuilt);
+        BuildEmitterGraphUVE(edited, 0U, rebuilt);
+        EXPECT_TRUE(hasChainWire(rebuilt, s0, s1));
+        EXPECT_FALSE(hasChainWire(rebuilt, s1, s2));
+
+        // Save -> load -> rebuild must preserve detached links while keeping them out of compiled ops.
+        const std::filesystem::path path = ::UVE::Tests::ScratchPathUVE("detached_chain_middle.uvfx");
+        ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(edited, path));
+        ParticleSystemAssetUVE reloaded;
+        ASSERT_TRUE(Asset::LoadParticleSystemAssetUVE(path, reloaded));
+        EXPECT_EQ(reloaded.emitters[0].detachedLinks, edited.emitters[0].detachedLinks);
+
+        prism::BlueprintGraph reloadedGraph;
+        InstallRulesUVE(reloadedGraph);
+        BuildEmitterGraphUVE(reloaded, 0U, reloadedGraph);
+        EXPECT_TRUE(hasChainWire(reloadedGraph, s0, s1));
+        EXPECT_FALSE(hasChainWire(reloadedGraph, s1, s2));
+
+        // Reconnecting S1 -> S2 restores the entire active chain and clears detachedLinks.
+        ASSERT_TRUE(reloadedGraph.connect(static_cast<int>(s1), 0, static_cast<int>(s2), 0));
+        const ParticleSystemAssetUVE reconnected = ApplyGraphUVE(reloaded, reloadedGraph);
+        EXPECT_TRUE(reconnected.emitters[0].detached.empty());
+        EXPECT_TRUE(reconnected.emitters[0].detachedLinks.empty());
+        EXPECT_EQ(reconnected.emitters[0].particleSpawn.size(), emitter.particleSpawn.size());
+    }
+
+    // Case 2: Delete the final wire feeding the Particle Spawn stage output node.
+    // Every upstream chain wire S0 -> S1 -> ... -> Sn must survive intact.
+    {
+        prism::BlueprintGraph graph;
+        InstallRulesUVE(graph);
+        BuildEmitterGraphUVE(system, 0U, graph);
+
+        ASSERT_TRUE(graph.disconnectPin(kVfxStageNodeParticleSpawnUVE, 0, true));
+        const ParticleSystemAssetUVE edited = ApplyGraphUVE(system, graph);
+        EXPECT_TRUE(edited.emitters[0].particleSpawn.empty());
+        EXPECT_EQ(edited.emitters[0].detached.size(), emitter.particleSpawn.size());
+        EXPECT_EQ(edited.emitters[0].detachedLinks.size(), emitter.particleSpawn.size() - 1U);
+
+        prism::BlueprintGraph rebuilt;
+        BuildEmitterGraphUVE(edited, 0U, rebuilt);
+        for (std::size_t idx = 0U; idx + 1U < emitter.particleSpawn.size(); ++idx) {
+            EXPECT_TRUE(hasChainWire(rebuilt, emitter.particleSpawn[idx].id, emitter.particleSpawn[idx + 1U].id))
+                << "upstream chain wire at index " << idx << " must survive stage-output disconnect";
+        }
+        EXPECT_FALSE(rebuilt.isPinConnected(kVfxStageNodeParticleSpawnUVE, 0, true));
+    }
+}
+
+TEST(VfxGraphAuthorityUVETest, StageOutputNodePositionsAndOriginPlacementSurviveRoundTrip) {
+    EnsurePrismHostedUVE();
+    const ParticleSystemAssetUVE system = VFX::CreateParticleTemplateUVE(ParticleTemplateKindUVE::Fountain);
+
+    prism::BlueprintGraph graph;
+    prism::BlueprintGraph::Features feat = graph.features();
+    feat.toolbar = false;
+    feat.crumbs = false;
+    feat.history = false;
+    feat.shortcuts = false;
+    graph.setFeatures(feat);
+    InstallRulesUVE(graph);
+    BuildEmitterGraphUVE(system, 0U, graph);
+    graph.arrange({0.0F, 0.0F, 2400.0F, 1600.0F});
+    graph.setView({200.0F, 100.0F}, 1.0F);
+    graph.setSnap(false);
+
+    const auto dragNodeTo = [](prism::BlueprintGraph& g, const int nodeId, const prism::Vec2 targetWorld) {
+        const prism::BlueprintNode* const node = g.findNode(nodeId);
+        ASSERT_NE(node, nullptr) << "nodeId=" << nodeId;
+        const prism::Vec2 startScreen = g.worldToScreen(node->pos) + prism::Vec2{24.0F, 12.0F};
+        const prism::Vec2 endScreen = startScreen + (targetWorld - node->pos);
+        prism::MouseEvent down{};
+        down.pos = startScreen;
+        down.button = prism::MouseButton::Left;
+        down.clicks = 1;
+        ASSERT_TRUE(g.onMouseDown(down)) << "mouse down failed on nodeId=" << nodeId;
+        prism::MouseEvent move = down;
+        move.pos = endScreen;
+        g.onMouseMove(move);
+        prism::MouseEvent up = move;
+        g.onMouseUp(up);
+    };
+
+    // Move all 4 fixed stage output nodes to custom positions and drag a module explicitly to (0, 0).
+    const std::array<std::pair<int, prism::Vec2>, 4> stageTargets{{
+        {kVfxStageNodeEmitterUpdateUVE, {1120.0F, 48.0F}},
+        {kVfxStageNodeParticleSpawnUVE, {1240.0F, 272.0F}},
+        {kVfxStageNodeParticleUpdateUVE, {1360.0F, 528.0F}},
+        {kVfxStageNodeRenderUVE, {1480.0F, 760.0F}},
+    }};
+    for (const auto& [stageNodeId, target] : stageTargets) {
+        dragNodeTo(graph, stageNodeId, target);
+    }
+
+    const int originModuleId = static_cast<int>(system.emitters[0].emitterUpdate.front().id);
+    dragNodeTo(graph, originModuleId, {0.0F, 0.0F});
+
+    const ParticleSystemAssetUVE edited = ApplyGraphUVE(system, graph);
+    for (std::size_t idx = 0U; idx < 4U; ++idx) {
+        EXPECT_TRUE(edited.emitters[0].stageNodePositions[idx].placed);
+        EXPECT_NEAR(edited.emitters[0].stageNodePositions[idx].x, stageTargets[idx].second.x, 1.0e-2F);
+        EXPECT_NEAR(edited.emitters[0].stageNodePositions[idx].y, stageTargets[idx].second.y, 1.0e-2F);
+    }
+    EXPECT_TRUE(edited.emitters[0].emitterUpdate.front().graphPosAtOrigin);
+    EXPECT_NEAR(edited.emitters[0].emitterUpdate.front().graphX, 0.0F, 1.0e-2F);
+    EXPECT_NEAR(edited.emitters[0].emitterUpdate.front().graphY, 0.0F, 1.0e-2F);
+
+    // Save -> load -> rebuild graph: all 4 stage output nodes AND the (0, 0) module keep their exact positions.
+    const std::filesystem::path path = ::UVE::Tests::ScratchPathUVE("stage_nodes_and_origin.uvfx");
+    ASSERT_TRUE(Asset::SaveParticleSystemAssetUVE(edited, path));
+    ParticleSystemAssetUVE reloaded;
+    ASSERT_TRUE(Asset::LoadParticleSystemAssetUVE(path, reloaded));
+
+    prism::BlueprintGraph rebuilt;
+    BuildEmitterGraphUVE(reloaded, 0U, rebuilt);
+    for (const auto& [stageNodeId, target] : stageTargets) {
+        const prism::BlueprintNode* const node = rebuilt.findNode(stageNodeId);
+        ASSERT_NE(node, nullptr);
+        EXPECT_NEAR(node->pos.x, target.x, 1.0e-2F) << "stage node " << stageNodeId;
+        EXPECT_NEAR(node->pos.y, target.y, 1.0e-2F) << "stage node " << stageNodeId;
+    }
+    const prism::BlueprintNode* const originNode = rebuilt.findNode(originModuleId);
+    ASSERT_NE(originNode, nullptr);
+    EXPECT_NEAR(originNode->pos.x, 0.0F, 1.0e-2F);
+    EXPECT_NEAR(originNode->pos.y, 0.0F, 1.0e-2F);
 }
 
 } // namespace

@@ -218,16 +218,32 @@ bool EditorUVE::CompileVfxEditorUVE() {
     return ok;
 }
 
-void EditorUVE::PlayVfxPreviewUVE() noexcept {
-    if (m_vfxEdit != nullptr) {
-        m_vfxEdit->playing = true;
+void EditorUVE::PlayVfxPreviewUVE() {
+    if (m_vfxEdit == nullptr) {
+        return;
     }
+    VfxEditSessionUVE& session = *m_vfxEdit;
+    const VFX::VfxInstanceUVE* const instance = session.previewWorld.TryGetInstanceUVE(session.previewHandle);
+    const double duration = std::max(0.1, static_cast<double>(session.system.duration));
+    if (!session.previewHandle.IsValidUVE() ||
+        (!session.loop && session.playhead >= duration && (instance == nullptr || !instance->IsAliveUVE()))) {
+        RestartVfxPreviewUVE();
+    }
+    session.playing = true;
 }
 
 void EditorUVE::PauseVfxPreviewUVE() noexcept {
     if (m_vfxEdit != nullptr) {
         m_vfxEdit->playing = false;
     }
+}
+
+void EditorUVE::StopVfxPreviewUVE() {
+    if (m_vfxEdit == nullptr) {
+        return;
+    }
+    m_vfxEdit->playing = false;
+    RestartVfxPreviewUVE();
 }
 
 void EditorUVE::RestartVfxPreviewUVE() {
@@ -332,13 +348,13 @@ std::uint64_t EditorUVE::RenderVfxPreviewUVE(const Math::Vector2UVE& size, Math:
     Core::EngineServicesUVE& services = m_vfxScene->GetServicesUVE();
 
     ViewportOverlayStateUVE& state = m_vfxViewportOverlayState;
-    if (session.focusPending) {
+    if (session.previewCameraResetPending) {
         const auto& b = session.system.fixedBounds;
         state.studioTarget = {(b.min.x + b.max.x) * 0.5F, (b.min.y + b.max.y) * 0.5F, (b.min.z + b.max.z) * 0.5F};
         const float radius = std::max({b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z, 1.0F});
         state.studioRadius = radius * 0.9F;
         ++state.studioFramingSerial;
-        session.focusPending = false;
+        session.previewCameraResetPending = false;
     }
     state.studioView = true;
     state.entityAuthoringView = true;
