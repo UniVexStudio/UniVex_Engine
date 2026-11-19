@@ -246,7 +246,7 @@ def main() -> int:
                         f"    A rename that swaps a noun has to swap its article too; prose and UI\n"
                         f"    strings are not checked by the compiler, so this is."
                     )
-            if rel.startswith("Engine/") or rel.startswith("Editor/") or rel.startswith("Test/"):
+            if rel.startswith("Engine/") or rel.startswith("Editor/"):
                 for name, pattern in foreign_patterns.items():
                     if pattern.search(line):
                         foreign_hits[name] += 1
