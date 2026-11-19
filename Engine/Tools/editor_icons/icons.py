@@ -4,7 +4,7 @@
 - All wired and unwired UI Controls
 - All ECS Inspector Components
 - All Object Palette Categories
-- All Content Browser Asset Types
+- All Asset Table Asset Types
 
 100% Pure Gray, Slate & White Soft-Matte Studio Shading (zero colorful hex codes).
 """
@@ -1173,7 +1173,7 @@ for _name, _path, _dots in CATEGORIES:
 
 
 # =============================================================================================
-# 12. Content Browser Asset Types (21 Assets — Monochrome Studio)
+# 12. Asset Table Asset Types (21 Assets — Monochrome Studio)
 # =============================================================================================
 
 @content_type("folder", "Folder")

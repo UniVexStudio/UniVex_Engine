@@ -271,7 +271,7 @@ public:
   TransactionService& history() { return m_history; }
   std::string serialize(bool selectionOnly = false) const;
   bool deserialize(const std::string& text);        // replaces the graph; false (and unchanged) if malformed
-  Callback<> onBrowse;                               // "Browse": reveal this graph in the content browser
+  Callback<> onBrowse;                               // "Browse": reveal this graph in the asset table
   // A host that owns the file and the compiler: Save / Ctrl+S and Compile call these instead of the
   // graph's own save and validation; the host reports back with setCompileResult.
   std::function<void()> onSaveRequested;

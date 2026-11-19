@@ -11,9 +11,9 @@
 #include "i_asset_database.h"
 #include "i_project_file_index.h"
 #include "skeleton_3d.h"
-#include "animation_montage_asset.h"
+#include "motion_montage_asset.h"
 #include "montage_library_asset.h"
-#include "montage_player_component.h"
+#include "montage_sequencer_component.h"
 
 #include "prism/Containers.h"
 #include "prism/Controls.h"
@@ -187,16 +187,16 @@ std::vector<Asset::AssetGuidUVE> EditorAnimGraphPanelUVE::ClipChoicesUVE() const
     return clips;
 }
 
-std::vector<Scene::EntityUVE> EditorAnimGraphPanelUVE::MontagePlayersUVE() const {
+std::vector<Scene::EntityUVE> EditorAnimGraphPanelUVE::MontageSequencersUVE() const {
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     const GraphUVE* graph = GraphPtrUVE();
-    if (graph != nullptr && graph->montagePlayer != Scene::kInvalidEntityUVE && em.IsAliveUVE(graph->montagePlayer) &&
-        em.HasComponentUVE<Scene::MontagePlayerComponentUVE>(graph->montagePlayer)) {
-        return {graph->montagePlayer};
+    if (graph != nullptr && graph->montageSequencer != Scene::kInvalidEntityUVE && em.IsAliveUVE(graph->montageSequencer) &&
+        em.HasComponentUVE<Scene::MontageSequencerComponentUVE>(graph->montageSequencer)) {
+        return {graph->montageSequencer};
     }
     std::vector<Scene::EntityUVE> players;
     for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
-        if (em.HasComponentUVE<Scene::MontagePlayerComponentUVE>(object)) {
+        if (em.HasComponentUVE<Scene::MontageSequencerComponentUVE>(object)) {
             players.push_back(object);
         }
     }
@@ -213,17 +213,17 @@ std::vector<std::string> EditorAnimGraphPanelUVE::MontagesOnSlotUVE(const std::s
         }
         auto found = m_montageSlots.find(guid.value);
         if (found == m_montageSlots.end()) {
-            Asset::AnimationMontageAssetUVE montage;
+            Asset::MotionMontageAssetUVE montage;
             const std::filesystem::path path = database.ResolveUVE(guid);
-            found = m_montageSlots.emplace(guid.value, !path.empty() && Asset::LoadAnimationMontageAssetUVE(path, montage) ? montage.slot : std::string{}).first;
+            found = m_montageSlots.emplace(guid.value, !path.empty() && Asset::LoadMotionMontageAssetUVE(path, montage) ? montage.slot : std::string{}).first;
         }
         const std::string name = database.ResolveUVE(guid).stem().string();
         if (found->second == slot && std::ranges::find(names, name) == names.end()) {
             names.push_back(name);
         }
     };
-    for (const Scene::EntityUVE player : MontagePlayersUVE()) {
-        const auto& component = em.GetComponentUVE<Scene::MontagePlayerComponentUVE>(player);
+    for (const Scene::EntityUVE player : MontageSequencersUVE()) {
+        const auto& component = em.GetComponentUVE<Scene::MontageSequencerComponentUVE>(player);
         for (std::size_t i = 0U; i < 8U; ++i) {
             consider(component.MontageAtUVE(i));
         }
@@ -640,17 +640,17 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         }
         case Kind::Slot: {
             auto name = prism::make<prism::TextInput>(node.parameter, "DefaultSlot");
-            name->setTooltip("The action clip slot laid over the input here (a MontagePlayer plays into it)");
+            name->setTooltip("The motion montage slot laid over the input here (a MontageSequencer plays into it)");
             name->onCommit = [this, id](const std::string& to) { EditNodeUVE(id, [&to](NodeUVE& n) { n.parameter = to; }); };
             body->add(RowUVE("Slot", name));
-            // What the montages on this slot are, from the MontagePlayer(s) the graph takes.
+            // What the montages on this slot are, from the MontageSequencer(s) the graph takes.
             const std::vector<std::string> montages = MontagesOnSlotUVE(node.parameter.empty() ? std::string{"DefaultSlot"} : node.parameter);
             std::string list;
             for (const std::string& montage : montages) {
                 list += (list.empty() ? "" : ", ") + montage;
             }
             auto plays = prism::make<prism::Label>(list, prism::FontRole::Small);
-            plays->setTooltip("Action Clips that play over the input here");
+            plays->setTooltip("Motion Montages that play over the input here");
             body->add(RowUVE("Plays", plays));
             break;
         }

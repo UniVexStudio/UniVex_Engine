@@ -63,7 +63,7 @@ bool EditorUVE::BeginRetargetPreviewUVE() {
     if (!m_documentSceneFactory) {
         return false;
     }
-    // A world of its own beside the level (as the Montage Editor's): the level is not touched.
+    // A world of its own beside the level (as the Motion Montage Editor's): the level is not touched.
     RetargetPreviewUVE preview;
     preview.scene = std::shared_ptr<Core::DocumentSceneUVE>(m_documentSceneFactory());
     if (preview.scene == nullptr) {

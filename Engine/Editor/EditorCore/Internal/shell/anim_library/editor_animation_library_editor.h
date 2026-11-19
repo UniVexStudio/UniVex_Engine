@@ -24,7 +24,7 @@ class DocumentTabUVE;
 
 /// The clips of an Animation Library as tiles: each with its icon (the skeleton half-way through
 /// the clip), its name, length and frames. Click picks, double-click renames, right-click for
-/// the rest; drag a tile onto another to reorder; drop clips from the Content Browser to add them.
+/// the rest; drag a tile onto another to reorder; drop clips from the Asset Table to add them.
 class AnimationLibraryGridUVE final : public prism::Widget {
 public:
     struct TileUVE {
@@ -77,7 +77,7 @@ private:
     bool m_dropHot = false;
 };
 
-/// The Animation Library editor, in a window of its own (as Retarget and the Montage Editor):
+/// The Animation Library editor, in a window of its own (as Retarget and the Motion Montage Editor):
 ///
 ///   [#1 logo] [title bar: File Edit Help | drag strip | - [] x]
 ///   [       ] [#2 the library's tab                          ]

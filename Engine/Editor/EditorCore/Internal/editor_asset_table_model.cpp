@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "editor_content_browser_model.h"
+#include "editor_asset_table_model.h"
 
 #include <algorithm>
 #include <cctype>

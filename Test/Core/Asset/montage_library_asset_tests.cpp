@@ -19,7 +19,7 @@ TEST(MontageLibraryAssetUVETest, SaveThenLoadRoundTrips) {
     ASSERT_TRUE(LoadMontageLibraryAssetUVE(path, loaded));
     EXPECT_EQ(loaded, library);
     AnimationLibraryAssetUVE notAnimations;
-    EXPECT_FALSE(LoadAnimationLibraryAssetUVE(path, notAnimations)) << "a montage library is not an animation library";
+    EXPECT_FALSE(LoadAnimationLibraryAssetUVE(path, notAnimations)) << "a motion montage library is not an animation library";
     std::filesystem::remove(path);
 }
 

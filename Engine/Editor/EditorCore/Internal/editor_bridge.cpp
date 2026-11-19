@@ -66,15 +66,15 @@ namespace {
         EditorBridgeCapabilityUVE::Redo,
         EditorBridgeCapabilityUVE::ReadHierarchy,
         EditorBridgeCapabilityUVE::ReadInspector,
-        EditorBridgeCapabilityUVE::ReadContentBrowser,
+        EditorBridgeCapabilityUVE::ReadAssetTable,
         EditorBridgeCapabilityUVE::ToggleEntitySelection,
         EditorBridgeCapabilityUVE::SetHierarchyFilter,
-        EditorBridgeCapabilityUVE::SetContentBrowserDirectory,
-        EditorBridgeCapabilityUVE::SetContentBrowserFilter,
-        EditorBridgeCapabilityUVE::SetContentBrowserFocus,
-        EditorBridgeCapabilityUVE::RefreshContentBrowser,
-        EditorBridgeCapabilityUVE::SelectContentBrowserEntry,
-        EditorBridgeCapabilityUVE::QueueContentBrowserImport,
+        EditorBridgeCapabilityUVE::SetAssetTableDirectory,
+        EditorBridgeCapabilityUVE::SetAssetTableFilter,
+        EditorBridgeCapabilityUVE::SetAssetTableFocus,
+        EditorBridgeCapabilityUVE::RefreshAssetTable,
+        EditorBridgeCapabilityUVE::SelectAssetTableEntry,
+        EditorBridgeCapabilityUVE::QueueAssetTableImport,
         EditorBridgeCapabilityUVE::ReadViewportSurface,
         EditorBridgeCapabilityUVE::ReadDeveloperConsole,
         EditorBridgeCapabilityUVE::SubmitDeveloperConsoleCommand,
@@ -288,63 +288,63 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
                 message = "The native hierarchy filter was updated.";
             }
             break;
-        case EditorBridgeRequestKindUVE::SetContentBrowserDirectory: {
+        case EditorBridgeRequestKindUVE::SetAssetTableDirectory: {
             if (!request.contentDirectory.has_value() || !IsBoundedContentPathUVE(*request.contentDirectory)) {
                 return MakeResponseUVE(request, false, "bridge.request.invalid",
-                                       "SetContentBrowserDirectory requires a bounded relative directory payload.");
+                                       "SetAssetTableDirectory requires a bounded relative directory payload.");
             }
             const std::filesystem::path requestedDirectory = std::filesystem::path{*request.contentDirectory}.lexically_normal();
             if (requestedDirectory.is_absolute() || requestedDirectory.has_root_name() ||
                 std::find(requestedDirectory.begin(), requestedDirectory.end(), std::filesystem::path{".."}) !=
                     requestedDirectory.end()) {
                 return MakeResponseUVE(request, false, "bridge.request.invalid",
-                                       "The requested content browser directory must be a normalized relative path.");
+                                       "The requested asset table directory must be a normalized relative path.");
             }
             const Asset::ProjectFileSnapshotUVE snapshot = m_editor->m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-            if (!m_editor->IsContentBrowserDirectoryInSnapshotUVE(snapshot, requestedDirectory)) {
+            if (!m_editor->IsAssetTableDirectoryInSnapshotUVE(snapshot, requestedDirectory)) {
                 return MakeResponseUVE(request, false, "bridge.content.directory.invalid",
-                                       "The requested content browser directory is absent from the current native snapshot.");
+                                       "The requested asset table directory is absent from the current native snapshot.");
             }
-            if (m_editor->m_contentBrowserDirectory != requestedDirectory) {
-                m_editor->m_contentBrowserDirectory = requestedDirectory;
+            if (m_editor->m_assetTableDirectory != requestedDirectory) {
+                m_editor->m_assetTableDirectory = requestedDirectory;
                 applied = true;
                 code = "bridge.command.applied";
-                message = "The native content browser directory was updated.";
+                message = "The native asset table directory was updated.";
             }
             break;
         }
-        case EditorBridgeRequestKindUVE::SetContentBrowserFilter:
+        case EditorBridgeRequestKindUVE::SetAssetTableFilter:
             if (!request.contentFilter.has_value() || !IsBoundedRequestTextUVE(*request.contentFilter)) {
                 return MakeResponseUVE(request, false, "bridge.request.invalid",
-                                       "SetContentBrowserFilter requires a bounded filter payload.");
+                                       "SetAssetTableFilter requires a bounded filter payload.");
             }
             if (m_editor->m_assetFilter != *request.contentFilter) {
                 m_editor->m_assetFilter = *request.contentFilter;
                 applied = true;
                 code = "bridge.command.applied";
-                message = "The native content browser filter was updated.";
+                message = "The native asset table filter was updated.";
             }
             break;
-        case EditorBridgeRequestKindUVE::SetContentBrowserFocus: {
+        case EditorBridgeRequestKindUVE::SetAssetTableFocus: {
             if (!request.contentFocus.has_value() || !IsBoundedRequestTextUVE(*request.contentFocus)) {
                 return MakeResponseUVE(request, false, "bridge.request.invalid",
-                                       "SetContentBrowserFocus requires one known bounded focus identifier.");
+                                       "SetAssetTableFocus requires one known bounded focus identifier.");
             }
-            const std::optional<EditorUVE::ContentBrowserTypeFocusUVE> focus =
-                ParseContentBrowserFocusUVE(*request.contentFocus);
+            const std::optional<EditorUVE::AssetTableTypeFocusUVE> focus =
+                ParseAssetTableFocusUVE(*request.contentFocus);
             if (!focus.has_value()) {
                 return MakeResponseUVE(request, false, "bridge.request.invalid",
-                                       "The requested content browser focus is not supported.");
+                                       "The requested asset table focus is not supported.");
             }
-            if (m_editor->m_contentBrowserTypeFocus != *focus) {
-                m_editor->m_contentBrowserTypeFocus = *focus;
+            if (m_editor->m_assetTableTypeFocus != *focus) {
+                m_editor->m_assetTableTypeFocus = *focus;
                 applied = true;
                 code = "bridge.command.applied";
-                message = "The native content browser type focus was updated.";
+                message = "The native asset table type focus was updated.";
             }
             break;
         }
-        case EditorBridgeRequestKindUVE::RefreshContentBrowser: {
+        case EditorBridgeRequestKindUVE::RefreshAssetTable: {
             Asset::IProjectFileIndexUVE& projectFileIndex = m_editor->m_services->GetProjectFileIndexUVE();
             Asset::IProjectChangeWatcherUVE& projectChangeWatcher = m_editor->m_services->GetProjectChangeWatcherUVE();
             const Asset::ProjectChangeSnapshotUVE changesBeforeRefresh = projectChangeWatcher.GetSnapshotUVE();
@@ -361,22 +361,22 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
                 projectChangeWatcher.AcknowledgeRescanUVE();
             }
             const Asset::ProjectFileSnapshotUVE refreshedSnapshot = projectFileIndex.GetSnapshotUVE();
-            m_editor->ReconcileContentBrowserDirectoryUVE(refreshedSnapshot);
+            m_editor->ReconcileAssetTableDirectoryUVE(refreshedSnapshot);
             applied = true;
             code = "bridge.command.applied";
             message = "The native cached project content snapshot was refreshed explicitly.";
             break;
         }
-        case EditorBridgeRequestKindUVE::SelectContentBrowserEntry: {
+        case EditorBridgeRequestKindUVE::SelectAssetTableEntry: {
             if (!request.contentEntryPath.has_value() || !IsBoundedContentPathUVE(*request.contentEntryPath)) {
                 return MakeResponseUVE(request, false, "bridge.request.invalid",
-                                       "SelectContentBrowserEntry requires a bounded relative entry path.");
+                                       "SelectAssetTableEntry requires a bounded relative entry path.");
             }
             const std::filesystem::path requestedPath = std::filesystem::path{*request.contentEntryPath}.lexically_normal();
             if (requestedPath.empty() || requestedPath.is_absolute() || requestedPath.has_root_name() ||
                 std::find(requestedPath.begin(), requestedPath.end(), std::filesystem::path{".."}) != requestedPath.end()) {
                 return MakeResponseUVE(request, false, "bridge.request.invalid",
-                                       "The requested content browser entry must be a normalized relative path.");
+                                       "The requested asset table entry must be a normalized relative path.");
             }
             const Asset::ProjectFileSnapshotUVE snapshot = m_editor->m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             const auto selected = std::find_if(snapshot.entries.cbegin(), snapshot.entries.cend(),
@@ -403,17 +403,17 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             }
             break;
         }
-        case EditorBridgeRequestKindUVE::QueueContentBrowserImport: {
+        case EditorBridgeRequestKindUVE::QueueAssetTableImport: {
             if (!request.contentEntryPath.has_value() || !request.contentImportDestinationPath.has_value() ||
                 !IsBoundedContentPathUVE(*request.contentEntryPath) ||
                 !IsBoundedContentPathUVE(*request.contentImportDestinationPath)) {
                 return MakeResponseUVE(request, false, "bridge.content.import.request.invalid",
-                                       "QueueContentBrowserImport requires bounded source and destination paths.");
+                                       "QueueAssetTableImport requires bounded source and destination paths.");
             }
             if (!m_editor->m_selectedProjectFile.has_value() ||
                 m_editor->m_selectedProjectFile->relativePath.generic_string() != *request.contentEntryPath) {
                 return MakeResponseUVE(request, false, "bridge.content.import.selection_mismatch",
-                                       "The import request must target the currently selected Asset Library entry.");
+                                       "The import request must target the currently selected Asset Table entry.");
             }
             const Asset::ProjectFileEntryUVE& selected = *m_editor->m_selectedProjectFile;
             if (selected.kind == Asset::ProjectFileEntryKindUVE::Directory) {
@@ -455,7 +455,7 @@ EditorBridgeResponseUVE EditorBridgeUVE::DispatchUVE(const EditorBridgeRequestUV
             }
             applied = true;
             code = "bridge.content.import.queued";
-            message = "The selected Asset Library entry was queued for native import.";
+            message = "The selected Asset Table entry was queued for native import.";
             responseContentImportJobId = jobId->value;
             break;
         }
@@ -576,7 +576,7 @@ EditorBridgeUVE::ObservedStateUVE EditorBridgeUVE::CaptureObservedStateUVE() {
     }
     observed.hierarchy = CaptureHierarchyUVE();
     observed.inspector = CaptureInspectorUVE();
-    observed.contentBrowser = CaptureContentBrowserUVE();
+    observed.assetTable = CaptureAssetTableUVE();
     observed.viewportSurface = EditorBridgeViewportSurfaceSnapshotUVE{
         EditorBridgeViewportSurfaceStateUVE::Unavailable, 0U, 0U, 0U, true, false,
         "No managed viewport surface transport is available in this headless bridge session."};
@@ -690,7 +690,7 @@ EditorBridgeSnapshotUVE EditorBridgeUVE::BuildSnapshotUVE() const {
     snapshot.activeEntity = observed.activeEntity;
     snapshot.hierarchy = observed.hierarchy;
     snapshot.inspector = observed.inspector;
-    snapshot.contentBrowser = observed.contentBrowser;
+    snapshot.assetTable = observed.assetTable;
     snapshot.viewportSurface = observed.viewportSurface;
     snapshot.developerConsole = observed.developerConsole;
     snapshot.dataTableCatalog = observed.dataTableCatalog;
@@ -876,17 +876,17 @@ EditorBridgeInspectorSnapshotUVE EditorBridgeUVE::CaptureInspectorUVE() const {
     return snapshot;
 }
 
-EditorBridgeContentBrowserSnapshotUVE EditorBridgeUVE::CaptureContentBrowserUVE() {
-    EditorBridgeContentBrowserSnapshotUVE snapshot{};
+EditorBridgeAssetTableSnapshotUVE EditorBridgeUVE::CaptureAssetTableUVE() {
+    EditorBridgeAssetTableSnapshotUVE snapshot{};
     Asset::IProjectFileIndexUVE& projectFileIndex = m_editor->m_services->GetProjectFileIndexUVE();
     const Asset::ProjectFileSnapshotUVE nativeSnapshot = projectFileIndex.GetSnapshotUVE();
-    m_editor->ReconcileContentBrowserDirectoryUVE(nativeSnapshot);
+    m_editor->ReconcileAssetTableDirectoryUVE(nativeSnapshot);
 
     snapshot.contentRoot = BoundPresentationTextUVE(nativeSnapshot.contentRoot.generic_string());
-    snapshot.currentDirectory = BoundContentPathUVE(m_editor->m_contentBrowserDirectory.generic_string());
+    snapshot.currentDirectory = BoundContentPathUVE(m_editor->m_assetTableDirectory.generic_string());
     snapshot.filter = BoundPresentationTextUVE(m_editor->m_assetFilter);
-    snapshot.typeFocus = BoundPresentationTextUVE(EditorUVE::GetContentBrowserFocusLabelUVE(m_editor->m_contentBrowserTypeFocus));
-    for (const std::filesystem::path& segment : m_editor->m_contentBrowserDirectory) {
+    snapshot.typeFocus = BoundPresentationTextUVE(EditorUVE::GetAssetTableFocusLabelUVE(m_editor->m_assetTableTypeFocus));
+    for (const std::filesystem::path& segment : m_editor->m_assetTableDirectory) {
         if (snapshot.breadcrumbs.size() >= kEditorBridgeMaximumPanelEntriesUVE) {
             break;
         }
@@ -898,16 +898,16 @@ EditorBridgeContentBrowserSnapshotUVE EditorBridgeUVE::CaptureContentBrowserUVE(
     snapshot.lastRefreshSucceeded = m_editor->m_projectFileLastRefreshSucceeded;
 
     for (const Asset::ProjectFileEntryUVE& entry : nativeSnapshot.entries) {
-        if (entry.relativePath.parent_path() == m_editor->m_contentBrowserDirectory) {
+        if (entry.relativePath.parent_path() == m_editor->m_assetTableDirectory) {
             ++snapshot.directEntryCount;
         }
     }
     // The same items the panel lists: a folder's children, or with a search everything under it
     // whose name matches (a shelf the panel may show is not a bridge location).
     for (const std::size_t index :
-         ListContentFolderUVE(nativeSnapshot.entries, m_editor->m_contentBrowserDirectory, m_editor->m_assetFilter)) {
+         ListContentFolderUVE(nativeSnapshot.entries, m_editor->m_assetTableDirectory, m_editor->m_assetFilter)) {
         const Asset::ProjectFileEntryUVE& entry = nativeSnapshot.entries[index];
-        if (!m_editor->DoesContentBrowserEntryMatchFocusUVE(entry)) {
+        if (!m_editor->DoesAssetTableEntryMatchFocusUVE(entry)) {
             continue;
         }
         ++snapshot.visibleEntryCount;
@@ -938,23 +938,23 @@ EditorBridgeContentBrowserSnapshotUVE EditorBridgeUVE::CaptureContentBrowserUVE(
             snapshot.importAction.diagnostic = classification.diagnostic;
         }
     } else {
-        snapshot.importAction.diagnostic = "no Asset Library entry is selected";
+        snapshot.importAction.diagnostic = "no Asset Table entry is selected";
     }
     return snapshot;
 }
 
-EditorBridgeContentBrowserEntryUVE EditorBridgeUVE::ToContentEntryUVE(const Asset::ProjectFileEntryUVE& entry) const {
-    return EditorBridgeContentBrowserEntryUVE{
+EditorBridgeAssetTableEntryUVE EditorBridgeUVE::ToContentEntryUVE(const Asset::ProjectFileEntryUVE& entry) const {
+    return EditorBridgeAssetTableEntryUVE{
         BoundContentPathUVE(entry.relativePath.generic_string()),
         entry.kind == Asset::ProjectFileEntryKindUVE::Directory,
-        BoundPresentationTextUVE(EditorUVE::GetContentBrowserItemTypeLabelUVE(m_editor->GetContentBrowserEntryTypeUVE(entry))),
+        BoundPresentationTextUVE(EditorUVE::GetAssetTableItemTypeLabelUVE(m_editor->GetAssetTableEntryTypeUVE(entry))),
         entry.registeredAssetGuid.has_value() ? std::optional<std::uint64_t>{entry.registeredAssetGuid->value} : std::nullopt,
     };
 }
 
-std::optional<EditorUVE::ContentBrowserTypeFocusUVE> EditorBridgeUVE::ParseContentBrowserFocusUVE(
+std::optional<EditorUVE::AssetTableTypeFocusUVE> EditorBridgeUVE::ParseAssetTableFocusUVE(
     const std::string& focus) noexcept {
-    using Focus = EditorUVE::ContentBrowserTypeFocusUVE;
+    using Focus = EditorUVE::AssetTableTypeFocusUVE;
     if (focus == "all") {
         return Focus::All;
     }

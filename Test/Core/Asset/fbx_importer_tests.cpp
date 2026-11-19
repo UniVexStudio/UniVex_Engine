@@ -360,7 +360,7 @@ TEST_F(FbxImporterUVETest, ARiggedModelPublishesItsRigBesideIt) {
 
 TEST_F(FbxImporterUVETest, AStaticModelPublishesNoRig) {
     // Nothing to share: a static mesh has no bones, and writing an empty skeleton asset would only
-    // teach the content browser to offer a rig with nothing in it.
+    // teach the asset table to offer a rig with nothing in it.
     const std::filesystem::path source = ScratchUVE("crate.fbx");
     const std::filesystem::path destination = ScratchUVE("crate.uvmodel");
     WriteFixtureUVE(source, MakeFbxUVE(kFloorGeometryUVE, kFloorConnectionsUVE));

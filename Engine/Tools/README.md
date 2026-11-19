@@ -27,7 +27,7 @@ the four hand-committed `.inc` files it replaced.
 ## editor_icons/
 
 The editor's built-in icons: one per scene node type, one per node palette category and one per
-content browser type, drawn in one shared style (solid 3D shapes lit from the upper left, one
+asset table type, drawn in one shared style (solid 3D shapes lit from the upper left, one
 colour family per category).
 
 - `kit.py` - the drawing primitives (boxes, spheres, cylinders, figures, tiles).
@@ -40,7 +40,7 @@ colour family per category).
 - `embed_editor_icons.py` - run by the EditorCore build to embed the committed PNGs as one table.
   The build never needs a browser.
 
-The editor's tests fail if a node type, palette category or content browser type has no icon, so
+The editor's tests fail if a node type, palette category or asset table type has no icon, so
 adding one of those means adding its icon here.
 
 ## headless_gl_toolchain.sh
