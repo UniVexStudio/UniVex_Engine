@@ -64,7 +64,6 @@ void PopulateVfxDarkStudioSceneUVE(Core::EngineServicesUVE& services) {
         light.color = color;
         light.intensity = intensity;
         light.range = range;
-        light.castsShadows = false;
         em.AddComponentUVE<Scene::LightComponentUVE>(lightEntity, light);
     };
     // 3-point studio light rig (Warm Key, Cool Rim, Soft Fill) around the elevated emitter stage.
