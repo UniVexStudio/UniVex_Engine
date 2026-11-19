@@ -34,7 +34,7 @@ namespace {
     return editor.GetDocumentRootsUVE();
 }
 
-TEST(EditorBridgeUVETest, ContentBrowserImportCapabilityUVE_ReportsRawParserBoundaryForSelectedEntry) {
+TEST(EditorBridgeUVETest, AssetTableImportCapabilityUVE_ReportsRawParserBoundaryForSelectedEntry) {
     const std::filesystem::path contentRoot = "uve_editor_bridge_content_import_capability";
     std::filesystem::remove_all(contentRoot);
     std::filesystem::create_directories(contentRoot);
@@ -69,7 +69,7 @@ TEST(EditorBridgeUVETest, ContentBrowserImportCapabilityUVE_ReportsRawParserBoun
         refresh.protocolVersion = kEditorBridgeProtocolVersionUVE;
         refresh.requestId = 1U;
         refresh.expectedRevision = initial.revision;
-        refresh.kind = EditorBridgeRequestKindUVE::RefreshContentBrowser;
+        refresh.kind = EditorBridgeRequestKindUVE::RefreshAssetTable;
         const EditorBridgeResponseUVE refreshed = bridge.DispatchUVE(refresh);
         ASSERT_TRUE(refreshed.applied);
 
@@ -77,43 +77,43 @@ TEST(EditorBridgeUVETest, ContentBrowserImportCapabilityUVE_ReportsRawParserBoun
         select.protocolVersion = kEditorBridgeProtocolVersionUVE;
         select.requestId = 2U;
         select.expectedRevision = refreshed.snapshot.revision;
-        select.kind = EditorBridgeRequestKindUVE::SelectContentBrowserEntry;
+        select.kind = EditorBridgeRequestKindUVE::SelectAssetTableEntry;
         select.contentEntryPath = "character.dae";
         const EditorBridgeResponseUVE selected = bridge.DispatchUVE(select);
         ASSERT_TRUE(selected.applied);
-        ASSERT_TRUE(selected.snapshot.contentBrowser.selectedEntry.has_value());
-        EXPECT_EQ(selected.snapshot.contentBrowser.selectedEntry->relativePath, "character.dae");
-        EXPECT_TRUE(selected.snapshot.contentBrowser.importAction.hasSelection);
-        EXPECT_FALSE(selected.snapshot.contentBrowser.importAction.canImport);
-        EXPECT_FALSE(selected.snapshot.contentBrowser.importAction.canReimport);
-        EXPECT_FALSE(selected.snapshot.contentBrowser.importAction.importerRegistered);
-        EXPECT_TRUE(selected.snapshot.contentBrowser.importAction.requiresFormatSpecificParser);
-        EXPECT_EQ(selected.snapshot.contentBrowser.importAction.sourceKind, "rawModel");
-        EXPECT_EQ(selected.snapshot.contentBrowser.importAction.diagnostic,
+        ASSERT_TRUE(selected.snapshot.assetTable.selectedEntry.has_value());
+        EXPECT_EQ(selected.snapshot.assetTable.selectedEntry->relativePath, "character.dae");
+        EXPECT_TRUE(selected.snapshot.assetTable.importAction.hasSelection);
+        EXPECT_FALSE(selected.snapshot.assetTable.importAction.canImport);
+        EXPECT_FALSE(selected.snapshot.assetTable.importAction.canReimport);
+        EXPECT_FALSE(selected.snapshot.assetTable.importAction.importerRegistered);
+        EXPECT_TRUE(selected.snapshot.assetTable.importAction.requiresFormatSpecificParser);
+        EXPECT_EQ(selected.snapshot.assetTable.importAction.sourceKind, "rawModel");
+        EXPECT_EQ(selected.snapshot.assetTable.importAction.diagnostic,
                   "format-specific parser is not registered");
 
         EditorBridgeRequestUVE selectShader{};
         selectShader.protocolVersion = kEditorBridgeProtocolVersionUVE;
         selectShader.requestId = 3U;
         selectShader.expectedRevision = selected.snapshot.revision;
-        selectShader.kind = EditorBridgeRequestKindUVE::SelectContentBrowserEntry;
+        selectShader.kind = EditorBridgeRequestKindUVE::SelectAssetTableEntry;
         selectShader.contentEntryPath = "basic.vert";
         const EditorBridgeResponseUVE selectedShader = bridge.DispatchUVE(selectShader);
         ASSERT_TRUE(selectedShader.applied);
-        EXPECT_TRUE(selectedShader.snapshot.contentBrowser.importAction.hasSelection);
-        EXPECT_TRUE(selectedShader.snapshot.contentBrowser.importAction.canImport);
-        EXPECT_FALSE(selectedShader.snapshot.contentBrowser.importAction.canReimport);
-        EXPECT_TRUE(selectedShader.snapshot.contentBrowser.importAction.importerRegistered);
-        EXPECT_TRUE(selectedShader.snapshot.contentBrowser.importAction.requiresFormatSpecificParser);
-        EXPECT_EQ(selectedShader.snapshot.contentBrowser.importAction.sourceKind, "rawShader");
-        EXPECT_EQ(selectedShader.snapshot.contentBrowser.importAction.diagnostic,
+        EXPECT_TRUE(selectedShader.snapshot.assetTable.importAction.hasSelection);
+        EXPECT_TRUE(selectedShader.snapshot.assetTable.importAction.canImport);
+        EXPECT_FALSE(selectedShader.snapshot.assetTable.importAction.canReimport);
+        EXPECT_TRUE(selectedShader.snapshot.assetTable.importAction.importerRegistered);
+        EXPECT_TRUE(selectedShader.snapshot.assetTable.importAction.requiresFormatSpecificParser);
+        EXPECT_EQ(selectedShader.snapshot.assetTable.importAction.sourceKind, "rawShader");
+        EXPECT_EQ(selectedShader.snapshot.assetTable.importAction.diagnostic,
                   "format-specific parser is registered");
 
         EditorBridgeRequestUVE selectPlain{};
         selectPlain.protocolVersion = kEditorBridgeProtocolVersionUVE;
         selectPlain.requestId = 4U;
         selectPlain.expectedRevision = selectedShader.snapshot.revision;
-        selectPlain.kind = EditorBridgeRequestKindUVE::SelectContentBrowserEntry;
+        selectPlain.kind = EditorBridgeRequestKindUVE::SelectAssetTableEntry;
         selectPlain.contentEntryPath = "notes.txt";
         const EditorBridgeResponseUVE selectedPlain = bridge.DispatchUVE(selectPlain);
         ASSERT_TRUE(selectedPlain.applied);
@@ -122,7 +122,7 @@ TEST(EditorBridgeUVETest, ContentBrowserImportCapabilityUVE_ReportsRawParserBoun
         queueImport.protocolVersion = kEditorBridgeProtocolVersionUVE;
         queueImport.requestId = 5U;
         queueImport.expectedRevision = selectedPlain.snapshot.revision;
-        queueImport.kind = EditorBridgeRequestKindUVE::QueueContentBrowserImport;
+        queueImport.kind = EditorBridgeRequestKindUVE::QueueAssetTableImport;
         queueImport.contentEntryPath = "notes.txt";
         queueImport.contentImportDestinationPath = "notes_imported.txt";
         const EditorBridgeResponseUVE queued = bridge.DispatchUVE(queueImport);
@@ -145,7 +145,7 @@ TEST(EditorBridgeUVETest, ContentBrowserImportCapabilityUVE_ReportsRawParserBoun
     std::filesystem::remove_all(contentRoot);
 }
 
-TEST(EditorBridgeUVETest, ContentBrowserAnimationEnvelopeUVE_ReportsTypedImporterAuthority) {
+TEST(EditorBridgeUVETest, AssetTableAnimationEnvelopeUVE_ReportsTypedImporterAuthority) {
     const std::filesystem::path contentRoot = "uve_editor_bridge_animation_asset";
     std::filesystem::remove_all(contentRoot);
     std::filesystem::create_directories(contentRoot);
@@ -170,7 +170,7 @@ TEST(EditorBridgeUVETest, ContentBrowserAnimationEnvelopeUVE_ReportsTypedImporte
         refresh.protocolVersion = kEditorBridgeProtocolVersionUVE;
         refresh.requestId = 1U;
         refresh.expectedRevision = initial.revision;
-        refresh.kind = EditorBridgeRequestKindUVE::RefreshContentBrowser;
+        refresh.kind = EditorBridgeRequestKindUVE::RefreshAssetTable;
         const EditorBridgeResponseUVE refreshed = bridge.DispatchUVE(refresh);
         ASSERT_TRUE(refreshed.applied);
 
@@ -178,16 +178,16 @@ TEST(EditorBridgeUVETest, ContentBrowserAnimationEnvelopeUVE_ReportsTypedImporte
         select.protocolVersion = kEditorBridgeProtocolVersionUVE;
         select.requestId = 2U;
         select.expectedRevision = refreshed.snapshot.revision;
-        select.kind = EditorBridgeRequestKindUVE::SelectContentBrowserEntry;
+        select.kind = EditorBridgeRequestKindUVE::SelectAssetTableEntry;
         select.contentEntryPath = "walk.uvanim";
         const EditorBridgeResponseUVE selected = bridge.DispatchUVE(select);
         ASSERT_TRUE(selected.applied);
-        ASSERT_TRUE(selected.snapshot.contentBrowser.importAction.hasSelection);
-        EXPECT_TRUE(selected.snapshot.contentBrowser.importAction.canImport);
-        EXPECT_TRUE(selected.snapshot.contentBrowser.importAction.importerRegistered);
-        EXPECT_FALSE(selected.snapshot.contentBrowser.importAction.requiresFormatSpecificParser);
-        EXPECT_EQ(selected.snapshot.contentBrowser.importAction.sourceKind, "animationEnvelope");
-        EXPECT_EQ(selected.snapshot.contentBrowser.importAction.diagnostic,
+        ASSERT_TRUE(selected.snapshot.assetTable.importAction.hasSelection);
+        EXPECT_TRUE(selected.snapshot.assetTable.importAction.canImport);
+        EXPECT_TRUE(selected.snapshot.assetTable.importAction.importerRegistered);
+        EXPECT_FALSE(selected.snapshot.assetTable.importAction.requiresFormatSpecificParser);
+        EXPECT_EQ(selected.snapshot.assetTable.importAction.sourceKind, "animationEnvelope");
+        EXPECT_EQ(selected.snapshot.assetTable.importAction.diagnostic,
                   "built-in generic copy importer is registered");
 
         editor.ShutdownUVE();
@@ -415,7 +415,7 @@ TEST(EditorBridgeUVETest, SnapshotUVE_CopiesHierarchyInspectorAndNativePanelSess
         EXPECT_EQ(*snapshot.inspector.assetBinding->meshGuid, 0x1111U);
         EXPECT_EQ(*snapshot.inspector.assetBinding->materialGuid, 0x2222U);
         EXPECT_TRUE(snapshot.inspector.canEditSelectedName);
-        EXPECT_FALSE(snapshot.contentBrowser.initialized);
+        EXPECT_FALSE(snapshot.assetTable.initialized);
         EXPECT_EQ(snapshot.viewportSurface.state, EditorBridgeViewportSurfaceStateUVE::Unavailable);
         EXPECT_EQ(snapshot.viewportSurface.generation, 0U);
         EXPECT_EQ(snapshot.viewportSurface.width, 0U);

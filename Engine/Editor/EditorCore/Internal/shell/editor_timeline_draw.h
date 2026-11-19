@@ -9,7 +9,7 @@
 namespace UVE::Editor {
 
 /// The look every timeline in the editor shares - the Animation Sequencer's dope sheet and the
-/// Montage Editor's tracks: the ruler with its ticks and grid, the playhead with its frame tag, the
+/// Motion Montage Editor's tracks: the ruler with its ticks and grid, the playhead with its frame tag, the
 /// shade past the end, the row headers and the key diamonds, in one set of colours.
 struct TimelineScaleUVE final {
     float left = 0.0F;              ///< screen x of time `scrollSeconds`

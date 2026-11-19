@@ -138,7 +138,7 @@ public:
 } // namespace
 
 EditorEntityEditorUVE::EditorEntityEditorUVE(EditorUVE& editor, EditorHostUVE& host)
-    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor), m_sequencer(editor), m_animGraphPanel(editor), m_blueprintPanel(editor), m_contentBrowser(editor) {}
+    : m_editor(editor), m_host(host), m_details(editor), m_viewToolbar(editor), m_dockPanels(editor), m_sequencer(editor), m_animGraphPanel(editor), m_blueprintPanel(editor), m_assetTable(editor) {}
 
 EditorEntityEditorUVE::~EditorEntityEditorUVE() {
     m_editor.m_openBlueprintProviderUVE = nullptr;
@@ -382,7 +382,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     frame->setBackground(prism::ThemeColor(&prism::Theme::window));
     frame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
     frame->setChild(window);
-    // Docked last time: the Content Browser comes back as a tab.
+    // Docked last time: the Asset Table comes back as a tab.
     m_contentFrame.reset();
     m_drawerPopup.reset();
     m_contentDocked = false;
@@ -414,7 +414,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildTitleBarUVE() {
         prism::MenuItem revert = prism::MenuItem::Item("Revert", [this] { static_cast<void>(m_editor.RevertEntityEditorUVE()); });
         revert.enabled = m_editor.HasEntityEditorUnsavedChangesUVE();
         items.push_back(std::move(revert));
-        items.push_back(prism::MenuItem::Item("Show in Asset Library", [this] {
+        items.push_back(prism::MenuItem::Item("Show in Asset Table", [this] {
             if (onBrowse) {
                 onBrowse(m_openPath);
             }
@@ -521,7 +521,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildToolbarRowUVE() {
     row->add(m_revertButton, CentreUVE());
     row->add(HSeparatorUVE());
 
-    auto browse = ToolButtonUVE(prism::Icon::FolderOpen, "Show the entity in the Asset Library", "Browse");
+    auto browse = ToolButtonUVE(prism::Icon::FolderOpen, "Show the entity in the Asset Table", "Browse");
     browse->onClick = [this] {
         if (onBrowse) {
             onBrowse(m_openPath);
@@ -826,7 +826,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildDockBarUVE() {
         {"Compile Results", prism::Icon::CompileResults},
         {"Find Results", prism::Icon::FindResults},
         {"Diff", prism::Icon::DiffView},
-        {"Asset Library", prism::Icon::AssetBrowser},
+        {"Asset Table", prism::Icon::AssetBrowser},
     }};
     // The Content Drawer first, as the level's bottom bar has it.
     m_drawerButton = prism::make<prism::Button>("Content Drawer", prism::Icon::AssetBrowser, prism::ButtonStyle::Toolbar);
@@ -863,10 +863,10 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildDockBarUVE() {
 }
 
 prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildContentFrameUVE() {
-    // Header: what it is, and where it lives (drawer or dock); under it the Content Browser.
+    // Header: what it is, and where it lives (drawer or dock); under it the Asset Table.
     auto header = prism::hbox(6.0F);
     header->setPadding(prism::Margin(8.0F, 3.0F, 6.0F, 3.0F));
-    auto title = prism::make<prism::Label>("Asset Library", prism::FontRole::Semibold);
+    auto title = prism::make<prism::Label>("Asset Table", prism::FontRole::Semibold);
     header->add(title, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     header->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     m_contentDockToggle = prism::make<prism::Button>(m_contentDocked ? "Undock to Drawer" : "Dock in Layout", prism::Icon::LayoutViewport,
@@ -880,7 +880,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildContentFrameUVE() {
     headerBar->setChild(header);
     auto column = prism::vbox();
     column->add(headerBar);
-    column->add(m_contentBrowser.BuildUVE(), prism::Slot{1.0F});
+    column->add(m_assetTable.BuildUVE(), prism::Slot{1.0F});
     auto frame = prism::make<prism::Border>();
     frame->setBackground(prism::ThemeColor(&prism::Theme::panel));
     frame->setBorder(prism::ThemeColor(&prism::Theme::borderStrong), prism::Margin(1.0F));
@@ -1457,11 +1457,11 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
         const bool atRoot = folderRelative.empty() || folderRelative == "." || *folderRelative.begin() == "..";
         auto folder = prism::make<prism::Button>(atRoot ? std::string("Content") : folderRelative.filename().string(), prism::Icon::Folder,
                                                  prism::ButtonStyle::Toolbar);
-        folder->setTooltip(atRoot ? std::string("Content: show it in the Asset Library")
-                                  : "Content/" + folderRelative.generic_string() + ": show it in the Asset Library");
+        folder->setTooltip(atRoot ? std::string("Content: show it in the Asset Table")
+                                  : "Content/" + folderRelative.generic_string() + ": show it in the Asset Table");
         folder->onClick = [this, folderRelative, atRoot] {
-            m_editor.m_contentBrowserDirectory = atRoot ? std::filesystem::path{} : folderRelative;
-            m_editor.m_contentStatusMessage = "Asset Library: " + (atRoot ? std::string("Content") : "Content/" + folderRelative.generic_string());
+            m_editor.m_assetTableDirectory = atRoot ? std::filesystem::path{} : folderRelative;
+            m_editor.m_contentStatusMessage = "Asset Table: " + (atRoot ? std::string("Content") : "Content/" + folderRelative.generic_string());
         };
         m_crumbRow->add(folder, CentreUVE());
         for (const OpenBlueprintEntryUVE& entry : m_openBlueprints) {
@@ -2914,7 +2914,7 @@ void EditorEntityEditorUVE::RefreshUVE() {
         SyncGraphDetailsUVE(graphShown);
         m_blueprintPanel.RefreshUVE();
         if (!m_editor.m_pendingBlueprintOpenUVE.empty()) {
-            // Opened from the Content Browser: the object that runs it.
+            // Opened from the Asset Table: the object that runs it.
             const std::string pending = std::exchange(m_editor.m_pendingBlueprintOpenUVE, std::string{});
             const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
             for (const Scene::EntityUVE object : m_editor.CollectEntityEditorObjectsUVE()) {
@@ -2926,7 +2926,7 @@ void EditorEntityEditorUVE::RefreshUVE() {
             }
         }
         if (m_editor.m_pendingBlueprintCreateUVE.has_value()) {
-            // Made from the Asset Library: the graph on the object it names, opened here.
+            // Made from the Asset Table: the graph on the object it names, opened here.
             const EditorUVE::PendingBlueprintCreateUVE pending = *m_editor.m_pendingBlueprintCreateUVE;
             m_editor.m_pendingBlueprintCreateUVE.reset();
             CreateBlueprintOnUVE(pending.file, pending.objectPath);
@@ -2937,7 +2937,7 @@ void EditorEntityEditorUVE::RefreshUVE() {
         }
         m_dockPanels.RefreshUVE(m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kConsolePageUVE, false);
         if (m_contentFrame && (m_drawerPopup || (m_contentDocked && m_dockVisible && m_dockPages && m_dockPages->activeIndex() == kContentPageUVE))) {
-            m_contentBrowser.RefreshUVE();
+            m_assetTable.RefreshUVE();
         }
     });
 }

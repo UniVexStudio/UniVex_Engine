@@ -5,7 +5,7 @@
 #include "texture_asset.h"
 
 #include "editor.h"
-#include "editor_content_browser_model.h"
+#include "editor_asset_table_model.h"
 #include "editor_icons.h"
 
 #include "prism/Icons.h"
@@ -36,11 +36,11 @@ class WrapBox;
 
 namespace UVE::Editor {
 
-/// The editor's Content Browser drawn with PRISM widgets. Everything it shows and does is the
+/// The editor's Asset Table drawn with PRISM widgets. Everything it shows and does is the
 /// engine's own: the project file index snapshot, the content model (ListContentFolderUVE,
 /// ListContentTreeUVE, CollectVisibleContentFoldersUVE, ContentSelectionUVE, SortContentFactsUVE,
 /// GroupContentByTypeUVE), the type classification and focus filter, the content catalogue, the
-/// favorites and shelves, and the same actions the previous Content Browser ran.
+/// favorites and shelves, and the same actions the previous Asset Table ran.
 ///
 ///   [ + Add  Save All  Import    ] | [ View  Split  Filter  search          ]
 ///   [ Favorites                  ] | [ path                                 ]
@@ -48,11 +48,11 @@ namespace UVE::Editor {
 ///   [ Shelves                    ] | [ Board                                ]
 ///
 /// Two separate settings: the view mode (the engine's five modes, tile size and sort) and the
-/// split mode (how the Content Browser's own sidebar and items share its space).
-class EditorContentBrowserUVE final {
+/// split mode (how the Asset Table's own sidebar and items share its space).
+class EditorAssetTableUVE final {
 public:
-    explicit EditorContentBrowserUVE(EditorUVE& editor);
-    ~EditorContentBrowserUVE();
+    explicit EditorAssetTableUVE(EditorUVE& editor);
+    ~EditorAssetTableUVE();
 
     [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
     /// Re-reads the project snapshot and editor state; rebuilds only what changed.
@@ -64,14 +64,14 @@ public:
     /// Drag payload tag for a content item (the payload is its content-relative path).
     static constexpr const char* kDragTagUVE = "uve.content";
 
-    /// How the sidebar and the items share the Content Browser.
+    /// How the sidebar and the items share the Asset Table.
     enum class SplitModeUVE : std::uint8_t { SideBySide = 0, Stacked, ItemsOnly, SidebarOnly };
 
 private:
     class TileUVE;
     class ItemsAreaUVE;
-    using ItemTypeUVE = EditorUVE::ContentBrowserItemTypeUVE;
-    using FocusUVE = EditorUVE::ContentBrowserTypeFocusUVE;
+    using ItemTypeUVE = EditorUVE::AssetTableItemTypeUVE;
+    using FocusUVE = EditorUVE::AssetTableTypeFocusUVE;
     [[nodiscard]] static prism::Icon IconForUVE(ItemTypeUVE type);
     [[nodiscard]] static prism::Color TintForUVE(ItemTypeUVE type);
     [[nodiscard]] static std::pair<std::string, std::string> DescribeUVE(ItemTypeUVE type);
@@ -109,11 +109,11 @@ private:
     void OpenBlueprintUVE(const std::filesystem::path& full);
     void OpenEntryUVE(std::size_t entryIndex);
     /// Right-click a clip > Create Montage: AM_<clip>.uvmontage beside it, the clip on its slot
-    /// track, opened in the Montage Editor.
+    /// track, opened in the Motion Montage Editor.
     void CreateMontageFromClipUVE(const std::filesystem::path& clipPath);
     /// Puts the montage in the library (made when it does not exist yet).
     void AddMontageToLibraryUVE(const std::filesystem::path& montagePath, const std::filesystem::path& libraryPath);
-    /// A montage library's list: open a montage, or take it off.
+    /// A motion montage library's list: open a montage, or take it off.
     void ShowMontageLibraryUVE(const std::filesystem::path& libraryPath);
     void SelectEntryUVE(std::size_t entryIndex, bool additive, bool range);
     void GoToFolderUVE(const std::filesystem::path& directory);
@@ -145,7 +145,7 @@ private:
     std::shared_ptr<prism::TableView> m_table;
     std::shared_ptr<prism::Label> m_status;
 
-    // The Content Browser's own split.
+    // The Asset Table's own split.
     std::shared_ptr<prism::Border> m_root;
     std::shared_ptr<prism::Splitter> m_split;
     SplitModeUVE m_splitMode = SplitModeUVE::SideBySide;

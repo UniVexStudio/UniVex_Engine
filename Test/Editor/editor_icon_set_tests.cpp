@@ -35,7 +35,7 @@ TEST(EditorIconSetUVETest, EveryPaletteCategoryHasAnIconByItsDisplayName) {
 }
 
 TEST(EditorIconSetUVETest, AnOpenFolderHasItsOwnIcon) {
-    // Every content browser type's icon is checked in editor_uve_tests.cpp, which can see the
+    // Every asset table type's icon is checked in editor_uve_tests.cpp, which can see the
     // editor's private type list; the open folder is the one icon no type names.
     EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder_open"), nullptr);
     EXPECT_NE(FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, "folder_open"),

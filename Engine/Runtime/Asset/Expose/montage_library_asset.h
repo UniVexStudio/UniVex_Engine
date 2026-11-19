@@ -26,8 +26,8 @@ struct MontageLibraryEntryUVE final {
     [[nodiscard]] bool operator==(const MontageLibraryEntryUVE&) const noexcept = default;
 };
 
-/// A montage library (`.uvmontagelib`): a named, ordered collection of `.uvmontage` Animation
-/// Montages that MontagePlayers link to, beside their own slots - the montage counterpart of the
+/// A motion montage library (`.uvmontagelib`): a named, ordered collection of `.uvmontage` Animation
+/// Montages that MontageSequencers link to, beside their own slots - the montage counterpart of the
 /// AnimationSequencer's `.uvanimlib`.
 struct MontageLibraryAssetUVE final {
     std::string libraryId;

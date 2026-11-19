@@ -43,15 +43,15 @@ enum class EditorBridgeCapabilityUVE : std::uint8_t {
     Redo,
     ReadHierarchy,
     ReadInspector,
-    ReadContentBrowser,
+    ReadAssetTable,
     ToggleEntitySelection,
     SetHierarchyFilter,
-    SetContentBrowserDirectory,
-    SetContentBrowserFilter,
-    SetContentBrowserFocus,
-    RefreshContentBrowser,
-    SelectContentBrowserEntry,
-    QueueContentBrowserImport,
+    SetAssetTableDirectory,
+    SetAssetTableFilter,
+    SetAssetTableFocus,
+    RefreshAssetTable,
+    SelectAssetTableEntry,
+    QueueAssetTableImport,
     ReadViewportSurface,
     ReadDeveloperConsole,
     SubmitDeveloperConsoleCommand,
@@ -74,12 +74,12 @@ enum class EditorBridgeRequestKindUVE : std::uint8_t {
     Redo,
     ToggleEntitySelection,
     SetHierarchyFilter,
-    SetContentBrowserDirectory,
-    SetContentBrowserFilter,
-    SetContentBrowserFocus,
-    RefreshContentBrowser,
-    SelectContentBrowserEntry,
-    QueueContentBrowserImport,
+    SetAssetTableDirectory,
+    SetAssetTableFilter,
+    SetAssetTableFocus,
+    RefreshAssetTable,
+    SelectAssetTableEntry,
+    QueueAssetTableImport,
     ReadViewportSurface,
     ReadDeveloperConsole,
     SubmitDeveloperConsoleCommand,
@@ -205,16 +205,16 @@ struct EditorBridgeInspectorSnapshotUVE final {
 
 /// One cached project-content row. This contains no absolute path traversal authority and no file
 /// handle; `relativePath` is relative to the native index's configured content root.
-struct EditorBridgeContentBrowserEntryUVE final {
+struct EditorBridgeAssetTableEntryUVE final {
     std::string relativePath;
     bool isDirectory = false;
     std::string typeLabel;
     std::optional<std::uint64_t> registeredAssetGuid;
 
-    [[nodiscard]] bool operator==(const EditorBridgeContentBrowserEntryUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeAssetTableEntryUVE&) const = default;
 };
 
-/// Value-only import/reimport facts for the selected Content Browser entry. This is capability
+/// Value-only import/reimport facts for the selected Asset Table entry. This is capability
 /// presentation, not an execution token: native importer registration, filesystem access, and
 /// AssetDatabase ownership remain on the C++ side.
 struct EditorBridgeContentImportActionSnapshotUVE final {
@@ -231,7 +231,7 @@ struct EditorBridgeContentImportActionSnapshotUVE final {
 
 /// Copied current-folder view over the native ProjectFileIndexUVE cache. UI filtering, navigation,
 /// refresh, and selection all remain C++ editor session state and never trigger managed filesystem I/O.
-struct EditorBridgeContentBrowserSnapshotUVE final {
+struct EditorBridgeAssetTableSnapshotUVE final {
     std::string contentRoot;
     std::string currentDirectory;
     std::string filter;
@@ -244,11 +244,11 @@ struct EditorBridgeContentBrowserSnapshotUVE final {
     bool initialized = false;
     bool lastRefreshSucceeded = true;
     bool truncated = false;
-    std::vector<EditorBridgeContentBrowserEntryUVE> entries;
-    std::optional<EditorBridgeContentBrowserEntryUVE> selectedEntry;
+    std::vector<EditorBridgeAssetTableEntryUVE> entries;
+    std::optional<EditorBridgeAssetTableEntryUVE> selectedEntry;
     EditorBridgeContentImportActionSnapshotUVE importAction;
 
-    [[nodiscard]] bool operator==(const EditorBridgeContentBrowserSnapshotUVE&) const = default;
+    [[nodiscard]] bool operator==(const EditorBridgeAssetTableSnapshotUVE&) const = default;
 };
 
 /// Immutable bridge-visible state. A revision is incremented whenever any field observable through
@@ -315,7 +315,7 @@ struct EditorBridgeSnapshotUVE final {
     std::optional<EditorBridgeEntityRefUVE> activeEntity;
     EditorBridgeHierarchySnapshotUVE hierarchy;
     EditorBridgeInspectorSnapshotUVE inspector;
-    EditorBridgeContentBrowserSnapshotUVE contentBrowser;
+    EditorBridgeAssetTableSnapshotUVE assetTable;
     EditorBridgeViewportSurfaceSnapshotUVE viewportSurface;
     EditorBridgeDeveloperConsoleSnapshotUVE developerConsole;
     EditorBridgeDataTableCatalogSnapshotUVE dataTableCatalog;
@@ -409,7 +409,7 @@ private:
         std::optional<EditorBridgeEntityRefUVE> activeEntity;
         EditorBridgeHierarchySnapshotUVE hierarchy;
         EditorBridgeInspectorSnapshotUVE inspector;
-        EditorBridgeContentBrowserSnapshotUVE contentBrowser;
+        EditorBridgeAssetTableSnapshotUVE assetTable;
         EditorBridgeViewportSurfaceSnapshotUVE viewportSurface;
         EditorBridgeDeveloperConsoleSnapshotUVE developerConsole;
         EditorBridgeDataTableCatalogSnapshotUVE dataTableCatalog;
@@ -433,10 +433,10 @@ private:
     [[nodiscard]] EditorBridgeDataTablePreviewSnapshotUVE CaptureDataTablePreviewUVE() const;
     [[nodiscard]] EditorBridgeHierarchySnapshotUVE CaptureHierarchyUVE();
     [[nodiscard]] EditorBridgeInspectorSnapshotUVE CaptureInspectorUVE() const;
-    [[nodiscard]] EditorBridgeContentBrowserSnapshotUVE CaptureContentBrowserUVE();
-    [[nodiscard]] EditorBridgeContentBrowserEntryUVE ToContentEntryUVE(
+    [[nodiscard]] EditorBridgeAssetTableSnapshotUVE CaptureAssetTableUVE();
+    [[nodiscard]] EditorBridgeAssetTableEntryUVE ToContentEntryUVE(
         const Asset::ProjectFileEntryUVE& entry) const;
-    [[nodiscard]] static std::optional<EditorUVE::ContentBrowserTypeFocusUVE> ParseContentBrowserFocusUVE(
+    [[nodiscard]] static std::optional<EditorUVE::AssetTableTypeFocusUVE> ParseAssetTableFocusUVE(
         const std::string& focus) noexcept;
 
     EditorUVE* m_editor = nullptr;

@@ -663,7 +663,7 @@ void BlueprintGraph::paintToolbar(Canvas& c) {
   x -= 3;
   button("compile:opts", "", false, "Compile options: Save on Compile, Jump to Error Node", {}, 0, true, Icon::ChevronDown);
   button("save", "Save", false, "Save (Ctrl+S)", {}, 0, true, Icon::Save);
-  button("browse", "Browse", false, "Find this graph in the Asset Library", {}, 0, true, Icon::Browse);
+  button("browse", "Browse", false, "Find this graph in the Asset Table", {}, 0, true, Icon::Browse);
   sep();
   button("find", "Find", false, "Find nodes, pins and values (Ctrl+F). Ctrl+Shift+F searches every saved graph", {}, 0, true, Icon::Search);
   button("hide", "", m_hideUnrelated, "Hide Unrelated: fade nodes that are not selected or linked to the selection", {}, 0, true, Icon::EyeOff);

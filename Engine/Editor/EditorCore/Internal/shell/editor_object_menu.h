@@ -26,7 +26,7 @@ class EditorUVE;
 ///   Expand / Collapse Branch  Select Children  Select All Inside
 ///   Move Up / Down / to Top / to Bottom
 ///   Copy Name
-///   Open Entity  Show in Content Browser     (a placed entity)
+///   Open Entity  Show in Asset Table     (a placed entity)
 ///   Save as Entity                           (anything else that can be copied)
 class EditorObjectMenuUVE final {
 public:

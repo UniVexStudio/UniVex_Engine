@@ -9,7 +9,7 @@
 //   ──
 //   Load...                the file window, on the slot's kinds (anywhere on disk)
 //   Import...        the same, copied into a Content folder first
-//   Show in Content Browser
+//   Show in Asset Table
 #include "editor_details.h"
 
 #include "editor.h"
@@ -67,11 +67,11 @@ EditorDetailsUVE::PickerSpecUVE EditorDetailsUVE::PickerSpecForUVE(const std::ve
         spec.listed = {".uvtex"};
         spec.loadable = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
     } else if (has(".uvmontagelib")) {
-        spec.title = "Action Clip Library";
+        spec.title = "Motion Montage Library";
         spec.listed = {".uvmontagelib"};
         spec.loadable = {".uvmontagelib"};
     } else if (has(".uvmontage")) {
-        spec.title = "Action Clip";
+        spec.title = "Motion Montage";
         spec.listed = {".uvmontage"};
         spec.loadable = {".uvmontage"};
     } else if (has(".uvaudio") || has(".wav")) {
@@ -133,7 +133,7 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
         items.push_back(prism::MenuItem::Item(shared->extras[index].first, onTarget([shared, index] { shared->extras[index].second(); })));
     }
     if (spec.newMaterial) {
-        // A new material in the Content Browser's folder, of the kind asked for, assigned at once.
+        // A new material in the Asset Table's folder, of the kind asked for, assigned at once.
         struct KindUVE final { const char* label; const char* stem; Asset::MaterialKindUVE kind; };
         static constexpr KindUVE kKinds[] = {
             {"New Standard Material", "M_Standard", Asset::MaterialKindUVE::Standard},
@@ -143,7 +143,7 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
         for (const KindUVE& kind : kKinds) {
             items.push_back(prism::MenuItem::Item(kind.label, onTarget([this, shared, kind] {
                 const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                const std::filesystem::path folder = now.contentRoot / m_editor.m_contentBrowserDirectory;
+                const std::filesystem::path folder = now.contentRoot / m_editor.m_assetTableDirectory;
                 std::error_code error;
                 std::filesystem::create_directories(folder, error);
                 const std::filesystem::path path = EditorUVE::MakeUniqueContentPathUVE(folder, kind.stem, ".uvmaterial");
@@ -250,14 +250,14 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
         };
         m_editor.OpenFilePickerUVE(std::move(request));
     }));
-    prism::MenuItem show = prism::MenuItem::Item("Show in Asset Library", [this, shared] {
+    prism::MenuItem show = prism::MenuItem::Item("Show in Asset Table", [this, shared] {
         const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
         std::error_code error;
         const std::filesystem::path relative = std::filesystem::relative(shared->current, now.contentRoot, error);
         for (const Asset::ProjectFileEntryUVE& file : now.entries) {
             if (!error && file.relativePath == relative) {
-                m_editor.m_contentBrowserDirectory = file.relativePath.parent_path();
-                m_editor.m_contentBrowserShelf.clear();
+                m_editor.m_assetTableDirectory = file.relativePath.parent_path();
+                m_editor.m_assetTableShelf.clear();
                 m_editor.m_contentSelection.ClearUVE();
                 m_editor.m_selectedProjectFile = file;
                 break;

@@ -658,7 +658,7 @@ bool BlueprintGraph::toolbarClick(Vec2 p) {
     else if (id == "save") { if (onSaveRequested) onSaveRequested(); else saveToFile(); }
     else if (id == "load") { openLoadMenu(b.r); return true; }
     else if (id == "find") { openFind(b.r); return true; }
-    else if (id == "browse") { if (onBrowse) onBrowse(); else Application::get().notify("Browse: no content browser connected", ToastLevel::Info, 1500); }
+    else if (id == "browse") { if (onBrowse) onBrowse(); else Application::get().notify("Browse: no asset table connected", ToastLevel::Info, 1500); }
     else if (id == "undo") undo();
     else if (id == "redo") redo();
     else if (id == "run") run();

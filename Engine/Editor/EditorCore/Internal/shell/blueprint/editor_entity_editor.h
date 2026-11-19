@@ -11,7 +11,7 @@
 #include "editor_view_toolbar.h"
 #include "editor_viewport_gizmos.h"
 #include "editor_widget_designer.h"
-#include "editor_content_browser.h"
+#include "editor_asset_table.h"
 
 #include "entity.h"
 
@@ -66,7 +66,7 @@ public:
     EditorEntityEditorUVE(const EditorEntityEditorUVE&) = delete;
     EditorEntityEditorUVE& operator=(const EditorEntityEditorUVE&) = delete;
 
-    /// "Browse" shows the open file in the level editor's Content Browser through this.
+    /// "Browse" shows the open file in the level editor's Asset Table through this.
     std::function<void(const std::filesystem::path&)> onBrowse;
 
     /// Opens the window when an entity is open and closes it when the session ends; turns the
@@ -129,7 +129,7 @@ private:
                              kFindPageUVE, kDiffPageUVE, kContentPageUVE, kDockPageCountUVE };
     /// The project's content in the entity window: a drawer that slides up over the bottom (its
     /// button on the dock bar, or Ctrl+Space), or docked as a tab of the dock (Dock in Layout).
-    EditorContentBrowserUVE m_contentBrowser;
+    EditorAssetTableUVE m_assetTable;
     prism::Ref<prism::Widget> m_contentFrame;
     std::shared_ptr<prism::Border> m_contentDockHolder;
     std::shared_ptr<prism::Button> m_contentDockToggle;
@@ -174,11 +174,11 @@ private:
     /// open its Blueprint or make one.
     void ShowBlueprintMenuUVE();
     /// Makes a Blueprint Class at `file` on the object named by `objectPath` (names from the root
-    /// down), opens it and saves the entity: the Asset Library's Add > Blueprint Class.
+    /// down), opens it and saves the entity: the Asset Table's Add > Blueprint Class.
     void CreateBlueprintOnUVE(const std::filesystem::path& file, const std::vector<std::string>& objectPath);
     /// Whether a Script slot's Blueprint file is still there.
     [[nodiscard]] bool BlueprintFileExistsUVE(const std::string& path) const;
-    /// The Asset Library deleted `absolute` (a file or folder): graphs from it close unsaved and
+    /// The Asset Table deleted `absolute` (a file or folder): graphs from it close unsaved and
     /// the open entity's Script slots that named it empty.
     void ForgetDeletedContentUVE(const std::filesystem::path& absolute);
     /// The create dialog: the Blueprint's name and the folder it goes in.

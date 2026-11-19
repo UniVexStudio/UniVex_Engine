@@ -157,55 +157,55 @@ struct EditorUVEAccessUVE final {
         return editor.m_inspectorDrawerRegistry.GetDrawerCountUVE();
     }
 
-    [[nodiscard]] static std::vector<std::string> GetEveryContentBrowserTypeLabelUVE() {
-        using Type = EditorUVE::ContentBrowserItemTypeUVE;
+    [[nodiscard]] static std::vector<std::string> GetEveryAssetTableTypeLabelUVE() {
+        using Type = EditorUVE::AssetTableItemTypeUVE;
         std::vector<std::string> labels;
         for (const Type type : {Type::Folder, Type::Scene, Type::Prefab, Type::Entity, Type::Bundle, Type::Mesh, Type::Model,
                                 Type::Texture, Type::Shader, Type::Material, Type::Save, Type::Animation, Type::Script, Type::Audio,
                                 Type::Font, Type::File}) {
-            labels.emplace_back(EditorUVE::GetContentBrowserItemTypeLabelUVE(type));
+            labels.emplace_back(EditorUVE::GetAssetTableItemTypeLabelUVE(type));
         }
         return labels;
     }
 
-    [[nodiscard]] static std::string GetContentBrowserItemTypeLabelUVE(const Asset::ProjectFileEntryUVE& entry) {
-        return EditorUVE::GetContentBrowserItemTypeLabelUVE(EditorUVE::ClassifyContentBrowserEntryUVE(entry));
+    [[nodiscard]] static std::string GetAssetTableItemTypeLabelUVE(const Asset::ProjectFileEntryUVE& entry) {
+        return EditorUVE::GetAssetTableItemTypeLabelUVE(EditorUVE::ClassifyAssetTableEntryUVE(entry));
     }
 
-    [[nodiscard]] static std::string GetContentBrowserEntryTypeLabelUVE(
+    [[nodiscard]] static std::string GetAssetTableEntryTypeLabelUVE(
         const EditorUVE& editor, const Asset::ProjectFileEntryUVE& entry) {
-        return EditorUVE::GetContentBrowserItemTypeLabelUVE(editor.GetContentBrowserEntryTypeUVE(entry));
+        return EditorUVE::GetAssetTableItemTypeLabelUVE(editor.GetAssetTableEntryTypeUVE(entry));
     }
 
-    static void SelectContentBrowserMeshFocusUVE(EditorUVE& editor) {
-        editor.m_contentBrowserTypeFocus = EditorUVE::ContentBrowserTypeFocusUVE::Mesh;
+    static void SelectAssetTableMeshFocusUVE(EditorUVE& editor) {
+        editor.m_assetTableTypeFocus = EditorUVE::AssetTableTypeFocusUVE::Mesh;
     }
 
-    static void SelectContentBrowserRegisteredFocusUVE(EditorUVE& editor) {
-        editor.m_contentBrowserTypeFocus = EditorUVE::ContentBrowserTypeFocusUVE::Registered;
+    static void SelectAssetTableRegisteredFocusUVE(EditorUVE& editor) {
+        editor.m_assetTableTypeFocus = EditorUVE::AssetTableTypeFocusUVE::Registered;
     }
 
-    [[nodiscard]] static bool DoesContentBrowserEntryMatchFocusUVE(const EditorUVE& editor,
+    [[nodiscard]] static bool DoesAssetTableEntryMatchFocusUVE(const EditorUVE& editor,
                                                                      const Asset::ProjectFileEntryUVE& entry) {
-        return editor.DoesContentBrowserEntryMatchFocusUVE(entry);
+        return editor.DoesAssetTableEntryMatchFocusUVE(entry);
     }
 
-    static void SetContentBrowserDirectoryUVE(EditorUVE& editor, std::filesystem::path directory) {
-        editor.m_contentBrowserDirectory = std::move(directory);
+    static void SetAssetTableDirectoryUVE(EditorUVE& editor, std::filesystem::path directory) {
+        editor.m_assetTableDirectory = std::move(directory);
     }
 
-    [[nodiscard]] static const std::filesystem::path& GetContentBrowserDirectoryUVE(const EditorUVE& editor) {
-        return editor.m_contentBrowserDirectory;
+    [[nodiscard]] static const std::filesystem::path& GetAssetTableDirectoryUVE(const EditorUVE& editor) {
+        return editor.m_assetTableDirectory;
     }
 
     static void SetAssetFilterUVE(EditorUVE& editor, std::string filter) { editor.m_assetFilter = std::move(filter); }
 
-    [[nodiscard]] static std::string GetContentBrowserTypeFocusLabelUVE(const EditorUVE& editor) {
-        return EditorUVE::GetContentBrowserFocusLabelUVE(editor.m_contentBrowserTypeFocus);
+    [[nodiscard]] static std::string GetAssetTableTypeFocusLabelUVE(const EditorUVE& editor) {
+        return EditorUVE::GetAssetTableFocusLabelUVE(editor.m_assetTableTypeFocus);
     }
 
-    static void ReconcileContentBrowserDirectoryUVE(EditorUVE& editor, const Asset::ProjectFileSnapshotUVE& snapshot) {
-        editor.ReconcileContentBrowserDirectoryUVE(snapshot);
+    static void ReconcileAssetTableDirectoryUVE(EditorUVE& editor, const Asset::ProjectFileSnapshotUVE& snapshot) {
+        editor.ReconcileAssetTableDirectoryUVE(snapshot);
     }
 
     static void LoadSessionSettingsUVE(EditorUVE& editor) { editor.LoadSessionSettingsUVE(); }
@@ -704,13 +704,13 @@ TEST(EditorUVETest, OutlinerContextUVE_AncestryAndEligibleParentsExcludeSelected
     engine.Shutdown();
 }
 
-TEST(EditorUVETest, ContentBrowserWorkflowUVE_UsesPrimaryExtensionTagAndIndependentRegisteredFocus) {
+TEST(EditorUVETest, AssetTableWorkflowUVE_UsesPrimaryExtensionTagAndIndependentRegisteredFocus) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_tags.uvscene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_asset_table_tags.uvscene");
         Asset::ProjectFileEntryUVE registeredMesh;
         registeredMesh.relativePath = "Characters/Hero.UVMODEL";
         registeredMesh.kind = Asset::ProjectFileEntryKindUVE::File;
@@ -725,18 +725,18 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_UsesPrimaryExtensionTagAndIndepend
         directory.kind = Asset::ProjectFileEntryKindUVE::Directory;
 
         // A registered file keeps its semantic extension tag; registration remains an independent badge/focus.
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(registeredMesh), "Mesh");
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(ordinaryFile), "File");
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(directory), "Folder");
+        EXPECT_EQ(EditorUVEAccessUVE::GetAssetTableItemTypeLabelUVE(registeredMesh), "Mesh");
+        EXPECT_EQ(EditorUVEAccessUVE::GetAssetTableItemTypeLabelUVE(ordinaryFile), "File");
+        EXPECT_EQ(EditorUVEAccessUVE::GetAssetTableItemTypeLabelUVE(directory), "Folder");
 
-        EditorUVEAccessUVE::SelectContentBrowserMeshFocusUVE(editor);
-        EXPECT_TRUE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, registeredMesh));
-        EXPECT_FALSE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, ordinaryFile));
+        EditorUVEAccessUVE::SelectAssetTableMeshFocusUVE(editor);
+        EXPECT_TRUE(EditorUVEAccessUVE::DoesAssetTableEntryMatchFocusUVE(editor, registeredMesh));
+        EXPECT_FALSE(EditorUVEAccessUVE::DoesAssetTableEntryMatchFocusUVE(editor, ordinaryFile));
 
-        EditorUVEAccessUVE::SelectContentBrowserRegisteredFocusUVE(editor);
-        EXPECT_TRUE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, registeredMesh));
-        EXPECT_FALSE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, ordinaryFile));
-        EXPECT_FALSE(EditorUVEAccessUVE::DoesContentBrowserEntryMatchFocusUVE(editor, directory));
+        EditorUVEAccessUVE::SelectAssetTableRegisteredFocusUVE(editor);
+        EXPECT_TRUE(EditorUVEAccessUVE::DoesAssetTableEntryMatchFocusUVE(editor, registeredMesh));
+        EXPECT_FALSE(EditorUVEAccessUVE::DoesAssetTableEntryMatchFocusUVE(editor, ordinaryFile));
+        EXPECT_FALSE(EditorUVEAccessUVE::DoesAssetTableEntryMatchFocusUVE(editor, directory));
 
         editor.ShutdownUVE();
     }
@@ -744,12 +744,12 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_UsesPrimaryExtensionTagAndIndepend
     engine.Shutdown();
 }
 
-TEST(EditorUVETest, ContentBrowserWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTypesAndEveryTypeHasAnIcon) {
+TEST(EditorUVETest, AssetTableWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTypesAndEveryTypeHasAnIcon) {
     const auto labelOf = [](const char* const path) {
         Asset::ProjectFileEntryUVE entry;
         entry.relativePath = path;
         entry.kind = Asset::ProjectFileEntryKindUVE::File;
-        return EditorUVEAccessUVE::GetContentBrowserItemTypeLabelUVE(entry);
+        return EditorUVEAccessUVE::GetAssetTableItemTypeLabelUVE(entry);
     };
     EXPECT_EQ(labelOf("Scripts/player.uvs"), "Script");
     EXPECT_EQ(labelOf("Audio/step.uvaudio"), "Audio");
@@ -768,27 +768,27 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_ScriptsAudioAndFontsAreTheirOwnTyp
     EXPECT_EQ(labelOf("Content/Hero.uventity"), "Entity");
     EXPECT_EQ(labelOf("Notes/readme.txt"), "File");
     // Without editor source metadata, raw model files use the extension-only mesh fallback.
-    // The live Content Browser applies the FBX source summary to distinguish animation-only and rigged files.
+    // The live Asset Table applies the FBX source summary to distinguish animation-only and rigged files.
     EXPECT_EQ(labelOf("Characters/hero.fbx"), "Mesh");
     EXPECT_EQ(labelOf("Characters/Hero.FBX"), "Mesh");
 
     // Each type shows its own picture in the browser, found by the label it is shown with.
     std::set<const EditorIconSourceUVE*> icons;
-    for (const std::string& label : EditorUVEAccessUVE::GetEveryContentBrowserTypeLabelUVE()) {
+    for (const std::string& label : EditorUVEAccessUVE::GetEveryAssetTableTypeLabelUVE()) {
         const EditorIconSourceUVE* const icon = FindEditorIconSourceUVE(EditorIconGroupUVE::ContentType, label);
         EXPECT_NE(icon, nullptr) << "no icon for content type " << label;
         icons.insert(icon);
     }
-    EXPECT_EQ(icons.size(), EditorUVEAccessUVE::GetEveryContentBrowserTypeLabelUVE().size());
+    EXPECT_EQ(icons.size(), EditorUVEAccessUVE::GetEveryAssetTableTypeLabelUVE().size());
 }
 
-TEST(EditorUVETest, ContentBrowserWorkflowUVE_PersistsFiltersAndSafelyFallsBackWhenFolderDisappears) {
+TEST(EditorUVETest, AssetTableWorkflowUVE_PersistsFiltersAndSafelyFallsBackWhenFolderDisappears) {
     Core::EngineCoreUVE engine(MakeEditorTestConfigUVE());
     engine.Init();
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_navigation.uvscene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_asset_table_navigation.uvscene");
         Asset::ProjectFileSnapshotUVE snapshot;
         snapshot.entries.push_back(
             Asset::ProjectFileEntryUVE{std::filesystem::path{"Scenes"}, Asset::ProjectFileEntryKindUVE::Directory, std::nullopt});
@@ -796,19 +796,19 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_PersistsFiltersAndSafelyFallsBackW
                                                                Asset::ProjectFileEntryKindUVE::File, std::nullopt});
 
         EditorUVEAccessUVE::SetAssetFilterUVE(editor, "city");
-        EditorUVEAccessUVE::SelectContentBrowserMeshFocusUVE(editor);
-        EditorUVEAccessUVE::SetContentBrowserDirectoryUVE(editor, "Scenes");
-        EditorUVEAccessUVE::ReconcileContentBrowserDirectoryUVE(editor, snapshot);
+        EditorUVEAccessUVE::SelectAssetTableMeshFocusUVE(editor);
+        EditorUVEAccessUVE::SetAssetTableDirectoryUVE(editor, "Scenes");
+        EditorUVEAccessUVE::ReconcileAssetTableDirectoryUVE(editor, snapshot);
 
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserDirectoryUVE(editor), std::filesystem::path{"Scenes"});
+        EXPECT_EQ(EditorUVEAccessUVE::GetAssetTableDirectoryUVE(editor), std::filesystem::path{"Scenes"});
         EXPECT_EQ(editor.GetAssetFilterUVE(), "city");
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserTypeFocusLabelUVE(editor), "Mesh");
+        EXPECT_EQ(EditorUVEAccessUVE::GetAssetTableTypeFocusLabelUVE(editor), "Mesh");
 
         snapshot.entries.clear();
-        EditorUVEAccessUVE::ReconcileContentBrowserDirectoryUVE(editor, snapshot);
-        EXPECT_TRUE(EditorUVEAccessUVE::GetContentBrowserDirectoryUVE(editor).empty());
+        EditorUVEAccessUVE::ReconcileAssetTableDirectoryUVE(editor, snapshot);
+        EXPECT_TRUE(EditorUVEAccessUVE::GetAssetTableDirectoryUVE(editor).empty());
         EXPECT_EQ(editor.GetAssetFilterUVE(), "city");
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserTypeFocusLabelUVE(editor), "Mesh");
+        EXPECT_EQ(EditorUVEAccessUVE::GetAssetTableTypeFocusLabelUVE(editor), "Mesh");
 
         editor.ShutdownUVE();
     }
@@ -816,7 +816,7 @@ TEST(EditorUVETest, ContentBrowserWorkflowUVE_PersistsFiltersAndSafelyFallsBackW
     engine.Shutdown();
 }
 
-TEST(EditorUVETest, ContentBrowserAutoRefreshUVE_RefreshesAfterEngineWatcherSequenceAndAcknowledgesIt) {
+TEST(EditorUVETest, AssetTableAutoRefreshUVE_RefreshesAfterEngineWatcherSequenceAndAcknowledgesIt) {
     const std::filesystem::path root = "uve_editor_tests_auto_refresh_content";
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root / "Scenes");
@@ -836,7 +836,7 @@ TEST(EditorUVETest, ContentBrowserAutoRefreshUVE_RefreshesAfterEngineWatcherSequ
     ASSERT_TRUE(engine.Load());
 
     {
-        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_content_browser_auto_refresh.uvscene");
+        EditorUVE editor(engine.GetServicesUVE(), "uve_editor_tests_asset_table_auto_refresh.uvscene");
         editor.InitUVE();
 
         engine.TickFrameUVE();
@@ -6202,11 +6202,11 @@ Connections:  {
         Asset::ProjectFileEntryUVE motionEntry;
         motionEntry.relativePath = "Models/strafe.fbx";
         motionEntry.kind = Asset::ProjectFileEntryKindUVE::File;
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserEntryTypeLabelUVE(editor, motionEntry), "Animation");
+        EXPECT_EQ(EditorUVEAccessUVE::GetAssetTableEntryTypeLabelUVE(editor, motionEntry), "Animation");
         Asset::ProjectFileEntryUVE rigEntry;
         rigEntry.relativePath = "Models/rig.gltf";
         rigEntry.kind = Asset::ProjectFileEntryKindUVE::File;
-        EXPECT_EQ(EditorUVEAccessUVE::GetContentBrowserEntryTypeLabelUVE(editor, rigEntry), "Skeletal Mesh");
+        EXPECT_EQ(EditorUVEAccessUVE::GetAssetTableEntryTypeLabelUVE(editor, rigEntry), "Skeletal Mesh");
         EXPECT_FALSE(EditorUVEAccessUVE::IsModelImportQueuedUVE(editor, "Models/strafe.fbx"));
         EXPECT_FALSE(std::filesystem::exists(EditorUVEAccessUVE::GetImportedModelPathUVE(editor, "Models/strafe.fbx")));
         editor.ShutdownUVE();

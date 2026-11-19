@@ -2,7 +2,7 @@
 
 #pragma once
 
-// The parts of the Content Browser that are decisions rather than drawing: where it is looking,
+// The parts of the Asset Table that are decisions rather than drawing: where it is looking,
 // the back/forward history, the user's shelves, and which files a folder or a search shows. Kept
 // free of UI code and GL so the rules can be tested on their own, and so the editor bridge lists
 // exactly what the panel shows.
@@ -29,7 +29,7 @@ struct ContentLocationUVE final {
     [[nodiscard]] bool operator==(const ContentLocationUVE&) const = default;
 };
 
-/// Back and forward through the places the Content Browser has shown, like a file manager.
+/// Back and forward through the places the Asset Table has shown, like a file manager.
 class ContentNavigationHistoryUVE final {
 public:
     static constexpr std::size_t kMaxEntriesUVE = 64U;
@@ -130,11 +130,11 @@ bool ReadSharedShelvesTextUVE(std::string_view text, ContentShelvesUVE& shelves,
 [[nodiscard]] std::vector<std::string> CollectVisibleContentFoldersUVE(std::span<const Asset::ProjectFileEntryUVE> entries,
                                                                        std::string_view query);
 
-/// The five ways the Content Browser shows things. Each is its own way of working, not only a look:
+/// The five ways the Asset Table shows things. Each is its own way of working, not only a look:
 /// Tiles browses one folder by picture; Columns walks down folder levels side by side with a
 /// preview of the file picked; Details is a table to sort by size or date; Recent lists what
 /// changed lately across everything below; Board lays everything below out by kind.
-enum class ContentBrowserModeUVE : std::uint8_t {
+enum class AssetTableModeUVE : std::uint8_t {
     Tiles = 0,
     Columns,
     Details,

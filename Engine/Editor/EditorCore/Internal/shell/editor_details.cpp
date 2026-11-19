@@ -3,7 +3,7 @@
 #include "model_animations.h"
 
 #include "editor_asset_thumbnail.h"
-#include "editor_content_browser.h"
+#include "editor_asset_table.h"
 
 #include "color.h"
 #include "rect.h"
@@ -92,7 +92,7 @@ constexpr std::array<std::string_view, 3> kCustomDrawnUVE{"component.name", "com
 }
 
 /// The preview a slot of these file kinds shows beside its picker, if any.
-/// An asset slot's drop target: a Content Browser item of the slot's kinds dropped on it is used
+/// An asset slot's drop target: a Asset Table item of the slot's kinds dropped on it is used
 /// as if it were picked (in the document of the window it is dropped in).
 class AssetSlotDropUVE final : public prism::Border {
 public:
@@ -127,7 +127,7 @@ private:
         return hot;
     }
     [[nodiscard]] std::optional<std::filesystem::path> AcceptsUVE(const prism::DragDropEvent& e) const {
-        if (!e.operation || e.operation->tag() != EditorContentBrowserUVE::kDragTagUVE) {
+        if (!e.operation || e.operation->tag() != EditorAssetTableUVE::kDragTagUVE) {
             return std::nullopt;
         }
         const std::string* relative = e.operation->getPayload<std::string>();
@@ -385,7 +385,7 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
         if (m_editor.m_selectedProjectFile.has_value() && !m_editor.m_selectedProjectFile->relativePath.empty()) {
             const auto& file = *m_editor.m_selectedProjectFile;
             m_title->setText(file.relativePath.filename().string());
-            m_subtitle->setText(EditorUVE::GetContentBrowserItemTypeLabelUVE(m_editor.GetContentBrowserEntryTypeUVE(file)));
+            m_subtitle->setText(EditorUVE::GetAssetTableItemTypeLabelUVE(m_editor.GetAssetTableEntryTypeUVE(file)));
             const int section = m_grid->addCategory("Asset");
             m_grid->addRow(section, "Path", prism::make<prism::Label>(file.relativePath.generic_string()));
             m_grid->addRow(section, "Registered",
@@ -1026,7 +1026,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
             // One button, like an asset slot: the file's name, or (Empty); the menu has Empty too.
             auto pick = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                    prism::ButtonStyle::Default);
-            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Asset Library") : property.tooltip);
+            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Asset Table") : property.tooltip);
             std::weak_ptr<prism::Button> weakPick = pick;
             row->sync = [p, weakPick](const void* inst) {
                 auto b = weakPick.lock();

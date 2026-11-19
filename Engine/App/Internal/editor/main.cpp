@@ -212,7 +212,7 @@ int main(const int argc, char** argv) {
             }
         }
 
-        // The level is a Viewport asset in the Content Browser: Content/Viewport/Viewport.uvscene
+        // The level is a Viewport asset in the Asset Table: Content/Viewport/Viewport.uvscene
         // unless --scene names another. A level saved at the old default moves there once.
         bool createDefaultViewport = false;
         if (options.scenePath.empty()) {

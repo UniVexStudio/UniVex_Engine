@@ -34,7 +34,7 @@
 #include "gameplay_attributes.h"
 #include "gameplay_tags.h"
 #include "memory_manager.h"
-#include "montage_player_component.h"
+#include "montage_sequencer_component.h"
 #include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "uvscript_compiler.h"
@@ -64,7 +64,7 @@ protected:
         entityManager.AddComponentUVE<Rigid3DComponentUVE>(entity, Rigid3DComponentUVE{});
         entityManager.AddComponentUVE<CharacterControllerComponentUVE>(entity, CharacterControllerComponentUVE{});
         entityManager.AddComponentUVE<AudioSourceComponentUVE>(entity, AudioSourceComponentUVE{});
-        entityManager.AddComponentUVE<MontagePlayerComponentUVE>(entity, MontagePlayerComponentUVE{});
+        entityManager.AddComponentUVE<MontageSequencerComponentUVE>(entity, MontageSequencerComponentUVE{});
         AnimationGraphComponentUVE graph;
         graph.parameters.push_back(AnimationParameterUVE{"Jump", AnimationParameterTypeUVE::Trigger});
         graph.parameters.push_back(AnimationParameterUVE{"IsJumping", AnimationParameterTypeUVE::Bool});

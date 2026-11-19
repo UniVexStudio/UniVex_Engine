@@ -2,7 +2,7 @@
 #pragma once
 
 #include "editor_chrome.h"
-#include "editor_content_browser.h"
+#include "editor_asset_table.h"
 #include "editor_details.h"
 #include "editor_dock_panels.h"
 #include "editor_entity_editor.h"
@@ -63,7 +63,7 @@ class EditorUVE;
 ///   title bar (logo tab, drag strip, minimize / maximize / close)
 ///   sub row 1: open folder, save, selection mode, blueprint (beta) | play / pause / stop
 ///   [ Outliner          | Viewport tab, sub row 2 (gizmo / view settings), viewport | Details   ]
-///   [ + / filter / search| dock area (Content Browser, Output Log, ...)               | search    ]
+///   [ + / filter / search| dock area (Asset Table, Output Log, ...)               | search    ]
 ///   dock bar
 ///
 /// It is a thin view over EditorUVE: every action goes through the same EditorUVE entry points
@@ -148,12 +148,12 @@ private:
     EditorInputMapWindowUVE m_inputMapWindow;
     EditorNetworkCaptureWindowUVE m_captureWindow;
     EditorAudioMixerWindowUVE m_audioMixerWindow;
-    // The Montage Editor's window (opened while a montage is open).
+    // The Motion Montage Editor's window (opened while a montage is open).
     EditorMontageEditorUVE m_montageEditor;
     EditorVfxEditorUVE m_vfxEditor;
     EditorRetargetWindowUVE m_retargetEditor;
     EditorAnimationLibraryWindowUVE m_animationLibraryEditor;
-    EditorContentBrowserUVE m_contentBrowser;
+    EditorAssetTableUVE m_assetTable;
     EditorDetailsUVE m_details2;
     EditorDockPanelsUVE m_dockPanels;
     EditorIconsUVE m_icons;

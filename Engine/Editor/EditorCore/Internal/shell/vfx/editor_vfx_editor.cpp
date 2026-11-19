@@ -248,12 +248,12 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
             "Save", [this] { static_cast<void>(m_editor.SaveVfxEditorUVE()); }, "Ctrl+S", prism::Icon::Save));
         items.push_back(prism::MenuItem::Item(
             "Compile", [this] { static_cast<void>(m_editor.CompileVfxEditorUVE()); }, "F7", prism::Icon::Check));
-        items.push_back(prism::MenuItem::Item("Show in Asset Library", [this] {
+        items.push_back(prism::MenuItem::Item("Show in Asset Table", [this] {
             const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             std::error_code error;
             const std::filesystem::path relative = std::filesystem::relative(m_openPath, now.contentRoot, error);
             if (!error) {
-                m_editor.m_contentBrowserDirectory = relative.parent_path();
+                m_editor.m_assetTableDirectory = relative.parent_path();
             }
         }, "", prism::Icon::Folder));
         items.push_back(prism::MenuItem::Sep());

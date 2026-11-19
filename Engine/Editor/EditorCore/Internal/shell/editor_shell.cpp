@@ -121,11 +121,11 @@ EditorShellUVE::EditorShellUVE(EditorUVE& editor)
                                   source.save = [&editor] { return editor.SaveProjectSettingsUVE(); };
                                   return source;
                               }),
-      m_shortcutsWindow(editor, m_host), m_inputMapWindow(editor, m_host), m_captureWindow(editor, m_host), m_audioMixerWindow(editor, m_host), m_montageEditor(editor, m_host), m_vfxEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_contentBrowser(editor), m_details2(editor), m_dockPanels(editor),
+      m_shortcutsWindow(editor, m_host), m_inputMapWindow(editor, m_host), m_captureWindow(editor, m_host), m_audioMixerWindow(editor, m_host), m_montageEditor(editor, m_host), m_vfxEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_assetTable(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
         ShowDockPanelUVE(0, true);
-        m_contentBrowser.RevealFileUVE(path);
+        m_assetTable.RevealFileUVE(path);
         m_host.FocusWindowUVE(EditorHostUVE::kMainWindowUVE);
     };
 }
@@ -207,7 +207,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     //   sub row 1: #4 #5 #3 | #14 | transport
     //   sub row 2: gizmo / snap / view settings (full width)
     //   [#6 Outliner | #25 viewport over the dock panel | #17 Details]
-    //   #16 dock bar: Content Browser, Output Log, Console, Profiler ...
+    //   #16 dock bar: Asset Table, Output Log, Console, Profiler ...
     auto window = prism::vbox();
     window->add(BuildTitleBarUVE());
     window->add(BuildToolbarRowUVE());
@@ -290,7 +290,7 @@ bool EditorShellUVE::DispatchShortcutUVE(const prism::Key key, const std::uint8_
 namespace {
 
 
-/// The Outliner's drop target for content dragged from the Content Browser.
+/// The Outliner's drop target for content dragged from the Asset Table.
 class OutlinerDropUVE final : public prism::Border {
 public:
     explicit OutlinerDropUVE(EditorShellUVE& shell) : m_shell(shell) {}
@@ -325,7 +325,7 @@ public:
 
 private:
     [[nodiscard]] static bool Accepts(const prism::DragDropEvent& e) {
-        return e.operation && e.operation->tag() == EditorContentBrowserUVE::kDragTagUVE;
+        return e.operation && e.operation->tag() == EditorAssetTableUVE::kDragTagUVE;
     }
     EditorShellUVE& m_shell;
     bool m_hot = false;
@@ -446,7 +446,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
 
     // #4 open folder, then #5 save beside #3 selection mode.
-    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Asset Library)");
+    auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Asset Table)");
     openFolder->onClick = [this] { ShowDockPanelUVE(0, true); };
     row->add(openFolder, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     auto save = ToolButtonUVE(prism::Icon::Save, "Save all (Ctrl+Shift+S)");
@@ -614,7 +614,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildOutlinerUVE() {
             static_cast<void>(m_editor.OpenEntityEditorUVE(source));
         }
     };
-    // Content dragged from the Content Browser lands here, under the row it is dropped on.
+    // Content dragged from the Asset Table lands here, under the row it is dropped on.
     auto drop = prism::make<OutlinerDropUVE>(*this);
     drop->setChild(m_outliner);
     page->add(drop, prism::Slot{1.0F});
@@ -654,7 +654,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDetailsUVE() {
 prism::Ref<prism::Widget> EditorShellUVE::BuildDockUVE() {
     // The dock panel (above the #16 dock bar): one page per dock tab.
     m_dockPages = prism::make<prism::StackSwitcher>();
-    m_dockPages->addPage(PanelUVE(m_contentBrowser.BuildUVE()));
+    m_dockPages->addPage(PanelUVE(m_assetTable.BuildUVE()));
     m_dockPages->addPage(PanelUVE(m_dockPanels.BuildOutputLogUVE()));
     m_dockPages->addPage(PanelUVE(m_dockPanels.BuildConsoleUVE()));
     m_dockPages->addPage(PanelUVE(m_dockPanels.BuildProfilerUVE()));
@@ -667,7 +667,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDockBarUVE() {
     bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
     struct DockTabUVE { const char* label; prism::Icon icon; };
     static constexpr std::array<DockTabUVE, 4> kTabs{{
-        {"Asset Library", prism::Icon::AssetBrowser},
+        {"Asset Table", prism::Icon::AssetBrowser},
         {"Output Log", prism::Icon::OutputLog},
         {"Console", prism::Icon::Terminal},
         {"Profiler", prism::Icon::Profiler},
@@ -690,7 +690,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDockBarUVE() {
 
 bool EditorShellUVE::DropContentOnOutlinerUVE(const std::string& relativePath, const prism::Vec2 at) {
     // Entity assets and models dropped on a row go under that row's object (else where a new
-    // object goes), through the same calls as the Content Browser's "Place in Scene".
+    // object goes), through the same calls as the Asset Table's "Place in Scene".
     const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     const std::filesystem::path relative(relativePath);
     Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
@@ -1188,7 +1188,7 @@ void EditorShellUVE::FrameUVE() {
     RefreshOutlinerUVE();
     RefreshDetailsUVE();
     RefreshToolbarUVE();
-    m_contentBrowser.RefreshUVE();
+    m_assetTable.RefreshUVE();
     {
         const int page = m_dockPages ? m_dockPages->activeIndex() : 0;
         m_dockPanels.RefreshUVE(m_dockVisible && page == 2, m_dockVisible && page == 3);

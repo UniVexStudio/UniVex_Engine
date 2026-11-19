@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "editor_content_browser_model.h"
+#include "editor_asset_table_model.h"
 
 namespace UVE::Editor {
 namespace {
@@ -42,7 +42,7 @@ namespace {
     return names;
 }
 
-TEST(ContentBrowserModelUVETest, AFolderListsItsChildrenFoldersFirstThenByNameIgnoringCase) {
+TEST(AssetTableModelUVETest, AFolderListsItsChildrenFoldersFirstThenByNameIgnoringCase) {
     const auto entries = ProjectUVE();
     EXPECT_EQ(NamesUVE(entries, ListContentFolderUVE(entries, "Sea", "")),
               (std::vector<std::string>{"Sea/Audio", "Sea/Models", "Sea/rock.uvmodel", "Sea/Wave.uvtex"}));
@@ -50,7 +50,7 @@ TEST(ContentBrowserModelUVETest, AFolderListsItsChildrenFoldersFirstThenByNameIg
     EXPECT_TRUE(ListContentFolderUVE(entries, "Sea/Models/Environment", "").empty());
 }
 
-TEST(ContentBrowserModelUVETest, ASearchLooksThroughEveryFolderBelowByNameOnly) {
+TEST(AssetTableModelUVETest, ASearchLooksThroughEveryFolderBelowByNameOnly) {
     const auto entries = ProjectUVE();
     // "wav" finds the texture and the sound, deep or not, but not the folder "Sea" that holds them.
     EXPECT_EQ(NamesUVE(entries, ListContentFolderUVE(entries, "", "wav")),
@@ -65,7 +65,7 @@ TEST(ContentBrowserModelUVETest, ASearchLooksThroughEveryFolderBelowByNameOnly) 
     EXPECT_EQ(ListContentFolderUVE(entries, "Sea", "   "), ListContentFolderUVE(entries, "Sea", ""));
 }
 
-TEST(ContentBrowserModelUVETest, InsideMeansStrictlyBelowAndTheRootHoldsEverything) {
+TEST(AssetTableModelUVETest, InsideMeansStrictlyBelowAndTheRootHoldsEverything) {
     EXPECT_TRUE(IsInsideContentDirectoryUVE("Sea/Audio", "Sea"));
     EXPECT_TRUE(IsInsideContentDirectoryUVE("Sea/Audio/waves.wav", "Sea"));
     EXPECT_FALSE(IsInsideContentDirectoryUVE("Sea", "Sea"));
@@ -74,7 +74,7 @@ TEST(ContentBrowserModelUVETest, InsideMeansStrictlyBelowAndTheRootHoldsEverythi
     EXPECT_FALSE(IsInsideContentDirectoryUVE("", ""));
 }
 
-TEST(ContentBrowserModelUVETest, TheFolderTreeSearchKeepsTheWayToEachMatch) {
+TEST(AssetTableModelUVETest, TheFolderTreeSearchKeepsTheWayToEachMatch) {
     const auto entries = ProjectUVE();
     EXPECT_EQ(CollectVisibleContentFoldersUVE(entries, "char"),
               (std::vector<std::string>{"Sea", "Sea/Models", "Sea/Models/Characters"}));
@@ -82,7 +82,7 @@ TEST(ContentBrowserModelUVETest, TheFolderTreeSearchKeepsTheWayToEachMatch) {
     EXPECT_TRUE(CollectVisibleContentFoldersUVE(entries, "rock").empty()); // files are not folders
 }
 
-TEST(ContentBrowserModelUVETest, BackAndForwardWalkThePlacesVisited) {
+TEST(AssetTableModelUVETest, BackAndForwardWalkThePlacesVisited) {
     ContentNavigationHistoryUVE history;
     EXPECT_FALSE(history.CanGoBackUVE());
     history.GoUVE({"Sea", {}});
@@ -105,7 +105,7 @@ TEST(ContentBrowserModelUVETest, BackAndForwardWalkThePlacesVisited) {
     EXPECT_FALSE(history.BackUVE());
 }
 
-TEST(ContentBrowserModelUVETest, HistoryIsBounded) {
+TEST(AssetTableModelUVETest, HistoryIsBounded) {
     ContentNavigationHistoryUVE history;
     for (int step = 0; step < 200; ++step) {
         history.GoUVE({"Folder" + std::to_string(step), {}});
@@ -118,7 +118,7 @@ TEST(ContentBrowserModelUVETest, HistoryIsBounded) {
     EXPECT_EQ(history.CurrentUVE().directory, "Folder135");
 }
 
-TEST(ContentBrowserModelUVETest, ShelvesHaveUniqueNamesAndHoldEachItemOnce) {
+TEST(AssetTableModelUVETest, ShelvesHaveUniqueNamesAndHoldEachItemOnce) {
     ContentShelvesUVE shelves;
     EXPECT_EQ(shelves.CreateUVE("Props"), "Props");
     EXPECT_EQ(shelves.CreateUVE("Props"), "Props 2");
@@ -138,7 +138,7 @@ TEST(ContentBrowserModelUVETest, ShelvesHaveUniqueNamesAndHoldEachItemOnce) {
     EXPECT_EQ(shelves.GetAllUVE().size(), 2U);
 }
 
-TEST(ContentBrowserModelUVETest, AShelfFollowsARenamedFolderAndListsOnlyWhatExists) {
+TEST(AssetTableModelUVETest, AShelfFollowsARenamedFolderAndListsOnlyWhatExists) {
     ContentShelvesUVE shelves;
     const std::string name = shelves.CreateUVE("Divers");
     ASSERT_TRUE(shelves.AddItemUVE(name, "Sea/Models/Characters/Diver.uventity"));
@@ -159,7 +159,7 @@ TEST(ContentBrowserModelUVETest, AShelfFollowsARenamedFolderAndListsOnlyWhatExis
     EXPECT_EQ(shelves.FindUVE(name)->items, expected);
 }
 
-TEST(ContentBrowserModelUVETest, ShelvesAreBounded) {
+TEST(AssetTableModelUVETest, ShelvesAreBounded) {
     ContentShelvesUVE shelves;
     for (std::size_t i = 0U; i < ContentShelvesUVE::kMaxShelvesUVE; ++i) {
         ASSERT_FALSE(shelves.CreateUVE("S").empty());
@@ -171,7 +171,7 @@ TEST(ContentBrowserModelUVETest, ShelvesAreBounded) {
     EXPECT_FALSE(shelves.AddItemUVE("S", "one-too-many"));
 }
 
-TEST(ContentBrowserModelUVETest, TeamAndPersonalShelvesAreKeptApart) {
+TEST(AssetTableModelUVETest, TeamAndPersonalShelvesAreKeptApart) {
     ContentShelvesUVE shelves;
     ASSERT_EQ(shelves.CreateUVE("Props", true), "Props");
     ASSERT_EQ(shelves.CreateUVE("Mine"), "Mine");
@@ -185,7 +185,7 @@ TEST(ContentBrowserModelUVETest, TeamAndPersonalShelvesAreKeptApart) {
     EXPECT_EQ(shelves.GetAllUVE()[0].name, "Mine");
 }
 
-TEST(ContentBrowserModelUVETest, TheTeamFileHoldsOnlyTeamShelvesAndReadsBack) {
+TEST(AssetTableModelUVETest, TheTeamFileHoldsOnlyTeamShelvesAndReadsBack) {
     ContentShelvesUVE written;
     ASSERT_EQ(written.CreateUVE("Props", true), "Props");
     ASSERT_TRUE(written.AddItemUVE("Props", "Sea/rock.uvmodel"));
@@ -206,7 +206,7 @@ TEST(ContentBrowserModelUVETest, TheTeamFileHoldsOnlyTeamShelvesAndReadsBack) {
     EXPECT_EQ(read.GetAllUVE().size(), 2U);
 }
 
-TEST(ContentBrowserModelUVETest, ATeamShelfWinsANameAndThePersonalOneIsRenamed) {
+TEST(AssetTableModelUVETest, ATeamShelfWinsANameAndThePersonalOneIsRenamed) {
     ContentShelvesUVE shelves;
     ASSERT_EQ(shelves.CreateUVE("Props"), "Props");
     ASSERT_TRUE(shelves.AddItemUVE("Props", "mine.uvmodel"));
@@ -221,7 +221,7 @@ TEST(ContentBrowserModelUVETest, ATeamShelfWinsANameAndThePersonalOneIsRenamed) 
     EXPECT_TRUE(shelves.ContainsUVE("Props 2", "mine.uvmodel"));
 }
 
-TEST(ContentBrowserModelUVETest, TheTeamFileIsReadWarily) {
+TEST(AssetTableModelUVETest, TheTeamFileIsReadWarily) {
     ContentShelvesUVE shelves;
     ASSERT_EQ(shelves.CreateUVE("Mine"), "Mine");
     std::string error;
@@ -242,7 +242,7 @@ TEST(ContentBrowserModelUVETest, TheTeamFileIsReadWarily) {
     EXPECT_EQ(shelves.GetAllUVE().size(), 2U); // S and Mine; the repeated S and the nameless one are dropped
 }
 
-TEST(ContentBrowserModelUVETest, TheTreeListingHoldsEverythingBelow) {
+TEST(AssetTableModelUVETest, TheTreeListingHoldsEverythingBelow) {
     const auto entries = ProjectUVE();
     EXPECT_EQ(NamesUVE(entries, ListContentTreeUVE(entries, "Sea/Models", "")),
               (std::vector<std::string>{"Sea/Models/Characters", "Sea/Models/Environment",
@@ -252,7 +252,7 @@ TEST(ContentBrowserModelUVETest, TheTreeListingHoldsEverythingBelow) {
               (std::vector<std::string>{"Sea/Wave.uvtex", "Sea/Audio/waves.wav"}));
 }
 
-TEST(ContentBrowserModelUVETest, DetailsSortKeepsFoldersFirstAndFallsBackToTheName) {
+TEST(AssetTableModelUVETest, DetailsSortKeepsFoldersFirstAndFallsBackToTheName) {
     const std::vector<ContentItemFactsUVE> facts{
         {"b.png", "Texture", "Sea", 300U, 30, false}, {"a.png", "Texture", "Sea", 100U, 50, false},
         {"Zeta", "Folder", "Sea", 0U, 10, true},      {"c.wav", "Audio", "Sea/Audio", 300U, 20, false},
@@ -273,7 +273,7 @@ TEST(ContentBrowserModelUVETest, DetailsSortKeepsFoldersFirstAndFallsBackToTheNa
     EXPECT_EQ(sorted(ContentSortKeyUVE::Folder, false), (std::vector<std::string>{"Zeta", "c.wav", "b.png", "a.png"}));
 }
 
-TEST(ContentBrowserModelUVETest, RecentBucketsCountFromMidnight) {
+TEST(AssetTableModelUVETest, RecentBucketsCountFromMidnight) {
     constexpr std::int64_t kDay = 24 * 60 * 60;
     const std::int64_t midnight = 1'790'000'000;
     EXPECT_EQ(ClassifyContentAgeUVE(midnight + 5, midnight), ContentAgeUVE::Today);
@@ -287,7 +287,7 @@ TEST(ContentBrowserModelUVETest, RecentBucketsCountFromMidnight) {
     EXPECT_STREQ(GetContentAgeLabelUVE(ContentAgeUVE::Today), "Today");
 }
 
-TEST(ContentBrowserModelUVETest, BoardLanesGroupFilesByKind) {
+TEST(AssetTableModelUVETest, BoardLanesGroupFilesByKind) {
     const std::vector<ContentItemFactsUVE> facts{
         {"rock", "Mesh", "", 0U, 0, false}, {"Sea", "Folder", "", 0U, 0, true},  {"wave", "Texture", "", 0U, 0, false},
         {"reef", "Mesh", "", 0U, 0, false}, {"hit", "Audio", "", 0U, 0, false},

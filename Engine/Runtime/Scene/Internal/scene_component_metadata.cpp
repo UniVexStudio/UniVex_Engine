@@ -9,7 +9,7 @@
 
 #include "area_component.h"
 #include "animation_sequencer_component.h"
-#include "montage_player_component.h"
+#include "montage_sequencer_component.h"
 #include "animation_graph_component.h"
 #include "auto_translate_component.h"
 #include "audio_source_component.h"
@@ -228,7 +228,7 @@ void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEnt
     AddUVE<ComponentT>(entries, std::move(entry));
 }
 
-[[nodiscard]] bool IsMontagePlayerComponentValidUVE(const MontagePlayerComponentUVE&) noexcept {
+[[nodiscard]] bool IsMontageSequencerComponentValidUVE(const MontageSequencerComponentUVE&) noexcept {
     return true;
 }
 
@@ -398,7 +398,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                 "meshGuid", "Mesh", kPropertyTypeAssetGuidUVE),
                                                             "asset:uvmodel"),
                                         "An imported model. Import a .glb or .gltf (Blender: File > Export > "
-                                        "glTF 2.0) from the Content Browser."),
+                                        "glTF 2.0) from the Asset Table."),
                          WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::materialGuid>(
                                                                 "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
                                                             "asset:uvmat"),
@@ -2230,17 +2230,17 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
             }));
 
-    // MontagePlayer: the montages its script can play, by file name.
-    using MP = MontagePlayerComponentUVE;
+    // MontageSequencer: the montages its script can play, by file name.
+    using MP = MontageSequencerComponentUVE;
     const auto montageSlot = [](auto property, const char* tip) {
         return WithTooltipUVE(WithCustomDrawerUVE(std::move(property), "asset:uvmontage"), tip);
     };
     constexpr const char* kMontageTipUVE =
-        "An Animation Montage this object can play. Its script plays it by the file's name: "
+        "An Motion Montage this object can play. Its script plays it by the file's name: "
         "montage.play(\"Attack\") plays Attack.uvmontage.";
-    AddValidatedUVE<MontagePlayerComponentUVE, &IsMontagePlayerComponentValidUVE>(
+    AddValidatedUVE<MontageSequencerComponentUVE, &IsMontageSequencerComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.montage_player", "MontagePlayerComponentUVE", "MontagePlayer", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.montage_sequencer", "MontageSequencerComponentUVE", "MontageSequencer", kSectionOrderTypeSpecificUVE,
             {
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage1>("montage1", "Montage 1", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage2>("montage2", "Montage 2", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),

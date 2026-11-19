@@ -106,7 +106,7 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
                                       {"params", {{"protocolVersion", kEditorBridgeProtocolVersionUVE},
                                                   {"requestId", 46U},
                                                   {"expectedRevision", 999U},
-                                                  {"kind", "queueContentBrowserImport"},
+                                                  {"kind", "queueAssetTableImport"},
                                                   {"contentEntryPath", "notes.txt"},
                                                   {"contentImportDestinationPath", "notes_imported.txt"}}}});
 
@@ -131,13 +131,13 @@ TEST(EditorBridgeStdioUVETest, ServeUVE_HandshakesAndRoutesExistingBridgeDispatc
         ASSERT_TRUE(handshakeSnapshot.at("inspector").at("assetBinding").is_object());
         EXPECT_EQ(handshakeSnapshot.at("inspector").at("assetBinding").at("meshGuid").get<std::uint64_t>(), 0x3333U);
         EXPECT_EQ(handshakeSnapshot.at("inspector").at("assetBinding").at("materialGuid").get<std::uint64_t>(), 0x4444U);
-        EXPECT_TRUE(handshakeSnapshot.at("contentBrowser").at("breadcrumbs").is_array());
-        ASSERT_TRUE(handshakeSnapshot.at("contentBrowser").at("importAction").is_object());
-        EXPECT_FALSE(handshakeSnapshot.at("contentBrowser").at("importAction").at("hasSelection").get<bool>());
-        EXPECT_FALSE(handshakeSnapshot.at("contentBrowser").at("importAction").at("canImport").get<bool>());
-        EXPECT_FALSE(handshakeSnapshot.at("contentBrowser").at("importAction").at("canReimport").get<bool>());
-        EXPECT_EQ(handshakeSnapshot.at("contentBrowser").at("importAction").at("diagnostic").get<std::string>(),
-                  "no Content Browser entry is selected");
+        EXPECT_TRUE(handshakeSnapshot.at("assetTable").at("breadcrumbs").is_array());
+        ASSERT_TRUE(handshakeSnapshot.at("assetTable").at("importAction").is_object());
+        EXPECT_FALSE(handshakeSnapshot.at("assetTable").at("importAction").at("hasSelection").get<bool>());
+        EXPECT_FALSE(handshakeSnapshot.at("assetTable").at("importAction").at("canImport").get<bool>());
+        EXPECT_FALSE(handshakeSnapshot.at("assetTable").at("importAction").at("canReimport").get<bool>());
+        EXPECT_EQ(handshakeSnapshot.at("assetTable").at("importAction").at("diagnostic").get<std::string>(),
+                  "no Asset Table entry is selected");
         ASSERT_TRUE(handshakeSnapshot.at("viewportSurface").is_object());
         EXPECT_EQ(handshakeSnapshot.at("viewportSurface").at("state").get<std::uint8_t>(), 0U);
         EXPECT_TRUE(handshakeSnapshot.at("viewportSurface").at("nativeRendererOwnsSurface").get<bool>());

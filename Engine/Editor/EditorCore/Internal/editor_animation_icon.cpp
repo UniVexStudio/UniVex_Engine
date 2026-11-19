@@ -37,7 +37,7 @@
 namespace UVE::Editor {
 namespace {
 
-/// Wide, the shape of a Content Browser tile's picture, so the figure fills it edge to edge.
+/// Wide, the shape of a Asset Table tile's picture, so the figure fills it edge to edge.
 constexpr int kIconWUVE = 152;
 constexpr int kIconHUVE = 128;
 

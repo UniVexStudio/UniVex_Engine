@@ -11,7 +11,7 @@
 
 namespace UVE::Asset {
 
-/// An Animation Montage (`.uvmontage`), the standard montage: a timed piece of animation a character
+/// An Motion Montage (`.uvmontage`), the standard montage: a timed piece of animation a character
 /// plays on top of what it is doing - an attack, a reload, an emote.
 ///
 ///   time ->   0 ........................................................ length
@@ -107,11 +107,11 @@ enum class MontageBlendCurveUVE : std::uint8_t {
 /// The weight `curve` gives at `t` (0..1, clamped) of the way through a blend.
 [[nodiscard]] float MontageBlendCurveWeightUVE(MontageBlendCurveUVE curve, double t) noexcept;
 
-struct AnimationMontageAssetUVE final {
+struct MotionMontageAssetUVE final {
     /// The slot it plays on: a Slot node of that name in the character's Anim Graph, or the whole
     /// body when the graph has none.
     std::string slot = "DefaultSlot";
-    /// The entity the Montage Editor previews it on (editor only; the game plays it on whoever asks).
+    /// The entity the Motion Montage Editor previews it on (editor only; the game plays it on whoever asks).
     AssetGuidUVE previewEntity;
     std::vector<MontageSegmentUVE> segments;
     std::vector<MontageSectionUVE> sections;
@@ -132,16 +132,16 @@ struct AnimationMontageAssetUVE final {
     bool autoBlendOut = true;
     double rateScale = 1.0;
     MontageRootMotionUVE rootMotion = MontageRootMotionUVE::Off;
-    [[nodiscard]] bool operator==(const AnimationMontageAssetUVE&) const = default;
+    [[nodiscard]] bool operator==(const MotionMontageAssetUVE&) const = default;
 };
 
-[[nodiscard]] bool IsAnimationMontageAssetValidUVE(const AnimationMontageAssetUVE& montage) noexcept;
+[[nodiscard]] bool IsMotionMontageAssetValidUVE(const MotionMontageAssetUVE& montage) noexcept;
 
-/// Loads a `.uvmontage` envelope (AssetKindUVE::AnimationMontage, JSON payload). Output is
+/// Loads a `.uvmontage` envelope (AssetKindUVE::MotionMontage, JSON payload). Output is
 /// published only after the payload parses and validates.
-[[nodiscard]] bool LoadAnimationMontageAssetUVE(const std::filesystem::path& path, AnimationMontageAssetUVE& outMontage);
+[[nodiscard]] bool LoadMotionMontageAssetUVE(const std::filesystem::path& path, MotionMontageAssetUVE& outMontage);
 
 /// Saves a validated montage; fields at their default are left out of the file.
-[[nodiscard]] bool SaveAnimationMontageAssetUVE(const AnimationMontageAssetUVE& montage, const std::filesystem::path& path);
+[[nodiscard]] bool SaveMotionMontageAssetUVE(const MotionMontageAssetUVE& montage, const std::filesystem::path& path);
 
 } // namespace UVE::Asset

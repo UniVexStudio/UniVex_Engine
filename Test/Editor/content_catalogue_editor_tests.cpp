@@ -658,7 +658,7 @@ Connections:  {
     Core::EngineCoreUVE engine(MakeCatalogueEditorConfigUVE(root));
     engine.Init();
     ASSERT_TRUE(engine.Load());
-    // Written where this project's Content Browser looks.
+    // Written where this project's Asset Table looks.
     const std::filesystem::path content = engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
     std::filesystem::create_directories(content / "Anims");
     {
