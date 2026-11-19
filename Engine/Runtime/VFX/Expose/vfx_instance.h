@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -27,6 +28,23 @@ struct VfxOwnerUVE final {
     Math::QuaternionUVE rotation{};
     Math::Vector3UVE velocity{};
     std::uint8_t qualityLevel = 2U; ///< 0 = Low, 1 = Medium, 2 = High.
+};
+
+/// Primitive shape mirrored from scene Collider3D components for real-time particle collision.
+enum class VfxColliderShapeKindUVE : std::uint8_t {
+    Box = 0U,
+    Sphere = 1U,
+    Capsule = 2U,
+};
+
+/// World-space collider snapshot supplied to VFX simulation for real-time particle collision.
+struct VfxColliderVolumeUVE final {
+    VfxColliderShapeKindUVE kind = VfxColliderShapeKindUVE::Box;
+    Math::Vector3UVE center{};
+    Math::QuaternionUVE rotation{};
+    Math::Vector3UVE halfExtents{0.5F, 0.5F, 0.5F};
+    float radius = 0.5F;
+    float height = 1.0F;
 };
 
 /// Structure-of-arrays particle state owned by a single emitter inside a running instance.
@@ -106,7 +124,10 @@ public:
     void KillUVE() noexcept;
 
     /// Advances all enabled emitters by `dt` seconds (clamped to [0, 0.1] and split into <= 1/30s steps).
-    void TickUVE(float dt, const VfxOwnerUVE& owner, float externalSpawnScale = 1.0F);
+    void TickUVE(float dt,
+                 const VfxOwnerUVE& owner,
+                 float externalSpawnScale = 1.0F,
+                 std::span<const VfxColliderVolumeUVE> sceneColliders = {});
 
     /// Runtime user-parameter overrides (take precedence over asset defaults).
     bool SetParameterFloatUVE(std::string_view name, float value) noexcept;
@@ -143,13 +164,15 @@ private:
     void StepSingleSubstepUVE(float dt,
                               const Math::Vector3UVE& prevOwnerPos,
                               const VfxOwnerUVE& owner,
-                              float externalSpawnScale);
+                              float externalSpawnScale,
+                              std::span<const VfxColliderVolumeUVE> sceneColliders);
     void StepEmitterUVE(std::size_t emitterIndex,
                         EmitterRuntimeUVE& runtime,
                         float dt,
                         const Math::Vector3UVE& prevOwnerPos,
                         const VfxOwnerUVE& owner,
-                        float externalSpawnScale);
+                        float externalSpawnScale,
+                        std::span<const VfxColliderVolumeUVE> sceneColliders);
 
     bool m_initialized = false;
     bool m_stopped = false;

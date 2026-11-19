@@ -5238,6 +5238,7 @@ uniform int uFlipbookRows;
 uniform int uFlipbookCols;
 uniform int uFrameBlend;
 uniform int uBlendMode;
+uniform int uFacingMode;
 uniform float uAlphaCutoff;
 uniform float uCameraFadeNear;
 uniform float uCameraFadeFar;
@@ -5285,6 +5286,35 @@ void main() {
         float frac = fract(clampedFrame);
         vec2 uv1 = ComputeFlipbookUv(vCornerUv, frame1, rows, cols);
         texSample = mix(texSample, texture(uAlbedoTexture, uv1), frac);
+    }
+
+    // Procedural non-boxy particle shaping when no authored sprite texture is bound (1x1 fallback).
+    ivec2 albedoDims = textureSize(uAlbedoTexture, 0);
+    if (albedoDims.x <= 1 && albedoDims.y <= 1) {
+        vec2 p = vCornerUv * 2.0 - 1.0;
+        if (uFacingMode == 2) {
+            // Velocity-aligned incandescent spark streak with tapered ends.
+            float across = abs(p.x);
+            float along = abs(p.y);
+            float taper = max(1.0 - along * along, 0.0);
+            float core = smoothstep(0.65 * taper + 0.06, 0.0, across) * smoothstep(1.0, 0.12, along);
+            float hot = exp(-(across * across * 14.0 + along * along * 2.5));
+            texSample.rgb *= mix(vec3(1.0), vec3(1.35, 1.25, 1.1), hot);
+            texSample.a *= clamp(core + hot * 0.55, 0.0, 1.0) * smoothstep(1.0, 0.85, max(across, along));
+        } else if (uBlendMode == 1) {
+            // Soft radial glow with hot inner core for additive fire/embers/magic.
+            float r = length(p);
+            float radial = smoothstep(1.0, 0.0, r);
+            float core = exp(-r * r * 4.2);
+            texSample.rgb *= mix(vec3(1.0), vec3(1.25, 1.18, 1.08), core);
+            texSample.a *= clamp(radial * radial * 0.60 + core * 0.85, 0.0, 1.0) * smoothstep(1.0, 0.82, r);
+        } else {
+            // Soft feathered organic disc for alpha-blended smoke/dust/snow/clouds.
+            float r = length(p);
+            float puff = smoothstep(1.0, 0.0, r);
+            puff = puff * puff * (3.0 - 2.0 * puff);
+            texSample.a *= puff;
+        }
     }
 
     vec4 base = texSample * vColor * uMaterialTint;

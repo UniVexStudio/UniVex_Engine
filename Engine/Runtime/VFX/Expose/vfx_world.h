@@ -134,6 +134,10 @@ public:
     /// and restarts active instances using any modified asset. Invalid reloads keep old instances.
     std::size_t PollHotReloadUVE();
 
+    /// Supplies the current frame's world-space Collider3D volumes for real-time particle collision.
+    void SetSceneCollidersUVE(std::vector<VfxColliderVolumeUVE> colliders);
+    void ClearSceneCollidersUVE() noexcept;
+
     /// Advances active instances by `dt` seconds with budget scaling, distance LOD, and frustum
     /// quarter-rate accumulation.
     void TickUVE(float dt, const VfxFrameViewUVE& frameView = {});
@@ -192,6 +196,7 @@ private:
     std::unordered_map<std::string, CachedAssetEntryUVE> m_assetCache;
     std::vector<InstanceSlotUVE> m_slots;
     std::vector<std::uint32_t> m_freeSlotIndices;
+    std::vector<VfxColliderVolumeUVE> m_sceneColliders;
     VfxWorldStatsUVE m_stats{};
 };
 

@@ -171,6 +171,14 @@ using Asset::ParticleVectorInputUVE;
     }
     {
         ParticleModuleUVE mod =
+            Asset::MakeDefaultParticleModuleUVE(nextId++, ParticleModuleTypeUVE::CollisionPhysics);
+        mod.floats["Bounce"] = ConstFloatUVE(0.55F);
+        mod.floats["Friction"] = ConstFloatUVE(0.18F);
+        mod.floats["LifeLoss"] = ConstFloatUVE(0.05F);
+        emitter.particleUpdate.push_back(std::move(mod));
+    }
+    {
+        ParticleModuleUVE mod =
             Asset::MakeDefaultParticleModuleUVE(nextId++, ParticleModuleTypeUVE::SpriteRenderer);
         mod.ints["Facing"] = 1;
         mod.ints["Blend"] = 1;
@@ -258,6 +266,14 @@ using Asset::ParticleVectorInputUVE;
     {
         ParticleModuleUVE mod = Asset::MakeDefaultParticleModuleUVE(nextId++, ParticleModuleTypeUVE::SizeOverLife);
         mod.floats["Scale"] = CurveFloatUVE({{0.0F, 1.0F}, {1.0F, 0.1F}});
+        emitter.particleUpdate.push_back(std::move(mod));
+    }
+    {
+        ParticleModuleUVE mod =
+            Asset::MakeDefaultParticleModuleUVE(nextId++, ParticleModuleTypeUVE::CollisionPhysics);
+        mod.floats["Bounce"] = ConstFloatUVE(0.65F);
+        mod.floats["Friction"] = ConstFloatUVE(0.12F);
+        mod.floats["LifeLoss"] = ConstFloatUVE(0.08F);
         emitter.particleUpdate.push_back(std::move(mod));
     }
     {

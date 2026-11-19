@@ -34,10 +34,11 @@ constexpr float kMaxInstanceStepDtUVE = 0.1F;
 void AdvanceInstanceByTotalDtUVE(VfxInstanceUVE& instance,
                                  float totalDt,
                                  const VfxOwnerUVE& owner,
-                                 const float externalSpawnScale) {
+                                 const float externalSpawnScale,
+                                 const std::span<const VfxColliderVolumeUVE> sceneColliders) {
     while (totalDt > 1e-6F) {
         const float stepDt = std::min(totalDt, kMaxInstanceStepDtUVE);
-        instance.TickUVE(stepDt, owner, externalSpawnScale);
+        instance.TickUVE(stepDt, owner, externalSpawnScale, sceneColliders);
         totalDt -= stepDt;
     }
 }
@@ -366,6 +367,14 @@ std::size_t VfxWorldUVE::PollHotReloadUVE() {
     return reloadedCount;
 }
 
+void VfxWorldUVE::SetSceneCollidersUVE(std::vector<VfxColliderVolumeUVE> colliders) {
+    m_sceneColliders = std::move(colliders);
+}
+
+void VfxWorldUVE::ClearSceneCollidersUVE() noexcept {
+    m_sceneColliders.clear();
+}
+
 void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
     (void)PollHotReloadUVE();
 
@@ -427,7 +436,8 @@ void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
             slot.accumulatedOutOfFrustumDt = 0.0F;
             slot.outOfFrustumFrameCounter = 0U;
             if (stepDt > 0.0F) {
-                AdvanceInstanceByTotalDtUVE(slot.instance, stepDt, effectiveOwner, instanceSpawnScale);
+                AdvanceInstanceByTotalDtUVE(slot.instance, stepDt, effectiveOwner, instanceSpawnScale,
+                                            m_sceneColliders);
             }
         } else {
             slot.accumulatedOutOfFrustumDt += dt;
@@ -437,7 +447,8 @@ void VfxWorldUVE::TickUVE(const float dt, const VfxFrameViewUVE& frameView) {
                 slot.accumulatedOutOfFrustumDt = 0.0F;
                 slot.outOfFrustumFrameCounter = 0U;
                 if (stepDt > 0.0F) {
-                    AdvanceInstanceByTotalDtUVE(slot.instance, stepDt, effectiveOwner, instanceSpawnScale);
+                    AdvanceInstanceByTotalDtUVE(slot.instance, stepDt, effectiveOwner, instanceSpawnScale,
+                                                m_sceneColliders);
                 }
             } else {
                 ++m_stats.quarterRateSkippedTicks;
