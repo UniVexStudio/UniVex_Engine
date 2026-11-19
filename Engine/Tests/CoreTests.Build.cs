@@ -68,6 +68,7 @@ public class CoreTestsModule : ModuleRules
             "../Runtime/Entity/Internal",
             "../Runtime/Retarget/Tests",
             "../Editor/EditorCore/Internal/shell",
+            "../Editor/EditorCore/Internal/shell/entity",
             "../Editor/EditorCore/Internal/shell/vfx",
             "../Editor/EditorCore/Blueprint/Editor"
         });
