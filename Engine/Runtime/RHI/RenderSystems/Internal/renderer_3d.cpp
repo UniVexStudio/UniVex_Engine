@@ -3625,9 +3625,9 @@ struct Renderer3DUVE::ImplUVE {
         program.SetVector3UVE("uUvOffset", Math::Vector3UVE{material.uvOffset.x, material.uvOffset.y, 0.0F});
         program.SetVector3UVE("uUv2Scale", Math::Vector3UVE{material.uv2Scale.x, material.uv2Scale.y, material.uv2Scale.x});
         program.SetVector3UVE("uUv2Offset", Math::Vector3UVE{material.uv2Offset.x, material.uv2Offset.y, 0.0F});
-        program.SetIntUVE("uUv1Triplanar", !material.triplanarEnabled ? 0 : material.worldSpaceTriplanar ? 2 : 1);
+        program.SetIntUVE("uUv1Triplanar", material.worldSpaceTriplanar ? 2 : (material.triplanarEnabled ? 1 : 0));
         program.SetFloatUVE("uUv1TriplanarSharpness", material.triplanarBlendSharpness);
-        program.SetIntUVE("uUv2Triplanar", !material.uv2Triplanar ? 0 : material.uv2WorldTriplanar ? 2 : 1);
+        program.SetIntUVE("uUv2Triplanar", material.uv2WorldTriplanar ? 2 : (material.uv2Triplanar ? 1 : 0));
         program.SetFloatUVE("uUv2TriplanarSharpness", material.uv2TriplanarSharpness);
         program.SetIntUVE("uAoOnUv2", material.aoOnUv2 ? 1 : 0);
         program.SetIntUVE("uEmissionOnUv2", material.emissionOnUv2 ? 1 : 0);
