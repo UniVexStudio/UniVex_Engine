@@ -73,7 +73,7 @@ void main() {
     [[nodiscard]] bool HasActiveWorldEnvironmentUVE() const;
     [[nodiscard]] bool HasAuthoredDirectionalLightUVE() const;
 
-    void SetShadingModeUVE(Render::ShadingModeUVE mode);
+    void SetShadingModeUVE(std::int32_t mode);
     void ApplyPreviewLightingUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
                                  bool previewAllowed);
     void ApplyAxisPaletteUVE(Editor::EditorUVE& editor,

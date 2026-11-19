@@ -121,9 +121,12 @@ std::uint64_t LevelViewportUVE::RenderUVE(const Math::Vector2UVE& availableSize,
         gameWorkspaceActive && (m_editor.GetPlayModeStateUVE() == Editor::EditorPlayModeStateUVE::Playing);
     const bool isGameMouseCaptured = isGamePlaying && m_editor.IsGameMouseCapturedUVE();
 
-    m_interaction.UpdateInteractionUVE(overlayState, width, height, isGameMouseCaptured);
-    if (isGameMouseCaptured && !m_interaction.IsPreviewingCameraUVE()) {
-        UpdatePlayCapturedCameraUVE(overlayState.input);
+    if (isGameMouseCaptured) {
+        if (!m_interaction.IsPreviewingCameraUVE()) {
+            UpdatePlayCapturedCameraUVE(overlayState.input);
+        }
+    } else {
+        m_interaction.UpdateInteractionUVE(overlayState, width, height, false);
     }
     m_interaction.AdvanceCameraAndPublishFocusUVE(overlayState.input);
 
