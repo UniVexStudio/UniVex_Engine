@@ -27,7 +27,7 @@ constexpr std::array<CodecCaseUVE, 3> kCasesUVE{{{Audio::EncodedAudioFormatUVE::
                                                  {Audio::EncodedAudioFormatUVE::Mp3, "mp3"},
                                                  {Audio::EncodedAudioFormatUVE::Vorbis, "ogg"}}};
 std::filesystem::path FixtureUVE(const char *extension) {
-    return Tests::RepositoryRootUVE() / "Test/Audio/Fixtures" / (std::string("tone.") + extension);
+    return Tests::RepositoryRootUVE() / "Engine/Runtime/Audio/Tests/Fixtures" / (std::string("tone.") + extension);
 }
 std::vector<std::byte> ReadUVE(const std::filesystem::path &path) {
     std::ifstream stream(path, std::ios::binary | std::ios::ate);

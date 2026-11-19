@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-#include "Retarget/retarget_test_rig.h"
+#include "retarget_test_rig.h"
 #include "Support/test_scratch.h"
 #include "animation_clip_asset.h"
 #include "editor_retarget_plan.h"
