@@ -117,7 +117,7 @@ def accent_for_key(key):
             return "#F59E0B"
         if icon_id in ("entity", "prefab"):
             return "#0284C7"
-        if icon_id in ("viewport", "viewport_3d", "viewport_2d"):
+        if icon_id in ("viewport", "viewport_3d"):
             return "#06B6D4"
         return "#71717A"
 
@@ -148,7 +148,7 @@ def build_card(key):
     ic = Icon(title)
     fn(ic)
     badge = badge_for_object(icon_id, section) if group == OBJECTS else (
-        "3D" if icon_id == "viewport_3d" else ("2D" if icon_id == "viewport_2d" else None)
+        "3D" if icon_id == "viewport_3d" else None
     )
     return ic.card_svg(badge=badge)
 
@@ -229,11 +229,6 @@ def viewport_3d(ic):
         '<path d="M 9 44 L 9 55 L 20 55"/><path d="M 55 44 L 55 55 L 44 55"/></g>'
     )
     box(ic, 32, 44, 22, 22, 22, LIGHT)
-
-
-@scene_object("viewport_2d", "Viewport2D", "2D")
-def viewport_2d(ic):
-    viewport(ic)
 
 
 @scene_object("object_3d", "Object3D", "Scene")
@@ -512,16 +507,6 @@ def spring_arm_3d(ic):
     )
 
 
-@scene_object("camera_2d", "Camera2D", "2D")
-def camera_2d(ic):
-    ic.add(
-        '<rect x="9" y="16" width="32" height="28" rx="4.5" fill="url(#uv_bright)" stroke="#52525B" stroke-width="1.2"/>'
-        '<circle cx="25" cy="30" r="7.5" fill="url(#uv_dark)" stroke="url(#uv_mid)" stroke-width="1.5"/>'
-        '<circle cx="23" cy="28" r="2.0" fill="#F4F4F5"/>'
-        '<polygon points="41,24 54,18 54,42 41,36" fill="url(#uv_mid)"/>'
-    )
-
-
 # =============================================================================================
 # 5. Combat & Gameplay 3D (Wired — Monochrome)
 # =============================================================================================
@@ -721,11 +706,6 @@ def particle_emitter_3d(ic):
     cylinder(ic, 32, 55, 11, 8, MID, ry=4.5)
     for cx, cy, ro, ri in ((32, 24, 9.5, 3.2), (18, 34, 6.0, 2.0), (46, 32, 6.5, 2.2), (24, 13, 5.0, 1.7), (43, 15, 5.5, 1.8)):
         ic.add(f'<polygon points="{pts(star(cx, cy, ro, ri, 4))}" fill="url(#uv_bright)"/>')
-
-
-@scene_object("sprite_2d", "Sprite2D", "2D")
-def sprite_2d(ic):
-    viewport(ic)
 
 
 @scene_object("canvas", "Canvas", "UI")
@@ -1134,7 +1114,6 @@ def comp_health(ic):
 
 CATEGORIES = [
     ("Scene", "M 31 18 V 26 M 31 26 L 19 38 M 31 26 L 43 38", [(31, 16, 4.5), (19, 40, 4.0), (43, 40, 4.0)]),
-    ("2D", "M 16 16 H 48 V 48 H 16 Z M 16 38 L 28 26 L 38 36 L 48 28", []),
     ("Physics", "M 14 26 H 22 M 12 33 H 21 M 16 40 H 23", [(36, 32, 9.5)]),
     ("Navigation", "M 20 47 V 15 M 20 17 H 42 L 36 24.5 L 42 32 H 20", []),
     ("Animation", "M 24 18 L 43 31 L 24 44 Z", []),
@@ -1234,11 +1213,6 @@ def viewport_3d_asset(ic):
 @content_type("Viewport3D", "Viewport3D")
 def viewport_3d_camel_asset(ic):
     viewport_3d(ic)
-
-
-@content_type("viewport_2d", "Viewport 2D")
-def viewport_2d_asset(ic):
-    viewport_2d(ic)
 
 
 @content_type("prefab", "Prefab")

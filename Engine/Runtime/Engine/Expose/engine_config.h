@@ -500,9 +500,8 @@ struct EngineConfigUVE {
     /// scene placed, wherever the camera looks; EnabledUVE preserves the shipped culling behaviour.
     FrustumCullingModeUVE frustumCullingModeUVE = FrustumCullingModeUVE::EnabledUVE;
 
-    /// Extended Part 1 Project Settings (Physics 2D/3D, Input, Audio, Animation, Navigation,
+    /// Extended Part 1 Project Settings (Physics 3D, Input, Audio, Animation, Navigation,
     /// Networking, Localisation, Quality Tiers, and Packaging).
-    Math::Vector2UVE gravity2DUVE{0.0F, -980.0F};
     double defaultLinearDampingUVE = 0.01;
     double defaultAngularDampingUVE = 0.05;
     double sleepThresholdUVE = 0.05;
@@ -673,7 +672,6 @@ struct EngineConfigUVE {
     bool multiThreadedRenderingUVE = true;
     std::int64_t commandBufferThreadCountUVE = 4;
 
-    std::int64_t msaa2dSamplesUVE = 1;
     std::int64_t msaa3dSamplesUVE = 1;
     std::int64_t taaSampleCountUVE = 8;
     std::int64_t taaJitterPatternUVE = 0; // 0=Halton23, 1=BlueNoise, 2=Uniform2x
@@ -754,14 +752,6 @@ struct EngineConfigUVE {
     double textureStreamingPressureMipBiasUVE = 1.0;
     std::int64_t maxTextureSizePerTierUVE = 4096;
     std::int64_t defaultTextureRepeatModeUVE = 1; // 0=Disabled, 1=Enabled, 2=Mirrored
-
-    std::int64_t defaultCanvasFilterUVE = 1; // 0=Nearest, 1=Linear
-    std::int64_t defaultCanvasRepeatUVE = 0; // 0=Disabled, 1=Enabled, 2=Mirror
-    bool pixelSnap2dTransformsUVE = false;
-    bool pixelSnap2dVerticesUVE = false;
-    std::int64_t shadowAtlas2dSizeUVE = 2048;
-    std::int64_t spriteSortAxisUVE = 1; // 0=ZIndexOnly, 1=YAxis, 2=CustomAxis
-    std::string defaultSpriteSortLayerUVE = "Default";
 
     std::int64_t defaultSkyModeUVE = 3; // 0=None, 1=Colour, 2=Gradient, 3=Physical, 4=Panorama
     std::int64_t defaultSkyResolutionUVE = 512;

@@ -869,10 +869,8 @@ TEST(EngineSettingsLayeringUVETest,
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
 
-    EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Physics2D, 0U), "layers.physics2d.1");
     EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Navigation, 5U), "layers.navigation.6");
     EXPECT_EQ(GetLayerNameSettingIdUVE(LayerSetUVE::Avoidance, 31U), "layers.avoidance.32");
-    EXPECT_NE(registry.FindUVE("layers.physics2d.1"), nullptr);
     EXPECT_NE(registry.FindUVE("layers.navigation.6"), nullptr);
     EXPECT_NE(registry.FindUVE("layers.avoidance.32"), nullptr);
 
@@ -880,8 +878,6 @@ TEST(EngineSettingsLayeringUVETest,
     ConfigManagerUVE user;
     ConfigManagerUVE platform;
     ConfigManagerUVE commandLineValues;
-    ASSERT_TRUE(registry.SetValueUVE(project, "physics.2d.gravity",
-                                     Config::SettingVector2UVE{0.0, -500.0}));
     ASSERT_TRUE(
         registry.SetValueUVE(project, "physics.layers.defaultCollisionMask", std::int64_t{0x0FLL}));
     ASSERT_TRUE(registry.SetValueUVE(project, "audio.output.sampleRate", std::int64_t{44100}));
@@ -893,7 +889,6 @@ TEST(EngineSettingsLayeringUVETest,
 
     EngineConfigUVE config{};
     ApplyEngineSettingsUVE(settings, config);
-    EXPECT_FLOAT_EQ(config.gravity2DUVE.y, -500.0F);
     EXPECT_EQ(config.defaultCollisionMaskUVE, 0x0FU);
     EXPECT_EQ(config.audioSampleRateUVE, 44100);
     EXPECT_EQ(config.networkDefaultPortUVE, 9000);
@@ -916,7 +911,6 @@ TEST(EngineSettingsLayeringUVETest,
     ASSERT_TRUE(registry.SetValueUVE(project, "rendering.postProcessing.colorGradingLutAsset",
                                      std::string{"Content/LUTs/film.uvtex"}));
     ASSERT_TRUE(registry.SetValueUVE(project, "rendering.textures.defaultAnisotropy", std::int64_t{16}));
-    ASSERT_TRUE(registry.SetValueUVE(project, "rendering.2d.pixelSnapTransforms", true));
     ASSERT_TRUE(registry.SetValueUVE(project, "rendering.environment.defaultWorldEnvironmentAsset",
                                      std::string{"Content/Env/default.uvenv"}));
     ASSERT_TRUE(registry.SetValueUVE(project, "physics.materials.defaultAsset",
@@ -935,7 +929,6 @@ TEST(EngineSettingsLayeringUVETest,
     EXPECT_TRUE(config.ssrEnabledUVE);
     EXPECT_EQ(config.colorGradingLutAssetUVE, "Content/LUTs/film.uvtex");
     EXPECT_EQ(config.defaultAnisotropyLevelUVE, 16);
-    EXPECT_TRUE(config.pixelSnap2dTransformsUVE);
     EXPECT_EQ(config.defaultWorldEnvironmentAssetUVE, "Content/Env/default.uvenv");
     EXPECT_EQ(config.defaultPhysicsMaterialAssetUVE, "Content/Physics/default.uvphysmat");
     EXPECT_DOUBLE_EQ(config.runtimeUiScaleUVE, 1.5);

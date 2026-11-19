@@ -11,35 +11,6 @@
 
 namespace UVE::Render::Shader::BuiltIn {
 
-const std::string_view kBasic2DSource = R"GLSLSRC(#version 450 core
-
-#ifdef VERTEX_SHADER
-layout(location = 0) in vec2 aPosition;
-layout(location = 1) in vec2 aTexCoord;
-
-out vec2 vTexCoord;
-
-uniform mat4 uModel;
-uniform mat4 uProjection;
-
-void main() {
-    vTexCoord = aTexCoord;
-    gl_Position = uProjection * uModel * vec4(aPosition, 0.0, 1.0);
-}
-#endif
-
-#ifdef FRAGMENT_SHADER
-in vec2 vTexCoord;
-out vec4 FragColor;
-
-uniform vec4 uColor;
-
-void main() {
-    FragColor = uColor;
-}
-#endif
-)GLSLSRC";
-
 const std::string_view kBasic3DSource = R"GLSLSRC(#version 450 core
 
 #ifdef VERTEX_SHADER
@@ -3784,31 +3755,6 @@ out vec4 FragColor;
 
 void main() {
     FragColor = vec4(vColor, 1.0);
-}
-#endif
-)GLSLSRC";
-
-const std::string_view kSprite2DSource = R"GLSLSRC(#version 450 core
-#ifdef VERTEX_SHADER
-layout(location = 0) in vec3 aPosition;
-layout(location = 1) in vec2 aTexCoord;
-layout(location = 2) in vec4 aColor;
-uniform mat4 uViewProjection;
-out vec2 vTexCoord;
-out vec4 vColor;
-void main() {
-    vTexCoord = aTexCoord;
-    vColor = aColor;
-    gl_Position = uViewProjection * vec4(aPosition, 1.0);
-}
-#endif
-#ifdef FRAGMENT_SHADER
-in vec2 vTexCoord;
-in vec4 vColor;
-uniform sampler2D uTexture;
-out vec4 FragColor;
-void main() {
-    FragColor = texture(uTexture, vTexCoord) * vColor;
 }
 #endif
 )GLSLSRC";

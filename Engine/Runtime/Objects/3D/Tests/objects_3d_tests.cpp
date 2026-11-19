@@ -8,7 +8,6 @@
 
 #include "all_objects_3d.h"
 #include "bone_attachment_3d.h"
-#include "sprite_2d.h"
 #include "animation_driver_component.h"
 #include "animation_sequencer_component.h"
 #include "area_component.h"
@@ -2013,17 +2012,13 @@ TEST(Expanded3DObjectComponentsUVETest, ComponentAndObjectHelpersValidateSanitiz
     ResetAnimationSequencerRuntimeStateUVE(seq);
     EXPECT_FALSE(seq.isPlaying);
 
-    // Static3DUVE, Camera3DUVE, Sprite2DUVE
+    // Static3DUVE, Camera3DUVE
     ColliderComponentUVE staticCollider = Collider3DUVE::MakeBoxUVE(Math::Vector3UVE{2.0F, 2.0F, 2.0F});
     EXPECT_TRUE(Static3DUVE::ContainsWorldPointUVE(staticCollider, WorldTransformComponentUVE{},
                                                    Math::Vector3UVE{1.0F, 1.0F, 1.0F}));
     CameraComponentUVE cam3d{};
     EXPECT_TRUE(Camera3DUVE::IsDepthWithinClipPlanesUVE(cam3d, 10.0F));
     EXPECT_FALSE(Camera3DUVE::IsDepthWithinClipPlanesUVE(cam3d, 0.01F));
-    Sprite2DComponentUVE sprite2d{};
-    EXPECT_TRUE(Sprite2DUVE::UsesWholeTextureRegionUVE(sprite2d));
-    EXPECT_TRUE(Sprite2DUVE::ContainsLocalPointUVE(sprite2d, Math::Vector2UVE{64.0F, 64.0F},
-                                                   Math::Vector2UVE{0.0F, 0.0F}));
 }
 
 } // namespace UVE::Scene::Tests

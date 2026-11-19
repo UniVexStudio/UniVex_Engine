@@ -22,7 +22,7 @@ struct GroupUVE final {
     std::size_t count;
 };
 
-constexpr std::array<GroupUVE, 13> kGroupsUVE{{
+constexpr std::array<GroupUVE, 12> kGroupsUVE{{
     {"Basic", {Kind::Folder, Kind::Object3D, Kind::Marker3D, Kind::Script}, 4},
     {"Meshes", {Kind::MeshInstance3D, Kind::BoxMesh3D, Kind::SphereMesh3D, Kind::PlaneMesh3D, Kind::LODGroup3D}, 5},
     {"Lights", {Kind::DirectionalLight3D, Kind::Light3D}, 2},
@@ -38,7 +38,6 @@ constexpr std::array<GroupUVE, 13> kGroupsUVE{{
     {"Audio & VFX", {Kind::AudioSource3D, Kind::ParticleEmitter3D}, 2},
     {"World", {Kind::LevelStreamer3D, Kind::WorldPartition3D, Kind::Occluder3D, Kind::VisibilityRegion3D}, 4},
     {"UI", {Kind::Canvas, Kind::UIText, Kind::UIImage, Kind::UIButton}, 4},
-    {"2D", {Kind::Sprite2D, Kind::Camera2D}, 2},
 }};
 
 /// The level's own: one per level, or a volume of the world. Never part of an entity.
@@ -60,8 +59,6 @@ constexpr std::array<GroupUVE, 13> kGroupsUVE{{
         case Kind::UIText:
         case Kind::UIImage:
         case Kind::UIButton:
-        case Kind::Sprite2D:
-        case Kind::Camera2D:
         case Kind::Folder:
             return true;
         default:
