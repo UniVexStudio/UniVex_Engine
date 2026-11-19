@@ -2,9 +2,9 @@
 
 using UniVexBuildTool;
 
-public class NetworkModule : ModuleRules
+public class NetworkingModule : ModuleRules
 {
-    public NetworkModule(ReadOnlyTargetRules Target) : base(Target)
+    public NetworkingModule(ReadOnlyTargetRules Target) : base(Target)
     {
         Type = ModuleType.StaticLibrary;
 
