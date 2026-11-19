@@ -555,7 +555,7 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
                 }
             }
             if (!blueprint.has_value()) {
-                base.message = "The Logic Graph at " + path + " cannot be read.";
+                base.message = "The Blueprint at " + path + " cannot be read.";
                 problems.push_back(std::move(base));
                 continue;
             }

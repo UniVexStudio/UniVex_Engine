@@ -145,7 +145,7 @@ constexpr std::array<ContentCatalogueItemUVE, 41> kItems{{
 
     {"animation-player", "Timeline", "Animation", "Plays animation clips on its parent", Action::EntityAsset,
      kAnimationSequencer, Scene::ViewportDimensionUVE::ThreeD, "AnimationSequencer"},
-    {"animation-tree", "Motion Graph", "Animation", "Blends clips with a graph and a state machine",
+    {"animation-tree", "Animation Graph", "Animation", "Blends clips with a graph and a state machine",
      Action::EntityAsset, kAnimationGraph, Scene::ViewportDimensionUVE::ThreeD, "AnimationGraph"},
     {"animation-library", "Animation Library", "Animation", "A named collection of animation clips that sequencers load from",
      Action::LibraryAsset, {}, Scene::ViewportDimensionUVE::ThreeD, "Animation Library"},

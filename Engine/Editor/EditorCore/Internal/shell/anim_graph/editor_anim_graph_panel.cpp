@@ -161,7 +161,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildUVE() {
         if (node->kind == Kind::StateMachine) {
             items.push_back(prism::MenuItem::Item("Open States", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::StateMachine));
         } else if (node->kind == Kind::BlendSpace1D || node->kind == Kind::BlendSpace2D) {
-            items.push_back(prism::MenuItem::Item("Open Blend Grid", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::NodeBlendSpace));
+            items.push_back(prism::MenuItem::Item("Open Blend Space", [this, nodeId] { OpenFocusUVE(nodeId); }, "", prism::Icon::NodeBlendSpace));
         }
     };
     m_graph->canConnectHook = [this](const int fromNode, int, const int toNode, const int toPin, std::string* why) {
@@ -851,7 +851,7 @@ void EditorAnimGraphPanelUVE::SyncFocusUVE() {
         m_crumbSignature = signature;
         m_crumbRow->clearChildren();
         auto up = prism::make<prism::Button>("", prism::Icon::ChevronLeft, prism::ButtonStyle::Flat);
-        up->setTooltip("Up one level (Esc in a State Machine or Blend Grid)");
+        up->setTooltip("Up one level (Esc in a State Machine or Blend Space)");
         up->onClick = [this] { CloseFocusUVE(); };
         m_crumbRow->add(up, CentreSlotUVE());
         auto tree = prism::make<prism::Button>("Tree", prism::Icon::AnimTree, prism::ButtonStyle::Flat);

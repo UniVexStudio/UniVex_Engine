@@ -65,12 +65,12 @@ const char* AnimationGraphKindLabelUVE(const Kind kind) noexcept {
         case Kind::Output: return "Output";
         case Kind::Clip: return "Clip";
         case Kind::Blend2: return "Blend";
-        case Kind::BlendSpace1D: return "Blend Grid";
+        case Kind::BlendSpace1D: return "Blend Space";
         case Kind::Additive: return "Additive";
         case Kind::OneShot: return "One Shot";
         case Kind::TimeScale: return "Time Scale";
         case Kind::StateMachine: return "State Machine";
-        case Kind::BlendSpace2D: return "Blend Grid 2D";
+        case Kind::BlendSpace2D: return "Blend Space 2D";
         case Kind::Select: return "Select";
         case Kind::LayeredBlend: return "Layered Blend";
         case Kind::TimeSeek: return "Time Seek";

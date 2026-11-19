@@ -467,10 +467,10 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     row->add(HSeparatorUVE());
 
 
-    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Logic Graph editor (beta)");
+    auto blueprint = ToolButtonUVE(prism::Icon::Blueprint, "Blueprint editor (beta)");
     blueprint->onClick = [] {
         if (prism::Application::exists()) {
-            prism::Application::get().notify("Logic Graph editor (beta) - coming in the logic graph milestone",
+            prism::Application::get().notify("Blueprint editor (beta) - coming in the blueprint milestone",
                                              prism::ToastLevel::Info);
         }
     };
