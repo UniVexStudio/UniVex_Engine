@@ -128,6 +128,7 @@ private:
 
     std::optional<univex::render::ShaderProgram> m_meshBlitProgram;
     GLuint m_meshBlitVao = 0U;
+    bool m_lastRenderUsedLookThroughCamera = false;
 };
 
 } // namespace UVE::App::Viewports

@@ -1019,9 +1019,26 @@ void main() {
     float exposure = uHasColorGrading != 0 ? max(uExposure, 0.0) : (uExposure > 0.0 ? uExposure : 1.0);
     hdrColor *= exposure;
 
+    bool sunDiscCovers = false;
+    if (uSkyCovers == 0 && uSunEnergy > 0.0 && uSunAngularDiameter > 0.0) {
+        vec2 skyNdc = sourceUV * 2.0 - 1.0;
+        vec3 skyView =
+            vec3(skyNdc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), skyNdc.y * max(uTanHalfFov, 0.0), -1.0);
+        vec3 skyWorldDir = normalize(uCameraRight * skyView.x + uCameraUp * skyView.y + uCameraForward);
+        vec3 skySunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
+        float sunRadius = radians(max(uSunAngularDiameter, 0.0)) * 0.5;
+        sunDiscCovers = skyWorldDir.y > -0.001 && skySunDir.y > -0.02 && dot(skyWorldDir, skySunDir) >= cos(sunRadius);
+    }
+    float covered = depth < 0.999999 ? 1.0 : ((uSkyCovers != 0 || sunDiscCovers) ? 0.75 : 0.0);
+
     // Tone map to linear [0, 1], then enter display sRGB space for perceptual FXAA, single-pass
     // chromatic aberration, grading, LUT, vignette, film grain, and post-OETF TPDF dithering.
-    vec3 ldrLinear = ApplyToneMappingUVE(hdrColor);
+    // Uncovered background pixels (no geometry and no sky) carry display-authored background clear
+    // color, so they bypass linear-to-sRGB re-encoding to preserve exact background charcoal values.
+    vec3 ldrLinear = covered > 0.0
+                         ? ApplyToneMappingUVE(hdrColor)
+                         : (uToneMappingMethod != 0 ? AcesToneMapUVE(hdrColor) : clamp(hdrColor, 0.0, 1.0));
+    bool encodeSrgbThisPixel = (uEncodeSrgbOutput != 0) && (covered > 0.0);
     float contrast = uHasColorGrading != 0 ? max(uContrast, 0.0) : (uContrast > 0.0 ? uContrast : 1.0);
     float saturation = uHasColorGrading != 0 ? max(uSaturation, 0.0) : (uSaturation > 0.0 ? uSaturation : 1.0);
     vec3 filterColor = uHasColorGrading != 0
@@ -1030,7 +1047,7 @@ void main() {
     bool hasGrading = abs(contrast - 1.0) > 1.0e-4 || abs(saturation - 1.0) > 1.0e-4 ||
                       abs(uBrightness) > 1.0e-4 ||
                       any(greaterThan(abs(filterColor - vec3(1.0)), vec3(1.0e-4)));
-    bool useDisplaySpace = (uEncodeSrgbOutput != 0) || (uFastApproximateAA != 0) ||
+    bool useDisplaySpace = encodeSrgbThisPixel || (uFastApproximateAA != 0) ||
                            (uChromaticAberrationIntensity > 0.0) || hasGrading ||
                            (uLutEnabled != 0 && uHasLutTexture != 0) ||
                            (uVignetteIntensity > 0.0) || (uFilmGrainIntensity > 0.0) ||
@@ -1038,9 +1055,11 @@ void main() {
 
     vec3 outColor = ldrLinear;
     if (useDisplaySpace) {
-        vec3 display = LinearToSrgbUVE(ldrLinear);
-        display = ApplyFastApproximateAAUVE(sourceUV, display, exposure);
-        display = ApplySinglePassChromaticAberrationUVE(sourceUV, display, exposure);
+        vec3 display = covered > 0.0 ? LinearToSrgbUVE(ldrLinear) : ldrLinear;
+        if (covered > 0.0) {
+            display = ApplyFastApproximateAAUVE(sourceUV, display, exposure);
+            display = ApplySinglePassChromaticAberrationUVE(sourceUV, display, exposure);
+        }
 
         if (hasGrading) {
             display = (display - vec3(0.5)) * contrast + vec3(0.5) + vec3(uBrightness);
@@ -1079,20 +1098,9 @@ void main() {
 
         // Hardware sRGB swapchains encode on write, so convert back to linear when uEncodeSrgbOutput == 0
         // to produce identical output across OpenGL, Editor viewports, and Vulkan SRGB swapchains.
-        outColor = uEncodeSrgbOutput != 0 ? display : SrgbToLinearUVE(display);
+        outColor = (uEncodeSrgbOutput != 0 || covered == 0.0) ? display : SrgbToLinearUVE(display);
     }
 
-    bool sunDiscCovers = false;
-    if (uSkyCovers == 0 && uSunEnergy > 0.0 && uSunAngularDiameter > 0.0) {
-        vec2 skyNdc = sourceUV * 2.0 - 1.0;
-        vec3 skyView =
-            vec3(skyNdc.x * max(uTanHalfFov, 0.0) * max(uAspect, 0.0001), skyNdc.y * max(uTanHalfFov, 0.0), -1.0);
-        vec3 skyWorldDir = normalize(uCameraRight * skyView.x + uCameraUp * skyView.y + uCameraForward);
-        vec3 skySunDir = length(uSunDirection) > 1.0e-5 ? normalize(uSunDirection) : vec3(0.0, 1.0, 0.0);
-        float sunRadius = radians(max(uSunAngularDiameter, 0.0)) * 0.5;
-        sunDiscCovers = skyWorldDir.y > -0.001 && skySunDir.y > -0.02 && dot(skyWorldDir, skySunDir) >= cos(sunRadius);
-    }
-    float covered = depth < 0.999999 ? 1.0 : ((uSkyCovers != 0 || sunDiscCovers) ? 0.75 : 0.0);
     float alpha = uWriteCoverageAlpha != 0 ? covered : 1.0;
     FragColor = vec4(outColor, alpha);
 }
