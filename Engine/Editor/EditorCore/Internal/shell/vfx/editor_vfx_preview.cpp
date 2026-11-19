@@ -8,8 +8,9 @@
 #include "prism/Theme.h"
 
 #include <algorithm>
-#include <cstddef>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -17,15 +18,41 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr float kTimelineHeaderWidthUVE = 86.0F;
+constexpr float kTimelinePadXUVE = 10.0F;
 constexpr float kTimelineRulerHeightUVE = 22.0F;
-constexpr float kTimelineBodyHeightUVE = 36.0F;
-constexpr float kTimelineRightPadUVE = 14.0F;
+constexpr float kTimelineBodyHeightUVE = 42.0F;
 
 [[nodiscard]] std::string FormatSecondsShortUVE(const double seconds) {
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.2f s", seconds);
+    std::snprintf(buf, sizeof(buf), "%.2fs", seconds);
     return buf;
+}
+
+[[nodiscard]] std::string FormatTickLabelUVE(const double seconds, const double step) {
+    char buf[32];
+    if (step >= 1.0) {
+        std::snprintf(buf, sizeof(buf), "%.0fs", seconds);
+    } else if (step >= 0.1) {
+        std::snprintf(buf, sizeof(buf), "%.1fs", seconds);
+    } else {
+        std::snprintf(buf, sizeof(buf), "%.2fs", seconds);
+    }
+    return buf;
+}
+
+[[nodiscard]] double PickMajorTickStepUVE(const double pixelsPerSecond, const float minSpacingPx) noexcept {
+    static constexpr std::array<double, 12> kSteps{
+        0.05, 0.1, 0.2, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0};
+    for (const double step : kSteps) {
+        if (step * pixelsPerSecond >= static_cast<double>(minSpacingPx)) {
+            return step;
+        }
+    }
+    double step = 120.0;
+    while (step * pixelsPerSecond < static_cast<double>(minSpacingPx) && step < 1.0e9) {
+        step *= 2.0;
+    }
+    return step;
 }
 
 [[nodiscard]] float ReadBurstTimeInputUVE(const Asset::ParticleModuleUVE& mod) noexcept {
@@ -68,7 +95,7 @@ std::string FormatVfxPreviewStatsTextUVE(const EditorUVE& editor) {
     }
 
     char summary[160];
-    std::snprintf(summary, sizeof(summary), "Total: %zu particles  |  %zu instances drawn",
+    std::snprintf(summary, sizeof(summary), "Total: %zu particles  |  %zu drawn",
                   totalAlive, session->lastInstancesDrawn);
     if (!lines.empty()) {
         lines += "\n";
@@ -94,22 +121,25 @@ double VfxTimelineWidgetUVE::EffectiveDurationUVE() const noexcept {
 }
 
 float VfxTimelineWidgetUVE::TimeToScreenXUVE(const double seconds) const noexcept {
-    const float left = m_rect.x + kTimelineHeaderWidthUVE;
-    const float usableW = std::max(1.0F, m_rect.w - kTimelineHeaderWidthUVE - kTimelineRightPadUVE);
+    const float left = m_rect.x + kTimelinePadXUVE;
+    const float usableW = std::max(1.0F, m_rect.w - kTimelinePadXUVE * 2.0F);
     const double duration = EffectiveDurationUVE();
     const double normalized = std::clamp(seconds / duration, 0.0, 1.0);
     return left + static_cast<float>(normalized) * usableW;
 }
 
 double VfxTimelineWidgetUVE::ScreenXToTimeUVE(const float x) const noexcept {
-    const float left = m_rect.x + kTimelineHeaderWidthUVE;
-    const float usableW = std::max(1.0F, m_rect.w - kTimelineHeaderWidthUVE - kTimelineRightPadUVE);
+    const float left = m_rect.x + kTimelinePadXUVE;
+    const float usableW = std::max(1.0F, m_rect.w - kTimelinePadXUVE * 2.0F);
     const double normalized = std::clamp(static_cast<double>((x - left) / usableW), 0.0, 1.0);
     return normalized * EffectiveDurationUVE();
 }
 
 void VfxTimelineWidgetUVE::ScrubAtScreenXUVE(const float x) {
     const double t = ScreenXToTimeUVE(x);
+    m_hoverValid = true;
+    m_hoverTime = t;
+    UpdateHoverTooltipUVE(x);
     m_editor.SetVfxPlayheadUVE(t);
     if (onScrub) {
         onScrub(t);
@@ -117,54 +147,108 @@ void VfxTimelineWidgetUVE::ScrubAtScreenXUVE(const float x) {
     invalidate();
 }
 
+void VfxTimelineWidgetUVE::UpdateHoverTooltipUVE(const float x) {
+    const double t = ScreenXToTimeUVE(x);
+    const double duration = EffectiveDurationUVE();
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "Scrub: %.2f s / %.2f s (Click or drag)", t, duration);
+    m_hoverTooltip = buf;
+}
+
+const std::string& VfxTimelineWidgetUVE::tooltipAt(const prism::Vec2) const {
+    return m_hoverTooltip;
+}
+
 void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     c.fillRect(m_rect, t.panel);
 
     const EditorUVE::VfxEditSessionUVE* const session = m_editor.VfxEditSessionPtrUVE();
-    if (session == nullptr) {
+    if (session == nullptr || m_rect.w < 4.0F || m_rect.h < 4.0F) {
         return;
     }
 
-    const prism::Rect rulerHeader{m_rect.x, m_rect.y, kTimelineHeaderWidthUVE, kTimelineRulerHeightUVE};
-    const prism::Rect trackHeader{m_rect.x, m_rect.y + kTimelineRulerHeightUVE, kTimelineHeaderWidthUVE, kTimelineBodyHeightUVE};
-    DrawTimelineRowHeaderUVE(c, rulerHeader, "Timeline", t.textDim);
-    DrawTimelineRowHeaderUVE(c, trackHeader, "Bursts / Warm", t.textDim);
-
-    const float left = m_rect.x + kTimelineHeaderWidthUVE;
-    const float usableW = std::max(1.0F, m_rect.w - kTimelineHeaderWidthUVE - kTimelineRightPadUVE);
+    const float left = m_rect.x + kTimelinePadXUVE;
+    const float usableW = std::max(1.0F, m_rect.w - kTimelinePadXUVE * 2.0F);
     const double duration = EffectiveDurationUVE();
+    const double pixelsPerSecond = static_cast<double>(usableW) / duration;
 
-    TimelineScaleUVE scale{};
-    scale.left = left;
-    scale.scrollSeconds = 0.0;
-    scale.pixelsPerSecond = static_cast<double>(usableW) / duration;
+    const prism::Rect rulerRect{m_rect.x, m_rect.y, m_rect.w, kTimelineRulerHeightUVE};
+    const prism::Rect trackRect{m_rect.x, m_rect.y + kTimelineRulerHeightUVE, m_rect.w,
+                                std::max(0.0F, m_rect.h - kTimelineRulerHeightUVE)};
 
-    const prism::Rect contentArea{left, m_rect.y, m_rect.w - kTimelineHeaderWidthUVE, m_rect.h};
-    const prism::Rect rulerRect{left, m_rect.y, m_rect.w - kTimelineHeaderWidthUVE, kTimelineRulerHeightUVE};
-    const prism::Rect trackRect{left, m_rect.y + kTimelineRulerHeightUVE, m_rect.w - kTimelineHeaderWidthUVE, kTimelineBodyHeightUVE};
+    c.pushClip(m_rect);
 
-    c.pushClip(contentArea);
+    // 1. Ruler background & track dark studio canvas.
+    c.fillRect(rulerRect, t.header);
+    c.fillRect(trackRect, prism::Color(19, 21, 25));
+    c.hline(m_rect.x, m_rect.right(), rulerRect.bottom() - 1.0F, t.border);
 
-    c.fillRect(trackRect, t.window);
-    DrawTimelineRulerUVE(c, rulerRect, scale, 60.0, duration, m_rect.bottom(), false);
-    DrawTimelineOutOfRangeUVE(c, contentArea, scale, static_cast<double>(session->system.duration));
-
-    // Draw warm-up shaded region [0, warmUpSeconds] when warmUpSeconds > 0.
-    if (session->system.warmUpSeconds > 0.0F) {
-        const float warmEndX = TimeToScreenXUVE(static_cast<double>(session->system.warmUpSeconds));
-        const float warmW = std::max(0.0F, warmEndX - left);
-        if (warmW > 0.5F) {
-            const prism::Rect warmRect{left, trackRect.y + 2.0F, warmW, trackRect.h - 4.0F};
-            c.fillRoundRect(warmRect, 3.0F, prism::Color(235, 168, 64, 52));
-            c.strokeRoundRect(warmRect, 3.0F, prism::Color(235, 168, 64, 150), 1.0F);
-            c.textIn(*t.small, prism::Rect{warmRect.x + 4.0F, warmRect.y, std::max(0.0F, warmRect.w - 8.0F), warmRect.h},
-                     "Warm-Up", prism::Color(245, 195, 105), prism::HAlign::Left, true);
+    // 2. Adaptive major & minor ticks across [0, duration], plus subtle vertical grid lines.
+    const double majorStep = PickMajorTickStepUVE(pixelsPerSecond, 54.0F);
+    const double minorStep = majorStep / 5.0;
+    for (int idx = 0; ; ++idx) {
+        const double s = static_cast<double>(idx) * minorStep;
+        if (s > duration + 1.0e-6) {
+            break;
+        }
+        const float x = std::round(TimeToScreenXUVE(std::min(s, duration)));
+        const bool isMajor = (idx % 5) == 0;
+        const float tickTop = rulerRect.y + (isMajor ? 12.0F : 16.0F);
+        c.fillRect(prism::Rect{x, tickTop, 1.0F, rulerRect.bottom() - 1.0F - tickTop},
+                   isMajor ? t.textDim : t.borderStrong);
+        if (isMajor) {
+            c.fillRect(prism::Rect{x, trackRect.y, 1.0F, trackRect.h}, prism::Color(255, 255, 255, 13));
+            const std::string label = FormatTickLabelUVE(s, majorStep);
+            const float labelW = t.small->width(label) + 4.0F;
+            const float labelX = std::clamp(x + 3.0F, m_rect.x + 3.0F, std::max(m_rect.x + 3.0F, m_rect.right() - labelW - 3.0F));
+            c.textIn(*t.small, prism::Rect{labelX, rulerRect.y + 1.0F, labelW, 12.0F}, label, t.textDim,
+                     prism::HAlign::Left, false);
         }
     }
 
-    // Draw diamond markers for every SpawnBurst module across enabled emitters.
-    const float markerCenterY = trackRect.y + trackRect.h * 0.5F;
+    // 3. System duration end boundary (shaded out-of-range if warm-up exceeds duration).
+    const double sysDuration = std::max(0.1, static_cast<double>(session->system.duration));
+    const float durationEndX = std::round(TimeToScreenXUVE(sysDuration));
+    if (durationEndX < m_rect.right() - 1.0F) {
+        c.fillRect(prism::Rect{durationEndX, trackRect.y, m_rect.right() - durationEndX, trackRect.h},
+                   prism::Color(0, 0, 0, 72));
+        c.fillRect(prism::Rect{durationEndX, trackRect.y, 1.0F, trackRect.h}, prism::Color(255, 255, 255, 42));
+    }
+
+    // 4. Warm-up shaded region [0, warmUpSeconds] when warmUpSeconds > 0.
+    if (session->system.warmUpSeconds > 0.0F) {
+        const float warmEndX = TimeToScreenXUVE(static_cast<double>(session->system.warmUpSeconds));
+        const float warmW = std::max(0.0F, warmEndX - left);
+        if (warmW > 1.0F) {
+            const prism::Rect warmRect{left, trackRect.y + 2.0F, warmW, trackRect.h - 4.0F};
+            c.fillRoundRect(warmRect, 3.0F, prism::Color(235, 168, 64, 38));
+            c.fillRect(prism::Rect{warmRect.x, warmRect.y, warmRect.w, 2.0F}, prism::Color(245, 186, 78, 195));
+            c.strokeRoundRect(warmRect, 3.0F, prism::Color(235, 168, 64, 130), 1);
+            if (warmW >= 46.0F) {
+                c.textIn(*t.small, prism::Rect{warmRect.x + 5.0F, warmRect.y + 3.0F, warmW - 10.0F, 14.0F},
+                         "Warm-Up", prism::Color(248, 204, 120), prism::HAlign::Left, true);
+            }
+        }
+    }
+
+    // 5. Playback scrub rail & elapsed progress fill.
+    const float railY = trackRect.bottom() - 13.0F;
+    const float railH = 6.0F;
+    const prism::Rect railRect{left, railY, usableW, railH};
+    c.fillRoundRect(railRect, 3.0F, prism::Color(35, 39, 47));
+    c.strokeRoundRect(railRect, 3.0F, prism::Color(56, 62, 74), 1);
+
+    const float playheadX = std::round(TimeToScreenXUVE(session->playhead));
+    const float fillW = std::clamp(playheadX - left, 0.0F, usableW);
+    if (fillW > 1.0F) {
+        const prism::Color fillColor =
+            session->playing ? prism::Color(66, 168, 255, 220) : prism::Color(104, 136, 178, 185);
+        c.fillRoundRect(prism::Rect{left, railY, fillW, railH}, 3.0F, fillColor);
+    }
+
+    // 6. SpawnBurst keyframe markers lane with vertical stem to the rail.
+    const float markerCenterY = trackRect.y + 13.0F;
     for (std::size_t ei = 0U; ei < session->system.emitters.size(); ++ei) {
         const Asset::ParticleEmitterAssetUVE& emitter = session->system.emitters[ei];
         if (!emitter.enabled) {
@@ -176,22 +260,51 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
                 continue;
             }
             const double burstTime = std::clamp(static_cast<double>(ReadBurstTimeInputUVE(mod)), 0.0, duration);
-            const float bx = TimeToScreenXUVE(burstTime);
-            DrawTimelineKeyUVE(c, prism::Vec2{bx, markerCenterY}, 5.5F,
+            const float bx = std::round(TimeToScreenXUVE(burstTime));
+            const prism::Color stemColor =
+                isSelectedEmitter ? prism::Color(90, 200, 250, 120) : prism::Color(140, 165, 195, 80);
+            c.fillRect(prism::Rect{bx, markerCenterY + 5.0F, 1.0F, std::max(0.0F, railY - (markerCenterY + 5.0F))},
+                       stemColor);
+            DrawTimelineKeyUVE(c, prism::Vec2{bx, markerCenterY}, 5.0F,
                                isSelectedEmitter ? prism::Color(90, 200, 250) : prism::Color(140, 165, 195),
                                isSelectedEmitter);
         }
     }
 
-    DrawTimelinePlayheadUVE(c, contentArea, kTimelineRulerHeightUVE, scale,
-                            session->playhead, FormatSecondsShortUVE(session->playhead));
+    // 7. Subtle hover scrub guide line (when hovering and not actively dragging).
+    if (m_hoverValid && !m_scrubbing) {
+        const float hx = std::round(TimeToScreenXUVE(m_hoverTime));
+        if (std::abs(hx - playheadX) > 2.0F) {
+            c.fillRect(prism::Rect{hx, rulerRect.y, 1.0F, m_rect.h}, prism::Color(255, 255, 255, 58));
+        }
+    }
+
+    // 8. High-contrast playhead needle, rail knot, and clamped ruler time pill.
+    const prism::Color headColor = TimelinePlayheadColorUVE();
+    c.fillRect(prism::Rect{playheadX, rulerRect.bottom() - 3.0F, 2.0F, trackRect.h + 3.0F}, headColor);
+    c.fillCircle(prism::Vec2{playheadX + 0.5F, railY + railH * 0.5F}, 4.5F, prism::Color(255, 255, 255));
+    c.fillCircle(prism::Vec2{playheadX + 0.5F, railY + railH * 0.5F}, 3.0F, headColor);
+
+    const std::string timeLabel = FormatSecondsShortUVE(session->playhead);
+    const float tagW = std::max(34.0F, t.small->width(timeLabel) + 10.0F);
+    const float tagX = std::clamp(playheadX - tagW * 0.5F, m_rect.x + 2.0F,
+                                  std::max(m_rect.x + 2.0F, m_rect.right() - tagW - 2.0F));
+    const prism::Rect tagRect{tagX, rulerRect.y + 2.0F, tagW, rulerRect.h - 7.0F};
+    c.fillRoundRect(tagRect, 3.0F, headColor);
+    const prism::Vec2 pointer[] = {
+        {playheadX - 3.5F, tagRect.bottom()},
+        {playheadX + 4.5F, tagRect.bottom()},
+        {playheadX + 0.5F, tagRect.bottom() + 4.0F},
+    };
+    c.fillPolygon(pointer, headColor);
+    c.textIn(*t.small, tagRect, timeLabel, prism::Color(255, 255, 255), prism::HAlign::Center, false);
 
     c.popClip();
-    c.strokeRect(m_rect, t.border, 1.0F);
+    c.strokeRect(m_rect, t.border, 1);
 }
 
 bool VfxTimelineWidgetUVE::onMouseDown(const prism::MouseEvent& e) {
-    if (e.button == prism::MouseButton::Left && e.pos.x >= m_rect.x + kTimelineHeaderWidthUVE) {
+    if (e.button == prism::MouseButton::Left) {
         m_scrubbing = true;
         ScrubAtScreenXUVE(e.pos.x);
         return true;
@@ -200,19 +313,29 @@ bool VfxTimelineWidgetUVE::onMouseDown(const prism::MouseEvent& e) {
 }
 
 bool VfxTimelineWidgetUVE::onMouseMove(const prism::MouseEvent& e) {
+    m_hoverValid = true;
+    m_hoverTime = ScreenXToTimeUVE(e.pos.x);
+    UpdateHoverTooltipUVE(e.pos.x);
     if (m_scrubbing) {
         ScrubAtScreenXUVE(e.pos.x);
         return true;
     }
+    invalidate();
     return false;
 }
 
 bool VfxTimelineWidgetUVE::onMouseUp(const prism::MouseEvent& e) {
     if (e.button == prism::MouseButton::Left && m_scrubbing) {
         m_scrubbing = false;
+        invalidate();
         return true;
     }
     return false;
+}
+
+void VfxTimelineWidgetUVE::onMouseLeave() {
+    m_hoverValid = false;
+    invalidate();
 }
 
 } // namespace UVE::Editor

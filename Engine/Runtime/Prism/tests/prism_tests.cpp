@@ -1553,6 +1553,24 @@ static void testBlueprintEmbedded(Application& app) {
   CHECK(spawned == 3 && g->findNode(502) != nullptr);
   CHECK(wired(10, 0, 502, 0) && wired(502, 0, 11, 1));
   app.closeAllPopups();
+
+  // pressing and dragging an unselected node while another node is selected must switch selection
+  // atomically (no transient empty callback that would confuse a host) and commit the new position
+  g->setSnap(false);
+  g->select(10);
+  std::vector<std::vector<int>> selectionTrace;
+  g->onSelectionChanged = [&](const std::vector<int>& ids) { selectionTrace.push_back(ids); };
+  const Vec2 beforeDrag = g->findNode(11)->pos;
+  const Vec2 head11 = g->worldToScreen(beforeDrag) + Vec2{30, 12};
+  const Vec2 drop11 = head11 + Vec2{48, 32};
+  app.hostMouseMove(head11);
+  app.hostMouseButton(head11, MouseButton::Left, true);
+  CHECK(selectionTrace.size() == 1 && selectionTrace[0].size() == 1 && selectionTrace[0][0] == 11);
+  app.hostMouseMove(drop11);
+  app.hostMouseButton(drop11, MouseButton::Left, false);
+  CHECK(!commits.empty() && commits.back() == "Move nodes");
+  CHECK(std::abs(g->findNode(11)->pos.x - (beforeDrag.x + 48.f)) < 0.5f);
+  CHECK(std::abs(g->findNode(11)->pos.y - (beforeDrag.y + 32.f)) < 0.5f);
 }
 
 static void testBlueprintGraphTypes(Application& app) {

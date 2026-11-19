@@ -1583,12 +1583,13 @@ public:
         VFX::VfxWorldUVE previewWorld;
         VFX::VfxHandleUVE previewHandle{};
         Render::VfxDrawListUVE vfxDrawList;
-        bool playing = true;
+        bool playing = false;
         bool loop = true;
         bool fixedSeed = false;
         bool showGrid = true;
         bool showBounds = false;
         bool focusPending = true;
+        bool previewCameraResetPending = true;
         bool confirmClose = false;
         double speed = 1.0;
         double playhead = 0.0;
@@ -1613,8 +1614,10 @@ public:
     /// Compiles every enabled emitter (only the solo emitter while one is soloed). Returns true
     /// when there are no errors; only then does the preview switch to the new system.
     [[nodiscard]] bool CompileVfxEditorUVE();
-    void PlayVfxPreviewUVE() noexcept;
+    void PlayVfxPreviewUVE();
     void PauseVfxPreviewUVE() noexcept;
+    /// Stops preview playback and resets the simulation cleanly back to `t = 0`.
+    void StopVfxPreviewUVE();
     void RestartVfxPreviewUVE();
     /// Moves the preview to `seconds`: restarts it and steps it forward deterministically.
     void SetVfxPlayheadUVE(double seconds);

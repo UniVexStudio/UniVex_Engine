@@ -22,6 +22,7 @@ inline constexpr std::size_t kMaximumParticleEmittersUVE = 32U;
 inline constexpr std::size_t kMaximumParticleModulesPerStageUVE = 64U;
 inline constexpr std::size_t kMaximumParticleUserParametersUVE = 64U;
 inline constexpr std::size_t kMaximumParticleDetachedModulesUVE = 256U;
+inline constexpr std::size_t kMaximumParticleDetachedLinksUVE = 512U;
 inline constexpr std::uint32_t kMaximumParticlesPerEmitterUVE = 1'000'000U;
 inline constexpr std::size_t kMaximumCurveKeysUVE = 64U;
 inline constexpr std::size_t kMaximumGradientStopsUVE = 16U;
@@ -164,6 +165,8 @@ struct ParticleModuleUVE final {
     std::map<std::string, std::string> strings; ///< Asset paths (texture, mesh, material), emitter names.
     float graphX = 0.0F;
     float graphY = 0.0F;
+    /// True when `(0, 0)` is an explicit graph position rather than "unplaced" (auto-layout).
+    bool graphPosAtOrigin = false;
     [[nodiscard]] bool operator==(const ParticleModuleUVE&) const = default;
 };
 
@@ -188,6 +191,22 @@ struct ParticleMathNodeUVE final {
     [[nodiscard]] bool operator==(const ParticleMathNodeUVE&) const = default;
 };
 
+/// Saved graph coordinates for one of the four fixed stage output nodes.
+struct ParticleStageNodePosUVE final {
+    bool placed = false;
+    float x = 0.0F;
+    float y = 0.0F;
+    [[nodiscard]] bool operator==(const ParticleStageNodePosUVE&) const = default;
+};
+
+/// Preserved chain wire (`Out -> In`) between two detached modules so deleting one wire does not
+/// erase remaining upstream links. Kept for authoring only and never compiled into runtime ops.
+struct ParticleDetachedLinkUVE final {
+    std::uint32_t fromModuleId = 0U;
+    std::uint32_t toModuleId = 0U;
+    [[nodiscard]] bool operator==(const ParticleDetachedLinkUVE&) const = default;
+};
+
 struct ParticleEmitterAssetUVE final {
     std::string name = "Emitter";
     bool enabled = true;
@@ -205,6 +224,10 @@ struct ParticleEmitterAssetUVE final {
     std::vector<ParticleModuleUVE> detached;
     std::vector<ParticleMathNodeUVE> mathNodes;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> comments;
+    /// Chain wires between modules in `detached`. Preserved for authoring and never compiled.
+    std::vector<ParticleDetachedLinkUVE> detachedLinks;
+    /// Saved positions for the 4 fixed stage output nodes, indexed by `ParticleStageUVE`.
+    std::array<ParticleStageNodePosUVE, 4> stageNodePositions{};
     [[nodiscard]] bool operator==(const ParticleEmitterAssetUVE&) const = default;
 };
 

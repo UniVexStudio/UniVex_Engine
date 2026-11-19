@@ -1,9 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_vfx_editor.h"
 
-#include <cstddef>
-#include <cstdint>
-
 #include "editor.h"
 #include "editor_chrome.h"
 #include "editor_fit_width.h"
@@ -24,26 +21,50 @@
 #include "prism/Layouts.h"
 #include "prism/Menu.h"
 #include "prism/TableView.h"
-#include "prism/Tabs.h"
 #include "prism/TextInput.h"
 #include "prism/Theme.h"
 #include "prism/Views.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
+#include <memory>
+#include <optional>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace UVE::Editor {
 namespace {
 
-constexpr int kVfxWindowWidthUVE = 1360;
-constexpr int kVfxWindowHeightUVE = 840;
+constexpr int kVfxWindowWidthUVE = 1440;
+constexpr int kVfxWindowHeightUVE = 860;
+
+constexpr std::uint8_t kPreviewStateStoppedUVE = 0U;
+constexpr std::uint8_t kPreviewStatePausedUVE = 1U;
+constexpr std::uint8_t kPreviewStatePlayingUVE = 2U;
+
+/// Root window border that intercepts VFX Editor shortcuts (Save, Compile, Undo/Redo, Play/Pause)
+/// during PRISM's tunnel phase while respecting focused text inputs and modal popups.
+class VfxWindowFrameUVE final : public prism::Border {
+public:
+    std::function<bool(const prism::KeyEvent&)> onShortcut;
+
+    prism::Reply onPreviewKeyDown(const prism::KeyEvent& e) override {
+        if (onShortcut && onShortcut(e)) {
+            return prism::Reply::handled();
+        }
+        return prism::Border::onPreviewKeyDown(e);
+    }
+};
 
 [[nodiscard]] prism::Slot CentreSlotUVE() {
     return prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center};
@@ -53,6 +74,14 @@ constexpr int kVfxWindowHeightUVE = 840;
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%.2f", t);
     return buf;
+}
+
+[[nodiscard]] prism::Ref<prism::Border> MakeSectionHeaderUVE(prism::Ref<prism::Box> row) {
+    auto bar = prism::make<prism::Border>();
+    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
+    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+    bar->setChild(std::move(row));
+    return bar;
 }
 
 [[nodiscard]] std::string MakeUniqueEmitterNameUVE(const Asset::ParticleSystemAssetUVE& sys,
@@ -99,6 +128,9 @@ constexpr int kVfxWindowHeightUVE = 840;
                 maxId = std::max(maxId, mod.id);
             }
         }
+        for (const Asset::ParticleMathNodeUVE& mathNode : emitter.mathNodes) {
+            maxId = std::max(maxId, mathNode.id);
+        }
     }
     return maxId + 1U;
 }
@@ -123,6 +155,7 @@ bool EditorVfxEditorUVE::SaveScreenshotUVE(const std::filesystem::path& path) {
 
 void EditorVfxEditorUVE::SelectModuleIdUVE(const std::uint32_t moduleId) {
     m_selectedModuleId = moduleId;
+    m_shownModuleId = moduleId;
     if (m_graph && moduleId != 0U) {
         m_graph->select(static_cast<int>(moduleId));
     }
@@ -142,13 +175,29 @@ void EditorVfxEditorUVE::SyncUVE() {
         m_window = 0;
         m_openPath.clear();
         m_viewport.reset();
+        m_statsOverlayLabel.reset();
         m_graph.reset();
         m_timeline.reset();
         m_compileTable.reset();
+        m_compileSummaryLabel.reset();
         m_emittersScroll.reset();
+        m_addEmitterButton.reset();
         m_parametersScroll.reset();
         m_inspectorScroll.reset();
+        m_playButton.reset();
+        m_stopButton.reset();
+        m_loopButton.reset();
+        m_seedButton.reset();
+        m_gridButton.reset();
+        m_boundsButton.reset();
+        m_speedCombo.reset();
+        m_previewStatePill.reset();
+        m_previewStateBadge.reset();
+        m_timecodeLabel.reset();
+        m_status.reset();
         m_tab.reset();
+        m_shownPreviewState = 0xFFU;
+        m_shownPlayingInit = false;
         m_shownValid = false;
     }
     if (session == nullptr) {
@@ -156,8 +205,11 @@ void EditorVfxEditorUVE::SyncUVE() {
     }
     if (m_window == 0) {
         m_selectedModuleId = 0U;
+        m_shownModuleId = 0U;
         m_closeAsked = false;
         m_shownValid = false;
+        m_shownPlayingInit = false;
+        m_shownPreviewState = 0xFFU;
         m_shownCompileCount = static_cast<std::size_t>(-1);
         m_window = m_host.OpenWindowUVE(
             BuildUVE(),
@@ -224,16 +276,61 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildUVE() {
     window->add(BuildToolbarUVE());
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
-    columns->add(BuildLeftColumnUVE(), prism::Splitter::Pane{270.0F, 210.0F, 480.0F, false});
-    columns->add(BuildCentreColumnUVE(), prism::Splitter::Pane{730.0F, 380.0F, 1e9F, true});
-    columns->add(BuildRightColumnUVE(), prism::Splitter::Pane{360.0F, 260.0F, 640.0F, false});
+    columns->add(BuildLeftColumnUVE(), prism::Splitter::Pane{395.0F, 330.0F, 640.0F, false});
+    columns->add(BuildCentreColumnUVE(), prism::Splitter::Pane{695.0F, 420.0F, 1e9F, true});
+    columns->add(BuildRightColumnUVE(), prism::Splitter::Pane{350.0F, 260.0F, 600.0F, false});
     window->add(columns, prism::Slot{1.0F});
 
-    auto frame = prism::make<prism::Border>();
+    auto frame = prism::make<VfxWindowFrameUVE>();
     frame->setBackground(prism::ThemeColor(&prism::Theme::window));
     frame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
+    frame->onShortcut = [this](const prism::KeyEvent& e) -> bool {
+        const bool ctrl = (e.mods & prism::ModCtrl) != 0U;
+        const bool shift = (e.mods & prism::ModShift) != 0U;
+        const bool alt = (e.mods & prism::ModAlt) != 0U;
+        if (ctrl && !alt && !shift && e.key == prism::Key::S) {
+            static_cast<void>(m_editor.SaveVfxEditorUVE());
+            return true;
+        }
+        if (!ctrl && !alt && !shift && e.key == prism::Key::F7) {
+            static_cast<void>(m_editor.CompileVfxEditorUVE());
+            m_shownCompileCount = static_cast<std::size_t>(-1);
+            return true;
+        }
+        const bool modalOrTyping = prism::Application::exists() && prism::Application::get().wantsKeyboard();
+        if (modalOrTyping) {
+            return false;
+        }
+        if (ctrl && !alt && e.key == prism::Key::Z) {
+            static_cast<void>(shift ? m_editor.RedoVfxEditUVE() : m_editor.UndoVfxEditUVE());
+            return true;
+        }
+        if (ctrl && !alt && !shift && e.key == prism::Key::Y) {
+            static_cast<void>(m_editor.RedoVfxEditUVE());
+            return true;
+        }
+        if (!ctrl && !alt && !shift && !e.repeat && e.key == prism::Key::Space) {
+            const prism::Widget* const focused =
+                prism::Application::exists() ? prism::Application::get().focus() : nullptr;
+            const bool buttonFocused =
+                focused != nullptr &&
+                (focused->accessRole() == prism::AccessRole::Button ||
+                 focused->accessRole() == prism::AccessRole::ToggleButton ||
+                 focused->accessRole() == prism::AccessRole::CheckBox);
+            if (!buttonFocused) {
+                if (const EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
+                    if (s->playing) {
+                        m_editor.PauseVfxPreviewUVE();
+                    } else {
+                        m_editor.PlayVfxPreviewUVE();
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
     frame->setChild(window);
-    ApplyCenterModeUVE(m_centerMode);
     return frame;
 }
 
@@ -247,7 +344,12 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
         items.push_back(prism::MenuItem::Item(
             "Save", [this] { static_cast<void>(m_editor.SaveVfxEditorUVE()); }, "Ctrl+S", prism::Icon::Save));
         items.push_back(prism::MenuItem::Item(
-            "Compile", [this] { static_cast<void>(m_editor.CompileVfxEditorUVE()); }, "F7", prism::Icon::Check));
+            "Compile",
+            [this] {
+                static_cast<void>(m_editor.CompileVfxEditorUVE());
+                m_shownCompileCount = static_cast<std::size_t>(-1);
+            },
+            "F7", prism::Icon::Check));
         items.push_back(prism::MenuItem::Item("Show in Asset Table", [this] {
             const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             std::error_code error;
@@ -271,19 +373,49 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
         return std::vector<prism::MenuItem>{std::move(undo), std::move(redo)};
     });
     menus->addMenu("Window", [this] {
+        const EditorUVE::VfxEditSessionUVE* const session = m_editor.VfxEditSessionPtrUVE();
         return std::vector<prism::MenuItem>{
-            prism::MenuItem::Check("Split Preview + Graph", m_centerMode == CenterModeUVE::Split,
-                                   [this] { ApplyCenterModeUVE(CenterModeUVE::Split); }),
-            prism::MenuItem::Check("Preview Only", m_centerMode == CenterModeUVE::PreviewOnly,
-                                   [this] { ApplyCenterModeUVE(CenterModeUVE::PreviewOnly); }),
-            prism::MenuItem::Check("Graph Only", m_centerMode == CenterModeUVE::GraphOnly,
-                                   [this] { ApplyCenterModeUVE(CenterModeUVE::GraphOnly); }),
+            prism::MenuItem::Item(
+                "Frame All Nodes", [this] {
+                    if (m_graph) {
+                        m_graph->frameAll();
+                    }
+                },
+                "Home", prism::Icon::Frame),
+            prism::MenuItem::Item(
+                "Frame Selected Nodes", [this] {
+                    if (m_graph) {
+                        m_graph->frameSelection();
+                    }
+                },
+                "F", prism::Icon::Frame),
+            prism::MenuItem::Sep(),
+            prism::MenuItem::Item(
+                "Reset Preview Camera", [this] {
+                    if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
+                        s->previewCameraResetPending = true;
+                    }
+                },
+                "", prism::Icon::Camera),
+            prism::MenuItem::Check(
+                "Show Floor Grid", session != nullptr && session->showGrid, [this] {
+                    if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
+                        s->showGrid = !s->showGrid;
+                    }
+                }),
+            prism::MenuItem::Check(
+                "Show Fixed Bounds", session != nullptr && session->showBounds, [this] {
+                    if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
+                        s->showBounds = !s->showBounds;
+                    }
+                }),
         };
     });
     menus->addMenu("Help", [] {
         return std::vector<prism::MenuItem>{
             prism::MenuItem::Item("Spawn from Blueprint: vfx.spawn(\"assets/VFX_Effect.uvfx\", pos)", {}).disabled(),
             prism::MenuItem::Item("Right-click the Particle Graph canvas to add modules", {}).disabled(),
+            prism::MenuItem::Item("Press Space to Play/Pause preview; scrub the timeline below the viewport", {}).disabled(),
         };
     });
     row->add(menus, CentreSlotUVE());
@@ -292,7 +424,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
 
     auto tabRow = prism::hbox();
     m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::Light);
+    m_tab->setFallbackIcon(prism::Icon::VfxGraph);
     m_tab->setName(m_openPath.empty() && m_editor.VfxEditSessionPtrUVE() != nullptr
                        ? m_editor.VfxEditSessionPtrUVE()->path.stem().string()
                        : m_openPath.stem().string());
@@ -325,61 +457,25 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
 
-    auto save = ToolButtonUVE(prism::Icon::Save, "Save Particle System (.uvfx)", "Save");
+    auto save = ToolButtonUVE(prism::Icon::Save, "Save Particle System (.uvfx) (Ctrl+S)", "Save");
     save->onClick = [this] { static_cast<void>(m_editor.SaveVfxEditorUVE()); };
     row->add(save, CentreSlotUVE());
 
-    auto undo = ToolButtonUVE(prism::Icon::Undo, "Undo");
+    auto undo = ToolButtonUVE(prism::Icon::Undo, "Undo (Ctrl+Z)");
     undo->onClick = [this] { static_cast<void>(m_editor.UndoVfxEditUVE()); };
-    auto redo = ToolButtonUVE(prism::Icon::Redo, "Redo");
+    auto redo = ToolButtonUVE(prism::Icon::Redo, "Redo (Ctrl+Y)");
     redo->onClick = [this] { static_cast<void>(m_editor.RedoVfxEditUVE()); };
     row->add(undo, CentreSlotUVE());
     row->add(redo, CentreSlotUVE());
     row->add(HSeparatorUVE(), CentreSlotUVE());
 
-    auto compile = ToolButtonUVE(prism::Icon::Check, "Compile all emitters and update live preview", "Compile");
+    auto compile = ToolButtonUVE(prism::Icon::Compile, "Compile all emitters and refresh preview (F7)", "Compile");
     compile->onClick = [this] {
         static_cast<void>(m_editor.CompileVfxEditorUVE());
         m_shownCompileCount = static_cast<std::size_t>(-1);
     };
     row->add(compile, CentreSlotUVE());
     row->add(HSeparatorUVE(), CentreSlotUVE());
-
-    m_playButton = ToolButtonUVE(prism::Icon::Play, "Play preview simulation");
-    m_playButton->setCheckable(true);
-    m_playButton->onClick = [this] { m_editor.PlayVfxPreviewUVE(); };
-    m_pauseButton = ToolButtonUVE(prism::Icon::Pause, "Pause preview simulation");
-    m_pauseButton->setCheckable(true);
-    m_pauseButton->onClick = [this] { m_editor.PauseVfxPreviewUVE(); };
-    auto restart = ToolButtonUVE(prism::Icon::Refresh, "Restart simulation from t = 0", "Restart");
-    restart->onClick = [this] { m_editor.RestartVfxPreviewUVE(); };
-
-    row->add(m_playButton, CentreSlotUVE());
-    row->add(m_pauseButton, CentreSlotUVE());
-    row->add(restart, CentreSlotUVE());
-
-    m_speedCombo = prism::make<prism::ComboBox>(
-        std::vector<std::string>{"0.1x", "0.25x", "0.5x", "1.0x", "2.0x", "4.0x"}, 3);
-    m_speedCombo->onChange = [this](const int idx) {
-        static constexpr std::array<double, 6> kSpeeds{0.1, 0.25, 0.5, 1.0, 2.0, 4.0};
-        if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE();
-            s != nullptr && idx >= 0 && static_cast<std::size_t>(idx) < kSpeeds.size()) {
-            s->speed = kSpeeds[static_cast<std::size_t>(idx)];
-        }
-    };
-    auto speedBox = prism::make<prism::SizeBox>();
-    speedBox->setWidthOverride(74.0F);
-    speedBox->setContent(m_speedCombo);
-    row->add(speedBox, CentreSlotUVE());
-
-    m_loopButton = ToolButtonUVE(prism::Icon::NodeLoop, "Loop preview playback", "Loop");
-    m_loopButton->setCheckable(true);
-    m_loopButton->onClick = [this] {
-        if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
-            s->loop = !s->loop;
-        }
-    };
-    row->add(m_loopButton, CentreSlotUVE());
 
     m_seedButton = ToolButtonUVE(prism::Icon::Lock, "Deterministic fixed seed on restart", "Fixed Seed");
     m_seedButton->setCheckable(true);
@@ -391,7 +487,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
     };
     row->add(m_seedButton, CentreSlotUVE());
 
-    m_gridButton = ToolButtonUVE(prism::Icon::Grid, "Show floor grid in preview", "Grid");
+    m_gridButton = ToolButtonUVE(prism::Icon::Grid, "Show floor grid in 3D preview", "Grid");
     m_gridButton->setCheckable(true);
     m_gridButton->onClick = [this] {
         if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
@@ -400,7 +496,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
     };
     row->add(m_gridButton, CentreSlotUVE());
 
-    m_boundsButton = ToolButtonUVE(prism::Icon::Cube, "Show system fixed bounds box in preview", "Bounds");
+    m_boundsButton = ToolButtonUVE(prism::Icon::Cube, "Show system fixed bounds box in 3D preview", "Bounds");
     m_boundsButton->setCheckable(true);
     m_boundsButton->onClick = [this] {
         if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
@@ -409,90 +505,40 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
     };
     row->add(m_boundsButton, CentreSlotUVE());
 
-    row->add(HSeparatorUVE(), CentreSlotUVE());
-
-    m_centerModeSeg = prism::make<prism::Segmented>();
-    m_centerModeSeg->add("Split").add("Preview").add("Graph");
-    m_centerModeSeg->setSelected(2);
-    m_centerModeSeg->onSelect = [this](const int idx) {
-        ApplyCenterModeUVE(idx == 1 ? CenterModeUVE::PreviewOnly
-                           : idx == 2 ? CenterModeUVE::GraphOnly
-                                      : CenterModeUVE::Split);
-    };
-    row->add(m_centerModeSeg, CentreSlotUVE());
-
     m_status = prism::make<prism::Label>("", prism::FontRole::Small);
     m_status->setColor(prism::ThemeColor(&prism::Theme::textDim));
     row->add(m_status, prism::Slot{1.0F, prism::Margin(10.0F, 0.0F, 0.0F, 0.0F), prism::HAlign::Right, prism::VAlign::Center});
 
-    auto bar = prism::make<prism::Border>();
-    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    bar->setChild(row);
-    return bar;
+    return MakeSectionHeaderUVE(std::move(row));
 }
 
 prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildLeftColumnUVE() {
-    // Top half: Emitters list. Bottom half: User Parameters list.
-    auto emittersHeader = prism::hbox(4.0F);
-    emittersHeader->setPadding(prism::Margin(6.0F, 4.0F, 6.0F, 4.0F));
-    auto emittersTitle = prism::make<prism::Label>("Emitters", prism::FontRole::Medium);
-    emittersHeader->add(emittersTitle, CentreSlotUVE());
-    emittersHeader->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
-    m_addEmitterButton = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Success);
-    m_addEmitterButton->onClick = [this] {
-        ShowAddEmitterMenuUVE(m_addEmitterButton ? m_addEmitterButton->rect() : prism::Rect{});
+    // Top pane: 3D Preview screen -> Transport controls directly underneath -> AAA Timeline directly underneath.
+    auto previewHeaderRow = prism::hbox(6.0F);
+    previewHeaderRow->setPadding(prism::Margin(8.0F, 4.0F, 6.0F, 4.0F));
+    auto previewTitle = prism::make<prism::Label>("3D Preview", prism::FontRole::Medium);
+    previewHeaderRow->add(previewTitle, CentreSlotUVE());
+    previewHeaderRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+
+    m_previewStateBadge = prism::make<prism::Label>("STOPPED", prism::FontRole::Small);
+    m_previewStateBadge->setColor(prism::Color(168, 178, 194));
+    m_previewStatePill = prism::make<prism::Border>();
+    m_previewStatePill->setBackground(prism::Color(36, 40, 48));
+    m_previewStatePill->setBorder(prism::Color(68, 76, 90), prism::Margin(1.0F));
+    m_previewStatePill->setPadding(prism::Margin(6.0F, 1.0F, 6.0F, 1.0F));
+    m_previewStatePill->setRadius(3.0F);
+    m_previewStatePill->setChild(m_previewStateBadge);
+    previewHeaderRow->add(m_previewStatePill, CentreSlotUVE());
+
+    auto resetCamBtn = prism::make<prism::Button>("", prism::Icon::Camera, prism::ButtonStyle::Flat);
+    resetCamBtn->setTooltip("Reset preview camera to system bounds");
+    resetCamBtn->onClick = [this] {
+        if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
+            s->previewCameraResetPending = true;
+        }
     };
-    emittersHeader->add(m_addEmitterButton, CentreSlotUVE());
+    previewHeaderRow->add(resetCamBtn, CentreSlotUVE());
 
-    auto emittersHeaderBar = prism::make<prism::Border>();
-    emittersHeaderBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    emittersHeaderBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    emittersHeaderBar->setChild(emittersHeader);
-
-    m_emittersScroll = prism::make<prism::ScrollBox>();
-    auto emittersBox = prism::vbox(0.0F);
-    emittersBox->add(emittersHeaderBar);
-    emittersBox->add(m_emittersScroll, prism::Slot{1.0F});
-
-    auto paramsHeader = prism::hbox(4.0F);
-    paramsHeader->setPadding(prism::Margin(6.0F, 4.0F, 6.0F, 4.0F));
-    auto paramsTitle = prism::make<prism::Label>("User Parameters", prism::FontRole::Medium);
-    paramsHeader->add(paramsTitle, CentreSlotUVE());
-    paramsHeader->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
-    auto addParamBtn = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Default);
-    addParamBtn->onClick = [this] {
-        m_editor.EditVfxSystemUVE([](Asset::ParticleSystemAssetUVE& sys) {
-            if (sys.parameters.size() >= Asset::kMaximumParticleUserParametersUVE) {
-                return;
-            }
-            Asset::ParticleUserParameterUVE param{};
-            param.name = MakeUniqueParameterNameUVE(sys, "Param");
-            param.type = Asset::ParticleUserParameterTypeUVE::Float;
-            param.value = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
-            param.alpha = 1.0F;
-            sys.parameters.push_back(std::move(param));
-        });
-    };
-    paramsHeader->add(addParamBtn, CentreSlotUVE());
-
-    auto paramsHeaderBar = prism::make<prism::Border>();
-    paramsHeaderBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    paramsHeaderBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    paramsHeaderBar->setChild(paramsHeader);
-
-    m_parametersScroll = prism::make<prism::ScrollBox>();
-    auto paramsBox = prism::vbox(0.0F);
-    paramsBox->add(paramsHeaderBar);
-    paramsBox->add(m_parametersScroll, prism::Slot{1.0F});
-
-    auto leftSplit = prism::make<prism::Splitter>(prism::Orientation::Vertical);
-    leftSplit->add(PanelUVE(emittersBox), prism::Splitter::Pane{420.0F, 150.0F, 1e9F, true});
-    leftSplit->add(PanelUVE(paramsBox), prism::Splitter::Pane{320.0F, 130.0F, 1e9F, false});
-    return leftSplit;
-}
-
-prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
     m_viewport = prism::make<prism::EngineView>();
     m_viewport->mode = prism::EngineView::Mode::Hole;
     m_viewport->onInput = [](const prism::EngineInput&) {};
@@ -503,6 +549,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
     statsCard->setBackground(prism::Color(16, 18, 22, 196));
     statsCard->setBorder(prism::Color(58, 66, 78, 190), prism::Margin(1.0F));
     statsCard->setPadding(prism::Margin(8.0F, 5.0F, 8.0F, 5.0F));
+    statsCard->setRadius(3.0F);
     statsCard->setChild(m_statsOverlayLabel);
 
     auto statsRow = prism::hbox();
@@ -516,13 +563,133 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
     auto viewportOverlay = prism::make<prism::Overlay>();
     viewportOverlay->add(m_viewport);
     viewportOverlay->add(statsContainer);
-    m_previewPane = PanelUVE(viewportOverlay);
+
+    // Transport bar directly beneath the 3D Preview viewport.
+    auto transportRow = prism::hbox(4.0F);
+    transportRow->setPadding(prism::Margin(6.0F, 4.0F, 6.0F, 4.0F));
+
+    m_playButton = prism::make<prism::Button>("Play", prism::Icon::Play, prism::ButtonStyle::Success);
+    m_playButton->setTooltip("Play or pause preview simulation (Space)");
+    m_playButton->onClick = [this] {
+        if (const EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
+            if (s->playing) {
+                m_editor.PauseVfxPreviewUVE();
+            } else {
+                m_editor.PlayVfxPreviewUVE();
+            }
+        }
+    };
+    transportRow->add(m_playButton, CentreSlotUVE());
+
+    m_stopButton = ToolButtonUVE(prism::Icon::Stop, "Stop preview and reset playhead to 0.00s");
+    m_stopButton->onClick = [this] { m_editor.StopVfxPreviewUVE(); };
+    transportRow->add(m_stopButton, CentreSlotUVE());
+
+    auto restartBtn = ToolButtonUVE(prism::Icon::Refresh, "Restart simulation from t = 0");
+    restartBtn->onClick = [this] { m_editor.RestartVfxPreviewUVE(); };
+    transportRow->add(restartBtn, CentreSlotUVE());
+
+    m_loopButton = ToolButtonUVE(prism::Icon::NodeLoop, "Toggle loop playback");
+    m_loopButton->setCheckable(true);
+    m_loopButton->onClick = [this] {
+        if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
+            s->loop = !s->loop;
+        }
+    };
+    transportRow->add(m_loopButton, CentreSlotUVE());
+
+    m_speedCombo = prism::make<prism::ComboBox>(
+        std::vector<std::string>{"0.1x", "0.25x", "0.5x", "1.0x", "2.0x", "4.0x"}, 3);
+    m_speedCombo->setTooltip("Preview simulation speed");
+    m_speedCombo->onChange = [this](const int idx) {
+        static constexpr std::array<double, 6> kSpeeds{0.1, 0.25, 0.5, 1.0, 2.0, 4.0};
+        if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE();
+            s != nullptr && idx >= 0 && static_cast<std::size_t>(idx) < kSpeeds.size()) {
+            s->speed = kSpeeds[static_cast<std::size_t>(idx)];
+        }
+    };
+    auto speedBox = prism::make<prism::SizeBox>();
+    speedBox->setWidthOverride(64.0F);
+    speedBox->setContent(m_speedCombo);
+    transportRow->add(speedBox, CentreSlotUVE());
+
+    transportRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+
+    m_timecodeLabel = prism::make<prism::Label>("0.00 / 0.00s", prism::FontRole::Mono);
+    m_timecodeLabel->setColor(prism::Color(208, 218, 232));
+    transportRow->add(m_timecodeLabel, CentreSlotUVE());
+
+    auto transportBar = prism::make<prism::Border>();
+    transportBar->setBackground(prism::ThemeColor(&prism::Theme::header));
+    transportBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 1.0F, 0.0F, 1.0F));
+    transportBar->setChild(transportRow);
+
+    // Upgraded studio timeline directly underneath the transport bar.
+    m_timeline = prism::make<VfxTimelineWidgetUVE>(m_editor);
+
+    auto previewPane = prism::vbox(0.0F);
+    previewPane->add(MakeSectionHeaderUVE(std::move(previewHeaderRow)));
+    previewPane->add(viewportOverlay, prism::Slot{1.0F});
+    previewPane->add(transportBar);
+    previewPane->add(m_timeline);
+
+    // Bottom pane: Emitters list + green "+ Add" button.
+    auto emittersHeader = prism::hbox(4.0F);
+    emittersHeader->setPadding(prism::Margin(8.0F, 4.0F, 6.0F, 4.0F));
+    auto emittersTitle = prism::make<prism::Label>("Emitters", prism::FontRole::Medium);
+    emittersHeader->add(emittersTitle, CentreSlotUVE());
+    emittersHeader->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    m_addEmitterButton = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Success);
+    m_addEmitterButton->onClick = [this] {
+        ShowAddEmitterMenuUVE(m_addEmitterButton ? m_addEmitterButton->rect() : prism::Rect{});
+    };
+    emittersHeader->add(m_addEmitterButton, CentreSlotUVE());
+
+    m_emittersScroll = prism::make<prism::ScrollBox>();
+    auto emittersBox = prism::vbox(0.0F);
+    emittersBox->add(MakeSectionHeaderUVE(std::move(emittersHeader)));
+    emittersBox->add(m_emittersScroll, prism::Slot{1.0F});
+
+    auto leftSplit = prism::make<prism::Splitter>(prism::Orientation::Vertical);
+    leftSplit->add(PanelUVE(previewPane), prism::Splitter::Pane{470.0F, 280.0F, 1e9F, true});
+    leftSplit->add(PanelUVE(emittersBox), prism::Splitter::Pane{310.0F, 160.0F, 1e9F, false});
+    return leftSplit;
+}
+
+prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
+    // Top pane: Full Particle Graph canvas (no Split/Preview toggle).
+    auto graphHeader = prism::hbox(6.0F);
+    graphHeader->setPadding(prism::Margin(8.0F, 4.0F, 6.0F, 4.0F));
+    auto graphTitle = prism::make<prism::Label>("Particle Graph", prism::FontRole::Medium);
+    graphHeader->add(graphTitle, CentreSlotUVE());
+    auto graphHint = prism::make<prism::Label>(
+        "Right-click to add modules  |  Drag wire to connect  |  Del to remove",
+        prism::FontRole::Small);
+    graphHint->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    graphHeader->add(graphHint, prism::Slot{1.0F, prism::Margin(8.0F, 0.0F, 0.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
+    auto frameAllBtn = prism::make<prism::Button>("Frame", prism::Icon::Frame, prism::ButtonStyle::Flat);
+    frameAllBtn->setTooltip("Frame all nodes in the graph (Home)");
+    frameAllBtn->onClick = [this] {
+        if (m_graph) {
+            m_graph->frameAll();
+        }
+    };
+    graphHeader->add(frameAllBtn, CentreSlotUVE());
 
     m_graph = prism::make<prism::BlueprintGraph>();
     prism::BlueprintGraph::Features graphFeatures = m_graph->features();
     graphFeatures.toolbar = false;
     graphFeatures.crumbs = false;
+    // The VFX Editor session owns Undo/Redo, Save, and Compile; disabling PRISM's internal
+    // history and host shortcuts prevents Ctrl+Z from restoring demo nodes over the emitter.
+    graphFeatures.history = false;
+    graphFeatures.shortcuts = false;
     m_graph->setFeatures(graphFeatures);
+    m_graph->onSaveRequested = [this] { static_cast<void>(m_editor.SaveVfxEditorUVE()); };
+    m_graph->onCompileRequested = [this] {
+        static_cast<void>(m_editor.CompileVfxEditorUVE());
+        m_shownCompileCount = static_cast<std::size_t>(-1);
+    };
     // The palette, the right-click menu and wire-drag search all offer the VFX node library (modules by
     // stage, plus Math / Value nodes) and create nodes through the VFX spawner; connections follow the
     // VFX stage rules, and the four stage output nodes are structural (never deleted or copied).
@@ -548,6 +715,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
         }
         if (picked != m_selectedModuleId) {
             m_selectedModuleId = picked;
+            m_shownModuleId = picked;
             RebuildInspectorUVE();
         }
     };
@@ -557,13 +725,20 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
         }
         SyncGraphToAssetUVE();
     };
-    m_graphPane = PanelUVE(m_graph);
 
-    m_centerTopSplitter = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
-    m_centerTopSplitter->add(m_previewPane, prism::Splitter::Pane{340.0F, 180.0F, 1e9F, false});
-    m_centerTopSplitter->add(m_graphPane, prism::Splitter::Pane{520.0F, 240.0F, 1e9F, true});
+    auto graphBox = prism::vbox(0.0F);
+    graphBox->add(MakeSectionHeaderUVE(std::move(graphHeader)));
+    graphBox->add(m_graph, prism::Slot{1.0F});
 
-    m_timeline = prism::make<VfxTimelineWidgetUVE>(m_editor);
+    // Bottom pane: Compile Results header + diagnostics table.
+    auto compileHeader = prism::hbox(6.0F);
+    compileHeader->setPadding(prism::Margin(8.0F, 4.0F, 8.0F, 4.0F));
+    auto compileTitle = prism::make<prism::Label>("Compile Results", prism::FontRole::Medium);
+    compileHeader->add(compileTitle, CentreSlotUVE());
+    compileHeader->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    m_compileSummaryLabel = prism::make<prism::Label>("Ready", prism::FontRole::Small);
+    m_compileSummaryLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    compileHeader->add(m_compileSummaryLabel, CentreSlotUVE());
 
     m_compileTable = prism::make<prism::TableView>();
     m_compileTable->addColumn(prism::TableColumn{"sev", "Severity", 80.0F});
@@ -602,48 +777,76 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
         const VFX::ParticleCompileMessageUVE& msg = session->compileMessages[static_cast<std::size_t>(r)];
         if (msg.emitterIndex < session->system.emitters.size() && session->selectedEmitter != msg.emitterIndex) {
             session->selectedEmitter = msg.emitterIndex;
+            m_shownEmitterIndex = msg.emitterIndex;
             RebuildGraphFromAssetUVE();
+            if (m_graph) {
+                m_graph->frameAll();
+            }
+            RebuildEmittersListUVE();
         }
         if (msg.moduleId != 0U) {
             SelectModuleIdUVE(msg.moduleId);
+            if (m_graph) {
+                m_graph->frameSelection();
+            }
         } else if (m_graph) {
             m_graph->select(kVfxStageNodeRenderUVE);
+            m_graph->frameSelection();
         }
     };
 
-    auto bottomBox = prism::vbox(0.0F);
-    bottomBox->add(m_timeline);
-    bottomBox->add(m_compileTable, prism::Slot{1.0F});
+    auto compileBox = prism::vbox(0.0F);
+    compileBox->add(MakeSectionHeaderUVE(std::move(compileHeader)));
+    compileBox->add(m_compileTable, prism::Slot{1.0F});
 
     auto centreSplit = prism::make<prism::Splitter>(prism::Orientation::Vertical);
-    centreSplit->add(m_centerTopSplitter, prism::Splitter::Pane{560.0F, 240.0F, 1e9F, true});
-    centreSplit->add(PanelUVE(bottomBox), prism::Splitter::Pane{185.0F, 110.0F, 420.0F, false});
+    centreSplit->add(PanelUVE(graphBox), prism::Splitter::Pane{590.0F, 260.0F, 1e9F, true});
+    centreSplit->add(PanelUVE(compileBox), prism::Splitter::Pane{165.0F, 110.0F, 360.0F, false});
     return centreSplit;
 }
 
 prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildRightColumnUVE() {
-    m_inspectorScroll = prism::make<prism::ScrollBox>();
-    auto tabs = prism::make<prism::TabView>();
-    tabs->addTab("Inspector", prism::Icon::Properties, PanelUVE(m_inspectorScroll));
-    return tabs;
-}
+    // Top pane: Inspector. Bottom pane: User Parameters (+ Add).
+    auto inspectorHeader = prism::hbox(4.0F);
+    inspectorHeader->setPadding(prism::Margin(8.0F, 4.0F, 8.0F, 4.0F));
+    auto inspectorTitle = prism::make<prism::Label>("Inspector", prism::FontRole::Medium);
+    inspectorHeader->add(inspectorTitle, CentreSlotUVE());
 
-void EditorVfxEditorUVE::ApplyCenterModeUVE(const CenterModeUVE mode) {
-    m_centerMode = mode;
-    if (m_previewPane) {
-        m_previewPane->setVisible(mode != CenterModeUVE::GraphOnly);
-    }
-    if (m_graphPane) {
-        m_graphPane->setVisible(mode != CenterModeUVE::PreviewOnly);
-    }
-    if (m_centerModeSeg) {
-        m_centerModeSeg->setSelected(mode == CenterModeUVE::PreviewOnly ? 1
-                                     : mode == CenterModeUVE::GraphOnly ? 2
-                                                                        : 0);
-    }
-    if (prism::Application::exists()) {
-        prism::Application::get().invalidateLayout();
-    }
+    m_inspectorScroll = prism::make<prism::ScrollBox>();
+    auto inspectorBox = prism::vbox(0.0F);
+    inspectorBox->add(MakeSectionHeaderUVE(std::move(inspectorHeader)));
+    inspectorBox->add(m_inspectorScroll, prism::Slot{1.0F});
+
+    auto paramsHeader = prism::hbox(4.0F);
+    paramsHeader->setPadding(prism::Margin(8.0F, 4.0F, 6.0F, 4.0F));
+    auto paramsTitle = prism::make<prism::Label>("User Parameters", prism::FontRole::Medium);
+    paramsHeader->add(paramsTitle, CentreSlotUVE());
+    paramsHeader->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    auto addParamBtn = prism::make<prism::Button>("Add", prism::Icon::Plus, prism::ButtonStyle::Default);
+    addParamBtn->onClick = [this] {
+        m_editor.EditVfxSystemUVE([](Asset::ParticleSystemAssetUVE& sys) {
+            if (sys.parameters.size() >= Asset::kMaximumParticleUserParametersUVE) {
+                return;
+            }
+            Asset::ParticleUserParameterUVE param{};
+            param.name = MakeUniqueParameterNameUVE(sys, "Param");
+            param.type = Asset::ParticleUserParameterTypeUVE::Float;
+            param.value = Math::Vector3UVE{1.0F, 0.0F, 0.0F};
+            param.alpha = 1.0F;
+            sys.parameters.push_back(std::move(param));
+        });
+    };
+    paramsHeader->add(addParamBtn, CentreSlotUVE());
+
+    m_parametersScroll = prism::make<prism::ScrollBox>();
+    auto paramsBox = prism::vbox(0.0F);
+    paramsBox->add(MakeSectionHeaderUVE(std::move(paramsHeader)));
+    paramsBox->add(m_parametersScroll, prism::Slot{1.0F});
+
+    auto rightSplit = prism::make<prism::Splitter>(prism::Orientation::Vertical);
+    rightSplit->add(PanelUVE(inspectorBox), prism::Splitter::Pane{460.0F, 200.0F, 1e9F, true});
+    rightSplit->add(PanelUVE(paramsBox), prism::Splitter::Pane{280.0F, 150.0F, 1e9F, false});
+    return rightSplit;
 }
 
 void EditorVfxEditorUVE::ShowAddEmitterMenuUVE(const prism::Rect anchor) {
@@ -728,7 +931,6 @@ void EditorVfxEditorUVE::RebuildEmittersListUVE() {
                 if (s->selectedEmitter != i) {
                     s->selectedEmitter = i;
                     m_selectedModuleId = 0U;
-                    m_shownValid = false;
                 }
             }
         };
@@ -745,7 +947,6 @@ void EditorVfxEditorUVE::RebuildEmittersListUVE() {
                     s->soloEmitter = i;
                 }
                 static_cast<void>(m_editor.CompileVfxEditorUVE());
-                m_shownValid = false;
             }
         };
         topRow->add(soloBtn, CentreSlotUVE());
@@ -800,16 +1001,51 @@ void EditorVfxEditorUVE::RebuildEmittersListUVE() {
                 }
                 Asset::ParticleEmitterAssetUVE copy = sys.emitters[i];
                 copy.name = MakeUniqueEmitterNameUVE(sys, copy.name + "_Copy");
+                std::unordered_map<std::uint32_t, std::uint32_t> idRemap;
                 std::uint32_t nextId = NextFreeModuleIdInSystemUVE(sys);
                 for (auto* stageVec : {&copy.emitterUpdate, &copy.particleSpawn, &copy.particleUpdate, &copy.render, &copy.detached}) {
                     for (Asset::ParticleModuleUVE& mod : *stageVec) {
-                        mod.id = nextId++;
+                        const std::uint32_t newId = nextId++;
+                        idRemap[mod.id] = newId;
+                        mod.id = newId;
                     }
+                }
+                for (Asset::ParticleMathNodeUVE& mathNode : copy.mathNodes) {
+                    const std::uint32_t newId = nextId++;
+                    idRemap[mathNode.id] = newId;
+                    mathNode.id = newId;
+                }
+                const auto remapId = [&idRemap](std::uint32_t& id) {
+                    if (id != 0U) {
+                        if (const auto it = idRemap.find(id); it != idRemap.end()) {
+                            id = it->second;
+                        }
+                    }
+                };
+                for (auto* stageVec : {&copy.emitterUpdate, &copy.particleSpawn, &copy.particleUpdate, &copy.render, &copy.detached}) {
+                    for (Asset::ParticleModuleUVE& mod : *stageVec) {
+                        for (auto& [pin, in] : mod.floats) {
+                            remapId(in.wireNode);
+                        }
+                        for (auto& [pin, in] : mod.vectors) {
+                            remapId(in.wireNode);
+                        }
+                    }
+                }
+                for (Asset::ParticleMathNodeUVE& mathNode : copy.mathNodes) {
+                    for (std::uint32_t& inputId : mathNode.inputs) {
+                        remapId(inputId);
+                    }
+                }
+                for (Asset::ParticleDetachedLinkUVE& link : copy.detachedLinks) {
+                    remapId(link.fromModuleId);
+                    remapId(link.toModuleId);
                 }
                 sys.emitters.insert(sys.emitters.begin() + static_cast<std::ptrdiff_t>(i + 1U), std::move(copy));
                 if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
                     s->selectedEmitter = i + 1U;
                 }
+                m_selectedModuleId = 0U;
             });
         };
         auto delBtn = prism::make<prism::Button>("", prism::Icon::Trash, prism::ButtonStyle::Flat);
@@ -1035,7 +1271,12 @@ void EditorVfxEditorUVE::RebuildGraphFromAssetUVE() {
         return;
     }
     m_syncingGraph = true;
+    m_graph->setNodeLibrary(BuildVfxGraphNodeLibraryUVE(session->system, true));
     BuildEmitterGraphUVE(session->system, session->selectedEmitter, *m_graph);
+    // Sync BlueprintGraph::m_lastSnapshot against the freshly rebuilt graph so future drags/edits
+    // always detect a diff and emit onChanged(). Must run BEFORE ApplyVfxCompileMessagesToGraphUVE
+    // because commit() clears BlueprintGraph::m_compiled.
+    m_graph->commit("Sync");
     ApplyVfxCompileMessagesToGraphUVE(*m_graph, session->compileMessages);
     if (m_selectedModuleId != 0U) {
         m_graph->select(static_cast<int>(m_selectedModuleId));
@@ -1064,6 +1305,7 @@ void EditorVfxEditorUVE::SyncGraphToAssetUVE() {
     });
     if (const EditorUVE::VfxEditSessionUVE* const updated = m_editor.VfxEditSessionPtrUVE()) {
         m_shownSystem = updated->system;
+        m_shownCompileCount = updated->compileMessages.size();
         ApplyVfxCompileMessagesToGraphUVE(*m_graph, updated->compileMessages);
     }
     RebuildCompileTableUVE();
@@ -1083,6 +1325,7 @@ void EditorVfxEditorUVE::RebuildInspectorUVE() {
         m_editor, session->selectedEmitter, m_selectedModuleId, [this] {
             if (const EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
                 m_shownSystem = s->system;
+                m_shownCompileCount = s->compileMessages.size();
             }
             RebuildGraphFromAssetUVE();
             RebuildCompileTableUVE();
@@ -1091,13 +1334,41 @@ void EditorVfxEditorUVE::RebuildInspectorUVE() {
 }
 
 void EditorVfxEditorUVE::RebuildCompileTableUVE() {
-    if (!m_compileTable) {
-        return;
-    }
     const EditorUVE::VfxEditSessionUVE* const session = m_editor.VfxEditSessionPtrUVE();
     const std::size_t count = session != nullptr ? session->compileMessages.size() : 0U;
-    m_compileTable->setRowCount(static_cast<int>(count));
-    m_compileTable->invalidate();
+    if (m_compileTable) {
+        m_compileTable->setRowCount(static_cast<int>(count));
+        m_compileTable->invalidate();
+    }
+    if (m_compileSummaryLabel && session != nullptr) {
+        std::size_t errorCount = 0U;
+        std::size_t warnCount = 0U;
+        for (const VFX::ParticleCompileMessageUVE& msg : session->compileMessages) {
+            if (msg.severity == VFX::ParticleCompileMessageUVE::Severity::Error) {
+                ++errorCount;
+            } else {
+                ++warnCount;
+            }
+        }
+        std::string summary;
+        prism::Color summaryColor(126, 200, 146);
+        if (errorCount > 0U) {
+            summary = std::to_string(errorCount) + (errorCount == 1U ? " error" : " errors");
+            if (warnCount > 0U) {
+                summary += ", " + std::to_string(warnCount) + (warnCount == 1U ? " warning" : " warnings");
+            }
+            summaryColor = prism::Color(240, 114, 114);
+        } else if (warnCount > 0U) {
+            summary = std::to_string(warnCount) + (warnCount == 1U ? " warning" : " warnings");
+            summaryColor = prism::Color(238, 194, 96);
+        } else {
+            summary = "Ready (0 issues)";
+        }
+        if (m_compileSummaryLabel->text() != summary) {
+            m_compileSummaryLabel->setText(summary);
+        }
+        m_compileSummaryLabel->setColor(summaryColor);
+    }
 }
 
 void EditorVfxEditorUVE::RefreshUVE() {
@@ -1108,11 +1379,42 @@ void EditorVfxEditorUVE::RefreshUVE() {
     if (m_tab) {
         m_tab->setDirty(m_editor.IsVfxEditorDirtyUVE());
     }
-    if (m_playButton) {
-        m_playButton->setChecked(session->playing);
+    if (m_playButton && (!m_shownPlayingInit || m_shownPlaying != session->playing)) {
+        m_shownPlaying = session->playing;
+        m_shownPlayingInit = true;
+        if (session->playing) {
+            m_playButton->setText("Pause");
+            m_playButton->setIcon(prism::Icon::Pause);
+            m_playButton->setStyle(prism::ButtonStyle::Primary);
+        } else {
+            m_playButton->setText("Play");
+            m_playButton->setIcon(prism::Icon::Play);
+            m_playButton->setStyle(prism::ButtonStyle::Success);
+        }
     }
-    if (m_pauseButton) {
-        m_pauseButton->setChecked(!session->playing);
+    if (m_previewStateBadge && m_previewStatePill) {
+        const std::uint8_t nextState = session->playing
+                                           ? kPreviewStatePlayingUVE
+                                           : (session->playhead > 1.0e-4 ? kPreviewStatePausedUVE : kPreviewStateStoppedUVE);
+        if (nextState != m_shownPreviewState) {
+            m_shownPreviewState = nextState;
+            if (nextState == kPreviewStatePlayingUVE) {
+                m_previewStateBadge->setText("PLAYING");
+                m_previewStateBadge->setColor(prism::Color(154, 240, 178));
+                m_previewStatePill->setBackground(prism::Color(26, 56, 38));
+                m_previewStatePill->setBorder(prism::Color(62, 146, 90), prism::Margin(1.0F));
+            } else if (nextState == kPreviewStatePausedUVE) {
+                m_previewStateBadge->setText("PAUSED");
+                m_previewStateBadge->setColor(prism::Color(246, 206, 122));
+                m_previewStatePill->setBackground(prism::Color(62, 48, 22));
+                m_previewStatePill->setBorder(prism::Color(156, 118, 44), prism::Margin(1.0F));
+            } else {
+                m_previewStateBadge->setText("STOPPED");
+                m_previewStateBadge->setColor(prism::Color(168, 178, 194));
+                m_previewStatePill->setBackground(prism::Color(36, 40, 48));
+                m_previewStatePill->setBorder(prism::Color(68, 76, 90), prism::Margin(1.0F));
+            }
+        }
     }
     if (m_loopButton) {
         m_loopButton->setChecked(session->loop);
@@ -1126,8 +1428,18 @@ void EditorVfxEditorUVE::RefreshUVE() {
     if (m_boundsButton) {
         m_boundsButton->setChecked(session->showBounds);
     }
+    if (m_timecodeLabel) {
+        const std::string tc = SecondsTextUVE(session->playhead) + " / " +
+                               SecondsTextUVE(static_cast<double>(session->system.duration)) + "s";
+        if (m_timecodeLabel->text() != tc) {
+            m_timecodeLabel->setText(tc);
+        }
+    }
     if (m_statsOverlayLabel) {
-        m_statsOverlayLabel->setText(FormatVfxPreviewStatsTextUVE(m_editor));
+        const std::string stats = FormatVfxPreviewStatsTextUVE(m_editor);
+        if (m_statsOverlayLabel->text() != stats) {
+            m_statsOverlayLabel->setText(stats);
+        }
     }
     if (m_status) {
         std::size_t errorCount = 0U;
@@ -1136,42 +1448,56 @@ void EditorVfxEditorUVE::RefreshUVE() {
                 ++errorCount;
             }
         }
-        std::string text = SecondsTextUVE(session->playhead) + " / " +
-                           SecondsTextUVE(static_cast<double>(session->system.duration)) + " s";
+        std::string text;
         if (errorCount > 0U) {
-            text += "   |  " + std::to_string(errorCount) + " compile error(s) (preview holding last good program)";
+            text = std::to_string(errorCount) + " compile error(s) (preview holding last good program)";
+        } else if (!session->status.empty()) {
+            text = session->status;
+        } else {
+            text = "Ready";
         }
-        if (!session->status.empty()) {
-            text += "   |  " + session->status;
+        if (m_status->text() != text) {
+            m_status->setText(text);
         }
-        m_status->setText(text);
     }
     if (m_timeline) {
         m_timeline->invalidate();
     }
 
-    const bool assetOrSelectionChanged =
+    const bool emitterChanged = !m_shownValid || m_shownEmitterIndex != session->selectedEmitter;
+    const bool assetChanged =
         !m_shownValid || !(m_shownSystem == session->system) ||
-        m_shownEmitterIndex != session->selectedEmitter ||
-        m_shownSoloEmitter != session->soloEmitter ||
-        m_shownModuleId != m_selectedModuleId;
-    if (assetOrSelectionChanged) {
+        emitterChanged ||
+        m_shownSoloEmitter != session->soloEmitter;
+    const bool selectionChanged = !m_shownValid || m_shownModuleId != m_selectedModuleId;
+    if (assetChanged) {
         m_shownSystem = session->system;
         m_shownEmitterIndex = session->selectedEmitter;
         m_shownSoloEmitter = session->soloEmitter;
         m_shownModuleId = m_selectedModuleId;
+        m_shownCompileCount = session->compileMessages.size();
         m_shownValid = true;
         RebuildEmittersListUVE();
         RebuildParametersListUVE();
         RebuildGraphFromAssetUVE();
+        if (emitterChanged && m_graph) {
+            m_graph->frameAll();
+        }
         RebuildInspectorUVE();
         RebuildCompileTableUVE();
-    } else if (m_shownCompileCount != session->compileMessages.size()) {
-        m_shownCompileCount = session->compileMessages.size();
-        if (m_graph) {
-            ApplyVfxCompileMessagesToGraphUVE(*m_graph, session->compileMessages);
+    } else {
+        if (selectionChanged) {
+            // Selection changes update only the Inspector; never rebuild the graph mid-drag.
+            m_shownModuleId = m_selectedModuleId;
+            RebuildInspectorUVE();
         }
-        RebuildCompileTableUVE();
+        if (m_shownCompileCount != session->compileMessages.size()) {
+            m_shownCompileCount = session->compileMessages.size();
+            if (m_graph) {
+                ApplyVfxCompileMessagesToGraphUVE(*m_graph, session->compileMessages);
+            }
+            RebuildCompileTableUVE();
+        }
     }
 }
 
@@ -1180,7 +1506,7 @@ void EditorVfxEditorUVE::RenderUVE() {
         return;
     }
     std::vector<EditorHostUVE::ViewImageUVE> views;
-    if (m_viewport && m_viewport->visible() && m_previewPane && m_previewPane->visible()) {
+    if (m_viewport && m_viewport->visible()) {
         const prism::Rect rect = m_viewport->rect();
         if (rect.w >= 1.0F && rect.h >= 1.0F) {
             const EditorViewportInputUVE input = m_host.CaptureViewInputUVE(m_window, rect);

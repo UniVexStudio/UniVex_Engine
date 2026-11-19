@@ -1176,7 +1176,7 @@ constexpr std::size_t kMaximumParticleCommentsUVE = 256U;
             entry["strings"] = std::move(strings);
         }
 
-        if (mod.graphX != 0.0F || mod.graphY != 0.0F) {
+        if (mod.graphPosAtOrigin || mod.graphX != 0.0F || mod.graphY != 0.0F) {
             entry["at"] = JsonUVE::array({mod.graphX, mod.graphY});
         }
         array.push_back(std::move(entry));
@@ -1217,6 +1217,7 @@ constexpr std::size_t kMaximumParticleCommentsUVE = 256U;
             }
             mod.graphX = at[0].get<float>();
             mod.graphY = at[1].get<float>();
+            mod.graphPosAtOrigin = (std::abs(mod.graphX) < 1.0e-4F && std::abs(mod.graphY) < 1.0e-4F);
         }
         if (item.contains("floats")) {
             const JsonUVE& floats = item.at("floats");
@@ -1387,8 +1388,19 @@ bool IsParticleSystemAssetValidUVE(const ParticleSystemAssetUVE& system) noexcep
             return false;
         }
         if (emitter.mathNodes.size() > kMaximumParticleMathNodesUVE ||
-            emitter.comments.size() > kMaximumParticleCommentsUVE) {
+            emitter.comments.size() > kMaximumParticleCommentsUVE ||
+            emitter.detachedLinks.size() > kMaximumParticleDetachedLinksUVE) {
             return false;
+        }
+        for (const ParticleDetachedLinkUVE& link : emitter.detachedLinks) {
+            if (link.fromModuleId == 0U || link.toModuleId == 0U || link.fromModuleId == link.toModuleId) {
+                return false;
+            }
+        }
+        for (const ParticleStageNodePosUVE& stagePos : emitter.stageNodePositions) {
+            if (!std::isfinite(stagePos.x) || !std::isfinite(stagePos.y)) {
+                return false;
+            }
         }
         for (const ParticleMathNodeUVE& math : emitter.mathNodes) {
             if (!NameOkUVE(math.op) || !std::isfinite(math.constant) ||
@@ -1456,6 +1468,7 @@ bool SaveParticleSystemAssetUVE(const ParticleSystemAssetUVE& system, const std:
         document["scalability"] = std::move(scalability);
     }
 
+    constexpr std::array<const char*, 4> kStagePosKeys{"emitterUpdate", "particleSpawn", "particleUpdate", "render"};
     JsonUVE emitters = JsonUVE::array();
     for (const ParticleEmitterAssetUVE& emitter : system.emitters) {
         JsonUVE e{
@@ -1484,6 +1497,25 @@ bool SaveParticleSystemAssetUVE(const ParticleSystemAssetUVE& system, const std:
         }
         if (!emitter.detached.empty()) {
             e["detached"] = SerializeModulesUVE(emitter.detached);
+        }
+        if (!emitter.detachedLinks.empty()) {
+            JsonUVE links = JsonUVE::array();
+            for (const ParticleDetachedLinkUVE& link : emitter.detachedLinks) {
+                links.push_back(JsonUVE::array({link.fromModuleId, link.toModuleId}));
+            }
+            e["detachedLinks"] = std::move(links);
+        }
+        JsonUVE stageNodes = JsonUVE::object();
+        for (std::size_t si = 0U; si < emitter.stageNodePositions.size(); ++si) {
+            if (emitter.stageNodePositions[si].placed) {
+                stageNodes[kStagePosKeys[si]] = JsonUVE::array({
+                    emitter.stageNodePositions[si].x,
+                    emitter.stageNodePositions[si].y,
+                });
+            }
+        }
+        if (!stageNodes.empty()) {
+            e["stageNodes"] = std::move(stageNodes);
         }
         if (!emitter.mathNodes.empty()) {
             JsonUVE nodes = JsonUVE::array();
@@ -1610,6 +1642,7 @@ bool LoadParticleSystemAssetUVE(const std::filesystem::path& path, ParticleSyste
         if (emitters.empty() || emitters.size() > kMaximumParticleEmittersUVE) {
             return false;
         }
+        constexpr std::array<const char*, 4> kStagePosKeys{"emitterUpdate", "particleSpawn", "particleUpdate", "render"};
         candidate.emitters.reserve(emitters.size());
         for (const JsonUVE& e : emitters) {
             if (!e.is_object() || !e.contains("name")) {
@@ -1633,6 +1666,43 @@ bool LoadParticleSystemAssetUVE(const std::filesystem::path& path, ParticleSyste
                 !TryParseModulesUVE(e, "detached", std::nullopt, emitter.detached,
                                     kMaximumParticleDetachedModulesUVE)) {
                 return false;
+            }
+            if (e.contains("detachedLinks")) {
+                const JsonUVE& links = e.at("detachedLinks");
+                if (!links.is_array() || links.size() > kMaximumParticleDetachedLinksUVE) {
+                    return false;
+                }
+                emitter.detachedLinks.reserve(links.size());
+                for (const JsonUVE& link : links) {
+                    if (!link.is_array() || link.size() != 2U ||
+                        !link[0].is_number_unsigned() || !link[1].is_number_unsigned()) {
+                        return false;
+                    }
+                    emitter.detachedLinks.push_back(
+                        ParticleDetachedLinkUVE{link[0].get<std::uint32_t>(), link[1].get<std::uint32_t>()});
+                }
+            }
+            if (e.contains("stageNodes")) {
+                const JsonUVE& stageNodes = e.at("stageNodes");
+                if (!stageNodes.is_object()) {
+                    return false;
+                }
+                for (const auto& [k, v] : stageNodes.items()) {
+                    std::size_t stageIdx = kStagePosKeys.size();
+                    for (std::size_t si = 0U; si < kStagePosKeys.size(); ++si) {
+                        if (k == kStagePosKeys[si]) {
+                            stageIdx = si;
+                            break;
+                        }
+                    }
+                    if (stageIdx >= kStagePosKeys.size() || !v.is_array() || v.size() != 2U ||
+                        !v[0].is_number() || !v[1].is_number()) {
+                        return false;
+                    }
+                    emitter.stageNodePositions[stageIdx].placed = true;
+                    emitter.stageNodePositions[stageIdx].x = v[0].get<float>();
+                    emitter.stageNodePositions[stageIdx].y = v[1].get<float>();
+                }
             }
             if (e.contains("mathNodes")) {
                 const JsonUVE& nodes = e.at("mathNodes");
