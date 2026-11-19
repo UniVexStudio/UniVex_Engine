@@ -149,7 +149,8 @@ TEST(EngineSettingsLayeringUVETest, WindowSettingsExposeExpectedPortableDefaults
               static_cast<std::int64_t>(SpatialUpscalingMethodUVE::BilinearUVE));
     const auto toneMappingMethod = settings.GetValueUVE(Id::kToneMappingMethodUVE);
     ASSERT_TRUE(toneMappingMethod.has_value());
-    EXPECT_EQ(std::get<std::int64_t>(*toneMappingMethod), static_cast<std::int64_t>(ToneMappingMethodUVE::AcesUVE));
+    EXPECT_EQ(std::get<std::int64_t>(*toneMappingMethod),
+              static_cast<std::int64_t>(ToneMappingMethodUVE::SoftFilmicUVE));
     const auto sharpeningAmount = settings.GetValueUVE(Id::kSharpeningAmountUVE);
     ASSERT_TRUE(sharpeningAmount.has_value());
     EXPECT_DOUBLE_EQ(std::get<double>(*sharpeningAmount), 0.0);
@@ -473,7 +474,7 @@ TEST(EngineSettingsLayeringUVETest, SSAOControlsHaveDefaultsBoundsAndPlatformOve
     EXPECT_EQ(std::get<std::int64_t>(*quality), 2);
     const auto blur = defaults.GetValueUVE(Id::kSsaoBlurEnabledUVE);
     ASSERT_TRUE(blur.has_value());
-    EXPECT_FALSE(std::get<bool>(*blur));
+    EXPECT_TRUE(std::get<bool>(*blur));
 
     for (const std::string_view id : {Id::kSsaoEnabledUVE, Id::kSsaoRadiusUVE, Id::kSsaoIntensityUVE,
                                       Id::kSsaoPowerUVE, Id::kSsaoQualityUVE, Id::kSsaoBlurEnabledUVE}) {

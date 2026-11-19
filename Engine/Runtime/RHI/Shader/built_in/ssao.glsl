@@ -5,11 +5,6 @@
 out vec2 vTexCoord;
 
 void main() {
-    // position is (0,0), (2,0), (0,2) - the oversized triangle that covers clip space once
-    // gl_Position maps it with position*2-1. The texture coordinate must use the inverse of
-    // that same mapping, (ndc+1)/2 == position, so the visible NDC range [-1,1] samples the
-    // full [0,1] of the source. Halving it here would sample only the source's lower-left
-    // quarter and magnify it across the whole target.
     vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
     vTexCoord = position;
     gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
@@ -21,71 +16,116 @@ in vec2 vTexCoord;
 out vec4 FragColor;
 
 uniform sampler2D uDepthTexture;
-// The projection matrix and its inverse (Math::TryInverseUVE(), Phase 2d), NOT the combined
-// view-projection or its inverse - reconstruction below stays entirely in view space, so only the
-// projection step needs undoing (uInverseProjection) and redoing (uProjection, to re-project each
-// hemisphere sample and look up its screen position - computed once on the CPU per frame rather
-// than inverting uInverseProjection again per pixel).
 uniform mat4 uInverseProjection;
 uniform mat4 uProjection;
 uniform int uOrthographic;
+// Backend depth-buffer decode: ndcZ = depthSample * uDepthNdcScale + uDepthNdcBias.
+// OpenGL default depth range uses (2.0, -1.0); Vulkan [0, 1] depth range uses (1.0, 0.0).
+uniform float uDepthNdcScale;
+uniform float uDepthNdcBias;
+// Fast 2-FLOP perspective view-space depth reconstruction parameters:
+// viewZ = uProjB / max(uProjA - ndcZ, 1e-6), viewXY = (uv * 2 - 1) * (-viewZ) * vec2(uInvProjX, uInvProjY).
+uniform float uProjA;
+uniform float uProjB;
+uniform float uInvProjX;
+uniform float uInvProjY;
+uniform int uFastReconstruct;
 uniform float uRadius;
 uniform float uBias;
 uniform float uIntensity;
 uniform float uPower;
 uniform int uSampleCount;
 
-// A 12-entry hemisphere kernel (quality tiers consume its first 4, 8, or all 12 samples) is
-// offline-generated, hemisphere-distributed, and biased toward the origin so more samples land
-// close to the shaded point. HashUVE() below supplies per-pixel kernel rotation without a vendored
-// noise texture, trading a small amount of dither/banding for a compact built-in path. A dedicated
-// rotation-noise texture remains a future quality upgrade, not a correctness requirement.
+// Stratified 12-sample low-discrepancy hemisphere kernel ordered so the first 4 (Low), 8 (Medium),
+// and 12 (High) taps each span all quadrants and the full radius [0.35..0.95] * uRadius.
 const int kKernelSizeUVE = 12;
 const vec3 kKernelUVE[12] = vec3[](
-    vec3(-0.0557, 0.0476, 0.0681),
-    vec3(0.0117, -0.0727, 0.0766),
-    vec3(0.0931, -0.0750, 0.0365),
-    vec3(0.1465, -0.0523, 0.0149),
-    vec3(0.1313, 0.0982, 0.1146),
-    vec3(0.0901, 0.2384, 0.0267),
-    vec3(-0.2553, -0.1976, 0.0374),
-    vec3(-0.2171, -0.3242, 0.1129),
-    vec3(0.2547, -0.2537, 0.3475),
-    vec3(0.4424, 0.3262, 0.2557),
-    vec3(0.3698, -0.5432, 0.3062),
-    vec3(-0.1842, 0.7316, 0.4049)
+    vec3( 0.2400,  0.1400,  0.2200),
+    vec3(-0.3600,  0.2900,  0.3400),
+    vec3( 0.1900, -0.5200,  0.4100),
+    vec3(-0.5800, -0.4400,  0.5200),
+    vec3( 0.4200, -0.1500,  0.2600),
+    vec3(-0.1800, -0.3500,  0.4800),
+    vec3(-0.5600,  0.4200,  0.3800),
+    vec3( 0.6200,  0.5100,  0.4500),
+    vec3(-0.1200,  0.2600,  0.3100),
+    vec3( 0.3400,  0.6400,  0.4400),
+    vec3(-0.7100, -0.1800,  0.5600),
+    vec3( 0.5400, -0.6200,  0.4900)
 );
 
-// Reconstructs a view-space position from a depth-buffer sample. GL's own fixed depth-range
-// mapping (depth = 0.5 * ndc.z + 0.5, default glDepthRange(0,1)) is inverted first to recover the
-// actual clip.z/clip.w ratio the projection matrix produced (this engine's PerspectiveUVE uses a
-// [0,1] "Vulkan-style" clip-space z, not OpenGL's traditional [-1,1] - see its doc comment), then
-// the standard homogeneous-divide trick recovers view-space xyz regardless of that convention.
+float DecodeNdcDepthUVE(float depthSample) {
+    float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
+    float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
+    return depthSample * scale + bias;
+}
+
 vec3 ReconstructViewPositionUVE(vec2 uv, float depthSample) {
-    vec3 ndc = vec3(uv * 2.0 - 1.0, 2.0 * depthSample - 1.0);
-    vec4 clipPos = vec4(ndc, 1.0);
-    vec4 viewPos = uInverseProjection * clipPos;
-    return viewPos.xyz / viewPos.w;
-}
-
-float HashUVE(vec2 value) {
-    return fract(sin(dot(value, vec2(12.9898, 78.233))) * 43758.5453);
-}
-
-void main() {
-    float centerDepth = texture(uDepthTexture, vTexCoord).r;
-    if (centerDepth >= 0.9999) {
-        FragColor = vec4(1.0, 1.0, 1.0, 1.0); // Background/far plane: never occluded.
-        return;
+    float ndcZ = DecodeNdcDepthUVE(depthSample);
+    vec2 ndcXY = uv * 2.0 - 1.0;
+    if (uFastReconstruct != 0 && uOrthographic == 0) {
+        float viewZ = uProjB / max(uProjA - ndcZ, 1.0e-6);
+        float negZ = -viewZ;
+        return vec3(ndcXY.x * negZ * uInvProjX, ndcXY.y * negZ * uInvProjY, viewZ);
     }
-    vec3 centerViewPos = ReconstructViewPositionUVE(vTexCoord, centerDepth);
+    vec4 viewPos = uInverseProjection * vec4(ndcXY, ndcZ, 1.0);
+    return viewPos.xyz / max(abs(viewPos.w), 1.0e-6);
+}
 
-    // View-space normal from screen-space derivatives of the reconstructed position.
-    vec3 dx = dFdx(centerViewPos);
-    vec3 dy = dFdy(centerViewPos);
-    vec3 n = cross(dx, dy);
+// Reconstructs a clean view-space normal from 4-neighbor minimum-difference depth taps.
+// Avoids screen-space derivative UB after early returns and prevents dark halos across depth edges.
+vec3 ReconstructViewNormalUVE(vec2 uv, vec3 centerViewPos) {
+    vec2 texel = 1.0 / max(vec2(textureSize(uDepthTexture, 0)), vec2(1.0));
+    vec2 halfTexel = texel * 0.5;
+    vec2 uvL = clamp(uv - vec2(texel.x, 0.0), halfTexel, vec2(1.0) - halfTexel);
+    vec2 uvR = clamp(uv + vec2(texel.x, 0.0), halfTexel, vec2(1.0) - halfTexel);
+    vec2 uvD = clamp(uv - vec2(0.0, texel.y), halfTexel, vec2(1.0) - halfTexel);
+    vec2 uvU = clamp(uv + vec2(0.0, texel.y), halfTexel, vec2(1.0) - halfTexel);
+
+    float dL = texture(uDepthTexture, uvL).r;
+    float dR = texture(uDepthTexture, uvR).r;
+    float dD = texture(uDepthTexture, uvD).r;
+    float dU = texture(uDepthTexture, uvU).r;
+
+    vec3 pL = dL < 0.999999 ? ReconstructViewPositionUVE(uvL, dL) : centerViewPos;
+    vec3 pR = dR < 0.999999 ? ReconstructViewPositionUVE(uvR, dR) : centerViewPos;
+    vec3 pD = dD < 0.999999 ? ReconstructViewPositionUVE(uvD, dD) : centerViewPos;
+    vec3 pU = dU < 0.999999 ? ReconstructViewPositionUVE(uvU, dU) : centerViewPos;
+
+    bool validL = dL < 0.999999;
+    bool validR = dR < 0.999999;
+    bool validD = dD < 0.999999;
+    bool validU = dU < 0.999999;
+
+    vec3 dPdx;
+    if (validR && validL) {
+        dPdx = abs(pR.z - centerViewPos.z) < abs(centerViewPos.z - pL.z)
+                   ? (pR - centerViewPos)
+                   : (centerViewPos - pL);
+    } else if (validR) {
+        dPdx = pR - centerViewPos;
+    } else if (validL) {
+        dPdx = centerViewPos - pL;
+    } else {
+        dPdx = vec3(1.0, 0.0, 0.0);
+    }
+
+    vec3 dPdy;
+    if (validU && validD) {
+        dPdy = abs(pU.z - centerViewPos.z) < abs(centerViewPos.z - pD.z)
+                   ? (pU - centerViewPos)
+                   : (centerViewPos - pD);
+    } else if (validU) {
+        dPdy = pU - centerViewPos;
+    } else if (validD) {
+        dPdy = centerViewPos - pD;
+    } else {
+        dPdy = vec3(0.0, 1.0, 0.0);
+    }
+
+    vec3 n = cross(dPdx, dPdy);
     float nLenSq = dot(n, n);
-    vec3 viewNormal = nLenSq > 1.0e-8 ? n * inversesqrt(nLenSq) : vec3(0.0, 0.0, 1.0);
+    vec3 viewNormal = nLenSq > 1.0e-12 ? n * inversesqrt(nLenSq) : vec3(0.0, 0.0, 1.0);
     if (isnan(viewNormal.x) || isnan(viewNormal.y) || isnan(viewNormal.z) ||
         isinf(viewNormal.x) || isinf(viewNormal.y) || isinf(viewNormal.z)) {
         viewNormal = vec3(0.0, 0.0, 1.0);
@@ -94,30 +134,61 @@ void main() {
     if (dot(viewNormal, towardEye) < 0.0) {
         viewNormal = -viewNormal;
     }
+    return viewNormal;
+}
 
-    float rotationAngle = HashUVE(vTexCoord) * 6.28318530718;
+// High-frequency blue-noise-like screen-space rotation with zero Moire patterns.
+float InterleavedGradientNoiseUVE(vec2 pixel) {
+    return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
+}
+
+// Orthonormal basis from a unit normal without any pole singularity.
+void BuildOrthonormalBasisUVE(vec3 n, out vec3 b1, out vec3 b2) {
+    if (n.z < -0.999999999) {
+        b1 = vec3(0.0, -1.0, 0.0);
+        b2 = vec3(-1.0, 0.0, 0.0);
+        return;
+    }
+    float a = 1.0 / (1.0 + n.z);
+    float b = -n.x * n.y * a;
+    b1 = vec3(1.0 - n.x * n.x * a, b, -n.x);
+    b2 = vec3(b, 1.0 - n.y * n.y * a, -n.y);
+}
+
+void main() {
+    float centerDepth = texture(uDepthTexture, vTexCoord).r;
+    if (centerDepth >= 0.999999) {
+        FragColor = vec4(1.0, 1.0, 1.0, 1.0); // Background/far plane: never occluded.
+        return;
+    }
+    vec3 centerViewPos = ReconstructViewPositionUVE(vTexCoord, centerDepth);
+    vec3 viewNormal = ReconstructViewNormalUVE(vTexCoord, centerViewPos);
+
+    vec3 basisT;
+    vec3 basisB;
+    BuildOrthonormalBasisUVE(viewNormal, basisT, basisB);
+    float rotationAngle = InterleavedGradientNoiseUVE(gl_FragCoord.xy) * 6.28318530718;
     float cosAngle = cos(rotationAngle);
     float sinAngle = sin(rotationAngle);
-    vec3 randomTangent = normalize(vec3(cosAngle, sinAngle, 0.0));
-    vec3 perp = randomTangent - viewNormal * dot(randomTangent, viewNormal);
-    float pLenSq = dot(perp, perp);
-    vec3 tangent = pLenSq > 1.0e-8 ? perp * inversesqrt(pLenSq) : vec3(1.0, 0.0, 0.0);
-    vec3 bitangent = cross(viewNormal, tangent);
+    vec3 tangent = basisT * cosAngle + basisB * sinAngle;
+    vec3 bitangent = -basisT * sinAngle + basisB * cosAngle;
     mat3 tbn = mat3(tangent, bitangent, viewNormal);
 
-    float normalViewDot = max(dot(viewNormal, normalize(towardEye)), 0.15);
-    float angleBias = max(uBias, uBias / normalViewDot);
+    vec3 towardEye = uOrthographic != 0 ? vec3(0.0, 0.0, 1.0) : -centerViewPos;
+    float eyeLen = max(length(towardEye), 1.0e-5);
+    float normalViewDot = max(dot(viewNormal, towardEye / eyeLen), 0.15);
+    float distanceScale = uOrthographic != 0 ? 1.0 : clamp(abs(centerViewPos.z) * 0.02, 0.25, 4.0);
+    float angleBias = max(uBias, uBias / normalViewDot) * distanceScale;
+    float safeRadius = max(uRadius, 0.01);
 
     float occlusion = 0.0;
     int sampleCount = clamp(uSampleCount, 1, kKernelSizeUVE);
     int validSamples = 0;
     for (int sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
-        vec3 samplePos = centerViewPos + (tbn * kKernelUVE[sampleIndex]) * uRadius;
+        vec3 samplePos = centerViewPos + (tbn * kKernelUVE[sampleIndex]) * safeRadius;
 
-        // Re-project the sample point with uProjection to look up what's actually in the depth
-        // buffer at that screen location.
         vec4 sampleClip = uProjection * vec4(samplePos, 1.0);
-        if (abs(sampleClip.w) < 0.0001) {
+        if (sampleClip.w <= 0.0001) {
             continue;
         }
         vec2 sampleUv = (sampleClip.xy / sampleClip.w) * 0.5 + 0.5;
@@ -127,29 +198,28 @@ void main() {
         }
 
         float sampledDepth = texture(uDepthTexture, sampleUv).r;
-        if (sampledDepth >= 0.9999) {
+        if (sampledDepth >= 0.999999) {
+            ++validSamples;
             continue;
         }
         vec3 sampledViewPos = ReconstructViewPositionUVE(sampleUv, sampledDepth);
 
         float depthDelta = abs(centerViewPos.z - sampledViewPos.z);
-        if (depthDelta > uRadius * 2.5) {
-            continue;
-        }
-        float rangeCheck = smoothstep(0.0, 1.0, uRadius / max(depthDelta, 0.0001));
-        occlusion += (sampledViewPos.z >= samplePos.z + angleBias ? 1.0 : 0.0) * rangeCheck;
+        float rangeCheck = 1.0 - smoothstep(safeRadius * 0.65, safeRadius * 1.5, depthDelta);
+        float occluded = sampledViewPos.z >= samplePos.z + angleBias ? 1.0 : 0.0;
+        occlusion += occluded * rangeCheck;
         ++validSamples;
     }
-    float rawOcc = validSamples > 0 ? (occlusion / float(sampleCount)) : 0.0;
-    float visibility = clamp(1.0 - rawOcc * max(uIntensity, 0.0), 0.15, 1.0);
+
+    float rawOcc = occlusion / float(max(validSamples, 1));
+    float visibility = clamp(1.0 - rawOcc * max(uIntensity, 0.0), 0.08, 1.0);
     visibility = pow(visibility, clamp(uPower, 0.1, 4.0));
     if (isnan(visibility) || isinf(visibility)) {
         visibility = 1.0;
     }
 
-    // Edge fade prevents glancing angle blackouts at screen/viewport borders
     vec2 edgeDist = min(vTexCoord, 1.0 - vTexCoord);
-    float edgeFade = smoothstep(0.0, 0.02, min(edgeDist.x, edgeDist.y));
+    float edgeFade = smoothstep(0.0, 0.025, min(edgeDist.x, edgeDist.y));
     visibility = mix(1.0, visibility, edgeFade);
 
     FragColor = vec4(vec3(visibility), 1.0);

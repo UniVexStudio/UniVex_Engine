@@ -3353,21 +3353,23 @@ TextureHandleUVE VulkanRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& d
     switch (desc.format) {
         case TextureFormatUVE::RGBA8Unorm: {
             // Allocate the image in the swapchain's unorm sibling so storage-image usage remains
-            // legal on devices that expose sRGB only as a sampled format. The sampled view uses
-            // the descriptor's requested sRGB sibling, so hardware decoding still occurs at
-            // sampling; the ATTACHMENT view keeps the swapchain format for dynamic rendering.
+            // legal on devices that expose sRGB only as a sampled format. Both sampled and
+            // attachment views honour desc.colorSpace so linear offscreen targets (such as AO,
+            // masks, and linear viewport textures) are never corrupted by hardware sRGB encoding,
+            // while sRGB targets keep hardware encode/decode on dynamic rendering.
             const VkFormat unormSibling = UnormSiblingFormatUVE(impl.swapchainFormat);
             const VkFormat srgbSibling = SrgbSiblingFormatUVE(impl.swapchainFormat);
             if (unormSibling != VK_FORMAT_UNDEFINED &&
                 (desc.colorSpace == TextureColorSpaceUVE::Linear || srgbSibling != VK_FORMAT_UNDEFINED)) {
                 format = unormSibling;
                 sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb ? srgbSibling : unormSibling;
-                attachmentFormat = impl.swapchainFormat;
+                attachmentFormat = sampledFormat;
             } else {
                 format = VK_FORMAT_R8G8B8A8_UNORM;
                 sampledFormat = desc.colorSpace == TextureColorSpaceUVE::Srgb
                                      ? VK_FORMAT_R8G8B8A8_SRGB
                                      : format;
+                attachmentFormat = sampledFormat;
             }
             // M5b fix: RGBA8 images are ALWAYS mutable-format — the storage alias view
             // (R8G8B8A8_UNORM over a B,G,R,A-family or sRGB image) needs
@@ -7712,6 +7714,15 @@ std::string_view VulkanRenderDeviceUVE::GetBackendNameUVE() const noexcept {
     // overlays and bug reports (see the header's capability-reporting contract).
     return m_impl->useDynamicRendering ? "Vulkan (M5b storage images)"
                                        : "Vulkan (M2c textures+staging)";
+}
+
+bool VulkanRenderDeviceUVE::IsPresentationSurfaceSrgbUVE() const noexcept {
+    return m_impl != nullptr && m_impl->swapchainFormat != VK_FORMAT_UNDEFINED &&
+           SrgbSiblingFormatUVE(m_impl->swapchainFormat) == m_impl->swapchainFormat;
+}
+
+bool VulkanRenderDeviceUVE::UsesZeroToOneDepthBufferUVE() const noexcept {
+    return true;
 }
 
 } // namespace UVE::Render

@@ -204,10 +204,11 @@ struct EngineProjectSettingUVE final {
         {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
              std::string(Id::kToneMappingMethodUVE), static_cast<std::int64_t>(defaults.toneMappingMethodUVE),
              {{static_cast<std::int64_t>(ToneMappingMethodUVE::LinearClampUVE), "Linear clamp"},
-              {static_cast<std::int64_t>(ToneMappingMethodUVE::AcesUVE), "ACES"}},
+              {static_cast<std::int64_t>(ToneMappingMethodUVE::AcesUVE), "ACES"},
+              {static_cast<std::int64_t>(ToneMappingMethodUVE::SoftFilmicUVE), "Soft filmic"}},
              "Tone Mapper", "Rendering/PostProcessing",
-             "Map HDR scene values into display range with direct linear clipping or the existing ACES-style "
-             "filmic curve. Exposure remains controlled by the active WorldEnvironment."))),
+             "Map HDR scene values into display range with direct linear clipping, ACES filmic, or soft filmic "
+             "highlight roll-off. Exposure remains controlled by the active WorldEnvironment."))),
          [](EngineConfigUVE& config, const SettingValueUVE& value) {
              config.toneMappingMethodUVE = static_cast<ToneMappingMethodUVE>(std::get<std::int64_t>(value));
          }},
@@ -261,7 +262,7 @@ struct EngineProjectSettingUVE final {
          }},
         {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeBoolSettingUVE(
              std::string(Id::kSsaoBlurEnabledUVE), defaults.ssaoBlurEnabledUVE, "Blur", "Rendering/SSAO",
-             "Apply a 3x3 Gaussian blur to the AO term while compositing, reducing half-resolution kernel noise."))),
+             "Apply a depth-aware separable bilateral blur to the AO term, smoothing half-resolution kernel noise while preserving edges."))),
          [](EngineConfigUVE& config, const SettingValueUVE& value) {
              config.ssaoBlurEnabledUVE = std::get<bool>(value);
          }},

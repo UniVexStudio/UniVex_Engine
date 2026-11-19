@@ -695,7 +695,8 @@ void main() {
         }
     }
     // Clamped at zero and multiplied last, so a source can never come out negative and the dial
-    // means the same thing for a panorama, a gradient and a scattering sky.
-    FragColor = vec4(max(color, vec3(0.0)) * max(uSkyLuminance, 0.0), 1.0);
+    // means the same thing for a panorama, a gradient and a scattering sky. Alpha 0.0 signals zero
+    // indirect-surface weight so screen-space AO never darkens sky pixels.
+    FragColor = vec4(max(color, vec3(0.0)) * max(uSkyLuminance, 0.0), 0.0);
 }
 #endif
