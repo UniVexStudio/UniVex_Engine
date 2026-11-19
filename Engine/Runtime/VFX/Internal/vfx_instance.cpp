@@ -1228,8 +1228,8 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                 }
 
                 // ---- Post-integration Collision Pass (CollisionPlane & real-time Collider3D CollisionPhysics) ----
-                const bool hasSizeX = HasAttributeUVE(program.attributeMask, ParticleAttributeBitUVE::SizeX);
-                for (const CompiledUpdateOpUVE& op : program.updateOps) {
+                const bool hasSizeX = HasVfxAttributeUVE(program.attributeMask, VfxAttributeBitUVE::SizeX);
+                for (const auto& op : program.updateOps) {
                     if (op.type != Asset::ParticleModuleTypeUVE::CollisionPlane &&
                         op.type != Asset::ParticleModuleTypeUVE::CollisionPhysics) {
                         continue;
