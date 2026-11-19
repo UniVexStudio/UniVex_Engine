@@ -568,6 +568,16 @@ vec2 CascadeTexelSizeUVE(int cascadeIndex) {
     return 1.0 / max(vec2(sz), vec2(1.0));
 }
 
+ivec2 CascadeMapSizeUVE(int cascadeIndex) {
+    if (cascadeIndex == 0) {
+        return textureSize(uShadowMapTextures[0], 0);
+    }
+    if (cascadeIndex == 1) {
+        return textureSize(uShadowMapTextures[1], 0);
+    }
+    return textureSize(uShadowMapTextures[2], 0);
+}
+
 vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
     if (cascadeIndex == 0) {
         return vLightSpacePositions[0];
@@ -599,7 +609,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     }
 
     ivec2 mapSize = cascadeIndex < 0 ? textureSize(uShadowMapTexture, 0)
-                                     : textureSize(uShadowMapTextures[clamp(cascadeIndex, 0, 2)], 0);
+                                     : CascadeMapSizeUVE(cascadeIndex);
     if (mapSize.x <= 1 || mapSize.y <= 1) {
         return 1.0;
     }
