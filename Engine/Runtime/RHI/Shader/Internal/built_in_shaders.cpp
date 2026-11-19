@@ -5261,8 +5261,8 @@ const std::string_view kStudioFloorPbrSource = R"GLSLSRC(#version 330 core
 #ifdef VERTEX_SHADER
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec4 aTangent;
-layout(location = 3) in vec2 aTexCoord;
+layout(location = 2) in vec2 aTexCoord;
+layout(location = 3) in vec4 aTangent;
 
 uniform mat4 uViewProjection;
 #if UVE_MOBILE

@@ -1207,10 +1207,10 @@ struct Renderer3DUVE::ImplUVE {
             studioFloorIndexBuffer == kInvalidBufferHandleUVE) {
             constexpr float kExtent = 48.0F;
             const std::array<Asset::MeshVertexUVE, 4U> vertices{{
-                Asset::MeshVertexUVE{{-kExtent, 0.0F, -kExtent}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F, 1.0F}, {0.0F, 0.0F}},
-                Asset::MeshVertexUVE{{-kExtent, 0.0F,  kExtent}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F, 1.0F}, {0.0F, 1.0F}},
-                Asset::MeshVertexUVE{{ kExtent, 0.0F,  kExtent}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 1.0F}},
-                Asset::MeshVertexUVE{{ kExtent, 0.0F, -kExtent}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 0.0F}},
+                Asset::MeshVertexUVE{{-kExtent, 0.0F, -kExtent}, {0.0F, 1.0F, 0.0F}, 0.0F, 0.0F, {1.0F, 0.0F, 0.0F}, 1.0F},
+                Asset::MeshVertexUVE{{-kExtent, 0.0F,  kExtent}, {0.0F, 1.0F, 0.0F}, 0.0F, 1.0F, {1.0F, 0.0F, 0.0F}, 1.0F},
+                Asset::MeshVertexUVE{{ kExtent, 0.0F,  kExtent}, {0.0F, 1.0F, 0.0F}, 1.0F, 1.0F, {1.0F, 0.0F, 0.0F}, 1.0F},
+                Asset::MeshVertexUVE{{ kExtent, 0.0F, -kExtent}, {0.0F, 1.0F, 0.0F}, 1.0F, 0.0F, {1.0F, 0.0F, 0.0F}, 1.0F},
             }};
             const std::array<std::uint32_t, 6U> indices{{0U, 1U, 2U, 0U, 2U, 3U}};
             DestroyBufferIfValidUVE(renderDevice, studioFloorVertexBuffer);
@@ -5101,7 +5101,6 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     Math::Matrix4x4UVE viewProjection{};
     Math::Vector3UVE viewPosition{};
     Math::QuaternionUVE viewRotation = normalizedCameraRotation;
-    constexpr float kHalfPiUVE = Math::kPiUVE * 0.5F;
     if (capturingProbe) {
         if (!Math::TryNormalizeUVE(m_impl->probeCaptureRotation, viewRotation)) {
             UVE_ERROR("Renderer3DUVE: probe capture rotation is invalid");
@@ -5943,11 +5942,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->studioFloorProgram->SetVector3UVE("uBaseTint", floorSettings.baseTintUVE);
                 m_impl->studioFloorProgram->SetFloatUVE("uRoughnessScale", floorSettings.roughnessScaleUVE);
                 m_impl->studioFloorProgram->SetFloatUVE("uSpecularStrength", floorSettings.specularStrengthUVE);
-                m_impl->studioFloorProgram->SetVector3UVE("uSkyTopColor", m_impl->environmentFrame.skyTopColor);
-                m_impl->studioFloorProgram->SetVector3UVE("uSkyHorizonColor", m_impl->environmentFrame.skyHorizonColor);
-                m_impl->studioFloorProgram->SetVector3UVE("uSkyGroundColor", m_impl->environmentFrame.skyGroundColor);
-                m_impl->studioFloorProgram->SetFloatUVE("uAmbientEnergy",
-                                                        std::max(m_impl->environmentFrame.ambientEnergy, 0.35F));
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyTopColor", m_impl->environmentFrame.skyColor);
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyHorizonColor", m_impl->environmentFrame.horizonColor);
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyGroundColor", m_impl->environmentFrame.groundColor);
+                m_impl->studioFloorProgram->SetFloatUVE("uAmbientEnergy", 0.55F);
                 m_impl->studioFloorProgram->SetIntUVE("uAlbedoMap", 0);
                 m_impl->studioFloorProgram->SetIntUVE("uNormalMap", 1);
                 m_impl->studioFloorProgram->SetIntUVE("uOrmMap", 2);
