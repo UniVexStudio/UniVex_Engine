@@ -457,6 +457,13 @@ public:
         static_cast<void>(settings);
     }
 
+    /// Configures material texture wrapping (repeat vs clamp-to-edge) and maximum anisotropic
+    /// filtering level used for standard surface textures.
+    virtual void SetMaterialSamplerSettingsUVE(bool repeatEnabled, float maxAnisotropy) noexcept {
+        static_cast<void>(repeatEnabled);
+        static_cast<void>(maxAnisotropy);
+    }
+
     /// Points the renderer at UI::UIRuntimeUVE's latest draw batch/font atlas, drawn by a
     /// "UIOverlay" pass added right after tone-mapping in every RenderFrame* variant. Pass nullptr
     /// (the default) to draw no UI this frame. The pointer is read fresh each RenderFrame* call,

@@ -5382,6 +5382,9 @@ std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render:
     Render::CullingSettingsUVE cullingSettings;
     cullingSettings.frustumCullingEnabledUVE = m_config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
     renderer->SetCullingSettingsUVE(cullingSettings);
+    renderer->SetMaterialSamplerSettingsUVE(
+        m_config.defaultTextureRepeatModeUVE != 0,
+        static_cast<float>(std::clamp<std::int64_t>(m_config.defaultAnisotropyLevelUVE, 1, 16)));
     return renderer;
 }
 
