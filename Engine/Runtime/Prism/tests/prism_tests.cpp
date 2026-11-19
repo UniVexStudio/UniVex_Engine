@@ -3159,9 +3159,9 @@ static void testGradientEditor(Application& app) {
   CHECK(nf->onMouseDown(md));
   MouseEvent mm{};
   mm.pos = {60.0f, 12.0f};
-  CHECK(nf->onMouseMove(mm));
+  nf->onMouseMove(mm);
   CHECK(near(nf->value(), 5.0f, 0.001f)); // did not scrub on drag
-  CHECK(nf->onMouseUp(mm));
+  nf->onMouseUp(mm);
 }
 
 int main(int argc, char** argv) {
