@@ -16,7 +16,7 @@ public class EditorCoreModule : ModuleRules
             "Component",
             "Platform",
             "Diagnostics",
-            "Network",
+            "Networking",
             "Plugins",
             "Retarget",
             "Prism",

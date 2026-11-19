@@ -43,7 +43,7 @@ public class CoreTestsModule : ModuleRules
             "RenderSystems",
             "Commandline",
             "Config",
-            "Network",
+            "Networking",
             "Plugins",
             "ProjectCheck",
             "UVScript",

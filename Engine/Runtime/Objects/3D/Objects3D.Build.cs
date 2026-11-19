@@ -15,7 +15,7 @@ public class Objects3DModule : ModuleRules
             "Animation",
             "Gameplay",
             "Physics",
-            "Network",
+            "Networking",
         });
 
         PrivateDependencyModuleNames.AddRange(new string[] {
