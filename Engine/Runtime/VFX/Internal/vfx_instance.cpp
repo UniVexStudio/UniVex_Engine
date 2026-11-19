@@ -1246,10 +1246,10 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                     if (op.type == Asset::ParticleModuleTypeUVE::CollisionPlane) {
                         for (std::size_t i = 0U; i < count; ++i) {
                             const float normAge = state.normalizedAge[i];
-                            const Math::Vector3UVE planePoint = EvaluateCompiledVectorInputUVE(
-                                op.vecA, normAge, nullptr, program.curveTables, m_parameters);
-                            Math::Vector3UVE planeNormal = EvaluateCompiledVectorInputUVE(
-                                op.vecB, normAge, nullptr, program.curveTables, m_parameters);
+                            const Math::Vector3UVE planePoint =
+                                EvaluateCompiledVectorInputUVE(op.vecA, nullptr, m_parameters);
+                            Math::Vector3UVE planeNormal =
+                                EvaluateCompiledVectorInputUVE(op.vecB, nullptr, m_parameters);
                             const float nLenSq = Math::LengthSquaredUVE(planeNormal);
                             planeNormal = nLenSq > 1.0e-8F ? (planeNormal * (1.0F / std::sqrt(nLenSq)))
                                                            : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
