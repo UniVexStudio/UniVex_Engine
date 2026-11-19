@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "prism/DrawList.h"
+#include <cmath>
 #include <cstring>
 
 namespace prism {
@@ -160,22 +161,32 @@ void RecordingCanvas::blit(const uint32_t* src, int sw, int sh, Vec2 dst) {
   d.i0 = off; d.w = sw; d.h = sh; d.a = dst;
 }
 
-void RecordingCanvas::blitScaled(const uint32_t* src, int sw, int sh, int stride, Rect dst) {
+// Images are recorded at the size they are drawn, resampled smoothly here, so every backend (the CPU
+// replay and the GPU batches) draws them pixel for pixel and none of them scales an image itself.
+void RecordingCanvas::recordImage(DrawOp op, const uint32_t* src, int sw, int sh, int stride, Rect dst) {
   if (!src || sw <= 0 || sh <= 0) return;
+  const int dw = int(std::lround(dst.x + dst.w)) - int(std::lround(dst.x));
+  const int dh = int(std::lround(dst.y + dst.h)) - int(std::lround(dst.y));
+  if (dw < 1 || dh < 1) return;
   int off = int(m_list.pixels.size());
-  m_list.pixels.reserve(m_list.pixels.size() + size_t(sw) * size_t(sh));
-  for (int y = 0; y < sh; y++) m_list.pixels.insert(m_list.pixels.end(), src + size_t(y) * size_t(stride), src + size_t(y) * size_t(stride) + size_t(sw));
-  DrawCmd& d = push(DrawOp::BlitScaled);
-  d.i0 = off; d.w = sw; d.h = sh; d.stride = sw; d.r = dst;
+  if (dw == sw && dh == sh) {
+    m_list.pixels.reserve(m_list.pixels.size() + size_t(sw) * size_t(sh));
+    for (int y = 0; y < sh; y++) m_list.pixels.insert(m_list.pixels.end(), src + size_t(y) * size_t(stride), src + size_t(y) * size_t(stride) + size_t(sw));
+  } else {
+    Canvas::resample(src, sw, sh, stride, dw, dh, m_resampled);
+    m_list.pixels.insert(m_list.pixels.end(), m_resampled.begin(), m_resampled.end());
+  }
+  DrawCmd& d = push(op);
+  d.i0 = off; d.w = dw; d.h = dh; d.stride = dw;
+  d.r = Rect(std::round(dst.x), std::round(dst.y), float(dw), float(dh));
+}
+
+void RecordingCanvas::blitScaled(const uint32_t* src, int sw, int sh, int stride, Rect dst) {
+  recordImage(DrawOp::BlitScaled, src, sw, sh, stride, dst);
 }
 
 void RecordingCanvas::blitBlend(const uint32_t* src, int sw, int sh, int stride, Rect dst) {
-  if (!src || sw <= 0 || sh <= 0) return;
-  int off = int(m_list.pixels.size());
-  m_list.pixels.reserve(m_list.pixels.size() + size_t(sw) * size_t(sh));
-  for (int y = 0; y < sh; y++) m_list.pixels.insert(m_list.pixels.end(), src + size_t(y) * size_t(stride), src + size_t(y) * size_t(stride) + size_t(sw));
-  DrawCmd& d = push(DrawOp::BlitBlend);
-  d.i0 = off; d.w = sw; d.h = sh; d.stride = sw; d.r = dst;
+  recordImage(DrawOp::BlitBlend, src, sw, sh, stride, dst);
 }
 
 void RecordingCanvas::fillRaw(Rect r, uint32_t argb) {

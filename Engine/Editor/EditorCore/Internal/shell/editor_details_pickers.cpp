@@ -23,6 +23,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <set>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -64,7 +65,8 @@ EditorDetailsUVE::PickerSpecUVE EditorDetailsUVE::PickerSpecForUVE(const std::ve
         spec.newMaterial = true;
     } else if (has(".uvtex") || has(".png")) {
         spec.title = "Texture";
-        spec.listed = {".uvtex"};
+        // The project's images whether published or not: a source image is published when picked.
+        spec.listed = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
         spec.loadable = {".uvtex", ".png", ".jpg", ".jpeg", ".bmp", ".tga"};
     } else if (has(".uvmontagelib")) {
         spec.title = "Motion Montage Library";
@@ -167,10 +169,21 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
         }
     }
 
-    // The project's files of this kind.
+    // The project's files of this kind. A source image already published beside itself is listed once,
+    // as its .uvtex.
+    std::set<std::string> published;
+    for (const Asset::ProjectFileEntryUVE& file : snapshot.entries) {
+        if (HasExtensionUVE({".uvtex"}, file.relativePath)) {
+            published.insert((file.relativePath.parent_path() / file.relativePath.stem()).generic_string());
+        }
+    }
     std::vector<prism::MenuItem> project;
     for (const Asset::ProjectFileEntryUVE& file : snapshot.entries) {
         if (file.kind == Asset::ProjectFileEntryKindUVE::Directory || !HasExtensionUVE(spec.listed, file.relativePath)) {
+            continue;
+        }
+        if (!HasExtensionUVE({".uvtex"}, file.relativePath) && HasExtensionUVE({".png", ".jpg", ".jpeg", ".bmp", ".tga"}, file.relativePath) &&
+            published.contains((file.relativePath.parent_path() / file.relativePath.stem()).generic_string())) {
             continue;
         }
         const std::filesystem::path absolute = snapshot.contentRoot / file.relativePath;

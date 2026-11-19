@@ -148,7 +148,7 @@ private:
     bool m_hot = false;
 };
 
-[[nodiscard]] prism::Ref<prism::Widget> WithAssetDropUVE(std::function<std::filesystem::path()> contentRoot, prism::Ref<prism::Widget> slot,
+[[nodiscard]] prism::Ref<prism::Widget> MakeAssetDropUVE(std::function<std::filesystem::path()> contentRoot, prism::Ref<prism::Widget> slot,
                                                          std::vector<std::string> kinds,
                                                          std::function<void(const std::filesystem::path&)> use) {
     auto drop = prism::make<AssetSlotDropUVE>(std::move(contentRoot), std::move(kinds), std::move(use));
@@ -258,6 +258,11 @@ public:
 
 } // namespace
 
+prism::Ref<prism::Widget> WithAssetDropUVE(std::function<std::filesystem::path()> contentRoot, prism::Ref<prism::Widget> slot,
+                                           std::vector<std::string> kinds, std::function<void(const std::filesystem::path&)> use) {
+    return MakeAssetDropUVE(std::move(contentRoot), std::move(slot), std::move(kinds), std::move(use));
+}
+
 EditorDetailsUVE::EditorDetailsUVE(EditorUVE& editor) : m_editor(editor) {}
 
 EditorDetailsUVE::~EditorDetailsUVE() = default;
@@ -351,7 +356,8 @@ void EditorDetailsUVE::RefreshUVE() {
     }
     const Scene::EntityUVE entity = m_editor.GetSelectedEntityUVE();
     const std::uint64_t signature = StructureSignatureUVE(entity);
-    if (signature != m_signature || entity != m_entity) {
+    if (signature != m_signature || entity != m_entity || m_rebuildRequested) {
+        m_rebuildRequested = false;
         m_signature = signature;
         m_entity = entity;
         RebuildUVE(entity);
@@ -1092,7 +1098,9 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                     ShowPickerUVE(spec, std::move(actions), b->rect());
                 }
             };
-            if (const std::optional<AssetThumbnailUVE::KindUVE> kind = ThumbnailKindForUVE(extensions); kind.has_value()) {
+            // The sky slot is the picker alone: its panorama is seen in the viewport, not in a box.
+            const std::optional<AssetThumbnailUVE::KindUVE> kind = skySlot ? std::nullopt : ThumbnailKindForUVE(extensions);
+            if (kind.has_value()) {
                 auto thumb = prism::make<AssetThumbnailUVE>(m_editor, *kind);
                 std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;
                 row->sync = [this, p, weakThumb, base = std::move(row->sync)](const void* inst) {
