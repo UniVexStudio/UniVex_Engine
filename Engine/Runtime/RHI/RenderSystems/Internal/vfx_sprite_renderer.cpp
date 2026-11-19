@@ -654,6 +654,7 @@ std::size_t VfxSpriteRendererUVE::RecordBatchListUVE(const std::vector<PreparedB
         program->SetIntUVE("uFlipbookCols", batch.cols);
         program->SetIntUVE("uFrameBlend", batch.frameBlend);
         program->SetIntUVE("uBlendMode", batch.blend);
+        program->SetIntUVE("uFacingMode", batch.facing);
         program->SetFloatUVE("uAlphaCutoff", batch.alphaCutoff);
         program->SetFloatUVE("uCameraFadeNear", batch.cameraFadeNear);
         program->SetFloatUVE("uCameraFadeFar", batch.cameraFadeFar);
@@ -664,7 +665,6 @@ std::size_t VfxSpriteRendererUVE::RecordBatchListUVE(const std::vector<PreparedB
             program->SetVector3UVE("uCameraUp", frameContext.cameraUp);
             program->SetVector3UVE("uCameraForward", frameContext.cameraForward);
             program->SetVector3UVE("uFacingAxis", batch.axis);
-            program->SetIntUVE("uFacingMode", batch.facing);
             program->SetIntUVE("uInstanceBaseIndex", static_cast<std::int32_t>(range.firstInstance));
             program->SetFloatUVE("uStretchScale", batch.stretchScale);
         }

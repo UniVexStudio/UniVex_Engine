@@ -365,7 +365,7 @@ TEST_F(VfxEditorSessionUVETest, SoloEmitter_PlaysOnlyThatEmitter) {
     EXPECT_GT(instance->GetEmitterStateUVE(1U).liveCount, 0U);
 }
 
-TEST_F(VfxEditorSessionUVETest, StudioPreview_ElevatesEmitterAboveFloorWithGridDisabledByDefault) {
+TEST_F(VfxEditorSessionUVETest, StudioPreview_SpawnsFlushOnFloorAndBouncesOffCollider3D) {
     ASSERT_TRUE(m_editor->OpenVfxEditorUVE(CreateSparksUVE()));
     const EditorUVE::VfxEditSessionUVE* const session = m_editor->VfxEditSessionPtrUVE();
     ASSERT_NE(session, nullptr);
@@ -375,13 +375,30 @@ TEST_F(VfxEditorSessionUVETest, StudioPreview_ElevatesEmitterAboveFloorWithGridD
     const VFX::VfxOwnerUVE* const owner = session->previewWorld.TryGetOwnerUVE(session->previewHandle);
     ASSERT_NE(owner, nullptr);
     EXPECT_FLOAT_EQ(owner->position.x, 0.0F);
-    EXPECT_GE(owner->position.y, 1.5F);
+    EXPECT_FLOAT_EQ(owner->position.y, 0.0F);
     EXPECT_FLOAT_EQ(owner->position.z, 0.0F);
 
-    const Math::AabbUVE deepBounds{Math::Vector3UVE{-2.0F, -2.5F, -2.0F},
-                                   Math::Vector3UVE{2.0F, 2.5F, 2.0F}};
-    const Math::Vector3UVE deepOrigin = EditorUVE::ResolveVfxPreviewOriginUVE(deepBounds);
-    EXPECT_NEAR(deepOrigin.y + deepBounds.min.y, 0.35F, 1.0e-5F);
+    // Verify real-time Collider3D floor collision keeps falling sparks above the floor surface (y >= 0).
+    VFX::VfxColliderVolumeUVE floorCol{};
+    floorCol.kind = VFX::VfxColliderShapeKindUVE::Box;
+    floorCol.center = Math::Vector3UVE{0.0F, -0.5F, 0.0F};
+    floorCol.halfExtents = Math::Vector3UVE{50.0F, 0.5F, 50.0F};
+    VFX::VfxWorldUVE world;
+    world.SetSceneCollidersUVE({floorCol});
+    const VFX::VfxHandleUVE handle = world.SpawnFromAssetUVE(
+        "sparks_floor_bounce", VFX::CreateParticleTemplateUVE(VFX::ParticleTemplateKindUVE::Sparks),
+        VFX::VfxOwnerUVE{{0.0F, 0.0F, 0.0F}, {}, {}, 2U}, 0ULL, 7U);
+    ASSERT_TRUE(handle.IsValidUVE());
+    for (int i = 0; i < 45; ++i) {
+        world.TickUVE(1.0F / 60.0F);
+    }
+    const VFX::VfxInstanceUVE* const inst = world.TryGetInstanceUVE(handle);
+    ASSERT_NE(inst, nullptr);
+    const VFX::VfxEmitterStateUVE& state = inst->GetEmitterStateUVE(0U);
+    ASSERT_GT(state.liveCount, 0U);
+    for (std::size_t i = 0U; i < state.liveCount; ++i) {
+        EXPECT_GE(state.posY[i], -0.02F);
+    }
 }
 
 } // namespace

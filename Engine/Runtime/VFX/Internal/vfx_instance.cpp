@@ -625,7 +625,7 @@ void VfxInstanceUVE::ResetUVE(const VfxOwnerUVE& initialOwner) {
         float remaining = m_warmUpSeconds;
         while (remaining > 1e-6F) {
             const float step = std::min(remaining, kWarmUpStepDtUVE);
-            StepSingleSubstepUVE(step, initialOwner.position, initialOwner, 1.0F);
+            StepSingleSubstepUVE(step, initialOwner.position, initialOwner, 1.0F, {});
             remaining -= step;
         }
     }
@@ -678,7 +678,10 @@ void VfxInstanceUVE::KillUVE() noexcept {
     }
 }
 
-void VfxInstanceUVE::TickUVE(const float dt, const VfxOwnerUVE& owner, const float externalSpawnScale) {
+void VfxInstanceUVE::TickUVE(const float dt,
+                             const VfxOwnerUVE& owner,
+                             const float externalSpawnScale,
+                             const std::span<const VfxColliderVolumeUVE> sceneColliders) {
     if (!m_initialized || m_killed) {
         return;
     }
@@ -704,7 +707,7 @@ void VfxInstanceUVE::TickUVE(const float dt, const VfxOwnerUVE& owner, const flo
         VfxOwnerUVE stepOwner = owner;
         stepOwner.position = LerpVec3UVE(frameStartPos, owner.position, endFrac);
         const Math::Vector3UVE prevStepPos = LerpVec3UVE(frameStartPos, owner.position, startFrac);
-        StepSingleSubstepUVE(subDt, prevStepPos, stepOwner, externalSpawnScale);
+        StepSingleSubstepUVE(subDt, prevStepPos, stepOwner, externalSpawnScale, sceneColliders);
     }
     m_lastOwnerPos = owner.position;
 }
@@ -833,9 +836,10 @@ Math::AabbUVE VfxInstanceUVE::GetLiveBoundsUVE() const noexcept {
 void VfxInstanceUVE::StepSingleSubstepUVE(const float dt,
                                           const Math::Vector3UVE& prevOwnerPos,
                                           const VfxOwnerUVE& owner,
-                                          const float externalSpawnScale) {
+                                          const float externalSpawnScale,
+                                          const std::span<const VfxColliderVolumeUVE> sceneColliders) {
     for (std::size_t idx = 0U; idx < m_emitters.size(); ++idx) {
-        StepEmitterUVE(idx, m_emitters[idx], dt, prevOwnerPos, owner, externalSpawnScale);
+        StepEmitterUVE(idx, m_emitters[idx], dt, prevOwnerPos, owner, externalSpawnScale, sceneColliders);
     }
 }
 
@@ -844,7 +848,8 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                                     const float dt,
                                     const Math::Vector3UVE& prevOwnerPos,
                                     const VfxOwnerUVE& owner,
-                                    const float externalSpawnScale) {
+                                    const float externalSpawnScale,
+                                    const std::span<const VfxColliderVolumeUVE> sceneColliders) {
     const ParticleProgramUVE& program = runtime.program;
     VfxEmitterStateUVE& state = runtime.state;
     if (!program.enabled) {
@@ -1220,6 +1225,186 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                     state.posX[i] += state.velX[i] * dt;
                     state.posY[i] += state.velY[i] * dt;
                     state.posZ[i] += state.velZ[i] * dt;
+                }
+
+                // ---- Post-integration Collision Pass (CollisionPlane & real-time Collider3D CollisionPhysics) ----
+                const bool hasSizeX = HasAttributeUVE(program.attributeMask, ParticleAttributeBitUVE::SizeX);
+                for (const CompiledUpdateOpUVE& op : program.updateOps) {
+                    if (op.type != Asset::ParticleModuleTypeUVE::CollisionPlane &&
+                        op.type != Asset::ParticleModuleTypeUVE::CollisionPhysics) {
+                        continue;
+                    }
+                    if (op.type == Asset::ParticleModuleTypeUVE::CollisionPhysics &&
+                        (sceneColliders.empty() || count > 2000U)) {
+                        continue;
+                    }
+
+                    const bool killOnHit = op.intA != 0;
+                    const bool isLocalSpace = program.space == Asset::ParticleSimulationSpaceUVE::Local;
+                    const Math::QuaternionUVE invOwnerRot = Math::ConjugateUVE(owner.rotation);
+
+                    if (op.type == Asset::ParticleModuleTypeUVE::CollisionPlane) {
+                        for (std::size_t i = 0U; i < count; ++i) {
+                            const float normAge = state.normalizedAge[i];
+                            const Math::Vector3UVE planePoint = EvaluateCompiledVectorInputUVE(
+                                op.vecA, normAge, nullptr, program.curveTables, m_parameters);
+                            Math::Vector3UVE planeNormal = EvaluateCompiledVectorInputUVE(
+                                op.vecB, normAge, nullptr, program.curveTables, m_parameters);
+                            const float nLenSq = Math::LengthSquaredUVE(planeNormal);
+                            planeNormal = nLenSq > 1.0e-8F ? (planeNormal / std::sqrt(nLenSq))
+                                                           : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                            const float bounce = std::clamp(
+                                EvaluateCompiledFloatInputUVE(op.floatA, normAge, nullptr, program.curveTables,
+                                                              m_parameters),
+                                0.0F, 1.0F);
+                            const float friction = std::clamp(
+                                EvaluateCompiledFloatInputUVE(op.floatB, normAge, nullptr, program.curveTables,
+                                                              m_parameters),
+                                0.0F, 1.0F);
+                            const float lifeLoss = std::max(
+                                0.0F, EvaluateCompiledFloatInputUVE(op.floatC, normAge, nullptr, program.curveTables,
+                                                                    m_parameters));
+                            const float radius = hasSizeX ? std::max(0.005F, state.sizeX[i] * 0.25F) : 0.01F;
+                            Math::Vector3UVE pos{state.posX[i], state.posY[i], state.posZ[i]};
+                            const float signedDist = Math::DotUVE(pos - planePoint, planeNormal) - radius;
+                            if (signedDist < 0.0F) {
+                                pos += planeNormal * (-signedDist);
+                                state.posX[i] = pos.x;
+                                state.posY[i] = pos.y;
+                                state.posZ[i] = pos.z;
+                                Math::Vector3UVE vel{state.velX[i], state.velY[i], state.velZ[i]};
+                                const float vDotN = Math::DotUVE(vel, planeNormal);
+                                if (vDotN < 0.0F) {
+                                    const Math::Vector3UVE vNormal = planeNormal * vDotN;
+                                    const Math::Vector3UVE vTangent = vel - vNormal;
+                                    vel = vTangent * (1.0F - friction) - vNormal * bounce;
+                                    state.velX[i] = vel.x;
+                                    state.velY[i] = vel.y;
+                                    state.velZ[i] = vel.z;
+                                }
+                                if (killOnHit) {
+                                    state.age[i] = state.lifetime[i] + 1.0F;
+                                } else if (lifeLoss > 0.0F) {
+                                    state.age[i] += lifeLoss * state.lifetime[i];
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Real-time CollisionPhysics against active scene Collider3D volumes (Box, Sphere, Capsule).
+                    for (std::size_t i = 0U; i < count; ++i) {
+                        const float normAge = state.normalizedAge[i];
+                        const float bounce = std::clamp(
+                            EvaluateCompiledFloatInputUVE(op.floatA, normAge, nullptr, program.curveTables,
+                                                          m_parameters),
+                            0.0F, 1.0F);
+                        const float friction = std::clamp(
+                            EvaluateCompiledFloatInputUVE(op.floatB, normAge, nullptr, program.curveTables,
+                                                          m_parameters),
+                            0.0F, 1.0F);
+                        const float lifeLoss = std::max(
+                            0.0F, EvaluateCompiledFloatInputUVE(op.floatC, normAge, nullptr, program.curveTables,
+                                                                m_parameters));
+                        const float radius = hasSizeX ? std::max(0.005F, state.sizeX[i] * 0.25F) : 0.01F;
+
+                        Math::Vector3UVE simPos{state.posX[i], state.posY[i], state.posZ[i]};
+                        Math::Vector3UVE simVel{state.velX[i], state.velY[i], state.velZ[i]};
+                        Math::Vector3UVE worldPos =
+                            isLocalSpace ? (owner.position + Math::RotateVectorUVE(owner.rotation, simPos)) : simPos;
+                        Math::Vector3UVE worldVel =
+                            isLocalSpace ? Math::RotateVectorUVE(owner.rotation, simVel) : simVel;
+
+                        bool collided = false;
+                        for (const VfxColliderVolumeUVE& col : sceneColliders) {
+                            Math::Vector3UVE hitNormal{0.0F, 1.0F, 0.0F};
+                            float penetration = 0.0F;
+                            bool hit = false;
+
+                            if (col.kind == VfxColliderShapeKindUVE::Box) {
+                                const Math::QuaternionUVE invColRot = Math::ConjugateUVE(col.rotation);
+                                const Math::Vector3UVE localP =
+                                    Math::RotateVectorUVE(invColRot, worldPos - col.center);
+                                const Math::Vector3UVE ext{
+                                    std::max(0.001F, col.halfExtents.x) + radius,
+                                    std::max(0.001F, col.halfExtents.y) + radius,
+                                    std::max(0.001F, col.halfExtents.z) + radius,
+                                };
+                                if (std::abs(localP.x) < ext.x && std::abs(localP.y) < ext.y &&
+                                    std::abs(localP.z) < ext.z) {
+                                    const float dx = ext.x - std::abs(localP.x);
+                                    const float dy = ext.y - std::abs(localP.y);
+                                    const float dz = ext.z - std::abs(localP.z);
+                                    Math::Vector3UVE localNormal{0.0F, 1.0F, 0.0F};
+                                    if (dy <= dx && dy <= dz) {
+                                        penetration = dy;
+                                        localNormal = {0.0F, localP.y >= 0.0F ? 1.0F : -1.0F, 0.0F};
+                                    } else if (dx <= dz) {
+                                        penetration = dx;
+                                        localNormal = {localP.x >= 0.0F ? 1.0F : -1.0F, 0.0F, 0.0F};
+                                    } else {
+                                        penetration = dz;
+                                        localNormal = {0.0F, 0.0F, localP.z >= 0.0F ? 1.0F : -1.0F};
+                                    }
+                                    hitNormal = Math::RotateVectorUVE(col.rotation, localNormal);
+                                    hit = true;
+                                }
+                            } else if (col.kind == VfxColliderShapeKindUVE::Sphere) {
+                                const Math::Vector3UVE delta = worldPos - col.center;
+                                const float minDist = std::max(0.001F, col.radius) + radius;
+                                const float distSq = Math::LengthSquaredUVE(delta);
+                                if (distSq < minDist * minDist) {
+                                    const float dist = std::sqrt(distSq);
+                                    hitNormal = dist > 1.0e-5F ? (delta / dist) : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                                    penetration = minDist - dist;
+                                    hit = true;
+                                }
+                            } else if (col.kind == VfxColliderShapeKindUVE::Capsule) {
+                                const Math::Vector3UVE up =
+                                    Math::RotateVectorUVE(col.rotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+                                const float halfSeg = std::max(0.0F, col.height * 0.5F - col.radius);
+                                const float t = std::clamp(Math::DotUVE(worldPos - col.center, up), -halfSeg, halfSeg);
+                                const Math::Vector3UVE closest = col.center + up * t;
+                                const Math::Vector3UVE delta = worldPos - closest;
+                                const float minDist = std::max(0.001F, col.radius) + radius;
+                                const float distSq = Math::LengthSquaredUVE(delta);
+                                if (distSq < minDist * minDist) {
+                                    const float dist = std::sqrt(distSq);
+                                    hitNormal = dist > 1.0e-5F ? (delta / dist) : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                                    penetration = minDist - dist;
+                                    hit = true;
+                                }
+                            }
+
+                            if (hit) {
+                                collided = true;
+                                worldPos += hitNormal * penetration;
+                                const float vDotN = Math::DotUVE(worldVel, hitNormal);
+                                if (vDotN < 0.0F) {
+                                    const Math::Vector3UVE vNormal = hitNormal * vDotN;
+                                    const Math::Vector3UVE vTangent = worldVel - vNormal;
+                                    worldVel = vTangent * (1.0F - friction) - vNormal * bounce;
+                                }
+                            }
+                        }
+
+                        if (collided) {
+                            simPos = isLocalSpace ? Math::RotateVectorUVE(invOwnerRot, worldPos - owner.position)
+                                                  : worldPos;
+                            simVel = isLocalSpace ? Math::RotateVectorUVE(invOwnerRot, worldVel) : worldVel;
+                            state.posX[i] = simPos.x;
+                            state.posY[i] = simPos.y;
+                            state.posZ[i] = simPos.z;
+                            state.velX[i] = simVel.x;
+                            state.velY[i] = simVel.y;
+                            state.velZ[i] = simVel.z;
+                            if (killOnHit) {
+                                state.age[i] = state.lifetime[i] + 1.0F;
+                            } else if (lifeLoss > 0.0F) {
+                                state.age[i] += lifeLoss * state.lifetime[i];
+                            }
+                        }
+                    }
                 }
             }
         }

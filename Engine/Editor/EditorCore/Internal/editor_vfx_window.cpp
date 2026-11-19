@@ -2,6 +2,7 @@
 
 #include "editor.h"
 
+#include "collider_component.h"
 #include "document_scene.h"
 #include "engine_services.h"
 #include "i_asset_database.h"
@@ -28,6 +29,48 @@ namespace {
 constexpr float kVfxStepSecondsUVE = 1.0F / 30.0F;
 constexpr int kVfxThumbnailSizeUVE = 128;
 
+[[nodiscard]] std::vector<VFX::VfxColliderVolumeUVE> CollectSceneVfxCollidersUVE(
+    const Scene::IEntityManagerUVE& em) {
+    std::vector<VFX::VfxColliderVolumeUVE> colliders;
+    em.ForEachComponentUVE<Scene::ColliderComponentUVE>(
+        [&](const Scene::EntityUVE entity, const Scene::ColliderComponentUVE& col) {
+            if (col.disabled) {
+                return;
+            }
+            const auto* const tf = em.TryGetComponentUVE<Scene::TransformComponentUVE>(entity);
+            const Math::Vector3UVE worldPos = tf != nullptr ? tf->worldPosition : Math::Vector3UVE{};
+            const Math::QuaternionUVE worldRot = tf != nullptr ? tf->worldRotation : Math::QuaternionUVE{};
+            const Math::Vector3UVE scale = tf != nullptr ? tf->worldScale : Math::Vector3UVE{1.0F, 1.0F, 1.0F};
+            const Math::Vector3UVE absScale{
+                std::max(Scene::kMinimumColliderWorldScaleUVE, std::abs(scale.x)),
+                std::max(Scene::kMinimumColliderWorldScaleUVE, std::abs(scale.y)),
+                std::max(Scene::kMinimumColliderWorldScaleUVE, std::abs(scale.z)),
+            };
+
+            VFX::VfxColliderVolumeUVE volume{};
+            volume.center = worldPos;
+            volume.rotation = worldRot;
+            if (col.shapeType == Scene::ColliderShapeTypeUVE::Sphere) {
+                volume.kind = VFX::VfxColliderShapeKindUVE::Sphere;
+                volume.radius = col.radius * std::max({absScale.x, absScale.y, absScale.z});
+            } else if (col.shapeType == Scene::ColliderShapeTypeUVE::Capsule ||
+                       col.shapeType == Scene::ColliderShapeTypeUVE::Cylinder) {
+                volume.kind = VFX::VfxColliderShapeKindUVE::Capsule;
+                volume.radius = col.radius * std::max(absScale.x, absScale.z);
+                volume.height = col.height * absScale.y;
+            } else {
+                volume.kind = VFX::VfxColliderShapeKindUVE::Box;
+                volume.halfExtents = Math::Vector3UVE{
+                    col.halfExtents.x * absScale.x,
+                    col.halfExtents.y * absScale.y,
+                    col.halfExtents.z * absScale.z,
+                };
+            }
+            colliders.push_back(volume);
+        });
+    return colliders;
+}
+
 void PopulateVfxDarkStudioSceneUVE(Core::EngineServicesUVE& services) {
     Scene::IEntityManagerUVE& em = services.GetEntityManagerUVE();
     Scene::ISceneGraphUVE& sg = services.GetSceneGraphUVE();
@@ -51,6 +94,19 @@ void PopulateVfxDarkStudioSceneUVE(Core::EngineServicesUVE& services) {
     env.ssaoIntensity = 1.05F;
     em.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity, env);
 
+    // Real studio floor Collider3D (top surface flush at y = 0.0) so falling particles
+    // bounce off the studio floor through the real-time Collider3D collision pipeline.
+    const Scene::EntityUVE floorColliderEntity = em.CreateEntityUVE();
+    Scene::TransformComponentUVE floorTf{};
+    floorTf.localPosition = Math::Vector3UVE{0.0F, -0.5F, 0.0F};
+    sg.AttachTransformUVE(em, floorColliderEntity, floorTf);
+    Scene::ColliderComponentUVE floorCol{};
+    floorCol.shapeType = Scene::ColliderShapeTypeUVE::Box;
+    floorCol.halfExtents = Math::Vector3UVE{50.0F, 0.5F, 50.0F};
+    floorCol.friction = 0.25F;
+    floorCol.restitution = 0.55F;
+    em.AddComponentUVE<Scene::ColliderComponentUVE>(floorColliderEntity, floorCol);
+
     const auto addStudioPointLight = [&](const Math::Vector3UVE& position,
                                          const Math::ColorUVE& color,
                                          const float intensity,
@@ -66,7 +122,7 @@ void PopulateVfxDarkStudioSceneUVE(Core::EngineServicesUVE& services) {
         light.range = range;
         em.AddComponentUVE<Scene::LightComponentUVE>(lightEntity, light);
     };
-    // 3-point studio light rig (Warm Key, Cool Rim, Soft Fill) around the elevated emitter stage.
+    // 3-point studio light rig (Warm Key, Cool Rim, Soft Fill) around the studio stage.
     addStudioPointLight(Math::Vector3UVE{3.6F, 5.4F, 3.8F}, Math::ColorUVE{1.00F, 0.96F, 0.90F}, 2.25F, 22.0F);
     addStudioPointLight(Math::Vector3UVE{-4.0F, 3.9F, -3.6F}, Math::ColorUVE{0.58F, 0.72F, 1.00F}, 1.45F, 20.0F);
     addStudioPointLight(Math::Vector3UVE{-3.0F, 2.7F, 4.2F}, Math::ColorUVE{0.78F, 0.84F, 0.96F}, 0.95F, 18.0F);
@@ -296,10 +352,10 @@ void EditorUVE::StopVfxPreviewUVE() {
     RestartVfxPreviewUVE();
 }
 
-Math::Vector3UVE EditorUVE::ResolveVfxPreviewOriginUVE(const Math::AabbUVE& fixedBounds) noexcept {
-    const float minY = std::isfinite(fixedBounds.min.y) ? fixedBounds.min.y : -1.0F;
-    const float elevatedY = std::clamp(std::max(1.5F, -minY + 0.35F), 1.5F, 4.0F);
-    return Math::Vector3UVE{0.0F, elevatedY, 0.0F};
+Math::Vector3UVE EditorUVE::ResolveVfxPreviewOriginUVE(const Math::AabbUVE& /*fixedBounds*/) noexcept {
+    // Spawn flush on the studio floor (y = 0) so effects originate directly on the floor plane
+    // and falling particles bounce off the real studio floor Collider3D.
+    return Math::Vector3UVE{0.0F, 0.0F, 0.0F};
 }
 
 void EditorUVE::RestartVfxPreviewUVE() {
@@ -338,6 +394,10 @@ void EditorUVE::SetVfxPlayheadUVE(const double seconds) {
     RestartVfxPreviewUVE();
     session.fixedSeed = wasFixed;
     session.restartCounter = counter;
+    if (m_vfxPreviewScene != nullptr) {
+        session.previewWorld.SetSceneCollidersUVE(
+            CollectSceneVfxCollidersUVE(m_vfxPreviewScene->GetServicesUVE().GetEntityManagerUVE()));
+    }
     double time = 0.0;
     while (time + 1.0e-9 < target && session.previewHandle.IsValidUVE()) {
         const double step = std::min(static_cast<double>(kVfxStepSecondsUVE), target - time);
@@ -355,6 +415,10 @@ void EditorUVE::TickVfxEditorUVE(const double deltaSeconds) {
     VfxEditSessionUVE& session = *m_vfxEdit;
     if (!session.playing || !session.previewHandle.IsValidUVE()) {
         return;
+    }
+    if (m_vfxPreviewScene != nullptr) {
+        session.previewWorld.SetSceneCollidersUVE(
+            CollectSceneVfxCollidersUVE(m_vfxPreviewScene->GetServicesUVE().GetEntityManagerUVE()));
     }
     const double dt = std::clamp(deltaSeconds, 0.0, 0.1) * std::clamp(session.speed, 0.01, 16.0);
     const auto begin = std::chrono::steady_clock::now();
