@@ -26,6 +26,9 @@
 #if !defined(GL_TEXTURE_MAX_ANISOTROPY_EXT)
 #define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
 #endif
+#if !defined(GL_PROGRAM_BINARY_RETRIEVABLE_HINT)
+#define GL_PROGRAM_BINARY_RETRIEVABLE_HINT 0x8257
+#endif
 #include "gl_error_check.h"
 #include "gl_render_device_state.h"
 #include "engine_assert.h"
@@ -317,9 +320,12 @@ struct GlTextureFormatUVE {
 void ReflectPipelineUniformsUVE(
     const Detail::GlFunctionsUVE& gl, GLuint glProgram,
     std::unordered_map<std::string, Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE,
-                       Detail::TransparentStringHashUVE, Detail::TransparentStringEqualUVE>& outUniforms, decltype(outUniforms) outElements) {
+                       Detail::TransparentStringHashUVE, Detail::TransparentStringEqualUVE>& outUniforms,
+    decltype(outUniforms) outElements,
+    bool& outHasImageUniforms) {
     outUniforms.clear();
     outElements.clear();
+    outHasImageUniforms = false;
 
     GLint activeUniformCount = 0;
     gl.glGetProgramiv(glProgram, GL_ACTIVE_UNIFORMS, &activeUniformCount);
@@ -343,9 +349,13 @@ void ReflectPipelineUniformsUVE(
         }
 
         const GLint location = gl.glGetUniformLocation(glProgram, name.c_str());
+        const bool isImageUniform = glType == GL_IMAGE_2D;
+        if (isImageUniform) {
+            outHasImageUniforms = true;
+        }
         const Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE record{
             GlUniformTypeToShaderDataTypeUVE(glType), location,
-            static_cast<std::uint32_t>(arraySize), glType == GL_IMAGE_2D};
+            static_cast<std::uint32_t>(arraySize), isImageUniform};
         outUniforms.emplace(name, record);
         if (isArray && location >= 0) {
             for (GLint element = 0; element < arraySize; ++element) {
@@ -431,6 +441,9 @@ GlRenderDeviceUVE::GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
             }
         }
         glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &m_impl->state.maxVertexAttribs);
+        glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &m_impl->state.maxArrayTextureLayers);
+        glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &m_impl->state.maxCubeMapTextureSize);
+        glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &m_impl->state.max3DTextureSize);
         GLint compressedFormatCount = 0;
         glGetIntegerv(kGlNumCompressedTextureFormatsUVE, &compressedFormatCount);
         if (compressedFormatCount > 0 && compressedFormatCount <= 4096) {
@@ -453,6 +466,8 @@ GlRenderDeviceUVE::GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
                           &m_impl->state.maxShaderStorageBindings);
         }
 #endif
+        m_impl->state.cachedCapabilities = GetCapabilitiesUVE();
+        m_impl->state.capabilitiesCached = true;
         Detail::RegisterGlDebugCallbackUVE(m_impl->state.gl);
         UVE_INFO("GlRenderDeviceUVE: initialized, backend GL_VERSION={}",
                   reinterpret_cast<const char*>(glGetString(GL_VERSION)));
@@ -479,6 +494,14 @@ GlRenderDeviceUVE::~GlRenderDeviceUVE() {
         m_impl->state.gl.glDeleteFramebuffers(1, &framebuffer);
     }
     m_impl->state.framebufferCache.clear();
+    if (m_impl->state.blitReadFbo != 0U) {
+        m_impl->state.gl.glDeleteFramebuffers(1, &m_impl->state.blitReadFbo);
+        m_impl->state.blitReadFbo = 0U;
+    }
+    if (m_impl->state.blitDrawFbo != 0U) {
+        m_impl->state.gl.glDeleteFramebuffers(1, &m_impl->state.blitDrawFbo);
+        m_impl->state.blitDrawFbo = 0U;
+    }
 
     // Release every device-owned GL object while the context is still owned by the window manager.
     // Relying on context teardown leaks resources when a renderer is recreated within one context.
@@ -696,12 +719,9 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
     const GLenum textureTarget = OperationTextureTargetUVE(desc.type);
     const GLenum bindingQuery = TextureBindingQueryForTargetUVE(textureTarget);
     if (isArray || isCube || isVolume) {
-        GLint maxLayers = 0;
-        glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &maxLayers);
-        GLint maxCubeSize = 0;
-        glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, &maxCubeSize);
-        GLint max3DSize = 0;
-        glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &max3DSize);
+        const GLint maxLayers = m_impl->state.maxArrayTextureLayers;
+        const GLint maxCubeSize = m_impl->state.maxCubeMapTextureSize;
+        const GLint max3DSize = m_impl->state.max3DTextureSize;
         if ((isArray && desc.arrayLayers > static_cast<std::uint32_t>(maxLayers)) ||
             (isCube && desc.width > static_cast<std::uint32_t>(maxCubeSize)) ||
             (isVolume && (desc.width > static_cast<std::uint32_t>(max3DSize) ||
@@ -1126,6 +1146,10 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
     if (geometryIt != m_impl->state.shaders.end()) {
         m_impl->state.gl.glAttachShader(glProgram, geometryIt->second.glShader);
     }
+    if (m_impl->state.gl.glProgramParameteri != nullptr &&
+        m_impl->state.gl.glGetProgramBinary != nullptr) {
+        m_impl->state.gl.glProgramParameteri(glProgram, GL_PROGRAM_BINARY_RETRIEVABLE_HINT, GL_TRUE);
+    }
     m_impl->state.gl.glLinkProgram(glProgram);
 
     const std::string infoLog = GetProgramInfoLogUVE(m_impl->state.gl, glProgram);
@@ -1164,7 +1188,8 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineUVE(const PipelineDescUVE& de
     record.depthCompare = desc.depthCompare;
     record.stencil = desc.stencil;
     record.topology = desc.topology;
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements,
+                               record.hasImageUniforms);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));
@@ -1226,7 +1251,8 @@ PipelineHandleUVE GlRenderDeviceUVE::CreateComputePipelineUVE(const ComputePipel
     record.isCompute = true;
     // Active-uniform reflection works identically for compute programs, so SetUniform*UVE on a
     // compute pipeline needs no special-casing.
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements,
+                               record.hasImageUniforms);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));
@@ -1395,7 +1421,8 @@ PipelineHandleUVE GlRenderDeviceUVE::CreatePipelineFromBinaryUVE(std::span<const
     // Uniform locations are not guaranteed portable across a binary load even though behavior
     // is - reflection must always be re-run here, never assumed inherited from the original
     // compile that produced this binary.
-    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements);
+    ReflectPipelineUniformsUVE(m_impl->state.gl, glProgram, record.uniforms, record.uniformElements,
+                               record.hasImageUniforms);
 
     const std::uint32_t handleValue = m_impl->state.nextPipelineHandle++;
     m_impl->state.pipelines.emplace(handleValue, std::move(record));
@@ -1457,6 +1484,8 @@ RenderDeviceCapabilitiesUVE GlRenderDeviceUVE::GetCapabilitiesUVE() const noexce
     RenderDeviceCapabilitiesUVE caps;
     if (!IsUsableUVE())
         return caps;
+    if (m_impl->state.capabilitiesCached)
+        return m_impl->state.cachedCapabilities;
     const auto native = RenderFeatureSupportUVE::Native;
     caps.retainedTextures = native;
     const auto &gl = m_impl->state.gl;
@@ -1572,8 +1601,11 @@ RenderOperationResultUVE GlRenderDeviceUVE::BlitTextureUVE(const TextureBlitDesc
 #endif
     const GLboolean oldScissor = glIsEnabled(GL_SCISSOR_TEST);
     glDisable(GL_SCISSOR_TEST);
-    GLuint framebuffers[2]{};
-    state.gl.glGenFramebuffers(2, framebuffers);
+    if (state.blitReadFbo == 0U)
+        state.gl.glGenFramebuffers(1, &state.blitReadFbo);
+    if (state.blitDrawFbo == 0U)
+        state.gl.glGenFramebuffers(1, &state.blitDrawFbo);
+    const GLuint framebuffers[2]{state.blitReadFbo, state.blitDrawFbo};
     const auto attach = [&](GLenum binding, const auto &texture, const TextureRegionUVE &region, GLuint fbo) {
         state.gl.glBindFramebuffer(binding, fbo);
         if (texture.desc.type == TextureTypeUVE::Texture2DArray) {
@@ -1605,9 +1637,19 @@ RenderOperationResultUVE GlRenderDeviceUVE::BlitTextureUVE(const TextureBlitDesc
             static_cast<GLint>(b.x + b.width), static_cast<GLint>(b.y + b.height), GL_COLOR_BUFFER_BIT,
             blit.filter == BlitFilterUVE::Point ? GL_NEAREST : GL_LINEAR);
     }
+    const auto detach = [&](GLenum binding, const auto &texture, GLuint fbo) {
+        if (fbo == 0U)
+            return;
+        state.gl.glBindFramebuffer(binding, fbo);
+        if (texture.desc.type == TextureTypeUVE::Texture2DArray)
+            state.gl.glFramebufferTextureLayer(binding, GL_COLOR_ATTACHMENT0, 0U, 0, 0);
+        else
+            state.gl.glFramebufferTexture2D(binding, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0U, 0);
+    };
+    detach(GL_READ_FRAMEBUFFER, source->second, framebuffers[0]);
+    detach(GL_DRAW_FRAMEBUFFER, target->second, framebuffers[1]);
     state.gl.glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(oldRead));
     state.gl.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(oldDraw));
-    state.gl.glDeleteFramebuffers(2, framebuffers);
     if (oldScissor)
         glEnable(GL_SCISSOR_TEST);
     else

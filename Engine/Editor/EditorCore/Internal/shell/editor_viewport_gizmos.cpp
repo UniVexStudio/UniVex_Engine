@@ -332,12 +332,16 @@ void EditorViewportGizmosUVE::UpdateHoverUVE(const prism::Vec2 p) {
             hot = true;
         }
     }
+    const bool hoverChanged =
+        (navHover != m_lastNavHover) || (gizmoHover != m_lastGizmoHover) || (hot != m_hot);
+    m_lastNavHover = navHover;
+    m_lastGizmoHover = gizmoHover;
     m_nav.setHover(navHover);
     m_gizmo.setHover(gizmoHover);
-    if (hot != m_hot) {
-        m_hot = hot;
+    m_hot = hot;
+    if (hoverChanged) {
+        invalidate();
     }
-    invalidate();
 }
 
 bool EditorViewportGizmosUVE::onMouseDown(const prism::MouseEvent& e) {
@@ -460,10 +464,15 @@ bool EditorViewportGizmosUVE::onMouseUp(const prism::MouseEvent& e) {
 
 void EditorViewportGizmosUVE::onMouseLeave() {
     if (m_dragging == DragUVE::None) {
+        const bool hoverChanged = m_hot || (m_lastNavHover != -1) || (m_lastGizmoHover != -1);
         m_hot = false;
+        m_lastNavHover = -1;
+        m_lastGizmoHover = -1;
         m_nav.setHover(-1);
         m_gizmo.setHover(-1);
-        invalidate();
+        if (hoverChanged) {
+            invalidate();
+        }
     }
 }
 

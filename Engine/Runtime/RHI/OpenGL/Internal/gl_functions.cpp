@@ -160,6 +160,8 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glGetActiveUniform = LoadOneUVE<PFNGLGETACTIVEUNIFORMPROC>(getProcAddress, "glGetActiveUniform");
     functions.glGetProgramBinary = LoadOneUVE<PFNGLGETPROGRAMBINARYPROC>(getProcAddress, "glGetProgramBinary");
     functions.glProgramBinary = LoadOneUVE<PFNGLPROGRAMBINARYPROC>(getProcAddress, "glProgramBinary");
+    functions.glProgramParameteri =
+        LoadOneUVE<PFNGLPROGRAMPARAMETERIPROC>(getProcAddress, "glProgramParameteri");
 
     functions.glGenSamplers = LoadOneUVE<PFNGLGENSAMPLERSPROC>(getProcAddress, "glGenSamplers");
     functions.glDeleteSamplers = LoadOneUVE<PFNGLDELETESAMPLERSPROC>(getProcAddress, "glDeleteSamplers");
