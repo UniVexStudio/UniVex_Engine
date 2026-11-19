@@ -7,8 +7,12 @@
 #include "i_asset_database.h"
 #include "i_renderer_3d.h"
 #include "i_project_file_index.h"
+#include "i_scene_graph.h"
+#include "light_component.h"
 #include "particle_render_bridge.h"
+#include "transform_component.h"
 #include "vfx_instance.h"
+#include "world_environment_3d.h"
 
 #include <algorithm>
 #include <array>
@@ -23,6 +27,53 @@ namespace {
 
 constexpr float kVfxStepSecondsUVE = 1.0F / 30.0F;
 constexpr int kVfxThumbnailSizeUVE = 128;
+
+void PopulateVfxDarkStudioSceneUVE(Core::EngineServicesUVE& services) {
+    Scene::IEntityManagerUVE& em = services.GetEntityManagerUVE();
+    Scene::ISceneGraphUVE& sg = services.GetSceneGraphUVE();
+
+    const Scene::EntityUVE envEntity = em.CreateEntityUVE();
+    sg.AttachTransformUVE(em, envEntity, Scene::TransformComponentUVE{});
+    Scene::WorldEnvironment3DComponentUVE env{};
+    env.skyColor = Math::Vector3UVE{0.022F, 0.025F, 0.032F};
+    env.horizonColor = Math::Vector3UVE{0.036F, 0.040F, 0.050F};
+    env.groundColor = Math::Vector3UVE{0.016F, 0.018F, 0.022F};
+    env.ambientColor = Math::Vector3UVE{0.085F, 0.092F, 0.112F};
+    env.ambientEnergy = 0.55F;
+    env.exposure = 1.05F;
+    env.postProcessingEnabled = true;
+    env.bloomEnabled = true;
+    env.bloomIntensity = 0.85F;
+    env.bloomThreshold = 1.0F;
+    env.bloomSoftKnee = 0.5F;
+    env.ssaoEnabled = true;
+    env.ssaoRadius = 0.55F;
+    env.ssaoIntensity = 1.05F;
+    em.AddComponentUVE<Scene::WorldEnvironment3DComponentUVE>(envEntity, env);
+
+    const auto addStudioPointLight = [&](const Math::Vector3UVE& position,
+                                         const Math::ColorUVE& color,
+                                         const float intensity,
+                                         const float range) {
+        const Scene::EntityUVE lightEntity = em.CreateEntityUVE();
+        Scene::TransformComponentUVE transform{};
+        transform.localPosition = position;
+        sg.AttachTransformUVE(em, lightEntity, transform);
+        Scene::LightComponentUVE light{};
+        light.type = Scene::LightTypeUVE::Point;
+        light.color = color;
+        light.intensity = intensity;
+        light.range = range;
+        light.castsShadows = false;
+        em.AddComponentUVE<Scene::LightComponentUVE>(lightEntity, light);
+    };
+    // 3-point studio light rig (Warm Key, Cool Rim, Soft Fill) around the elevated emitter stage.
+    addStudioPointLight(Math::Vector3UVE{3.6F, 5.4F, 3.8F}, Math::ColorUVE{1.00F, 0.96F, 0.90F}, 2.25F, 22.0F);
+    addStudioPointLight(Math::Vector3UVE{-4.0F, 3.9F, -3.6F}, Math::ColorUVE{0.58F, 0.72F, 1.00F}, 1.45F, 20.0F);
+    addStudioPointLight(Math::Vector3UVE{-3.0F, 2.7F, 4.2F}, Math::ColorUVE{0.78F, 0.84F, 0.96F}, 0.95F, 18.0F);
+    sg.UpdateUVE(em);
+    services.GetRenderer3DUVE().SetSceneClearColorUVE({0.028F, 0.031F, 0.038F, 1.0F});
+}
 
 [[nodiscard]] bool HasErrorUVE(const std::vector<VFX::ParticleCompileMessageUVE>& messages) noexcept {
     return std::ranges::any_of(messages, [](const VFX::ParticleCompileMessageUVE& m) {
