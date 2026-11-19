@@ -119,8 +119,11 @@ class CSharpParser:
             extra_dirs = [(mod_dir / d).resolve() for d in mod.extra_source_dirs if (mod_dir / d).is_dir()]
             search_dirs = [mod_dir] + extra_dirs
             seen_roots = set()
+            is_test_module = mod.name.endswith("Tests")
             for s_dir in search_dirs:
-                for root_dir, _, files in os.walk(s_dir):
+                for root_dir, dirnames, files in os.walk(s_dir):
+                    if not is_test_module:
+                        dirnames[:] = [d for d in dirnames if d not in ("Tests", "tests", "Testing")]
                     rpath = Path(root_dir).resolve()
                     if rpath in seen_roots or ".git" in rpath.parts or "build" in rpath.parts or ".uvbt" in rpath.parts:
                         continue
@@ -348,14 +351,15 @@ class EngineBuilder:
             text = text.replace("@UNIVEX_SELECTION_OUTLINE_FRAG@", (vp_shaders / "selection_outline.frag").read_text(encoding="utf-8"))
             sel_out.write_text(text, encoding="utf-8")
 
-        # 6. Test artifacts if Test/ exists
-        test_dir = self.repo_root / "Test"
-        if test_dir.is_dir() and bin_dir is not None:
+        # 6. Test artifacts (co-located inside module Tests/ and Editor/Blueprint/Testing/)
+        plugin_fixtures_dir = self.repo_root / "Engine" / "Runtime" / "Plugins" / "Tests" / "Fixtures"
+        bp_native_dir = self.repo_root / "Editor" / "Blueprint" / "Testing" / "Compiler" / "native"
+        if (plugin_fixtures_dir.is_dir() or bp_native_dir.is_dir()) and bin_dir is not None:
             # Build test plugins
             plugin_fixtures = [
-                (test_dir / "Plugins" / "Fixtures" / "uve_test_plugin_valid.cpp", bin_dir / "libuve_test_plugin_valid.so"),
-                (test_dir / "Plugins" / "Fixtures" / "uve_test_plugin_bad_protocol.cpp", bin_dir / "libuve_test_plugin_bad_protocol.so"),
-                (test_dir / "Plugins" / "Fixtures" / "uve_test_plugin_no_entry.cpp", bin_dir / "libuve_test_plugin_no_entry.so"),
+                (plugin_fixtures_dir / "uve_test_plugin_valid.cpp", bin_dir / "libuve_test_plugin_valid.so"),
+                (plugin_fixtures_dir / "uve_test_plugin_bad_protocol.cpp", bin_dir / "libuve_test_plugin_bad_protocol.so"),
+                (plugin_fixtures_dir / "uve_test_plugin_no_entry.cpp", bin_dir / "libuve_test_plugin_no_entry.so"),
             ]
             plugin_inc = self.repo_root / "Engine" / "Runtime" / "Plugins" / "Expose"
             for src, dst in plugin_fixtures:
@@ -392,13 +396,13 @@ class EngineBuilder:
                 cmd = [cxx, "-std=c++23", "-O2"] + inc_flags + [str(s) for s in bp_srcs] + [str(uvsc_main), "-o", str(uvsc_exe)]
                 subprocess.run(cmd, check=True)
 
-            # Generate native script sources
-            host_file = test_dir / "UVScript" / "native" / "fake_object.uvhost"
+            # Generate native Blueprint script sources
+            host_file = bp_native_dir / "fake_object.uvhost"
             script_names = ["player.uvs", "math.uvs", "waits.uvs", "errors.uvs", "methods.uvs", "collections.uvs"]
-            gen_script_dir = test_dir / "UVScript" / "native" / "generated"
+            gen_script_dir = bp_native_dir / "generated"
             gen_script_dir.mkdir(parents=True, exist_ok=True)
             for sname in script_names:
-                ssrc = test_dir / "UVScript" / "native" / sname
+                ssrc = bp_native_dir / sname
                 sdst = gen_script_dir / f"{sname}.cpp"
                 if uvsc_exe.exists() and host_file.exists() and ssrc.exists() and (not sdst.exists() or ssrc.stat().st_mtime > sdst.stat().st_mtime or host_file.stat().st_mtime > sdst.stat().st_mtime):
                     subprocess.run([str(uvsc_exe), "--host", str(host_file), "--out", str(sdst), str(ssrc)], check=True)
@@ -550,7 +554,7 @@ class EngineBuilder:
                 f'UVE_TEST_PLUGIN_VALID_PATH="{bin_dir / "libuve_test_plugin_valid.so"}"',
                 f'UVE_TEST_PLUGIN_BAD_PROTOCOL_PATH="{bin_dir / "libuve_test_plugin_bad_protocol.so"}"',
                 f'UVE_TEST_PLUGIN_NO_ENTRY_PATH="{bin_dir / "libuve_test_plugin_no_entry.so"}"',
-                f'UVE_UVSCRIPT_NATIVE_DIR="{self.repo_root / "Test" / "UVScript" / "native"}"',
+                f'UVE_UVSCRIPT_NATIVE_DIR="{self.repo_root / "Editor" / "Blueprint" / "Testing" / "Compiler" / "native"}"',
             ])
 
         print(f"\n[UVBT] ================================================================")

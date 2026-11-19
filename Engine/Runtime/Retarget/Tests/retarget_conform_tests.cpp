@@ -10,7 +10,7 @@
 
 #include <gtest/gtest.h>
 
-#include "Retarget/retarget_test_rig.h"
+#include "retarget_test_rig.h"
 #include "mesh_skinning.h"
 #include "retarget_conform.h"
 
