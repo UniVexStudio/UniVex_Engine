@@ -282,7 +282,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
     });
     menus->addMenu("Help", [] {
         return std::vector<prism::MenuItem>{
-            prism::MenuItem::Item("Spawn from UVScript: vfx.spawn(\"assets/VFX_Effect.uvfx\", pos)", {}).disabled(),
+            prism::MenuItem::Item("Spawn from Blueprint: vfx.spawn(\"assets/VFX_Effect.uvfx\", pos)", {}).disabled(),
             prism::MenuItem::Item("Right-click the Particle Graph canvas to add modules", {}).disabled(),
         };
     });

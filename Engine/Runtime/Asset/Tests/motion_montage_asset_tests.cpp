@@ -81,7 +81,7 @@ TEST(MotionMontageAssetUVETest, CurvesAreLinearAndClamped) {
 }
 
 TEST(MotionMontageAssetUVETest, SaveThenLoadRoundTrips) {
-    const std::filesystem::path path = "uve_animation_montage_round_trip.uvmontage";
+    const std::filesystem::path path = "uve_motion_montage_round_trip.uvmontage";
     std::filesystem::remove(path);
     MotionMontageAssetUVE montage = MakeAttackUVE();
     static_cast<void>(AddMontageSectionUVE(montage, "Attack", 1.0));
