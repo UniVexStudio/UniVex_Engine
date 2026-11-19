@@ -327,12 +327,12 @@ TEST(EngineCoreUVETest, InvalidCommandLineSettingFallsBackToPlatformValue) {
 TEST(EngineCoreUVETest, ProjectSettings_DeclareEngineDefaultsAndNeedARestart) {
     Config::SettingsRegistryUVE registry;
     ASSERT_TRUE(RegisterEngineProjectSettingsUVE(registry));
-    // 181 settings declared in the GetEngineProjectSettingsUVE() table plus the default-player entity
-    // registered on its own; the 5 * kLayerCountUVE layer-name settings are added on top of this.
-    // Spelled out because the number silently drifts every time a setting is added to the table -
-    // this assertion is the drift detector, so update it deliberately when the table grows (most
-    // recently for contact-shadow thickness and strength).
-    EXPECT_EQ(registry.GetCountUVE(), 182U + (5U * kLayerCountUVE));
+    // 175 settings declared in the GetEngineProjectSettingsUVE() table plus the default-player entity
+    // registered on its own; the 4 * kLayerCountUVE layer-name settings (Physics, Render, Navigation,
+    // Avoidance) are added on top of this. Spelled out because the number silently drifts every time a
+    // setting is added or removed - this assertion is the drift detector, so update it deliberately
+    // when the table changes (most recently removing the 6 pure-2D settings and LayerSetUVE::Physics2D).
+    EXPECT_EQ(registry.GetCountUVE(), 176U + (4U * kLayerCountUVE));
     namespace Id = EngineProjectSettingIdUVE;
     ASSERT_NE(registry.FindUVE(Id::kDefaultPlayerEntityUVE), nullptr);
     ASSERT_NE(registry.FindUVE(Id::kShaderProgramCacheDirectoryUVE), nullptr);
