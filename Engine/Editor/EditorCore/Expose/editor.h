@@ -1578,7 +1578,7 @@ public:
         bool playing = false;
         bool loop = true;
         bool fixedSeed = false;
-        bool showGrid = true;
+        bool showGrid = false;
         bool showBounds = false;
         bool focusPending = true;
         bool previewCameraResetPending = true;
@@ -1589,6 +1589,9 @@ public:
         std::vector<float> lastEmitterCpuMs;
         std::size_t lastInstancesDrawn = 0U;
     };
+
+    /// Computes the elevated world-space origin above the y = 0 studio floor for a VFX system's fixed bounds.
+    [[nodiscard]] static Math::Vector3UVE ResolveVfxPreviewOriginUVE(const Math::AabbUVE& fixedBounds) noexcept;
 
     /// Opens the `.uvfx` at `absolutePath` in the VFX Editor (replacing any open document).
     [[nodiscard]] bool OpenVfxEditorUVE(const std::filesystem::path& absolutePath);

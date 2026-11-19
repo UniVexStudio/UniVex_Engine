@@ -111,4 +111,7 @@ extern const std::string_view kWaterSource;
 inline constexpr std::string_view kVfxSpriteVirtualPath = "shaders/vfx_sprite.glsl";
 extern const std::string_view kVfxSpriteSource;
 
+inline constexpr std::string_view kStudioFloorPbrVirtualPath = "shaders/studio_floor_pbr.glsl";
+extern const std::string_view kStudioFloorPbrSource;
+
 } // namespace UVE::Render::Shader::BuiltIn

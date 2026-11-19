@@ -398,12 +398,6 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
                 },
                 "", prism::Icon::Camera),
             prism::MenuItem::Check(
-                "Show Floor Grid", session != nullptr && session->showGrid, [this] {
-                    if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
-                        s->showGrid = !s->showGrid;
-                    }
-                }),
-            prism::MenuItem::Check(
                 "Show Fixed Bounds", session != nullptr && session->showBounds, [this] {
                     if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
                         s->showBounds = !s->showBounds;
@@ -486,15 +480,6 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
         }
     };
     row->add(m_seedButton, CentreSlotUVE());
-
-    m_gridButton = ToolButtonUVE(prism::Icon::Grid, "Show floor grid in 3D preview", "Grid");
-    m_gridButton->setCheckable(true);
-    m_gridButton->onClick = [this] {
-        if (EditorUVE::VfxEditSessionUVE* const s = m_editor.VfxEditSessionPtrUVE()) {
-            s->showGrid = !s->showGrid;
-        }
-    };
-    row->add(m_gridButton, CentreSlotUVE());
 
     m_boundsButton = ToolButtonUVE(prism::Icon::Cube, "Show system fixed bounds box in 3D preview", "Bounds");
     m_boundsButton->setCheckable(true);

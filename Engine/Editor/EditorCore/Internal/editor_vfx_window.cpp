@@ -246,6 +246,12 @@ void EditorUVE::StopVfxPreviewUVE() {
     RestartVfxPreviewUVE();
 }
 
+Math::Vector3UVE EditorUVE::ResolveVfxPreviewOriginUVE(const Math::AabbUVE& fixedBounds) noexcept {
+    const float minY = std::isfinite(fixedBounds.min.y) ? fixedBounds.min.y : -1.0F;
+    const float elevatedY = std::clamp(std::max(1.5F, -minY + 0.35F), 1.5F, 4.0F);
+    return Math::Vector3UVE{0.0F, elevatedY, 0.0F};
+}
+
 void EditorUVE::RestartVfxPreviewUVE() {
     if (m_vfxEdit == nullptr) {
         return;
@@ -262,8 +268,10 @@ void EditorUVE::RestartVfxPreviewUVE() {
     if (!session.hasGoodSystem) {
         return;
     }
+    VFX::VfxOwnerUVE owner{};
+    owner.position = ResolveVfxPreviewOriginUVE(session.lastGoodSystem.fixedBounds);
     session.previewHandle = session.previewWorld.SpawnFromAssetUVE(
-        "vfx_editor_preview", BuildPreviewSystemUVE(session.lastGoodSystem, session.soloEmitter), {}, 0ULL, seed);
+        "vfx_editor_preview", BuildPreviewSystemUVE(session.lastGoodSystem, session.soloEmitter), owner, 0ULL, seed);
 }
 
 void EditorUVE::SetVfxPlayheadUVE(const double seconds) {
@@ -343,16 +351,29 @@ std::uint64_t EditorUVE::RenderVfxPreviewUVE(const Math::Vector2UVE& size, Math:
         if (m_vfxScene == nullptr) {
             return 0U;
         }
+        PopulateVfxDarkStudioSceneUVE(m_vfxScene->GetServicesUVE());
     }
     VfxEditSessionUVE& session = *m_vfxEdit;
     Core::EngineServicesUVE& services = m_vfxScene->GetServicesUVE();
+    const Math::Vector3UVE previewOrigin = ResolveVfxPreviewOriginUVE(session.system.fixedBounds);
+    if (session.previewHandle.IsValidUVE()) {
+        VFX::VfxOwnerUVE owner{};
+        if (const VFX::VfxOwnerUVE* const existingOwner = session.previewWorld.TryGetOwnerUVE(session.previewHandle)) {
+            owner = *existingOwner;
+        }
+        owner.position = previewOrigin;
+        static_cast<void>(session.previewWorld.SetOwnerUVE(session.previewHandle, owner));
+    }
 
     ViewportOverlayStateUVE& state = m_vfxViewportOverlayState;
     if (session.previewCameraResetPending) {
         const auto& b = session.system.fixedBounds;
-        state.studioTarget = {(b.min.x + b.max.x) * 0.5F, (b.min.y + b.max.y) * 0.5F, (b.min.z + b.max.z) * 0.5F};
-        const float radius = std::max({b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z, 1.0F});
-        state.studioRadius = radius * 0.9F;
+        const float centerX = (b.min.x + b.max.x) * 0.5F + previewOrigin.x;
+        const float centerY = (b.min.y + b.max.y) * 0.5F + previewOrigin.y;
+        const float centerZ = (b.min.z + b.max.z) * 0.5F + previewOrigin.z;
+        state.studioTarget = {centerX, std::max(previewOrigin.y, centerY), centerZ};
+        const float radius = std::max({b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z, 1.5F});
+        state.studioRadius = radius * 0.85F;
         ++state.studioFramingSerial;
         session.previewCameraResetPending = false;
     }
@@ -361,16 +382,23 @@ std::uint64_t EditorUVE::RenderVfxPreviewUVE(const Math::Vector2UVE& size, Math:
     state.gameWorkspaceActive = false;
     state.hostDrawsGizmos = false;
     state.pointerOverOverlay = false;
-    state.gridVisible = session.showGrid;
+    session.showGrid = false;
+    state.gridVisible = false;
     state.bones.clear();
     state.colliderLines.clear();
     state.collisionShapesVisible = session.showBounds;
     if (session.showBounds) {
         const auto& b = session.system.fixedBounds;
+        const float minX = b.min.x + previewOrigin.x;
+        const float maxX = b.max.x + previewOrigin.x;
+        const float minY = b.min.y + previewOrigin.y;
+        const float maxY = b.max.y + previewOrigin.y;
+        const float minZ = b.min.z + previewOrigin.z;
+        const float maxZ = b.max.z + previewOrigin.z;
         const std::array<std::array<float, 3>, 8> c{{
-            {b.min.x, b.min.y, b.min.z}, {b.max.x, b.min.y, b.min.z}, {b.max.x, b.max.y, b.min.z},
-            {b.min.x, b.max.y, b.min.z}, {b.min.x, b.min.y, b.max.z}, {b.max.x, b.min.y, b.max.z},
-            {b.max.x, b.max.y, b.max.z}, {b.min.x, b.max.y, b.max.z}}};
+            {minX, minY, minZ}, {maxX, minY, minZ}, {maxX, maxY, minZ},
+            {minX, maxY, minZ}, {minX, minY, maxZ}, {maxX, minY, maxZ},
+            {maxX, maxY, maxZ}, {minX, maxY, maxZ}}};
         constexpr std::array<std::array<int, 2>, 12> edges{{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
                                                            {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}}};
         for (const auto& e : edges) {
@@ -382,11 +410,19 @@ std::uint64_t EditorUVE::RenderVfxPreviewUVE(const Math::Vector2UVE& size, Math:
     }
     state.input = input;
 
-    // This view's own scene draws the live preview world's particles.
+    // This view's own scene draws the live preview world's particles using the live studio orbit camera.
     services.SetVfxWorldUVE(&session.previewWorld);
+    const Math::Vector3UVE extractCameraEye =
+        state.viewCamera.valid
+            ? Math::Vector3UVE{state.viewCamera.eye[0], state.viewCamera.eye[1], state.viewCamera.eye[2]}
+            : Math::Vector3UVE{0.0F, previewOrigin.y + 0.6F, 5.5F};
+    const Math::Vector3UVE extractCameraForward =
+        state.viewCamera.valid
+            ? Math::Vector3UVE{state.viewCamera.forward[0], state.viewCamera.forward[1], state.viewCamera.forward[2]}
+            : Math::Vector3UVE{0.0F, -0.1F, -1.0F};
     Render::ParticleRenderBridgeUVE::ExtractVfxUVE(session.previewWorld, session.vfxDrawList,
-                                                   Math::Vector3UVE{0.0F, 2.0F, 6.0F},
-                                                   Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+                                                   extractCameraEye,
+                                                   extractCameraForward);
     session.lastInstancesDrawn = session.vfxDrawList.stats.instancesExtracted;
     Render::IRenderer3DUVE& renderer = services.GetRenderer3DUVE();
     renderer.SetVfxDrawListUVE(&session.vfxDrawList);
