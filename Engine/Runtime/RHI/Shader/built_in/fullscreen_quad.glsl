@@ -1091,7 +1091,7 @@ void main() {
             display = clamp(display + vec3(grainNoise * filmGrainIntensity * 0.08), 0.0, 1.0);
         }
 
-        if (uDitheringEnabled != 0) {
+        if (uDitheringEnabled != 0 && covered > 0.0) {
             float dither = TriangularDitherNoiseUVE(floor(gl_FragCoord.xy));
             display = clamp(display + vec3(dither), 0.0, 1.0);
         }

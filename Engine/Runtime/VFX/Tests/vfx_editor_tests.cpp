@@ -381,7 +381,7 @@ TEST_F(VfxEditorSessionUVETest, StudioPreview_ElevatesEmitterAboveFloorWithGridD
     const Math::AabbUVE deepBounds{Math::Vector3UVE{-2.0F, -2.5F, -2.0F},
                                    Math::Vector3UVE{2.0F, 2.5F, 2.0F}};
     const Math::Vector3UVE deepOrigin = EditorUVE::ResolveVfxPreviewOriginUVE(deepBounds);
-    EXPECT_GE(deepOrigin.y + deepBounds.min.y, 0.35F);
+    EXPECT_NEAR(deepOrigin.y + deepBounds.min.y, 0.35F, 1.0e-5F);
 }
 
 } // namespace
