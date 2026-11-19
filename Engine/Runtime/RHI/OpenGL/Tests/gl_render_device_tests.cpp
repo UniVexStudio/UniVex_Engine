@@ -3106,13 +3106,15 @@ TEST_F(GlRenderDeviceUVETest, LitShadowed3DShader_DepthPrepassDarkensOccludedFra
     const ShaderHandleUVE litVertexShader = renderDevice->CreateShaderUVE(
         ShaderDescUVE{ShaderStageUVE::Vertex,
                       WithShaderStageDefineUVE(Shader::BuiltIn::kLitShadowed3DSource, "VERTEX_SHADER")});
+    std::string litFragmentInfoLog;
     const ShaderHandleUVE litFragmentShader = renderDevice->CreateShaderUVE(
         ShaderDescUVE{ShaderStageUVE::Fragment,
-                      WithShaderStageDefineUVE(Shader::BuiltIn::kLitShadowed3DSource, "FRAGMENT_SHADER")});
+                      WithShaderStageDefineUVE(Shader::BuiltIn::kLitShadowed3DSource, "FRAGMENT_SHADER")},
+        &litFragmentInfoLog);
     ASSERT_NE(shadowVertexShader, kInvalidShaderHandleUVE);
     ASSERT_NE(shadowFragmentShader, kInvalidShaderHandleUVE);
     ASSERT_NE(litVertexShader, kInvalidShaderHandleUVE);
-    ASSERT_NE(litFragmentShader, kInvalidShaderHandleUVE);
+    ASSERT_NE(litFragmentShader, kInvalidShaderHandleUVE) << litFragmentInfoLog;
 
     PipelineDescUVE shadowPipelineDesc;
     shadowPipelineDesc.vertexShader = shadowVertexShader;
