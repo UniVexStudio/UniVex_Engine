@@ -176,15 +176,22 @@ void RadixSortVfxSpritesUVE(std::vector<VfxSpriteGpuInstanceUVE>& instances,
         return;
     }
 
-    std::vector<std::uint32_t> indices(count);
-    std::vector<std::uint32_t> keys(count);
+    static thread_local std::vector<std::uint32_t> indices;
+    static thread_local std::vector<std::uint32_t> keys;
+    static thread_local std::vector<std::uint32_t> scratchIndices;
+    static thread_local std::vector<std::uint32_t> scratchKeys;
+    static thread_local std::vector<VfxSpriteGpuInstanceUVE> sortedInstances;
+    static thread_local std::vector<float> sortedDepths;
+
+    indices.resize(count);
+    keys.resize(count);
     for (std::size_t i = 0U; i < count; ++i) {
         indices[i] = static_cast<std::uint32_t>(i);
         keys[i] = FloatToDescendingRadixKeyUVE(depths[i]);
     }
 
-    std::vector<std::uint32_t> scratchIndices(count);
-    std::vector<std::uint32_t> scratchKeys(count);
+    scratchIndices.resize(count);
+    scratchKeys.resize(count);
 
     for (std::uint32_t shift = 0U; shift < 32U; shift += 8U) {
         std::array<std::size_t, 256U> histogram{};
@@ -211,15 +218,15 @@ void RadixSortVfxSpritesUVE(std::vector<VfxSpriteGpuInstanceUVE>& instances,
         indices.swap(scratchIndices);
     }
 
-    std::vector<VfxSpriteGpuInstanceUVE> sortedInstances(count);
-    std::vector<float> sortedDepths(count);
+    sortedInstances.resize(count);
+    sortedDepths.resize(count);
     for (std::size_t i = 0U; i < count; ++i) {
         const std::size_t src = indices[i];
         sortedInstances[i] = instances[src];
         sortedDepths[i] = depths[src];
     }
-    instances = std::move(sortedInstances);
-    depths = std::move(sortedDepths);
+    instances.swap(sortedInstances);
+    depths.swap(sortedDepths);
 }
 
 float ComputeVfxSoftParticleFadeUVE(const float sceneLinearDepth,

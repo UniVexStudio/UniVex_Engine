@@ -58,6 +58,13 @@ struct GlDeviceStateUVE {
     GLint maxCombinedTextureImageUnits = 0;
     GLint maxUniformBufferBindings = 0;
     GLint maxVertexAttribs = 0;
+    GLint maxArrayTextureLayers = 0;
+    GLint maxCubeMapTextureSize = 0;
+    GLint max3DTextureSize = 0;
+    RenderDeviceCapabilitiesUVE cachedCapabilities{};
+    bool capabilitiesCached = false;
+    GLuint blitReadFbo = 0U;
+    GLuint blitDrawFbo = 0U;
     // GL_COMPRESSED_TEXTURE_FORMATS is the driver-authoritative list for compressed image
     // allocation. Keep the queried internal-format tokens so Basis target selection never
     // requests a format the active context cannot sample/upload.
@@ -190,6 +197,10 @@ struct GlDeviceStateUVE {
         /// VAO/vertex layout and no render state — GlCommandBufferUVE skips the graphics-side
         /// setup for them and DispatchUVE() requires one to be the currently bound pipeline.
         bool isCompute = false;
+
+        /// Cached at uniform reflection time: true if at least one uniform is GL_IMAGE_2D, so
+        /// BindTextureUVE can skip scanning the uniform map when false.
+        bool hasImageUniforms = false;
 
         /// Every uniform reflected right after this pipeline's program successfully linked
         /// (Increment 21) — GlCommandBufferUVE's SetUniform*UVE calls look a name up here instead

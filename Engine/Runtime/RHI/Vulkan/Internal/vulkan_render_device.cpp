@@ -5901,9 +5901,10 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
         }
         static thread_local std::vector<std::uint32_t> dynamicOffsets; // replay thread only
         static thread_local std::vector<const ImplUVE::BufferRecordUVE*> tupleUniformRecords;
+        static thread_local std::vector<std::uint32_t> tupleUniformValues;
         dynamicOffsets.clear();
         tupleUniformRecords.clear();
-        std::vector<std::uint32_t> tupleUniformValues;
+        tupleUniformValues.clear();
         tupleUniformValues.reserve(record.uniformBlocks.size());
         tupleUniformRecords.reserve(record.uniformBlocks.size());
         bool anyUniformBufferBound = false;
@@ -5949,9 +5950,24 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
         ImplUVE::PipelineRecordUVE::DescriptorSetArrayUVE setsToBind = record.descriptorSets;
         if (!record.textureSlots.empty() || !record.storageSlots.empty() || anyUniformBufferBound) {
             static thread_local std::vector<const ImplUVE::TextureRecordUVE*> tupleRecords;
+            static thread_local std::vector<std::uint32_t> tupleValues;
+            static thread_local std::string tupleKey;
             tupleRecords.clear();
-            std::string tupleKey;
-            std::vector<std::uint32_t> tupleValues;
+            tupleValues.clear();
+            tupleKey.clear();
+            const std::size_t tupleSamplerSlotCount =
+                std::max(record.textureSlots.size(), record.samplerBindings.size());
+            tupleKey.reserve((record.textureSlots.size() + tupleSamplerSlotCount +
+                              record.storageSlots.size() + tupleUniformValues.size()) *
+                             8U);
+            const auto appendUintToKeyUVE = [](std::string& key, const std::uint32_t v) {
+                char digits[16]{};
+                const auto [ptr, ec] = std::to_chars(digits, digits + sizeof(digits), v);
+                if (ec == std::errc{}) {
+                    key.append(digits, static_cast<std::size_t>(ptr - digits));
+                }
+                key.push_back('#');
+            };
             tupleValues.reserve(record.textureSlots.size());
             tupleRecords.reserve(record.textureSlots.size());
             for (std::size_t slotIndex = 0; slotIndex < record.textureSlots.size(); ++slotIndex) {
@@ -6040,7 +6056,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 }
                 tupleValues.push_back(value);
                 tupleRecords.push_back(&impl.textures.at(value));
-                tupleKey.append(std::to_string(value)).push_back('#');
+                appendUintToKeyUVE(tupleKey, value);
             }
             // Tier 2.2: sampler section of the tuple key ('p'-prefixed like the 's' storage
             // section below). Covers every slot a bound sampler can feed: combined-image
@@ -6049,10 +6065,9 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
             // write time (the texture's own sampler for combined slots, the fixed sampler
             // for standalone ones).
             static thread_local std::vector<const ImplUVE::SamplerRecordUVE*> tupleSamplerRecords;
+            static thread_local std::vector<std::uint32_t> tupleSamplerValues;
             tupleSamplerRecords.clear();
-            std::vector<std::uint32_t> tupleSamplerValues;
-            const std::size_t tupleSamplerSlotCount =
-                std::max(record.textureSlots.size(), record.samplerBindings.size());
+            tupleSamplerValues.clear();
             tupleSamplerValues.reserve(tupleSamplerSlotCount);
             tupleSamplerRecords.reserve(tupleSamplerSlotCount);
             for (std::size_t slotIndex = 0; slotIndex < tupleSamplerSlotCount; ++slotIndex) {
@@ -6067,8 +6082,7 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 tupleSamplerRecords.push_back(
                     samplerValue != 0U ? &impl.samplers.at(samplerValue) : nullptr);
                 tupleKey.push_back('p');
-                tupleKey.append(std::to_string(samplerValue));
-                tupleKey.push_back('#');
+                appendUintToKeyUVE(tupleKey, samplerValue);
             }
             // M2f: storage-buffer section of the tuple key ('s'-prefixed so the concatenated
             // key stays unambiguous next to the texture section). 0 is never a live handle
@@ -6078,8 +6092,9 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
             // rejected unknown handles and non-Storage usage with a warn-once, so anything
             // still in currentStorageValues is a live Storage buffer).
             static thread_local std::vector<const ImplUVE::BufferRecordUVE*> tupleStorageRecords;
+            static thread_local std::vector<std::uint32_t> tupleStorageValues;
             tupleStorageRecords.clear();
-            std::vector<std::uint32_t> tupleStorageValues;
+            tupleStorageValues.clear();
             tupleStorageValues.reserve(record.storageSlots.size());
             tupleStorageRecords.reserve(record.storageSlots.size());
             for (std::size_t slotIndex = 0; slotIndex < record.storageSlots.size(); ++slotIndex) {
@@ -6092,16 +6107,14 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                 tupleStorageValues.push_back(value);
                 tupleStorageRecords.push_back(value != 0U ? &impl.buffers.at(value) : nullptr);
                 tupleKey.push_back('s');
-                tupleKey.append(std::to_string(value));
-                tupleKey.push_back('#');
+                appendUintToKeyUVE(tupleKey, value);
             }
             // WP5d: uniform-buffer section of the tuple key ('u'-prefixed). 0 means "use the
             // SetUniform* frame ring"; a live Uniform buffer handle routes that block's dynamic
             // UBO descriptor to the caller's VkBuffer at offset 0.
             for (const std::uint32_t uboValue : tupleUniformValues) {
                 tupleKey.push_back('u');
-                tupleKey.append(std::to_string(uboValue));
-                tupleKey.push_back('#');
+                appendUintToKeyUVE(tupleKey, uboValue);
             }
             const auto cached = record.cachedTextureSets.find(tupleKey);
             if (cached != record.cachedTextureSets.end()) {
@@ -6250,10 +6263,10 @@ void VulkanRenderDeviceUVE::ReplayRecordedCommandsUVE(const std::vector<Recorded
                         nullptr);
                 }
                 record.cachedTextureSets.emplace(tupleKey, freshSets);
-                record.cachedTextureTextures.emplace(tupleKey, std::move(tupleValues));
-                record.cachedStorageBuffers.emplace(tupleKey, std::move(tupleStorageValues));
-                record.cachedUniformBuffers.emplace(tupleKey, std::move(tupleUniformValues));
-                record.cachedTextureSamplers.emplace(tupleKey, std::move(tupleSamplerValues));
+                record.cachedTextureTextures.emplace(tupleKey, tupleValues);
+                record.cachedStorageBuffers.emplace(tupleKey, tupleStorageValues);
+                record.cachedUniformBuffers.emplace(tupleKey, tupleUniformValues);
+                record.cachedTextureSamplers.emplace(tupleKey, tupleSamplerValues);
                 setsToBind = freshSets;
             }
         }

@@ -954,86 +954,77 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
     // block-compressed and sRGB textures remain available to samplers only.
     if (m_state->gl.glBindImageTexture != nullptr) {
         const auto* const pipelineRecord = FindCurrentPipelineUVE();
-        if (pipelineRecord != nullptr) {
-            bool programHasImageUniform = false;
-            for (const auto& uniformEntry : pipelineRecord->uniforms) {
-                if (uniformEntry.second.isImageUniform) {
-                    programHasImageUniform = true;
+        if (pipelineRecord != nullptr && pipelineRecord->hasImageUniforms) {
+            GLenum imageFormat = 0;
+            switch (textureIt->second.desc.format) {
+                case TextureFormatUVE::RGBA8Unorm:
+                    // OpenGL does not provide storage-image access to sRGB texture storage.
+                    // Keep sRGB textures available to samplers, but refuse their image-unit
+                    // binding instead of issuing writes that drivers may silently discard.
+                    imageFormat = textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                      ? 0U
+                                      : GL_RGBA8;
                     break;
-                }
+                case TextureFormatUVE::RGBA16Float:
+                    imageFormat = GL_RGBA16F;
+                    break;
+                case TextureFormatUVE::R8Unorm:
+                    imageFormat = GL_R8;
+                    break;
+                case TextureFormatUVE::RG8Unorm:
+                    imageFormat = GL_RG8;
+                    break;
+                case TextureFormatUVE::R16Float:
+                    imageFormat = GL_R16F;
+                    break;
+                case TextureFormatUVE::RG16Float:
+                    imageFormat = GL_RG16F;
+                    break;
+                case TextureFormatUVE::R32Float:
+                    imageFormat = GL_R32F;
+                    break;
+                case TextureFormatUVE::RG32Float:
+                    imageFormat = GL_RG32F;
+                    break;
+                case TextureFormatUVE::RGBA32Float:
+                    imageFormat = GL_RGBA32F;
+                    break;
+                case TextureFormatUVE::Depth32Float:
+                case TextureFormatUVE::Depth24Stencil8:
+                case TextureFormatUVE::BC1RGB:
+                case TextureFormatUVE::BC3RGBA:
+                case TextureFormatUVE::BC7RGBA:
+                case TextureFormatUVE::ETC2RGB8:
+                case TextureFormatUVE::ETC2RGBA8:
+                case TextureFormatUVE::ASTC4x4RGBA:
+                    imageFormat = 0;
+                    break;
             }
-            if (programHasImageUniform) {
-                GLenum imageFormat = 0;
-                switch (textureIt->second.desc.format) {
-                    case TextureFormatUVE::RGBA8Unorm:
-                        // OpenGL does not provide storage-image access to sRGB texture storage.
-                        // Keep sRGB textures available to samplers, but refuse their image-unit
-                        // binding instead of issuing writes that drivers may silently discard.
-                        imageFormat = textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb
-                                          ? 0U
-                                          : GL_RGBA8;
-                        break;
-                    case TextureFormatUVE::RGBA16Float:
-                        imageFormat = GL_RGBA16F;
-                        break;
-                    case TextureFormatUVE::R8Unorm:
-                        imageFormat = GL_R8;
-                        break;
-                    case TextureFormatUVE::RG8Unorm:
-                        imageFormat = GL_RG8;
-                        break;
-                    case TextureFormatUVE::R16Float:
-                        imageFormat = GL_R16F;
-                        break;
-                    case TextureFormatUVE::RG16Float:
-                        imageFormat = GL_RG16F;
-                        break;
-                    case TextureFormatUVE::R32Float:
-                        imageFormat = GL_R32F;
-                        break;
-                    case TextureFormatUVE::RG32Float:
-                        imageFormat = GL_RG32F;
-                        break;
-                    case TextureFormatUVE::RGBA32Float:
-                        imageFormat = GL_RGBA32F;
-                        break;
-                    case TextureFormatUVE::Depth32Float:
-                    case TextureFormatUVE::Depth24Stencil8:
-                    case TextureFormatUVE::BC1RGB:
-                    case TextureFormatUVE::BC3RGBA:
-                    case TextureFormatUVE::BC7RGBA:
-                    case TextureFormatUVE::ETC2RGB8:
-                    case TextureFormatUVE::ETC2RGBA8:
-                    case TextureFormatUVE::ASTC4x4RGBA:
-                        imageFormat = 0;
-                        break;
-                }
-                // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
-                // sampler-only, matching the Vulkan backend's black-sink fallback.
-                const bool storageAllowed = HasTextureUsageUVE(textureUsage, TextureUsageUVE::Storage);
-                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U && storageAllowed) {
-                    m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
-                                                   0, GL_READ_WRITE, imageFormat);
+            // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
+            // sampler-only, matching the Vulkan backend's black-sink fallback.
+            const bool storageAllowed = HasTextureUsageUVE(textureUsage, TextureUsageUVE::Storage);
+            if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U && storageAllowed) {
+                m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
+                                               0, GL_READ_WRITE, imageFormat);
+            } else {
+                // Do not leave a prior command's image binding live when the new sampled
+                // texture cannot legally serve as a storage image.
+                m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
+                if (!storageAllowed) {
+                    UVE_ERROR("GlCommandBufferUVE: texture was created without TextureUsageUVE::Storage; "
+                              "the image unit is left unbound");
+                } else if (textureIt->second.desc.arrayLayers > 1U) {
+                    UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
+                              "storage images in Tier 2.3; the image unit is left unbound");
+                } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
+                    UVE_ERROR("GlCommandBufferUVE: block-compressed textures cannot be bound as storage "
+                              "images; the image unit is left unbound");
+                } else if (textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb) {
+                    UVE_ERROR("GlCommandBufferUVE: sRGB textures cannot be bound as storage images; "
+                              "the image unit is left unbound");
                 } else {
-                    // Do not leave a prior command's image binding live when the new sampled
-                    // texture cannot legally serve as a storage image.
-                    m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
-                    if (!storageAllowed) {
-                        UVE_ERROR("GlCommandBufferUVE: texture was created without TextureUsageUVE::Storage; "
-                                  "the image unit is left unbound");
-                    } else if (textureIt->second.desc.arrayLayers > 1U) {
-                        UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
-                                  "storage images in Tier 2.3; the image unit is left unbound");
-                    } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
-                        UVE_ERROR("GlCommandBufferUVE: block-compressed textures cannot be bound as storage "
-                                  "images; the image unit is left unbound");
-                    } else if (textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb) {
-                        UVE_ERROR("GlCommandBufferUVE: sRGB textures cannot be bound as storage images; "
-                                  "the image unit is left unbound");
-                    } else {
-                        UVE_ERROR("GlCommandBufferUVE: depth textures cannot be bound as storage "
-                                  "images; the image unit is left unbound");
-                    }
+                    UVE_ERROR("GlCommandBufferUVE: depth textures cannot be bound as storage "
+                              "images; the image unit is left unbound");
                 }
             }
         }

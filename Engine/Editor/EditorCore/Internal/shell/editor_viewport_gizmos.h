@@ -83,6 +83,8 @@ private:
     std::vector<BillboardUVE> m_billboards;
 
     bool m_hot = false;
+    int m_lastNavHover = -1;
+    int m_lastGizmoHover = -1;
     DragUVE m_dragging = DragUVE::None;
     prism::Vec2 m_navPress{0.0F, 0.0F};
     prism::Vec2 m_navLast{0.0F, 0.0F};

@@ -39,7 +39,9 @@ constexpr std::size_t kFrustumPlaneCountUVE = 6U;
 /// has not written it yet. A caller recording an indirect draw immediately afterwards would
 /// otherwise draw with whatever instanceCount the buffer held before.
 void FlushComputeSubmissionUVE(IRenderDeviceUVE& device) {
-    device.PresentUVE();
+    if (device.GetBackendNameUVE().starts_with("Vulkan")) {
+        device.PresentUVE();
+    }
 }
 
 } // namespace

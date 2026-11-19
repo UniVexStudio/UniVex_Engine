@@ -6493,9 +6493,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetIntUVE("uFogVolumeCount",
                                                    static_cast<std::int32_t>(m_impl->fogVolumeCount));
             const auto& fogNames = GetRendererUniformNamesUVE().fogVolumes;
-            for (std::size_t volumeIndex = 0; volumeIndex < Scene::kMaximumFogVolumesPerFrameUVE; ++volumeIndex) {
-                const Scene::FogVolume3DFrameUVE volume =
-                    volumeIndex < m_impl->fogVolumeCount ? m_impl->fogVolumes[volumeIndex] : Scene::FogVolume3DFrameUVE{};
+            const std::size_t activeFogVolumes =
+                std::min(m_impl->fogVolumeCount, Scene::kMaximumFogVolumesPerFrameUVE);
+            for (std::size_t volumeIndex = 0; volumeIndex < activeFogVolumes; ++volumeIndex) {
+                const Scene::FogVolume3DFrameUVE& volume = m_impl->fogVolumes[volumeIndex];
                 const FogVolumeUniformNamesUVE& names = fogNames[volumeIndex];
                 m_impl->toneMappingProgram->SetVector3UVE(names.position, volume.worldPosition);
                 m_impl->toneMappingProgram->SetVector3UVE(names.axisX, volume.axisX);

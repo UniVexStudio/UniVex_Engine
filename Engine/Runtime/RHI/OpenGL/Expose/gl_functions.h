@@ -151,6 +151,7 @@ struct GlFunctionsUVE {
     PFNGLGETACTIVEUNIFORMPROC glGetActiveUniform = nullptr;
     PFNGLGETPROGRAMBINARYPROC glGetProgramBinary = nullptr;
     PFNGLPROGRAMBINARYPROC glProgramBinary = nullptr;
+    PFNGLPROGRAMPARAMETERIPROC glProgramParameteri = nullptr;
 
     // Tier 2.2 sampler objects (core since desktop GL 3.3 / GLES 3.0). Optional like the
     // program-binary entry points above: CreateSamplerUVE fails closed when getProcAddress
