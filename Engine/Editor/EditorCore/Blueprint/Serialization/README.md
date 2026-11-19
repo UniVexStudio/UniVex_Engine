@@ -1,3 +1,3 @@
 # Engine/Editor/EditorCore/Blueprint/Serialization
 
-Blueprint serialization and migration (Graph, Node, Pin, Asset, Versioning, Migration, Import, Export). Active .uvbp/.uvwbp serialization currently lives in Engine/Runtime/Asset/Internal/blueprint_asset.cpp and widget_blueprint_asset.cpp.
+Blueprint serialization and migration (`blueprint_asset.cpp`, `widget_blueprint_asset.cpp`, `blueprint_serialization.{h,cpp}`): `.uvbp`/`.uvwbp` persistence, granular Graph/Node/Pin/Asset JSON serialization, schema Versioning, Migration pipeline, and Import/Export.

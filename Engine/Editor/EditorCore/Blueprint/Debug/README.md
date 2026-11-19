@@ -1,3 +1,3 @@
 # Engine/Editor/EditorCore/Blueprint/Debug
 
-Blueprint debugging facilities (Breakpoints, Watch, ExecutionTrace, LiveValues, CallStack, Diagnostics). VM line-debugger hooks currently live in Engine/Editor/EditorCore/Blueprint/Runtime/VirtualMachine/.
+Blueprint debugging facilities (`blueprint_debugger.{h,cpp}`): Breakpoints, Watch evaluation, ExecutionTrace, LiveValues snapshots, CallStack frames, Diagnostics, and `BlueprintDebugSessionUVE` integrating with VM hooks in `Runtime/VirtualMachine/`.
