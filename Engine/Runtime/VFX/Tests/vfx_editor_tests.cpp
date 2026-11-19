@@ -365,5 +365,24 @@ TEST_F(VfxEditorSessionUVETest, SoloEmitter_PlaysOnlyThatEmitter) {
     EXPECT_GT(instance->GetEmitterStateUVE(1U).liveCount, 0U);
 }
 
+TEST_F(VfxEditorSessionUVETest, StudioPreview_ElevatesEmitterAboveFloorWithGridDisabledByDefault) {
+    ASSERT_TRUE(m_editor->OpenVfxEditorUVE(CreateSparksUVE()));
+    const EditorUVE::VfxEditSessionUVE* const session = m_editor->VfxEditSessionPtrUVE();
+    ASSERT_NE(session, nullptr);
+    EXPECT_FALSE(session->showGrid);
+    ASSERT_TRUE(session->previewHandle.IsValidUVE());
+
+    const VFX::VfxOwnerUVE* const owner = session->previewWorld.TryGetOwnerUVE(session->previewHandle);
+    ASSERT_NE(owner, nullptr);
+    EXPECT_FLOAT_EQ(owner->position.x, 0.0F);
+    EXPECT_GE(owner->position.y, 1.5F);
+    EXPECT_FLOAT_EQ(owner->position.z, 0.0F);
+
+    const Math::AabbUVE deepBounds{Math::Vector3UVE{-2.0F, -2.5F, -2.0F},
+                                   Math::Vector3UVE{2.0F, 2.5F, 2.0F}};
+    const Math::Vector3UVE deepOrigin = EditorUVE::ResolveVfxPreviewOriginUVE(deepBounds);
+    EXPECT_GE(deepOrigin.y + deepBounds.min.y, 0.35F);
+}
+
 } // namespace
 } // namespace UVE::Editor::Tests

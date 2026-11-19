@@ -1166,6 +1166,186 @@ struct Renderer3DUVE::ImplUVE {
     Math::Vector3UVE reflectionProbeHalfExtents{};
     TextureHandleUVE reflectionProbeCube = kInvalidTextureHandleUVE;
 
+    std::optional<StudioFloorSettingsUVE> studioFloorSettings{};
+    std::shared_ptr<Shader::ShaderProgramUVE> studioFloorProgram;
+    BufferHandleUVE studioFloorVertexBuffer = kInvalidBufferHandleUVE;
+    BufferHandleUVE studioFloorIndexBuffer = kInvalidBufferHandleUVE;
+    TextureHandleUVE studioFloorAlbedoTexture = kInvalidTextureHandleUVE;
+    TextureHandleUVE studioFloorNormalTexture = kInvalidTextureHandleUVE;
+    TextureHandleUVE studioFloorOrmTexture = kInvalidTextureHandleUVE;
+
+    void DestroyStudioFloorResourcesUVE() {
+        DestroyBufferIfValidUVE(renderDevice, studioFloorVertexBuffer);
+        DestroyBufferIfValidUVE(renderDevice, studioFloorIndexBuffer);
+        DestroyTextureIfValidUVE(renderDevice, studioFloorAlbedoTexture);
+        DestroyTextureIfValidUVE(renderDevice, studioFloorNormalTexture);
+        DestroyTextureIfValidUVE(renderDevice, studioFloorOrmTexture);
+        studioFloorVertexBuffer = kInvalidBufferHandleUVE;
+        studioFloorIndexBuffer = kInvalidBufferHandleUVE;
+        studioFloorAlbedoTexture = kInvalidTextureHandleUVE;
+        studioFloorNormalTexture = kInvalidTextureHandleUVE;
+        studioFloorOrmTexture = kInvalidTextureHandleUVE;
+        studioFloorProgram.reset();
+    }
+
+    [[nodiscard]] bool EnsureStudioFloorResourcesUVE() {
+        if (!studioFloorProgram) {
+            Shader::ShaderProgramDescUVE floorDesc;
+            floorDesc.virtualFilePath = std::string(Shader::BuiltIn::kStudioFloorPbrVirtualPath);
+            floorDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kStudioFloorPbrSource);
+            floorDesc.vertexLayout = MeshVertexLayoutUVE();
+            floorDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
+            floorDesc.depthTestEnabled = true;
+            floorDesc.depthWriteEnabled = true;
+            floorDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+            floorDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+            floorDesc.cullMode = CullModeUVE::None;
+            floorDesc.debugNameUVE = "StudioFloorPBR";
+            studioFloorProgram = shaderManager.CreateProgramUVE(floorDesc);
+        }
+        if (studioFloorVertexBuffer == kInvalidBufferHandleUVE ||
+            studioFloorIndexBuffer == kInvalidBufferHandleUVE) {
+            constexpr float kExtent = 48.0F;
+            const std::array<Asset::MeshVertexUVE, 4U> vertices{{
+                Asset::MeshVertexUVE{{-kExtent, 0.0F, -kExtent}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F, 1.0F}, {0.0F, 0.0F}},
+                Asset::MeshVertexUVE{{-kExtent, 0.0F,  kExtent}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F, 1.0F}, {0.0F, 1.0F}},
+                Asset::MeshVertexUVE{{ kExtent, 0.0F,  kExtent}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 1.0F}},
+                Asset::MeshVertexUVE{{ kExtent, 0.0F, -kExtent}, {0.0F, 1.0F, 0.0F}, {1.0F, 0.0F, 0.0F, 1.0F}, {1.0F, 0.0F}},
+            }};
+            const std::array<std::uint32_t, 6U> indices{{0U, 1U, 2U, 0U, 2U, 3U}};
+            DestroyBufferIfValidUVE(renderDevice, studioFloorVertexBuffer);
+            DestroyBufferIfValidUVE(renderDevice, studioFloorIndexBuffer);
+            studioFloorVertexBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{sizeof(vertices), BufferUsageUVE::Vertex},
+                std::as_bytes(std::span<const Asset::MeshVertexUVE>{vertices}));
+            studioFloorIndexBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{sizeof(indices), BufferUsageUVE::Index},
+                std::as_bytes(std::span<const std::uint32_t>{indices}));
+        }
+        if (studioFloorAlbedoTexture == kInvalidTextureHandleUVE ||
+            studioFloorNormalTexture == kInvalidTextureHandleUVE ||
+            studioFloorOrmTexture == kInvalidTextureHandleUVE) {
+            constexpr std::uint32_t kTexSize = 256U;
+            constexpr std::size_t kTexPixels = static_cast<std::size_t>(kTexSize) * kTexSize;
+            std::vector<float> heightMap(kTexPixels, 0.0F);
+            std::vector<std::uint8_t> albedoBytes(kTexPixels * 4U, 0U);
+            std::vector<std::uint8_t> normalBytes(kTexPixels * 4U, 0U);
+            std::vector<std::uint8_t> ormBytes(kTexPixels * 4U, 0U);
+
+            const auto hashGrid = [](const int x, const int y, const int period, const std::uint32_t seed) noexcept -> float {
+                const int wx = ((x % period) + period) % period;
+                const int wy = ((y % period) + period) % period;
+                std::uint32_t h = static_cast<std::uint32_t>(wx) * 374761393U +
+                                  static_cast<std::uint32_t>(wy) * 668265263U + seed * 2246822519U;
+                h = (h ^ (h >> 13U)) * 1274126177U;
+                h ^= (h >> 16U);
+                return static_cast<float>(h & 0xFFFFU) / 65535.0F;
+            };
+            const auto sampleTileNoise = [&](const float u, const float v, const int period, const std::uint32_t seed) noexcept -> float {
+                const float gx = u * static_cast<float>(period);
+                const float gy = v * static_cast<float>(period);
+                const int x0 = static_cast<int>(std::floor(gx));
+                const int y0 = static_cast<int>(std::floor(gy));
+                const float fx = gx - static_cast<float>(x0);
+                const float fy = gy - static_cast<float>(y0);
+                const float sx = fx * fx * (3.0F - 2.0F * fx);
+                const float sy = fy * fy * (3.0F - 2.0F * fy);
+                const float n00 = hashGrid(x0, y0, period, seed);
+                const float n10 = hashGrid(x0 + 1, y0, period, seed);
+                const float n01 = hashGrid(x0, y0 + 1, period, seed);
+                const float n11 = hashGrid(x0 + 1, y0 + 1, period, seed);
+                return (n00 * (1.0F - sx) + n10 * sx) * (1.0F - sy) +
+                       (n01 * (1.0F - sx) + n11 * sx) * sy;
+            };
+
+            for (std::uint32_t y = 0U; y < kTexSize; ++y) {
+                const float v = (static_cast<float>(y) + 0.5F) / static_cast<float>(kTexSize);
+                for (std::uint32_t x = 0U; x < kTexSize; ++x) {
+                    const float u = (static_cast<float>(x) + 0.5F) / static_cast<float>(kTexSize);
+                    const float nMacro = sampleTileNoise(u, v, 8, 11U);
+                    const float nMid = sampleTileNoise(u, v, 24, 37U);
+                    const float nFine = sampleTileNoise(u, v, 64, 73U);
+                    const float nMicro = sampleTileNoise(u, v, 128, 131U);
+                    // Subtle brushed concrete/basalt micro-grain along X.
+                    const float brushed = sampleTileNoise(u * 0.25F, v, 96, 197U);
+                    const float fbm = 0.36F * nMacro + 0.28F * nMid + 0.20F * nFine + 0.16F * nMicro;
+
+                    // Subtle recessed 2x2 architectural slab seam (no bright grid lines).
+                    const float tileU = std::fmod(u * 2.0F, 1.0F);
+                    const float tileV = std::fmod(v * 2.0F, 1.0F);
+                    const float edgeDist = std::min({tileU, 1.0F - tileU, tileV, 1.0F - tileV});
+                    const float seamMask = std::clamp(edgeDist / 0.014F, 0.0F, 1.0F);
+                    const float seamSmooth = seamMask * seamMask * (3.0F - 2.0F * seamMask);
+
+                    const float height = (fbm * 0.78F + brushed * 0.22F) * (0.65F + 0.35F * seamSmooth);
+                    const std::size_t idx = static_cast<std::size_t>(y) * kTexSize + x;
+                    heightMap[idx] = height;
+
+                    // Dark studio slate-basalt albedo (sRGB ~29..41 out of 255) with subtle mineral variation.
+                    const float baseTone = (0.118F + 0.038F * (fbm - 0.5F) + 0.012F * (brushed - 0.5F)) *
+                                           (0.86F + 0.14F * seamSmooth);
+                    const auto toByte = [](const float c) noexcept -> std::uint8_t {
+                        return static_cast<std::uint8_t>(std::lround(std::clamp(c, 0.0F, 1.0F) * 255.0F));
+                    };
+                    albedoBytes[idx * 4U + 0U] = toByte(baseTone * 0.96F);
+                    albedoBytes[idx * 4U + 1U] = toByte(baseTone * 0.99F);
+                    albedoBytes[idx * 4U + 2U] = toByte(baseTone * 1.06F);
+                    albedoBytes[idx * 4U + 3U] = 255U;
+
+                    const float ao = std::clamp((0.88F + 0.12F * nFine) * (0.82F + 0.18F * seamSmooth), 0.0F, 1.0F);
+                    const float roughness = std::clamp(0.74F - 0.10F * (fbm - 0.5F) + 0.06F * (1.0F - seamSmooth), 0.45F, 0.92F);
+                    ormBytes[idx * 4U + 0U] = toByte(ao);
+                    ormBytes[idx * 4U + 1U] = toByte(roughness);
+                    ormBytes[idx * 4U + 2U] = 0U;
+                    ormBytes[idx * 4U + 3U] = 255U;
+                }
+            }
+
+            for (std::uint32_t y = 0U; y < kTexSize; ++y) {
+                const std::uint32_t yPrev = (y + kTexSize - 1U) % kTexSize;
+                const std::uint32_t yNext = (y + 1U) % kTexSize;
+                for (std::uint32_t x = 0U; x < kTexSize; ++x) {
+                    const std::uint32_t xPrev = (x + kTexSize - 1U) % kTexSize;
+                    const std::uint32_t xNext = (x + 1U) % kTexSize;
+                    const float hL = heightMap[static_cast<std::size_t>(y) * kTexSize + xPrev];
+                    const float hR = heightMap[static_cast<std::size_t>(y) * kTexSize + xNext];
+                    const float hD = heightMap[static_cast<std::size_t>(yPrev) * kTexSize + x];
+                    const float hU = heightMap[static_cast<std::size_t>(yNext) * kTexSize + x];
+                    constexpr float kBumpStrength = 1.65F;
+                    const Math::Vector3UVE n = Math::NormalizeUVE(
+                        Math::Vector3UVE{(hL - hR) * kBumpStrength, (hD - hU) * kBumpStrength, 1.0F});
+                    const auto toByte = [](const float c) noexcept -> std::uint8_t {
+                        return static_cast<std::uint8_t>(std::lround(std::clamp(c, 0.0F, 1.0F) * 255.0F));
+                    };
+                    const std::size_t idx = static_cast<std::size_t>(y) * kTexSize + x;
+                    normalBytes[idx * 4U + 0U] = toByte(n.x * 0.5F + 0.5F);
+                    normalBytes[idx * 4U + 1U] = toByte(n.y * 0.5F + 0.5F);
+                    normalBytes[idx * 4U + 2U] = toByte(n.z * 0.5F + 0.5F);
+                    normalBytes[idx * 4U + 3U] = 255U;
+                }
+            }
+
+            DestroyTextureIfValidUVE(renderDevice, studioFloorAlbedoTexture);
+            DestroyTextureIfValidUVE(renderDevice, studioFloorNormalTexture);
+            DestroyTextureIfValidUVE(renderDevice, studioFloorOrmTexture);
+            studioFloorAlbedoTexture = renderDevice.CreateTextureUVE(
+                TextureDescUVE{kTexSize, kTexSize, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Srgb},
+                std::as_bytes(std::span<const std::uint8_t>{albedoBytes}));
+            studioFloorNormalTexture = renderDevice.CreateTextureUVE(
+                TextureDescUVE{kTexSize, kTexSize, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear},
+                std::as_bytes(std::span<const std::uint8_t>{normalBytes}));
+            studioFloorOrmTexture = renderDevice.CreateTextureUVE(
+                TextureDescUVE{kTexSize, kTexSize, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear},
+                std::as_bytes(std::span<const std::uint8_t>{ormBytes}));
+        }
+        return studioFloorProgram != nullptr && studioFloorProgram->IsValidUVE() &&
+               studioFloorVertexBuffer != kInvalidBufferHandleUVE &&
+               studioFloorIndexBuffer != kInvalidBufferHandleUVE &&
+               studioFloorAlbedoTexture != kInvalidTextureHandleUVE &&
+               studioFloorNormalTexture != kInvalidTextureHandleUVE &&
+               studioFloorOrmTexture != kInvalidTextureHandleUVE;
+    }
+
     void DestroyReflectionProbeGpuCacheUVE(ReflectionProbeGpuCacheUVE& cache) {
         DestroyTextureIfValidUVE(renderDevice, cache.cube);
         cache.cube = kInvalidTextureHandleUVE;
@@ -4617,6 +4797,7 @@ Renderer3DUVE::~Renderer3DUVE() {
     DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->particleVertexBuffer);
     DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->uiVertexBuffer);
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->uiFontAtlasTexture);
+    m_impl->DestroyStudioFloorResourcesUVE();
 }
 
 bool Renderer3DUVE::ResizeTargetsUVE(const std::uint32_t width, const std::uint32_t height) {
@@ -5730,6 +5911,100 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     }
                 }
                 commandBuffer.DrawUVE(3);
+                commandBuffer.EndRenderPassUVE();
+            });
+    }
+
+    if (!capturingProbe &&
+        m_impl->studioFloorSettings.has_value() &&
+        m_impl->studioFloorSettings->enabledUVE &&
+        m_impl->EnsureStudioFloorResourcesUVE()) {
+        const StudioFloorSettingsUVE floorSettings = *m_impl->studioFloorSettings;
+        const std::array<RenderGraphResourceUseUVE, 2U> studioFloorResources{
+            RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::ReadWrite},
+            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
+        renderGraph.AddPassUVE(
+            "StudioFloor", studioFloorResources,
+            [this, viewProjection, viewPosition, floorSettings, lights](ICommandBufferUVE& commandBuffer) {
+                RenderPassDescUVE passDesc;
+                passDesc.colorAttachment = m_impl->colorTarget;
+                passDesc.depthAttachment = m_impl->depthTarget;
+                passDesc.colorLoadOp = LoadOpUVE::Load;
+                passDesc.depthLoadOp = LoadOpUVE::Load;
+                commandBuffer.BeginRenderPassUVE(passDesc);
+
+                m_impl->studioFloorProgram->SetMatrix4x4UVE("uViewProjection", viewProjection);
+                m_impl->studioFloorProgram->SetFloatUVE("uFloorY", floorSettings.heightYUVE);
+                m_impl->studioFloorProgram->SetVector3UVE("uViewPosition", viewPosition);
+                m_impl->studioFloorProgram->SetVector3UVE("uPivotPosition", floorSettings.pivotPositionUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uTileScale", floorSettings.tileScaleUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uFadeStartRadius", floorSettings.fadeStartRadiusMetersUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uFadeEndRadius", floorSettings.fadeEndRadiusMetersUVE);
+                m_impl->studioFloorProgram->SetVector3UVE("uBaseTint", floorSettings.baseTintUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uRoughnessScale", floorSettings.roughnessScaleUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uSpecularStrength", floorSettings.specularStrengthUVE);
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyTopColor", m_impl->environmentFrame.skyTopColor);
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyHorizonColor", m_impl->environmentFrame.skyHorizonColor);
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyGroundColor", m_impl->environmentFrame.skyGroundColor);
+                m_impl->studioFloorProgram->SetFloatUVE("uAmbientEnergy",
+                                                        std::max(m_impl->environmentFrame.ambientEnergy, 0.35F));
+                m_impl->studioFloorProgram->SetIntUVE("uAlbedoMap", 0);
+                m_impl->studioFloorProgram->SetIntUVE("uNormalMap", 1);
+                m_impl->studioFloorProgram->SetIntUVE("uOrmMap", 2);
+
+                std::array<Math::Vector3UVE, 4U> lightPositions{};
+                std::array<Math::Vector3UVE, 4U> lightColors{};
+                std::array<float, 4U> lightRanges{{16.0F, 16.0F, 16.0F, 16.0F}};
+                std::int32_t lightCount = 0;
+                for (const LightDataUVE& light : lights) {
+                    if (light.type == Scene::LightTypeUVE::Directional || light.intensity <= 0.0F) {
+                        continue;
+                    }
+                    if (lightCount >= 4) {
+                        break;
+                    }
+                    const std::size_t idx = static_cast<std::size_t>(lightCount++);
+                    lightPositions[idx] = light.position;
+                    lightColors[idx] = Math::ToVector3UVE(light.color) * light.intensity;
+                    lightRanges[idx] = std::max(light.range, 1.0F);
+                }
+                if (lightCount == 0) {
+                    // Built-in 3-point studio light rig centered around the studio floor pivot.
+                    const Math::Vector3UVE p = floorSettings.pivotPositionUVE;
+                    lightCount = 3;
+                    lightPositions[0U] = Math::Vector3UVE{p.x + 3.5F, floorSettings.heightYUVE + 5.2F, p.z + 3.8F};
+                    lightColors[0U] = Math::Vector3UVE{1.0F, 0.96F, 0.90F} * 2.2F;
+                    lightRanges[0U] = 22.0F;
+                    lightPositions[1U] = Math::Vector3UVE{p.x - 4.0F, floorSettings.heightYUVE + 3.8F, p.z - 3.5F};
+                    lightColors[1U] = Math::Vector3UVE{0.58F, 0.72F, 1.0F} * 1.45F;
+                    lightRanges[1U] = 20.0F;
+                    lightPositions[2U] = Math::Vector3UVE{p.x - 2.8F, floorSettings.heightYUVE + 2.6F, p.z + 4.2F};
+                    lightColors[2U] = Math::Vector3UVE{0.78F, 0.84F, 0.96F} * 0.95F;
+                    lightRanges[2U] = 18.0F;
+                }
+                m_impl->studioFloorProgram->SetIntUVE("uLightCount", lightCount);
+                for (std::size_t i = 0U; i < 4U; ++i) {
+                    const std::string idxStr = std::to_string(i);
+                    m_impl->studioFloorProgram->SetVector3UVE("uLightPositions[" + idxStr + "]", lightPositions[i]);
+                    m_impl->studioFloorProgram->SetVector3UVE("uLightColors[" + idxStr + "]", lightColors[i]);
+                    m_impl->studioFloorProgram->SetFloatUVE("uLightRanges[" + idxStr + "]", lightRanges[i]);
+                }
+
+                m_impl->studioFloorProgram->ApplyToUVE(commandBuffer);
+                commandBuffer.BindTextureUVE(m_impl->studioFloorAlbedoTexture, 0U);
+                commandBuffer.BindTextureUVE(m_impl->studioFloorNormalTexture, 1U);
+                commandBuffer.BindTextureUVE(m_impl->studioFloorOrmTexture, 2U);
+                if (m_impl->materialRepeatSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->materialRepeatSampler, 0U);
+                    commandBuffer.BindSamplerUVE(m_impl->materialRepeatSampler, 1U);
+                    commandBuffer.BindSamplerUVE(m_impl->materialRepeatSampler, 2U);
+                }
+                commandBuffer.BindVertexBufferUVE(m_impl->studioFloorVertexBuffer, 0U);
+                commandBuffer.BindIndexBufferUVE(m_impl->studioFloorIndexBuffer);
+                commandBuffer.DrawIndexedUVE(6U, 1U, 0U);
+                if (m_impl->renderDevice.GetBackendNameUVE() == "OpenGL") {
+                    ++m_impl->lastFrameDiagnostics.glDrawCallsIssued;
+                }
                 commandBuffer.EndRenderPassUVE();
             });
     }
@@ -6889,6 +7164,10 @@ void Renderer3DUVE::SetUIRuntimeUVE(const UI::UIRuntimeUVE* const uiRuntime) noe
 
 void Renderer3DUVE::SetVfxDrawListUVE(const VfxDrawListUVE* const vfxDrawList) noexcept {
     m_impl->vfxDrawListForFrame = vfxDrawList;
+}
+
+void Renderer3DUVE::SetStudioFloorUVE(const std::optional<StudioFloorSettingsUVE>& settings) noexcept {
+    m_impl->studioFloorSettings = settings;
 }
 
 void Renderer3DUVE::SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept {

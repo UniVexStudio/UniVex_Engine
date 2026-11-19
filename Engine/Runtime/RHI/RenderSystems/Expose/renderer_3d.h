@@ -79,6 +79,7 @@ public:
     void SetMeshUploadBudgetUVE(std::size_t meshesPerFrame) noexcept override;
     void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
     void SetVfxDrawListUVE(const VfxDrawListUVE* vfxDrawList) noexcept override;
+    void SetStudioFloorUVE(const std::optional<StudioFloorSettingsUVE>& settings) noexcept override;
     /// Renders every 3D View the UI drew last frame (UIView3DComponentUVE) into its own picture,
     /// which the UI pass then draws in its rect. Called at the start of each frame.
     void CaptureUIViewsUVE(Scene::IEntityManagerUVE& entityManager, Scene::EntityUVE cameraEntity);

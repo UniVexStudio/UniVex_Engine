@@ -100,6 +100,21 @@ struct CullingSettingsUVE final {
     bool gpuOcclusionCullingEnabledUVE = false;
 };
 
+/// Opt-in dark studio floor plane rendered inside the HDR scene pass (before VfxParticles,
+/// SSAO, Bloom, and ToneMapping) for dedicated studio preview viewports.
+struct StudioFloorSettingsUVE final {
+    bool enabledUVE = false;
+    float heightYUVE = 0.0F;
+    float halfExtentMetersUVE = 45.0F;
+    float tileScaleUVE = 0.45F;
+    float fadeStartRadiusMetersUVE = 9.0F;
+    float fadeEndRadiusMetersUVE = 34.0F;
+    Math::Vector3UVE pivotPositionUVE{0.0F, 0.0F, 0.0F};
+    Math::Vector3UVE baseTintUVE{1.0F, 1.0F, 1.0F};
+    float roughnessScaleUVE = 1.0F;
+    float specularStrengthUVE = 0.58F;
+};
+
 /// A copied, frame-local account of observable Renderer3DUVE work. Each field names evidence that
 /// the renderer actually has: extraction and recorded-pass/draw counts are CPU-side facts;
 /// `glDrawCallsIssued` means a draw call was dispatched through the immediate OpenGL backend, not
@@ -481,6 +496,11 @@ public:
     /// Pass `nullptr` (the default) to draw no VFX sprites this frame.
     virtual void SetVfxDrawListUVE(const VfxDrawListUVE* vfxDrawList) noexcept {
         static_cast<void>(vfxDrawList);
+    }
+
+    /// Configures or clears the opt-in dark studio PBR floor plane for studio preview viewports.
+    virtual void SetStudioFloorUVE(const std::optional<StudioFloorSettingsUVE>& settings) noexcept {
+        static_cast<void>(settings);
     }
 
     /// Returns the last frame's copied renderer evidence snapshot. The snapshot intentionally does
