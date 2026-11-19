@@ -30,10 +30,11 @@ public class EditorCoreModule : ModuleRules
         });
 
         // The editor's PRISM windows: shared pieces in shell/, each kind of asset editor in a folder
-        // of its own (Blueprint Class in Blueprint/Editor, Animation Graph, Widget Blueprint, Montage,
-        // Retarget, Animation Library, VFX).
+        // of its own (Entity, Animation Graph, Widget Blueprint, Montage, Retarget, Animation Library,
+        // VFX, and Blueprint Graph in Blueprint/Editor).
         PrivateIncludePaths.AddRange(new string[] {
             "Internal/shell",
+            "Internal/shell/entity",
             "Blueprint/Editor",
             "Internal/shell/anim_graph",
             "Internal/shell/widget",
