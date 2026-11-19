@@ -693,7 +693,7 @@ TEST_F(BlueprintUVETest, WidgetNodesMoveSizeFadeAndAnimateWidgets) {
 }
 
 TEST_F(BlueprintUVETest, NetworkingNodesDelegateToEngineRuntimeNetworking) {
-    // Verify the Networking nodes defined in Editor/Blueprint/Nodes/Networking/ are registered in
+    // Verify the Networking nodes defined in Engine/Editor/EditorCore/Blueprint/Nodes/Networking/ are registered in
     // the Blueprint catalog, translate cleanly, and execute against BlueprintObjectHostUVE
     // (which delegates directly to Engine/Runtime/Networking/).
     const Asset::BlueprintNodeTypeUVE* const relayCount = Asset::FindBlueprintNodeTypeUVE("net_relay_peer_count");

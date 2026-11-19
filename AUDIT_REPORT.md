@@ -5,10 +5,10 @@
 - **Located feature branch**: `feature/vfx-particle-graph` (`origin/feature/vfx-particle-graph`, commit `5be1902a`, branched from `02659ffc` on top of `master`).
   - Other repository branches verified via `git branch -a`: `master` (`f698eeaf`, `origin/master` at `ece5c7b5`) and `origin/feature/prism-ui-editor` (`fdb2c16a`).
   - `feature/vfx-particle-graph` contained the VFX particle graph implementation plus Phase 2 graph authority fixes (`5be1902a`).
-- **Working branch**: `fix/vfx-blueprint-audit`, branched from `feature/vfx-particle-graph` (`5be1902a`) and containing one commit per phase for Phases 3 through 10.
+- **Working branch**: `feature/vfx-particle-graph` (consolidated single branch; temporary `fix/vfx-blueprint-audit` fast-forward merged into `feature/vfx-particle-graph` and deleted).
 - **Repository build layout notes discovered during audit**:
   - Build tool entrypoint: `./uvbt` -> `Engine/Tools/UVBT/uvbt.py` (with companion C# definitions in `Engine/Tools/UVBT/UVBT.csproj`, `UVBT.Core/`, `UVBT.App/`). All 56 modules (`*.Build.cs`) and 6 targets (`*.Target.cs` under `Engine/Source/Targets/`) are driven through `./uvbt`.
-  - Existing editor modules reside under `Engine/Editor/` (`EditorApp`, `EditorCore`, `Viewport`), while the Blueprint module architecture created in Phase 6 lives at top-level `Editor/Blueprint/` (`Editor/Blueprint/Blueprint.Build.cs`).
+  - All editor modules reside under `Engine/Editor/` (`EditorApp`, `EditorCore`, `Viewport`), with the Blueprint module nested at `Engine/Editor/EditorCore/Blueprint/` (`Engine/Editor/EditorCore/Blueprint/Blueprint.Build.cs`).
 
 ---
 
@@ -50,30 +50,30 @@
 
 ## 4. Architecture Changes
 
-1. **Replaced `Engine/Runtime/UVScript/` with `Editor/Blueprint/` (Phase 6, Commit `5d795d4a`)**:
+1. **Replaced `Engine/Runtime/UVScript/` with `Engine/Editor/EditorCore/Blueprint/` (Phase 6, Commit `5d795d4a`)**:
    - Removed `Engine/Runtime/UVScript/` completely (`UVScript.Build.cs`, `README.md`, and all 18 source files migrated).
-   - Created UVBT module `Editor/Blueprint/Blueprint.Build.cs` (`BlueprintModule`, zero engine runtime dependencies) containing:
-     - `Editor/Blueprint/Compiler/Frontend/`: `blueprint_ast.h`, `blueprint_parser.h`, `blueprint_parser.cpp`
-     - `Editor/Blueprint/Compiler/Intermediate/`: `blueprint_program.h`
-     - `Editor/Blueprint/Compiler/Backend/`: `blueprint_compiler.h`, `blueprint_compiler.cpp`, `blueprint_codegen.h`, `blueprint_codegen.cpp`, `blueprint_compiler_main.cpp`
-     - `Editor/Blueprint/Runtime/VirtualMachine/`: `blueprint_instance.h`, `blueprint_instance.cpp`
-     - `Editor/Blueprint/Runtime/Variables/`: `blueprint_value.h`, `blueprint_value.cpp`
-     - `Editor/Blueprint/Runtime/ObjectBinding/`: `blueprint_host.h`, `blueprint_host_description.h`, `blueprint_host_description.cpp`, `blueprint_native.h`, `blueprint_native.cpp`
-     - `Editor/Blueprint/Nodes/Networking/`: `blueprint_networking_nodes.h`, `blueprint_networking_nodes.cpp`
-     - `Editor/Blueprint/Testing/{Compiler,Runtime,Integration}/`: migrated Blueprint compiler, VM, debugger, and integration tests plus native `.uvs`/`.uvhost` fixtures.
+   - Created UVBT module `Engine/Editor/EditorCore/Blueprint/Blueprint.Build.cs` (`BlueprintModule`, zero engine runtime dependencies) containing:
+     - `Engine/Editor/EditorCore/Blueprint/Compiler/Frontend/`: `blueprint_ast.h`, `blueprint_parser.h`, `blueprint_parser.cpp`
+     - `Engine/Editor/EditorCore/Blueprint/Compiler/Intermediate/`: `blueprint_program.h`
+     - `Engine/Editor/EditorCore/Blueprint/Compiler/Backend/`: `blueprint_compiler.h`, `blueprint_compiler.cpp`, `blueprint_codegen.h`, `blueprint_codegen.cpp`, `blueprint_compiler_main.cpp`
+     - `Engine/Editor/EditorCore/Blueprint/Runtime/VirtualMachine/`: `blueprint_instance.h`, `blueprint_instance.cpp`
+     - `Engine/Editor/EditorCore/Blueprint/Runtime/Variables/`: `blueprint_value.h`, `blueprint_value.cpp`
+     - `Engine/Editor/EditorCore/Blueprint/Runtime/ObjectBinding/`: `blueprint_host.h`, `blueprint_host_description.h`, `blueprint_host_description.cpp`, `blueprint_native.h`, `blueprint_native.cpp`
+     - `Engine/Editor/EditorCore/Blueprint/Nodes/Networking/`: `blueprint_networking_nodes.h`, `blueprint_networking_nodes.cpp`
+     - `Engine/Editor/EditorCore/Blueprint/Testing/{Compiler,Runtime,Integration}/`: migrated Blueprint compiler, VM, debugger, and integration tests plus native `.uvs`/`.uvhost` fixtures.
    - Tracked architectural placeholder folders deliberately with intent `README.md` files (no fake/empty source stubs):
      - **Populated with real code**: `Compiler` (`Frontend`, `Intermediate`, `Backend`), `Nodes/Networking`, `Runtime` (`VirtualMachine`, `Variables`, `ObjectBinding`), `Testing` (`Compiler`, `Runtime`, `Integration`).
      - **Not yet populated (tracked with intent `README.md` only)**: `Core`, `Editor`, `Serialization`, `Assets`, `Plugins`, `Debug`, `Profiling`, `Resources`, `Platform`.
    - Migrated namespace `UVE::UVScript` -> `UVE::Blueprint` and `UVScriptObjectHostUVE` -> `BlueprintObjectHostUVE` (`Engine/Runtime/Engine/Expose/blueprint_object_host.h`, `Engine/Runtime/Engine/Internal/blueprint_object_host.cpp`).
-   - Updated `Engine/Tools/UVBT/uvbt.py` to compile the native codegen tool `uvsc` from `Editor/Blueprint/Compiler/Backend/blueprint_compiler_main.cpp` and `Editor/Blueprint/Testing/Compiler/native/`.
+   - Updated `Engine/Tools/UVBT/uvbt.py` to compile the native codegen tool `uvsc` from `Engine/Editor/EditorCore/Blueprint/Compiler/Backend/blueprint_compiler_main.cpp` and `Engine/Editor/EditorCore/Blueprint/Testing/Compiler/native/`.
 2. **Blueprint Networking Nodes (Phase 6, Commit `5d795d4a`)**:
-   - Added 23 Blueprint networking nodes in `Editor/Blueprint/Nodes/Networking/blueprint_networking_nodes.{h,cpp}` (`GetNetworkingBlueprintNodesUVE()`) registered into `Engine/Runtime/Asset/Internal/blueprint_nodes.cpp`:
+   - Added 23 Blueprint networking nodes in `Engine/Editor/EditorCore/Blueprint/Nodes/Networking/blueprint_networking_nodes.{h,cpp}` (`GetNetworkingBlueprintNodesUVE()`) registered into `Engine/Runtime/Asset/Internal/blueprint_nodes.cpp`:
      - **RPC (11 nodes)**: `net_rpc_begin`, `net_rpc_push_int`, `net_rpc_push_float`, `net_rpc_push_str`, `net_rpc_push_bool`, `net_rpc_push_vec3`, `net_rpc_send`, `net_rpc_cancel`, `net_rpc_result_kind`, `net_rpc_result_int`, `net_rpc_result_str` -> delegate to `Engine/Runtime/Networking/` (`NetworkRpcUVE`).
      - **Lobby (7 nodes)**: `net_lobby_list`, `net_lobby_create`, `net_lobby_join`, `net_lobby_leave`, `net_lobby_room`, `net_lobby_roster_count`, `net_lobby_roster_name` -> delegate to `Engine/Runtime/Networking/` (`NetworkLobbyClientUVE`).
      - **Relay (5 nodes)**: `net_relay_peer_count`, `net_relay_peer_room`, `net_relay_peer_state`, `net_relay_set_room`, `net_relay_set_interest` -> delegate to `Engine/Runtime/Networking/` (`NetworkRelayUVE`).
    - Verified via `BlueprintUVETest.NetworkingNodesDelegateToEngineRuntimeNetworking` in `Engine/Runtime/Gameplay/Tests/blueprint_execution_tests.cpp`.
 3. **Co-located Test Architecture (Phase 8, Commit `5635b880`)**:
-   - Relocated all 490 test files from top-level `Test/` into module-local `Tests/` directories (`Engine/Runtime/<Module>/Tests/`, `Engine/Editor/EditorCore/Tests/`, `Editor/Blueprint/Testing/`) and shared harness in `Engine/Tests/{CoreTests.Build.cs,Support/}`. Removed top-level `Test/`.
+   - Relocated all 490 test files from top-level `Test/` into module-local `Tests/` directories (`Engine/Runtime/<Module>/Tests/`, `Engine/Editor/EditorCore/Tests/`, `Engine/Editor/EditorCore/Blueprint/Testing/`) and shared harness in `Engine/Tests/{CoreTests.Build.cs,Support/}`. Removed top-level `Test/`.
    - Updated `Engine/Tools/UVBT/uvbt.py` so non-test modules automatically exclude `Tests`, `tests`, and `Testing` directories from production source discovery, while `CoreTests.Build.cs` gathers all 44 co-located test directories via `ExtraSourceDirectories`.
 
 ---
@@ -87,19 +87,19 @@
   - Tests relocated in Phase 8: `Test/Network/` -> `Engine/Runtime/Networking/Tests/`.
 - **Confirmation**:
   - `Engine/Runtime/Networking/` exists; `Engine/Runtime/Network/` does not exist.
-  - Zero networking runtime files were moved into `Editor/` or `Editor/Blueprint/`.
-  - `grep` across `Editor/Blueprint/` confirms zero socket/transport/packet implementations (`socket(`, `bind(`, `sendto(`, `recvfrom(`, `sockaddr`, `UdpSocket`, `TcpSocket` = 0 matches). Blueprint networking nodes solely emit calls into `Engine/Runtime/Networking/` APIs through `BlueprintObjectHostUVE`.
+  - Zero networking runtime files were moved into `Editor/` or `Engine/Editor/EditorCore/Blueprint/`.
+  - `grep` across `Engine/Editor/EditorCore/Blueprint/` confirms zero socket/transport/packet implementations (`socket(`, `bind(`, `sendto(`, `recvfrom(`, `sockaddr`, `UdpSocket`, `TcpSocket` = 0 matches). Blueprint networking nodes solely emit calls into `Engine/Runtime/Networking/` APIs through `BlueprintObjectHostUVE`.
 
 ---
 
 ## 6. Blueprint Runtime Boundary Confirmation
 
-`Editor/Blueprint/Runtime/` contains **exclusively** Blueprint execution infrastructure (9 files total):
-- `Editor/Blueprint/Runtime/VirtualMachine/blueprint_instance.h` / `.cpp` (VM bytecode execution, call frames, wait states, debugger hooks)
-- `Editor/Blueprint/Runtime/Variables/blueprint_value.h` / `.cpp` (Blueprint typed values, arrays, maps)
-- `Editor/Blueprint/Runtime/ObjectBinding/blueprint_host.h`, `blueprint_host_description.h` / `.cpp`, `blueprint_native.h` / `.cpp` (host reflection bridge and native compiled-script registry)
+`Engine/Editor/EditorCore/Blueprint/Runtime/` contains **exclusively** Blueprint execution infrastructure (9 files total):
+- `Engine/Editor/EditorCore/Blueprint/Runtime/VirtualMachine/blueprint_instance.h` / `.cpp` (VM bytecode execution, call frames, wait states, debugger hooks)
+- `Engine/Editor/EditorCore/Blueprint/Runtime/Variables/blueprint_value.h` / `.cpp` (Blueprint typed values, arrays, maps)
+- `Engine/Editor/EditorCore/Blueprint/Runtime/ObjectBinding/blueprint_host.h`, `blueprint_host_description.h` / `.cpp`, `blueprint_native.h` / `.cpp` (host reflection bridge and native compiled-script registry)
 
-No Engine Runtime subsystem (Networking, Physics, Audio, Animation, Rendering, Input, Navigation, AI, Gameplay) resides in `Editor/Blueprint/Runtime/`.
+No Engine Runtime subsystem (Networking, Physics, Audio, Animation, Rendering, Input, Navigation, AI, Gameplay) resides in `Engine/Editor/EditorCore/Blueprint/Runtime/`.
 
 ---
 
@@ -137,18 +137,18 @@ No Engine Runtime subsystem (Networking, Physics, Audio, Animation, Rendering, I
 ### Phase 6: UVScript -> Blueprint Migration (Commit `5d795d4a`)
 | Old | New |
 |---|---|
-| `Engine/Runtime/UVScript/UVScript.Build.cs` | `Editor/Blueprint/Blueprint.Build.cs` |
-| `Engine/Runtime/UVScript/Expose/uvscript_ast.h` | `Editor/Blueprint/Compiler/Frontend/blueprint_ast.h` |
-| `Engine/Runtime/UVScript/Expose/uvscript_parser.h` / `Internal/uvscript_parser.cpp` | `Editor/Blueprint/Compiler/Frontend/blueprint_parser.{h,cpp}` |
-| `Engine/Runtime/UVScript/Internal/uvscript_program.h` | `Editor/Blueprint/Compiler/Intermediate/blueprint_program.h` |
-| `Engine/Runtime/UVScript/Expose/uvscript_compiler.h` / `Internal/uvscript_compiler.cpp` | `Editor/Blueprint/Compiler/Backend/blueprint_compiler.{h,cpp}` |
-| `Engine/Runtime/UVScript/Expose/uvscript_codegen.h` / `Internal/uvscript_codegen.cpp` | `Editor/Blueprint/Compiler/Backend/blueprint_codegen.{h,cpp}` |
-| `Engine/Runtime/UVScript/Tool/uvsc_main.cpp` | `Editor/Blueprint/Compiler/Backend/blueprint_compiler_main.cpp` |
-| `Engine/Runtime/UVScript/Expose/uvscript_instance.h` / `Internal/uvscript_instance.cpp` | `Editor/Blueprint/Runtime/VirtualMachine/blueprint_instance.{h,cpp}` |
-| `Engine/Runtime/UVScript/Expose/uvscript_value.h` / `Internal/uvscript_value.cpp` | `Editor/Blueprint/Runtime/Variables/blueprint_value.{h,cpp}` |
-| `Engine/Runtime/UVScript/Expose/uvscript_host.h` | `Editor/Blueprint/Runtime/ObjectBinding/blueprint_host.h` |
-| `Engine/Runtime/UVScript/Expose/uvscript_host_description.h` / `Internal/uvscript_host_description.cpp` | `Editor/Blueprint/Runtime/ObjectBinding/blueprint_host_description.{h,cpp}` |
-| `Engine/Runtime/UVScript/Expose/uvscript_native.h` / `Internal/uvscript_native.cpp` | `Editor/Blueprint/Runtime/ObjectBinding/blueprint_native.{h,cpp}` |
+| `Engine/Runtime/UVScript/UVScript.Build.cs` | `Engine/Editor/EditorCore/Blueprint/Blueprint.Build.cs` |
+| `Engine/Runtime/UVScript/Expose/uvscript_ast.h` | `Engine/Editor/EditorCore/Blueprint/Compiler/Frontend/blueprint_ast.h` |
+| `Engine/Runtime/UVScript/Expose/uvscript_parser.h` / `Internal/uvscript_parser.cpp` | `Engine/Editor/EditorCore/Blueprint/Compiler/Frontend/blueprint_parser.{h,cpp}` |
+| `Engine/Runtime/UVScript/Internal/uvscript_program.h` | `Engine/Editor/EditorCore/Blueprint/Compiler/Intermediate/blueprint_program.h` |
+| `Engine/Runtime/UVScript/Expose/uvscript_compiler.h` / `Internal/uvscript_compiler.cpp` | `Engine/Editor/EditorCore/Blueprint/Compiler/Backend/blueprint_compiler.{h,cpp}` |
+| `Engine/Runtime/UVScript/Expose/uvscript_codegen.h` / `Internal/uvscript_codegen.cpp` | `Engine/Editor/EditorCore/Blueprint/Compiler/Backend/blueprint_codegen.{h,cpp}` |
+| `Engine/Runtime/UVScript/Tool/uvsc_main.cpp` | `Engine/Editor/EditorCore/Blueprint/Compiler/Backend/blueprint_compiler_main.cpp` |
+| `Engine/Runtime/UVScript/Expose/uvscript_instance.h` / `Internal/uvscript_instance.cpp` | `Engine/Editor/EditorCore/Blueprint/Runtime/VirtualMachine/blueprint_instance.{h,cpp}` |
+| `Engine/Runtime/UVScript/Expose/uvscript_value.h` / `Internal/uvscript_value.cpp` | `Engine/Editor/EditorCore/Blueprint/Runtime/Variables/blueprint_value.{h,cpp}` |
+| `Engine/Runtime/UVScript/Expose/uvscript_host.h` | `Engine/Editor/EditorCore/Blueprint/Runtime/ObjectBinding/blueprint_host.h` |
+| `Engine/Runtime/UVScript/Expose/uvscript_host_description.h` / `Internal/uvscript_host_description.cpp` | `Engine/Editor/EditorCore/Blueprint/Runtime/ObjectBinding/blueprint_host_description.{h,cpp}` |
+| `Engine/Runtime/UVScript/Expose/uvscript_native.h` / `Internal/uvscript_native.cpp` | `Engine/Editor/EditorCore/Blueprint/Runtime/ObjectBinding/blueprint_native.{h,cpp}` |
 | `Engine/Runtime/Engine/Expose/uvscript_object_host.h` / `Internal/uvscript_object_host.cpp` | `Engine/Runtime/Engine/Expose/blueprint_object_host.{h,cpp}` (`BlueprintObjectHostUVE`) |
 | `Engine/Editor/EditorCore/Internal/editor_panel_uvscript.cpp` | `Engine/Editor/EditorCore/Internal/editor_panel_blueprint_script.cpp` |
 | `Test/Gameplay/uvscript_blueprint_tests.cpp` | `Engine/Runtime/Gameplay/Tests/blueprint_execution_tests.cpp` |
@@ -217,12 +217,12 @@ Audit method: traced all 56 `*.Build.cs` modules, every `.cpp` compilation unit 
 - **Files moved**: 490 tracked files moved via `git mv` from top-level `Test/` into co-located `Tests/` folders inside their owning modules:
   - 43 runtime modules under `Engine/Runtime/<Module>/Tests/` (including `Core/*/Tests`, `Objects/*/Tests`, `RHI/*/Tests`, `Networking/Tests`, `VFX/Tests`, `Retarget/Tests`, etc.)
   - `Engine/Editor/EditorCore/Tests/` (preserved pre-migration exclusion from `CoreTests`, matching the prior `ExcludedFiles` `"Editor/"` entry)
-  - `Editor/Blueprint/Testing/{Compiler,Runtime,Integration}/` (including `Compiler/native/` `.uvs` / `.uvhost` fixtures)
+  - `Engine/Editor/EditorCore/Blueprint/Testing/{Compiler,Runtime,Integration}/` (including `Compiler/native/` `.uvs` / `.uvhost` fixtures)
   - `Engine/Tests/CoreTests.Build.cs` and `Engine/Tests/Support/{test_image_fixtures.h,test_scratch.h,test_scratch.cpp}`
 - **Deleted**: Top-level `Test/` directory (including `Test/CoreTests.Build.cs` and empty stub files `Test/Object/README.md`, `Test/Renderer/README.md`).
 - **Fixture path updates**:
   - `Engine/Runtime/Audio/Tests/compressed_audio_importer_tests.cpp`: `"Test/Audio/Fixtures"` -> `"Engine/Runtime/Audio/Tests/Fixtures"`.
-  - `Engine/Tools/UVBT/uvbt.py`: plugin fixture build path -> `Engine/Runtime/Plugins/Tests/Fixtures/`; native codegen `.uvs` path -> `Editor/Blueprint/Testing/Compiler/native/`; production modules skip `Tests`/`tests`/`Testing`.
+  - `Engine/Tools/UVBT/uvbt.py`: plugin fixture build path -> `Engine/Runtime/Plugins/Tests/Fixtures/`; native codegen `.uvs` path -> `Engine/Editor/EditorCore/Blueprint/Testing/Compiler/native/`; production modules skip `Tests`/`tests`/`Testing`.
   - `Engine/Tests/CoreTests.Build.cs`: added `../Runtime/Retarget/Tests` to `PrivateIncludePaths` and all 44 co-located directories to `ExtraSourceDirectories`.
 - **Test count verification (`UniVexTests --gtest_list_tests | grep -c "^  "`)**:
   - **Before relocation (baseline at `5be1902a`)**: `5,464` tests
@@ -270,11 +270,11 @@ Audit method: traced all 56 `*.Build.cs` modules, every `.cpp` compilation unit 
   - `Runtime/Network/`: **0 hits**
   - `UVScript`: **remaining hits justified** — preserved only for `.uvs` script file format compatibility (`kUVScriptExtensionUVE`, `OpenUVScript*`, `ParseUVScriptUVE`, `CompileUVScriptSourceUVE`, `TranslateBlueprintToUVScriptUVE`), `UVE_UVSCRIPT_NATIVE_DIR` macro, legacy `.uvs` file extension migration, and pre-existing `uvscript_*_tests.cpp` test suite filenames/names so existing `.uvs` assets and test filters keep working.
 - [x] Graph names restored and consistent (`Blueprint`, `Widget Blueprint`, `Animation Graph`, `Blend Space`)
-- [x] `Editor/Blueprint/` matches required tree (populated modules with real code; unpopulated future folders tracked explicitly via `README.md`)
+- [x] `Engine/Editor/EditorCore/Blueprint/` matches required tree (populated modules with real code; unpopulated future folders tracked explicitly via `README.md`)
 - [x] `Engine/Runtime/Networking/` exists; `Engine/Runtime/Network/` does not
-- [x] Blueprint networking nodes (`Editor/Blueprint/Nodes/Networking/`) call `Engine/Runtime/Networking/` APIs
+- [x] Blueprint networking nodes (`Engine/Editor/EditorCore/Blueprint/Nodes/Networking/`) call `Engine/Runtime/Networking/` APIs
 - [x] No networking implementation duplicated in Blueprint
-- [x] `Editor/Blueprint/Runtime/` contains only Blueprint execution infrastructure
+- [x] `Engine/Editor/EditorCore/Blueprint/Runtime/` contains only Blueprint execution infrastructure
 - [x] No accidental deletions (`git diff -M --diff-filter=D --name-only 5be1902a..HEAD` shows only the 5 intentionally replaced files: `Engine/Runtime/UVScript/{UVScript.Build.cs,README.md}`, `Test/{CoreTests.Build.cs,Object/README.md,Renderer/README.md}`)
 - [x] Migrated tests all execute
 
@@ -287,7 +287,7 @@ Audit method: traced all 56 `*.Build.cs` modules, every `.cpp` compilation unit 
 3. **Full suite under `xvfb-run` display**: Running all 5,465 tests simultaneously under `xvfb-run` triggered a VM restart mid-run; display-backed verification was therefore run on the targeted 409-test slice (`*Vfx*:*Particle*:*Blueprint*:*Networking*:*Network*:*Montage*:*AssetTable*`, 408 passed / 1 Vulkan skip / 0 failed) while the full 5,465-test suite completed cleanly with `DISPLAY=:99` (253 display/GPU skips, only the 5 pre-existing Release-assert baseline failures).
 4. **5 pre-existing Release-build failures**: The 5 failures listed in Section 12 exist identically on the starting commit `5be1902a` in `Linux Release` (`NDEBUG` disables debug asserts expected by those death tests).
 5. **EditorCore unit tests (`Engine/Editor/EditorCore/Tests/`)**: Matching the pre-migration `Test/CoreTests.Build.cs` exclusion (`ExcludedFiles: "Editor/"`), these tests were relocated next to `EditorCore` and remain excluded from `CoreTests` so test scope matches baseline. Enabling them requires adding `../Editor/EditorCore/Internal` to a dedicated `EditorTests` target/module.
-6. **Unpopulated `Editor/Blueprint/` folders**: `Core`, `Editor`, `Serialization`, `Assets`, `Plugins`, `Debug`, `Profiling`, `Resources`, `Platform` contain intent `README.md` files only; existing Blueprint UI shell (`Engine/Editor/EditorCore/Internal/shell/blueprint/`), Prism graph widget (`Engine/Runtime/Prism/`), and asset definitions (`Engine/Runtime/Asset/`) remain in place to avoid destabilizing working editor features.
+6. **Unpopulated `Engine/Editor/EditorCore/Blueprint/` folders**: `Core`, `Editor`, `Serialization`, `Assets`, `Plugins`, `Debug`, `Profiling`, `Resources`, `Platform` contain intent `README.md` files only; existing Blueprint UI shell (`Engine/Editor/EditorCore/Internal/shell/blueprint/`), Prism graph widget (`Engine/Runtime/Prism/`), and asset definitions (`Engine/Runtime/Asset/`) remain in place to avoid destabilizing working editor features.
 7. **2DS clarification**: Confirm whether the 26 editor-only 2D objects flagged in Section 9 should receive runtime simulation systems or be removed in a dedicated follow-up.
 8. **Legacy `.uvs` API/test names**: Internal `.uvs` text-script helpers (`ParseUVScriptUVE`, `CompileUVScriptSourceUVE`, `uvscript_*_tests.cpp`) were intentionally retained for `.uvs` backward compatibility.
 
@@ -295,7 +295,7 @@ Audit method: traced all 56 `*.Build.cs` modules, every `.cpp` compilation unit 
 
 ## 14. Commit List per Phase
 
-Branch: `fix/vfx-blueprint-audit` (based on `feature/vfx-particle-graph` at `5be1902a`)
+Branch: `feature/vfx-particle-graph` (single consolidated branch)
 
 | Phase | Commit | Summary |
 |---|---|---|
@@ -303,8 +303,9 @@ Branch: `fix/vfx-blueprint-audit` (based on `feature/vfx-particle-graph` at `5be
 | Phase 3 | `b052d173` | Restore original graph names: Blueprint, Widget Blueprint, Animation Graph, and Blend Space |
 | Phase 4 | `f1d27d11` | Rename Animation Montage to Motion Montage, Montage Player to Montage Sequencer, and Content Browser to Asset Table |
 | Phase 5 | `3ae8b36d` | Rename Engine/Runtime/Network to Engine/Runtime/Networking |
-| Phase 6 | `5d795d4a` | Replace Engine/Runtime/UVScript with Editor/Blueprint architecture and Blueprint Networking nodes |
+| Phase 6 | `5d795d4a` | Replace Engine/Runtime/UVScript with Engine/Editor/EditorCore/Blueprint architecture and Blueprint Networking nodes |
 | Phase 7 | *(audit only — no deletions required)* | Verified all 56 modules and all `.cpp` units active; documented 26 editor-only 2D objects and 2DS findings in Section 9 and Section 10 |
 | Phase 8 | `5635b880` | Move tests next to engine and Blueprint sources and remove top-level Test directory |
 | Phase 9 | `576dae72` | Fix remaining naming and vocabulary audit findings |
-| Phase 10 | *(report commit on HEAD)* | Write final `AUDIT_REPORT.md` with full verification results |
+| Phase 10 | `278c010b` | Write final `AUDIT_REPORT.md` with full verification results |
+| Follow-up | *(HEAD)* | Move Blueprint module under `Engine/Editor/EditorCore/Blueprint/`, untrack generated `.uvs.cpp` files, and consolidate onto `feature/vfx-particle-graph` |

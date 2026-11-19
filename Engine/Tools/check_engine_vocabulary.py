@@ -146,7 +146,7 @@ ALLOWED_PREFIXES = (
     # point of the line, so the file is allowlisted rather than rewritten.
     "Engine/Runtime/Engine/Internal/blueprint_object_host.cpp",
     # ...and the test that proves that alias reads, reports read-only, and is NOT described.
-    "Editor/Blueprint/Testing/Compiler/uvscript_vm_tests.cpp",
+    "Engine/Editor/EditorCore/Blueprint/Testing/Compiler/uvscript_vm_tests.cpp",
     # This tool's own denylist obviously names what it forbids.
     "Engine/Tools/check_engine_vocabulary.py",
 )
@@ -246,7 +246,7 @@ def main() -> int:
                         f"    A rename that swaps a noun has to swap its article too; prose and UI\n"
                         f"    strings are not checked by the compiler, so this is."
                     )
-            if rel.startswith("Engine/") or rel.startswith("Editor/"):
+            if rel.startswith("Engine/"):
                 for name, pattern in foreign_patterns.items():
                     if pattern.search(line):
                         foreign_hits[name] += 1

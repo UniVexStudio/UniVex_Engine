@@ -1,11 +1,11 @@
-# Editor/Blueprint
+# Engine/Editor/EditorCore/Blueprint
 
 Blueprint visual scripting, compiler, virtual machine, and node architecture for UniVex Engine (replacing `Engine/Runtime/UVScript/`).
 
 ## Boundary: Engine Runtime vs Blueprint Runtime
 - `Engine/Runtime/` owns real engine systems (`Networking/`, `Physics/`, `Audio/`, `Animation/`, `RHI/`, `Input/`, `Navigation/`, `AI/`, `Gameplay/`, `VFX/`, ...).
-- `Editor/Blueprint/Runtime/` owns **only** Blueprint execution infrastructure: the VM (`VirtualMachine/`), Blueprint values/variables (`Variables/`), and host object binding (`ObjectBinding/`).
-- Blueprint nodes under `Editor/Blueprint/Nodes/` (including `Editor/Blueprint/Nodes/Networking/`) consume Engine Runtime systems exclusively through public host APIs. No sockets, transport, physics, or audio systems are implemented in Blueprint.
+- `Engine/Editor/EditorCore/Blueprint/Runtime/` owns **only** Blueprint execution infrastructure: the VM (`VirtualMachine/`), Blueprint values/variables (`Variables/`), and host object binding (`ObjectBinding/`).
+- Blueprint nodes under `Engine/Editor/EditorCore/Blueprint/Nodes/` (including `Engine/Editor/EditorCore/Blueprint/Nodes/Networking/`) consume Engine Runtime systems exclusively through public host APIs. No sockets, transport, physics, or audio systems are implemented in Blueprint.
 
 ## Directory Layout Status
 
