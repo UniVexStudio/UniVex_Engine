@@ -57,8 +57,8 @@ class DocumentTabUVE;
 ///   [ Details                            | compile results (when any)   ]
 ///
 /// Everything it shows and does is the editor's: the entity session (open / save / revert /
-/// compile / close), the document's objects, selection and undo, the Details rows, the viewport
-/// backend of ViewportContextUVE::EntityEditor. It reads and acts inside the entity's scope.
+/// compile / close), the document's objects, selection and undo, the Details rows, and the
+/// dedicated entity viewport (`EditorViewportsUVE::entity`). It reads and acts inside the entity's scope.
 class EditorEntityEditorUVE final {
 public:
     EditorEntityEditorUVE(EditorUVE& editor, EditorHostUVE& host);

@@ -1122,7 +1122,7 @@ void EditorShellUVE::AppendCameraScreenUVE(EditorUVE& editor, const EditorDetail
         return;
     }
     const Scene::EntityUVE selected = editor.GetSelectedEntityUVE();
-    const bool show = details.CameraScreenOpenUVE() && editor.m_viewportPanelRenderer && editor.m_selectedEntities.size() == 1U &&
+    const bool show = details.CameraScreenOpenUVE() && editor.m_viewports.cameraPreview && editor.m_selectedEntities.size() == 1U &&
                       Scene::IsDocumentCameraEntityUVE(editor.m_services->GetEntityManagerUVE(), selected) &&
                       editor.GetPreviewCameraUVE() != selected;
     if (screen->visible() != show) {
@@ -1137,15 +1137,14 @@ void EditorShellUVE::AppendCameraScreenUVE(EditorUVE& editor, const EditorDetail
         return;
     }
     static EditorUVE::ViewportOverlayStateUVE state{};
-    state.hostDrawsGizmos = true;
+    state.hostDrawsGizmos = false;
     state.gameWorkspaceActive = false;
     state.studioView = false;
     state.entityAuthoringView = editor.IsEntityDocumentActiveUVE();
     state.input = EditorViewportInputUVE{};
     Math::Vector2UVE used{0.0F, 0.0F};
-    const std::uint64_t texture = editor.m_viewportPanelRenderer(EditorUVE::ViewportContextUVE::InspectorCameraPreview,
-                                                                 Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)},
-                                                                 used, state);
+    const std::uint64_t texture =
+        editor.m_viewports.cameraPreview(Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used, state);
     if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
         EditorHostUVE::ViewImageUVE view{};
         view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x, used.y};
@@ -1292,7 +1291,7 @@ void EditorShellUVE::FrameUVE() {
     }
     if (!renderView && !m_startupCovered && m_viewport && m_viewport->visible() && m_lastView.texture != 0U) {
         views.push_back(m_lastView); // the last frame again, between warm-up frames
-    } else if (renderView && m_viewport && m_viewport->visible() && m_editor.m_viewportPanelRenderer) {
+    } else if (renderView && m_viewport && m_viewport->visible() && m_editor.m_viewports.level) {
         const prism::Rect rect = m_viewport->rect();
         if (rect.w >= 1.0F && rect.h >= 1.0F) {
             EditorUVE::ViewportOverlayStateUVE& state = m_editor.m_viewportOverlayState;
@@ -1314,9 +1313,8 @@ void EditorShellUVE::FrameUVE() {
             }
             state.input = m_host.CaptureViewInputUVE(rect);
             Math::Vector2UVE used{0.0F, 0.0F};
-            const std::uint64_t texture = m_editor.m_viewportPanelRenderer(
-                EditorUVE::ViewportContextUVE::Main, Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used,
-                state);
+            const std::uint64_t texture =
+                m_editor.m_viewports.level(Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used, state);
             m_host.ApplyViewCursorUVE(state.input);
             state.orbitRequestX = 0.0F;
             state.orbitRequestY = 0.0F;

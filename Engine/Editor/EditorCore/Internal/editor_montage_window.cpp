@@ -337,7 +337,7 @@ void EditorUVE::TickMontageEditorUVE(const double deltaSeconds) {
 std::uint64_t EditorUVE::RenderMontagePreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
                                                  const EditorViewportInputUVE& input) {
     outUsed = Math::Vector2UVE{0.0F, 0.0F};
-    if (!m_montageEdit.has_value() || m_montageScene == nullptr || !m_viewportPanelRenderer) {
+    if (!m_montageEdit.has_value() || m_montageScene == nullptr || !m_viewports.montage) {
         return 0U;
     }
     MontageEditSessionUVE& session = *m_montageEdit;
@@ -358,7 +358,7 @@ std::uint64_t EditorUVE::RenderMontagePreviewUVE(const Math::Vector2UVE& size, M
     state.input = input;
     std::uint64_t texture = 0U;
     try {
-        texture = m_viewportPanelRenderer(ViewportContextUVE::MontageEditor, size, outUsed, state);
+        texture = m_viewports.montage(size, outUsed, state);
     } catch (...) {
         m_services = previous;
         throw;

@@ -335,7 +335,7 @@ void EditorUVE::TickVfxEditorUVE(const double deltaSeconds) {
 std::uint64_t EditorUVE::RenderVfxPreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
                                              const EditorViewportInputUVE& input) {
     outUsed = Math::Vector2UVE{0.0F, 0.0F};
-    if (m_vfxEdit == nullptr || !m_viewportPanelRenderer || !m_documentSceneFactory || size.x < 8.0F || size.y < 8.0F) {
+    if (m_vfxEdit == nullptr || !m_viewports.vfx || !m_documentSceneFactory || size.x < 8.0F || size.y < 8.0F) {
         return 0U;
     }
     if (m_vfxScene == nullptr) {
@@ -395,7 +395,7 @@ std::uint64_t EditorUVE::RenderVfxPreviewUVE(const Math::Vector2UVE& size, Math:
     m_services = &services;
     std::uint64_t texture = 0U;
     try {
-        texture = m_viewportPanelRenderer(ViewportContextUVE::VfxEditor, size, outUsed, state);
+        texture = m_viewports.vfx(size, outUsed, state);
     } catch (...) {
         m_services = previous;
         renderer.SetVfxDrawListUVE(nullptr);
