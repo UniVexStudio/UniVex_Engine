@@ -22,7 +22,6 @@ public class SceneModule : ModuleRules
             "Animation",
             "Objects3D",
             "ObjectsCanvas",
-            "Objects2D",
             "Strings",
         });
 

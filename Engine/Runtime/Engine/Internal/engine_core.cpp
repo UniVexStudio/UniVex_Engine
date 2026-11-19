@@ -189,7 +189,6 @@
 #include "world_partition_3d.h"
 #include "gi_probes_3d.h"
 #include "xr_objects_3d.h"
-#include "all_objects_2d.h"
 #include "ui_extended_containers.h"
 #include "ui_extended_controls.h"
 #include "shape_narrow_phase.h"
@@ -3413,19 +3412,12 @@ void EngineCoreUVE::SyncCameraFollowUVE() {
     Scene::UpdateCameraFollowUVE(*m_entityManager);
     static_cast<void>(Scene::UpdatePathFollow3DObjectsUVE(
         *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
-    static_cast<void>(Scene::UpdatePathFollow2DObjectsUVE(
-        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
     static_cast<void>(Scene::UpdateSprite3DObjectsUVE(
-        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
-    static_cast<void>(Scene::UpdateAnimatedSprite2DObjectsUVE(
-        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
-    static_cast<void>(Scene::UpdateAudioAnimNavInput2DObjectsUVE(
         *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
     static_cast<void>(Scene::UpdateXRObjects3DUVE(*m_entityManager));
     static_cast<void>(Scene::UpdateUIExtendedObjectsUVE(
         *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
     static_cast<void>(Scene::UpdateRemoteTransform3DObjectsUVE(*m_entityManager));
-    static_cast<void>(Scene::UpdateRemoteTransform2DObjectsUVE(*m_entityManager));
 }
 
 void EngineCoreUVE::SyncKinematic3DObjectsUVE(const float fixedDeltaTimeSeconds) {
@@ -4680,8 +4672,6 @@ void EngineCoreUVE::Update() {
             *m_entityManager, m_config.gravity, fixedDeltaTimeSeconds));
         static_cast<void>(Scene::UpdateSoftBody3DObjectsUVE(
             *m_entityManager, m_config.gravity, fixedDeltaTimeSeconds));
-        static_cast<void>(Scene::UpdatePhysics2DObjectsUVE(
-            *m_entityManager, fixedDeltaTimeSeconds, m_config.gravity2DUVE));
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
         SyncKinematic3DObjectsUVE(fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);

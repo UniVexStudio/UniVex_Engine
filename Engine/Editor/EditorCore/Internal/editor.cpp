@@ -71,7 +71,6 @@
 #include "camera_component.h"
 #include "character_controller_component.h"
 #include "collider_component.h"
-#include "all_objects_2d.h"
 #include "all_objects_3d.h"
 #include "preview_lighting.h"
 #include "all_objects_canvas.h"
@@ -945,16 +944,8 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
         const Scene::EntityUVE root = CreateObjectDefinitionEntityInternalUVE(
             Scene::SceneRootObjectDefinitionUVE{}, Scene::ApplySceneRootObjectDefinitionUVE);
-        // The dimension is part of the file, not of its name: a 2D item stamps its Viewport TwoD, and
-        // opening the result restores that instead of reading "2D" out of the path.
-        Scene::EntityUVE viewport = Scene::kInvalidEntityUVE;
-        if (item->sceneDimension == Scene::ViewportDimensionUVE::TwoD) {
-            viewport = CreateObjectDefinitionEntityInternalUVE(Scene::Viewport2DObjectDefinitionUVE{},
-                                                               Scene::ApplyViewport2DObjectDefinitionUVE);
-        } else {
-            viewport = CreateObjectDefinitionEntityInternalUVE(Scene::Viewport3DObjectDefinitionUVE{},
-                                                               Scene::ApplyViewport3DObjectDefinitionUVE);
-        }
+        const Scene::EntityUVE viewport = CreateObjectDefinitionEntityInternalUVE(
+            Scene::Viewport3DObjectDefinitionUVE{}, Scene::ApplyViewport3DObjectDefinitionUVE);
         // A new scene is its root and its Viewport, and nothing else. The World folder used to be
         // created here, so every level opened with an empty folder above an empty level; it now
         // appears with the first object that needs somewhere to live.
@@ -1374,27 +1365,8 @@ bool EditorUVE::OpenSceneAssetUVE(const std::filesystem::path& path) {
     const std::filesystem::path previous = m_activeScenePath;
     m_activeScenePath = path;
     if (LoadSceneUVE()) {
-        // The document's own Viewport marker decides how it opens. This used to search the file's
-        // NAME for "2D", so a level called "Level2D" opened flat and a genuinely flat scene called
-        // "Flat" opened on the 3D grid; the same scene could be 2D or 3D depending on what someone
-        // had saved it as. Legacy documents carry no dimension and read as 3D, which is what they are.
-        bool is2D = false;
-        if (const Scene::EntityUVE viewport = GetDocumentViewportUVE(); viewport != Scene::kInvalidEntityUVE) {
-            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-            if (entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport)) {
-                is2D = entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport).dimension ==
-                       Scene::ViewportDimensionUVE::TwoD;
-            }
-        }
-        if (is2D) {
-            m_viewportOverlayState.is2DMode = true;
-            m_viewportOverlayState.orthographic = true;
-            RequestViewportViewUVE(ViewportViewUVE::Front);
-        } else {
-            m_viewportOverlayState.is2DMode = false;
-            SetViewportOrthographicUVE(false);
-            m_viewportOverlayState.view = ViewportViewUVE::User;
-        }
+        SetViewportOrthographicUVE(false);
+        m_viewportOverlayState.view = ViewportViewUVE::User;
         return true;
     }
     m_activeScenePath = previous;
@@ -2782,16 +2754,6 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::Folder:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::FolderObjectDefinitionUVE{},
                                                             Scene::ApplyFolderObjectDefinitionUVE);
-            break;
-        // The first 2D kind — a textured quad with no 3D transform requirements beyond
-        // what the creation shell already attaches.
-        case Scene::Objects::SceneObjectKindUVE::Sprite2D:
-            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Sprite2DObjectDefinitionUVE{},
-                                                            Scene::ApplySprite2DObjectDefinitionUVE);
-            break;
-        case Scene::Objects::SceneObjectKindUVE::Camera2D:
-            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Camera2DObjectDefinitionUVE{},
-                                                            Scene::ApplyCamera2DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Viewport3D:
             // The level's 3D Viewport is created by the document layout (EnsureDocumentLayoutUVE).

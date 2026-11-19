@@ -1531,7 +1531,6 @@ std::vector<prism::MenuItem> EditorAssetTableUVE::CatalogueMenuUVE() {
     }));
     items.push_back(prism::MenuItem::Sub("World", {
         item("Level", "viewport_3d", prism::Icon::SceneAsset, "Viewport3D"),
-        item("Level 2D", "viewport_2d", prism::Icon::SceneAsset, "Viewport3D"),
     }));
     return items;
 }

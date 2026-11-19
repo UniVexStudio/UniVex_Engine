@@ -20,8 +20,6 @@
 #include "primitive_mesh_component.h"
 #include "rigid_3d_component.h"
 #include "script_component.h"
-#include "camera_2d_component.h"
-#include "sprite_2d_component.h"
 #include "entity_manager.h"
 #include "event_system.h"
 #include "memory_manager.h"
@@ -69,8 +67,6 @@ TEST_F(SceneObjectTypeUVETest, InferenceReadsEveryKindThatHasComponentsOfItsOwn)
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(MeshComponentUVE{})), Kind::MeshInstance3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Marker3DComponentUVE{})), Kind::Marker3D);
     EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(AreaComponentUVE{})), Kind::Area3D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Sprite2DComponentUVE{})), Kind::Sprite2D);
-    EXPECT_EQ(InferSceneObjectKindUVE(entityManager, MakeWithUVE(Camera2DComponentUVE{})), Kind::Camera2D);
 
     // A primitive carries a collider too, and still reads as its shape.
     for (const auto& [primitive, kind] : {std::pair{PrimitiveMeshKindUVE::Cube, Kind::BoxMesh3D},

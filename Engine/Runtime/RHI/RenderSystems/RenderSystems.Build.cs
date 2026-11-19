@@ -14,7 +14,6 @@ public class RenderSystemsModule : ModuleRules
             "Containers",
             "Math",
             "Scene",
-            "Objects2D",
             "Asset",
             "RHI",
             "RHIShader",

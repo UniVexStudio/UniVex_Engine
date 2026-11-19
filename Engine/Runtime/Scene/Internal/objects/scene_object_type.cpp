@@ -7,7 +7,6 @@
 #include "animation_graph_component.h"
 #include "area_component.h"
 #include "audio_source_component.h"
-#include "camera_2d_component.h"
 #include "camera_component.h"
 #include "canvas_component.h"
 #include "character_controller_component.h"
@@ -18,7 +17,6 @@
 #include "primitive_mesh_component.h"
 #include "rigid_3d_component.h"
 #include "script_component.h"
-#include "sprite_2d_component.h"
 #include "ui_button_component.h"
 #include "ui_image_component.h"
 #include "ui_text_component.h"
@@ -133,8 +131,6 @@ Objects::SceneObjectKindUVE InferSceneObjectKindUVE(const IEntityManagerUVE& ent
                            OwnComponentUVE<UITextComponentUVE>{Kind::UIText},
                            OwnComponentUVE<UIImageComponentUVE>{Kind::UIImage},
                            OwnComponentUVE<UIButtonComponentUVE>{Kind::UIButton},
-                           OwnComponentUVE<Sprite2DComponentUVE>{Kind::Sprite2D},
-                           OwnComponentUVE<Camera2DComponentUVE>{Kind::Camera2D},
                            OwnComponentUVE<AreaComponentUVE>{Kind::Area3D},
                            OwnComponentUVE<PlayerComponentUVE>{Kind::Player3D},
                            OwnComponentUVE<CharacterControllerComponentUVE>{Kind::Character3D})) {

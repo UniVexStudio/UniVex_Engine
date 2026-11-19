@@ -695,32 +695,13 @@ public:
         bool studioView = false;
 
         // The Entity Editor's viewport: one entity, authored in isolation. It is a 3D object view
-        // with the level's camera controls, not a 2D canvas and not a level, so the two controls
-        // that only mean something for a level are hidden there - the preview sun/environment
-        // (which exists to light a scene that has no lights of its own, while an entity being
-        // authored is lit by its own) and the 2D/3D switch (an entity asset is a 3D object; the
-        // 2D viewport mode belongs to the level's canvas). Set by DrawViewportImageUVE from the
-        // viewport context it is drawing, never authored by the user.
+        // with the level's camera controls, not a level, so level-only controls (such as the
+        // preview sun/environment that lights an unlit scene) are hidden there. Set by the panel
+        // drawing the viewport, never authored by the user.
         bool entityAuthoringView = false;
         std::array<float, 3> studioTarget{0.0F, 1.0F, 0.0F};
         float studioRadius = 1.5F;
         std::uint32_t studioFramingSerial = 0U;
-        bool is2DMode = false;
-        bool viewport2DPanTool = false;
-        bool viewport2DPivotEditing = false;
-        bool viewport2DPixelSnap = false;
-        bool viewport2DGridSnap = false;
-        bool viewport2DGuideSnap = true;
-        bool viewport2DRotationSnap = false;
-        float viewport2DGridStep = 16.0F;
-        float viewport2DRotationStepDeg = 15.0F;
-        bool viewport2DShowRulers = true;
-        bool viewport2DShowGuides = true;
-        bool viewport2DShowHud = true;
-        bool viewport2DShowCollision = true;
-        std::uint32_t viewport2DZoom100Serial = 0U;
-        std::uint32_t viewport2DZoomFitSerial = 0U;
-        std::uint32_t viewport2DClearGuidesSerial = 0U;
         int shadingMode = 0;
         bool physicsPaused = false;
         bool previewSun = true;

@@ -570,13 +570,6 @@ struct EngineProjectSettingUVE final {
                                     defaults.appendSceneNameInEditorPlayModeUVE, "Append Scene in Editor Play",
                                     "Window/Title", "Append the active scene name while the editor is playing.")),
          [](EngineConfigUVE& config, const SettingValueUVE& value) { config.appendSceneNameInEditorPlayModeUVE = std::get<bool>(value); }},
-        {RestartRequiredUVE(Config::MakeVector2SettingUVE(
-             "physics.2d.gravity", Config::SettingVector2UVE{0.0, -980.0}, -100000.0, 100000.0,
-             "2D Gravity", "Physics/2D", "Default 2D gravity acceleration in pixels/s^2.")),
-         [](EngineConfigUVE& config, const SettingValueUVE& value) {
-             const auto& g = std::get<Config::SettingVector2UVE>(value);
-             config.gravity2DUVE = Math::Vector2UVE{static_cast<float>(g.x), static_cast<float>(g.y)};
-         }},
         {RestartRequiredUVE(Config::MakeFloatSettingUVE("physics.common.defaultLinearDamping",
                                      defaults.defaultLinearDampingUVE, 0.0, 100.0,
                                      "Default Linear Damping", "Physics/Common")),
@@ -859,13 +852,6 @@ struct EngineProjectSettingUVE final {
              config.commandBufferThreadCountUVE = std::get<std::int64_t>(value);
          }},
         {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
-             "rendering.antialiasing.msaa2dSamples", defaults.msaa2dSamplesUVE,
-             {{1, "Disabled (1x)"}, {2, "2x"}, {4, "4x"}, {8, "8x"}}, "2D MSAA Samples",
-             "Rendering/AntiAliasing"))),
-         [](EngineConfigUVE& config, const SettingValueUVE& value) {
-             config.msaa2dSamplesUVE = std::get<std::int64_t>(value);
-         }},
-        {RestartRequiredUVE(PlatformOverrideUVE(Config::MakeEnumSettingUVE(
              "rendering.antialiasing.msaa3dSamples", defaults.msaa3dSamplesUVE,
              {{1, "Disabled (1x)"}, {2, "2x"}, {4, "4x"}, {8, "8x"}}, "3D MSAA Samples",
              "Rendering/AntiAliasing"))),
@@ -1110,28 +1096,6 @@ struct EngineProjectSettingUVE final {
              config.defaultTextureRepeatModeUVE = std::get<std::int64_t>(value);
          }},
         {RestartRequiredUVE(Config::MakeEnumSettingUVE(
-             "rendering.2d.defaultCanvasFilter", defaults.defaultCanvasFilterUVE,
-             {{0, "Nearest"}, {1, "Linear"}}, "2D Canvas Filter", "Rendering/2D")),
-         [](EngineConfigUVE& config, const SettingValueUVE& value) {
-             config.defaultCanvasFilterUVE = std::get<std::int64_t>(value);
-         }},
-        {RestartRequiredUVE(Config::MakeBoolSettingUVE("rendering.2d.pixelSnapTransforms", defaults.pixelSnap2dTransformsUVE,
-                                    "2D Transform Pixel Snap", "Rendering/2D")),
-         [](EngineConfigUVE& config, const SettingValueUVE& value) {
-             config.pixelSnap2dTransformsUVE = std::get<bool>(value);
-         }},
-        {RestartRequiredUVE(Config::MakeIntSettingUVE("rendering.2d.shadowAtlasSize", defaults.shadowAtlas2dSizeUVE,
-                                   256, 8192, "2D Shadow Atlas Size", "Rendering/2D")),
-         [](EngineConfigUVE& config, const SettingValueUVE& value) {
-             config.shadowAtlas2dSizeUVE = std::get<std::int64_t>(value);
-         }},
-        {RestartRequiredUVE(Config::MakeEnumSettingUVE(
-             "rendering.2d.spriteSortAxis", defaults.spriteSortAxisUVE,
-             {{0, "Z-Index Only"}, {1, "Y-Axis"}, {2, "Custom Axis"}}, "Sprite Sort Axis", "Rendering/2D")),
-         [](EngineConfigUVE& config, const SettingValueUVE& value) {
-             config.spriteSortAxisUVE = std::get<std::int64_t>(value);
-         }},
-        {RestartRequiredUVE(Config::MakeEnumSettingUVE(
              "rendering.environment.defaultSkyMode", defaults.defaultSkyModeUVE,
              {{0, "None"}, {1, "Colour"}, {2, "Gradient"}, {3, "Physical"}, {4, "Panorama"}},
              "Default Sky Mode", "Rendering/Environment")),
@@ -1364,9 +1328,6 @@ std::string GetLayerNameSettingIdUVE(const LayerSetUVE set, const std::size_t in
     case LayerSetUVE::Physics:
         prefix = "layers.physics.";
         break;
-    case LayerSetUVE::Physics2D:
-        prefix = "layers.physics2d.";
-        break;
     case LayerSetUVE::Render:
         prefix = "layers.render.";
         break;
@@ -1404,7 +1365,7 @@ bool RegisterEngineProjectSettingsUVE(Config::SettingsRegistryUVE& registry) {
                     allRegistered;
     // Layer names, 1 to 32 as a person counts them; bit 0 is layer 1.
     constexpr std::size_t kMaximumLayerNameBytesUVE = 32U;
-    for (const LayerSetUVE set : {LayerSetUVE::Physics, LayerSetUVE::Physics2D, LayerSetUVE::Render,
+    for (const LayerSetUVE set : {LayerSetUVE::Physics, LayerSetUVE::Render,
                                   LayerSetUVE::Navigation, LayerSetUVE::Avoidance}) {
         std::string_view category = "Layers/Render";
         std::string_view tooltip = "Shown wherever a mesh's, light's or decal's render layers are picked.";
@@ -1412,10 +1373,6 @@ bool RegisterEngineProjectSettingsUVE(Config::SettingsRegistryUVE& registry) {
         case LayerSetUVE::Physics:
             category = "Layers/Physics";
             tooltip = "Shown wherever a 3D collider's layer or mask is picked.";
-            break;
-        case LayerSetUVE::Physics2D:
-            category = "Layers/Physics2D";
-            tooltip = "Shown wherever a 2D collider's layer or mask is picked.";
             break;
         case LayerSetUVE::Render:
             category = "Layers/Render";

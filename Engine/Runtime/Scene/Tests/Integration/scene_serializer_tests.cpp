@@ -61,8 +61,6 @@
 #include "visibility_component.h"
 #include "ui_button_component.h"
 #include "ui_image_component.h"
-#include "camera_2d_component.h"
-#include "sprite_2d_component.h"
 #include "ui_layout_container_component.h"
 #include "ui_text_component.h"
 #include "world_transform_component.h"
@@ -2542,66 +2540,6 @@ TEST_F(SceneSerializerUVETest, SaveThenLoad_UIComponentsUVE_RoundTripExactly) {
     EXPECT_FLOAT_EQ(loadedButton.hoverColor.x, 0.2F);
     EXPECT_TRUE(loadedButton.isHovered);
     EXPECT_FALSE(loadedButton.wasClickedThisFrame);
-
-    std::filesystem::remove(path);
-}
-
-TEST_F(SceneSerializerUVETest, SaveThenLoad_Sprite2D_RoundTripsExactly) {
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    Sprite2DComponentUVE sprite{};
-    sprite.textureAssetGuid = Asset::AssetGuidUVE{0x2D2DU};
-    sprite.sourceRect.position = Math::Vector2UVE{64.0F, 32.0F};
-    sprite.sourceRect.size = Math::Vector2UVE{32.0F, 16.0F};
-    sprite.flipH = true;
-    sprite.modulate = Math::Vector3UVE{0.9F, 0.1F, 0.5F};
-    sprite.alpha = 0.5F;
-    sprite.offset = Math::Vector2UVE{10.0F, -5.0F};
-    entityManager.AddComponentUVE<Sprite2DComponentUVE>(entity, sprite);
-
-    const std::filesystem::path path = "uve_scene_serializer_tests_sprite_2d.uvscene";
-    std::filesystem::remove(path);
-    ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
-
-    EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
-    const std::vector<EntityUVE> roots = serializer.LoadUVE(loadedManager, path);
-    ASSERT_EQ(roots.size(), 1U);
-
-    const Sprite2DComponentUVE& loaded =
-        loadedManager.GetComponentUVE<Sprite2DComponentUVE>(roots[0]);
-    EXPECT_EQ(loaded.textureAssetGuid.value, 0x2D2DU);
-    EXPECT_FLOAT_EQ(loaded.sourceRect.position.x, 64.0F);
-    EXPECT_FLOAT_EQ(loaded.sourceRect.size.y, 16.0F);
-    EXPECT_TRUE(loaded.flipH);
-    EXPECT_FALSE(loaded.flipV);
-    EXPECT_FLOAT_EQ(loaded.modulate.y, 0.1F);
-    EXPECT_FLOAT_EQ(loaded.alpha, 0.5F);
-    EXPECT_FLOAT_EQ(loaded.offset.x, 10.0F);
-
-    std::filesystem::remove(path);
-}
-
-TEST_F(SceneSerializerUVETest, SaveThenLoad_Camera2D_RoundTripsExactly) {
-    const EntityUVE entity = entityManager.CreateEntityUVE();
-    Camera2DComponentUVE camera{};
-    camera.zoom = Math::Vector2UVE{2.0F, 2.0F};
-    camera.offset = Math::Vector2UVE{16.0F, -8.0F};
-    camera.current = true;
-    entityManager.AddComponentUVE<Camera2DComponentUVE>(entity, camera);
-
-    const std::filesystem::path path = "uve_scene_serializer_tests_camera_2d.uvscene";
-    std::filesystem::remove(path);
-    ASSERT_TRUE(serializer.SaveUVE(entityManager, {entity}, path, SceneAssetTypeUVE::Scene));
-
-    EntityManagerUVE loadedManager(memoryManager.GetDefaultAllocatorUVE(), eventSystem);
-    const std::vector<EntityUVE> roots = serializer.LoadUVE(loadedManager, path);
-    ASSERT_EQ(roots.size(), 1U);
-
-    const Camera2DComponentUVE& loaded =
-        loadedManager.GetComponentUVE<Camera2DComponentUVE>(roots[0]);
-    EXPECT_FLOAT_EQ(loaded.zoom.y, 2.0F);
-    EXPECT_FLOAT_EQ(loaded.offset.x, 16.0F);
-    EXPECT_FLOAT_EQ(loaded.offset.y, -8.0F);
-    EXPECT_TRUE(loaded.current);
 
     std::filesystem::remove(path);
 }

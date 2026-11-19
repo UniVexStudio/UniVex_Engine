@@ -463,8 +463,7 @@ TEST_P(BuiltInShaderParityUVETest, EmbeddedSource_IsByteIdenticalToPhysicalFile)
 
 INSTANTIATE_TEST_SUITE_P(
     AllBuiltInShaders, BuiltInShaderParityUVETest,
-    ::testing::Values(std::pair<std::string_view, std::string_view>{"basic_2d.glsl", BuiltIn::kBasic2DSource},
-                       std::pair<std::string_view, std::string_view>{"basic_3d.glsl", BuiltIn::kBasic3DSource},
+    ::testing::Values(std::pair<std::string_view, std::string_view>{"basic_3d.glsl", BuiltIn::kBasic3DSource},
                        std::pair<std::string_view, std::string_view>{"basic_3d_textured.glsl",
                                                                       BuiltIn::kBasic3DTexturedSource},
                        std::pair<std::string_view, std::string_view>{"fullscreen_quad.glsl",

@@ -14,7 +14,6 @@
 #include "auto_translate_component.h"
 #include "audio_source_component.h"
 #include "bone_modifier_component.h"
-#include "camera_2d_component.h"
 #include "camera_component.h"
 #include "canvas_component.h"
 #include "character_controller_component.h"
@@ -44,7 +43,6 @@
 #include "ui_button_component.h"
 #include "ui_checkbox_component.h"
 #include "ui_dropdown_component.h"
-#include "sprite_2d_component.h"
 #include "ui_image_component.h"
 #include "ui_layout_container_component.h"
 #include "ui_progress_bar_component.h"
@@ -345,15 +343,6 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                                   kPropertyTypeFloatUVE),
                                         0.002, 100000.0, 1.0),
                            "Lens"),
-            }));
-
-    AddValidatedUVE<Camera2DComponentUVE, &IsCamera2DComponentValidUVE>(
-        entries,
-        MakeEntryUVE("component.camera_2d", "Camera2DComponentUVE", "Camera2D", kSectionOrderTypeSpecificUVE,
-            {
-                DeclareUVE<&Camera2DComponentUVE::zoom>("zoom", "Zoom", kPropertyTypeVector2UVE),
-                DeclareUVE<&Camera2DComponentUVE::offset>("offset", "Offset", kPropertyTypeVector2UVE),
-                DeclareUVE<&Camera2DComponentUVE::current>("current", "Current", kPropertyTypeBoolUVE),
             }));
 
     AddValidatedUVE<LightComponentUVE, &IsLightComponentValidUVE>(
@@ -2492,27 +2481,6 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          InGroupUVE(DeclareUVE<&UIImageComponentUVE::sliceUVMax>("sliceUVMax", "Slice UV Max",
                                                                                 kPropertyTypeVector2UVE),
                                     "Nine Slice"),
-                     }));
-
-    AddValidatedUVE<Sprite2DComponentUVE, &IsSprite2DComponentValidUVE>(
-        entries,
-        MakeEntryUVE("component.sprite_2d", "Sprite2DComponentUVE", "Sprite2D", kSectionOrderTypeSpecificUVE,
-                     {
-                         DeclareUVE<&Sprite2DComponentUVE::textureAssetGuid>("textureAssetGuid", "Texture",
-                                                                            kPropertyTypeAssetGuidUVE),
-                         DeclareUVE<&Sprite2DComponentUVE::sourceRect>("sourceRect", "Source Rect",
-                                                                      kPropertyTypeRectUVE),
-                         DeclareUVE<&Sprite2DComponentUVE::flipH>("flipH", "Flip H",
-                                                                  kPropertyTypeBoolUVE),
-                         DeclareUVE<&Sprite2DComponentUVE::flipV>("flipV", "Flip V",
-                                                                  kPropertyTypeBoolUVE),
-                         DeclareUVE<&Sprite2DComponentUVE::modulate>("modulate", "Modulate",
-                                                                     kPropertyTypeColorUVE),
-                         WithRangeUVE(DeclareUVE<&Sprite2DComponentUVE::alpha>("alpha", "Alpha",
-                                                                              kPropertyTypeFloatUVE),
-                                      0.0, 1.0, 0.01),
-                         DeclareUVE<&Sprite2DComponentUVE::offset>("offset", "Offset",
-                                                                   kPropertyTypeVector2UVE),
                      }));
 
     AddUVE<UIButtonComponentUVE>(
