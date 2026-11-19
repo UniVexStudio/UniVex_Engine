@@ -1228,8 +1228,8 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                 }
 
                 // ---- Post-integration Collision Pass (CollisionPlane & real-time Collider3D CollisionPhysics) ----
-                const bool hasSizeX = HasVfxAttributeUVE(program.attributeMask, VfxAttributeBitUVE::SizeX);
-                for (const auto& op : program.updateOps) {
+                const bool hasSize = HasVfxAttributeUVE(program.attributeMask, VfxAttributeBitUVE::Size);
+                for (const VfxParticleUpdateOpUVE& op : program.particleUpdateOps) {
                     if (op.type != Asset::ParticleModuleTypeUVE::CollisionPlane &&
                         op.type != Asset::ParticleModuleTypeUVE::CollisionPhysics) {
                         continue;
@@ -1240,7 +1240,7 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                     }
 
                     const bool killOnHit = op.intA != 0;
-                    const bool isLocalSpace = program.space == Asset::ParticleSimulationSpaceUVE::Local;
+                    const bool isLocalSpace = program.space == Asset::ParticleSimSpaceUVE::Local;
                     const Math::QuaternionUVE invOwnerRot = Math::ConjugateUVE(owner.rotation);
 
                     if (op.type == Asset::ParticleModuleTypeUVE::CollisionPlane) {
@@ -1251,7 +1251,7 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                             Math::Vector3UVE planeNormal = EvaluateCompiledVectorInputUVE(
                                 op.vecB, normAge, nullptr, program.curveTables, m_parameters);
                             const float nLenSq = Math::LengthSquaredUVE(planeNormal);
-                            planeNormal = nLenSq > 1.0e-8F ? (planeNormal / std::sqrt(nLenSq))
+                            planeNormal = nLenSq > 1.0e-8F ? (planeNormal * (1.0F / std::sqrt(nLenSq)))
                                                            : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
                             const float bounce = std::clamp(
                                 EvaluateCompiledFloatInputUVE(op.floatA, normAge, nullptr, program.curveTables,
@@ -1264,7 +1264,7 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                             const float lifeLoss = std::max(
                                 0.0F, EvaluateCompiledFloatInputUVE(op.floatC, normAge, nullptr, program.curveTables,
                                                                     m_parameters));
-                            const float radius = hasSizeX ? std::max(0.005F, state.sizeX[i] * 0.25F) : 0.01F;
+                            const float radius = hasSize ? std::max(0.005F, state.sizeX[i] * 0.25F) : 0.01F;
                             Math::Vector3UVE pos{state.posX[i], state.posY[i], state.posZ[i]};
                             const float signedDist = Math::DotUVE(pos - planePoint, planeNormal) - radius;
                             if (signedDist < 0.0F) {
@@ -1306,7 +1306,7 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                         const float lifeLoss = std::max(
                             0.0F, EvaluateCompiledFloatInputUVE(op.floatC, normAge, nullptr, program.curveTables,
                                                                 m_parameters));
-                        const float radius = hasSizeX ? std::max(0.005F, state.sizeX[i] * 0.25F) : 0.01F;
+                        const float radius = hasSize ? std::max(0.005F, state.sizeX[i] * 0.25F) : 0.01F;
 
                         Math::Vector3UVE simPos{state.posX[i], state.posY[i], state.posZ[i]};
                         Math::Vector3UVE simVel{state.velX[i], state.velY[i], state.velZ[i]};
@@ -1355,7 +1355,8 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                                 const float distSq = Math::LengthSquaredUVE(delta);
                                 if (distSq < minDist * minDist) {
                                     const float dist = std::sqrt(distSq);
-                                    hitNormal = dist > 1.0e-5F ? (delta / dist) : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                                    hitNormal = dist > 1.0e-5F ? (delta * (1.0F / dist))
+                                                               : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
                                     penetration = minDist - dist;
                                     hit = true;
                                 }
@@ -1370,7 +1371,8 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                                 const float distSq = Math::LengthSquaredUVE(delta);
                                 if (distSq < minDist * minDist) {
                                     const float dist = std::sqrt(distSq);
-                                    hitNormal = dist > 1.0e-5F ? (delta / dist) : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
+                                    hitNormal = dist > 1.0e-5F ? (delta * (1.0F / dist))
+                                                               : Math::Vector3UVE{0.0F, 1.0F, 0.0F};
                                     penetration = minDist - dist;
                                     hit = true;
                                 }
