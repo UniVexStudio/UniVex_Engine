@@ -10,51 +10,27 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
-#include <cmath>
+#include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-
-#include "viewport_render_pass.h"
-#include "integration/editor_mesh_layer.h"
-#include "integration/selection_outline_geometry.h"
-#include "integration/entity_picker.h"
-#include "univex/camera/viewport_metrics.h"
-#include "integration/math_conversions.h"
-#include "univex/camera/orbit_camera.h"
-#include "univex/render/shader_program.h"
-#include "univex/render/studio_backdrop_renderer.h"
-
 #include "engine_core.h"
 #include "logging_macros.h"
 #include "editor_bridge_stdio.h"
-#include "ui_draw_batch.h"
-#include "ui_font_atlas.h"
 #include "editor.h"
-#include "vector2.h"
-#include "camera_component.h"
+#include "vector3.h"
 #include "light_component.h"
 #include "transform_component.h"
-#include "world_transform_component.h"
 #include "i_entity_manager.h"
-#include "camera_3d.h"
-#include "directional_light_3d.h"
-#include "fog_volume_3d.h"
-#include "occluder_3d.h"
-#include "reflection_probe_3d.h"
-#include "visibility_region_3d.h"
-#include "world_partition_3d.h"
-#include "camera_system.h"
-#include "i_scene_graph.h"
-#include "univex/gizmo/gizmo_geometry.h"
-#include "editor_viewport_backends.h"
+#include "editor_viewport_host.h"
 
 namespace {
 
@@ -304,31 +280,21 @@ int main(const int argc, char** argv) {
         }
 
         // EngineCoreUVE's own scene render stays a documented no-op (the editor doesn't own a
-        // gameplay camera), so the Viewport panel's real content comes entirely from
-        // EditorViewportBackendsUVE - grid, orbit camera, gizmos, and one proxy cube per live
-        // scene entity, shown by the editor's view rather than EngineCoreUVE's own render
-        // target. Only constructed in real windowed mode: it needs an actual current GL context,
-        // which headless mode's NullRenderDeviceUVE never creates.
-        // Three real backends, not three names routed through one mutable renderer.  In particular,
-        // resizing/orbiting the level view can no longer recreate the Entity Editor's target or
-        // overwrite its camera; Retarget also keeps its fixed studio framing in its own backend.
-        using ViewportContextUVE = UVE::Editor::EditorUVE::ViewportContextUVE;
-        std::unique_ptr<UVE::App::EditorViewportBackendsUVE> viewportBackends;
+        // gameplay camera), so each editor window's 3D view comes from its dedicated viewport
+        // owned by EditorViewportHostUVE: level_viewport, camera_preview_viewport,
+        // entity_viewport, widget_preview_viewport, retarget_viewport, montage_viewport, and
+        // vfx_viewport. Only constructed in real windowed mode: it needs an actual current GL
+        // context, which headless mode's NullRenderDeviceUVE never creates.
+        std::unique_ptr<UVE::App::Viewports::EditorViewportHostUVE> viewportHost;
         editor.SetDocumentSceneFactoryUVE([&engine] { return engine.CreateDocumentSceneUVE(); });
-        editor.SetDocumentSceneClosingUVE([&viewportBackends](const UVE::Core::EngineServicesUVE& services) {
-            if (viewportBackends != nullptr) {
-                viewportBackends->ForgetServicesUVE(services);
+        editor.SetDocumentSceneClosingUVE([&viewportHost](const UVE::Core::EngineServicesUVE& services) {
+            if (viewportHost != nullptr) {
+                viewportHost->ForgetServicesUVE(services);
             }
         });
         if (!options.headless) {
-            viewportBackends = std::make_unique<UVE::App::EditorViewportBackendsUVE>(editor, engine);
-            editor.SetViewportPanelRendererUVE(
-                [&viewportBackends](const ViewportContextUVE context,
-                                    const UVE::Math::Vector2UVE& availableSize,
-                                    UVE::Math::Vector2UVE& outUsedSize,
-                                    const UVE::Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
-                    return viewportBackends->RenderUVE(context, availableSize, outUsedSize, overlayState);
-                });
+            viewportHost = std::make_unique<UVE::App::Viewports::EditorViewportHostUVE>(editor, engine);
+            viewportHost->BindToEditorUVE(editor);
         }
         engine.SetPostRenderCallbackUVE([&editor] { editor.RenderOverlayUVE(); });
 
@@ -344,10 +310,12 @@ int main(const int argc, char** argv) {
             std::fprintf(stderr, "uve_editor: could not save the PRISM screenshot\n");
         }
         engine.SetPostRenderCallbackUVE({});
-        editor.SetViewportPanelRendererUVE({});
+        if (viewportHost != nullptr) {
+            viewportHost->UnbindFromEditorUVE(editor);
+        }
         // Destroyed here, before engine.Shutdown() tears down the window/GL context below - its
         // destructor deletes real GL objects (framebuffers/textures) that must still be valid.
-        viewportBackends.reset();
+        viewportHost.reset();
         editor.ShutdownUVE();
         engine.Shutdown();
         return 0;

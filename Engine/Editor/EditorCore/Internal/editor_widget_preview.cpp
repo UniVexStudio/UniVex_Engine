@@ -68,7 +68,7 @@ void DestroyTreeUVE(Core::EngineServicesUVE& services, const Scene::EntityUVE ro
 std::uint64_t EditorUVE::RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& request, const Math::Vector2UVE& size,
                                                 Math::Vector2UVE& outUsed) {
     outUsed = Math::Vector2UVE{0.0F, 0.0F};
-    if (request.assetPath.empty() || !m_viewportPanelRenderer || !m_documentSceneFactory || size.x < 8.0F || size.y < 8.0F) {
+    if (request.assetPath.empty() || !m_viewports.widgetPreview || !m_documentSceneFactory || size.x < 8.0F || size.y < 8.0F) {
         return 0U;
     }
     if (!m_widgetPreview.has_value()) {
@@ -186,7 +186,7 @@ std::uint64_t EditorUVE::RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& r
     m_previewCamera = throughStage ? preview.stageCamera : Scene::kInvalidEntityUVE;
     std::uint64_t texture = 0U;
     try {
-        texture = m_viewportPanelRenderer(ViewportContextUVE::WidgetPreview, size, outUsed, state);
+        texture = m_viewports.widgetPreview(size, outUsed, state);
     } catch (...) {
         m_services = previous;
         m_previewCamera = previousCamera;

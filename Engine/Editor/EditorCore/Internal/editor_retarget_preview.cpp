@@ -118,7 +118,7 @@ std::uint64_t EditorUVE::RenderRetargetPreviewUVE(const Math::Vector2UVE& size, 
                                                  const EditorViewportInputUVE& input) {
     outUsed = Math::Vector2UVE{0.0F, 0.0F};
     std::uint64_t texture = 0U;
-    if (!m_retargetPreview.has_value() || !m_viewportPanelRenderer) {
+    if (!m_retargetPreview.has_value() || !m_viewports.retarget) {
         return texture;
     }
     RetargetPreviewUVE& preview = *m_retargetPreview;
@@ -141,7 +141,7 @@ std::uint64_t EditorUVE::RenderRetargetPreviewUVE(const Math::Vector2UVE& size, 
         state.colliderLines.clear();
         BuildSkeletonOverlayUVE(state.bones);
         state.input = input;
-        texture = m_viewportPanelRenderer(ViewportContextUVE::Retarget, size, outUsed, state);
+        texture = m_viewports.retarget(size, outUsed, state);
     });
     return texture;
 }

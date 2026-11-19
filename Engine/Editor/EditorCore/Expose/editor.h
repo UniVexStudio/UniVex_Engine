@@ -552,7 +552,7 @@ public:
 
     /// The 4 standard transform-tool modes a Viewport overlay toolbar exposes, named generically
     /// (not tied to any specific renderer's own enum) so EditorCore stays engine/viewport-agnostic
-    /// - see ViewportPanelRendererUVE's own doc comment below for why.
+    /// - see ViewportRenderCallbackUVE's own doc comment below for why.
     enum class ViewportGizmoModeUVE {
         Move,
         Rotate,
@@ -573,10 +573,10 @@ public:
     };
 
     /// Current state of the Viewport panel's own overlay toolbar (projection mode, active gizmo
-    /// tool, snap, grid) - owned and mutated by EditorUVE's own overlay-drawing code
-    /// (DrawViewportPanelUVE()), then handed to ViewportPanelRendererUVE each frame so the
-    /// concrete renderer can apply it to its own real projection/gizmo-mode/grid state. Kept as
-    /// plain enums/bools with no viewport-module type in sight, for the same reason.
+    /// tool, snap, grid) - owned and mutated by EditorUVE's own overlay-drawing code, then handed
+    /// to each dedicated ViewportRenderCallbackUVE each frame so the concrete viewport can apply
+    /// it to its own real projection/gizmo-mode/grid state. Kept as plain enums/bools with no
+    /// viewport-module type in sight, for the same reason.
     /// One axis colour as plain RGB in 0..1 - see ViewportOverlayStateUVE::axisColorX for why this
     /// is a local struct rather than the viewport's own palette type.
     struct ViewportAxisColorUVE final {
@@ -807,43 +807,54 @@ public:
         mutable std::array<float, 3> selectionOutlineRgb{};
     };
 
-    /// Render callback for the dockable "Viewport" panel: given the panel's current available
-    /// content-region size and the overlay toolbar's current state (see ViewportOverlayStateUVE),
-    /// renders into the caller's own framebuffer at (at most) that size and returns a GL texture
-    /// name for the editor's view to show, writing the actual rendered size back through
-    /// outUsedSize. Returning 0 means "not ready yet" - nothing is drawn that frame. Deliberately
-    /// free of any GL/
+    /// Render callback for an individual editor 3D viewport: given the view's current available
+    /// content-region size and overlay state (see ViewportOverlayStateUVE), renders into that
+    /// viewport's own framebuffer at (at most) that size and returns a GL texture name for the
+    /// editor's view to show, writing the actual rendered size back through outUsedSize. Returning
+    /// 0 means "not ready yet" - nothing is drawn that frame. Deliberately free of any GL or
     /// viewport-module types so EditorCore stays engine/viewport-agnostic (this is an upper-layer
     /// module that may compose Engine/Runtime, not something that should link a sibling
-    /// Engine/Editor module directly) - see Engine/App/src/editor/main.cpp for the concrete
-    /// Engine/Editor/Viewport-backed implementation.
-    /// Identifies one of the editor's physically independent render views.  This is deliberately
-    /// explicit at the renderer boundary: Main, Entity Editor, Retarget, and Inspector Camera
-    /// Preview must never reuse an
-    /// orbit camera, gesture, framebuffer, or render texture merely because only one happened to
-    /// be visible in an earlier frame.
-    enum class ViewportContextUVE : std::uint8_t {
-        Main = 0,
-        EntityEditor,
-        Retarget,
-        InspectorCameraPreview,
-        /// The Motion Montage Editor's preview of its character.
-        MontageEditor,
-        /// The Widget Editor's Designer: a 3D View's asset, live, where the widget stands.
-        WidgetPreview,
-        /// The VFX / Particle Graph Editor's live preview of its particle system.
-        VfxEditor,
-        Count
-    };
-
-    using ViewportPanelRendererUVE =
-        std::function<std::uint64_t(ViewportContextUVE context, const Math::Vector2UVE& availableSize,
-                                    Math::Vector2UVE& outUsedSize,
+    /// Engine/Editor module directly) - see Engine/App/Internal/editor/viewports/ for the concrete
+    /// Engine/Editor/Viewport-backed implementations.
+    using ViewportRenderCallbackUVE =
+        std::function<std::uint64_t(const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
                                     const ViewportOverlayStateUVE& overlayState)>;
 
-    /// Registers (or clears, with an empty std::function) the Viewport panel's render callback.
-    /// Called once per frame from RenderOverlayUVE() while the panel is visible.
-    void SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer);
+    /// Physically separated per-window 3D viewport bindings. Each editor window owns its own
+    /// independent camera, render target, and input state without routing through a shared
+    /// dispatcher enum.
+    struct EditorViewportsUVE final {
+        /// The main Level Editor 3D viewport (`level_viewport`).
+        ViewportRenderCallbackUVE level;
+        /// The corner Picture-in-Picture preview for a selected Camera3D (`camera_preview_viewport`).
+        ViewportRenderCallbackUVE cameraPreview;
+        /// The Entity Editor's isolated authoring viewport (`entity_viewport`).
+        ViewportRenderCallbackUVE entity;
+        /// The Widget Editor Designer's 3D View preview (`widget_preview_viewport`).
+        ViewportRenderCallbackUVE widgetPreview;
+        /// The Retarget window's dual-character studio viewport (`retarget_viewport`).
+        ViewportRenderCallbackUVE retarget;
+        /// The Motion Montage Editor's skeletal preview viewport (`montage_viewport`).
+        ViewportRenderCallbackUVE montage;
+        /// The VFX / Particle Graph Editor's live particle preview viewport (`vfx_viewport`).
+        ViewportRenderCallbackUVE vfx;
+    };
+
+    /// Replaces all seven per-window viewport callbacks at once.
+    void SetEditorViewportsUVE(EditorViewportsUVE viewports);
+    /// Clears all seven per-window viewport callbacks.
+    void ClearEditorViewportsUVE();
+    /// Returns the currently registered per-window viewport callbacks.
+    [[nodiscard]] const EditorViewportsUVE& GetEditorViewportsUVE() const noexcept { return m_viewports; }
+
+    /// Registers (or clears, with an empty callback) an individual editor window's 3D viewport.
+    void SetLevelViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetCameraPreviewViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetEntityViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetWidgetPreviewViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetRetargetViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetMontageViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetVfxViewportRendererUVE(ViewportRenderCallbackUVE renderer);
 
     /// Makes a scene beside the level for an asset document (the Entity Editor's entity), so
     /// editing it never touches the level. The app passes EngineCoreUVE::CreateDocumentSceneUVE;
@@ -854,13 +865,13 @@ public:
     /// window); without one the built-in picker is used.
     using FilePickerHostUVE = std::function<void(FilePickerRequestUVE)>;
     void SetFilePickerHostUVE(FilePickerHostUVE host) { m_filePickerHost = std::move(host); }
-    /// Called with a document scene's services just before that scene is destroyed, so whatever
-    /// draws it (the viewport backends) lets go first.
+    /// Called with a document scene's services just before that scene is destroyed, so whichever
+    /// viewport draws it lets go first.
     using DocumentSceneClosingUVE = std::function<void(const Core::EngineServicesUVE&)>;
     void SetDocumentSceneClosingUVE(DocumentSceneClosingUVE callback) { m_documentSceneClosing = std::move(callback); }
 
     /// The services of the document being worked on right now: the level's, or the open entity's
-    /// inside an EntityDocumentScopeUVE. Viewport backends render the scene these hold.
+    /// inside an EntityDocumentScopeUVE. Active editor viewports render the scene these hold.
     [[nodiscard]] Core::EngineServicesUVE& GetActiveServicesUVE() noexcept { return *m_services; }
     /// True inside an EntityDocumentScopeUVE: the document is the open entity, not the level.
     [[nodiscard]] bool IsEntityDocumentActiveUVE() const noexcept { return m_entityDocumentActive; }
@@ -1026,7 +1037,7 @@ public:
     void SetMontagePlayheadUVE(double time);
     /// Advances the preview and poses its character. Called once a frame.
     void TickMontageEditorUVE(double deltaSeconds);
-    /// Draws the preview into the Motion Montage Editor's view (ViewportContextUVE::MontageEditor).
+    /// Draws the preview into the Motion Montage Editor's dedicated viewport (`montage_viewport`).
     [[nodiscard]] std::uint64_t RenderMontagePreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
                                                         const EditorViewportInputUVE& input);
     /// What the Widget Editor's Designer shows in a 3D View (UIView3DComponentUVE's look).
@@ -1042,8 +1053,8 @@ public:
         /// empty: the asset then stands alone on the studio floor.
         std::vector<std::byte> stage;
     };
-    /// Draws a 3D View's asset, lit and turning, into the Designer's preview
-    /// (ViewportContextUVE::WidgetPreview), in a world of its own; 0 when there is nothing to show.
+    /// Draws a 3D View's asset, lit and turning, into the Designer's dedicated preview viewport
+    /// (`widget_preview_viewport`), in a world of its own; 0 when there is nothing to show.
     [[nodiscard]] std::uint64_t RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& request, const Math::Vector2UVE& size,
                                                       Math::Vector2UVE& outUsed);
     /// Lets the preview's world go (the Widget Editor closed, or no 3D View left).
@@ -3555,7 +3566,7 @@ private:
     float m_inspectorPanelWidth = 320.0F;
     std::array<char, 512> m_consoleInput{};
     bool m_consoleScrollToBottom = false;
-    ViewportPanelRendererUVE m_viewportPanelRenderer;
+    EditorViewportsUVE m_viewports;
     /// The VFX Editor's open document, its preview world's scene, and the thumbnail cache.
     std::unique_ptr<VfxEditSessionUVE> m_vfxEdit;
     std::unique_ptr<Core::DocumentSceneUVE> m_vfxScene;
@@ -3564,8 +3575,8 @@ private:
     bool m_prismUiRequested = false;
     std::filesystem::path m_prismAssetDir;
     std::unique_ptr<EditorShellUVE> m_levelShell;
-    // UI/render state is isolated just like the three backend cameras and render targets. Main
-    // remains the canonical settings-backed state; tool-window state is session-local.
+    // UI/render state is isolated per window, matching the dedicated per-window viewports.
+    // Level remains the canonical settings-backed state; tool-window state is session-local.
     ViewportOverlayStateUVE m_viewportOverlayState;
     ViewportOverlayStateUVE m_entityViewportOverlayState;
     ViewportOverlayStateUVE m_retargetViewportOverlayState;

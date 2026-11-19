@@ -2949,7 +2949,7 @@ void EditorEntityEditorUVE::RenderUVE() {
         return;
     }
     std::vector<EditorHostUVE::ViewImageUVE> views;
-    if (m_viewport && m_viewport->visible() && m_editor.m_viewportPanelRenderer) {
+    if (m_viewport && m_viewport->visible() && m_editor.m_viewports.entity) {
         const prism::Rect rect = m_viewport->rect();
         if (rect.w >= 1.0F && rect.h >= 1.0F) {
             // Inside the entity's scope this is the entity view's own state.
@@ -2970,9 +2970,8 @@ void EditorEntityEditorUVE::RenderUVE() {
             }
             state.input = m_host.CaptureViewInputUVE(m_window, rect);
             Math::Vector2UVE used{0.0F, 0.0F};
-            const std::uint64_t texture = m_editor.m_viewportPanelRenderer(
-                EditorUVE::ViewportContextUVE::EntityEditor, Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used,
-                state);
+            const std::uint64_t texture =
+                m_editor.m_viewports.entity(Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used, state);
             m_host.ApplyViewCursorUVE(m_window, state.input);
             state.orbitRequestX = 0.0F;
             state.orbitRequestY = 0.0F;

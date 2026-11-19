@@ -116,8 +116,9 @@ public class CoreTestsModule : ModuleRules
             "../Runtime/VFX/Tests",
             "../Runtime/Window/Tests",
             "../Runtime/World/Tests",
-            "../Editor/EditorCore/Blueprint/Testing"
-            // Note: ../Editor/EditorCore/Tests is intentionally excluded here, matching
+            "../Editor/EditorCore/Blueprint/Testing",
+            "../Editor/EditorCore/Tests/Viewports"
+            // Note: ../Editor/EditorCore/Tests root is intentionally excluded here, matching
             // the pre-relocation ExcludedFiles entry for Test/Editor/.
         });
 
