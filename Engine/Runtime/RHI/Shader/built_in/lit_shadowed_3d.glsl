@@ -1087,7 +1087,9 @@ vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 
     UvSetUVE set = control.w > 0.5 ? uv2 : uv1;
     vec2 tiling = vec2(1.0) + transform.xy;
     set.uv = set.uv * tiling + transform.zw;
-    set.position = set.position * vec3(tiling.x, tiling.y, tiling.x) + vec3(transform.z, transform.w, transform.z);
+    set.uvX = set.uvX * tiling + transform.zw;
+    set.uvY = set.uvY * tiling + transform.zw;
+    set.uvZ = set.uvZ * tiling + transform.zw;
     vec4 value = SampleUvSetUVE(map, set);
     int channel = int(control.x + 0.5);
     if (channel >= 1) {
