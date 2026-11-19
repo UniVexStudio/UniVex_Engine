@@ -2270,6 +2270,7 @@ uniform int uPackIndirectWeightAlpha = 0;
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
 uniform mat4 uLightSpaceMatrix;
+uniform mat4 uLightSpaceMatrices[3];
 uniform int uShadowPcfKernelRadius;
 // Increment 30 fixed three-cascade directional shadow contract.
 uniform sampler2D uShadowMapTextures[3];
