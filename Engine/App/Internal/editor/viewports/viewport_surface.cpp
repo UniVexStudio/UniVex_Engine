@@ -27,30 +27,36 @@ constexpr std::string_view kMeshBlitFragmentShaderUVE = R"(#version 330 core
 uniform sampler2D uMeshColor;
 uniform sampler2D uSceneDepth;
 uniform int uHasDepth;
+uniform int uDirectSceneDepth;
 uniform mat4 uSceneInvViewProj;
 uniform mat4 uViewProj;
 uniform vec2 uOutSize;
 out vec4 FragColor;
 void main() {
     vec4 meshColor = texelFetch(uMeshColor, ivec2(gl_FragCoord.xy), 0);
-    if (meshColor.a < 0.25) {
+    if (meshColor.a < 0.01) {
         discard;
     }
-    FragColor = vec4(meshColor.rgb, 1.0);
+    float coverageAlpha = meshColor.a >= 0.74 ? 1.0 : smoothstep(0.01, 0.74, meshColor.a);
+    FragColor = vec4(meshColor.rgb, coverageAlpha);
     if (uHasDepth == 0) {
         gl_FragDepth = 0.0;
         return;
     }
-    vec2 uv = gl_FragCoord.xy / uOutSize;
+    vec2 uv = gl_FragCoord.xy / max(uOutSize, vec2(1.0));
     float d = texture(uSceneDepth, uv).r;
     if (d >= 0.999999) {
         gl_FragDepth = 1.0;
         return;
     }
+    if (uDirectSceneDepth != 0) {
+        gl_FragDepth = clamp(d * 2.0 - 1.0, 0.0, 1.0);
+        return;
+    }
     vec4 world = uSceneInvViewProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
-    world /= world.w;
+    world /= max(abs(world.w), 1.0e-6);
     vec4 clip = uViewProj * vec4(world.xyz, 1.0);
-    gl_FragDepth = clamp((clip.z / clip.w) * 0.5 + 0.5, 0.0, 1.0);
+    gl_FragDepth = clamp((clip.z / max(abs(clip.w), 1.0e-6)) * 0.5 + 0.5, 0.0, 1.0);
 }
 )";
 
@@ -192,6 +198,8 @@ univex::integration::EditorMeshLayerResultUVE ViewportSurfaceUVE::RenderSceneMes
     const int width,
     const int height,
     const std::optional<Scene::EntityUVE> lookThroughCamera) {
+    m_lastRenderUsedLookThroughCamera =
+        lookThroughCamera.has_value() && *lookThroughCamera != Scene::kInvalidEntityUVE;
     return m_meshLayer.RenderUVE(camera, static_cast<std::uint32_t>(width),
                                  static_cast<std::uint32_t>(height), lookThroughCamera);
 }
@@ -217,7 +225,8 @@ void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshL
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_ALWAYS);
     glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     m_meshBlitProgram->Use();
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, meshResult.colorTextureId);
@@ -229,6 +238,8 @@ void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshL
         depth.valid && glDevice != nullptr ? static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture))
                                            : 0U;
     glUniform1i(m_meshBlitProgram->UniformLocation("uHasDepth"), depthTexture != 0U ? 1 : 0);
+    glUniform1i(m_meshBlitProgram->UniformLocation("uDirectSceneDepth"),
+                m_lastRenderUsedLookThroughCamera ? 1 : 0);
     if (depthTexture != 0U) {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, depthTexture);
@@ -246,6 +257,7 @@ void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshL
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
     glActiveTexture(GL_TEXTURE0);
+    glDisable(GL_BLEND);
     glDepthFunc(GL_LESS);
 }
 
