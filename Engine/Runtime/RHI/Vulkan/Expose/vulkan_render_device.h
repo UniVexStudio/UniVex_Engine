@@ -317,6 +317,8 @@ public:
 
     [[nodiscard]] bool IsUsableUVE() const noexcept override;
     [[nodiscard]] std::string_view GetBackendNameUVE() const noexcept override;
+    [[nodiscard]] bool IsPresentationSurfaceSrgbUVE() const noexcept override;
+    [[nodiscard]] bool UsesZeroToOneDepthBufferUVE() const noexcept override;
 
     // --- M1 diagnostics beyond IRenderDeviceUVE (Vulkan bootstrap device only) ---
     /// Copies the most recently presented swapchain image's pixel contents into `outRGBA8`,

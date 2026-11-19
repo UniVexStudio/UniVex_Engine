@@ -74,10 +74,12 @@ enum class SpatialUpscalingMethodUVE : std::uint32_t {
 };
 
 /// Tone-mapping operators the built-in final pass can execute. LinearClamp is a direct clip into
-/// display range; ACES provides the existing filmic roll-off and remains the default.
+/// display range; ACES provides a high-contrast filmic curve; SoftFilmic provides smooth
+/// highlight desaturation and roll-off and is the default.
 enum class ToneMappingMethodUVE : std::uint32_t {
     LinearClampUVE = 0U,
     AcesUVE,
+    SoftFilmicUVE,
 };
 
 /// Bounds shared by the persisted resolution-scale settings and EngineCoreUVE's startup validation.
@@ -472,7 +474,7 @@ struct EngineConfigUVE {
     /// Spatial resampling used to fit the scene render target to the presentation size.
     SpatialUpscalingMethodUVE spatialUpscalingMethodUVE = SpatialUpscalingMethodUVE::BilinearUVE;
     /// Operator used to map the HDR scene color into display range in the final full-screen pass.
-    ToneMappingMethodUVE toneMappingMethodUVE = ToneMappingMethodUVE::AcesUVE;
+    ToneMappingMethodUVE toneMappingMethodUVE = ToneMappingMethodUVE::SoftFilmicUVE;
     /// Unsharp-mask strength applied to the final scene reconstruction before exposure/tone mapping; 0 disables it.
     float sharpeningAmountUVE = 0.0F;
     /// Add sub-LSB screen-space noise before output quantization to reduce visible banding.
@@ -493,8 +495,8 @@ struct EngineConfigUVE {
     float ssaoPowerUVE = 1.0F;
     /// 0 = Low (4 samples), 1 = Medium (8), 2 = High (12); High preserves the existing kernel cost.
     std::uint32_t ssaoQualityUVE = 2U;
-    /// Apply the small Gaussian AO blur while compositing; disabled by default to preserve current output.
-    bool ssaoBlurEnabledUVE = false;
+    /// Apply the depth-aware separable bilateral AO blur to smooth half-resolution kernel noise.
+    bool ssaoBlurEnabledUVE = true;
 
     /// Frustum culling for the renderer's main colour view. DebugFreezeUVE submits everything the
     /// scene placed, wherever the camera looks; EnabledUVE preserves the shipped culling behaviour.

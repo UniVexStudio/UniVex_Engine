@@ -40,7 +40,7 @@ struct PostProcessSettingsUVE final {
     float ssaoPowerUVE = 1.0F;
     /// 0 = Low (4 samples), 1 = Medium (8), 2 = High (12).
     std::uint32_t ssaoQualityUVE = 2U;
-    bool ssaoBlurEnabledUVE = false;
+    bool ssaoBlurEnabledUVE = true;
 
     /// Screen-space contact shadows (see contact_shadows_uve.h). Off by default: the pass refines an
     /// existing shadow map with a depth-buffer march, so a project opts in once it has shadows worth
@@ -66,6 +66,9 @@ struct PostProcessSettingsUVE final {
     std::uint32_t fastApproximateAAQualityUVE = 1U;
     bool nearestUpscalingEnabledUVE = false;
     bool acesToneMappingEnabledUVE = true;
+    /// 0 = Linear clamp, 1 = ACES filmic, 2 = Soft filmic (default). Setting
+    /// `acesToneMappingEnabledUVE = false` forces mode 0 for backwards compatibility.
+    std::uint32_t toneMappingMethodUVE = 2U;
     float sharpeningAmountUVE = 0.0F;
     bool ditheringEnabledUVE = true;
 };

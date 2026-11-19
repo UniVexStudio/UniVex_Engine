@@ -173,14 +173,15 @@ TEST(PreviewLightingUVETest, EnvironmentCarriesTheAuthoredBandsAndAmbient) {
     EXPECT_EQ(frame.environment.ambientSource, WorldEnvironmentAmbientSourceUVE::Sky);
 }
 
-TEST(PreviewLightingUVETest, ThePreviewNeverAddsPostProcessingOfItsOwn) {
-    // A stand-in for a missing environment must not silently bloom, occlude or grade the author's
-    // scene: those are decisions that belong to the WorldEnvironment they will add themselves.
+TEST(PreviewLightingUVETest, PreviewCarriesCleanPostProcessingDefaultsWithoutFog) {
+    // The preview environment matches the runtime AAA post-processing baseline (soft-knee bloom
+    // and ambient-only SSAO active, fog opt-in) so the editor viewport matches the game output.
     const PreviewLightingFrameUVE frame = ResolvePreviewLightingUVE(false, false, DefaultSettingsUVE());
     ASSERT_TRUE(frame.environmentActive);
-    EXPECT_FALSE(frame.environment.postProcessingEnabled);
-    EXPECT_FALSE(frame.environment.bloomEnabled);
-    EXPECT_FALSE(frame.environment.ssaoEnabled);
+    EXPECT_TRUE(frame.environment.hasPostProcessingOverride);
+    EXPECT_TRUE(frame.environment.postProcessingEnabled);
+    EXPECT_TRUE(frame.environment.bloomEnabled);
+    EXPECT_TRUE(frame.environment.ssaoEnabled);
     EXPECT_FALSE(frame.environment.fogEnabled);
 }
 

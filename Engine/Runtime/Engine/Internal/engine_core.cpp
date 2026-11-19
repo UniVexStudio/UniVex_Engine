@@ -525,11 +525,12 @@ void EngineCoreUVE::Init() {
     switch (m_config.toneMappingMethodUVE) {
     case ToneMappingMethodUVE::LinearClampUVE:
     case ToneMappingMethodUVE::AcesUVE:
+    case ToneMappingMethodUVE::SoftFilmicUVE:
         break;
     default:
-        UVE_WARNING("EngineCoreUVE: invalid tone-mapping method {}; using ACES",
+        UVE_WARNING("EngineCoreUVE: invalid tone-mapping method {}; using SoftFilmic",
                     static_cast<std::uint32_t>(m_config.toneMappingMethodUVE));
-        m_config.toneMappingMethodUVE = ToneMappingMethodUVE::AcesUVE;
+        m_config.toneMappingMethodUVE = ToneMappingMethodUVE::SoftFilmicUVE;
         break;
     }
     switch (m_config.postProcessAAMethodUVE) {
@@ -5333,6 +5334,52 @@ VersionUVE EngineCoreUVE::GetEngineVersionUVE() noexcept {
 }
 
 
+void ApplyEngineConfigToRenderer3DUVE(const EngineConfigUVE& config, Render::IRenderer3DUVE& renderer) {
+    renderer.SetSceneClearColorUVE(config.backgroundColorUVE);
+    Render::PostProcessSettingsUVE postProcessSettings;
+    postProcessSettings.nearestUpscalingEnabledUVE =
+        config.spatialUpscalingMethodUVE == SpatialUpscalingMethodUVE::NearestUVE;
+    postProcessSettings.acesToneMappingEnabledUVE = config.toneMappingMethodUVE != ToneMappingMethodUVE::LinearClampUVE;
+    postProcessSettings.toneMappingMethodUVE = static_cast<std::uint32_t>(config.toneMappingMethodUVE);
+    postProcessSettings.sharpeningAmountUVE = config.sharpeningAmountUVE;
+    postProcessSettings.ditheringEnabledUVE = config.ditheringEnabledUVE;
+    postProcessSettings.fastApproximateAAEnabledUVE =
+        config.postProcessAAMethodUVE == PostProcessAAMethodUVE::FastApproximateUVE;
+    postProcessSettings.fastApproximateAAQualityUVE = config.screenSpaceAAQualityUVE;
+    postProcessSettings.ssaoEnabledUVE = config.ssaoEnabledUVE;
+    postProcessSettings.ssaoRadiusUVE = config.ssaoRadiusUVE;
+    postProcessSettings.ssaoIntensityUVE = config.ssaoIntensityUVE;
+    postProcessSettings.ssaoPowerUVE = config.ssaoPowerUVE;
+    postProcessSettings.ssaoQualityUVE = config.ssaoQualityUVE;
+    postProcessSettings.ssaoBlurEnabledUVE = config.ssaoBlurEnabledUVE;
+    // Contact shadows: the enable/length/steps settings predate the pass that consumes them, so
+    // this is where they finally reach a renderer.
+    postProcessSettings.contactShadowsEnabledUVE = config.contactShadowsEnabledUVE;
+    postProcessSettings.contactShadowLengthMetersUVE = static_cast<float>(config.contactShadowsLengthUVE);
+    postProcessSettings.contactShadowThicknessMetersUVE = static_cast<float>(config.contactShadowsThicknessUVE);
+    postProcessSettings.contactShadowStrengthUVE = static_cast<float>(config.contactShadowsStrengthUVE);
+    postProcessSettings.contactShadowStepCountUVE =
+        static_cast<std::uint32_t>(std::max<std::int64_t>(config.contactShadowsStepCountUVE, 0));
+    postProcessSettings.ssrEnabledUVE = config.ssrEnabledUVE;
+    postProcessSettings.ssrMaxStepsUVE = static_cast<std::uint32_t>(std::max<std::int64_t>(config.ssrMaxStepsUVE, 1));
+    postProcessSettings.ssrDepthToleranceUVE = static_cast<float>(config.ssrDepthToleranceUVE);
+    postProcessSettings.ssrFadeInUVE = static_cast<float>(config.ssrFadeInUVE);
+    postProcessSettings.ssrFadeOutUVE = static_cast<float>(config.ssrFadeOutUVE);
+    renderer.SetPostProcessSettingsUVE(postProcessSettings);
+    renderer.SetShadowBiasDefaultsUVE(config.shadowBiasDefaultUVE, config.shadowNormalBiasDefaultUVE);
+    // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use
+    // it as the tile size; point lights will use the same number for their six faces once their
+    // atlas path exists, so one authored setting keeps meaning one thing.
+    renderer.SetShadowAtlasTileResolutionUVE(
+        static_cast<std::uint32_t>(std::max<std::int64_t>(config.pointSpotShadowResolutionUVE, 0)));
+    Render::CullingSettingsUVE cullingSettings;
+    cullingSettings.frustumCullingEnabledUVE = config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
+    renderer.SetCullingSettingsUVE(cullingSettings);
+    renderer.SetMaterialSamplerSettingsUVE(
+        config.defaultTextureRepeatModeUVE != 0,
+        static_cast<float>(std::clamp<std::int64_t>(config.defaultAnisotropyLevelUVE, 1, 16)));
+}
+
 std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render::IMeshRendererUVE& meshRenderer,
                                                                   Render::ICameraSystemUVE& cameraSystem,
                                                                   Render::ILightSystemUVE& lightSystem,
@@ -5343,48 +5390,7 @@ std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render:
         m_config.ambientColor, m_config.shadowMapResolution, m_config.shadowMapHalfExtent,
         m_config.shadowMapNearPlane, m_config.shadowMapFarPlane, m_config.shadowFrustumPadding,
         m_config.shadowCascadeSplitLambda, m_config.shadowCascadeBlendRatio, m_config.shadowPcfKernelRadius);
-    renderer->SetSceneClearColorUVE(m_config.backgroundColorUVE);
-    Render::PostProcessSettingsUVE postProcessSettings;
-    postProcessSettings.nearestUpscalingEnabledUVE =
-        m_config.spatialUpscalingMethodUVE == SpatialUpscalingMethodUVE::NearestUVE;
-    postProcessSettings.acesToneMappingEnabledUVE = m_config.toneMappingMethodUVE == ToneMappingMethodUVE::AcesUVE;
-    postProcessSettings.sharpeningAmountUVE = m_config.sharpeningAmountUVE;
-    postProcessSettings.ditheringEnabledUVE = m_config.ditheringEnabledUVE;
-    postProcessSettings.fastApproximateAAEnabledUVE =
-        m_config.postProcessAAMethodUVE == PostProcessAAMethodUVE::FastApproximateUVE;
-    postProcessSettings.fastApproximateAAQualityUVE = m_config.screenSpaceAAQualityUVE;
-    postProcessSettings.ssaoEnabledUVE = m_config.ssaoEnabledUVE;
-    postProcessSettings.ssaoRadiusUVE = m_config.ssaoRadiusUVE;
-    postProcessSettings.ssaoIntensityUVE = m_config.ssaoIntensityUVE;
-    postProcessSettings.ssaoPowerUVE = m_config.ssaoPowerUVE;
-    postProcessSettings.ssaoQualityUVE = m_config.ssaoQualityUVE;
-    postProcessSettings.ssaoBlurEnabledUVE = m_config.ssaoBlurEnabledUVE;
-    // Contact shadows: the enable/length/steps settings predate the pass that consumes them, so
-    // this is where they finally reach a renderer.
-    postProcessSettings.contactShadowsEnabledUVE = m_config.contactShadowsEnabledUVE;
-    postProcessSettings.contactShadowLengthMetersUVE = static_cast<float>(m_config.contactShadowsLengthUVE);
-    postProcessSettings.contactShadowThicknessMetersUVE = static_cast<float>(m_config.contactShadowsThicknessUVE);
-    postProcessSettings.contactShadowStrengthUVE = static_cast<float>(m_config.contactShadowsStrengthUVE);
-    postProcessSettings.contactShadowStepCountUVE =
-        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.contactShadowsStepCountUVE, 0));
-    postProcessSettings.ssrEnabledUVE = m_config.ssrEnabledUVE;
-    postProcessSettings.ssrMaxStepsUVE = static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.ssrMaxStepsUVE, 1));
-    postProcessSettings.ssrDepthToleranceUVE = static_cast<float>(m_config.ssrDepthToleranceUVE);
-    postProcessSettings.ssrFadeInUVE = static_cast<float>(m_config.ssrFadeInUVE);
-    postProcessSettings.ssrFadeOutUVE = static_cast<float>(m_config.ssrFadeOutUVE);
-    renderer->SetPostProcessSettingsUVE(postProcessSettings);
-    renderer->SetShadowBiasDefaultsUVE(m_config.shadowBiasDefaultUVE, m_config.shadowNormalBiasDefaultUVE);
-    // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use
-    // it as the tile size; point lights will use the same number for their six faces once their
-    // atlas path exists, so one authored setting keeps meaning one thing.
-    renderer->SetShadowAtlasTileResolutionUVE(
-        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.pointSpotShadowResolutionUVE, 0)));
-    Render::CullingSettingsUVE cullingSettings;
-    cullingSettings.frustumCullingEnabledUVE = m_config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
-    renderer->SetCullingSettingsUVE(cullingSettings);
-    renderer->SetMaterialSamplerSettingsUVE(
-        m_config.defaultTextureRepeatModeUVE != 0,
-        static_cast<float>(std::clamp<std::int64_t>(m_config.defaultAnisotropyLevelUVE, 1, 16)));
+    ApplyEngineConfigToRenderer3DUVE(m_config, *renderer);
     return renderer;
 }
 

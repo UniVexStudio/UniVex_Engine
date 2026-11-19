@@ -275,6 +275,13 @@ uniform int uPremultiplyAlpha;
 #else
 uniform int uPremultiplyAlpha = 0;
 #endif
+// Set to 1 on opaque non-blended draws so FragColor.a carries the surface's indirect-lighting
+// luminance fraction for ambient-only SSAO modulation in the final composite pass.
+#if UVE_MOBILE
+uniform int uPackIndirectWeightAlpha;
+#else
+uniform int uPackIndirectWeightAlpha = 0;
+#endif
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
 uniform mat4 uLightSpaceMatrix;
@@ -876,8 +883,17 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
 }
 // One exit point for the colour/alpha pair, so the four debug and unshaded early-outs cannot drift
 // from the lit path on premultiplication. Only the pipeline state decides whether it is needed.
+float LuminanceUVE(vec3 color) {
+    return dot(max(color, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722));
+}
 vec4 ComposeFragmentUVE(vec3 color, float alpha) {
     return vec4(uPremultiplyAlpha != 0 ? color * alpha : color, alpha);
+}
+vec4 ComposeOutputUVE(vec3 color, float surfaceOpacity, float indirectWeight) {
+    if (uPackIndirectWeightAlpha != 0) {
+        return vec4(color, clamp(indirectWeight, 0.0, 1.0));
+    }
+    return ComposeFragmentUVE(color, surfaceOpacity);
 }
 // One UV set: planar 2D coordinates or normal-weighted triplanar projection.
 struct UvSetUVE {
@@ -964,11 +980,11 @@ void main() {
     float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
     if (uShadingMode == 1 || uUnshaded != 0) {
-        FragColor = ComposeFragmentUVE(albedo, surfaceOpacity);
+        FragColor = ComposeOutputUVE(albedo, surfaceOpacity, 0.0);
         return;
     }
     if (uShadingMode == 2) {
-        FragColor = ComposeFragmentUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
+        FragColor = ComposeOutputUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
         return;
     }
     float ambientOcclusion = mix(1.0, SampleUvSetUVE(uAOTexture, uAoOnUv2 != 0 ? uv2 : uv1).r, clamp(uOcclusionStrength, 0.0, 1.0));
@@ -999,7 +1015,7 @@ void main() {
     }
 
     if (uShadingMode == 4) {
-        FragColor = ComposeFragmentUVE(normal * 0.5 + 0.5, surfaceOpacity);
+        FragColor = ComposeOutputUVE(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
         return;
     }
 
@@ -1063,8 +1079,10 @@ void main() {
     vec3 ambientSpecular = ambientFresnel * specEnv;
     // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
     // does not stop reflecting light in a way the sky can reach either.
-    vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion +
-                    uEmissiveColor * max(uEmissiveEnergy, 0.0) * SampleUvSetUVE(uEmissiveTexture, uEmissionOnUv2 != 0 ? uv2 : uv1).rgb;
+    vec3 indirectLighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion;
+    vec3 emissiveLighting =
+        uEmissiveColor * max(uEmissiveEnergy, 0.0) * SampleUvSetUVE(uEmissiveTexture, uEmissionOnUv2 != 0 ? uv2 : uv1).rgb;
+    vec3 lighting = indirectLighting + emissiveLighting;
 
     for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
@@ -1152,6 +1170,7 @@ void main() {
     // Preserves the accumulated PBR direct lighting and highlights instead of discarding them.
     vec3 baselineAmbient = max(ambientColor, vec3(0.04)) * albedo * ambientOcclusion;
     vec3 finalColor = max(lighting, baselineAmbient);
-    FragColor = ComposeFragmentUVE(finalColor, surfaceOpacity);
+    float indirectWeight = clamp(LuminanceUVE(indirectLighting) / max(LuminanceUVE(finalColor), 1.0e-4), 0.0, 1.0);
+    FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
 }
 #endif

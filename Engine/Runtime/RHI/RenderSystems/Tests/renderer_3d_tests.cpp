@@ -61,6 +61,7 @@
 #include "directional_light_3d.h"
 #include "occluder_3d.h"
 #include "reflection_probe_3d.h"
+#include "sky_3d.h"
 #include "visibility_region_3d.h"
 #include "world_environment_3d.h"
 #include "world_partition_3d.h"
@@ -2437,9 +2438,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithoutTextures_UsesFallbackTex
     const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
     // Slot 3 (the shadow map, bound once per item in the main pass regardless of material) is
     // excluded here. The first six remain the two items' material fallback bindings, recorded
-    // during the MainColor pass before any of the slot-0 fullscreen post-process binds that
-    // follow it (Phase 2b SSAO + SSAOComposite + BloomBrightPass + BloomBlurH + BloomBlurV +
-    // BloomComposite, six single-texture passes, then finally ToneMapping's source bind).
+    // during the MainColor pass before any of the post-process binds that follow it
+    // (SSAO + SSAOBlurH + SSAOBlurV + BloomBrightPass + BloomBlurH + BloomBlurV, then
+    // ToneMapping's source and depth binds on slots 0 and 1).
     std::vector<BindTextureCommandUVE> textureBinds;
     for (const RecordedCommandUVE& command : commands) {
         if (const auto* const bindTexture = std::get_if<BindTextureCommandUVE>(&command)) {
@@ -2448,10 +2449,9 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialWithoutTextures_UsesFallbackTex
             }
         }
     }
-    // 2 items x 3 material texture slots, then 6 Phase 2b post-process passes, then ToneMapping's
-    // two binds - its scene-colour source on slot 0 and the scene depth it reads on slot 1 to
-    // report per-pixel coverage in the destination's alpha (see fullscreen_quad.glsl).
-    ASSERT_EQ(textureBinds.size(), 14U);
+    // 2 items x 3 material texture slots (6), SSAO depth (1), SSAOBlurH/V source+depth (4),
+    // BloomBrightPass + BloomBlurH + BloomBlurV (3), and ToneMapping's source+depth (2) = 16.
+    ASSERT_EQ(textureBinds.size(), 16U);
 
     // Group by slot: item1's slot-N handle must equal item2's slot-N handle (fallback reuse
     // across two independently-resolved materials), and the albedo/AO slots (both default to the
@@ -4222,8 +4222,9 @@ TEST_F(Renderer3DUVETest, ResizeTargetsUVE_NewSize_AllocatesOnceAndThenIsFree) {
     const std::uint64_t afterFirst = renderDevice.GetTextureCreateAttemptCountUVE();
 
     // A genuinely new size does cost allocations - the cache removes repeat cost, it does not
-    // conjure targets. Eight of them: color, depth, bloom bright, two blur, SSAO, contact shadow, SSR.
-    EXPECT_EQ(afterFirst - beforeNewSize, 8U);
+    // conjure targets. Nine of them: color, depth, bloom bright, two blur, SSAO, SSAO blur,
+    // contact shadow, and SSR.
+    EXPECT_EQ(afterFirst - beforeNewSize, 9U);
 
     ASSERT_TRUE(renderer3D->ResizeTargetsUVE(800U, 600U));
     EXPECT_EQ(renderDevice.GetTextureCreateAttemptCountUVE(), afterFirst);
@@ -4238,7 +4239,7 @@ TEST_F(Renderer3DUVETest, ResizeTargetsUVE_ManyDistinctSizes_DoesNotGrowWithoutB
     }
     // Live resources are bounded by the cache limit rather than by the number of sizes seen. The
     // exact figure is not the point; that it is far below 24 sets is.
-    EXPECT_LT(renderDevice.GetLiveResourceCountUVE(), 24U * 8U);
+    EXPECT_LT(renderDevice.GetLiveResourceCountUVE(), 24U * 9U);
 }
 
 TEST_F(Renderer3DUVETest, ResizeTargetsUVE_AfterEviction_StillRendersCorrectly) {
@@ -5201,6 +5202,47 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_AMeshWhoseOwnMaterialCannotBeResolved_I
         << "the materialed path cannot draw it - the material will not load - and must not claim to";
     EXPECT_GT(diagnostics.primitiveItemsExtracted, 0U)
         << "the built-in path must draw the mesh untextured rather than drop it entirely";
+}
+
+TEST_F(Renderer3DUVETest, SoftFilmicToneMappingAndSrgbOutputEncodingAreDefaultInFinalComposite) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    const auto findIntUniform = [&commands](const std::string_view name) -> std::optional<std::int32_t> {
+        for (const RecordedCommandUVE& cmd : commands) {
+            if (const auto* const u = std::get_if<SetUniformIntCommandUVE>(&cmd)) {
+                if (u->name == name) {
+                    return u->value;
+                }
+            }
+        }
+        return std::nullopt;
+    };
+    ASSERT_TRUE(findIntUniform("uToneMappingMethod").has_value());
+    EXPECT_EQ(*findIntUniform("uToneMappingMethod"), 2);
+    ASSERT_TRUE(findIntUniform("uEncodeSrgbOutput").has_value());
+    EXPECT_EQ(*findIntUniform("uEncodeSrgbOutput"), 1);
+    ASSERT_TRUE(findIntUniform("uSsaoCompositeEnabled").has_value());
+    EXPECT_EQ(*findIntUniform("uSsaoCompositeEnabled"), 1);
+    ASSERT_TRUE(findIntUniform("uBloomCompositeEnabled").has_value());
+    EXPECT_EQ(*findIntUniform("uBloomCompositeEnabled"), 1);
+}
+
+TEST_F(Renderer3DUVETest, StandaloneSky3DPreservesDefaultPostProcessingPasses) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Scene::EntityUVE skyEntity = entityManager.CreateEntityUVE();
+    Scene::Sky3DComponentUVE sky{};
+    sky.enabled = true;
+    entityManager.AddComponentUVE<Scene::Sky3DComponentUVE>(skyEntity, sky);
+    WaitUntilShadowProgramReadyUVE();
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE diagnostics = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_TRUE(diagnostics.ssaoPassRecorded);
+    EXPECT_TRUE(diagnostics.bloomPassRecorded);
+    EXPECT_TRUE(diagnostics.toneMappingPassRecorded);
 }
 
 } // namespace UVE::Render::Tests

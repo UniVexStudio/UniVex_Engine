@@ -326,6 +326,17 @@ public:
 
     /// A short human-readable backend name (e.g. `"Null"`), for logging/diagnostics.
     [[nodiscard]] virtual std::string_view GetBackendNameUVE() const noexcept = 0;
+
+    /// True when the backend's default presentation surface performs hardware linear-to-sRGB
+    /// encoding on writes (for example a Vulkan SRGB swapchain). When false (OpenGL default
+    /// framebuffer without framebuffer sRGB or a UNORM headless swapchain), the final tone-mapping
+    /// pass encodes linear HDR output with the IEC 61966-2-1 sRGB transfer function.
+    [[nodiscard]] virtual bool IsPresentationSurfaceSrgbUVE() const noexcept { return false; }
+
+    /// True when clip-space depth [0, 1] is stored directly in [0, 1] in the depth buffer
+    /// (Vulkan). When false (OpenGL default depth range), depth values are remapped from
+    /// [-1, 1] into [0, 1] so [0, 1] clip Z lands in [0.5, 1.0].
+    [[nodiscard]] virtual bool UsesZeroToOneDepthBufferUVE() const noexcept { return false; }
 private:
     struct TextureRetirementStateUVE;
     std::shared_ptr<TextureRetirementStateUVE> m_textureRetirement;
