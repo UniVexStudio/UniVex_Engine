@@ -2575,6 +2575,100 @@ TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialSettings_PushUvEmissiveNormalAo
     EXPECT_TRUE(boundEmissive);
 }
 
+TEST_F(Renderer3DUVETest, RenderFrameUVE_MaterialSamplersAndPbrProperties_BindRepeatSamplerAndUploadUniforms) {
+    assetManager.RegisterLoaderUVE<Asset::MaterialAssetUVE>(
+        [vertexGuid = vertexShaderGuid, fragmentGuid = fragmentShaderGuid](const std::filesystem::path&,
+                                                                             Asset::MaterialAssetUVE& material) {
+            material.vertexShader = vertexGuid;
+            material.fragmentShader = fragmentGuid;
+            material.uvScale = Math::Vector2UVE{3.0F, 5.0F};
+            material.normalFlipGreen = true;
+            material.dielectricSpecular = 0.75F;
+            material.triplanarEnabled = true;
+            material.worldSpaceTriplanar = true;
+            material.triplanarBlendSharpness = 4.0F;
+            return true;
+        });
+
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    const Asset::AssetGuidUVE meshGuid = assetDatabase.RegisterUVE("renderer3d_tests_sampler_mesh.uvmodel");
+    const Asset::AssetGuidUVE materialGuid = assetDatabase.RegisterUVE("renderer3d_tests_sampler.uvmat");
+    MakeMeshEntityUVE(Math::Vector3UVE{0.0F, 0.0F, -10.0F}, meshGuid, materialGuid);
+    WaitUntilAssetsReadyUVE(meshGuid, materialGuid);
+
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+
+    const std::vector<RecordedCommandUVE>& commands = renderDevice.GetLastSubmittedCommandsUVE();
+    bool foundNormalFlipGreen = false;
+    bool foundDielectricSpecular = false;
+    bool foundUvScaleZ = false;
+    SamplerHandleUVE materialSamplerSlot12 = kInvalidSamplerHandleUVE;
+    for (const RecordedCommandUVE& command : commands) {
+        if (const auto* const uniform = std::get_if<SetUniformIntCommandUVE>(&command)) {
+            if (uniform->name == "uNormalFlipGreen") {
+                EXPECT_EQ(uniform->value, 1);
+                foundNormalFlipGreen = true;
+            }
+        }
+        if (const auto* const uniform = std::get_if<SetUniformFloatCommandUVE>(&command)) {
+            if (uniform->name == "uDielectricSpecular") {
+                EXPECT_FLOAT_EQ(uniform->value, 0.75F);
+                foundDielectricSpecular = true;
+            }
+        }
+        if (const auto* const uniform = std::get_if<SetUniformVector3CommandUVE>(&command)) {
+            if (uniform->name == "uUvScale") {
+                EXPECT_FLOAT_EQ(uniform->value.x, 3.0F);
+                EXPECT_FLOAT_EQ(uniform->value.y, 5.0F);
+                EXPECT_FLOAT_EQ(uniform->value.z, 3.0F);
+                foundUvScaleZ = true;
+            }
+        }
+        if (const auto* const bind = std::get_if<BindSamplerCommandUVE>(&command)) {
+            if (bind->slot == 12U) {
+                materialSamplerSlot12 = bind->sampler;
+            }
+        }
+    }
+    EXPECT_TRUE(foundNormalFlipGreen);
+    EXPECT_TRUE(foundDielectricSpecular);
+    EXPECT_TRUE(foundUvScaleZ);
+    EXPECT_NE(materialSamplerSlot12, kInvalidSamplerHandleUVE);
+
+    constexpr std::array<std::uint32_t, 5U> kMaterialSlots{0U, 1U, 2U, 12U, 13U};
+    std::array<bool, 5U> materialSlotsBoundWithMaterialSampler{};
+    for (const RecordedCommandUVE& command : commands) {
+        if (const auto* const bind = std::get_if<BindSamplerCommandUVE>(&command)) {
+            if (bind->sampler == materialSamplerSlot12) {
+                for (std::size_t i = 0U; i < kMaterialSlots.size(); ++i) {
+                    if (bind->slot == kMaterialSlots[i]) {
+                        materialSlotsBoundWithMaterialSampler[i] = true;
+                    }
+                }
+            }
+        }
+    }
+    for (const bool bound : materialSlotsBoundWithMaterialSampler) {
+        EXPECT_TRUE(bound);
+    }
+
+    const std::size_t liveResourcesBefore = renderDevice.GetLiveResourceCountUVE();
+    renderer3D->SetMaterialSamplerSettingsUVE(false, 4.0F);
+    EXPECT_EQ(renderDevice.GetLiveResourceCountUVE(), liveResourcesBefore);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    SamplerHandleUVE updatedSampler = kInvalidSamplerHandleUVE;
+    for (const RecordedCommandUVE& command : renderDevice.GetLastSubmittedCommandsUVE()) {
+        if (const auto* const bind = std::get_if<BindSamplerCommandUVE>(&command)) {
+            if (bind->slot == 12U) {
+                updatedSampler = bind->sampler;
+                break;
+            }
+        }
+    }
+    EXPECT_NE(updatedSampler, kInvalidSamplerHandleUVE);
+    EXPECT_NE(updatedSampler, materialSamplerSlot12);
+}
+
 TEST_F(Renderer3DUVETest, RenderFrameUVE_ReadyEmptyMeshSkipsInvalidGpuBuffers) {
     assetManager.RegisterLoaderUVE<Asset::MeshAssetUVE>(
         [](const std::filesystem::path&, Asset::MeshAssetUVE& mesh) {

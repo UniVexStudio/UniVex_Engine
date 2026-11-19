@@ -73,6 +73,7 @@ public:
     void SetShadowBiasDefaultsUVE(float depthBias, float normalBias) noexcept override;
     void SetShadowAtlasTileResolutionUVE(std::uint32_t resolution) noexcept override;
     void SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept override;
+    void SetMaterialSamplerSettingsUVE(bool repeatEnabled, float maxAnisotropy) noexcept override;
     void SetShadingModeUVE(std::int32_t shadingMode) noexcept override;
     void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept override;
     void SetMeshUploadBudgetUVE(std::size_t meshesPerFrame) noexcept override;

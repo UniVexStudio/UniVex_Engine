@@ -672,6 +672,13 @@ void GlCommandBufferUVE::EndRenderPassUVE() {
         m_state->gl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
         m_tempFramebuffer = 0;
     }
+    if (m_state != nullptr && m_state->gl.glBindSampler != nullptr && !m_boundSamplers.empty()) {
+        for (const auto& [slot, samplerHandle] : m_boundSamplers) {
+            static_cast<void>(samplerHandle);
+            m_state->gl.glBindSampler(slot, 0U);
+        }
+        m_boundSamplers.clear();
+    }
     m_insideRenderPass = false;
 }
 
