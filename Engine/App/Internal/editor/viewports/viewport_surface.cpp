@@ -113,7 +113,7 @@ bool ViewportSurfaceUVE::HasAuthoredDirectionalLightUVE() const {
     return univex::integration::HasAuthoredDirectionalLightNodeUVE(m_entityManager);
 }
 
-void ViewportSurfaceUVE::SetShadingModeUVE(const Render::ShadingModeUVE mode) {
+void ViewportSurfaceUVE::SetShadingModeUVE(const std::int32_t mode) {
     m_services.GetRenderer3DUVE().SetShadingModeUVE(mode);
 }
 
