@@ -998,7 +998,7 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         SetVector2UVE(gl, PreviewUniformUVE::UvScale, uvScale);
         SetVector2UVE(gl, PreviewUniformUVE::UvOffset, uvOffset);
         SetIntUVE(gl, PreviewUniformUVE::Uv1Triplanar,
-                  !material.triplanarEnabled ? 0 : (material.worldSpaceTriplanar ? 2 : 1));
+                  material.worldSpaceTriplanar ? 2 : (material.triplanarEnabled ? 1 : 0));
         SetFloatUVE(gl, PreviewUniformUVE::Uv1TriplanarSharpness, material.triplanarBlendSharpness);
         SetFloatUVE(gl, PreviewUniformUVE::NormalScale, material.normalScale);
         SetBoolUVE(gl, PreviewUniformUVE::FlipGreen, material.normalFlipGreen);

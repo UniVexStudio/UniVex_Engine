@@ -79,7 +79,14 @@ void main() {
     vWorldTangent = mat3(model) * aTangent.xyz;
     vTangentHandedness = aTangent.w;
     vTexCoord = aTexCoord;
-    vObjectPosition = aPosition;
+    // Scale-invariant object-space coordinates: triplanar projection moves and rotates with the
+    // mesh while automatically tiling when the mesh is scaled so textures never stretch.
+    vec3 objectScale = vec3(
+        max(length(model[0].xyz), 1.0e-5),
+        max(length(model[1].xyz), 1.0e-5),
+        max(length(model[2].xyz), 1.0e-5)
+    );
+    vObjectPosition = aPosition * objectScale;
     vObjectNormal = aNormal;
     mat3 normalMat3 = mat3(normalMatrix);
     vNormalAxisX = normalMat3[0];
