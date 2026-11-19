@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <exception>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -687,15 +688,17 @@ constexpr std::size_t kMaximumParticleCommentsUVE = 256U;
     return true;
 }
 
+/// `expectedStage` empty: any stage is accepted (the detached list mixes stages).
 [[nodiscard]] bool ValidateStageModulesUVE(const std::vector<ParticleModuleUVE>& modules,
-                                           const ParticleStageUVE expectedStage,
-                                           const std::vector<ParticleUserParameterUVE>& parameters) noexcept {
-    if (modules.size() > kMaximumParticleModulesPerStageUVE) {
+                                           const std::optional<ParticleStageUVE> expectedStage,
+                                           const std::vector<ParticleUserParameterUVE>& parameters,
+                                           const std::size_t maximumCount = kMaximumParticleModulesPerStageUVE) noexcept {
+    if (modules.size() > maximumCount) {
         return false;
     }
     for (const ParticleModuleUVE& mod : modules) {
         const ParticleModuleDescriptorUVE* desc = FindParticleModuleDescriptorUVE(mod.type);
-        if (desc == nullptr || desc->stage != expectedStage) {
+        if (desc == nullptr || (expectedStage.has_value() && desc->stage != *expectedStage)) {
             return false;
         }
         if (!std::isfinite(mod.graphX) || !std::isfinite(mod.graphY)) {
@@ -1182,14 +1185,15 @@ constexpr std::size_t kMaximumParticleCommentsUVE = 256U;
 }
 
 [[nodiscard]] bool TryParseModulesUVE(const JsonUVE& emitterJson, const std::string_view stageKey,
-                                      const ParticleStageUVE expectedStage,
-                                      std::vector<ParticleModuleUVE>& outModules) {
+                                      const std::optional<ParticleStageUVE> expectedStage,
+                                      std::vector<ParticleModuleUVE>& outModules,
+                                      const std::size_t maximumCount = kMaximumParticleModulesPerStageUVE) {
     const std::string keyString(stageKey);
     if (!emitterJson.contains(keyString)) {
         return true;
     }
     const JsonUVE& list = emitterJson.at(keyString);
-    if (!list.is_array() || list.size() > kMaximumParticleModulesPerStageUVE) {
+    if (!list.is_array() || list.size() > maximumCount) {
         return false;
     }
     outModules.reserve(list.size());
@@ -1199,7 +1203,7 @@ constexpr std::size_t kMaximumParticleCommentsUVE = 256U;
         }
         const std::string typeName = item.at("type").get<std::string>();
         const ParticleModuleDescriptorUVE* desc = FindParticleModuleDescriptorByNameUVE(typeName);
-        if (desc == nullptr || desc->stage != expectedStage) {
+        if (desc == nullptr || (expectedStage.has_value() && desc->stage != *expectedStage)) {
             return false;
         }
         ParticleModuleUVE mod;
@@ -1377,7 +1381,9 @@ bool IsParticleSystemAssetValidUVE(const ParticleSystemAssetUVE& system) noexcep
         if (!ValidateStageModulesUVE(emitter.emitterUpdate, ParticleStageUVE::EmitterUpdate, system.parameters) ||
             !ValidateStageModulesUVE(emitter.particleSpawn, ParticleStageUVE::ParticleSpawn, system.parameters) ||
             !ValidateStageModulesUVE(emitter.particleUpdate, ParticleStageUVE::ParticleUpdate, system.parameters) ||
-            !ValidateStageModulesUVE(emitter.render, ParticleStageUVE::Render, system.parameters)) {
+            !ValidateStageModulesUVE(emitter.render, ParticleStageUVE::Render, system.parameters) ||
+            !ValidateStageModulesUVE(emitter.detached, std::nullopt, system.parameters,
+                                     kMaximumParticleDetachedModulesUVE)) {
             return false;
         }
         if (emitter.mathNodes.size() > kMaximumParticleMathNodesUVE ||
@@ -1475,6 +1481,9 @@ bool SaveParticleSystemAssetUVE(const ParticleSystemAssetUVE& system, const std:
         }
         if (!emitter.render.empty()) {
             e["render"] = SerializeModulesUVE(emitter.render);
+        }
+        if (!emitter.detached.empty()) {
+            e["detached"] = SerializeModulesUVE(emitter.detached);
         }
         if (!emitter.mathNodes.empty()) {
             JsonUVE nodes = JsonUVE::array();
@@ -1620,7 +1629,9 @@ bool LoadParticleSystemAssetUVE(const std::filesystem::path& path, ParticleSyste
             if (!TryParseModulesUVE(e, "emitterUpdate", ParticleStageUVE::EmitterUpdate, emitter.emitterUpdate) ||
                 !TryParseModulesUVE(e, "particleSpawn", ParticleStageUVE::ParticleSpawn, emitter.particleSpawn) ||
                 !TryParseModulesUVE(e, "particleUpdate", ParticleStageUVE::ParticleUpdate, emitter.particleUpdate) ||
-                !TryParseModulesUVE(e, "render", ParticleStageUVE::Render, emitter.render)) {
+                !TryParseModulesUVE(e, "render", ParticleStageUVE::Render, emitter.render) ||
+                !TryParseModulesUVE(e, "detached", std::nullopt, emitter.detached,
+                                    kMaximumParticleDetachedModulesUVE)) {
                 return false;
             }
             if (e.contains("mathNodes")) {

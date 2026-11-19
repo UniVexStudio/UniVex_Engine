@@ -82,7 +82,10 @@ constexpr float kCurveTimeEpsilonUVE = 1e-4F;
     if (Asset::ParticleModuleUVE* m = findIn(emitter.particleUpdate)) {
         return m;
     }
-    return findIn(emitter.render);
+    if (Asset::ParticleModuleUVE* m = findIn(emitter.render)) {
+        return m;
+    }
+    return findIn(emitter.detached);
 }
 
 [[nodiscard]] const Asset::ParticleModuleUVE* FindConstModuleInEmitterUVE(
@@ -105,7 +108,10 @@ constexpr float kCurveTimeEpsilonUVE = 1e-4F;
     if (const Asset::ParticleModuleUVE* m = findIn(emitter.particleUpdate)) {
         return m;
     }
-    return findIn(emitter.render);
+    if (const Asset::ParticleModuleUVE* m = findIn(emitter.render)) {
+        return m;
+    }
+    return findIn(emitter.detached);
 }
 
 [[nodiscard]] std::vector<std::string> MatchingUserParametersUVE(

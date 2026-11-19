@@ -94,7 +94,7 @@ constexpr int kVfxWindowHeightUVE = 840;
 [[nodiscard]] std::uint32_t NextFreeModuleIdInSystemUVE(const Asset::ParticleSystemAssetUVE& sys) noexcept {
     std::uint32_t maxId = 1U;
     for (const Asset::ParticleEmitterAssetUVE& emitter : sys.emitters) {
-        for (const auto* stageVec : {&emitter.emitterUpdate, &emitter.particleSpawn, &emitter.particleUpdate, &emitter.render}) {
+        for (const auto* stageVec : {&emitter.emitterUpdate, &emitter.particleSpawn, &emitter.particleUpdate, &emitter.render, &emitter.detached}) {
             for (const Asset::ParticleModuleUVE& mod : *stageVec) {
                 maxId = std::max(maxId, mod.id);
             }
@@ -523,6 +523,18 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
     graphFeatures.toolbar = false;
     graphFeatures.crumbs = false;
     m_graph->setFeatures(graphFeatures);
+    // The palette, the right-click menu and wire-drag search all offer the VFX node library (modules by
+    // stage, plus Math / Value nodes) and create nodes through the VFX spawner; connections follow the
+    // VFX stage rules, and the four stage output nodes are structural (never deleted or copied).
+    m_graph->setNodeLibrary(BuildVfxGraphNodeLibraryUVE(m_shownSystem, true));
+    m_graph->onSpawn = [this](const prism::BlueprintNodeSpec& spec, const prism::Vec2 world) {
+        return m_graph ? SpawnVfxGraphNodeUVE(*m_graph, spec, world) : -1;
+    };
+    m_graph->canConnectHook = [this](const int fromNode, const int fromPin, const int toNode, const int toPin,
+                                     std::string* const why) {
+        return m_graph == nullptr || CanConnectVfxPinsUVE(*m_graph, fromNode, fromPin, toNode, toPin, why);
+    };
+    m_graph->nodeLocked = [](const int nodeId) { return IsVfxStageNodeIdUVE(nodeId); };
     m_graph->onSelectionChanged = [this](const std::vector<int>& selectedIds) {
         if (m_syncingGraph || !m_graph) {
             return;
@@ -656,7 +668,7 @@ void EditorVfxEditorUVE::ShowAddEmitterMenuUVE(const prism::Rect anchor) {
                 Asset::ParticleEmitterAssetUVE em = std::move(tpl.emitters.front());
                 em.name = MakeUniqueEmitterNameUVE(sys, em.name.empty() ? "Emitter" : em.name);
                 std::uint32_t nextId = NextFreeModuleIdInSystemUVE(sys);
-                for (auto* stageVec : {&em.emitterUpdate, &em.particleSpawn, &em.particleUpdate, &em.render}) {
+                for (auto* stageVec : {&em.emitterUpdate, &em.particleSpawn, &em.particleUpdate, &em.render, &em.detached}) {
                     for (Asset::ParticleModuleUVE& mod : *stageVec) {
                         mod.id = nextId++;
                     }
@@ -789,7 +801,7 @@ void EditorVfxEditorUVE::RebuildEmittersListUVE() {
                 Asset::ParticleEmitterAssetUVE copy = sys.emitters[i];
                 copy.name = MakeUniqueEmitterNameUVE(sys, copy.name + "_Copy");
                 std::uint32_t nextId = NextFreeModuleIdInSystemUVE(sys);
-                for (auto* stageVec : {&copy.emitterUpdate, &copy.particleSpawn, &copy.particleUpdate, &copy.render}) {
+                for (auto* stageVec : {&copy.emitterUpdate, &copy.particleSpawn, &copy.particleUpdate, &copy.render, &copy.detached}) {
                     for (Asset::ParticleModuleUVE& mod : *stageVec) {
                         mod.id = nextId++;
                     }
@@ -875,7 +887,7 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
                 const std::string oldName = sys.parameters[i].name;
                 sys.parameters[i].name = newName;
                 for (Asset::ParticleEmitterAssetUVE& em : sys.emitters) {
-                    for (auto* stageVec : {&em.emitterUpdate, &em.particleSpawn, &em.particleUpdate, &em.render}) {
+                    for (auto* stageVec : {&em.emitterUpdate, &em.particleSpawn, &em.particleUpdate, &em.render, &em.detached}) {
                         for (Asset::ParticleModuleUVE& mod : *stageVec) {
                             for (auto& [pin, in] : mod.floats) {
                                 if (in.kind == Asset::ParticleValueKindUVE::UserParameter && in.parameter == oldName) {

@@ -212,6 +212,9 @@ public:
   void showNodeMenu(int nodeId, Vec2 screen);
   // A comment box around the selection (or at `world` with nothing selected), then its title to type.
   void addCommentAroundSelection(Vec2 world, bool rename = true);
+  // Nodes the host owns structurally (a fixed output node): never deleted, cut, copied or duplicated
+  // by the graph's own edits. Null: no node is locked.
+  std::function<bool(int nodeId)> nodeLocked;
   // The host's own rule for a connection, asked after the graph's type checks pass.
   std::function<bool(int fromNode, int fromPin, int toNode, int toPin, std::string* why)> canConnectHook;
   // The values an input may take (the host's widgets, assets ...): editing it opens a list of

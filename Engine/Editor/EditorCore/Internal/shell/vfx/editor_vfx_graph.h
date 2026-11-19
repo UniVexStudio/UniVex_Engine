@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace UVE::Editor {
@@ -43,6 +44,18 @@ void BuildEmitterGraphUVE(const Asset::ParticleSystemAssetUVE& system,
 [[nodiscard]] std::vector<prism::BlueprintNodeSpec> BuildVfxGraphNodeLibraryUVE(
     const Asset::ParticleSystemAssetUVE& system,
     bool includeMathNodes = false);
+
+/// Creates the node described by `spec` (from `BuildVfxGraphNodeLibraryUVE`) at `world` and returns its
+/// id, or -1 if `spec` makes no node. The id never collides with a stage output node or another node.
+int SpawnVfxGraphNodeUVE(prism::BlueprintGraph& graph, const prism::BlueprintNodeSpec& spec, prism::Vec2 world);
+
+/// The VFX graph's own connection rules, installed as `BlueprintGraph::canConnectHook`:
+///  - a module's chain `Out` only feeds a module of the same stage, or that stage's output node;
+///  - a chain `Out` feeds one node, and a stage output node takes one chain;
+///  - only Float inputs may be wired from Math / Value nodes (other input kinds have no wire form).
+[[nodiscard]] bool CanConnectVfxPinsUVE(const prism::BlueprintGraph& graph,
+                                        int fromNode, int fromPin, int toNode, int toPin,
+                                        std::string* why);
 
 /// Applies compiler diagnostics (`ParticleCompileMessageUVE`) onto `graph` as a `BlueprintCompileReport`
 /// so nodes with errors or warnings display red/yellow badges on canvas.

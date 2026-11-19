@@ -21,6 +21,7 @@ namespace UVE::Asset {
 inline constexpr std::size_t kMaximumParticleEmittersUVE = 32U;
 inline constexpr std::size_t kMaximumParticleModulesPerStageUVE = 64U;
 inline constexpr std::size_t kMaximumParticleUserParametersUVE = 64U;
+inline constexpr std::size_t kMaximumParticleDetachedModulesUVE = 256U;
 inline constexpr std::uint32_t kMaximumParticlesPerEmitterUVE = 1'000'000U;
 inline constexpr std::size_t kMaximumCurveKeysUVE = 64U;
 inline constexpr std::size_t kMaximumGradientStopsUVE = 16U;
@@ -198,6 +199,10 @@ struct ParticleEmitterAssetUVE final {
     std::vector<ParticleModuleUVE> particleSpawn;
     std::vector<ParticleModuleUVE> particleUpdate;
     std::vector<ParticleModuleUVE> render;
+    /// Modules that exist in the emitter graph but are not wired into their stage's chain. They are
+    /// kept so authoring work survives save/load and graph rebuilds, but they are never compiled:
+    /// only modules reachable through the stage chain contribute to the program.
+    std::vector<ParticleModuleUVE> detached;
     std::vector<ParticleMathNodeUVE> mathNodes;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> comments;
     [[nodiscard]] bool operator==(const ParticleEmitterAssetUVE&) const = default;
