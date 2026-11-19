@@ -1059,7 +1059,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                 if (skySlot) {
                     spec.title = "Sky";
                 } else if (scriptSlot) {
-                    spec.title = "Logic Graph";
+                    spec.title = "Blueprint";
                 }
                 PickerActionsUVE actions;
                 const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();

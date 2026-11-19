@@ -5680,9 +5680,9 @@ const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserIte
         case ContentBrowserItemTypeUVE::MontageLibrary:
             return "Action Clip Library";
         case ContentBrowserItemTypeUVE::Blueprint:
-            return "Logic Graph";
+            return "Blueprint";
         case ContentBrowserItemTypeUVE::WidgetBlueprint:
-            return "UI Graph";
+            return "Widget Blueprint";
         case ContentBrowserItemTypeUVE::Script:
             return "Script";
         case ContentBrowserItemTypeUVE::Audio:

@@ -412,7 +412,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
         case Kind::BlendSpace1D:
             body->add(RowUVE("X", valueSlider(node.areaMin.x, node.areaMax.x, node.value, node.parameter, false)));
             body->add(RowUVE("By", parameterCombo(node.parameter, {ParamType::Float}, false)));
-            body->add(RowUVE("", open("Open Blend Grid")));
+            body->add(RowUVE("", open("Open Blend Space")));
             break;
         case Kind::BlendSpace2D: {
             // One Vector3 parameter (x, y) drives both axes; or a Float for each.
@@ -434,7 +434,7 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildBodyUVE(const NodeUVE& n
                 EditNodeUVE(id, [i](NodeUVE& n) { n.blendMode = static_cast<Scene::AnimationBlendModeUVE>(std::clamp(i, 0, 2)); });
             };
             body->add(RowUVE("Mode", mode));
-            body->add(RowUVE("", open("Open Blend Grid")));
+            body->add(RowUVE("", open("Open Blend Space")));
             break;
         }
         case Kind::OneShot:

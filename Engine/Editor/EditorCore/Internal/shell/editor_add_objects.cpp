@@ -114,7 +114,7 @@ bool IsObjectOfferedForRootUVE(const Kind kind, const EntityRootUVE root) noexce
 
 bool IsObjectOfferedUVE(const Kind kind, const AddObjectContextUVE context) noexcept {
     if (context == AddObjectContextUVE::Entity) {
-        // An entity's objects get their behaviour from Logic Graphs, not script objects.
+        // An entity's objects get their behaviour from Blueprints, not script objects.
         return !IsLevelOnlyUVE(kind) && kind != Kind::Script;
     }
     // A level takes everything of the world; a character's parts are built inside an Entity.

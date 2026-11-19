@@ -572,7 +572,7 @@ void BlendSpaceViewUVE::ShowEmptyMenuUVE(const prism::Vec2 at, const Math::Vecto
         clips.push_back(prism::MenuItem::Item("No animations in the project", {}).disabled());
     }
     std::vector<prism::MenuItem> items;
-    items.push_back(prism::MenuItem::Header("Blend Grid"));
+    items.push_back(prism::MenuItem::Header("Blend Space"));
     items.push_back(prism::MenuItem::Sub("Add Animation Here", std::move(clips), prism::Icon::Plus));
     items.push_back(prism::MenuItem::Item("Empty Point Here", [this, position] { AddPointUVE(position, Asset::AssetGuidUVE{}); }));
     items.push_back(prism::MenuItem::Sep());

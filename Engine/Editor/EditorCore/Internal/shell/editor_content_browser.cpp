@@ -241,8 +241,8 @@ std::pair<std::string, std::string> EditorContentBrowserUVE::DescribeUVE(const I
         case ItemTypeUVE::AnimationMontage: return {"Action Clip", "AC"};
         case ItemTypeUVE::ParticleSystem: return {"Particle System", "VFX"};
         case ItemTypeUVE::MontageLibrary: return {"Action Clip Library", "ACL"};
-        case ItemTypeUVE::Blueprint: return {"Logic Graph", "LG"};
-        case ItemTypeUVE::WidgetBlueprint: return {"UI Graph", "UI"};
+        case ItemTypeUVE::Blueprint: return {"Blueprint Class", "BP"};
+        case ItemTypeUVE::WidgetBlueprint: return {"Widget Blueprint", "WBP"};
         case ItemTypeUVE::Script: return {"Script", "UVS"};
         case ItemTypeUVE::Audio: return {"Audio", "AUD"};
         case ItemTypeUVE::Font: return {"Font", "FNT"};
@@ -343,7 +343,7 @@ public:
             // A Blueprint's well is the word, not a glyph.
             const prism::Rect well{r.x + 3.0F, r.y + 3.0F, r.w - 6.0F, prism::assetTileWellHeight(r) - 17.0F};
             c.fillRect(well, m_hot && !m_selected ? prism::Color(40, 41, 45) : prism::Color(30, 31, 34));
-            c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Logic Graph" : "UI Graph", prism::Color(214, 220, 230),
+            c.textIn(*t.medium, well, m_type == ItemTypeUVE::Blueprint ? "Blueprint" : "Widget Blueprint", prism::Color(214, 220, 230),
                      prism::HAlign::Center, false);
         }
     }
@@ -1474,12 +1474,12 @@ std::vector<prism::MenuItem> EditorContentBrowserUVE::CatalogueMenuUVE() {
     }));
     // A Blueprint Class: gameplay as nodes (what an object's Script slot runs).
     prism::MenuItem blueprintClass =
-        prism::MenuItem::Item("Logic Graph", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
-    items.push_back(prism::MenuItem::Sub("Logic Graph", {blueprintClass, entityClass()}));
+        prism::MenuItem::Item("Blueprint Class", [this] { CreateBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+    items.push_back(prism::MenuItem::Sub("Blueprint", {blueprintClass, entityClass()}));
     items.push_back(prism::MenuItem::Sub("Gameplay", {blueprintClass}));
     // A Widget Blueprint: a screen of UI (text, buttons, bars ...) with its own graph.
     prism::MenuItem widgetBlueprint =
-        prism::MenuItem::Item("UI Graph", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
+        prism::MenuItem::Item("Widget Blueprint", [this] { CreateWidgetBlueprintUVE(); }, "", prism::Icon::BlueprintClass);
     items.push_back(prism::MenuItem::Sub("User Interface", {widgetBlueprint}));
     items.push_back(prism::MenuItem::Sub("Visual Effects", {
         prism::MenuItem::Item("Particle System", [this] { CreateParticleSystemUVE(); }, "", prism::Icon::Light),
@@ -1580,10 +1580,10 @@ void EditorContentBrowserUVE::CreateMaterialUVE(const std::string& stem, const A
 
 namespace {
 
-/// One object of an entity file, as the Logic Graph dialog lists it.
+/// One object of an entity file, as the Blueprint Class dialog lists it.
 struct EntityFileObjectUVE {
     std::string name;
-    std::string graph;                 // the Logic Graph its Script slot names (and that exists), or ""
+    std::string graph;                 // the Blueprint its Script slot names (and that exists), or ""
     std::vector<std::string> path;     // names from the root down to it
     int depth = 0;
 };
@@ -1650,17 +1650,17 @@ struct EntityFileObjectUVE {
 }
 
 [[nodiscard]] std::string GraphNameForUVE(const std::string& object) {
-    std::string name = "LG_";
+    std::string name = "BP_";
     for (const char c : object) {
         name.push_back(std::isalnum(static_cast<unsigned char>(c)) != 0 ? c : '_');
     }
-    return name.size() > 3U ? name : std::string("LG_New");
+    return name.size() > 3U ? name : std::string("BP_NewBlueprint");
 }
 
 } // namespace
 
 void EditorContentBrowserUVE::CreateBlueprintUVE() {
-    // A Logic Graph runs on an object of an entity class: the class, then the object (None: the
+    // A Blueprint runs on an object of an entity class: the class, then the object (None: the
     // entity's root itself, else one of the objects under it). Create makes the graph in this
     // folder and opens the entity with the graph on that object.
     const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -1676,7 +1676,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
         }
     }
     if (entities.empty()) {
-        m_editor.m_contentStatusMessage = "Make an Entity Class first: a Logic Graph runs on an object of an entity.";
+        m_editor.m_contentStatusMessage = "Make an Entity Class first: a Blueprint runs on an object of an entity.";
         return;
     }
     struct StateUVE {
@@ -1685,15 +1685,15 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
         std::vector<EntityFileObjectUVE> objects;
     };
     auto state = std::make_shared<StateUVE>();
-    auto name = prism::make<prism::TextInput>("LG_New", "Name");
+    auto name = prism::make<prism::TextInput>("BP_NewBlueprint", "Name");
     auto entityCombo = prism::make<prism::ComboBox>(labels, 0);
     // One picker: the entity itself (None), then every object under it, indented by depth. An
-    // object that already runs a Logic Graph is listed but cannot be picked.
+    // object that already runs a Blueprint is listed but cannot be picked.
     auto objectPicker = prism::make<prism::ComboBox>(std::vector<std::string>{}, 0);
     auto note = prism::make<prism::Label>("", prism::FontRole::Small);
     note->setColor(prism::ThemeColor(&prism::Theme::textDim));
     auto form = prism::make<prism::PropertyGrid>();
-    const int cat = form->addCategory("New Logic Graph");
+    const int cat = form->addCategory("New Blueprint Class");
     form->addRow(cat, "Name", name, "The file's name");
     form->addRow(cat, "Entity Class", entityCombo, "The entity whose object runs the graph");
     form->addRow(cat, "Object", objectPicker, "None: the entity itself. Or one of the objects under it.");
@@ -1705,7 +1705,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
     std::weak_ptr<prism::Label> weakNote = note;
     const auto showPick = [state, weakNote] {
         if (const auto n = weakNote.lock()) {
-            n->setText(state->object < 0 ? "Every object of this entity already has a Logic Graph."
+            n->setText(state->object < 0 ? "Every object of this entity already has a Blueprint."
                                          : "Runs on: " + state->objects[static_cast<std::size_t>(state->object)].name);
         }
     };
@@ -1775,10 +1775,10 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
         }
         *made = true;
         const std::filesystem::path file = EditorUVE::MakeUniqueContentPathUVE(folder, n->text(), ".uvbp");
-        m_editor.m_pendingLogicGraphCreateUVE =
-            EditorUVE::PendingLogicGraphUVE{file, state->objects[static_cast<std::size_t>(state->object)].path};
+        m_editor.m_pendingBlueprintCreateUVE =
+            EditorUVE::PendingBlueprintCreateUVE{file, state->objects[static_cast<std::size_t>(state->object)].path};
         if (!m_editor.OpenEntityEditorUVE(entities[static_cast<std::size_t>(state->entity)])) {
-            m_editor.m_pendingLogicGraphCreateUVE.reset();
+            m_editor.m_pendingBlueprintCreateUVE.reset();
             m_editor.m_contentStatusMessage = "Could not open " + entities[static_cast<std::size_t>(state->entity)].filename().string() + ".";
         }
         static_cast<void>(rebuild);
@@ -1789,7 +1789,7 @@ void EditorContentBrowserUVE::CreateBlueprintUVE() {
             prism::Application::get().closeAllPopups();
         }
     };
-    prism::showDialog("Logic Graph", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 520.0F);
+    prism::showDialog("Blueprint Class", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 520.0F);
 }
 
 void EditorContentBrowserUVE::CreateParticleSystemUVE() {
@@ -1846,7 +1846,7 @@ void EditorContentBrowserUVE::CreateWidgetBlueprintUVE() {
     const std::optional<std::filesystem::path> made =
         m_editor.CreateWidgetBlueprintAssetUVE(snapshot.contentRoot / m_editor.m_contentBrowserDirectory);
     if (!made.has_value()) {
-        m_editor.m_contentStatusMessage = "Could not create a UI Graph here.";
+        m_editor.m_contentStatusMessage = "Could not create a Widget Blueprint here.";
         return;
     }
     m_editor.m_contentStatusMessage.clear();
@@ -1880,7 +1880,7 @@ void EditorContentBrowserUVE::OpenBlueprintUVE(const std::filesystem::path& full
         m_editor.m_pendingBlueprintOpenUVE = stored;
         return;
     }
-    m_editor.m_contentStatusMessage = name + " is not on any object yet: pick it in an object's Script slot, or use the Entity Editor's Logic Graph button.";
+    m_editor.m_contentStatusMessage = name + " is not on any object yet: pick it in an object's Script slot, or use the Entity Editor's Blueprint button.";
 }
 
 void EditorContentBrowserUVE::CreateCatalogueItemUVE(const std::string& id) {
