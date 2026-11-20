@@ -1731,6 +1731,16 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
             m_uiRuntime.SetViewportSizeUVE(*reference);
         }
     }
+    if (std::isfinite(m_config.runtimeUiScaleUVE) && m_config.runtimeUiScaleUVE > 0.0 &&
+        std::abs(m_config.runtimeUiScaleUVE - 1.0) > 1.0e-4) {
+        const float uiScale = static_cast<float>(std::clamp(m_config.runtimeUiScaleUVE, 0.25, 4.0));
+        uiTransform.scaleX *= uiScale;
+        uiTransform.scaleY *= uiScale;
+        const Math::Vector2UVE currentViewport = m_uiRuntime.GetViewportSizeUVE();
+        if (currentViewport.x > 0.0F && currentViewport.y > 0.0F) {
+            m_uiRuntime.SetViewportSizeUVE(Math::Vector2UVE{currentViewport.x / uiScale, currentViewport.y / uiScale});
+        }
+    }
     m_uiRuntime.SetCoordinateTransformUVE(uiTransform);
 
     // Whether a text is translated is its resolved Auto Translate mode, asked of the scene graph so

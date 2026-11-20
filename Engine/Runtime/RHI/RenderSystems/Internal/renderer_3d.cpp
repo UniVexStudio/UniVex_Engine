@@ -343,7 +343,7 @@ inline constexpr std::size_t kMaximumParticleGpuDrawCommandsUVE = 16'384U;
 inline constexpr std::size_t kParticleVerticesPerCommandUVE = 6U;
 inline constexpr float kParticleHalfExtentUVE = 0.05F;
 
-inline constexpr std::size_t kMaximumUIQuadsUVE = 8'192U;
+inline constexpr std::size_t kMaximumUIQuadsUVE = 32'768U;
 inline constexpr std::size_t kUIVerticesPerQuadUVE = 6U;
 
 /// A material's manager-owned linked program plus its resolved texture handles, cached by
