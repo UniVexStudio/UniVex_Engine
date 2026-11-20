@@ -298,6 +298,7 @@ bool NumberField::onMouseDown(const MouseEvent& e) {
 
 bool NumberField::onMouseMove(const MouseEvent& e) {
   if (!m_down) return false;
+  if (!m_scrubbable) return true;
   float dx = e.pos.x - m_pressX;
   if (!m_dragging && std::fabs(dx) > 3) { m_dragging = true; if (onBegin) onBegin(); }
   if (m_dragging) {

@@ -140,13 +140,13 @@ ALLOWED_PREFIXES = (
     "Engine/Runtime/Objects/Core/Internal/variant.cpp",
     "Engine/Runtime/Scene/Internal/objects/scene_object_registry.cpp",
     # The test that proves those aliases work has to name what it is proving.
-    "Test/Integration/Object/variant_tests.cpp",
+    "Engine/Runtime/Objects/Core/Tests/Integration/variant_tests.cpp",
     # The live object host keeps `is_on_floor` as a read alias for scripts written against the
     # old name - a second spelling of one property, not a second property. That string is the
     # point of the line, so the file is allowlisted rather than rewritten.
-    "Engine/Runtime/Engine/Internal/uvscript_object_host.cpp",
+    "Engine/Runtime/Engine/Internal/blueprint_object_host.cpp",
     # ...and the test that proves that alias reads, reports read-only, and is NOT described.
-    "Test/UVScript/uvscript_vm_tests.cpp",
+    "Engine/Editor/EditorCore/Blueprint/Testing/Compiler/uvscript_vm_tests.cpp",
     # This tool's own denylist obviously names what it forbids.
     "Engine/Tools/check_engine_vocabulary.py",
 )
@@ -246,7 +246,7 @@ def main() -> int:
                         f"    A rename that swaps a noun has to swap its article too; prose and UI\n"
                         f"    strings are not checked by the compiler, so this is."
                     )
-            if rel.startswith("Engine/") or rel.startswith("Test/"):
+            if rel.startswith("Engine/"):
                 for name, pattern in foreign_patterns.items():
                     if pattern.search(line):
                         foreign_hits[name] += 1

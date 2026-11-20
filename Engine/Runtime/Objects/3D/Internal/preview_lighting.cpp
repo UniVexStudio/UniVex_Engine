@@ -124,11 +124,18 @@ PreviewLightingFrameUVE ResolvePreviewLightingUVE(const bool sceneHasDirectional
                                                  groundColor.z * ambientEnergy};
     environment.ambientColor = Math::Vector3UVE{horizonColor.x * ambientEnergy, horizonColor.y * ambientEnergy,
                                                 horizonColor.z * ambientEnergy};
-    // A preview is a stand-in for the missing environment, not a hidden effects stack: the author's
-    // post-processing decisions belong to the WorldEnvironment they will add themselves.
-    environment.postProcessingEnabled = false;
-    environment.bloomEnabled = false;
-    environment.ssaoEnabled = false;
+    // Keep the preview viewport visually aligned with the runtime post-processing pipeline: soft
+    // ambient-only SSAO and subtle soft-knee bloom are active by default while fog remains opt-in.
+    environment.hasPostProcessingOverride = true;
+    environment.postProcessingEnabled = true;
+    environment.bloomEnabled = true;
+    environment.bloomThreshold = 1.15F;
+    environment.bloomIntensity = 0.25F;
+    environment.bloomSoftKnee = 0.5F;
+    environment.bloomMipCount = 4U;
+    environment.ssaoEnabled = true;
+    environment.ssaoRadius = 0.5F;
+    environment.ssaoIntensity = 0.85F;
     environment.fogEnabled = false;
     environment.exposure = 1.0F;
     environment.fogDensity = 0.0F;

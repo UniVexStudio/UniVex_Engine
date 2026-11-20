@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 // PRISM - Asset Browser & Content Drawer.
-// Editor-grade Content Browser with Sources folder panel, breadcrumbs,
+// Editor-grade Asset Table with Sources folder panel, breadcrumbs,
 // action toolbar (+ Add, Import, Save All), type filters, 3D PBR thumbnails,
 // class badge pills, asset type color bars, and drag & drop.
 #pragma once

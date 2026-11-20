@@ -59,6 +59,10 @@
 #include "i_timer.h"
 #include "i_window_manager.h"
 
+namespace UVE::VFX {
+class VfxWorldUVE;
+} // namespace UVE::VFX
+
 namespace UVE::Core {
 
 /// EngineServicesUVE is the engine's central dependency-provider / service
@@ -192,6 +196,9 @@ public:
     [[nodiscard]] Save::ICheckpointManagerUVE& GetCheckpointManagerUVE() const noexcept;
     [[nodiscard]] Window::IWindowManagerUVE& GetWindowManagerUVE() const noexcept;
 
+    void SetVfxWorldUVE(VFX::VfxWorldUVE* vfxWorld) noexcept;
+    [[nodiscard]] VFX::VfxWorldUVE* TryGetVfxWorldUVE() const noexcept;
+
     /// These services with the scene half replaced: another scene's entities and graph, drawn by
     /// its own renderer and render systems (see DocumentSceneUVE). Everything else is shared.
     [[nodiscard]] EngineServicesUVE WithSceneUVE(Scene::IEntityManagerUVE& entityManager,
@@ -249,6 +256,7 @@ private:
     Save::ISaveGameSystemUVE* m_saveGameSystem;
     Save::ICheckpointManagerUVE* m_checkpointManager;
     Window::IWindowManagerUVE* m_windowManager;
+    VFX::VfxWorldUVE* m_vfxWorld = nullptr;
 };
 
 } // namespace UVE::Core

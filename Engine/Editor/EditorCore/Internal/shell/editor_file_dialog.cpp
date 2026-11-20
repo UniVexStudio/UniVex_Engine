@@ -134,7 +134,7 @@ void EditorFileDialogUVE::OpenUVE(FilePickerRequestUVE request) {
     m_closePending = false;
     m_allKinds = m_request.extensions.empty();
     const std::filesystem::path contentRoot = ContentRootUVE();
-    m_importInto = m_editor.m_contentBrowserDirectory;
+    m_importInto = m_editor.m_assetTableDirectory;
     std::error_code error;
     std::filesystem::path start = m_request.startDirectory;
     if (!start.empty() && start.is_relative()) {

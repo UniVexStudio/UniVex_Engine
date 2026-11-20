@@ -16,9 +16,6 @@ namespace UVE::Render::Shader::BuiltIn {
 /// reachable (see ShaderProgramDescUVE's doc comment) — kept byte-identical to its `.glsl` file
 /// by convention, enforced by tests/render/shader/built_in_shaders_parity_uve_tests.cpp.
 
-inline constexpr std::string_view kBasic2DVirtualPath = "shaders/basic_2d.glsl";
-extern const std::string_view kBasic2DSource;
-
 inline constexpr std::string_view kBasic3DVirtualPath = "shaders/basic_3d.glsl";
 extern const std::string_view kBasic3DSource;
 
@@ -58,11 +55,7 @@ inline constexpr std::string_view kDebugLineVirtualPath = "shaders/debug_line.gl
 /// one batch-wide uPointSize (pixels) written to gl_PointSize.
 inline constexpr std::string_view kDebugPointVirtualPath = "shaders/debug_point.glsl";
 extern const std::string_view kDebugPointSource;
-/// Renderer2DUVE's sprite pass: world-space textured quads with per-vertex modulate
-/// through uViewProjection, sampled from uTexture (slot 0) - one upload + draw per sprite.
-inline constexpr std::string_view kSprite2DVirtualPath = "shaders/sprite_2d.glsl";
 extern const std::string_view kDebugLineSource;
-extern const std::string_view kSprite2DSource;
 
 /// The compute kernel Render::ParticleComputeSimulationUVE dispatches (CS4) - the GPU twin of
 /// Scene::ParticleRuntimeUVE's per-particle integration. Unlike every other entry here this file
@@ -114,5 +107,11 @@ extern const std::string_view kSsrSource;
 
 inline constexpr std::string_view kWaterVirtualPath = "shaders/water.glsl";
 extern const std::string_view kWaterSource;
+
+inline constexpr std::string_view kVfxSpriteVirtualPath = "shaders/vfx_sprite.glsl";
+extern const std::string_view kVfxSpriteSource;
+
+inline constexpr std::string_view kStudioFloorPbrVirtualPath = "shaders/studio_floor_pbr.glsl";
+extern const std::string_view kStudioFloorPbrSource;
 
 } // namespace UVE::Render::Shader::BuiltIn

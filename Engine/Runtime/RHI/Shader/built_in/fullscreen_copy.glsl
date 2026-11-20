@@ -5,11 +5,6 @@
 out vec2 vTexCoord;
 
 void main() {
-    // position is (0,0), (2,0), (0,2) - the oversized triangle that covers clip space once
-    // gl_Position maps it with position*2-1. The texture coordinate must use the inverse of
-    // that same mapping, (ndc+1)/2 == position, so the visible NDC range [-1,1] samples the
-    // full [0,1] of the source. Halving it here would sample only the source's lower-left
-    // quarter and magnify it across the whole target.
     vec2 position = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
     vTexCoord = position;
     gl_Position = vec4(position * 2.0 - 1.0, 0.0, 1.0);
@@ -20,14 +15,35 @@ void main() {
 in vec2 vTexCoord;
 out vec4 FragColor;
 
-// The default is a passthrough; the SSAO composite opts into a small AO blur before its Multiply
-// blend. Bloom uses this same shader with the blur toggle off and its Additive blend mode.
+// Default is a passthrough copy. When uSsaoBlurEnabled != 0, performs a depth-aware bilateral blur
+// (either 7-tap separable along (uBilateralAxisX, uBilateralAxisY) or a 3x3 fallback) so half-res
+// AO noise smooths cleanly without bleeding across geometric silhouettes or onto the sky.
 uniform sampler2D uSourceTexture;
+uniform sampler2D uDepthTexture;
 uniform int uSsaoBlurEnabled;
+uniform float uBilateralAxisX;
+uniform float uBilateralAxisY;
+uniform float uBilateralDepthSharpness;
+uniform float uDepthNdcScale;
+uniform float uDepthNdcBias;
+uniform float uProjA;
+uniform float uProjB;
+uniform int uOrthographic;
+uniform int uFastReconstruct;
+uniform mat4 uInverseProjection;
 
-vec4 SampleSourceClampedUVE(vec2 uv) {
-    vec2 texelSize = 1.0 / vec2(textureSize(uSourceTexture, 0));
-    vec2 halfTexel = texelSize * 0.5;
+float LinearDepthUVE(vec2 uv, float depthSample) {
+    float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
+    float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
+    float ndcZ = depthSample * scale + bias;
+    if (uFastReconstruct != 0 && uOrthographic == 0) {
+        return abs(uProjB / max(uProjA - ndcZ, 1.0e-6));
+    }
+    vec4 viewPos = uInverseProjection * vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
+    return abs(viewPos.z / max(abs(viewPos.w), 1.0e-6));
+}
+
+vec4 SampleSourceClampedUVE(vec2 uv, vec2 halfTexel) {
     return texture(uSourceTexture, clamp(uv, halfTexel, vec2(1.0) - halfTexel));
 }
 
@@ -37,18 +53,72 @@ void main() {
         return;
     }
 
-    // A small separable-Gaussian-equivalent 3x3 kernel smooths the half-resolution AO term before
-    // the Multiply blend, without needing an extra ping-pong target or feeding back into the source.
-    vec2 texelSize = 1.0 / vec2(textureSize(uSourceTexture, 0));
-    vec2 x = vec2(texelSize.x, 0.0);
-    vec2 y = vec2(0.0, texelSize.y);
-    vec4 center = SampleSourceClampedUVE(vTexCoord);
-    vec4 axes = SampleSourceClampedUVE(vTexCoord - x) + SampleSourceClampedUVE(vTexCoord + x) +
-                SampleSourceClampedUVE(vTexCoord - y) + SampleSourceClampedUVE(vTexCoord + y);
-    vec4 diagonals = SampleSourceClampedUVE(vTexCoord - x - y) +
-                     SampleSourceClampedUVE(vTexCoord + x - y) +
-                     SampleSourceClampedUVE(vTexCoord - x + y) +
-                     SampleSourceClampedUVE(vTexCoord + x + y);
-    FragColor = (center * 4.0 + axes * 2.0 + diagonals) * (1.0 / 16.0);
+    vec2 texelSize = 1.0 / max(vec2(textureSize(uSourceTexture, 0)), vec2(1.0));
+    vec2 halfTexel = texelSize * 0.5;
+    float centerDepth = texture(uDepthTexture, vTexCoord).r;
+    if (centerDepth >= 0.999999) {
+        FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+        return;
+    }
+
+    vec4 centerValue = SampleSourceClampedUVE(vTexCoord, halfTexel);
+    float centerLinDepth = LinearDepthUVE(vTexCoord, centerDepth);
+    float depthSharpness = uBilateralDepthSharpness > 0.0 ? uBilateralDepthSharpness : 12.0;
+    float depthScale = max(centerLinDepth * 0.05, 0.02);
+
+    vec2 axis = vec2(uBilateralAxisX, uBilateralAxisY);
+    if (dot(axis, axis) > 1.0e-5) {
+        // 7-tap separable Gaussian-bilateral kernel (sigma ~= 1.6 texels).
+        const float kSpatialWeightsUVE[4] = float[](0.25, 0.1875, 0.125, 0.0625);
+        vec4 sum = centerValue * kSpatialWeightsUVE[0];
+        float weightSum = kSpatialWeightsUVE[0];
+        vec2 stepUv = axis * texelSize;
+        for (int tap = 1; tap <= 3; ++tap) {
+            float spatialW = kSpatialWeightsUVE[tap];
+            vec2 offset = stepUv * float(tap);
+
+            vec2 uvPos = clamp(vTexCoord + offset, halfTexel, vec2(1.0) - halfTexel);
+            float dPos = texture(uDepthTexture, uvPos).r;
+            if (dPos < 0.999999) {
+                float deltaPos = abs(LinearDepthUVE(uvPos, dPos) - centerLinDepth) / depthScale;
+                float wPos = spatialW * exp(-deltaPos * depthSharpness * 0.15);
+                sum += texture(uSourceTexture, uvPos) * wPos;
+                weightSum += wPos;
+            }
+
+            vec2 uvNeg = clamp(vTexCoord - offset, halfTexel, vec2(1.0) - halfTexel);
+            float dNeg = texture(uDepthTexture, uvNeg).r;
+            if (dNeg < 0.999999) {
+                float deltaNeg = abs(LinearDepthUVE(uvNeg, dNeg) - centerLinDepth) / depthScale;
+                float wNeg = spatialW * exp(-deltaNeg * depthSharpness * 0.15);
+                sum += texture(uSourceTexture, uvNeg) * wNeg;
+                weightSum += wNeg;
+            }
+        }
+        FragColor = sum / max(weightSum, 1.0e-5);
+        return;
+    }
+
+    // Fallback 3x3 depth-aware bilateral blur when invoked without a separable axis.
+    vec4 sum = centerValue * 4.0;
+    float weightSum = 4.0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) {
+                continue;
+            }
+            float spatialW = (dx == 0 || dy == 0) ? 2.0 : 1.0;
+            vec2 sampleUv = clamp(vTexCoord + vec2(float(dx), float(dy)) * texelSize, halfTexel, vec2(1.0) - halfTexel);
+            float sampleDepth = texture(uDepthTexture, sampleUv).r;
+            if (sampleDepth >= 0.999999) {
+                continue;
+            }
+            float delta = abs(LinearDepthUVE(sampleUv, sampleDepth) - centerLinDepth) / depthScale;
+            float w = spatialW * exp(-delta * depthSharpness * 0.15);
+            sum += texture(uSourceTexture, sampleUv) * w;
+            weightSum += w;
+        }
+    }
+    FragColor = sum / max(weightSum, 1.0e-5);
 }
 #endif

@@ -9,12 +9,11 @@
 
 #include "area_component.h"
 #include "animation_sequencer_component.h"
-#include "montage_player_component.h"
+#include "montage_sequencer_component.h"
 #include "animation_graph_component.h"
 #include "auto_translate_component.h"
 #include "audio_source_component.h"
 #include "bone_modifier_component.h"
-#include "camera_2d_component.h"
 #include "camera_component.h"
 #include "canvas_component.h"
 #include "character_controller_component.h"
@@ -44,7 +43,6 @@
 #include "ui_button_component.h"
 #include "ui_checkbox_component.h"
 #include "ui_dropdown_component.h"
-#include "sprite_2d_component.h"
 #include "ui_image_component.h"
 #include "ui_layout_container_component.h"
 #include "ui_progress_bar_component.h"
@@ -228,6 +226,10 @@ void AddValidatedUVE(std::vector<TypeMetadataEntryUVE>& entries, TypeMetadataEnt
     AddUVE<ComponentT>(entries, std::move(entry));
 }
 
+[[nodiscard]] bool IsMontageSequencerComponentValidUVE(const MontageSequencerComponentUVE&) noexcept {
+    return true;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The declarations themselves. Each component states what it exposes exactly once, here, instead
 // of being re-described by every consumer that needs to know.
@@ -343,15 +345,6 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                            "Lens"),
             }));
 
-    AddValidatedUVE<Camera2DComponentUVE, &IsCamera2DComponentValidUVE>(
-        entries,
-        MakeEntryUVE("component.camera_2d", "Camera2DComponentUVE", "Camera2D", kSectionOrderTypeSpecificUVE,
-            {
-                DeclareUVE<&Camera2DComponentUVE::zoom>("zoom", "Zoom", kPropertyTypeVector2UVE),
-                DeclareUVE<&Camera2DComponentUVE::offset>("offset", "Offset", kPropertyTypeVector2UVE),
-                DeclareUVE<&Camera2DComponentUVE::current>("current", "Current", kPropertyTypeBoolUVE),
-            }));
-
     AddValidatedUVE<LightComponentUVE, &IsLightComponentValidUVE>(
         entries,
         MakeEntryUVE("component.light", "LightComponentUVE", "Light", kSectionOrderTypeSpecificUVE,
@@ -394,7 +387,7 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                                                 "meshGuid", "Mesh", kPropertyTypeAssetGuidUVE),
                                                             "asset:uvmodel"),
                                         "An imported model. Import a .glb or .gltf (Blender: File > Export > "
-                                        "glTF 2.0) from the Content Browser."),
+                                        "glTF 2.0) from the Asset Table."),
                          WithTooltipUVE(WithCustomDrawerUVE(DeclareUVE<&MeshComponentUVE::materialGuid>(
                                                                 "materialGuid", "Material", kPropertyTypeAssetGuidUVE),
                                                             "asset:uvmat"),
@@ -967,7 +960,16 @@ void DeclareRenderingUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                                             0.0, 1000000.0, 0.1),
                                WithRangeUVE(DeclareUVE<&ParticleEmitterComponentUVE::lifetimeSeconds>(
                                                 "lifetimeSeconds", "Lifetime", kPropertyTypeFloatUVE),
-                                            0.01, 3600.0, 0.01)}));
+                                            0.01, 3600.0, 0.01),
+                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::systemAssetPath>(
+                                                  "systemAssetPath", "Particle System", kPropertyTypeStringUVE),
+                                              "Optional .uvfx particle system asset. Empty keeps the simple built-in emitter."),
+                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::autoPlay>(
+                                                  "autoPlay", "Auto Play", kPropertyTypeBoolUVE),
+                                              "Start playing the Particle System automatically when the scene starts."),
+                               WithTooltipUVE(DeclareUVE<&ParticleEmitterComponentUVE::seed>(
+                                                  "seed", "Seed", kPropertyTypeUInt32UVE),
+                                              "Random seed for deterministic playback (0 derives a per-entity seed).")}));
 
     // LODGroup3D's own section. The chain is declared as a prefix: `levelCount` says how many of
     // the two lists below are in use, and both lists are drawn by a block drawer that shows exactly
@@ -2217,17 +2219,17 @@ void DeclareAnimationUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                 InGroupUVE(DeclareRuntimeStateUVE<&P::finished>("finished", "Finished", kPropertyTypeBoolUVE), "State"),
             }));
 
-    // MontagePlayer: the montages its script can play, by file name.
-    using MP = MontagePlayerComponentUVE;
+    // MontageSequencer: the montages its script can play, by file name.
+    using MP = MontageSequencerComponentUVE;
     const auto montageSlot = [](auto property, const char* tip) {
         return WithTooltipUVE(WithCustomDrawerUVE(std::move(property), "asset:uvmontage"), tip);
     };
     constexpr const char* kMontageTipUVE =
-        "An Animation Montage this object can play. Its script plays it by the file's name: "
+        "An Motion Montage this object can play. Its script plays it by the file's name: "
         "montage.play(\"Attack\") plays Attack.uvmontage.";
-    AddValidatedUVE<MontagePlayerComponentUVE, +[](const MontagePlayerComponentUVE&) noexcept { return true; }>(
+    AddValidatedUVE<MontageSequencerComponentUVE, &IsMontageSequencerComponentValidUVE>(
         entries,
-        MakeEntryUVE("component.montage_player", "MontagePlayerComponentUVE", "MontagePlayer", kSectionOrderTypeSpecificUVE,
+        MakeEntryUVE("component.montage_sequencer", "MontageSequencerComponentUVE", "MontageSequencer", kSectionOrderTypeSpecificUVE,
             {
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage1>("montage1", "Montage 1", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
                 InGroupUVE(montageSlot(DeclareUVE<&MP::montage2>("montage2", "Montage 2", kPropertyTypeAssetGuidUVE), kMontageTipUVE), "Montages"),
@@ -2479,27 +2481,6 @@ void DeclareMediaAndUIUVE(std::vector<TypeMetadataEntryUVE>& entries) {
                          InGroupUVE(DeclareUVE<&UIImageComponentUVE::sliceUVMax>("sliceUVMax", "Slice UV Max",
                                                                                 kPropertyTypeVector2UVE),
                                     "Nine Slice"),
-                     }));
-
-    AddValidatedUVE<Sprite2DComponentUVE, &IsSprite2DComponentValidUVE>(
-        entries,
-        MakeEntryUVE("component.sprite_2d", "Sprite2DComponentUVE", "Sprite2D", kSectionOrderTypeSpecificUVE,
-                     {
-                         DeclareUVE<&Sprite2DComponentUVE::textureAssetGuid>("textureAssetGuid", "Texture",
-                                                                            kPropertyTypeAssetGuidUVE),
-                         DeclareUVE<&Sprite2DComponentUVE::sourceRect>("sourceRect", "Source Rect",
-                                                                      kPropertyTypeRectUVE),
-                         DeclareUVE<&Sprite2DComponentUVE::flipH>("flipH", "Flip H",
-                                                                  kPropertyTypeBoolUVE),
-                         DeclareUVE<&Sprite2DComponentUVE::flipV>("flipV", "Flip V",
-                                                                  kPropertyTypeBoolUVE),
-                         DeclareUVE<&Sprite2DComponentUVE::modulate>("modulate", "Modulate",
-                                                                     kPropertyTypeColorUVE),
-                         WithRangeUVE(DeclareUVE<&Sprite2DComponentUVE::alpha>("alpha", "Alpha",
-                                                                              kPropertyTypeFloatUVE),
-                                      0.0, 1.0, 0.01),
-                         DeclareUVE<&Sprite2DComponentUVE::offset>("offset", "Offset",
-                                                                   kPropertyTypeVector2UVE),
                      }));
 
     AddUVE<UIButtonComponentUVE>(

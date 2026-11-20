@@ -72,6 +72,7 @@
 #include "shader_program_desc.h"
 #include "shader_program.h"
 #include "ui_runtime.h"
+#include "vfx_sprite_renderer.h"
 
 namespace UVE::Render {
 
@@ -434,6 +435,11 @@ constexpr std::size_t kShadowCascadeCountUVE = 3;
 constexpr std::uint32_t kShadowCascadeFirstTextureSlotUVE = kShadowMapTextureSlotUVE;
 constexpr std::uint32_t kReflectionProbeFirstTextureSlotUVE = 6U;
 constexpr std::uint32_t kSkyTextureSlotUVE = 1U;
+constexpr std::uint32_t kToneMappingLutTextureSlotUVE = 2U;
+constexpr std::uint32_t kToneMappingSsaoTextureSlotUVE = 14U;
+constexpr std::uint32_t kToneMappingContactShadowTextureSlotUVE = 16U;
+constexpr std::uint32_t kToneMappingSsrTextureSlotUVE = 17U;
+constexpr std::uint32_t kToneMappingBloomTextureSlotUVE = 18U;
 
 // Phase 2b post-process defaults. User-facing SSAO radius, intensity, power, and sample quality live
 // in PostProcessSettingsUVE; without a WorldEnvironment the renderer keeps bloom's legacy hard knee.
@@ -935,6 +941,7 @@ struct Renderer3DUVE::ImplUVE {
         std::array<BloomMipTargetsUVE, kMaximumBloomMipCountUVE> bloomMipTargets{};
         std::uint32_t bloomMipTargetCount = 0U;
         TextureHandleUVE ssaoTarget = kInvalidTextureHandleUVE;
+        TextureHandleUVE ssaoBlurTarget = kInvalidTextureHandleUVE;
         TextureHandleUVE contactShadowTarget = kInvalidTextureHandleUVE;
         TextureHandleUVE ssrTarget = kInvalidTextureHandleUVE;
     };
@@ -987,11 +994,33 @@ struct Renderer3DUVE::ImplUVE {
     /// never sampled), this is later bound as a sampled texture input during the main color pass.
     std::array<TextureHandleUVE, kShadowCascadeCountUVE> shadowMapTargets{};
 
-    /// Tier 2.2 point sampler bound alongside every shadow cascade (see BindMaterialTexturesUVE):
-    /// manual PCF taps texel centers, so point sampling is the CORRECT filter — the pre-2.2
-    /// linear default double-filtered (each tap pre-blurred, then averaged). Invalid when the
-    /// backend cannot make sampler objects (pre-3.3 GL) — binds are skipped, keeping linear.
+    /// Tier 2.2 point sampler bound alongside every shadow cascade and depth texture read:
+    /// manual PCF and depth reconstruction tap texel centers, so point sampling is required.
     SamplerHandleUVE shadowPointSampler{};
+    /// Trilinear sampler for material albedo/normal/AO/ORM/emissive maps (repeat + anisotropy).
+    SamplerHandleUVE materialRepeatSampler{};
+    /// Linear clamp-to-edge sampler for decals, UI, bloom, and post-process color reads.
+    SamplerHandleUVE clampLinearSampler{};
+    /// Equirectangular environment/sky sampler (repeat horizontally across longitude, clamp poles).
+    SamplerHandleUVE environmentEquirectSampler{};
+    bool materialTextureRepeatEnabled = true;
+    float materialMaxAnisotropy = 8.0F;
+
+    void RebuildMaterialRepeatSamplerUVE() {
+        DestroySamplerIfValidUVE(renderDevice, materialRepeatSampler);
+        materialRepeatSampler = kInvalidSamplerHandleUVE;
+        SamplerDescUVE desc;
+        desc.magFilter = SamplerFilterUVE::Linear;
+        desc.minFilter = SamplerFilterUVE::Linear;
+        desc.mipMode = SamplerMipModeUVE::Linear;
+        const SamplerWrapUVE wrap =
+            materialTextureRepeatEnabled ? SamplerWrapUVE::Repeat : SamplerWrapUVE::ClampToEdge;
+        desc.wrapU = wrap;
+        desc.wrapV = wrap;
+        desc.wrapW = wrap;
+        desc.maxAnisotropy = std::clamp(materialMaxAnisotropy, 1.0F, 16.0F);
+        materialRepeatSampler = renderDevice.CreateSamplerUVE(desc);
+    }
 
     /// The built-in shadow-depth vertex+fragment program (engine/render/shader/built_in/
     /// shadow_depth.glsl), compiled once via shaderManager at construction — not tied to any
@@ -1047,13 +1076,15 @@ struct Renderer3DUVE::ImplUVE {
     float humanEyeTexelX = 0.0F;
     float humanEyeTexelY = 0.0F;
     Scene::WorldEnvironmentFrameUVE environmentFrame{};
-    /// Editor preview environment (Godot's "Preview Environment"). Applied only when the scene
-    /// resolves to no WorldEnvironment of its own, so authored lighting can never be overridden by
-    /// an editor convenience - see IRenderer3DUVE::SetPreviewEnvironmentUVE.
+    /// Editor preview environment applied only when the scene resolves to no WorldEnvironment of
+    /// its own, so authored lighting is never overridden - see SetPreviewEnvironmentUVE.
     std::optional<Scene::WorldEnvironmentFrameUVE> previewEnvironment{};
     Asset::AssetGuidUVE skyTextureGuid{};
     TextureHandleUVE skyTextureHandle = kInvalidTextureHandleUVE;
     bool skyTextureEnabled = false;
+    Asset::AssetGuidUVE lutTextureGuid{};
+    TextureHandleUVE lutTextureHandle = kInvalidTextureHandleUVE;
+    bool lutTextureEnabled = false;
     /// See IRenderer3DUVE::GetLastSceneDepthUVE().
     SceneDepthExportUVE lastSceneDepth{};
     float environmentCameraNear = 0.1F;
@@ -1134,6 +1165,186 @@ struct Renderer3DUVE::ImplUVE {
     Math::Vector3UVE reflectionProbeAxisZ{0.0F, 0.0F, 1.0F};
     Math::Vector3UVE reflectionProbeHalfExtents{};
     TextureHandleUVE reflectionProbeCube = kInvalidTextureHandleUVE;
+
+    std::optional<StudioFloorSettingsUVE> studioFloorSettings{};
+    std::shared_ptr<Shader::ShaderProgramUVE> studioFloorProgram;
+    BufferHandleUVE studioFloorVertexBuffer = kInvalidBufferHandleUVE;
+    BufferHandleUVE studioFloorIndexBuffer = kInvalidBufferHandleUVE;
+    TextureHandleUVE studioFloorAlbedoTexture = kInvalidTextureHandleUVE;
+    TextureHandleUVE studioFloorNormalTexture = kInvalidTextureHandleUVE;
+    TextureHandleUVE studioFloorOrmTexture = kInvalidTextureHandleUVE;
+
+    void DestroyStudioFloorResourcesUVE() {
+        DestroyBufferIfValidUVE(renderDevice, studioFloorVertexBuffer);
+        DestroyBufferIfValidUVE(renderDevice, studioFloorIndexBuffer);
+        DestroyTextureIfValidUVE(renderDevice, studioFloorAlbedoTexture);
+        DestroyTextureIfValidUVE(renderDevice, studioFloorNormalTexture);
+        DestroyTextureIfValidUVE(renderDevice, studioFloorOrmTexture);
+        studioFloorVertexBuffer = kInvalidBufferHandleUVE;
+        studioFloorIndexBuffer = kInvalidBufferHandleUVE;
+        studioFloorAlbedoTexture = kInvalidTextureHandleUVE;
+        studioFloorNormalTexture = kInvalidTextureHandleUVE;
+        studioFloorOrmTexture = kInvalidTextureHandleUVE;
+        studioFloorProgram.reset();
+    }
+
+    [[nodiscard]] bool EnsureStudioFloorResourcesUVE() {
+        if (!studioFloorProgram) {
+            Shader::ShaderProgramDescUVE floorDesc;
+            floorDesc.virtualFilePath = std::string(Shader::BuiltIn::kStudioFloorPbrVirtualPath);
+            floorDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kStudioFloorPbrSource);
+            floorDesc.vertexLayout = MeshVertexLayoutUVE();
+            floorDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
+            floorDesc.depthTestEnabled = true;
+            floorDesc.depthWriteEnabled = true;
+            floorDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+            floorDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+            floorDesc.cullMode = CullModeUVE::None;
+            floorDesc.debugNameUVE = "StudioFloorPBR";
+            studioFloorProgram = shaderManager.CreateProgramUVE(floorDesc);
+        }
+        if (studioFloorVertexBuffer == kInvalidBufferHandleUVE ||
+            studioFloorIndexBuffer == kInvalidBufferHandleUVE) {
+            constexpr float kExtent = 48.0F;
+            const std::array<Asset::MeshVertexUVE, 4U> vertices{{
+                Asset::MeshVertexUVE{{-kExtent, 0.0F, -kExtent}, {0.0F, 1.0F, 0.0F}, 0.0F, 0.0F, {1.0F, 0.0F, 0.0F}, 1.0F},
+                Asset::MeshVertexUVE{{-kExtent, 0.0F,  kExtent}, {0.0F, 1.0F, 0.0F}, 0.0F, 1.0F, {1.0F, 0.0F, 0.0F}, 1.0F},
+                Asset::MeshVertexUVE{{ kExtent, 0.0F,  kExtent}, {0.0F, 1.0F, 0.0F}, 1.0F, 1.0F, {1.0F, 0.0F, 0.0F}, 1.0F},
+                Asset::MeshVertexUVE{{ kExtent, 0.0F, -kExtent}, {0.0F, 1.0F, 0.0F}, 1.0F, 0.0F, {1.0F, 0.0F, 0.0F}, 1.0F},
+            }};
+            const std::array<std::uint32_t, 6U> indices{{0U, 1U, 2U, 0U, 2U, 3U}};
+            DestroyBufferIfValidUVE(renderDevice, studioFloorVertexBuffer);
+            DestroyBufferIfValidUVE(renderDevice, studioFloorIndexBuffer);
+            studioFloorVertexBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{sizeof(vertices), BufferUsageUVE::Vertex},
+                std::as_bytes(std::span<const Asset::MeshVertexUVE>{vertices}));
+            studioFloorIndexBuffer = renderDevice.CreateBufferUVE(
+                BufferDescUVE{sizeof(indices), BufferUsageUVE::Index},
+                std::as_bytes(std::span<const std::uint32_t>{indices}));
+        }
+        if (studioFloorAlbedoTexture == kInvalidTextureHandleUVE ||
+            studioFloorNormalTexture == kInvalidTextureHandleUVE ||
+            studioFloorOrmTexture == kInvalidTextureHandleUVE) {
+            constexpr std::uint32_t kTexSize = 256U;
+            constexpr std::size_t kTexPixels = static_cast<std::size_t>(kTexSize) * kTexSize;
+            std::vector<float> heightMap(kTexPixels, 0.0F);
+            std::vector<std::uint8_t> albedoBytes(kTexPixels * 4U, 0U);
+            std::vector<std::uint8_t> normalBytes(kTexPixels * 4U, 0U);
+            std::vector<std::uint8_t> ormBytes(kTexPixels * 4U, 0U);
+
+            const auto hashGrid = [](const int x, const int y, const int period, const std::uint32_t seed) noexcept -> float {
+                const int wx = ((x % period) + period) % period;
+                const int wy = ((y % period) + period) % period;
+                std::uint32_t h = static_cast<std::uint32_t>(wx) * 374761393U +
+                                  static_cast<std::uint32_t>(wy) * 668265263U + seed * 2246822519U;
+                h = (h ^ (h >> 13U)) * 1274126177U;
+                h ^= (h >> 16U);
+                return static_cast<float>(h & 0xFFFFU) / 65535.0F;
+            };
+            const auto sampleTileNoise = [&](const float u, const float v, const int period, const std::uint32_t seed) noexcept -> float {
+                const float gx = u * static_cast<float>(period);
+                const float gy = v * static_cast<float>(period);
+                const int x0 = static_cast<int>(std::floor(gx));
+                const int y0 = static_cast<int>(std::floor(gy));
+                const float fx = gx - static_cast<float>(x0);
+                const float fy = gy - static_cast<float>(y0);
+                const float sx = fx * fx * (3.0F - 2.0F * fx);
+                const float sy = fy * fy * (3.0F - 2.0F * fy);
+                const float n00 = hashGrid(x0, y0, period, seed);
+                const float n10 = hashGrid(x0 + 1, y0, period, seed);
+                const float n01 = hashGrid(x0, y0 + 1, period, seed);
+                const float n11 = hashGrid(x0 + 1, y0 + 1, period, seed);
+                return (n00 * (1.0F - sx) + n10 * sx) * (1.0F - sy) +
+                       (n01 * (1.0F - sx) + n11 * sx) * sy;
+            };
+
+            for (std::uint32_t y = 0U; y < kTexSize; ++y) {
+                const float v = (static_cast<float>(y) + 0.5F) / static_cast<float>(kTexSize);
+                for (std::uint32_t x = 0U; x < kTexSize; ++x) {
+                    const float u = (static_cast<float>(x) + 0.5F) / static_cast<float>(kTexSize);
+                    const float nMacro = sampleTileNoise(u, v, 8, 11U);
+                    const float nMid = sampleTileNoise(u, v, 24, 37U);
+                    const float nFine = sampleTileNoise(u, v, 64, 73U);
+                    const float nMicro = sampleTileNoise(u, v, 128, 131U);
+                    // Subtle brushed concrete/basalt micro-grain along X.
+                    const float brushed = sampleTileNoise(u * 0.25F, v, 96, 197U);
+                    const float fbm = 0.36F * nMacro + 0.28F * nMid + 0.20F * nFine + 0.16F * nMicro;
+
+                    // Subtle recessed 2x2 architectural slab seam (no bright grid lines).
+                    const float tileU = std::fmod(u * 2.0F, 1.0F);
+                    const float tileV = std::fmod(v * 2.0F, 1.0F);
+                    const float edgeDist = std::min({tileU, 1.0F - tileU, tileV, 1.0F - tileV});
+                    const float seamMask = std::clamp(edgeDist / 0.014F, 0.0F, 1.0F);
+                    const float seamSmooth = seamMask * seamMask * (3.0F - 2.0F * seamMask);
+
+                    const float height = (fbm * 0.78F + brushed * 0.22F) * (0.65F + 0.35F * seamSmooth);
+                    const std::size_t idx = static_cast<std::size_t>(y) * kTexSize + x;
+                    heightMap[idx] = height;
+
+                    // Dark studio slate-basalt albedo (sRGB ~29..41 out of 255) with subtle mineral variation.
+                    const float baseTone = (0.118F + 0.038F * (fbm - 0.5F) + 0.012F * (brushed - 0.5F)) *
+                                           (0.86F + 0.14F * seamSmooth);
+                    const auto toByte = [](const float c) noexcept -> std::uint8_t {
+                        return static_cast<std::uint8_t>(std::lround(std::clamp(c, 0.0F, 1.0F) * 255.0F));
+                    };
+                    albedoBytes[idx * 4U + 0U] = toByte(baseTone * 0.96F);
+                    albedoBytes[idx * 4U + 1U] = toByte(baseTone * 0.99F);
+                    albedoBytes[idx * 4U + 2U] = toByte(baseTone * 1.06F);
+                    albedoBytes[idx * 4U + 3U] = 255U;
+
+                    const float ao = std::clamp((0.88F + 0.12F * nFine) * (0.82F + 0.18F * seamSmooth), 0.0F, 1.0F);
+                    const float roughness = std::clamp(0.74F - 0.10F * (fbm - 0.5F) + 0.06F * (1.0F - seamSmooth), 0.45F, 0.92F);
+                    ormBytes[idx * 4U + 0U] = toByte(ao);
+                    ormBytes[idx * 4U + 1U] = toByte(roughness);
+                    ormBytes[idx * 4U + 2U] = 0U;
+                    ormBytes[idx * 4U + 3U] = 255U;
+                }
+            }
+
+            for (std::uint32_t y = 0U; y < kTexSize; ++y) {
+                const std::uint32_t yPrev = (y + kTexSize - 1U) % kTexSize;
+                const std::uint32_t yNext = (y + 1U) % kTexSize;
+                for (std::uint32_t x = 0U; x < kTexSize; ++x) {
+                    const std::uint32_t xPrev = (x + kTexSize - 1U) % kTexSize;
+                    const std::uint32_t xNext = (x + 1U) % kTexSize;
+                    const float hL = heightMap[static_cast<std::size_t>(y) * kTexSize + xPrev];
+                    const float hR = heightMap[static_cast<std::size_t>(y) * kTexSize + xNext];
+                    const float hD = heightMap[static_cast<std::size_t>(yPrev) * kTexSize + x];
+                    const float hU = heightMap[static_cast<std::size_t>(yNext) * kTexSize + x];
+                    constexpr float kBumpStrength = 1.65F;
+                    const Math::Vector3UVE n = Math::NormalizeUVE(
+                        Math::Vector3UVE{(hL - hR) * kBumpStrength, (hD - hU) * kBumpStrength, 1.0F});
+                    const auto toByte = [](const float c) noexcept -> std::uint8_t {
+                        return static_cast<std::uint8_t>(std::lround(std::clamp(c, 0.0F, 1.0F) * 255.0F));
+                    };
+                    const std::size_t idx = static_cast<std::size_t>(y) * kTexSize + x;
+                    normalBytes[idx * 4U + 0U] = toByte(n.x * 0.5F + 0.5F);
+                    normalBytes[idx * 4U + 1U] = toByte(n.y * 0.5F + 0.5F);
+                    normalBytes[idx * 4U + 2U] = toByte(n.z * 0.5F + 0.5F);
+                    normalBytes[idx * 4U + 3U] = 255U;
+                }
+            }
+
+            DestroyTextureIfValidUVE(renderDevice, studioFloorAlbedoTexture);
+            DestroyTextureIfValidUVE(renderDevice, studioFloorNormalTexture);
+            DestroyTextureIfValidUVE(renderDevice, studioFloorOrmTexture);
+            studioFloorAlbedoTexture = renderDevice.CreateTextureUVE(
+                TextureDescUVE{kTexSize, kTexSize, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Srgb},
+                std::as_bytes(std::span<const std::uint8_t>{albedoBytes}));
+            studioFloorNormalTexture = renderDevice.CreateTextureUVE(
+                TextureDescUVE{kTexSize, kTexSize, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear},
+                std::as_bytes(std::span<const std::uint8_t>{normalBytes}));
+            studioFloorOrmTexture = renderDevice.CreateTextureUVE(
+                TextureDescUVE{kTexSize, kTexSize, TextureFormatUVE::RGBA8Unorm, 1U, TextureColorSpaceUVE::Linear},
+                std::as_bytes(std::span<const std::uint8_t>{ormBytes}));
+        }
+        return studioFloorProgram != nullptr && studioFloorProgram->IsValidUVE() &&
+               studioFloorVertexBuffer != kInvalidBufferHandleUVE &&
+               studioFloorIndexBuffer != kInvalidBufferHandleUVE &&
+               studioFloorAlbedoTexture != kInvalidTextureHandleUVE &&
+               studioFloorNormalTexture != kInvalidTextureHandleUVE &&
+               studioFloorOrmTexture != kInvalidTextureHandleUVE;
+    }
 
     void DestroyReflectionProbeGpuCacheUVE(ReflectionProbeGpuCacheUVE& cache) {
         DestroyTextureIfValidUVE(renderDevice, cache.cube);
@@ -1231,31 +1442,21 @@ struct Renderer3DUVE::ImplUVE {
     std::shared_ptr<Shader::ShaderProgramUVE> bloomBrightPassProgram;
     std::shared_ptr<Shader::ShaderProgramUVE> bloomDownsampleProgram;
     std::shared_ptr<Shader::ShaderProgramUVE> bloomBlurProgram;
-    /// fullscreen_copy.glsl compiled with PipelineBlendModeUVE::Additive - composites the blurred
-    /// bloom result onto colorTarget.
-    std::shared_ptr<Shader::ShaderProgramUVE> bloomCompositeProgram;
 
-    /// SSAO occlusion target, also at half resolution (screen-space AO tolerates the softer detail
-    /// well, and it more than halves the per-pixel hemisphere-kernel sampling cost).
+    /// Half-resolution R8Unorm SSAO target and ping-pong bilateral blur target.
     TextureHandleUVE ssaoTarget;
+    TextureHandleUVE ssaoBlurTarget;
     std::shared_ptr<Shader::ShaderProgramUVE> ssaoProgram;
-    /// fullscreen_copy.glsl compiled with PipelineBlendModeUVE::Multiply - composites the SSAO
-    /// occlusion term onto colorTarget.
-    std::shared_ptr<Shader::ShaderProgramUVE> ssaoCompositeProgram;
+    /// Opaque fullscreen_copy.glsl used for the two-pass separable depth-aware bilateral SSAO blur.
+    std::shared_ptr<Shader::ShaderProgramUVE> ssaoBlurProgram;
 
-    /// Screen-space contact-shadow term at FULL resolution - unlike SSAO this is the sharpest
-    /// feature in the frame, and sampling it from a half-res target would blur away the very
-    /// centimetres it exists to recover.
+    /// Full-resolution R8Unorm screen-space contact-shadow visibility term.
     TextureHandleUVE contactShadowTarget;
     std::shared_ptr<Shader::ShaderProgramUVE> contactShadowProgram;
-    /// fullscreen_copy.glsl compiled with PipelineBlendModeUVE::Multiply - multiplies the contact
-    /// shadow visibility term into colorTarget.
-    std::shared_ptr<Shader::ShaderProgramUVE> contactShadowCompositeProgram;
 
-    /// Screen-space reflections (SSR) term and compositing programs.
+    /// Half-resolution HDR screen-space reflections term (composited bilaterally in ToneMapping).
     TextureHandleUVE ssrTarget;
     std::shared_ptr<Shader::ShaderProgramUVE> ssrProgram;
-    std::shared_ptr<Shader::ShaderProgramUVE> ssrCompositeProgram;
 
     /// Minimal built-in particle program and reusable CPU-expanded vertex buffer. ShaderManagerUVE
     /// owns the linked pipeline lifetime; Renderer3DUVE owns only the buffer and releases it in its
@@ -1522,6 +1723,12 @@ struct Renderer3DUVE::ImplUVE {
     BufferHandleUVE uiVertexBuffer = kInvalidBufferHandleUVE;
     std::vector<UIVertexUVE> uiVertexStaging;
 
+    const VfxDrawListUVE* vfxDrawListForFrame = nullptr;
+    VfxSpriteRendererUVE vfxSpriteRenderer;
+    VfxSpriteFrameContextUVE vfxFrameContext{};
+    std::unordered_map<Asset::AssetGuidUVE, Asset::AssetHandleUVE<Asset::MaterialAssetUVE>> vfxMaterialHandles;
+    std::unordered_set<Asset::AssetGuidUVE> vfxReferencedTextureGuids;
+
     ImplUVE(IRenderDeviceUVE& renderDeviceIn, IRenderSystemUVE& renderSystemIn, IMeshRendererUVE& meshRendererIn,
             ICameraSystemUVE& cameraSystemIn, ILightSystemUVE& lightSystemIn,
             Shader::IShaderManagerUVE& shaderManagerIn, Asset::IAssetManagerUVE& assetManagerIn,
@@ -1565,19 +1772,26 @@ struct Renderer3DUVE::ImplUVE {
             renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
         baseBloomTargets.blurB =
             renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
-        set.ssaoTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
-        set.contactShadowTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::RGBA8Unorm, 1});
+        const auto createSingleChannelTarget = [this](const std::uint32_t targetW, const std::uint32_t targetH) {
+            TextureHandleUVE handle =
+                renderDevice.CreateTextureUVE(TextureDescUVE{targetW, targetH, TextureFormatUVE::R8Unorm, 1});
+            if (handle == kInvalidTextureHandleUVE) {
+                handle = renderDevice.CreateTextureUVE(TextureDescUVE{targetW, targetH, TextureFormatUVE::RGBA8Unorm, 1});
+            }
+            return handle;
+        };
+        set.ssaoTarget = createSingleChannelTarget(halfWidth, halfHeight);
+        set.ssaoBlurTarget = createSingleChannelTarget(halfWidth, halfHeight);
+        set.contactShadowTarget = createSingleChannelTarget(width, height);
         set.ssrTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::RGBA16Float, 1});
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA16Float, 1});
         if (set.ssrTarget == kInvalidTextureHandleUVE) {
             set.ssrTarget =
-                renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::RGBA8Unorm, 1});
+                renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
         }
 
         // Color and depth are load-bearing: without them there is no frame at all. The
-        // post-process four are not - RenderFrameUVE() guards on their validity and skips those
+        // post-process targets are not - RenderFrameUVE() guards on their validity and skips those
         // passes - so a set missing only those is still returned and still usable, preserving the
         // pre-cache behavior exactly.
         if (set.colorTarget == kInvalidTextureHandleUVE || set.depthTarget == kInvalidTextureHandleUVE) {
@@ -1595,10 +1809,12 @@ struct Renderer3DUVE::ImplUVE {
                 bloomTargets = BloomMipTargetsUVE{};
             }
             DestroyTextureIfValidUVE(renderDevice, set.ssaoTarget);
+            DestroyTextureIfValidUVE(renderDevice, set.ssaoBlurTarget);
             DestroyTextureIfValidUVE(renderDevice, set.contactShadowTarget);
             DestroyTextureIfValidUVE(renderDevice, set.ssrTarget);
             set.bloomMipTargetCount = 0U;
             set.ssaoTarget = kInvalidTextureHandleUVE;
+            set.ssaoBlurTarget = kInvalidTextureHandleUVE;
             set.contactShadowTarget = kInvalidTextureHandleUVE;
             set.ssrTarget = kInvalidTextureHandleUVE;
             UVE_WARNING("Renderer3DUVE: post-process target creation failed at {}x{}; bloom/SSAO/contact "
@@ -1619,6 +1835,7 @@ struct Renderer3DUVE::ImplUVE {
             DestroyTextureIfValidUVE(renderDevice, bloomTargets.blurB);
         }
         DestroyTextureIfValidUVE(renderDevice, set.ssaoTarget);
+        DestroyTextureIfValidUVE(renderDevice, set.ssaoBlurTarget);
         DestroyTextureIfValidUVE(renderDevice, set.contactShadowTarget);
         DestroyTextureIfValidUVE(renderDevice, set.ssrTarget);
     }
@@ -1632,6 +1849,7 @@ struct Renderer3DUVE::ImplUVE {
         bloomMipTargets = set.bloomMipTargets;
         bloomMipTargetCount = set.bloomMipTargetCount;
         ssaoTarget = set.ssaoTarget;
+        ssaoBlurTarget = set.ssaoBlurTarget;
         contactShadowTarget = set.contactShadowTarget;
         ssrTarget = set.ssrTarget;
         targetWidth = width;
@@ -1697,7 +1915,7 @@ struct Renderer3DUVE::ImplUVE {
         const std::pair<std::uint32_t, std::uint32_t> key{newWidth, newHeight};
         const auto cachedIt = targetSetCache.find(key);
         if (cachedIt != targetSetCache.end()) {
-            // The whole point: a size seen before costs a handful of pointer assignments, not six
+            // The whole point: a size seen before costs a handful of pointer assignments, not
             // texture allocations. This is the path a steady-state split view takes every frame.
             ActivateTargetSetUVE(cachedIt->second, newWidth, newHeight);
             return true;
@@ -1719,7 +1937,9 @@ struct Renderer3DUVE::ImplUVE {
             bloomMipTargets = {};
             bloomMipTargetCount = 0U;
             ssaoTarget = kInvalidTextureHandleUVE;
+            ssaoBlurTarget = kInvalidTextureHandleUVE;
             contactShadowTarget = kInvalidTextureHandleUVE;
+            ssrTarget = kInvalidTextureHandleUVE;
         }
 
         std::optional<SizedTargetSetUVE> created = CreateTargetSetUVE(newWidth, newHeight);
@@ -1758,6 +1978,14 @@ struct Renderer3DUVE::ImplUVE {
         if (skyTextureGuid != Asset::kInvalidAssetGuidUVE) {
             referencedTextureGuids.insert(skyTextureGuid);
         }
+        if (lutTextureGuid != Asset::kInvalidAssetGuidUVE) {
+            referencedTextureGuids.insert(lutTextureGuid);
+        }
+        for (const Asset::AssetGuidUVE vfxTexGuid : vfxReferencedTextureGuids) {
+            if (vfxTexGuid != Asset::kInvalidAssetGuidUVE) {
+                referencedTextureGuids.insert(vfxTexGuid);
+            }
+        }
         for (auto textureIt = textureCache.begin(); textureIt != textureCache.end();) {
             if (!referencedTextureGuids.contains(textureIt->first)) {
                 DestroyTextureIfValidUVE(renderDevice, textureIt->second);
@@ -1768,12 +1996,84 @@ struct Renderer3DUVE::ImplUVE {
         }
     }
 
+    [[nodiscard]] VfxResolvedBatchAppearanceUVE ResolveVfxBatchAppearanceUVE(
+        const std::string_view texturePath,
+        const std::string_view materialPath) {
+        VfxResolvedBatchAppearanceUVE result{};
+        result.albedoTexture = fallbackWhiteTexture;
+        result.materialTint = Math::Vector4UVE{1.0F, 1.0F, 1.0F, 1.0F};
+        result.materialEmissive = Math::Vector3UVE{0.0F, 0.0F, 0.0F};
+        result.ready = true;
+
+        if (!materialPath.empty()) {
+            const Asset::AssetGuidUVE matGuid = assetDatabase.RegisterUVE(materialPath);
+            if (matGuid != Asset::kInvalidAssetGuidUVE) {
+                auto matIt = vfxMaterialHandles.find(matGuid);
+                if (matIt == vfxMaterialHandles.end()) {
+                    matIt = vfxMaterialHandles
+                                .emplace(matGuid,
+                                         assetManager.LoadUVE<Asset::MaterialAssetUVE>(matGuid, assetDatabase))
+                                .first;
+                }
+                const Asset::AssetHandleUVE<Asset::MaterialAssetUVE>& matHandle = matIt->second;
+                if (!matHandle.IsReadyUVE() && !matHandle.HasFailedUVE()) {
+                    result.ready = false;
+                    return result;
+                }
+                if (matHandle.IsReadyUVE()) {
+                    const Asset::MaterialAssetUVE* const mat = matHandle.TryGetUVE();
+                    if (mat != nullptr && Asset::IsMaterialAssetValidUVE(*mat)) {
+                        result.materialTint = Math::Vector4UVE{
+                            mat->albedoColor.r,
+                            mat->albedoColor.g,
+                            mat->albedoColor.b,
+                            std::clamp(mat->albedoAlpha, 0.0F, 1.0F),
+                        };
+                        const float emissiveEnergy = std::max(0.0F, mat->emissiveEnergy);
+                        result.materialEmissive = Math::Vector3UVE{
+                            mat->emissiveColor.r * emissiveEnergy,
+                            mat->emissiveColor.g * emissiveEnergy,
+                            mat->emissiveColor.b * emissiveEnergy,
+                        };
+                        if (mat->albedoTexture != Asset::kInvalidAssetGuidUVE) {
+                            vfxReferencedTextureGuids.insert(mat->albedoTexture);
+                            const std::optional<TextureHandleUVE> matTex =
+                                ResolveTextureGpuHandleUVE(mat->albedoTexture, fallbackWhiteTexture);
+                            if (!matTex.has_value()) {
+                                result.ready = false;
+                                return result;
+                            }
+                            result.albedoTexture = *matTex;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!texturePath.empty()) {
+            const Asset::AssetGuidUVE texGuid = assetDatabase.RegisterUVE(texturePath);
+            if (texGuid != Asset::kInvalidAssetGuidUVE) {
+                vfxReferencedTextureGuids.insert(texGuid);
+                const std::optional<TextureHandleUVE> resolvedTex =
+                    ResolveTextureGpuHandleUVE(texGuid, fallbackWhiteTexture);
+                if (!resolvedTex.has_value()) {
+                    result.ready = false;
+                    return result;
+                }
+                result.albedoTexture = *resolvedTex;
+            }
+        }
+
+        return result;
+    }
+
     /// True when anything this renderer has cached was derived from `guid`: the sky texture, a
     /// mesh's GPU buffers, a material's resolved program plus texture handles (or the shaders one
     /// of those materials is built from), a texture upload, or a failed-upload memo.
     [[nodiscard]] bool CachedStateDependsOnUVE(const Asset::AssetGuidUVE guid) const {
         if (guid == skyTextureGuid || meshCache.contains(guid) || textureCache.contains(guid) ||
-            failedTextureGuids.contains(guid) || materialCache.contains(guid)) {
+            failedTextureGuids.contains(guid) || materialCache.contains(guid) ||
+            vfxMaterialHandles.contains(guid) || vfxReferencedTextureGuids.contains(guid)) {
             return true;
         }
         // A shader asset has no cache entry of its own, but every material built from it does.
@@ -1792,6 +2092,7 @@ struct Renderer3DUVE::ImplUVE {
             skyTextureHandle = kInvalidTextureHandleUVE;
             skyTextureEnabled = false;
         }
+        vfxMaterialHandles.erase(guid);
         const auto meshIt = meshCache.find(guid);
         if (meshIt != meshCache.end()) {
             DestroyBufferIfValidUVE(renderDevice, meshIt->second.vertexBuffer);
@@ -3317,14 +3618,16 @@ struct Renderer3DUVE::ImplUVE {
         program.SetVector3UVE("uEmissiveColor", Math::ToVector3UVE(material.emissiveColor));
         program.SetFloatUVE("uEmissiveEnergy", material.emissiveEnergy);
         program.SetFloatUVE("uNormalScale", material.normalScale);
+        program.SetIntUVE("uNormalFlipGreen", material.normalFlipGreen ? 1 : 0);
+        program.SetFloatUVE("uDielectricSpecular", std::clamp(material.dielectricSpecular, 0.0F, 1.0F));
         program.SetFloatUVE("uOcclusionStrength", material.occlusionStrength);
-        program.SetVector3UVE("uUvScale", Math::Vector3UVE{material.uvScale.x, material.uvScale.y, 0.0F});
+        program.SetVector3UVE("uUvScale", Math::Vector3UVE{material.uvScale.x, material.uvScale.y, material.uvScale.x});
         program.SetVector3UVE("uUvOffset", Math::Vector3UVE{material.uvOffset.x, material.uvOffset.y, 0.0F});
         program.SetVector3UVE("uUv2Scale", Math::Vector3UVE{material.uv2Scale.x, material.uv2Scale.y, material.uv2Scale.x});
         program.SetVector3UVE("uUv2Offset", Math::Vector3UVE{material.uv2Offset.x, material.uv2Offset.y, 0.0F});
-        program.SetIntUVE("uUv1Triplanar", !material.triplanarEnabled ? 0 : material.worldSpaceTriplanar ? 2 : 1);
+        program.SetIntUVE("uUv1Triplanar", material.worldSpaceTriplanar ? 2 : (material.triplanarEnabled ? 1 : 0));
         program.SetFloatUVE("uUv1TriplanarSharpness", material.triplanarBlendSharpness);
-        program.SetIntUVE("uUv2Triplanar", !material.uv2Triplanar ? 0 : material.uv2WorldTriplanar ? 2 : 1);
+        program.SetIntUVE("uUv2Triplanar", material.uv2WorldTriplanar ? 2 : (material.uv2Triplanar ? 1 : 0));
         program.SetFloatUVE("uUv2TriplanarSharpness", material.uv2TriplanarSharpness);
         program.SetIntUVE("uAoOnUv2", material.aoOnUv2 ? 1 : 0);
         program.SetIntUVE("uEmissionOnUv2", material.emissionOnUv2 ? 1 : 0);
@@ -3360,6 +3663,7 @@ struct Renderer3DUVE::ImplUVE {
         program.SetIntUVE("uAlphaSource", static_cast<std::int32_t>(alphaSource));
         program.SetIntUVE("uPremultiplyAlpha",
                           !blendedVariant && MaterialPremultipliesAlphaUVE(material) ? 1 : 0);
+        program.SetIntUVE("uPackIndirectWeightAlpha", blends ? 0 : 1);
         program.SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
         program.SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
         program.SetIntUVE("uAOTexture", static_cast<std::int32_t>(kAoTextureSlotUVE));
@@ -3381,18 +3685,14 @@ struct Renderer3DUVE::ImplUVE {
                                  const FrameUniformsUVE& frameUniforms,
                                  ICommandBufferUVE& commandBuffer) {
         if (frameUniforms.cascadeCount > 0) {
-            commandBuffer.BindTextureUVE(shadowMapTargets[0], kShadowMapTextureSlotUVE);
+            // kShadowMapTextureSlotUVE aliases cascade 0 (slot 3), so binding the 3 cascade slots
+            // covers both legacy single-map and three-cascade lookups without duplicate binds.
             for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
-                commandBuffer.BindTextureUVE(
-                    shadowMapTargets[cascadeIndex],
-                    kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex));
-            }
-            if (shadowPointSampler != kInvalidSamplerHandleUVE) {
-                commandBuffer.BindSamplerUVE(shadowPointSampler, kShadowMapTextureSlotUVE);
-                for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
-                    commandBuffer.BindSamplerUVE(
-                        shadowPointSampler,
-                        kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex));
+                const std::uint32_t slot =
+                    kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex);
+                commandBuffer.BindTextureUVE(shadowMapTargets[cascadeIndex], slot);
+                if (shadowPointSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(shadowPointSampler, slot);
                 }
             }
         }
@@ -3421,6 +3721,13 @@ struct Renderer3DUVE::ImplUVE {
             {ResourceBindingKindUVE::Texture, kMetallicRoughnessTextureSlotUVE},
             {ResourceBindingKindUVE::Texture, kEmissiveTextureSlotUVE}}};
         BindGroupUVE(commandBuffer, {materialBindings, materialLayout});
+        if (materialRepeatSampler != kInvalidSamplerHandleUVE) {
+            commandBuffer.BindSamplerUVE(materialRepeatSampler, kAlbedoTextureSlotUVE);
+            commandBuffer.BindSamplerUVE(materialRepeatSampler, kNormalTextureSlotUVE);
+            commandBuffer.BindSamplerUVE(materialRepeatSampler, kAoTextureSlotUVE);
+            commandBuffer.BindSamplerUVE(materialRepeatSampler, kMetallicRoughnessTextureSlotUVE);
+            commandBuffer.BindSamplerUVE(materialRepeatSampler, kEmissiveTextureSlotUVE);
+        }
         if (reflectionProbeEnabled != 0) {
             // The fallback must be a cube too (a 2D texture under a samplerCube uniform is
             // incomplete on GL and a view-type violation on Vulkan).
@@ -3437,6 +3744,9 @@ struct Renderer3DUVE::ImplUVE {
                 ? frameUniforms.ambientEnvironmentTexture
                 : fallbackWhiteTexture;
         commandBuffer.BindTextureUVE(ambientEnvironmentTexture, kAmbientEnvironmentTextureSlotUVE);
+        if (environmentEquirectSampler != kInvalidSamplerHandleUVE) {
+            commandBuffer.BindSamplerUVE(environmentEquirectSampler, kAmbientEnvironmentTextureSlotUVE);
+        }
     }
 
     /// Records `items` as instanced draws where the material supports it, falling back to the
@@ -3691,6 +4001,9 @@ struct Renderer3DUVE::ImplUVE {
             decalProgram->SetFloatUVE("uDistanceFadeLength", command.distanceFadeLength);
             decalProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindTextureUVE(albedoTexture, kAlbedoTextureSlotUVE);
+            if (clampLinearSampler != kInvalidSamplerHandleUVE) {
+                commandBuffer.BindSamplerUVE(clampLinearSampler, kAlbedoTextureSlotUVE);
+            }
             commandBuffer.BindVertexBufferUVE(geometry->vertexBuffer);
             commandBuffer.BindIndexBufferUVE(geometry->indexBuffer);
             commandBuffer.DrawIndexedUVE(command.indexCount);
@@ -4067,6 +4380,9 @@ struct Renderer3DUVE::ImplUVE {
             uiOverlayProgram->SetIntUVE("uSourceTexture", 0);
             uiOverlayProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindTextureUVE(texture, 0U);
+            if (clampLinearSampler != kInvalidSamplerHandleUVE) {
+                commandBuffer.BindSamplerUVE(clampLinearSampler, 0U);
+            }
             commandBuffer.BindVertexBufferUVE(uiVertexBuffer);
             commandBuffer.DrawUVE(static_cast<std::uint32_t>(uiVertexStaging.size()));
             return true;
@@ -4172,13 +4488,35 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
             TextureDescUVE{shadowMapResolution, shadowMapResolution, TextureFormatUVE::Depth32Float, 1});
     }
 
-    // Tier 2.2: the shadow sampler — point/point, no mips (single-level depth targets), clamp.
-    // Creation failure is non-fatal (invalid handle ⇒ binds skipped ⇒ legacy linear taps).
+    // Tier 2.2: the shadow/depth point sampler — point/point, no mips, clamp-to-edge.
+    // Creation failure is non-fatal (invalid handle ⇒ binds skipped).
     SamplerDescUVE shadowSamplerDesc;
     shadowSamplerDesc.magFilter = SamplerFilterUVE::Point;
     shadowSamplerDesc.minFilter = SamplerFilterUVE::Point;
     shadowSamplerDesc.mipMode = SamplerMipModeUVE::None;
     m_impl->shadowPointSampler = renderDevice.CreateSamplerUVE(shadowSamplerDesc);
+
+    m_impl->RebuildMaterialRepeatSamplerUVE();
+
+    SamplerDescUVE clampLinearDesc;
+    clampLinearDesc.magFilter = SamplerFilterUVE::Linear;
+    clampLinearDesc.minFilter = SamplerFilterUVE::Linear;
+    clampLinearDesc.mipMode = SamplerMipModeUVE::None;
+    clampLinearDesc.wrapU = SamplerWrapUVE::ClampToEdge;
+    clampLinearDesc.wrapV = SamplerWrapUVE::ClampToEdge;
+    clampLinearDesc.wrapW = SamplerWrapUVE::ClampToEdge;
+    clampLinearDesc.maxAnisotropy = 1.0F;
+    m_impl->clampLinearSampler = renderDevice.CreateSamplerUVE(clampLinearDesc);
+
+    SamplerDescUVE envEquirectDesc;
+    envEquirectDesc.magFilter = SamplerFilterUVE::Linear;
+    envEquirectDesc.minFilter = SamplerFilterUVE::Linear;
+    envEquirectDesc.mipMode = SamplerMipModeUVE::None;
+    envEquirectDesc.wrapU = SamplerWrapUVE::Repeat;
+    envEquirectDesc.wrapV = SamplerWrapUVE::ClampToEdge;
+    envEquirectDesc.wrapW = SamplerWrapUVE::ClampToEdge;
+    envEquirectDesc.maxAnisotropy = 1.0F;
+    m_impl->environmentEquirectSampler = renderDevice.CreateSamplerUVE(envEquirectDesc);
 
     Shader::ShaderProgramDescUVE shadowProgramDesc;
     shadowProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kShadowDepthVirtualPath);
@@ -4248,15 +4586,6 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     bloomBlurProgramDesc.debugNameUVE = "BloomBlur";
     m_impl->bloomBlurProgram = shaderManager.CreateProgramUVE(bloomBlurProgramDesc);
 
-    Shader::ShaderProgramDescUVE bloomCompositeProgramDesc;
-    bloomCompositeProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenCopyVirtualPath);
-    bloomCompositeProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kFullscreenCopySource);
-    bloomCompositeProgramDesc.depthTestEnabled = false;
-    bloomCompositeProgramDesc.depthWriteEnabled = false;
-    bloomCompositeProgramDesc.blendMode = PipelineBlendModeUVE::Additive;
-    bloomCompositeProgramDesc.debugNameUVE = "BloomComposite";
-    m_impl->bloomCompositeProgram = shaderManager.CreateProgramUVE(bloomCompositeProgramDesc);
-
     Shader::ShaderProgramDescUVE ssaoProgramDesc;
     ssaoProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kSsaoVirtualPath);
     ssaoProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kSsaoSource);
@@ -4265,14 +4594,14 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     ssaoProgramDesc.debugNameUVE = "SSAO";
     m_impl->ssaoProgram = shaderManager.CreateProgramUVE(ssaoProgramDesc);
 
-    Shader::ShaderProgramDescUVE ssaoCompositeProgramDesc;
-    ssaoCompositeProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenCopyVirtualPath);
-    ssaoCompositeProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kFullscreenCopySource);
-    ssaoCompositeProgramDesc.depthTestEnabled = false;
-    ssaoCompositeProgramDesc.depthWriteEnabled = false;
-    ssaoCompositeProgramDesc.blendMode = PipelineBlendModeUVE::Multiply;
-    ssaoCompositeProgramDesc.debugNameUVE = "SSAOComposite";
-    m_impl->ssaoCompositeProgram = shaderManager.CreateProgramUVE(ssaoCompositeProgramDesc);
+    Shader::ShaderProgramDescUVE ssaoBlurProgramDesc;
+    ssaoBlurProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenCopyVirtualPath);
+    ssaoBlurProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kFullscreenCopySource);
+    ssaoBlurProgramDesc.depthTestEnabled = false;
+    ssaoBlurProgramDesc.depthWriteEnabled = false;
+    ssaoBlurProgramDesc.blendMode = PipelineBlendModeUVE::Opaque;
+    ssaoBlurProgramDesc.debugNameUVE = "SSAOBlur";
+    m_impl->ssaoBlurProgram = shaderManager.CreateProgramUVE(ssaoBlurProgramDesc);
 
     Shader::ShaderProgramDescUVE contactShadowProgramDesc;
     contactShadowProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kContactShadowVirtualPath);
@@ -4282,16 +4611,6 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     contactShadowProgramDesc.debugNameUVE = "ContactShadow";
     m_impl->contactShadowProgram = shaderManager.CreateProgramUVE(contactShadowProgramDesc);
 
-    Shader::ShaderProgramDescUVE contactShadowCompositeProgramDesc;
-    contactShadowCompositeProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenCopyVirtualPath);
-    contactShadowCompositeProgramDesc.embeddedFallbackSourceCode =
-        std::string(Shader::BuiltIn::kFullscreenCopySource);
-    contactShadowCompositeProgramDesc.depthTestEnabled = false;
-    contactShadowCompositeProgramDesc.depthWriteEnabled = false;
-    contactShadowCompositeProgramDesc.blendMode = PipelineBlendModeUVE::Multiply;
-    contactShadowCompositeProgramDesc.debugNameUVE = "ContactShadowComposite";
-    m_impl->contactShadowCompositeProgram = shaderManager.CreateProgramUVE(contactShadowCompositeProgramDesc);
-
     Shader::ShaderProgramDescUVE ssrProgramDesc;
     ssrProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kSsrVirtualPath);
     ssrProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kSsrSource);
@@ -4299,15 +4618,6 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     ssrProgramDesc.depthWriteEnabled = false;
     ssrProgramDesc.debugNameUVE = "SSR";
     m_impl->ssrProgram = shaderManager.CreateProgramUVE(ssrProgramDesc);
-
-    Shader::ShaderProgramDescUVE ssrCompositeProgramDesc;
-    ssrCompositeProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenCopyVirtualPath);
-    ssrCompositeProgramDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kFullscreenCopySource);
-    ssrCompositeProgramDesc.depthTestEnabled = false;
-    ssrCompositeProgramDesc.depthWriteEnabled = false;
-    ssrCompositeProgramDesc.blendMode = PipelineBlendModeUVE::Additive;
-    ssrCompositeProgramDesc.debugNameUVE = "SSRComposite";
-    m_impl->ssrCompositeProgram = shaderManager.CreateProgramUVE(ssrCompositeProgramDesc);
 
     Shader::ShaderProgramDescUVE particleProgramDesc;
     particleProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kParticleVirtualPath);
@@ -4424,6 +4734,8 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     m_impl->uiVertexBuffer = renderDevice.CreateBufferUVE(
         BufferDescUVE{sizeof(UIVertexUVE) * kMaximumUIQuadsUVE * kUIVerticesPerQuadUVE, BufferUsageUVE::Vertex});
 
+    m_impl->vfxSpriteRenderer.InitializeUVE(renderDevice, shaderManager);
+
     ImplUVE* const implPtr = m_impl.get();
     static_cast<void>(m_impl->indirectCull.InitializeUVE());
     m_impl->reloadSubscription = eventSystem.Subscribe<Asset::AssetReloadedEventUVE>(
@@ -4435,6 +4747,9 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
 Renderer3DUVE::~Renderer3DUVE() {
     m_impl->eventSystem.Unsubscribe(m_impl->reloadSubscription);
     m_impl->eventSystem.Unsubscribe(m_impl->loadCompletedSubscription);
+    m_impl->vfxSpriteRenderer.DestroyUVE(m_impl->renderDevice);
+    m_impl->vfxMaterialHandles.clear();
+    m_impl->vfxReferencedTextureGuids.clear();
     m_impl->DestroyOcclusionProbesUVE();
     for (const auto& [guid, meshResources] : m_impl->meshCache) {
         DestroyBufferIfValidUVE(m_impl->renderDevice, meshResources.vertexBuffer);
@@ -4475,6 +4790,7 @@ Renderer3DUVE::~Renderer3DUVE() {
     m_impl->bloomMipTargets = {};
     m_impl->bloomMipTargetCount = 0U;
     m_impl->ssaoTarget = kInvalidTextureHandleUVE;
+    m_impl->ssaoBlurTarget = kInvalidTextureHandleUVE;
     m_impl->contactShadowTarget = kInvalidTextureHandleUVE;
     m_impl->ssrTarget = kInvalidTextureHandleUVE;
     for (auto& [entity, cache] : m_impl->reflectionProbeCaptures) {
@@ -4488,14 +4804,19 @@ Renderer3DUVE::~Renderer3DUVE() {
     }
     m_impl->reflectionProbeCaptureDepths.clear();
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackWhiteTexture);
+    DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackWhiteCubeTexture);
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->fallbackNormalTexture);
     for (const TextureHandleUVE shadowMapTarget : m_impl->shadowMapTargets) {
         DestroyTextureIfValidUVE(m_impl->renderDevice, shadowMapTarget);
     }
     DestroySamplerIfValidUVE(m_impl->renderDevice, m_impl->shadowPointSampler);
+    DestroySamplerIfValidUVE(m_impl->renderDevice, m_impl->materialRepeatSampler);
+    DestroySamplerIfValidUVE(m_impl->renderDevice, m_impl->clampLinearSampler);
+    DestroySamplerIfValidUVE(m_impl->renderDevice, m_impl->environmentEquirectSampler);
     DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->particleVertexBuffer);
     DestroyBufferIfValidUVE(m_impl->renderDevice, m_impl->uiVertexBuffer);
     DestroyTextureIfValidUVE(m_impl->renderDevice, m_impl->uiFontAtlasTexture);
+    m_impl->DestroyStudioFloorResourcesUVE();
 }
 
 bool Renderer3DUVE::ResizeTargetsUVE(const std::uint32_t width, const std::uint32_t height) {
@@ -4780,13 +5101,25 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->skyTextureEnabled = true;
         }
     }
-    if (previousSkyTextureGuid != m_impl->skyTextureGuid) {
+    const Asset::AssetGuidUVE previousLutTextureGuid = m_impl->lutTextureGuid;
+    m_impl->lutTextureGuid = Asset::kInvalidAssetGuidUVE;
+    m_impl->lutTextureHandle = kInvalidTextureHandleUVE;
+    m_impl->lutTextureEnabled = false;
+    if (m_impl->environmentFrame.lutEnabled && !m_impl->environmentFrame.lutAssetPath.empty()) {
+        m_impl->lutTextureGuid = m_impl->assetDatabase.RegisterUVE(m_impl->environmentFrame.lutAssetPath);
+        const std::optional<TextureHandleUVE> resolvedLutTexture =
+            m_impl->ResolveTextureGpuHandleUVE(m_impl->lutTextureGuid, kInvalidTextureHandleUVE);
+        if (resolvedLutTexture.has_value() && *resolvedLutTexture != kInvalidTextureHandleUVE) {
+            m_impl->lutTextureHandle = *resolvedLutTexture;
+            m_impl->lutTextureEnabled = true;
+        }
+    }
+    if (previousSkyTextureGuid != m_impl->skyTextureGuid || previousLutTextureGuid != m_impl->lutTextureGuid) {
         m_impl->EvictUnreferencedTextureCacheEntriesUVE();
     }
     Math::Matrix4x4UVE viewProjection{};
     Math::Vector3UVE viewPosition{};
     Math::QuaternionUVE viewRotation = normalizedCameraRotation;
-    constexpr float kHalfPiUVE = Math::kPiUVE * 0.5F;
     if (capturingProbe) {
         if (!Math::TryNormalizeUVE(m_impl->probeCaptureRotation, viewRotation)) {
             UVE_ERROR("Renderer3DUVE: probe capture rotation is invalid");
@@ -5272,6 +5605,32 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.pendingAssetLoads = queue.pendingAssetLoads;
     m_impl->lastFrameDiagnostics.failedAssetLoads = queue.failedAssetLoads;
 
+    if (m_impl->vfxDrawListForFrame != nullptr && !capturingProbe) {
+        m_impl->vfxFrameContext = VfxSpriteFrameContextUVE{
+            viewProjection,
+            inverseProjection,
+            viewPosition,
+            m_impl->skyCameraRight,
+            m_impl->skyCameraUp,
+            m_impl->skyCameraForward,
+            m_impl->depthTarget,
+            m_impl->targetWidth,
+            m_impl->targetHeight,
+        };
+        m_impl->lastFrameDiagnostics.vfxBatchesExtracted =
+            m_impl->vfxDrawListForFrame->stats.batchesExtracted;
+        m_impl->lastFrameDiagnostics.vfxInstancesExtracted =
+            m_impl->vfxDrawListForFrame->stats.instancesExtracted;
+        m_impl->lastFrameDiagnostics.vfxInstancesTruncated =
+            m_impl->vfxDrawListForFrame->stats.instancesTruncated;
+        m_impl->vfxSpriteRenderer.PrepareFrameBatchesUVE(
+            m_impl->renderDevice, *m_impl->vfxDrawListForFrame, m_impl->vfxFrameContext);
+    } else if (!capturingProbe) {
+        m_impl->vfxFrameContext = VfxSpriteFrameContextUVE{};
+        m_impl->vfxSpriteRenderer.PrepareFrameBatchesUVE(
+            m_impl->renderDevice, VfxDrawListUVE{}, m_impl->vfxFrameContext);
+    }
+
     RenderGraphUVE& renderGraph = m_impl->renderGraph;
     renderGraph.ClearUVE();
     // +6 resources beyond the shadow cascades at the compatibility one-level setting: color, depth,
@@ -5388,10 +5747,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             passDesc.colorAttachment = m_impl->colorTarget;
             passDesc.depthAttachment = m_impl->depthTarget;
             passDesc.colorLoadOp = LoadOpUVE::Clear;
-            passDesc.clearColor = m_impl->sceneClearColor;
+            passDesc.clearColor = {m_impl->sceneClearColor[0], m_impl->sceneClearColor[1],
+                                   m_impl->sceneClearColor[2], 0.0F};
             if (m_impl->environmentFrame.hasEnvironment) {
                 const Math::Vector3UVE& horizon = m_impl->environmentFrame.horizonColor;
-                passDesc.clearColor = {horizon.x, horizon.y, horizon.z, 1.0F};
+                passDesc.clearColor = {horizon.x, horizon.y, horizon.z, 0.0F};
             }
             m_impl->lastFrameDiagnostics.mainPassRecorded = true;
             commandBuffer.BeginRenderPassUVE(passDesc);
@@ -5421,6 +5781,18 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->lastFrameDiagnostics.particleDrawCommandsSubmitted > 0U ? 1U : 0U;
             m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +=
                 m_impl->RecordPrimitiveItemsUVE(m_impl->primitiveItems, frameUniforms, commandBuffer);
+            if (!m_impl->probeCaptureViewActive &&
+                m_impl->vfxSpriteRenderer.HasOpaqueBatchesUVE() &&
+                m_impl->vfxSpriteRenderer.AreOpaqueProgramsReadyUVE()) {
+                m_impl->lastFrameDiagnostics.vfxPassRecorded = true;
+                m_impl->lastFrameDiagnostics.vfxDrawCallsRecorded +=
+                    m_impl->vfxSpriteRenderer.RecordOpaqueBatchesUVE(
+                        commandBuffer, m_impl->vfxFrameContext,
+                        [this](const std::string_view texPath, const std::string_view matPath) {
+                            return m_impl->ResolveVfxBatchAppearanceUVE(texPath, matPath);
+                        },
+                        &m_impl->lastFrameDiagnostics.vfxInstancesDrawn);
+            }
             // WP3: the occlusion proxies go last, after every opaque writer of this pass, so a
             // zero-sample bracket means "behind everything that was drawn this frame".
             m_impl->lastFrameDiagnostics.occlusionQueriesIssued =
@@ -5431,6 +5803,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     m_impl->lastFrameDiagnostics.primitiveDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.particleDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.decalDrawCallsRecorded +
+                    m_impl->lastFrameDiagnostics.vfxDrawCallsRecorded +
                     m_impl->lastFrameDiagnostics.occlusionQueriesIssued;
             }
             commandBuffer.EndRenderPassUVE();
@@ -5536,8 +5909,14 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 }
                 m_impl->proceduralSkyProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->depthTarget, 0U);
+                if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, 0U);
+                }
                 if (m_impl->skyTextureEnabled) {
                     commandBuffer.BindTextureUVE(m_impl->skyTextureHandle, kSkyTextureSlotUVE);
+                    if (m_impl->environmentEquirectSampler != kInvalidSamplerHandleUVE) {
+                        commandBuffer.BindSamplerUVE(m_impl->environmentEquirectSampler, kSkyTextureSlotUVE);
+                    }
                 }
                 if (shadowsReady) {
                     for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
@@ -5554,27 +5933,169 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             });
     }
 
+    if (!capturingProbe &&
+        m_impl->studioFloorSettings.has_value() &&
+        m_impl->studioFloorSettings->enabledUVE &&
+        m_impl->EnsureStudioFloorResourcesUVE()) {
+        const StudioFloorSettingsUVE floorSettings = *m_impl->studioFloorSettings;
+        const std::array<RenderGraphResourceUseUVE, 2U> studioFloorResources{
+            RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::ReadWrite},
+            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
+        renderGraph.AddPassUVE(
+            "StudioFloor", studioFloorResources,
+            [this, viewProjection, viewPosition, floorSettings, lights](ICommandBufferUVE& commandBuffer) {
+                RenderPassDescUVE passDesc;
+                passDesc.colorAttachment = m_impl->colorTarget;
+                passDesc.depthAttachment = m_impl->depthTarget;
+                passDesc.colorLoadOp = LoadOpUVE::Load;
+                passDesc.depthLoadOp = LoadOpUVE::Load;
+                commandBuffer.BeginRenderPassUVE(passDesc);
+
+                m_impl->studioFloorProgram->SetMatrix4x4UVE("uViewProjection", viewProjection);
+                m_impl->studioFloorProgram->SetFloatUVE("uFloorY", floorSettings.heightYUVE);
+                m_impl->studioFloorProgram->SetVector3UVE("uViewPosition", viewPosition);
+                m_impl->studioFloorProgram->SetVector3UVE("uPivotPosition", floorSettings.pivotPositionUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uTileScale", floorSettings.tileScaleUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uFadeStartRadius", floorSettings.fadeStartRadiusMetersUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uFadeEndRadius", floorSettings.fadeEndRadiusMetersUVE);
+                m_impl->studioFloorProgram->SetVector3UVE("uBaseTint", floorSettings.baseTintUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uRoughnessScale", floorSettings.roughnessScaleUVE);
+                m_impl->studioFloorProgram->SetFloatUVE("uSpecularStrength", floorSettings.specularStrengthUVE);
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyTopColor", m_impl->environmentFrame.skyColor);
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyHorizonColor", m_impl->environmentFrame.horizonColor);
+                m_impl->studioFloorProgram->SetVector3UVE("uSkyGroundColor", m_impl->environmentFrame.groundColor);
+                m_impl->studioFloorProgram->SetFloatUVE("uAmbientEnergy", 0.55F);
+                m_impl->studioFloorProgram->SetIntUVE("uAlbedoMap", 0);
+                m_impl->studioFloorProgram->SetIntUVE("uNormalMap", 1);
+                m_impl->studioFloorProgram->SetIntUVE("uOrmMap", 2);
+
+                std::array<Math::Vector3UVE, 4U> lightPositions{};
+                std::array<Math::Vector3UVE, 4U> lightColors{};
+                std::array<float, 4U> lightRanges{{16.0F, 16.0F, 16.0F, 16.0F}};
+                std::int32_t lightCount = 0;
+                for (const LightDataUVE& light : lights) {
+                    if (light.type == Scene::LightTypeUVE::Directional || light.intensity <= 0.0F) {
+                        continue;
+                    }
+                    if (lightCount >= 4) {
+                        break;
+                    }
+                    const std::size_t idx = static_cast<std::size_t>(lightCount++);
+                    lightPositions[idx] = light.position;
+                    lightColors[idx] = Math::ToVector3UVE(light.color) * light.intensity;
+                    lightRanges[idx] = std::max(light.range, 1.0F);
+                }
+                if (lightCount == 0) {
+                    // Built-in 3-point studio light rig centered around the studio floor pivot.
+                    const Math::Vector3UVE p = floorSettings.pivotPositionUVE;
+                    lightCount = 3;
+                    lightPositions[0U] = Math::Vector3UVE{p.x + 3.5F, floorSettings.heightYUVE + 5.2F, p.z + 3.8F};
+                    lightColors[0U] = Math::Vector3UVE{1.0F, 0.96F, 0.90F} * 2.2F;
+                    lightRanges[0U] = 22.0F;
+                    lightPositions[1U] = Math::Vector3UVE{p.x - 4.0F, floorSettings.heightYUVE + 3.8F, p.z - 3.5F};
+                    lightColors[1U] = Math::Vector3UVE{0.58F, 0.72F, 1.0F} * 1.45F;
+                    lightRanges[1U] = 20.0F;
+                    lightPositions[2U] = Math::Vector3UVE{p.x - 2.8F, floorSettings.heightYUVE + 2.6F, p.z + 4.2F};
+                    lightColors[2U] = Math::Vector3UVE{0.78F, 0.84F, 0.96F} * 0.95F;
+                    lightRanges[2U] = 18.0F;
+                }
+                m_impl->studioFloorProgram->SetIntUVE("uLightCount", lightCount);
+                for (std::size_t i = 0U; i < 4U; ++i) {
+                    const std::string idxStr = std::to_string(i);
+                    m_impl->studioFloorProgram->SetVector3UVE("uLightPositions[" + idxStr + "]", lightPositions[i]);
+                    m_impl->studioFloorProgram->SetVector3UVE("uLightColors[" + idxStr + "]", lightColors[i]);
+                    m_impl->studioFloorProgram->SetFloatUVE("uLightRanges[" + idxStr + "]", lightRanges[i]);
+                }
+
+                m_impl->studioFloorProgram->ApplyToUVE(commandBuffer);
+                commandBuffer.BindTextureUVE(m_impl->studioFloorAlbedoTexture, 0U);
+                commandBuffer.BindTextureUVE(m_impl->studioFloorNormalTexture, 1U);
+                commandBuffer.BindTextureUVE(m_impl->studioFloorOrmTexture, 2U);
+                if (m_impl->materialRepeatSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->materialRepeatSampler, 0U);
+                    commandBuffer.BindSamplerUVE(m_impl->materialRepeatSampler, 1U);
+                    commandBuffer.BindSamplerUVE(m_impl->materialRepeatSampler, 2U);
+                }
+                commandBuffer.BindVertexBufferUVE(m_impl->studioFloorVertexBuffer, 0U);
+                commandBuffer.BindIndexBufferUVE(m_impl->studioFloorIndexBuffer);
+                commandBuffer.DrawIndexedUVE(6U, 1U, 0U);
+                if (m_impl->renderDevice.GetBackendNameUVE() == "OpenGL") {
+                    ++m_impl->lastFrameDiagnostics.glDrawCallsIssued;
+                }
+                commandBuffer.EndRenderPassUVE();
+            });
+    }
+
+    if (!capturingProbe &&
+        m_impl->vfxSpriteRenderer.HasTranslucentBatchesUVE() &&
+        m_impl->vfxSpriteRenderer.AreTranslucentProgramsReadyUVE()) {
+        const std::array<RenderGraphResourceUseUVE, 2U> vfxPassResources{
+            RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
+            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
+        renderGraph.AddPassUVE(
+            "VfxParticles", vfxPassResources,
+            [this](ICommandBufferUVE& commandBuffer) {
+                RenderPassDescUVE passDesc;
+                passDesc.colorAttachment = m_impl->colorTarget;
+                passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                passDesc.colorLoadOp = LoadOpUVE::Load;
+                commandBuffer.BeginRenderPassUVE(passDesc);
+                m_impl->lastFrameDiagnostics.vfxPassRecorded = true;
+                const std::size_t translucentDraws =
+                    m_impl->vfxSpriteRenderer.RecordTranslucentBatchesUVE(
+                        commandBuffer, m_impl->vfxFrameContext,
+                        [this](const std::string_view texPath, const std::string_view matPath) {
+                            return m_impl->ResolveVfxBatchAppearanceUVE(texPath, matPath);
+                        },
+                        &m_impl->lastFrameDiagnostics.vfxInstancesDrawn);
+                m_impl->lastFrameDiagnostics.vfxDrawCallsRecorded += translucentDraws;
+                if (m_impl->renderDevice.GetBackendNameUVE() == "OpenGL") {
+                    m_impl->lastFrameDiagnostics.glDrawCallsIssued += translucentDraws;
+                }
+                commandBuffer.EndRenderPassUVE();
+            });
+    }
+
+    const bool usesZeroToOneDepth = m_impl->renderDevice.UsesZeroToOneDepthBufferUVE();
+    const float depthNdcScale = usesZeroToOneDepth ? 1.0F : 2.0F;
+    const float depthNdcBias = usesZeroToOneDepth ? 0.0F : -1.0F;
+    const float p00 = projection.m[0][0];
+    const float p11 = projection.m[1][1];
+    const float p22 = projection.m[2][2];
+    const float p23 = projection.m[2][3];
+    const bool fastDepthReconstruct =
+        !isOrthographic && std::isfinite(p00) && std::isfinite(p11) && std::isfinite(p22) && std::isfinite(p23) &&
+        std::fabs(p00) > 1.0e-6F && std::fabs(p11) > 1.0e-6F &&
+        std::fabs(projection.m[0][2]) < 1.0e-5F && std::fabs(projection.m[1][2]) < 1.0e-5F &&
+        std::fabs(projection.m[3][2] + 1.0F) < 1.0e-5F && std::fabs(projection.m[3][3]) < 1.0e-5F;
+    const float projA = fastDepthReconstruct ? -p22 : 1.0F;
+    const float projB = fastDepthReconstruct ? p23 : 0.0F;
+    const float invProjX = fastDepthReconstruct ? (1.0F / p00) : 1.0F;
+    const float invProjY = fastDepthReconstruct ? (1.0F / p11) : 1.0F;
+
     const auto& baseBloomTargets = m_impl->bloomMipTargets[0U];
     const bool bloomTargetsValid = m_impl->bloomMipTargetCount > 0U &&
                                    baseBloomTargets.bright != kInvalidTextureHandleUVE &&
                                    baseBloomTargets.blurA != kInvalidTextureHandleUVE &&
                                    baseBloomTargets.blurB != kInvalidTextureHandleUVE;
-    const bool environmentAllowsPost = !m_impl->environmentFrame.hasEnvironment ||
-                                       m_impl->environmentFrame.postProcessingEnabled;
-    const bool environmentBloom = !m_impl->environmentFrame.hasEnvironment || m_impl->environmentFrame.bloomEnabled;
-    const bool environmentSsao = !m_impl->environmentFrame.hasEnvironment || m_impl->environmentFrame.ssaoEnabled;
+    const bool hasPostOverride = m_impl->environmentFrame.hasPostProcessingOverride;
+    const bool environmentAllowsPost = !hasPostOverride || m_impl->environmentFrame.postProcessingEnabled;
+    const bool environmentBloom = !hasPostOverride || m_impl->environmentFrame.bloomEnabled;
+    const bool environmentSsao = !hasPostOverride || m_impl->environmentFrame.ssaoEnabled;
     const bool ssaoActive = !capturingProbe && environmentAllowsPost && environmentSsao &&
-                             m_impl->postProcessSettings.ssaoEnabledUVE &&
-                             m_impl->ssaoTarget != kInvalidTextureHandleUVE && projectionInvertible &&
-                             m_impl->ssaoProgram->IsValidUVE() && m_impl->ssaoCompositeProgram->IsValidUVE();
+                            m_impl->postProcessSettings.ssaoEnabledUVE &&
+                            m_impl->ssaoTarget != kInvalidTextureHandleUVE && projectionInvertible &&
+                            m_impl->ssaoProgram != nullptr && m_impl->ssaoProgram->IsValidUVE();
+    const bool ssaoBlurActive = ssaoActive && m_impl->postProcessSettings.ssaoBlurEnabledUVE &&
+                                m_impl->ssaoBlurTarget != kInvalidTextureHandleUVE &&
+                                m_impl->ssaoBlurProgram != nullptr && m_impl->ssaoBlurProgram->IsValidUVE();
     const bool bloomBaseProgramsReady = m_impl->bloomBrightPassProgram && m_impl->bloomBrightPassProgram->IsValidUVE() &&
-                                        m_impl->bloomBlurProgram && m_impl->bloomBlurProgram->IsValidUVE() &&
-                                        m_impl->bloomCompositeProgram && m_impl->bloomCompositeProgram->IsValidUVE();
+                                        m_impl->bloomBlurProgram && m_impl->bloomBlurProgram->IsValidUVE();
     const bool bloomRequested = !capturingProbe && environmentAllowsPost && environmentBloom &&
                                 m_impl->postProcessSettings.bloomEnabledUVE;
     std::uint32_t bloomMipCountUsed = 0U;
     if (bloomRequested && bloomTargetsValid && bloomBaseProgramsReady) {
-        const std::uint32_t requestedBloomMipCount = m_impl->environmentFrame.hasEnvironment
+        const std::uint32_t requestedBloomMipCount = hasPostOverride
                                                          ? m_impl->environmentFrame.bloomMipCount
                                                          : kDefaultBloomMipCountUVE;
         const bool canBuildBloomPyramid =
@@ -5587,16 +6108,18 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     }
     const bool bloomActive = bloomRequested && bloomTargetsValid && bloomBaseProgramsReady && bloomMipCountUsed > 0U;
 
-
+    RenderGraphResourceHandleUVE ssaoResource{};
     if (ssaoActive) {
         m_impl->lastFrameDiagnostics.ssaoPassRecorded = true;
-        const RenderGraphResourceHandleUVE ssaoResource = renderGraph.ImportTextureUVE(m_impl->ssaoTarget, "SSAO");
+        ssaoResource = renderGraph.ImportTextureUVE(m_impl->ssaoTarget, "SSAO");
         const std::array<RenderGraphResourceUseUVE, 2U> ssaoPassResources{
             RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
             RenderGraphResourceUseUVE{ssaoResource, RenderGraphResourceAccessUVE::Write}};
         renderGraph.AddPassUVE(
             "SSAO", ssaoPassResources,
-            [this, &projection, &inverseProjection, isOrthographic](ICommandBufferUVE& commandBuffer) {
+            [this, &projection, &inverseProjection, isOrthographic, hasPostOverride,
+             depthNdcScale, depthNdcBias, projA, projB, invProjX, invProjY, fastDepthReconstruct](
+                ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->ssaoTarget;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -5606,10 +6129,17 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->ssaoProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
                 m_impl->ssaoProgram->SetMatrix4x4UVE("uProjection", projection);
                 m_impl->ssaoProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
-                const float ssaoRadius = m_impl->environmentFrame.hasEnvironment
+                m_impl->ssaoProgram->SetFloatUVE("uDepthNdcScale", depthNdcScale);
+                m_impl->ssaoProgram->SetFloatUVE("uDepthNdcBias", depthNdcBias);
+                m_impl->ssaoProgram->SetFloatUVE("uProjA", projA);
+                m_impl->ssaoProgram->SetFloatUVE("uProjB", projB);
+                m_impl->ssaoProgram->SetFloatUVE("uInvProjX", invProjX);
+                m_impl->ssaoProgram->SetFloatUVE("uInvProjY", invProjY);
+                m_impl->ssaoProgram->SetIntUVE("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
+                const float ssaoRadius = hasPostOverride
                                              ? m_impl->environmentFrame.ssaoRadius
                                              : m_impl->postProcessSettings.ssaoRadiusUVE;
-                const float ssaoIntensity = m_impl->environmentFrame.hasEnvironment
+                const float ssaoIntensity = hasPostOverride
                                                 ? m_impl->environmentFrame.ssaoIntensity
                                                 : m_impl->postProcessSettings.ssaoIntensityUVE;
                 const std::uint32_t quality = std::min(m_impl->postProcessSettings.ssaoQualityUVE, 2U);
@@ -5620,28 +6150,94 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->ssaoProgram->SetIntUVE("uSampleCount", kSsaoSamplesPerQualityUVE[quality]);
                 m_impl->ssaoProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->depthTarget, 0U);
+                if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, 0U);
+                }
                 commandBuffer.DrawUVE(3);
                 commandBuffer.EndRenderPassUVE();
             });
-        const std::array<RenderGraphResourceUseUVE, 2U> ssaoCompositeResources{
-            RenderGraphResourceUseUVE{ssaoResource, RenderGraphResourceAccessUVE::Read},
-            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
-        renderGraph.AddPassUVE(
-            "SSAOComposite", ssaoCompositeResources,
-            [this](ICommandBufferUVE& commandBuffer) {
-                RenderPassDescUVE passDesc;
-                passDesc.colorAttachment = m_impl->colorTarget;
-                passDesc.depthAttachment = kInvalidTextureHandleUVE;
-                passDesc.colorLoadOp = LoadOpUVE::Load;
-                commandBuffer.BeginRenderPassUVE(passDesc);
-                m_impl->ssaoCompositeProgram->SetIntUVE("uSourceTexture", 0);
-                m_impl->ssaoCompositeProgram->SetIntUVE(
-                    "uSsaoBlurEnabled", m_impl->postProcessSettings.ssaoBlurEnabledUVE ? 1 : 0);
-                m_impl->ssaoCompositeProgram->ApplyToUVE(commandBuffer);
-                commandBuffer.BindTextureUVE(m_impl->ssaoTarget, 0U);
-                commandBuffer.DrawUVE(3);
-                commandBuffer.EndRenderPassUVE();
-            });
+
+        if (ssaoBlurActive) {
+            const RenderGraphResourceHandleUVE ssaoBlurResource =
+                renderGraph.ImportTextureUVE(m_impl->ssaoBlurTarget, "SSAOBlur");
+            const std::array<RenderGraphResourceUseUVE, 3U> ssaoBlurHResources{
+                RenderGraphResourceUseUVE{ssaoResource, RenderGraphResourceAccessUVE::Read},
+                RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
+                RenderGraphResourceUseUVE{ssaoBlurResource, RenderGraphResourceAccessUVE::Write}};
+            renderGraph.AddPassUVE(
+                "SSAOBlurH", ssaoBlurHResources,
+                [this, &inverseProjection, isOrthographic, depthNdcScale, depthNdcBias,
+                 projA, projB, fastDepthReconstruct](ICommandBufferUVE& commandBuffer) {
+                    RenderPassDescUVE passDesc;
+                    passDesc.colorAttachment = m_impl->ssaoBlurTarget;
+                    passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                    passDesc.colorLoadOp = LoadOpUVE::DontCare;
+                    commandBuffer.BeginRenderPassUVE(passDesc);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uSourceTexture", 0);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uDepthTexture", 1);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uSsaoBlurEnabled", 1);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uBilateralAxisX", 1.0F);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uBilateralAxisY", 0.0F);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uBilateralDepthSharpness", 12.0F);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uDepthNdcScale", depthNdcScale);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uDepthNdcBias", depthNdcBias);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uProjA", projA);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uProjB", projB);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
+                    m_impl->ssaoBlurProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
+                    m_impl->ssaoBlurProgram->ApplyToUVE(commandBuffer);
+                    commandBuffer.BindTextureUVE(m_impl->ssaoTarget, 0U);
+                    if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                        commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 0U);
+                    }
+                    commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);
+                    if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
+                        commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, 1U);
+                    }
+                    commandBuffer.DrawUVE(3);
+                    commandBuffer.EndRenderPassUVE();
+                });
+
+            const std::array<RenderGraphResourceUseUVE, 3U> ssaoBlurVResources{
+                RenderGraphResourceUseUVE{ssaoBlurResource, RenderGraphResourceAccessUVE::Read},
+                RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
+                RenderGraphResourceUseUVE{ssaoResource, RenderGraphResourceAccessUVE::Write}};
+            renderGraph.AddPassUVE(
+                "SSAOBlurV", ssaoBlurVResources,
+                [this, &inverseProjection, isOrthographic, depthNdcScale, depthNdcBias,
+                 projA, projB, fastDepthReconstruct](ICommandBufferUVE& commandBuffer) {
+                    RenderPassDescUVE passDesc;
+                    passDesc.colorAttachment = m_impl->ssaoTarget;
+                    passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                    passDesc.colorLoadOp = LoadOpUVE::DontCare;
+                    commandBuffer.BeginRenderPassUVE(passDesc);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uSourceTexture", 0);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uDepthTexture", 1);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uSsaoBlurEnabled", 1);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uBilateralAxisX", 0.0F);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uBilateralAxisY", 1.0F);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uBilateralDepthSharpness", 12.0F);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uDepthNdcScale", depthNdcScale);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uDepthNdcBias", depthNdcBias);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uProjA", projA);
+                    m_impl->ssaoBlurProgram->SetFloatUVE("uProjB", projB);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
+                    m_impl->ssaoBlurProgram->SetIntUVE("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
+                    m_impl->ssaoBlurProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
+                    m_impl->ssaoBlurProgram->ApplyToUVE(commandBuffer);
+                    commandBuffer.BindTextureUVE(m_impl->ssaoBlurTarget, 0U);
+                    if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                        commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 0U);
+                    }
+                    commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);
+                    if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
+                        commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, 1U);
+                    }
+                    commandBuffer.DrawUVE(3);
+                    commandBuffer.EndRenderPassUVE();
+                });
+        }
     }
 
     // Contact shadows reuse the same depth buffer SSAO reads - it is already resolved and sampleable
@@ -5672,19 +6268,22 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                      contactShadowSettings.enabledUVE &&
                                      m_impl->contactShadowTarget != kInvalidTextureHandleUVE && projectionInvertible &&
                                      sunDirectionInViewLengthSquared > 1.0e-8F &&
-                                     m_impl->contactShadowProgram->IsValidUVE() &&
-                                     m_impl->contactShadowCompositeProgram->IsValidUVE();
+                                     m_impl->contactShadowProgram != nullptr &&
+                                     m_impl->contactShadowProgram->IsValidUVE();
 
+    RenderGraphResourceHandleUVE contactShadowResource{};
     if (contactShadowActive) {
         m_impl->lastFrameDiagnostics.contactShadowPassRecorded = true;
-        const RenderGraphResourceHandleUVE contactShadowResource =
+        contactShadowResource =
             renderGraph.ImportTextureUVE(m_impl->contactShadowTarget, "ContactShadow");
         const std::array<RenderGraphResourceUseUVE, 2U> contactShadowPassResources{
             RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read},
             RenderGraphResourceUseUVE{contactShadowResource, RenderGraphResourceAccessUVE::Write}};
         renderGraph.AddPassUVE(
             "ContactShadows", contactShadowPassResources,
-            [this, &projection, &inverseProjection, settingsInView, isOrthographic](ICommandBufferUVE& commandBuffer) {
+            [this, &projection, &inverseProjection, settingsInView, isOrthographic,
+             depthNdcScale, depthNdcBias, projA, projB, invProjX, invProjY, fastDepthReconstruct](
+                ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->contactShadowTarget;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -5694,6 +6293,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->contactShadowProgram->SetMatrix4x4UVE("uProjection", projection);
                 m_impl->contactShadowProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
                 m_impl->contactShadowProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
+                m_impl->contactShadowProgram->SetFloatUVE("uDepthNdcScale", depthNdcScale);
+                m_impl->contactShadowProgram->SetFloatUVE("uDepthNdcBias", depthNdcBias);
+                m_impl->contactShadowProgram->SetFloatUVE("uProjA", projA);
+                m_impl->contactShadowProgram->SetFloatUVE("uProjB", projB);
+                m_impl->contactShadowProgram->SetFloatUVE("uInvProjX", invProjX);
+                m_impl->contactShadowProgram->SetFloatUVE("uInvProjY", invProjY);
+                m_impl->contactShadowProgram->SetIntUVE("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
                 m_impl->contactShadowProgram->SetVector3UVE("uLightDirectionView", settingsInView.lightDirectionView);
                 m_impl->contactShadowProgram->SetFloatUVE("uLengthMeters", settingsInView.settings.lengthMetersUVE);
                 m_impl->contactShadowProgram->SetFloatUVE("uThicknessMeters", settingsInView.settings.thicknessMetersUVE);
@@ -5703,25 +6309,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->contactShadowProgram->SetFloatUVE("uDepthBiasMeters", kContactShadowDepthBiasMetersUVE);
                 m_impl->contactShadowProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->depthTarget, 0U);
-                commandBuffer.DrawUVE(3);
-                commandBuffer.EndRenderPassUVE();
-            });
-        // Applied before bloom so a bright surface next to its contact shadow cannot bleed the light
-        // back over it through the bright-pass threshold.
-        const std::array<RenderGraphResourceUseUVE, 2U> contactShadowCompositeResources{
-            RenderGraphResourceUseUVE{contactShadowResource, RenderGraphResourceAccessUVE::Read},
-            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
-        renderGraph.AddPassUVE(
-            "ContactShadowsComposite", contactShadowCompositeResources,
-            [this](ICommandBufferUVE& commandBuffer) {
-                RenderPassDescUVE passDesc;
-                passDesc.colorAttachment = m_impl->colorTarget;
-                passDesc.depthAttachment = kInvalidTextureHandleUVE;
-                passDesc.colorLoadOp = LoadOpUVE::Load;
-                commandBuffer.BeginRenderPassUVE(passDesc);
-                m_impl->contactShadowCompositeProgram->SetIntUVE("uSourceTexture", 0);
-                m_impl->contactShadowCompositeProgram->ApplyToUVE(commandBuffer);
-                commandBuffer.BindTextureUVE(m_impl->contactShadowTarget, 0U);
+                if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, 0U);
+                }
                 commandBuffer.DrawUVE(3);
                 commandBuffer.EndRenderPassUVE();
             });
@@ -5730,11 +6320,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const bool ssrActive = !capturingProbe && environmentAllowsPost &&
                            m_impl->postProcessSettings.ssrEnabledUVE &&
                            m_impl->ssrTarget != kInvalidTextureHandleUVE && projectionInvertible &&
-                           m_impl->ssrProgram->IsValidUVE() &&
-                           m_impl->ssrCompositeProgram->IsValidUVE();
+                           m_impl->ssrProgram != nullptr && m_impl->ssrProgram->IsValidUVE();
+    RenderGraphResourceHandleUVE ssrResource{};
     if (ssrActive) {
         m_impl->lastFrameDiagnostics.ssrPassRecorded = true;
-        const RenderGraphResourceHandleUVE ssrResource =
+        ssrResource =
             renderGraph.ImportTextureUVE(m_impl->ssrTarget, "ScreenSpaceReflections");
         const std::array<RenderGraphResourceUseUVE, 3U> ssrPassResources{
             RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Read},
@@ -5742,7 +6332,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             RenderGraphResourceUseUVE{ssrResource, RenderGraphResourceAccessUVE::Write}};
         renderGraph.AddPassUVE(
             "ScreenSpaceReflections", ssrPassResources,
-            [this, projection, inverseProjection, isOrthographic](ICommandBufferUVE& commandBuffer) {
+            [this, projection, inverseProjection, isOrthographic,
+             depthNdcScale, depthNdcBias, projA, projB, invProjX, invProjY, fastDepthReconstruct](
+                ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->ssrTarget;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -5754,6 +6346,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->ssrProgram->SetMatrix4x4UVE("uProjection", projection);
                 m_impl->ssrProgram->SetMatrix4x4UVE("uInverseProjection", inverseProjection);
                 m_impl->ssrProgram->SetIntUVE("uOrthographic", isOrthographic ? 1 : 0);
+                m_impl->ssrProgram->SetFloatUVE("uDepthNdcScale", depthNdcScale);
+                m_impl->ssrProgram->SetFloatUVE("uDepthNdcBias", depthNdcBias);
+                m_impl->ssrProgram->SetFloatUVE("uProjA", projA);
+                m_impl->ssrProgram->SetFloatUVE("uProjB", projB);
+                m_impl->ssrProgram->SetFloatUVE("uInvProjX", invProjX);
+                m_impl->ssrProgram->SetFloatUVE("uInvProjY", invProjY);
+                m_impl->ssrProgram->SetIntUVE("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
                 m_impl->ssrProgram->SetVector3UVE("uCameraPosition", m_impl->environmentCameraPosition);
                 m_impl->ssrProgram->SetFloatUVE("uCameraNear", m_impl->environmentCameraNear);
                 m_impl->ssrProgram->SetFloatUVE("uCameraFar", m_impl->environmentCameraFar);
@@ -5763,30 +6362,19 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->ssrProgram->SetFloatUVE("uFadeOut", m_impl->postProcessSettings.ssrFadeOutUVE);
                 m_impl->ssrProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
+                if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 0U);
+                }
                 commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);
-                commandBuffer.DrawUVE(3);
-                commandBuffer.EndRenderPassUVE();
-            });
-
-        const std::array<RenderGraphResourceUseUVE, 2U> ssrCompositeResources{
-            RenderGraphResourceUseUVE{ssrResource, RenderGraphResourceAccessUVE::Read},
-            RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
-        renderGraph.AddPassUVE(
-            "ScreenSpaceReflectionsComposite", ssrCompositeResources,
-            [this](ICommandBufferUVE& commandBuffer) {
-                RenderPassDescUVE passDesc;
-                passDesc.colorAttachment = m_impl->colorTarget;
-                passDesc.depthAttachment = kInvalidTextureHandleUVE;
-                passDesc.colorLoadOp = LoadOpUVE::Load;
-                commandBuffer.BeginRenderPassUVE(passDesc);
-                m_impl->ssrCompositeProgram->SetIntUVE("uSourceTexture", 0);
-                m_impl->ssrCompositeProgram->ApplyToUVE(commandBuffer);
-                commandBuffer.BindTextureUVE(m_impl->ssrTarget, 0U);
+                if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, 1U);
+                }
                 commandBuffer.DrawUVE(3);
                 commandBuffer.EndRenderPassUVE();
             });
     }
 
+    RenderGraphResourceHandleUVE finalBloomResource{};
     if (bloomActive) {
         m_impl->lastFrameDiagnostics.bloomPassRecorded = true;
         m_impl->lastFrameDiagnostics.bloomMipCountUsed = bloomMipCountUsed;
@@ -5803,24 +6391,25 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->bloomMipTargets[mipIndex].blurB, std::string{"BloomBlurB"} + suffix);
         }
 
-        const float bloomThreshold = m_impl->environmentFrame.hasEnvironment
+        const float bloomThreshold = hasPostOverride
                                          ? m_impl->environmentFrame.bloomThreshold
                                          : kBloomThresholdUVE;
-        const float configuredBloomIntensity = m_impl->environmentFrame.hasEnvironment
+        const float configuredBloomIntensity = hasPostOverride
                                                    ? m_impl->environmentFrame.bloomIntensity
                                                    : 1.0F;
-        const float bloomSoftKnee = m_impl->environmentFrame.hasEnvironment
+        const float bloomSoftKnee = hasPostOverride
                                         ? m_impl->environmentFrame.bloomSoftKnee
                                         : kBloomSoftKneeUVE;
-        // Share energy across the active scales so changing the mip count broadens bloom without
-        // multiplying its overall intensity. One level is exactly the former bright-pass value.
-        const float bloomIntensityPerMip = configuredBloomIntensity / static_cast<float>(bloomMipCountUsed);
+        const float bloomExposure = m_impl->environmentFrame.exposure > 0.0F
+                                        ? m_impl->environmentFrame.exposure
+                                        : 1.0F;
         const std::array<RenderGraphResourceUseUVE, 2U> brightPassResources{
             RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Read},
             RenderGraphResourceUseUVE{bloomBrightResources[0U], RenderGraphResourceAccessUVE::Write}};
         renderGraph.AddPassUVE(
             "BloomBrightPass", brightPassResources,
-            [this, bloomThreshold, bloomIntensityPerMip, bloomSoftKnee](ICommandBufferUVE& commandBuffer) {
+            [this, bloomThreshold, configuredBloomIntensity, bloomSoftKnee, bloomExposure](
+                ICommandBufferUVE& commandBuffer) {
                 RenderPassDescUVE passDesc;
                 passDesc.colorAttachment = m_impl->bloomMipTargets[0U].bright;
                 passDesc.depthAttachment = kInvalidTextureHandleUVE;
@@ -5828,15 +6417,23 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 commandBuffer.BeginRenderPassUVE(passDesc);
                 m_impl->bloomBrightPassProgram->SetIntUVE("uSourceTexture", 0);
                 m_impl->bloomBrightPassProgram->SetFloatUVE("uBloomThreshold", bloomThreshold);
-                m_impl->bloomBrightPassProgram->SetFloatUVE("uBloomIntensity", bloomIntensityPerMip);
+                m_impl->bloomBrightPassProgram->SetFloatUVE("uBloomIntensity", configuredBloomIntensity);
                 m_impl->bloomBrightPassProgram->SetFloatUVE("uBloomSoftKnee", bloomSoftKnee);
+                m_impl->bloomBrightPassProgram->SetFloatUVE("uExposure", bloomExposure);
                 m_impl->bloomBrightPassProgram->ApplyToUVE(commandBuffer);
                 commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
+                if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 0U);
+                }
                 commandBuffer.DrawUVE(3);
                 commandBuffer.EndRenderPassUVE();
             });
 
+        std::array<std::pair<std::uint32_t, std::uint32_t>, kMaximumBloomMipCountUVE> mipSizes{};
+        mipSizes[0U] = {HalfExtentUVE(m_impl->targetWidth), HalfExtentUVE(m_impl->targetHeight)};
         for (std::uint32_t mipIndex = 1U; mipIndex < bloomMipCountUsed; ++mipIndex) {
+            mipSizes[mipIndex] = {HalfExtentUVE(mipSizes[mipIndex - 1U].first),
+                                  HalfExtentUVE(mipSizes[mipIndex - 1U].second)};
             const std::array<RenderGraphResourceUseUVE, 2U> downsampleResources{
                 RenderGraphResourceUseUVE{bloomBrightResources[mipIndex - 1U], RenderGraphResourceAccessUVE::Read},
                 RenderGraphResourceUseUVE{bloomBrightResources[mipIndex], RenderGraphResourceAccessUVE::Write}};
@@ -5852,101 +6449,160 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     m_impl->bloomDownsampleProgram->SetIntUVE("uSourceTexture", 0);
                     m_impl->bloomDownsampleProgram->ApplyToUVE(commandBuffer);
                     commandBuffer.BindTextureUVE(m_impl->bloomMipTargets[mipIndex - 1U].bright, 0U);
+                    if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                        commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 0U);
+                    }
                     commandBuffer.DrawUVE(3);
                     commandBuffer.EndRenderPassUVE();
                 });
         }
 
-        std::uint32_t mipWidth = HalfExtentUVE(m_impl->targetWidth);
-        std::uint32_t mipHeight = HalfExtentUVE(m_impl->targetHeight);
-        for (std::uint32_t mipIndex = 0U; mipIndex < bloomMipCountUsed; ++mipIndex) {
-            if (mipIndex > 0U) {
-                mipWidth = HalfExtentUVE(mipWidth);
-                mipHeight = HalfExtentUVE(mipHeight);
-            }
-            const float texelSizeX = 1.0F / static_cast<float>(mipWidth);
-            const float texelSizeY = 1.0F / static_cast<float>(mipHeight);
-            const std::string suffix = bloomMipCountUsed == kDefaultBloomMipCountUVE
-                                            ? std::string{}
-                                            : "[" + std::to_string(mipIndex) + "]";
+        if (bloomMipCountUsed == 1U) {
+            const float texelSizeX = 1.0F / static_cast<float>(mipSizes[0U].first);
+            const float texelSizeY = 1.0F / static_cast<float>(mipSizes[0U].second);
             const std::array<RenderGraphResourceUseUVE, 2U> blurHResources{
-                RenderGraphResourceUseUVE{bloomBrightResources[mipIndex], RenderGraphResourceAccessUVE::Read},
-                RenderGraphResourceUseUVE{bloomBlurAResources[mipIndex], RenderGraphResourceAccessUVE::Write}};
-            const std::string blurHName = "BloomBlurH" + suffix;
+                RenderGraphResourceUseUVE{bloomBrightResources[0U], RenderGraphResourceAccessUVE::Read},
+                RenderGraphResourceUseUVE{bloomBlurAResources[0U], RenderGraphResourceAccessUVE::Write}};
             renderGraph.AddPassUVE(
-                blurHName, blurHResources,
-                [this, mipIndex, texelSizeX, texelSizeY](ICommandBufferUVE& commandBuffer) {
+                "BloomBlurH", blurHResources,
+                [this, texelSizeX, texelSizeY](ICommandBufferUVE& commandBuffer) {
                     RenderPassDescUVE passDesc;
-                    passDesc.colorAttachment = m_impl->bloomMipTargets[mipIndex].blurA;
+                    passDesc.colorAttachment = m_impl->bloomMipTargets[0U].blurA;
                     passDesc.depthAttachment = kInvalidTextureHandleUVE;
                     passDesc.colorLoadOp = LoadOpUVE::DontCare;
                     commandBuffer.BeginRenderPassUVE(passDesc);
                     m_impl->bloomBlurProgram->SetIntUVE("uSourceTexture", 0);
+                    m_impl->bloomBlurProgram->SetIntUVE("uUpsampleMode", 0);
                     m_impl->bloomBlurProgram->SetFloatUVE("uBlurDirectionX", 1.0F);
                     m_impl->bloomBlurProgram->SetFloatUVE("uBlurDirectionY", 0.0F);
                     m_impl->bloomBlurProgram->SetFloatUVE("uTexelSizeX", texelSizeX);
                     m_impl->bloomBlurProgram->SetFloatUVE("uTexelSizeY", texelSizeY);
                     m_impl->bloomBlurProgram->ApplyToUVE(commandBuffer);
-                    commandBuffer.BindTextureUVE(m_impl->bloomMipTargets[mipIndex].bright, 0U);
+                    commandBuffer.BindTextureUVE(m_impl->bloomMipTargets[0U].bright, 0U);
+                    if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                        commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 0U);
+                    }
                     commandBuffer.DrawUVE(3);
                     commandBuffer.EndRenderPassUVE();
                 });
 
             const std::array<RenderGraphResourceUseUVE, 2U> blurVResources{
-                RenderGraphResourceUseUVE{bloomBlurAResources[mipIndex], RenderGraphResourceAccessUVE::Read},
-                RenderGraphResourceUseUVE{bloomBlurBResources[mipIndex], RenderGraphResourceAccessUVE::Write}};
-            const std::string blurVName = "BloomBlurV" + suffix;
+                RenderGraphResourceUseUVE{bloomBlurAResources[0U], RenderGraphResourceAccessUVE::Read},
+                RenderGraphResourceUseUVE{bloomBlurBResources[0U], RenderGraphResourceAccessUVE::Write}};
             renderGraph.AddPassUVE(
-                blurVName, blurVResources,
-                [this, mipIndex, texelSizeX, texelSizeY](ICommandBufferUVE& commandBuffer) {
+                "BloomBlurV", blurVResources,
+                [this, texelSizeX, texelSizeY](ICommandBufferUVE& commandBuffer) {
                     RenderPassDescUVE passDesc;
-                    passDesc.colorAttachment = m_impl->bloomMipTargets[mipIndex].blurB;
+                    passDesc.colorAttachment = m_impl->bloomMipTargets[0U].blurB;
                     passDesc.depthAttachment = kInvalidTextureHandleUVE;
                     passDesc.colorLoadOp = LoadOpUVE::DontCare;
                     commandBuffer.BeginRenderPassUVE(passDesc);
                     m_impl->bloomBlurProgram->SetIntUVE("uSourceTexture", 0);
+                    m_impl->bloomBlurProgram->SetIntUVE("uUpsampleMode", 0);
                     m_impl->bloomBlurProgram->SetFloatUVE("uBlurDirectionX", 0.0F);
                     m_impl->bloomBlurProgram->SetFloatUVE("uBlurDirectionY", 1.0F);
                     m_impl->bloomBlurProgram->SetFloatUVE("uTexelSizeX", texelSizeX);
                     m_impl->bloomBlurProgram->SetFloatUVE("uTexelSizeY", texelSizeY);
                     m_impl->bloomBlurProgram->ApplyToUVE(commandBuffer);
-                    commandBuffer.BindTextureUVE(m_impl->bloomMipTargets[mipIndex].blurA, 0U);
+                    commandBuffer.BindTextureUVE(m_impl->bloomMipTargets[0U].blurA, 0U);
+                    if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                        commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 0U);
+                    }
                     commandBuffer.DrawUVE(3);
                     commandBuffer.EndRenderPassUVE();
                 });
-
-            const std::array<RenderGraphResourceUseUVE, 2U> bloomCompositeResources{
-                RenderGraphResourceUseUVE{bloomBlurBResources[mipIndex], RenderGraphResourceAccessUVE::Read},
-                RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Write}};
-            const std::string compositeName = "BloomComposite" + suffix;
-            renderGraph.AddPassUVE(
-                compositeName, bloomCompositeResources,
-                [this, mipIndex](ICommandBufferUVE& commandBuffer) {
-                    RenderPassDescUVE passDesc;
-                    passDesc.colorAttachment = m_impl->colorTarget;
-                    passDesc.depthAttachment = kInvalidTextureHandleUVE;
-                    passDesc.colorLoadOp = LoadOpUVE::Load;
-                    commandBuffer.BeginRenderPassUVE(passDesc);
-                    m_impl->bloomCompositeProgram->SetIntUVE("uSourceTexture", 0);
-                    m_impl->bloomCompositeProgram->SetIntUVE("uSsaoBlurEnabled", 0);
-                    m_impl->bloomCompositeProgram->ApplyToUVE(commandBuffer);
-                    commandBuffer.BindTextureUVE(m_impl->bloomMipTargets[mipIndex].blurB, 0U);
-                    commandBuffer.DrawUVE(3);
-                    commandBuffer.EndRenderPassUVE();
-                });
+        } else {
+            // Progressive 3x3 tent upsample from coarsest mip down to mip 0 into blurB[0].
+            for (std::uint32_t step = bloomMipCountUsed - 1U; step > 0U; --step) {
+                const std::uint32_t fineMip = step - 1U;
+                const bool firstStep = (step == bloomMipCountUsed - 1U);
+                const RenderGraphResourceHandleUVE coarseResource =
+                    firstStep ? bloomBrightResources[step] : bloomBlurBResources[step];
+                const TextureHandleUVE coarseTexture =
+                    firstStep ? m_impl->bloomMipTargets[step].bright : m_impl->bloomMipTargets[step].blurB;
+                const TextureHandleUVE fineTexture = m_impl->bloomMipTargets[fineMip].bright;
+                const TextureHandleUVE dstTexture = m_impl->bloomMipTargets[fineMip].blurB;
+                const float coarseTexelX = 1.0F / static_cast<float>(mipSizes[step].first);
+                const float coarseTexelY = 1.0F / static_cast<float>(mipSizes[step].second);
+                const std::array<RenderGraphResourceUseUVE, 3U> upsampleResources{
+                    RenderGraphResourceUseUVE{coarseResource, RenderGraphResourceAccessUVE::Read},
+                    RenderGraphResourceUseUVE{bloomBrightResources[fineMip], RenderGraphResourceAccessUVE::Read},
+                    RenderGraphResourceUseUVE{bloomBlurBResources[fineMip], RenderGraphResourceAccessUVE::Write}};
+                const std::string upsampleName = "BloomUpsample" + std::to_string(fineMip);
+                renderGraph.AddPassUVE(
+                    upsampleName, upsampleResources,
+                    [this, coarseTexture, fineTexture, dstTexture, coarseTexelX, coarseTexelY](
+                        ICommandBufferUVE& commandBuffer) {
+                        RenderPassDescUVE passDesc;
+                        passDesc.colorAttachment = dstTexture;
+                        passDesc.depthAttachment = kInvalidTextureHandleUVE;
+                        passDesc.colorLoadOp = LoadOpUVE::DontCare;
+                        commandBuffer.BeginRenderPassUVE(passDesc);
+                        m_impl->bloomBlurProgram->SetIntUVE("uSourceTexture", 0);
+                        m_impl->bloomBlurProgram->SetIntUVE("uHigherMipTexture", 1);
+                        m_impl->bloomBlurProgram->SetIntUVE("uUpsampleMode", 1);
+                        m_impl->bloomBlurProgram->SetFloatUVE("uUpsampleScatter", 0.65F);
+                        m_impl->bloomBlurProgram->SetFloatUVE("uTexelSizeX", coarseTexelX);
+                        m_impl->bloomBlurProgram->SetFloatUVE("uTexelSizeY", coarseTexelY);
+                        m_impl->bloomBlurProgram->ApplyToUVE(commandBuffer);
+                        commandBuffer.BindTextureUVE(coarseTexture, 0U);
+                        if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                            commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 0U);
+                        }
+                        commandBuffer.BindTextureUVE(fineTexture, 1U);
+                        if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                            commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, 1U);
+                        }
+                        commandBuffer.DrawUVE(3);
+                        commandBuffer.EndRenderPassUVE();
+                    });
+            }
         }
+        finalBloomResource = bloomBlurBResources[0U];
     }
 
     // The default framebuffer is an external presentation surface, not a TextureHandleUVE; the
-    // scene color input remains explicit in the graph while this pass writes that external output.
-    const std::array<RenderGraphResourceUseUVE, 1U> toneMappingResources{
-        RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Read}};
+    // scene color, depth, shadow cascades, and active post-process targets are declared explicitly
+    // as Read dependencies while this unified pass writes that external output.
+    std::array<RenderGraphResourceUseUVE, 9U> toneMappingResources{};
+    std::size_t toneMappingResourceCount = 0U;
+    toneMappingResources[toneMappingResourceCount++] =
+        RenderGraphResourceUseUVE{colorResource, RenderGraphResourceAccessUVE::Read};
+    toneMappingResources[toneMappingResourceCount++] =
+        RenderGraphResourceUseUVE{depthResource, RenderGraphResourceAccessUVE::Read};
+    if (shadowsReady) {
+        for (const RenderGraphResourceHandleUVE shadowResource : shadowResources) {
+            toneMappingResources[toneMappingResourceCount++] =
+                RenderGraphResourceUseUVE{shadowResource, RenderGraphResourceAccessUVE::Read};
+        }
+    }
+    if (ssaoActive && ssaoResource.IsValidUVE()) {
+        toneMappingResources[toneMappingResourceCount++] =
+            RenderGraphResourceUseUVE{ssaoResource, RenderGraphResourceAccessUVE::Read};
+    }
+    if (contactShadowActive && contactShadowResource.IsValidUVE()) {
+        toneMappingResources[toneMappingResourceCount++] =
+            RenderGraphResourceUseUVE{contactShadowResource, RenderGraphResourceAccessUVE::Read};
+    }
+    if (ssrActive && ssrResource.IsValidUVE()) {
+        toneMappingResources[toneMappingResourceCount++] =
+            RenderGraphResourceUseUVE{ssrResource, RenderGraphResourceAccessUVE::Read};
+    }
+    if (bloomActive && finalBloomResource.IsValidUVE()) {
+        toneMappingResources[toneMappingResourceCount++] =
+            RenderGraphResourceUseUVE{finalBloomResource, RenderGraphResourceAccessUVE::Read};
+    }
+
     // An unlinked program records no work: do not declare a phantom read (and barrier) while
     // shader compilation is pending. The callback retains its defensive readiness check.
     if (m_impl->toneMappingProgram->IsValidUVE()) renderGraph.AddPassUVE(
-        "ToneMapping", toneMappingResources,
+        "ToneMapping",
+        std::span<const RenderGraphResourceUseUVE>{toneMappingResources.data(), toneMappingResourceCount},
         [this, inverseProjection, previousMotionBlurViewProjection, motionBlurHistoryReady, shadowsReady,
-         isOrthographic, orthoHalfHeight, sunDiscActive, &lightSpaceMatrices, &cascadeSplits](
+         isOrthographic, orthoHalfHeight, sunDiscActive, capturingProbe, hasPostOverride,
+         ssaoActive, contactShadowActive, ssrActive, bloomActive,
+         depthNdcScale, depthNdcBias, projA, projB, invProjX, invProjY, fastDepthReconstruct,
+         &lightSpaceMatrices, &cascadeSplits](
             ICommandBufferUVE& commandBuffer) {
             if (!m_impl->toneMappingProgram->IsValidUVE()) {
                 return;
@@ -5988,8 +6644,11 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetIntUVE("uSourceTexture", 0);
             m_impl->toneMappingProgram->SetIntUVE("uNearestUpscaling",
                                                  m_impl->postProcessSettings.nearestUpscalingEnabledUVE ? 1 : 0);
-            m_impl->toneMappingProgram->SetIntUVE("uToneMappingMethod",
-                                                 m_impl->postProcessSettings.acesToneMappingEnabledUVE ? 1 : 0);
+            const std::int32_t toneMappingMethod =
+                !m_impl->postProcessSettings.acesToneMappingEnabledUVE
+                    ? 0
+                    : static_cast<std::int32_t>(std::min(m_impl->postProcessSettings.toneMappingMethodUVE, 2U));
+            m_impl->toneMappingProgram->SetIntUVE("uToneMappingMethod", toneMappingMethod);
             m_impl->toneMappingProgram->SetFloatUVE("uSharpeningAmount",
                                                    m_impl->postProcessSettings.sharpeningAmountUVE);
             m_impl->toneMappingProgram->SetIntUVE("uDitheringEnabled",
@@ -6006,6 +6665,39 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                                            !(m_impl->uiViewCaptureActive && !m_impl->captureTransparentBackground)
                                                        ? 1
                                                        : 0);
+            const bool encodeSrgbOutput =
+                (!capturingProbe || m_impl->uiViewCaptureActive) &&
+                (m_impl->destinationTextureOverride.has_value() ||
+                 !m_impl->renderDevice.IsPresentationSurfaceSrgbUVE());
+            m_impl->toneMappingProgram->SetIntUVE("uEncodeSrgbOutput", encodeSrgbOutput ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE("uSsaoCompositeEnabled", ssaoActive ? 1 : 0);
+            if (ssaoActive) {
+                m_impl->toneMappingProgram->SetIntUVE(
+                    "uSsaoBlurEnabled", m_impl->postProcessSettings.ssaoBlurEnabledUVE ? 1 : 0);
+            }
+            m_impl->toneMappingProgram->SetIntUVE("uContactShadowCompositeEnabled", contactShadowActive ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE("uSsrCompositeEnabled", ssrActive ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE("uBloomCompositeEnabled", bloomActive ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE("uHasColorGrading",
+                                                 hasPostOverride && m_impl->environmentFrame.postProcessingEnabled ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE("uHasLutTexture", m_impl->lutTextureEnabled ? 1 : 0);
+            m_impl->toneMappingProgram->SetIntUVE("uLutTexture",
+                                                 static_cast<std::int32_t>(kToneMappingLutTextureSlotUVE));
+            m_impl->toneMappingProgram->SetIntUVE("uSsaoTexture",
+                                                 static_cast<std::int32_t>(kToneMappingSsaoTextureSlotUVE));
+            m_impl->toneMappingProgram->SetIntUVE("uContactShadowTexture",
+                                                 static_cast<std::int32_t>(kToneMappingContactShadowTextureSlotUVE));
+            m_impl->toneMappingProgram->SetIntUVE("uSsrTexture",
+                                                 static_cast<std::int32_t>(kToneMappingSsrTextureSlotUVE));
+            m_impl->toneMappingProgram->SetIntUVE("uBloomTexture",
+                                                 static_cast<std::int32_t>(kToneMappingBloomTextureSlotUVE));
+            m_impl->toneMappingProgram->SetFloatUVE("uDepthNdcScale", depthNdcScale);
+            m_impl->toneMappingProgram->SetFloatUVE("uDepthNdcBias", depthNdcBias);
+            m_impl->toneMappingProgram->SetFloatUVE("uProjA", projA);
+            m_impl->toneMappingProgram->SetFloatUVE("uProjB", projB);
+            m_impl->toneMappingProgram->SetFloatUVE("uInvProjX", invProjX);
+            m_impl->toneMappingProgram->SetFloatUVE("uInvProjY", invProjY);
+            m_impl->toneMappingProgram->SetIntUVE("uFastReconstruct", fastDepthReconstruct ? 1 : 0);
             m_impl->toneMappingProgram->SetIntUVE("uHumanEye", m_impl->humanEyeEnabled ? 1 : 0);
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeCenterScale", m_impl->humanEyeCenterScale);
             m_impl->toneMappingProgram->SetFloatUVE("uHumanEyeTexelX", m_impl->humanEyeTexelX);
@@ -6093,9 +6785,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetIntUVE("uFogVolumeCount",
                                                    static_cast<std::int32_t>(m_impl->fogVolumeCount));
             const auto& fogNames = GetRendererUniformNamesUVE().fogVolumes;
-            for (std::size_t volumeIndex = 0; volumeIndex < Scene::kMaximumFogVolumesPerFrameUVE; ++volumeIndex) {
-                const Scene::FogVolume3DFrameUVE volume =
-                    volumeIndex < m_impl->fogVolumeCount ? m_impl->fogVolumes[volumeIndex] : Scene::FogVolume3DFrameUVE{};
+            const std::size_t activeFogVolumes =
+                std::min(m_impl->fogVolumeCount, Scene::kMaximumFogVolumesPerFrameUVE);
+            for (std::size_t volumeIndex = 0; volumeIndex < activeFogVolumes; ++volumeIndex) {
+                const Scene::FogVolume3DFrameUVE& volume = m_impl->fogVolumes[volumeIndex];
                 const FogVolumeUniformNamesUVE& names = fogNames[volumeIndex];
                 m_impl->toneMappingProgram->SetVector3UVE(names.position, volume.worldPosition);
                 m_impl->toneMappingProgram->SetVector3UVE(names.axisX, volume.axisX);
@@ -6131,7 +6824,16 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->toneMappingProgram->SetFloatUVE("uLutContribution", m_impl->environmentFrame.lutContribution);
             m_impl->toneMappingProgram->ApplyToUVE(commandBuffer);
             commandBuffer.BindTextureUVE(m_impl->colorTarget, 0U);
+            const SamplerHandleUVE colorSampler = m_impl->postProcessSettings.nearestUpscalingEnabledUVE
+                                                      ? m_impl->shadowPointSampler
+                                                      : m_impl->clampLinearSampler;
+            if (colorSampler != kInvalidSamplerHandleUVE) {
+                commandBuffer.BindSamplerUVE(colorSampler, 0U);
+            }
             commandBuffer.BindTextureUVE(m_impl->depthTarget, 1U);
+            if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
+                commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, 1U);
+            }
             if (shadowsReady) {
                 for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
                     const std::uint32_t slot =
@@ -6140,6 +6842,36 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     if (m_impl->shadowPointSampler != kInvalidSamplerHandleUVE) {
                         commandBuffer.BindSamplerUVE(m_impl->shadowPointSampler, slot);
                     }
+                }
+            }
+            if (m_impl->lutTextureEnabled && m_impl->lutTextureHandle != kInvalidTextureHandleUVE) {
+                commandBuffer.BindTextureUVE(m_impl->lutTextureHandle, kToneMappingLutTextureSlotUVE);
+                if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, kToneMappingLutTextureSlotUVE);
+                }
+            }
+            if (ssaoActive) {
+                commandBuffer.BindTextureUVE(m_impl->ssaoTarget, kToneMappingSsaoTextureSlotUVE);
+                if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, kToneMappingSsaoTextureSlotUVE);
+                }
+            }
+            if (contactShadowActive) {
+                commandBuffer.BindTextureUVE(m_impl->contactShadowTarget, kToneMappingContactShadowTextureSlotUVE);
+                if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, kToneMappingContactShadowTextureSlotUVE);
+                }
+            }
+            if (ssrActive) {
+                commandBuffer.BindTextureUVE(m_impl->ssrTarget, kToneMappingSsrTextureSlotUVE);
+                if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, kToneMappingSsrTextureSlotUVE);
+                }
+            }
+            if (bloomActive) {
+                commandBuffer.BindTextureUVE(m_impl->bloomMipTargets[0U].blurB, kToneMappingBloomTextureSlotUVE);
+                if (m_impl->clampLinearSampler != kInvalidSamplerHandleUVE) {
+                    commandBuffer.BindSamplerUVE(m_impl->clampLinearSampler, kToneMappingBloomTextureSlotUVE);
                 }
             }
             commandBuffer.DrawUVE(3);
@@ -6352,6 +7084,8 @@ void Renderer3DUVE::SetPostProcessSettingsUVE(const PostProcessSettingsUVE& sett
     m_impl->postProcessSettings.ssaoQualityUVE = std::min(settings.ssaoQualityUVE, 2U);
     m_impl->postProcessSettings.fastApproximateAAQualityUVE =
         std::min(settings.fastApproximateAAQualityUVE, 2U);
+    m_impl->postProcessSettings.toneMappingMethodUVE =
+        std::min(settings.toneMappingMethodUVE, 2U);
     m_impl->postProcessSettings.sharpeningAmountUVE =
         std::isfinite(settings.sharpeningAmountUVE) ? std::clamp(settings.sharpeningAmountUVE, 0.0F, 1.0F) : 0.0F;
 }
@@ -6384,6 +7118,19 @@ void Renderer3DUVE::SetShadowAtlasTileResolutionUVE(const std::uint32_t resoluti
     m_impl->shadowAtlasTileResolutionUVE =
         resolution == 0U ? kShadowAtlasMinTileResolutionUVE
                          : std::clamp(resolution, kShadowAtlasMinTileResolutionUVE, kShadowAtlasResolutionUVE);
+}
+
+void Renderer3DUVE::SetMaterialSamplerSettingsUVE(const bool repeatEnabled, const float maxAnisotropy) noexcept {
+    const float sanitizedAnisotropy =
+        std::isfinite(maxAnisotropy) ? std::clamp(maxAnisotropy, 1.0F, 16.0F) : 1.0F;
+    if (m_impl->materialTextureRepeatEnabled == repeatEnabled &&
+        std::abs(m_impl->materialMaxAnisotropy - sanitizedAnisotropy) <= 1.0e-3F &&
+        m_impl->materialRepeatSampler != kInvalidSamplerHandleUVE) {
+        return;
+    }
+    m_impl->materialTextureRepeatEnabled = repeatEnabled;
+    m_impl->materialMaxAnisotropy = sanitizedAnisotropy;
+    m_impl->RebuildMaterialRepeatSamplerUVE();
 }
 
 void Renderer3DUVE::SetCullingSettingsUVE(const CullingSettingsUVE& settings) noexcept {
@@ -6430,6 +7177,14 @@ void Renderer3DUVE::SetSceneClearColorUVE(const std::array<float, 4U>& color) no
 
 void Renderer3DUVE::SetUIRuntimeUVE(const UI::UIRuntimeUVE* const uiRuntime) noexcept {
     m_impl->uiRuntimeForFrame = uiRuntime;
+}
+
+void Renderer3DUVE::SetVfxDrawListUVE(const VfxDrawListUVE* const vfxDrawList) noexcept {
+    m_impl->vfxDrawListForFrame = vfxDrawList;
+}
+
+void Renderer3DUVE::SetStudioFloorUVE(const std::optional<StudioFloorSettingsUVE>& settings) noexcept {
+    m_impl->studioFloorSettings = settings;
 }
 
 void Renderer3DUVE::SetPhysicsInterpolationAlphaUVE(const float alpha) noexcept {

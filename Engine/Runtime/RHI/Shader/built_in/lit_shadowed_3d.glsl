@@ -11,9 +11,12 @@ out vec3 vWorldNormal;
 out vec3 vWorldTangent;
 out float vTangentHandedness;
 out vec2 vTexCoord;
-// Object-space position and normal for object-space triplanar mapping (UV1 / UV2 "Triplanar").
+// Object-space position, normal, and object-to-world normal basis for triplanar mapping.
 out vec3 vObjectPosition;
 out vec3 vObjectNormal;
+out vec3 vNormalAxisX;
+out vec3 vNormalAxisY;
+out vec3 vNormalAxisZ;
 out vec4 vLightSpacePosition;
 out vec4 vLightSpacePositions[3];
 
@@ -76,12 +79,25 @@ void main() {
     vWorldTangent = mat3(model) * aTangent.xyz;
     vTangentHandedness = aTangent.w;
     vTexCoord = aTexCoord;
-    vObjectPosition = aPosition;
+    // Scale-invariant object-space coordinates: triplanar projection moves and rotates with the
+    // mesh while automatically tiling when the mesh is scaled so textures never stretch.
+    vec3 objectScale = vec3(
+        max(length(model[0].xyz), 1.0e-5),
+        max(length(model[1].xyz), 1.0e-5),
+        max(length(model[2].xyz), 1.0e-5)
+    );
+    vObjectPosition = aPosition * objectScale;
     vObjectNormal = aNormal;
+    mat3 normalMat3 = mat3(normalMatrix);
+    vNormalAxisX = normalMat3[0];
+    vNormalAxisY = normalMat3[1];
+    vNormalAxisZ = normalMat3[2];
     vLightSpacePosition = uLightSpaceMatrix * worldPosition;
-    // Normal offset: each cascade looks up the shadow a texel or so off the surface, along its
-    // normal, so a lit face never shadows itself (no acne) and contact shadows stay attached.
-    vec3 offsetNormal = normalize(mat3(normalMatrix) * aNormal);
+    // Slope-scaled normal offset: surfaces facing the light shift minimally to keep contact
+    // shadows grounded without peter-panning, while grazing angles shift by ~1.35 texels to
+    // prevent self-shadowing acne.
+    float worldNormalLen = length(vWorldNormal);
+    vec3 offsetNormal = worldNormalLen > 1.0e-5 ? (vWorldNormal / worldNormalLen) : vec3(0.0, 1.0, 0.0);
     for (int cascadeIndex = 0; cascadeIndex < 3; ++cascadeIndex) {
         mat4 lightMatrix = uLightSpaceMatrices[cascadeIndex];
         float texelWorld = 0.0;
@@ -89,7 +105,12 @@ void main() {
         if (uShadowMapResolution > 1.0 && scale > 1.0e-6) {
             texelWorld = 2.0 / (scale * uShadowMapResolution);
         }
-        vLightSpacePositions[cascadeIndex] = lightMatrix * vec4(worldPosition.xyz + offsetNormal * texelWorld * 1.5, 1.0);
+        vec3 lightAxisZ = vec3(lightMatrix[0][2], lightMatrix[1][2], lightMatrix[2][2]);
+        float lightAxisLen = length(lightAxisZ);
+        float cosTheta = lightAxisLen > 1.0e-6 ? abs(dot(offsetNormal, lightAxisZ / lightAxisLen)) : 0.0;
+        float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
+        float slopeOffset = texelWorld * mix(0.35, 1.35, sinTheta);
+        vLightSpacePositions[cascadeIndex] = lightMatrix * vec4(worldPosition.xyz + offsetNormal * slopeOffset, 1.0);
     }
     gl_Position = uViewProjection * worldPosition;
 }
@@ -103,6 +124,9 @@ in float vTangentHandedness;
 in vec2 vTexCoord;
 in vec3 vObjectPosition;
 in vec3 vObjectNormal;
+in vec3 vNormalAxisX;
+in vec3 vNormalAxisY;
+in vec3 vNormalAxisZ;
 in vec4 vLightSpacePosition;
 in vec4 vLightSpacePositions[3];
 out vec4 FragColor;
@@ -158,6 +182,16 @@ uniform float uEmissiveEnergy = 1.0;
 uniform float uNormalScale;
 #else
 uniform float uNormalScale = 1.0;
+#endif
+#if UVE_MOBILE
+uniform int uNormalFlipGreen;
+#else
+uniform int uNormalFlipGreen = 0;
+#endif
+#if UVE_MOBILE
+uniform float uDielectricSpecular;
+#else
+uniform float uDielectricSpecular = 0.5;
 #endif
 #if UVE_MOBILE
 uniform float uOcclusionStrength;
@@ -308,9 +342,17 @@ uniform int uPremultiplyAlpha;
 #else
 uniform int uPremultiplyAlpha = 0;
 #endif
+// Set to 1 on opaque non-blended draws so FragColor.a carries the surface's indirect-lighting
+// luminance fraction for ambient-only SSAO modulation in the final composite pass.
+#if UVE_MOBILE
+uniform int uPackIndirectWeightAlpha;
+#else
+uniform int uPackIndirectWeightAlpha = 0;
+#endif
 // Legacy Increment 27 pair retained for project-authored shaders and direct single-map tests.
 uniform sampler2D uShadowMapTexture;
 uniform mat4 uLightSpaceMatrix;
+uniform mat4 uLightSpaceMatrices[3];
 uniform int uShadowPcfKernelRadius;
 // Increment 30 fixed three-cascade directional shadow contract.
 uniform sampler2D uShadowMapTextures[3];
@@ -376,9 +418,12 @@ vec3 HemisphereAmbientUVE(vec3 normal) {
     float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
     vec3 skyLum = vec3(dot(uSkyAmbient, vec3(0.2126, 0.7152, 0.0722)));
     vec3 groundLum = vec3(dot(uGroundAmbient, vec3(0.2126, 0.7152, 0.0722)));
-    vec3 balancedSky = mix(skyLum, uSkyAmbient, 0.32);
-    vec3 balancedGround = mix(groundLum, uGroundAmbient, 0.38);
-    return mix(balancedGround, balancedSky, hemi);
+    vec3 balancedSky = mix(skyLum, uSkyAmbient, 0.68);
+    vec3 balancedGround = mix(groundLum, uGroundAmbient, 0.72);
+    vec3 horizonFill = mix(balancedGround, balancedSky, 0.52);
+    float horizonWeight = 1.0 - abs(normal.y);
+    vec3 verticalBlend = mix(balancedGround, balancedSky, smoothstep(0.0, 1.0, hemi));
+    return mix(verticalBlend, horizonFill, horizonWeight * 0.25);
 }
 
 vec2 AmbientEnvironmentUvUVE(vec3 direction) {
@@ -419,17 +464,15 @@ vec3 SampleEnvironmentSpecularUVE(vec3 direction, float roughness) {
 }
 
 vec3 SkyReflectionUVE(vec3 direction, float roughness) {
-    // Direction picks the band: overhead, horizon, or the bounce off the ground. A mirror then reads
-    // as a gradient rather than one flat colour, which is the difference between chrome in a box and
-    // chrome under open sky. Roughness pulls it back toward the ambient - a rough surface integrates
-    // over a wide cone, and the diffuse-ish ambient already is that integral, so this avoids
-    // pretending a blurry surface still shows a crisp horizon line.
     float up = clamp(direction.y, -1.0, 1.0);
     vec3 sharp = up >= 0.0
-        ? mix(uSkyReflectionHorizon, uSkyReflectionSky, smoothstep(0.0, 0.30, up))
-        : mix(uSkyReflectionHorizon, uSkyReflectionGround, smoothstep(0.0, 0.22, -up));
+        ? mix(uSkyReflectionHorizon, uSkyReflectionSky, smoothstep(0.0, 0.32, up))
+        : mix(uSkyReflectionHorizon, uSkyReflectionGround, smoothstep(0.0, 0.25, -up));
     float blur = roughness * roughness;
-    vec3 soft = mix(uSkyReflectionSky, uSkyReflectionHorizon, 0.5);
+    float hemi = clamp(up * 0.5 + 0.5, 0.0, 1.0);
+    vec3 softUpper = mix(uSkyReflectionHorizon, uSkyReflectionSky, 0.55);
+    vec3 softLower = mix(uSkyReflectionGround, uSkyReflectionHorizon, 0.55);
+    vec3 soft = mix(softLower, softUpper, hemi);
     return mix(sharp, soft, blur);
 }
 
@@ -448,12 +491,22 @@ vec3 AmbientFromSourceUVE(vec3 normal) {
     return HemisphereAmbientUVE(normal);
 }
 
-// Tier 2.3: the probe is a real cubemap now — one sampler, one texture() call. The face-select
-// if-chain, planar projection, and per-face samplers it replaces are gone (see git history);
-// GPU-side face selection also filters seamlessly across face edges, where the manual math
-// clamped to each face's edge texels (final-look parity passes with the 2D viewport).
-vec3 SampleReflectionProbeUVE(vec3 direction) {
-    return texture(uReflectionProbeCube, direction).rgb;
+// Roughness-aware cubemap probe sampling: mirror surfaces sample the exact reflection vector,
+// while rough surfaces integrate a 5-tap orthonormal cone across the cubemap.
+vec3 SampleReflectionProbeUVE(vec3 direction, float roughness) {
+    vec3 dir = SafeNormalizeUVE(direction);
+    if (roughness <= 0.08) {
+        return texture(uReflectionProbeCube, dir).rgb;
+    }
+    vec3 referenceAxis = abs(dir.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = SafeNormalizeUVE(cross(referenceAxis, dir));
+    vec3 bitangent = cross(dir, tangent);
+    float spread = roughness * roughness * 0.45;
+    return texture(uReflectionProbeCube, dir).rgb * 0.4 +
+           (texture(uReflectionProbeCube, dir + tangent * spread).rgb +
+            texture(uReflectionProbeCube, dir - tangent * spread).rgb +
+            texture(uReflectionProbeCube, dir + bitangent * spread).rgb +
+            texture(uReflectionProbeCube, dir - bitangent * spread).rgb) * 0.15;
 }
 
 float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
@@ -469,7 +522,7 @@ float ReflectionProbeInfluenceUVE(vec3 worldPoint) {
     if (normalizedDistance >= 1.0) {
         return 0.0;
     }
-    return 1.0 - normalizedDistance;
+    return 1.0 - smoothstep(0.0, 1.0, normalizedDistance);
 }
 
 vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
@@ -505,6 +558,11 @@ vec3 ReflectionProbeBoxProjectUVE(vec3 worldOrigin, vec3 worldDirection) {
     return worldHit - uReflectionProbePosition;
 }
 
+float Pow5UVE(float x) {
+    float x2 = x * x;
+    return x2 * x2 * x;
+}
+
 float DistributionGgxUVE(float normalDotHalf, float roughness) {
     float alpha = roughness * roughness;
     float alphaSquared = alpha * alpha;
@@ -513,19 +571,40 @@ float DistributionGgxUVE(float normalDotHalf, float roughness) {
     return alphaSquared / max(kPiUVE * denominator * denominator, kBrdfEpsilonUVE);
 }
 
-float GeometrySchlickGgxUVE(float normalDotDirection, float roughness) {
+// Height-correlated Smith-GGX visibility term V = G / (4 * NdotV * NdotL).
+float VisibilitySmithGGXCorrelatedUVE(float normalDotView, float normalDotLight, float roughness) {
     float alpha = roughness * roughness;
-    float k = ((alpha + 1.0) * (alpha + 1.0)) * 0.125;
-    return normalDotDirection / max(normalDotDirection * (1.0 - k) + k, kBrdfEpsilonUVE);
-}
-
-float GeometrySmithUVE(float normalDotView, float normalDotLight, float roughness) {
-    return GeometrySchlickGgxUVE(normalDotView, roughness) *
-           GeometrySchlickGgxUVE(normalDotLight, roughness);
+    float alpha2 = alpha * alpha;
+    float ggxV = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alpha2) + alpha2);
+    float ggxL = normalDotView * sqrt(normalDotLight * normalDotLight * (1.0 - alpha2) + alpha2);
+    return 0.5 / max(ggxV + ggxL, kBrdfEpsilonUVE);
 }
 
 vec3 FresnelSchlickUVE(float halfDotView, vec3 baseReflectance) {
-    return baseReflectance + (vec3(1.0) - baseReflectance) * pow(1.0 - halfDotView, 5.0);
+    return baseReflectance + (vec3(1.0) - baseReflectance) * Pow5UVE(clamp(1.0 - halfDotView, 0.0, 1.0));
+}
+
+// Analytic split-sum GGX environment BRDF approximation (scale, bias).
+vec2 EnvBrdfApproxUVE(float roughness, float normalDotView) {
+    const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+    const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * normalDotView)) * r.x + r.y;
+    return clamp(vec2(-1.04, 1.04) * a004 + r.zw, vec2(0.0), vec2(1.0));
+}
+
+// Screen-space microfacet normal-variance filtering to suppress sub-pixel specular aliasing on
+// curved geometry, thin bevels, and high-frequency normal maps.
+float ApplyGeometricSpecularAAUVE(vec3 geometricNormal, vec3 shadingNormal, float perceptualRoughness) {
+    vec3 dGeoU = dFdx(geometricNormal);
+    vec3 dGeoV = dFdy(geometricNormal);
+    vec3 dShadU = dFdx(shadingNormal);
+    vec3 dShadV = dFdy(shadingNormal);
+    float variance = 0.20 * (dot(dGeoU, dGeoU) + dot(dGeoV, dGeoV)) +
+                     0.10 * (dot(dShadU, dShadU) + dot(dShadV, dShadV));
+    float kernelRoughness2 = min(2.0 * variance, 0.18);
+    float r2 = perceptualRoughness * perceptualRoughness;
+    return clamp(sqrt(r2 + kernelRoughness2), 0.04, 1.0);
 }
 
 float SampleCascadeDepthUVE(int cascadeIndex, vec2 texCoord) {
@@ -550,6 +629,16 @@ vec2 CascadeTexelSizeUVE(int cascadeIndex) {
     return 1.0 / max(vec2(sz), vec2(1.0));
 }
 
+ivec2 CascadeMapSizeUVE(int cascadeIndex) {
+    if (cascadeIndex == 0) {
+        return textureSize(uShadowMapTextures[0], 0);
+    }
+    if (cascadeIndex == 1) {
+        return textureSize(uShadowMapTextures[1], 0);
+    }
+    return textureSize(uShadowMapTextures[2], 0);
+}
+
 vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
     if (cascadeIndex == 0) {
         return vLightSpacePositions[0];
@@ -559,6 +648,14 @@ vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
     }
     return vLightSpacePositions[2];
 }
+
+// 16-tap golden-angle Vogel disc for isotropic, clumping-free soft shadow penumbra integration.
+const vec2 kVogelDisk16UVE[16] = vec2[16](
+    vec2( 0.176777,  0.000000), vec2(-0.225967,  0.205764), vec2( 0.034729, -0.393506), vec2( 0.281441,  0.372739),
+    vec2(-0.511329, -0.095890), vec2( 0.430580, -0.355913), vec2(-0.054116,  0.587895), vec2(-0.382775, -0.477944),
+    vec2( 0.677406,  0.118636), vec2(-0.625114,  0.372894), vec2( 0.264935, -0.727892), vec2( 0.140751,  0.798237),
+    vec2(-0.800547, -0.252855), vec2( 0.779871, -0.415022), vec2(-0.357475,  0.848231), vec2(-0.427858, -0.875842)
+);
 
 float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lightDirection, int cascadeIndex) {
     if (abs(lightSpacePosition.w) <= 0.0001) {
@@ -573,71 +670,70 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     }
 
     ivec2 mapSize = cascadeIndex < 0 ? textureSize(uShadowMapTexture, 0)
-                                     : textureSize(uShadowMapTextures[clamp(cascadeIndex, 0, 2)], 0);
+                                     : CascadeMapSizeUVE(cascadeIndex);
     if (mapSize.x <= 1 || mapSize.y <= 1) {
         return 1.0;
     }
 
-    // 0 Hard: one look-up. 1 Soft: a rotated 16-tap Poisson disc a few texels wide. 2 Softest: a
-    // blocker search first, so the penumbra widens with the distance from the caster (sharp where
-    // an object touches the ground, soft further away). The disc's rotation comes from the pixel's
-    // screen position, so it is the same every frame: no shimmer.
     int filterMode = clamp(uShadowPcfKernelRadius, 0, 2);
-    vec2 texelSize = cascadeIndex < 0 ? 1.0 / max(vec2(mapSize), vec2(1.0))
-                                      : CascadeTexelSizeUVE(cascadeIndex);
+    vec2 mapDims = max(vec2(mapSize), vec2(1.0));
+    vec2 texelSize = 1.0 / mapDims;
     float currentDepth = projected.z;
-    float bias = max(uShadowBias * (1.0 - max(dot(normal, lightDirection), 0.0)) * max(uShadowNormalBias, 0.0),
+    float cosTheta = clamp(dot(normal, lightDirection), 0.0, 1.0);
+    float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
+    float bias = max(uShadowBias * mix(0.25, 1.0, sinTheta) * max(uShadowNormalBias, 0.25),
                      uShadowBias * 0.2);
-    float visibleSamples = 0.0;
-    int sampleCount = 0;
+    float compareDepth = currentDepth - bias;
+    float visibleWeight = 0.0;
+    float totalWeight = 0.0;
     if (filterMode == 0) {
         float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, projected.xy).r
                                               : SampleCascadeDepthUVE(cascadeIndex, projected.xy);
-        visibleSamples = currentDepth - bias > sampledDepth ? 0.0 : 1.0;
-        sampleCount = 1;
+        visibleWeight = compareDepth > sampledDepth ? 0.0 : 1.0;
+        totalWeight = 1.0;
     } else {
-        const vec2 poisson[16] = vec2[16](
-            vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725), vec2(-0.09418410, -0.92938870),
-            vec2(0.34495938, 0.29387760), vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
-            vec2(-0.38277543, 0.27676845), vec2(0.97484398, 0.75648379), vec2(0.44323325, -0.97511554),
-            vec2(0.53742981, -0.47373420), vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
-            vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590), vec2(0.19984126, 0.78641367),
-            vec2(0.14383161, -0.14100790));
         float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
         float angle = noise * 6.2831853;
-        mat2 rotation = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+        float cosA = cos(angle);
+        float sinA = sin(angle);
+        mat2 rotation = mat2(cosA, sinA, -sinA, cosA);
         float radius = 2.0;
         if (filterMode == 2) {
+            mat4 lightMat = cascadeIndex < 0 ? uLightSpaceMatrix : uLightSpaceMatrices[clamp(cascadeIndex, 0, 2)];
+            float xyScale = length(vec3(lightMat[0][0], lightMat[1][0], lightMat[2][0]));
+            float zScale = length(vec3(lightMat[0][2], lightMat[1][2], lightMat[2][2]));
+            float depthToXyRatio = (xyScale > 1.0e-5 && zScale > 1.0e-5) ? (0.5 * xyScale / zScale) : 0.5;
             float blockerSum = 0.0;
             float blockers = 0.0;
             for (int i = 0; i < 16; i += 2) {
-                vec2 coord = projected.xy + rotation * poisson[i] * texelSize * 6.0;
-                float depth = cascadeIndex < 0 ? texture(uShadowMapTexture, coord).r : SampleCascadeDepthUVE(cascadeIndex, coord);
-                if (depth < currentDepth - bias) {
+                vec2 coord = projected.xy + rotation * kVogelDisk16UVE[i] * texelSize * 6.0;
+                float depth = cascadeIndex < 0 ? texture(uShadowMapTexture, coord).r
+                                               : SampleCascadeDepthUVE(cascadeIndex, coord);
+                if (depth < compareDepth) {
                     blockerSum += depth;
                     blockers += 1.0;
                 }
             }
             if (blockers > 0.0) {
                 float blocker = blockerSum / blockers;
-                radius = clamp(1.5 + (currentDepth - blocker) * 900.0, 1.5, 8.0);
+                radius = clamp(1.5 + (currentDepth - blocker) * depthToXyRatio * 1800.0, 1.5, 8.0);
             } else {
                 radius = 1.5;
             }
         }
         for (int i = 0; i < 16; ++i) {
-            vec2 sampleCoord = projected.xy + rotation * poisson[i] * texelSize * radius;
+            vec2 offset = kVogelDisk16UVE[i];
+            vec2 sampleCoord = projected.xy + rotation * offset * texelSize * radius;
             float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, sampleCoord).r
                                                   : SampleCascadeDepthUVE(cascadeIndex, sampleCoord);
-            visibleSamples += currentDepth - bias > sampledDepth ? 0.0 : 1.0;
-            ++sampleCount;
+            float tapW = 1.0 - 0.25 * dot(offset, offset);
+            visibleWeight += (compareDepth > sampledDepth ? 0.0 : 1.0) * tapW;
+            totalWeight += tapW;
         }
-        // A gentler edge: the coverage eased, so the penumbra reads as a gradient, not as steps.
-        float coverage = visibleSamples / float(sampleCount);
-        visibleSamples = smoothstep(0.0, 1.0, coverage) * float(sampleCount);
     }
 
-    float factor = mix(1.0, visibleSamples / float(sampleCount), clamp(uShadowOpacity, 0.0, 1.0));
+    float coverage = visibleWeight / max(totalWeight, 1.0e-5);
+    float factor = mix(1.0, coverage, clamp(uShadowOpacity, 0.0, 1.0));
     if (isnan(factor) || isinf(factor)) {
         return 1.0;
     }
@@ -660,8 +756,9 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
     }
 
-    float viewDepth = uOrthographic != 0
-                          ? max(dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward)), 0.0)
+    float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward));
+    float viewDepth = (uOrthographic != 0 || planarDepth > 0.0)
+                          ? max(planarDepth, 0.0)
                           : length(vWorldPosition - uViewPosition);
     int finalCascadeIndex = clamp(uShadowCascadeCount - 1, 0, 2);
     float finalCascadeFarDepth = uShadowCascadeSplits[finalCascadeIndex];
@@ -909,28 +1006,50 @@ float PointShadowFactorUVE(int lightIndex, vec3 normal, vec3 lightPosition, floa
 }
 // One exit point for the colour/alpha pair, so the four debug and unshaded early-outs cannot drift
 // from the lit path on premultiplication. Only the pipeline state decides whether it is needed.
+float LuminanceUVE(vec3 color) {
+    return dot(max(color, vec3(0.0)), vec3(0.2126, 0.7152, 0.0722));
+}
 vec4 ComposeFragmentUVE(vec3 color, float alpha) {
     return vec4(uPremultiplyAlpha != 0 ? color * alpha : color, alpha);
 }
-// One UV set: its scale, offset and triplanar mode.
+vec4 ComposeOutputUVE(vec3 color, float surfaceOpacity, float indirectWeight) {
+    if (uPackIndirectWeightAlpha != 0) {
+        return vec4(color, clamp(indirectWeight, 0.0, 1.0));
+    }
+    return ComposeFragmentUVE(color, surfaceOpacity);
+}
+// One UV set: planar 2D coordinates or normal-weighted triplanar projection.
 struct UvSetUVE {
     vec2 uv;
     int triplanar;
-    vec3 position;
+    vec2 uvX;
+    vec2 uvY;
+    vec2 uvZ;
     vec3 weights;
+    vec3 triNormal;
 };
 UvSetUVE MakeUvSetUVE(vec3 scale, vec3 offset, int triplanar, float sharpness) {
     UvSetUVE set;
     set.triplanar = triplanar;
     set.uv = vTexCoord * scale.xy + offset.xy;
-    set.position = vec3(0.0);
-    set.weights = vec3(0.0);
+    set.uvX = set.uv;
+    set.uvY = set.uv;
+    set.uvZ = set.uv;
+    set.weights = vec3(0.0, 1.0, 0.0);
+    set.triNormal = vec3(0.0, 1.0, 0.0);
     if (triplanar != 0) {
         vec3 position = triplanar == 2 ? vWorldPosition : vObjectPosition;
-        vec3 normal = triplanar == 2 ? vWorldNormal : vObjectNormal;
-        set.position = position * vec3(scale.x, scale.y, scale.x) + offset;
-        vec3 weights = pow(abs(normal), vec3(max(sharpness, 0.001)));
-        set.weights = weights / max(dot(weights, vec3(1.0)), 0.00001);
+        vec3 n = SafeNormalizeUVE(triplanar == 2 ? vWorldNormal : vObjectNormal);
+        set.triNormal = n;
+        vec3 weights = pow(max(abs(n), vec3(1.0e-4)), vec3(max(sharpness, 0.001)));
+        set.weights = weights / max(dot(weights, vec3(1.0)), 1.0e-5);
+        // Per-plane 2D projection with consistent handedness before applying scale and offset.
+        vec2 pX = vec2(n.x < 0.0 ? -position.z : position.z, -position.y);
+        vec2 pY = vec2(position.x, n.y < 0.0 ? -position.z : position.z);
+        vec2 pZ = vec2(n.z < 0.0 ? -position.x : position.x, -position.y);
+        set.uvX = pX * scale.xy + offset.xy;
+        set.uvY = pY * scale.xy + offset.xy;
+        set.uvZ = pZ * scale.xy + offset.xy;
     }
     return set;
 }
@@ -938,12 +1057,36 @@ vec4 SampleUvSetUVE(sampler2D map, UvSetUVE set) {
     if (set.triplanar == 0) {
         return texture(map, set.uv);
     }
-    // Godot's triplanar: the three planar projections, each weighted by how much the surface faces it.
-    vec4 samples = vec4(0.0);
-    samples += texture(map, set.position.zy * vec2(1.0, -1.0)) * set.weights.x;
-    samples += texture(map, set.position.xz) * set.weights.y;
-    samples += texture(map, set.position.xy * vec2(1.0, -1.0)) * set.weights.z;
-    return samples;
+    // Three axis-aligned planar projections blended by surface normal orientation.
+    return texture(map, set.uvX) * set.weights.x +
+           texture(map, set.uvY) * set.weights.y +
+           texture(map, set.uvZ) * set.weights.z;
+}
+vec3 SampleTriplanarNormalUVE(sampler2D normalMap, UvSetUVE set, float normalScale, int flipGreen) {
+    vec3 tX = texture(normalMap, set.uvX).xyz * 2.0 - 1.0;
+    vec3 tY = texture(normalMap, set.uvY).xyz * 2.0 - 1.0;
+    vec3 tZ = texture(normalMap, set.uvZ).xyz * 2.0 - 1.0;
+    if (flipGreen != 0) {
+        tX.y = -tX.y;
+        tY.y = -tY.y;
+        tZ.y = -tZ.y;
+    }
+    tX.xy *= normalScale;
+    tY.xy *= normalScale;
+    tZ.xy *= normalScale;
+    vec3 n = set.triNormal;
+    float sX = n.x < 0.0 ? -1.0 : 1.0;
+    float sY = n.y < 0.0 ? -1.0 : 1.0;
+    float sZ = n.z < 0.0 ? -1.0 : 1.0;
+    // Whiteout triplanar normal blend preserving the geometric normal on flat normal maps.
+    vec3 nX = vec3(n.x * tX.z, n.y - tX.y, n.z + tX.x * sX);
+    vec3 nY = vec3(n.x + tY.x, n.y * tY.z, n.z + tY.y * sY);
+    vec3 nZ = vec3(n.x + tZ.x * sZ, n.y - tZ.y, n.z * tZ.z);
+    vec3 blended = nX * set.weights.x + nY * set.weights.y + nZ * set.weights.z;
+    if (set.triplanar == 1) {
+        blended = mat3(vNormalAxisX, vNormalAxisY, vNormalAxisZ) * blended;
+    }
+    return SafeNormalizeUVE(blended);
 }
 // One map read its own way: its UV set, tiling and offset, then the channel, invert and strength
 // (strength 0 is `neutral`: what the material looks like without the map).
@@ -951,7 +1094,9 @@ vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 
     UvSetUVE set = control.w > 0.5 ? uv2 : uv1;
     vec2 tiling = vec2(1.0) + transform.xy;
     set.uv = set.uv * tiling + transform.zw;
-    set.position = set.position * vec3(tiling.x, tiling.y, tiling.x) + vec3(transform.z, transform.w, transform.z);
+    set.uvX = set.uvX * tiling + transform.zw;
+    set.uvY = set.uvY * tiling + transform.zw;
+    set.uvZ = set.uvZ * tiling + transform.zw;
     vec4 value = SampleUvSetUVE(map, set);
     int channel = int(control.x + 0.5);
     if (channel >= 1) {
@@ -966,7 +1111,6 @@ vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 
 void main() {
     UvSetUVE uv1 = MakeUvSetUVE(vec3(uUvScale.xy, uUvScale.x), uUvOffset, uUv1Triplanar, uUv1TriplanarSharpness);
     UvSetUVE uv2 = MakeUvSetUVE(uUv2Scale, uUv2Offset, uUv2Triplanar, uUv2TriplanarSharpness);
-    vec2 uv = uv1.uv;
     vec4 albedoSample = ReadMapUVE(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
@@ -979,34 +1123,42 @@ void main() {
     float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
     float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
     if (uShadingMode == 1 || uUnshaded != 0) {
-        FragColor = ComposeFragmentUVE(albedo, surfaceOpacity);
+        FragColor = ComposeOutputUVE(albedo, surfaceOpacity, 0.0);
         return;
     }
     if (uShadingMode == 2) {
-        FragColor = ComposeFragmentUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity);
+        FragColor = ComposeOutputUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
         return;
     }
     float ambientOcclusion = mix(1.0, ReadMapUVE(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
-    vec3 normal = SafeNormalizeUVE(vWorldNormal);
+    vec3 geometricNormal = SafeNormalizeUVE(vWorldNormal);
     // A few legacy/direct RHI callers do not provide a usable normal attribute. Keep those
     // materials lit instead of allowing a zero vector to poison the tangent frame and BRDF.
-    if (dot(normal, normal) <= kBrdfEpsilonUVE * kBrdfEpsilonUVE) {
-        normal = vec3(0.0, 0.0, 1.0);
+    if (dot(geometricNormal, geometricNormal) <= kBrdfEpsilonUVE * kBrdfEpsilonUVE) {
+        geometricNormal = vec3(0.0, 0.0, 1.0);
     }
-    vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
-    if (dot(tangent, tangent) <= 0.00000001) {
-        vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-        tangent = cross(fallbackAxis, normal);
+    vec3 normal = geometricNormal;
+    if (uv1.triplanar != 0) {
+        normal = SampleTriplanarNormalUVE(uNormalTexture, uv1, uNormalScale, uNormalFlipGreen);
+    } else {
+        vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
+        if (dot(tangent, tangent) <= 0.00000001) {
+            vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+            tangent = cross(fallbackAxis, normal);
+        }
+        tangent = SafeNormalizeUVE(tangent);
+        vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
+        bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
+        vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+        if (uNormalFlipGreen != 0) {
+            tangentSpaceNormal.y = -tangentSpaceNormal.y;
+        }
+        tangentSpaceNormal.xy *= uNormalScale;
+        normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
     }
-    tangent = SafeNormalizeUVE(tangent);
-    vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
-    bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-    vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
-    tangentSpaceNormal.xy *= uNormalScale;
-    normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
 
     if (uShadingMode == 4) {
-        FragColor = ComposeFragmentUVE(normal * 0.5 + 0.5, surfaceOpacity);
+        FragColor = ComposeOutputUVE(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
         return;
     }
 
@@ -1024,28 +1176,18 @@ void main() {
 
     vec3 metallicRoughnessSample = ReadMapUVE(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
     float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * metallicRoughnessSample.b, 0.0, 1.0);
-    float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
-    // Ambient, split into diffuse and specular exactly as the direct term is.
-    //
-    // The old ambient was purely diffuse: albedo * ambient * ao. For a dielectric that is roughly
-    // right, but a metal has NO diffuse response at all - its diffuseWeight is (1-F)(1-metallic),
-    // which is zero at metallic 1 - so a metal lit only by ambient came out BLACK. That is the
-    // single most visible way a correct BRDF still looks wrong, and it is why "the PBR looks
-    // broken" usually means "there is no ambient specular".
-    //
-    // Specular ambient comes from the selected source or the strongest captured ReflectionProbe3D
-    // at the eye (six 2D faces, box-projected). Environment-map ambient uses a small equirectangular
-    // cone filter; the legacy Sky source remains the hemisphere approximation.
-    vec3 ambientBaseReflectance = mix(vec3(0.04), albedo, metallic);
-    float normalDotViewAmbient = max(dot(normal, viewDirection), 0.0);
-    // Roughness-aware Fresnel: the standard Schlick term goes to white at grazing angles, which on
-    // a rough surface produces a bright rim that should not be there - the microfacets point in
-    // too many directions to reflect coherently. Clamping the ceiling by (1 - roughness) is the
-    // usual, cheap correction.
+    float rawRoughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * metallicRoughnessSample.g, 0.04, 1.0);
+    float roughness = ApplyGeometricSpecularAAUVE(geometricNormal, normal, rawRoughness);
+    float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
+    float dielectricF0 = 0.16 * dielectricSpec * dielectricSpec;
+    vec3 ambientBaseReflectance = mix(vec3(dielectricF0), albedo, metallic);
+    float normalDotViewAmbient = max(dot(normal, viewDirection), 0.001);
+    vec2 envBrdf = EnvBrdfApproxUVE(roughness, normalDotViewAmbient);
+    vec3 energyCompensation = vec3(1.0) + ambientBaseReflectance * (1.0 / max(envBrdf.x + envBrdf.y, 0.05) - 1.0);
     vec3 ambientFresnel =
         ambientBaseReflectance +
         (max(vec3(1.0 - roughness), ambientBaseReflectance) - ambientBaseReflectance) *
-            pow(1.0 - normalDotViewAmbient, 5.0);
+            Pow5UVE(clamp(1.0 - normalDotViewAmbient, 0.0, 1.0));
     vec3 ambientDiffuseWeight = (vec3(1.0) - ambientFresnel) * (1.0 - metallic);
     vec3 ambientColor = AmbientFromSourceUVE(normal);
     vec3 reflection = reflect(-viewDirection, normal);
@@ -1060,16 +1202,17 @@ void main() {
         float probeWeight = ReflectionProbeInfluenceUVE(vWorldPosition);
         if (probeWeight > 0.0) {
             vec3 sampleDir = ReflectionProbeBoxProjectUVE(vWorldPosition, reflection);
-            vec3 captured = SampleReflectionProbeUVE(sampleDir);
-            specEnv = mix(specEnv, captured, probeWeight * (1.0 - roughness * roughness));
+            vec3 captured = SampleReflectionProbeUVE(sampleDir, roughness);
+            specEnv = mix(specEnv, captured, probeWeight);
         }
     }
     vec3 ambientDiffuse = ambientDiffuseWeight * albedo * ambientColor;
-    vec3 ambientSpecular = ambientFresnel * specEnv;
-    // AO occludes both terms. Applying it to the diffuse alone is a common shortcut, but a crevice
-    // does not stop reflecting light in a way the sky can reach either.
-    vec3 lighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion +
-                    uEmissiveColor * max(uEmissiveEnergy, 0.0) * ReadMapUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
+    vec3 ambientSpecular = (ambientBaseReflectance * envBrdf.x + vec3(envBrdf.y)) * specEnv * energyCompensation;
+    vec3 indirectLighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion;
+    vec3 emissiveLighting =
+        uEmissiveColor * max(uEmissiveEnergy, 0.0) *
+        ReadMapUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
+    vec3 lighting = indirectLighting + emissiveLighting;
 
     for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
@@ -1089,30 +1232,23 @@ void main() {
             float distanceToLight = max(length(toLight), 0.0001);
             lightDirection = toLight / distanceToLight;
             attenuation = 1.0 / max(distanceToLight * distanceToLight, 0.0001);
-            if (light.range > 0.0 && distanceToLight > light.range) {
-                attenuation = 0.0;
+            if (light.range > 0.0) {
+                float rangeRatio = distanceToLight / light.range;
+                float r2 = rangeRatio * rangeRatio;
+                float window = clamp(1.0 - r2 * r2, 0.0, 1.0);
+                attenuation *= window * window;
             }
             if (light.type == 2) {
-                // Smooth cone falloff rather than a binary in/out test. A hard cutoff produces a
-                // jagged, aliased cone edge that no amount of MSAA fixes, because the edge is in
-                // the shading rather than in the geometry. The inner cone is derived from the
-                // authored outer angle rather than adding a second uniform - one authored angle
-                // stays one authored angle, and the material contract does not change.
                 float cosOuter = cos(radians(light.spotAngleDegrees));
                 float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
                 float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
-                // max() guards the degenerate case where the two cosines coincide (a zero-width
-                // falloff band), which would otherwise divide by zero.
                 float coneFalloff = clamp((coneAlignment - cosOuter) /
                                               max(cosInner - cosOuter, kBrdfEpsilonUVE),
                                           0.0, 1.0);
-                // Squared so the falloff is smooth in perceived brightness rather than linear in
-                // cosine, which reads as a visible ring at the transition.
                 attenuation *= coneFalloff * coneFalloff;
             }
         }
 
-        // AAA PBR standard: Surfaces facing away from the light source receive zero direct light.
         float normalDotLight = max(dot(normal, lightDirection), 0.0);
         float normalDotView = max(dot(normal, viewDirection), 0.001);
         if (normalDotLight <= 0.0 || normalDotView <= 0.0 || attenuation <= 0.0) {
@@ -1122,12 +1258,11 @@ void main() {
         vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
         float normalDotHalf = max(dot(normal, halfDirection), 0.0);
         float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
-        vec3 baseReflectance = mix(vec3(0.04), albedo, metallic);
+        vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
         vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
         float distribution = DistributionGgxUVE(normalDotHalf, roughness);
-        float geometry = GeometrySmithUVE(normalDotView, normalDotLight, roughness);
-        vec3 specular = (distribution * geometry * fresnel) /
-                        max(4.0 * normalDotView * normalDotLight, kBrdfEpsilonUVE) * max(light.specular, 0.0);
+        float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+        vec3 specular = (distribution * visibility * fresnel) * energyCompensation * max(light.specular, 0.0);
         vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
         vec3 diffuse = diffuseWeight * albedo / kPiUVE;
         vec3 radiance = light.color * light.intensity * attenuation;
@@ -1153,10 +1288,8 @@ void main() {
         }
     }
 
-    // Safe baseline ambient fill so unlit back-faces or scenes without an explicit sky are never pitch black.
-    // Preserves the accumulated PBR direct lighting and highlights instead of discarding them.
-    vec3 baselineAmbient = max(ambientColor, vec3(0.04)) * albedo * ambientOcclusion;
-    vec3 finalColor = max(lighting, baselineAmbient);
-    FragColor = ComposeFragmentUVE(finalColor, surfaceOpacity);
+    vec3 finalColor = max(lighting, vec3(0.0));
+    float indirectWeight = clamp(LuminanceUVE(indirectLighting) / max(LuminanceUVE(finalColor), 1.0e-4), 0.0, 1.0);
+    FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
 }
 #endif

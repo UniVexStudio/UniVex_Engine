@@ -68,21 +68,15 @@ enum class SceneObjectKindUVE : std::uint8_t {
     TwoBoneIK3D,
     /// Character3D marked as the possessed player. Appended so no existing kind's value moves.
     Player3D,
-    /// The first 2D scene node: a textured world-space quad. Appended so no existing
-    /// kind's value moves.
-    Sprite2D,
-    /// The 2D scrolling camera: the view a 2D scene is authored through. Appended so no
-    /// existing kind's value moves.
-    Camera2D,
     /// The whole body solved at once so several limbs can share one answer. Appended so no
     /// existing kind's value moves.
     FullBodyIK3D,
     /// The sky over a scene: colour source, bands, and the panorama they replace. Appended so no
     /// existing kind's value moves.
     Sky,
-    /// Plays Animation Montages (attacks, reloads, emotes) on the character it is under, from its
+    /// Plays Motion Montages (attacks, reloads, emotes) on the character it is under, from its
     /// script. Appended so no existing kind's value moves.
-    MontagePlayer,
+    MontageSequencer,
 };
 
 struct SceneObjectDescriptorUVE final {

@@ -293,11 +293,11 @@ std::vector<BlueprintNodeSpec> buildLibrary() {
   const auto An = BlueprintNodeCategory::Animation, St = BlueprintNodeCategory::State, Bh = BlueprintNodeCategory::Behavior,
              Fx = BlueprintNodeCategory::Effect, Au = BlueprintNodeCategory::Audio;
   add("Animation|Poses", "Sequence Player", "animation clip play", [=] { return mk("Sequence Player", "Animation Sequence", An, H, {I("Sequence", PT::Object, "Idle"), I("Play Rate", PT::Float, "1.0"), I("Loop", PT::Bool, "true")}, {O("Pose", PT::Pose)}); });
-  add("Animation|Poses", "Blend Grid Player", "locomotion speed direction", [=] { return mk("Blend Grid Player", "Blend Grid 2D", An, H, {I("Blend Grid", PT::Object, "Locomotion"), I("X (Direction)", PT::Float, "0.0"), I("Y (Speed)", PT::Float, "0.0")}, {O("Pose", PT::Pose)}); });
+  add("Animation|Poses", "Blend Space Player", "locomotion speed direction", [=] { return mk("Blend Space Player", "Blend Space 2D", An, H, {I("Blend Space", PT::Object, "Locomotion"), I("X (Direction)", PT::Float, "0.0"), I("Y (Speed)", PT::Float, "0.0")}, {O("Pose", PT::Pose)}); });
   add("Animation|Poses", "State Machine Pose", "locomotion states", [=] { return mk("State Machine", "Locomotion", An, H, {}, {O("Pose", PT::Pose)}, "Evaluates the state machine and outputs its pose."); });
   add("Animation|Blend", "Blend Poses by Bool", "switch select", [=] { return mk("Blend Poses by Bool", "", An, H, {I("Active Value", PT::Bool, "false"), I("True Pose", PT::Pose), I("False Pose", PT::Pose), I("Blend Time", PT::Float, "0.2")}, {O("Pose", PT::Pose)}); });
   add("Animation|Blend", "Layered Blend per Bone", "upper body mask additive", [=] { return mk("Layered Blend per Bone", "", An, H, {I("Base Pose", PT::Pose), I("Blend Pose 0", PT::Pose), I("Blend Weight 0", PT::Float, "1.0"), I("Bone Name", PT::Name, "spine_01")}, {O("Pose", PT::Pose)}); });
-  add("Animation|Blend", "Default Slot", "action clip slot", [=] { return mk("Slot 'DefaultSlot'", "Action Clip Slot", An, H, {I("Source", PT::Pose)}, {O("Pose", PT::Pose)}); });
+  add("Animation|Blend", "Default Slot", "motion montage slot", [=] { return mk("Slot 'DefaultSlot'", "Motion Montage Slot", An, H, {I("Source", PT::Pose)}, {O("Pose", PT::Pose)}); });
   add("Animation|Skeletal Control", "Two Bone IK", "foot hand ik", [=] { return mk("Two Bone IK", "Skeletal Control", An, H, {I("Component Pose", PT::Pose), I("Effector Location", PT::Vector, "0,0,0"), I("Joint Target", PT::Vector, "0,50,0"), I("Alpha", PT::Float, "1.0")}, {O("Pose", PT::Pose)}); });
   add("Animation|Skeletal Control", "Modify Bone", "transform rotate bone", [=] { return mk("Transform (Modify) Bone", "Skeletal Control", An, H, {I("Component Pose", PT::Pose), I("Bone Name", PT::Name, "head"), I("Rotation", PT::Vector, "0,0,0"), I("Alpha", PT::Float, "1.0")}, {O("Pose", PT::Pose)}); });
   add("Animation|Output", "Output Pose", "result final", [=] { BlueprintNode n = mk("Output Pose", "Final Animation Pose", An, H, {I("Result", PT::Pose)}, {}); n.inputs[0].required = true; return n; });
@@ -316,7 +316,7 @@ std::vector<BlueprintNodeSpec> buildLibrary() {
   add("Behavior Tree|Composites", "BT Sequence", "and in order", [=] { return mk("Sequence", "Runs children until one fails", Bh, H, {I("Parent", PT::Link)}, {O("Child 0", PT::Link), O("Child 1", PT::Link), O("Child 2", PT::Link)}); });
   add("Behavior Tree|Decorators", "BT Blackboard Check", "decorator condition key", [=] { return mk("Blackboard", "Decorator", Bh, H, {I("Parent", PT::Link), I("Key", PT::Name, "HasTarget"), I("Is Set", PT::Bool, "true")}, {O("Child", PT::Link)}); });
   add("Behavior Tree|Tasks", "BT Move To", "navigate chase", [=] { return mk("Move To", "Task", Bh, H, {I("Parent", PT::Link), I("Target Key", PT::Name, "TargetActor"), I("Acceptable Radius", PT::Float, "120.0")}, {}); });
-  add("Behavior Tree|Tasks", "BT Attack", "melee shoot", [=] { return mk("Attack", "Task", Bh, H, {I("Parent", PT::Link), I("Action Clip", PT::Object, "Melee_01")}, {}); });
+  add("Behavior Tree|Tasks", "BT Attack", "melee shoot", [=] { return mk("Attack", "Task", Bh, H, {I("Parent", PT::Link), I("Motion Montage", PT::Object, "Melee_01")}, {}); });
   add("Behavior Tree|Tasks", "BT Wait", "idle pause", [=] { return mk("Wait", "Task", Bh, H, {I("Parent", PT::Link), I("Duration", PT::Float, "2.0")}, {}); });
   add("Behavior Tree|Tasks", "BT Find Patrol Point", "random location", [=] { return mk("Find Patrol Point", "Task", Bh, H, {I("Parent", PT::Link), I("Radius", PT::Float, "800.0"), I("Result Key", PT::Name, "PatrolPoint")}, {}); });
 
@@ -645,7 +645,11 @@ std::vector<int> BlueprintGraph::selectedIds() const {
 }
 void BlueprintGraph::removeSelected() {
   bool any = false;
-  for (int id : selectedIds()) { removeNode(id); any = true; }
+  for (int id : selectedIds()) {
+    if (nodeLocked && nodeLocked(id)) continue;
+    removeNode(id);
+    any = true;
+  }
   size_t cn = m_comments.size();
   std::erase_if(m_comments, [](const BlueprintComment& c) { return c.selected; });
   any |= cn != m_comments.size();
@@ -934,7 +938,7 @@ std::string BlueprintGraph::serialize(bool selOnly) const {
   if (!selOnly) o << "V\t" << m_pan.x << '\t' << m_pan.y << '\t' << m_zoom << '\n';
   std::set<int> ids;
   for (auto& n : m_nodes) {
-    if (selOnly && !n.selected) continue;
+    if (selOnly && (!n.selected || (nodeLocked && nodeLocked(n.id)))) continue;
     ids.insert(n.id);
     writeNode(o, n);
   }

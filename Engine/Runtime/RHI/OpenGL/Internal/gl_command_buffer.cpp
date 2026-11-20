@@ -672,6 +672,13 @@ void GlCommandBufferUVE::EndRenderPassUVE() {
         m_state->gl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
         m_tempFramebuffer = 0;
     }
+    if (m_state != nullptr && m_state->gl.glBindSampler != nullptr && !m_boundSamplers.empty()) {
+        for (const auto& [slot, samplerHandle] : m_boundSamplers) {
+            static_cast<void>(samplerHandle);
+            m_state->gl.glBindSampler(slot, 0U);
+        }
+        m_boundSamplers.clear();
+    }
     m_insideRenderPass = false;
 }
 
@@ -947,86 +954,77 @@ void GlCommandBufferUVE::BindTextureUVE(TextureHandleUVE texture, std::uint32_t 
     // block-compressed and sRGB textures remain available to samplers only.
     if (m_state->gl.glBindImageTexture != nullptr) {
         const auto* const pipelineRecord = FindCurrentPipelineUVE();
-        if (pipelineRecord != nullptr) {
-            bool programHasImageUniform = false;
-            for (const auto& uniformEntry : pipelineRecord->uniforms) {
-                if (uniformEntry.second.isImageUniform) {
-                    programHasImageUniform = true;
+        if (pipelineRecord != nullptr && pipelineRecord->hasImageUniforms) {
+            GLenum imageFormat = 0;
+            switch (textureIt->second.desc.format) {
+                case TextureFormatUVE::RGBA8Unorm:
+                    // OpenGL does not provide storage-image access to sRGB texture storage.
+                    // Keep sRGB textures available to samplers, but refuse their image-unit
+                    // binding instead of issuing writes that drivers may silently discard.
+                    imageFormat = textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb
+                                      ? 0U
+                                      : GL_RGBA8;
                     break;
-                }
+                case TextureFormatUVE::RGBA16Float:
+                    imageFormat = GL_RGBA16F;
+                    break;
+                case TextureFormatUVE::R8Unorm:
+                    imageFormat = GL_R8;
+                    break;
+                case TextureFormatUVE::RG8Unorm:
+                    imageFormat = GL_RG8;
+                    break;
+                case TextureFormatUVE::R16Float:
+                    imageFormat = GL_R16F;
+                    break;
+                case TextureFormatUVE::RG16Float:
+                    imageFormat = GL_RG16F;
+                    break;
+                case TextureFormatUVE::R32Float:
+                    imageFormat = GL_R32F;
+                    break;
+                case TextureFormatUVE::RG32Float:
+                    imageFormat = GL_RG32F;
+                    break;
+                case TextureFormatUVE::RGBA32Float:
+                    imageFormat = GL_RGBA32F;
+                    break;
+                case TextureFormatUVE::Depth32Float:
+                case TextureFormatUVE::Depth24Stencil8:
+                case TextureFormatUVE::BC1RGB:
+                case TextureFormatUVE::BC3RGBA:
+                case TextureFormatUVE::BC7RGBA:
+                case TextureFormatUVE::ETC2RGB8:
+                case TextureFormatUVE::ETC2RGBA8:
+                case TextureFormatUVE::ASTC4x4RGBA:
+                    imageFormat = 0;
+                    break;
             }
-            if (programHasImageUniform) {
-                GLenum imageFormat = 0;
-                switch (textureIt->second.desc.format) {
-                    case TextureFormatUVE::RGBA8Unorm:
-                        // OpenGL does not provide storage-image access to sRGB texture storage.
-                        // Keep sRGB textures available to samplers, but refuse their image-unit
-                        // binding instead of issuing writes that drivers may silently discard.
-                        imageFormat = textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb
-                                          ? 0U
-                                          : GL_RGBA8;
-                        break;
-                    case TextureFormatUVE::RGBA16Float:
-                        imageFormat = GL_RGBA16F;
-                        break;
-                    case TextureFormatUVE::R8Unorm:
-                        imageFormat = GL_R8;
-                        break;
-                    case TextureFormatUVE::RG8Unorm:
-                        imageFormat = GL_RG8;
-                        break;
-                    case TextureFormatUVE::R16Float:
-                        imageFormat = GL_R16F;
-                        break;
-                    case TextureFormatUVE::RG16Float:
-                        imageFormat = GL_RG16F;
-                        break;
-                    case TextureFormatUVE::R32Float:
-                        imageFormat = GL_R32F;
-                        break;
-                    case TextureFormatUVE::RG32Float:
-                        imageFormat = GL_RG32F;
-                        break;
-                    case TextureFormatUVE::RGBA32Float:
-                        imageFormat = GL_RGBA32F;
-                        break;
-                    case TextureFormatUVE::Depth32Float:
-                    case TextureFormatUVE::Depth24Stencil8:
-                    case TextureFormatUVE::BC1RGB:
-                    case TextureFormatUVE::BC3RGBA:
-                    case TextureFormatUVE::BC7RGBA:
-                    case TextureFormatUVE::ETC2RGB8:
-                    case TextureFormatUVE::ETC2RGBA8:
-                    case TextureFormatUVE::ASTC4x4RGBA:
-                        imageFormat = 0;
-                        break;
-                }
-                // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
-                // sampler-only, matching the Vulkan backend's black-sink fallback.
-                const bool storageAllowed = HasTextureUsageUVE(textureUsage, TextureUsageUVE::Storage);
-                if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U && storageAllowed) {
-                    m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
-                                                   0, GL_READ_WRITE, imageFormat);
+            // Tier 2.3: layered storage images are out of scope — arrays/cubes stay
+            // sampler-only, matching the Vulkan backend's black-sink fallback.
+            const bool storageAllowed = HasTextureUsageUVE(textureUsage, TextureUsageUVE::Storage);
+            if (imageFormat != 0 && textureIt->second.desc.arrayLayers <= 1U && storageAllowed) {
+                m_state->gl.glBindImageTexture(slot, textureIt->second.glTexture, 0, GL_FALSE,
+                                               0, GL_READ_WRITE, imageFormat);
+            } else {
+                // Do not leave a prior command's image binding live when the new sampled
+                // texture cannot legally serve as a storage image.
+                m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
+                if (!storageAllowed) {
+                    UVE_ERROR("GlCommandBufferUVE: texture was created without TextureUsageUVE::Storage; "
+                              "the image unit is left unbound");
+                } else if (textureIt->second.desc.arrayLayers > 1U) {
+                    UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
+                              "storage images in Tier 2.3; the image unit is left unbound");
+                } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
+                    UVE_ERROR("GlCommandBufferUVE: block-compressed textures cannot be bound as storage "
+                              "images; the image unit is left unbound");
+                } else if (textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb) {
+                    UVE_ERROR("GlCommandBufferUVE: sRGB textures cannot be bound as storage images; "
+                              "the image unit is left unbound");
                 } else {
-                    // Do not leave a prior command's image binding live when the new sampled
-                    // texture cannot legally serve as a storage image.
-                    m_state->gl.glBindImageTexture(slot, 0U, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
-                    if (!storageAllowed) {
-                        UVE_ERROR("GlCommandBufferUVE: texture was created without TextureUsageUVE::Storage; "
-                                  "the image unit is left unbound");
-                    } else if (textureIt->second.desc.arrayLayers > 1U) {
-                        UVE_ERROR("GlCommandBufferUVE: array/cubemap textures cannot be bound as "
-                                  "storage images in Tier 2.3; the image unit is left unbound");
-                    } else if (IsTextureFormatCompressedUVE(textureIt->second.desc.format)) {
-                        UVE_ERROR("GlCommandBufferUVE: block-compressed textures cannot be bound as storage "
-                                  "images; the image unit is left unbound");
-                    } else if (textureIt->second.desc.colorSpace == TextureColorSpaceUVE::Srgb) {
-                        UVE_ERROR("GlCommandBufferUVE: sRGB textures cannot be bound as storage images; "
-                                  "the image unit is left unbound");
-                    } else {
-                        UVE_ERROR("GlCommandBufferUVE: depth textures cannot be bound as storage "
-                                  "images; the image unit is left unbound");
-                    }
+                    UVE_ERROR("GlCommandBufferUVE: depth textures cannot be bound as storage "
+                              "images; the image unit is left unbound");
                 }
             }
         }
@@ -1296,18 +1294,33 @@ void GlCommandBufferUVE::DrawIndexedUVE(std::uint32_t indexCount, std::uint32_t 
                   firstIndex, rangeEnd, indexCapacity);
         return;
     }
-    if (indexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
-        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE indexCount exceeds the GLsizei range");
+    if (indexCount == 0U || instanceCount == 0U) {
         return;
     }
-    if (instanceCount > 1) {
-        UVE_WARNING("GlCommandBufferUVE: DrawIndexedUVE instanceCount > 1 is not yet supported - drawing once");
+    if (indexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
+        instanceCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
+        UVE_ERROR("GlCommandBufferUVE: DrawIndexedUVE count exceeds the GLsizei range");
+        return;
     }
     // GL takes a byte offset here, unlike every other API in this engine which speaks indices.
     const auto indexOffsetBytes =
         static_cast<std::uintptr_t>(firstIndex) * static_cast<std::uintptr_t>(sizeof(std::uint32_t));
-    glDrawElements(ToGlDrawModeUVE(pipelineRecord->topology), static_cast<GLsizei>(indexCount),
-                     GL_UNSIGNED_INT, reinterpret_cast<const void*>(indexOffsetBytes));
+    const GLenum drawMode = ToGlDrawModeUVE(pipelineRecord->topology);
+    if (instanceCount > 1U) {
+        if (m_state->gl.glDrawElementsInstanced != nullptr) {
+            m_state->gl.glDrawElementsInstanced(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
+                                                reinterpret_cast<const void*>(indexOffsetBytes),
+                                                static_cast<GLsizei>(instanceCount));
+        } else {
+            UVE_WARNING("GlCommandBufferUVE: DrawIndexedUVE instanceCount > 1 requires "
+                        "glDrawElementsInstanced - drawing once");
+            glDrawElements(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
+                           reinterpret_cast<const void*>(indexOffsetBytes));
+        }
+    } else {
+        glDrawElements(drawMode, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT,
+                       reinterpret_cast<const void*>(indexOffsetBytes));
+    }
     UVE_GL_CHECK_ERROR_UVE("DrawIndexedUVE");
 }
 
@@ -1381,25 +1394,37 @@ void GlCommandBufferUVE::DrawUVE(std::uint32_t vertexCount, std::uint32_t instan
             UVE_ERROR("GlCommandBufferUVE: DrawUVE has no valid bound vertex buffer");
             return;
         }
-        if (m_currentVertexStride == 0U ||
+        if (m_currentVertexStride > 0U &&
             static_cast<std::uint64_t>(vertexCount) >
                 vertexBufferIt->second.sizeBytes / static_cast<std::uint64_t>(m_currentVertexStride)) {
             UVE_ERROR("GlCommandBufferUVE: DrawUVE vertexCount exceeds the bound vertex buffer");
             return;
         }
     }
-    if (vertexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
-        UVE_ERROR("GlCommandBufferUVE: DrawUVE vertexCount exceeds the GLsizei range");
+    if (vertexCount == 0U || instanceCount == 0U) {
         return;
     }
-    if (instanceCount > 1) {
-        UVE_WARNING("GlCommandBufferUVE: DrawUVE instanceCount > 1 is not yet supported - drawing once");
+    if (vertexCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max()) ||
+        instanceCount > static_cast<std::uint32_t>(std::numeric_limits<GLsizei>::max())) {
+        UVE_ERROR("GlCommandBufferUVE: DrawUVE count exceeds the GLsizei range");
+        return;
     }
     const auto* const drawPipelineRecord = FindCurrentPipelineUVE();
     const GLenum drawMode = drawPipelineRecord != nullptr
                                 ? ToGlDrawModeUVE(drawPipelineRecord->topology)
                                 : GL_TRIANGLES;
-    glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
+    if (instanceCount > 1U) {
+        if (m_state->gl.glDrawArraysInstanced != nullptr) {
+            m_state->gl.glDrawArraysInstanced(drawMode, 0, static_cast<GLsizei>(vertexCount),
+                                              static_cast<GLsizei>(instanceCount));
+        } else {
+            UVE_WARNING("GlCommandBufferUVE: DrawUVE instanceCount > 1 requires glDrawArraysInstanced "
+                        "- drawing once");
+            glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
+        }
+    } else {
+        glDrawArrays(drawMode, 0, static_cast<GLsizei>(vertexCount));
+    }
     UVE_GL_CHECK_ERROR_UVE("DrawUVE");
 }
 

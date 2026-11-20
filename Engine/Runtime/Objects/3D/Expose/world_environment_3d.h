@@ -164,6 +164,10 @@ struct WorldEnvironmentFrameUVE final {
     float lutContribution = 1.0F;
     std::string lutAssetPath;
     bool hasEnvironment = false;
+    /// True when an authored WorldEnvironment3D or explicit preview environment supplies post-process
+    /// overrides (bloom, SSAO, exposure, grading). Standalone Sky3D sets `hasEnvironment` for sky
+    /// rendering without flipping this flag, so project-level post-processing stays active.
+    bool hasPostProcessingOverride = false;
     std::string skyAssetPath;
 
     /// True when the sky for this frame comes from a Sky object's scattering model instead of the

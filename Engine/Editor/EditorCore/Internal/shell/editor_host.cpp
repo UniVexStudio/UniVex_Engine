@@ -836,7 +836,7 @@ bool EditorHostUVE::InTargetScopeUVE(const WindowUVE& source, const WindowUVE& t
 }
 
 EditorHostUVE::WindowUVE* EditorHostUVE::DragTargetUVE(const WindowUVE& source, prism::Vec2& local) const {
-    // A PRISM drag (a Content Browser item, say) can end over another of the editor's windows. The
+    // A PRISM drag (a Asset Table item, say) can end over another of the editor's windows. The
     // OS keeps sending the pointer to the window the press started in; GLFW_HOVERED asks the OS which
     // window is really under the pointer (its own stacking, not PRISM's order).
     if (!m_app || !m_app->isDragging() || source.window == nullptr || glfwGetWindowAttrib(source.window, GLFW_HOVERED) != 0) {

@@ -20,10 +20,10 @@
 #include <variant>
 #include <vector>
 
-#include "uvscript_object_host.h"
+#include "blueprint_object_host.h"
 #include "i_entity_manager.h"
-#include "uvscript_compiler.h"
-#include "uvscript_instance.h"
+#include "blueprint_compiler.h"
+#include "blueprint_instance.h"
 
 namespace UVE::Editor {
 namespace {
@@ -67,26 +67,26 @@ std::vector<EditorUVE::ScriptExportRowUVE> EditorUVE::GetSelectedScriptExportsUV
     if (!source.has_value()) {
         return {};
     }
-    Core::UVScriptObjectHostUVE host(entityManager, nullptr, entity);
-    const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(*source, host);
+    Core::BlueprintObjectHostUVE host(entityManager, nullptr, entity);
+    const Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(*source, host);
     if (!compiled.IsSuccessUVE()) {
         return {};
     }
     // The defaults are whatever the field initializers produce, so a throwaway instance runs them.
-    const UVScript::ScriptInstanceUVE defaults(compiled.program, host);
+    const Blueprint::ScriptInstanceUVE defaults(compiled.program, host);
     std::vector<ScriptExportRowUVE> rows;
-    for (const UVScript::FieldInfoUVE& field : UVScript::GetProgramFieldsUVE(*compiled.program)) {
-        if (field.kind != UVScript::FieldKindUVE::Export) {
+    for (const Blueprint::FieldInfoUVE& field : Blueprint::GetProgramFieldsUVE(*compiled.program)) {
+        if (field.kind != Blueprint::FieldKindUVE::Export) {
             continue;
         }
         ScriptExportRowUVE row;
         row.name = field.name;
         row.type = field.type;
-        const std::optional<UVScript::ValueUVE> initial = defaults.GetFieldUVE(field.name);
-        row.defaultText = initial.has_value() ? UVScript::FormatValueUVE(*initial) : std::string{};
+        const std::optional<Blueprint::ValueUVE> initial = defaults.GetFieldUVE(field.name);
+        row.defaultText = initial.has_value() ? Blueprint::FormatValueUVE(*initial) : std::string{};
         row.valueText = row.defaultText;
         if (const auto stored = script.exportValues.find(field.name);
-            stored != script.exportValues.end() && UVScript::ParseValueTextUVE(stored->second, field.type).has_value()) {
+            stored != script.exportValues.end() && Blueprint::ParseValueTextUVE(stored->second, field.type).has_value()) {
             row.valueText = stored->second;
             row.overridden = true;
         }
@@ -112,12 +112,12 @@ bool EditorUVE::SetSelectedScriptExportUVE(const std::string& name, std::optiona
     std::map<std::string, std::string> values =
         m_services->GetEntityManagerUVE().GetComponentUVE<Scene::ScriptComponentUVE>(m_selectedEntity).exportValues;
     if (text.has_value()) {
-        const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(*text, row->type);
+        const std::optional<Blueprint::ValueUVE> value = Blueprint::ParseValueTextUVE(*text, row->type);
         if (!value.has_value()) {
             return false;
         }
         // Stored in the canonical form, so "1" for a float reads back as "1.0".
-        values.insert_or_assign(name, UVScript::FormatValueUVE(*value));
+        values.insert_or_assign(name, Blueprint::FormatValueUVE(*value));
     } else {
         values.erase(name);
     }

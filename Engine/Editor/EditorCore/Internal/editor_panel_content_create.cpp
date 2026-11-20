@@ -222,7 +222,7 @@ void EditorUVE::BeginContentRenameUVE(const std::filesystem::path& relativePath)
 
 bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirectory) {
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_contentBrowserDirectory) : targetDirectory;
+    const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
 
 #if defined(_WIN32)
     HMODULE comdlg = LoadLibraryA("comdlg32.dll");
@@ -287,7 +287,7 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
         return false;
     }
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_contentBrowserDirectory) : targetDirectory;
+    const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
     std::error_code ec;
     std::filesystem::create_directories(destDir, ec);
 
@@ -321,7 +321,7 @@ void EditorUVE::OpenCreateShaderModalUVE(const std::filesystem::path& targetDire
     m_createShaderModal = CreateShaderModalStateUVE{};
     m_createShaderModal.isOpen = true;
     m_createShaderModal.openRequested = true;
-    m_createShaderModal.targetDirectory = targetDirectory.empty() ? m_contentBrowserDirectory : targetDirectory;
+    m_createShaderModal.targetDirectory = targetDirectory.empty() ? m_assetTableDirectory : targetDirectory;
     m_createShaderModal.shaderTypeIndex = 0;
     m_createShaderModal.onShaderCreated = std::move(onCreated);
 

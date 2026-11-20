@@ -15,6 +15,10 @@ namespace UVE::CommandLine {
 class ICommandLineUVE;
 }
 
+namespace UVE::Render {
+class IRenderer3DUVE;
+}
+
 namespace UVE::Core {
 
 /// Ids of settings registered by the engine. Most are project settings overriding fields of
@@ -108,11 +112,10 @@ inline constexpr std::string_view kDefaultPlayerEntityUVE = "game.player.default
 inline constexpr std::string_view kHeadlessUVE = "headless";
 } // namespace EngineProjectSettingIdUVE
 
-/// The sets of 32 layers a project names: 3D physics layers, 2D physics layers, render layers,
+/// The sets of 32 layers a project names: 3D physics layers, render layers,
 /// navigation layers, and avoidance layers.
 enum class LayerSetUVE {
     Physics,
-    Physics2D,
     Render,
     Navigation,
     Avoidance,
@@ -162,5 +165,10 @@ void ApplyEngineSettingsUVE(const Config::SettingsStackUVE& settings, EngineConf
 /// Compatibility convenience for a project-only stack: copies every setting `document` stores into
 /// its matching field, leaving application-selected fields alone when the project does not set them.
 void ApplyEngineProjectSettingsUVE(const Config::SettingsDocumentUVE& document, EngineConfigUVE& config);
+
+/// Pushes the runtime-mutable rendering settings from `config` (clear color, post-processing,
+/// SSAO, contact shadows, SSR, shadow bias/atlas, culling, and default material samplers) onto
+/// `renderer`. Used both at renderer construction and when saving Project Settings live in Editor.
+void ApplyEngineConfigToRenderer3DUVE(const EngineConfigUVE& config, Render::IRenderer3DUVE& renderer);
 
 } // namespace UVE::Core

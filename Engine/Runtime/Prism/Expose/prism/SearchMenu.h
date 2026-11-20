@@ -11,7 +11,7 @@ namespace prism {
 //   - Typing filters every item of every group into one list, best matches first, each with its group
 //     on the right. Up / Down / Enter pick, Esc closes.
 // Separators and disabled items are shown as they are; disabled items cannot be picked.
-// `flyouts` (the standard Content Browser Add): with no query, each top-level submenu is one row that opens beside
+// `flyouts` (the standard Asset Table Add): with no query, each top-level submenu is one row that opens beside
 // the menu instead of a group of rows; MenuItem::Header rows title the sections ("GET", "CREATE").
 void showSearchMenu(std::vector<MenuItem> items, Rect anchor, PopupPlacement placement, std::string placeholder = "Search",
                     bool flyouts = false);

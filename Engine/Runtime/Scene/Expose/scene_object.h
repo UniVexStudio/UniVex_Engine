@@ -14,7 +14,6 @@
 #include "animation_sequencer_component.h"
 #include "area_component.h"
 #include "audio_source_component.h"
-#include "camera_2d_component.h"
 #include "camera_component.h"
 #include "collider_component.h"
 #include "light_component.h"
@@ -23,7 +22,6 @@
 #include "primitive_mesh_component.h"
 #include "rigid_3d_component.h"
 #include "script_component.h"
-#include "sprite_2d_component.h"
 #include "transform_component.h"
 #include "entity.h"
 #include "scene_object_registry.h"
@@ -36,4 +34,3 @@
 // header or in the editor's creation switch.
 #include "all_objects_3d.h"
 #include "all_objects_canvas.h"
-#include "all_objects_2d.h"

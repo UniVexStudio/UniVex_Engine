@@ -32,17 +32,17 @@ public:
     [[nodiscard]] std::uintptr_t GetObjectCardIconTextureIdUVE(Scene::Objects::SceneObjectKindUVE kind) const noexcept;
     /// The icon of an object palette category, by its display name ("Physics"). 0 when unknown.
     [[nodiscard]] std::uintptr_t GetObjectCategoryIconTextureIdUVE(std::string_view category) const noexcept;
-    /// The icon of a Content Browser type, by its ContentBrowserItemTypeUVE label (editor_uve.h),
+    /// The icon of a Asset Table type, by its AssetTableItemTypeUVE label (editor_uve.h),
     /// e.g. "Mesh" or "Folder", or "folder_open" for an expanded folder. 0 when unknown.
     [[nodiscard]] std::uintptr_t GetContentTypeIconTextureIdUVE(std::string_view typeId) const noexcept;
-    /// The studio card icon of a Content Browser type (used in thumbnails and +Add).
+    /// The studio card icon of a Asset Table type (used in thumbnails and +Add).
     [[nodiscard]] std::uintptr_t GetContentTypeCardIconTextureIdUVE(std::string_view typeId) const noexcept;
     /// The icon of an ECS component by component type name ("component_transform", "Transform", etc.).
     [[nodiscard]] std::uintptr_t GetComponentIconTextureIdUVE(std::string_view componentId) const noexcept;
 
     /// Uploads an arbitrary RGBA8 image (e.g. a decoded Asset::TextureAssetUVE) as a standalone GL
     /// texture, for editor-owned dynamic content the fixed baked-icon set above doesn't cover
-    /// (e.g. Content Browser thumbnails). Returns 0 on failure. Does not depend on instance state:
+    /// (e.g. Asset Table thumbnails). Returns 0 on failure. Does not depend on instance state:
     /// callers manage the returned id's lifetime themselves via DeleteDynamicTextureUVE().
     [[nodiscard]] static std::uintptr_t UploadDynamicTextureUVE(const std::uint8_t* pixels, int width,
                                                                  int height) noexcept;

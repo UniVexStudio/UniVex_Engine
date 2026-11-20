@@ -26,7 +26,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "animation_montage_asset.h"
+#include "motion_montage_asset.h"
 #include "animation_clip_asset.h"
 #include "asset_handle.h"
 #include "i_asset_bundle.h"
@@ -55,8 +55,8 @@
 #include "engine_state.h"
 #include "frame_stats.h"
 #include "dynamic_render_resolution.h"
-#include "uvscript_object_host.h"
-#include "uvscript_instance.h"
+#include "blueprint_object_host.h"
+#include "blueprint_instance.h"
 #include "engine_version.h"
 #include "i_logger.h"
 #include "i_event_system.h"
@@ -90,6 +90,8 @@
 #include "i_entity_manager.h"
 #include "skeleton_3d.h"
 #include "particle_runtime.h"
+#include "vfx_draw_list.h"
+#include "vfx_world.h"
 #include "i_prefab_system.h"
 #include "i_scene_graph.h"
 #include "i_scene_serializer.h"
@@ -319,7 +321,7 @@ public:
 
     /// Test/diagnostic hook: the `.uvs` instance running on `entity`, or null when it has none
     /// (no script, not compiled yet, or compile failed).
-    [[nodiscard]] UVScript::ScriptInstanceUVE* FindUVScriptInstanceUVE(Scene::EntityUVE entity) noexcept;
+    [[nodiscard]] Blueprint::ScriptInstanceUVE* FindUVScriptInstanceUVE(Scene::EntityUVE entity) noexcept;
 
     /// Release builds: writes the C++ for every distinct `.uvs` program running right now into
     /// `directory` (`<script>_<fingerprint>.uvs.cpp`), compiled against each object's real host, so
@@ -358,6 +360,8 @@ public:
     [[nodiscard]] const EngineConfigUVE& GetConfigUVE() const noexcept { return m_config; }
     [[nodiscard]] const FrameStatsUVE& GetFrameStatsUVE() const noexcept;
     [[nodiscard]] Scene::ParticleRuntimeSnapshotUVE GetParticleRuntimeSnapshotUVE() const;
+    [[nodiscard]] VFX::VfxWorldUVE& GetVfxWorldUVE() noexcept;
+    [[nodiscard]] const VFX::VfxWorldUVE& GetVfxWorldUVE() const noexcept;
 
     /// Requests normal fixed simulation or a held simulation state. Frame maintenance and rendering
     /// continue in both modes. Returns false outside EngineStateUVE::Running.
@@ -554,6 +558,10 @@ private:
     /// runtime, auto-emits from each ticking emitter's world pose, simulates one frame under
     /// configured gravity, and leaves renderer extraction read-only.
     void SyncParticleRuntimeUVE();
+    /// Reconciles ParticleEmitterComponentUVE entities that reference a `.uvfx` particle system
+    /// asset with VfxWorldUVE, updates attached owner poses and velocities, polls `.uvfx` hot
+    /// reload when enabled, and steps VfxWorldUVE simulation when not paused.
+    void SyncVfxRuntimeUVE();
     /// Ages every decal by the step's simulated seconds and queues one Decal3DExpiredEventUVE per
     /// decal that runs out. Lifetime is simulation time, so a paused game freezes decals and the
     /// same scene expires the same decals on the same step.
@@ -948,6 +956,17 @@ private:
     std::unique_ptr<Scene::ParticleRuntimeUVE> m_particleRuntime;
     /// Unused fraction of a particle per emitter, so a rate below the frame rate still emits.
     std::unordered_map<Scene::EntityUVE, float> m_particleEmitRemainder;
+    std::unique_ptr<VFX::VfxWorldUVE> m_vfxWorld;
+    Render::VfxDrawListUVE m_vfxDrawList;
+    struct VfxEntityInstanceStateUVE final {
+        VFX::VfxHandleUVE handle{};
+        std::string systemAssetPath;
+        std::uint32_t seed = 0U;
+        Math::Vector3UVE lastWorldPosition{};
+        bool hasLastWorldPosition = false;
+        bool wasEmitting = false;
+    };
+    std::unordered_map<Scene::EntityUVE, VfxEntityInstanceStateUVE> m_vfxEntityInstances;
 
     /// Baked navmeshes by region entity, and one steering state per agent entity. Owned here so the
     /// caches live exactly as long as the session that built them; a scene teardown clears them
@@ -986,9 +1005,9 @@ private:
         std::string source;
         /// The object's export values it started with; changing them restarts the script.
         std::map<std::string, std::string> exportValues;
-        std::shared_ptr<const UVScript::ProgramUVE> program;
-        std::unique_ptr<UVScriptObjectHostUVE> host;
-        std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
+        std::shared_ptr<const Blueprint::ProgramUVE> program;
+        std::unique_ptr<BlueprintObjectHostUVE> host;
+        std::unique_ptr<Blueprint::ScriptInstanceUVE> instance;
         bool readyRaised = false;
     };
     std::unordered_map<Scene::EntityUVE, UVScriptSlotUVE> m_uvScripts;
@@ -1028,12 +1047,12 @@ private:
     /// release before the manager is destroyed; clips no object references any more are dropped
     /// each frame.
     std::unordered_map<std::uint64_t, Asset::AssetHandleUVE<Asset::AnimationClipAssetUVE>> m_animationClips;
-    /// The Animation Montages MontagePlayers play, by asset guid; reread when the file changes (the
-    /// Montage Editor saves while the game runs in the editor).
+    /// The Motion Montages MontageSequencers play, by asset guid; reread when the file changes (the
+    /// Motion Montage Editor saves while the game runs in the editor).
     struct MontageCacheEntryUVE final {
         std::filesystem::path path;
         std::filesystem::file_time_type written{};
-        std::optional<Asset::AnimationMontageAssetUVE> montage;
+        std::optional<Asset::MotionMontageAssetUVE> montage;
     };
     std::unordered_map<std::uint64_t, MontageCacheEntryUVE> m_animationMontages;
     /// IK on a skeleton nothing animates (an editor authoring a rig, a prop with no clip). A modifier blends over

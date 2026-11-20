@@ -107,7 +107,7 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
     using Workspace = EditorWorkspaceUVE;
     using RightTab = EditorRightPanelTabUVE;
     using BottomDock = EditorBottomDockUVE;
-    using ViewMode = EditorUVE::ContentBrowserViewModeUVE;
+    using ViewMode = EditorUVE::AssetTableViewModeUVE;
     const EditorTransformSnappingSettingsUVE snapping{};
     const ViewportOverlayStateUVE overlay{};
     const ColorPickerPreferencesUVE picker{};
@@ -158,28 +158,28 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
              return true;
          }},
         {HiddenUVE(Config::MakeEnumSettingUVE(
-             IdUVE(Id::kContentBrowserViewModeUVE), static_cast<std::int64_t>(ViewMode::SmallTiles),
+             IdUVE(Id::kAssetTableViewModeUVE), static_cast<std::int64_t>(ViewMode::SmallTiles),
              {EntryUVE(ViewMode::SmallTiles, "Small Tiles"), EntryUVE(ViewMode::LargeTiles, "Large Tiles"),
               EntryUVE(ViewMode::List, "List")},
-             "Asset Library View", kSessionCategoryUVE)),
+             "Asset Table View", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE {
-             return static_cast<std::int64_t>(editor.m_contentBrowserViewMode);
+             return static_cast<std::int64_t>(editor.m_assetTableViewMode);
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             editor.m_contentBrowserViewMode = static_cast<ViewMode>(std::get<std::int64_t>(value));
+             editor.m_assetTableViewMode = static_cast<ViewMode>(std::get<std::int64_t>(value));
              return true;
          }},
         {HiddenUVE(Config::MakeEnumSettingUVE(
-             IdUVE(Id::kContentBrowserModeUVE), static_cast<std::int64_t>(ContentBrowserModeUVE::Tiles),
-             {EntryUVE(ContentBrowserModeUVE::Tiles, "Tiles"), EntryUVE(ContentBrowserModeUVE::Columns, "Columns"),
-              EntryUVE(ContentBrowserModeUVE::Details, "Details"), EntryUVE(ContentBrowserModeUVE::Recent, "Recent"),
-              EntryUVE(ContentBrowserModeUVE::Board, "Board")},
-             "Asset Library Mode", kSessionCategoryUVE)),
+             IdUVE(Id::kAssetTableModeUVE), static_cast<std::int64_t>(AssetTableModeUVE::Tiles),
+             {EntryUVE(AssetTableModeUVE::Tiles, "Tiles"), EntryUVE(AssetTableModeUVE::Columns, "Columns"),
+              EntryUVE(AssetTableModeUVE::Details, "Details"), EntryUVE(AssetTableModeUVE::Recent, "Recent"),
+              EntryUVE(AssetTableModeUVE::Board, "Board")},
+             "Asset Table Mode", kSessionCategoryUVE)),
          [](const EditorUVE& editor) -> SettingValueUVE {
-             return static_cast<std::int64_t>(editor.m_contentBrowserMode);
+             return static_cast<std::int64_t>(editor.m_assetTableMode);
          },
          [](EditorUVE& editor, const SettingValueUVE& value) {
-             editor.m_contentBrowserMode = static_cast<ContentBrowserModeUVE>(std::get<std::int64_t>(value));
+             editor.m_assetTableMode = static_cast<AssetTableModeUVE>(std::get<std::int64_t>(value));
              return true;
          }},
         // Game is not among the entries, so a session is never restored into it: saving while in

@@ -109,7 +109,7 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"canEditSelectedName", snapshot.canEditSelectedName}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeContentBrowserEntryUVE& entry) {
+[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeAssetTableEntryUVE& entry) {
     return JsonUVE{{"relativePath", entry.relativePath},
                    {"isDirectory", entry.isDirectory},
                    {"typeLabel", entry.typeLabel},
@@ -128,9 +128,9 @@ enum class FrameReadResultUVE : std::uint8_t {
                    {"diagnostic", action.diagnostic}};
 }
 
-[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeContentBrowserSnapshotUVE& snapshot) {
+[[nodiscard]] JsonUVE ToJsonUVE(const EditorBridgeAssetTableSnapshotUVE& snapshot) {
     JsonUVE entries = JsonUVE::array();
-    for (const EditorBridgeContentBrowserEntryUVE& entry : snapshot.entries) {
+    for (const EditorBridgeAssetTableEntryUVE& entry : snapshot.entries) {
         entries.push_back(ToJsonUVE(entry));
     }
     JsonUVE breadcrumbs = JsonUVE::array();
@@ -285,7 +285,7 @@ enum class FrameReadResultUVE : std::uint8_t {
                                                                         : JsonUVE(nullptr)},
                    {"hierarchy", ToJsonUVE(snapshot.hierarchy)},
                    {"inspector", ToJsonUVE(snapshot.inspector)},
-                   {"contentBrowser", ToJsonUVE(snapshot.contentBrowser)},
+                   {"assetTable", ToJsonUVE(snapshot.assetTable)},
                    {"viewportSurface", ToJsonUVE(snapshot.viewportSurface)},
                    {"developerConsole", ToJsonUVE(snapshot.developerConsole)},
                    {"dataTableCatalog", ToJsonUVE(snapshot.dataTableCatalog)},
@@ -392,23 +392,23 @@ enum class FrameReadResultUVE : std::uint8_t {
     if (value == "setHierarchyFilter") {
         return EditorBridgeRequestKindUVE::SetHierarchyFilter;
     }
-    if (value == "setContentBrowserDirectory") {
-        return EditorBridgeRequestKindUVE::SetContentBrowserDirectory;
+    if (value == "setAssetTableDirectory") {
+        return EditorBridgeRequestKindUVE::SetAssetTableDirectory;
     }
-    if (value == "setContentBrowserFilter") {
-        return EditorBridgeRequestKindUVE::SetContentBrowserFilter;
+    if (value == "setAssetTableFilter") {
+        return EditorBridgeRequestKindUVE::SetAssetTableFilter;
     }
-    if (value == "setContentBrowserFocus") {
-        return EditorBridgeRequestKindUVE::SetContentBrowserFocus;
+    if (value == "setAssetTableFocus") {
+        return EditorBridgeRequestKindUVE::SetAssetTableFocus;
     }
-    if (value == "refreshContentBrowser") {
-        return EditorBridgeRequestKindUVE::RefreshContentBrowser;
+    if (value == "refreshAssetTable") {
+        return EditorBridgeRequestKindUVE::RefreshAssetTable;
     }
-    if (value == "selectContentBrowserEntry") {
-        return EditorBridgeRequestKindUVE::SelectContentBrowserEntry;
+    if (value == "selectAssetTableEntry") {
+        return EditorBridgeRequestKindUVE::SelectAssetTableEntry;
     }
-    if (value == "queueContentBrowserImport") {
-        return EditorBridgeRequestKindUVE::QueueContentBrowserImport;
+    if (value == "queueAssetTableImport") {
+        return EditorBridgeRequestKindUVE::QueueAssetTableImport;
     }
     if (value == "readDeveloperConsole") {
         return EditorBridgeRequestKindUVE::ReadDeveloperConsole;

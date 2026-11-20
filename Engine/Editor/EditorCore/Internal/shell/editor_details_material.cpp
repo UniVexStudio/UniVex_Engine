@@ -9,6 +9,7 @@
 #include "editor_asset_thumbnail.h"
 
 #include "asset_guid.h"
+#include "color.h"
 #include "i_project_file_index.h"
 #include "material_asset.h"
 
@@ -46,12 +47,17 @@ using MaterialUVE = Asset::MaterialAssetUVE;
 }
 
 [[nodiscard]] prism::Color ToColorUVE(const Math::ColorUVE& c, const float alpha = 1.0F) {
-    const auto b = [](const float v) { return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0F, 1.0F) * 255.0F)); };
-    return prism::Color(b(c.r), b(c.g), b(c.b), b(alpha));
+    const auto toByte = [](const float v) {
+        return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0F, 1.0F) * 255.0F));
+    };
+    return prism::Color(toByte(Math::LinearToDisplayUVE(c.r)), toByte(Math::LinearToDisplayUVE(c.g)),
+                        toByte(Math::LinearToDisplayUVE(c.b)), toByte(alpha));
 }
 
 [[nodiscard]] Math::ColorUVE FromColorUVE(const prism::Color c) {
-    return Math::ColorUVE{static_cast<float>(c.r) / 255.0F, static_cast<float>(c.g) / 255.0F, static_cast<float>(c.b) / 255.0F};
+    return Math::ColorUVE{Math::DisplayToLinearUVE(static_cast<float>(c.r) / 255.0F),
+                          Math::DisplayToLinearUVE(static_cast<float>(c.g) / 255.0F),
+                          Math::DisplayToLinearUVE(static_cast<float>(c.b) / 255.0F)};
 }
 
 } // namespace

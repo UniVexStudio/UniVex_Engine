@@ -21,7 +21,8 @@ public class EditorAppModule : ModuleRules
         });
 
         PublicIncludePaths.AddRange(new string[] {
-            "../../App/Internal/editor"
+            "../../App/Internal/editor",
+            "../../App/Internal/editor/viewports"
         });
 
         // Exclude the old smoke harness main.cpp so it does not collide with the product editor main.cpp

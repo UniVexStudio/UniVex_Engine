@@ -177,14 +177,14 @@ void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE enti
                                  }
                              }),
                              !source.empty()));
-        items.push_back(when(prism::MenuItem::Item("Show in Asset Library", [&editor, source] {
+        items.push_back(when(prism::MenuItem::Item("Show in Asset Table", [&editor, source] {
                                  const Asset::ProjectFileSnapshotUVE now = editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
                                  std::error_code error;
                                  const std::filesystem::path relative = std::filesystem::relative(source, now.contentRoot, error);
                                  for (const Asset::ProjectFileEntryUVE& file : now.entries) {
                                      if (!error && file.relativePath == relative) {
-                                         editor.m_contentBrowserDirectory = file.relativePath.parent_path();
-                                         editor.m_contentBrowserShelf.clear();
+                                         editor.m_assetTableDirectory = file.relativePath.parent_path();
+                                         editor.m_assetTableShelf.clear();
                                          editor.m_contentSelection.ClearUVE();
                                          editor.m_selectedProjectFile = file;
                                          break;
@@ -194,9 +194,9 @@ void EditorObjectMenuUVE::ShowUVE(EditorUVE& editor, const Scene::EntityUVE enti
                              !source.empty()));
     } else {
         items.push_back(when(prism::MenuItem::Item("Save as Entity", [&editor, name] {
-                                 // Into the Content Browser's folder, under the object's own name.
+                                 // Into the Asset Table's folder, under the object's own name.
                                  const Asset::ProjectFileSnapshotUVE now = editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-                                 const std::filesystem::path folder = now.contentRoot / editor.m_contentBrowserDirectory;
+                                 const std::filesystem::path folder = now.contentRoot / editor.m_assetTableDirectory;
                                  std::error_code error;
                                  std::filesystem::create_directories(folder, error);
                                  const std::filesystem::path path =
