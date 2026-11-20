@@ -2682,7 +2682,7 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
             }
         });
         if (camera != Scene::kInvalidEntityUVE && m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(camera)) {
-            static std::mt19937 random{1234U};
+            static std::mt19937 random{std::random_device{}()};
             std::uniform_real_distribution<float> spread(-1.0F, 1.0F);
             const float amplitude = static_cast<float>(m_cameraShakeStrength * (m_cameraShakeRemaining / m_cameraShakeDuration));
             m_cameraShakeOffset = Math::Vector3UVE{spread(random) * amplitude, spread(random) * amplitude, spread(random) * amplitude * 0.3F};
