@@ -27,7 +27,7 @@ public:
     /// Registers `texture` and returns its bindless table index. Idempotent for an already
     /// registered texture. Returns kInvalidBindlessTextureIndexUVE if invalid or full.
     [[nodiscard]] std::uint32_t RegisterUVE(const TextureHandleUVE texture) {
-        if (!texture.IsValidUVE() || m_capacity == 0U) {
+        if (texture == kInvalidTextureHandleUVE || m_capacity == 0U) {
             return kInvalidBindlessTextureIndexUVE;
         }
         const auto existing = m_textureToSlot.find(texture.value);
@@ -51,7 +51,7 @@ public:
     }
 
     void UnregisterSlotUVE(const std::uint32_t slot) {
-        if (slot >= m_slots.size() || !m_slots[slot].IsValidUVE()) {
+        if (slot >= m_slots.size() || m_slots[slot] == kInvalidTextureHandleUVE) {
             return;
         }
         m_textureToSlot.erase(m_slots[slot].value);
@@ -60,7 +60,7 @@ public:
     }
 
     void UnregisterTextureUVE(const TextureHandleUVE texture) {
-        if (!texture.IsValidUVE()) {
+        if (texture == kInvalidTextureHandleUVE) {
             return;
         }
         const auto it = m_textureToSlot.find(texture.value);
