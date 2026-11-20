@@ -79,6 +79,20 @@ public:
                                            const Math::FrustumUVE& cullFrustum, RenderQueueUVE& outQueue) const {
         outQueue = ExtractRenderQueueUVE(entityManager, assetManager, assetDatabase, cullFrustum);
     }
+
+    virtual void SetActiveCullFrustumUVE(const Math::FrustumUVE& frustum) const noexcept {
+        static_cast<void>(frustum);
+    }
+
+    virtual void ClearActiveCullFrustumUVE() const noexcept {}
+
+    virtual void SynchronizeSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,
+                                                   Asset::IAssetManagerUVE& assetManager,
+                                                   Asset::IAssetDatabaseUVE& assetDatabase) const {
+        static_cast<void>(entityManager);
+        static_cast<void>(assetManager);
+        static_cast<void>(assetDatabase);
+    }
 };
 
 } // namespace UVE::Render
