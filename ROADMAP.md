@@ -235,9 +235,7 @@ status legend.
 - [x] A water rendering system (at minimum a stylized/simple ocean or lake shader with reflection + refraction) — `Water3DUVE` with Gerstner wave displacement, dual animated normal ripples, eye-depth reconstruction, screen-space refraction with occlusion gating, Beer-Lambert depth absorption, contact shoreline foam, Schlick Fresnel, and sun specular highlight; locked by `Water3DUVETest` and shader parity tests.
 
 ### 1.3 Renderer-adjacent modules that are currently empty placeholders
-- [ ] `Renderer` module (currently a one-line placeholder folder) — decide whether its
-  scope absorbs/renames the existing `RHI/RenderSystems` split or is genuinely a new layer,
-  then design it deliberately rather than leaving two same-purpose folders
+- [x] `Renderer` module placeholder retired — removed completely; all rendering lives under `Engine/Runtime/RHI/RenderSystems/`.
 
 ---
 
@@ -1026,9 +1024,7 @@ real utility file) — networked multiplayer is a from-scratch, long-term projec
 - [x] Editor capture UI: bounded decode-on-push packet ring (512, drop-oldest, direction/channel/malformed/text filters, hexdump) feeding a Capture bottom-dock tab with filter toolbar, packet list, and selected decode (Clear + stats; app-fed via CapturePacketUVE until live taps land)
 - [x] Live stream taps: session-level tap sink copying every sent/received datagram (direction, pump clock, channel byte; ignored garbage included, failed sends excluded) straight into the capture ring
 - [x] Capture demo: tap-fed ring over mixed loopback traffic (handshake, replication, RPC, shots, garbage) with host channel mapping, forced drops, filter proofs, and a printed hexdump
-- [ ] The now-redundant `Networking` placeholder folder and the real `Network` folder
-  should be reconciled into one clearly-named module once real network code exists, instead
-  of carrying two same-purpose folders forward
+- [x] Reconciled into a single `Engine/Runtime/Networking/` module (commit `3ae8b36`); no duplicate `Network` folder remains.
 
 ---
 
@@ -1130,8 +1126,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   formats
 - [ ] An in-editor material editor / shader graph (author materials visually; currently
   materials are authored as data with no visual node graph)
-- [ ] A particle-effect authoring tool (currently particles are a runtime system with no
-  dedicated editor UI for authoring effects)
+- [x] A particle-effect authoring tool — `EditorVfxEditorUVE` + `VfxViewportUVE` (4-stage node graph, curve/gradient editors, timeline scrubber, burst lanes, live 3D studio preview, 8 VFX test suites).
 
 ---
 
@@ -1172,8 +1167,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   fallback for non-Latin scripts — the current embedded UI font only covers a Latin-1
   subset)
 - [ ] Accessibility features (colorblind modes, UI scaling, screen-reader hooks)
-- [ ] A dedicated in-editor UI layout tool (visually place and preview UI without running
-  the game)
+- [x] A dedicated in-editor UI layout tool — `WidgetDesignerViewUVE` + `WidgetPreviewViewportUVE` for `.uvwbp` Widget Blueprints (WYSIWYG canvas, multi-screen tabs, drag/resize handles, widget palette, live 3D preview).
 
 ---
 
@@ -1241,8 +1235,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 - A material editor / shader graph — tracked once, under Asset Pipeline above.
 - [ ] A terrain-sculpting tool
 - A particle-effect editor — tracked once, under Asset Pipeline above.
-- [ ] An animation timeline/sequencer for previewing and authoring clips, blend spaces, and
-  state machine transitions visually
+- [x] An animation timeline/sequencer for previewing and authoring clips, blend spaces, and state machine transitions visually — `EditorSequencerPanelUVE`, `EditorAnimGraphPanelUVE`, `BlendSpaceViewUVE`, `StateMachineViewUVE`, and `EditorMontageEditorUVE`.
 - A cinematic/sequencer tool — done, and tracked once, under Gameplay Framework above.
 - [ ] Source-control integration (status indicators, checkout/add/revert from inside the
   editor) for at least one common version-control system
@@ -1257,8 +1250,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   health checks); expand into a general "project validator" panel
 
 ### 10.2 Editor-adjacent cleanup
-- [ ] Retire or consolidate the older, now-redundant standalone editor scaffold binary that
-  predates the real editor, once confirmed nothing still depends on it
+- [x] Standalone editor scaffold binary retired (deleted in `4b23aeb`; stale excludes cleaned from `EditorApp.Build.cs`).
 - [ ] An "Output Log" and a "Search" (find-in-project) panel, tabbed into the bottom dock
   beside the six that are there now; both are standard in every mature content-creation editor
 

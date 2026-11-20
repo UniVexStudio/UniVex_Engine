@@ -25,12 +25,6 @@ public class EditorAppModule : ModuleRules
             "../../App/Internal/editor/viewports"
         });
 
-        // Exclude the old smoke harness main.cpp so it does not collide with the product editor main.cpp
-        ExcludedFiles.AddRange(new string[] {
-            "Engine/Editor/EditorApp/Internal/main.cpp",
-            "Internal/main.cpp"
-        });
-
         PublicSystemLibraries.AddRange(new string[] {
             "GL",
             "GLX",
