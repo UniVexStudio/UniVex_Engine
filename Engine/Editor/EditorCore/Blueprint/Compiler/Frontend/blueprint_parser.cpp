@@ -269,6 +269,8 @@ private:
 /// Thrown to abandon the current line; caught where parsing can resume.
 struct SyntaxErrorUVE final {};
 
+constexpr std::size_t kMaximumBlueprintParseDepthUVE = 128U;
+
 class ParserUVE final {
 public:
     ParserUVE(std::vector<TokenUVE> tokens, std::vector<DiagnosticUVE>& diagnostics)
@@ -502,6 +504,14 @@ private:
     // ---- statements
 
     BlockUVE ParseBlock() {
+        if (m_recursionDepth >= kMaximumBlueprintParseDepthUVE) {
+            Fail("block is nested too deeply (maximum depth is 128)");
+        }
+        struct DepthScopeUVE final {
+            std::size_t& depth;
+            explicit DepthScopeUVE(std::size_t& d) noexcept : depth(d) { ++depth; }
+            ~DepthScopeUVE() noexcept { --depth; }
+        } scope{m_recursionDepth};
         if (!Is(TokenKindUVE::Newline)) {
             Fail("start the block on a new, indented line");
         }
@@ -627,7 +637,17 @@ private:
         return expr;
     }
 
-    ExprPtrUVE ParseExpr() { return ParseOr(); }
+    ExprPtrUVE ParseExpr() {
+        if (m_recursionDepth >= kMaximumBlueprintParseDepthUVE) {
+            Fail("expression is nested too deeply (maximum depth is 128)");
+        }
+        struct DepthScopeUVE final {
+            std::size_t& depth;
+            explicit DepthScopeUVE(std::size_t& d) noexcept : depth(d) { ++depth; }
+            ~DepthScopeUVE() noexcept { --depth; }
+        } scope{m_recursionDepth};
+        return ParseOr();
+    }
 
     ExprPtrUVE ParseOr() {
         ExprPtrUVE left = ParseAnd();
@@ -877,6 +897,7 @@ private:
     std::vector<TokenUVE> m_tokens;
     std::vector<DiagnosticUVE>& m_diagnostics;
     std::size_t m_index = 0U;
+    std::size_t m_recursionDepth = 0U;
 };
 
 } // namespace
