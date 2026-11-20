@@ -269,6 +269,14 @@ Window::IWindowManagerUVE& EngineServicesUVE::GetWindowManagerUVE() const noexce
     return *m_windowManager;
 }
 
+void EngineServicesUVE::SetVfxWorldUVE(VFX::VfxWorldUVE* const vfxWorld) noexcept {
+    m_vfxWorld = vfxWorld;
+}
+
+VFX::VfxWorldUVE* EngineServicesUVE::TryGetVfxWorldUVE() const noexcept {
+    return m_vfxWorld;
+}
+
 EngineServicesUVE EngineServicesUVE::WithSceneUVE(Scene::IEntityManagerUVE& entityManager,
                                                   Scene::ISceneGraphUVE& sceneGraph,
                                                   Render::ICameraSystemUVE& cameraSystem,

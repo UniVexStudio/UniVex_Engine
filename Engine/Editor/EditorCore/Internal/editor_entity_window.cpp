@@ -34,10 +34,10 @@
 #include "name_component.h"
 #include "prefab_instance_component.h"
 #include "script_component.h"
-#include "uvscript_object_host.h"
-#include "uvscript_compiler.h"
-#include "uvscript_instance.h"
-#include "uvscript_parser.h"
+#include "blueprint_object_host.h"
+#include "blueprint_compiler.h"
+#include "blueprint_instance.h"
+#include "blueprint_parser.h"
 #include "uve_file_envelope.h"
 
 #include <nlohmann/json.hpp>
@@ -64,8 +64,8 @@ namespace {
 struct EntitySimulationUVE final {
     struct ScriptUVE final {
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
-        std::unique_ptr<Core::UVScriptObjectHostUVE> host;
-        std::unique_ptr<UVScript::ScriptInstanceUVE> instance;
+        std::unique_ptr<Core::BlueprintObjectHostUVE> host;
+        std::unique_ptr<Blueprint::ScriptInstanceUVE> instance;
         bool ready = false;
     };
     Scene::SceneSnapshotUVE snapshot;
@@ -555,7 +555,7 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
                 }
             }
             if (!blueprint.has_value()) {
-                base.message = "The Logic Graph at " + path + " cannot be read.";
+                base.message = "The Blueprint at " + path + " cannot be read.";
                 problems.push_back(std::move(base));
                 continue;
             }
@@ -579,8 +579,8 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
                 problem.message = titled(node, message);
                 problems.push_back(std::move(problem));
             }
-            Core::UVScriptObjectHostUVE host(entityManager, nullptr, entity);
-            for (const UVScript::DiagnosticUVE& diagnostic : UVScript::CompileUVScriptSourceUVE(translated.source, host).diagnostics) {
+            Core::BlueprintObjectHostUVE host(entityManager, nullptr, entity);
+            for (const Blueprint::DiagnosticUVE& diagnostic : Blueprint::CompileUVScriptSourceUVE(translated.source, host).diagnostics) {
                 EntityCompileProblemUVE problem = base;
                 problem.blueprintNode = translated.NodeAtLineUVE(diagnostic.at.line);
                 problem.message = titled(problem.blueprintNode, diagnostic.message);
@@ -605,8 +605,8 @@ std::size_t EditorUVE::CompileEntityEditorUVE() {
             problems.push_back(std::move(base));
             continue;
         }
-        Core::UVScriptObjectHostUVE host(entityManager, nullptr, entity);
-        for (const UVScript::DiagnosticUVE& diagnostic : UVScript::CompileUVScriptSourceUVE(*text, host).diagnostics) {
+        Core::BlueprintObjectHostUVE host(entityManager, nullptr, entity);
+        for (const Blueprint::DiagnosticUVE& diagnostic : Blueprint::CompileUVScriptSourceUVE(*text, host).diagnostics) {
             EntityCompileProblemUVE problem = base;
             problem.at = diagnostic.at;
             problem.message = diagnostic.message;
@@ -774,7 +774,7 @@ std::vector<EditorUVE::EntitySignalRowUVE> EditorUVE::GetEntityEditorSignalsUVE(
         }
         const std::string objectName = GetEntityDisplayLabelUVE(entity);
         // Whatever parsed is listed, even while the file has mistakes elsewhere.
-        for (const UVScript::HandlerUVE& handler : UVScript::ParseUVScriptUVE(*text).file.handlers) {
+        for (const Blueprint::HandlerUVE& handler : Blueprint::ParseUVScriptUVE(*text).file.handlers) {
             EntitySignalRowUVE row;
             row.entity = entity;
             row.objectName = objectName;
@@ -859,9 +859,9 @@ bool EditorUVE::PlayEntitySimulationUVE() {
         EntitySimulationUVE::ScriptUVE script;
         script.entity = entity;
         EntitySimulationUVE* const raw = simulation.get();
-        script.host = std::make_unique<Core::UVScriptObjectHostUVE>(
+        script.host = std::make_unique<Core::BlueprintObjectHostUVE>(
             entityManager, &m_services->GetInputSystemUVE(), entity, nullptr, nullptr,
-            [raw](const Scene::EntityUVE other) -> UVScript::ScriptInstanceUVE* {
+            [raw](const Scene::EntityUVE other) -> Blueprint::ScriptInstanceUVE* {
                 for (EntitySimulationUVE::ScriptUVE& candidate : raw->scripts) {
                     if (candidate.entity == other) {
                         return candidate.instance.get();
@@ -869,18 +869,18 @@ bool EditorUVE::PlayEntitySimulationUVE() {
                 }
                 return nullptr;
             });
-        const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(*text, *script.host);
+        const Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(*text, *script.host);
         if (!compiled.IsSuccessUVE()) {
             ++failed;
             continue;
         }
-        script.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *script.host);
-        for (const UVScript::FieldInfoUVE& field : UVScript::GetProgramFieldsUVE(*compiled.program)) {
+        script.instance = std::make_unique<Blueprint::ScriptInstanceUVE>(compiled.program, *script.host);
+        for (const Blueprint::FieldInfoUVE& field : Blueprint::GetProgramFieldsUVE(*compiled.program)) {
             const auto stored = component.exportValues.find(field.name);
-            if (field.kind != UVScript::FieldKindUVE::Export || stored == component.exportValues.end()) {
+            if (field.kind != Blueprint::FieldKindUVE::Export || stored == component.exportValues.end()) {
                 continue;
             }
-            if (const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(stored->second, field.type)) {
+            if (const std::optional<Blueprint::ValueUVE> value = Blueprint::ParseValueTextUVE(stored->second, field.type)) {
                 static_cast<void>(script.instance->SetFieldUVE(field.name, *value));
             }
         }
@@ -951,7 +951,7 @@ void EditorUVE::TickEntitySimulationUVE(const double deltaSeconds) {
             script.ready = true;
             static_cast<void>(script.instance->RaiseEventUVE("ready"));
         }
-        const UVScript::ValueUVE args[] = {dt};
+        const Blueprint::ValueUVE args[] = {dt};
         static_cast<void>(script.instance->RaiseEventUVE("tick", args));
         script.instance->AdvanceUVE(dt);
     }

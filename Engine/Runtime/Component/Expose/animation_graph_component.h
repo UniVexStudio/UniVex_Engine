@@ -61,7 +61,7 @@ enum class AnimationGraphNodeKindUVE : std::uint8_t {
     LayeredBlend,
     /// Jumps its input to `value` seconds when its trigger fires, then plays on from there.
     TimeSeek,
-    /// Where an Animation Montage plays: its input passes through, and a montage playing on the
+    /// Where an Motion Montage plays: its input passes through, and a montage playing on the
     /// slot named `parameter` (default "DefaultSlot") is blended over it by the montage's weight.
     Slot,
     /// Bends a two-bone chain (`bones`: root, middle, tip - upper arm, forearm, hand) so the tip
@@ -406,9 +406,9 @@ struct AnimationGraphCommentUVE final {
 struct AnimationGraphComponentUVE final {
     /// Outliner entity with AnimationSequencerComponentUVE supplying clips to this graph.
     EntityUVE sequencer = kInvalidEntityUVE;
-    /// Optional: the MontagePlayer whose montages play on this graph's Slot nodes. Unset, any
-    /// MontagePlayer posing the same skeleton does.
-    EntityUVE montagePlayer = kInvalidEntityUVE;
+    /// Optional: the MontageSequencer whose montages play on this graph's Slot nodes. Unset, any
+    /// MontageSequencer posing the same skeleton does.
+    EntityUVE montageSequencer = kInvalidEntityUVE;
     std::vector<AnimationParameterUVE> parameters;
     /// A new tree starts as Output fed by one Clip, so picking a clip is all it takes to play.
     std::vector<AnimationGraphNodeUVE> nodes = MakeDefaultAnimationGraphUVE();
@@ -444,7 +444,7 @@ struct AnimationGraphComponentUVE final {
 
     /// Authored data only: runtime state is ignored.
     [[nodiscard]] bool HasSameSettingsUVE(const AnimationGraphComponentUVE& other) const {
-        return sequencer == other.sequencer && montagePlayer == other.montagePlayer && parameters == other.parameters &&
+        return sequencer == other.sequencer && montageSequencer == other.montageSequencer && parameters == other.parameters &&
                nodes == other.nodes && comments == other.comments;
     }
 

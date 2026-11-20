@@ -32,7 +32,7 @@ struct MeshThumbnailBoneUVE final {
 /// Renders a small preview image of a mesh asset's own geometry - fixed default camera angle
 /// auto-framed to the mesh's bounding box, key/fill light shading, each surface in its material's
 /// albedo colour and map -
-/// directly into a standalone GL texture, for Content Browser mesh thumbnails.
+/// directly into a standalone GL texture, for Asset Table mesh thumbnails.
 ///
 /// Mirrors EditorUiAssetsUVE's precedent of talking to raw OpenGL directly from the editor module
 /// rather than going through IRenderDeviceUVE: Render::TextureHandleUVE is fully opaque with no

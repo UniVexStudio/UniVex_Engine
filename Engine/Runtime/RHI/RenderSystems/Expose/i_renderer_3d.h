@@ -17,6 +17,7 @@
 #include "world_environment_3d.h"
 #include "particle_runtime.h"
 #include "ui_runtime.h"
+#include "vfx_draw_list.h"
 
 namespace UVE::Render {
 
@@ -39,7 +40,7 @@ struct PostProcessSettingsUVE final {
     float ssaoPowerUVE = 1.0F;
     /// 0 = Low (4 samples), 1 = Medium (8), 2 = High (12).
     std::uint32_t ssaoQualityUVE = 2U;
-    bool ssaoBlurEnabledUVE = false;
+    bool ssaoBlurEnabledUVE = true;
 
     /// Screen-space contact shadows (see contact_shadows_uve.h). Off by default: the pass refines an
     /// existing shadow map with a depth-buffer march, so a project opts in once it has shadows worth
@@ -65,6 +66,9 @@ struct PostProcessSettingsUVE final {
     std::uint32_t fastApproximateAAQualityUVE = 1U;
     bool nearestUpscalingEnabledUVE = false;
     bool acesToneMappingEnabledUVE = true;
+    /// 0 = Linear clamp, 1 = ACES filmic, 2 = Soft filmic (default). Setting
+    /// `acesToneMappingEnabledUVE = false` forces mode 0 for backwards compatibility.
+    std::uint32_t toneMappingMethodUVE = 2U;
     float sharpeningAmountUVE = 0.0F;
     bool ditheringEnabledUVE = true;
 };
@@ -94,6 +98,21 @@ struct CullingSettingsUVE final {
     /// camera, a moved object, a device without queries - draws the item. Default off: the stage
     /// costs a query bracket per item and only pays back in occlusion-heavy scenes.
     bool gpuOcclusionCullingEnabledUVE = false;
+};
+
+/// Opt-in dark studio floor plane rendered inside the HDR scene pass (before VfxParticles,
+/// SSAO, Bloom, and ToneMapping) for dedicated studio preview viewports.
+struct StudioFloorSettingsUVE final {
+    bool enabledUVE = false;
+    float heightYUVE = 0.0F;
+    float halfExtentMetersUVE = 45.0F;
+    float tileScaleUVE = 0.45F;
+    float fadeStartRadiusMetersUVE = 9.0F;
+    float fadeEndRadiusMetersUVE = 34.0F;
+    Math::Vector3UVE pivotPositionUVE{0.0F, 0.0F, 0.0F};
+    Math::Vector3UVE baseTintUVE{1.0F, 1.0F, 1.0F};
+    float roughnessScaleUVE = 1.0F;
+    float specularStrengthUVE = 0.58F;
 };
 
 /// A copied, frame-local account of observable Renderer3DUVE work. Each field names evidence that
@@ -277,6 +296,14 @@ struct Renderer3DFrameDiagnosticsUVE final {
     std::size_t shadowAtlasBatchesRecorded = 0U;
     std::size_t shadowAtlasBatchedItems = 0U;
     std::size_t shadowAtlasInstancedDrawCallsRecorded = 0U;
+
+    /// VFX / Particle Graph sprite pipeline diagnostics for this frame.
+    std::size_t vfxBatchesExtracted = 0U;
+    std::size_t vfxInstancesExtracted = 0U;
+    std::size_t vfxInstancesDrawn = 0U;
+    std::size_t vfxInstancesTruncated = 0U;
+    std::size_t vfxDrawCallsRecorded = 0U;
+    bool vfxPassRecorded = false;
 };
 
 /// IRenderer3DUVE is the engine's final per-frame render orchestrator (the spec's `Renderer3DUVE`,
@@ -448,6 +475,13 @@ public:
         static_cast<void>(settings);
     }
 
+    /// Configures material texture wrapping (repeat vs clamp-to-edge) and maximum anisotropic
+    /// filtering level used for standard surface textures.
+    virtual void SetMaterialSamplerSettingsUVE(bool repeatEnabled, float maxAnisotropy) noexcept {
+        static_cast<void>(repeatEnabled);
+        static_cast<void>(maxAnisotropy);
+    }
+
     /// Points the renderer at UI::UIRuntimeUVE's latest draw batch/font atlas, drawn by a
     /// "UIOverlay" pass added right after tone-mapping in every RenderFrame* variant. Pass nullptr
     /// (the default) to draw no UI this frame. The pointer is read fresh each RenderFrame* call,
@@ -455,6 +489,18 @@ public:
     /// is a no-op so non-Renderer3D test doubles need not own UI-overlay state.
     virtual void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept {
         static_cast<void>(uiRuntime);
+    }
+
+    /// Points the renderer at the frame's extracted VFX sprite draw list (`VfxDrawListUVE`),
+    /// drawn in `MainColor` (opaque cutout batches) and `VfxParticles` (translucent batches).
+    /// Pass `nullptr` (the default) to draw no VFX sprites this frame.
+    virtual void SetVfxDrawListUVE(const VfxDrawListUVE* vfxDrawList) noexcept {
+        static_cast<void>(vfxDrawList);
+    }
+
+    /// Configures or clears the opt-in dark studio PBR floor plane for studio preview viewports.
+    virtual void SetStudioFloorUVE(const std::optional<StudioFloorSettingsUVE>& settings) noexcept {
+        static_cast<void>(settings);
     }
 
     /// Returns the last frame's copied renderer evidence snapshot. The snapshot intentionally does

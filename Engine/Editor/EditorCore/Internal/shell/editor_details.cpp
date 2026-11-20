@@ -3,7 +3,7 @@
 #include "model_animations.h"
 
 #include "editor_asset_thumbnail.h"
-#include "editor_content_browser.h"
+#include "editor_asset_table.h"
 
 #include "color.h"
 #include "rect.h"
@@ -23,7 +23,7 @@
 #include "bone_attachment_3d.h"
 #include "core_variant.h"
 #include "object_metadata_component.h"
-#include "uvscript_value.h"
+#include "blueprint_value.h"
 
 #include "prism/Application.h"
 #include "prism/Containers.h"
@@ -92,7 +92,7 @@ constexpr std::array<std::string_view, 3> kCustomDrawnUVE{"component.name", "com
 }
 
 /// The preview a slot of these file kinds shows beside its picker, if any.
-/// An asset slot's drop target: a Content Browser item of the slot's kinds dropped on it is used
+/// An asset slot's drop target: a Asset Table item of the slot's kinds dropped on it is used
 /// as if it were picked (in the document of the window it is dropped in).
 class AssetSlotDropUVE final : public prism::Border {
 public:
@@ -127,7 +127,7 @@ private:
         return hot;
     }
     [[nodiscard]] std::optional<std::filesystem::path> AcceptsUVE(const prism::DragDropEvent& e) const {
-        if (!e.operation || e.operation->tag() != EditorContentBrowserUVE::kDragTagUVE) {
+        if (!e.operation || e.operation->tag() != EditorAssetTableUVE::kDragTagUVE) {
             return std::nullopt;
         }
         const std::string* relative = e.operation->getPayload<std::string>();
@@ -391,7 +391,7 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
         if (m_editor.m_selectedProjectFile.has_value() && !m_editor.m_selectedProjectFile->relativePath.empty()) {
             const auto& file = *m_editor.m_selectedProjectFile;
             m_title->setText(file.relativePath.filename().string());
-            m_subtitle->setText(EditorUVE::GetContentBrowserItemTypeLabelUVE(EditorUVE::ClassifyContentBrowserEntryUVE(file)));
+            m_subtitle->setText(EditorUVE::GetAssetTableItemTypeLabelUVE(m_editor.GetAssetTableEntryTypeUVE(file)));
             const int section = m_grid->addCategory("Asset");
             m_grid->addRow(section, "Path", prism::make<prism::Label>(file.relativePath.generic_string()));
             m_grid->addRow(section, "Registered",
@@ -1032,7 +1032,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
             // One button, like an asset slot: the file's name, or (Empty); the menu has Empty too.
             auto pick = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                    prism::ButtonStyle::Default);
-            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Asset Library") : property.tooltip);
+            pick->setTooltip(property.tooltip.empty() ? std::string("Pick, load or import a file, or drop one from the Asset Table") : property.tooltip);
             std::weak_ptr<prism::Button> weakPick = pick;
             row->sync = [p, weakPick](const void* inst) {
                 auto b = weakPick.lock();
@@ -1065,7 +1065,7 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
                 if (skySlot) {
                     spec.title = "Sky";
                 } else if (scriptSlot) {
-                    spec.title = "Logic Graph";
+                    spec.title = "Blueprint";
                 }
                 PickerActionsUVE actions;
                 const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
@@ -1391,7 +1391,7 @@ void EditorDetailsUVE::AddScriptExportsUVE(const int category, const bool writab
     // One row per `export` field of the object's script, typed; a changed value is marked, and its
     // tooltip has the script's default (the reset button puts it back).
     for (const EditorUVE::ScriptExportRowUVE& row : m_editor.GetSelectedScriptExportsUVE()) {
-        const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(row.valueText, row.type);
+        const std::optional<Blueprint::ValueUVE> value = Blueprint::ParseValueTextUVE(row.valueText, row.type);
         if (!value.has_value()) {
             continue;
         }
@@ -1408,16 +1408,16 @@ void EditorDetailsUVE::AddScriptExportsUVE(const int category, const bool writab
             editor = number;
         } else if (const double* const real = std::get_if<double>(&*value)) {
             auto number = prism::make<prism::NumberField>(static_cast<float>(*real), 0.05F, 3);
-            number->onCommit = [set](const float v) { set(UVScript::FormatValueUVE(UVScript::ValueUVE{static_cast<double>(v)})); };
+            number->onCommit = [set](const float v) { set(Blueprint::FormatValueUVE(Blueprint::ValueUVE{static_cast<double>(v)})); };
             editor = number;
-        } else if (const auto* const vector = std::get_if<UVScript::Vec3ValueUVE>(&*value)) {
+        } else if (const auto* const vector = std::get_if<Blueprint::Vec3ValueUVE>(&*value)) {
             auto parts = std::make_shared<std::array<double, 3>>(std::array<double, 3>{vector->x, vector->y, vector->z});
             auto box = prism::hbox(4.0F);
             for (std::size_t axis = 0U; axis < 3U; ++axis) {
                 auto number = prism::make<prism::NumberField>(static_cast<float>((*parts)[axis]), 0.05F, 3);
                 number->onCommit = [set, parts, axis](const float v) {
                     (*parts)[axis] = static_cast<double>(v);
-                    set(UVScript::FormatValueUVE(UVScript::ValueUVE{UVScript::Vec3ValueUVE{(*parts)[0], (*parts)[1], (*parts)[2]}}));
+                    set(Blueprint::FormatValueUVE(Blueprint::ValueUVE{Blueprint::Vec3ValueUVE{(*parts)[0], (*parts)[1], (*parts)[2]}}));
                 };
                 box->add(number, prism::Slot{1.0F});
             }

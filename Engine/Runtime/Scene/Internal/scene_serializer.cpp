@@ -45,7 +45,7 @@
 #include "animation_driver_component.h"
 #include "animation_sequencer_component.h"
 #include "animation_graph_component.h"
-#include "montage_player_component.h"
+#include "montage_sequencer_component.h"
 #include "area_component.h"
 #include "audio_source_component.h"
 #include "bone_modifier_component.h"
@@ -238,7 +238,7 @@ namespace {
     return {{"attributes", std::move(attributes)}};
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const MontagePlayerComponentUVE& component) {
+[[nodiscard]] nlohmann::json ToJsonUVE(const MontageSequencerComponentUVE& component) {
     nlohmann::json montages = nlohmann::json::array();
     for (std::size_t i = 0U; i < 8U; ++i) {
         montages.push_back(component.MontageAtUVE(i).value);
@@ -250,7 +250,7 @@ namespace {
     return out;
 }
 
-[[nodiscard]] bool IsMontagePlayerComponentValidUVE(const MontagePlayerComponentUVE&) noexcept {
+[[nodiscard]] bool IsMontageSequencerComponentValidUVE(const MontageSequencerComponentUVE&) noexcept {
     return true;
 }
 
@@ -602,8 +602,8 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
     if (component.sequencer != kInvalidEntityUVE) {
         root["sequencer"] = {{"index", component.sequencer.index}, {"generation", component.sequencer.generation}};
     }
-    if (component.montagePlayer != kInvalidEntityUVE) {
-        root["montagePlayer"] = {{"index", component.montagePlayer.index}, {"generation", component.montagePlayer.generation}};
+    if (component.montageSequencer != kInvalidEntityUVE) {
+        root["montageSequencer"] = {{"index", component.montageSequencer.index}, {"generation", component.montageSequencer.generation}};
     }
     return root;
 }
@@ -617,10 +617,11 @@ void ResolveParallelTargetsUVE(std::vector<KeyUVE>& keys, EntityUVE KeyUVE::*mem
             json["sequencer"].value("index", std::numeric_limits<std::uint32_t>::max()),
             json["sequencer"].value("generation", 0U)};
     }
-    if (json.contains("montagePlayer") && json["montagePlayer"].is_object()) {
-        tree.montagePlayer = EntityUVE{
-            json["montagePlayer"].value("index", std::numeric_limits<std::uint32_t>::max()),
-            json["montagePlayer"].value("generation", 0U)};
+    const char* const montageKey = json.contains("montageSequencer") ? "montageSequencer" : "montagePlayer";
+    if (json.contains(montageKey) && json[montageKey].is_object()) {
+        tree.montageSequencer = EntityUVE{
+            json[montageKey].value("index", std::numeric_limits<std::uint32_t>::max()),
+            json[montageKey].value("generation", 0U)};
     }
     if (!json.contains("nodes") && (json.contains("clipA") || json.contains("clipB"))) {
         tree.parameters = {AnimationParameterUVE{"blend", AnimationParameterTypeUVE::Float, json.value("blend", 0.0F)}};
@@ -1089,13 +1090,7 @@ template <typename VectorT>
     return nlohmann::json::object();
 }
 
-[[nodiscard]] nlohmann::json ToJsonUVE(const OutlinerViewport3DComponentUVE& component) {
-    // Only a 2D level says so. Writing nothing for 3D keeps every 3D .uvscene byte-for-byte what it
-    // was before dimensions were stored, and a file that says nothing is 3D by definition - which is
-    // exactly what every scene written before this existed is.
-    if (component.dimension == ViewportDimensionUVE::TwoD) {
-        return {{"dimension", "2d"}};
-    }
+[[nodiscard]] nlohmann::json ToJsonUVE(const OutlinerViewport3DComponentUVE&) {
     return nlohmann::json::object();
 }
 
@@ -2067,6 +2062,7 @@ template <typename T, typename FromJsonFunc, typename ValidateFunc>
         // carries the left-hand name and still loads; writing always uses the right-hand one.
         {"AnimationTreeComponentUVE", "AnimationGraphComponentUVE"},
         {"AnimationPlayerComponentUVE", "AnimationSequencerComponentUVE"},
+        {"MontagePlayerComponentUVE", "MontageSequencerComponentUVE"},
         {"RigidBodyComponentUVE", "Rigid3DComponentUVE"},
         {"AnimatableBody3DComponentUVE", "Kinematic3DComponentUVE"},
         // The AnimationMixer pass: it never mixed anything, it is the base AnimationSequencer and
@@ -2504,9 +2500,9 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                           }
                           return attributes;
                       }, IsGameplayAttributesComponentValidUVE));
-        table.emplace("MontagePlayerComponentUVE",
-                      MakeRegistrationUVE<MontagePlayerComponentUVE>([](const nlohmann::json& json) {
-                          MontagePlayerComponentUVE slot;
+        table.emplace("MontageSequencerComponentUVE",
+                      MakeRegistrationUVE<MontageSequencerComponentUVE>([](const nlohmann::json& json) {
+                          MontageSequencerComponentUVE slot;
                           Asset::AssetGuidUVE* const fields[] = {&slot.montage1, &slot.montage2, &slot.montage3,
                                                                  &slot.montage4, &slot.montage5, &slot.montage6,
                                                                  &slot.montage7, &slot.montage8};
@@ -2519,7 +2515,7 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
                           }
                           slot.libraryRef = Asset::AssetGuidUVE{json.value("library", std::uint64_t{0})};
                           return slot;
-                      }, IsMontagePlayerComponentValidUVE));
+                      }, IsMontageSequencerComponentValidUVE));
         table.emplace("GameplayTagComponentUVE",
                       MakeRegistrationUVE<GameplayTagComponentUVE>([](const nlohmann::json& json) {
                           GameplayTagComponentUVE tags;
@@ -2807,13 +2803,10 @@ MakeMetadataRegistrationUVE(const std::string& componentName,
         table.emplace("FolderComponentUVE", MakeRegistrationUVE<FolderComponentUVE>([](const nlohmann::json&) {
                           return FolderComponentUVE{};
                       }, IsFolderComponentValidUVE));
-        table.emplace("OutlinerViewport3DComponentUVE", MakeRegistrationUVE<OutlinerViewport3DComponentUVE>([](const nlohmann::json& json) {
-                          // Anything but the one word this writer emits - absent, or a value some
-                          // hand-edit left behind - reads as 3D rather than failing the load.
-                          const bool is2D = json.contains("dimension") && json["dimension"].is_string() &&
-                                            json["dimension"].get<std::string>() == "2d";
-                          return OutlinerViewport3DComponentUVE{is2D ? ViewportDimensionUVE::TwoD
-                                                                      : ViewportDimensionUVE::ThreeD};
+        table.emplace("OutlinerViewport3DComponentUVE", MakeRegistrationUVE<OutlinerViewport3DComponentUVE>([](const nlohmann::json&) {
+                          // Pure 3D marker; any legacy "dimension" field is ignored gracefully so
+                          // older scene files continue to load without error.
+                          return OutlinerViewport3DComponentUVE{};
                       }, IsOutlinerViewport3DComponentValidUVE));
         table.emplace("SceneRootComponentUVE",
                     MakeRegistrationUVE<SceneRootComponentUVE>([](const nlohmann::json&) {

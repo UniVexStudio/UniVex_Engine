@@ -7,7 +7,7 @@
 #include "editor_host.h"
 #include "editor_montage_timeline.h"
 
-#include "animation_montage_editing.h"
+#include "motion_montage_editing.h"
 #include "i_asset_database.h"
 #include "i_project_file_index.h"
 
@@ -98,7 +98,7 @@ void EditorMontageEditorUVE::AddClipUVE(const std::filesystem::path& absolute, c
         return;
     }
     const double length = clip->durationSeconds;
-    m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
+    m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
         const std::size_t at = Asset::AddMontageSegmentUVE(m, guid, length, index);
         selection = SelectionUVE{SelectionUVE::KindUVE::Segment, at, 0U};
     });
@@ -134,7 +134,7 @@ void EditorMontageEditorUVE::AskNameUVE(const std::string& title, const std::str
     });
 }
 
-std::string EditorMontageEditorUVE::UniqueCurveNameUVE(const Asset::AnimationMontageAssetUVE& montage, const std::string& base) {
+std::string EditorMontageEditorUVE::UniqueCurveNameUVE(const Asset::MotionMontageAssetUVE& montage, const std::string& base) {
     const auto taken = [&montage](const std::string& name) {
         return std::any_of(montage.curves.begin(), montage.curves.end(), [&name](const Asset::MontageCurveUVE& c) { return c.name == name; });
     };
@@ -163,7 +163,7 @@ void EditorMontageEditorUVE::AddAtPlayheadUVE(const AddKindUVE kind) {
         track = session->montage.notifyStates[selection.index].track;
     }
     using Kind = SelectionUVE::KindUVE;
-    m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& m) {
+    m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& m) {
         switch (kind) {
             case AddKindUVE::Notify: {
                 const std::size_t index = Asset::AddMontageNotifyUVE(m, "Notify_" + std::to_string(m.notifies.size() + 1U), at, track);
@@ -228,7 +228,7 @@ void EditorMontageEditorUVE::SyncUVE() {
         m_closeAsked = false;
         m_shownValid = false;
         m_shownClipCount = static_cast<std::size_t>(-1);
-        m_window = m_host.OpenWindowUVE(BuildUVE(), "Action Clip Editor - " + path.filename().string(), kWindowWidthUVE,
+        m_window = m_host.OpenWindowUVE(BuildUVE(), "Motion Montage Editor - " + path.filename().string(), kWindowWidthUVE,
                                         kWindowHeightUVE);
         if (m_window == 0) {
             m_editor.CloseMontageEditorUVE();
@@ -264,7 +264,7 @@ void EditorMontageEditorUVE::RequestCloseUVE() {
     const std::string name = m_openPath.filename().string();
     m_host.AppUVE().runInWindow(m_window, [this, name] {
         auto text = prism::make<prism::Label>("Save the changes to " + name + " before closing?");
-        prism::showDialog("Close Action Clip", text,
+        prism::showDialog("Close Motion Montage", text,
                           {prism::DialogButton{"Save", true, [this] {
                                m_closeAsked = false;
                                if (m_editor.SaveMontageEditorUVE()) {
@@ -342,7 +342,7 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildUVE() {
             return {};
         }
         const auto [state, index] = m_notifyRows[static_cast<std::size_t>(row)];
-        const Asset::AnimationMontageAssetUVE& m = session->montage;
+        const Asset::MotionMontageAssetUVE& m = session->montage;
         if (state ? index >= m.notifyStates.size() : index >= m.notifies.size()) {
             return {};
         }
@@ -391,12 +391,12 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildTitleBarUVE() {
     menus->addMenu("File", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Save", [this] { static_cast<void>(m_editor.SaveMontageEditorUVE()); }, "", prism::Icon::Save));
-        items.push_back(prism::MenuItem::Item("Show in Asset Library", [this] {
+        items.push_back(prism::MenuItem::Item("Show in Asset Table", [this] {
             const Asset::ProjectFileSnapshotUVE now = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
             std::error_code error;
             const std::filesystem::path relative = std::filesystem::relative(m_openPath, now.contentRoot, error);
             if (!error) {
-                m_editor.m_contentBrowserDirectory = relative.parent_path();
+                m_editor.m_assetTableDirectory = relative.parent_path();
             }
         }, "", prism::Icon::Folder));
         items.push_back(prism::MenuItem::Sep());
@@ -450,11 +450,11 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildTitleBarUVE() {
 prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildToolbarUVE() {
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
-    auto save = ToolButtonUVE(prism::Icon::Save, "Save the action clip", "Save");
+    auto save = ToolButtonUVE(prism::Icon::Save, "Save the motion montage", "Save");
     save->onClick = [this] { static_cast<void>(m_editor.SaveMontageEditorUVE()); };
     row->add(save, CentreUVE());
     row->add(HSeparatorUVE(), CentreUVE());
-    m_previewButton = ToolButtonUVE(prism::Icon::PreviewCharacter, "The character the action clip is previewed on", "Preview");
+    m_previewButton = ToolButtonUVE(prism::Icon::PreviewCharacter, "The character the motion montage is previewed on", "Preview");
     m_previewButton->onClick = [this] { ShowPreviewMenuUVE(); };
     row->add(m_previewButton, CentreUVE());
     row->add(HSeparatorUVE(), CentreUVE());
@@ -604,27 +604,27 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
     if (session == nullptr || !m_details) {
         return;
     }
-    const Asset::AnimationMontageAssetUVE& m = session->montage;
+    const Asset::MotionMontageAssetUVE& m = session->montage;
     auto grid = prism::make<prism::PropertyGrid>();
     int cat = -1;
     const auto number = [this](const double value, const float step, const int decimals,
-                               std::function<void(Asset::AnimationMontageAssetUVE&, double)> set) {
+                               std::function<void(Asset::MotionMontageAssetUVE&, double)> set) {
         auto field = prism::make<prism::NumberField>(static_cast<float>(value), step, decimals);
         field->onCommit = [this, set = std::move(set)](const float v) {
-            m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& montage) { set(montage, static_cast<double>(v)); });
+            m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& montage) { set(montage, static_cast<double>(v)); });
         };
         return field;
     };
-    const auto text = [this](const std::string& value, std::function<void(Asset::AnimationMontageAssetUVE&, const std::string&)> set) {
+    const auto text = [this](const std::string& value, std::function<void(Asset::MotionMontageAssetUVE&, const std::string&)> set) {
         auto field = prism::make<prism::TextInput>(value, "");
         field->onCommit = [this, set = std::move(set)](const std::string& v) {
-            m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& montage) { set(montage, v); });
+            m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& montage) { set(montage, v); });
         };
         return field;
     };
 
     // A notify track, by name.
-    const auto trackPicker = [this, &m](const std::uint32_t track, std::function<void(Asset::AnimationMontageAssetUVE&, std::uint32_t)> set) {
+    const auto trackPicker = [this, &m](const std::uint32_t track, std::function<void(Asset::MotionMontageAssetUVE&, std::uint32_t)> set) {
         std::vector<std::string> names;
         const std::uint32_t tracks = std::max<std::uint32_t>(m.notifyTracks, track + 1U);
         for (std::uint32_t t = 0U; t < tracks; ++t) {
@@ -632,7 +632,7 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
         }
         auto picker = prism::make<prism::ComboBox>(names, static_cast<int>(track));
         picker->onChange = [this, set = std::move(set)](const int v) {
-            m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) { set(mm, static_cast<std::uint32_t>(std::clamp(v, 0, 63))); });
+            m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& mm) { set(mm, static_cast<std::uint32_t>(std::clamp(v, 0, 63))); });
         };
         return picker;
     };
@@ -672,7 +672,7 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
                     return;
                 }
                 const double length = clip->durationSeconds;
-                m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) {
+                m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& mm) {
                     if (i < mm.segments.size()) {
                         mm.segments[i].clip = guid;
                         mm.segments[i].clipLength = length;
@@ -717,7 +717,7 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
                 if (v < 0 || static_cast<std::size_t>(v) >= kColours.size()) {
                     return;
                 }
-                m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) {
+                m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& mm) {
                     if (i < mm.notifies.size()) {
                         mm.notifies[i].colour = kColours[static_cast<std::size_t>(v)].second;
                     }
@@ -732,7 +732,7 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
         grid->addRow(cat, "Trigger Weight", number(m.notifies[i].minWeight, 0.05F, 2, [i](auto& mm, double v) {
                          mm.notifies[i].minWeight = static_cast<float>(std::clamp(v, 0.0, 1.0));
                      }),
-                     "Raised only while the action clip weighs at least this much (0: also while it blends)");
+                     "Raised only while the motion montage weighs at least this much (0: also while it blends)");
     } else if (selection.kind == Kind::State && i < m.notifyStates.size()) {
         cat = grid->addCategory(m.notifyStates[i].name);
         grid->addRow(cat, "Name", text(m.notifyStates[i].name, [i](auto& mm, const std::string& v) { mm.notifyStates[i].name = v; }));
@@ -790,19 +790,19 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
                 m_editor.SetMontagePreviewEntityUVE(guids[static_cast<std::size_t>(v)]);
             }
         };
-        grid->addRow(cat, "Preview", preview, "The character the action clip is shown on (the game plays it on whoever asks)");
+        grid->addRow(cat, "Preview", preview, "The character the motion montage is shown on (the game plays it on whoever asks)");
     }
 
-    cat = grid->addCategory("Action Clip");
+    cat = grid->addCategory("Motion Montage");
     grid->addRow(cat, "Slot", text(m.slot, [](auto& mm, const std::string& v) { mm.slot = v.empty() ? std::string("DefaultSlot") : v; }));
     // A blend: its time, and the shape of its weight over that time.
     const auto blend = [this, &number](const double seconds, const Asset::MontageBlendCurveUVE curve,
-                                       std::function<void(Asset::AnimationMontageAssetUVE&, double)> setTime,
-                                       std::function<void(Asset::AnimationMontageAssetUVE&, Asset::MontageBlendCurveUVE)> setCurve) {
+                                       std::function<void(Asset::MotionMontageAssetUVE&, double)> setTime,
+                                       std::function<void(Asset::MotionMontageAssetUVE&, Asset::MontageBlendCurveUVE)> setCurve) {
         auto shape = prism::make<prism::ComboBox>(std::vector<std::string>{"Linear", "Ease In", "Ease Out", "Ease In Out"},
                                                   static_cast<int>(curve));
         shape->onChange = [this, setCurve = std::move(setCurve)](const int v) {
-            m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) {
+            m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& mm) {
                 setCurve(mm, static_cast<Asset::MontageBlendCurveUVE>(std::clamp(v, 0, 3)));
             });
         };
@@ -822,14 +822,14 @@ void EditorMontageEditorUVE::RebuildDetailsUVE() {
     grid->addRow(cat, "Blend Out Trigger", number(m.blendOutTriggerSeconds, 0.01F, 2, [](auto& mm, double v) { mm.blendOutTriggerSeconds = v; }));
     auto autoBlend = prism::make<prism::CheckBox>("", m.autoBlendOut);
     autoBlend->onChange = [this](const bool v) {
-        m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) { mm.autoBlendOut = v; });
+        m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& mm) { mm.autoBlendOut = v; });
     };
     grid->addRow(cat, "Auto Blend Out", autoBlend);
     grid->addRow(cat, "Rate Scale", number(m.rateScale, 0.05F, 2, [](auto& mm, double v) { mm.rateScale = std::max(0.01, v); }));
     auto rootMotion = prism::make<prism::ComboBox>(std::vector<std::string>{"Off", "In Place", "Apply To Target"},
                                                    static_cast<int>(m.rootMotion));
     rootMotion->onChange = [this](const int v) {
-        m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) {
+        m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& mm) {
             mm.rootMotion = static_cast<Asset::MontageRootMotionUVE>(std::clamp(v, 0, 2));
         });
     };
@@ -842,7 +842,7 @@ void EditorMontageEditorUVE::RebuildSectionsUVE() {
     if (session == nullptr || !m_sections) {
         return;
     }
-    const Asset::AnimationMontageAssetUVE& m = session->montage;
+    const Asset::MotionMontageAssetUVE& m = session->montage;
     // Each section with what follows it (End, Loop, or another section), as the standard Montage Sections.
     auto grid = prism::make<prism::PropertyGrid>();
     const int cat = grid->addCategory("Sections");
@@ -862,7 +862,7 @@ void EditorMontageEditorUVE::RebuildSectionsUVE() {
         auto next = prism::make<prism::ComboBox>(choices, current);
         next->onChange = [this, name = section.name, choices](const int v) {
             const std::string target = v <= 0 ? std::string() : v == 1 ? name : choices[static_cast<std::size_t>(v)].substr(2);
-            m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) {
+            m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& mm) {
                 static_cast<void>(Asset::SetMontageSectionNextUVE(mm, name, target));
             });
         };
@@ -890,7 +890,7 @@ void EditorMontageEditorUVE::RebuildNotifiesUVE() {
     if (session == nullptr) {
         return;
     }
-    const Asset::AnimationMontageAssetUVE& m = session->montage;
+    const Asset::MotionMontageAssetUVE& m = session->montage;
     // Notifies and states together, in time order.
     m_notifyRows.clear();
     for (std::size_t i = 0U; i < m.notifies.size(); ++i) {
@@ -932,7 +932,7 @@ void EditorMontageEditorUVE::RebuildNotifiesUVE() {
             };
             auto remove = ToolButtonUVE(prism::Icon::Trash, "Delete this curve");
             remove->onClick = [this, ci] {
-                m_editor.EditMontageUVE([ci](Asset::AnimationMontageAssetUVE& mm) {
+                m_editor.EditMontageUVE([ci](Asset::MotionMontageAssetUVE& mm) {
                     if (ci < mm.curves.size()) {
                         mm.curves.erase(mm.curves.begin() + static_cast<std::ptrdiff_t>(ci));
                     }
@@ -944,7 +944,7 @@ void EditorMontageEditorUVE::RebuildNotifiesUVE() {
                 if (v.empty()) {
                     return;
                 }
-                m_editor.EditMontageUVE([&](Asset::AnimationMontageAssetUVE& mm) {
+                m_editor.EditMontageUVE([&](Asset::MotionMontageAssetUVE& mm) {
                     if (ci < mm.curves.size() && mm.curves[ci].name != v) {
                         mm.curves[ci].name = UniqueCurveNameUVE(mm, v);   // two curves never share a name
                     }

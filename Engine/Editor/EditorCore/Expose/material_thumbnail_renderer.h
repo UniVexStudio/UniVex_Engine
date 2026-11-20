@@ -46,7 +46,7 @@ struct MaterialThumbnailTexturesUVE final {
     MaterialThumbnailImageUVE emissive;
 };
 
-/// Renders a Content Browser preview of a material: a fixed preview sphere drawn with the
+/// Renders a Asset Table preview of a material: a fixed preview sphere drawn with the
 /// material's own albedo, normal, metallic-roughness, occlusion and emissive inputs through a
 /// physically based (GGX/Cook-Torrance) shader, under a three-light studio rig plus a hemisphere
 /// ambient that stands in for an environment probe (so metals show reflections instead of

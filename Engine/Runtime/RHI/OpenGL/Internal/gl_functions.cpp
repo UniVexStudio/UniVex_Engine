@@ -86,6 +86,10 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glBindImageTexture = LoadOneUVE<PFNGLBINDIMAGETEXTUREPROC>(getProcAddress, "glBindImageTexture");
     functions.glDrawElementsIndirect =
         LoadOneUVE<PFNGLDRAWELEMENTSINDIRECTPROC>(getProcAddress, "glDrawElementsIndirect");
+    functions.glDrawArraysInstanced =
+        LoadOneUVE<PFNGLDRAWARRAYSINSTANCEDPROC>(getProcAddress, "glDrawArraysInstanced");
+    functions.glDrawElementsInstanced =
+        LoadOneUVE<PFNGLDRAWELEMENTSINSTANCEDPROC>(getProcAddress, "glDrawElementsInstanced");
 
     functions.glGenVertexArrays = LoadOneUVE<PFNGLGENVERTEXARRAYSPROC>(getProcAddress, "glGenVertexArrays");
     functions.glDeleteVertexArrays = LoadOneUVE<PFNGLDELETEVERTEXARRAYSPROC>(getProcAddress, "glDeleteVertexArrays");
@@ -156,6 +160,8 @@ GlFunctionsUVE LoadGlFunctionsUVE(void* (*getProcAddress)(const char*)) {
     functions.glGetActiveUniform = LoadOneUVE<PFNGLGETACTIVEUNIFORMPROC>(getProcAddress, "glGetActiveUniform");
     functions.glGetProgramBinary = LoadOneUVE<PFNGLGETPROGRAMBINARYPROC>(getProcAddress, "glGetProgramBinary");
     functions.glProgramBinary = LoadOneUVE<PFNGLPROGRAMBINARYPROC>(getProcAddress, "glProgramBinary");
+    functions.glProgramParameteri =
+        LoadOneUVE<PFNGLPROGRAMPARAMETERIPROC>(getProcAddress, "glProgramParameteri");
 
     functions.glGenSamplers = LoadOneUVE<PFNGLGENSAMPLERSPROC>(getProcAddress, "glGenSamplers");
     functions.glDeleteSamplers = LoadOneUVE<PFNGLDELETESAMPLERSPROC>(getProcAddress, "glDeleteSamplers");

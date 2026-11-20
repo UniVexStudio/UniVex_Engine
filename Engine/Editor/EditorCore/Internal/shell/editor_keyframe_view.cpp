@@ -2,7 +2,7 @@
 #include "editor_keyframe_view.h"
 
 #include "editor.h"
-#include "editor_content_browser.h"
+#include "editor_asset_table.h"
 #include "editor_sequencer_panel.h"
 #include "editor_timeline_tracks.h"
 
@@ -1076,7 +1076,7 @@ bool KeyframeViewUVE::onDragEnter(const prism::DragDropEvent& e) {
 }
 
 bool KeyframeViewUVE::onDragOver(const prism::DragDropEvent& e) {
-    const std::string* path = e.operation && e.operation->tag() == EditorContentBrowserUVE::kDragTagUVE
+    const std::string* path = e.operation && e.operation->tag() == EditorAssetTableUVE::kDragTagUVE
                                   ? e.operation->getPayload<std::string>()
                                   : nullptr;
     const bool accepts = path != nullptr && std::filesystem::path{*path}.extension() == ".uvanim" &&

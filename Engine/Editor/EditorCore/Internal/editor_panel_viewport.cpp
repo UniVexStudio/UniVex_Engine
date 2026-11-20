@@ -52,8 +52,40 @@ void EditorUVE::RenderOverlayUVE() {
     }
 }
 
-void EditorUVE::SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer) {
-    m_viewportPanelRenderer = std::move(renderer);
+void EditorUVE::SetEditorViewportsUVE(EditorViewportsUVE viewports) {
+    m_viewports = std::move(viewports);
+}
+
+void EditorUVE::ClearEditorViewportsUVE() {
+    m_viewports = EditorViewportsUVE{};
+}
+
+void EditorUVE::SetLevelViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+    m_viewports.level = std::move(renderer);
+}
+
+void EditorUVE::SetCameraPreviewViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+    m_viewports.cameraPreview = std::move(renderer);
+}
+
+void EditorUVE::SetEntityViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+    m_viewports.entity = std::move(renderer);
+}
+
+void EditorUVE::SetWidgetPreviewViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+    m_viewports.widgetPreview = std::move(renderer);
+}
+
+void EditorUVE::SetRetargetViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+    m_viewports.retarget = std::move(renderer);
+}
+
+void EditorUVE::SetMontageViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+    m_viewports.montage = std::move(renderer);
+}
+
+void EditorUVE::SetVfxViewportRendererUVE(ViewportRenderCallbackUVE renderer) {
+    m_viewports.vfx = std::move(renderer);
 }
 
 void EditorUVE::SetEntityContextToolbarAnchorUVE(const Scene::EntityUVE entity, const float pixelX,

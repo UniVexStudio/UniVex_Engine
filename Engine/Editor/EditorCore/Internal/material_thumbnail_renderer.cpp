@@ -94,8 +94,11 @@ uniform vec3 uAlbedoColor;
 uniform float uAlbedoAlpha;
 uniform float uMetallic;
 uniform float uRoughness;
+uniform float uDielectricSpecular;
 uniform vec2 uUvScale;
 uniform vec2 uUvOffset;
+uniform int uUv1Triplanar;
+uniform float uUv1TriplanarSharpness;
 uniform float uNormalScale;
 uniform bool uFlipGreen;
 uniform float uOcclusionStrength;
@@ -187,11 +190,53 @@ vec3 LinearToDisplayUVE(vec3 color) {
     return mix(high, low, lessThanEqual(color, vec3(0.0031308)));
 }
 
-vec4 ReadMapUVE(sampler2D map, int slot, vec4 neutral) {
+struct PreviewUvSetUVE {
+    int triplanar;
+    vec2 uv;
+    vec2 uvX;
+    vec2 uvY;
+    vec2 uvZ;
+    vec3 weights;
+    vec3 triNormal;
+};
+
+PreviewUvSetUVE BuildPreviewUvSetUVE() {
+    PreviewUvSetUVE set;
+    set.triplanar = uUv1Triplanar;
+    set.uv = vTexCoord * uUvScale + uUvOffset;
+    set.uvX = set.uv;
+    set.uvY = set.uv;
+    set.uvZ = set.uv;
+    set.weights = vec3(0.0, 1.0, 0.0);
+    set.triNormal = normalize(vNormal);
+    if (uUv1Triplanar != 0) {
+        const vec3 pos = vWorldPosition;
+        const vec3 n = set.triNormal;
+        const vec3 w = pow(max(abs(n), vec3(1.0e-4)), vec3(max(uUv1TriplanarSharpness, 0.001)));
+        set.weights = w / max(dot(w, vec3(1.0)), 1.0e-5);
+        const vec2 pX = vec2(n.x < 0.0 ? -pos.z : pos.z, -pos.y);
+        const vec2 pY = vec2(pos.x, n.y < 0.0 ? -pos.z : pos.z);
+        const vec2 pZ = vec2(n.z < 0.0 ? -pos.x : pos.x, -pos.y);
+        set.uvX = pX * uUvScale + uUvOffset;
+        set.uvY = pY * uUvScale + uUvOffset;
+        set.uvZ = pZ * uUvScale + uUvOffset;
+    }
+    return set;
+}
+
+vec4 ReadMapUVE(sampler2D map, int slot, PreviewUvSetUVE set, vec4 neutral) {
     const vec4 transform = uMapTransform[slot];
     const vec4 control = uMapControl[slot];
-    const vec2 base = control.w > 0.5 ? vTexCoord * uUv2Scale + uUv2Offset : vTexCoord * uUvScale + uUvOffset;
-    vec4 value = texture(map, base * (vec2(1.0) + transform.xy) + transform.zw);
+    const vec2 scale = vec2(1.0) + transform.xy;
+    vec4 value;
+    if (control.w <= 0.5 && set.triplanar != 0) {
+        value = texture(map, set.uvX * scale + transform.zw) * set.weights.x +
+                texture(map, set.uvY * scale + transform.zw) * set.weights.y +
+                texture(map, set.uvZ * scale + transform.zw) * set.weights.z;
+    } else {
+        const vec2 base = control.w > 0.5 ? vTexCoord * uUv2Scale + uUv2Offset : set.uv;
+        value = texture(map, base * scale + transform.zw);
+    }
     const int channel = int(control.x + 0.5);
     if (channel >= 1) {
         const float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
@@ -203,10 +248,33 @@ vec4 ReadMapUVE(sampler2D map, int slot, vec4 neutral) {
     return mix(value, neutral, clamp(control.z, 0.0, 1.0));
 }
 
+vec3 SamplePreviewTriplanarNormalUVE(sampler2D normalMap, PreviewUvSetUVE set) {
+    vec3 tX = texture(normalMap, set.uvX).xyz * 2.0 - 1.0;
+    vec3 tY = texture(normalMap, set.uvY).xyz * 2.0 - 1.0;
+    vec3 tZ = texture(normalMap, set.uvZ).xyz * 2.0 - 1.0;
+    if (uFlipGreen) {
+        tX.y = -tX.y;
+        tY.y = -tY.y;
+        tZ.y = -tZ.y;
+    }
+    tX.xy *= uNormalScale;
+    tY.xy *= uNormalScale;
+    tZ.xy *= uNormalScale;
+    const vec3 n = set.triNormal;
+    const float sX = n.x < 0.0 ? -1.0 : 1.0;
+    const float sY = n.y < 0.0 ? -1.0 : 1.0;
+    const float sZ = n.z < 0.0 ? -1.0 : 1.0;
+    const vec3 nX = vec3(n.x * tX.z, n.y - tX.y, n.z + tX.x * sX);
+    const vec3 nY = vec3(n.x + tY.x, n.y * tY.z, n.z + tY.y * sY);
+    const vec3 nZ = vec3(n.x + tZ.x * sZ, n.y - tZ.y, n.z * tZ.z);
+    return normalize(nX * set.weights.x + nY * set.weights.y + nZ * set.weights.z);
+}
+
 void main() {
+    const PreviewUvSetUVE uvSet = BuildPreviewUvSetUVE();
     vec4 albedoSample = vec4(1.0);
     if (uHasAlbedoTexture) {
-        albedoSample = ReadMapUVE(uAlbedoTexture, 0, vec4(1.0));
+        albedoSample = ReadMapUVE(uAlbedoTexture, 0, uvSet, vec4(1.0));
     }
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
@@ -220,20 +288,24 @@ void main() {
     }
 
     vec3 shadingNormal = normalize(vNormal);
-    vec3 tangent = vTangent - shadingNormal * dot(shadingNormal, vTangent);
-    if (dot(tangent, tangent) <= 1.0e-8) {
-        const vec3 fallbackAxis = abs(shadingNormal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-        tangent = cross(fallbackAxis, shadingNormal);
-    }
-    tangent = normalize(tangent);
-    vec3 bitangent = normalize(cross(shadingNormal, tangent));
-    if (uFlipGreen) {
-        bitangent = -bitangent;
-    }
     if (uHasNormalTexture) {
-        vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, 1, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
-        tangentSpaceNormal.xy *= uNormalScale;
-        shadingNormal = normalize(mat3(tangent, bitangent, shadingNormal) * tangentSpaceNormal);
+        if (uvSet.triplanar != 0) {
+            shadingNormal = SamplePreviewTriplanarNormalUVE(uNormalTexture, uvSet);
+        } else {
+            vec3 tangent = vTangent - shadingNormal * dot(shadingNormal, vTangent);
+            if (dot(tangent, tangent) <= 1.0e-8) {
+                const vec3 fallbackAxis = abs(shadingNormal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+                tangent = cross(fallbackAxis, shadingNormal);
+            }
+            tangent = normalize(tangent);
+            vec3 bitangent = normalize(cross(shadingNormal, tangent));
+            vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, 1, uvSet, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+            if (uFlipGreen) {
+                tangentSpaceNormal.y = -tangentSpaceNormal.y;
+            }
+            tangentSpaceNormal.xy *= uNormalScale;
+            shadingNormal = normalize(mat3(tangent, bitangent, shadingNormal) * tangentSpaceNormal);
+        }
     }
 
     const vec3 view = normalize(uCameraPosition - vWorldPosition);
@@ -246,7 +318,7 @@ void main() {
     float metallic = uMetallic;
     float roughness = uRoughness;
     if (uHasMetallicRoughnessTexture) {
-        const vec3 metallicRoughness = ReadMapUVE(uMetallicRoughnessTexture, 2, vec4(1.0)).rgb;
+        const vec3 metallicRoughness = ReadMapUVE(uMetallicRoughnessTexture, 2, uvSet, vec4(1.0)).rgb;
         metallic *= metallicRoughness.b;
         roughness *= metallicRoughness.g;
     }
@@ -257,10 +329,11 @@ void main() {
 
     float occlusion = 1.0;
     if (uHasAOTexture) {
-        occlusion = mix(1.0, ReadMapUVE(uAOTexture, 3, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
+        occlusion = mix(1.0, ReadMapUVE(uAOTexture, 3, uvSet, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
     }
 
-    const vec3 baseReflectance = mix(vec3(0.04), albedo, metallic);
+    const float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
+    const vec3 baseReflectance = mix(vec3(0.16 * dielectricSpec * dielectricSpec), albedo, metallic);
     vec3 color = DirectLightUVE(shadingNormal, view, normalize(uKeyDirection), uKeyColor, albedo, baseReflectance,
                                 metallic, roughness) +
                  DirectLightUVE(shadingNormal, view, normalize(uFillDirection), uFillColor, albedo, baseReflectance,
@@ -284,7 +357,7 @@ void main() {
     color += diffuseAmbient + specularAmbient;
 
     if (uHasEmissiveTexture) {
-        color += ReadMapUVE(uEmissiveTexture, 4, vec4(1.0)).rgb * uEmissiveColor * uEmissiveEnergy;
+        color += ReadMapUVE(uEmissiveTexture, 4, uvSet, vec4(1.0)).rgb * uEmissiveColor * uEmissiveEnergy;
     } else {
         color += uEmissiveColor * uEmissiveEnergy;
     }
@@ -309,8 +382,11 @@ enum class PreviewUniformUVE : std::size_t {
     AlbedoAlpha,
     Metallic,
     Roughness,
+    DielectricSpecular,
     UvScale,
     UvOffset,
+    Uv1Triplanar,
+    Uv1TriplanarSharpness,
     NormalScale,
     FlipGreen,
     OcclusionStrength,
@@ -349,13 +425,14 @@ constexpr std::size_t kPreviewUniformCountUVE = static_cast<std::size_t>(Preview
 /// Must stay in the same order as PreviewUniformUVE; InitializeUVE() resolves every name once.
 constexpr std::array<const char*, kPreviewUniformCountUVE> kPreviewUniformNamesUVE{
     "uViewProjection",       "uCameraPosition",   "uAlbedoColor",       "uAlbedoAlpha",      "uMetallic",
-    "uRoughness",            "uUvScale",          "uUvOffset",          "uNormalScale",      "uFlipGreen",
-    "uOcclusionStrength",    "uEmissiveColor",    "uEmissiveEnergy",    "uUnshaded",         "uAlphaCutoff",
-    "uBlendEnabled",         "uHasAlbedoTexture", "uHasNormalTexture",  "uHasMetallicRoughnessTexture",
-    "uHasAOTexture",         "uHasEmissiveTexture", "uAlbedoTexture",   "uNormalTexture",    "uMetallicRoughnessTexture",
-    "uAOTexture",            "uEmissiveTexture",  "uKeyDirection",      "uKeyColor",         "uFillDirection",
-    "uFillColor",            "uRimDirection",     "uRimColor",          "uSkyAmbient",       "uGroundAmbient",
-    "uMapTransform",         "uMapControl",       "uUv2Scale",          "uUv2Offset",
+    "uRoughness",            "uDielectricSpecular", "uUvScale",         "uUvOffset",         "uUv1Triplanar",
+    "uUv1TriplanarSharpness", "uNormalScale",     "uFlipGreen",         "uOcclusionStrength", "uEmissiveColor",
+    "uEmissiveEnergy",       "uUnshaded",         "uAlphaCutoff",       "uBlendEnabled",     "uHasAlbedoTexture",
+    "uHasNormalTexture",     "uHasMetallicRoughnessTexture", "uHasAOTexture", "uHasEmissiveTexture",
+    "uAlbedoTexture",        "uNormalTexture",    "uMetallicRoughnessTexture", "uAOTexture", "uEmissiveTexture",
+    "uKeyDirection",         "uKeyColor",         "uFillDirection",     "uFillColor",        "uRimDirection",
+    "uRimColor",             "uSkyAmbient",       "uGroundAmbient",     "uMapTransform",     "uMapControl",
+    "uUv2Scale",             "uUv2Offset",
 };
 
 void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexcept {
@@ -828,9 +905,14 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
     glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
     constexpr std::size_t kPreviewTextureUnitCountUVE = 5U;
     std::array<GLint, kPreviewTextureUnitCountUVE> previousTextureBindings{};
+    std::array<GLint, kPreviewTextureUnitCountUVE> previousSamplerBindings{};
     for (std::size_t unit = 0U; unit < kPreviewTextureUnitCountUVE; ++unit) {
         gl.table.glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureBindings[unit]);
+        if (gl.table.glBindSampler != nullptr) {
+            glGetIntegerv(GL_SAMPLER_BINDING, &previousSamplerBindings[unit]);
+            gl.table.glBindSampler(static_cast<GLuint>(unit), 0U);
+        }
     }
     const GLboolean depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
     const GLboolean cullFaceWasEnabled = glIsEnabled(GL_CULL_FACE);
@@ -910,10 +992,14 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         SetFloatUVE(gl, PreviewUniformUVE::AlbedoAlpha, material.albedoAlpha);
         SetFloatUVE(gl, PreviewUniformUVE::Metallic, material.metallic);
         SetFloatUVE(gl, PreviewUniformUVE::Roughness, material.roughness);
+        SetFloatUVE(gl, PreviewUniformUVE::DielectricSpecular, std::clamp(material.dielectricSpecular, 0.0F, 1.0F));
         const float uvScale[2] = {material.uvScale.x, material.uvScale.y};
         const float uvOffset[2] = {material.uvOffset.x, material.uvOffset.y};
         SetVector2UVE(gl, PreviewUniformUVE::UvScale, uvScale);
         SetVector2UVE(gl, PreviewUniformUVE::UvOffset, uvOffset);
+        SetIntUVE(gl, PreviewUniformUVE::Uv1Triplanar,
+                  material.worldSpaceTriplanar ? 2 : (material.triplanarEnabled ? 1 : 0));
+        SetFloatUVE(gl, PreviewUniformUVE::Uv1TriplanarSharpness, material.triplanarBlendSharpness);
         SetFloatUVE(gl, PreviewUniformUVE::NormalScale, material.normalScale);
         SetBoolUVE(gl, PreviewUniformUVE::FlipGreen, material.normalFlipGreen);
         SetFloatUVE(gl, PreviewUniformUVE::OcclusionStrength, material.occlusionStrength);
@@ -1021,6 +1107,9 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
     for (std::size_t unit = 0U; unit < kPreviewTextureUnitCountUVE; ++unit) {
         gl.table.glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBindings[unit]));
+        if (gl.table.glBindSampler != nullptr) {
+            gl.table.glBindSampler(static_cast<GLuint>(unit), static_cast<GLuint>(previousSamplerBindings[unit]));
+        }
     }
     gl.table.glActiveTexture(static_cast<GLenum>(previousActiveTexture));
     SetGlCapabilityUVE(GL_DEPTH_TEST, depthTestWasEnabled);

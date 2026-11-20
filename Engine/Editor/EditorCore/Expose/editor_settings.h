@@ -25,8 +25,8 @@ inline constexpr std::string_view kBottomDockHeightUVE = "editor.panels.bottomDo
 /// dragged", and the layout falls back to its default ratio.
 inline constexpr std::string_view kScenePanelWidthUVE = "editor.panels.sceneWidth";
 inline constexpr std::string_view kInspectorPanelWidthUVE = "editor.panels.inspectorWidth";
-inline constexpr std::string_view kContentBrowserViewModeUVE = "editor.contentBrowser.viewMode";
-inline constexpr std::string_view kContentBrowserModeUVE = "editor.contentBrowser.mode";
+inline constexpr std::string_view kAssetTableViewModeUVE = "editor.assetTable.viewMode";
+inline constexpr std::string_view kAssetTableModeUVE = "editor.assetTable.mode";
 inline constexpr std::string_view kActiveWorkspaceUVE = "editor.workspace.active";
 inline constexpr std::string_view kActiveRightPanelTabUVE = "editor.rightPanel.activeTab";
 inline constexpr std::string_view kActiveBottomDockUVE = "editor.bottomDock.active";

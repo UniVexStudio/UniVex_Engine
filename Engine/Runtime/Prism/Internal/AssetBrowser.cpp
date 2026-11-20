@@ -398,7 +398,7 @@ void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
 }
 
 // One content tile: thumbnail well, chamfered type tab + type underline, name + type footer, accent
-// frame with corner brackets when selected. Shared by AssetBrowser and host content browsers.
+// frame with corner brackets when selected. Shared by AssetBrowser and host asset tables.
 float assetTileWellHeight(Rect tile) {
   // Square, leaving the footer its two lines.
   return std::max(0.0f, std::min(tile.w - 6.0f, tile.h - 44.0f));

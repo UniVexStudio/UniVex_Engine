@@ -1,12 +1,12 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
-// The Montage Editor's document: an open `.uvmontage`, its undo, and its preview - the character
+// The Motion Montage Editor's document: an open `.uvmontage`, its undo, and its preview - the character
 // the montage is previewed on, in a scene of its own beside the level (and an open entity), posed
 // at the playhead every frame. The PRISM window (shell/montage/editor_montage_editor) draws it.
 #include "editor.h"
 
 #include "animation_clip_asset.h"
-#include "animation_montage.h"
-#include "animation_montage_editing.h"
+#include "motion_montage.h"
+#include "motion_montage_editing.h"
 #include "document_scene.h"
 #include "i_asset_database.h"
 #include "i_entity_manager.h"
@@ -71,9 +71,9 @@ bool EditorUVE::OpenMontageEditorUVE(const std::filesystem::path& path) {
         m_contentStatusMessage = "Save or close " + m_montageEdit->path.filename().string() + " first.";
         return false;
     }
-    Asset::AnimationMontageAssetUVE montage;
-    if (!Asset::LoadAnimationMontageAssetUVE(path, montage)) {
-        m_contentStatusMessage = "Could not read " + path.filename().string() + " as an action clip.";
+    Asset::MotionMontageAssetUVE montage;
+    if (!Asset::LoadMotionMontageAssetUVE(path, montage)) {
+        m_contentStatusMessage = "Could not read " + path.filename().string() + " as an motion montage.";
         return false;
     }
     CloseMontageEditorUVE();
@@ -96,7 +96,7 @@ bool EditorUVE::SaveMontageEditorUVE() {
     if (!m_montageEdit.has_value()) {
         return false;
     }
-    if (!Asset::SaveAnimationMontageAssetUVE(m_montageEdit->montage, m_montageEdit->path)) {
+    if (!Asset::SaveMotionMontageAssetUVE(m_montageEdit->montage, m_montageEdit->path)) {
         m_montageEdit->status = "Could not save " + m_montageEdit->path.filename().string() + ".";
         return false;
     }
@@ -116,17 +116,17 @@ void EditorUVE::CloseMontageEditorUVE() {
     m_montageClips.clear();
 }
 
-void EditorUVE::EditMontageUVE(const std::function<void(Asset::AnimationMontageAssetUVE&)>& edit) {
+void EditorUVE::EditMontageUVE(const std::function<void(Asset::MotionMontageAssetUVE&)>& edit) {
     if (!m_montageEdit.has_value() || !edit) {
         return;
     }
-    Asset::AnimationMontageAssetUVE changed = m_montageEdit->montage;
+    Asset::MotionMontageAssetUVE changed = m_montageEdit->montage;
     edit(changed);
     if (changed == m_montageEdit->montage) {
         return;
     }
-    if (!Asset::IsAnimationMontageAssetValidUVE(changed)) {
-        m_montageEdit->status = "That would make the action clip invalid.";
+    if (!Asset::IsMotionMontageAssetValidUVE(changed)) {
+        m_montageEdit->status = "That would make the motion montage invalid.";
         return;
     }
     const bool previewChanged = !(changed.previewEntity == m_montageEdit->montage.previewEntity) ||
@@ -166,7 +166,7 @@ bool EditorUVE::RedoMontageEditUVE() {
 }
 
 void EditorUVE::SetMontagePreviewEntityUVE(const Asset::AssetGuidUVE guid) {
-    EditMontageUVE([guid](Asset::AnimationMontageAssetUVE& m) { m.previewEntity = guid; });
+    EditMontageUVE([guid](Asset::MotionMontageAssetUVE& m) { m.previewEntity = guid; });
 }
 
 void EditorUVE::RebuildMontagePreviewUVE() {
@@ -198,7 +198,7 @@ void EditorUVE::RebuildMontagePreviewUVE() {
                                                                            session.montage.previewEntity, Scene::kInvalidEntityUVE);
         session.previewSkeleton = FindSkeletonUnderUVE(services, session.previewRoot);
         if (session.previewRoot != Scene::kInvalidEntityUVE && session.previewSkeleton == Scene::kInvalidEntityUVE) {
-            session.status = "The preview entity has no Skeleton3D: the action clip has no bones to move.";
+            session.status = "The preview entity has no Skeleton3D: the motion montage has no bones to move.";
         }
     }
     if (session.previewSkeleton == Scene::kInvalidEntityUVE) {
@@ -296,7 +296,7 @@ void EditorUVE::TickMontageEditorUVE(const double deltaSeconds) {
         std::vector<Scene::MontageEventUVE> events;
         // The preview plays at full weight (the blends matter against a pose the editor has none of)
         // and never blends out early: it shows the whole montage.
-        Asset::AnimationMontageAssetUVE timing = session.montage;
+        Asset::MotionMontageAssetUVE timing = session.montage;
         timing.blendInSeconds = 0.0;
         timing.blendOutSeconds = 0.0;
         timing.autoBlendOut = true;
@@ -337,7 +337,7 @@ void EditorUVE::TickMontageEditorUVE(const double deltaSeconds) {
 std::uint64_t EditorUVE::RenderMontagePreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
                                                  const EditorViewportInputUVE& input) {
     outUsed = Math::Vector2UVE{0.0F, 0.0F};
-    if (!m_montageEdit.has_value() || m_montageScene == nullptr || !m_viewportPanelRenderer) {
+    if (!m_montageEdit.has_value() || m_montageScene == nullptr || !m_viewports.montage) {
         return 0U;
     }
     MontageEditSessionUVE& session = *m_montageEdit;
@@ -358,7 +358,7 @@ std::uint64_t EditorUVE::RenderMontagePreviewUVE(const Math::Vector2UVE& size, M
     state.input = input;
     std::uint64_t texture = 0U;
     try {
-        texture = m_viewportPanelRenderer(ViewportContextUVE::MontageEditor, size, outUsed, state);
+        texture = m_viewports.montage(size, outUsed, state);
     } catch (...) {
         m_services = previous;
         throw;

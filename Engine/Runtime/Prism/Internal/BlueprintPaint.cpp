@@ -59,7 +59,7 @@ Icon nodeIconFor(const BlueprintNode& n) {
   // the animation graph's own spellings first
   if (n.category == BlueprintNodeCategory::Animation) {
     if (has("sequence player") || t == "clip" || word("clip")) return Icon::AnimClipNode;
-    if (has("blend grid") || has("blendspace")) return Icon::NodeBlendSpace;
+    if (has("blend space") || has("blendspace")) return Icon::NodeBlendSpace;
     if (has("layered blend")) return Icon::LayeredBlend;
     if (has("blend poses by bool") || has("by bool")) return Icon::BlendByBool;
     if (has("blend") || has("blend2")) return Icon::NodeBlend;
@@ -115,7 +115,7 @@ Icon nodeIconFor(const BlueprintNode& n) {
   if (n.category == BlueprintNodeCategory::PureMath && n.style == BlueprintNodeStyle::Compact) return Icon::NodeMath;
   // animation
   if (has("sequence player")) return Icon::NodeClip;
-  if (has("blend grid")) return Icon::NodeBlendSpace;
+  if (has("blend space")) return Icon::NodeBlendSpace;
   if (has("layered blend") || has("blend poses")) return Icon::NodeBlend;
   if (word("ik") || has("bone")) return Icon::NodeBone;
   if (has("slot")) return Icon::NodeSlot;
@@ -663,7 +663,7 @@ void BlueprintGraph::paintToolbar(Canvas& c) {
   x -= 3;
   button("compile:opts", "", false, "Compile options: Save on Compile, Jump to Error Node", {}, 0, true, Icon::ChevronDown);
   button("save", "Save", false, "Save (Ctrl+S)", {}, 0, true, Icon::Save);
-  button("browse", "Browse", false, "Find this graph in the Asset Library", {}, 0, true, Icon::Browse);
+  button("browse", "Browse", false, "Find this graph in the Asset Table", {}, 0, true, Icon::Browse);
   sep();
   button("find", "Find", false, "Find nodes, pins and values (Ctrl+F). Ctrl+Shift+F searches every saved graph", {}, 0, true, Icon::Search);
   button("hide", "", m_hideUnrelated, "Hide Unrelated: fade nodes that are not selected or linked to the selection", {}, 0, true, Icon::EyeOff);

@@ -116,4 +116,72 @@ void showColorPickerWindow(Color initialColor,
                            Callback<> onCancel = nullptr,
                            Callback<Color> onLiveChange = nullptr);
 
+struct GradientColorStop {
+  float t = 0.0f;
+  float r = 1.0f;
+  float g = 1.0f;
+  float b = 1.0f;
+};
+
+struct GradientAlphaStop {
+  float t = 0.0f;
+  float alpha = 1.0f;
+};
+
+class GradientEditor : public Widget {
+public:
+  GradientEditor();
+
+  void setStops(std::vector<GradientColorStop> colorStops,
+                std::vector<GradientAlphaStop> alphaStops,
+                bool notify = false);
+  const std::vector<GradientColorStop>& colorStops() const { return m_colorStops; }
+  const std::vector<GradientAlphaStop>& alphaStops() const { return m_alphaStops; }
+
+  int addColorStop(float t, float r, float g, float b, bool notify = true);
+  int addAlphaStop(float t, float alpha, bool notify = true);
+  bool moveColorStop(int index, float newT, bool notify = true);
+  bool moveAlphaStop(int index, float newT, bool notify = true);
+  bool setColorStopValue(int index, float r, float g, float b, bool notify = true);
+  bool setAlphaStopValue(int index, float alpha, bool notify = true);
+  bool deleteColorStop(int index, bool notify = true);
+  bool deleteAlphaStop(int index, bool notify = true);
+  bool deleteSelectedStop(bool notify = true);
+
+  int selectedColorStop() const { return m_selColor; }
+  int selectedAlphaStop() const { return m_selAlpha; }
+  void selectColorStop(int index);
+  void selectAlphaStop(int index);
+
+  ColorHdr evaluateLinear(float t) const;
+  Color evaluateDisplay(float t) const;
+
+  Callback<> onChanged;
+  Callback<> onCommit;
+  Callback<> onSelectionChanged;
+
+  Vec2 measure(Vec2 avail) override;
+  void paint(Canvas& c) override;
+  bool onMouseDown(const MouseEvent& e) override;
+  bool onMouseMove(const MouseEvent& e) override;
+  bool onMouseUp(const MouseEvent& e) override;
+  bool onKeyDown(const KeyEvent& e) override;
+  bool focusable() const override { return true; }
+
+private:
+  Rect barRect() const;
+  float xToT(float x) const;
+  float tToX(float t) const;
+  int hitColorStop(Vec2 p) const;
+  int hitAlphaStop(Vec2 p) const;
+  void sortStops(float keepColorT = -1.0f, float keepAlphaT = -1.0f);
+
+  std::vector<GradientColorStop> m_colorStops;
+  std::vector<GradientAlphaStop> m_alphaStops;
+  int m_selColor = -1;
+  int m_selAlpha = -1;
+  bool m_draggingColor = false;
+  bool m_draggingAlpha = false;
+};
+
 } // namespace prism

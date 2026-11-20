@@ -43,11 +43,11 @@
 #include "editor_settings.h"
 #include "editor_viewport_input.h"
 #include "animation_library_asset.h"
-#include "animation_montage_asset.h"
-#include "montage_player_component.h"
+#include "motion_montage_asset.h"
+#include "montage_sequencer_component.h"
 #include "shader_asset.h"
 #include "gltf_skeleton.h"
-#include "editor_content_browser_model.h"
+#include "editor_asset_table_model.h"
 #include "editor_entity_diff.h"
 #include "editor_retarget_plan.h"
 #include "editor_hierarchy_view.h"
@@ -83,6 +83,11 @@
 #include "morph_target_component.h"
 #include "skin_component.h"
 #include "particle_emitter_component.h"
+#include "particle_system_asset.h"
+#include "vfx_program.h"
+#include "vfx_templates.h"
+#include "vfx_world.h"
+#include "vfx_draw_list.h"
 #include "physics_interpolation_component.h"
 #include "primitive_mesh_component.h"
 #include "rigid_3d_component.h"
@@ -94,8 +99,8 @@
 #include "scene_object_registry.h"
 #include "entity.h"
 #include "i_scene_serializer.h"
-#include "uvscript_ast.h"
-#include "uvscript_value.h"
+#include "blueprint_ast.h"
+#include "blueprint_value.h"
 
 namespace UVE::Asset {
 struct AnimationClipAssetUVE;
@@ -281,7 +286,7 @@ struct EditorModelSourceInfoUVE final {
     bool hasSkeleton = false;
     /// A skeleton and its animation with no mesh: shown as Animation, and not imported as a mesh.
     bool animationOnly = false;
-    /// A one-line description for the Content Browser tooltip ("162 bones, 1 animation, 0.27 s").
+    /// A one-line description for the Asset Table tooltip ("162 bones, 1 animation, 0.27 s").
     std::string summary;
     /// Takes in the file: each is imported as a `.uvanim` clip beside it.
     std::size_t animationCount = 0U;
@@ -441,7 +446,7 @@ struct FilePickerListingUVE final {
 };
 
 class EditorShellUVE;
-class EditorContentBrowserUVE;
+class EditorAssetTableUVE;
 class EditorDetailsUVE;
 class EditorViewportGizmosUVE;
 
@@ -459,12 +464,13 @@ class EditorUVE final {
     friend class PacketListUVE;
     friend class PacketDetailUVE;
     friend class MixerTableUVE;
-    friend class EditorContentBrowserUVE;
+    friend class EditorAssetTableUVE;
     friend class EditorDetailsUVE;
     friend class EditorViewportGizmosUVE;
     friend class EditorDockPanelsUVE;
     friend class EditorViewToolbarUVE;
     friend class EditorEntityEditorUVE;
+    friend class EditorVfxEditorUVE;
     friend class EditorSequencerPanelUVE;
     friend class KeyframeViewUVE;
     friend class EditorAnimGraphPanelUVE;
@@ -547,7 +553,7 @@ public:
 
     /// The 4 standard transform-tool modes a Viewport overlay toolbar exposes, named generically
     /// (not tied to any specific renderer's own enum) so EditorCore stays engine/viewport-agnostic
-    /// - see ViewportPanelRendererUVE's own doc comment below for why.
+    /// - see ViewportRenderCallbackUVE's own doc comment below for why.
     enum class ViewportGizmoModeUVE {
         Move,
         Rotate,
@@ -568,10 +574,10 @@ public:
     };
 
     /// Current state of the Viewport panel's own overlay toolbar (projection mode, active gizmo
-    /// tool, snap, grid) - owned and mutated by EditorUVE's own overlay-drawing code
-    /// (DrawViewportPanelUVE()), then handed to ViewportPanelRendererUVE each frame so the
-    /// concrete renderer can apply it to its own real projection/gizmo-mode/grid state. Kept as
-    /// plain enums/bools with no viewport-module type in sight, for the same reason.
+    /// tool, snap, grid) - owned and mutated by EditorUVE's own overlay-drawing code, then handed
+    /// to each dedicated ViewportRenderCallbackUVE each frame so the concrete viewport can apply
+    /// it to its own real projection/gizmo-mode/grid state. Kept as plain enums/bools with no
+    /// viewport-module type in sight, for the same reason.
     /// One axis colour as plain RGB in 0..1 - see ViewportOverlayStateUVE::axisColorX for why this
     /// is a local struct rather than the viewport's own palette type.
     struct ViewportAxisColorUVE final {
@@ -690,32 +696,13 @@ public:
         bool studioView = false;
 
         // The Entity Editor's viewport: one entity, authored in isolation. It is a 3D object view
-        // with the level's camera controls, not a 2D canvas and not a level, so the two controls
-        // that only mean something for a level are hidden there - the preview sun/environment
-        // (which exists to light a scene that has no lights of its own, while an entity being
-        // authored is lit by its own) and the 2D/3D switch (an entity asset is a 3D object; the
-        // 2D viewport mode belongs to the level's canvas). Set by DrawViewportImageUVE from the
-        // viewport context it is drawing, never authored by the user.
+        // with the level's camera controls, not a level, so level-only controls (such as the
+        // preview sun/environment that lights an unlit scene) are hidden there. Set by the panel
+        // drawing the viewport, never authored by the user.
         bool entityAuthoringView = false;
         std::array<float, 3> studioTarget{0.0F, 1.0F, 0.0F};
         float studioRadius = 1.5F;
         std::uint32_t studioFramingSerial = 0U;
-        bool is2DMode = false;
-        bool viewport2DPanTool = false;
-        bool viewport2DPivotEditing = false;
-        bool viewport2DPixelSnap = false;
-        bool viewport2DGridSnap = false;
-        bool viewport2DGuideSnap = true;
-        bool viewport2DRotationSnap = false;
-        float viewport2DGridStep = 16.0F;
-        float viewport2DRotationStepDeg = 15.0F;
-        bool viewport2DShowRulers = true;
-        bool viewport2DShowGuides = true;
-        bool viewport2DShowHud = true;
-        bool viewport2DShowCollision = true;
-        std::uint32_t viewport2DZoom100Serial = 0U;
-        std::uint32_t viewport2DZoomFitSerial = 0U;
-        std::uint32_t viewport2DClearGuidesSerial = 0U;
         int shadingMode = 0;
         bool physicsPaused = false;
         bool previewSun = true;
@@ -821,41 +808,54 @@ public:
         mutable std::array<float, 3> selectionOutlineRgb{};
     };
 
-    /// Render callback for the dockable "Viewport" panel: given the panel's current available
-    /// content-region size and the overlay toolbar's current state (see ViewportOverlayStateUVE),
-    /// renders into the caller's own framebuffer at (at most) that size and returns a GL texture
-    /// name for the editor's view to show, writing the actual rendered size back through
-    /// outUsedSize. Returning 0 means "not ready yet" - nothing is drawn that frame. Deliberately
-    /// free of any GL/
+    /// Render callback for an individual editor 3D viewport: given the view's current available
+    /// content-region size and overlay state (see ViewportOverlayStateUVE), renders into that
+    /// viewport's own framebuffer at (at most) that size and returns a GL texture name for the
+    /// editor's view to show, writing the actual rendered size back through outUsedSize. Returning
+    /// 0 means "not ready yet" - nothing is drawn that frame. Deliberately free of any GL or
     /// viewport-module types so EditorCore stays engine/viewport-agnostic (this is an upper-layer
     /// module that may compose Engine/Runtime, not something that should link a sibling
-    /// Engine/Editor module directly) - see Engine/App/src/editor/main.cpp for the concrete
-    /// Engine/Editor/Viewport-backed implementation.
-    /// Identifies one of the editor's physically independent render views.  This is deliberately
-    /// explicit at the renderer boundary: Main, Entity Editor, Retarget, and Inspector Camera
-    /// Preview must never reuse an
-    /// orbit camera, gesture, framebuffer, or render texture merely because only one happened to
-    /// be visible in an earlier frame.
-    enum class ViewportContextUVE : std::uint8_t {
-        Main = 0,
-        EntityEditor,
-        Retarget,
-        InspectorCameraPreview,
-        /// The Montage Editor's preview of its character.
-        MontageEditor,
-        /// The Widget Editor's Designer: a 3D View's asset, live, where the widget stands.
-        WidgetPreview,
-        Count
-    };
-
-    using ViewportPanelRendererUVE =
-        std::function<std::uint64_t(ViewportContextUVE context, const Math::Vector2UVE& availableSize,
-                                    Math::Vector2UVE& outUsedSize,
+    /// Engine/Editor module directly) - see Engine/App/Internal/editor/viewports/ for the concrete
+    /// Engine/Editor/Viewport-backed implementations.
+    using ViewportRenderCallbackUVE =
+        std::function<std::uint64_t(const Math::Vector2UVE& availableSize, Math::Vector2UVE& outUsedSize,
                                     const ViewportOverlayStateUVE& overlayState)>;
 
-    /// Registers (or clears, with an empty std::function) the Viewport panel's render callback.
-    /// Called once per frame from RenderOverlayUVE() while the panel is visible.
-    void SetViewportPanelRendererUVE(ViewportPanelRendererUVE renderer);
+    /// Physically separated per-window 3D viewport bindings. Each editor window owns its own
+    /// independent camera, render target, and input state without routing through a shared
+    /// dispatcher enum.
+    struct EditorViewportsUVE final {
+        /// The main Level Editor 3D viewport (`level_viewport`).
+        ViewportRenderCallbackUVE level;
+        /// The corner Picture-in-Picture preview for a selected Camera3D (`camera_preview_viewport`).
+        ViewportRenderCallbackUVE cameraPreview;
+        /// The Entity Editor's isolated authoring viewport (`entity_viewport`).
+        ViewportRenderCallbackUVE entity;
+        /// The Widget Editor Designer's 3D View preview (`widget_preview_viewport`).
+        ViewportRenderCallbackUVE widgetPreview;
+        /// The Retarget window's dual-character studio viewport (`retarget_viewport`).
+        ViewportRenderCallbackUVE retarget;
+        /// The Motion Montage Editor's skeletal preview viewport (`montage_viewport`).
+        ViewportRenderCallbackUVE montage;
+        /// The VFX / Particle Graph Editor's live particle preview viewport (`vfx_viewport`).
+        ViewportRenderCallbackUVE vfx;
+    };
+
+    /// Replaces all seven per-window viewport callbacks at once.
+    void SetEditorViewportsUVE(EditorViewportsUVE viewports);
+    /// Clears all seven per-window viewport callbacks.
+    void ClearEditorViewportsUVE();
+    /// Returns the currently registered per-window viewport callbacks.
+    [[nodiscard]] const EditorViewportsUVE& GetEditorViewportsUVE() const noexcept { return m_viewports; }
+
+    /// Registers (or clears, with an empty callback) an individual editor window's 3D viewport.
+    void SetLevelViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetCameraPreviewViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetEntityViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetWidgetPreviewViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetRetargetViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetMontageViewportRendererUVE(ViewportRenderCallbackUVE renderer);
+    void SetVfxViewportRendererUVE(ViewportRenderCallbackUVE renderer);
 
     /// Makes a scene beside the level for an asset document (the Entity Editor's entity), so
     /// editing it never touches the level. The app passes EngineCoreUVE::CreateDocumentSceneUVE;
@@ -866,13 +866,13 @@ public:
     /// window); without one the built-in picker is used.
     using FilePickerHostUVE = std::function<void(FilePickerRequestUVE)>;
     void SetFilePickerHostUVE(FilePickerHostUVE host) { m_filePickerHost = std::move(host); }
-    /// Called with a document scene's services just before that scene is destroyed, so whatever
-    /// draws it (the viewport backends) lets go first.
+    /// Called with a document scene's services just before that scene is destroyed, so whichever
+    /// viewport draws it lets go first.
     using DocumentSceneClosingUVE = std::function<void(const Core::EngineServicesUVE&)>;
     void SetDocumentSceneClosingUVE(DocumentSceneClosingUVE callback) { m_documentSceneClosing = std::move(callback); }
 
     /// The services of the document being worked on right now: the level's, or the open entity's
-    /// inside an EntityDocumentScopeUVE. Viewport backends render the scene these hold.
+    /// inside an EntityDocumentScopeUVE. Active editor viewports render the scene these hold.
     [[nodiscard]] Core::EngineServicesUVE& GetActiveServicesUVE() noexcept { return *m_services; }
     /// True inside an EntityDocumentScopeUVE: the document is the open entity, not the level.
     [[nodiscard]] bool IsEntityDocumentActiveUVE() const noexcept { return m_entityDocumentActive; }
@@ -991,16 +991,16 @@ public:
     /// are fresh on both sides. Refused in Play or while another entity is open.
     bool OpenEntityEditorUVE(const std::filesystem::path& assetPath);
 
-    // ---- Montage Editor ---------------------------------------------------------------------------
-    /// An open Animation Montage (`.uvmontage`): the asset being edited, its undo, the preview's
+    // ---- Motion Montage Editor ---------------------------------------------------------------------------
+    /// An open Motion Montage (`.uvmontage`): the asset being edited, its undo, the preview's
     /// playhead and playback, and the preview character in a scene of its own.
     struct MontageEditSessionUVE final {
         std::filesystem::path path;
         Asset::AssetGuidUVE guid;
-        Asset::AnimationMontageAssetUVE montage;
-        Asset::AnimationMontageAssetUVE saved;
-        std::vector<Asset::AnimationMontageAssetUVE> undo;
-        std::vector<Asset::AnimationMontageAssetUVE> redo;
+        Asset::MotionMontageAssetUVE montage;
+        Asset::MotionMontageAssetUVE saved;
+        std::vector<Asset::MotionMontageAssetUVE> undo;
+        std::vector<Asset::MotionMontageAssetUVE> redo;
         double playhead = 0.0;
         bool playing = false;
         bool loop = true;
@@ -1016,7 +1016,7 @@ public:
         std::string lastEvent;
         bool focusPending = true;
     };
-    /// Opens `path` in the Montage Editor (replacing a montage already open, which must be saved or
+    /// Opens `path` in the Motion Montage Editor (replacing a montage already open, which must be saved or
     /// discarded first: false while it has unsaved changes).
     bool OpenMontageEditorUVE(const std::filesystem::path& path);
     [[nodiscard]] bool IsMontageEditorOpenUVE() const noexcept { return m_montageEdit.has_value(); }
@@ -1026,7 +1026,7 @@ public:
     bool SaveMontageEditorUVE();
     void CloseMontageEditorUVE();
     /// Changes the open montage through `edit` as one undo step (nothing when it changes nothing).
-    void EditMontageUVE(const std::function<void(Asset::AnimationMontageAssetUVE&)>& edit);
+    void EditMontageUVE(const std::function<void(Asset::MotionMontageAssetUVE&)>& edit);
     bool UndoMontageEditUVE();
     bool RedoMontageEditUVE();
     /// Puts the preview on the entity asset `guid` (invalid: the skeleton of the first clip).
@@ -1038,7 +1038,7 @@ public:
     void SetMontagePlayheadUVE(double time);
     /// Advances the preview and poses its character. Called once a frame.
     void TickMontageEditorUVE(double deltaSeconds);
-    /// Draws the preview into the Montage Editor's view (ViewportContextUVE::MontageEditor).
+    /// Draws the preview into the Motion Montage Editor's dedicated viewport (`montage_viewport`).
     [[nodiscard]] std::uint64_t RenderMontagePreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
                                                         const EditorViewportInputUVE& input);
     /// What the Widget Editor's Designer shows in a 3D View (UIView3DComponentUVE's look).
@@ -1054,8 +1054,8 @@ public:
         /// empty: the asset then stands alone on the studio floor.
         std::vector<std::byte> stage;
     };
-    /// Draws a 3D View's asset, lit and turning, into the Designer's preview
-    /// (ViewportContextUVE::WidgetPreview), in a world of its own; 0 when there is nothing to show.
+    /// Draws a 3D View's asset, lit and turning, into the Designer's dedicated preview viewport
+    /// (`widget_preview_viewport`), in a world of its own; 0 when there is nothing to show.
     [[nodiscard]] std::uint64_t RenderWidgetPreviewUVE(const WidgetPreviewRequestUVE& request, const Math::Vector2UVE& size,
                                                       Math::Vector2UVE& outUsed);
     /// Lets the preview's world go (the Widget Editor closed, or no 3D View left).
@@ -1117,7 +1117,7 @@ public:
         Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
         std::string objectName;
         std::string scriptPath;
-        UVScript::SourceLocationUVE at;
+        Blueprint::SourceLocationUVE at;
         std::string message;
         /// A Blueprint's problem: the node it is on (0 for none).
         std::uint32_t blueprintNode = 0U;
@@ -1135,20 +1135,20 @@ public:
     /// Writes the Entity Editor's open Blueprint graph when it has unsaved edits (set by its window):
     /// every save of the entity saves its graph too, and Simulate and Revert keep its edits.
     std::function<void()> m_saveOpenBlueprintUVE;
-    /// Told when the Asset Library deletes a file (its absolute path): the Entity Editor closes a
+    /// Told when the Asset Table deletes a file (its absolute path): the Entity Editor closes a
     /// graph it had open from that file and empties the Script slots that named it.
     std::function<void(const std::filesystem::path& absolute)> m_onContentDeletedUVE;
     /// Whether the Blueprint open in the Entity Editor has edits not yet saved (closing asks first).
     std::function<bool()> m_openBlueprintDirtyUVE;
-    /// A Blueprint (project path) the Entity Editor opens once its entity is open (Content Browser open).
+    /// A Blueprint (project path) the Entity Editor opens once its entity is open (Asset Table open).
     std::string m_pendingBlueprintOpenUVE;
-    /// A Logic Graph to make once the Entity Editor has the entity open (the Asset Library's
-    /// Add > Logic Graph): the file, and the object it runs on as names from the root down.
-    struct PendingLogicGraphUVE {
+    /// A Blueprint Class to make once the Entity Editor has the entity open (Add > Blueprint Class):
+    /// the file, and the object it runs on as names from the root down.
+    struct PendingBlueprintCreateUVE {
         std::filesystem::path file;
         std::vector<std::string> objectPath;
     };
-    std::optional<PendingLogicGraphUVE> m_pendingLogicGraphCreateUVE;
+    std::optional<PendingBlueprintCreateUVE> m_pendingBlueprintCreateUVE;
     /// Checks the whole open entity: one root, and every object's `.uvs` script (read from the
     /// open text editor when it has unsaved text, else from disk) compiled against that object.
     /// Returns the problem count; the list stays until the next Compile, Revert or close.
@@ -1238,7 +1238,7 @@ public:
     /// remains outside the document root set.
     [[nodiscard]] bool LoadSceneUVE();
 
-    /// Makes a Content Browser `.uvscene` the active scene and loads it. The caller supplies an
+    /// Makes a Asset Table `.uvscene` the active scene and loads it. The caller supplies an
     /// existing regular scene file; the current document is recovered by LoadSceneUVE() if the
     /// replacement fails.
     [[nodiscard]] bool OpenSceneAssetUVE(const std::filesystem::path& path);
@@ -1557,6 +1557,80 @@ public:
     /// The Outliner's Viewport: the folder at the top of the level that every other folder lives in.
     /// Invalid while an entity or the Retarget preview stands in for the level.
     [[nodiscard]] Scene::EntityUVE GetDocumentViewportUVE();
+    /// One open VFX / Particle Graph Editor document: the particle system being authored, its
+    /// undo history, the last compile's diagnostics, and the live preview world it plays in.
+    struct VfxEditSessionUVE final {
+        std::filesystem::path path;
+        Asset::ParticleSystemAssetUVE system;
+        Asset::ParticleSystemAssetUVE savedSystem;
+        /// The most recent system that compiled without errors; the preview keeps running it
+        /// while the authored system has compile errors.
+        Asset::ParticleSystemAssetUVE lastGoodSystem;
+        bool hasGoodSystem = false;
+        std::vector<Asset::ParticleSystemAssetUVE> undo;
+        std::vector<Asset::ParticleSystemAssetUVE> redo;
+        std::size_t selectedEmitter = 0U;
+        std::optional<std::size_t> soloEmitter;
+        std::vector<VFX::ParticleCompileMessageUVE> compileMessages;
+        std::string status;
+        VFX::VfxWorldUVE previewWorld;
+        VFX::VfxHandleUVE previewHandle{};
+        Render::VfxDrawListUVE vfxDrawList;
+        bool playing = false;
+        bool loop = true;
+        bool fixedSeed = false;
+        bool showGrid = false;
+        bool showBounds = false;
+        bool focusPending = true;
+        bool previewCameraResetPending = true;
+        bool confirmClose = false;
+        double speed = 1.0;
+        double playhead = 0.0;
+        std::uint32_t restartCounter = 0U;
+        std::vector<float> lastEmitterCpuMs;
+        std::size_t lastInstancesDrawn = 0U;
+    };
+
+    /// Computes the elevated world-space origin above the y = 0 studio floor for a VFX system's fixed bounds.
+    [[nodiscard]] static Math::Vector3UVE ResolveVfxPreviewOriginUVE(const Math::AabbUVE& fixedBounds) noexcept;
+
+    /// Opens the `.uvfx` at `absolutePath` in the VFX Editor (replacing any open document).
+    [[nodiscard]] bool OpenVfxEditorUVE(const std::filesystem::path& absolutePath);
+    [[nodiscard]] bool IsVfxEditorOpenUVE() const noexcept { return m_vfxEdit != nullptr; }
+    [[nodiscard]] bool IsVfxEditorDirtyUVE() const noexcept;
+    /// Writes the document (only when it is a valid particle system) and marks it clean.
+    [[nodiscard]] bool SaveVfxEditorUVE();
+    void CloseVfxEditorUVE();
+    /// One undoable edit: `edit` mutates a copy of the system, which then replaces it, is
+    /// recompiled, and (when it compiles) respawns the live preview. Returns false when no
+    /// document is open or the edit changed nothing.
+    bool EditVfxSystemUVE(const std::function<void(Asset::ParticleSystemAssetUVE&)>& edit);
+    [[nodiscard]] bool UndoVfxEditUVE();
+    [[nodiscard]] bool RedoVfxEditUVE();
+    /// Compiles every enabled emitter (only the solo emitter while one is soloed). Returns true
+    /// when there are no errors; only then does the preview switch to the new system.
+    [[nodiscard]] bool CompileVfxEditorUVE();
+    void PlayVfxPreviewUVE();
+    void PauseVfxPreviewUVE() noexcept;
+    /// Stops preview playback and resets the simulation cleanly back to `t = 0`.
+    void StopVfxPreviewUVE();
+    void RestartVfxPreviewUVE();
+    /// Moves the preview to `seconds`: restarts it and steps it forward deterministically.
+    void SetVfxPlayheadUVE(double seconds);
+    void TickVfxEditorUVE(double deltaSeconds);
+    /// Draws the live preview into the VFX Editor's view; 0 when nothing can be drawn.
+    [[nodiscard]] std::uint64_t RenderVfxPreviewUVE(const Math::Vector2UVE& size, Math::Vector2UVE& outUsed,
+                                                    const EditorViewportInputUVE& input);
+    [[nodiscard]] VfxEditSessionUVE* VfxEditSessionPtrUVE() noexcept { return m_vfxEdit.get(); }
+    /// Creates a new `.uvfx` in `directory` from a built-in template; returns its path (empty on failure).
+    [[nodiscard]] std::filesystem::path CreateParticleSystemAssetUVE(const std::filesystem::path& directory,
+                                                                     const std::string& name,
+                                                                     VFX::ParticleTemplateKindUVE kind);
+    /// The Asset Table thumbnail of a `.uvfx`: its particles at 60% of the duration.
+    [[nodiscard]] std::uintptr_t GetVfxThumbnailUVE(const std::filesystem::path& relativePath);
+    void ClearVfxThumbnailCacheUVE() noexcept;
+    void InvalidateVfxThumbnailCacheUVE(const std::filesystem::path& absolutePath);
+
     [[nodiscard]] EditorStateUVE GetStateUVE() const noexcept;
     [[nodiscard]] Scene::EntityUVE GetSelectedEntityUVE() const noexcept;
 
@@ -1640,7 +1714,7 @@ public:
         std::string text;
         std::string savedText;
         /// Every problem the compiler found in `text`, in source order; empty when it compiles.
-        std::vector<UVScript::DiagnosticUVE> diagnostics;
+        std::vector<Blueprint::DiagnosticUVE> diagnostics;
 
         [[nodiscard]] bool IsDirtyUVE() const noexcept { return text != savedText; }
     };
@@ -1670,7 +1744,7 @@ public:
     /// One `export` field of the selected object's `.uvs` script, as the Inspector shows it.
     struct ScriptExportRowUVE final {
         std::string name;
-        UVScript::TypeUVE type;
+        Blueprint::TypeUVE type;
         /// The script's own initial value, as UVScript text.
         std::string defaultText;
         /// What this object runs with: its stored value when it has a valid one, else the default.
@@ -1873,7 +1947,7 @@ private:
         bool focusPending = true;
     };
     /// What the Retarget window's viewport shows: a world of its own (a document scene beside the
-    /// level, as the Montage Editor's), so the level stays open and editable the whole time.
+    /// level, as the Motion Montage Editor's), so the level stays open and editable the whole time.
     struct RetargetPreviewUVE final {
         std::shared_ptr<Core::DocumentSceneUVE> scene;
         /// Everything of the preview stands under it.
@@ -2033,9 +2107,9 @@ private:
         Audio,
     };
 
-    /// Session-only Content Browser focus. This filters copied ProjectFileIndexUVE entries and
+    /// Session-only Asset Table focus. This filters copied ProjectFileIndexUVE entries and
     /// never requests I/O, loads an asset, or changes the AssetDatabaseUVE registry.
-    enum class ContentBrowserTypeFocusUVE {
+    enum class AssetTableTypeFocusUVE {
         All,
         Folders,
         Scene,
@@ -2052,7 +2126,7 @@ private:
 
     /// A file's primary presentation type. Registry correlation is deliberately a separate badge:
     /// one registered `.uvmodel` row therefore remains Mesh + Registered, never an ambiguous tag.
-    enum class ContentBrowserItemTypeUVE {
+    enum class AssetTableItemTypeUVE {
         Folder,
         Scene,
         Prefab,
@@ -2071,9 +2145,9 @@ private:
         Animation,
         /// A named, ordered collection of animation clips (`.uvanimlib`) that sequencers load from.
         AnimationLibrary,
-        /// An Animation Montage (`.uvmontage`): opens in the Montage Editor.
-        AnimationMontage,
-        /// A named list of montages (`.uvmontagelib`) MontagePlayers link to.
+        /// An Motion Montage (`.uvmontage`): opens in the Motion Montage Editor.
+        MotionMontage,
+        /// A named list of montages (`.uvmontagelib`) MontageSequencers link to.
         MontageLibrary,
         /// A Blueprint Class (`.uvbp`): an object's gameplay as a node graph, edited in the Entity Editor.
         Blueprint,
@@ -2082,6 +2156,8 @@ private:
         Script,
         Audio,
         Font,
+        /// A Particle System (`.uvfx`): opens in the VFX / Particle Graph Editor.
+        ParticleSystem,
         File,
     };
 
@@ -2576,14 +2652,19 @@ private:
     [[nodiscard]] bool ApplyComponentPropertySnapshotUVE(Scene::EntityUVE entity,
                                                          const Core::TypeMetadataEntryUVE* metadata,
                                                          const void* snapshot);
-    [[nodiscard]] static ContentBrowserItemTypeUVE ClassifyContentBrowserEntryUVE(
+    /// Extension-only fallback classification used before model-source metadata is available.
+    [[nodiscard]] static AssetTableItemTypeUVE ClassifyAssetTableEntryUVE(
         const Asset::ProjectFileEntryUVE& entry);
-    [[nodiscard]] static const char* GetContentBrowserItemTypeLabelUVE(ContentBrowserItemTypeUVE type) noexcept;
-    [[nodiscard]] static const char* GetContentBrowserFocusLabelUVE(ContentBrowserTypeFocusUVE focus) noexcept;
-    [[nodiscard]] bool DoesContentBrowserEntryMatchFocusUVE(const Asset::ProjectFileEntryUVE& entry) const;
-    [[nodiscard]] bool IsContentBrowserDirectoryInSnapshotUVE(const Asset::ProjectFileSnapshotUVE& snapshot,
+    /// Classifies a browser entry using the source summary from the latest project refresh, so
+    /// animation-only FBX sources are not presented as static meshes and rigged sources as meshes.
+    [[nodiscard]] AssetTableItemTypeUVE GetAssetTableEntryTypeUVE(
+        const Asset::ProjectFileEntryUVE& entry) const;
+    [[nodiscard]] static const char* GetAssetTableItemTypeLabelUVE(AssetTableItemTypeUVE type) noexcept;
+    [[nodiscard]] static const char* GetAssetTableFocusLabelUVE(AssetTableTypeFocusUVE focus) noexcept;
+    [[nodiscard]] bool DoesAssetTableEntryMatchFocusUVE(const Asset::ProjectFileEntryUVE& entry) const;
+    [[nodiscard]] bool IsAssetTableDirectoryInSnapshotUVE(const Asset::ProjectFileSnapshotUVE& snapshot,
                                                                const std::filesystem::path& directory) const;
-    void ReconcileContentBrowserDirectoryUVE(const Asset::ProjectFileSnapshotUVE& snapshot) noexcept;
+    void ReconcileAssetTableDirectoryUVE(const Asset::ProjectFileSnapshotUVE& snapshot) noexcept;
     [[nodiscard]] bool IsProjectPathFavoritedUVE(const std::filesystem::path& relativePath) const;
     void ToggleProjectPathFavoriteUVE(const std::filesystem::path& relativePath);
     static constexpr std::size_t kMaxPersistedFavoriteProjectsUVE = 128U;
@@ -2619,7 +2700,7 @@ private:
     /// back to the generic per-type icon in that case.
     [[nodiscard]] std::uintptr_t GetMaterialThumbnailUVE(const std::filesystem::path& relativePath);
     void ClearMaterialThumbnailCacheUVE() noexcept;
-    /// Drops one material's cached preview after its asset was saved, so the Content Browser shows
+    /// Drops one material's cached preview after its asset was saved, so the Asset Table shows
     /// the edit. `absolutePath` is the material file the Inspector wrote; it is matched against the
     /// project content root and ignored when outside it.
     void InvalidateMaterialThumbnailCacheUVE(const std::filesystem::path& absolutePath);
@@ -2675,7 +2756,7 @@ private:
     /// What a model source's file holds, read now if the last refresh did not cover it.
     ///
     /// The refresh cache is an optimisation for the panels that draw many entries; it must never be
-    /// the reason an action fails. A placement that ran before the Content Browser had refreshed
+    /// the reason an action fails. A placement that ran before the Asset Table had refreshed
     /// used to see "no information" and treat a bones-only animation as a model whose mesh had not
     /// been converted yet, so it placed nothing and said it was still importing. Reading the file
     /// here is one bounded summary - no geometry, no curves - and it is remembered for next time.
@@ -2831,8 +2912,8 @@ private:
     EditorBottomDockUVE m_activeBottomDock = EditorBottomDockUVE::FileSystem;
     /// Empty is the ProjectFileIndexUVE content root. This value is session-only and must name a
     /// directory in the latest successful copied snapshot before it is used as a browser location.
-    std::filesystem::path m_contentBrowserDirectory;
-    /// The Entity Editor's Content Browser is docked as a tab (else it is a drawer that slides up).
+    std::filesystem::path m_assetTableDirectory;
+    /// The Entity Editor's Asset Table is docked as a tab (else it is a drawer that slides up).
     bool m_entityContentDocked = false;
     /// User-curated shortcuts into the project tree, as project-relative generic paths; both
     /// directories and files may be favorited. Persisted across sessions (see
@@ -2852,15 +2933,15 @@ private:
     std::optional<Scene::TransformComponentUVE> m_transformClipboard;
     /// Whether scale axes are linked/proportional (Uniform Scaling / Magnet mode). Defaults to true.
     bool m_uniformScaleLocked = true;
-    /// The shelf the Content item area shows instead of m_contentBrowserDirectory, or empty.
-    std::string m_contentBrowserShelf;
+    /// The shelf the Content item area shows instead of m_assetTableDirectory, or empty.
+    std::string m_assetTableShelf;
     /// The user's shelves; saved with the session like the pinned paths.
     ContentShelvesUVE m_contentShelves;
     /// project.uvshelves' write time as last read or written, to notice a change made outside
     /// (a pull, a teammate's editor), and when the panel last looked.
     std::optional<std::filesystem::file_time_type> m_sharedShelvesWriteTime;
     double m_sharedShelvesCheckedAt = 0.0;
-    /// Back/forward; follows m_contentBrowserDirectory/m_contentBrowserShelf each frame, so a
+    /// Back/forward; follows m_assetTableDirectory/m_assetTableShelf each frame, so a
     /// change made anywhere (tree, breadcrumb, bridge) is a step Back can undo.
     ContentNavigationHistoryUVE m_contentHistory;
     /// The folder tree's own search, shown while its magnifier is on.
@@ -2869,22 +2950,22 @@ private:
     /// The shelf being renamed inline in the sidebar, and its text.
     std::string m_contentShelfRenaming;
     std::string m_contentShelfRenameText;
-    /// Fraction of the merged Content Browser panel's width given to its left file/folder list
+    /// Fraction of the merged Asset Table panel's width given to its left file/folder list
     /// (the remainder goes to the right thumbnail grid); adjusted by dragging the splitter between
     /// them. Matches the ~35% left / ~65% right proportions of the design this panel was built to.
-    float m_contentBrowserSplitRatio = 0.35F;
-    /// Whether the Content Browser shows its sidebar (pinned, folders, shelves) beside the items,
+    float m_assetTableSplitRatio = 0.35F;
+    /// Whether the Asset Table shows its sidebar (pinned, folders, shelves) beside the items,
     /// or the items alone at full width. Toggled from the panel's Settings menu.
-    bool m_contentBrowserSplitModeUVE = true;
-    /// How the Content Browser shows files, picked from its "..." menu.
-    enum class ContentBrowserViewModeUVE : std::uint8_t {
+    bool m_assetTableSplitModeUVE = true;
+    /// How the Asset Table shows files, picked from its "..." menu.
+    enum class AssetTableViewModeUVE : std::uint8_t {
         SmallTiles = 0,
         LargeTiles,
         List,
     };
-    ContentBrowserViewModeUVE m_contentBrowserViewMode = ContentBrowserViewModeUVE::SmallTiles;
+    AssetTableViewModeUVE m_assetTableViewMode = AssetTableViewModeUVE::SmallTiles;
     /// Which of the five modes the item area is in (Settings > Mode, or the mode strip).
-    ContentBrowserModeUVE m_contentBrowserMode = ContentBrowserModeUVE::Tiles;
+    AssetTableModeUVE m_assetTableMode = AssetTableModeUVE::Tiles;
     /// Details' sort, for this session.
     ContentSortKeyUVE m_contentSortKey = ContentSortKeyUVE::Name;
     bool m_contentSortAscending = true;
@@ -2892,13 +2973,13 @@ private:
     /// content-relative path; read from disk once each and forgotten when the project is rescanned.
     std::unordered_map<std::string, ContentFileFactsUVE> m_contentFileFacts;
     std::uint64_t m_contentFileFactsGeneration = 0U;
-    /// Content-derived thumbnail textures for Content Browser entries (currently texture assets
+    /// Content-derived thumbnail textures for Asset Table entries (currently texture assets
     /// only), keyed by project-relative generic path. A cached 0 means a prior load attempt
     /// failed (not a texture, corrupt, or unsupported format) and callers should fall back to the
     /// generic per-type icon rather than retrying every frame. Cleared whenever the project file
     /// index is successfully refreshed, since on-disk content may have changed.
     std::map<std::string, std::uintptr_t> m_textureThumbnailCache;
-    /// Content-derived thumbnail textures for Content Browser mesh entries, rendered on demand by
+    /// Content-derived thumbnail textures for Asset Table mesh entries, rendered on demand by
     /// m_meshThumbnailRenderer. Kept up to date on its own: the files it was drawn from (the mesh
     /// and its materials) are looked at again now and then, and a change draws it again; a
     /// picture that could not be drawn yet (an import still running) is tried again.
@@ -2912,14 +2993,14 @@ private:
     /// Bumped whenever a mesh picture is drawn again or the pictures are dropped: views that copy
     /// pictures by texture id copy again (an id can be reused for a new picture).
     std::uint64_t m_meshThumbnailGeneration = 0U;
-    /// Content-derived thumbnail textures for Content Browser material entries, rendered on demand
+    /// Content-derived thumbnail textures for Asset Table material entries, rendered on demand
     /// by m_materialThumbnailRenderer. Same caching contract as m_textureThumbnailCache, plus
     /// targeted invalidation when the Inspector saves a material (InvalidateMaterialThumbnailCacheUVE).
     std::map<std::string, std::uintptr_t> m_materialThumbnailCache;
     /// Material thumbnails invalidated during this frame. The Inspector saves a material on every
     /// edit - including every frame of a slider drag - so its preview is dropped from
     /// m_materialThumbnailCache immediately but the GL texture is only freed at the start of the
-    /// next Content Browser pass, so a card still drawn this frame keeps its texture.
+    /// next Asset Table pass, so a card still drawn this frame keeps its texture.
     std::vector<std::uintptr_t> m_retiredMaterialThumbnailTextures;
     /// Why the last Skeleton3D source bind failed; shown under the Source row until the next bind.
     std::string m_skeletonSourceStatus;
@@ -3267,7 +3348,7 @@ private:
     std::map<std::string, EditorModelSourceInfoUVE> m_modelSources;
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;
     MaterialThumbnailRendererUVE m_materialThumbnailRenderer;
-    ContentBrowserTypeFocusUVE m_contentBrowserTypeFocus = ContentBrowserTypeFocusUVE::All;
+    AssetTableTypeFocusUVE m_assetTableTypeFocus = AssetTableTypeFocusUVE::All;
     std::string m_assetFilter;
     /// One default-constructed instance per inspected component type, made on first use, so the
     /// Inspector can tell a changed value from a default one without constructing a component per
@@ -3421,7 +3502,7 @@ private:
     FilePickerHostUVE m_filePickerHost;
     std::unique_ptr<Core::DocumentSceneUVE> m_entityScene;
     std::optional<MontageEditSessionUVE> m_montageEdit;
-    /// The Montage Editor's preview scene (its character), beside the level and the entity.
+    /// The Motion Montage Editor's preview scene (its character), beside the level and the entity.
     std::unique_ptr<Core::DocumentSceneUVE> m_montageScene;
     std::map<std::uint64_t, std::optional<Asset::AnimationClipAssetUVE>> m_montageClips;
     /// The Widget Editor's 3D View preview: its world, the asset standing in it, how it is framed.
@@ -3497,12 +3578,17 @@ private:
     float m_inspectorPanelWidth = 320.0F;
     std::array<char, 512> m_consoleInput{};
     bool m_consoleScrollToBottom = false;
-    ViewportPanelRendererUVE m_viewportPanelRenderer;
+    EditorViewportsUVE m_viewports;
+    /// The VFX Editor's open document, its preview world's scene, and the thumbnail cache.
+    std::unique_ptr<VfxEditSessionUVE> m_vfxEdit;
+    std::unique_ptr<Core::DocumentSceneUVE> m_vfxScene;
+    ViewportOverlayStateUVE m_vfxViewportOverlayState;
+    std::map<std::string, std::uintptr_t> m_vfxThumbnailCache;
     bool m_prismUiRequested = false;
     std::filesystem::path m_prismAssetDir;
     std::unique_ptr<EditorShellUVE> m_levelShell;
-    // UI/render state is isolated just like the three backend cameras and render targets. Main
-    // remains the canonical settings-backed state; tool-window state is session-local.
+    // UI/render state is isolated per window, matching the dedicated per-window viewports.
+    // Level remains the canonical settings-backed state; tool-window state is session-local.
     ViewportOverlayStateUVE m_viewportOverlayState;
     ViewportOverlayStateUVE m_entityViewportOverlayState;
     ViewportOverlayStateUVE m_retargetViewportOverlayState;

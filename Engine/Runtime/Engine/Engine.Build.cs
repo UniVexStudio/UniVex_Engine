@@ -34,8 +34,9 @@ public class EngineModule : ModuleRules
             "RHIVulkan",
             "RHINull",
             "RenderSystems",
-            "UVScript",
-            "Network"
+            "Blueprint",
+            "Networking",
+            "VFX"
         });
 
         PublicDefinitions.AddRange(new string[] {

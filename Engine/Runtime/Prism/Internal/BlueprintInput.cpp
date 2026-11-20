@@ -658,7 +658,7 @@ bool BlueprintGraph::toolbarClick(Vec2 p) {
     else if (id == "save") { if (onSaveRequested) onSaveRequested(); else saveToFile(); }
     else if (id == "load") { openLoadMenu(b.r); return true; }
     else if (id == "find") { openFind(b.r); return true; }
-    else if (id == "browse") { if (onBrowse) onBrowse(); else Application::get().notify("Browse: no content browser connected", ToastLevel::Info, 1500); }
+    else if (id == "browse") { if (onBrowse) onBrowse(); else Application::get().notify("Browse: no asset table connected", ToastLevel::Info, 1500); }
     else if (id == "undo") undo();
     else if (id == "redo") redo();
     else if (id == "run") run();
@@ -729,11 +729,16 @@ bool BlueprintGraph::onMouseDown(const MouseEvent& e) {
     if (e.clicks == 2 && onNodeDoubleClicked) { select(id); onNodeDoubleClicked(id); return true; }
     BlueprintNode* n = nodeById(id);
     if (additive) n->selected = !n->selected;
-    else if (!n->selected) { clearSelection(); n->selected = true; }
+    else if (!n->selected) {
+      for (auto& nn : m_nodes) nn.selected = false;
+      for (auto& cm : m_comments) cm.selected = false;
+      n->selected = true;
+    }
     else m_pendingSelect = id;                 // already part of a selection: collapse on release if it was a plain click
     m_dragOrigin.clear();
     for (auto& nn : m_nodes) if (nn.selected) m_dragOrigin.push_back({nn.id, nn.pos});
     m_drag = m_dragOrigin.empty() ? Drag::None : Drag::Nodes;
+    notifySelection();
     invalidate();
     return true;
   }
@@ -745,7 +750,10 @@ bool BlueprintGraph::onMouseDown(const MouseEvent& e) {
   }
   if (BlueprintComment* cm = commentTitleAt(e.pos)) {
     if (e.clicks == 2) { editComment(*cm); return true; }
-    if (!additive) clearSelection();
+    if (!additive) {
+      for (auto& nn : m_nodes) nn.selected = false;
+      for (auto& c : m_comments) c.selected = false;
+    }
     cm->selected = true;
     m_drag = Drag::Comment;
     m_dragCommentId = cm->id;
@@ -755,6 +763,7 @@ bool BlueprintGraph::onMouseDown(const MouseEvent& e) {
     for (auto& n : m_nodes) {            // nodes fully inside the comment travel with it
       if (cm->bounds.contains(n.pos) && cm->bounds.contains(n.pos + n.size)) m_dragOrigin.push_back({n.id, n.pos});
     }
+    notifySelection();
     invalidate();
     return true;
   }
@@ -1110,7 +1119,8 @@ void BlueprintGraph::showCommentMenu(int commentId, Vec2 p) {
   items.push_back(MenuItem::Item("Select Nodes Inside", [this, commentId] {
     for (auto& c : m_comments) {
       if (c.id != commentId) continue;
-      clearSelection();
+      for (auto& nn : m_nodes) nn.selected = false;
+      for (auto& cm : m_comments) cm.selected = false;
       for (auto& n : m_nodes) n.selected = c.bounds.contains(n.pos) && c.bounds.contains(n.pos + n.size);
       notifySelection();
       invalidate();

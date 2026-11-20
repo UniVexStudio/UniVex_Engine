@@ -21,9 +21,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT" || exit 1
 INC=$(find Engine -type d -name Expose | sed 's/^/-I/' | tr '\n' ' ')
 fail=0
-# The panel TUs, and the PRISM windows in shell/ and its per-editor folders (blueprint/,
-# anim_graph/, widget/, montage/, retarget/).
-for f in Engine/Editor/EditorCore/Internal/editor_panel_*.cpp $(find Engine/Editor/EditorCore/Internal/shell -name '*.cpp' | sort); do
+# The panel TUs, the PRISM windows in shell/ and its per-editor folders (anim_graph/, widget/,
+# montage/, retarget/, vfx/), and the Blueprint editor TUs in Blueprint/Editor/.
+for f in Engine/Editor/EditorCore/Internal/editor_panel_*.cpp $(find Engine/Editor/EditorCore/Internal/shell Engine/Editor/EditorCore/Blueprint/Editor -name '*.cpp' 2>/dev/null | sort); do
   # list every std:: symbol used, and confirm a matching standard header is included
   while read -r sym hdr; do
     if grep -q "std::$sym\b" "$f" && ! grep -q "#include <$hdr>" "$f"; then

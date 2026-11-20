@@ -22,7 +22,7 @@ struct GroupUVE final {
     std::size_t count;
 };
 
-constexpr std::array<GroupUVE, 13> kGroupsUVE{{
+constexpr std::array<GroupUVE, 12> kGroupsUVE{{
     {"Basic", {Kind::Folder, Kind::Object3D, Kind::Marker3D, Kind::Script}, 4},
     {"Meshes", {Kind::MeshInstance3D, Kind::BoxMesh3D, Kind::SphereMesh3D, Kind::PlaneMesh3D, Kind::LODGroup3D}, 5},
     {"Lights", {Kind::DirectionalLight3D, Kind::Light3D}, 2},
@@ -30,7 +30,7 @@ constexpr std::array<GroupUVE, 13> kGroupsUVE{{
     {"Camera", {Kind::Camera3D, Kind::SpringArm3D}, 2},
     {"Physics", {Kind::Static3D, Kind::Rigid3D, Kind::Kinematic3D, Kind::Collider3D, Kind::Area3D, Kind::RayCast3D}, 6},
     {"Animation",
-     {Kind::Skeleton3D, Kind::AnimationSequencer, Kind::AnimationGraph, Kind::MontagePlayer, Kind::BoneAttachment3D,
+     {Kind::Skeleton3D, Kind::AnimationSequencer, Kind::AnimationGraph, Kind::MontageSequencer, Kind::BoneAttachment3D,
       Kind::TwoBoneIK3D, Kind::FullBodyIK3D},
      7},
     {"Gameplay", {Kind::SpawnPoint3D, Kind::InteractionArea3D, Kind::Hitbox3D, Kind::Hurtbox3D, Kind::Projectile3D}, 5},
@@ -38,7 +38,6 @@ constexpr std::array<GroupUVE, 13> kGroupsUVE{{
     {"Audio & VFX", {Kind::AudioSource3D, Kind::ParticleEmitter3D}, 2},
     {"World", {Kind::LevelStreamer3D, Kind::WorldPartition3D, Kind::Occluder3D, Kind::VisibilityRegion3D}, 4},
     {"UI", {Kind::Canvas, Kind::UIText, Kind::UIImage, Kind::UIButton}, 4},
-    {"2D", {Kind::Sprite2D, Kind::Camera2D}, 2},
 }};
 
 /// The level's own: one per level, or a volume of the world. Never part of an entity.
@@ -60,8 +59,6 @@ constexpr std::array<GroupUVE, 13> kGroupsUVE{{
         case Kind::UIText:
         case Kind::UIImage:
         case Kind::UIButton:
-        case Kind::Sprite2D:
-        case Kind::Camera2D:
         case Kind::Folder:
             return true;
         default:
@@ -103,7 +100,7 @@ bool IsObjectOfferedForRootUVE(const Kind kind, const EntityRootUVE root) noexce
         case Kind::FullBodyIK3D:
         case Kind::BoneAttachment3D:
         case Kind::AnimationGraph:
-        case Kind::MontagePlayer:
+        case Kind::MontageSequencer:
         case Kind::NavSeeker3D:
         case Kind::SpringArm3D:
             return root == EntityRootUVE::Character;
@@ -114,7 +111,7 @@ bool IsObjectOfferedForRootUVE(const Kind kind, const EntityRootUVE root) noexce
 
 bool IsObjectOfferedUVE(const Kind kind, const AddObjectContextUVE context) noexcept {
     if (context == AddObjectContextUVE::Entity) {
-        // An entity's objects get their behaviour from Logic Graphs, not script objects.
+        // An entity's objects get their behaviour from Blueprints, not script objects.
         return !IsLevelOnlyUVE(kind) && kind != Kind::Script;
     }
     // A level takes everything of the world; a character's parts are built inside an Entity.
@@ -141,7 +138,7 @@ prism::Icon ObjectKindGlyphUVE(const Kind kind) noexcept {
         case Kind::Skeleton3D: return prism::Icon::Skeleton;
         case Kind::AnimationSequencer: return prism::Icon::AnimSequencer;
         case Kind::AnimationGraph: return prism::Icon::AnimGraph;
-        case Kind::MontagePlayer: return prism::Icon::MontagePlayer;
+        case Kind::MontageSequencer: return prism::Icon::MontageSequencer;
         case Kind::BoneAttachment3D: return prism::Icon::BoneAttachment;
         case Kind::TwoBoneIK3D: return prism::Icon::TwoBoneIK;
         default: return prism::Icon::None;

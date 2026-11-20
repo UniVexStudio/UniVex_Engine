@@ -11,7 +11,7 @@
 
 namespace UVE::Editor {
 
-/// The Montage Editor's timeline, drawn with PRISM's canvas:
+/// The Motion Montage Editor's timeline, drawn with PRISM's canvas:
 ///
 ///   [header ][ ruler with the playhead                                   ]
 ///   [Sections][ |Start        |Attack1          |Attack2       |End       ]

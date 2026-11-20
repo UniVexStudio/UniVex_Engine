@@ -78,8 +78,8 @@
 #include "config_manager.h"
 #include "engine_project_settings.h"
 #include "shader_cache_path_policy.h"
-#include "uvscript_codegen.h"
-#include "uvscript_compiler.h"
+#include "blueprint_codegen.h"
+#include "blueprint_compiler.h"
 #include "engine_assert.h"
 #include "log_sink.h"
 #include "logger.h"
@@ -147,9 +147,9 @@
 #include "full_body_ik_3d.h"
 #include "skeleton_3d.h"
 #include "animation_graph.h"
-#include "animation_montage.h"
-#include "animation_montage_editing.h"
-#include "montage_player_component.h"
+#include "motion_montage.h"
+#include "motion_montage_editing.h"
+#include "montage_sequencer_component.h"
 #include "decal_3d_events.h"
 #include "decal_3d.h"
 #include "nav_mesh_volume_3d.h"
@@ -189,7 +189,6 @@
 #include "world_partition_3d.h"
 #include "gi_probes_3d.h"
 #include "xr_objects_3d.h"
-#include "all_objects_2d.h"
 #include "ui_extended_containers.h"
 #include "ui_extended_controls.h"
 #include "shape_narrow_phase.h"
@@ -226,6 +225,7 @@
 #include "montage_library_asset.h"
 #include "collider_component.h"
 #include "particle_emitter_component.h"
+#include "particle_render_bridge.h"
 #include "rigid_3d_component.h"
 #include "solid_body_component.h"
 #include "script_component.h"
@@ -525,11 +525,12 @@ void EngineCoreUVE::Init() {
     switch (m_config.toneMappingMethodUVE) {
     case ToneMappingMethodUVE::LinearClampUVE:
     case ToneMappingMethodUVE::AcesUVE:
+    case ToneMappingMethodUVE::SoftFilmicUVE:
         break;
     default:
-        UVE_WARNING("EngineCoreUVE: invalid tone-mapping method {}; using ACES",
+        UVE_WARNING("EngineCoreUVE: invalid tone-mapping method {}; using SoftFilmic",
                     static_cast<std::uint32_t>(m_config.toneMappingMethodUVE));
-        m_config.toneMappingMethodUVE = ToneMappingMethodUVE::AcesUVE;
+        m_config.toneMappingMethodUVE = ToneMappingMethodUVE::SoftFilmicUVE;
         break;
     }
     switch (m_config.postProcessAAMethodUVE) {
@@ -1028,6 +1029,10 @@ void EngineCoreUVE::Init() {
     // ParticleRuntime fifteenth: owns only bounded authored-emitter runtime state; ECS remains
     // authoritative and EngineCore reconciles it before simulation/render extraction.
     m_particleRuntime = std::make_unique<Scene::ParticleRuntimeUVE>();
+    m_vfxWorld = std::make_unique<VFX::VfxWorldUVE>();
+    if (!m_config.projectRootDirectoryUVE.empty()) {
+        m_vfxWorld->SetProjectRootUVE(m_config.projectRootDirectoryUVE);
+    }
 
     // NavigationRuntime: owns the baked navmesh per region entity and one steering state per agent
     // entity. Nothing else in the engine keeps a navmesh, so a rebuild is this object's business.
@@ -1197,6 +1202,7 @@ void EngineCoreUVE::Init() {
                         *m_audioDevice, *m_audioSystem,
                         *m_audioSourceSystem, *m_saveGameSystem, *m_checkpointManager,
                         *m_windowManager);
+    m_services->SetVfxWorldUVE(m_vfxWorld.get());
 
     TransitionStateUVE(EngineStateUVE::Running);
     UVE_INFO("EngineCoreUVE: initialized");
@@ -1245,6 +1251,9 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
     m_entityManager->ForEachUVE<Scene::ParticleEmitterComponentUVE>(
         [this, &authoredEmitters, simulationPaused](const Scene::EntityUVE entity,
                                                     const Scene::ParticleEmitterComponentUVE& component) {
+            if (!component.systemAssetPath.empty()) {
+                return;
+            }
             authoredEmitters.push_back(entity);
             const Scene::ParticleRuntimeSnapshotUVE currentSnapshot = m_particleRuntime->GetSnapshotUVE();
             bool budgetMatches = false;
@@ -1337,6 +1346,127 @@ void EngineCoreUVE::SyncParticleRuntimeUVE() {
                                                    component.lifetimeSeconds}));
         }
         static_cast<void>(m_particleRuntime->SimulateDetailedUVE(deltaSeconds, m_config.gravity, m_threadPool.get()));
+    }
+}
+
+void EngineCoreUVE::SyncVfxRuntimeUVE() {
+    if (m_vfxWorld == nullptr) {
+        return;
+    }
+
+    if (!m_config.projectRootDirectoryUVE.empty() &&
+        m_vfxWorld->GetProjectRootUVE() != m_config.projectRootDirectoryUVE) {
+        m_vfxWorld->SetProjectRootUVE(m_config.projectRootDirectoryUVE);
+    }
+
+    const bool simulationPaused = m_simulationExecutionMode == SimulationExecutionModeUVE::Paused;
+    const float rawDeltaSeconds = m_timer != nullptr ? static_cast<float>(m_timer->GetDeltaTimeUVE()) : 0.0F;
+    const float scaledDeltaSeconds =
+        simulationPaused ? 0.0F : std::max(0.0F, rawDeltaSeconds * m_simulationSpeedScale);
+
+    std::unordered_set<Scene::EntityUVE> activeVfxEntities;
+    m_entityManager->ForEachUVE<Scene::ParticleEmitterComponentUVE>(
+        [this, &activeVfxEntities, scaledDeltaSeconds](const Scene::EntityUVE entity,
+                                                       const Scene::ParticleEmitterComponentUVE& component) {
+            if (component.systemAssetPath.empty() || !Scene::IsParticleEmitterComponentValidUVE(component)) {
+                return;
+            }
+            activeVfxEntities.insert(entity);
+
+            VfxEntityInstanceStateUVE& state = m_vfxEntityInstances[entity];
+            VFX::VfxOwnerUVE owner{};
+            owner.qualityLevel = m_vfxWorld->GetQualityLevelUVE();
+            if (m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(entity)) {
+                const Scene::WorldTransformComponentUVE& world =
+                    m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(entity);
+                if (!world.dirty && Math::IsFiniteUVE(world.worldPosition)) {
+                    owner.position = world.worldPosition;
+                    Math::QuaternionUVE rot = world.worldRotation;
+                    if (!Math::TryNormalizeUVE(rot, rot)) {
+                        rot = Math::QuaternionUVE{};
+                    }
+                    owner.rotation = rot;
+                    if (state.hasLastWorldPosition && scaledDeltaSeconds > 1e-6F) {
+                        owner.velocity =
+                            (world.worldPosition - state.lastWorldPosition) * (1.0F / scaledDeltaSeconds);
+                    }
+                    state.lastWorldPosition = world.worldPosition;
+                    state.hasLastWorldPosition = true;
+                }
+            }
+
+            const bool assetOrSeedChanged =
+                state.systemAssetPath != component.systemAssetPath || state.seed != component.seed;
+            if (assetOrSeedChanged && state.handle.IsValidUVE()) {
+                static_cast<void>(m_vfxWorld->KillUVE(state.handle));
+                state.handle = VFX::kInvalidVfxHandleUVE;
+                state.wasEmitting = false;
+            }
+            state.systemAssetPath = component.systemAssetPath;
+            state.seed = component.seed;
+
+            const bool shouldEmit = component.emitting && component.autoPlay;
+            const std::uint64_t attachKey =
+                (static_cast<std::uint64_t>(entity.generation) << 32ULL) |
+                static_cast<std::uint64_t>(entity.index);
+
+            if (shouldEmit) {
+                if (!state.handle.IsValidUVE() || !m_vfxWorld->IsAliveUVE(state.handle) || !state.wasEmitting) {
+                    if (state.handle.IsValidUVE() && m_vfxWorld->IsAliveUVE(state.handle)) {
+                        static_cast<void>(m_vfxWorld->KillUVE(state.handle));
+                    }
+                    state.handle =
+                        m_vfxWorld->SpawnUVE(component.systemAssetPath, owner, attachKey, component.seed);
+                } else {
+                    static_cast<void>(m_vfxWorld->SetOwnerUVE(state.handle, owner));
+                }
+                state.wasEmitting = true;
+            } else {
+                if (state.handle.IsValidUVE() && m_vfxWorld->IsAliveUVE(state.handle)) {
+                    if (state.wasEmitting) {
+                        static_cast<void>(m_vfxWorld->StopUVE(state.handle));
+                    }
+                    if (m_vfxWorld->IsAliveUVE(state.handle)) {
+                        static_cast<void>(m_vfxWorld->SetOwnerUVE(state.handle, owner));
+                    }
+                }
+                state.wasEmitting = false;
+            }
+        });
+
+    for (auto it = m_vfxEntityInstances.begin(); it != m_vfxEntityInstances.end();) {
+        if (!activeVfxEntities.contains(it->first)) {
+            if (it->second.handle.IsValidUVE()) {
+                static_cast<void>(m_vfxWorld->KillUVE(it->second.handle));
+            }
+            it = m_vfxEntityInstances.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    if (m_config.hotReloadEnabledUVE) {
+        static_cast<void>(m_vfxWorld->PollHotReloadUVE());
+    }
+
+    if (!simulationPaused && scaledDeltaSeconds > 0.0F) {
+        VFX::VfxFrameViewUVE frameView{};
+        if (m_activeCamera != Scene::kInvalidEntityUVE &&
+            m_entityManager->IsAliveUVE(m_activeCamera) &&
+            m_entityManager->HasComponentUVE<Scene::CameraComponentUVE>(m_activeCamera) &&
+            m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+            const Scene::CameraComponentUVE& camComp =
+                m_entityManager->GetComponentUVE<Scene::CameraComponentUVE>(m_activeCamera);
+            const Scene::WorldTransformComponentUVE& camWorld =
+                m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera);
+            if (!camWorld.dirty && Math::IsFiniteUVE(camWorld.worldPosition)) {
+                frameView.hasCamera = true;
+                frameView.cameraPosition = camWorld.worldPosition;
+                frameView.frustum = Math::FrustumUVE::FromViewProjectionUVE(
+                    Scene::Camera3DUVE::BuildViewProjectionMatrixUVE(camComp, camWorld));
+            }
+        }
+        m_vfxWorld->TickUVE(scaledDeltaSeconds, frameView);
     }
 }
 
@@ -1930,7 +2060,7 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
                 return;
             }
             const std::string& source = *read;
-            auto host = std::make_unique<UVScriptObjectHostUVE>(
+            auto host = std::make_unique<BlueprintObjectHostUVE>(
                 *m_entityManager, m_inputSystem.get(), entity, m_audioSourceSystem.get(), m_audioSystem.get(),
                 [this](const Scene::EntityUVE other) { return FindUVScriptInstanceUVE(other); });
             host->SetWidgetFactoryUVE([this](const std::string& path) { return CreateWidgetUVE(path); });
@@ -1943,9 +2073,9 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
                     m_windowManager->SetCursorVisibleUVE(show);
                 }
             });
-            const UVScript::CompileResultUVE compiled = UVScript::CompileUVScriptSourceUVE(source, *host);
+            const Blueprint::CompileResultUVE compiled = Blueprint::CompileUVScriptSourceUVE(source, *host);
             if (!compiled.IsSuccessUVE()) {
-                for (const UVScript::DiagnosticUVE& diagnostic : compiled.diagnostics) {
+                for (const Blueprint::DiagnosticUVE& diagnostic : compiled.diagnostics) {
                     UVE_ERROR("{}:{}:{}: {}", component.scriptAssetPath, diagnostic.at.line, diagnostic.at.column,
                               diagnostic.message);
                 }
@@ -1957,16 +2087,16 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
             slot.path = component.scriptAssetPath;
             slot.source = source;
             slot.program = compiled.program;
-            slot.instance = std::make_unique<UVScript::ScriptInstanceUVE>(compiled.program, *host);
+            slot.instance = std::make_unique<Blueprint::ScriptInstanceUVE>(compiled.program, *host);
             // The object's own values for the script's exports, before `ready` sees them. A value
             // for a field the script no longer exports, or of the wrong type, is skipped.
             slot.exportValues = component.exportValues;
-            for (const UVScript::FieldInfoUVE& field : UVScript::GetProgramFieldsUVE(*compiled.program)) {
+            for (const Blueprint::FieldInfoUVE& field : Blueprint::GetProgramFieldsUVE(*compiled.program)) {
                 const auto stored = component.exportValues.find(field.name);
-                if (field.kind != UVScript::FieldKindUVE::Export || stored == component.exportValues.end()) {
+                if (field.kind != Blueprint::FieldKindUVE::Export || stored == component.exportValues.end()) {
                     continue;
                 }
-                if (const std::optional<UVScript::ValueUVE> value = UVScript::ParseValueTextUVE(stored->second, field.type)) {
+                if (const std::optional<Blueprint::ValueUVE> value = Blueprint::ParseValueTextUVE(stored->second, field.type)) {
                     static_cast<void>(slot.instance->SetFieldUVE(field.name, *value));
                 }
             }
@@ -2012,12 +2142,12 @@ void EngineCoreUVE::SyncUVScriptsUVE(const bool simulationPaused) {
             !Scene::IsTickingUVE(ResolvedTickModeUVE(*m_sceneGraph, entity), simulationPaused)) {
             continue;
         }
-        UVScript::ScriptInstanceUVE& instance = *it->second.instance;
+        Blueprint::ScriptInstanceUVE& instance = *it->second.instance;
         if (!it->second.readyRaised) {
             it->second.readyRaised = true;
             static_cast<void>(instance.RaiseEventUVE("ready"));
         }
-        const UVScript::ValueUVE args[] = {dt};
+        const Blueprint::ValueUVE args[] = {dt};
         static_cast<void>(instance.RaiseEventUVE("tick", args));
         instance.AdvanceUVE(dt);
     }
@@ -2117,13 +2247,13 @@ namespace {
 
 void EngineCoreUVE::FillScriptServicesUVE() {
     ScriptServicesUVE& s = m_scriptServices;
-    const auto toEngine = [](const UVScript::Vec3ValueUVE& v) {
+    const auto toEngine = [](const Blueprint::Vec3ValueUVE& v) {
         return Math::Vector3UVE{static_cast<float>(v.x), static_cast<float>(v.y), static_cast<float>(v.z)};
     };
     const auto toScript = [](const Math::Vector3UVE& v) {
-        return UVScript::Vec3ValueUVE{static_cast<double>(v.x), static_cast<double>(v.y), static_cast<double>(v.z)};
+        return Blueprint::Vec3ValueUVE{static_cast<double>(v.x), static_cast<double>(v.y), static_cast<double>(v.z)};
     };
-    s.trace = [this, toEngine, toScript](const UVScript::Vec3ValueUVE& from, const UVScript::Vec3ValueUVE& to, const double radius,
+    s.trace = [this, toEngine, toScript](const Blueprint::Vec3ValueUVE& from, const Blueprint::Vec3ValueUVE& to, const double radius,
                                          const Scene::EntityUVE ignore) {
         ScriptServicesUVE::TraceHitUVE out;
         const Math::Vector3UVE a = toEngine(from);
@@ -2162,7 +2292,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
         }
         return out;
     };
-    s.spawn = [this, toEngine](const std::string& path, const UVScript::Vec3ValueUVE& position, const UVScript::Vec3ValueUVE& rotation) {
+    s.spawn = [this, toEngine](const std::string& path, const Blueprint::Vec3ValueUVE& position, const Blueprint::Vec3ValueUVE& rotation) {
         if (m_sceneSerializer == nullptr || path.empty()) {
             return Scene::kInvalidEntityUVE;
         }
@@ -2242,7 +2372,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
             m_pendingScriptEvents.emplace_back(target, name, payload);
         }
     };
-    s.playSound = [this, toEngine](const std::string& path, const UVScript::Vec3ValueUVE& position, const double volume, const bool spatial) {
+    s.playSound = [this, toEngine](const std::string& path, const Blueprint::Vec3ValueUVE& position, const double volume, const bool spatial) {
         if (m_audioSourceSystem == nullptr || m_audioSystem == nullptr || m_sceneGraph == nullptr) {
             return false;
         }
@@ -2303,7 +2433,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
     s.cameraForward = [this, currentCamera, toScript] {
         const Scene::EntityUVE camera = currentCamera();
         if (camera == Scene::kInvalidEntityUVE || !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(camera)) {
-            return UVScript::Vec3ValueUVE{0.0, 0.0, -1.0};
+            return Blueprint::Vec3ValueUVE{0.0, 0.0, -1.0};
         }
         return toScript(Math::RotateVectorUVE(m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(camera).worldRotation,
                                               Math::Vector3UVE{0.0F, 0.0F, -1.0F}));
@@ -2311,7 +2441,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
     s.cameraLocation = [this, currentCamera, toScript] {
         const Scene::EntityUVE camera = currentCamera();
         if (camera == Scene::kInvalidEntityUVE || !m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(camera)) {
-            return UVScript::Vec3ValueUVE{};
+            return Blueprint::Vec3ValueUVE{};
         }
         return toScript(m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(camera).worldPosition);
     };
@@ -2378,7 +2508,7 @@ void EngineCoreUVE::FillScriptServicesUVE() {
 void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationPaused) {
     m_scriptGameDelta = simulationPaused ? 0.0 : dt * static_cast<double>(m_simulationSpeedScale);
     m_scriptGameTime += m_scriptGameDelta;
-    const auto instanceOf = [this](const Scene::EntityUVE entity) -> UVScript::ScriptInstanceUVE* {
+    const auto instanceOf = [this](const Scene::EntityUVE entity) -> Blueprint::ScriptInstanceUVE* {
         const auto slot = m_uvScripts.find(entity);
         return slot != m_uvScripts.end() ? slot->second.instance.get() : nullptr;
     };
@@ -2396,8 +2526,8 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
                 continue;
             }
             for (const std::string& id : slot->second.host->AdvanceTimersUVE(m_scriptGameDelta)) {
-                if (UVScript::ScriptInstanceUVE* const instance = instanceOf(entity)) {
-                    const UVScript::ValueUVE args[] = {id};
+                if (Blueprint::ScriptInstanceUVE* const instance = instanceOf(entity)) {
+                    const Blueprint::ValueUVE args[] = {id};
                     static_cast<void>(instance->RaiseEventUVE("timer", args));
                 }
             }
@@ -2408,8 +2538,8 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
         std::vector<std::tuple<Scene::EntityUVE, std::string, std::string>> events;
         std::swap(events, m_pendingScriptEvents);
         for (const auto& [target, name, payload] : events) {
-            if (UVScript::ScriptInstanceUVE* const instance = instanceOf(target); instance != nullptr && m_entityManager->IsAliveUVE(target)) {
-                const UVScript::ValueUVE args[] = {name, payload};
+            if (Blueprint::ScriptInstanceUVE* const instance = instanceOf(target); instance != nullptr && m_entityManager->IsAliveUVE(target)) {
+                const Blueprint::ValueUVE args[] = {name, payload};
                 static_cast<void>(instance->RaiseEventUVE("custom_event", args));
             }
         }
@@ -2426,7 +2556,7 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
             for (const Scene::EntityUVE child : m_sceneGraph->GetChildrenUVE(*m_entityManager, root)) {
                 destroy(child);
             }
-            if (UVScript::ScriptInstanceUVE* const instance = instanceOf(root)) {
+            if (Blueprint::ScriptInstanceUVE* const instance = instanceOf(root)) {
                 static_cast<void>(instance->RaiseEventUVE("destroyed"));
             }
             // The script goes with its object, before the object: no handler outlives what it drives.
@@ -2518,7 +2648,7 @@ Scene::EntityUVE EngineCoreUVE::CreateWidgetUVE(const std::string& path) {
 void EngineCoreUVE::RaiseWidgetScriptEventsUVE() {
     // A widget that was used tells every scripted object above it (and itself): a Widget
     // Blueprint's graph sits on its root Canvas and hears each of its buttons by name.
-    const auto raise = [this](Scene::EntityUVE widget, const std::string_view event, const std::span<const UVScript::ValueUVE> args) {
+    const auto raise = [this](Scene::EntityUVE widget, const std::string_view event, const std::span<const Blueprint::ValueUVE> args) {
         for (int depth = 0; depth < 256 && m_entityManager->IsAliveUVE(widget); ++depth) {
             if (const auto slot = m_uvScripts.find(widget); slot != m_uvScripts.end() && slot->second.instance != nullptr) {
                 static_cast<void>(slot->second.instance->RaiseEventUVE(event, args));
@@ -2579,11 +2709,11 @@ void EngineCoreUVE::RaiseWidgetScriptEventsUVE() {
         }
     });
     for (const auto& [entity, event] : used) {
-        const UVScript::ValueUVE args[] = {nameOf(entity)};
+        const Blueprint::ValueUVE args[] = {nameOf(entity)};
         raise(entity, event, args);
     }
     for (const auto& [entity, text] : committed) {
-        const UVScript::ValueUVE args[] = {nameOf(entity), text};
+        const Blueprint::ValueUVE args[] = {nameOf(entity), text};
         raise(entity, "ui_committed", args);
     }
 }
@@ -2593,7 +2723,7 @@ std::optional<std::size_t> EngineCoreUVE::WriteNativeUVScriptsUVE(const std::fil
     std::filesystem::create_directories(directory, error);
     std::unordered_set<std::uint64_t> written;
     for (const auto& [entity, slot] : m_uvScripts) {
-        const std::uint64_t fingerprint = UVScript::GetProgramFingerprintUVE(*slot.program);
+        const std::uint64_t fingerprint = Blueprint::GetProgramFingerprintUVE(*slot.program);
         if (!written.insert(fingerprint).second) {
             continue;
         }
@@ -2602,7 +2732,7 @@ std::optional<std::size_t> EngineCoreUVE::WriteNativeUVScriptsUVE(const std::fil
         const std::filesystem::path file =
             directory / (std::filesystem::path{slot.path}.stem().string() + suffix + ".uvs.cpp");
         std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        out << UVScript::GenerateUVScriptNativeCppUVE(*slot.program, slot.path);
+        out << Blueprint::GenerateUVScriptNativeCppUVE(*slot.program, slot.path);
         if (!out) {
             UVE_ERROR("EngineCoreUVE: could not write native script \"{}\"", file.generic_string());
             return std::nullopt;
@@ -2611,7 +2741,7 @@ std::optional<std::size_t> EngineCoreUVE::WriteNativeUVScriptsUVE(const std::fil
     return written.size();
 }
 
-UVScript::ScriptInstanceUVE* EngineCoreUVE::FindUVScriptInstanceUVE(const Scene::EntityUVE entity) noexcept {
+Blueprint::ScriptInstanceUVE* EngineCoreUVE::FindUVScriptInstanceUVE(const Scene::EntityUVE entity) noexcept {
     const auto it = m_uvScripts.find(entity);
     return it == m_uvScripts.end() ? nullptr : it->second.instance.get();
 }
@@ -2811,13 +2941,13 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 continue;
             }
             for (const std::string& name : events) {
-                const UVScript::ValueUVE args[] = {UVScript::ValueUVE{name}};
+                const Blueprint::ValueUVE args[] = {Blueprint::ValueUVE{name}};
                 static_cast<void>(slot->second.instance->RaiseEventUVE("animation_event", args));
             }
         }
     };
 
-    // Montages, first half: a script asks through the MontagePlayer (montage.play / jump_to / stop);
+    // Montages, first half: a script asks through the MontageSequencer (montage.play / jump_to / stop);
     // the request is carried out here, where the montage files are, and the montage steps once a
     // frame. Its pose goes to the character's AnimationGraph when the graph has a Slot node for it
     // (the graph lays it where the slot is); otherwise it is blended over the whole body after the
@@ -2834,7 +2964,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
     if (!physicsStep) {
         m_entityManager->ForEachUVE<Scene::AnimationGraphComponentUVE>(
             [](const Scene::EntityUVE, Scene::AnimationGraphComponentUVE& graph) { graph.slotPoses.clear(); });
-        const auto montageFor = [this](const Asset::AssetGuidUVE guid) -> const Asset::AnimationMontageAssetUVE* {
+        const auto montageFor = [this](const Asset::AssetGuidUVE guid) -> const Asset::MotionMontageAssetUVE* {
             if (guid == Asset::kInvalidAssetGuidUVE || !m_assetDatabase) {
                 return nullptr;
             }
@@ -2848,8 +2978,8 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
             if (path != entry.path || written != entry.written) {
                 entry.path = path;
                 entry.written = written;
-                Asset::AnimationMontageAssetUVE loaded;
-                if (Asset::LoadAnimationMontageAssetUVE(path, loaded)) {
+                Asset::MotionMontageAssetUVE loaded;
+                if (Asset::LoadMotionMontageAssetUVE(path, loaded)) {
                     entry.montage = std::move(loaded);
                 } else {
                     entry.montage.reset();
@@ -2862,7 +2992,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                            [](const unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
             return text;
         };
-        // A montage event reaches the MontagePlayer's script and the script of the object it is under.
+        // A montage event reaches the MontageSequencer's script and the script of the object it is under.
         const auto raiseMontageEvent = [this](const Scene::EntityUVE self, const char* event, const std::string& name) {
             if (m_simulationExecutionMode != SimulationExecutionModeUVE::Running) {
                 return;
@@ -2875,13 +3005,13 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                 if (listener == Scene::kInvalidEntityUVE || slot == m_uvScripts.end() || slot->second.instance == nullptr) {
                     continue;
                 }
-                const UVScript::ValueUVE args[] = {UVScript::ValueUVE{name}};
+                const Blueprint::ValueUVE args[] = {Blueprint::ValueUVE{name}};
                 static_cast<void>(slot->second.instance->RaiseEventUVE(event, args));
             }
         };
         for (const Scene::EntityUVE entity :
-             CollectFixedStepOrderUVE<Scene::MontagePlayerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
-            Scene::MontagePlayerComponentUVE& player = m_entityManager->GetComponentUVE<Scene::MontagePlayerComponentUVE>(entity);
+             CollectFixedStepOrderUVE<Scene::MontageSequencerComponentUVE>(*m_entityManager, *m_sceneGraph)) {
+            Scene::MontageSequencerComponentUVE& player = m_entityManager->GetComponentUVE<Scene::MontageSequencerComponentUVE>(entity);
             std::vector<Scene::MontageEventUVE> events;
             if (player.request != Scene::MontageRequestUVE::None) {
                 const Scene::MontageRequestUVE request = player.request;
@@ -2903,7 +3033,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                         }
                     }
                     for (const auto& [guid, libraryName] : offered) {
-                        const Asset::AnimationMontageAssetUVE* const montage = montageFor(guid);
+                        const Asset::MotionMontageAssetUVE* const montage = montageFor(guid);
                         if (montage == nullptr || (lower(m_assetDatabase->ResolveUVE(guid).stem().string()) != wanted &&
                                                    lower(libraryName) != wanted)) {
                             continue;
@@ -2917,7 +3047,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                         }
                         break;
                     }
-                } else if (const Asset::AnimationMontageAssetUVE* const montage = montageFor(player.playing)) {
+                } else if (const Asset::MotionMontageAssetUVE* const montage = montageFor(player.playing)) {
                     if (request == Scene::MontageRequestUVE::JumpTo) {
                         static_cast<void>(Scene::JumpToMontageSectionUVE(*montage, player.playback, player.requestSection));
                     } else {
@@ -2925,7 +3055,7 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                     }
                 }
             }
-            const Asset::AnimationMontageAssetUVE* const montage = montageFor(player.playing);
+            const Asset::MotionMontageAssetUVE* const montage = montageFor(player.playing);
             const Scene::EntityUVE skeletonEntity = resolveSkeleton(entity, Scene::kInvalidEntityUVE);
             if (montage != nullptr && player.IsPlayingUVE()) {
                 Scene::StepMontageUVE(*montage, player.playback, animDeltaSeconds, events);
@@ -2948,9 +3078,9 @@ void EngineCoreUVE::SyncAnimationUVE(const float deltaSeconds, const bool physic
                                 resolveSkeleton(graphEntity, mixerOf(graphEntity).target) != skeletonEntity) {
                                 return;
                             }
-                            // A graph linked to another MontagePlayer leaves this one's montages alone.
-                            if (graph.montagePlayer != Scene::kInvalidEntityUVE && graph.montagePlayer != entity &&
-                                m_entityManager->IsAliveUVE(graph.montagePlayer)) {
+                            // A graph linked to another MontageSequencer leaves this one's montages alone.
+                            if (graph.montageSequencer != Scene::kInvalidEntityUVE && graph.montageSequencer != entity &&
+                                m_entityManager->IsAliveUVE(graph.montageSequencer)) {
                                 return;
                             }
                             const bool hasSlot = std::any_of(graph.nodes.begin(), graph.nodes.end(),
@@ -3283,19 +3413,12 @@ void EngineCoreUVE::SyncCameraFollowUVE() {
     Scene::UpdateCameraFollowUVE(*m_entityManager);
     static_cast<void>(Scene::UpdatePathFollow3DObjectsUVE(
         *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
-    static_cast<void>(Scene::UpdatePathFollow2DObjectsUVE(
-        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
     static_cast<void>(Scene::UpdateSprite3DObjectsUVE(
-        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
-    static_cast<void>(Scene::UpdateAnimatedSprite2DObjectsUVE(
-        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
-    static_cast<void>(Scene::UpdateAudioAnimNavInput2DObjectsUVE(
         *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
     static_cast<void>(Scene::UpdateXRObjects3DUVE(*m_entityManager));
     static_cast<void>(Scene::UpdateUIExtendedObjectsUVE(
         *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
     static_cast<void>(Scene::UpdateRemoteTransform3DObjectsUVE(*m_entityManager));
-    static_cast<void>(Scene::UpdateRemoteTransform2DObjectsUVE(*m_entityManager));
 }
 
 void EngineCoreUVE::SyncKinematic3DObjectsUVE(const float fixedDeltaTimeSeconds) {
@@ -3411,7 +3534,7 @@ void EngineCoreUVE::RaiseContactScriptEventUVE(const Scene::EntityUVE first, con
         }
         const bool otherNamed = others[i] != Scene::kInvalidEntityUVE && m_entityManager->IsAliveUVE(others[i]) &&
                                 m_entityManager->HasComponentUVE<Scene::NameComponentUVE>(others[i]);
-        const UVScript::ValueUVE args[] = {UVScript::ValueUVE{
+        const Blueprint::ValueUVE args[] = {Blueprint::ValueUVE{
             otherNamed ? m_entityManager->GetComponentUVE<Scene::NameComponentUVE>(others[i]).name
                        : std::string{}}};
         static_cast<void>(slot->second.instance->RaiseEventUVE(event, args));
@@ -4550,8 +4673,6 @@ void EngineCoreUVE::Update() {
             *m_entityManager, m_config.gravity, fixedDeltaTimeSeconds));
         static_cast<void>(Scene::UpdateSoftBody3DObjectsUVE(
             *m_entityManager, m_config.gravity, fixedDeltaTimeSeconds));
-        static_cast<void>(Scene::UpdatePhysics2DObjectsUVE(
-            *m_entityManager, fixedDeltaTimeSeconds, m_config.gravity2DUVE));
         m_physicsSystem->StepUVE(*m_entityManager, *m_sceneGraph, fixedDeltaTimeSeconds);
         SyncKinematic3DObjectsUVE(fixedDeltaTimeSeconds);
         SyncCharacterControllersUVE(fixedDeltaTimeSeconds);
@@ -4595,6 +4716,7 @@ void EngineCoreUVE::Update() {
     // and it has been computed every frame since the timer was written - only ever logged.
     m_renderer3D->SetPhysicsInterpolationAlphaUVE(static_cast<float>(fixedStep.alpha));
     SyncParticleRuntimeUVE();
+    SyncVfxRuntimeUVE();
     SyncUIRuntimeUVE();
     // Decals age on the SIMULATED clock - the fixed step times the steps that actually ran - so a
     // frame that ran no step does not shorten a decal's life, and a paused simulation freezes it.
@@ -4754,6 +4876,25 @@ void EngineCoreUVE::Render() {
 
     m_renderer3D->SetUIRuntimeUVE(&m_uiRuntime);
     if (m_activeCamera != Scene::kInvalidEntityUVE) {
+        if (m_vfxWorld != nullptr) {
+            Math::Vector3UVE cameraPos{};
+            Math::Vector3UVE cameraForward{0.0F, 0.0F, -1.0F};
+            if (m_entityManager->IsAliveUVE(m_activeCamera) &&
+                m_entityManager->HasComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera)) {
+                const Scene::WorldTransformComponentUVE& camWorld =
+                    m_entityManager->GetComponentUVE<Scene::WorldTransformComponentUVE>(m_activeCamera);
+                cameraPos = camWorld.worldPosition;
+                Math::QuaternionUVE rot = camWorld.worldRotation;
+                if (Math::TryNormalizeUVE(rot, rot)) {
+                    cameraForward = Math::RotateVectorUVE(rot, Math::Vector3UVE{0.0F, 0.0F, -1.0F});
+                }
+            }
+            Render::ParticleRenderBridgeUVE::ExtractVfxUVE(*m_vfxWorld, m_vfxDrawList, cameraPos, cameraForward);
+            m_renderer3D->SetVfxDrawListUVE(&m_vfxDrawList);
+        } else {
+            m_vfxDrawList.ClearUVE();
+            m_renderer3D->SetVfxDrawListUVE(nullptr);
+        }
         const bool hasParticles = m_particleRuntime != nullptr && m_particleRuntime->GetInstanceCountUVE() > 0U;
         std::optional<Render::ViewportRectUVE> contentRegion = m_editorViewportRegionUVE;
         if (!contentRegion.has_value() && m_windowedRenderingActiveUVE &&
@@ -4976,6 +5117,8 @@ void EngineCoreUVE::Shutdown() {
     m_projectSettingsSubscriptions.clear();
     m_uvScriptFailedSources.clear();
     m_uvScripts.clear(); // hosts point into the entity manager, so they go first
+    m_vfxEntityInstances.clear();
+    m_vfxDrawList.ClearUVE();
     m_services.reset();
     m_checkpointManager.reset();
     m_saveGameSystem.reset();
@@ -4989,6 +5132,9 @@ void EngineCoreUVE::Shutdown() {
     m_mobileInputSystem.reset();
     m_gamepadInputSystem.reset();
     m_navigationRuntime.reset();
+    m_vfxWorld.reset();
+    m_particleRuntime.reset();
+    m_particleEmitRemainder.clear();
     m_raycastSystem.reset();
     m_physicsQuerySystem.reset();
     m_physicsSystem.reset();
@@ -5068,6 +5214,16 @@ const FrameStatsUVE& EngineCoreUVE::GetFrameStatsUVE() const noexcept {
 
 Scene::ParticleRuntimeSnapshotUVE EngineCoreUVE::GetParticleRuntimeSnapshotUVE() const {
     return m_particleRuntime != nullptr ? m_particleRuntime->GetSnapshotUVE() : Scene::ParticleRuntimeSnapshotUVE{};
+}
+
+VFX::VfxWorldUVE& EngineCoreUVE::GetVfxWorldUVE() noexcept {
+    UVE_ASSERT(m_vfxWorld != nullptr);
+    return *m_vfxWorld;
+}
+
+const VFX::VfxWorldUVE& EngineCoreUVE::GetVfxWorldUVE() const noexcept {
+    UVE_ASSERT(m_vfxWorld != nullptr);
+    return *m_vfxWorld;
 }
 
 bool EngineCoreUVE::SetSimulationExecutionModeUVE(const SimulationExecutionModeUVE mode) noexcept {
@@ -5178,6 +5334,52 @@ VersionUVE EngineCoreUVE::GetEngineVersionUVE() noexcept {
 }
 
 
+void ApplyEngineConfigToRenderer3DUVE(const EngineConfigUVE& config, Render::IRenderer3DUVE& renderer) {
+    renderer.SetSceneClearColorUVE(config.backgroundColorUVE);
+    Render::PostProcessSettingsUVE postProcessSettings;
+    postProcessSettings.nearestUpscalingEnabledUVE =
+        config.spatialUpscalingMethodUVE == SpatialUpscalingMethodUVE::NearestUVE;
+    postProcessSettings.acesToneMappingEnabledUVE = config.toneMappingMethodUVE != ToneMappingMethodUVE::LinearClampUVE;
+    postProcessSettings.toneMappingMethodUVE = static_cast<std::uint32_t>(config.toneMappingMethodUVE);
+    postProcessSettings.sharpeningAmountUVE = config.sharpeningAmountUVE;
+    postProcessSettings.ditheringEnabledUVE = config.ditheringEnabledUVE;
+    postProcessSettings.fastApproximateAAEnabledUVE =
+        config.postProcessAAMethodUVE == PostProcessAAMethodUVE::FastApproximateUVE;
+    postProcessSettings.fastApproximateAAQualityUVE = config.screenSpaceAAQualityUVE;
+    postProcessSettings.ssaoEnabledUVE = config.ssaoEnabledUVE;
+    postProcessSettings.ssaoRadiusUVE = config.ssaoRadiusUVE;
+    postProcessSettings.ssaoIntensityUVE = config.ssaoIntensityUVE;
+    postProcessSettings.ssaoPowerUVE = config.ssaoPowerUVE;
+    postProcessSettings.ssaoQualityUVE = config.ssaoQualityUVE;
+    postProcessSettings.ssaoBlurEnabledUVE = config.ssaoBlurEnabledUVE;
+    // Contact shadows: the enable/length/steps settings predate the pass that consumes them, so
+    // this is where they finally reach a renderer.
+    postProcessSettings.contactShadowsEnabledUVE = config.contactShadowsEnabledUVE;
+    postProcessSettings.contactShadowLengthMetersUVE = static_cast<float>(config.contactShadowsLengthUVE);
+    postProcessSettings.contactShadowThicknessMetersUVE = static_cast<float>(config.contactShadowsThicknessUVE);
+    postProcessSettings.contactShadowStrengthUVE = static_cast<float>(config.contactShadowsStrengthUVE);
+    postProcessSettings.contactShadowStepCountUVE =
+        static_cast<std::uint32_t>(std::max<std::int64_t>(config.contactShadowsStepCountUVE, 0));
+    postProcessSettings.ssrEnabledUVE = config.ssrEnabledUVE;
+    postProcessSettings.ssrMaxStepsUVE = static_cast<std::uint32_t>(std::max<std::int64_t>(config.ssrMaxStepsUVE, 1));
+    postProcessSettings.ssrDepthToleranceUVE = static_cast<float>(config.ssrDepthToleranceUVE);
+    postProcessSettings.ssrFadeInUVE = static_cast<float>(config.ssrFadeInUVE);
+    postProcessSettings.ssrFadeOutUVE = static_cast<float>(config.ssrFadeOutUVE);
+    renderer.SetPostProcessSettingsUVE(postProcessSettings);
+    renderer.SetShadowBiasDefaultsUVE(config.shadowBiasDefaultUVE, config.shadowNormalBiasDefaultUVE);
+    // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use
+    // it as the tile size; point lights will use the same number for their six faces once their
+    // atlas path exists, so one authored setting keeps meaning one thing.
+    renderer.SetShadowAtlasTileResolutionUVE(
+        static_cast<std::uint32_t>(std::max<std::int64_t>(config.pointSpotShadowResolutionUVE, 0)));
+    Render::CullingSettingsUVE cullingSettings;
+    cullingSettings.frustumCullingEnabledUVE = config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
+    renderer.SetCullingSettingsUVE(cullingSettings);
+    renderer.SetMaterialSamplerSettingsUVE(
+        config.defaultTextureRepeatModeUVE != 0,
+        static_cast<float>(std::clamp<std::int64_t>(config.defaultAnisotropyLevelUVE, 1, 16)));
+}
+
 std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render::IMeshRendererUVE& meshRenderer,
                                                                   Render::ICameraSystemUVE& cameraSystem,
                                                                   Render::ILightSystemUVE& lightSystem,
@@ -5188,45 +5390,7 @@ std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render:
         m_config.ambientColor, m_config.shadowMapResolution, m_config.shadowMapHalfExtent,
         m_config.shadowMapNearPlane, m_config.shadowMapFarPlane, m_config.shadowFrustumPadding,
         m_config.shadowCascadeSplitLambda, m_config.shadowCascadeBlendRatio, m_config.shadowPcfKernelRadius);
-    renderer->SetSceneClearColorUVE(m_config.backgroundColorUVE);
-    Render::PostProcessSettingsUVE postProcessSettings;
-    postProcessSettings.nearestUpscalingEnabledUVE =
-        m_config.spatialUpscalingMethodUVE == SpatialUpscalingMethodUVE::NearestUVE;
-    postProcessSettings.acesToneMappingEnabledUVE = m_config.toneMappingMethodUVE == ToneMappingMethodUVE::AcesUVE;
-    postProcessSettings.sharpeningAmountUVE = m_config.sharpeningAmountUVE;
-    postProcessSettings.ditheringEnabledUVE = m_config.ditheringEnabledUVE;
-    postProcessSettings.fastApproximateAAEnabledUVE =
-        m_config.postProcessAAMethodUVE == PostProcessAAMethodUVE::FastApproximateUVE;
-    postProcessSettings.fastApproximateAAQualityUVE = m_config.screenSpaceAAQualityUVE;
-    postProcessSettings.ssaoEnabledUVE = m_config.ssaoEnabledUVE;
-    postProcessSettings.ssaoRadiusUVE = m_config.ssaoRadiusUVE;
-    postProcessSettings.ssaoIntensityUVE = m_config.ssaoIntensityUVE;
-    postProcessSettings.ssaoPowerUVE = m_config.ssaoPowerUVE;
-    postProcessSettings.ssaoQualityUVE = m_config.ssaoQualityUVE;
-    postProcessSettings.ssaoBlurEnabledUVE = m_config.ssaoBlurEnabledUVE;
-    // Contact shadows: the enable/length/steps settings predate the pass that consumes them, so
-    // this is where they finally reach a renderer.
-    postProcessSettings.contactShadowsEnabledUVE = m_config.contactShadowsEnabledUVE;
-    postProcessSettings.contactShadowLengthMetersUVE = static_cast<float>(m_config.contactShadowsLengthUVE);
-    postProcessSettings.contactShadowThicknessMetersUVE = static_cast<float>(m_config.contactShadowsThicknessUVE);
-    postProcessSettings.contactShadowStrengthUVE = static_cast<float>(m_config.contactShadowsStrengthUVE);
-    postProcessSettings.contactShadowStepCountUVE =
-        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.contactShadowsStepCountUVE, 0));
-    postProcessSettings.ssrEnabledUVE = m_config.ssrEnabledUVE;
-    postProcessSettings.ssrMaxStepsUVE = static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.ssrMaxStepsUVE, 1));
-    postProcessSettings.ssrDepthToleranceUVE = static_cast<float>(m_config.ssrDepthToleranceUVE);
-    postProcessSettings.ssrFadeInUVE = static_cast<float>(m_config.ssrFadeInUVE);
-    postProcessSettings.ssrFadeOutUVE = static_cast<float>(m_config.ssrFadeOutUVE);
-    renderer->SetPostProcessSettingsUVE(postProcessSettings);
-    renderer->SetShadowBiasDefaultsUVE(m_config.shadowBiasDefaultUVE, m_config.shadowNormalBiasDefaultUVE);
-    // The project's "Point/Spot Cube Resolution" is the requested atlas tile edge. Spot shadows use
-    // it as the tile size; point lights will use the same number for their six faces once their
-    // atlas path exists, so one authored setting keeps meaning one thing.
-    renderer->SetShadowAtlasTileResolutionUVE(
-        static_cast<std::uint32_t>(std::max<std::int64_t>(m_config.pointSpotShadowResolutionUVE, 0)));
-    Render::CullingSettingsUVE cullingSettings;
-    cullingSettings.frustumCullingEnabledUVE = m_config.frustumCullingModeUVE == FrustumCullingModeUVE::EnabledUVE;
-    renderer->SetCullingSettingsUVE(cullingSettings);
+    ApplyEngineConfigToRenderer3DUVE(m_config, *renderer);
     return renderer;
 }
 

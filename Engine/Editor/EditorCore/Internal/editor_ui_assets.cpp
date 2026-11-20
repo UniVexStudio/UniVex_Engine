@@ -183,7 +183,7 @@ bool EditorUiAssetsUVE::InitializeUVE() noexcept {
     for (const Scene::Objects::SceneObjectDescriptorUVE& descriptor : Scene::Objects::GetSceneObjectDescriptorsUVE()) {
         const auto kind = static_cast<std::size_t>(descriptor.kind);
         if (kind < m_objectIconTextureIds.size()) {
-            // A Folder in the Scene panel looks like the folders in the Content Browser.
+            // A Folder in the Scene panel looks like the folders in the Asset Table.
             m_objectIconTextureIds[kind] =
                 descriptor.kind == Scene::Objects::SceneObjectKindUVE::Folder
                     ? FindIconTextureIdUVE(m_iconTextureIds, EditorIconGroupUVE::ContentType, "folder")

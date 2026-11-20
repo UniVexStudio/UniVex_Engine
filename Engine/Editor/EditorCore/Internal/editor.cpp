@@ -1,6 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
-#include "montage_player_component.h"
+#include "montage_sequencer_component.h"
 #include "shell/editor_shell.h"
 #include "shell/widget/editor_widget_icons.h"
 #include "logging_macros.h"
@@ -71,7 +71,6 @@
 #include "camera_component.h"
 #include "character_controller_component.h"
 #include "collider_component.h"
-#include "all_objects_2d.h"
 #include "all_objects_3d.h"
 #include "preview_lighting.h"
 #include "all_objects_canvas.h"
@@ -150,7 +149,7 @@ void FitColliderToPrimitiveKindUVE(Scene::ColliderComponentUVE& collider,
     }
 }
 
-/// Square resolution rendered for each Asset Library mesh and entity thumbnail (see
+/// Square resolution rendered for each Asset Table mesh and entity thumbnail (see
 /// EditorUVE::GetMeshThumbnailUVE), and for each material thumbnail. Several times the size a tile or
 /// an Inspector slot shows: PRISM shrinks a picture by averaging the pixels under each screen pixel
 /// (Canvas::resample), so the extra resolution is supersampling - smooth silhouettes, no stair steps -
@@ -840,6 +839,13 @@ std::size_t EditorUVE::SaveAllUVE() {
             failed.emplace_back(std::filesystem::path{m_openUVScript->path}.filename().string());
         }
     }
+    if (IsVfxEditorDirtyUVE()) {
+        if (SaveVfxEditorUVE()) {
+            ++saved;
+        } else {
+            failed.emplace_back(m_vfxEdit->path.filename().string());
+        }
+    }
     if (!failed.empty()) {
         std::string names;
         for (const std::string& name : failed) {
@@ -936,16 +942,8 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
         Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
         const Scene::EntityUVE root = CreateObjectDefinitionEntityInternalUVE(
             Scene::SceneRootObjectDefinitionUVE{}, Scene::ApplySceneRootObjectDefinitionUVE);
-        // The dimension is part of the file, not of its name: a 2D item stamps its Viewport TwoD, and
-        // opening the result restores that instead of reading "2D" out of the path.
-        Scene::EntityUVE viewport = Scene::kInvalidEntityUVE;
-        if (item->sceneDimension == Scene::ViewportDimensionUVE::TwoD) {
-            viewport = CreateObjectDefinitionEntityInternalUVE(Scene::Viewport2DObjectDefinitionUVE{},
-                                                               Scene::ApplyViewport2DObjectDefinitionUVE);
-        } else {
-            viewport = CreateObjectDefinitionEntityInternalUVE(Scene::Viewport3DObjectDefinitionUVE{},
-                                                               Scene::ApplyViewport3DObjectDefinitionUVE);
-        }
+        const Scene::EntityUVE viewport = CreateObjectDefinitionEntityInternalUVE(
+            Scene::Viewport3DObjectDefinitionUVE{}, Scene::ApplyViewport3DObjectDefinitionUVE);
         // A new scene is its root and its Viewport, and nothing else. The World folder used to be
         // created here, so every level opened with an empty folder above an empty level; it now
         // appears with the first object that needs somewhere to live.
@@ -964,7 +962,7 @@ std::optional<std::filesystem::path> EditorUVE::CreateContentCatalogueItemUVE(
     if (item->action == ContentCatalogueActionUVE::MontageAsset) {
         const std::string_view stem = item->fileStem.empty() ? item->label : item->fileStem;
         const std::filesystem::path path = MakeUniqueContentPathUVE(directory, stem, ".uvmontage");
-        if (!Asset::SaveAnimationMontageAssetUVE(Asset::AnimationMontageAssetUVE{}, path)) {
+        if (!Asset::SaveMotionMontageAssetUVE(Asset::MotionMontageAssetUVE{}, path)) {
             return std::nullopt;
         }
         static_cast<void>(m_services->GetAssetDatabaseUVE().RegisterUVE(path));
@@ -1365,27 +1363,8 @@ bool EditorUVE::OpenSceneAssetUVE(const std::filesystem::path& path) {
     const std::filesystem::path previous = m_activeScenePath;
     m_activeScenePath = path;
     if (LoadSceneUVE()) {
-        // The document's own Viewport marker decides how it opens. This used to search the file's
-        // NAME for "2D", so a level called "Level2D" opened flat and a genuinely flat scene called
-        // "Flat" opened on the 3D grid; the same scene could be 2D or 3D depending on what someone
-        // had saved it as. Legacy documents carry no dimension and read as 3D, which is what they are.
-        bool is2D = false;
-        if (const Scene::EntityUVE viewport = GetDocumentViewportUVE(); viewport != Scene::kInvalidEntityUVE) {
-            Scene::IEntityManagerUVE& entityManager = m_services->GetEntityManagerUVE();
-            if (entityManager.HasComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport)) {
-                is2D = entityManager.GetComponentUVE<Scene::OutlinerViewport3DComponentUVE>(viewport).dimension ==
-                       Scene::ViewportDimensionUVE::TwoD;
-            }
-        }
-        if (is2D) {
-            m_viewportOverlayState.is2DMode = true;
-            m_viewportOverlayState.orthographic = true;
-            RequestViewportViewUVE(ViewportViewUVE::Front);
-        } else {
-            m_viewportOverlayState.is2DMode = false;
-            SetViewportOrthographicUVE(false);
-            m_viewportOverlayState.view = ViewportViewUVE::User;
-        }
+        SetViewportOrthographicUVE(false);
+        m_viewportOverlayState.view = ViewportViewUVE::User;
         return true;
     }
     m_activeScenePath = previous;
@@ -1679,7 +1658,10 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                        left.maxDistance == right.maxDistance && left.attenuationCurve == right.attenuationCurve &&
                        left.playOnAwake == right.playOnAwake;
             } else if constexpr (std::is_same_v<LeftType, Scene::ParticleEmitterComponentUVE>) {
-                return left.maxParticles == right.maxParticles;
+                return left.maxParticles == right.maxParticles && left.emitting == right.emitting &&
+                       left.emissionRate == right.emissionRate && left.lifetimeSeconds == right.lifetimeSeconds &&
+                       left.systemAssetPath == right.systemAssetPath && left.autoPlay == right.autoPlay &&
+                       left.seed == right.seed;
             } else if constexpr (std::is_same_v<LeftType, Scene::ScriptComponentUVE>) {
                 return left.scriptAssetPath == right.scriptAssetPath && left.exportValues == right.exportValues;
             } else if constexpr (std::is_same_v<LeftType, Scene::AnimationSequencerComponentUVE>) {
@@ -2669,8 +2651,8 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::BoneAttachment3D:
             entity = createObjectWithComponent(Scene::BoneAttachment3DComponentUVE{});
             break;
-        case Scene::Objects::SceneObjectKindUVE::MontagePlayer:
-            entity = createObjectWithComponent(Scene::MontagePlayerComponentUVE{});
+        case Scene::Objects::SceneObjectKindUVE::MontageSequencer:
+            entity = createObjectWithComponent(Scene::MontageSequencerComponentUVE{});
             break;
         case Scene::Objects::SceneObjectKindUVE::TwoBoneIK3D:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::TwoBoneIK3DObjectDefinitionUVE{},
@@ -2770,16 +2752,6 @@ Scene::EntityUVE EditorUVE::CreateSceneObjectEntityInternalUVE(const Scene::Obje
         case Scene::Objects::SceneObjectKindUVE::Folder:
             entity = CreateObjectDefinitionEntityInternalUVE(Scene::FolderObjectDefinitionUVE{},
                                                             Scene::ApplyFolderObjectDefinitionUVE);
-            break;
-        // The first 2D kind — a textured quad with no 3D transform requirements beyond
-        // what the creation shell already attaches.
-        case Scene::Objects::SceneObjectKindUVE::Sprite2D:
-            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Sprite2DObjectDefinitionUVE{},
-                                                            Scene::ApplySprite2DObjectDefinitionUVE);
-            break;
-        case Scene::Objects::SceneObjectKindUVE::Camera2D:
-            entity = CreateObjectDefinitionEntityInternalUVE(Scene::Camera2DObjectDefinitionUVE{},
-                                                            Scene::ApplyCamera2DObjectDefinitionUVE);
             break;
         case Scene::Objects::SceneObjectKindUVE::Viewport3D:
             // The level's 3D Viewport is created by the document layout (EnsureDocumentLayoutUVE).
@@ -4092,7 +4064,7 @@ bool EditorUVE::EnsureDocumentLayoutUVE() {
         changed = true;
     }
     static_cast<void>(sceneGraph.SetSiblingIndexUVE(entityManager, viewport, 0U));
-    // The Viewport is the open level: it carries the name of its asset in the Content Browser.
+    // The Viewport is the open level: it carries the name of its asset in the Asset Table.
     if (const std::string stem = m_activeScenePath.stem().string(); !stem.empty()) {
         if (!entityManager.HasComponentUVE<Scene::NameComponentUVE>(viewport)) {
             entityManager.AddComponentUVE<Scene::NameComponentUVE>(viewport, Scene::NameComponentUVE{stem});
@@ -4932,6 +4904,8 @@ void EditorUVE::ShutdownUVE() {
         ClearTextureThumbnailCacheUVE();
         ClearMeshThumbnailCacheUVE();
         ClearMaterialThumbnailCacheUVE();
+        ClearVfxThumbnailCacheUVE();
+        CloseVfxEditorUVE();
         m_meshThumbnailRenderer.ShutdownUVE();
         m_materialThumbnailRenderer.ShutdownUVE();
         m_uiAssets.ShutdownUVE();
@@ -5518,10 +5492,10 @@ void EditorUVE::RebuildHierarchyFilterCacheUVE() {
     }
 }
 
-EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
+EditorUVE::AssetTableItemTypeUVE EditorUVE::ClassifyAssetTableEntryUVE(
     const Asset::ProjectFileEntryUVE& entry) {
     if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
-        return ContentBrowserItemTypeUVE::Folder;
+        return AssetTableItemTypeUVE::Folder;
     }
 
     std::string extension = entry.relativePath.extension().generic_string();
@@ -5529,25 +5503,25 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
         return static_cast<char>(std::tolower(character));
     });
     if (extension == ".uvscene") {
-        return ContentBrowserItemTypeUVE::Scene;
+        return AssetTableItemTypeUVE::Scene;
     }
     if (extension == ".uvprefab") {
-        return ContentBrowserItemTypeUVE::Prefab;
+        return AssetTableItemTypeUVE::Prefab;
     }
     if (extension == ".uventity") {
-        return ContentBrowserItemTypeUVE::Entity;
+        return AssetTableItemTypeUVE::Entity;
     }
     if (extension == ".uvbundle") {
-        return ContentBrowserItemTypeUVE::Bundle;
+        return AssetTableItemTypeUVE::Bundle;
     }
     // Model sources are shown as what they are - a mesh - and imported automatically behind the
     // scenes (see QueueModelAutoImportsUVE); a rigged one is relabelled Model by the caller, which
     // knows the file's contents.
     if (extension == ".uvmodel" || IsModelSourcePathUVE(entry.relativePath)) {
-        return ContentBrowserItemTypeUVE::Mesh;
+        return AssetTableItemTypeUVE::Mesh;
     }
     if (extension == ".uvtex") {
-        return ContentBrowserItemTypeUVE::Texture;
+        return AssetTableItemTypeUVE::Texture;
     }
     // Raw, not-yet-imported source images. Godot-style engines preview these directly rather than
     // requiring an import step first; this repo already has standalone decoders for all four
@@ -5556,43 +5530,46 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     // since both content-browser call sites already dispatch thumbnails on this exact type.
     if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" ||
         extension == ".tga") {
-        return ContentBrowserItemTypeUVE::Texture;
+        return AssetTableItemTypeUVE::Texture;
     }
     if (extension == ".uvshader") {
-        return ContentBrowserItemTypeUVE::Shader;
+        return AssetTableItemTypeUVE::Shader;
     }
     // Both spellings: every importer writes `.uvmat`, while the Inspector's own "New Material"
     // flow creates `.uvmaterial`. A material the editor itself just created must still classify as
     // one here or it would get a generic File icon and never a material preview.
     if (extension == ".uvmat" || extension == ".uvmaterial") {
-        return ContentBrowserItemTypeUVE::Material;
+        return AssetTableItemTypeUVE::Material;
     }
     if (extension == ".uvsave") {
-        return ContentBrowserItemTypeUVE::Save;
+        return AssetTableItemTypeUVE::Save;
     }
     if (extension == ".uvbp") {
-        return ContentBrowserItemTypeUVE::Blueprint;
+        return AssetTableItemTypeUVE::Blueprint;
     }
     if (extension == ".uvwbp") {
-        return ContentBrowserItemTypeUVE::WidgetBlueprint;
+        return AssetTableItemTypeUVE::WidgetBlueprint;
     }
     if (extension == ".uvs") {
-        return ContentBrowserItemTypeUVE::Script;
+        return AssetTableItemTypeUVE::Script;
     }
     // A clip (a take imported from an FBX, or authored): the same Animation an animation-only
     // model source shows as.
     if (extension == ".uvanim") {
-        return ContentBrowserItemTypeUVE::Animation;
+        return AssetTableItemTypeUVE::Animation;
     }
     // A library of clips: its own browser type so it opens in the Animation Library window.
     if (extension == ".uvanimlib") {
-        return ContentBrowserItemTypeUVE::AnimationLibrary;
+        return AssetTableItemTypeUVE::AnimationLibrary;
+    }
+    if (extension == ".uvfx") {
+        return AssetTableItemTypeUVE::ParticleSystem;
     }
     if (extension == ".uvmontage") {
-        return ContentBrowserItemTypeUVE::AnimationMontage;
+        return AssetTableItemTypeUVE::MotionMontage;
     }
     if (extension == ".uvmontagelib") {
-        return ContentBrowserItemTypeUVE::MontageLibrary;
+        return AssetTableItemTypeUVE::MontageLibrary;
     }
     // The envelope the audio importer writes, and every source format an importer can turn into
     // one: WAV, plus the compressed Ogg/Vorbis, MP3 and FLAC streams RegisterCompressedAudioImportersUVE
@@ -5601,124 +5578,145 @@ EditorUVE::ContentBrowserItemTypeUVE EditorUVE::ClassifyContentBrowserEntryUVE(
     // cannot give it.
     if (extension == ".uvaudio" || extension == ".wav" || extension == ".ogg" || extension == ".mp3" ||
         extension == ".flac") {
-        return ContentBrowserItemTypeUVE::Audio;
+        return AssetTableItemTypeUVE::Audio;
     }
     if (extension == ".ttf" || extension == ".otf") {
-        return ContentBrowserItemTypeUVE::Font;
+        return AssetTableItemTypeUVE::Font;
     }
-    return ContentBrowserItemTypeUVE::File;
+    return AssetTableItemTypeUVE::File;
 }
 
-const char* EditorUVE::GetContentBrowserItemTypeLabelUVE(const ContentBrowserItemTypeUVE type) noexcept {
+EditorUVE::AssetTableItemTypeUVE EditorUVE::GetAssetTableEntryTypeUVE(
+    const Asset::ProjectFileEntryUVE& entry) const {
+    const AssetTableItemTypeUVE extensionType = ClassifyAssetTableEntryUVE(entry);
+    if (entry.kind != Asset::ProjectFileEntryKindUVE::File || !IsModelSourcePathUVE(entry.relativePath)) {
+        return extensionType;
+    }
+    const EditorModelSourceInfoUVE* const source = FindModelSourceInfoUVE(entry.relativePath);
+    if (source == nullptr) {
+        return extensionType;
+    }
+    if (source->animationOnly) {
+        return AssetTableItemTypeUVE::Animation;
+    }
+    if (source->rigged) {
+        return AssetTableItemTypeUVE::Model;
+    }
+    return extensionType;
+}
+
+const char* EditorUVE::GetAssetTableItemTypeLabelUVE(const AssetTableItemTypeUVE type) noexcept {
     switch (type) {
-        case ContentBrowserItemTypeUVE::Folder:
+        case AssetTableItemTypeUVE::Folder:
             return "Folder";
-        case ContentBrowserItemTypeUVE::Scene:
+        case AssetTableItemTypeUVE::Scene:
             return "Viewport3D"; // a level: it opens as the Viewport3D in the Outliner
-        case ContentBrowserItemTypeUVE::Prefab:
+        case AssetTableItemTypeUVE::Prefab:
             return "Prefab";
-        case ContentBrowserItemTypeUVE::Entity:
+        case AssetTableItemTypeUVE::Entity:
             return "Entity";
-        case ContentBrowserItemTypeUVE::Bundle:
+        case AssetTableItemTypeUVE::Bundle:
             return "Bundle";
-        case ContentBrowserItemTypeUVE::Mesh:
+        case AssetTableItemTypeUVE::Mesh:
             return "Mesh";
-        case ContentBrowserItemTypeUVE::Model:
+        case AssetTableItemTypeUVE::Model:
             return "Model";
-        case ContentBrowserItemTypeUVE::Texture:
+        case AssetTableItemTypeUVE::Texture:
             return "Texture";
-        case ContentBrowserItemTypeUVE::Shader:
+        case AssetTableItemTypeUVE::Shader:
             return "Shader";
-        case ContentBrowserItemTypeUVE::Material:
+        case AssetTableItemTypeUVE::Material:
             return "Material";
-        case ContentBrowserItemTypeUVE::Save:
+        case AssetTableItemTypeUVE::Save:
             return "Save";
-        case ContentBrowserItemTypeUVE::Animation:
+        case AssetTableItemTypeUVE::Animation:
             return "Animation";
-        case ContentBrowserItemTypeUVE::AnimationLibrary:
+        case AssetTableItemTypeUVE::AnimationLibrary:
             return "Animation Library";
-        case ContentBrowserItemTypeUVE::AnimationMontage:
-            return "Action Clip";
-        case ContentBrowserItemTypeUVE::MontageLibrary:
-            return "Action Clip Library";
-        case ContentBrowserItemTypeUVE::Blueprint:
-            return "Logic Graph";
-        case ContentBrowserItemTypeUVE::WidgetBlueprint:
-            return "UI Graph";
-        case ContentBrowserItemTypeUVE::Script:
+        case AssetTableItemTypeUVE::ParticleSystem:
+            return "Particle System";
+        case AssetTableItemTypeUVE::MotionMontage:
+            return "Motion Montage";
+        case AssetTableItemTypeUVE::MontageLibrary:
+            return "Motion Montage Library";
+        case AssetTableItemTypeUVE::Blueprint:
+            return "Blueprint";
+        case AssetTableItemTypeUVE::WidgetBlueprint:
+            return "Widget Blueprint";
+        case AssetTableItemTypeUVE::Script:
             return "Script";
-        case ContentBrowserItemTypeUVE::Audio:
+        case AssetTableItemTypeUVE::Audio:
             return "Audio";
-        case ContentBrowserItemTypeUVE::Font:
+        case AssetTableItemTypeUVE::Font:
             return "Font";
-        case ContentBrowserItemTypeUVE::File:
+        case AssetTableItemTypeUVE::File:
             return "File";
     }
     return "File";
 }
 
-const char* EditorUVE::GetContentBrowserFocusLabelUVE(const ContentBrowserTypeFocusUVE focus) noexcept {
+const char* EditorUVE::GetAssetTableFocusLabelUVE(const AssetTableTypeFocusUVE focus) noexcept {
     switch (focus) {
-        case ContentBrowserTypeFocusUVE::All:
+        case AssetTableTypeFocusUVE::All:
             return "All";
-        case ContentBrowserTypeFocusUVE::Folders:
+        case AssetTableTypeFocusUVE::Folders:
             return "Folders";
-        case ContentBrowserTypeFocusUVE::Scene:
+        case AssetTableTypeFocusUVE::Scene:
             return "Scene";
-        case ContentBrowserTypeFocusUVE::Prefab:
+        case AssetTableTypeFocusUVE::Prefab:
             return "Prefab";
-        case ContentBrowserTypeFocusUVE::Bundle:
+        case AssetTableTypeFocusUVE::Bundle:
             return "Bundle";
-        case ContentBrowserTypeFocusUVE::Mesh:
+        case AssetTableTypeFocusUVE::Mesh:
             return "Mesh";
-        case ContentBrowserTypeFocusUVE::Texture:
+        case AssetTableTypeFocusUVE::Texture:
             return "Texture";
-        case ContentBrowserTypeFocusUVE::Shader:
+        case AssetTableTypeFocusUVE::Shader:
             return "Shader";
-        case ContentBrowserTypeFocusUVE::Material:
+        case AssetTableTypeFocusUVE::Material:
             return "Material";
-        case ContentBrowserTypeFocusUVE::Save:
+        case AssetTableTypeFocusUVE::Save:
             return "Save";
-        case ContentBrowserTypeFocusUVE::Registered:
+        case AssetTableTypeFocusUVE::Registered:
             return "Registered";
-        case ContentBrowserTypeFocusUVE::OtherFiles:
+        case AssetTableTypeFocusUVE::OtherFiles:
             return "Other Files";
     }
     return "All";
 }
 
-bool EditorUVE::DoesContentBrowserEntryMatchFocusUVE(const Asset::ProjectFileEntryUVE& entry) const {
-    const ContentBrowserItemTypeUVE type = ClassifyContentBrowserEntryUVE(entry);
-    switch (m_contentBrowserTypeFocus) {
-        case ContentBrowserTypeFocusUVE::All:
+bool EditorUVE::DoesAssetTableEntryMatchFocusUVE(const Asset::ProjectFileEntryUVE& entry) const {
+    const AssetTableItemTypeUVE type = GetAssetTableEntryTypeUVE(entry);
+    switch (m_assetTableTypeFocus) {
+        case AssetTableTypeFocusUVE::All:
             return true;
-        case ContentBrowserTypeFocusUVE::Folders:
-            return type == ContentBrowserItemTypeUVE::Folder;
-        case ContentBrowserTypeFocusUVE::Scene:
-            return type == ContentBrowserItemTypeUVE::Scene;
-        case ContentBrowserTypeFocusUVE::Prefab:
-            return type == ContentBrowserItemTypeUVE::Prefab || type == ContentBrowserItemTypeUVE::Entity;
-        case ContentBrowserTypeFocusUVE::Bundle:
-            return type == ContentBrowserItemTypeUVE::Bundle;
-        case ContentBrowserTypeFocusUVE::Mesh:
-            return type == ContentBrowserItemTypeUVE::Mesh || type == ContentBrowserItemTypeUVE::Model;
-        case ContentBrowserTypeFocusUVE::Texture:
-            return type == ContentBrowserItemTypeUVE::Texture;
-        case ContentBrowserTypeFocusUVE::Shader:
-            return type == ContentBrowserItemTypeUVE::Shader;
-        case ContentBrowserTypeFocusUVE::Material:
-            return type == ContentBrowserItemTypeUVE::Material;
-        case ContentBrowserTypeFocusUVE::Save:
-            return type == ContentBrowserItemTypeUVE::Save;
-        case ContentBrowserTypeFocusUVE::Registered:
+        case AssetTableTypeFocusUVE::Folders:
+            return type == AssetTableItemTypeUVE::Folder;
+        case AssetTableTypeFocusUVE::Scene:
+            return type == AssetTableItemTypeUVE::Scene;
+        case AssetTableTypeFocusUVE::Prefab:
+            return type == AssetTableItemTypeUVE::Prefab || type == AssetTableItemTypeUVE::Entity;
+        case AssetTableTypeFocusUVE::Bundle:
+            return type == AssetTableItemTypeUVE::Bundle;
+        case AssetTableTypeFocusUVE::Mesh:
+            return type == AssetTableItemTypeUVE::Mesh || type == AssetTableItemTypeUVE::Model;
+        case AssetTableTypeFocusUVE::Texture:
+            return type == AssetTableItemTypeUVE::Texture;
+        case AssetTableTypeFocusUVE::Shader:
+            return type == AssetTableItemTypeUVE::Shader;
+        case AssetTableTypeFocusUVE::Material:
+            return type == AssetTableItemTypeUVE::Material;
+        case AssetTableTypeFocusUVE::Save:
+            return type == AssetTableItemTypeUVE::Save;
+        case AssetTableTypeFocusUVE::Registered:
             return entry.kind == Asset::ProjectFileEntryKindUVE::File && entry.registeredAssetGuid.has_value();
-        case ContentBrowserTypeFocusUVE::OtherFiles:
-            return type == ContentBrowserItemTypeUVE::File;
+        case AssetTableTypeFocusUVE::OtherFiles:
+            return type == AssetTableItemTypeUVE::File;
     }
     return false;
 }
 
-bool EditorUVE::IsContentBrowserDirectoryInSnapshotUVE(const Asset::ProjectFileSnapshotUVE& snapshot,
+bool EditorUVE::IsAssetTableDirectoryInSnapshotUVE(const Asset::ProjectFileSnapshotUVE& snapshot,
                                                         const std::filesystem::path& directory) const {
     if (directory.empty()) {
         return true;
@@ -5728,9 +5726,9 @@ bool EditorUVE::IsContentBrowserDirectoryInSnapshotUVE(const Asset::ProjectFileS
     });
 }
 
-void EditorUVE::ReconcileContentBrowserDirectoryUVE(const Asset::ProjectFileSnapshotUVE& snapshot) noexcept {
-    if (!IsContentBrowserDirectoryInSnapshotUVE(snapshot, m_contentBrowserDirectory)) {
-        m_contentBrowserDirectory.clear();
+void EditorUVE::ReconcileAssetTableDirectoryUVE(const Asset::ProjectFileSnapshotUVE& snapshot) noexcept {
+    if (!IsAssetTableDirectoryInSnapshotUVE(snapshot, m_assetTableDirectory)) {
+        m_assetTableDirectory.clear();
     }
 }
 
@@ -6351,7 +6349,9 @@ namespace {
         if (!summary.has_value()) {
             return info;
         }
-        info.rigged = summary->hasSkin;
+        // A skin without any mesh geometry is not a Skeletal Mesh asset. Keep this tied to the
+        // source summary instead of using the skin flag alone; animation-only FBXs still have bones.
+        info.rigged = summary->meshCount > 0U && summary->hasSkin;
         info.hasSkeleton = summary->boneCount > 0U;
         info.animationOnly = summary->IsAnimationOnlyUVE();
         info.animationCount = summary->animationCount;
@@ -6370,8 +6370,8 @@ namespace {
         return info; // OBJ has no skeleton.
     }
     const std::optional<Asset::GltfMetadataUVE> metadata = Asset::ParseGltfMetadataUVE(json);
-    info.rigged = metadata.has_value() && metadata->skinCount > 0U;
-    info.hasSkeleton = info.rigged; // A glTF skeleton is read from its skin.
+    info.rigged = metadata.has_value() && metadata->meshCount > 0U && metadata->skinCount > 0U;
+    info.hasSkeleton = metadata.has_value() && metadata->skinCount > 0U; // A glTF skeleton is read from its skin.
     if (!timeError) {
         s_modelInfoCache[cacheKey] = CachedModelInfoUVE{writeTime, info};
     }

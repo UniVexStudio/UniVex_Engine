@@ -92,7 +92,7 @@ public:
   void setDragSpeed(float s) { m_speed = s; }
   // Off: the field is a plain value box. A press starts typing at once and dragging changes nothing
   // (for settings whose value is typed, not scrubbed).
-  void setScrubbable(bool on) { m_scrubbable = on; }
+  void setScrubbable(bool on) { m_scrubbable = on; invalidate(); }
   bool scrubbable() const { return m_scrubbable; }
   void setAccentStrip(Color c) { m_strip = c; m_hasStrip = true; invalidate(); }
   void setAxisLabel(std::string label, Color c) { m_axisLabel = std::move(label); m_strip = c; m_hasStrip = true; invalidate(); }
@@ -128,6 +128,8 @@ public:
   void setValue(float x, float y, float z, bool notify = false);
   float get(int i) const { return m_f[size_t(i)]->value(); }
   void setSuffix(const std::string& s) { for (auto& f : m_f) f->setSuffix(s); }
+  void setScrubbable(bool s) { for (auto& f : m_f) f->setScrubbable(s); }
+  bool scrubbable() const { return m_f[0]->scrubbable(); }
   Callback<int, float> onChange;
   Callback<> onCommit;
   Callback<> onBegin;

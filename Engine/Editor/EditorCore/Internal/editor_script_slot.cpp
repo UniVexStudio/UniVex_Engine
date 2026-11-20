@@ -209,7 +209,7 @@ void EditorUVE::OpenCreateScriptModalUVE(const std::filesystem::path& targetDire
     m_createScriptModal = CreateScriptModalStateUVE{};
     m_createScriptModal.isOpen = true;
     m_createScriptModal.openRequested = true;
-    m_createScriptModal.targetDirectory = targetDirectory.empty() ? m_contentBrowserDirectory : targetDirectory;
+    m_createScriptModal.targetDirectory = targetDirectory.empty() ? m_assetTableDirectory : targetDirectory;
     m_createScriptModal.targetEntity = entity;
 
     std::string defaultName = "NewScript";

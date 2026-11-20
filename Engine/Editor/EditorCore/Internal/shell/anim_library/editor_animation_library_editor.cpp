@@ -3,7 +3,7 @@
 
 #include "editor.h"
 #include "editor_chrome.h"
-#include "editor_content_browser.h"
+#include "editor_asset_table.h"
 #include "editor_host.h"
 
 #include "animation_clip_asset.h"
@@ -96,7 +96,7 @@ void AnimationLibraryGridUVE::paint(prism::Canvas& c) {
     c.fillRect(rect(), t.window);
     if (m_tiles.empty()) {
         c.textIn(*t.ui, prism::Rect{rect().x, rect().y + rect().h * 0.4F, rect().w, 22.0F},
-                 "No clips yet: + Add Animation, or drop .uvanim files here from the Asset Library.", t.textDim,
+                 "No clips yet: + Add Animation, or drop .uvanim files here from the Asset Table.", t.textDim,
                  prism::HAlign::Center, true);
     }
     for (std::size_t i = 0U; i < m_tiles.size(); ++i) {
@@ -106,7 +106,7 @@ void AnimationLibraryGridUVE::paint(prism::Canvas& c) {
         const bool hovered = i == m_hover;
         c.shadow(r, 6.0F, 4, prism::Color(0, 0, 0, 90));
         c.fillRoundRect(r, 6.0F, hovered ? t.controlHover : t.panel);
-        // The icon on a deep backdrop, as a thumbnail is shown in the Content Browser.
+        // The icon on a deep backdrop, as a thumbnail is shown in the Asset Table.
         // The picture edge to edge across the tile, in the icon's own shape.
         const prism::Rect art{r.x + 1.0F, r.y + 1.0F, r.w - 2.0F, std::floor((r.w - 2.0F) * 128.0F / 152.0F)};
         c.fillRect(art, prism::Color(18, 19, 23));
@@ -127,7 +127,7 @@ void AnimationLibraryGridUVE::paint(prism::Canvas& c) {
             c.fillRoundRect(warn, 3.0F, prism::Color(200, 70, 70));
             c.textIn(*t.small, warn, "Missing", t.textBright, prism::HAlign::Center, false);
         }
-        // The type stripe, as the Content Browser's tiles.
+        // The type stripe, as the Asset Table's tiles.
         c.fillRect(prism::Rect{r.x, art.bottom() + 6.0F, r.w, 2.0F}, prism::Color(78, 201, 176));
         c.textIn(*t.semibold, prism::Rect{r.x + 9.0F, art.bottom() + 10.0F, r.w - 16.0F, 18.0F}, tile.name,
                  tile.missing ? t.textDim : t.textBright, prism::HAlign::Left, true);
@@ -227,7 +227,7 @@ bool AnimationLibraryGridUVE::onDragEnter(const prism::DragDropEvent& e) {
 }
 
 bool AnimationLibraryGridUVE::onDragOver(const prism::DragDropEvent& e) {
-    const std::string* path = e.operation && e.operation->tag() == EditorContentBrowserUVE::kDragTagUVE
+    const std::string* path = e.operation && e.operation->tag() == EditorAssetTableUVE::kDragTagUVE
                                   ? e.operation->getPayload<std::string>()
                                   : nullptr;
     const bool accepts = path != nullptr && std::filesystem::path{*path}.extension() == ".uvanim";
@@ -357,12 +357,12 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildTitleBarUVE() {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Add Animation...", [this] { ShowAddMenuUVE(m_addButton ? m_addButton->rect() : prism::Rect{}); }, "",
                                               prism::Icon::Plus));
-        items.push_back(prism::MenuItem::Item("Show in Asset Library", [this] {
+        items.push_back(prism::MenuItem::Item("Show in Asset Table", [this] {
             std::error_code error;
             const std::filesystem::path relative =
                 std::filesystem::relative(m_openPath, m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot, error);
             if (!error) {
-                m_editor.m_contentBrowserDirectory = relative.parent_path();
+                m_editor.m_assetTableDirectory = relative.parent_path();
             }
         }, "", prism::Icon::Folder));
         items.push_back(prism::MenuItem::Sep());
@@ -599,12 +599,12 @@ void EditorAnimationLibraryWindowUVE::ShowEntryMenuUVE(const std::size_t entry, 
     last.enabled = entry + 1U < count;
     items.push_back(std::move(first));
     items.push_back(std::move(last));
-    items.push_back(prism::MenuItem::Item("Show Clip in Asset Library", [this, entry] {
+    items.push_back(prism::MenuItem::Item("Show Clip in Asset Table", [this, entry] {
         std::error_code error;
         const std::filesystem::path relative =
             std::filesystem::relative(ClipPathUVE(entry), m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot, error);
         if (!error) {
-            m_editor.m_contentBrowserDirectory = relative.parent_path();
+            m_editor.m_assetTableDirectory = relative.parent_path();
         }
     }, "", prism::Icon::Folder));
     items.push_back(prism::MenuItem::Sep());

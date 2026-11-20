@@ -23,7 +23,7 @@
 #include "prism/SearchMenu.h"
 #include "prism/Canvas.h"
 
-#include "editor_content_browser.h"
+#include "editor_asset_table.h"
 
 #include <algorithm>
 #include <cmath>
@@ -85,13 +85,13 @@ const EditorUVE::AnimationTimelineViewUVE& EditorSequencerPanelUVE::ResyncUVE() 
 
 namespace {
 
-/// The panel's frame: Animation Libraries and clips dropped from the Content Browser land here.
+/// The panel's frame: Animation Libraries and clips dropped from the Asset Table land here.
 class SequencerDropUVE final : public prism::Border {
 public:
     std::function<bool(const std::string&)> accepts;
     std::function<bool(const std::string&)> dropped;
     bool onDragOver(const prism::DragDropEvent& e) override {
-        const std::string* path = e.operation && e.operation->tag() == EditorContentBrowserUVE::kDragTagUVE ? e.operation->getPayload<std::string>() : nullptr;
+        const std::string* path = e.operation && e.operation->tag() == EditorAssetTableUVE::kDragTagUVE ? e.operation->getPayload<std::string>() : nullptr;
         const bool ok = path != nullptr && accepts && accepts(*path);
         if (ok != m_hot) {
             m_hot = ok;

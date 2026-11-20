@@ -98,7 +98,16 @@ Scene::EntityUVE EditorUVE::AddPreviewEnvironmentToSceneUVE() {
                                            m_viewportOverlayState.previewGroundColor[1],
                                            m_viewportOverlayState.previewGroundColor[2]};
         env.ambientEnergy = m_viewportOverlayState.previewAmbientEnergy;
-        env.postProcessingEnabled = false;
+        env.postProcessingEnabled = true;
+        env.bloomEnabled = true;
+        env.bloomThreshold = 1.15F;
+        env.bloomIntensity = 0.25F;
+        env.bloomSoftKnee = 0.5F;
+        env.bloomMipCount = 4U;
+        env.ssaoEnabled = true;
+        env.ssaoRadius = 0.5F;
+        env.ssaoIntensity = 0.85F;
+        env.fogEnabled = false;
     }
     m_sceneDirty = true;
     SelectEntityUVE(envEntity);

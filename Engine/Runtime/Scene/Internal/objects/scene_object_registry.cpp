@@ -8,7 +8,7 @@ namespace {
 constexpr std::array<std::string_view, 0U> kNoContracts{};
 constexpr std::array<std::string_view, 1U> kAnimationGraphContracts{"AnimationGraphComponentUVE"};
 constexpr std::array<std::string_view, 1U> kAnimationSequencerContracts{"AnimationSequencerComponentUVE"};
-constexpr std::array<std::string_view, 1U> kMontagePlayerContracts{"MontagePlayerComponentUVE"};
+constexpr std::array<std::string_view, 1U> kMontageSequencerContracts{"MontageSequencerComponentUVE"};
 constexpr std::array<std::string_view, 2U> kCharacterContracts{
     "TransformComponentUVE", "ColliderComponentUVE"};
 constexpr std::array<std::string_view, 3U> kPlayerContracts{
@@ -52,11 +52,9 @@ constexpr std::array<std::string_view, 1U> kCanvasContracts{"CanvasComponentUVE"
 constexpr std::array<std::string_view, 1U> kUITextContracts{"UITextComponentUVE"};
 constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUVE"};
 constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
-constexpr std::array<std::string_view, 1U> kSprite2DContracts{"Sprite2DComponentUVE"};
-constexpr std::array<std::string_view, 1U> kCamera2DContracts{"Camera2DComponentUVE"};
 constexpr std::array<std::string_view, 1U> kSkyContracts{"Sky3DComponentUVE"};
 
-constexpr std::array<SceneObjectDescriptorUVE, 54U> kDescriptors{
+constexpr std::array<SceneObjectDescriptorUVE, 52U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Object library - libraryCreatable is false.
     SceneObjectDescriptorUVE{SceneObjectKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootObjectDefinitionUVE", kNoContracts, false},
@@ -93,7 +91,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 54U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::WorldPartition3D, "world_partition_3d", "WorldPartition3D", "World", "Scene/WorldPartition3DComponentUVE", kPartitionContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::AnimationGraph, "animation_graph", "AnimationGraph", "Animation", "Scene/AnimationGraphComponentUVE", kAnimationGraphContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::AnimationSequencer, "animation_sequencer", "AnimationSequencer", "Animation", "Scene/AnimationSequencerComponentUVE", kAnimationSequencerContracts, true},
-    SceneObjectDescriptorUVE{SceneObjectKindUVE::MontagePlayer, "montage_player", "MontagePlayer", "Animation", "Scene/MontagePlayerComponentUVE", kMontagePlayerContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::MontageSequencer, "montage_sequencer", "MontageSequencer", "Animation", "Scene/MontageSequencerComponentUVE", kMontageSequencerContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Character3D, "character_3d", "Character3D", "Physics", "Physics/CharacterControllerUVE", kCharacterContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Camera3D, "camera_3d", "Camera3D", "Rendering", "Render/CameraSystemUVE", kCameraContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::MeshInstance3D, "mesh_instance_3d", "MeshInstance3D", "Rendering", "Render/MeshRendererUVE", kMeshContracts, true},
@@ -112,12 +110,10 @@ constexpr std::array<SceneObjectDescriptorUVE, 54U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::UIButton, "ui_button", "UI Button", "UI", "UI/UIRuntimeUVE", kUIButtonContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Folder, "folder", "Folder", "Scene", "Scene/Editor", kNoContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::DirectionalLight3D, "directional_light_3d", "DirectionalLight3D", "Rendering", "Render/LightSystemUVE", kDirectionalLightContracts, true},
-    // Called "viewport" before the 2D arrival renamed it Viewport3D: FindSceneObjectDescriptorUVE
+    // Called "viewport" before being renamed Viewport3D: FindSceneObjectDescriptorUVE
     // (typeId) resolves the legacy id to this same row, so the rename touches no saved file.
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Viewport3D, "viewport_3d", "Viewport3D", "Scene", "Scene/Editor", kNoContracts, false},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Player3D, "player_3d", "Player3D", "Gameplay", "Scene/Player3DObjectDefinitionUVE", kPlayerContracts, true},
-    SceneObjectDescriptorUVE{SceneObjectKindUVE::Sprite2D, "sprite_2d", "Sprite2D", "2D", "Render/Sprite2D", kSprite2DContracts, true},
-    SceneObjectDescriptorUVE{SceneObjectKindUVE::Camera2D, "camera_2d", "Camera2D", "Rendering", "Render/CameraSystemUVE", kCamera2DContracts, true},
 };
 
 } // namespace
@@ -156,6 +152,9 @@ const SceneObjectDescriptorUVE* FindSceneObjectDescriptorUVE(const std::string_v
     if (typeId == "animation_player") {
         return FindSceneObjectDescriptorUVE(SceneObjectKindUVE::AnimationSequencer);
     }
+    if (typeId == "montage_player") {
+        return FindSceneObjectDescriptorUVE(SceneObjectKindUVE::MontageSequencer);
+    }
     if (typeId == "animation_tree") {
         return FindSceneObjectDescriptorUVE(SceneObjectKindUVE::AnimationGraph);
     }
@@ -186,7 +185,7 @@ SceneObjectPlacementUVE GetSceneObjectPlacementUVE(const SceneObjectKindUVE kind
         case SceneObjectKindUVE::Character3D:
         case SceneObjectKindUVE::Player3D:
         case SceneObjectKindUVE::AnimationSequencer:
-        case SceneObjectKindUVE::MontagePlayer:
+        case SceneObjectKindUVE::MontageSequencer:
         case SceneObjectKindUVE::AnimationGraph:
         case SceneObjectKindUVE::Skeleton3D:
         case SceneObjectKindUVE::TwoBoneIK3D:

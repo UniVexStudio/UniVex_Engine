@@ -65,12 +65,12 @@ const char* AnimationGraphKindLabelUVE(const Kind kind) noexcept {
         case Kind::Output: return "Output";
         case Kind::Clip: return "Clip";
         case Kind::Blend2: return "Blend";
-        case Kind::BlendSpace1D: return "Blend Grid";
+        case Kind::BlendSpace1D: return "Blend Space";
         case Kind::Additive: return "Additive";
         case Kind::OneShot: return "One Shot";
         case Kind::TimeScale: return "Time Scale";
         case Kind::StateMachine: return "State Machine";
-        case Kind::BlendSpace2D: return "Blend Grid 2D";
+        case Kind::BlendSpace2D: return "Blend Space 2D";
         case Kind::Select: return "Select";
         case Kind::LayeredBlend: return "Layered Blend";
         case Kind::TimeSeek: return "Time Seek";
@@ -101,7 +101,7 @@ const char* AnimationGraphKindHelpUVE(const Kind kind) noexcept {
         case Kind::LayeredBlend:
             return "Lays the Layer over the Base on chosen bone branches only - shoot with the upper body while running.";
         case Kind::TimeSeek: return "Jumps its input to a time when its trigger fires, then plays on.";
-        case Kind::Slot: return "Where an Action Clip plays: the action clip on this slot is laid over the input.";
+        case Kind::Slot: return "Where an Motion Montage plays: the motion montage on this slot is laid over the input.";
         case Kind::TwoBoneIK:
             return "Bends a two-bone chain (upper arm, forearm, hand) so its tip reaches a target - a hand on a rail, a foot on a step.";
         case Kind::ModifyBone: return "Moves, turns and scales one bone, on top of the pose or instead of it.";

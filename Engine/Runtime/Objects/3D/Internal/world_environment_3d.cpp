@@ -166,6 +166,7 @@ WorldEnvironmentFrameUVE ResolveWorldEnvironmentFrameUVE(IEntityManagerUVE& enti
             frame.lutContribution = environment.lutContribution;
             frame.lutAssetPath = environment.lutAssetPath;
             frame.hasEnvironment = true;
+            frame.hasPostProcessingOverride = true;
             frame.skyAssetPath = environment.skyAssetPath;
         });
 

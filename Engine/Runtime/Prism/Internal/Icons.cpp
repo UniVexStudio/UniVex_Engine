@@ -332,7 +332,7 @@ void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke) {
   case Icon::AnimLibrary: { p.rect(2, 3, 3, 10.5f); p.rect(6.2f, 3, 3, 10.5f); p.poly({{10.5f, 3.6f}, {13.2f, 3}, {15, 12.8f}, {12.3f, 13.4f}}, true); p.dot(3.5f, 5, 0.7f); p.dot(7.7f, 5, 0.7f); } break;
   case Icon::MontageLibrary: { p.line(1.5f, 13.5f, 14.5f, 13.5f); p.rrect(2, 3, 5, 8, 1); p.rrect(9, 3, 5, 8, 1); p.fillPoly({{3.6f, 5.4f}, {5.6f, 7}, {3.6f, 8.6f}}); p.fillPoly({{10.6f, 5.4f}, {12.6f, 7}, {10.6f, 8.6f}}); } break;
   case Icon::AnimSequencer: { p.rrect(2, 2.5f, 12, 8, 1.5f); p.fillPoly({{6.5f, 4.5f}, {10, 6.5f}, {6.5f, 8.5f}}); p.line(2, 13.2f, 14, 13.2f); p.dot(6, 13.2f, 1.5f); } break;
-  case Icon::MontagePlayer: { p.circle(8, 8, 6); p.fillPoly({{6.6f, 5.2f}, {11, 8}, {6.6f, 10.8f}}); p.line(3.8f, 3.8f, 2.2f, 2.2f); } break;
+  case Icon::MontageSequencer: { p.circle(8, 8, 6); p.fillPoly({{6.6f, 5.2f}, {11, 8}, {6.6f, 10.8f}}); p.line(3.8f, 3.8f, 2.2f, 2.2f); } break;
   case Icon::AnimTree: { p.dot(8, 2.8f, 1.4f); p.dot(3.2f, 12.8f, 1.4f); p.dot(8, 12.8f, 1.4f); p.dot(12.8f, 12.8f, 1.4f); p.line(8, 4, 8, 11.5f); p.line(8, 7.5f, 3.4f, 11.6f); p.line(8, 7.5f, 12.6f, 11.6f); } break;
   case Icon::AnimClipNode: { p.rrect(2, 4, 11, 8, 2); p.fillPoly({{6, 6}, {9.5f, 8}, {6, 10}}); p.dot(14.2f, 8, 1.3f); } break;
   case Icon::LayeredBlend: { p.poly({{2, 10.5f}, {8, 13.5f}, {14, 10.5f}}); p.poly({{2, 7}, {8, 10}, {14, 7}, {8, 4}}, true); p.line(8, 1.5f, 8, 4); } break;

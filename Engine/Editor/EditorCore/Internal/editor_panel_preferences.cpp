@@ -4,6 +4,7 @@
 // EditorSettingsWindowUVE) and saving the project's settings.
 
 #include "editor.h"
+#include "engine_project_settings.h"
 
 namespace UVE::Editor {
 
@@ -19,7 +20,13 @@ void EditorUVE::OpenProjectSettingsUVE() noexcept {
 
 bool EditorUVE::SaveProjectSettingsUVE() {
     Config::SettingsDocumentUVE& project = m_services->GetProjectSettingsUVE();
-    return !project.IsDirtyUVE() || project.SaveUVE();
+    const bool saved = !project.IsDirtyUVE() || project.SaveUVE();
+    if (saved) {
+        Core::EngineConfigUVE resolvedConfig{};
+        Core::ApplyEngineProjectSettingsUVE(project, resolvedConfig);
+        Core::ApplyEngineConfigToRenderer3DUVE(resolvedConfig, m_services->GetRenderer3DUVE());
+    }
+    return saved;
 }
 
 } // namespace UVE::Editor
