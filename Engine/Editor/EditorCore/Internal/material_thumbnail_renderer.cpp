@@ -48,17 +48,17 @@ constexpr std::uint32_t kPreviewSphereSlicesUVE = 96U;
 constexpr std::uint32_t kPreviewSphereStacksUVE = 64U;
 constexpr float kPreviewSphereRadiusUVE = 0.5F;
 
-// One light, the sun (its direction points from the surface toward it), plus the sky's hemisphere
-// ambient, which keeps the far side of the sphere from going black. The fill and rim slots of the
-// shader stay, dark.
+// Balanced three-point studio rig (directions point from the surface toward each light) plus a
+// hemisphere ambient. Calibrated so whites and metals stay realistic and never blow out, while
+// shadow sides still show surface roughness and normal detail.
 constexpr float kKeyLightDirectionUVE[3] = {-0.45F, 0.85F, 0.55F};
-constexpr float kKeyLightColorUVE[3] = {3.30F, 3.18F, 3.00F};
+constexpr float kKeyLightColorUVE[3] = {2.05F, 1.98F, 1.88F};
 constexpr float kFillLightDirectionUVE[3] = {0.75F, -0.15F, 0.65F};
-constexpr float kFillLightColorUVE[3] = {0.0F, 0.0F, 0.0F};
+constexpr float kFillLightColorUVE[3] = {0.42F, 0.46F, 0.54F};
 constexpr float kRimLightDirectionUVE[3] = {0.10F, 0.46F, -0.95F};
-constexpr float kRimLightColorUVE[3] = {0.0F, 0.0F, 0.0F};
-constexpr float kSkyAmbientUVE[3] = {0.144F, 0.160F, 0.192F};
-constexpr float kGroundAmbientUVE[3] = {0.035F, 0.033F, 0.029F};
+constexpr float kRimLightColorUVE[3] = {0.55F, 0.58F, 0.65F};
+constexpr float kSkyAmbientUVE[3] = {0.16F, 0.18F, 0.22F};
+constexpr float kGroundAmbientUVE[3] = {0.045F, 0.042F, 0.038F};
 
 constexpr const char* kVertexShaderSourceUVE = R"GLSL(#version 330 core
 layout(location = 0) in vec3 aPosition;
@@ -549,11 +549,16 @@ struct MaterialThumbnailRendererUVE::GlStateUVE {
 
     GLuint scratchFramebuffer = 0U;
     GLuint scratchDepthRenderbuffer = 0U;
+    GLuint scratchColorTexture = 0U;
+    GLuint resolveFramebuffer = 0U;
     int scratchWidth = 0;
     int scratchHeight = 0;
 };
 
 namespace {
+
+constexpr GLenum kReadFramebufferUVE = 0x8CA8U;
+constexpr GLenum kDrawFramebufferUVE = 0x8CA9U;
 
 /// Sets the blend factors through the resolved glBlendFuncSeparate, falling back to the GL 1.1
 /// glBlendFunc (which a context without the 1.4 entry point cannot distinguish from it anyway).
@@ -566,11 +571,10 @@ void SetBlendFactorsUVE(const MaterialThumbnailRendererUVE::GlStateUVE& gl, cons
     }
 }
 
-/// Creates (once) and resizes (as needed) the scratch framebuffer + depth-renderbuffer reused by
-/// every RenderThumbnailUVE() call, mirroring MeshThumbnailRendererUVE's target management. Leaves
-/// GL_FRAMEBUFFER/GL_RENDERBUFFER on the scratch objects; the caller saves/restores around it.
+/// Creates (once) and resizes (as needed) the scratch framebuffer + depth-renderbuffer (+ optional
+/// supersampled color texture & resolve framebuffer) reused by every RenderThumbnailUVE() call.
 [[nodiscard]] bool EnsureScratchTargetUVE(MaterialThumbnailRendererUVE::GlStateUVE& gl, const int width,
-                                          const int height) noexcept {
+                                          const int height, const bool supersample) noexcept {
     const bool firstTime = gl.scratchFramebuffer == 0U;
     if (firstTime) {
         gl.table.glGenFramebuffers(1, &gl.scratchFramebuffer);
@@ -579,9 +583,24 @@ void SetBlendFactorsUVE(const MaterialThumbnailRendererUVE::GlStateUVE& gl, cons
             return false;
         }
     }
+    if (supersample && gl.resolveFramebuffer == 0U) {
+        gl.table.glGenFramebuffers(1, &gl.resolveFramebuffer);
+        glGenTextures(1, &gl.scratchColorTexture);
+        if (gl.resolveFramebuffer == 0U || gl.scratchColorTexture == 0U) {
+            return false;
+        }
+    }
     if (firstTime || gl.scratchWidth != width || gl.scratchHeight != height) {
         gl.table.glBindRenderbuffer(GL_RENDERBUFFER, gl.scratchDepthRenderbuffer);
         gl.table.glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+        if (supersample && gl.scratchColorTexture != 0U) {
+            glBindTexture(GL_TEXTURE_2D, gl.scratchColorTexture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        }
         gl.scratchWidth = width;
         gl.scratchHeight = height;
     }
@@ -836,6 +855,14 @@ void MaterialThumbnailRendererUVE::ShutdownUVE() noexcept {
             gl.table.glDeleteVertexArrays(1, &gl.previewVertexArray);
             gl.previewVertexArray = 0U;
         }
+        if (gl.scratchColorTexture != 0U) {
+            glDeleteTextures(1, &gl.scratchColorTexture);
+            gl.scratchColorTexture = 0U;
+        }
+        if (gl.resolveFramebuffer != 0U) {
+            gl.table.glDeleteFramebuffers(1, &gl.resolveFramebuffer);
+            gl.resolveFramebuffer = 0U;
+        }
         if (gl.scratchDepthRenderbuffer != 0U) {
             gl.table.glDeleteRenderbuffers(1, &gl.scratchDepthRenderbuffer);
             gl.scratchDepthRenderbuffer = 0U;
@@ -938,7 +965,10 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
     GLfloat previousClearColor[4] = {0.0F, 0.0F, 0.0F, 0.0F};
     glGetFloatv(GL_COLOR_CLEAR_VALUE, previousClearColor);
 
-    bool succeeded = EnsureScratchTargetUVE(gl, width, height);
+    const bool supersample = gl.table.glBlitFramebuffer != nullptr && width <= 1024 && height <= 1024;
+    const int renderWidth = supersample ? width * 2 : width;
+    const int renderHeight = supersample ? height * 2 : height;
+    bool succeeded = EnsureScratchTargetUVE(gl, renderWidth, renderHeight, supersample);
 
     GLuint colorTexture = 0U;
     if (succeeded) {
@@ -952,9 +982,21 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
-        gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
-        succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        if (supersample) {
+            gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.resolveFramebuffer);
+            gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+            succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+            if (succeeded) {
+                gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
+                gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                                gl.scratchColorTexture, 0);
+                succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+            }
+        } else {
+            gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
+            gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+            succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        }
     }
 
     // Upload the material's maps. A slot whose bytes are missing/invalid uploads nothing, and the
@@ -969,7 +1011,7 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
     }
 
     if (succeeded) {
-        glViewport(0, 0, width, height);
+        glViewport(0, 0, renderWidth, renderHeight);
         glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         SetGlCapabilityUVE(GL_DEPTH_TEST, GL_TRUE);
         glDepthMask(GL_TRUE);
@@ -1072,6 +1114,13 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         gl.table.glBindVertexArray(0);
     }
 
+    if (succeeded && supersample) {
+        gl.table.glBindFramebuffer(kReadFramebufferUVE, gl.scratchFramebuffer);
+        gl.table.glBindFramebuffer(kDrawFramebufferUVE, gl.resolveFramebuffer);
+        gl.table.glBlitFramebuffer(0, 0, renderWidth, renderHeight, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        succeeded = glGetError() == GL_NO_ERROR;
+    }
+
     // The texture is rendered larger than it is ever drawn, so it needs a mip chain: without one,
     // a card sampling 256 px down to 64 with bilinear filtering reads four texels and still
     // aliases. The mipmap min filter is only switched on once the chain exists - a texture whose
@@ -1091,6 +1140,7 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         }
     }
     if (colorTexture != 0U) {
+        gl.table.glBindFramebuffer(GL_FRAMEBUFFER, supersample ? gl.resolveFramebuffer : gl.scratchFramebuffer);
         gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     }
 

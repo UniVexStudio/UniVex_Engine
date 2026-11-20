@@ -6122,30 +6122,62 @@ std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relat
     Asset::MeshAssetUVE mesh;
     std::string extension = relativePath.extension().string();
     std::ranges::transform(extension, extension.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const auto buildLook = [&](const Asset::AssetGuidUVE materialGuid, Asset::IAssetDatabaseUVE& assetDatabase,
+                               std::vector<std::unique_ptr<MaterialThumbnailImageUVE>>& images,
+                               const bool markSeeThroughSkip) -> MeshThumbnailLookUVE {
+        MeshThumbnailLookUVE look;
+        if (materialGuid == Asset::kInvalidAssetGuidUVE) {
+            return look;
+        }
+        const std::filesystem::path materialPath = assetDatabase.ResolveUVE(materialGuid);
+        Asset::MaterialAssetUVE material;
+        if (materialPath.empty() || !Asset::LoadMaterialAssetUVE(materialPath, material)) {
+            return look;
+        }
+        remember(materialPath);
+        look.colour = {material.albedoColor.r, material.albedoColor.g, material.albedoColor.b};
+        look.metallic = material.metallic;
+        look.roughness = material.roughness;
+        look.dielectricSpecular = material.dielectricSpecular;
+        look.normalScale = material.normalScale;
+        look.flipGreen = material.normalFlipGreen;
+        look.occlusionStrength = material.occlusionStrength;
+        look.emissiveColor = {material.emissiveColor.r, material.emissiveColor.g, material.emissiveColor.b};
+        look.emissiveEnergy = material.emissiveEnergy;
+        look.uvScale = {material.uvScale.x, material.uvScale.y};
+        look.uvOffset = {material.uvOffset.x, material.uvOffset.y};
+        look.unshaded = material.unshaded;
+        if (markSeeThroughSkip) {
+            look.skip = material.isTransparent || material.alphaCutoff > 0.0F;
+        }
+        const auto loadMap = [&](const Asset::AssetGuidUVE texGuid, const bool srgb,
+                                 const MaterialThumbnailImageUVE*& slotPtr) {
+            if (texGuid == Asset::kInvalidAssetGuidUVE) {
+                return;
+            }
+            const std::filesystem::path texturePath = assetDatabase.ResolveUVE(texGuid);
+            auto image = std::make_unique<MaterialThumbnailImageUVE>();
+            if (!texturePath.empty() && LoadMaterialPreviewImageUVE(texturePath, srgb, *image)) {
+                remember(texturePath);
+                slotPtr = image.get();
+                images.push_back(std::move(image));
+            }
+        };
+        loadMap(material.albedoTexture, true, look.albedo);
+        loadMap(material.normalTexture, false, look.normal);
+        loadMap(material.metallicRoughnessTexture, false, look.metallicRoughness);
+        loadMap(material.aoTexture, false, look.ao);
+        loadMap(material.emissiveTexture, true, look.emissive);
+        return look;
+    };
+
     if (extension == ".uventity" || extension == ".uvprefab") {
         // An entity: its meshes and primitives where it puts them, seen by the thumbnail's own
         // camera (its "Thumbnail Camera" when it has one) - never the viewport's.
         Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
         std::vector<std::unique_ptr<MaterialThumbnailImageUVE>> images;
         const auto lookOf = [&](const Asset::AssetGuidUVE materialGuid) {
-            MeshThumbnailLookUVE look;
-            const std::filesystem::path materialPath = assetDatabase.ResolveUVE(materialGuid);
-            Asset::MaterialAssetUVE material;
-            if (materialPath.empty() || !Asset::LoadMaterialAssetUVE(materialPath, material)) {
-                return look;
-            }
-            remember(materialPath);
-            look.colour = {material.albedoColor.r, material.albedoColor.g, material.albedoColor.b};
-            if (material.albedoTexture != Asset::kInvalidAssetGuidUVE) {
-                const std::filesystem::path texturePath = assetDatabase.ResolveUVE(material.albedoTexture);
-                auto image = std::make_unique<MaterialThumbnailImageUVE>();
-                if (!texturePath.empty() && LoadMaterialPreviewImageUVE(texturePath, true, *image)) {
-                    remember(texturePath);
-                    look.albedo = image.get();
-                    images.push_back(std::move(image));
-                }
-            }
-            return look;
+            return buildLook(materialGuid, assetDatabase, images, false);
         };
         const auto pose = [&](Asset::MeshAssetUVE& model, const std::filesystem::path& file) {
             std::filesystem::path skeletonFile = file;
@@ -6171,35 +6203,13 @@ std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relat
         std::vector<MeshThumbnailBoneUVE> bones;
         PoseMeshForThumbnailUVE(mesh, skeletonFile, bones);
         remember(skeletonFile);
-        // Each material slot as its material says: its albedo colour times its albedo map. A
-        // see-through slot (eyelashes, hair cards) is left out; a slot whose material cannot be
-        // read is a neutral grey - never some other file's texture.
+        // Each material slot with full PBR maps/scalars. A see-through slot (eyelashes, hair cards)
+        // is left out; a slot whose material cannot be read stays neutral grey.
         Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
         std::vector<MeshThumbnailLookUVE> looks(mesh.materialGuids.size());
         std::vector<std::unique_ptr<MaterialThumbnailImageUVE>> images;
         for (std::size_t slot = 0U; slot < mesh.materialGuids.size(); ++slot) {
-            const Asset::AssetGuidUVE materialGuid = mesh.materialGuids[slot];
-            if (materialGuid == Asset::kInvalidAssetGuidUVE) {
-                continue;
-            }
-            const std::filesystem::path materialPath = assetDatabase.ResolveUVE(materialGuid);
-            Asset::MaterialAssetUVE material;
-            if (materialPath.empty() || !Asset::LoadMaterialAssetUVE(materialPath, material)) {
-                continue;
-            }
-            remember(materialPath);
-            MeshThumbnailLookUVE& look = looks[slot];
-            look.colour = {material.albedoColor.r, material.albedoColor.g, material.albedoColor.b};
-            look.skip = material.isTransparent || material.alphaCutoff > 0.0F;
-            if (material.albedoTexture != Asset::kInvalidAssetGuidUVE) {
-                const std::filesystem::path texturePath = assetDatabase.ResolveUVE(material.albedoTexture);
-                auto image = std::make_unique<MaterialThumbnailImageUVE>();
-                if (!texturePath.empty() && LoadMaterialPreviewImageUVE(texturePath, true, *image)) {
-                    remember(texturePath);
-                    look.albedo = image.get();
-                    images.push_back(std::move(image));
-                }
-            }
+            looks[slot] = buildLook(mesh.materialGuids[slot], assetDatabase, images, true);
         }
         // Never draw nothing: when every slot is see-through, draw them all.
         if (!looks.empty() && std::ranges::all_of(looks, [](const MeshThumbnailLookUVE& look) { return look.skip; })) {

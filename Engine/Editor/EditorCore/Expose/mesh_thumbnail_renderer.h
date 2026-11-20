@@ -15,11 +15,27 @@ namespace UVE::Editor {
 
 struct MaterialThumbnailImageUVE;
 
-/// How one material slot of a mesh looks in its thumbnail: its albedo colour, times its albedo
-/// map when it has one. A see-through slot (eyelashes, hair cards) is left out of the picture.
+/// How one material slot of a mesh looks in its thumbnail: full PBR inputs (albedo, metallic,
+/// roughness, normal, AO, emissive, UV transform) so mesh thumbnails match real runtime materials.
+/// A see-through slot (eyelashes, hair cards) is left out of the picture.
 struct MeshThumbnailLookUVE final {
     std::array<float, 3> colour{0.70F, 0.72F, 0.76F};
+    float metallic = 0.0F;
+    float roughness = 0.5F;
+    float dielectricSpecular = 0.5F;
+    float normalScale = 1.0F;
+    bool flipGreen = false;
+    float occlusionStrength = 1.0F;
+    std::array<float, 3> emissiveColor{0.0F, 0.0F, 0.0F};
+    float emissiveEnergy = 1.0F;
+    std::array<float, 2> uvScale{1.0F, 1.0F};
+    std::array<float, 2> uvOffset{0.0F, 0.0F};
+    bool unshaded = false;
     const MaterialThumbnailImageUVE* albedo = nullptr;
+    const MaterialThumbnailImageUVE* normal = nullptr;
+    const MaterialThumbnailImageUVE* metallicRoughness = nullptr;
+    const MaterialThumbnailImageUVE* ao = nullptr;
+    const MaterialThumbnailImageUVE* emissive = nullptr;
     bool skip = false;
 };
 
