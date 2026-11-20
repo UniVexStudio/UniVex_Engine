@@ -1695,13 +1695,14 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
             } else if constexpr (std::is_same_v<LeftType, Scene::EditorDescriptionComponentUVE>) {
                 return left.description == right.description;
             } else if constexpr (std::is_same_v<LeftType, Scene::ProcessComponentUVE>) {
-                return left == right;
+                return left.mode == right.mode && left.priority == right.priority &&
+                       left.physicsPriority == right.physicsPriority;
             } else if constexpr (std::is_same_v<LeftType, Scene::ThreadGroupComponentUVE>) {
-                return left == right;
+                return left.mode == right.mode && left.order == right.order;
             } else if constexpr (std::is_same_v<LeftType, Scene::AutoTranslateComponentUVE>) {
-                return left == right;
+                return left.mode == right.mode;
             } else if constexpr (std::is_same_v<LeftType, Scene::ObjectMetadataComponentUVE>) {
-                return left == right;
+                return left.entries == right.entries;
             } else {
                 return false;
             }
