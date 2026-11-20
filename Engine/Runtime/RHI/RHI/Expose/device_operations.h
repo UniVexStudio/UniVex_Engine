@@ -46,6 +46,9 @@ struct RenderDeviceCapabilitiesUVE final {
     RenderFeatureSupportUVE timelineSemaphores = RenderFeatureSupportUVE::Unsupported;
     /// Optional geometry stage in a graphics pipeline; Model never means GPU execution.
     RenderFeatureSupportUVE geometryShaders = RenderFeatureSupportUVE::Unsupported;
+    /// Descriptor-indexing / bindless sampled texture table support.
+    RenderFeatureSupportUVE bindlessTextures = RenderFeatureSupportUVE::Unsupported;
+    std::uint32_t maxBindlessTextures = 0U;
 };
 /// Timeline semaphore: a monotonic 64-bit counter that orders work without a binary
 /// signal/unsignal cycle. Binary (queue-to-queue) semaphores are deliberately NOT part of this

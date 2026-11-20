@@ -333,9 +333,12 @@ status legend.
   their own entries below: the engine-level ComputeSystemUVE layer (Part 7.2) and shader
   cross-compilation tooling
 - [ ] A backend for each target OS's native graphics API where OpenGL is not the best
-  choice on that platform
-- [ ] Shader cross-compilation so one shader source authors once and targets every backend
-  (currently shaders are authored directly in one shading language for one backend)
+  choice on that platform *(deferred to Roadmap v2: Vulkan + OpenGL natively cover Windows, Linux, and Android; DX12/Metal require dedicated hardware/OS CI runners)*
+- [x] Shader cross-compilation so one shader source authors once and targets every backend —
+  `Engine/Tools/compile_shaders.py` (GLSL -> Vulkan SPIR-V via `glslc`/`glslangValidator` +
+  `spirv-cross` GLES3/HLSL/MSL emission + structural validation + C++ SPIR-V header codegen,
+  locked by `test_compile_shaders.py`) paired with runtime `TranspileShaderSourceForDialectUVE`
+  (`OpenGL430` / `OpenGLES300` / `VulkanGlsl450`) locked by `ShaderCrossCompilerUVETest`.
 - [x] GPU compute-shader support (for culling, particle simulation, skinning, Hi-Z, and ray tracing on the
   GPU instead of the CPU) — RHI level completed with M5a (compute pipelines, DispatchUVE,
   SSBO write path) and M5b (STORAGE_IMAGE descriptors, GENERAL transitions + image barriers,
@@ -399,7 +402,11 @@ status legend.
   GLSL has no portable float64 and a double CPU path would have left a permanent ~1 ULP
   disagreement on roughly one vertex in six, forcing every skinning test onto a tolerance.
   Pose resolution stays on the CPU: walking a parent chain is serial work a dispatch cannot help.
-- [ ] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead
+- [x] Bindless/descriptor-indexing-style resource binding for reduced per-draw overhead —
+  `BindlessTextureTableUVE` + `IRenderDeviceUVE::RegisterBindlessTextureUVE` /
+  `UnregisterBindlessTextureUVE` / `SupportsBindlessTexturesUVE` + `RenderDeviceCapabilitiesUVE::bindlessTextures`
+  wired into `VulkanRenderDeviceUVE` (Vulkan 1.3 dynamic/descriptor-indexing capable devices) and
+  `NullRenderDeviceUVE` with automatic slot recycling and destroy-time cleanup; locked by `BindlessTextureTableUVETest`.
 
 ---
 

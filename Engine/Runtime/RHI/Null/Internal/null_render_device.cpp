@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "bindless_texture_table.h"
 #include "null_command_buffer.h"
 #include "engine_assert.h"
 #include "logging_macros.h"
@@ -65,6 +66,7 @@ struct NullRenderDeviceUVE::ImplUVE {
     std::uint32_t nextQuery = 1U, activeOcclusion = 0U;
     std::vector<RecordedDeviceOperationUVE> operations;
     std::uint64_t droppedOperations = 0U;
+    BindlessTextureTableUVE bindlessTable{};
     void RecordUVE(RecordedDeviceOperationUVE operation) {
         if (operations.size() == 256U) {
             operations.erase(operations.begin());
@@ -177,10 +179,22 @@ bool NullRenderDeviceUVE::SupportsTextureFormatUVE(const TextureFormatUVE format
 }
 
 void NullRenderDeviceUVE::DestroyTextureUVE(TextureHandleUVE texture) {
+    m_impl->bindlessTable.UnregisterTextureUVE(texture);
     if (m_impl->textures.erase(texture.value) == 0) {
         UVE_ERROR("NullRenderDeviceUVE: DestroyTextureUVE called with an unknown or already-destroyed handle ({})",
                    texture.value);
     }
+}
+
+std::uint32_t NullRenderDeviceUVE::RegisterBindlessTextureUVE(TextureHandleUVE texture) {
+    if (m_impl->textures.find(texture.value) == m_impl->textures.end()) {
+        return kInvalidBindlessTextureIndexUVE;
+    }
+    return m_impl->bindlessTable.RegisterUVE(texture);
+}
+
+void NullRenderDeviceUVE::UnregisterBindlessTextureUVE(std::uint32_t bindlessIndex) {
+    m_impl->bindlessTable.UnregisterSlotUVE(bindlessIndex);
 }
 
 SamplerHandleUVE NullRenderDeviceUVE::CreateSamplerUVE(const SamplerDescUVE& desc) {
@@ -495,6 +509,8 @@ RenderDeviceCapabilitiesUVE NullRenderDeviceUVE::GetCapabilitiesUVE() const noex
                                      RenderFeatureSupportUVE::Unsupported, model};
     caps.geometryShaders = model;
     caps.timelineSemaphores = model;
+    caps.bindlessTextures = model;
+    caps.maxBindlessTextures = kDefaultMaxBindlessTexturesUVE;
     return caps;
 }
 RenderOperationResultUVE NullRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE handle,
