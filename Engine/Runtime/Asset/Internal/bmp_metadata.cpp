@@ -37,7 +37,9 @@ namespace {
 bool DecodeBmpRgba8ImageUVE(const std::vector<std::byte>& bytes, BmpRgba8ImageUVE& outImage) noexcept {
     constexpr std::size_t kFileHeaderBytesUVE = 14U;
     constexpr std::size_t kInfoHeaderBytesUVE = 40U;
-    if (bytes.size() > kMaximumBmpDecodedPixelBytesUVE || !CanReadUVE(bytes, 0U, kFileHeaderBytesUVE) ||
+    constexpr std::size_t kMaximumBmpHeaderAndPaletteOverheadBytesUVE = 4096U;
+    if (bytes.size() > kMaximumBmpDecodedPixelBytesUVE + kMaximumBmpHeaderAndPaletteOverheadBytesUVE ||
+        !CanReadUVE(bytes, 0U, kFileHeaderBytesUVE) ||
         bytes[0] != std::byte{'B'} || bytes[1] != std::byte{'M'}) {
         return false;
     }

@@ -80,11 +80,20 @@ bool IsMaterialAssetValidUVE(const MaterialAssetUVE& material) noexcept {
            IsFiniteUnitIntervalUVE(material.dielectricSpecular) &&
            std::isfinite(material.heightScale) && material.heightScale >= 0.0F &&
            IsFiniteUnitIntervalUVE(material.rimAmount) &&
+           IsFiniteUnitIntervalUVE(material.rimTint.r) && IsFiniteUnitIntervalUVE(material.rimTint.g) &&
+           IsFiniteUnitIntervalUVE(material.rimTint.b) &&
            IsFiniteUnitIntervalUVE(material.clearcoatAmount) &&
            IsFiniteUnitIntervalUVE(material.clearcoatRoughness) &&
            IsFiniteUnitIntervalUVE(material.anisotropyAmount) &&
            IsFiniteUnitIntervalUVE(material.subsurfaceStrength) &&
            IsFiniteUnitIntervalUVE(material.refractionAmount) &&
+           material.parallaxMinLayers > 0U && material.parallaxMinLayers <= material.parallaxMaxLayers &&
+           std::isfinite(material.proximityFadeDistance) && material.proximityFadeDistance >= 0.0F &&
+           std::isfinite(material.distanceFadeNear) && material.distanceFadeNear >= 0.0F &&
+           std::isfinite(material.distanceFadeFar) && material.distanceFadeFar >= 0.0F &&
+           IsFiniteUnitIntervalUVE(material.textureTint.r) &&
+           IsFiniteUnitIntervalUVE(material.textureTint.g) &&
+           IsFiniteUnitIntervalUVE(material.textureTint.b) &&
            std::isfinite(material.textureTileX) && std::isfinite(material.textureTileY) &&
            std::ranges::all_of(material.maps, [](const MaterialMapSettingsUVE& map) {
                return std::isfinite(map.tiling.x) && std::isfinite(map.tiling.y) && std::isfinite(map.offset.x) &&
@@ -487,6 +496,10 @@ bool SaveMaterialAssetUVE(const MaterialAssetUVE& material, const std::filesyste
     }
     if (material.customShader != kInvalidAssetGuidUVE) {
         payload["customShader"] = material.customShader.value;
+    }
+    if (material.textureTint.r != defaults.textureTint.r || material.textureTint.g != defaults.textureTint.g ||
+        material.textureTint.b != defaults.textureTint.b) {
+        payload["textureTint"] = ColorToJsonUVE(material.textureTint);
     }
     if (material.textureTileX != 1.0F) {
         payload["textureTileX"] = material.textureTileX;

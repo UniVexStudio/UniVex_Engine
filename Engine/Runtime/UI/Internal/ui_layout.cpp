@@ -302,7 +302,8 @@ void PositionContainerItemsUVE(Scene::IEntityManagerUVE& entityManager,
 } // namespace
 
 void LayoutUIScrollContainersUVE(Scene::IEntityManagerUVE& entityManager, const Input::IInputSystemUVE& input,
-                                 const UIFontAtlasUVE& fontAtlas) {
+                                 const UIFontAtlasUVE& fontAtlas,
+                                 const std::optional<Math::Vector2UVE> pointerPositionInAuthoredSpace) {
     std::vector<OrderedContainerUVE> containers;
     entityManager.ForEachUVE<Scene::UIScrollContainerComponentUVE>(
         [&entityManager, &containers](const Scene::EntityUVE entity, const Scene::UIScrollContainerComponentUVE&) {
@@ -325,7 +326,7 @@ void LayoutUIScrollContainersUVE(Scene::IEntityManagerUVE& entityManager, const 
         });
 
     const float wheel = input.GetMouseScrollDeltaUVE();
-    const Math::Vector2UVE mouse = input.GetMousePositionUVE();
+    const Math::Vector2UVE mouse = pointerPositionInAuthoredSpace.value_or(input.GetMousePositionUVE());
     const bool horizontal = input.IsKeyDownUVE(Input::KeyCodeUVE::LeftShift) ||
                             input.IsKeyDownUVE(Input::KeyCodeUVE::RightShift);
     for (const OrderedContainerUVE& container : containers) {

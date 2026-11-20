@@ -154,6 +154,24 @@ TEST_F(UIScrollUVETest, Wheel_ScrollsAndClampsToContent) {
     EXPECT_EQ(ScrollOfUVE(scroll).scrollOffset, (Math::Vector2UVE{0.0F, 0.0F}));
 }
 
+TEST_F(UIScrollUVETest, Wheel_HonorsCoordinateTransformWhenScaledOrOffset) {
+    const Scene::EntityUVE scroll = MakeScrollUVE(Math::RectUVE{{10.0F, 10.0F}, {200.0F, 100.0F}});
+    for (std::int64_t i = 0; i < 6; ++i) {
+        LinkUVE(MakeButtonUVE({60.0F, 20.0F}), scroll, i);
+    }
+    runtime.SetViewportSizeUVE({800.0F, 600.0F});
+    UICoordinateTransformUVE transform;
+    transform.scaleX = 2.0F;
+    transform.scaleY = 2.0F;
+    transform.offsetX = 100.0F;
+    transform.offsetY = 50.0F;
+    runtime.SetCoordinateTransformUVE(transform);
+
+    // Device pointer (200, 150) maps to authored ((200 - 100)/2, (150 - 50)/2) = (50, 50), inside scroll rect.
+    FrameUVE({200.0F, 150.0F}, false, -5.0F);
+    EXPECT_EQ(ScrollOfUVE(scroll).scrollOffset, (Math::Vector2UVE{0.0F, 56.0F}));
+}
+
 TEST_F(UIScrollUVETest, DropsFullyClippedQuads) {
     const Scene::EntityUVE scroll = MakeScrollUVE(Math::RectUVE{{10.0F, 10.0F}, {200.0F, 100.0F}});
     for (std::int64_t i = 0; i < 6; ++i) {

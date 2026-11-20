@@ -68,6 +68,18 @@ void GlyphAtlas::reset() {
   version++;
 }
 
+bool GlyphAtlas::grow(int maxSize) {
+  if (size >= maxSize) return false;
+  size = std::min(size * 2, maxSize);
+  pixels.assign(size_t(size) * size_t(size), uint8_t(0));
+  m_map.clear();
+  m_x = m_y = 1;
+  m_rowH = 0;
+  generation++;
+  version++;
+  return true;
+}
+
 const GlyphAtlas::Entry* GlyphAtlas::get(const Font& f, char32_t cp) {
   Key k{&f, cp};
   if (auto it = m_map.find(k); it != m_map.end()) return &it->second;
@@ -97,6 +109,7 @@ struct Builder {
   GlyphAtlas& atlas;
   GpuFrame& out;
   std::array<IRect, 64> stack{};
+  std::vector<IRect> stackOverflow;
   int stackTop = 0;
   IRect clip;
   bool atlasFull = false;
@@ -199,7 +212,9 @@ struct Builder {
     for (int i = 0; i < n; i++) { Vec2 a = p[i], b = p[(i + 1) % n]; area += a.x * b.y - b.x * a.y; }
     if (std::fabs(area) < 1e-5f) return;
     float sgn = area > 0 ? 1.f : -1.f;
-    Vec2 nrm[64];
+    Vec2 nrmStack[64];
+    std::vector<Vec2> nrmHeap;
+    Vec2* nrm = n <= 64 ? nrmStack : (nrmHeap.resize(size_t(n)), nrmHeap.data());
     for (int i = 0; i < n; i++) {
       Vec2 a = p[(i + n - 1) % n], b = p[i], d = p[(i + 1) % n];
       auto en = [&](Vec2 s, Vec2 e) { float dx = e.x - s.x, dy = e.y - s.y, l = std::sqrt(dx * dx + dy * dy); return l < 1e-6f ? Vec2{0, 0} : Vec2{sgn * dy / l, -sgn * dx / l}; };
@@ -380,14 +395,20 @@ struct Builder {
         break;
       }
       case DrawOp::PushClip: {
-        if (stackTop < 64) stack[size_t(stackTop++)] = clip;
+        if (stackTop < 64) stack[size_t(stackTop)] = clip;
+        else stackOverflow.push_back(clip);
+        stackTop++;
         int x0 = std::max(clip.x0, int(std::lround(d.r.x))), y0 = std::max(clip.y0, int(std::lround(d.r.y)));
         int x1 = std::min(clip.x1, int(std::lround(d.r.x + d.r.w))), y1 = std::min(clip.y1, int(std::lround(d.r.y + d.r.h)));
         clip = {x0, y0, std::max(x0, x1), std::max(y0, y1)};
         break;
       }
       case DrawOp::PopClip:
-        if (stackTop > 0) clip = stack[size_t(--stackTop)];
+        if (stackTop > 0) {
+          --stackTop;
+          if (stackTop < 64) clip = stack[size_t(stackTop)];
+          else { clip = stackOverflow.back(); stackOverflow.pop_back(); }
+        }
         break;
       case DrawOp::FillRect: fillRect(d.r, d.c); break;
       case DrawOp::FillRoundRect: roundRect(d.r, d.f0, d.c, 0); break;
@@ -414,14 +435,15 @@ struct Builder {
 } // namespace
 
 bool buildGpuFrame(const DrawList& list, GlyphAtlas& atlas, GpuFrame& out) {
-  for (int attempt = 0; attempt < 2; attempt++) {
+  for (int attempt = 0; attempt < 4; attempt++) {
     out.clear();
     out.width = list.width;
     out.height = list.height;
     Builder b(list, atlas, out);
     b.run();
     if (!b.atlasFull) return true;
-    atlas.reset();           // atlas full: start over with only what this frame needs
+    if (attempt == 0) atlas.reset(); // atlas full: start over with only what this frame needs
+    else if (!atlas.grow()) break;   // single frame exceeded current size: double up to 4096
   }
   return false;
 }

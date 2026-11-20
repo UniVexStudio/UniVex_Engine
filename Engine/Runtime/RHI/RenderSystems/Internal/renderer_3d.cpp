@@ -437,9 +437,9 @@ constexpr std::uint32_t kReflectionProbeFirstTextureSlotUVE = 6U;
 constexpr std::uint32_t kSkyTextureSlotUVE = 1U;
 constexpr std::uint32_t kToneMappingLutTextureSlotUVE = 2U;
 constexpr std::uint32_t kToneMappingSsaoTextureSlotUVE = 14U;
-constexpr std::uint32_t kToneMappingContactShadowTextureSlotUVE = 16U;
-constexpr std::uint32_t kToneMappingSsrTextureSlotUVE = 17U;
-constexpr std::uint32_t kToneMappingBloomTextureSlotUVE = 18U;
+constexpr std::uint32_t kToneMappingContactShadowTextureSlotUVE = 6U;
+constexpr std::uint32_t kToneMappingSsrTextureSlotUVE = 7U;
+constexpr std::uint32_t kToneMappingBloomTextureSlotUVE = 8U;
 
 // Phase 2b post-process defaults. User-facing SSAO radius, intensity, power, and sample quality live
 // in PostProcessSettingsUVE; without a WorldEnvironment the renderer keeps bloom's legacy hard knee.

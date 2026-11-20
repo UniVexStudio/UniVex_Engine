@@ -224,11 +224,10 @@ struct ToICandidateUVE final {
     const Scene::ColliderComponentUVE& movingCollider,
     const std::vector<Detail::ColliderWorldAabbUVE>& cache,
     Scene::EntityUVE movingEntity, std::size_t maximumTargets, bool& truncated) {
-    truncated = cache.size() > maximumTargets;
-    const std::size_t targetCount = std::min(cache.size(), maximumTargets);
+    truncated = false;
+    std::size_t evaluatedCount = 0U;
     std::optional<ToICandidateUVE> best;
-    for (std::size_t index = 0U; index < targetCount; ++index) {
-        const Detail::ColliderWorldAabbUVE& candidate = cache[index];
+    for (const Detail::ColliderWorldAabbUVE& candidate : cache) {
         if (candidate.entity == movingEntity ||
             !CollisionFilterAcceptsUVE(movingCollider, candidate.collisionLayer, candidate.collisionMask)) {
             continue;
@@ -238,6 +237,11 @@ struct ToICandidateUVE final {
         if (!hit.has_value()) {
             continue;
         }
+        if (evaluatedCount >= maximumTargets) {
+            truncated = true;
+            break;
+        }
+        ++evaluatedCount;
         const bool earlier = !best.has_value() || hit->time < best->hit.time - CharacterControllerUVE::kToIEpsilonUVE;
         const bool tied = best.has_value() &&
                           std::fabs(hit->time - best->hit.time) <= CharacterControllerUVE::kToIEpsilonUVE;
@@ -421,13 +425,16 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveUVE(
         sceneGraph.UpdateUVE(entityManager);
 
         const std::vector<CollisionPairUVE> pairs = collisionSystem.DetectCollisionsUVE(entityManager);
-        const std::size_t processCount = std::min(pairs.size(), kMaximumContactsUVE);
-        result.contactsTruncated = result.contactsTruncated || pairs.size() > kMaximumContactsUVE;
-        for (std::size_t index = 0U; index < processCount; ++index) {
-            const CollisionPairUVE& pair = pairs[index];
+        std::size_t entityPairCount = 0U;
+        for (const CollisionPairUVE& pair : pairs) {
             if (pair.first != input.entity && pair.second != input.entity) {
                 continue;
             }
+            if (entityPairCount >= kMaximumContactsUVE) {
+                result.contactsTruncated = true;
+                break;
+            }
+            ++entityPairCount;
             const float separationAxisLengthSquared = Math::LengthSquaredUVE(pair.separationAxis);
             if (!std::isfinite(pair.penetrationDepth) || pair.penetrationDepth <= 0.0F ||
                 !Math::IsFiniteUVE(pair.separationAxis) || !std::isfinite(separationAxisLengthSquared) ||
@@ -463,7 +470,7 @@ CharacterControllerMoveResultUVE CharacterControllerUVE::MoveUVE(
             result.blocked = true;
             ++result.contactCount;
         }
-        if (processCount > 0U) {
+        if (entityPairCount > 0U) {
             sceneGraph.UpdateUVE(entityManager);
         }
     }

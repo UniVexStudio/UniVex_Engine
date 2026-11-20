@@ -34,7 +34,9 @@ constexpr std::uint8_t kTgaUnsupportedInterleaveBitsUVE = 0xC0U;
 
 bool DecodeTgaRgba8ImageUVE(const std::vector<std::byte>& bytes,
                             TgaRgba8ImageUVE& outImage) noexcept {
-    if (bytes.size() > kMaximumTgaDecodedPixelBytesUVE || bytes.size() < kTgaHeaderBytesUVE) {
+    constexpr std::size_t kMaximumTgaHeaderAndFooterOverheadBytesUVE = 4096U;
+    if (bytes.size() > kMaximumTgaDecodedPixelBytesUVE + kMaximumTgaHeaderAndFooterOverheadBytesUVE ||
+        bytes.size() < kTgaHeaderBytesUVE) {
         return false;
     }
 
