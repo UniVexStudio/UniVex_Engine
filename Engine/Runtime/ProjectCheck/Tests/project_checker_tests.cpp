@@ -144,5 +144,35 @@ TEST_F(ProjectCheckerUVETest, RunUVE_ChecksMaterialsWrittenByTheInspectorAsWellA
     EXPECT_TRUE(foundDecodeFailure);
 }
 
+TEST_F(ProjectCheckerUVETest, RunUVE_ValidatesAllRegisteredEnvelopeAssetKindsCaseInsensitively) {
+    static_cast<void>(WriteEnvelopeUVE("player.uvbp", Asset::AssetKindUVE::Blueprint));
+    static_cast<void>(WriteEnvelopeUVE("sparks.UVFX", Asset::AssetKindUVE::ParticleSystem));
+    static_cast<void>(WriteEnvelopeUVE("hero.uvskel", Asset::AssetKindUVE::Skeleton));
+    static_cast<void>(WriteEnvelopeUVE("locomotion.uvanimlib", Asset::AssetKindUVE::AnimationLibrary));
+    static_cast<void>(WriteEnvelopeUVE("attack.uvmontage", Asset::AssetKindUVE::MotionMontage));
+    static_cast<void>(WriteEnvelopeUVE("combat.uvmontagelib", Asset::AssetKindUVE::MontageLibrary));
+    static_cast<void>(WriteEnvelopeUVE("hud.uvwbp", Asset::AssetKindUVE::Prefab));
+    static_cast<void>(WriteEnvelopeUVE("items.uvtable", Asset::AssetKindUVE::DataTable));
+    static_cast<void>(WriteEnvelopeUVE("bgm.uvaudio", Asset::AssetKindUVE::Audio));
+    static_cast<void>(WriteEnvelopeUVE("ui.uvfont", Asset::AssetKindUVE::Font));
+    static_cast<void>(WriteEnvelopeUVE("bad_bp.UVBP", Asset::AssetKindUVE::Blob));
+
+    const ProjectCheckReportUVE report = ProjectCheckerUVE{}.RunUVE(ProjectCheckOptionsUVE{m_root, {}});
+    ASSERT_TRUE(report.HasErrorsUVE());
+    bool foundBadBpMismatch = false;
+    bool foundSparksUnregistered = false;
+    for (const ProjectCheckDiagnosticUVE& diagnostic : report.diagnostics) {
+        if (diagnostic.path.filename() == "sparks.UVFX") {
+            EXPECT_NE(diagnostic.code, "envelope.kind.mismatch");
+            EXPECT_NE(diagnostic.code, "envelope.decode.failed");
+            foundSparksUnregistered |= diagnostic.code == "registry.file.unregistered";
+        }
+        foundBadBpMismatch |=
+            diagnostic.code == "envelope.kind.mismatch" && diagnostic.path.filename() == "bad_bp.UVBP";
+    }
+    EXPECT_TRUE(foundBadBpMismatch);
+    EXPECT_TRUE(foundSparksUnregistered);
+}
+
 } // namespace
 } // namespace UVE::ProjectCheck::Tests

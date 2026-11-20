@@ -16,8 +16,10 @@
 
 #include "import_helpers.h"
 
+#include "bmp_metadata.h"
 #include "jpeg_metadata.h"
 #include "png_metadata.h"
+#include "tga_metadata.h"
 #include "texture_import_settings.h"
 #include "logging_macros.h"
 
@@ -25,6 +27,7 @@ namespace UVE::Asset::Detail {
 namespace {
 
 constexpr std::string_view kPngSignatureUVE{"\x89PNG\r\n\x1a\n", 8U};
+constexpr std::string_view kBmpSignatureUVE{"BM", 2U};
 
 [[nodiscard]] bool StartsWithUVE(const std::vector<std::byte>& bytes, const std::string_view prefix) noexcept {
     if (bytes.size() < prefix.size()) {
@@ -47,6 +50,10 @@ constexpr std::string_view kPngSignatureUVE{"\x89PNG\r\n\x1a\n", 8U};
 [[nodiscard]] bool LooksLikeJpegUVE(const std::vector<std::byte>& bytes) noexcept {
     return bytes.size() >= 3U && std::to_integer<unsigned char>(bytes[0]) == 0xFFU &&
            std::to_integer<unsigned char>(bytes[1]) == 0xD8U && std::to_integer<unsigned char>(bytes[2]) == 0xFFU;
+}
+
+[[nodiscard]] bool LooksLikeBmpUVE(const std::vector<std::byte>& bytes) noexcept {
+    return bytes.size() >= 54U && StartsWithUVE(bytes, kBmpSignatureUVE);
 }
 
 /// True when `relative` resolves to a path inside the directory it is resolved against. Model files
@@ -75,9 +82,10 @@ constexpr std::string_view kPngSignatureUVE{"\x89PNG\r\n\x1a\n", 8U};
 
 /// Decodes one blob into the asset's level-0 pixels. The format is decided by the bytes, never by a
 /// file extension or an author-supplied MIME string: those are hints at best, and a wrong hint must
-/// not turn a decode failure into a texture of the wrong shape.
+/// not turn a decode failure into a texture of the wrong shape. Because TGA files have no magic
+/// prefix at byte 0, `allowTgaFallback` is enabled only when loading a `.tga` file from disk.
 [[nodiscard]] bool DecodeTextureSourceUVE(const std::vector<std::byte>& imageBytes, const char* importerName,
-                                          TextureAssetUVE& outTexture) {
+                                          TextureAssetUVE& outTexture, const bool allowTgaFallback = false) {
     if (LooksLikePngUVE(imageBytes)) {
         PngRgba8ImageUVE decoded;
         if (!DecodePngRgba8ImageUVE(imageBytes, decoded)) {
@@ -102,10 +110,85 @@ constexpr std::string_view kPngSignatureUVE{"\x89PNG\r\n\x1a\n", 8U};
         outTexture.pixels = std::move(decoded.pixels);
         return true;
     }
-    UVE_WARNING("{}: a {} byte image is neither PNG nor JPEG, the two raster forms a glTF or MTL model "
-                "may embed; the texture is skipped",
+    if (LooksLikeBmpUVE(imageBytes)) {
+        BmpRgba8ImageUVE decoded;
+        if (!DecodeBmpRgba8ImageUVE(imageBytes, decoded)) {
+            UVE_WARNING("{}: a {} byte BMP image failed bounded RGBA8 decoding; the texture is skipped",
+                        importerName, imageBytes.size());
+            return false;
+        }
+        outTexture.width = decoded.width;
+        outTexture.height = decoded.height;
+        outTexture.pixels = std::move(decoded.pixels);
+        return true;
+    }
+    if (allowTgaFallback) {
+        TgaRgba8ImageUVE decoded;
+        if (!DecodeTgaRgba8ImageUVE(imageBytes, decoded)) {
+            UVE_WARNING("{}: a {} byte TGA image failed bounded RGBA8 decoding; the texture is skipped",
+                        importerName, imageBytes.size());
+            return false;
+        }
+        outTexture.width = decoded.width;
+        outTexture.height = decoded.height;
+        outTexture.pixels = std::move(decoded.pixels);
+        return true;
+    }
+    UVE_WARNING("{}: a {} byte image is not a valid PNG, JPEG, BMP, or TGA model texture; the texture is skipped",
                 importerName, imageBytes.size());
     return false;
+}
+
+[[nodiscard]] AssetGuidUVE ImportModelTextureBytesInternalUVE(
+    const std::vector<std::byte>& imageBytes, const std::string_view textureStem,
+    const std::filesystem::path& destinationPath, const TextureAssetColorSpaceUVE colorSpace,
+    const TextureUsageUVE usage, const ModelTextureImportOptionsUVE& options,
+    IAssetDatabaseUVE& assetDatabase, const bool allowTgaFallback) {
+    if (imageBytes.empty() || imageBytes.size() > options.maximumImageBytes) {
+        UVE_WARNING("{}: a model texture is {} bytes, outside the bounded [1, {}] byte range; the texture is "
+                    "skipped",
+                    options.importerName, imageBytes.size(), options.maximumImageBytes);
+        return kInvalidAssetGuidUVE;
+    }
+    try {
+        TextureAssetUVE texture;
+        if (!DecodeTextureSourceUVE(imageBytes, options.importerName, texture, allowTgaFallback)) {
+            return kInvalidAssetGuidUVE;
+        }
+        texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+        texture.colorSpace = colorSpace;
+        texture.usage = usage;
+
+        TextureImportSettingsUVE settings;
+        settings.colorSpace = colorSpace;
+        settings.usage = usage;
+        if (!PrepareTextureForImportUVE(texture, settings)) {
+            UVE_WARNING("{}: a model texture failed mip generation, compression or validation; the texture is "
+                        "skipped",
+                        options.importerName);
+            return kInvalidAssetGuidUVE;
+        }
+
+        const std::filesystem::path texturePath =
+            destinationPath.parent_path() / (std::string(textureStem) + ".uvtex");
+        if (!PublishAssetAtomicallyUVE(
+                texturePath, options.importerName, options.temporarySuffix,
+                [&texture](const std::filesystem::path& temporaryPath) {
+                    return SaveTextureAssetUVE(texture, temporaryPath);
+                })) {
+            return kInvalidAssetGuidUVE;
+        }
+        const AssetGuidUVE guid = assetDatabase.RegisterUVE(texturePath);
+        if (guid == kInvalidAssetGuidUVE) {
+            UVE_ERROR("{}: asset database rejected imported texture \"{}\"", options.importerName,
+                      texturePath.string());
+            return kInvalidAssetGuidUVE;
+        }
+        return guid;
+    } catch (const std::bad_alloc&) {
+        UVE_ERROR("{}: out of memory while importing a model texture", options.importerName);
+        return kInvalidAssetGuidUVE;
+    }
 }
 
 } // namespace
@@ -154,51 +237,8 @@ AssetGuidUVE ImportModelTextureBytesUVE(const std::vector<std::byte>& imageBytes
                                         const TextureAssetColorSpaceUVE colorSpace, const TextureUsageUVE usage,
                                         const ModelTextureImportOptionsUVE& options,
                                         IAssetDatabaseUVE& assetDatabase) {
-    if (imageBytes.empty() || imageBytes.size() > options.maximumImageBytes) {
-        UVE_WARNING("{}: a model texture is {} bytes, outside the bounded [1, {}] byte range; the texture is "
-                    "skipped",
-                    options.importerName, imageBytes.size(), options.maximumImageBytes);
-        return kInvalidAssetGuidUVE;
-    }
-    try {
-        TextureAssetUVE texture;
-        if (!DecodeTextureSourceUVE(imageBytes, options.importerName, texture)) {
-            return kInvalidAssetGuidUVE;
-        }
-        texture.format = TextureAssetFormatUVE::RGBA8Unorm;
-        texture.colorSpace = colorSpace;
-        texture.usage = usage;
-
-        TextureImportSettingsUVE settings;
-        settings.colorSpace = colorSpace;
-        settings.usage = usage;
-        if (!PrepareTextureForImportUVE(texture, settings)) {
-            UVE_WARNING("{}: a model texture failed mip generation, compression or validation; the texture is "
-                        "skipped",
-                        options.importerName);
-            return kInvalidAssetGuidUVE;
-        }
-
-        const std::filesystem::path texturePath =
-            destinationPath.parent_path() / (std::string(textureStem) + ".uvtex");
-        if (!PublishAssetAtomicallyUVE(
-                texturePath, options.importerName, options.temporarySuffix,
-                [&texture](const std::filesystem::path& temporaryPath) {
-                    return SaveTextureAssetUVE(texture, temporaryPath);
-                })) {
-            return kInvalidAssetGuidUVE;
-        }
-        const AssetGuidUVE guid = assetDatabase.RegisterUVE(texturePath);
-        if (guid == kInvalidAssetGuidUVE) {
-            UVE_ERROR("{}: asset database rejected imported texture \"{}\"", options.importerName,
-                      texturePath.string());
-            return kInvalidAssetGuidUVE;
-        }
-        return guid;
-    } catch (const std::bad_alloc&) {
-        UVE_ERROR("{}: out of memory while importing a model texture", options.importerName);
-        return kInvalidAssetGuidUVE;
-    }
+    return ImportModelTextureBytesInternalUVE(imageBytes, textureStem, destinationPath, colorSpace, usage, options,
+                                              assetDatabase, /*allowTgaFallback=*/false);
 }
 
 AssetGuidUVE ImportModelTextureFileUVE(const std::filesystem::path& sourceDirectory,
@@ -227,9 +267,10 @@ AssetGuidUVE ImportModelTextureFileUVE(const std::filesystem::path& sourceDirect
         return kInvalidAssetGuidUVE;
     }
     const std::string extension = ToLowerUVE(relative.extension().string());
-    if (extension != ".png" && extension != ".jpg" && extension != ".jpeg") {
+    if (extension != ".png" && extension != ".jpg" && extension != ".jpeg" &&
+        extension != ".bmp" && extension != ".tga") {
         UVE_WARNING("{}: model references texture \"{}\" with a format the model importers cannot decode "
-                    "(only PNG and JPEG); the texture is skipped",
+                    "(only PNG, JPEG, BMP, and TGA); the texture is skipped",
                     options.importerName, authoredTextureFile);
         return kInvalidAssetGuidUVE;
     }
@@ -248,8 +289,8 @@ AssetGuidUVE ImportModelTextureFileUVE(const std::filesystem::path& sourceDirect
         return kInvalidAssetGuidUVE;
     }
     const std::string stem = relative.stem().string();
-    return ImportModelTextureBytesUVE(imageBytes, stem.empty() ? "texture" : stem, destinationPath, colorSpace,
-                                      usage, options, assetDatabase);
+    return ImportModelTextureBytesInternalUVE(imageBytes, stem.empty() ? "texture" : stem, destinationPath, colorSpace,
+                                              usage, options, assetDatabase, extension == ".tga");
 }
 
 } // namespace UVE::Asset::Detail

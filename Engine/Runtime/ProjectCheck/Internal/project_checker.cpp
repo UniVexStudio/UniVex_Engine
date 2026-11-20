@@ -9,6 +9,7 @@
 #include <system_error>
 
 #include "asset_database.h"
+#include "asset_type_registry.h"
 #include "uve_file_envelope.h"
 
 namespace UVE::ProjectCheck {
@@ -35,21 +36,7 @@ namespace {
 }
 
 [[nodiscard]] std::optional<Asset::AssetKindUVE> ExpectedKindUVE(const std::filesystem::path& path) {
-    const std::string extension = path.extension().string();
-    if (extension == ".uvscene") return Asset::AssetKindUVE::Scene;
-    if (extension == ".uvprefab" || extension == ".uventity") return Asset::AssetKindUVE::Prefab;
-    if (extension == ".uvbundle") return Asset::AssetKindUVE::Bundle;
-    if (extension == ".uvmodel") return Asset::AssetKindUVE::Mesh;
-    if (extension == ".uvtex") return Asset::AssetKindUVE::Texture;
-    if (extension == ".uvshader") return Asset::AssetKindUVE::Shader;
-    // Both spellings are materials, and both are written by the engine itself: the importers
-    // publish `.uvmat` beside a model, and the Inspector's "New Material" writes `.uvmaterial`.
-    // Knowing only one of them meant every material an author created from the Inspector was
-    // skipped by the check - never validated, never reported as unregistered - which is the exact
-    // silent hole this check exists to close.
-    if (extension == ".uvmat" || extension == ".uvmaterial") return Asset::AssetKindUVE::Material;
-    if (extension == ".uvsave") return Asset::AssetKindUVE::Save;
-    return std::nullopt;
+    return Asset::ExpectedAssetKindForPathUVE(path);
 }
 
 void AddUVE(ProjectCheckReportUVE& report, const ProjectCheckSeverityUVE severity, std::string code,

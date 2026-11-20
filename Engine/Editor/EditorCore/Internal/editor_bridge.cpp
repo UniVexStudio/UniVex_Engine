@@ -14,45 +14,14 @@
 #include <type_traits>
 #include <utility>
 
+#include "asset_type_registry.h"
 #include "mesh_component.h"
 
 namespace UVE::Editor {
 namespace {
 
 [[nodiscard]] std::string SourceKindLabelUVE(const Asset::AssetImportSourceKindUVE kind) {
-    switch (kind) {
-        case Asset::AssetImportSourceKindUVE::PlainText:
-            return "plainText";
-        case Asset::AssetImportSourceKindUVE::SceneEnvelope:
-            return "sceneEnvelope";
-        case Asset::AssetImportSourceKindUVE::PrefabEnvelope:
-            return "prefabEnvelope";
-        case Asset::AssetImportSourceKindUVE::MeshEnvelope:
-            return "meshEnvelope";
-        case Asset::AssetImportSourceKindUVE::TextureEnvelope:
-            return "textureEnvelope";
-        case Asset::AssetImportSourceKindUVE::ShaderEnvelope:
-            return "shaderEnvelope";
-        case Asset::AssetImportSourceKindUVE::MaterialEnvelope:
-            return "materialEnvelope";
-        case Asset::AssetImportSourceKindUVE::AnimationEnvelope:
-            return "animationEnvelope";
-        case Asset::AssetImportSourceKindUVE::RawModel:
-            return "rawModel";
-        case Asset::AssetImportSourceKindUVE::RawTexture:
-            return "rawTexture";
-        case Asset::AssetImportSourceKindUVE::RawMaterial:
-            return "rawMaterial";
-        case Asset::AssetImportSourceKindUVE::RawShader:
-            return "rawShader";
-        case Asset::AssetImportSourceKindUVE::RawAudio:
-            return "rawAudio";
-        case Asset::AssetImportSourceKindUVE::RawFont:
-            return "rawFont";
-        case Asset::AssetImportSourceKindUVE::Unknown:
-            return "unknown";
-    }
-    return "unknown";
+    return std::string(Asset::AssetImportSourceKindLabelUVE(kind));
 }
 
 [[nodiscard]] const std::vector<EditorBridgeCapabilityUVE>& CapabilitiesUVE() noexcept {
