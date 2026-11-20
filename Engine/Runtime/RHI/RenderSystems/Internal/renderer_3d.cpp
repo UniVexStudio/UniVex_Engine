@@ -326,7 +326,7 @@ inline constexpr std::uint32_t kInstanceVisibleIndexSlotUVE = 3U;
 /// The most instances one frame may upload. Bounds the per-frame upload the same way
 /// kMaximumParticleGpuDrawCommandsUVE bounds particles; a batch that would exceed it is recorded
 /// per-object instead, which is slower but never wrong.
-inline constexpr std::size_t kMaximumInstancesPerFrameUVE = 65'536U;
+inline constexpr std::size_t kMaximumInstancesPerFrameUVE = 262'144U;
 
 /// Whether a material's vertex source actually implements the instancing contract.
 ///
@@ -339,11 +339,11 @@ inline constexpr std::size_t kMaximumInstancesPerFrameUVE = 65'536U;
            vertexSource.contains("gl_InstanceID");
 }
 
-inline constexpr std::size_t kMaximumParticleGpuDrawCommandsUVE = 16'384U;
+inline constexpr std::size_t kMaximumParticleGpuDrawCommandsUVE = 32'768U;
 inline constexpr std::size_t kParticleVerticesPerCommandUVE = 6U;
 inline constexpr float kParticleHalfExtentUVE = 0.05F;
 
-inline constexpr std::size_t kMaximumUIQuadsUVE = 8'192U;
+inline constexpr std::size_t kMaximumUIQuadsUVE = 32'768U;
 inline constexpr std::size_t kUIVerticesPerQuadUVE = 6U;
 
 /// A material's manager-owned linked program plus its resolved texture handles, cached by
@@ -437,9 +437,9 @@ constexpr std::uint32_t kReflectionProbeFirstTextureSlotUVE = 6U;
 constexpr std::uint32_t kSkyTextureSlotUVE = 1U;
 constexpr std::uint32_t kToneMappingLutTextureSlotUVE = 2U;
 constexpr std::uint32_t kToneMappingSsaoTextureSlotUVE = 14U;
-constexpr std::uint32_t kToneMappingContactShadowTextureSlotUVE = 16U;
-constexpr std::uint32_t kToneMappingSsrTextureSlotUVE = 17U;
-constexpr std::uint32_t kToneMappingBloomTextureSlotUVE = 18U;
+constexpr std::uint32_t kToneMappingContactShadowTextureSlotUVE = 11U;
+constexpr std::uint32_t kToneMappingSsrTextureSlotUVE = 12U;
+constexpr std::uint32_t kToneMappingBloomTextureSlotUVE = 13U;
 
 // Phase 2b post-process defaults. User-facing SSAO radius, intensity, power, and sample quality live
 // in PostProcessSettingsUVE; without a WorldEnvironment the renderer keeps bloom's legacy hard knee.
@@ -515,6 +515,7 @@ struct RendererUniformNamesUVE {
     std::array<std::string, kMaxShadowedLightsUVE> lightShadowEnabled{};
     std::array<std::string, kMaxShadowedLightsUVE> lightShadowDepthRanges{};
     std::array<std::string, kMaxShadowTilesUVE> lightShadowCubeRects{};
+    std::array<std::string, kMaxLightsUVE> lightShadowSlots{};
     std::string shadowAtlasTexelSize;
 
     RendererUniformNamesUVE() : legacyLightSpaceMatrix("uLightSpaceMatrix") {
@@ -546,6 +547,9 @@ struct RendererUniformNamesUVE {
             lightShadowTileRects[lightSlot] = "uLightShadowTileRects[" + index + "]";
             lightShadowEnabled[lightSlot] = "uLightShadowEnabled[" + index + "]";
             lightShadowDepthRanges[lightSlot] = "uLightShadowDepthRange[" + index + "]";
+        }
+        for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
+            lightShadowSlots[lightIndex] = "uLightShadowSlot[" + std::to_string(lightIndex) + "]";
         }
         for (std::size_t tileSlot = 0; tileSlot < kMaxShadowTilesUVE; ++tileSlot) {
             lightShadowCubeRects[tileSlot] = "uLightShadowCubeRects[" + std::to_string(tileSlot) + "]";
@@ -876,6 +880,14 @@ struct FrameUniformsUVE {
     std::array<std::int32_t, kMaxShadowedLightsUVE> lightShadowEnabled{};
     std::array<Math::Vector2UVE, kMaxShadowedLightsUVE> lightShadowDepthRanges{};
     std::array<Math::Vector4UVE, kMaxShadowTilesUVE> lightShadowCubeRects{};
+    /// Quality-tier ceiling on lights the shader loops over (Renderer3DUVE::SetScalabilityModeUVE).
+    std::size_t activeLightCap = kMaxLightsUVE;
+    /// Per light: 0-based shadow slot + 1, or -1 when the light owns no slot (see lit_shadowed_3d.glsl).
+    std::array<std::int32_t, kMaxLightsUVE> lightShadowSlots = [] {
+        std::array<std::int32_t, kMaxLightsUVE> slots{};
+        slots.fill(-1);
+        return slots;
+    }();
     /// True when at least one point light owns a tile. The 24 cube-rect uploads are skipped when it
     /// is false - a spot-only or directional-only frame should not pay 96 float uploads per draw for
     /// an array no light reads. Skipping is safe precisely because `uLightShadowEnabled[]` is still
@@ -1071,6 +1083,9 @@ struct Renderer3DUVE::ImplUVE {
     CullingSettingsUVE cullingSettings{};
     std::int32_t shadingMode = 0;
     std::int32_t scalabilityMode = 2;
+    std::size_t activeMaxInstancesPerFrame = 131'072U;
+    std::size_t activeMaxLightsPerFrame = kMaxLightsUVE;
+    std::size_t activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
     bool humanEyeEnabled = false;
     float humanEyeCenterScale = 1.0F;
     float humanEyeTexelX = 0.0F;
@@ -2583,7 +2598,7 @@ struct Renderer3DUVE::ImplUVE {
                 *counters.batchesRecorded += batchSet.batches.size();
                 *counters.batchedItems += items.size();
                 if (!batchSet.batches.empty() &&
-                    batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
+                    batchSet.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
                     EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
                     UploadShadowInstanceTransformsUVE(batchSet.instanceMatrices)) {
                     instancedShadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
@@ -3530,7 +3545,10 @@ struct Renderer3DUVE::ImplUVE {
         program.SetIntUVE("uAmbientEnvironmentMap",
                           static_cast<std::int32_t>(kAmbientEnvironmentTextureSlotUVE));
         program.SetIntUVE("uAmbientEnvironmentMapEnabled", frameUniforms.ambientEnvironmentMapEnabled ? 1 : 0);
+        program.SetIntUVE("uActiveLightCount",
+                          static_cast<std::int32_t>(std::min(frameUniforms.lights.SizeUVE(), frameUniforms.activeLightCap)));
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
+            program.SetIntUVE(uniformNames.lightShadowSlots[lightIndex], frameUniforms.lightShadowSlots[lightIndex]);
             // The shader's light slots are fixed at kMaxLightsUVE, but the extracted list only
             // holds live lights — paste a default (intensity 0, contributes nothing) over the
             // unused slots so stale uniforms from an earlier frame can never leak through.
@@ -3768,7 +3786,7 @@ struct Renderer3DUVE::ImplUVE {
         // uInstanceBaseIndex. Uploading per batch would be the obvious shape and the wrong one -
         // it trades one buffer update per frame for one per batch.
         const bool instancingUsable =
-            batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
+            batchSet.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
             EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
             UploadInstanceTransformsUVE(batchSet.instanceMatrices);
 
@@ -4021,7 +4039,7 @@ struct Renderer3DUVE::ImplUVE {
         }
 
         const std::size_t commandCount =
-            std::min(recording.commands.size(), kMaximumParticleGpuDrawCommandsUVE);
+            std::min(recording.commands.size(), activeMaxParticleGpuDrawCommands);
         particleVertexStaging.clear();
         particleVertexStaging.reserve(commandCount * kParticleVerticesPerCommandUVE);
         const auto appendVertex = [this](const ParticleDrawCommandUVE& command, float xOffset, float yOffset) {
@@ -5492,6 +5510,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     frameUniforms.skyReflectionHorizon = m_impl->environmentFrame.reflectionHorizon;
     frameUniforms.skyReflectionGround = m_impl->environmentFrame.reflectionGround;
     frameUniforms.isOrthographic = isOrthographic;
+    frameUniforms.activeLightCap = m_impl->activeMaxLightsPerFrame;
     frameUniforms.cameraForward = m_impl->skyCameraForward;
 
     // Indexed by uLights[] slot, which is exactly how the shader indexes its own arrays - a tile
@@ -5499,19 +5518,21 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     for (std::size_t activeIndex = 0; activeIndex < activeShadowTileCount; ++activeIndex) {
         const LightShadowAssignmentUVE& assignment =
             shadowPlan.assignments[activeShadowTiles[activeIndex]];
-        frameUniforms.lightShadowEnabled[assignment.lightIndex] = 1;
+        const std::size_t slot = assignment.shadowSlot;
+        frameUniforms.lightShadowSlots[assignment.lightIndex] = static_cast<std::int32_t>(slot) + 1;
+        frameUniforms.lightShadowEnabled[slot] = 1;
         // (near, far) for the shader's world-space bias conversion. See ShadowLinearDepthUVE /
         // ShadowDepthSlopeUVE - the CPU and GPU halves of one formula, pinned together by
         // light_shadow_planner_uve_tests.cpp.
-        frameUniforms.lightShadowDepthRanges[assignment.lightIndex] =
+        frameUniforms.lightShadowDepthRanges[slot] =
             Math::Vector2UVE{assignment.nearPlane, assignment.farPlane};
         if (assignment.isPoint) {
-            frameUniforms.lightShadowCubeRects[assignment.lightIndex * kPointShadowFaceCountUVE +
+            frameUniforms.lightShadowCubeRects[slot * kPointShadowFaceCountUVE +
                                                assignment.faceIndex] = assignment.tile.normalizedRect;
             frameUniforms.pointShadowTilesActive = true;
         } else {
-            frameUniforms.lightShadowMatrices[assignment.lightIndex] = assignment.lightViewProjection;
-            frameUniforms.lightShadowTileRects[assignment.lightIndex] = assignment.tile.normalizedRect;
+            frameUniforms.lightShadowMatrices[slot] = assignment.lightViewProjection;
+            frameUniforms.lightShadowTileRects[slot] = assignment.tile.normalizedRect;
         }
     }
     if (activeShadowTileCount > 0U && m_impl->shadowAtlas.has_value()) {
@@ -5595,7 +5616,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     } else {
         m_impl->occlusionProxyDraws.clear();
     }
-    ParticleDrawRecorderUVE::RecordIntoUVE(queue, kMaximumParticleGpuDrawCommandsUVE,
+    ParticleDrawRecorderUVE::RecordIntoUVE(queue, m_impl->activeMaxParticleGpuDrawCommands,
                                             m_impl->particleDrawRecording);
     m_impl->lastFrameDiagnostics.particleDrawCommandsRecorded = m_impl->particleDrawRecording.commands.size();
     m_impl->lastFrameDiagnostics.particleDrawCommandsSubmissionTruncated =
@@ -5606,6 +5627,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.failedAssetLoads = queue.failedAssetLoads;
 
     if (m_impl->vfxDrawListForFrame != nullptr && !capturingProbe) {
+        const bool vfxZeroToOneDepth = m_impl->renderDevice.UsesZeroToOneDepthBufferUVE();
         m_impl->vfxFrameContext = VfxSpriteFrameContextUVE{
             viewProjection,
             inverseProjection,
@@ -5616,6 +5638,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->depthTarget,
             m_impl->targetWidth,
             m_impl->targetHeight,
+            vfxZeroToOneDepth ? 1.0F : 2.0F,
+            vfxZeroToOneDepth ? 0.0F : -1.0F,
         };
         m_impl->lastFrameDiagnostics.vfxBatchesExtracted =
             m_impl->vfxDrawListForFrame->stats.batchesExtracted;
@@ -7146,23 +7170,48 @@ void Renderer3DUVE::SetMeshUploadBudgetUVE(const std::size_t meshesPerFrame) noe
 }
 
 void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) noexcept {
-    const std::int32_t clampedLevel = std::clamp(scalabilityMode, 0, 2);
+    const std::int32_t clampedLevel = std::clamp(scalabilityMode, 0, 3);
     m_impl->scalabilityMode = clampedLevel;
     if (clampedLevel == 0) {
         m_impl->postProcessSettings.ssaoQualityUVE = 0U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = false;
         m_impl->postProcessSettings.bloomEnabledUVE = false;
+        m_impl->postProcessSettings.contactShadowsEnabledUVE = false;
+        m_impl->postProcessSettings.ssrEnabledUVE = false;
         m_impl->shadowPcfKernelRadius = 0;
+        m_impl->activeMaxInstancesPerFrame = 16'384U;
+        m_impl->activeMaxParticleGpuDrawCommands = 4'096U;
+        m_impl->activeMaxLightsPerFrame = 4U;
     } else if (clampedLevel == 1) {
         m_impl->postProcessSettings.ssaoQualityUVE = 1U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
         m_impl->postProcessSettings.bloomEnabledUVE = true;
+        m_impl->postProcessSettings.contactShadowsEnabledUVE = false;
+        m_impl->postProcessSettings.ssrEnabledUVE = false;
         m_impl->shadowPcfKernelRadius = 1;
-    } else {
+        m_impl->activeMaxInstancesPerFrame = 65'536U;
+        m_impl->activeMaxParticleGpuDrawCommands = 16'384U;
+        m_impl->activeMaxLightsPerFrame = 8U;
+    } else if (clampedLevel == 2) {
         m_impl->postProcessSettings.ssaoQualityUVE = 2U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
         m_impl->postProcessSettings.bloomEnabledUVE = true;
         m_impl->shadowPcfKernelRadius = 2;
+        m_impl->activeMaxInstancesPerFrame = 131'072U;
+        m_impl->activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
+        m_impl->activeMaxLightsPerFrame = 12U;
+    } else {
+        m_impl->postProcessSettings.ssaoQualityUVE = 2U;
+        m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
+        m_impl->postProcessSettings.bloomEnabledUVE = true;
+        m_impl->postProcessSettings.ssrMaxStepsUVE =
+            std::max(m_impl->postProcessSettings.ssrMaxStepsUVE, 64U);
+        m_impl->postProcessSettings.contactShadowStepCountUVE =
+            std::max(m_impl->postProcessSettings.contactShadowStepCountUVE, 12U);
+        m_impl->shadowPcfKernelRadius = 2;
+        m_impl->activeMaxInstancesPerFrame = kMaximumInstancesPerFrameUVE;
+        m_impl->activeMaxLightsPerFrame = kMaxLightsUVE;
+        m_impl->activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
     }
 }
 

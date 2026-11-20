@@ -42,7 +42,7 @@ constexpr float kNearPlaneFractionUVE = 0.05F;
 // Default neutral tone when no texture is available.
 constexpr Math::Vector3UVE kBaseColorUVE{0.70F, 0.72F, 0.76F};
 
-constexpr const char* kVertexShaderSourceUVE = R"GLSL(#version 450 core
+constexpr const char* kVertexShaderSourceUVE = R"GLSL(#version 330 core
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aTexCoord;
@@ -58,7 +58,7 @@ void main() {
 }
 )GLSL";
 
-constexpr const char* kFragmentShaderSourceUVE = R"GLSL(#version 450 core
+constexpr const char* kFragmentShaderSourceUVE = R"GLSL(#version 330 core
 in vec3 vNormal;
 in vec2 vTexCoord;
 in vec3 vWorldPosition;
@@ -98,7 +98,7 @@ void main() {
 }
 )GLSL";
 
-constexpr const char* kBoneVertexShaderSourceUVE = R"GLSL(#version 450 core
+constexpr const char* kBoneVertexShaderSourceUVE = R"GLSL(#version 330 core
 layout(location = 0) in vec3 aPosition;
 uniform mat4 uViewProjection;
 void main() {
@@ -106,7 +106,7 @@ void main() {
 }
 )GLSL";
 
-constexpr const char* kBoneFragmentShaderSourceUVE = R"GLSL(#version 450 core
+constexpr const char* kBoneFragmentShaderSourceUVE = R"GLSL(#version 330 core
 out vec4 FragColor;
 uniform vec4 uBoneColor;
 void main() {

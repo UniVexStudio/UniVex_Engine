@@ -144,6 +144,8 @@ uniform sampler2D uSceneDepthTexture;
 uniform mat4 uInverseProjection;
 uniform vec2 uInvViewportSize;
 uniform float uSoftDistance;
+uniform float uDepthNdcScale;
+uniform float uDepthNdcBias;
 #endif
 
 out vec4 FragColor;
@@ -161,7 +163,9 @@ vec2 ComputeFlipbookUv(vec2 cornerUv, int frameIndex, int rows, int cols) {
 
 #ifdef UVE_VFX_TRANSLUCENT
 float ReconstructLinearViewDepth(vec2 screenUv, float rawDepth) {
-    vec3 ndc = vec3(screenUv * 2.0 - 1.0, 2.0 * clamp(rawDepth, 0.0, 1.0) - 1.0);
+    float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
+    float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
+    vec3 ndc = vec3(screenUv * 2.0 - 1.0, clamp(rawDepth, 0.0, 1.0) * scale + bias);
     vec4 viewPos = uInverseProjection * vec4(ndc, 1.0);
     float invW = abs(viewPos.w) > 1.0e-7 ? (1.0 / viewPos.w) : 1.0;
     return -(viewPos.z * invW);

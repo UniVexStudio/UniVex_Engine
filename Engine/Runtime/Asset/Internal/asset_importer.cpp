@@ -2,6 +2,7 @@
 
 
 #include "asset_importer.h"
+#include "asset_type_registry.h"
 #include "bmp_importer.h"
 #include "gltf_importer.h"
 #if !defined(__ANDROID__)
@@ -34,13 +35,7 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
                                           const AssetImportSettingsUVE&)>;
 
 [[nodiscard]] std::string NormalizeExtensionUVE(std::string extension) {
-    if (!extension.empty() && extension.front() == '.') {
-        extension.erase(extension.begin());
-    }
-    for (char& character : extension) {
-        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
-    }
-    return extension;
+    return NormalizeAssetExtensionUVE(extension);
 }
 
 /// The generic envelope importer: copies `source` to `destination` verbatim, applying no
@@ -165,52 +160,7 @@ using ImportFuncUVE = std::function<bool(const std::filesystem::path&, const std
 }
 
 [[nodiscard]] AssetImportSourceKindUVE ClassifySourceKindUVE(const std::string& extension) {
-    if (extension == "txt") {
-        return AssetImportSourceKindUVE::PlainText;
-    }
-    if (extension == "uvscene") {
-        return AssetImportSourceKindUVE::SceneEnvelope;
-    }
-    if (extension == "uvprefab" || extension == "uventity") {
-        return AssetImportSourceKindUVE::PrefabEnvelope;
-    }
-    if (extension == "uvmodel") {
-        return AssetImportSourceKindUVE::MeshEnvelope;
-    }
-    if (extension == "uvtex") {
-        return AssetImportSourceKindUVE::TextureEnvelope;
-    }
-    if (extension == "uvshader") {
-        return AssetImportSourceKindUVE::ShaderEnvelope;
-    }
-    if (extension == "uvmat") {
-        return AssetImportSourceKindUVE::MaterialEnvelope;
-    }
-    if (extension == "uvanim") {
-        return AssetImportSourceKindUVE::AnimationEnvelope;
-    }
-    if (extension == "vert" || extension == "frag" || extension == "comp") {
-        return AssetImportSourceKindUVE::RawShader;
-    }
-    if (extension == "fbx" || extension == "obj" || extension == "gltf" || extension == "glb" ||
-        extension == "dae") {
-        return AssetImportSourceKindUVE::RawModel;
-    }
-    if (extension == "png" || extension == "jpg" || extension == "jpeg" || extension == "tga" ||
-        extension == "bmp" || extension == "webp" || extension == "hdr" || extension == "exr") {
-        return AssetImportSourceKindUVE::RawTexture;
-    }
-    if (extension == "material" || extension == "mat" || extension == "mtl") {
-        return AssetImportSourceKindUVE::RawMaterial;
-    }
-    if (extension == "wav" || extension == "ogg" || extension == "mp3" || extension == "flac" ||
-        extension == "aac" || extension == "m4a" || extension == "wma") {
-        return AssetImportSourceKindUVE::RawAudio;
-    }
-    if (extension == "ttf" || extension == "otf") {
-        return AssetImportSourceKindUVE::RawFont;
-    }
-    return AssetImportSourceKindUVE::Unknown;
+    return ClassifyImportSourceKindForExtensionUVE(extension);
 }
 
 [[nodiscard]] bool RequiresFormatSpecificParserUVE(const AssetImportSourceKindUVE kind) {
@@ -231,22 +181,9 @@ struct AssetImporterUVE::ImplUVE {
 
 AssetImporterUVE::AssetImporterUVE() : m_impl(std::make_unique<ImplUVE>()) {
     RegisterImporterUVE("txt", &TextFileImportUVE);
-    RegisterImporterUVE("uvscene", &GenericFileImportUVE);
-    RegisterImporterUVE("uvprefab", &GenericFileImportUVE);
-    RegisterImporterUVE("uventity", &GenericFileImportUVE);
-
-    // Typed UVE envelopes are already validated by their corresponding asset loaders. Importing
-    // them here is an intentionally format-neutral, deterministic copy/re-register operation;
-    // bounded BMP/PNG/TGA, OBJ (with its MTL materials), FBX (static mesh with materials), MTL,
-    // glTF/GLB one-primitive with the material and textures the primitive samples, JPEG, and
-    // explicit-stage shader source conversions are registered separately; audio, ambiguous
-    // combined GLSL, multi-primitive glTF scenes and raw animation clip decoding remain
-    // independently deferred parser-owned work.
-    RegisterImporterUVE("uvmodel", &GenericFileImportUVE);
-    RegisterImporterUVE("uvtex", &GenericFileImportUVE);
-    RegisterImporterUVE("uvshader", &GenericFileImportUVE);
-    RegisterImporterUVE("uvmat", &GenericFileImportUVE);
-    RegisterImporterUVE("uvanim", &GenericFileImportUVE);
+    for (const std::string_view envelopeExtension : GetBuiltInEnvelopeExtensionsUVE()) {
+        RegisterImporterUVE(std::string(envelopeExtension), &GenericFileImportUVE);
+    }
     RegisterBmpImporterUVE(*this);
     RegisterPngImporterUVE(*this);
     RegisterTgaImporterUVE(*this);

@@ -20,6 +20,17 @@ namespace {
            std::all_of(subtag.cbegin(), subtag.cend(), IsAsciiAlphaUVE);
 }
 
+[[nodiscard]] bool IsNumericRegionSubtagUVE(const std::string_view subtag) noexcept {
+    return subtag.size() == 3U &&
+           std::all_of(subtag.cbegin(), subtag.cend(), [](const char character) noexcept {
+               return std::isdigit(static_cast<unsigned char>(character)) != 0;
+           });
+}
+
+[[nodiscard]] bool IsRegionOrScriptSubtagUVE(const std::string_view subtag) noexcept {
+    return IsAlphaSubtagUVE(subtag) || IsNumericRegionSubtagUVE(subtag);
+}
+
 [[nodiscard]] std::string ToLowerUVE(const std::string_view value) {
     std::string result{value};
     std::transform(result.begin(), result.end(), result.begin(), [](const char character) {
@@ -43,27 +54,38 @@ std::string LocaleUVE::ToTagUVE() const {
 }
 
 std::optional<LocaleUVE> TryParseLocaleUVE(const std::string_view tag) {
-    if (tag.empty() || tag.size() > (kMaximumLocaleSubtagBytesUVE * 2U) + 1U) {
+    if (tag.empty() || tag.size() > (kMaximumLocaleSubtagBytesUVE * 3U) + 2U) {
         return std::nullopt;
     }
     // Both separators are accepted because both are in circulation - BCP 47 writes "en-US" while
     // POSIX environments write "en_US", and a tag read from either place should mean the same
     // locale rather than silently becoming one nothing has translations for.
-    const std::size_t separator = tag.find_first_of("-_");
-    const std::string_view language = tag.substr(0U, separator);
+    const std::size_t firstSeparator = tag.find_first_of("-_");
+    const std::string_view language = tag.substr(0U, firstSeparator);
     if (!IsAlphaSubtagUVE(language)) {
         return std::nullopt;
     }
-    if (separator == std::string_view::npos) {
+    if (firstSeparator == std::string_view::npos) {
         return LocaleUVE{ToLowerUVE(language), ""};
     }
-    const std::string_view region = tag.substr(separator + 1U);
-    if (!IsAlphaSubtagUVE(region)) {
+    const std::string_view remainder = tag.substr(firstSeparator + 1U);
+    if (remainder.empty()) {
         return std::nullopt;
     }
-    // Normalized on the way in - lowercase language, uppercase region - so "EN-us" and "en-US"
-    // resolve to the same table instead of to two tables that never fall back to each other.
-    return LocaleUVE{ToLowerUVE(language), ToUpperUVE(region)};
+    const std::size_t secondSeparator = remainder.find_first_of("-_");
+    if (secondSeparator == std::string_view::npos) {
+        if (!IsRegionOrScriptSubtagUVE(remainder)) {
+            return std::nullopt;
+        }
+        return LocaleUVE{ToLowerUVE(language), ToUpperUVE(remainder)};
+    }
+    const std::string_view scriptSubtag = remainder.substr(0U, secondSeparator);
+    const std::string_view regionSubtag = remainder.substr(secondSeparator + 1U);
+    if (!IsAlphaSubtagUVE(scriptSubtag) || !IsRegionOrScriptSubtagUVE(regionSubtag) ||
+        regionSubtag.find_first_of("-_") != std::string_view::npos) {
+        return std::nullopt;
+    }
+    return LocaleUVE{ToLowerUVE(language), ToUpperUVE(scriptSubtag) + "-" + ToUpperUVE(regionSubtag)};
 }
 
 bool StringTableUVE::SetTranslationUVE(std::string key, std::string value) {

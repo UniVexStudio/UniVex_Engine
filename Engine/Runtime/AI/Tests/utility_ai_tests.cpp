@@ -84,6 +84,11 @@ TEST(UtilityAiUVETest, Score_MultipliesWeightedConsiderations) {
 
     const AiActionUVE plain = MakeActionUVE("idle", 0.3F);
     EXPECT_FLOAT_EQ(ScoreAiActionUVE(plain, board), 0.3F);
+
+    AiActionUVE compensated = action;
+    compensated.compensateConsiderationCount = true;
+    EXPECT_GT(ScoreAiActionUVE(compensated, board), ScoreAiActionUVE(action, board));
+    EXPECT_NEAR(ScoreAiActionUVE(compensated, board), 0.625F, 1.0e-5F);
 }
 
 TEST(UtilityAiUVETest, Score_VetoesOnZeroAndMissingInputs) {

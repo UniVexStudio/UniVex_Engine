@@ -30,7 +30,7 @@ struct LocaleUVE final {
 inline constexpr std::size_t kMaximumLocaleSubtagBytesUVE = 8U;
 inline constexpr std::size_t kMaximumTranslationKeyBytesUVE = 256U;
 inline constexpr std::size_t kMaximumTranslationValueBytesUVE = 4096U;
-inline constexpr std::size_t kMaximumTranslationsPerTableUVE = 8192U;
+inline constexpr std::size_t kMaximumTranslationsPerTableUVE = 65536U;
 
 /// Parses "en", "en-US" or "en_US" into a locale. Returns nothing for a tag that is empty,
 /// oversized, or shaped like something other than language[-region] - a malformed tag must not

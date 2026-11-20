@@ -81,6 +81,9 @@ ViewportSceneInteractionUVE::ViewportSceneInteractionUVE(Editor::EditorUVE& edit
                                                          Scene::IEntityManagerUVE& entityManager)
     : m_editor(editor), m_entityManager(entityManager) {
     m_camera.Settings().allowFullOrbit = true;
+    const auto& prefs = m_editor.GetExtendedPreferencesUVE();
+    m_camera.Settings().fovYRadians = static_cast<float>(prefs.defaultCameraFovDegrees) * 3.14159265F / 180.0F;
+    m_flySpeed = static_cast<float>(prefs.freelookBaseSpeed);
 }
 
 ViewportSceneInteractionUVE::~ViewportSceneInteractionUVE() {
@@ -880,7 +883,9 @@ bool ViewportSceneInteractionUVE::UpdateFlyCameraUVE(const Editor::EditorViewpor
     const univex::math::Vec3 wanted =
         wishLength > 0.001F ? wish * (speed / wishLength) : univex::math::Vec3{0.0F, 0.0F, 0.0F};
     const float dt = std::clamp(input.deltaTime, 0.0F, 0.1F);
-    const float blend = 1.0F - std::exp(-dt * 14.0F);
+    // cameraInertiaSmoothing is the velocity blend's time constant (s); 0 follows input instantly.
+    const double smoothing = m_editor.GetExtendedPreferencesUVE().cameraInertiaSmoothing;
+    const float blend = smoothing > 0.001 ? 1.0F - std::exp(-dt * static_cast<float>(2.1 / smoothing)) : 1.0F;
     m_flyVelocity = m_flyVelocity + (wanted - m_flyVelocity) * blend;
     if (univex::math::Length(m_flyVelocity) > 0.0005F) {
         m_camera.Translate(m_flyVelocity * dt);

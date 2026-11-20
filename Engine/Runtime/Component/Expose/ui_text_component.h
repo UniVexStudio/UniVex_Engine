@@ -12,7 +12,7 @@
 
 namespace UVE::Scene {
 
-inline constexpr std::size_t kMaximumUITextBytesUVE = 512U;
+inline constexpr std::size_t kMaximumUITextBytesUVE = 4096U;
 inline constexpr float kMinimumUIFontSizeUVE = 1.0F;
 inline constexpr float kMaximumUIFontSizeUVE = 512.0F;
 inline constexpr float kDefaultUIFontSizeUVE = 16.0F;

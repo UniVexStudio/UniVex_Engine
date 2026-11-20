@@ -261,7 +261,41 @@ NavigationSyncReportUVE NavigationRuntimeUVE::SyncUVE(Scene::IEntityManagerUVE& 
         agent.ConfigureUVE(settings);
         agent.SetPositionUVE(position);
         agent.SetTargetUVE(seeker.targetPosition);
-        agent.StepUVE(*mesh, neighbours, deltaTimeSeconds);
+        if (m_config.maxAvoidanceNeighbors > 0U && neighbours.size() > m_config.maxAvoidanceNeighbors) {
+            const float maxDist = std::isfinite(m_config.maxNeighborDistanceMetres) &&
+                                          m_config.maxNeighborDistanceMetres > 0.0F
+                                      ? m_config.maxNeighborDistanceMetres
+                                      : 15.0F;
+            const float maxDistSq = maxDist * maxDist;
+            std::vector<std::pair<float, NavAgentObstacleUVE>> candidateNeighbours;
+            candidateNeighbours.reserve(neighbours.size());
+            for (const NavAgentObstacleUVE& obstacle : neighbours) {
+                const float dx = obstacle.position.x - position.x;
+                const float dy = obstacle.position.y - position.y;
+                const float dz = obstacle.position.z - position.z;
+                const float distSq = dx * dx + dy * dy + dz * dz;
+                if (distSq <= maxDistSq) {
+                    candidateNeighbours.emplace_back(distSq, obstacle);
+                }
+            }
+            if (candidateNeighbours.size() > m_config.maxAvoidanceNeighbors) {
+                std::partial_sort(
+                    candidateNeighbours.begin(),
+                    candidateNeighbours.begin() + static_cast<std::ptrdiff_t>(m_config.maxAvoidanceNeighbors),
+                    candidateNeighbours.end(),
+                    [](const auto& lhs, const auto& rhs) noexcept { return lhs.first < rhs.first; });
+                candidateNeighbours.resize(m_config.maxAvoidanceNeighbors);
+            }
+            std::vector<NavAgentObstacleUVE> localNeighbours;
+            localNeighbours.reserve(candidateNeighbours.size());
+            for (const auto& [distSq, obstacle] : candidateNeighbours) {
+                static_cast<void>(distSq);
+                localNeighbours.push_back(obstacle);
+            }
+            agent.StepUVE(*mesh, localNeighbours, deltaTimeSeconds);
+        } else {
+            agent.StepUVE(*mesh, neighbours, deltaTimeSeconds);
+        }
 
         seeker.nextPathPosition = agent.GetNextPathPositionUVE();
         seeker.desiredVelocity = agent.GetDesiredVelocityUVE();

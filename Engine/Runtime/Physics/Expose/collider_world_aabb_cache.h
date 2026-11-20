@@ -60,7 +60,7 @@ struct DynamicColliderWorldAabbUpdateResultUVE final {
 /// callers retain the original encounter ordering while moved bounds update broad-phase pruning.
 class DynamicAabbBvhUVE final {
 public:
-    static constexpr std::size_t kMaximumProxiesUVE = 4096U;
+    static constexpr std::size_t kMaximumProxiesUVE = 16384U;
 
     explicit DynamicAabbBvhUVE(std::vector<ColliderWorldAabbUVE> colliders);
 

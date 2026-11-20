@@ -56,6 +56,8 @@ struct VfxSpriteFrameContextUVE final {
     TextureHandleUVE sceneDepthTexture = kInvalidTextureHandleUVE;
     std::uint32_t viewportWidth = 1U;
     std::uint32_t viewportHeight = 1U;
+    float depthNdcScale = 2.0F;
+    float depthNdcBias = -1.0F;
 };
 
 /// Computes the 4 world-space quad corners for one sprite instance across all 4 facing modes:

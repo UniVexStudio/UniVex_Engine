@@ -19,7 +19,7 @@ struct AnimationEventUVE final {
 };
 
 struct AnimationClipUVE final {
-    static constexpr std::size_t kMaximumSamplesUVE = 4096U;
+    static constexpr std::size_t kMaximumSamplesUVE = 32768U;
     static constexpr std::size_t kMaximumEventsUVE = 1024U;
     static constexpr std::size_t kMaximumCollectedEventsUVE = 1024U;
     static constexpr std::size_t kMaximumIdentifierBytesUVE = 128U;

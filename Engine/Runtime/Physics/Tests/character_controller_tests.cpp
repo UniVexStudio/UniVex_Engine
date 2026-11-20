@@ -380,5 +380,43 @@ TEST_F(CharacterControllerUVETest, MoveUVE_RejectsDynamicBodyAndClampsInvalidBud
     EXPECT_NEAR(GetWorldPositionUVE(controller).x, 0.1F, 1.0e-4F);
 }
 
+TEST_F(CharacterControllerUVETest, MoveUVE_IgnoresUnrelatedWorldPairsWhenCountingContacts) {
+    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
+    const Scene::EntityUVE wall = MakeColliderEntityUVE({0.5F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::EntityUVE dummyA = MakeColliderEntityUVE({100.0F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+    const Scene::EntityUVE dummyB = MakeColliderEntityUVE({100.1F, 0.0F, 0.0F}, {0.5F, 0.5F, 0.5F});
+
+    FixedCollisionSystemUVE crowdedWorld;
+    for (std::size_t i = 0U; i < CharacterControllerUVE::kMaximumContactsUVE + 10U; ++i) {
+        crowdedWorld.pairs.push_back(CollisionPairUVE{dummyA, dummyB, {1.0F, 0.0F, 0.0F}, 0.1F});
+    }
+    crowdedWorld.pairs.push_back(CollisionPairUVE{controller, wall, {1.0F, 0.0F, 0.0F}, 0.25F});
+
+    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveUVE(
+        entityManager, sceneGraph, crowdedWorld,
+        CharacterControllerInputUVE{controller, {0.25F, 0.0F, 0.0F}, 1U, 1.0F});
+    ASSERT_TRUE(result.IsAcceptedUVE());
+    EXPECT_TRUE(result.blocked);
+    EXPECT_FALSE(result.contactsTruncated);
+    EXPECT_EQ(result.contactCount, 1U);
+}
+
+TEST_F(CharacterControllerUVETest, MoveWithToIUVE_FindsWallBeyond256NonIntersectingWorldColliders) {
+    for (std::size_t i = 0U; i < CharacterControllerUVE::kMaximumToITargetsUVE + 16U; ++i) {
+        MakeColliderEntityUVE({-50.0F - static_cast<float>(i) * 2.0F, 50.0F, 0.0F}, {0.25F, 0.25F, 0.25F});
+    }
+    const Scene::EntityUVE controller = MakeControllerEntityUVE({}, {0.5F, 0.5F, 0.5F});
+    MakeColliderEntityUVE({2.0F, 0.0F, 0.0F}, {0.05F, 2.0F, 2.0F});
+
+    const CharacterControllerMoveResultUVE result = CharacterControllerUVE::MoveWithToIUVE(
+        entityManager, sceneGraph, collisionSystem,
+        CharacterControllerInputUVE{controller, {10.0F, 0.0F, 0.0F}, 1U, 100.0F});
+    ASSERT_TRUE(result.IsAcceptedUVE());
+    EXPECT_TRUE(result.blocked);
+    EXPECT_TRUE(result.toiUsed);
+    EXPECT_FALSE(result.contactsTruncated);
+    EXPECT_LT(GetWorldPositionUVE(controller).x, 1.5F);
+}
+
 } // namespace
 } // namespace UVE::Physics::Tests

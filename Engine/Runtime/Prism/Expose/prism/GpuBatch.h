@@ -54,6 +54,7 @@ public:
   // Returns null when the atlas is full (the caller resets and retries).
   const Entry* get(const Font& f, char32_t cp);
   void reset();
+  bool grow(int maxSize = 4096);
   int size;
   std::vector<uint8_t> pixels;
   uint64_t version = 1;     // bumps whenever pixels changed
