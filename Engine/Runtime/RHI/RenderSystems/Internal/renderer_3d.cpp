@@ -326,7 +326,7 @@ inline constexpr std::uint32_t kInstanceVisibleIndexSlotUVE = 3U;
 /// The most instances one frame may upload. Bounds the per-frame upload the same way
 /// kMaximumParticleGpuDrawCommandsUVE bounds particles; a batch that would exceed it is recorded
 /// per-object instead, which is slower but never wrong.
-inline constexpr std::size_t kMaximumInstancesPerFrameUVE = 65'536U;
+inline constexpr std::size_t kMaximumInstancesPerFrameUVE = 262'144U;
 
 /// Whether a material's vertex source actually implements the instancing contract.
 ///
@@ -339,7 +339,7 @@ inline constexpr std::size_t kMaximumInstancesPerFrameUVE = 65'536U;
            vertexSource.contains("gl_InstanceID");
 }
 
-inline constexpr std::size_t kMaximumParticleGpuDrawCommandsUVE = 16'384U;
+inline constexpr std::size_t kMaximumParticleGpuDrawCommandsUVE = 32'768U;
 inline constexpr std::size_t kParticleVerticesPerCommandUVE = 6U;
 inline constexpr float kParticleHalfExtentUVE = 0.05F;
 
@@ -1071,6 +1071,8 @@ struct Renderer3DUVE::ImplUVE {
     CullingSettingsUVE cullingSettings{};
     std::int32_t shadingMode = 0;
     std::int32_t scalabilityMode = 2;
+    std::size_t activeMaxInstancesPerFrame = 131'072U;
+    std::size_t activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
     bool humanEyeEnabled = false;
     float humanEyeCenterScale = 1.0F;
     float humanEyeTexelX = 0.0F;
@@ -2583,7 +2585,7 @@ struct Renderer3DUVE::ImplUVE {
                 *counters.batchesRecorded += batchSet.batches.size();
                 *counters.batchedItems += items.size();
                 if (!batchSet.batches.empty() &&
-                    batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
+                    batchSet.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
                     EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
                     UploadShadowInstanceTransformsUVE(batchSet.instanceMatrices)) {
                     instancedShadowProgram->SetMatrix4x4UVE("uLightSpaceMatrix", lightSpaceMatrix);
@@ -3768,7 +3770,7 @@ struct Renderer3DUVE::ImplUVE {
         // uInstanceBaseIndex. Uploading per batch would be the obvious shape and the wrong one -
         // it trades one buffer update per frame for one per batch.
         const bool instancingUsable =
-            batchSet.instanceMatrices.size() <= kMaximumInstancesPerFrameUVE &&
+            batchSet.instanceMatrices.size() <= activeMaxInstancesPerFrame &&
             EnsureInstanceBufferCapacityUVE(batchSet.instanceMatrices.size()) &&
             UploadInstanceTransformsUVE(batchSet.instanceMatrices);
 
@@ -4021,7 +4023,7 @@ struct Renderer3DUVE::ImplUVE {
         }
 
         const std::size_t commandCount =
-            std::min(recording.commands.size(), kMaximumParticleGpuDrawCommandsUVE);
+            std::min(recording.commands.size(), activeMaxParticleGpuDrawCommands);
         particleVertexStaging.clear();
         particleVertexStaging.reserve(commandCount * kParticleVerticesPerCommandUVE);
         const auto appendVertex = [this](const ParticleDrawCommandUVE& command, float xOffset, float yOffset) {
@@ -5595,7 +5597,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     } else {
         m_impl->occlusionProxyDraws.clear();
     }
-    ParticleDrawRecorderUVE::RecordIntoUVE(queue, kMaximumParticleGpuDrawCommandsUVE,
+    ParticleDrawRecorderUVE::RecordIntoUVE(queue, m_impl->activeMaxParticleGpuDrawCommands,
                                             m_impl->particleDrawRecording);
     m_impl->lastFrameDiagnostics.particleDrawCommandsRecorded = m_impl->particleDrawRecording.commands.size();
     m_impl->lastFrameDiagnostics.particleDrawCommandsSubmissionTruncated =
@@ -7158,6 +7160,8 @@ void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) no
         m_impl->postProcessSettings.contactShadowsEnabledUVE = false;
         m_impl->postProcessSettings.ssrEnabledUVE = false;
         m_impl->shadowPcfKernelRadius = 0;
+        m_impl->activeMaxInstancesPerFrame = 16'384U;
+        m_impl->activeMaxParticleGpuDrawCommands = 4'096U;
     } else if (clampedLevel == 1) {
         m_impl->postProcessSettings.ssaoQualityUVE = 1U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
@@ -7165,11 +7169,15 @@ void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) no
         m_impl->postProcessSettings.contactShadowsEnabledUVE = false;
         m_impl->postProcessSettings.ssrEnabledUVE = false;
         m_impl->shadowPcfKernelRadius = 1;
+        m_impl->activeMaxInstancesPerFrame = 65'536U;
+        m_impl->activeMaxParticleGpuDrawCommands = 16'384U;
     } else if (clampedLevel == 2) {
         m_impl->postProcessSettings.ssaoQualityUVE = 2U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
         m_impl->postProcessSettings.bloomEnabledUVE = true;
         m_impl->shadowPcfKernelRadius = 2;
+        m_impl->activeMaxInstancesPerFrame = 131'072U;
+        m_impl->activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
     } else {
         m_impl->postProcessSettings.ssaoQualityUVE = 2U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
@@ -7179,6 +7187,8 @@ void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) no
         m_impl->postProcessSettings.contactShadowStepCountUVE =
             std::max(m_impl->postProcessSettings.contactShadowStepCountUVE, 12U);
         m_impl->shadowPcfKernelRadius = 2;
+        m_impl->activeMaxInstancesPerFrame = kMaximumInstancesPerFrameUVE;
+        m_impl->activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
     }
 }
 

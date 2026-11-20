@@ -15,7 +15,7 @@ namespace UVE::Asset {
 /// A skeletal clip is one track per bone, so the payload bound is sized for a long take on a full
 /// humanoid (about 70 bones, 30 fps, a couple of minutes) rather than for one object's motion.
 inline constexpr std::size_t kMaximumAnimationAssetPayloadBytesUVE = 96U * 1024U * 1024U;
-inline constexpr std::size_t kMaximumAnimationAssetSamplesUVE = 4096U;
+inline constexpr std::size_t kMaximumAnimationAssetSamplesUVE = 32768U;
 inline constexpr std::size_t kMaximumAnimationAssetEventsUVE = 1024U;
 inline constexpr std::size_t kMaximumAnimationAssetIdentifierBytesUVE = 128U;
 inline constexpr std::size_t kMaximumAnimationAssetBonesUVE = 256U;
