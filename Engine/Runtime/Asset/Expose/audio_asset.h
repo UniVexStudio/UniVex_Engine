@@ -9,7 +9,7 @@
 
 namespace UVE::Asset {
 
-inline constexpr std::size_t kMaximumAudioAssetSamplesUVE = 1U << 20U;
+inline constexpr std::size_t kMaximumAudioAssetSamplesUVE = 1U << 24U;
 
 /// Schema version of the `.uvaudio` payload that follows the universal envelope header. Exposed
 /// because a streaming reader parses the same header from disk without going through the

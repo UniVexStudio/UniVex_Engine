@@ -136,11 +136,11 @@ TEST(CompressedAudioBoundaryUVETest, WrongFormatAndUnknownEnumNeverFallBackOrMut
 TEST(CompressedAudioBoundaryUVETest, DeclaredDecodedLengthOverAssetCapIsRejected) {
     auto bytes = ReadUVE(FixtureUVE("flac"));
     ASSERT_GT(bytes.size(), 26U);
-    // STREAMINFO's low 36 bits carry total samples. Advertise 2^21 frames without
+    // STREAMINFO's low 36 bits carry total samples. Advertise 2^25 frames without
     // inflating the fixture. The decoder must refuse before allocating that output.
     bytes[21] &= std::byte{0xF0};
-    bytes[22] = std::byte{0};
-    bytes[23] = std::byte{0x20};
+    bytes[22] = std::byte{0x02};
+    bytes[23] = std::byte{0};
     bytes[24] = std::byte{0};
     bytes[25] = std::byte{0};
     Asset::AudioAssetUVE output{2U, 44100U, {0.25F, -0.25F}};
