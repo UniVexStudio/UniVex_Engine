@@ -402,6 +402,9 @@ uniform vec3 uReflectionProbeAxisY;
 uniform vec3 uReflectionProbeAxisZ;
 uniform vec3 uReflectionProbeHalfExtents;
 uniform samplerCube uReflectionProbeCube;
+uniform samplerCube uReflectionProbeSecondaryCube;
+uniform float uReflectionProbeBlendWeight;
+uniform vec3 uGiIndirectIrradiance;
 
 // Unified 2D shadow atlas for spot and point lights, sampled from texture slot 15 - the LAST unit
 // inside GLES3's guaranteed 16-unit floor, chosen so it cannot shadow one of the eleven dense
@@ -1237,10 +1240,16 @@ void main() {
         if (probeWeight > 0.0) {
             vec3 sampleDir = ReflectionProbeBoxProjectUVE(vWorldPosition, reflection);
             vec3 captured = SampleReflectionProbeUVE(sampleDir, roughness);
+            float secondaryBlend = clamp(uReflectionProbeBlendWeight, 0.0, 1.0);
+            if (secondaryBlend > 0.001) {
+                vec3 secondaryCaptured = texture(uReflectionProbeSecondaryCube, sampleDir).rgb;
+                captured = mix(captured, secondaryCaptured, secondaryBlend);
+            }
             specEnv = mix(specEnv, captured, probeWeight);
         }
     }
-    vec3 ambientDiffuse = ambientDiffuseWeight * albedo * ambientColor;
+    vec3 giDiffuse = max(uGiIndirectIrradiance, vec3(0.0));
+    vec3 ambientDiffuse = ambientDiffuseWeight * albedo * (ambientColor + giDiffuse);
     vec3 ambientSpecular = (ambientBaseReflectance * envBrdf.x + vec3(envBrdf.y)) * specEnv * energyCompensation;
     vec3 indirectLighting = (ambientDiffuse + ambientSpecular) * ambientOcclusion;
     vec3 emissiveLighting =

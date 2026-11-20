@@ -439,6 +439,7 @@ constexpr TextureFormatUVE kSceneColorTargetFormatUVE = TextureFormatUVE::RGBA16
 constexpr std::size_t kShadowCascadeCountUVE = 3;
 constexpr std::uint32_t kShadowCascadeFirstTextureSlotUVE = kShadowMapTextureSlotUVE;
 constexpr std::uint32_t kReflectionProbeFirstTextureSlotUVE = 6U;
+constexpr std::uint32_t kReflectionProbeSecondaryTextureSlotUVE = 7U;
 constexpr std::uint32_t kSkyTextureSlotUVE = 1U;
 constexpr std::uint32_t kToneMappingLutTextureSlotUVE = 2U;
 constexpr std::uint32_t kToneMappingSsaoTextureSlotUVE = 14U;
@@ -892,6 +893,7 @@ struct FrameUniformsUVE {
     float clusterFar = 1000.0F;
     float viewportWidth = 1.0F;
     float viewportHeight = 1.0F;
+    Math::Vector3UVE giIndirectIrradiance{0.0F, 0.0F, 0.0F};
     /// Per light: 0-based shadow slot + 1, or -1 when the light owns no slot (see lit_shadowed_3d.glsl).
     std::array<std::int32_t, kMaxLightsUVE> lightShadowSlots = [] {
         std::array<std::int32_t, kMaxLightsUVE> slots{};
@@ -1197,6 +1199,8 @@ struct Renderer3DUVE::ImplUVE {
     Math::Vector3UVE reflectionProbeAxisZ{0.0F, 0.0F, 1.0F};
     Math::Vector3UVE reflectionProbeHalfExtents{};
     TextureHandleUVE reflectionProbeCube = kInvalidTextureHandleUVE;
+    TextureHandleUVE reflectionProbeSecondaryCube = kInvalidTextureHandleUVE;
+    float reflectionProbeBlendWeight = 0.0F;
 
     std::optional<StudioFloorSettingsUVE> studioFloorSettings{};
     std::shared_ptr<Shader::ShaderProgramUVE> studioFloorProgram;
@@ -1393,11 +1397,15 @@ struct Renderer3DUVE::ImplUVE {
             cache.captureResolution = resolution;
         }
         if (cache.cube == kInvalidTextureHandleUVE) {
-            TextureDescUVE cubeDesc{resolution, resolution, TextureFormatUVE::RGBA8Unorm, 1};
+            TextureDescUVE cubeDesc{resolution, resolution, kSceneColorTargetFormatUVE, 1};
             cubeDesc.type = TextureTypeUVE::Cubemap;
             cubeDesc.arrayLayers =
                 static_cast<std::uint32_t>(Scene::kReflectionProbeCubemapFaceCountUVE);
             cache.cube = renderDevice.CreateTextureUVE(cubeDesc);
+            if (cache.cube == kInvalidTextureHandleUVE && kSceneColorTargetFormatUVE != TextureFormatUVE::RGBA8Unorm) {
+                cubeDesc.format = TextureFormatUVE::RGBA8Unorm;
+                cache.cube = renderDevice.CreateTextureUVE(cubeDesc);
+            }
         }
         if (cache.cube == kInvalidTextureHandleUVE) {
             DestroyReflectionProbeGpuCacheUVE(cache);
@@ -1427,6 +1435,8 @@ struct Renderer3DUVE::ImplUVE {
         reflectionProbeAxisZ = Math::Vector3UVE{0.0F, 0.0F, 1.0F};
         reflectionProbeHalfExtents = {};
         reflectionProbeCube = kInvalidTextureHandleUVE;
+        reflectionProbeSecondaryCube = kInvalidTextureHandleUVE;
+        reflectionProbeBlendWeight = 0.0F;
     }
 
     void EvictDeadReflectionProbeCapturesUVE(Scene::IEntityManagerUVE& entityManager) {
@@ -1445,6 +1455,7 @@ struct Renderer3DUVE::ImplUVE {
         ClearBoundReflectionProbeUVE();
         std::array<Scene::ReflectionProbe3DFrameUVE, Scene::kMaximumReflectionProbesPerFrameUVE> frames{};
         const std::size_t count = Scene::CollectReflectionProbe3DFramesUVE(entityManager, viewPosition, frames);
+        float primaryWeight = 0.0F;
         for (std::size_t i = 0; i < count; ++i) {
             const Scene::ReflectionProbe3DFrameUVE& frame = frames[i];
             if (!frame.capturedOnce || frame.entity == Scene::kInvalidEntityUVE) {
@@ -1455,14 +1466,22 @@ struct Renderer3DUVE::ImplUVE {
                 cacheIt->second.captureResolution != frame.captureResolution) {
                 continue;
             }
-            reflectionProbeEnabled = 1;
-            reflectionProbePosition = frame.worldPosition;
-            reflectionProbeAxisX = frame.axisX;
-            reflectionProbeAxisY = frame.axisY;
-            reflectionProbeAxisZ = frame.axisZ;
-            reflectionProbeHalfExtents = frame.halfExtents;
-            reflectionProbeCube = cacheIt->second.cube;
-            break;
+            if (reflectionProbeEnabled == 0) {
+                reflectionProbeEnabled = 1;
+                reflectionProbePosition = frame.worldPosition;
+                reflectionProbeAxisX = frame.axisX;
+                reflectionProbeAxisY = frame.axisY;
+                reflectionProbeAxisZ = frame.axisZ;
+                reflectionProbeHalfExtents = frame.halfExtents;
+                reflectionProbeCube = cacheIt->second.cube;
+                primaryWeight = std::max(frame.influenceWeight, 1.0e-4F);
+            } else {
+                reflectionProbeSecondaryCube = cacheIt->second.cube;
+                const float secondaryWeight = std::max(frame.influenceWeight, 0.0F);
+                reflectionProbeBlendWeight =
+                    std::clamp(secondaryWeight / (primaryWeight + secondaryWeight), 0.0F, 0.5F);
+                break;
+            }
         }
     }
 
@@ -3834,6 +3853,10 @@ struct Renderer3DUVE::ImplUVE {
         program.SetVector3UVE("uReflectionProbeHalfExtents", reflectionProbeHalfExtents);
         program.SetIntUVE(uniformNames.reflectionProbeCube,
                           static_cast<std::int32_t>(kReflectionProbeFirstTextureSlotUVE));
+        program.SetIntUVE("uReflectionProbeSecondaryCube",
+                          static_cast<std::int32_t>(kReflectionProbeSecondaryTextureSlotUVE));
+        program.SetFloatUVE("uReflectionProbeBlendWeight", reflectionProbeBlendWeight);
+        program.SetVector3UVE("uGiIndirectIrradiance", frameUniforms.giIndirectIrradiance);
     }
 
     /// Binds shadow cascades, material/probe textures, and the world ambient map for every lit draw.
@@ -3891,6 +3914,10 @@ struct Renderer3DUVE::ImplUVE {
                                                    ? reflectionProbeCube
                                                    : fallbackWhiteCubeTexture;
             commandBuffer.BindTextureUVE(probeCube, kReflectionProbeFirstTextureSlotUVE);
+            const TextureHandleUVE secondaryCube =
+                reflectionProbeSecondaryCube != kInvalidTextureHandleUVE ? reflectionProbeSecondaryCube
+                                                                         : fallbackWhiteCubeTexture;
+            commandBuffer.BindTextureUVE(secondaryCube, kReflectionProbeSecondaryTextureSlotUVE);
         }
         // The built-in lit shaders declare this sampler statically, so bind a valid fallback even
         // when the mode disables sampling; Vulkan still requires every active sampler descriptor.
@@ -5711,6 +5738,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     frameUniforms.clusterFar = m_impl->environmentCameraFar;
     frameUniforms.viewportWidth = static_cast<float>(std::max<std::uint32_t>(m_impl->targetWidth, 1U));
     frameUniforms.viewportHeight = static_cast<float>(std::max<std::uint32_t>(m_impl->targetHeight, 1U));
+    const Math::ColorUVE sceneGiIrradiance =
+        Scene::EvaluateIndirectGI3DIrradianceAtPointUVE(entityManager, viewPosition);
+    frameUniforms.giIndirectIrradiance =
+        Math::Vector3UVE{sceneGiIrradiance.r, sceneGiIrradiance.g, sceneGiIrradiance.b};
 
     // Forward+ clustered lighting: runs whenever explicitly enabled or when the scene has more
     // active lights than the 16-slot uniform path can hold.
