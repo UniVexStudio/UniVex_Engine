@@ -172,5 +172,32 @@ TEST_F(AssetCookerUVETest, ParticleSystemAssetsAndDependenciesAreValidatedDuring
     EXPECT_FALSE(rejectedMissing.success);
     EXPECT_NE(rejectedMissing.message.find("Missing asset GUID"), std::string::npos);
 }
+TEST_F(AssetCookerUVETest, CooksAuthoredMaterialsEntitiesAndHonorsConfiguredMaxTextureSize) {
+    const std::string entityJson = "{\"entities\":[]}";
+    const auto* entityBytes = reinterpret_cast<const std::byte*>(entityJson.data());
+    ASSERT_TRUE(Asset::WriteUveFileUVE(root/"content/hero.uventity", Asset::AssetKindUVE::Prefab,
+                                       {entityBytes, entityBytes + entityJson.size()}));
+    Asset::TextureAssetUVE largeTex;
+    largeTex.width = 4096U;
+    largeTex.height = 4U;
+    largeTex.pixels.resize(4096U * 4U * 4U, std::byte{255});
+    ASSERT_TRUE(Asset::SaveTextureAssetUVE(largeTex, root/"content/hero.uvtex"));
+    std::ofstream(root/"project.uvsettings") << "{\"rendering\":{\"textures\":{\"maxSizePerTier\":4096}}}\n";
+
+    Asset::AssetDatabaseUVE db;
+    ASSERT_TRUE(db.LoadUVE(root/".uvassetdb"));
+    const auto entityGuid = db.RegisterUVE("content/hero.uventity");
+    ASSERT_TRUE(db.SaveUVE());
+
+    const auto cooked = CookProjectAssetsUVE(root/"game.uvproject", output, CookTargetUVE::Windows);
+    ASSERT_TRUE(cooked.success) << cooked.message;
+    EXPECT_TRUE(std::filesystem::exists(output/"content/hero.uventity"));
+    Asset::AssetDatabaseUVE shipped;
+    ASSERT_TRUE(shipped.LoadUVE(output/".uvassetdb"));
+    EXPECT_TRUE(shipped.HasGuidUVE(entityGuid));
+    Asset::TextureAssetUVE cookedTex;
+    ASSERT_TRUE(Asset::LoadTextureAssetUVE(output/"content/hero.uvtex", cookedTex));
+    EXPECT_EQ(cookedTex.width, 4096U);
+}
 } // namespace
 } // namespace UVE::Pack::Tests

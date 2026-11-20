@@ -204,6 +204,25 @@ TEST(NetworkReplicationUVETest, Snapshot_TruncatedToFitLowestIdsWin) {
     }
 }
 
+TEST(NetworkReplicationUVETest, Snapshot_MultiChunkModeReplicatesBeyond74EntitiesInOneTick) {
+    ReplicationHarnessUVE harness = MakeReplicatorsUVE();
+    EXPECT_FALSE(harness.a.SetMaxSnapshotChunksPerTickUVE(0U));
+    ASSERT_TRUE(harness.a.SetMaxSnapshotChunksPerTickUVE(2U));
+    EXPECT_EQ(harness.a.MaxSnapshotChunksPerTickUVE(), 2U);
+
+    for (NetworkEntityIdUVE id = 0U; id < 100U; ++id) {
+        harness.positionsA[id] = Math::Vector3UVE{static_cast<float>(id), 1.0F, 2.0F};
+        harness.positionsB[id] = Math::Vector3UVE{-1.0F, -1.0F, -1.0F};
+        ASSERT_TRUE(RegisterOwnerProxyUVE(harness, id));
+    }
+
+    ASSERT_TRUE(harness.EstablishUVE(1000U));
+    EXPECT_EQ(harness.a.StatsUVE().entriesTruncated, 0U);
+    EXPECT_EQ(harness.a.StatsUVE().snapshotsSent, 2U);
+    EXPECT_EQ(harness.b.StatsUVE().entriesApplied, 100U);
+    EXPECT_EQ(harness.positionsB[99U], (Math::Vector3UVE{99.0F, 1.0F, 2.0F}));
+}
+
 TEST(NetworkReplicationUVETest, SendOnlyWhenEstablished) {
     ReplicationHarnessUVE harness = MakeReplicatorsUVE();
     harness.RegisterMirroredUVE(7U);

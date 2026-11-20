@@ -123,6 +123,15 @@ void EditorViewportGizmosUVE::SyncUVE() {
         m_billboards.clear();
         return;
     }
+    // gizmoSizePx is the preference's on-screen size; 96 px is the widget's nominal (size == 1).
+    m_gizmo.size = static_cast<float>(m_editor.GetExtendedPreferencesUVE().gizmoSizePx / 96.0);
+    // gizmoOpacity fades the axis and hot colours. Floored at 0.5 so the gizmo can never become hard to see.
+    const double opacity = std::clamp(m_editor.GetExtendedPreferencesUVE().gizmoOpacity, 0.5, 1.0);
+    const auto alphaByte = static_cast<std::uint8_t>(opacity * 255.0);
+    for (auto& colour : m_gizmo.axisColor) {
+        colour.a = alphaByte;
+    }
+    m_gizmo.hotColor.a = alphaByte;
     const auto& state = m_editor.m_viewportOverlayState;
     using Mode = EditorUVE::ViewportGizmoModeUVE;
     switch (state.gizmoMode) {

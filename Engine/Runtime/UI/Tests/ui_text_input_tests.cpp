@@ -86,7 +86,7 @@ TEST_F(UITextInputUVETest, ValidatorAcceptsDefaultsRejectsBadConfig) {
     field.maxLength = 0;
     EXPECT_FALSE(IsUITextInputComponentValidUVE(field));
     field.maxLength = 32;
-    field.text = std::string(513U, 'x');
+    field.text = std::string(Scene::kMaximumUITextBytesUVE + 1U, 'x');
     EXPECT_FALSE(IsUITextInputComponentValidUVE(field));
     field.text.clear();
     field.caretIndex = -1;

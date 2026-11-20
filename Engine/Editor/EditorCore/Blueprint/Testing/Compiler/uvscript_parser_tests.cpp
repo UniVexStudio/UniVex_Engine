@@ -155,5 +155,16 @@ TEST(UVScriptParserUVETest, JoinsLinesInsideBracketsAndReadsUnits) {
     EXPECT_FALSE(IsUVScriptUnitUVE("hours"));
 }
 
+TEST(UVScriptParserUVETest, RejectsDeeplyNestedExpressionsWithoutStackOverflow) {
+    std::string source = "on ready:\n    let x = ";
+    source.append(200U, '(');
+    source += "1";
+    source.append(200U, ')');
+    source += "\n";
+    const ParseResultUVE result = ParseUVScriptUVE(source);
+    EXPECT_FALSE(result.IsSuccessUVE());
+    ASSERT_FALSE(result.diagnostics.empty());
+}
+
 } // namespace
 } // namespace UVE::Blueprint::Tests

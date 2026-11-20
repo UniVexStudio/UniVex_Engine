@@ -65,8 +65,8 @@ class DataTableJsonImporterUVE;
 
 class DataTableUVE final {
 public:
-    static constexpr std::size_t kMaximumColumnsUVE = 64U;
-    static constexpr std::size_t kMaximumRowsUVE = 4096U;
+    static constexpr std::size_t kMaximumColumnsUVE = 256U;
+    static constexpr std::size_t kMaximumRowsUVE = 65536U;
     static constexpr std::size_t kMaximumIdentifierBytesUVE = 64U;
     static constexpr std::size_t kMaximumStringBytesUVE = 1024U;
     static constexpr std::size_t kMaximumDocumentBytesUVE = 4U * 1024U * 1024U;

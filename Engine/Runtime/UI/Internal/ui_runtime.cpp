@@ -406,7 +406,7 @@ void UIRuntimeUVE::TickUVE(Scene::IEntityManagerUVE& entityManager, const Input:
                 scrollbar.wasChangedThisFrame = true;
             }
         });
-    LayoutUIScrollContainersUVE(entityManager, inputSystem, m_fontAtlas);
+    LayoutUIScrollContainersUVE(entityManager, inputSystem, m_fontAtlas, mousePosition);
     TickUITweensUVE(entityManager, m_deltaTime);
 
     // Keyboard focus is resolved after layout/tweens so it uses the same rects as hit-testing.

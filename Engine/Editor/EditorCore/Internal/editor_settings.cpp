@@ -1437,6 +1437,11 @@ const std::vector<EditorSettingBindingUVE>& EditorUVE::GetSettingBindingsUVE() {
          [](const EditorUVE& editor) -> SettingValueUVE { return editor.m_extendedPreferences.undoHistoryDepth; },
          [](EditorUVE& editor, const SettingValueUVE& value) {
              editor.m_extendedPreferences.undoHistoryDepth = std::get<std::int64_t>(value);
+             editor.m_historyCapacity = static_cast<std::size_t>(
+                 std::clamp<std::int64_t>(editor.m_extendedPreferences.undoHistoryDepth, 16, 1024));
+             while (editor.m_undoHistory.size() > editor.m_historyCapacity) {
+                 editor.m_undoHistory.pop_front();
+             }
              return true;
          }},
         {Config::MakeBoolSettingUVE(IdUVE(Id::kLowProcessorModeUVE), false, "Low-Processor Mode When Idle",

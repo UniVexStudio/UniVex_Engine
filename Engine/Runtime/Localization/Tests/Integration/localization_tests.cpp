@@ -32,6 +32,18 @@ TEST(LocaleUVETest, TryParseLocaleUVE_AcceptsBothSeparatorsAndNormalizesCase) {
     ASSERT_TRUE(languageOnly.has_value());
     EXPECT_TRUE(languageOnly->region.empty());
     EXPECT_EQ(languageOnly->ToTagUVE(), "fil");
+
+    const std::optional<LocaleUVE> numericRegion = TryParseLocaleUVE("es-419");
+    ASSERT_TRUE(numericRegion.has_value());
+    EXPECT_EQ(numericRegion->language, "es");
+    EXPECT_EQ(numericRegion->region, "419");
+    EXPECT_EQ(numericRegion->ToTagUVE(), "es-419");
+
+    const std::optional<LocaleUVE> scriptAndRegion = TryParseLocaleUVE("zh_Hans-cn");
+    ASSERT_TRUE(scriptAndRegion.has_value());
+    EXPECT_EQ(scriptAndRegion->language, "zh");
+    EXPECT_EQ(scriptAndRegion->region, "HANS-CN");
+    EXPECT_EQ(scriptAndRegion->ToTagUVE(), "zh-HANS-CN");
 }
 
 TEST(LocaleUVETest, TryParseLocaleUVE_RejectsWhatIsNotALocale) {

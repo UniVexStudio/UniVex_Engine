@@ -172,6 +172,14 @@ bool NetworkReplicatorUVE::SetPositionEpsilonUVE(const float epsilon) noexcept {
     return true;
 }
 
+bool NetworkReplicatorUVE::SetMaxSnapshotChunksPerTickUVE(const std::size_t maxChunks) noexcept {
+    if (maxChunks == 0U) {
+        return false;
+    }
+    m_maxSnapshotChunksPerTick = maxChunks;
+    return true;
+}
+
 bool NetworkReplicatorUVE::RequestOwnershipUVE(const NetworkEntityIdUVE netId,
                                               const std::uint64_t nowMs) {
     const auto entry = m_entries.find(netId);
@@ -244,6 +252,8 @@ void NetworkReplicatorUVE::UpdateUVE(const std::uint64_t nowMs) {
     // anything an authority flip hid.
     const bool full = m_sendsCompleted % m_fullPeriod == 0U;
     std::vector<std::pair<NetworkEntityIdUVE, Math::Vector3UVE>> included;
+    const std::size_t maxTotalEntries =
+        kReplicationMaximumEntriesPerSnapshotUVE * std::max<std::size_t>(1U, m_maxSnapshotChunksPerTick);
     // Relevancy runs once per entity per tick: the property frame reuses these verdicts
     // instead of re-running app predicates.
     std::set<NetworkEntityIdUVE> relevantSenders;
@@ -265,36 +275,54 @@ void NetworkReplicatorUVE::UpdateUVE(const std::uint64_t nowMs) {
                 continue;
             }
         }
-        if (included.size() >= kReplicationMaximumEntriesPerSnapshotUVE) {
+        if (included.size() >= maxTotalEntries) {
             ++m_stats.entriesTruncated;
             continue;
         }
         included.emplace_back(netId, position);
     }
-    std::vector<std::byte> framed;
-    if (!full) {
-        Utilities::AppendUint16LeUVE(framed, kReplicationDeltaMarkerUVE);
-    }
-    Utilities::AppendUint16LeUVE(framed, static_cast<std::uint16_t>(included.size()));
-    for (const auto& [netId, position] : included) {
-        Utilities::AppendUint32LeUVE(framed, netId);
-        Utilities::AppendFloatLeUVE(framed, position.x);
-        Utilities::AppendFloatLeUVE(framed, position.y);
-        Utilities::AppendFloatLeUVE(framed, position.z);
-    }
-    std::vector<std::uint8_t> datagram;
-    datagram.reserve(framed.size());
-    for (const std::byte byte : framed) {
-        datagram.push_back(static_cast<std::uint8_t>(byte));
-    }
-    if (SendPayloadUVE(datagram)) {
-        for (const auto& [netId, position] : included) {
+    const std::size_t chunkCount =
+        included.empty()
+            ? 1U
+            : ((included.size() + kReplicationMaximumEntriesPerSnapshotUVE - 1U) /
+               kReplicationMaximumEntriesPerSnapshotUVE);
+    bool anyChunkSent = false;
+    for (std::size_t chunkIndex = 0U; chunkIndex < chunkCount; ++chunkIndex) {
+        const std::size_t beginIndex = chunkIndex * kReplicationMaximumEntriesPerSnapshotUVE;
+        const std::size_t endIndex =
+            std::min(included.size(), beginIndex + kReplicationMaximumEntriesPerSnapshotUVE);
+        const std::size_t chunkSize = endIndex - beginIndex;
+        std::vector<std::byte> framed;
+        if (!full) {
+            Utilities::AppendUint16LeUVE(framed, kReplicationDeltaMarkerUVE);
+        }
+        Utilities::AppendUint16LeUVE(framed, static_cast<std::uint16_t>(chunkSize));
+        for (std::size_t i = beginIndex; i < endIndex; ++i) {
+            const auto& [netId, position] = included[i];
+            Utilities::AppendUint32LeUVE(framed, netId);
+            Utilities::AppendFloatLeUVE(framed, position.x);
+            Utilities::AppendFloatLeUVE(framed, position.y);
+            Utilities::AppendFloatLeUVE(framed, position.z);
+        }
+        std::vector<std::uint8_t> datagram;
+        datagram.reserve(framed.size());
+        for (const std::byte byte : framed) {
+            datagram.push_back(static_cast<std::uint8_t>(byte));
+        }
+        if (!SendPayloadUVE(datagram)) {
+            break;
+        }
+        for (std::size_t i = beginIndex; i < endIndex; ++i) {
+            const auto& [netId, position] = included[i];
             m_baselines[netId] = position;
         }
         ++m_stats.snapshotsSent;
         if (!full) {
             ++m_stats.deltaSnapshotsSent;
         }
+        anyChunkSent = true;
+    }
+    if (anyChunkSent) {
         ++m_sendsCompleted;
         m_lastSendMs = nowMs;
     }

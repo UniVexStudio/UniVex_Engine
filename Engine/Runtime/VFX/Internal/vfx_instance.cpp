@@ -1234,8 +1234,7 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                         op.type != Asset::ParticleModuleTypeUVE::CollisionPhysics) {
                         continue;
                     }
-                    if (op.type == Asset::ParticleModuleTypeUVE::CollisionPhysics &&
-                        (sceneColliders.empty() || count > 2000U)) {
+                    if (op.type == Asset::ParticleModuleTypeUVE::CollisionPhysics && sceneColliders.empty()) {
                         continue;
                     }
 
@@ -1293,7 +1292,8 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                     }
 
                     // Real-time CollisionPhysics against active scene Collider3D volumes (Box, Sphere, Capsule).
-                    for (std::size_t i = 0U; i < count; ++i) {
+                    const std::size_t collisionCount = std::min<std::size_t>(count, 16384U);
+                    for (std::size_t i = 0U; i < collisionCount; ++i) {
                         const float normAge = state.normalizedAge[i];
                         const float bounce = std::clamp(
                             EvaluateCompiledFloatInputUVE(op.floatA, normAge, nullptr, program.curveTables,
@@ -1322,14 +1322,17 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                             bool hit = false;
 
                             if (col.kind == VfxColliderShapeKindUVE::Box) {
-                                const Math::QuaternionUVE invColRot = Math::ConjugateUVE(col.rotation);
-                                const Math::Vector3UVE localP =
-                                    Math::RotateVectorUVE(invColRot, worldPos - col.center);
                                 const Math::Vector3UVE ext{
                                     std::max(0.001F, col.halfExtents.x) + radius,
                                     std::max(0.001F, col.halfExtents.y) + radius,
                                     std::max(0.001F, col.halfExtents.z) + radius,
                                 };
+                                const Math::Vector3UVE centerDelta = worldPos - col.center;
+                                if (Math::LengthSquaredUVE(centerDelta) > Math::LengthSquaredUVE(ext)) {
+                                    continue;
+                                }
+                                const Math::QuaternionUVE invColRot = Math::ConjugateUVE(col.rotation);
+                                const Math::Vector3UVE localP = Math::RotateVectorUVE(invColRot, centerDelta);
                                 if (std::abs(localP.x) < ext.x && std::abs(localP.y) < ext.y &&
                                     std::abs(localP.z) < ext.z) {
                                     const float dx = ext.x - std::abs(localP.x);
@@ -1361,13 +1364,18 @@ void VfxInstanceUVE::StepEmitterUVE(const std::size_t emitterIndex,
                                     hit = true;
                                 }
                             } else if (col.kind == VfxColliderShapeKindUVE::Capsule) {
+                                const float halfSeg = std::max(0.0F, col.height * 0.5F - col.radius);
+                                const float minDist = std::max(0.001F, col.radius) + radius;
+                                const float boundRadius = halfSeg + minDist;
+                                const Math::Vector3UVE centerDelta = worldPos - col.center;
+                                if (Math::LengthSquaredUVE(centerDelta) > boundRadius * boundRadius) {
+                                    continue;
+                                }
                                 const Math::Vector3UVE up =
                                     Math::RotateVectorUVE(col.rotation, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
-                                const float halfSeg = std::max(0.0F, col.height * 0.5F - col.radius);
-                                const float t = std::clamp(Math::DotUVE(worldPos - col.center, up), -halfSeg, halfSeg);
+                                const float t = std::clamp(Math::DotUVE(centerDelta, up), -halfSeg, halfSeg);
                                 const Math::Vector3UVE closest = col.center + up * t;
                                 const Math::Vector3UVE delta = worldPos - closest;
-                                const float minDist = std::max(0.001F, col.radius) + radius;
                                 const float distSq = Math::LengthSquaredUVE(delta);
                                 if (distSq < minDist * minDist) {
                                     const float dist = std::sqrt(distSq);

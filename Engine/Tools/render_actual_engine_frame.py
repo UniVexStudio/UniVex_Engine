@@ -549,7 +549,7 @@ pixel_buffer = (ctypes.c_ubyte * (WIDTH * HEIGHT * 4))()
 gl.glReadPixels(0, 0, WIDTH, HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, pixel_buffer)
 
 # Export image
-output_dir = Path("/home/antigravity/UniVexStudio/UniVex_Engine")
+output_dir = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[2]
 output_path = output_dir / "univex_actual_render.png"
 
 raw_bytes = bytes(pixel_buffer)

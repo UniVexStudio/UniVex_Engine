@@ -494,8 +494,28 @@ void EngineCoreUVE::Init() {
                                        commandLineSettings)) {
         throw std::logic_error("Failed to attach engine settings layers.");
     }
+    const std::filesystem::path initialLogFilePath = m_config.logFilePath;
+    const std::filesystem::path callerShaderCachePath = m_config.shaderCachePath;
+    const bool callerSuppliedSafeAbsoluteShaderCache =
+        !callerShaderCachePath.empty() && callerShaderCachePath.is_absolute() &&
+        callerShaderCachePath.native().find(std::filesystem::path::value_type{}) ==
+            std::filesystem::path::string_type::npos &&
+        std::ranges::none_of(callerShaderCachePath, [](const std::filesystem::path& component) {
+            return component == std::filesystem::path("..");
+        });
     ApplyEngineSettingsUVE(settings, m_config);
-    if (!IsSafeShaderCachePathUVE(m_config.shaderCachePath)) {
+    if (m_config.logFilePath != initialLogFilePath && !m_config.logFilePath.empty()) {
+        auto updatedLogger = std::make_unique<Debug::LoggerUVE>();
+        updatedLogger->Init(m_config.minLogLevel);
+        if (m_config.enableConsoleLogging) {
+            updatedLogger->AddSink(std::make_unique<Debug::ConsoleSinkUVE>());
+        }
+        updatedLogger->AddSink(std::make_unique<Debug::FileSinkUVE>(m_config.logFilePath));
+        m_logger = std::move(updatedLogger);
+    }
+    const bool acceptCallerAbsoluteShaderCache =
+        callerSuppliedSafeAbsoluteShaderCache && m_config.shaderCachePath == callerShaderCachePath;
+    if (!acceptCallerAbsoluteShaderCache && !IsSafeShaderCachePathUVE(m_config.shaderCachePath)) {
         const std::filesystem::path defaultShaderCachePath = EngineConfigUVE{}.shaderCachePath;
         UVE_WARNING("EngineCoreUVE: shader-cache directory must be a non-empty relative path without parent "
                     "segments; using \"{}\"",
@@ -975,6 +995,7 @@ void EngineCoreUVE::Init() {
                     static_cast<float>(std::max(0.0, m_config.defaultAngularDampingUVE));
             }
             if (forceApplyAll || m_config.sleepThresholdUVE != defaultConfig.sleepThresholdUVE ||
+                m_config.allowSleepingDefaultUVE != defaultConfig.allowSleepingDefaultUVE ||
                 m_projectSettings.IsModifiedUVE("physics.common.sleepThreshold") ||
                 m_projectSettings.IsModifiedUVE("physics.common.allowSleepingDefault")) {
                 simSettings.sleepThreshold = static_cast<float>(std::max(0.0, m_config.sleepThresholdUVE));
@@ -1040,11 +1061,16 @@ void EngineCoreUVE::Init() {
     {
         Navigation::NavigationRuntimeConfigUVE navRuntimeConfig{};
         navRuntimeConfig.globalAvoidanceEnabled = m_config.navAvoidanceEnabledUVE;
+        navRuntimeConfig.maxAvoidanceNeighbors =
+            static_cast<std::size_t>(std::max<std::int64_t>(1, m_config.navMaxNeighborsUVE));
+        navRuntimeConfig.maxNeighborDistanceMetres =
+            static_cast<float>(std::max(0.1, m_config.navNeighborDistanceUVE));
         m_navigationRuntime->SetRuntimeConfigUVE(navRuntimeConfig);
     }
 
     // GamepadInputSystem thirtieth: owns only bounded injectable current/previous snapshots.
-    m_gamepadInputSystem = std::make_unique<Input::GamepadInputSystemUVE>();
+    m_gamepadInputSystem = std::make_unique<Input::GamepadInputSystemUVE>(
+        static_cast<float>(m_config.inputGamepadDeadzoneInnerUVE));
 
     // MobileInputSystem thirty-first: owns only bounded injectable touch/gyroscope snapshots.
     m_mobileInputSystem = std::make_unique<Input::MobileInputSystemUVE>();
@@ -1068,7 +1094,11 @@ void EngineCoreUVE::Init() {
     // AudioDevice twenty-ninth: no dependencies of its own. Prefers the real miniaudio backend;
     // falls back to NullAudioDeviceUVE (with a warning) on machines with no usable audio output
     // (headless CI, servers) so the whole audio stack above stays functional either way.
-    if (auto miniaudioDevice = Audio::MiniaudioAudioDeviceUVE::CreateUVE()) {
+    Audio::MiniaudioAudioDeviceUVE::OptionsUVE audioDeviceOptions{};
+    if (m_config.audioSampleRateUVE >= 8000 && m_config.audioSampleRateUVE <= 192000) {
+        audioDeviceOptions.outputSampleRate = static_cast<std::uint32_t>(m_config.audioSampleRateUVE);
+    }
+    if (auto miniaudioDevice = Audio::MiniaudioAudioDeviceUVE::CreateUVE(audioDeviceOptions)) {
         m_audioDevice = std::move(miniaudioDevice);
     } else {
         UVE_WARNING("EngineCoreUVE: no usable audio output device - falling back to NullAudioDeviceUVE "
@@ -1095,19 +1125,10 @@ void EngineCoreUVE::Init() {
         }
     };
     {
-        const EngineConfigUVE defaultConfig{};
-        syncAudioBusVolumeUVE("Master", m_config.audioMasterVolumeUVE,
-                              m_config.audioMasterVolumeUVE != defaultConfig.audioMasterVolumeUVE ||
-                                  isSettingCustomizedUVE("audio.buses.masterVolume"));
-        syncAudioBusVolumeUVE("Music", m_config.audioMusicVolumeUVE,
-                              m_config.audioMusicVolumeUVE != defaultConfig.audioMusicVolumeUVE ||
-                                  isSettingCustomizedUVE("audio.buses.musicVolume"));
-        syncAudioBusVolumeUVE("SFX", m_config.audioSfxVolumeUVE,
-                              m_config.audioSfxVolumeUVE != defaultConfig.audioSfxVolumeUVE ||
-                                  isSettingCustomizedUVE("audio.buses.sfxVolume"));
-        syncAudioBusVolumeUVE("Voice", m_config.audioVoiceVolumeUVE,
-                              m_config.audioVoiceVolumeUVE != defaultConfig.audioVoiceVolumeUVE ||
-                                  isSettingCustomizedUVE("audio.buses.voiceVolume"));
+        syncAudioBusVolumeUVE("Master", m_config.audioMasterVolumeUVE, true);
+        syncAudioBusVolumeUVE("Music", m_config.audioMusicVolumeUVE, true);
+        syncAudioBusVolumeUVE("SFX", m_config.audioSfxVolumeUVE, true);
+        syncAudioBusVolumeUVE("Voice", m_config.audioVoiceVolumeUVE, true);
     }
 
     // Physics-driven occlusion: the audio system declares what a blocker looks like and this
@@ -1122,8 +1143,15 @@ void EngineCoreUVE::Init() {
     // MeshRendererUVE::ExtractRenderQueueUVE().
     m_audioSourceSystem = std::make_unique<Audio::AudioSourceSystemUVE>();
 
-    // Subscribe live project settings observers so runtime edits to Physics, Audio, and Navigation
-    // in m_projectSettings immediately propagate into the active subsystems.
+    if (const auto fallbackLocale = Localization::TryParseLocaleUVE(m_config.localisationFallbackLocaleUVE)) {
+        m_localizationService.SetFallbackLocaleUVE(*fallbackLocale);
+    }
+    if (const auto defaultLocale = Localization::TryParseLocaleUVE(m_config.localisationDefaultLocaleUVE)) {
+        m_localizationService.SetActiveLocaleUVE(*defaultLocale);
+    }
+
+    // Subscribe live project settings observers so runtime edits to Physics, Audio, Navigation,
+    // Input, and Localisation in m_projectSettings immediately propagate into the active subsystems.
     m_projectSettingsSubscriptions.clear();
     if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
             "Physics",
@@ -1132,9 +1160,15 @@ void EngineCoreUVE::Init() {
                 if (m_physicsSystem != nullptr) {
                     syncPhysicsSimulationSettingsUVE(*m_physicsSystem, true);
                 }
-                if (m_timer != nullptr && event.id == EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE) {
-                    m_timer->SetFixedTimestepUVE(
-                        m_config.fixedUpdateFps > 0.0 ? (1.0 / m_config.fixedUpdateFps) : 0.0);
+                if (m_timer != nullptr) {
+                    if (event.id == EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE) {
+                        m_timer->SetFixedTimestepUVE(
+                            m_config.fixedUpdateFps > 0.0 ? (1.0 / m_config.fixedUpdateFps) : 0.0);
+                    } else if (event.id == EngineProjectSettingIdUVE::kPhysicsMaxFrameTimeUVE) {
+                        m_timer->SetMaxDeltaTimeUVE(m_config.maxDeltaTimeSeconds);
+                    } else if (event.id == EngineProjectSettingIdUVE::kPhysicsMaxStepsPerFrameUVE) {
+                        m_timer->SetMaxStepsPerTickUVE(m_config.maxFixedStepsPerFrame);
+                    }
                 }
             });
         sub.IsValidUVE()) {
@@ -1165,7 +1199,54 @@ void EngineCoreUVE::Init() {
                     Navigation::NavigationRuntimeConfigUVE navRuntimeConfig =
                         m_navigationRuntime->GetRuntimeConfigUVE();
                     navRuntimeConfig.globalAvoidanceEnabled = m_config.navAvoidanceEnabledUVE;
+                    navRuntimeConfig.maxAvoidanceNeighbors =
+                        static_cast<std::size_t>(std::max<std::int64_t>(1, m_config.navMaxNeighborsUVE));
+                    navRuntimeConfig.maxNeighborDistanceMetres =
+                        static_cast<float>(std::max(0.1, m_config.navNeighborDistanceUVE));
                     m_navigationRuntime->SetRuntimeConfigUVE(navRuntimeConfig);
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Input",
+            [this](const Config::SettingChangedEventUVE&) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (m_gamepadInputSystem != nullptr) {
+                    m_gamepadInputSystem->SetDeadZoneUVE(
+                        static_cast<float>(m_config.inputGamepadDeadzoneInnerUVE));
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Localisation",
+            [this](const Config::SettingChangedEventUVE& event) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (event.id == "localisation.fallbackLocale") {
+                    if (const auto fallbackLocale =
+                            Localization::TryParseLocaleUVE(m_config.localisationFallbackLocaleUVE)) {
+                        m_localizationService.SetFallbackLocaleUVE(*fallbackLocale);
+                    }
+                } else if (event.id == "localisation.defaultLocale") {
+                    if (const auto defaultLocale =
+                            Localization::TryParseLocaleUVE(m_config.localisationDefaultLocaleUVE)) {
+                        m_localizationService.SetActiveLocaleUVE(*defaultLocale);
+                    }
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Quality",
+            [this](const Config::SettingChangedEventUVE& event) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (m_renderer3D != nullptr && event.id == "quality.activePreset") {
+                    m_renderer3D->SetScalabilityModeUVE(
+                        static_cast<std::int32_t>(m_config.activeQualityTierUVE));
                 }
             });
         sub.IsValidUVE()) {
@@ -1650,6 +1731,16 @@ void EngineCoreUVE::SyncUIRuntimeUVE() {
             m_uiRuntime.SetViewportSizeUVE(*reference);
         }
     }
+    if (std::isfinite(m_config.runtimeUiScaleUVE) && m_config.runtimeUiScaleUVE > 0.0 &&
+        std::abs(m_config.runtimeUiScaleUVE - 1.0) > 1.0e-4) {
+        const float uiScale = static_cast<float>(std::clamp(m_config.runtimeUiScaleUVE, 0.25, 4.0));
+        uiTransform.scaleX *= uiScale;
+        uiTransform.scaleY *= uiScale;
+        const Math::Vector2UVE currentViewport = m_uiRuntime.GetViewportSizeUVE();
+        if (currentViewport.x > 0.0F && currentViewport.y > 0.0F) {
+            m_uiRuntime.SetViewportSizeUVE(Math::Vector2UVE{currentViewport.x / uiScale, currentViewport.y / uiScale});
+        }
+    }
     m_uiRuntime.SetCoordinateTransformUVE(uiTransform);
 
     // Whether a text is translated is its resolved Auto Translate mode, asked of the scene graph so
@@ -1999,21 +2090,25 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
     // Edits are picked up by re-reading every script in use a few times a second: a script whose
     // text changed is dropped (and so recompiled and restarted below), and a failed one is retried.
     // The files are small and few, so this is cheaper than wiring every writer to a notification.
-    constexpr auto kRecheckIntervalUVE = std::chrono::milliseconds(500);
-    if (const auto now = std::chrono::steady_clock::now(); now - m_uvScriptLastRecheck >= kRecheckIntervalUVE) {
-        m_uvScriptLastRecheck = now;
-        const auto readText = [this](const std::string& path) { return ReadUVScriptSourceUVE(path); };
-        std::erase_if(m_uvScripts,
-                      [&readText](const auto& entry) { return readText(entry.second.path) != entry.second.source; });
-        std::erase_if(m_uvScriptFailedSources, [this, &readText](const auto& entry) {
-            if (readText(entry.first) == entry.second) {
-                return false;
-            }
-            std::erase_if(m_scriptReconcileFailedEntities,
-                          [&entry](const auto& failed) { return failed.second == entry.first; });
-            return true;
-        });
+#if !UVE_SHIPPING
+    if (m_config.hotReloadEnabledUVE) {
+        constexpr auto kRecheckIntervalUVE = std::chrono::milliseconds(500);
+        if (const auto now = std::chrono::steady_clock::now(); now - m_uvScriptLastRecheck >= kRecheckIntervalUVE) {
+            m_uvScriptLastRecheck = now;
+            const auto readText = [this](const std::string& path) { return ReadUVScriptSourceUVE(path); };
+            std::erase_if(m_uvScripts,
+                          [&readText](const auto& entry) { return readText(entry.second.path) != entry.second.source; });
+            std::erase_if(m_uvScriptFailedSources, [this, &readText](const auto& entry) {
+                if (readText(entry.first) == entry.second) {
+                    return false;
+                }
+                std::erase_if(m_scriptReconcileFailedEntities,
+                              [&entry](const auto& failed) { return failed.second == entry.first; });
+                return true;
+            });
+        }
     }
+#endif
 
     // Drop instances whose object is gone, lost its script, or now points at another file.
     std::erase_if(m_uvScripts, [this](const auto& entry) {
@@ -2587,7 +2682,7 @@ void EngineCoreUVE::FinishScriptFrameUVE(const double dt, const bool simulationP
             }
         });
         if (camera != Scene::kInvalidEntityUVE && m_entityManager->HasComponentUVE<Scene::TransformComponentUVE>(camera)) {
-            static std::mt19937 random{1234U};
+            static std::mt19937 random{std::random_device{}()};
             std::uniform_real_distribution<float> spread(-1.0F, 1.0F);
             const float amplitude = static_cast<float>(m_cameraShakeStrength * (m_cameraShakeRemaining / m_cameraShakeDuration));
             m_cameraShakeOffset = Math::Vector3UVE{spread(random) * amplitude, spread(random) * amplitude, spread(random) * amplitude * 0.3F};
@@ -4564,14 +4659,9 @@ void EngineCoreUVE::Update() {
         const std::uint32_t drawableHeight = m_windowManager->GetHeightUVE();
         m_presentationSurfaceReadyUVE = drawableWidth > 0U && drawableHeight > 0U;
         if (!m_presentationSurfaceReadyUVE) {
-#if defined(__ANDROID__)
-            // Android may transiently lose its ANativeWindow/EGLSurface between lifecycle commands.
-            // Keep the engine alive and let the backend recreate the surface instead of converting a
-            // recoverable presentation pause into permanent backend loss.
+            // A minimized desktop window or an Android lifecycle pause reports a 0x0 surface.
+            // Keep the engine and graphics backend alive so rendering resumes when the surface returns.
             m_presentationSurfaceReadyUVE = m_windowManager->TryRecoverSurfaceUVE();
-#else
-            m_windowedRenderingActiveUVE = false;
-#endif
         }
         if ((!m_presentationSurfaceReadyUVE && !m_windowedRenderingActiveUVE) ||
             (m_presentationSurfaceReadyUVE && !m_renderDevice->IsUsableUVE())) {
@@ -4699,8 +4789,8 @@ void EngineCoreUVE::Update() {
         const float scaledFrameDelta = static_cast<float>(m_timer->GetDeltaTimeUVE()) * m_simulationSpeedScale;
         SyncGameplayAttributesUVE(scaledFrameDelta);
         SyncCinematicUVE(scaledFrameDelta);
-        SyncAiBrainsUVE(scaledFrameDelta);
         SyncPerceptionUVE(scaledFrameDelta);
+        SyncAiBrainsUVE(scaledFrameDelta);
     }
     // Bone attachments follow the pose that was just evaluated, and do it before the graph
     // propagates world transforms: a weapon on a hand is on the hand in the same frame the hand
@@ -4714,7 +4804,8 @@ void EngineCoreUVE::Update() {
     // display against 60 Hz physics: 58% of frames previously received no new pose at all, and
     // per-frame movement jumped between 0 and 16.7 cm at 10 m/s. This is the value that fixes it,
     // and it has been computed every frame since the timer was written - only ever logged.
-    m_renderer3D->SetPhysicsInterpolationAlphaUVE(static_cast<float>(fixedStep.alpha));
+    m_renderer3D->SetPhysicsInterpolationAlphaUVE(
+        m_config.physicsInterpolationDefaultUVE ? static_cast<float>(fixedStep.alpha) : 1.0F);
     SyncParticleRuntimeUVE();
     SyncVfxRuntimeUVE();
     SyncUIRuntimeUVE();
@@ -5378,6 +5469,9 @@ void ApplyEngineConfigToRenderer3DUVE(const EngineConfigUVE& config, Render::IRe
     renderer.SetMaterialSamplerSettingsUVE(
         config.defaultTextureRepeatModeUVE != 0,
         static_cast<float>(std::clamp<std::int64_t>(config.defaultAnisotropyLevelUVE, 1, 16)));
+    if (config.activeQualityTierUVE != EngineConfigUVE{}.activeQualityTierUVE) {
+        renderer.SetScalabilityModeUVE(static_cast<std::int32_t>(config.activeQualityTierUVE));
+    }
 }
 
 std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render::IMeshRendererUVE& meshRenderer,

@@ -176,12 +176,21 @@ bool RemoveBlackboardVectorUVE(BlackboardComponentUVE& board, const std::string_
 
 float ScoreAiActionUVE(const AiActionUVE& action, const BlackboardComponentUVE& board) noexcept {
     double score = SanitizedInputUVE(action.baseScore);
+    std::size_t activeConsiderations = 0U;
     for (const AiConsiderationUVE& consideration : action.considerations) {
         const float value = GetBlackboardValueUVE(board, consideration.inputId);
         const double curved = EvaluateAiResponseCurveUVE(consideration.curve, value);
         const double weight =
             std::isfinite(consideration.weight) && consideration.weight >= 0.0F ? consideration.weight : 0.0;
         score *= std::pow(curved, weight);
+        if (weight > 0.0) {
+            ++activeConsiderations;
+        }
+    }
+    if (action.compensateConsiderationCount && activeConsiderations > 1U && score > 0.0 && score < 1.0) {
+        const double modificationFactor = 1.0 - (1.0 / static_cast<double>(activeConsiderations));
+        const double makeupValue = (1.0 - score) * modificationFactor;
+        score += makeupValue * score;
     }
     return static_cast<float>(score);
 }

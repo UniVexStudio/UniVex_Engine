@@ -115,6 +115,7 @@ public:
     [[nodiscard]] virtual bool WasButtonReleasedThisFrameUVE(std::size_t gamepadIndex,
                                                               GamepadButtonUVE button) const = 0;
     [[nodiscard]] virtual float GetDeadZoneUVE() const noexcept = 0;
+    virtual void SetDeadZoneUVE(float deadZone) noexcept { static_cast<void>(deadZone); }
 };
 
 } // namespace UVE::Input

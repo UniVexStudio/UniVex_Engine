@@ -1085,8 +1085,10 @@ std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<c
             // without one.
             {
                 const Math::ColorUVE& albedo = converted.material.albedoColor;
-                if (albedo.r <= 1.0e-4F && albedo.g <= 1.0e-4F && albedo.b <= 1.0e-4F) {
-                    const bool hasAlbedoMap = converted.albedo.HasImageUVE() || !converted.albedo.file.empty();
+                const bool hasAlbedoMap = converted.albedo.HasImageUVE() || !converted.albedo.file.empty();
+                const bool hasAuthoredBaseOrDiffuse = baseColor.has_value || diffuseColor.has_value;
+                if (albedo.r <= 1.0e-4F && albedo.g <= 1.0e-4F && albedo.b <= 1.0e-4F &&
+                    (hasAlbedoMap || !hasAuthoredBaseOrDiffuse)) {
                     const float value = hasAlbedoMap ? 1.0F : 0.8F;
                     converted.material.albedoColor = Math::ColorUVE{value, value, value};
                 }

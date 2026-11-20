@@ -2,6 +2,9 @@
 
 #pragma once
 
+#include <optional>
+#include "vector2.h"
+
 namespace UVE::Input {
 class IInputSystemUVE;
 } // namespace UVE::Input
@@ -21,6 +24,7 @@ class UIFontAtlasUVE;
 /// widget measures the same inside either container. A scroll container stacks its children
 /// itself - a layout container on the same entity is overridden, not merged.
 void LayoutUIScrollContainersUVE(Scene::IEntityManagerUVE& entityManager, const Input::IInputSystemUVE& input,
-                                 const UIFontAtlasUVE& fontAtlas);
+                                 const UIFontAtlasUVE& fontAtlas,
+                                 std::optional<Math::Vector2UVE> pointerPositionInAuthoredSpace = std::nullopt);
 
 } // namespace UVE::UI

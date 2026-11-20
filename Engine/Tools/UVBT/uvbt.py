@@ -184,6 +184,10 @@ class BuildCache:
         if not obj_file.exists():
             return False
 
+        recorded = self.data.get(str(obj_file))
+        if recorded is not None and recorded.get("cmd") != cmd_str:
+            return False
+
         # Check source file mtime vs object file mtime
         obj_mtime = obj_file.stat().st_mtime
         if not source_file.exists() or source_file.stat().st_mtime > obj_mtime:
@@ -292,12 +296,18 @@ class EngineBuilder:
         embed_script = self.repo_root / "Engine" / "Tools" / "embed_file.py"
         cxx = os.environ.get("CXX", "g++")
 
+        def needs_regen(output_path: Path, input_paths) -> bool:
+            if not output_path.exists():
+                return True
+            out_mtime = output_path.stat().st_mtime
+            return any(p.exists() and p.stat().st_mtime > out_mtime for p in input_paths)
+
         # 1. Retarget humanoid reference
         retarget_gen = gen_dir / "Retarget"
         retarget_gen.mkdir(parents=True, exist_ok=True)
         retarget_inc = retarget_gen / "humanoid_reference_json.inc"
         retarget_src = self.repo_root / "Engine" / "Runtime" / "Retarget" / "Runtime" / "Data" / "humanoid_reference.json"
-        if retarget_src.exists() and (not retarget_inc.exists() or retarget_src.stat().st_mtime > retarget_inc.stat().st_mtime):
+        if retarget_src.exists() and needs_regen(retarget_inc, [retarget_src, embed_script]):
             subprocess.run([sys.executable, str(embed_script), str(retarget_src), str(retarget_inc), "uve_retarget_humanoid_json"], check=True)
 
         # 2. UI runtime font
@@ -305,7 +315,7 @@ class EngineBuilder:
         ui_gen.mkdir(parents=True, exist_ok=True)
         ui_inc = ui_gen / "ui_font_ttf_bytes.inc"
         ui_src = self.repo_root / "Engine" / "Runtime" / "UI" / "assets" / "fonts" / "liberation-sans-subset.ttf"
-        if ui_src.exists() and (not ui_inc.exists() or ui_src.stat().st_mtime > ui_inc.stat().st_mtime):
+        if ui_src.exists() and needs_regen(ui_inc, [ui_src, embed_script]):
             subprocess.run([sys.executable, str(embed_script), str(ui_src), str(ui_inc), "uve_ui_runtime_font_ttf_bytes"], check=True)
 
         editor_gen = gen_dir / "EditorCore"
@@ -315,7 +325,7 @@ class EngineBuilder:
         editor_icons_inc = editor_gen / "uve_editor_icon_set.inc"
         embed_icons_script = self.repo_root / "Engine" / "Tools" / "editor_icons" / "embed_editor_icons.py"
         icons_dir = self.repo_root / "Engine" / "Editor" / "EditorCore" / "assets" / "icons"
-        if embed_icons_script.exists() and icons_dir.is_dir() and not editor_icons_inc.exists():
+        if embed_icons_script.exists() and icons_dir.is_dir() and needs_regen(editor_icons_inc, [embed_icons_script, *icons_dir.glob("*")]):
             subprocess.run([sys.executable, str(embed_icons_script), str(editor_icons_inc), str(icons_dir)], check=True)
 
         # 5. Viewport Shaders
@@ -325,7 +335,8 @@ class EngineBuilder:
 
         grid_in = vp_shaders / "grid_shader_sources.h.in"
         grid_out = vp_render_gen / "grid_shader_sources.h"
-        if grid_in.exists() and vp_shaders.is_dir() and not grid_out.exists():
+        grid_srcs = [grid_in, vp_shaders / "infinite_grid.vert", vp_shaders / "infinite_grid.frag"]
+        if grid_in.exists() and vp_shaders.is_dir() and needs_regen(grid_out, grid_srcs):
             text = grid_in.read_text(encoding="utf-8")
             text = text.replace("@UNIVEX_GRID_VERT_SOURCE@", (vp_shaders / "infinite_grid.vert").read_text(encoding="utf-8"))
             text = text.replace("@UNIVEX_GRID_FRAG_SOURCE@", (vp_shaders / "infinite_grid.frag").read_text(encoding="utf-8"))
@@ -333,7 +344,9 @@ class EngineBuilder:
 
         gizmo_in = vp_shaders / "gizmo_shader_sources.h.in"
         gizmo_out = vp_render_gen / "gizmo_shader_sources.h"
-        if gizmo_in.exists() and vp_shaders.is_dir() and not gizmo_out.exists():
+        gizmo_srcs = [gizmo_in, vp_shaders / "gizmo_line.vert", vp_shaders / "gizmo_line.frag",
+                      vp_shaders / "gizmo_solid.vert", vp_shaders / "gizmo_solid.frag"]
+        if gizmo_in.exists() and vp_shaders.is_dir() and needs_regen(gizmo_out, gizmo_srcs):
             text = gizmo_in.read_text(encoding="utf-8")
             text = text.replace("@UNIVEX_GIZMO_LINE_VERT@", (vp_shaders / "gizmo_line.vert").read_text(encoding="utf-8"))
             text = text.replace("@UNIVEX_GIZMO_LINE_FRAG@", (vp_shaders / "gizmo_line.frag").read_text(encoding="utf-8"))
@@ -343,7 +356,9 @@ class EngineBuilder:
 
         sel_in = vp_shaders / "selection_outline_shader_sources.h.in"
         sel_out = vp_render_gen / "selection_outline_shader_sources.h"
-        if sel_in.exists() and vp_shaders.is_dir() and not sel_out.exists():
+        sel_srcs = [sel_in, vp_shaders / "selection_mask.vert", vp_shaders / "selection_mask.frag",
+                    vp_shaders / "selection_outline.vert", vp_shaders / "selection_outline.frag"]
+        if sel_in.exists() and vp_shaders.is_dir() and needs_regen(sel_out, sel_srcs):
             text = sel_in.read_text(encoding="utf-8")
             text = text.replace("@UNIVEX_SELECTION_MASK_VERT@", (vp_shaders / "selection_mask.vert").read_text(encoding="utf-8"))
             text = text.replace("@UNIVEX_SELECTION_MASK_FRAG@", (vp_shaders / "selection_mask.frag").read_text(encoding="utf-8"))
@@ -612,7 +627,16 @@ class EngineBuilder:
         ]
 
         # Engine build profile definitions
-        if configuration == "Release":
+        if configuration == "Shipping":
+            base_defs = [
+                "UVE_BUILD_CONFIGURATION_RELEASE=1",
+                "UVE_SHIPPING=1",
+                "UVE_PROFILE_ASSERTIONS_ENABLED=0",
+                "UVE_PROFILE_DEFAULT_LOG_LEVEL=3",
+                "UVE_COMPILED_LOG_LEVEL=2",
+            ]
+            base_cflags += ["-O3", "-DNDEBUG"]
+        elif configuration == "Release":
             base_defs = [
                 "UVE_BUILD_CONFIGURATION_RELEASE=1",
                 "UVE_SHIPPING=0",
@@ -621,6 +645,15 @@ class EngineBuilder:
                 "UVE_COMPILED_LOG_LEVEL=0",
             ]
             base_cflags += ["-O3", "-DNDEBUG"]
+        elif configuration == "Development":
+            base_defs = [
+                "UVE_BUILD_CONFIGURATION_DEVELOPMENT=1",
+                "UVE_SHIPPING=0",
+                "UVE_PROFILE_ASSERTIONS_ENABLED=1",
+                "UVE_PROFILE_DEFAULT_LOG_LEVEL=1",
+                "UVE_COMPILED_LOG_LEVEL=0",
+            ]
+            base_cflags += ["-O2", "-g"]
         else: # Debug or Sanitizers
             base_defs = [
                 "UVE_BUILD_CONFIGURATION_DEBUG=1",

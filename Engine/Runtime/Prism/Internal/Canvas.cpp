@@ -209,7 +209,7 @@ void Canvas::polyline(std::span<const Vec2> p, Color c, float th, bool closed) {
 }
 
 void Canvas::fillPolygon(std::span<const Vec2> p, Color c, bool aa) {
-  size_t n = std::min<size_t>(p.size(), 64);
+  size_t n = p.size();
   if (n < 3 || c.a == 0) return;
   float area = 0;
   for (size_t i = 0; i < n; i++) {
@@ -219,7 +219,9 @@ void Canvas::fillPolygon(std::span<const Vec2> p, Color c, bool aa) {
   if (std::fabs(area) < 1e-5f) return;
   float sgn = area > 0 ? 1.f : -1.f;
   struct E { float nx, ny, c; };
-  std::array<E, 64> e;
+  std::array<E, 64> eStack;
+  std::vector<E> eHeap;
+  E* e = n <= 64 ? eStack.data() : (eHeap.resize(n), eHeap.data());
   float minx = 1e9f, miny = 1e9f, maxx = -1e9f, maxy = -1e9f;
   for (size_t i = 0; i < n; i++) {
     Vec2 a = p[i], b = p[(i + 1) % n];

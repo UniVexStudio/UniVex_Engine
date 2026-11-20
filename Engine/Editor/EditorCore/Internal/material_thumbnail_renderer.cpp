@@ -60,7 +60,7 @@ constexpr float kRimLightColorUVE[3] = {0.0F, 0.0F, 0.0F};
 constexpr float kSkyAmbientUVE[3] = {0.144F, 0.160F, 0.192F};
 constexpr float kGroundAmbientUVE[3] = {0.035F, 0.033F, 0.029F};
 
-constexpr const char* kVertexShaderSourceUVE = R"GLSL(#version 450 core
+constexpr const char* kVertexShaderSourceUVE = R"GLSL(#version 330 core
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aTexCoord;
@@ -79,7 +79,7 @@ void main() {
 }
 )GLSL";
 
-constexpr const char* kFragmentShaderSourceUVE = R"GLSL(#version 450 core
+constexpr const char* kFragmentShaderSourceUVE = R"GLSL(#version 330 core
 const float kPi = 3.14159265359;
 
 in vec3 vWorldPosition;

@@ -1694,6 +1694,15 @@ bool EditorUVE::AreSceneComponentValuesEqualUVE(const EditorSceneComponentValueU
                 return left.mode == right.mode;
             } else if constexpr (std::is_same_v<LeftType, Scene::EditorDescriptionComponentUVE>) {
                 return left.description == right.description;
+            } else if constexpr (std::is_same_v<LeftType, Scene::ProcessComponentUVE>) {
+                return left.mode == right.mode && left.priority == right.priority &&
+                       left.physicsPriority == right.physicsPriority;
+            } else if constexpr (std::is_same_v<LeftType, Scene::ThreadGroupComponentUVE>) {
+                return left.mode == right.mode && left.order == right.order;
+            } else if constexpr (std::is_same_v<LeftType, Scene::AutoTranslateComponentUVE>) {
+                return left.mode == right.mode;
+            } else if constexpr (std::is_same_v<LeftType, Scene::ObjectMetadataComponentUVE>) {
+                return left.entries == right.entries;
             } else {
                 return false;
             }
@@ -4863,6 +4872,12 @@ void EditorUVE::SetColorPickerPreferencesUVE(ColorPickerPreferencesUVE preferenc
 }
 
 void EditorUVE::SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferences) noexcept {
+    if (preferences.undoHistoryDepth > 0) {
+        m_historyCapacity = static_cast<std::size_t>(std::clamp<std::int64_t>(preferences.undoHistoryDepth, 1, 4096));
+        while (m_undoHistory.size() > m_historyCapacity) {
+            m_undoHistory.pop_front();
+        }
+    }
     m_extendedPreferences = std::move(preferences);
 }
 

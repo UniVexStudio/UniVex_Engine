@@ -313,5 +313,24 @@ TEST(FbxMaterialConverterUVETest, AMapWithoutEmbeddedBytesAndWithoutANameIsProce
     EXPECT_TRUE(material.albedo.procedural);
 }
 
+TEST(FbxMaterialConverterUVETest, ExplicitlyAuthoredUntexturedBlackAlbedoIsPreserved) {
+    const std::string text = MakeFbxUVE(R"(	Material: 3700, "Material::Obsidian", "" {
+		Version: 102
+		ShadingModel: "lambert"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",0.0,0.0,0.0
+		}
+	}
+)",
+                                        "");
+    const auto materials = ReadFbxMaterialsUVE(BytesUVE(text));
+    ASSERT_TRUE(materials.has_value());
+    ASSERT_EQ(materials->size(), 1U);
+    const FbxMaterialUVE& material = materials->front();
+    EXPECT_FLOAT_EQ(material.material.albedoColor.r, 0.0F);
+    EXPECT_FLOAT_EQ(material.material.albedoColor.g, 0.0F);
+    EXPECT_FLOAT_EQ(material.material.albedoColor.b, 0.0F);
+}
+
 } // namespace
 } // namespace UVE::Asset::Tests

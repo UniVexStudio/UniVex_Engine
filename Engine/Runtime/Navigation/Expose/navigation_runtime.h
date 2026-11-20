@@ -44,6 +44,8 @@ struct NavigationSyncReportUVE final {
 /// Project-level navigation runtime defaults and gates consumed by NavigationRuntimeUVE.
 struct NavigationRuntimeConfigUVE final {
     bool globalAvoidanceEnabled = true;
+    std::size_t maxAvoidanceNeighbors = 16U;
+    float maxNeighborDistanceMetres = 15.0F;
 };
 
 /// The navigation half of the ECS: it bakes each region into a mesh once and keeps it, then steps
