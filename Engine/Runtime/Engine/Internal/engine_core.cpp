@@ -1240,6 +1240,18 @@ void EngineCoreUVE::Init() {
         sub.IsValidUVE()) {
         m_projectSettingsSubscriptions.push_back(sub);
     }
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Quality",
+            [this](const Config::SettingChangedEventUVE& event) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (m_renderer3D != nullptr && event.id == "quality.activePreset") {
+                    m_renderer3D->SetScalabilityModeUVE(
+                        static_cast<std::int32_t>(m_config.activeQualityTierUVE));
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
 
     // SaveGameSystem thirty-second: needs SceneSerializer (composed by reference) and
     // EngineConfigUVE::saveDirectoryPath.
@@ -5447,6 +5459,9 @@ void ApplyEngineConfigToRenderer3DUVE(const EngineConfigUVE& config, Render::IRe
     renderer.SetMaterialSamplerSettingsUVE(
         config.defaultTextureRepeatModeUVE != 0,
         static_cast<float>(std::clamp<std::int64_t>(config.defaultAnisotropyLevelUVE, 1, 16)));
+    if (config.activeQualityTierUVE != EngineConfigUVE{}.activeQualityTierUVE) {
+        renderer.SetScalabilityModeUVE(static_cast<std::int32_t>(config.activeQualityTierUVE));
+    }
 }
 
 std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render::IMeshRendererUVE& meshRenderer,

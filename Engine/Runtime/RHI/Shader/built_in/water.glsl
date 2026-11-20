@@ -111,6 +111,8 @@ uniform float uCameraFar;
 
 uniform sampler2D uSceneColorTexture;
 uniform sampler2D uSceneDepthTexture;
+uniform float uDepthNdcScale;
+uniform float uDepthNdcBias;
 
 float LinearizeDepth(float depth) {
     float near = max(uCameraNear, 0.01);
@@ -118,7 +120,10 @@ float LinearizeDepth(float depth) {
     if (uOrthographic != 0) {
         return mix(near, far, clamp(depth, 0.0, 1.0));
     }
-    return (2.0 * near * far) / (far + near - depth * (far - near));
+    float scale = uDepthNdcScale != 0.0 ? uDepthNdcScale : 2.0;
+    float bias = uDepthNdcScale != 0.0 ? uDepthNdcBias : -1.0;
+    float ndcZ = clamp(depth, 0.0, 1.0) * scale + bias;
+    return (2.0 * near * far) / max(far + near - ndcZ * (far - near), 1.0e-6);
 }
 
 void main() {

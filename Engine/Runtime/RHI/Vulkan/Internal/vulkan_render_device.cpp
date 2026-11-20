@@ -506,7 +506,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // always-snapshot-per-draw; batching is a later optimization slice). The cursor is reset
     // each frame strictly AFTER the in-flight fence's wait, so a region is never overwritten
     // while the GPU might still read it for the previous frame.
-    static constexpr std::uint64_t kFrameUboCapacityUVE = 1024U * 1024U; // 1 MiB per frame
+    static constexpr std::uint64_t kFrameUboCapacityUVE = 8U * 1024U * 1024U; // 8 MiB per frame
     VkBuffer frameUbo = VK_NULL_HANDLE;
     VkDeviceMemory frameUboMemory = VK_NULL_HANDLE;
     void* frameUboMapped = nullptr;
@@ -524,15 +524,15 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     // when the referencing submission is provably done. (DestroyTextureUVE keeps its
     // immediate free — it waits for queue idle first.)
     std::vector<VkDescriptorSet> deferredDescriptorSetFreesUVE;
-    static constexpr std::uint32_t kDescriptorPoolSetCapacityUVE = 256U;
-    static constexpr std::uint32_t kDescriptorPoolUboCapacityUVE = 256U;
-    static constexpr std::uint32_t kDescriptorPoolSamplerCapacityUVE = 256U;
+    static constexpr std::uint32_t kDescriptorPoolSetCapacityUVE = 4096U;
+    static constexpr std::uint32_t kDescriptorPoolUboCapacityUVE = 4096U;
+    static constexpr std::uint32_t kDescriptorPoolSamplerCapacityUVE = 16384U;
     // M2f pool types: storage buffers, split sampled images, and standalone samplers.
-    static constexpr std::uint32_t kDescriptorPoolStorageCapacityUVE = 256U;
-    static constexpr std::uint32_t kDescriptorPoolSampledImageCapacityUVE = 256U;
-    static constexpr std::uint32_t kDescriptorPoolFixedSamplerCapacityUVE = 256U;
+    static constexpr std::uint32_t kDescriptorPoolStorageCapacityUVE = 4096U;
+    static constexpr std::uint32_t kDescriptorPoolSampledImageCapacityUVE = 16384U;
+    static constexpr std::uint32_t kDescriptorPoolFixedSamplerCapacityUVE = 4096U;
     // M5b pool type: storage images (imageLoad/imageStore slots, GENERAL layout).
-    static constexpr std::uint32_t kDescriptorPoolStorageImageCapacityUVE = 256U;
+    static constexpr std::uint32_t kDescriptorPoolStorageImageCapacityUVE = 4096U;
 
     // M2f device-owned descriptor resources: one FIXED sampler (standalone SAMPLER bindings use
     // the shared linear/trilinear, clamp-to-edge shape; each sampled image view bounds its levels)
