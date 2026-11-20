@@ -8,6 +8,7 @@
 #include "area_3d.h"
 #include "character_3d.h"
 #include "collider_3d.h"
+#include "destructible_3d.h"
 #include "hitbox_3d.h"
 #include "hurtbox_3d.h"
 #include "interaction_area_3d.h"
