@@ -22,7 +22,7 @@ namespace UVE::Render {
 /// importance-based selection. A compile-time constant, not an EngineConfigUVE field — mirrors
 /// the existing fixed-texture-slot-constant precedent (kAlbedoTextureSlotUVE etc. in
 /// renderer_3d_uve.cpp) rather than adding runtime configurability nobody asked for.
-constexpr std::size_t kMaxLightsUVE = 4;
+constexpr std::size_t kMaxLightsUVE = 16;
 
 /// One light slot's data for this frame, extracted by ILightSystemUVE::ExtractActiveLightsUVE().
 /// `intensity == 0.0F` is the deliberate "this slot is empty" sentinel — no std::optional,

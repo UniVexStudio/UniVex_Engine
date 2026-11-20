@@ -21,8 +21,8 @@ namespace UVE::Render {
 /// `lit_shadowed_3d.glsl`. The static assertion below is the guard.
 inline constexpr std::size_t kMaxShadowedLightsUVE = 4U;
 
-static_assert(kMaxShadowedLightsUVE == kMaxLightsUVE,
-              "every extracted light slot must be able to hold an atlas shadow tile");
+static_assert(kMaxShadowedLightsUVE <= kMaxLightsUVE,
+              "shadowed light slots must not exceed the active light budget");
 
 /// Tiles the plan can hold: four lights, worst case six faces each.
 inline constexpr std::size_t kMaxShadowTilesUVE =
@@ -31,14 +31,16 @@ inline constexpr std::size_t kMaxShadowTilesUVE =
 /// One tile's place in the frame's atlas: where it sits and what matrix projects world space into
 /// it. A spot light contributes one; a point light contributes six, one per cube face.
 struct LightShadowAssignmentUVE {
-    /// Slot in `uLights[]` this tile belongs to. The shader indexes `uLightShadowEnabled`,
-    /// `uLightShadowMatrices`, `uLightShadowTileRects`, `uLightShadowCubeRects` and
-    /// `uLightShadowDepthRange` by exactly this number, so it is what ties a tile to the light it
-    /// shadows. Six point-light assignments share one `lightIndex`.
+    /// Slot in `uLights[]` this tile belongs to.
     std::size_t lightIndex = 0U;
 
+    /// Atlas shadow slot (`0..kMaxShadowedLightsUVE-1`) this light owns in `uLightShadow*[]`.
+    /// Decoupled from `lightIndex` so scenes with >4 active lights can assign shadows to any
+    /// eligible subset of `kMaxShadowedLightsUVE` casters.
+    std::size_t shadowSlot = 0U;
+
     /// Cube face for a point light; always 0 for a spot light, which has a single tile. The shader
-    /// uses it as the second index into `uLightShadowCubeRects[lightIndex * 6 + faceIndex]`.
+    /// uses it as the second index into `uLightShadowCubeRects[shadowSlot * 6 + faceIndex]`.
     std::uint32_t faceIndex = 0U;
 
     /// Which uniform half consumes this assignment. A spot tile is sampled with the light's
@@ -63,6 +65,7 @@ struct LightShadowAssignmentUVE {
 /// renderer then records no atlas passes and uploads a fully disabled uniform set.
 struct LightShadowPlanUVE {
     std::array<LightShadowAssignmentUVE, kMaxShadowTilesUVE> assignments{};
+    std::array<std::int32_t, kMaxLightsUVE> lightToShadowSlot{};
     std::size_t count = 0U;
 
     /// Tile edge in pixels every assignment uses, or 0 when `count == 0`. One resolution for the

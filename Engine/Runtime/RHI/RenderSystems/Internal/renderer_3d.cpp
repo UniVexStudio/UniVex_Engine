@@ -515,6 +515,7 @@ struct RendererUniformNamesUVE {
     std::array<std::string, kMaxShadowedLightsUVE> lightShadowEnabled{};
     std::array<std::string, kMaxShadowedLightsUVE> lightShadowDepthRanges{};
     std::array<std::string, kMaxShadowTilesUVE> lightShadowCubeRects{};
+    std::array<std::string, kMaxLightsUVE> lightShadowSlots{};
     std::string shadowAtlasTexelSize;
 
     RendererUniformNamesUVE() : legacyLightSpaceMatrix("uLightSpaceMatrix") {
@@ -546,6 +547,9 @@ struct RendererUniformNamesUVE {
             lightShadowTileRects[lightSlot] = "uLightShadowTileRects[" + index + "]";
             lightShadowEnabled[lightSlot] = "uLightShadowEnabled[" + index + "]";
             lightShadowDepthRanges[lightSlot] = "uLightShadowDepthRange[" + index + "]";
+        }
+        for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
+            lightShadowSlots[lightIndex] = "uLightShadowSlot[" + std::to_string(lightIndex) + "]";
         }
         for (std::size_t tileSlot = 0; tileSlot < kMaxShadowTilesUVE; ++tileSlot) {
             lightShadowCubeRects[tileSlot] = "uLightShadowCubeRects[" + std::to_string(tileSlot) + "]";
@@ -876,6 +880,12 @@ struct FrameUniformsUVE {
     std::array<std::int32_t, kMaxShadowedLightsUVE> lightShadowEnabled{};
     std::array<Math::Vector2UVE, kMaxShadowedLightsUVE> lightShadowDepthRanges{};
     std::array<Math::Vector4UVE, kMaxShadowTilesUVE> lightShadowCubeRects{};
+    /// Per light: 0-based shadow slot + 1, or -1 when the light owns no slot (see lit_shadowed_3d.glsl).
+    std::array<std::int32_t, kMaxLightsUVE> lightShadowSlots = [] {
+        std::array<std::int32_t, kMaxLightsUVE> slots{};
+        slots.fill(-1);
+        return slots;
+    }();
     /// True when at least one point light owns a tile. The 24 cube-rect uploads are skipped when it
     /// is false - a spot-only or directional-only frame should not pay 96 float uploads per draw for
     /// an array no light reads. Skipping is safe precisely because `uLightShadowEnabled[]` is still
@@ -3532,7 +3542,10 @@ struct Renderer3DUVE::ImplUVE {
         program.SetIntUVE("uAmbientEnvironmentMap",
                           static_cast<std::int32_t>(kAmbientEnvironmentTextureSlotUVE));
         program.SetIntUVE("uAmbientEnvironmentMapEnabled", frameUniforms.ambientEnvironmentMapEnabled ? 1 : 0);
+        program.SetIntUVE("uActiveLightCount",
+                          static_cast<std::int32_t>(std::min(frameUniforms.lights.SizeUVE(), kMaxLightsUVE)));
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
+            program.SetIntUVE(uniformNames.lightShadowSlots[lightIndex], frameUniforms.lightShadowSlots[lightIndex]);
             // The shader's light slots are fixed at kMaxLightsUVE, but the extracted list only
             // holds live lights — paste a default (intensity 0, contributes nothing) over the
             // unused slots so stale uniforms from an earlier frame can never leak through.
@@ -5501,19 +5514,21 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     for (std::size_t activeIndex = 0; activeIndex < activeShadowTileCount; ++activeIndex) {
         const LightShadowAssignmentUVE& assignment =
             shadowPlan.assignments[activeShadowTiles[activeIndex]];
-        frameUniforms.lightShadowEnabled[assignment.lightIndex] = 1;
+        const std::size_t slot = assignment.shadowSlot;
+        frameUniforms.lightShadowSlots[assignment.lightIndex] = static_cast<std::int32_t>(slot) + 1;
+        frameUniforms.lightShadowEnabled[slot] = 1;
         // (near, far) for the shader's world-space bias conversion. See ShadowLinearDepthUVE /
         // ShadowDepthSlopeUVE - the CPU and GPU halves of one formula, pinned together by
         // light_shadow_planner_uve_tests.cpp.
-        frameUniforms.lightShadowDepthRanges[assignment.lightIndex] =
+        frameUniforms.lightShadowDepthRanges[slot] =
             Math::Vector2UVE{assignment.nearPlane, assignment.farPlane};
         if (assignment.isPoint) {
-            frameUniforms.lightShadowCubeRects[assignment.lightIndex * kPointShadowFaceCountUVE +
+            frameUniforms.lightShadowCubeRects[slot * kPointShadowFaceCountUVE +
                                                assignment.faceIndex] = assignment.tile.normalizedRect;
             frameUniforms.pointShadowTilesActive = true;
         } else {
-            frameUniforms.lightShadowMatrices[assignment.lightIndex] = assignment.lightViewProjection;
-            frameUniforms.lightShadowTileRects[assignment.lightIndex] = assignment.tile.normalizedRect;
+            frameUniforms.lightShadowMatrices[slot] = assignment.lightViewProjection;
+            frameUniforms.lightShadowTileRects[slot] = assignment.tile.normalizedRect;
         }
     }
     if (activeShadowTileCount > 0U && m_impl->shadowAtlas.has_value()) {

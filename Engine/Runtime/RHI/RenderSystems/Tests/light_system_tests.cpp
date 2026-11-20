@@ -215,11 +215,11 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_MultipleLightsSameArchetype_Ea
     EXPECT_EQ(result.SizeUVE(), 3U); // three lights, three slots, no sentinel tail
 }
 
-TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_MoreThanMaxLights_OnlyFirstFourCreatedAreKept) {
-    // kMaxLightsUVE == 4: create 6 lights, all in the same archetype, so encounter order equals
-    // creation order — only the first 4 created should be kept, matching the confirmed
+TEST_F(LightSystemUVETest, ExtractActiveLightsUVE_MoreThanMaxLights_OnlyFirstMaxCreatedAreKept) {
+    // Create kMaxLightsUVE + 2 lights, all in the same archetype, so encounter order equals
+    // creation order — only the first kMaxLightsUVE created should be kept, matching the confirmed
     // first-N-encountered policy (no distance/importance sorting).
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < static_cast<int>(kMaxLightsUVE) + 2; ++i) {
         static_cast<void>(MakeLightEntityUVE(
             Math::Vector3UVE{0.0F, 0.0F, 0.0F}, Math::QuaternionUVE{},
             Scene::LightComponentUVE{Math::ColorUVE{1.0F, 1.0F, 1.0F}, static_cast<float>(i + 1)}));
@@ -378,9 +378,9 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_OutOfRangeLightNeverTak
     EXPECT_EQ(result.SizeUVE(), 1U) << "the out-of-range light must leave no slot at all";
 }
 
-TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_MoreLightsThanSlots_KeepsTheStrongestFour) {
-    // Ten candidates, four slots: the survivors must be the four nearest, in order.
-    for (int index = 0; index < 10; ++index) {
+TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_MoreLightsThanSlots_KeepsTheStrongestMax) {
+    // kMaxLightsUVE + 6 candidates, kMaxLightsUVE slots: the survivors must be the nearest, in order.
+    for (int index = 0; index < static_cast<int>(kMaxLightsUVE) + 6; ++index) {
         static_cast<void>(MakeLightEntityUVE(Math::Vector3UVE{static_cast<float>(index + 1), 0.0F, 0.0F},
                            Math::QuaternionUVE{}, MakePointLightUVE(10.0F, 1000.0F)));
     }
@@ -388,8 +388,8 @@ TEST_F(LightSystemUVETest, ExtractActiveLightsForViewUVE_MoreLightsThanSlots_Kee
     const LightListUVE result =
         lightSystem.ExtractActiveLightsForViewUVE(entityManager, Math::Vector3UVE{0.0F, 0.0F, 0.0F});
 
-    ASSERT_EQ(result.SizeUVE(), 4U);
-    for (std::size_t index = 0U; index < 4U; ++index) {
+    ASSERT_EQ(result.SizeUVE(), kMaxLightsUVE);
+    for (std::size_t index = 0U; index < kMaxLightsUVE; ++index) {
         EXPECT_FLOAT_EQ(result[index].position.x, static_cast<float>(index + 1));
     }
 }
