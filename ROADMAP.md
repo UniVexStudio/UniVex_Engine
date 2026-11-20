@@ -1167,8 +1167,9 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   participation, as have single-line text input (focus, caret, basic editing) and
   scroll views (clipped vertical stacks with wheel scrolling) — the widget box is
   fully checked
-- [ ] Rich text (multiple fonts/sizes/styles/colors within one text block, not just one
-  baked font per label)
+- [x] Rich text (multiple fonts/sizes/styles/colors within one text block) — `UITextComponentUVE::richText`
+  + `ParseRichTextSpansUVE` (`[color=#RRGGBB]`, `[b]`, `[i]`, `[size=N]` nested spans with graceful
+  malformed-tag fallback); locked by `RichTextUVETest`.
 - [x] 9-slice/scalable image borders for resolution-independent UI art — textured images
   slice into up to 9 quads with authored pixel margins and texture-fraction borders,
   hollow-frame and proportional-shrink fallbacks included
@@ -1182,10 +1183,15 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   Enter activates buttons and opens/picks dropdown items, Space toggles checkboxes, arrow keys step sliders,
   Escape releases focus, and mouse-focused fields update the tab order start; locked by UIFocusNavigationUVETest
 - [x] World-space UI (a Canvas rendered as a 3D object in the scene, e.g. floating health bars or diegetic screens), distinct from the current screen-space-only Canvas implementation — `CanvasComponentUVE` supports `CanvasRenderModeUVE::WorldSpace` with configurable physical size (`worldSize`), reference pixels, planar and billboard orientations (`ComputeWorldSpaceCanvasTransformUVE`), rendered and tracked through `Renderer3DUVE` passes; locked by `Renderer3DUVETest`.
-- [ ] Localization support for UI text (string tables, right-to-left text layout, font
-  fallback for non-Latin scripts — the current embedded UI font only covers a Latin-1
-  subset)
-- [ ] Accessibility features (colorblind modes, UI scaling, screen-reader hooks)
+- [x] Localization support for UI text — string tables (`LocalizationServiceUVE`), full UTF-8
+  codepoint codec (`DecodeUtf8CodepointsUVE`/`EncodeUtf8CodepointsUVE`), BiDi/RTL visual run
+  reordering (`UITextDirectionUVE` + `ResolveVisualTextOrderUVE` for Arabic/Hebrew with embedded
+  LTR numbers), and prioritized Unicode font fallback chain (`UIFontFallbackChainUVE` covering
+  Latin, Greek/Cyrillic, Hebrew/Arabic, CJK, and Hangul); locked by `UnicodeRtlLocalizationUVETest`.
+- [x] Accessibility features — LMS Daltonization colorblind compensation (`ColorblindModeUVE`:
+  `Protanopia`/`Deuteranopia`/`Tritanopia` in `fullscreen_quad.glsl` + CPU mirror), live UI scaling
+  (`UIRuntimeUVE::SetUiScaleFactorUVE`), and screen-reader focus/announcement hook interface
+  (`IAccessibilityBridgeUVE` / `RecordingAccessibilityBridgeUVE`); locked by `AccessibilityUVETest`.
 - [x] A dedicated in-editor UI layout tool — `WidgetDesignerViewUVE` + `WidgetPreviewViewportUVE` for `.uvwbp` Widget Blueprints (WYSIWYG canvas, multi-screen tabs, drag/resize handles, widget palette, live 3D preview).
 
 ---
