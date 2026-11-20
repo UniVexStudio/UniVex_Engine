@@ -512,7 +512,9 @@ INSTANTIATE_TEST_SUITE_P(
                        std::pair<std::string_view, std::string_view>{"taa_resolve.glsl",
                                                                       BuiltIn::kTaaResolveSource},
                        std::pair<std::string_view, std::string_view>{"wboit_composite.glsl",
-                                                                      BuiltIn::kWboitCompositeSource}));
+                                                                      BuiltIn::kWboitCompositeSource},
+                       std::pair<std::string_view, std::string_view>{"rt_trace.glsl",
+                                                                      BuiltIn::kRtTraceSource}));
 
 
 // ---------------------------------------------------------------------------

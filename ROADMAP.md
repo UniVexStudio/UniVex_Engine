@@ -165,9 +165,8 @@ status legend.
   rather than the geometry.
 - [x] Forward+ / clustered lighting path (`LightClusterGridUVE`: 16×9×24 frustum clusters, up to 256 dynamic lights via std430 SSBOs in `lit_shadowed_3d.glsl`, quality-tiered budgets Low 16 / Med 64 / High 128 / Ultra 256, automatic 16-light uniform fallback on mobile/GLES3; locked by `LightClusterGridUVETest`).
 - [x] Screen-space reflections — implemented with view-space position/normal reconstruction from camera depth, linear ray-marching in screen space with configurable max steps, depth tolerance, screen-edge fading, and Schlick Fresnel attenuation. Evaluated in dedicated pass and additively composited; locked by Renderer3DUVETest and shader parity tests.
-- [ ] Real-time reflection probes (baked and/or dynamically updated cubemaps)
-- [ ] Global illumination (baked lightmaps at minimum; a real-time or hybrid GI solution
-  as a long-term goal)
+- [x] Real-time & baked reflection probes (HDR `RGBA16Float` cubemap capture with fallback, box-projected parallax, smooth 2-probe blending in `lit_shadowed_3d.glsl`, L2 Spherical Harmonics projection, and `.uvprobe` persistence; locked by `GiReflectionProbesUVETest`).
+- [x] Hybrid Global Illumination (baked UV2 lightmap atlas + 3D trilinear L2 SH irradiance probe grid in `BakeSceneLightmapUVE` + live `LightmapGI3D`/`VoxelGI3D`/`LightmapProbe3D` indirect diffuse wired into `Renderer3DUVE` & `lit_shadowed_3d.glsl`; locked by `GiReflectionProbesUVETest`).
 - [x] Volumetric fog / volumetric lighting — volumetric shadow raymarching through directional light cascades with Henyey-Greenstein Mie forward scattering phase function; integrates inscattered sunlight modulated by cascaded shadow map occlusions in fullscreen_quad.glsl and modulates fog volume integration; locked by Renderer3DUVETest.
 - [x] Temporal anti-aliasing (`taa_math.h` Halton(2,3) 16-sample projection jitter + `taa_resolve.glsl` depth-reprojected 3×3 YCoCg variance-clamped HDR history ping-pong pass in `Renderer3DUVE`; locked by `TaaMathUVETest` and shader parity tests).
 - [x] HDR display output and a real color-grading / LUT pipeline — 3D LUT sampling with 2D strip texture format (256x16, 1024x32) with trilinear slice interpolation in the tonemapping pass, configurable LUT contribution, and integration with WorldEnvironment3DComponentUVE; locked by Renderer3DUVETest.
@@ -178,7 +177,7 @@ status legend.
   material's albedo texture and colour (tinted by `modulate`, plus emissive scaled by
   `emissionEnergy`, with the texture's alpha joining `albedoMix`) evaluating the authored fades per
   pixel, back to front
-- [ ] Ray-traced reflections/shadows/GI as an optional high-end path (long-term)
+- [x] Compute ray-traced shadows, 1-bounce reflections, and 1-bounce GI (`RtSceneBoxNodeUVE` + exact slab tracer in `ray_traced_effects.h/.cpp` + universal GL 4.3/Vulkan compute kernel `rt_trace.glsl`; locked by `RayTracedEffectsUVETest` and shader parity tests).
 
 ### 1.2 Scene scale & performance
 - [x] GPU instancing for repeated meshes — the CPU half and the shader half have landed:
