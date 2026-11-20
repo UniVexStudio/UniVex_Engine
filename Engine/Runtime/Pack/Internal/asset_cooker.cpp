@@ -309,11 +309,12 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
         const std::string contentPrefix = package.contentRoot.lexically_normal().generic_string() + "/";
         std::uint32_t textureSizeLimit = target == CookTargetUVE::Android ? 1024U : 2048U;
         if (Relative(package.settingsPath) && std::filesystem::is_regular_file(root/package.settingsPath)) {
-            Core::ConfigManagerUVE projectConfig;
+            Config::ConfigManagerUVE projectConfig;
             if (projectConfig.LoadUVE(Contained(root, root/package.settingsPath))) {
-                if (const auto configuredMax = projectConfig.GetIntUVE("rendering.textures.maxSizePerTier");
-                    configuredMax.has_value() && *configuredMax >= 256 && *configuredMax <= 16384) {
-                    const auto requestedLimit = static_cast<std::uint32_t>(*configuredMax);
+                const std::int64_t configuredMax =
+                    projectConfig.GetIntUVE("rendering.textures.maxSizePerTier", 0);
+                if (configuredMax >= 256 && configuredMax <= 16384) {
+                    const auto requestedLimit = static_cast<std::uint32_t>(configuredMax);
                     textureSizeLimit = target == CookTargetUVE::Android
                         ? std::min(requestedLimit, 2048U)
                         : requestedLimit;

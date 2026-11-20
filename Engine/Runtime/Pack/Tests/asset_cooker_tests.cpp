@@ -182,7 +182,7 @@ TEST_F(AssetCookerUVETest, CooksAuthoredMaterialsEntitiesAndHonorsConfiguredMaxT
     largeTex.height = 4U;
     largeTex.pixels.resize(4096U * 4U * 4U, std::byte{255});
     ASSERT_TRUE(Asset::SaveTextureAssetUVE(largeTex, root/"content/hero.uvtex"));
-    std::ofstream(root/"project.uvsettings") << "rendering.textures.maxSizePerTier=4096\n";
+    std::ofstream(root/"project.uvsettings") << "{\"rendering\":{\"textures\":{\"maxSizePerTier\":4096}}}\n";
 
     Asset::AssetDatabaseUVE db;
     ASSERT_TRUE(db.LoadUVE(root/".uvassetdb"));
