@@ -514,7 +514,9 @@ INSTANTIATE_TEST_SUITE_P(
                        std::pair<std::string_view, std::string_view>{"wboit_composite.glsl",
                                                                       BuiltIn::kWboitCompositeSource},
                        std::pair<std::string_view, std::string_view>{"rt_trace.glsl",
-                                                                      BuiltIn::kRtTraceSource}));
+                                                                      BuiltIn::kRtTraceSource},
+                       std::pair<std::string_view, std::string_view>{"hiz_downsample.glsl",
+                                                                      BuiltIn::kHiZDownsampleSource}));
 
 
 // ---------------------------------------------------------------------------

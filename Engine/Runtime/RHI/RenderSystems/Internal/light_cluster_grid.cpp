@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 
+#include "directional_light_3d.h"
 #include "editor_internal_entity_component.h"
 #include "light_component.h"
 #include "light_emitter_component.h"
@@ -35,7 +36,7 @@ constexpr std::uint32_t kMaxLightsPerClusterUVE = 64U;
         return true;
     }
     const Scene::VisibilityComponentUVE& vis = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
-    return vis.visible && vis.resolvedVisibleInHierarchy;
+    return vis.visible && vis.visibleInHierarchy;
 }
 
 } // namespace
@@ -105,15 +106,18 @@ std::vector<LightDataUVE> ExtractClusteredLightsForViewUVE(Scene::IEntityManager
                 data.castsShadows = emitter.shadowEnabled;
                 data.cullMask = emitter.cullMask;
                 data.specular = emitter.specular;
-                data.shadowMaxDistance = emitter.shadowMaxDistance;
-                data.shadowSplitBlend = emitter.shadowSplitBlend;
-                data.shadowDistanceFadeRange = emitter.shadowDistanceFadeRange;
                 data.shadowBias = emitter.shadowBias >= 0.0F ? emitter.shadowBias * 0.025F : -1.0F;
                 data.shadowNormalBias = emitter.shadowNormalBias;
                 data.shadowOpacity = emitter.shadowOpacity;
                 data.shadowBlur = emitter.shadowBlur;
             } else {
                 data.castsShadows = (data.type == Scene::LightTypeUVE::Directional);
+            }
+            if (entityManager.HasComponentUVE<Scene::DirectionalLight3DComponentUVE>(entity)) {
+                const auto& directional = entityManager.GetComponentUVE<Scene::DirectionalLight3DComponentUVE>(entity);
+                data.shadowMaxDistance = directional.shadowMaxDistance;
+                data.shadowSplitBlend = directional.shadowSplitBlend;
+                data.shadowDistanceFadeRange = directional.shadowDistanceFadeRange;
             }
 
             float score = 0.0F;

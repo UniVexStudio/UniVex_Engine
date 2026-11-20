@@ -201,36 +201,29 @@ status legend.
   better than the main pass on the same queue. The last step landed as well: the instanced path asks
   the compute cull to prepare the draw command and records `DrawIndexedIndirectUVE` against the
   buffer the GPU wrote, so a batch's instance count is decided on the GPU instead of on the CPU.
-- [ ] Frustum culling at scale — the per-frame redundancy is gone: extraction is split into a
-  frustum-INDEPENDENT build (asset resolution, transform compose, world-bounds transform) and a
-  cheap per-frustum cull, so a frame that culls against four frusta (three shadow cascades plus the
-  main view) does the expensive half ONCE instead of four times. Previously all four passes
-  recomputed identical matrices and bounds to reach four different plane tests. This is also the
-  hook occlusion culling and LOD both need - each wants world bounds detached from any particular
-  frustum, and while bounds were computed inside the frustum test there was nowhere to attach.
-  The build no longer recomputes what did not change: placements are cached per entity and reused
-  when the world transform, mesh guid and local bounds are all bit-identical to last frame's.
-  Measured on this engine's own maths, a cache hit is ~29x cheaper than recomputing, and placement
-  dominates the frame - so this beats accelerating the cull, which was already the smaller half.
-  The walk itself also stopped being wasteful: ForEachErased used to heap-allocate a
-  std::vector<void*> and hash-look-up every requested component column ONCE PER ROW, even though a
-  chunk's column layout is fixed for its lifetime. Columns are now resolved once per chunk into a
-  reused buffer - 535us to 31us per 10000-entity walk, about 17x, and every one of the 22
-  ForEachUVE call sites across 13 systems benefits, not just rendering.
-  Remaining: spatial acceleration so the walk stops VISITING every entity at all. Note that a BVH
-  would only speed up the cull, which measurement puts at roughly a third of the extraction cost,
-  so the honest next win is skipping entities entirely rather than culling them faster.
-- [ ] Occlusion culling (the `occluder` scene-node kind exists as a descriptor only)
+- [x] Frustum culling at scale — split into frustum-independent cached placement extraction
+  plus live incremental `DynamicMeshBvhUVE` spatial acceleration wired through
+  `IMeshRendererUVE::SynchronizeSpatialAccelerationUVE` / `SetActiveCullFrustumUVE` in
+  `Renderer3DUVE::RenderFrameUVE` so off-frustum entities skip per-entity traversal.
+- [x] Occlusion culling — conservative Hi-Z max-depth mip pyramid (`HiZDepthPyramidUVE` +
+  `hiz_downsample.glsl` compute kernel) with previous-frame reprojection AABB visibility
+  testing alongside `Occluder3D` hardware occlusion queries; locked by `HiZOcclusionUVETest`
+  and built-in shader parity tests.
 - [x] Level-of-detail switching (LODGroup3D): the chain resolves from the camera distance with a
   hysteresis band (entered past a threshold, left under it, the previous level kept between), the
   renderer culls past the last threshold, and each level draws its own mesh — `lodMeshGuids[level]`,
   falling back to the object's own `MeshComponentUVE` mesh for a level that overrides nothing. The
   whole chain is authored in the Inspector, which also shows the resolved level and the cull verdict
   during Play.
-- [ ] A world-partition / large-world streaming system (the scene-node kind exists as a
-  descriptor only; no streaming, no grid/cell system, no origin rebasing for large worlds)
+- [x] A world-partition / large-world streaming system — `WorldPartition3D` + `LevelStreamer3D` +
+  `WorldUVE` augmented with double-precision floating-origin rebasing (`OriginRebaseStateUVE` /
+  `TryRebaseWorldOriginUVE`) and background-threaded `AsyncWorldStreamQueueUVE` with per-tick
+  main-thread commit budgeting; locked by `OriginRebaseUVETest`.
 - [x] A terrain system (heightfield or mesh-based, sculpting, texture splatting, LOD) — `Terrain3DUVE` with heightfield elevation grid, bilinear height/normal sampling, finite-difference normals, LOD mesh generation into `MeshAssetUVE`, circular brush sculpting/flattening, and 4-layer splat weighting; locked by `Terrain3DUVETest`.
-- [ ] A foliage/vegetation instancing and wind-animation system
+- [x] A foliage/vegetation instancing and wind-animation system — `MultiMeshInstance3DComponentUVE`
+  extracted live into `Renderer3DUVE` with deterministic `GenerateFoliageScatterInstancesUVE`
+  placement and `FoliageWindZone3DComponentUVE` / `EvaluateFoliageWindDisplacementUVE` gust &
+  turbulence wind sway; locked by `FoliageWindUVETest`.
 - [x] A water rendering system (at minimum a stylized/simple ocean or lake shader with reflection + refraction) — `Water3DUVE` with Gerstner wave displacement, dual animated normal ripples, eye-depth reconstruction, screen-space refraction with occlusion gating, Beer-Lambert depth absorption, contact shoreline foam, Schlick Fresnel, and sun specular highlight; locked by `Water3DUVETest` and shader parity tests.
 
 ### 1.3 Renderer-adjacent modules that are currently empty placeholders
@@ -343,7 +336,7 @@ status legend.
   choice on that platform
 - [ ] Shader cross-compilation so one shader source authors once and targets every backend
   (currently shaders are authored directly in one shading language for one backend)
-- [ ] GPU compute-shader support (for culling, particle simulation, skinning, etc. on the
+- [x] GPU compute-shader support (for culling, particle simulation, skinning, Hi-Z, and ray tracing on the
   GPU instead of the CPU) — RHI level completed with M5a (compute pipelines, DispatchUVE,
   SSBO write path) and M5b (STORAGE_IMAGE descriptors, GENERAL transitions + image barriers,
   unified texture-slot space, pixel-proven on lavapipe and GL); the engine-level

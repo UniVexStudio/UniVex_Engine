@@ -5490,8 +5490,17 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->visibilitySet.viewLayerMask =
         capturingProbe ? m_impl->probeCaptureVisibilityLayers : 0xFFFFFFFFU;
     m_impl->visibilitySet.frustumTestsDisabled = frustumCullingFrozen;
+    const LightDataUVE* const earlyShadowCaster = FindShadowCasterUVE(lights);
+    if (!frustumCullingFrozen && earlyShadowCaster == nullptr) {
+        m_impl->meshRenderer.SynchronizeSpatialAccelerationUVE(entityManager, m_impl->assetManager,
+                                                               m_impl->assetDatabase);
+        m_impl->meshRenderer.SetActiveCullFrustumUVE(frustum);
+    } else {
+        m_impl->meshRenderer.ClearActiveCullFrustumUVE();
+    }
     m_impl->meshRenderer.BuildVisibilitySetUVE(entityManager, m_impl->assetManager, m_impl->assetDatabase,
                                                m_impl->visibilitySet);
+    m_impl->meshRenderer.ClearActiveCullFrustumUVE();
     m_impl->lastFrameDiagnostics.placementCacheHits = m_impl->visibilitySet.placementCacheHits;
     m_impl->lastFrameDiagnostics.placementCacheMisses = m_impl->visibilitySet.placementCacheMisses;
     m_impl->lastFrameDiagnostics.visibilityClusters = m_impl->visibilitySet.clusters.size();
@@ -5501,6 +5510,83 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                                      m_impl->primitiveItems);
     m_impl->ExtractUnmaterialedMeshItemsUVE(entityManager, frustum, viewPosition, frustumCullingFrozen,
                                             m_impl->primitiveItems);
+
+    // Foliage / MultiMeshInstance3D extraction with active wind zone sway.
+    Scene::FoliageWindZone3DComponentUVE activeWind{};
+    activeWind.enabled = false;
+    entityManager.ForEachUVE<Scene::FoliageWindZone3DComponentUVE>(
+        [&](const Scene::EntityUVE, const Scene::FoliageWindZone3DComponentUVE& zone) {
+            if (zone.enabled && !activeWind.enabled) {
+                activeWind = zone;
+            }
+        });
+    entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MultiMeshInstance3DComponentUVE>(
+        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& wt,
+            const Scene::MultiMeshInstance3DComponentUVE& mm) {
+            if (!mm.enabled || wt.dirty || mm.meshAssetGuid == Asset::kInvalidAssetGuidUVE || mm.instances.empty() ||
+                IsHiddenInHierarchyUVE(entityManager, entity)) {
+                return;
+            }
+            auto handleIt = m_impl->unmaterialedMeshHandles.find(mm.meshAssetGuid);
+            if (handleIt == m_impl->unmaterialedMeshHandles.end()) {
+                handleIt = m_impl->unmaterialedMeshHandles
+                               .emplace(mm.meshAssetGuid, m_impl->assetManager.LoadUVE<Asset::MeshAssetUVE>(
+                                                              mm.meshAssetGuid, m_impl->assetDatabase))
+                               .first;
+            }
+            const Asset::MeshAssetUVE* const mesh = handleIt->second.TryGetUVE();
+            if (mesh == nullptr || mesh->indices.empty()) {
+                return;
+            }
+            Asset::AssetGuidUVE resolvedMaterialGuid = mm.materialAssetGuid;
+            if (resolvedMaterialGuid != Asset::kInvalidAssetGuidUVE) {
+                if (m_impl->assetDatabase.ResolveUVE(resolvedMaterialGuid).empty()) {
+                    resolvedMaterialGuid = Asset::kInvalidAssetGuidUVE;
+                } else if (m_impl->primitiveMaterialHandles.find(resolvedMaterialGuid) ==
+                           m_impl->primitiveMaterialHandles.end()) {
+                    m_impl->primitiveMaterialHandles.emplace(
+                        resolvedMaterialGuid,
+                        m_impl->assetManager.LoadUVE<Asset::MaterialAssetUVE>(resolvedMaterialGuid,
+                                                                              m_impl->assetDatabase));
+                }
+            }
+            Math::QuaternionUVE parentRot{};
+            if (!Math::TryNormalizeUVE(wt.worldRotation, parentRot)) {
+                return;
+            }
+            const Math::Matrix4x4UVE parentWorld =
+                Math::Matrix4x4UVE::ComposeTrsUVE(wt.worldPosition, parentRot, wt.worldScale);
+            const std::size_t maxCount =
+                mm.visibleInstanceCount >= 0
+                    ? std::min<std::size_t>(static_cast<std::size_t>(mm.visibleInstanceCount), mm.instances.size())
+                    : mm.instances.size();
+            const std::size_t drawLimit = std::min(maxCount, m_impl->activeMaxInstancesPerFrame);
+            for (std::size_t i = 0U; i < drawLimit; ++i) {
+                const Scene::MultiMeshInstanceTransform3DUVE& inst = mm.instances[i];
+                Math::QuaternionUVE instRot{};
+                if (!Math::TryNormalizeUVE(inst.rotation, instRot)) {
+                    instRot = Math::QuaternionUVE{};
+                }
+                Math::Vector3UVE pos = inst.position;
+                if (activeWind.enabled) {
+                    pos = pos + Scene::EvaluateFoliageWindDisplacementUVE(
+                                    wt.worldPosition + pos, 1.0F, m_impl->skyTimeSeconds, activeWind);
+                }
+                const Math::Matrix4x4UVE instWorld =
+                    parentWorld * Math::Matrix4x4UVE::ComposeTrsUVE(pos, instRot, inst.scale);
+                const Math::AabbUVE bounds = mesh->localBounds.TransformUVE(instWorld);
+                if (!frustumCullingFrozen && !frustum.IntersectsUVE(bounds)) {
+                    continue;
+                }
+                PrimitiveRenderItemUVE item{};
+                item.worldMatrix = instWorld;
+                item.baseColor = Math::Vector3UVE{inst.customColor.r, inst.customColor.g, inst.customColor.b};
+                item.materialGuid = resolvedMaterialGuid;
+                item.meshGuid = mm.meshAssetGuid;
+                item.mesh = mesh;
+                m_impl->primitiveItems.push_back(item);
+            }
+        });
     m_impl->lastFrameDiagnostics.primitiveItemsExtracted = m_impl->primitiveItems.size();
     m_impl->lastFrameDiagnostics.skinnedMeshesDrawn = m_impl->skinnedMeshesThisFrame;
 

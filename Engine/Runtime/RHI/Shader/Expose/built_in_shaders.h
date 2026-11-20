@@ -123,4 +123,7 @@ extern const std::string_view kWboitCompositeSource;
 inline constexpr std::string_view kRtTraceVirtualPath = "shaders/rt_trace.glsl";
 extern const std::string_view kRtTraceSource;
 
+inline constexpr std::string_view kHiZDownsampleVirtualPath = "shaders/hiz_downsample.glsl";
+extern const std::string_view kHiZDownsampleSource;
+
 } // namespace UVE::Render::Shader::BuiltIn
