@@ -85,9 +85,9 @@ void RecordingCanvas::line(Vec2 a, Vec2 b, Color c, float t) {
 
 void RecordingCanvas::fillPolygon(std::span<const Vec2> pts, Color c, bool aa) {
   if (pts.size() < 3 || c.a == 0) return;
-  size_t n = std::min<size_t>(pts.size(), 64);
+  size_t n = pts.size();
   int off = int(m_list.points.size());
-  m_list.points.insert(m_list.points.end(), pts.begin(), pts.begin() + long(n));
+  m_list.points.insert(m_list.points.end(), pts.begin(), pts.end());
   DrawCmd& d = push(DrawOp::FillPolygon);
   d.c = c; d.aa = aa; d.i0 = off; d.i1 = int(n);
 }
