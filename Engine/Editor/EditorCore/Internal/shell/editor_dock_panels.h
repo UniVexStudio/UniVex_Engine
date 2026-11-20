@@ -47,6 +47,7 @@ public:
     [[nodiscard]] prism::Ref<prism::Widget> BuildOutputLogUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildConsoleUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildProfilerUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildSearchUVE();
 
     /// Pulls new log lines (always, so nothing is missed while the page is hidden), and refreshes
     /// the console and profiler while their page is the one showing.

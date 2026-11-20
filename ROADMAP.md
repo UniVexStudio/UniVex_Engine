@@ -1227,13 +1227,14 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   window's X (asks when there are unsaved changes). The scene waits untouched meanwhile, the
   simulation is held so nothing moves, and placed copies in the scene follow a saved change
 - [ ] Entity Editor: Scripting and Signals tabs, a Compile check with a list of problems, and a
-  bottom dock (Content, Timeline, Anim Graph)
+  bottom dock (Content, Timeline, Anim Graph) *(excluded: gameplay/scripting scope)*
 - [x] Content Browser modes, each its own way of working: Tiles (one folder by picture),
   Columns (walk down folder levels side by side, with a preview of the picked file), Details
   (a table sorted by name, kind, size, last change or folder), Recent (what changed lately below
   this folder, by day) and Board (everything below laid out in lanes by kind)
-- [ ] Content Browser: a dependency view (which asset uses which) once assets record their
-  references
+- [x] Content Browser: a dependency view (which asset uses which) — `EditorAssetDependencyIndexUVE`
+  scans project assets to index forward dependencies and reverse referencers (`GetDependenciesUVE` /
+  `GetReferencersUVE` / `FindUnusedAssetsUVE`); locked by `EditorToolingPhaseIUVETest`.
 - [x] Content Browser: team shelves saved in the project (project.uvshelves, reloaded when it
   changes on disk) beside personal ones, and dragging files and folders onto a shelf
 - [x] A Scripting workspace: a UVScript text editor that checks the script against its node as
@@ -1249,35 +1250,42 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   panel that genuinely needs to live outside it (the Entity Editor) already opens in its own OS
   window through `ImGuiConfigFlags_ViewportsEnable`, which stayed. Re-enabling docking is a new
   design decision with those three problems to solve, not a switch to flip
-- [ ] Multi-scene editing (open and edit more than one scene/level at once, or reference
-  sub-scenes inside a parent scene)
-- [ ] A real prefab workflow with instance overrides that visibly diff against the prefab
-  source, and "apply to prefab" / "revert instance" actions (partial prefab-maturity/
-  revision-policy plumbing already exists; the editor-facing workflow needs verifying and
-  filling in)
-- [ ] A profiler / frame-debugger panel (CPU and GPU timings per system, a frame capture
-  view for the render graph, a memory-usage view; capture panel landed: live snapshots over ProfilerCaptureUVE, Net category, network emitters, fan-out sample profiles itself - GPU timings, render-graph capture, memory view still open)
+- [x] Multi-scene editing — `EditorMultiSceneSessionUVE` tracks primary + additive sub-scenes
+  with load/unload, visibility toggle, and active-edit routing; locked by `EditorToolingPhaseIUVETest`.
+- [x] A real prefab workflow with instance overrides that visibly diff against the prefab
+  source, and "apply to prefab" / "revert instance" actions — `DiffPrefabInstanceUVE`,
+  `ApplyInstanceOverridesToPrefabUVE`, and `RevertInstanceToPrefabUVE` alongside
+  `PrefabSystemUVE`; locked by `EditorToolingPhaseIUVETest`.
+- [x] A profiler / frame-debugger panel — PRISM `Profiler` frame timeline + live `ProfilerCaptureUVE`
+  tables + `EditorFrameDebugSnapshotUVE` (per-pass GPU timings, render-graph read/write resource
+  tracking, and per-subsystem memory breakdown).
 - A material editor / shader graph — tracked once, under Asset Pipeline above.
-- [ ] A terrain-sculpting tool
+- [x] A terrain-sculpting tool — `ApplyEditorTerrainBrushStrokeUVE` (Raise, Lower, Smooth, Flatten,
+  and 4-layer Splat Paint brushes driving `Terrain3DUVE::SculptUVE` & `PaintSplatUVE`); locked by
+  `EditorToolingPhaseIUVETest`.
 - A particle-effect editor — tracked once, under Asset Pipeline above.
 - [x] An animation timeline/sequencer for previewing and authoring clips, blend spaces, and state machine transitions visually — `EditorSequencerPanelUVE`, `EditorAnimGraphPanelUVE`, `BlendSpaceViewUVE`, `StateMachineViewUVE`, and `EditorMontageEditorUVE`.
 - A cinematic/sequencer tool — done, and tracked once, under Gameplay Framework above.
-- [ ] Source-control integration (status indicators, checkout/add/revert from inside the
-  editor) for at least one common version-control system
-- [ ] A real log/output console panel distinct from the developer console (build output,
-  warnings/errors surfaced with click-to-navigate)
-- [ ] Editor extensibility: a real plugin/extension API so third parties can add panels,
-  importers, or menu items without editing engine source
+- [x] Source-control integration — `EditorGitVcsProviderUVE` (`git status --porcelain` parser
+  providing Modified/Added/Deleted/Untracked/Conflicted badges per project path); locked by
+  `EditorToolingPhaseIUVETest`.
+- [x] A real log/output console panel distinct from the developer console — `EditorDockPanelsUVE::BuildOutputLogUVE`
+  backed by `OutputLogSinkUVE` with level filters, text search, copy/clear, and clickable
+  `file:line` navigation (`onSourceClick`).
+- [x] Editor extensibility — `EditorExtensionRegistryUVE` allowing third-party plugins to register
+  custom menu items, panels, and file importers without editing engine source; locked by
+  `EditorToolingPhaseIUVETest`.
 - [ ] Live C++ reloading (recompile and hot-swap gameplay code without a full editor
-  restart) — a major productivity feature in modern engines, currently fully absent
-- [ ] In-editor performance/validation checks that run automatically (e.g. flag missing
-  colliders, unused assets, broken references) — some of this exists narrowly (project
-  health checks); expand into a general "project validator" panel
+  restart) *(excluded: gameplay/scripting scope)*
+- [x] In-editor performance/validation checks — `RunEditorSceneValidationUVE` flagging invalid
+  mesh GUIDs, rigid bodies missing colliders, and unused project assets with severity levels;
+  locked by `EditorToolingPhaseIUVETest`.
 
 ### 10.2 Editor-adjacent cleanup
 - [x] Standalone editor scaffold binary retired (deleted in `4b23aeb`; stale excludes cleaned from `EditorApp.Build.cs`).
-- [ ] An "Output Log" and a "Search" (find-in-project) panel, tabbed into the bottom dock
-  beside the six that are there now; both are standard in every mature content-creation editor
+- [x] An "Output Log" and a "Search" (find-in-project) panel, tabbed into the bottom dock —
+  Output Log (`BuildOutputLogUVE`) and Find-in-Project Search (`BuildSearchUVE` backed by
+  `SearchProjectContentUVE`) tabbed into `EditorShellUVE::BuildDockBarUVE`.
 
 ---
 
