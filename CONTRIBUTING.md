@@ -33,13 +33,13 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
 
 ## 3. Testing Discipline
 
-- **GoogleTest Suite**: Every feature with non-trivial logic must be locked with unit or integration tests under the `Test/` directory.
+- **GoogleTest Suite**: Every feature with non-trivial logic must be locked with unit or integration tests in the module's `Tests/` directory (automatically compiled into `UniVexTests` via `Engine/Tests/CoreTests.Build.cs`).
 - **Coverage Standard**: Tests must verify:
   1. Default and valid configurations.
   2. Degenerate and invalid configurations (out-of-range, null/invalid handles, infinite/NaN inputs).
   3. Bounded limits and capacity saturation (e.g., `kMaximumConstraintsUVE`).
   4. Generation safety and stale handle rejection where generational handles are used.
-- Add newly created test files to `Test/CMakeLists.txt` under the appropriate test executable target (`uve_core_tests` or `uve_integration_tests`).
+- Build and run with UVBT: `./uvbt build UniVexTests Linux Debug && LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./.uvbt/bin/Linux/Debug/UniVexTests`.
 
 ---
 
@@ -52,8 +52,8 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
    - `docs(subsystem): short description`
    - `test(subsystem): short description`
 3. **Checklist Before Submitting**:
-   - [ ] Verified against the existing test suite (`ctest --output-on-failure`).
+   - [ ] Verified against the existing test suite (`./.uvbt/bin/Linux/Debug/UniVexTests` and `uve_prism_tests`).
    - [ ] All new tests pass cleanly.
-   - [ ] Zero compiler warnings.
+   - [ ] Zero compiler warnings (`UVBT_WERROR=1`).
    - [ ] Checked off and described the completed item in `ROADMAP.md` (or relevant roadmap).
    - [ ] Filled out all sections of `.github/PULL_REQUEST_TEMPLATE.md`.

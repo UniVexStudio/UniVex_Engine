@@ -15,11 +15,11 @@ Production-grade real-time 3D engine and PRISM editor targeting Desktop (Linux, 
 
 ```bash
 # Build and run automated tests (Linux)
-python3 Engine/Tools/UVBT/uvbt.py build UniVexTests --config Debug
-xvfb-run -a ./Binaries/Linux/Debug/UniVexTests
+./uvbt build UniVexTests Linux Debug
+xvfb-run -a ./.uvbt/bin/Linux/Debug/UniVexTests
 
 # Build the Editor
-python3 Engine/Tools/UVBT/uvbt.py build EditorApp --config Release
+./uvbt build UniVexEditor Linux Release
 ```
 
 ## Documentation & Samples

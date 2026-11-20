@@ -22,6 +22,7 @@
 #include <string_view>
 #include <vector>
 
+#include "crash_reporter.h"
 #include "engine_core.h"
 #include "logging_macros.h"
 #include "editor_bridge_stdio.h"
@@ -172,8 +173,19 @@ int main(const int argc, char** argv) {
     }
 
     UVE::Core::EngineCoreUVE engine(config);
+    UVE::Platform::CrashReporterUVE crashReporter;
     try {
         engine.Init();
+        if (!options.headless && !options.bridgeStdio) {
+            const UVE::Core::EngineConfigUVE& effectiveConfig = engine.GetConfigUVE();
+            if (effectiveConfig.crashHandlerEnabledUVE && !effectiveConfig.userDataDirectoryPathUVE.empty()) {
+                const std::filesystem::path dumpDir =
+                    effectiveConfig.crashDumpDirectoryUVE.is_absolute()
+                        ? effectiveConfig.crashDumpDirectoryUVE
+                        : (effectiveConfig.userDataDirectoryPathUVE / effectiveConfig.crashDumpDirectoryUVE);
+                static_cast<void>(crashReporter.InstallUVE(dumpDir, "uve_editor"));
+            }
+        }
         if (!engine.Load()) {
             engine.Shutdown();
             return 1;
