@@ -356,6 +356,30 @@ TEST(LightShadowPlannerUVE, Plan_DegradesTileSizeInsteadOfDroppingLights) {
     EXPECT_EQ(atlas.GetAllocatedTileCountUVE(), 4U);
 }
 
+TEST(LightShadowPlannerUVE, Plan_ShadowSlotsAreDecoupledFromLightIndex) {
+    const Math::FrustumUVE frustum = MakeViewFrustumUVE();
+    LightDataUVE off = MakeSpotLightUVE();
+    off.castsShadows = false;
+    const LightListUVE lights = MakeLightListUVE(
+        {off, MakeSpotLightUVE(Math::Vector3UVE{-2.0F, 0.0F, -5.0F}, 8.0F), off,
+         MakeSpotLightUVE(Math::Vector3UVE{2.0F, 0.0F, -5.0F}, 8.0F),
+         MakeSpotLightUVE(Math::Vector3UVE{0.0F, 2.0F, -6.0F}, 8.0F),
+         MakeSpotLightUVE(Math::Vector3UVE{0.0F, -2.0F, -6.0F}, 8.0F)});
+    ShadowAtlasManagerUVE atlas;
+
+    const LightShadowPlanUVE plan = BuildLightShadowPlanUVE(lights, frustum, atlas, 1024U);
+
+    ASSERT_EQ(plan.count, 4U);
+    const std::size_t expectedLights[] = {1U, 3U, 4U, 5U};
+    for (std::size_t slot = 0U; slot < 4U; ++slot) {
+        EXPECT_EQ(plan.assignments[slot].lightIndex, expectedLights[slot]);
+        EXPECT_EQ(plan.assignments[slot].shadowSlot, slot);
+        EXPECT_EQ(plan.lightToShadowSlot[expectedLights[slot]], static_cast<std::int32_t>(slot));
+    }
+    EXPECT_EQ(plan.lightToShadowSlot[0], -1);
+    EXPECT_EQ(plan.lightToShadowSlot[2], -1);
+}
+
 TEST(LightShadowPlannerUVE, Plan_ProjectsTheConeAxisThroughTheTileCentre) {
     // The matrix the pass renders with and the matrix the shader unprojects with are the same
     // object, so one check pins both: a point straight down the light's -Z axis must land at the

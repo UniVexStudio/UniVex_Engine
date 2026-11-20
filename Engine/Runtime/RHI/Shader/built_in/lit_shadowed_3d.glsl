@@ -143,7 +143,9 @@ struct LightUVE {
     float specular;
 };
 
-uniform LightUVE uLights[4];
+uniform LightUVE uLights[16];
+uniform int uActiveLightCount;
+uniform int uLightShadowSlot[16];
 uniform vec3 uAmbientColor;
 uniform vec3 uSkyAmbient;
 uniform vec3 uGroundAmbient;
@@ -1214,7 +1216,8 @@ void main() {
         ReadMapUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
     vec3 lighting = indirectLighting + emissiveLighting;
 
-    for (int lightIndex = 0; lightIndex < 4; ++lightIndex) {
+    int activeLightCount = uActiveLightCount > 0 ? min(uActiveLightCount, 16) : 16;
+    for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
         LightUVE light = uLights[lightIndex];
         if (light.intensity <= 0.0) {
             continue;
@@ -1268,17 +1271,20 @@ void main() {
         vec3 radiance = light.color * light.intensity * attenuation;
         vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
 
+        int encodedShadowSlot = uLightShadowSlot[lightIndex];
+        int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1)
+                       : (encodedShadowSlot < 0 ? -1 : (lightIndex < 4 ? lightIndex : -1));
         if (light.type == 0) {
             float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
             if (isnan(shadowFactor) || isinf(shadowFactor)) {
                 shadowFactor = 1.0;
             }
             directContribution *= clamp(shadowFactor, 0.0, 1.0);
-        } else if (light.type == 1) {
-            float shadowFactor = PointShadowFactorUVE(lightIndex, normal, light.position, light.range);
+        } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
+            float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
             directContribution *= clamp(shadowFactor, 0.0, 1.0);
-        } else if (light.type == 2) {
-            float shadowFactor = SpotShadowFactorUVE(lightIndex, normal, lightDirection);
+        } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
+            float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
             directContribution *= clamp(shadowFactor, 0.0, 1.0);
         }
         if (!isnan(directContribution.r) && !isinf(directContribution.r) &&

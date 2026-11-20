@@ -117,11 +117,16 @@ bool IsPointLightShadowCandidateUVE(const LightDataUVE& light,
 std::size_t CountShadowTilesUVE(const LightListUVE& lights,
                                 const Math::FrustumUVE& viewFrustum) noexcept {
     std::size_t tiles = 0U;
+    std::size_t shadowedLights = 0U;
     for (std::size_t lightIndex = 0; lightIndex < lights.SizeUVE(); ++lightIndex) {
+        if (shadowedLights >= kMaxShadowedLightsUVE) {
+            break;
+        }
         const LightDataUVE& light = lights[lightIndex];
         if (IsSpotLightShadowCandidateUVE(light, viewFrustum) ||
             IsPointLightShadowCandidateUVE(light, viewFrustum)) {
             tiles += TilesForLightUVE(light);
+            ++shadowedLights;
         }
     }
     return tiles;
@@ -182,6 +187,7 @@ LightShadowPlanUVE BuildLightShadowPlanUVE(const LightListUVE& lights,
                                            ShadowAtlasManagerUVE& atlas,
                                            const std::uint32_t requestedResolution) noexcept {
     LightShadowPlanUVE plan{};
+    plan.lightToShadowSlot.fill(-1);
     atlas.ResetUVE();
 
     // Counted first, not accumulated on the fly: the tile resolution depends on how many tiles the
@@ -230,6 +236,7 @@ LightShadowPlanUVE BuildLightShadowPlanUVE(const LightListUVE& lights,
             }
             LightShadowAssignmentUVE& assignment = plan.assignments[plan.count++];
             assignment.lightIndex = lightIndex;
+            assignment.shadowSlot = shadowedLights;
             assignment.faceIndex = face;
             assignment.isPoint = isPoint;
             assignment.tile = *tile;
@@ -251,6 +258,7 @@ LightShadowPlanUVE BuildLightShadowPlanUVE(const LightListUVE& lights,
             }
             break;
         }
+        plan.lightToShadowSlot[lightIndex] = static_cast<std::int32_t>(shadowedLights);
         ++shadowedLights;
     }
 
