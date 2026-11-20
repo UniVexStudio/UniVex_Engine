@@ -479,7 +479,7 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
 
     {
         auto openGraphBtn = prism::make<prism::Button>("Open Visual Material Graph...");
-        openGraphBtn->onClick = [this, materialPath, edit] {
+        openGraphBtn->onClick = [this, materialPath = absolutePath, edit] {
             const std::filesystem::path graphPath =
                 materialPath.parent_path() / (materialPath.stem().string() + ".uvmatgraph");
             auto graphAsset = std::make_shared<Asset::MaterialGraphAssetUVE>();
