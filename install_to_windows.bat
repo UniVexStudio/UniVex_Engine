@@ -9,8 +9,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$installDir = \"$env:LOCALAPPDATA\Programs\UniVex_Engine\"; " ^
   "Write-Host 'Target Directory:' $installDir; " ^
   "if (-not (Test-Path $installDir)) { New-Item -ItemType Directory -Path $installDir -Force | Out-Null }; " ^
-  "Copy-Item 'build\Engine\App\uve_editor.exe' -Destination \"$installDir\uve_editor.exe\" -Force; " ^
-  "Get-ChildItem 'build\Engine\App\*.dll' | ForEach-Object { Copy-Item $_.FullName -Destination \"$installDir\$($_.Name)\" -Force }; " ^
+  "$srcDir = if (Test-Path '.uvbt\bin\Windows\Release\uve_editor.exe') { '.uvbt\bin\Windows\Release' } elseif (Test-Path 'package\UniVex-Editor\uve_editor.exe') { 'package\UniVex-Editor' } else { throw 'Built uve_editor.exe not found. Run ./uvbt build UniVexEditor Windows Release first.' }; " ^
+  "Copy-Item \"$srcDir\uve_editor.exe\" -Destination \"$installDir\uve_editor.exe\" -Force; " ^
+  "Get-ChildItem \"$srcDir\*.dll\" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination \"$installDir\$($_.Name)\" -Force }; " ^
+  "if (Test-Path \"$srcDir\prism_assets\") { Copy-Item \"$srcDir\prism_assets\" -Destination \"$installDir\prism_assets\" -Recurse -Force }; " ^
   "$contentDir = \"$installDir\Content\Viewport\"; " ^
   "if (-not (Test-Path $contentDir)) { New-Item -ItemType Directory -Path $contentDir -Force | Out-Null }; " ^
   "$wsh = New-Object -ComObject WScript.Shell; " ^

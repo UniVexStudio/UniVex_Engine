@@ -12,7 +12,7 @@ contradictory variant impossible to build.
 
 | | `Debug` | `Development` | `Release` | `Shipping` |
 |---|---|---|---|---|
-| CMake build type | `Debug` | `RelWithDebInfo` | `Release` | `MinSizeRel` |
+| UVBT configuration | `Debug` | `Development` | `Release` | `Shipping` |
 | `UVE_DEBUG` / assertions | on | on | off | off |
 | `UVE_SHIPPING` | 0 | 0 | 0 | 1 |
 | Runtime default log level | `Trace` (0) | `Debug` (1) | `Info` (2) | `Warning` (3) |
@@ -21,26 +21,11 @@ contradictory variant impossible to build.
 
 ## Who decides the variant
 
-`Engine/CMake/UveBuildConfiguration.cmake` owns the decision. Two inputs can describe a
-build — CMake's conventional `CMAKE_BUILD_TYPE`, and this engine's `UVE_BUILD_CONFIGURATION`
-— and the precedence is:
+`Engine/Tools/UVBT/uvbt.py` owns the build configuration selected via
+`./uvbt build <Target> <Platform> <Debug|Development|Release|Shipping>` (defaulting to
+`Debug` when omitted).
 
-1. **An explicitly requested profile wins**, and the CMake build type follows it.
-   `-DUVE_BUILD_CONFIGURATION=Shipping` produces shipping semantics regardless of what
-   CMake's type vocabulary happens to be called.
-2. **Otherwise the profile is derived from `CMAKE_BUILD_TYPE`.** `Debug` → `Debug`,
-   `RelWithDebInfo` → `Development`, `Release` → `Release`, `MinSizeRel` → `Shipping`.
-   This is the path a tool outside the repo takes when it passes a conventional flag.
-3. **Otherwise both default to `Debug`**, with a warning if `CMAKE_BUILD_TYPE` was set to
-   something with no profile equivalent.
-
-Earlier this module ignored `CMAKE_BUILD_TYPE` entirely and forced it back to `Debug`, so
-`-DCMAKE_BUILD_TYPE=Release` silently produced an unoptimized binary with assertions
-enabled. That is the worst possible failure mode: every test passes, and the artifact
-ships wrong. The rule above exists specifically so that the conventional flag keeps its
-conventional meaning while a named profile still outranks it.
-
-The chosen profile is then published to every translation unit as definitions:
+The chosen profile is published to every translation unit as preprocessor definitions:
 `UVE_BUILD_CONFIGURATION_<NAME>=1`, `UVE_SHIPPING=0|1`,
 `UVE_PROFILE_ASSERTIONS_ENABLED=0|1`, `UVE_PROFILE_DEFAULT_LOG_LEVEL=<0..5>` and
 `UVE_COMPILED_LOG_LEVEL=<threshold>`.

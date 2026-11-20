@@ -11,23 +11,26 @@ UniVex Engine uses **UVBT** (`Engine/Tools/UVBT/uvbt.py`) as its single build sy
 
 ```bash
 # Build the full automated test suite (Debug)
-python3 Engine/Tools/UVBT/uvbt.py build UniVexTests --config Debug
+./uvbt build UniVexTests Linux Debug
 
 # Build the standalone Editor
-python3 Engine/Tools/UVBT/uvbt.py build EditorApp --config Release
+./uvbt build UniVexEditor Linux Release
 
 # Build a Shipping runtime binary (strips TRACE/INFO logs and assertions)
-python3 Engine/Tools/UVBT/uvbt.py build RuntimeApp --config Shipping
+./uvbt build UniVexRuntime Linux Shipping
 
 # Enable strict warnings-as-errors
-UVBT_WERROR=1 python3 Engine/Tools/UVBT/uvbt.py build UniVexTests --config Debug
+UVBT_WERROR=1 ./uvbt build UniVexTests Linux Debug
 ```
 
 ## Running Tests & Tools
 
 ```bash
 # Run headless automated tests (Linux with software GL / Vulkan lavapipe)
-xvfb-run -a ./Binaries/Linux/Debug/UniVexTests
+LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./.uvbt/bin/Linux/Debug/UniVexTests
+
+# Run PRISM UI unit & golden tests
+./.uvbt/bin/Linux/Debug/uve_prism_tests Engine/Runtime/Prism/assets
 
 # Validate all built-in shaders and optionally cross-compile to SPIR-V
 python3 Engine/Tools/compile_shaders.py --validate-sources
