@@ -183,6 +183,7 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsUvSetsAndTheDetailsSurfaceFiel
     original.receiveShadows = false;
     original.rimAmount = 0.5F;
     original.rimTint = Math::ColorUVE{0.5F, 0.25F, 1.0F};
+    original.textureTint = Math::ColorUVE{0.3F, 0.6F, 0.9F};
     original.refractionAmount = 0.75F;
     original.renderLayerMask = 0x5U;
     ASSERT_TRUE(SaveMaterialAssetUVE(original, path));
@@ -206,6 +207,9 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsUvSetsAndTheDetailsSurfaceFiel
     EXPECT_FALSE(loaded.receiveShadows);
     EXPECT_FLOAT_EQ(loaded.rimAmount, 0.5F);
     EXPECT_FLOAT_EQ(loaded.rimTint.g, 0.25F);
+    EXPECT_FLOAT_EQ(loaded.textureTint.r, 0.3F);
+    EXPECT_FLOAT_EQ(loaded.textureTint.g, 0.6F);
+    EXPECT_FLOAT_EQ(loaded.textureTint.b, 0.9F);
     EXPECT_FLOAT_EQ(loaded.refractionAmount, 0.75F);
     EXPECT_EQ(loaded.renderLayerMask, 0x5U);
 
@@ -218,6 +222,11 @@ TEST(MaterialAssetUVETest, SaveThenLoad_RoundTripsUvSetsAndTheDetailsSurfaceFiel
     EXPECT_FLOAT_EQ(defaultsLoaded.dielectricSpecular, 0.5F);
     EXPECT_TRUE(defaultsLoaded.receiveShadows);
     EXPECT_EQ(defaultsLoaded.renderLayerMask, 0xFFFFFFFFU);
+
+    MaterialAssetUVE invalidParallax = MakeTestMaterialUVE();
+    invalidParallax.parallaxMinLayers = 32U;
+    invalidParallax.parallaxMaxLayers = 8U;
+    EXPECT_FALSE(IsMaterialAssetValidUVE(invalidParallax));
 
     std::filesystem::remove(path);
 }

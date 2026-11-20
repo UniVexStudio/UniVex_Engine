@@ -48,9 +48,9 @@ bool EmbeddedClip(const std::filesystem::path& path, std::filesystem::path& mode
 }
 bool RuntimePath(const std::filesystem::path& path) {
     if (std::filesystem::path model; EmbeddedClip(path, model)) return Extension(model) == ".uvmodel";
-    static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvshader", ".uvscene",
-        ".uvprefab", ".uvwbp", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage", ".uvmontagelib", ".uvfont", ".uvtable",
-        ".uvfx", ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
+    static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvmaterial", ".uvshader", ".uvscene",
+        ".uvprefab", ".uventity", ".uvwbp", ".uvbp", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage",
+        ".uvmontagelib", ".uvfont", ".uvtable", ".uvfx", ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
     return extensions.contains(Extension(path));
 }
 void CheckGuid(Asset::AssetGuidUVE guid, const Asset::AssetDatabaseUVE& db) {
@@ -119,8 +119,10 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
     if (!envelope) return false;
     const std::map<std::string,Asset::AssetKindUVE> kinds{
         {".uvtex",Asset::AssetKindUVE::Texture},{".uvmodel",Asset::AssetKindUVE::Mesh},
-        {".uvmat",Asset::AssetKindUVE::Material},{".uvshader",Asset::AssetKindUVE::Shader},
-        {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},{".uvwbp",Asset::AssetKindUVE::Prefab},
+        {".uvmat",Asset::AssetKindUVE::Material},{".uvmaterial",Asset::AssetKindUVE::Material},
+        {".uvshader",Asset::AssetKindUVE::Shader},
+        {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},
+        {".uventity",Asset::AssetKindUVE::Prefab},{".uvwbp",Asset::AssetKindUVE::Prefab},
         {".uvaudio",Asset::AssetKindUVE::Audio},{".uvanim",Asset::AssetKindUVE::Animation},
         {".uvskel",Asset::AssetKindUVE::Skeleton},{".uvanimlib",Asset::AssetKindUVE::AnimationLibrary},
         {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::MotionMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbp",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable},{".uvfx",Asset::AssetKindUVE::ParticleSystem}};

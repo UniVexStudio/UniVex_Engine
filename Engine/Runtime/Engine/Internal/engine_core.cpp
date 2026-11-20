@@ -494,8 +494,28 @@ void EngineCoreUVE::Init() {
                                        commandLineSettings)) {
         throw std::logic_error("Failed to attach engine settings layers.");
     }
+    const std::filesystem::path initialLogFilePath = m_config.logFilePath;
+    const std::filesystem::path callerShaderCachePath = m_config.shaderCachePath;
+    const bool callerSuppliedSafeAbsoluteShaderCache =
+        !callerShaderCachePath.empty() && callerShaderCachePath.is_absolute() &&
+        callerShaderCachePath.native().find(std::filesystem::path::value_type{}) ==
+            std::filesystem::path::string_type::npos &&
+        std::ranges::none_of(callerShaderCachePath, [](const std::filesystem::path& component) {
+            return component == std::filesystem::path("..");
+        });
     ApplyEngineSettingsUVE(settings, m_config);
-    if (!IsSafeShaderCachePathUVE(m_config.shaderCachePath)) {
+    if (m_config.logFilePath != initialLogFilePath && !m_config.logFilePath.empty()) {
+        auto updatedLogger = std::make_unique<Debug::LoggerUVE>();
+        updatedLogger->Init(m_config.minLogLevel);
+        if (m_config.enableConsoleLogging) {
+            updatedLogger->AddSink(std::make_unique<Debug::ConsoleSinkUVE>());
+        }
+        updatedLogger->AddSink(std::make_unique<Debug::FileSinkUVE>(m_config.logFilePath));
+        m_logger = std::move(updatedLogger);
+    }
+    const bool acceptCallerAbsoluteShaderCache =
+        callerSuppliedSafeAbsoluteShaderCache && m_config.shaderCachePath == callerShaderCachePath;
+    if (!acceptCallerAbsoluteShaderCache && !IsSafeShaderCachePathUVE(m_config.shaderCachePath)) {
         const std::filesystem::path defaultShaderCachePath = EngineConfigUVE{}.shaderCachePath;
         UVE_WARNING("EngineCoreUVE: shader-cache directory must be a non-empty relative path without parent "
                     "segments; using \"{}\"",
@@ -975,6 +995,7 @@ void EngineCoreUVE::Init() {
                     static_cast<float>(std::max(0.0, m_config.defaultAngularDampingUVE));
             }
             if (forceApplyAll || m_config.sleepThresholdUVE != defaultConfig.sleepThresholdUVE ||
+                m_config.allowSleepingDefaultUVE != defaultConfig.allowSleepingDefaultUVE ||
                 m_projectSettings.IsModifiedUVE("physics.common.sleepThreshold") ||
                 m_projectSettings.IsModifiedUVE("physics.common.allowSleepingDefault")) {
                 simSettings.sleepThreshold = static_cast<float>(std::max(0.0, m_config.sleepThresholdUVE));
@@ -1999,21 +2020,25 @@ void EngineCoreUVE::ReconcileUVScriptInstancesUVE() {
     // Edits are picked up by re-reading every script in use a few times a second: a script whose
     // text changed is dropped (and so recompiled and restarted below), and a failed one is retried.
     // The files are small and few, so this is cheaper than wiring every writer to a notification.
-    constexpr auto kRecheckIntervalUVE = std::chrono::milliseconds(500);
-    if (const auto now = std::chrono::steady_clock::now(); now - m_uvScriptLastRecheck >= kRecheckIntervalUVE) {
-        m_uvScriptLastRecheck = now;
-        const auto readText = [this](const std::string& path) { return ReadUVScriptSourceUVE(path); };
-        std::erase_if(m_uvScripts,
-                      [&readText](const auto& entry) { return readText(entry.second.path) != entry.second.source; });
-        std::erase_if(m_uvScriptFailedSources, [this, &readText](const auto& entry) {
-            if (readText(entry.first) == entry.second) {
-                return false;
-            }
-            std::erase_if(m_scriptReconcileFailedEntities,
-                          [&entry](const auto& failed) { return failed.second == entry.first; });
-            return true;
-        });
+#if !UVE_SHIPPING
+    if (m_config.hotReloadEnabledUVE) {
+        constexpr auto kRecheckIntervalUVE = std::chrono::milliseconds(500);
+        if (const auto now = std::chrono::steady_clock::now(); now - m_uvScriptLastRecheck >= kRecheckIntervalUVE) {
+            m_uvScriptLastRecheck = now;
+            const auto readText = [this](const std::string& path) { return ReadUVScriptSourceUVE(path); };
+            std::erase_if(m_uvScripts,
+                          [&readText](const auto& entry) { return readText(entry.second.path) != entry.second.source; });
+            std::erase_if(m_uvScriptFailedSources, [this, &readText](const auto& entry) {
+                if (readText(entry.first) == entry.second) {
+                    return false;
+                }
+                std::erase_if(m_scriptReconcileFailedEntities,
+                              [&entry](const auto& failed) { return failed.second == entry.first; });
+                return true;
+            });
+        }
     }
+#endif
 
     // Drop instances whose object is gone, lost its script, or now points at another file.
     std::erase_if(m_uvScripts, [this](const auto& entry) {
@@ -4564,14 +4589,9 @@ void EngineCoreUVE::Update() {
         const std::uint32_t drawableHeight = m_windowManager->GetHeightUVE();
         m_presentationSurfaceReadyUVE = drawableWidth > 0U && drawableHeight > 0U;
         if (!m_presentationSurfaceReadyUVE) {
-#if defined(__ANDROID__)
-            // Android may transiently lose its ANativeWindow/EGLSurface between lifecycle commands.
-            // Keep the engine alive and let the backend recreate the surface instead of converting a
-            // recoverable presentation pause into permanent backend loss.
+            // A minimized desktop window or an Android lifecycle pause reports a 0x0 surface.
+            // Keep the engine and graphics backend alive so rendering resumes when the surface returns.
             m_presentationSurfaceReadyUVE = m_windowManager->TryRecoverSurfaceUVE();
-#else
-            m_windowedRenderingActiveUVE = false;
-#endif
         }
         if ((!m_presentationSurfaceReadyUVE && !m_windowedRenderingActiveUVE) ||
             (m_presentationSurfaceReadyUVE && !m_renderDevice->IsUsableUVE())) {
@@ -4699,8 +4719,8 @@ void EngineCoreUVE::Update() {
         const float scaledFrameDelta = static_cast<float>(m_timer->GetDeltaTimeUVE()) * m_simulationSpeedScale;
         SyncGameplayAttributesUVE(scaledFrameDelta);
         SyncCinematicUVE(scaledFrameDelta);
-        SyncAiBrainsUVE(scaledFrameDelta);
         SyncPerceptionUVE(scaledFrameDelta);
+        SyncAiBrainsUVE(scaledFrameDelta);
     }
     // Bone attachments follow the pose that was just evaluated, and do it before the graph
     // propagates world transforms: a weapon on a hand is on the hand in the same frame the hand

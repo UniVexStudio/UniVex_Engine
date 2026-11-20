@@ -561,6 +561,22 @@ static void testSvgPath() {
   c.resize(200, 200);
   c.clear(Color(0, 0, 0));
   parsed.draw(c, Color(255, 255, 255), 2.0f, Color(100, 100, 100, 150), {10, 10}, 1.0f);
+
+  std::vector<Vec2> poly128;
+  poly128.reserve(128);
+  for (int i = 0; i < 128; i++) {
+    float ang = float(i) * (6.2831853f / 128.f);
+    poly128.push_back({100.f + std::cos(ang) * 40.f, 100.f + std::sin(ang) * 40.f});
+  }
+  c.fillPolygon(poly128, Color(255, 128, 64), true);
+  RecordingCanvas recPoly;
+  recPoly.resize(200, 200);
+  recPoly.beginFrame();
+  recPoly.fillPolygon(poly128, Color(255, 128, 64), true);
+  GlyphAtlas polyAtlas;
+  GpuFrame polyFrame;
+  CHECK(buildGpuFrame(recPoly.list(), polyAtlas, polyFrame));
+  CHECK(polyFrame.vertices.size() == 256);
 }
 
 static void testHiDpiAndScale(Application& app, TestPlatform& plat) {

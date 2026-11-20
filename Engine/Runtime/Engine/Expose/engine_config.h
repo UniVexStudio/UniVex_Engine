@@ -447,7 +447,7 @@ struct EngineConfigUVE {
     /// resolve, so the engine still runs (without hot-reload) if launched from a working
     /// directory where the source tree isn't reachable.
     std::string shaderSourceMountPrefixUVE = "shaders";
-    std::filesystem::path shaderSourceRealDirectoryUVE = "engine/render/shader/built_in/";
+    std::filesystem::path shaderSourceRealDirectoryUVE = "Engine/Runtime/RHI/Shader/built_in/";
 
     /// Optional borrowed native window handle for platform backends. Android uses this as an
     /// ANativeWindow* supplied by NativeActivity; the engine never takes ownership or destroys it.
