@@ -63,7 +63,7 @@ std::vector<RtSceneBoxNodeUVE> BuildRtSceneBoxesFromEntitiesUVE(Scene::IEntityMa
             }
             if (entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
                 const auto& vis = entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
-                if (!vis.visible || !vis.resolvedVisibleInHierarchy) {
+                if (!vis.visible || !vis.visibleInHierarchy) {
                     return;
                 }
             }
@@ -77,7 +77,7 @@ std::vector<RtSceneBoxNodeUVE> BuildRtSceneBoxesFromEntitiesUVE(Scene::IEntityMa
                                    wt.worldPosition.z - half.z, 0.0F};
             node.maxAndRoughness = {wt.worldPosition.x + half.x, wt.worldPosition.y + half.y,
                                     wt.worldPosition.z + half.z, 0.5F};
-            node.albedo = {prim.color.r, prim.color.g, prim.color.b, 1.0F};
+            node.albedo = {prim.baseColor.x, prim.baseColor.y, prim.baseColor.z, 1.0F};
             boxes.push_back(node);
         });
     return boxes;
