@@ -90,7 +90,7 @@ struct ConstraintIslandEdgeUVE final {
 };
 
 struct ConstraintIslandPlanUVE final {
-    static constexpr std::size_t kMaximumEntitiesUVE = 512U;
+    static constexpr std::size_t kMaximumEntitiesUVE = 2048U;
     std::array<Scene::EntityUVE, kMaximumEntitiesUVE> entities{};
     std::array<std::size_t, kMaximumEntitiesUVE> islandIndices{};
     std::size_t entityCount = 0U;
@@ -179,7 +179,7 @@ struct ConstraintIslandPlanUVE final {
 /// preserving slot order within each island and leaving the positional constraint equations unchanged.
 class PhysicsConstraintSystemUVE final {
 public:
-    static constexpr std::size_t kMaximumConstraintsUVE = 256U;
+    static constexpr std::size_t kMaximumConstraintsUVE = 1024U;
     static constexpr std::size_t kMaximumSolverIterationsUVE = 8U;
     static constexpr float kConstraintEpsilonUVE = 1.0e-4F;
 

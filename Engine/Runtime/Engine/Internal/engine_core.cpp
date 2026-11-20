@@ -1061,11 +1061,16 @@ void EngineCoreUVE::Init() {
     {
         Navigation::NavigationRuntimeConfigUVE navRuntimeConfig{};
         navRuntimeConfig.globalAvoidanceEnabled = m_config.navAvoidanceEnabledUVE;
+        navRuntimeConfig.maxAvoidanceNeighbors =
+            static_cast<std::size_t>(std::max<std::int64_t>(1, m_config.navMaxNeighborsUVE));
+        navRuntimeConfig.maxNeighborDistanceMetres =
+            static_cast<float>(std::max(0.1, m_config.navNeighborDistanceUVE));
         m_navigationRuntime->SetRuntimeConfigUVE(navRuntimeConfig);
     }
 
     // GamepadInputSystem thirtieth: owns only bounded injectable current/previous snapshots.
-    m_gamepadInputSystem = std::make_unique<Input::GamepadInputSystemUVE>();
+    m_gamepadInputSystem = std::make_unique<Input::GamepadInputSystemUVE>(
+        static_cast<float>(m_config.inputGamepadDeadzoneInnerUVE));
 
     // MobileInputSystem thirty-first: owns only bounded injectable touch/gyroscope snapshots.
     m_mobileInputSystem = std::make_unique<Input::MobileInputSystemUVE>();
@@ -1145,8 +1150,8 @@ void EngineCoreUVE::Init() {
         m_localizationService.SetActiveLocaleUVE(*defaultLocale);
     }
 
-    // Subscribe live project settings observers so runtime edits to Physics, Audio, Navigation, and
-    // Localisation in m_projectSettings immediately propagate into the active subsystems.
+    // Subscribe live project settings observers so runtime edits to Physics, Audio, Navigation,
+    // Input, and Localisation in m_projectSettings immediately propagate into the active subsystems.
     m_projectSettingsSubscriptions.clear();
     if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
             "Physics",
@@ -1194,7 +1199,23 @@ void EngineCoreUVE::Init() {
                     Navigation::NavigationRuntimeConfigUVE navRuntimeConfig =
                         m_navigationRuntime->GetRuntimeConfigUVE();
                     navRuntimeConfig.globalAvoidanceEnabled = m_config.navAvoidanceEnabledUVE;
+                    navRuntimeConfig.maxAvoidanceNeighbors =
+                        static_cast<std::size_t>(std::max<std::int64_t>(1, m_config.navMaxNeighborsUVE));
+                    navRuntimeConfig.maxNeighborDistanceMetres =
+                        static_cast<float>(std::max(0.1, m_config.navNeighborDistanceUVE));
                     m_navigationRuntime->SetRuntimeConfigUVE(navRuntimeConfig);
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Input",
+            [this](const Config::SettingChangedEventUVE&) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (m_gamepadInputSystem != nullptr) {
+                    m_gamepadInputSystem->SetDeadZoneUVE(
+                        static_cast<float>(m_config.inputGamepadDeadzoneInnerUVE));
                 }
             });
         sub.IsValidUVE()) {

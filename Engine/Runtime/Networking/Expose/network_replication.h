@@ -194,6 +194,10 @@ public:
     /// Per-component movement that marks an entity changed. Zero means exact equality.
     /// Returns false (keeping the old epsilon) for NaN or a negative.
     [[nodiscard]] bool SetPositionEpsilonUVE(float epsilon) noexcept;
+    /// Maximum snapshot packets emitted per send tick when more than 74 entities need replication.
+    /// Defaults to 1 to preserve the legacy single-packet truncation contract; raising this allows
+    /// multi-packet snapshot chunking across large entity populations. Returns false for 0.
+    [[nodiscard]] bool SetMaxSnapshotChunksPerTickUVE(std::size_t maxChunks) noexcept;
     /// Asks the peer for ownership of `netId`: sends a request immediately and reports the
     /// answer (or the timeout) through the transfer handler. Single-flight per entity -
     /// one open request at a time. Returns false (sending nothing) unless the entity is
@@ -260,6 +264,7 @@ public:
     [[nodiscard]] ReplicationStatsUVE StatsUVE() const noexcept { return m_stats; }
     [[nodiscard]] std::uint32_t FullSnapshotPeriodUVE() const noexcept { return m_fullPeriod; }
     [[nodiscard]] float PositionEpsilonUVE() const noexcept { return m_positionEpsilon; }
+    [[nodiscard]] std::size_t MaxSnapshotChunksPerTickUVE() const noexcept { return m_maxSnapshotChunksPerTick; }
     [[nodiscard]] std::uint64_t OwnershipTimeoutUVE() const noexcept {
         return m_ownershipTimeoutMs;
     }
@@ -292,6 +297,7 @@ private:
     std::uint64_t m_lastSendMs = 0U;
     std::uint32_t m_fullPeriod = kDefaultFullSnapshotPeriodUVE;
     float m_positionEpsilon = kDefaultDeltaPositionEpsilonUVE;
+    std::size_t m_maxSnapshotChunksPerTick = 1U;
     std::uint64_t m_sendsCompleted = 0U;
     std::uint64_t m_ownershipTimeoutMs = kDefaultOwnershipTimeoutMsUVE;
     OwnershipTransferHandlerUVE m_transferHandler;

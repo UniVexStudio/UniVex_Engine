@@ -28,6 +28,7 @@ public:
     [[nodiscard]] bool WasButtonReleasedThisFrameUVE(std::size_t gamepadIndex,
                                                       GamepadButtonUVE button) const override;
     [[nodiscard]] float GetDeadZoneUVE() const noexcept override { return m_deadZone; }
+    void SetDeadZoneUVE(float deadZone) noexcept override;
 
 private:
     using SnapshotArrayUVE = std::array<GamepadStateSnapshotUVE, kMaximumGamepadCountUVE>;
@@ -37,7 +38,7 @@ private:
     [[nodiscard]] static bool IsValidButtonUVE(GamepadButtonUVE button) noexcept;
     [[nodiscard]] float NormalizeAxisValueUVE(float value) const noexcept;
 
-    const float m_deadZone;
+    float m_deadZone;
 
     mutable std::mutex m_liveStateMutex;
     SnapshotArrayUVE m_liveState{};
