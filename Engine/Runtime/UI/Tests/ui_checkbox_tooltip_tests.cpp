@@ -147,7 +147,7 @@ TEST_F(UICheckboxTooltipUVETest, Tooltip_ValidatorRejectsOverlongTextAndBadTimin
     Scene::UITooltipComponentUVE tooltip;
     tooltip.text = "Save";
     EXPECT_TRUE(IsUITooltipComponentValidUVE(tooltip));
-    tooltip.text = std::string(513U, 'x');
+    tooltip.text = std::string(Scene::kMaximumUITextBytesUVE + 1U, 'x');
     EXPECT_FALSE(IsUITooltipComponentValidUVE(tooltip));
     tooltip.text = "Save";
     tooltip.delay = -1.0F;
