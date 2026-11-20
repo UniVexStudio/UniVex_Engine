@@ -5606,6 +5606,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     m_impl->lastFrameDiagnostics.failedAssetLoads = queue.failedAssetLoads;
 
     if (m_impl->vfxDrawListForFrame != nullptr && !capturingProbe) {
+        const bool vfxZeroToOneDepth = m_impl->renderDevice.UsesZeroToOneDepthBufferUVE();
         m_impl->vfxFrameContext = VfxSpriteFrameContextUVE{
             viewProjection,
             inverseProjection,
@@ -5616,6 +5617,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             m_impl->depthTarget,
             m_impl->targetWidth,
             m_impl->targetHeight,
+            vfxZeroToOneDepth ? 1.0F : 2.0F,
+            vfxZeroToOneDepth ? 0.0F : -1.0F,
         };
         m_impl->lastFrameDiagnostics.vfxBatchesExtracted =
             m_impl->vfxDrawListForFrame->stats.batchesExtracted;
@@ -7146,22 +7149,35 @@ void Renderer3DUVE::SetMeshUploadBudgetUVE(const std::size_t meshesPerFrame) noe
 }
 
 void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) noexcept {
-    const std::int32_t clampedLevel = std::clamp(scalabilityMode, 0, 2);
+    const std::int32_t clampedLevel = std::clamp(scalabilityMode, 0, 3);
     m_impl->scalabilityMode = clampedLevel;
     if (clampedLevel == 0) {
         m_impl->postProcessSettings.ssaoQualityUVE = 0U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = false;
         m_impl->postProcessSettings.bloomEnabledUVE = false;
+        m_impl->postProcessSettings.contactShadowsEnabledUVE = false;
+        m_impl->postProcessSettings.ssrEnabledUVE = false;
         m_impl->shadowPcfKernelRadius = 0;
     } else if (clampedLevel == 1) {
         m_impl->postProcessSettings.ssaoQualityUVE = 1U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
         m_impl->postProcessSettings.bloomEnabledUVE = true;
+        m_impl->postProcessSettings.contactShadowsEnabledUVE = false;
+        m_impl->postProcessSettings.ssrEnabledUVE = false;
         m_impl->shadowPcfKernelRadius = 1;
+    } else if (clampedLevel == 2) {
+        m_impl->postProcessSettings.ssaoQualityUVE = 2U;
+        m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
+        m_impl->postProcessSettings.bloomEnabledUVE = true;
+        m_impl->shadowPcfKernelRadius = 2;
     } else {
         m_impl->postProcessSettings.ssaoQualityUVE = 2U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
         m_impl->postProcessSettings.bloomEnabledUVE = true;
+        m_impl->postProcessSettings.ssrMaxStepsUVE =
+            std::max(m_impl->postProcessSettings.ssrMaxStepsUVE, 64U);
+        m_impl->postProcessSettings.contactShadowStepCountUVE =
+            std::max(m_impl->postProcessSettings.contactShadowStepCountUVE, 12U);
         m_impl->shadowPcfKernelRadius = 2;
     }
 }

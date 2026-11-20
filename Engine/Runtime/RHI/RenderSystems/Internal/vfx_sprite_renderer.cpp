@@ -674,6 +674,8 @@ std::size_t VfxSpriteRendererUVE::RecordBatchListUVE(const std::vector<PreparedB
             program->SetMatrix4x4UVE("uInverseProjection", frameContext.inverseProjection);
             program->SetVector2UVE("uInvViewportSize", invViewport);
             program->SetFloatUVE("uSoftDistance", batch.softDistance);
+            program->SetFloatUVE("uDepthNdcScale", frameContext.depthNdcScale);
+            program->SetFloatUVE("uDepthNdcBias", frameContext.depthNdcBias);
         }
 
         program->ApplyToUVE(commandBuffer);
