@@ -12,7 +12,9 @@
 #include "color.h"
 #include "i_project_file_index.h"
 #include "material_asset.h"
+#include "material_graph_asset.h"
 
+#include "prism/BlueprintGraph.h"
 #include "prism/Containers.h"
 #include "prism/Controls.h"
 #include "prism/Layouts.h"
@@ -27,7 +29,9 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -472,6 +476,69 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
     slider("Refraction", &MaterialUVE::refractionAmount, 0.0F, 1.0F);
     texture("Height Map", &MaterialUVE::heightTexture, kNoMapUVE);
     slider("Height Scale", &MaterialUVE::heightScale, 0.0F, 0.25F);
+
+    {
+        auto openGraphBtn = prism::make<prism::Button>("Open Visual Material Graph...");
+        openGraphBtn->onClick = [this, materialPath, edit] {
+            const std::filesystem::path graphPath =
+                materialPath.parent_path() / (materialPath.stem().string() + ".uvmatgraph");
+            auto graphAsset = std::make_shared<Asset::MaterialGraphAssetUVE>();
+            if (!Asset::LoadMaterialGraphAssetUVE(graphPath, *graphAsset)) {
+                *graphAsset = Asset::CreateDefaultPbrMaterialGraphUVE();
+                graphAsset->name = materialPath.stem().string();
+            }
+            auto body = prism::vbox(6.0F);
+            auto statusLbl = prism::make<prism::Label>("Shader graph ready");
+            statusLbl->setColor(prism::ThemeColor(&prism::Theme::textDim));
+            auto bpGraph = prism::make<prism::BlueprintGraph>();
+            bpGraph->setPreset(prism::BlueprintGraphPreset::MaterialShader);
+            auto graphBox = prism::make<prism::SizeBox>();
+            graphBox->setWidthOverride(780.0F);
+            graphBox->setHeightOverride(440.0F);
+            graphBox->setContent(bpGraph);
+            body->add(graphBox);
+            body->add(statusLbl);
+
+            const auto compiled = Asset::CompileMaterialGraphToGlslUVE(*graphAsset);
+            if (compiled.ok) {
+                statusLbl->setText("Compiled OK (" + std::to_string(graphAsset->nodes.size()) + " nodes, " +
+                                   std::to_string(compiled.glslSource.size()) + " bytes GLSL)");
+            } else if (!compiled.errors.empty()) {
+                statusLbl->setText("Compile error: " + compiled.errors.front());
+            }
+
+            prism::showDialog(
+                "Visual Material Graph — " + materialPath.filename().string(), body,
+                {{"Close", false, nullptr},
+                 {"Save & Compile", true,
+                  [this, graphPath, materialPath, graphAsset, edit] {
+                      (void)Asset::SaveMaterialGraphAssetUVE(*graphAsset, graphPath);
+                      const auto res = Asset::CompileMaterialGraphToGlslUVE(*graphAsset);
+                      if (res.ok) {
+                          const std::filesystem::path glslPath =
+                              materialPath.parent_path() / (materialPath.stem().string() + "_graph.glsl");
+                          std::ofstream glslOut(glslPath, std::ios::trunc);
+                          if (glslOut) {
+                              glslOut << res.glslSource;
+                          }
+                          if (m_editor.m_services != nullptr) {
+                              const Asset::AssetGuidUVE shaderGuid =
+                                  m_editor.m_services->GetAssetDatabaseUVE().RegisterUVE(glslPath);
+                              edit([shaderGuid](MaterialUVE& m) {
+                                  m.customShader = shaderGuid;
+                                  m.useCustomShaderCode = true;
+                              });
+                          }
+                          m_editor.m_contentStatusMessage =
+                              "Saved & compiled material graph " + graphPath.filename().string();
+                      } else if (!res.errors.empty()) {
+                          m_editor.m_contentStatusMessage = "Material graph error: " + res.errors.front();
+                      }
+                  }}},
+                820.0F);
+        };
+        add("Shader Graph", openGraphBtn, "Author this material visually in the node-based PBR Material Graph.");
+    }
 }
 
 } // namespace UVE::Editor
@@ -508,6 +575,24 @@ void EditorDetailsUVE::ShowTextureSettingsUVE(const std::filesystem::path& textu
     heading->setColor(prism::ThemeColor(&prism::Theme::textDim));
     body->add(heading);
 
+    auto memEstimateLabel = prism::make<prism::Label>("");
+    memEstimateLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    const auto updateMemEstimate = [settings, weakMem = std::weak_ptr<prism::Label>(memEstimateLabel)] {
+        if (auto lbl = weakMem.lock()) {
+            const std::size_t bytes = Asset::EstimateImportedTextureMemoryBytesUVE(
+                settings->maxResolutionClamp, settings->maxResolutionClamp, *settings);
+            char buf[64];
+            if (bytes >= 1024U * 1024U) {
+                std::snprintf(buf, sizeof(buf), "%.2f MiB (at max size)",
+                              static_cast<double>(bytes) / (1024.0 * 1024.0));
+            } else {
+                std::snprintf(buf, sizeof(buf), "%.1f KiB (at max size)", static_cast<double>(bytes) / 1024.0);
+            }
+            lbl->setText(buf);
+        }
+    };
+    updateMemEstimate();
+
     auto colorSpace = prism::make<prism::ComboBox>(std::vector<std::string>{"sRGB (colour)", "Linear (data)"},
                                                    settings->colorSpace == Asset::TextureAssetColorSpaceUVE::Linear ? 1 : 0);
     colorSpace->onChange = [settings](const int i) {
@@ -528,7 +613,10 @@ void EditorDetailsUVE::ShowTextureSettingsUVE(const std::filesystem::path& textu
     };
     row("Usage", usage, "What the image holds: a picture, a tangent-space normal map, or a mask of values.");
     auto mipmaps = prism::make<prism::CheckBox>("", settings->generateMipmaps);
-    mipmaps->onChange = [settings](const bool v) { settings->generateMipmaps = v; };
+    mipmaps->onChange = [settings, updateMemEstimate](const bool v) {
+        settings->generateMipmaps = v;
+        updateMemEstimate();
+    };
     row("Generate Mipmaps", mipmaps, "Smaller copies for distant surfaces: no shimmering, faster sampling.");
     auto mipFilter = prism::make<prism::ComboBox>(std::vector<std::string>{"Smooth (box)", "Sharp (nearest)"},
                                                   settings->mipFilter == Asset::TextureMipmapFilterUVE::Nearest ? 1 : 0);
@@ -544,19 +632,24 @@ void EditorDetailsUVE::ShowTextureSettingsUVE(const std::filesystem::path& textu
         }
     }
     auto maxSize = prism::make<prism::ComboBox>(std::vector<std::string>{"256", "512", "1024", "2048", "4096", "8192"}, sizeIndex);
-    maxSize->onChange = [settings](const int i) { settings->maxResolutionClamp = kSizes[static_cast<std::size_t>(std::clamp(i, 0, 5))]; };
+    maxSize->onChange = [settings, updateMemEstimate](const int i) {
+        settings->maxResolutionClamp = kSizes[static_cast<std::size_t>(std::clamp(i, 0, 5))];
+        updateMemEstimate();
+    };
     row("Max Size", maxSize, "A larger image is scaled down to this on import (memory and download size).");
     const int compressionIndex = settings->compressionMode == Asset::TextureCompressionModeUVE::BasisETC1S   ? 1
                                  : settings->compressionMode == Asset::TextureCompressionModeUVE::BasisUASTC ? 2
                                                                                                               : 0;
     auto compression = prism::make<prism::ComboBox>(std::vector<std::string>{"None", "Small (ETC1S)", "High Quality (UASTC)"},
                                                     compressionIndex);
-    compression->onChange = [settings](const int i) {
+    compression->onChange = [settings, updateMemEstimate](const int i) {
         settings->compressionMode = i == 1 ? Asset::TextureCompressionModeUVE::BasisETC1S
                                     : i == 2 ? Asset::TextureCompressionModeUVE::BasisUASTC
                                              : Asset::TextureCompressionModeUVE::None;
+        updateMemEstimate();
     };
     row("Compression", compression, "Stored compressed: far smaller on disk and in memory, at some quality.");
+    row("Est. Memory", memEstimateLabel, "Estimated GPU/asset memory budget for the chosen resolution, mipmaps, and compression.");
     auto invertGreen = prism::make<prism::CheckBox>("", settings->invertGreenChannel);
     invertGreen->onChange = [settings](const bool v) { settings->invertGreenChannel = v; };
     row("Invert Green", invertGreen, "For normal maps made with the other green-channel convention.");

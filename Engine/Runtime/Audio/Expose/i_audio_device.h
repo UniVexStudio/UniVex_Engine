@@ -97,6 +97,19 @@ public:
         return kSilentAudioMeterUVE;
     }
 
+    // --- Optional microphone / audio capture (voice chat). ---
+    [[nodiscard]] virtual bool StartCaptureUVE(std::uint32_t sampleRateHz, std::uint32_t channels) {
+        static_cast<void>(sampleRateHz);
+        static_cast<void>(channels);
+        return false;
+    }
+    virtual void StopCaptureUVE() {}
+    [[nodiscard]] virtual bool IsCapturingUVE() const noexcept { return false; }
+    [[nodiscard]] virtual std::size_t ReadCaptureFramesUVE(std::span<float> outInterleavedFrames) {
+        static_cast<void>(outInterleavedFrames);
+        return 0U;
+    }
+
     /// A short human-readable backend name (e.g. `"Null"`), for logging/diagnostics.
     [[nodiscard]] virtual std::string_view GetBackendNameUVE() const noexcept = 0;
 };

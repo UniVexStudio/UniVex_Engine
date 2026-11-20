@@ -221,9 +221,13 @@ std::size_t UpdateDestructibleDebrisUVE(IEntityManagerUVE& entityManager,
             const float angSpeed = Math::LengthUVE(debris.angularVelocity);
             if (angSpeed > 1.0e-5F) {
                 const Math::Vector3UVE axis = debris.angularVelocity * (1.0F / angSpeed);
-                const Math::QuaternionUVE dq =
-                    Math::QuaternionUVE::FromAxisAngleUVE(axis, angSpeed * deltaTimeSeconds);
-                tr.localRotation = Math::NormalizeUVE(dq * tr.localRotation);
+                Math::QuaternionUVE dq{};
+                if (Math::TryMakeAxisAngleUVE(axis, angSpeed * deltaTimeSeconds, dq)) {
+                    Math::QuaternionUVE nextRot{};
+                    if (Math::TryNormalizeUVE(dq * tr.localRotation, nextRot)) {
+                        tr.localRotation = nextRot;
+                    }
+                }
             }
             if (entityManager.HasComponentUVE<WorldTransformComponentUVE>(entity)) {
                 auto& wt = entityManager.GetComponentUVE<WorldTransformComponentUVE>(entity);

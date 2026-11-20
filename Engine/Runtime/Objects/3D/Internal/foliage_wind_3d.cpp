@@ -46,7 +46,7 @@ void GenerateFoliageScatterInstancesUVE(const FoliageScatterSettingsUVE& setting
             settings.areaMin.z + (settings.areaMax.z - settings.areaMin.z) * rz,
         };
         const float yaw = ryaw * 2.0F * Math::kPiUVE;
-        inst.rotation = Math::QuaternionUVE::FromAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, yaw);
+        (void)Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, yaw, inst.rotation);
         const float s = loScale + (hiScale - loScale) * rscale;
         inst.scale = Math::Vector3UVE{s, s, s};
         outMultiMesh.instances.push_back(inst);
