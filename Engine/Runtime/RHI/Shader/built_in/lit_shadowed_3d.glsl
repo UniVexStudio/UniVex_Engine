@@ -368,6 +368,7 @@ uniform float uSurfaceOpacity;
 uniform float uShadowBias;
 uniform float uShadowNormalBias;
 uniform float uShadowOpacity;
+uniform int uDisableReceiveShadows;
 uniform int uReflectionProbeEnabled;
 uniform vec3 uReflectionProbePosition;
 uniform vec3 uReflectionProbeAxisX;
@@ -683,8 +684,13 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     float currentDepth = projected.z;
     float cosTheta = clamp(dot(normal, lightDirection), 0.0, 1.0);
     float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
-    float bias = max(uShadowBias * mix(0.25, 1.0, sinTheta) * max(uShadowNormalBias, 0.25),
-                     uShadowBias * 0.2);
+    // Cascaded draws already apply a slope-scaled vertex normal offset; keep fragment depth bias
+    // tight so shadows stay grounded on floors instead of detaching or vanishing near contact.
+    float bias = cascadeIndex >= 0
+                     ? max(uShadowBias * mix(0.10, 0.35, sinTheta) * max(uShadowNormalBias, 0.25),
+                           uShadowBias * 0.08)
+                     : max(uShadowBias * mix(0.25, 1.0, sinTheta) * max(uShadowNormalBias, 0.25),
+                           uShadowBias * 0.2);
     float compareDepth = currentDepth - bias;
     float visibleWeight = 0.0;
     float totalWeight = 0.0;
@@ -1271,21 +1277,23 @@ void main() {
         vec3 radiance = light.color * light.intensity * attenuation;
         vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
 
-        int encodedShadowSlot = uLightShadowSlot[lightIndex];
-        int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1)
-                       : (encodedShadowSlot < 0 ? -1 : (lightIndex < 4 ? lightIndex : -1));
-        if (light.type == 0) {
-            float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
-            if (isnan(shadowFactor) || isinf(shadowFactor)) {
-                shadowFactor = 1.0;
+        if (uDisableReceiveShadows == 0) {
+            int encodedShadowSlot = uLightShadowSlot[lightIndex];
+            int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1)
+                           : (encodedShadowSlot < 0 ? -1 : (lightIndex < 4 ? lightIndex : -1));
+            if (light.type == 0) {
+                float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
+                if (isnan(shadowFactor) || isinf(shadowFactor)) {
+                    shadowFactor = 1.0;
+                }
+                directContribution *= clamp(shadowFactor, 0.0, 1.0);
+            } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
+                float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
+                directContribution *= clamp(shadowFactor, 0.0, 1.0);
+            } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
+                float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
+                directContribution *= clamp(shadowFactor, 0.0, 1.0);
             }
-            directContribution *= clamp(shadowFactor, 0.0, 1.0);
-        } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
-            float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
-            directContribution *= clamp(shadowFactor, 0.0, 1.0);
-        } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
-            float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
-            directContribution *= clamp(shadowFactor, 0.0, 1.0);
         }
         if (!isnan(directContribution.r) && !isinf(directContribution.r) &&
             !isnan(directContribution.g) && !isinf(directContribution.g) &&

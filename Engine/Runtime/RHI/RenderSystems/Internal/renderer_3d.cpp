@@ -3630,6 +3630,7 @@ struct Renderer3DUVE::ImplUVE {
         program.SetFloatUVE("uShadowBias", frameUniforms.shadowBias);
         program.SetFloatUVE("uShadowNormalBias", frameUniforms.shadowNormalBias);
         program.SetFloatUVE("uShadowOpacity", frameUniforms.shadowOpacity);
+        program.SetIntUVE("uDisableReceiveShadows", material.receiveShadows ? 0 : 1);
         program.SetVector3UVE("uAlbedoColor", Math::ToVector3UVE(material.albedoColor));
         program.SetFloatUVE("uMetallic", material.metallic);
         program.SetFloatUVE("uRoughness", material.roughness);
@@ -5914,7 +5915,8 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->proceduralSkyProgram->SetFloatUVE("uSkyLuminance", m_impl->environmentFrame.skyLuminance);
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTexture", static_cast<std::int32_t>(kSkyTextureSlotUVE));
                 m_impl->proceduralSkyProgram->SetIntUVE("uSkyTextureEnabled", m_impl->skyTextureEnabled ? 1 : 0);
-                m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowEnabled", shadowsReady ? 1 : 0);
+                // Shadows belong on real floor/terrain geometry, never projected onto empty sky void.
+                m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowEnabled", 0);
                 if (shadowsReady) {
                     m_impl->proceduralSkyProgram->SetIntUVE("uSkyGroundShadowMap0",
                                                             static_cast<std::int32_t>(kShadowCascadeFirstTextureSlotUVE));
