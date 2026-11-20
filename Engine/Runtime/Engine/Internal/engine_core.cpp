@@ -1089,7 +1089,11 @@ void EngineCoreUVE::Init() {
     // AudioDevice twenty-ninth: no dependencies of its own. Prefers the real miniaudio backend;
     // falls back to NullAudioDeviceUVE (with a warning) on machines with no usable audio output
     // (headless CI, servers) so the whole audio stack above stays functional either way.
-    if (auto miniaudioDevice = Audio::MiniaudioAudioDeviceUVE::CreateUVE()) {
+    Audio::MiniaudioAudioDeviceUVE::OptionsUVE audioDeviceOptions{};
+    if (m_config.audioSampleRateUVE >= 8000 && m_config.audioSampleRateUVE <= 192000) {
+        audioDeviceOptions.outputSampleRate = static_cast<std::uint32_t>(m_config.audioSampleRateUVE);
+    }
+    if (auto miniaudioDevice = Audio::MiniaudioAudioDeviceUVE::CreateUVE(audioDeviceOptions)) {
         m_audioDevice = std::move(miniaudioDevice);
     } else {
         UVE_WARNING("EngineCoreUVE: no usable audio output device - falling back to NullAudioDeviceUVE "
@@ -1116,19 +1120,10 @@ void EngineCoreUVE::Init() {
         }
     };
     {
-        const EngineConfigUVE defaultConfig{};
-        syncAudioBusVolumeUVE("Master", m_config.audioMasterVolumeUVE,
-                              m_config.audioMasterVolumeUVE != defaultConfig.audioMasterVolumeUVE ||
-                                  isSettingCustomizedUVE("audio.buses.masterVolume"));
-        syncAudioBusVolumeUVE("Music", m_config.audioMusicVolumeUVE,
-                              m_config.audioMusicVolumeUVE != defaultConfig.audioMusicVolumeUVE ||
-                                  isSettingCustomizedUVE("audio.buses.musicVolume"));
-        syncAudioBusVolumeUVE("SFX", m_config.audioSfxVolumeUVE,
-                              m_config.audioSfxVolumeUVE != defaultConfig.audioSfxVolumeUVE ||
-                                  isSettingCustomizedUVE("audio.buses.sfxVolume"));
-        syncAudioBusVolumeUVE("Voice", m_config.audioVoiceVolumeUVE,
-                              m_config.audioVoiceVolumeUVE != defaultConfig.audioVoiceVolumeUVE ||
-                                  isSettingCustomizedUVE("audio.buses.voiceVolume"));
+        syncAudioBusVolumeUVE("Master", m_config.audioMasterVolumeUVE, true);
+        syncAudioBusVolumeUVE("Music", m_config.audioMusicVolumeUVE, true);
+        syncAudioBusVolumeUVE("SFX", m_config.audioSfxVolumeUVE, true);
+        syncAudioBusVolumeUVE("Voice", m_config.audioVoiceVolumeUVE, true);
     }
 
     // Physics-driven occlusion: the audio system declares what a blocker looks like and this
@@ -1143,8 +1138,15 @@ void EngineCoreUVE::Init() {
     // MeshRendererUVE::ExtractRenderQueueUVE().
     m_audioSourceSystem = std::make_unique<Audio::AudioSourceSystemUVE>();
 
-    // Subscribe live project settings observers so runtime edits to Physics, Audio, and Navigation
-    // in m_projectSettings immediately propagate into the active subsystems.
+    if (const auto fallbackLocale = Localization::TryParseLocaleUVE(m_config.localisationFallbackLocaleUVE)) {
+        m_localizationService.SetFallbackLocaleUVE(*fallbackLocale);
+    }
+    if (const auto defaultLocale = Localization::TryParseLocaleUVE(m_config.localisationDefaultLocaleUVE)) {
+        m_localizationService.SetActiveLocaleUVE(*defaultLocale);
+    }
+
+    // Subscribe live project settings observers so runtime edits to Physics, Audio, Navigation, and
+    // Localisation in m_projectSettings immediately propagate into the active subsystems.
     m_projectSettingsSubscriptions.clear();
     if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
             "Physics",
@@ -1153,9 +1155,15 @@ void EngineCoreUVE::Init() {
                 if (m_physicsSystem != nullptr) {
                     syncPhysicsSimulationSettingsUVE(*m_physicsSystem, true);
                 }
-                if (m_timer != nullptr && event.id == EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE) {
-                    m_timer->SetFixedTimestepUVE(
-                        m_config.fixedUpdateFps > 0.0 ? (1.0 / m_config.fixedUpdateFps) : 0.0);
+                if (m_timer != nullptr) {
+                    if (event.id == EngineProjectSettingIdUVE::kPhysicsTicksPerSecondUVE) {
+                        m_timer->SetFixedTimestepUVE(
+                            m_config.fixedUpdateFps > 0.0 ? (1.0 / m_config.fixedUpdateFps) : 0.0);
+                    } else if (event.id == EngineProjectSettingIdUVE::kPhysicsMaxFrameTimeUVE) {
+                        m_timer->SetMaxDeltaTimeUVE(m_config.maxDeltaTimeSeconds);
+                    } else if (event.id == EngineProjectSettingIdUVE::kPhysicsMaxStepsPerFrameUVE) {
+                        m_timer->SetMaxStepsPerTickUVE(m_config.maxFixedStepsPerFrame);
+                    }
                 }
             });
         sub.IsValidUVE()) {
@@ -1187,6 +1195,25 @@ void EngineCoreUVE::Init() {
                         m_navigationRuntime->GetRuntimeConfigUVE();
                     navRuntimeConfig.globalAvoidanceEnabled = m_config.navAvoidanceEnabledUVE;
                     m_navigationRuntime->SetRuntimeConfigUVE(navRuntimeConfig);
+                }
+            });
+        sub.IsValidUVE()) {
+        m_projectSettingsSubscriptions.push_back(sub);
+    }
+    if (const auto sub = m_projectSettings.SubscribeToCategoryUVE(
+            "Localisation",
+            [this](const Config::SettingChangedEventUVE& event) {
+                ApplyEngineProjectSettingsUVE(m_projectSettings, m_config);
+                if (event.id == "localisation.fallbackLocale") {
+                    if (const auto fallbackLocale =
+                            Localization::TryParseLocaleUVE(m_config.localisationFallbackLocaleUVE)) {
+                        m_localizationService.SetFallbackLocaleUVE(*fallbackLocale);
+                    }
+                } else if (event.id == "localisation.defaultLocale") {
+                    if (const auto defaultLocale =
+                            Localization::TryParseLocaleUVE(m_config.localisationDefaultLocaleUVE)) {
+                        m_localizationService.SetActiveLocaleUVE(*defaultLocale);
+                    }
                 }
             });
         sub.IsValidUVE()) {
@@ -4734,7 +4761,8 @@ void EngineCoreUVE::Update() {
     // display against 60 Hz physics: 58% of frames previously received no new pose at all, and
     // per-frame movement jumped between 0 and 16.7 cm at 10 m/s. This is the value that fixes it,
     // and it has been computed every frame since the timer was written - only ever logged.
-    m_renderer3D->SetPhysicsInterpolationAlphaUVE(static_cast<float>(fixedStep.alpha));
+    m_renderer3D->SetPhysicsInterpolationAlphaUVE(
+        m_config.physicsInterpolationDefaultUVE ? static_cast<float>(fixedStep.alpha) : 1.0F);
     SyncParticleRuntimeUVE();
     SyncVfxRuntimeUVE();
     SyncUIRuntimeUVE();

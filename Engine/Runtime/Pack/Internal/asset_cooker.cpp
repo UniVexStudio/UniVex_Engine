@@ -12,6 +12,8 @@
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 #include "asset_database.h"
+#include "asset_type_registry.h"
+#include "config_manager.h"
 #include "font_asset.h"
 #include "skeleton_asset.h"
 #include "animation_library_asset.h"
@@ -48,10 +50,7 @@ bool EmbeddedClip(const std::filesystem::path& path, std::filesystem::path& mode
 }
 bool RuntimePath(const std::filesystem::path& path) {
     if (std::filesystem::path model; EmbeddedClip(path, model)) return Extension(model) == ".uvmodel";
-    static const std::set<std::string> extensions{ ".uvtex", ".uvmodel", ".uvmat", ".uvmaterial", ".uvshader", ".uvscene",
-        ".uvprefab", ".uventity", ".uvwbp", ".uvbp", ".uvaudio", ".uvanim", ".uvskel", ".uvanimlib", ".uvmontage",
-        ".uvmontagelib", ".uvfont", ".uvtable", ".uvfx", ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
-    return extensions.contains(Extension(path));
+    return Asset::IsCookableRuntimeExtensionUVE(Extension(path));
 }
 void CheckGuid(Asset::AssetGuidUVE guid, const Asset::AssetDatabaseUVE& db) {
     if (guid.value == 0) return;
@@ -59,7 +58,8 @@ void CheckGuid(Asset::AssetGuidUVE guid, const Asset::AssetDatabaseUVE& db) {
     if (!RuntimePath(db.ResolveUVE(guid)))
         throw std::runtime_error("GUID dependency references authoring source; import a native asset first");
 }
-void CheckParticleDependency(const std::string& ref, const std::filesystem::path& sourcePath, const Asset::AssetDatabaseUVE& db) {
+void CheckParticleDependency(const std::string& ref, const std::filesystem::path& sourcePath,
+                             const Asset::AssetDatabaseUVE& db, const std::string& contentPrefix) {
     if (ref.empty()) return;
     const bool isHexGuid = ref.size() == 16U && std::all_of(ref.begin(), ref.end(), [](unsigned char c) {
         return std::isxdigit(c) != 0;
@@ -76,7 +76,10 @@ void CheckParticleDependency(const std::string& ref, const std::filesystem::path
     const std::string normRef = std::filesystem::path(ref).lexically_normal().generic_string();
     for (const auto& record : db.GetRegisteredAssetsUVE()) {
         const std::string recPath = record.path.lexically_normal().generic_string();
-        if (recPath == normRef || recPath == ("content/" + normRef) ||
+        if (recPath == normRef ||
+            (!contentPrefix.empty() && (recPath == (contentPrefix + normRef) ||
+                                        (normRef.starts_with(contentPrefix) && recPath == normRef.substr(contentPrefix.size())))) ||
+            recPath == ("content/" + normRef) ||
             (normRef.starts_with("content/") && recPath == normRef.substr(8U))) {
             CheckGuid(record.guid, db);
             return;
@@ -106,10 +109,9 @@ void CheckJsonGuids(const Json& json, const Asset::AssetDatabaseUVE& db, const s
         CheckGuid({json.get<std::uint64_t>()},db);
     }
 }
-bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
+bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db, const std::string& contentPrefix) {
     const auto extension = Extension(path);
-    const std::set<std::string> text{ ".uvs", ".glsl", ".vert", ".frag", ".comp", ".glslinc" };
-    if (text.contains(extension)) {
+    if (Asset::IsCookableRuntimeTextExtensionUVE(extension)) {
         if (std::filesystem::file_size(path) > 4U*1024U*1024U) return false;
         std::ifstream input(path,std::ios::binary);
         const std::string content{std::istreambuf_iterator<char>(input),{}};
@@ -117,16 +119,11 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
     }
     auto envelope = Asset::ReadUveFileUVE(path);
     if (!envelope) return false;
-    const std::map<std::string,Asset::AssetKindUVE> kinds{
-        {".uvtex",Asset::AssetKindUVE::Texture},{".uvmodel",Asset::AssetKindUVE::Mesh},
-        {".uvmat",Asset::AssetKindUVE::Material},{".uvmaterial",Asset::AssetKindUVE::Material},
-        {".uvshader",Asset::AssetKindUVE::Shader},
-        {".uvscene",Asset::AssetKindUVE::Scene},{".uvprefab",Asset::AssetKindUVE::Prefab},
-        {".uventity",Asset::AssetKindUVE::Prefab},{".uvwbp",Asset::AssetKindUVE::Prefab},
-        {".uvaudio",Asset::AssetKindUVE::Audio},{".uvanim",Asset::AssetKindUVE::Animation},
-        {".uvskel",Asset::AssetKindUVE::Skeleton},{".uvanimlib",Asset::AssetKindUVE::AnimationLibrary},
-        {".uvfont",Asset::AssetKindUVE::Font},{".uvmontage",Asset::AssetKindUVE::MotionMontage},{".uvmontagelib",Asset::AssetKindUVE::MontageLibrary},{".uvbp",Asset::AssetKindUVE::Blueprint},{".uvtable",Asset::AssetKindUVE::DataTable},{".uvfx",Asset::AssetKindUVE::ParticleSystem}};
-    if (const auto it = kinds.find(extension); it == kinds.end() || it->second != envelope->first.assetType) return false;
+    const auto expectedKind = Asset::ExpectedAssetKindForExtensionUVE(extension);
+    if (!expectedKind.has_value() || !Asset::IsCookableNativeEnvelopeExtensionUVE(extension) ||
+        *expectedKind != envelope->first.assetType) {
+        return false;
+    }
     switch (envelope->first.assetType) {
     case Asset::AssetKindUVE::Texture: { Asset::TextureAssetUVE v; return Asset::LoadTextureAssetUVE(path,v); }
     case Asset::AssetKindUVE::Mesh: {
@@ -177,7 +174,7 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
                 for (const auto& mod : *stage) {
                     for (const char* key : {"Texture", "Mesh", "Material"}) {
                         if (const auto it = mod.strings.find(key); it != mod.strings.end()) {
-                            CheckParticleDependency(it->second, path, db);
+                            CheckParticleDependency(it->second, path, db, contentPrefix);
                         }
                     }
                 }
@@ -196,10 +193,9 @@ bool Validate(const std::filesystem::path& path, Asset::AssetDatabaseUVE& db) {
     default: return false; // saves/bundles/blobs are not independently cooked runtime assets
     }
 }
-void CookTexture(const std::filesystem::path& source, const std::filesystem::path& dest, CookTargetUVE target) {
+void CookTexture(const std::filesystem::path& source, const std::filesystem::path& dest, const std::uint32_t limit) {
     Asset::TextureAssetUVE texture;
     if (!Asset::LoadTextureAssetUVE(source,texture)) throw std::runtime_error("Invalid texture: " + source.string());
-    const std::uint32_t limit = target == CookTargetUVE::Android ? 1024U : 2048U;
     if (texture.payloadEncoding == Asset::TexturePayloadEncodingUVE::BasisUniversalKtx2 &&
         (texture.width > limit || texture.height > limit)) {
         Asset::TextureTranscodedMipChainUVE decoded;
@@ -304,20 +300,31 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             source = Contained(root,source);
             const auto relative = source.lexically_relative(root);
             if (!Relative(source.lexically_relative(content))) throw std::runtime_error("Registered asset outside content");
-            if (!Validate(source,db)) throw std::runtime_error("Invalid registered native asset: " + source.string());
+            if (!Validate(source,db,package.contentRoot.lexically_normal().generic_string() + "/")) throw std::runtime_error("Invalid registered native asset: " + source.string());
             required.insert(relative);
             char hex[17]; std::snprintf(hex,sizeof(hex),"%016llx",static_cast<unsigned long long>(record.guid.value));
             if (record.guid.value == 0) throw std::runtime_error("Invalid zero GUID");
             catalog[hex] = relative.generic_string();
         }
-        const std::set<std::string> native{ ".uvtex",".uvmodel",".uvmat",".uvshader",".uvscene",".uvprefab",".uvwbp",
-            ".uvaudio",".uvanim",".uvskel",".uvanimlib",".uvmontage",".uvmontagelib",".uvfont",".uvtable",".uvfx" };
-        const std::set<std::string> text{ ".uvs",".glsl",".vert",".frag",".comp",".glslinc" };
+        const std::string contentPrefix = package.contentRoot.lexically_normal().generic_string() + "/";
+        std::uint32_t textureSizeLimit = target == CookTargetUVE::Android ? 1024U : 2048U;
+        if (Relative(package.settingsPath) && std::filesystem::is_regular_file(root/package.settingsPath)) {
+            Core::ConfigManagerUVE projectConfig;
+            if (projectConfig.LoadUVE(Contained(root, root/package.settingsPath))) {
+                if (const auto configuredMax = projectConfig.GetIntUVE("rendering.textures.maxSizePerTier");
+                    configuredMax.has_value() && *configuredMax >= 256 && *configuredMax <= 16384) {
+                    const auto requestedLimit = static_cast<std::uint32_t>(*configuredMax);
+                    textureSizeLimit = target == CookTargetUVE::Android
+                        ? std::min(requestedLimit, 2048U)
+                        : requestedLimit;
+                }
+            }
+        }
         for (const auto& entry : std::filesystem::recursive_directory_iterator(content)) {
             if (entry.is_symlink()) throw std::runtime_error("Cook does not accept symlinks");
             if (!entry.is_regular_file()) continue;
             const auto extension = Extension(entry.path());
-            if (native.contains(extension) || text.contains(extension)) required.insert(entry.path().lexically_relative(root));
+            if (Asset::IsCookableRuntimeExtensionUVE(extension)) required.insert(entry.path().lexically_relative(root));
         }
         Json runtimeFiles = Json::array();
         for (const auto& relative : required) {
@@ -326,8 +333,8 @@ AssetCookResultUVE CookProjectAssetsUVE(const std::filesystem::path& projectFile
             const auto dest = stage/relative;
             std::filesystem::create_directories(dest.parent_path());
             const auto extension = Extension(source);
-            if ((native.contains(extension) || text.contains(extension)) && !Validate(source,db)) throw std::runtime_error("Corrupt native content: " + source.string());
-            if (extension == ".uvtex") CookTexture(source,dest,target);
+            if (Asset::IsCookableRuntimeExtensionUVE(extension) && !Validate(source,db,contentPrefix)) throw std::runtime_error("Corrupt native content: " + source.string());
+            if (extension == ".uvtex") CookTexture(source,dest,textureSizeLimit);
             else std::filesystem::copy_file(source,dest);
             result.sourceBytes += std::filesystem::file_size(source);
             result.cookedBytes += std::filesystem::file_size(dest);
