@@ -89,7 +89,7 @@ struct SceneObjectDescriptorUVE final {
     bool libraryCreatable = false;
 };
 
-inline constexpr std::size_t kMaximumSceneObjectDescriptorsUVE = 64U;
+inline constexpr std::size_t kMaximumSceneObjectDescriptorsUVE = 256U;
 
 /// Where an object kind belongs. The world holds the level itself - meshes, lights, cameras,
 /// environment, volumes - and is what the Scene panel's "+" offers first. An Entity object is part of

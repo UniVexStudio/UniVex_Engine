@@ -445,7 +445,7 @@ struct TypeMetadataRegistrationResultUVE final {
 
 class TypeMetadataRegistryUVE final {
 public:
-    static constexpr std::size_t kMaximumTypesUVE = 256U;
+    static constexpr std::size_t kMaximumTypesUVE = 4096U;
     static constexpr std::size_t kMaximumMembersPerTypeUVE = 128U;
     static constexpr std::size_t kMaximumIdentifierBytesUVE = 128U;
     static constexpr std::size_t kMaximumDisplayNameBytesUVE = 256U;

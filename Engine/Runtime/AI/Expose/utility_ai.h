@@ -28,10 +28,10 @@ namespace UVE::Scene {
 // nothing scores above zero, nothing is selected: an NPC with no valid action does nothing rather
 // than a zero-scored something.
 
-inline constexpr std::size_t kMaximumAiActionsUVE = 32U;
-inline constexpr std::size_t kMaximumAiConsiderationsUVE = 8U;
-inline constexpr std::size_t kMaximumAiBlackboardEntriesUVE = 64U;
-inline constexpr std::size_t kMaximumAiBlackboardVectorsUVE = 32U;
+inline constexpr std::size_t kMaximumAiActionsUVE = 128U;
+inline constexpr std::size_t kMaximumAiConsiderationsUVE = 16U;
+inline constexpr std::size_t kMaximumAiBlackboardEntriesUVE = 256U;
+inline constexpr std::size_t kMaximumAiBlackboardVectorsUVE = 128U;
 inline constexpr std::size_t kMaximumAiActionIdBytesUVE = 64U;
 inline constexpr std::size_t kMaximumAiInputIdBytesUVE = 64U;
 
@@ -88,6 +88,10 @@ struct AiActionUVE final {
     /// which is what makes board-less priority brains work.
     float baseScore = 1.0F;
     std::vector<AiConsiderationUVE> considerations;
+    /// Optional compensation factor (1 - 1/N) so actions with many considerations are not
+    /// systematically penalized relative to 1-consideration actions. Defaults to false to preserve
+    /// existing uncompensated product scoring contracts.
+    bool compensateConsiderationCount = false;
 
     [[nodiscard]] bool operator==(const AiActionUVE&) const = default;
 };

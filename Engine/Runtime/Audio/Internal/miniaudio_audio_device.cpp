@@ -411,11 +411,13 @@ bool MiniaudioAudioDeviceUVE::SetVoiceParamsUVE(VoiceHandleUVE voice, const Audi
     // Only touch the filter state when the corner actually moves: reconfiguring every frame would
     // reset nothing but would still cost a log/exp per voice per frame for no audible gain.
     if (params.lowPassCutoffHz != entry->voice.lastLowPassCutoffHz) {
+        const bool wasBypassed = entry->voice.lastLowPassCutoffHz <= 0.0F;
+        const bool nowBypassed = params.lowPassCutoffHz <= 0.0F;
         entry->voice.lowPass.ConfigureUVE(params.lowPassCutoffHz,
                                           static_cast<float>(m_impl->outputSampleRate));
-        // A corner that changes is a new acoustic path: keeping the old state would let a stale
-        // transient ring through at the new setting.
-        entry->voice.lowPass.ResetUVE();
+        if (wasBypassed || nowBypassed) {
+            entry->voice.lowPass.ResetUVE();
+        }
         entry->voice.lastLowPassCutoffHz = params.lowPassCutoffHz;
     }
     return true;

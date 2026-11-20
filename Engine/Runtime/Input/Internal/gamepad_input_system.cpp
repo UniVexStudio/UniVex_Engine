@@ -12,6 +12,12 @@ namespace UVE::Input {
 GamepadInputSystemUVE::GamepadInputSystemUVE(const float deadZone) noexcept
     : m_deadZone(std::isfinite(deadZone) && deadZone >= 0.0F && deadZone < 1.0F ? deadZone : 0.15F) {}
 
+void GamepadInputSystemUVE::SetDeadZoneUVE(const float deadZone) noexcept {
+    if (std::isfinite(deadZone) && deadZone >= 0.0F && deadZone < 1.0F) {
+        m_deadZone = deadZone;
+    }
+}
+
 bool GamepadInputSystemUVE::IsValidGamepadIndexUVE(const std::size_t gamepadIndex) noexcept {
     return gamepadIndex < kMaximumGamepadCountUVE;
 }

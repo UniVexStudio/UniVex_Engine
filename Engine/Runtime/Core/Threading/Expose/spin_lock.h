@@ -27,8 +27,11 @@ public:
 
     void lock() noexcept {
         while (m_flag.test_and_set(std::memory_order_acquire)) {
-            // Spin. No backoff: backoff helps contended locks, and a contended spinlock is
-            // already the wrong primitive (see above).
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+            __builtin_ia32_pause();
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__aarch64__) || defined(__arm__))
+            __asm__ __volatile__("yield" ::: "memory");
+#endif
         }
     }
 
