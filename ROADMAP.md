@@ -455,8 +455,15 @@ status legend.
   drawn exactly when it can be hit; bounded and deterministic, whole shapes only. The editor's
   Viewport view menu carries the toggle, and the wireframes draw depth-tested under the gizmos, so
   a collider behind a wall stays behind it. 19 headless tests
-- [ ] Soft-body / cloth simulation
-- [ ] Vehicle physics (wheeled at minimum)
+- [x] Soft-body / cloth simulation — multi-substep XPBD solver in `SoftBody3DComponentUVE`
+  supporting both 1D chains and 2D cloth grids (`BuildClothGridSoftBody3DUVE` with structural,
+  shear, and bending compliance), wind drag, pinned vertices, and sphere/AABB collider resolution;
+  locked by `XpbdClothSoftBodyUVETest`.
+- [x] Vehicle physics (wheeled at minimum) — 6-DOF raycast wheeled vehicle simulation in
+  `VehicleBody3DComponentUVE` + `VehicleWheel3DComponentUVE` with per-wheel ground raycast
+  suspension (spring-damper + pitch/roll torque), Ackermann steering (`EvaluateAckermannSteeringUVE`),
+  lateral tire grip, rolling resistance, powered/braking/steerable wheel masks, and non-reversing
+  braking; locked by `Vehicle6DofRaycastUVETest`.
 - [x] Ragdoll physics (driven skeletal bodies + constraints layered over an animated
   skeleton) — `RagdollSolverUVE`: sequential-impulse articulated bodies at a 1/240 s fixed step,
   the standard Free/Limited/Locked per-axis model (swing1/swing2 cone + signed twist, so a knee and an
@@ -468,7 +475,10 @@ status legend.
   `BuildRagdollContactsUVE` resolves the body capsules against the world's collider cache
   (sphere/capsule/oriented box/AABB, combined material), and `ApplyRagdollImpactUVE` carries a hit
   that never became a contact into the nearest body, waking it. 32 headless tests
-- [ ] Destructible/fracturable physics objects
+- [x] Destructible/fracturable physics objects — `Destructible3DComponentUVE`, deterministic
+  volume/mass-conserving BSP convex chunk splitter (`FractureBoundsIntoChunksUVE`), impact
+  threshold fracture (`ApplyDestructibleImpactUVE`), and debris kinematics + lifetime expiration
+  (`UpdateDestructibleDebrisUVE`); locked by `Destructible3DUVETest`.
 - [x] Joint types beyond hinge (ball socket, slider/prismatic, fixed, spring/distance) — DistanceConstraintUVE
   (rest-length spring/distance), HingeConstraintUVE (coincident anchors with rotation axis),
   BallSocketConstraintUVE (spherical joint with 3 rotational DOF), and FixedConstraintUVE
