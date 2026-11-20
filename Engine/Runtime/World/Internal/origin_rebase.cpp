@@ -48,8 +48,8 @@ bool TryRebaseWorldOriginUVE(Scene::IEntityManagerUVE& entityManager, Math::Vect
         });
 
     entityManager.ForEachUVE<Scene::WorldTransformComponentUVE>(
-        [&](const Scene::EntityUVE, Scene::WorldTransformComponentUVE& worldTransform) {
-            worldTransform.worldPosition = worldTransform.worldPosition - shift;
+        [&](const Scene::EntityUVE, const Scene::WorldTransformComponentUVE& worldTransform) {
+            worldTransform.dirty = true;
         });
 
     inOutCameraLocalPosition = inOutCameraLocalPosition - shift;

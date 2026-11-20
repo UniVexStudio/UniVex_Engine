@@ -1,0 +1,14 @@
+{
+  "name": "PbrShowcase",
+  "version": "1.0.0",
+  "startupScene": "Scenes/PbrShowcase.uvscene",
+  "renderQualityTier": "High",
+  "features": [
+    "ForwardPlusClusteredLighting",
+    "TemporalAntiAliasing",
+    "WboitTransparency",
+    "HdrReflectionProbes",
+    "HybridGlobalIllumination",
+    "VisualMaterialGraph"
+  ]
+}

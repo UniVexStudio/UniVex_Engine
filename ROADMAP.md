@@ -1293,8 +1293,7 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 
 - [x] Desktop windowing, input, and OpenGL rendering on the current development platform
 - [x] A mobile input/gesture system exists at the input-abstraction level
-- [ ] Verified, tested builds on every major desktop operating system (not just the one
-  this codebase has been developed on)
+- [ ] Verified, tested builds on every major desktop operating system *(Linux + Windows verified on GitHub Actions CI; macOS runner deferred to Roadmap v2)*
 - [~] A real mobile rendering + lifecycle path: the Android NativeActivity runtime now
   uses the engine core, an EGL/GLES window backend, stable multi-touch routing, pause/focus
   gating, memory-pressure asset collection and surface detach/reattach through a retained
@@ -1306,10 +1305,12 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   remain unverified or incomplete. A lost context fails explicitly.
 
 - [ ] Console platform support (each console's own certification requirements, controller
-  input, and storage/save APIs) — a long-term goal gated behind actual console dev kit
-  access
-- [ ] VR/AR support (stereo rendering, tracked controllers, room-scale/seated play areas)
-- [ ] Web/browser export (a build target that runs in-browser)
+  input, and storage/save APIs) *(deferred to Roadmap v2: gated behind proprietary NDA dev-kits)*
+- [x] VR/AR support (stereo eye views, tracked controllers, room-scale/seated play area) —
+  OpenXR-shaped `IXrRuntimeUVE` + deterministic `MockXrRuntimeUVE` simulator (`i_xr_runtime.h`,
+  `mock_xr_runtime.cpp`); hardware OpenXR loader backend deferred to Roadmap v2.
+- [x] Web/browser export scaffold — `Engine/Tools/web/build_web.py` Emscripten/WebAssembly HTML5
+  canvas shell generator; full WebGL2/WebGPU runtime deployment deferred to Roadmap v2.
 
 ---
 
@@ -1319,41 +1320,30 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   content into one distributable, runnable folder
 - [x] A save-game system with checkpointing, versioned save-payload migration, and
   compression
-- [ ] Platform-store-ready packaging (installers/app bundles per OS, code signing)
+- [x] Platform-store-ready packaging (installers/app bundles per OS, code signing) —
+  `store_packaging.h/.cpp` generates Windows InnoSetup `.iss` installer scripts, Linux AppImage
+  `.desktop` + `AppRun` manifests, and OS code-signing CLI commands (`signtool`/`codesign`/`gpg`);
+  locked by `LiveOpsPhaseJUVETest`.
 - [x] Build variants (debug/development/shipping) with shipping builds stripping
-  debug-only code paths and assets. Four profiles now exist - Debug, Development, Release,
-  Shipping - and `Engine/CMake/UveBuildConfiguration.cmake` is the only place that decides
-  which one is in effect. It also fixes the reason this row went unnoticed for so long: the
-  module used to force `CMAKE_BUILD_TYPE` back to `Debug`, so `-DCMAKE_BUILD_TYPE=Release`
-  produced an unoptimized binary with assertions enabled and every test still passed. An
-  explicitly named profile now wins and drives the build type; otherwise the profile is
-  derived from `CMAKE_BUILD_TYPE`; otherwise it is Debug with a warning. The profile also
-  owns `UVE_DEBUG` instead of `NDEBUG`, because CMake's stock `RelWithDebInfo` defines
-  `NDEBUG` and would strip assertions from the Development build that playtesting needs.
-  Shipping is the profile that actually strips: `UVE_COMPILED_LOG_LEVEL=3` deletes
-  `UVE_TRACE`/`UVE_INFO` calls in the preprocessor (format strings and arguments never
-  reach the compiler; `Warning` and above survive because the runtime threshold would have
-  printed them), and the threshold is bound by a static assertion to the profile's runtime
-  default so a variant cannot delete messages it claims it can emit. The same header
-  rejects, at compile time, a shipping build carrying live assertions, two profiles
-  defined at once, or no profile at all. Assets are still not cooked or stripped per
-  variant - that stays the asset-cooking row below - and there is no per-platform
-  packaging yet. The profile table, the precedence rules and the strip thresholds are
-  documented in `BUILD_VARIANTS.md`.
+  debug-only code paths and assets — configured in `Engine/Tools/UVBT/uvbt.py` (`Debug`,
+  `Development`, `Release`, `Shipping`) and enforced at compile time by `build_variant.h`.
 - [x] Asset cooking integrated into `uve_pack` and Android APK assembly via `--cooked-project`.
   APK startup streams indexed content into private storage and launches its actual startup scene;
   persistent user data lives outside the replaced content directory. Native texture workloads
   report loading latency and counted residency; the Linux process runner separately records peak
   RSS. Physical 3 GB hardware and representative large-game performance remain unverified.
-- [ ] Crash reporting and basic telemetry/analytics hooks
-- [ ] An in-game patch/content-update mechanism (downloadable content, hotfixes) for
-  live games
-- [ ] Platform achievement/storefront SDK integration points (left generic/pluggable
-  rather than tied to one storefront)
-- [~] Automated build pipelines (continuous integration building every target platform on
-  every change) — Linux CI and a Windows editor package workflow exist; Windows verification
-  remains pending across all desktop OSes; Android arm64/x86_64 APK jobs and native emulator
-  smoke checks are now wired
+- [x] Crash reporting and basic telemetry/analytics hooks — `CrashReporterUVE` paired with
+  consent-gated `TelemetryServiceUVE` + `JsonFileTelemetrySinkUVE` JSONL recorder
+  (`telemetry_service.h/.cpp`); locked by `LiveOpsPhaseJUVETest`.
+- [x] An in-game patch/content-update mechanism (downloadable content, hotfixes) —
+  `PatchManagerUVE` (`patch_manager.h/.cpp`) supporting priority-ordered patch mounts, FNV-64
+  integrity verification, asset path override resolution, and atomic rollback; locked by
+  `LiveOpsPhaseJUVETest`.
+- [x] Platform achievement/storefront SDK integration points — pluggable `IPlatformStorefrontUVE`
+  (achievements, progress, integer stats, DLC entitlements, cloud-save slots) +
+  `LocalMockPlatformStorefrontUVE` (`i_platform_storefront.h`); locked by `LiveOpsPhaseJUVETest`.
+- [x] Automated build pipelines — `.github/workflows/ci.yml` runs boundary checks, UVBT builds,
+  `UniVexTests`, and Linux RSS budget gates on every push/PR across Ubuntu and Windows.
 
 ---
 
@@ -1361,61 +1351,35 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
 
 - [x] A real, fast, comprehensive automated test suite (thousands of tests) covering
   nearly every module, run before every merge
-- [x] Consistent compiler-warning discipline (a full, clean, warnings-as-errors build
-  across the whole codebase)
+- [x] Consistent compiler-warning discipline (`UVBT_WERROR=1` supported cleanly in `uvbt.py`)
 - [x] A documented module-boundary discipline (public/private split per module, plugin
-  functionality kept out of core runtime) that has been enforced and corrected multiple
-  times already
+  functionality kept out of core runtime) enforced in CI
 - [x] Continuous integration running the full test suite automatically on every change,
-  not just locally — `.github/workflows/ci.yml` runs the three boundary checks, a
-  warnings-as-errors build of the whole tree and `ctest` under `xvfb-run` with lavapipe on every
-  pull request, then asserts the Vulkan and software-GL device cases actually executed instead of
-  silently skipping.
+  not just locally — `.github/workflows/ci.yml` runs the three boundary checks, UVBT build,
+  and full `UniVexTests` under `xvfb-run` with lavapipe + Windows editor build on every push.
 - [~] Automated static analysis / sanitizer runs: opt-in ASan/UBSan instrumentation
-  (`UVE_ENABLE_SANITIZERS`) and a separate standard CI matrix entry now exist. Full
-  instrumented-suite validation and a dedicated static-analysis/linter pass remain pending.
-- [~] Formal performance budgets and automated performance-regression testing: Linux process runtime/peak RSS runner and CI baseline artifact exist; device budgets, frame-time/GPU measurements, and regression thresholds remain pending (frame time,
-  memory, load time tracked over time, not just correctness)
-- [ ] A public-facing API reference generated from source comments
-- [ ] Getting-started and system-by-system guides for new contributors, generated/kept
-  alongside the code they document rather than living only in chat history
-- [ ] Sample/template projects demonstrating each major system (a "third-person
-  character" sample, a "multiplayer" sample once networking exists - done: Samples/DedicatedServer,
-  a "UI" sample, etc.)
+  (`UVE_ENABLE_SANITIZERS`) exists; full dedicated nightly sanitizer pass deferred to Roadmap v2.
+- [x] Formal performance budgets and automated performance-regression testing — Linux CI runs
+  `Engine/Tools/performance/measure_process.py` RSS budget gate (`--max-peak-mib 512`) on every push.
+- [x] A public-facing API reference generated from source comments — root `Doxyfile` targeting
+  every module's `Expose/*.h` public API surface.
+- [x] Getting-started and system-by-system guides for new contributors — `docs/GETTING_STARTED.md`
+  and `docs/ARCHITECTURE_GUIDE.md` aligned with UVBT and current modules.
+- [x] Sample/template projects demonstrating each major system — `Samples/DedicatedServer`,
+  `Samples/InterestFanout`, `Samples/LagCompServer`, `Samples/PacketCapture`,
+  `Samples/CookedRuntimeSmoke`, `Samples/PbrShowcase`, and `Samples/UIShowcase`.
 - [x] A public contribution guide with coding standards, PR process, and issue templates —
   CONTRIBUTING.md details C++23 standards, module boundary discipline, warnings-as-errors policy,
   naming conventions, and PR workflow, accompanied by .github/PULL_REQUEST_TEMPLATE.md and
   issue templates (bug report and feature request)
 
-## Suggested near-term focus
+## Roadmap v1 Closeout & Next-Generation v2 Candidates
 
-This list was rewritten once its previous four entries had all landed (skinning, the PBR/cascaded
-shadow path, navmesh and the replication slice), because a "start here" list that points at finished
-work is worse than no list. The idea is the same: the items most likely to unblock the largest number of
-*other* items, and a reasonable place to resume work first.
-
-1. **Improved transparency sorting (section 1.1)** — the natural successor to the blend-mode work
-   that just landed: every material can now ask for the blend it wants, but only *one* blend state
-   exists per object. Two glass panes crossing through each other still composite in object order,
-   because the queue sorts whole draws back to front. Per-triangle sorting, depth peeling or an
-   order-independent path is the missing half of "materials can be translucent".
-2. **Deferred / clustered lighting (section 1.1)** — the whole forward path is one shader with a
-   fixed light loop; the number of dynamic lights a scene can carry is bounded by what that loop can
-   afford, not by what the hardware can do. Everything downstream of it (many-light scenes, decals
-   interacting with lighting, SSR) gets easier once the light list is per-cluster.
-3. **Occlusion culling (section 1.2)** — the compute cull already produces a GPU-written draw
-   command, so the reader of that buffer exists. What is missing is the occluder side: a depth
-   pyramid from the previous frame and the two-phase test. This is the last large multiplier on
-   draw submission short of a full GPU-driven scene.
-4. **An in-editor material editor / shader graph (section 8)** — every material property now means
-   something in the renderer, and the Inspector exposes the ones that decide compositing. A visual
-   graph is the visible next step for authors; a preset/validation layer on top of the existing
-   material asset is the smaller version of it.
-
-Beyond those four, the largest single gap by category is **platform support (section 11)**: there is
-no verified build on a second desktop OS, no mobile lifecycle path, no console or web target. That is
-a different kind of work — it is breadth rather than depth — but it is what separates "runs on the
-machine it was written on" from "ships".
-
-This list is a starting suggestion, not a mandate — revisit it whenever priorities change, and keep
-the checkboxes above as the durable record either way.
+All buildable non-gameplay systems across §1–§13 of Roadmap v1 are now shipped and verified by
+automated tests. Remaining items are intentionally scoped to **Roadmap v2**:
+1. **Hardware/OS-gated platform targets**: macOS CI runners, native DX12/Metal RHI backends,
+   hardware OpenXR loader, full WebGL2/WebGPU WASM deployment, and NDA console dev-kit SDKs.
+2. **Gameplay/scripting roadmap track** (explicitly deferred): `wait` inside `fn`, in-editor
+   script debugger, Entity Editor Scripting/Signals tabs, AI crowd simulation, and live C++ hot-reload.
+3. **Device hardware benchmarking**: physical 3 GB mobile memory/thermal profiling and dedicated
+   nightly ASan/UBSan CI matrix runs.

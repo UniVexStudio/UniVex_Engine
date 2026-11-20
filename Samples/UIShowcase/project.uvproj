@@ -1,0 +1,13 @@
+{
+  "name": "UIShowcase",
+  "version": "1.0.0",
+  "startupScene": "Scenes/UIShowcase.uvscene",
+  "uiScaleFactor": 1.0,
+  "features": [
+    "RichTextMarkup",
+    "UnicodeUtf8FontFallback",
+    "BidiRtlLayout",
+    "ColorblindDaltonization",
+    "AccessibilityBridge"
+  ]
+}

@@ -332,7 +332,7 @@ std::size_t UpdateVehicle3DObjectsUVE(IEntityManagerUVE& entityManager,
                 Math::QuaternionUVE dq{};
                 if (Math::TryMakeAxisAngleUVE(Math::Vector3UVE{0.0F, 1.0F, 0.0F}, yawDelta, dq)) {
                     Math::QuaternionUVE nextRot{};
-                    if (Math::TryNormalizeUVE(dq * chassisRot, nextRot)) {
+                    if (Math::TryNormalizeUVE(Math::MultiplyUVE(dq, chassisRot), nextRot)) {
                         localTransform.localRotation = nextRot;
                         chassisRot = nextRot;
                     }
