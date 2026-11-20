@@ -123,6 +123,8 @@ void EditorViewportGizmosUVE::SyncUVE() {
         m_billboards.clear();
         return;
     }
+    // gizmoSizePx is the preference's on-screen size; 96 px is the widget's nominal (size == 1).
+    m_gizmo.size = static_cast<float>(m_editor.GetExtendedPreferencesUVE().gizmoSizePx / 96.0);
     const auto& state = m_editor.m_viewportOverlayState;
     using Mode = EditorUVE::ViewportGizmoModeUVE;
     switch (state.gizmoMode) {
