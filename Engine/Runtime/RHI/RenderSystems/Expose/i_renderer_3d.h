@@ -64,6 +64,13 @@ struct PostProcessSettingsUVE final {
 
     bool fastApproximateAAEnabledUVE = false;
     std::uint32_t fastApproximateAAQualityUVE = 1U;
+    /// Temporal Anti-Aliasing (Halton jitter + YCoCg variance-clamped HDR history reprojection).
+    bool temporalAAEnabledUVE = false;
+    float taaHistoryWeightUVE = 0.90F;
+    /// Weighted Blended Order-Independent Transparency (MRT accum + log-revealage composite).
+    bool orderIndependentTransparencyEnabledUVE = false;
+    /// Forward+ 16x9x24 clustered lighting SSBO path (up to 256 dynamic lights on desktop GPUs).
+    bool clusteredLightingEnabledUVE = false;
     bool nearestUpscalingEnabledUVE = false;
     bool acesToneMappingEnabledUVE = true;
     /// 0 = Linear clamp, 1 = ACES filmic, 2 = Soft filmic (default). Setting
@@ -248,6 +255,13 @@ struct Renderer3DFrameDiagnosticsUVE final {
     bool toneMappingPassRecorded = false;
     /// True when the fast approximate edge filter was enabled and dispatched by tone mapping.
     bool fastApproximateAAPassApplied = false;
+    /// True when temporal anti-aliasing resolve ran this frame.
+    bool temporalAAPassApplied = false;
+    /// True when weighted blended order-independent transparency ran this frame.
+    bool wboitPassRecorded = false;
+    /// True when Forward+ clustered lighting SSBOs were active for the main lit pass.
+    bool clusteredLightingPassActive = false;
+    std::size_t clusteredLightsSubmitted = 0U;
     bool particleItemsTruncated = false;
     bool particleDrawCommandsSubmissionTruncated = false;
     /// True only when SSAO was enabled (PostProcessSettingsUVE), its post-process targets and

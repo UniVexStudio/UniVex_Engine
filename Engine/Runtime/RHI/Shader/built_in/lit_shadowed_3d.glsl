@@ -129,7 +129,12 @@ in vec3 vNormalAxisY;
 in vec3 vNormalAxisZ;
 in vec4 vLightSpacePosition;
 in vec4 vLightSpacePositions[3];
+#ifdef UVE_WBOIT
+layout(location = 0) out vec4 FragColor;
+layout(location = 1) out vec4 FragRevealage;
+#else
 out vec4 FragColor;
+#endif
 
 struct LightUVE {
     int type; // 0 = Directional, 1 = Point, 2 = Spot
@@ -146,6 +151,27 @@ struct LightUVE {
 uniform LightUVE uLights[16];
 uniform int uActiveLightCount;
 uniform int uLightShadowSlot[16];
+#if !defined(UVE_MOBILE)
+struct ClusteredGpuLightUVE {
+    vec4 positionAndRange;
+    vec4 directionAndType;
+    vec4 colorAndIntensity;
+    vec4 spotMaskSpecShadow;
+};
+layout(std430, binding = 4) readonly buffer ClusteredLightBlock {
+    ClusteredGpuLightUVE clusteredLights[];
+};
+layout(std430, binding = 5) readonly buffer ClusteredCellBlock {
+    uvec2 clusteredCells[];
+};
+layout(std430, binding = 6) readonly buffer ClusteredIndexBlock {
+    uint clusteredLightIndices[];
+};
+uniform int uClusteredLightingEnabled = 0;
+uniform vec3 uClusterGridDims = vec3(16.0, 9.0, 24.0);
+uniform vec2 uClusterNearFar = vec2(0.1, 1000.0);
+uniform vec2 uClusterViewportSize = vec2(1280.0, 720.0);
+#endif
 uniform vec3 uAmbientColor;
 uniform vec3 uSkyAmbient;
 uniform vec3 uGroundAmbient;
@@ -1222,88 +1248,196 @@ void main() {
         ReadMapUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
     vec3 lighting = indirectLighting + emissiveLighting;
 
-    int activeLightCount = uActiveLightCount > 0 ? min(uActiveLightCount, 16) : 16;
-    for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
-        LightUVE light = uLights[lightIndex];
-        if (light.intensity <= 0.0) {
-            continue;
-        }
-        if ((light.cullMask & uMeshRenderLayers) == 0) {
-            continue;
-        }
+    vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
+    float normalDotView = max(dot(normal, viewDirection), 0.001);
 
-        vec3 lightDirection;
-        float attenuation = 1.0;
-        if (light.type == 0) {
-            lightDirection = SafeNormalizeUVE(-light.direction);
-        } else {
-            vec3 toLight = light.position - vWorldPosition;
-            float distanceToLight = max(length(toLight), 0.0001);
-            lightDirection = toLight / distanceToLight;
-            attenuation = 1.0 / max(distanceToLight * distanceToLight, 0.0001);
-            if (light.range > 0.0) {
-                float rangeRatio = distanceToLight / light.range;
-                float r2 = rangeRatio * rangeRatio;
-                float window = clamp(1.0 - r2 * r2, 0.0, 1.0);
-                attenuation *= window * window;
+#if !defined(UVE_MOBILE)
+    if (uClusteredLightingEnabled != 0) {
+        int gridX = max(int(uClusterGridDims.x + 0.5), 1);
+        int gridY = max(int(uClusterGridDims.y + 0.5), 1);
+        int gridZ = max(int(uClusterGridDims.z + 0.5), 1);
+        vec2 screenUv = clamp(gl_FragCoord.xy / max(uClusterViewportSize, vec2(1.0)), vec2(0.0), vec2(0.999999));
+        int cx = clamp(int(screenUv.x * float(gridX)), 0, gridX - 1);
+        int cy = clamp(int(screenUv.y * float(gridY)), 0, gridY - 1);
+        float positiveViewDepth = max(dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward)),
+                                      max(uClusterNearFar.x, 0.001));
+        float safeNear = max(uClusterNearFar.x, 0.001);
+        float safeFar = max(uClusterNearFar.y, safeNear + 0.01);
+        float sliceRatio = log(clamp(positiveViewDepth, safeNear, safeFar) / safeNear) / log(safeFar / safeNear);
+        int cz = clamp(int(sliceRatio * float(gridZ)), 0, gridZ - 1);
+        int clusterIndex = (cz * gridY + cy) * gridX + cx;
+        uvec2 cell = clusteredCells[clusterIndex];
+        uint count = min(cell.y, 64u);
+        for (uint ci = 0u; ci < count; ++ci) {
+            uint li = clusteredLightIndices[cell.x + ci];
+            ClusteredGpuLightUVE gpuLight = clusteredLights[li];
+            LightUVE light;
+            light.type = int(gpuLight.directionAndType.w + 0.5);
+            light.position = gpuLight.positionAndRange.xyz;
+            light.direction = gpuLight.directionAndType.xyz;
+            light.color = gpuLight.colorAndIntensity.rgb;
+            light.intensity = gpuLight.colorAndIntensity.w;
+            light.range = gpuLight.positionAndRange.w;
+            light.spotAngleDegrees = gpuLight.spotMaskSpecShadow.x;
+            light.cullMask = floatBitsToInt(gpuLight.spotMaskSpecShadow.y);
+            light.specular = gpuLight.spotMaskSpecShadow.z;
+            int encodedShadowSlot = int(gpuLight.spotMaskSpecShadow.w + (gpuLight.spotMaskSpecShadow.w >= 0.0 ? 0.5 : -0.5));
+            if (light.intensity <= 0.0 || (light.cullMask & uMeshRenderLayers) == 0) {
+                continue;
             }
-            if (light.type == 2) {
-                float cosOuter = cos(radians(light.spotAngleDegrees));
-                float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
-                float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
-                float coneFalloff = clamp((coneAlignment - cosOuter) /
-                                              max(cosInner - cosOuter, kBrdfEpsilonUVE),
-                                          0.0, 1.0);
-                attenuation *= coneFalloff * coneFalloff;
-            }
-        }
-
-        float normalDotLight = max(dot(normal, lightDirection), 0.0);
-        float normalDotView = max(dot(normal, viewDirection), 0.001);
-        if (normalDotLight <= 0.0 || normalDotView <= 0.0 || attenuation <= 0.0) {
-            continue;
-        }
-
-        vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
-        float normalDotHalf = max(dot(normal, halfDirection), 0.0);
-        float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
-        vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
-        vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
-        float distribution = DistributionGgxUVE(normalDotHalf, roughness);
-        float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
-        vec3 specular = (distribution * visibility * fresnel) * energyCompensation * max(light.specular, 0.0);
-        vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
-        vec3 diffuse = diffuseWeight * albedo / kPiUVE;
-        vec3 radiance = light.color * light.intensity * attenuation;
-        vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
-
-        if (uDisableReceiveShadows == 0) {
-            int encodedShadowSlot = uLightShadowSlot[lightIndex];
-            int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1)
-                           : (encodedShadowSlot < 0 ? -1 : (lightIndex < 4 ? lightIndex : -1));
+            vec3 lightDirection;
+            float attenuation = 1.0;
             if (light.type == 0) {
-                float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
-                if (isnan(shadowFactor) || isinf(shadowFactor)) {
-                    shadowFactor = 1.0;
+                lightDirection = SafeNormalizeUVE(-light.direction);
+            } else {
+                vec3 toLight = light.position - vWorldPosition;
+                float distanceToLight = max(length(toLight), 0.0001);
+                lightDirection = toLight / distanceToLight;
+                attenuation = 1.0 / max(distanceToLight * distanceToLight, 0.0001);
+                if (light.range > 0.0) {
+                    float rangeRatio = distanceToLight / light.range;
+                    float r2 = rangeRatio * rangeRatio;
+                    float window = clamp(1.0 - r2 * r2, 0.0, 1.0);
+                    attenuation *= window * window;
                 }
-                directContribution *= clamp(shadowFactor, 0.0, 1.0);
-            } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
-                float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
-                directContribution *= clamp(shadowFactor, 0.0, 1.0);
-            } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
-                float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
-                directContribution *= clamp(shadowFactor, 0.0, 1.0);
+                if (light.type == 2) {
+                    float cosOuter = cos(radians(light.spotAngleDegrees));
+                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
+                    float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
+                    float coneFalloff = clamp((coneAlignment - cosOuter) /
+                                                  max(cosInner - cosOuter, kBrdfEpsilonUVE),
+                                              0.0, 1.0);
+                    attenuation *= coneFalloff * coneFalloff;
+                }
+            }
+            float normalDotLight = max(dot(normal, lightDirection), 0.0);
+            if (normalDotLight <= 0.0 || attenuation <= 0.0) {
+                continue;
+            }
+            vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+            float normalDotHalf = max(dot(normal, halfDirection), 0.0);
+            float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
+            vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
+            float distribution = DistributionGgxUVE(normalDotHalf, roughness);
+            float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+            vec3 specular = (distribution * visibility * fresnel) * energyCompensation * max(light.specular, 0.0);
+            vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+            vec3 diffuse = diffuseWeight * albedo / kPiUVE;
+            vec3 radiance = light.color * light.intensity * attenuation;
+            vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
+            if (uDisableReceiveShadows == 0) {
+                int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1) : -1;
+                if (light.type == 0) {
+                    float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
+                    if (isnan(shadowFactor) || isinf(shadowFactor)) {
+                        shadowFactor = 1.0;
+                    }
+                    directContribution *= clamp(shadowFactor, 0.0, 1.0);
+                } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
+                    float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
+                    directContribution *= clamp(shadowFactor, 0.0, 1.0);
+                } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
+                    float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
+                    directContribution *= clamp(shadowFactor, 0.0, 1.0);
+                }
+            }
+            if (!isnan(directContribution.r) && !isinf(directContribution.r) &&
+                !isnan(directContribution.g) && !isinf(directContribution.g) &&
+                !isnan(directContribution.b) && !isinf(directContribution.b)) {
+                lighting += directContribution;
             }
         }
-        if (!isnan(directContribution.r) && !isinf(directContribution.r) &&
-            !isnan(directContribution.g) && !isinf(directContribution.g) &&
-            !isnan(directContribution.b) && !isinf(directContribution.b)) {
-            lighting += directContribution;
+    } else
+#endif
+    {
+        int activeLightCount = uActiveLightCount > 0 ? min(uActiveLightCount, 16) : 16;
+        for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
+            LightUVE light = uLights[lightIndex];
+            if (light.intensity <= 0.0) {
+                continue;
+            }
+            if ((light.cullMask & uMeshRenderLayers) == 0) {
+                continue;
+            }
+
+            vec3 lightDirection;
+            float attenuation = 1.0;
+            if (light.type == 0) {
+                lightDirection = SafeNormalizeUVE(-light.direction);
+            } else {
+                vec3 toLight = light.position - vWorldPosition;
+                float distanceToLight = max(length(toLight), 0.0001);
+                lightDirection = toLight / distanceToLight;
+                attenuation = 1.0 / max(distanceToLight * distanceToLight, 0.0001);
+                if (light.range > 0.0) {
+                    float rangeRatio = distanceToLight / light.range;
+                    float r2 = rangeRatio * rangeRatio;
+                    float window = clamp(1.0 - r2 * r2, 0.0, 1.0);
+                    attenuation *= window * window;
+                }
+                if (light.type == 2) {
+                    float cosOuter = cos(radians(light.spotAngleDegrees));
+                    float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
+                    float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
+                    float coneFalloff = clamp((coneAlignment - cosOuter) /
+                                                  max(cosInner - cosOuter, kBrdfEpsilonUVE),
+                                              0.0, 1.0);
+                    attenuation *= coneFalloff * coneFalloff;
+                }
+            }
+
+            float normalDotLight = max(dot(normal, lightDirection), 0.0);
+            if (normalDotLight <= 0.0 || normalDotView <= 0.0 || attenuation <= 0.0) {
+                continue;
+            }
+
+            vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+            float normalDotHalf = max(dot(normal, halfDirection), 0.0);
+            float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
+            vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
+            float distribution = DistributionGgxUVE(normalDotHalf, roughness);
+            float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+            vec3 specular = (distribution * visibility * fresnel) * energyCompensation * max(light.specular, 0.0);
+            vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+            vec3 diffuse = diffuseWeight * albedo / kPiUVE;
+            vec3 radiance = light.color * light.intensity * attenuation;
+            vec3 directContribution = (diffuse + specular) * radiance * normalDotLight;
+
+            if (uDisableReceiveShadows == 0) {
+                int encodedShadowSlot = uLightShadowSlot[lightIndex];
+                int shadowSlot = encodedShadowSlot > 0 ? (encodedShadowSlot - 1)
+                               : (encodedShadowSlot < 0 ? -1 : (lightIndex < 4 ? lightIndex : -1));
+                if (light.type == 0) {
+                    float shadowFactor = DirectionalShadowFactorUVE(normal, lightDirection);
+                    if (isnan(shadowFactor) || isinf(shadowFactor)) {
+                        shadowFactor = 1.0;
+                    }
+                    directContribution *= clamp(shadowFactor, 0.0, 1.0);
+                } else if (light.type == 1 && shadowSlot >= 0 && shadowSlot < 4) {
+                    float shadowFactor = PointShadowFactorUVE(shadowSlot, normal, light.position, light.range);
+                    directContribution *= clamp(shadowFactor, 0.0, 1.0);
+                } else if (light.type == 2 && shadowSlot >= 0 && shadowSlot < 4) {
+                    float shadowFactor = SpotShadowFactorUVE(shadowSlot, normal, lightDirection);
+                    directContribution *= clamp(shadowFactor, 0.0, 1.0);
+                }
+            }
+            if (!isnan(directContribution.r) && !isinf(directContribution.r) &&
+                !isnan(directContribution.g) && !isinf(directContribution.g) &&
+                !isnan(directContribution.b) && !isinf(directContribution.b)) {
+                lighting += directContribution;
+            }
         }
     }
 
     vec3 finalColor = max(lighting, vec3(0.0));
+#ifdef UVE_WBOIT
+    float a = clamp(surfaceOpacity, 0.0, 0.9999);
+    float weight = clamp(a * max(1.0e-2, 3.0e3 * pow(max(1.0 - gl_FragCoord.z, 0.0), 3.0)), 1.0e-2, 3.0e3);
+    FragColor = vec4(finalColor * a * weight, a * weight);
+    FragRevealage = vec4(-log(max(1.0 - a, 1.0e-4)), 0.0, 0.0, 0.0);
+#else
     float indirectWeight = clamp(LuminanceUVE(indirectLighting) / max(LuminanceUVE(finalColor), 1.0e-4), 0.0, 1.0);
     FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
+#endif
 }
 #endif
