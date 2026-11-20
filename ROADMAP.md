@@ -163,15 +163,15 @@ status legend.
   without changing the structure. Spot lights also gained a smooth cone falloff; the hard binary
   cutoff produced an aliased cone edge that no MSAA could fix, because the edge was in the shading
   rather than the geometry.
-- [ ] Deferred or forward+/clustered lighting path for scenes with many dynamic lights
+- [x] Forward+ / clustered lighting path (`LightClusterGridUVE`: 16×9×24 frustum clusters, up to 256 dynamic lights via std430 SSBOs in `lit_shadowed_3d.glsl`, quality-tiered budgets Low 16 / Med 64 / High 128 / Ultra 256, automatic 16-light uniform fallback on mobile/GLES3; locked by `LightClusterGridUVETest`).
 - [x] Screen-space reflections — implemented with view-space position/normal reconstruction from camera depth, linear ray-marching in screen space with configurable max steps, depth tolerance, screen-edge fading, and Schlick Fresnel attenuation. Evaluated in dedicated pass and additively composited; locked by Renderer3DUVETest and shader parity tests.
 - [ ] Real-time reflection probes (baked and/or dynamically updated cubemaps)
 - [ ] Global illumination (baked lightmaps at minimum; a real-time or hybrid GI solution
   as a long-term goal)
 - [x] Volumetric fog / volumetric lighting — volumetric shadow raymarching through directional light cascades with Henyey-Greenstein Mie forward scattering phase function; integrates inscattered sunlight modulated by cascaded shadow map occlusions in fullscreen_quad.glsl and modulates fog volume integration; locked by Renderer3DUVETest.
-- [ ] Temporal anti-aliasing (and/or a modern upscaling technique)
+- [x] Temporal anti-aliasing (`taa_math.h` Halton(2,3) 16-sample projection jitter + `taa_resolve.glsl` depth-reprojected 3×3 YCoCg variance-clamped HDR history ping-pong pass in `Renderer3DUVE`; locked by `TaaMathUVETest` and shader parity tests).
 - [x] HDR display output and a real color-grading / LUT pipeline — 3D LUT sampling with 2D strip texture format (256x16, 1024x32) with trilinear slice interpolation in the tonemapping pass, configurable LUT contribution, and integration with WorldEnvironment3DComponentUVE; locked by Renderer3DUVETest.
-- [ ] Order-independent or improved transparency sorting
+- [x] Order-independent transparency (WBOIT: single-pass MRT additive accum + exact log-revealage `UVE_WBOIT` variant of `lit_shadowed_3d.glsl` + `wboit_composite.glsl` composited before tone mapping, with automatic back-to-front fallback on Low/mobile; locked by shader parity tests).
 - [x] Decal rendering — the `decal` scene-node kind is real end to end: the lifetime runtime counts
   down and reports the expiry, the projected-geometry pass clips the receiving surfaces against the
   box or cylinder volume, and the built-in `decal.glsl` program paints the surviving patches with the
