@@ -363,6 +363,20 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
     // Kind: a preset over the same physically based path; picking one applies the same defaults
     // the content catalogue's material entries use and leaves every texture alone.
     section("Preset");
+    {
+        auto preview = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Material);
+        preview->setAssetUVE(absolutePath);
+        std::weak_ptr<AssetThumbnailUVE> weakPreview = preview;
+        auto previewRow = std::make_shared<RowUVE>();
+        previewRow->sync = [weakPreview](const void*) {
+            if (auto t = weakPreview.lock()) {
+                t->refreshUVE();
+            }
+        };
+        previewRow->editor = preview.get();
+        m_rows.push_back(std::move(previewRow));
+        m_grid->addRow(category, "Preview", std::move(preview), "Live PBR material preview (click to enlarge).");
+    }
     combo("Kind", {"Standard", "ORM", "Custom Shader"}, static_cast<int>(loaded.kind), [](MaterialUVE& m, const int i) {
         m.kind = static_cast<Asset::MaterialKindUVE>(std::clamp(i, 0, 2));
         switch (m.kind) {

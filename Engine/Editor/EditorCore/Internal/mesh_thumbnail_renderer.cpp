@@ -3,9 +3,11 @@
 #include "mesh_thumbnail_renderer.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 // See uve/rhi_opengl/gl_functions_uve.h for why glext.h is safe to include here: it only
@@ -59,42 +61,183 @@ void main() {
 )GLSL";
 
 constexpr const char* kFragmentShaderSourceUVE = R"GLSL(#version 330 core
+const float kPi = 3.14159265359;
+
 in vec3 vNormal;
 in vec2 vTexCoord;
 in vec3 vWorldPosition;
 out vec4 FragColor;
-uniform vec3 uLightDirection;
-uniform vec3 uBaseColor;
-uniform bool uHasAlbedoTexture;
-uniform sampler2D uAlbedoTexture;
+
 uniform vec3 uCameraPosition;
+uniform vec3 uBaseColor;
+uniform float uMetallic;
+uniform float uRoughness;
+uniform float uDielectricSpecular;
+uniform float uNormalScale;
+uniform bool uFlipGreen;
+uniform float uOcclusionStrength;
+uniform vec3 uEmissiveColor;
+uniform float uEmissiveEnergy;
+uniform vec2 uUvScale;
+uniform vec2 uUvOffset;
+uniform bool uUnshaded;
+
+uniform bool uHasAlbedoTexture;
+uniform bool uHasNormalTexture;
+uniform bool uHasMetallicRoughnessTexture;
+uniform bool uHasAOTexture;
+uniform bool uHasEmissiveTexture;
+uniform sampler2D uAlbedoTexture;
+uniform sampler2D uNormalTexture;
+uniform sampler2D uMetallicRoughnessTexture;
+uniform sampler2D uAOTexture;
+uniform sampler2D uEmissiveTexture;
+
+float DistributionGGXUVE(vec3 normal, vec3 halfway, float roughness) {
+    const float alpha = roughness * roughness;
+    const float alphaSquared = alpha * alpha;
+    const float normalDotHalfway = max(dot(normal, halfway), 0.0);
+    const float denominator = normalDotHalfway * normalDotHalfway * (alphaSquared - 1.0) + 1.0;
+    return alphaSquared / max(kPi * denominator * denominator, 1.0e-5);
+}
+
+float VisibilitySmithGGXCorrelatedUVE(float normalDotView, float normalDotLight, float roughness) {
+    const float alpha = roughness * roughness;
+    const float alphaSquared = alpha * alpha;
+    const float viewTerm = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alphaSquared) + alphaSquared);
+    const float lightTerm = normalDotView * sqrt(normalDotLight * normalDotLight * (1.0 - alphaSquared) + alphaSquared);
+    return 0.5 / max(viewTerm + lightTerm, 1.0e-5);
+}
+
+vec3 FresnelSchlickUVE(float viewDotHalfway, vec3 baseReflectance) {
+    return baseReflectance + (vec3(1.0) - baseReflectance) * pow(1.0 - viewDotHalfway, 5.0);
+}
+
+vec3 DirectLightUVE(vec3 normal, vec3 view, vec3 lightDirection, vec3 radiance, vec3 albedo,
+                    vec3 baseReflectance, float metallic, float roughness) {
+    const float normalDotLight = max(dot(normal, lightDirection), 0.0);
+    if (normalDotLight <= 0.0) {
+        return vec3(0.0);
+    }
+    const vec3 halfway = normalize(view + lightDirection);
+    const float normalDotView = max(dot(normal, view), 1.0e-4);
+    const float distribution = DistributionGGXUVE(normal, halfway, roughness);
+    const float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+    const vec3 fresnel = FresnelSchlickUVE(max(dot(halfway, view), 0.0), baseReflectance);
+    const vec3 specular = fresnel * distribution * visibility;
+    const vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+    return (diffuseWeight * albedo / kPi + specular) * radiance * normalDotLight;
+}
+
+vec3 ToneMapUVE(vec3 color) {
+    const vec3 numerator = color * (2.51 * color + 0.03);
+    const vec3 denominator = color * (2.43 * color + 0.59) + 0.14;
+    return clamp(numerator / denominator, 0.0, 1.0);
+}
+
+vec3 LinearToDisplayUVE(vec3 color) {
+    const vec3 low = color * 12.92;
+    const vec3 high = 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+    return mix(high, low, lessThanEqual(color, vec3(0.0031308)));
+}
+
+vec3 PerturbNormalUVE(vec3 geomNormal, vec3 worldPos, vec2 uv, vec3 tangentNormal) {
+    const vec3 dp1 = dFdx(worldPos);
+    const vec3 dp2 = dFdy(worldPos);
+    const vec2 duv1 = dFdx(uv);
+    const vec2 duv2 = dFdy(uv);
+    const vec3 dp2perp = cross(dp2, geomNormal);
+    const vec3 dp1perp = cross(geomNormal, dp1);
+    const vec3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+    const vec3 bitangent = dp2perp * duv1.y + dp1perp * duv2.y;
+    const float maxLenSq = max(dot(tangent, tangent), dot(bitangent, bitangent));
+    if (maxLenSq <= 1.0e-10) {
+        return geomNormal;
+    }
+    const float invMax = inversesqrt(maxLenSq);
+    return normalize(mat3(tangent * invMax, bitangent * invMax, geomNormal) * tangentNormal);
+}
+
 void main() {
-    vec3 normal = normalize(vNormal);
-    vec3 albedo = uBaseColor;
+    const vec2 uv = vTexCoord * uUvScale + uUvOffset;
+    vec4 albedoSample = vec4(1.0);
     if (uHasAlbedoTexture) {
-        vec4 sampled = texture(uAlbedoTexture, vTexCoord);
-        if (sampled.a < 0.05) {
+        albedoSample = texture(uAlbedoTexture, uv);
+        if (albedoSample.a < 0.05) {
             discard;
         }
-        albedo = uBaseColor * sampled.rgb;
+    }
+    const vec3 albedo = uBaseColor * albedoSample.rgb;
+    if (uUnshaded) {
+        FragColor = vec4(LinearToDisplayUVE(clamp(albedo, 0.0, 1.0)), 1.0);
+        return;
     }
 
-    // One light: the sun, warm white, with only the sky's soft fill around it (no fill or rim lights).
-    vec3 sunDir = normalize(-uLightDirection);
-    float sun = max(dot(normal, sunDir), 0.0);
-    vec3 viewDir = normalize(uCameraPosition - vWorldPosition);
+    vec3 shadingNormal = normalize(vNormal);
+    if (uHasNormalTexture) {
+        vec3 tangentNormal = texture(uNormalTexture, uv).xyz * 2.0 - 1.0;
+        if (uFlipGreen) {
+            tangentNormal.y = -tangentNormal.y;
+        }
+        tangentNormal.xy *= uNormalScale;
+        shadingNormal = PerturbNormalUVE(shadingNormal, vWorldPosition, uv, tangentNormal);
+    }
 
-    float hemi = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 sky = mix(vec3(0.10, 0.10, 0.11), vec3(0.24, 0.25, 0.27), hemi);
+    const vec3 view = normalize(uCameraPosition - vWorldPosition);
+    if (dot(shadingNormal, view) < 0.0) {
+        shadingNormal = -shadingNormal;
+    }
 
-    vec3 halfVec = normalize(sunDir + viewDir);
-    float spec = pow(max(dot(normal, halfVec), 0.0), 32.0) * 0.18 * step(0.0, dot(normal, sunDir));
+    float metallic = uMetallic;
+    float roughness = uRoughness;
+    if (uHasMetallicRoughnessTexture) {
+        const vec3 mr = texture(uMetallicRoughnessTexture, uv).rgb;
+        metallic *= mr.b;
+        roughness *= mr.g;
+    }
+    metallic = clamp(metallic, 0.0, 1.0);
+    roughness = clamp(roughness, 0.045, 1.0);
 
-    vec3 litColor = albedo * (sky + sun * vec3(1.05, 1.0, 0.94)) + vec3(spec);
+    float occlusion = 1.0;
+    if (uHasAOTexture) {
+        occlusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    }
 
-    // ACES filmic tonemapping for vivid, crisp rendering
-    litColor = litColor / (litColor + vec3(0.12)) * 1.12;
-    FragColor = vec4(clamp(litColor, 0.0, 1.0), 1.0);
+    const float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
+    const vec3 baseReflectance = mix(vec3(0.16 * dielectricSpec * dielectricSpec), albedo, metallic);
+
+    // Balanced three-point studio rig matching MaterialThumbnailRendererUVE so mesh and material
+    // thumbnails agree on exposure, roughness response, and metal reflections.
+    const vec3 keyDir = normalize(vec3(-0.45, 0.85, 0.55));
+    const vec3 keyColor = vec3(2.05, 1.98, 1.88);
+    const vec3 fillDir = normalize(vec3(0.75, -0.15, 0.65));
+    const vec3 fillColor = vec3(0.42, 0.46, 0.54);
+    const vec3 rimDir = normalize(vec3(0.10, 0.46, -0.95));
+    const vec3 rimColor = vec3(0.55, 0.58, 0.65);
+    const vec3 skyAmbient = vec3(0.16, 0.18, 0.22);
+    const vec3 groundAmbient = vec3(0.045, 0.042, 0.038);
+
+    vec3 color = DirectLightUVE(shadingNormal, view, keyDir, keyColor, albedo, baseReflectance, metallic, roughness) +
+                 DirectLightUVE(shadingNormal, view, fillDir, fillColor, albedo, baseReflectance, metallic, roughness) +
+                 DirectLightUVE(shadingNormal, view, rimDir, rimColor, albedo, baseReflectance, metallic, roughness);
+
+    const vec3 irradiance = mix(groundAmbient, skyAmbient, shadingNormal.y * 0.5 + 0.5) * occlusion;
+    const vec3 diffuseAmbient = albedo * (1.0 - metallic) * irradiance;
+    const vec3 reflection = reflect(-view, shadingNormal);
+    const vec3 environment = mix(groundAmbient, skyAmbient, reflection.y * 0.5 + 0.5);
+    const float normalDotView = max(dot(shadingNormal, view), 0.0);
+    const vec3 ambientFresnel =
+        baseReflectance + (max(vec3(1.0 - roughness), baseReflectance) - baseReflectance) * pow(1.0 - normalDotView, 5.0);
+    const vec3 specularAmbient = environment * ambientFresnel * mix(1.0, occlusion, 0.6);
+    color += diffuseAmbient + specularAmbient;
+
+    if (uHasEmissiveTexture) {
+        color += texture(uEmissiveTexture, uv).rgb * uEmissiveColor * uEmissiveEnergy;
+    } else {
+        color += uEmissiveColor * uEmissiveEnergy;
+    }
+
+    FragColor = vec4(LinearToDisplayUVE(ToneMapUVE(color)), 1.0);
 }
 )GLSL";
 
@@ -114,6 +257,9 @@ void main() {
 }
 )GLSL";
 
+constexpr GLenum kReadFramebufferUVE = 0x8CA8U;
+constexpr GLenum kDrawFramebufferUVE = 0x8CA9U;
+
 void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexcept {
     if (enabled == GL_TRUE) {
         glEnable(capability);
@@ -131,16 +277,9 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
 
 } // namespace
 
-/// The GL function pointers, compiled shader program, and scratch render target this renderer
-/// needs, kept out of the public header (see the header's class doc comment). Hand-rolled loader
-/// scoped to exactly what a single-mesh, no-material preview render needs - mirrors
-/// engine/render/src/gl_functions_uve.h's precedent rather than depending on it, since that header
-/// is private to engine/render and this class is deliberately independent of engine/render.
 /// The shared GL proc table (see uve/rhi_opengl/gl_functions_uve.h), compiled shader program, and
 /// scratch render target this renderer needs, kept out of the public header (see the header's class
-/// doc comment). Historical note: this class used to keep its own hand-rolled loader struct here -
-/// collapsed into the engine's one shared contract (AUDIT 5.6); only the genuinely preview-specific
-/// state below remains local.
+/// doc comment).
 struct MeshThumbnailRendererUVE::GlStateUVE {
     Render::Detail::GlFunctionsUVE table;
 
@@ -148,11 +287,29 @@ struct MeshThumbnailRendererUVE::GlStateUVE {
 
     GLuint shaderProgram = 0U;
     GLint viewProjectionUniform = -1;
-    GLint lightDirectionUniform = -1;
-    GLint baseColorUniform = -1;
-    GLint hasAlbedoTextureUniform = -1;
-    GLint albedoTextureUniform = -1;
     GLint cameraPositionUniform = -1;
+    GLint baseColorUniform = -1;
+    GLint metallicUniform = -1;
+    GLint roughnessUniform = -1;
+    GLint dielectricSpecularUniform = -1;
+    GLint normalScaleUniform = -1;
+    GLint flipGreenUniform = -1;
+    GLint occlusionStrengthUniform = -1;
+    GLint emissiveColorUniform = -1;
+    GLint emissiveEnergyUniform = -1;
+    GLint uvScaleUniform = -1;
+    GLint uvOffsetUniform = -1;
+    GLint unshadedUniform = -1;
+    GLint hasAlbedoTextureUniform = -1;
+    GLint hasNormalTextureUniform = -1;
+    GLint hasMetallicRoughnessTextureUniform = -1;
+    GLint hasAOTextureUniform = -1;
+    GLint hasEmissiveTextureUniform = -1;
+    GLint albedoTextureUniform = -1;
+    GLint normalTextureUniform = -1;
+    GLint metallicRoughnessTextureUniform = -1;
+    GLint aoTextureUniform = -1;
+    GLint emissiveTextureUniform = -1;
     bool programLinked = false;
 
     GLuint boneShaderProgram = 0U;
@@ -162,6 +319,8 @@ struct MeshThumbnailRendererUVE::GlStateUVE {
 
     GLuint scratchFramebuffer = 0U;
     GLuint scratchDepthRenderbuffer = 0U;
+    GLuint scratchColorTexture = 0U;
+    GLuint resolveFramebuffer = 0U;
     int scratchWidth = 0;
     int scratchHeight = 0;
 };
@@ -186,13 +345,10 @@ namespace {
     return true;
 }
 
-/// Creates (once) and resizes (as needed) the scratch framebuffer + depth-renderbuffer that every
-/// RenderThumbnailUVE() call reuses. The depth renderbuffer is attached exactly once, right after
-/// creation - resizing only calls glRenderbufferStorage, which preserves the object's id and thus
-/// its existing attachment. Leaves GL_FRAMEBUFFER/GL_RENDERBUFFER bound to the scratch objects;
-/// the caller is responsible for saving/restoring those bindings around the whole render.
+/// Creates (once) and resizes (as needed) the scratch framebuffer + depth-renderbuffer (+ optional
+/// supersampled color texture & resolve framebuffer) reused by every RenderThumbnailUVE() call.
 [[nodiscard]] bool EnsureScratchTargetUVE(MeshThumbnailRendererUVE::GlStateUVE& gl, const int width,
-                                           const int height) noexcept {
+                                           const int height, const bool supersample) noexcept {
     const bool firstTime = gl.scratchFramebuffer == 0U;
     if (firstTime) {
         gl.table.glGenFramebuffers(1, &gl.scratchFramebuffer);
@@ -201,9 +357,24 @@ namespace {
             return false;
         }
     }
+    if (supersample && gl.resolveFramebuffer == 0U) {
+        gl.table.glGenFramebuffers(1, &gl.resolveFramebuffer);
+        glGenTextures(1, &gl.scratchColorTexture);
+        if (gl.resolveFramebuffer == 0U || gl.scratchColorTexture == 0U) {
+            return false;
+        }
+    }
     if (firstTime || gl.scratchWidth != width || gl.scratchHeight != height) {
         gl.table.glBindRenderbuffer(GL_RENDERBUFFER, gl.scratchDepthRenderbuffer);
         gl.table.glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+        if (supersample && gl.scratchColorTexture != 0U) {
+            glBindTexture(GL_TEXTURE_2D, gl.scratchColorTexture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        }
         gl.scratchWidth = width;
         gl.scratchHeight = height;
     }
@@ -257,11 +428,30 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
     }
 
     gl.viewProjectionUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uViewProjection");
-    gl.lightDirectionUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uLightDirection");
-    gl.baseColorUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uBaseColor");
-    gl.hasAlbedoTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uHasAlbedoTexture");
-    gl.albedoTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uAlbedoTexture");
     gl.cameraPositionUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uCameraPosition");
+    gl.baseColorUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uBaseColor");
+    gl.metallicUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uMetallic");
+    gl.roughnessUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uRoughness");
+    gl.dielectricSpecularUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uDielectricSpecular");
+    gl.normalScaleUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uNormalScale");
+    gl.flipGreenUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uFlipGreen");
+    gl.occlusionStrengthUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uOcclusionStrength");
+    gl.emissiveColorUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uEmissiveColor");
+    gl.emissiveEnergyUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uEmissiveEnergy");
+    gl.uvScaleUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uUvScale");
+    gl.uvOffsetUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uUvOffset");
+    gl.unshadedUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uUnshaded");
+    gl.hasAlbedoTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uHasAlbedoTexture");
+    gl.hasNormalTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uHasNormalTexture");
+    gl.hasMetallicRoughnessTextureUniform =
+        gl.table.glGetUniformLocation(gl.shaderProgram, "uHasMetallicRoughnessTexture");
+    gl.hasAOTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uHasAOTexture");
+    gl.hasEmissiveTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uHasEmissiveTexture");
+    gl.albedoTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uAlbedoTexture");
+    gl.normalTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uNormalTexture");
+    gl.metallicRoughnessTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uMetallicRoughnessTexture");
+    gl.aoTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uAOTexture");
+    gl.emissiveTextureUniform = gl.table.glGetUniformLocation(gl.shaderProgram, "uEmissiveTexture");
     gl.programLinked = true;
 
     GLuint boneVertexShader = 0U;
@@ -293,6 +483,14 @@ void MeshThumbnailRendererUVE::ShutdownUVE() noexcept {
     }
     GlStateUVE& gl = *m_gl;
     if (gl.functionsLoaded) {
+        if (gl.scratchColorTexture != 0U) {
+            glDeleteTextures(1, &gl.scratchColorTexture);
+            gl.scratchColorTexture = 0U;
+        }
+        if (gl.resolveFramebuffer != 0U) {
+            gl.table.glDeleteFramebuffers(1, &gl.resolveFramebuffer);
+            gl.resolveFramebuffer = 0U;
+        }
         if (gl.scratchDepthRenderbuffer != 0U) {
             gl.table.glDeleteRenderbuffers(1, &gl.scratchDepthRenderbuffer);
             gl.scratchDepthRenderbuffer = 0U;
@@ -390,7 +588,6 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     // Invert Y in projection so OpenGL's bottom-up FBO maps right-side up to the UI's top-down (0,0)-(1,1) UV coordinates.
     projection.m[1][1] = -projection.m[1][1];
     const Math::Matrix4x4UVE viewProjection = projection * view;
-    const Math::Vector3UVE lightDirection = Math::NormalizeUVE(Math::Vector3UVE{-0.5F, -1.0F, -0.35F});
 
     GLint previousFramebuffer = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
@@ -406,18 +603,35 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
     GLint previousElementArrayBuffer = 0;
     glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &previousElementArrayBuffer);
-    GLint previousTexture = 0;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+    GLint previousActiveTexture = GL_TEXTURE0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    constexpr std::size_t kTextureUnitCountUVE = 5U;
+    std::array<GLint, kTextureUnitCountUVE> previousTextures{};
+    std::array<GLint, kTextureUnitCountUVE> previousSamplers{};
+    for (std::size_t unit = 0U; unit < kTextureUnitCountUVE; ++unit) {
+        gl.table.glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextures[unit]);
+        if (gl.table.glBindSampler != nullptr) {
+            glGetIntegerv(GL_SAMPLER_BINDING, &previousSamplers[unit]);
+            gl.table.glBindSampler(static_cast<GLuint>(unit), 0U);
+        }
+    }
+    gl.table.glActiveTexture(GL_TEXTURE0);
     const GLboolean depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
     const GLboolean cullFaceWasEnabled = glIsEnabled(GL_CULL_FACE);
     const GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
     const GLboolean scissorWasEnabled = glIsEnabled(GL_SCISSOR_TEST);
     GLboolean previousDepthMask = GL_TRUE;
     glGetBooleanv(GL_DEPTH_WRITEMASK, &previousDepthMask);
+    GLint previousUnpackAlignment = 4;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
     GLfloat previousClearColor[4] = {0.0F, 0.0F, 0.0F, 0.0F};
     glGetFloatv(GL_COLOR_CLEAR_VALUE, previousClearColor);
 
-    bool succeeded = EnsureScratchTargetUVE(gl, width, height);
+    const bool supersample = gl.table.glBlitFramebuffer != nullptr && width <= 1024 && height <= 1024;
+    const int renderWidth = supersample ? width * 2 : width;
+    const int renderHeight = supersample ? height * 2 : height;
+    bool succeeded = EnsureScratchTargetUVE(gl, renderWidth, renderHeight, supersample);
 
     GLuint colorTexture = 0U;
     if (succeeded) {
@@ -432,33 +646,57 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-        gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
-        gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
-        succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        if (supersample) {
+            gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.resolveFramebuffer);
+            gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+            succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+            if (succeeded) {
+                gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
+                gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                                gl.scratchColorTexture, 0);
+                succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+            }
+        } else {
+            gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
+            gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+            succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        }
     }
 
-    // Each distinct albedo map uploaded once.
-    std::vector<std::pair<const MaterialThumbnailImageUVE*, GLuint>> albedoTextures;
-    const auto textureOf = [&albedoTextures](const MaterialThumbnailImageUVE* image) -> GLuint {
+    // Upload each distinct (image, forceLinear) texture once with proper sRGB/linear format and mipmaps.
+    struct UploadedMapUVE {
+        const MaterialThumbnailImageUVE* image = nullptr;
+        bool forceLinear = false;
+        GLuint id = 0U;
+    };
+    std::vector<UploadedMapUVE> uploadedMaps;
+    const auto textureOf = [&gl, &uploadedMaps](const MaterialThumbnailImageUVE* image,
+                                                const bool forceLinear) -> GLuint {
         if (image == nullptr || !image->IsValidUVE()) {
             return 0U;
         }
-        for (const auto& [known, id] : albedoTextures) {
-            if (known == image) {
-                return id;
+        for (const UploadedMapUVE& known : uploadedMaps) {
+            if (known.image == image && known.forceLinear == forceLinear) {
+                return known.id;
             }
         }
         GLuint id = 0U;
         glGenTextures(1, &id);
         if (id != 0U) {
+            gl.table.glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, id);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            const GLint internalFormat = image->srgb && !forceLinear ? GL_SRGB8_ALPHA8 : GL_RGBA8;
+            glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, image->width, image->height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                         image->rgba8.data());
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image->width, image->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->rgba8.data());
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            gl.table.glGenerateMipmap(GL_TEXTURE_2D);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                            glGetError() == GL_NO_ERROR ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
         }
-        albedoTextures.emplace_back(image, id);
+        uploadedMaps.push_back(UploadedMapUVE{image, forceLinear, id});
         return id;
     };
 
@@ -466,7 +704,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     GLuint vertexBuffer = 0U;
     GLuint indexBuffer = 0U;
     if (succeeded) {
-        glViewport(0, 0, width, height);
+        glViewport(0, 0, renderWidth, renderHeight);
         // Transparent background: the preview is the mesh alone, composited over whatever tile shows it.
         glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         SetGlCapabilityUVE(GL_DEPTH_TEST, GL_TRUE);
@@ -500,10 +738,24 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
 
         gl.table.glUseProgram(gl.shaderProgram);
         gl.table.glUniformMatrix4fv(gl.viewProjectionUniform, 1, GL_TRUE, &viewProjection.m[0][0]);
-        gl.table.glUniform3fv(gl.lightDirectionUniform, 1, &lightDirection.x);
         gl.table.glUniform3fv(gl.cameraPositionUniform, 1, &cameraPosition.x);
         gl.table.glUniform1i(gl.albedoTextureUniform, 0);
-        // Each surface in its own material's look; see-through ones are left out.
+        gl.table.glUniform1i(gl.normalTextureUniform, 1);
+        gl.table.glUniform1i(gl.metallicRoughnessTextureUniform, 2);
+        gl.table.glUniform1i(gl.aoTextureUniform, 3);
+        gl.table.glUniform1i(gl.emissiveTextureUniform, 4);
+
+        const auto bindMap = [&gl](const GLenum unit, const GLint hasUniform, const GLuint texId) {
+            if (texId != 0U) {
+                gl.table.glActiveTexture(unit);
+                glBindTexture(GL_TEXTURE_2D, texId);
+            }
+            if (hasUniform >= 0) {
+                gl.table.glUniform1i(hasUniform, texId != 0U ? 1 : 0);
+            }
+        };
+
+        // Each surface in its own material's PBR look; see-through ones are left out.
         for (std::size_t index = 0U; index < mesh.SurfaceCountUVE(); ++index) {
             const Asset::MeshSurfaceUVE surface = mesh.GetSurfaceUVE(index);
             if (surface.indexCount == 0U || static_cast<std::size_t>(surface.firstIndex) + surface.indexCount > mesh.indices.size()) {
@@ -518,14 +770,25 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
                 continue;
             }
             gl.table.glUniform3fv(gl.baseColorUniform, 1, look.colour.data());
-            const GLuint texture = textureOf(look.albedo);
-            if (texture != 0U) {
-                // glActiveTexture is a GL 1.3 entry point: Windows' opengl32 <GL/gl.h> only declares
-                // GL 1.1, so it must come from the shared loaded proc table like every other post-1.1 call.
-                gl.table.glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, texture);
-            }
-            gl.table.glUniform1i(gl.hasAlbedoTextureUniform, texture != 0U ? 1 : 0);
+            gl.table.glUniform1f(gl.metallicUniform, look.metallic);
+            gl.table.glUniform1f(gl.roughnessUniform, look.roughness);
+            gl.table.glUniform1f(gl.dielectricSpecularUniform, std::clamp(look.dielectricSpecular, 0.0F, 1.0F));
+            gl.table.glUniform1f(gl.normalScaleUniform, look.normalScale);
+            gl.table.glUniform1i(gl.flipGreenUniform, look.flipGreen ? 1 : 0);
+            gl.table.glUniform1f(gl.occlusionStrengthUniform, look.occlusionStrength);
+            gl.table.glUniform3fv(gl.emissiveColorUniform, 1, look.emissiveColor.data());
+            gl.table.glUniform1f(gl.emissiveEnergyUniform, look.emissiveEnergy);
+            gl.table.glUniform2fv(gl.uvScaleUniform, 1, look.uvScale.data());
+            gl.table.glUniform2fv(gl.uvOffsetUniform, 1, look.uvOffset.data());
+            gl.table.glUniform1i(gl.unshadedUniform, look.unshaded ? 1 : 0);
+
+            bindMap(GL_TEXTURE0, gl.hasAlbedoTextureUniform, textureOf(look.albedo, /*forceLinear=*/false));
+            bindMap(GL_TEXTURE1, gl.hasNormalTextureUniform, textureOf(look.normal, /*forceLinear=*/true));
+            bindMap(GL_TEXTURE2, gl.hasMetallicRoughnessTextureUniform,
+                    textureOf(look.metallicRoughness, /*forceLinear=*/true));
+            bindMap(GL_TEXTURE3, gl.hasAOTextureUniform, textureOf(look.ao, /*forceLinear=*/true));
+            bindMap(GL_TEXTURE4, gl.hasEmissiveTextureUniform, textureOf(look.emissive, /*forceLinear=*/false));
+
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(surface.indexCount), GL_UNSIGNED_INT,
                            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(surface.firstIndex) * sizeof(std::uint32_t)));
         }
@@ -583,9 +846,25 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         }
     }
 
-    for (const auto& [image, id] : albedoTextures) {
-        if (id != 0U) {
-            glDeleteTextures(1, &id);
+    if (succeeded && supersample) {
+        gl.table.glBindFramebuffer(kReadFramebufferUVE, gl.scratchFramebuffer);
+        gl.table.glBindFramebuffer(kDrawFramebufferUVE, gl.resolveFramebuffer);
+        gl.table.glBlitFramebuffer(0, 0, renderWidth, renderHeight, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        succeeded = glGetError() == GL_NO_ERROR;
+    }
+
+    if (succeeded) {
+        gl.table.glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, colorTexture);
+        gl.table.glGenerateMipmap(GL_TEXTURE_2D);
+        if (glGetError() == GL_NO_ERROR) {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        }
+    }
+
+    for (const UploadedMapUVE& map : uploadedMaps) {
+        if (map.id != 0U) {
+            glDeleteTextures(1, &map.id);
         }
     }
     if (vertexBuffer != 0U) {
@@ -598,6 +877,7 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
         gl.table.glDeleteVertexArrays(1, &vao);
     }
     if (colorTexture != 0U) {
+        gl.table.glBindFramebuffer(GL_FRAMEBUFFER, supersample ? gl.resolveFramebuffer : gl.scratchFramebuffer);
         gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     }
 
@@ -608,12 +888,20 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     gl.table.glBindVertexArray(static_cast<GLuint>(previousVao));
     gl.table.glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
     gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementArrayBuffer));
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+    for (std::size_t unit = 0U; unit < kTextureUnitCountUVE; ++unit) {
+        gl.table.glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextures[unit]));
+        if (gl.table.glBindSampler != nullptr) {
+            gl.table.glBindSampler(static_cast<GLuint>(unit), static_cast<GLuint>(previousSamplers[unit]));
+        }
+    }
+    gl.table.glActiveTexture(static_cast<GLenum>(previousActiveTexture));
     SetGlCapabilityUVE(GL_DEPTH_TEST, depthTestWasEnabled);
     SetGlCapabilityUVE(GL_CULL_FACE, cullFaceWasEnabled);
     SetGlCapabilityUVE(GL_BLEND, blendWasEnabled);
     SetGlCapabilityUVE(GL_SCISSOR_TEST, scissorWasEnabled);
     glDepthMask(previousDepthMask);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
     glClearColor(previousClearColor[0], previousClearColor[1], previousClearColor[2], previousClearColor[3]);
 
     if (!succeeded) {
