@@ -22,11 +22,13 @@ enum class UITextHorizontalAlignUVE : std::uint8_t { Left = 0, Center = 1, Right
 /// Where the lines sit down their box.
 enum class UITextVerticalAlignUVE : std::uint8_t { Top = 0, Middle = 1, Bottom = 2 };
 
+/// Text layout direction for BiDi / right-to-left localization.
+enum class UITextDirectionUVE : std::uint8_t { Auto = 0, LeftToRight = 1, RightToLeft = 2 };
+
 /// A single line of screen-space UI text, anchored at `positionPixels` (raw window pixel
 /// coordinates, top-left origin - the same convention IInputSystemUVE::GetMousePositionUVE()
 /// already uses, so no unprojection is ever needed anywhere in this system). Rendered by
-/// UIRuntimeUVE/Renderer3DUVE's "UIOverlay" pass against a baked bitmap-font glyph atlas; only the
-/// embedded font's own covered characters (Latin-1 subset) are guaranteed to render.
+/// UIRuntimeUVE/Renderer3DUVE's "UIOverlay" pass against a baked bitmap-font glyph atlas.
 /// Thread-safety: value type; trivially safe to copy/move.
 struct UITextComponentUVE final {
     std::string text;
@@ -43,6 +45,10 @@ struct UITextComponentUVE final {
     UITextVerticalAlignUVE verticalAlign = UITextVerticalAlignUVE::Top;
     /// Long lines break at spaces to stay inside the box's width.
     bool wrap = false;
+    /// Enables inline rich-text markup (`[color=#RRGGBB]`, `[b]`, `[i]`, `[size=N]`).
+    bool richText = false;
+    /// Text reading direction (`Auto` detects Arabic/Hebrew RTL scripts automatically).
+    UITextDirectionUVE textDirection = UITextDirectionUVE::Auto;
     /// Distance between lines, in font sizes.
     float lineHeight = 1.25F;
     Math::Vector3UVE shadowColor{0.0F, 0.0F, 0.0F};

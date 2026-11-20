@@ -196,6 +196,8 @@ uniform mat4 uLightSpaceMatrices[3];
 uniform float uShadowCascadeSplits[3];
 uniform int uLutEnabled;
 uniform float uLutContribution;
+uniform int uColorblindMode;
+uniform float uColorblindSeverity;
 
 const int kFogModeLinearUVE = 0; // WorldEnvironmentFogModeUVE::Linear
 const int kFogModeHeightUVE = 2; // Exponential is 1; Height is 2.
@@ -1118,6 +1120,7 @@ void main() {
     bool useDisplaySpace = encodeSrgbThisPixel || (uFastApproximateAA != 0) ||
                            (uChromaticAberrationIntensity > 0.0) || hasGrading ||
                            (uLutEnabled != 0 && uHasLutTexture != 0) ||
+                           (uColorblindMode > 0 && uColorblindSeverity > 0.0) ||
                            (uVignetteIntensity > 0.0) || (uFilmGrainIntensity > 0.0) ||
                            (uDitheringEnabled != 0);
 
@@ -1140,6 +1143,29 @@ void main() {
         if (uLutEnabled != 0 && uHasLutTexture != 0) {
             vec3 graded = SampleLutUVE(uLutTexture, display);
             display = mix(display, graded, clamp(uLutContribution, 0.0, 1.0));
+        }
+
+        if (uColorblindMode > 0 && uColorblindSeverity > 0.0) {
+            float l = 17.8824 * display.r + 43.5161 * display.g + 4.11935 * display.b;
+            float m = 3.45565 * display.r + 27.1554 * display.g + 3.86714 * display.b;
+            float k = 0.0299566 * display.r + 0.184309 * display.g + 1.46709 * display.b;
+            float sl = l;
+            float sm = m;
+            float sk = k;
+            if (uColorblindMode == 1) {
+                sl = 2.02344 * m - 2.52581 * k;
+            } else if (uColorblindMode == 2) {
+                sm = 0.494207 * l + 1.24827 * k;
+            } else if (uColorblindMode == 3) {
+                sk = -0.395913 * l + 0.801109 * m;
+            }
+            vec3 sim = vec3(
+                0.0809444479 * sl - 0.130504409 * sm + 0.116721066 * sk,
+                -0.0102485335 * sl + 0.0540193266 * sm - 0.113614708 * sk,
+                -0.000365296938 * sl - 0.00412161469 * sm + 0.693511405 * sk);
+            vec3 err = display - sim;
+            vec3 corr = vec3(display.r, display.g + 0.7 * err.r + err.g, display.b + 0.7 * err.r + err.b);
+            display = clamp(mix(display, corr, clamp(uColorblindSeverity, 0.0, 1.0)), 0.0, 1.0);
         }
 
         float vignetteIntensity = clamp(uVignetteIntensity, 0.0, 1.0);
