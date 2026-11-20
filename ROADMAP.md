@@ -1023,7 +1023,10 @@ real utility file) — networked multiplayer is a from-scratch, long-term projec
   per-entity filters.
 - [x] Interest core: spatial relevance between viewers and entities (uniform grid, per-viewer radii, hysteresis band, always-relevant flags, fail-open unknowns with counters; feeds the replicator's per-entity relevancy filters; priority tiers with id-staggered send rates, per-entity rate overrides, multi-client fan-out with per-viewer budgets over tier-distance ranking, proven by a fan-out sample: one server, three budgeted bots, divergent views)
 - [x] Interest Gameplay adapter: scene <-> interest sync with filter binding (world-pose upserts that never flip always-relevant flags, viewer-follows-pawn moves, idempotent per-viewer binds; short counts surface map/core drift)
-- [ ] Voice chat
+- [x] Voice chat — `IAudioDeviceUVE` capture hooks + `VoiceChatSessionUVE` (pluggable
+  `IVoiceCodecUVE` with 4:1 `ImaAdpcmVoiceCodecUVE`, energy VAD + PTT gate, wire packet
+  serialization, and sequence-ordered `VoiceJitterBufferUVE` with packet-loss concealment);
+  locked by `VoiceChatUVETest`.
 - [x] A matchmaking/lobby layer, or at minimum a clean integration point for a third-party
   one — the lobby below is a room registry over direct RPC sessions (create/list/join/leave/roster,
   one room per client, roster-change push, typed client facade, script surface).
@@ -1118,8 +1121,10 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   device. Remaining, and the reason this sat unchecked: compression is opt-in (`None` by default)
   and the Inspector exposes no control with a quality/memory preview, so no project ever turns it
   on — by accident or deliberately.
-- [ ] SVG/vector asset support (a real rasterizer — confirmed not to exist anywhere in this
-  codebase today, so raw vector source files fall back to a generic icon)
+- [x] SVG/vector asset support — dependency-free SVG rasterizer (`RasterizeSvgToTextureAssetUVE`
+  in `svg_importer.h/.cpp`) supporting `<svg>`/`viewBox`, `<rect>`, `<circle>`, `<ellipse>`,
+  `<polygon>`, `<polyline>`, `<line>`, and `<path>` (`M/L/H/V/Q/C/Z`) with 2× anti-aliasing,
+  fills, strokes, opacity, and `rasterScale` into RGBA8 `TextureAssetUVE`; locked by `SvgImporterUVETest`.
 - [x] Asset cooking for imported native content: `uve_pack --cook windows|android` writes a
   fresh package with stable GUIDs, a rooted relative catalog, validated dependencies, texture
   dimension limits (2048/1024), generated mips and portable UASTC when the encoder is available.
@@ -1131,10 +1136,15 @@ script per node; see `Engine/Runtime/UVScript/README.md`.
   pinned-pressure loads with a diagnostic; failed reloads preserve last-known-good data. Cooked
   profiles default to 256 MiB (Windows) / 128 MiB (Android). This is not a process/GPU cap or
   progressive texture/mesh streaming: transient decoding and downstream copies are excluded.
-- [ ] Version-control-friendly asset diffing/merging tools for binary or semi-binary asset
-  formats
-- [ ] An in-editor material editor / shader graph (author materials visually; currently
-  materials are authored as data with no visual node graph)
+- [x] Version-control-friendly asset diffing/merging tools for binary or semi-binary asset
+  formats — `Engine/Tools/uve_asset_diff.py` (`textconv` for `git diff` on JSON and binary `.uve*`
+  envelopes, semantic property `diff`, and 3-way JSON `merge` driver with conflict detection);
+  locked by `Engine/Tools/test_uve_asset_diff.py`.
+- [x] An in-editor material editor / shader graph — `.uvmatgraph` asset & cycle-checked topological
+  GLSL PBR surface compiler (`material_graph_asset.h`, `material_graph_compiler.cpp`) wired into
+  Material Details (`Open Visual Material Graph...` launching `prism::BlueprintGraph` with
+  `MaterialShader` preset + Save & Compile + live Texture Settings memory estimate); locked by
+  `MaterialGraphCompilerUVETest`.
 - [x] A particle-effect authoring tool — `EditorVfxEditorUVE` + `VfxViewportUVE` (4-stage node graph, curve/gradient editors, timeline scrubber, burst lanes, live 3D studio preview, 8 VFX test suites).
 
 ---
