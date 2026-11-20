@@ -880,6 +880,8 @@ struct FrameUniformsUVE {
     std::array<std::int32_t, kMaxShadowedLightsUVE> lightShadowEnabled{};
     std::array<Math::Vector2UVE, kMaxShadowedLightsUVE> lightShadowDepthRanges{};
     std::array<Math::Vector4UVE, kMaxShadowTilesUVE> lightShadowCubeRects{};
+    /// Quality-tier ceiling on lights the shader loops over (Renderer3DUVE::SetScalabilityModeUVE).
+    std::size_t activeLightCap = kMaxLightsUVE;
     /// Per light: 0-based shadow slot + 1, or -1 when the light owns no slot (see lit_shadowed_3d.glsl).
     std::array<std::int32_t, kMaxLightsUVE> lightShadowSlots = [] {
         std::array<std::int32_t, kMaxLightsUVE> slots{};
@@ -1082,6 +1084,7 @@ struct Renderer3DUVE::ImplUVE {
     std::int32_t shadingMode = 0;
     std::int32_t scalabilityMode = 2;
     std::size_t activeMaxInstancesPerFrame = 131'072U;
+    std::size_t activeMaxLightsPerFrame = kMaxLightsUVE;
     std::size_t activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
     bool humanEyeEnabled = false;
     float humanEyeCenterScale = 1.0F;
@@ -3543,7 +3546,7 @@ struct Renderer3DUVE::ImplUVE {
                           static_cast<std::int32_t>(kAmbientEnvironmentTextureSlotUVE));
         program.SetIntUVE("uAmbientEnvironmentMapEnabled", frameUniforms.ambientEnvironmentMapEnabled ? 1 : 0);
         program.SetIntUVE("uActiveLightCount",
-                          static_cast<std::int32_t>(std::min(frameUniforms.lights.SizeUVE(), kMaxLightsUVE)));
+                          static_cast<std::int32_t>(std::min(frameUniforms.lights.SizeUVE(), frameUniforms.activeLightCap)));
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
             program.SetIntUVE(uniformNames.lightShadowSlots[lightIndex], frameUniforms.lightShadowSlots[lightIndex]);
             // The shader's light slots are fixed at kMaxLightsUVE, but the extracted list only
@@ -5507,6 +5510,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     frameUniforms.skyReflectionHorizon = m_impl->environmentFrame.reflectionHorizon;
     frameUniforms.skyReflectionGround = m_impl->environmentFrame.reflectionGround;
     frameUniforms.isOrthographic = isOrthographic;
+    frameUniforms.activeLightCap = m_impl->activeMaxLightsPerFrame;
     frameUniforms.cameraForward = m_impl->skyCameraForward;
 
     // Indexed by uLights[] slot, which is exactly how the shader indexes its own arrays - a tile
@@ -7177,6 +7181,7 @@ void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) no
         m_impl->shadowPcfKernelRadius = 0;
         m_impl->activeMaxInstancesPerFrame = 16'384U;
         m_impl->activeMaxParticleGpuDrawCommands = 4'096U;
+        m_impl->activeMaxLightsPerFrame = 4U;
     } else if (clampedLevel == 1) {
         m_impl->postProcessSettings.ssaoQualityUVE = 1U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
@@ -7186,6 +7191,7 @@ void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) no
         m_impl->shadowPcfKernelRadius = 1;
         m_impl->activeMaxInstancesPerFrame = 65'536U;
         m_impl->activeMaxParticleGpuDrawCommands = 16'384U;
+        m_impl->activeMaxLightsPerFrame = 8U;
     } else if (clampedLevel == 2) {
         m_impl->postProcessSettings.ssaoQualityUVE = 2U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
@@ -7193,6 +7199,7 @@ void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) no
         m_impl->shadowPcfKernelRadius = 2;
         m_impl->activeMaxInstancesPerFrame = 131'072U;
         m_impl->activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
+        m_impl->activeMaxLightsPerFrame = 12U;
     } else {
         m_impl->postProcessSettings.ssaoQualityUVE = 2U;
         m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
@@ -7203,6 +7210,7 @@ void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) no
             std::max(m_impl->postProcessSettings.contactShadowStepCountUVE, 12U);
         m_impl->shadowPcfKernelRadius = 2;
         m_impl->activeMaxInstancesPerFrame = kMaximumInstancesPerFrameUVE;
+        m_impl->activeMaxLightsPerFrame = kMaxLightsUVE;
         m_impl->activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
     }
 }
