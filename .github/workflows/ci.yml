@@ -38,7 +38,7 @@ env:
 
 on:
   push:
-    branches: [master, 'kosuke/**', 'refactor/**']
+    branches: [master, 'kosuke/**', 'refactor/**', 'fix/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -137,7 +137,7 @@ jobs:
           path: .ccache
           key: ccache-linux-${{ matrix.mode }}-${{ github.sha }}
 
-      - name: Cooked project smoke test
+      - name: Cooked project smoke test & RSS budget gate
         run: |
           ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_asset_workload --create-fixture /tmp/uve-ci-cook-source
           ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_pack --project /tmp/uve-ci-cook-source/sample.uvproject --runtime ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_runtime --output /tmp/uve-ci-cooked --cook android
@@ -145,6 +145,8 @@ jobs:
           ./.uvbt/bin/Linux/${{ matrix.mode }}/uve_asset_workload /tmp/uve-ci-cooked/.uvassetdb /tmp/uve-ci-cooked /tmp/uve-ci-asset-load.json
           cd /tmp/uve-ci-cooked
           ./uve_runtime --headless --project sample.uvproject --frames 3
+          cd "${{ github.workspace }}"
+          python3 Engine/Tools/performance/measure_process.py --runs 2 --timeout 30 --max-peak-mib 512 --output /tmp/uve-ci-runtime-perf.json -- /tmp/uve-ci-cooked/uve_runtime --headless --project /tmp/uve-ci-cooked/sample.uvproject --frames 3
 
       - name: Surface build errors as annotations
         if: failure()
