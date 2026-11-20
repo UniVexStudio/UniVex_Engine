@@ -18,10 +18,11 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <utility>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <string>
+#include <utility>
 
 namespace UVE::Editor {
 namespace {

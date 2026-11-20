@@ -23,8 +23,8 @@ TEST(BindlessTextureTableUVETest, RegistersRecyclesAndAutoUnregistersOnDestroy) 
     desc.format = TextureFormatUVE::RGBA8Unorm;
     const TextureHandleUVE texA = device.CreateTextureUVE(desc);
     const TextureHandleUVE texB = device.CreateTextureUVE(desc);
-    ASSERT_TRUE(texA.IsValidUVE());
-    ASSERT_TRUE(texB.IsValidUVE());
+    ASSERT_NE(texA, kInvalidTextureHandleUVE);
+    ASSERT_NE(texB, kInvalidTextureHandleUVE);
 
     const std::uint32_t slotA = device.RegisterBindlessTextureUVE(texA);
     const std::uint32_t slotA2 = device.RegisterBindlessTextureUVE(texA);
