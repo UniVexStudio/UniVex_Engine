@@ -15,6 +15,7 @@ public class EngineAppModule : ModuleRules
 
         ExcludedFiles.AddRange(new string[] {
             "editor/",
+            "hub/",
             "Android/"
         });
     }
