@@ -415,7 +415,12 @@ jobs:
           ccache -z
           signing=()
           if [ -n "${ANDROID_KEYSTORE}" ]; then
-            echo "${ANDROID_KEYSTORE}" | base64 -d > "${RUNNER_TEMP}/release.keystore"
+            # Pasted base64 often carries line breaks, spaces or a byte-order mark; skip them.
+            printf '%s' "${ANDROID_KEYSTORE}" | base64 --decode --ignore-garbage > "${RUNNER_TEMP}/release.keystore"
+            if ! keytool -list -keystore "${RUNNER_TEMP}/release.keystore" -storepass:env UVE_ANDROID_KEYSTORE_PASSWORD > /dev/null; then
+              echo "::error::The ANDROID_KEYSTORE secret is not a keystore that ANDROID_KEYSTORE_PASSWORD opens. Paste the base64 of the .keystore/.jks file again, and check the password."
+              exit 1
+            fi
             signing=(--keystore "${RUNNER_TEMP}/release.keystore")
           else
             echo "::warning::ANDROID_KEYSTORE is not set: the APK is signed with a throwaway debug key, so it cannot update an installed copy."
