@@ -18,6 +18,10 @@
 #include "engine_core.h"
 #include "engine_install.h"
 #include "hub_window.h"
+#include "prism/Theme.h"
+#include "prism/WindowChrome.h"
+#include <fstream>
+#include <iterator>
 #include "logging_macros.h"
 #include "project_list.h"
 #include "project_registry.h"
@@ -30,6 +34,8 @@ inline constexpr std::uint32_t kHubWindowHeightUVE = 760U;
 inline constexpr std::string_view kHubLogFileNameUVE = "uve_hub.log";
 /// PRISM's fonts, themes and locales ship beside the executable under this name.
 inline constexpr std::string_view kPrismAssetsDirectoryNameUVE = "prism_assets";
+/// The Hub's colour and metric tokens, inside PRISM's asset directory.
+inline constexpr std::string_view kHubThemeFileUVE = "themes/univex-hub.json";
 /// Frame-rate caps: the Hub is a quiet window and needs no more.
 inline constexpr std::uint32_t kFocusedFrameRateCapUVE = 60U;
 inline constexpr std::uint32_t kUnfocusedFrameRateCapUVE = 10U;
@@ -165,6 +171,8 @@ int main(const int argc, char** argv) {
     config.windowTitle = std::string(kHubWindowTitleUVE);
     config.windowWidth = kHubWindowWidthUVE;
     config.windowHeight = kHubWindowHeightUVE;
+    // The Hub draws its own title bar (PRISM window chrome) in place of the OS frame.
+    config.windowBorderlessUVE = true;
     config.logFilePath = context.registryFile.parent_path() / kHubLogFileNameUVE;
     config.focusedFrameRateCapUVE = kFocusedFrameRateCapUVE;
     config.unfocusedFrameRateCapUVE = kUnfocusedFrameRateCapUVE;
@@ -190,8 +198,18 @@ int main(const int argc, char** argv) {
             core.Shutdown();
             return kStartupFailedExitCodeUVE;
         }
+        const std::filesystem::path themeFile =
+            executableDirectory / kPrismAssetsDirectoryNameUVE / std::filesystem::path(kHubThemeFileUVE);
+        std::ifstream themeInput(themeFile, std::ios::binary);
+        const std::string themeText{std::istreambuf_iterator<char>(themeInput), std::istreambuf_iterator<char>()};
+        std::string themeError;
+        if (themeText.empty() || !prism::themeMutable().applyJson(themeText, &themeError)) {
+            UVE_WARNING("uve_hub: the Hub theme {} could not be applied: {}", themeFile.string(), themeError);
+        }
         UVE::Hub::HubWindowUVE hub(std::move(context));
-        host.SetRootUVE(hub.BuildUVE());
+        prism::WindowChromeOptions chrome;
+        chrome.title = std::string(kHubWindowTitleUVE);
+        host.SetRootUVE(prism::wrapWithWindowChrome(hub.BuildUVE(), UVE::Editor::EditorHostUVE::kMainWindowUVE, chrome));
         hub.ShowPageUVE(options.page);
         core.SetPostRenderCallbackUVE([&host] {
             host.BeginFrameUVE();

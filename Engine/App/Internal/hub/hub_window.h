@@ -3,10 +3,12 @@
 #pragma once
 
 #include <filesystem>
+#include <utility>
 #include <string>
 #include <vector>
 
 #include "engine_install.h"
+#include "hub_widgets.h"
 #include "project_list.h"
 #include "project_registry.h"
 #include "project_template.h"
@@ -49,6 +51,10 @@ private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildNewProjectPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildSettingsPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildProjectRowUVE(const Pack::ProjectListRowUVE& row);
+    [[nodiscard]] prism::Ref<NavItemUVE> MakeNavItemUVE(const std::string& label, prism::Icon icon, HubPageUVE page);
+    /// A path field with a Browse button that opens the folder picker.
+    [[nodiscard]] prism::Ref<prism::Widget> FolderFieldUVE(const prism::Ref<prism::TextInput>& field,
+                                                           const std::string& pickerTitle);
 
     void ReloadRegistryUVE();
     void RefreshProjectListUVE();
@@ -58,6 +64,8 @@ private:
     template <class ChangeUVE> void UpdateRegistryUVE(ChangeUVE&& change);
 
     void OpenProjectUVE(const std::filesystem::path& projectFile);
+    /// Opens the project whose manifest sits in `folder`.
+    void OpenProjectFolderUVE(const std::filesystem::path& folder);
     void CreateProjectUVE();
     void SaveSettingsUVE();
     void SetStatusUVE(const std::string& message, bool isError);
@@ -70,7 +78,7 @@ private:
     Pack::ProjectListSortUVE m_sort = Pack::ProjectListSortUVE::RecentlyOpened;
 
     prism::Ref<prism::StackSwitcher> m_pages;
-    std::vector<prism::Ref<prism::Button>> m_navigation;
+    std::vector<std::pair<HubPageUVE, prism::Ref<NavItemUVE>>> m_navigation;
     prism::Ref<prism::Label> m_status;
 
     prism::Ref<prism::TextInput> m_search;
@@ -78,7 +86,7 @@ private:
     prism::Ref<prism::TextInput> m_openPath;
 
     prism::Ref<prism::Box> m_templateRows;
-    std::vector<prism::Ref<prism::Button>> m_templateButtons;
+    std::vector<prism::Ref<NavItemUVE>> m_templateButtons;
     prism::Ref<prism::Label> m_templateDescription;
     prism::Ref<prism::TextInput> m_projectName;
     prism::Ref<prism::TextInput> m_projectLocation;
