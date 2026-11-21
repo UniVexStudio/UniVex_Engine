@@ -334,7 +334,7 @@ public:
       static const char* lbl[] = {"Get", "Set"};
       for (int k = 0; k < 2; k++) {
         Rect b = btnRect(r, k);
-        c.fillRoundRect(b, 3, m_hot == 100 + i * 4 + k ? t.accent : t.control);
+        c.fillRoundRect(b, 3, m_hot == 100 + i * 4 + k ? t.rowSelected : t.control);
         c.textIn(*t.ui, b, lbl[k], t.textBright, HAlign::Center);
       }
       Rect x = btnRect(r, 2);

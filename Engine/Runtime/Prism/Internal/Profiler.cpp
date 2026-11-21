@@ -93,10 +93,10 @@ void Profiler::paint(Canvas& c) {
   chip(Rect{rr.x, rr.y, rr.w, rr.h}, "", true, m_hot == 1, m_paused ? t.warning : Color(210, 70, 70));
   if (!m_paused) c.fillCircle(Vec2(rr.x + 14, rr.y + 11), 3.2f, Color(240, 90, 90));
   c.textIn(*t.semibold, Rect{rr.x + 22, rr.y, rr.w - 24, rr.h}, m_paused ? "Paused" : "Recording", t.textBright, HAlign::Center);
-  chip(clearRect(), "Clear", false, m_hot == 2, t.accent);
+  chip(clearRect(), "Clear", false, m_hot == 2, t.highlight);
   c.textIn(*t.ui, Rect{m_rect.right() - 196, m_rect.y, 64, kBarH}, "Budget", t.textDim, HAlign::Right);
-  chip(t60Rect(), "60 fps", std::fabs(m_targetMs - 16.667f) < 0.1f, m_hot == 3, t.accent);
-  chip(t30Rect(), "30 fps", std::fabs(m_targetMs - 33.333f) < 0.1f, m_hot == 4, t.accent);
+  chip(t60Rect(), "60 fps", std::fabs(m_targetMs - 16.667f) < 0.1f, m_hot == 3, t.highlight);
+  chip(t30Rect(), "30 fps", std::fabs(m_targetMs - 33.333f) < 0.1f, m_hot == 4, t.highlight);
 
   const ProfileFrame* f = shownFrame();
   if (!f) {
@@ -148,8 +148,8 @@ void Profiler::paint(Canvas& c) {
     if (sel) c.strokeRect({x0 + bw * float(i) - 1, plot.y, std::max(3.0f, bw + 1.4f), plot.h}, t.textBright);
   }
   float ty = yOf(m_targetMs);
-  for (float x = plot.x; x < plot.right(); x += 8) c.hline(x, std::min(plot.right(), x + 4), ty, t.accentHover);
-  c.textIn(*t.ui, Rect{plot.x + 4, ty - 14, 120, 12}, fmt("budget %.1f ms", m_targetMs), t.accentHover);
+  for (float x = plot.x; x < plot.right(); x += 8) c.hline(x, std::min(plot.right(), x + 4), ty, t.warning);
+  c.textIn(*t.ui, Rect{plot.x + 4, ty - 14, 120, 12}, fmt("budget %.1f ms", m_targetMs), t.warning);
   c.textIn(*t.ui, Rect{plot.right() - 150, plot.y, 146, 12}, "CPU bars    GPU ticks", t.textDim, HAlign::Right);
   c.hline(g.x, g.right(), g.bottom(), t.border);
 
@@ -181,7 +181,7 @@ void Profiler::paintTimeline(Canvas& c, Rect r, const ProfileFrame& f) {
   // budget line
   if (m_targetMs >= t0 && m_targetMs <= t0 + span) {
     float x = xOf(m_targetMs);
-    for (float y = r.y + 17; y < r.bottom(); y += 6) c.vline(x, y, std::min(r.bottom(), y + 3), t.accentHover);
+    for (float y = r.y + 17; y < r.bottom(); y += 6) c.vline(x, y, std::min(r.bottom(), y + 3), t.warning);
   }
   static const char* names[3] = {"CPU Main", "Render", "GPU"};
   int maxDepth[3] = {0, 0, 0};

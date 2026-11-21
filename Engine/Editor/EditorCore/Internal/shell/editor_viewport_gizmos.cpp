@@ -564,7 +564,7 @@ void EditorViewportGizmosUVE::paint(prism::Canvas& c) {
         const bool selected = m_editor.IsEntitySelectedUVE(b.entity);
         c.fillCircle(s, kBillboardSizeUVE * 0.62F, prism::Color(14, 16, 22, selected ? 210 : 150));
         if (selected) {
-            c.strokeCircle(s, kBillboardSizeUVE * 0.62F, prism::theme().accent, 1.5F);
+            c.strokeCircle(s, kBillboardSizeUVE * 0.62F, prism::theme().highlight, 1.5F);
         }
         if (b.icon) {
             c.blitBlend(b.icon.pixels, b.icon.size, b.icon.size, b.icon.size, box);

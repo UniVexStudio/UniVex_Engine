@@ -5,8 +5,8 @@
 
 namespace prism {
 
-// The UniVex palette: graphite surfaces with deep amber as the one accent. Amber marks what is active
-// or primary; it is never the background of ordinary controls.
+// The UniVex palette: graphite surfaces, neutral highlights for what is selected or active, and deep
+// amber only for primary actions and the brand.
 Theme Theme::dark() {
   Theme t;
   t.window = Color::hex(0x17191d);       // main background
@@ -25,11 +25,12 @@ Theme Theme::dark() {
   t.textBright = Color::hex(0xf7f8fa);
   t.accent = Color::hex(0xe5a126);
   t.accentHover = Color::hex(0xf2b84b);
-  t.accentDim = Color::hex(0x3b2e19);    // subtle amber: selections and hovered menu rows
+  t.accentDim = Color::hex(0x3b2e19);    // subtle amber, for amber-tinted surfaces only
   t.accentText = Color::hex(0x17191d);   // text on an amber fill
+  t.highlight = Color::hex(0xb9bfc9);    // selected, active and focused indicators
   t.rowHover = Color(255, 255, 255, 10);
-  t.rowSelected = Color::hex(0x3b2e19);
-  t.rowSelectedInactive = Color::hex(0x2e3239);
+  t.rowSelected = Color::hex(0x373c46);
+  t.rowSelectedInactive = Color::hex(0x2c3037);
   t.success = Color::hex(0x55b982);
   t.warning = Color::hex(0xe5a126);
   t.error = Color::hex(0xe05c5c);
@@ -72,6 +73,7 @@ Theme Theme::light() {
   t.logBg = Color::hex(0xffffff);
   t.statusBar = Color::hex(0xdcdce1);
   t.popup = Color::hex(0xffffff);
+  t.highlight = Color::hex(0x5a606b);
   return t;
 }
 
@@ -80,7 +82,7 @@ const std::vector<Theme::ColorToken>& Theme::colorTokens() {
 #define T(n) {#n, &Theme::n}
       T(window), T(panel), T(header), T(control), T(controlHover), T(controlPress), T(field), T(border), T(borderSoft),
       T(borderStrong), T(text), T(textDim), T(textDisabled), T(textBright), T(accent), T(accentHover), T(accentDim),
-      T(accentText), T(rowHover), T(rowSelected), T(rowSelectedInactive), T(success), T(warning), T(error), T(info),
+      T(accentText), T(highlight), T(rowHover), T(rowSelected), T(rowSelectedInactive), T(success), T(warning), T(error), T(info),
       T(axisX), T(axisY), T(axisZ), T(logBg), T(statusBar), T(popup)
 #undef T
   };

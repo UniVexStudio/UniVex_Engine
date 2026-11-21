@@ -2186,7 +2186,7 @@ void EditorAssetTableUVE::BeginDragUVE(const std::size_t entryIndex) {
         const prism::Rect card{mouse.x + 12.0F, mouse.y + 12.0F, std::min(260.0F, t.ui->width(name) + 40.0F), 26.0F};
         c.shadow(card, 3, 6, prism::Color(0, 0, 0, 140));
         c.fillRoundRect(card, 4.0F, prism::Color(35, 45, 60, 240));
-        c.strokeRoundRect(card, 4.0F, t.accent, 1);
+        c.strokeRoundRect(card, 4.0F, t.highlight, 1);
         if (icon) {
             c.blitBlend(icon.pixels, icon.size, icon.size, icon.size, prism::Rect{card.x + 6.0F, card.y + 5.0F, 16.0F, 16.0F});
         }

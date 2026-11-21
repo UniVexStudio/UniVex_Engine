@@ -890,7 +890,7 @@ void EditorVfxEditorUVE::RebuildEmittersListUVE() {
 
         auto card = prism::make<prism::Border>();
         card->setBackground(selected ? prism::Color(44, 62, 88) : prism::Color(30, 32, 37));
-        card->setBorder(selected ? prism::theme().accent : prism::theme().border, prism::Margin(1.0F));
+        card->setBorder(selected ? prism::theme().highlight : prism::theme().border, prism::Margin(1.0F));
         card->setPadding(prism::Margin(6.0F, 4.0F, 6.0F, 4.0F));
 
         auto col = prism::vbox(3.0F);

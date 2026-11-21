@@ -112,7 +112,7 @@ public:
     void paint(prism::Canvas& c) override {
         prism::Border::paint(c);
         if (m_hot) {
-            c.strokeRoundRect(rect().deflated(2.0F), 4.0F, prism::theme().accent, 2);
+            c.strokeRoundRect(rect().deflated(2.0F), 4.0F, prism::theme().highlight, 2);
         }
     }
 

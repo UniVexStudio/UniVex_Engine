@@ -89,7 +89,7 @@ public:
       }
       const Entry& e = m_entries[size_t(row.entry)];
       const bool hot = int(i) == m_sel && e.item.enabled;
-      if (hot) c.fillRoundRect(rr.deflated(Margin(2, 1)), 3, t.accentDim);
+      if (hot) c.fillRoundRect(rr.deflated(Margin(2, 1)), 3, t.rowSelected);
       const Color fg = !e.item.enabled ? t.textDisabled : (hot ? t.textBright : t.text);
       const Color dim = !e.item.enabled ? t.textDisabled : (hot ? t.text : t.textDim);
       const Rect ic{rr.x + 8, rr.y + (rr.h - 16) * 0.5f, 16, 16};

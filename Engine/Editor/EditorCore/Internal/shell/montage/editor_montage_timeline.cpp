@@ -189,7 +189,7 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
         const bool selected = picked.kind == KindUVE::Segment && picked.index == i;
         c.fillRoundRect(block, 3.0F, selected ? prism::Color(64, 150, 140) : prism::Color(48, 110, 104));
         if (selected) {
-            c.strokeRoundRect(block, 3.0F, t.accent, 1);
+            c.strokeRoundRect(block, 3.0F, t.highlight, 1);
         }
         std::string label = m_window.ClipNameUVE(montage.segments[i].clip);
         if (montage.segments[i].loops > 1U) {
@@ -212,7 +212,7 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
         const prism::Rect bar{x0, row.y + 4.0F, x1 - x0, row.h - 8.0F};
         c.fillRoundRect(bar, 3.0F, selected ? prism::Color(200, 120, 60) : prism::Color(150, 90, 50));
         if (selected) {
-            c.strokeRoundRect(bar, 3.0F, t.accent, 1);
+            c.strokeRoundRect(bar, 3.0F, t.highlight, 1);
         }
         c.textIn(*t.small, prism::Rect{bar.x + 5.0F, bar.y, bar.w - 6.0F, bar.h}, state.name, t.textBright);
     }
@@ -268,13 +268,13 @@ void MontageTimelineUVE::paint(prism::Canvas& c) {
 
     // What is being dragged, where it would land.
     if (m_drag.has_value()) {
-        c.fillRect(prism::Rect{m_mouse.x, m_rect.y + kRulerUVE, 1.0F, m_rect.h - kRulerUVE}, t.accent);
+        c.fillRect(prism::Rect{m_mouse.x, m_rect.y + kRulerUVE, 1.0F, m_rect.h - kRulerUVE}, t.highlight);
     }
     c.popClip();
     // The playhead, with its time on the ruler.
     DrawTimelinePlayheadUVE(c, content, kRulerUVE, scale, session->playhead, SecondsTextUVE(session->playhead));
     if (m_dropHot) {
-        c.strokeRoundRect(slotRow, 3.0F, t.accent, 2);
+        c.strokeRoundRect(slotRow, 3.0F, t.highlight, 2);
     }
 }
 
