@@ -33,6 +33,8 @@ class ModuleInfo:
         self.public_sys_libs = []
         self.private_sys_libs = []
         self.source_files = []
+        # Windows resource scripts (.rc): icons and version data, compiled and linked on Windows only.
+        self.resource_files = []
         self.excluded_files = []
 
     def __repr__(self):
@@ -113,8 +115,9 @@ class CSharpParser:
             if p.is_dir() and p not in mod.private_includes:
                 mod.private_includes.append(p)
 
-        # Discover source files (.cpp, .c)
+        # Discover source files (.cpp, .c) and Windows resource scripts (.rc)
         sources = []
+        resources = []
         if mod.module_type != "HeaderOnly":
             extra_dirs = [(mod_dir / d).resolve() for d in mod.extra_source_dirs if (mod_dir / d).is_dir()]
             search_dirs = [mod_dir] + extra_dirs
@@ -129,15 +132,16 @@ class CSharpParser:
                         continue
                     seen_roots.add(rpath)
                     for f in files:
-                        if f.endswith((".cpp", ".c", ".cc")):
+                        if f.endswith((".cpp", ".c", ".cc", ".rc")):
                             full_src = rpath / f
                             try:
                                 rel_str = str(full_src.relative_to(mod_dir)).replace("\\", "/")
                             except ValueError:
                                 rel_str = str(full_src.relative_to(s_dir)).replace("\\", "/")
                             if f not in mod.excluded_files and not any(ex in rel_str for ex in mod.excluded_files):
-                                sources.append(full_src)
+                                (resources if f.endswith(".rc") else sources).append(full_src)
         mod.source_files = sorted(list(dict.fromkeys(sources)))
+        mod.resource_files = sorted(list(dict.fromkeys(resources)))
 
         return mod
 
@@ -245,6 +249,38 @@ class EngineBuilder:
             if cand.is_dir() and cand not in dirs:
                 dirs.append(cand)
         return [d for d in dirs if d.is_dir()]
+
+    def _compile_resources(self, target, obj_dir, cxx):
+        """Compiles the root modules' Windows resource scripts (.rc) into objects to link.
+
+        Only the root modules' are used: a resource object inside a static library is never pulled
+        into the link, because nothing references it. windres is taken from WINDRES or from beside
+        the compiler, and each script runs from its own folder so relative file names in it work.
+        """
+        scripts = [rc for name in target.extra_modules if name in self.modules
+                   for rc in self.modules[name].resource_files]
+        if not scripts:
+            return []
+        windres = os.environ.get("WINDRES") or shutil.which("windres")
+        if windres is None:
+            compiler = shutil.which(cxx)
+            candidate = Path(compiler).with_name("windres.exe") if compiler else None
+            windres = str(candidate) if candidate and candidate.is_file() else None
+        if windres is None:
+            raise RuntimeError("[UVBT] windres is needed to compile Windows resources (.rc).")
+        objects = []
+        for script in scripts:
+            out_obj = obj_dir / "resources" / (script.stem + ".res.o")
+            out_obj.parent.mkdir(parents=True, exist_ok=True)
+            cmd = [windres, "--input", script.name, "--output", str(out_obj), "--output-format=coff"]
+            res = subprocess.run(cmd, cwd=script.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode != 0:
+                print(res.stdout)
+                print(res.stderr)
+                raise RuntimeError(f"[UVBT] Resource compilation failed: {script}")
+            print(f"[UVBT] Compiled resources :: {script.name}")
+            objects.append(str(out_obj))
+        return objects
 
     def _ensure_uiautomation_import_lib(self, lib_dir: Path):
         implib = lib_dir / "libuiautomationcore.a"
@@ -882,6 +918,8 @@ class EngineBuilder:
             # main() (e.g. the Viewport demo app) would otherwise win symbol resolution over the
             # real entry point of the root module and the wrong program would be produced.
             root_objs = [str(o) for m in target.extra_modules for o in module_objects.get(m, [])]
+            if platform == "Windows":
+                root_objs += self._compile_resources(target, obj_dir, cxx)
             root_libs = {str(module_libs[m]) for m in target.extra_modules if m in module_libs}
             other_libs = [l for l in all_libs if l not in root_libs]
             link_cmd += root_objs

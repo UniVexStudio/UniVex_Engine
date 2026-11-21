@@ -1,0 +1,5 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+// Windows resources for the UniVex Hub Setup executable: the UniVex icon Explorer and the taskbar show.
+// UVBT compiles this from its own folder, so the path is relative to it.
+
+1 ICON "../../../Distribution/brand/univex-logo.ico"

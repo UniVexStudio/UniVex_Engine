@@ -129,6 +129,7 @@ jobs:
           ./uvbt build UniVexAssetWorkload Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexEditor Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexHub Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
+          ./uvbt build UniVexHubSetup Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexPrismTests Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ccache -s
 
@@ -227,8 +228,8 @@ jobs:
       - name: Validate the CI annotation helper
         run: python3 -m unittest discover -s Engine/Tools/ci -p 'test_*.py'
 
-      - name: Validate the engine packager
-        run: python3 -m unittest discover -s Engine/Tools -p 'test_package_engine.py'
+      - name: Validate the engine and installer packagers
+        run: python3 -m unittest discover -s Engine/Tools -p 'test_*_installer.py' && python3 -m unittest discover -s Engine/Tools -p 'test_package_engine.py'
 
   # ---------------------------------------------------------------------------------------------
   # Windows: the editor is built as an actual Windows application, and the exe is started once with
@@ -278,6 +279,7 @@ jobs:
           ccache -z
           ./uvbt build UniVexEditor Windows Release -j4
           ./uvbt build UniVexHub Windows Release -j4
+          ./uvbt build UniVexHubSetup Windows Release -j4
           ./uvbt build UniVexRuntime Windows Release -j4
           ./uvbt build UniVexPack Windows Release -j4
           ./uvbt build UniVexAssetWorkload Windows Release -j4
