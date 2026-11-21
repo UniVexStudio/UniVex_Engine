@@ -17,18 +17,25 @@
 # it. On a release each job also packages what it built - nothing is compiled twice - and Publish puts
 # the engine packages, the Hub installers and the Hub APK, each with its .sha256, into one release.
 #
-# A release is a push of the tag v<version> (e.g. v0.2.0, v0.2.0-beta) or of a branch named
-# release/v<version> - the same thing for setups that can push branches but not tags. The tag is the
-# engine's version; the Hub's version is read from the Hub that was built. Tags ending in -beta are
-# published as prereleases, the Hub's Beta channel.
+# Two kinds of release, both made by the same jobs:
+#
+#   every push to master  A development build: published to the development repository as the
+#                         prerelease v<engine version>-beta, its files replaced by each later push of
+#                         the same version.
+#   a tag v<version>      A versioned release (e.g. v0.2.0, v0.2.0-beta). Tags ending in -beta are
+#                         prereleases, the Hub's Beta channel.
+#
+# The engine's version comes from the tag, or from the built editor for master; the Hub's version is
+# always read from the Hub that was built. Other branches are checked through pull requests.
 #
 # Where a release goes is switched by the PUBLISH_RELEASES repository variable:
 #
 #   not "true" (default)  The development repository in DEV_RELEASES_REPOSITORY below (a repository
 #                         variable of the same name overrides it). The Hub never reads it: builds from
 #                         there are installed with the Hub's "Import package...".
-#   "true"                The repository Engine/Distribution/engine_feed.json names, the one the Hub
-#                         reads to offer engine versions.
+#   "true"                Tag releases go to the repository Engine/Distribution/engine_feed.json
+#                         names, the one the Hub reads to offer engine versions. Master builds always
+#                         go to the development repository.
 #
 # Publishing needs the RELEASES_TOKEN secret: a fine-grained access token with Contents: write on
 # those two repositories only. An APK is signed with the key in the ANDROID_KEYSTORE secret (base64,
@@ -46,10 +53,12 @@ env:
   UNIVEX_DIAGNOSTIC_ARTIFACTS: ${{ vars.DIAGNOSTIC_ARTIFACTS == 'true' }}
   ENGINE_FEED_FILE: Engine/Distribution/engine_feed.json
   DEV_RELEASES_REPOSITORY: ${{ vars.DEV_RELEASES_REPOSITORY || 'UniVexStudio/UniVexReleases-Dev' }}
+  # True for a run that publishes: a push to master (a development build) or a version tag.
+  IS_RELEASE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v') }}
 
 on:
   push:
-    branches: [master, 'kosuke/**', 'refactor/**', 'fix/**', 'feature/**', 'release/v*']
+    branches: [master]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -57,7 +66,7 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   # A newer push replaces a running check, never a running release.
-  cancel-in-progress: ${{ !(startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')) }}
+  cancel-in-progress: ${{ !((github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v')) }}
 
 jobs:
   # ---------------------------------------------------------------------------------------------
@@ -289,12 +298,12 @@ jobs:
         id: version
         run: echo "hub-version=$(.uvbt/bin/Linux/Release/uve_hub --version)" >> "${GITHUB_OUTPUT}"
       - name: Package the installer
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        if: env.IS_RELEASE == 'true'
         run: |
           python3 Engine/Tools/make_hub_installer.py --bin .uvbt/bin/Linux/Release --target linux \
             --tag "hub-v${{ steps.version.outputs.hub-version }}" --output dist
       - name: Hand the release files to the publish job
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: hub-linux
@@ -351,7 +360,7 @@ jobs:
           path: .ccache
           key: ccache-windows-hub-${{ github.sha }}
       - name: Package the installer
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        if: env.IS_RELEASE == 'true'
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -359,7 +368,7 @@ jobs:
           hub_version=$("$bin/uve_hub.exe" --version | tr -d '\r')
           python Engine/Tools/make_hub_installer.py --bin "$bin" --target windows --tag "hub-v${hub_version}" --output dist
       - name: Hand the release files to the publish job
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: hub-windows
@@ -408,7 +417,7 @@ jobs:
       - name: Build the Hub APK
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
-          RELEASING: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v') }}
+          RELEASING: ${{ env.IS_RELEASE }}
           UVE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           UVE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
@@ -418,10 +427,13 @@ jobs:
           if [ -n "${ANDROID_KEYSTORE}" ]; then
             # Pasted base64 often carries line breaks, spaces or a byte-order mark; skip them.
             printf '%s' "${ANDROID_KEYSTORE}" | base64 --decode --ignore-garbage > "${RUNNER_TEMP}/release.keystore"
-            if keytool -list -keystore "${RUNNER_TEMP}/release.keystore" -storepass:env UVE_ANDROID_KEYSTORE_PASSWORD > /dev/null; then
+            if check=$(keytool -list -keystore "${RUNNER_TEMP}/release.keystore" -storepass:env UVE_ANDROID_KEYSTORE_PASSWORD 2>&1); then
               signing=(--keystore "${RUNNER_TEMP}/release.keystore")
             else
-              message="The ANDROID_KEYSTORE secret is not a keystore that ANDROID_KEYSTORE_PASSWORD opens. Paste the base64 of the .keystore/.jks file again, and check the password."
+              # keytool's own reason (wrong password, not a keystore, ...) and the decoded size; no secret.
+              reason=$(printf '%s\n' "${check}" | grep -i 'error' | tail -n 1)
+              size=$(wc -c < "${RUNNER_TEMP}/release.keystore")
+              message="The ANDROID_KEYSTORE secret (${size} bytes once decoded) is not a keystore that ANDROID_KEYSTORE_PASSWORD opens: ${reason}. Paste the base64 of the .keystore/.jks file again, and check the password."
               # A release must be signed with the real key; a check build can use a debug key.
               if [ "${RELEASING}" = "true" ]; then
                 echo "::error::${message}"
@@ -445,7 +457,7 @@ jobs:
             ThirdParty/android
           key: android-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
       - name: Hand the release files to the publish job
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: hub-android
@@ -461,6 +473,8 @@ jobs:
     name: Release / Linux
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    outputs:
+      release-tag: ${{ steps.package.outputs.release-tag }}
     env:
       UVBT_COMPILER_LAUNCHER: ccache
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -495,12 +509,18 @@ jobs:
           path: .ccache
           key: ccache-linux-Release-${{ github.sha }}
       - name: Package the engine
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        id: package
+        if: env.IS_RELEASE == 'true'
         run: |
-          python3 Engine/Tools/package_engine.py --bin .uvbt/bin/Linux/Release --target linux \
-            --tag "${GITHUB_REF_NAME#release/}" --output dist
+          set -euo pipefail
+          bin=.uvbt/bin/Linux/Release
+          # A tag names its version; a master build is a development prerelease of the built version.
+          tag="${GITHUB_REF_NAME}"
+          [ "${GITHUB_REF_TYPE}" = "tag" ] || tag="v$("$bin/uve_editor" --version)-beta"
+          python3 Engine/Tools/package_engine.py --bin "$bin" --target linux --tag "${tag}" --output dist
+          echo "release-tag=${tag}" >> "${GITHUB_OUTPUT}"
       - name: Hand the release files to the publish job
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-linux
@@ -605,13 +625,16 @@ jobs:
           mv ../cook-source ../source-unavailable
           ../cooked/uve_runtime.exe --headless --project ../cooked/sample.uvproject --frames 3
       - name: Package the engine
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        if: env.IS_RELEASE == 'true'
         shell: msys2 {0}
         run: |
-          python Engine/Tools/package_engine.py --bin .uvbt/bin/Windows/Release --target windows \
-            --tag "${GITHUB_REF_NAME#release/}" --output dist
+          set -euo pipefail
+          bin=.uvbt/bin/Windows/Release
+          tag="${GITHUB_REF_NAME}"
+          [ "${GITHUB_REF_TYPE}" = "tag" ] || tag="v$("$bin/uve_editor.exe" --version | tr -d '\r')-beta"
+          python Engine/Tools/package_engine.py --bin "$bin" --target windows --tag "${tag}" --output dist
       - name: Hand the release files to the publish job
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+        if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-windows
@@ -679,7 +702,7 @@ jobs:
   # ---------------------------------------------------------------------------------------------
   publish:
     name: Publish the release
-    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v')
     needs: [linux, hub-linux, hub-windows, hub-android, release-linux, release-windows, release-android]
     runs-on: ubuntu-24.04
     permissions:
@@ -697,7 +720,8 @@ jobs:
           PUBLISH_RELEASES: ${{ vars.PUBLISH_RELEASES }}
         run: |
           set -euo pipefail
-          if [ "${PUBLISH_RELEASES}" = "true" ]; then
+          # Only a version tag reaches the public repository; master builds stay in development.
+          if [ "${PUBLISH_RELEASES}" = "true" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             repository=$(jq -er '.owner + "/" + .repository' "${ENGINE_FEED_FILE}")
           elif [ -n "${DEV_RELEASES_REPOSITORY}" ]; then
             repository="${DEV_RELEASES_REPOSITORY}"
@@ -728,7 +752,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
           set -euo pipefail
-          RELEASE_TAG="${GITHUB_REF_NAME#release/}"
+          RELEASE_TAG="${{ needs.release-linux.outputs.release-tag }}"
           if [ -z "${GH_TOKEN}" ]; then
             echo "::error::The RELEASES_TOKEN secret is not set; it needs Contents: write on ${RELEASES_REPOSITORY}."
             exit 1
