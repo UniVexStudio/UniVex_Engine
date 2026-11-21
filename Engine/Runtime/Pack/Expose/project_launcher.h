@@ -10,6 +10,7 @@
 #include "engine_config.h"
 #include "engine_version.h"
 #include "editor_project_package.h"
+#include "project_compatibility.h"
 
 namespace UVE::Core {
 class EngineCoreUVE;
@@ -66,6 +67,8 @@ enum class ProjectEditorSetupCodeUVE : std::uint8_t {
     InvalidProjectFile,
     ContentRootInvalid,
     StartupSceneInvalid,
+    /// The project was saved with a newer engine this one must not open.
+    EngineTooOld,
     DirectoryUnavailable,
 };
 
@@ -78,6 +81,8 @@ struct ProjectEditorSetupUVE final {
     /// The manifest's startup scene under the content root, or empty when none is configured. The
     /// file itself may not exist yet: a freshly created project names the scene it will save first.
     std::filesystem::path startupScene;
+    /// How the project's recorded engine version relates to the engine opening it.
+    ProjectCompatibilityUVE compatibility;
 };
 
 struct ProjectEditorSetupResultUVE final {
@@ -95,10 +100,12 @@ struct ProjectEditorSetupResultUVE final {
 /// PrepareProjectRuntimeUVE, the project's shipped-application policy (window, icons, splash,
 /// user-data location) is left alone: the editor keeps its own window and per-user preferences, and
 /// a project without a startup scene is still a valid project to author. The log keeps the file name
-/// the caller chose and moves under kProjectEditorLogDirectoryNameUVE in the project root. On
-/// failure `config` is not modified.
-[[nodiscard]] ProjectEditorSetupResultUVE PrepareProjectEditorUVE(const std::filesystem::path& projectFile,
-                                                                  Core::EngineConfigUVE& config);
+/// the caller chose and moves under kProjectEditorLogDirectoryNameUVE in the project root. A project
+/// saved with an engine newer than `engineVersion` beyond the compatibility policy is refused with
+/// EngineTooOld. On failure `config` is not modified.
+[[nodiscard]] ProjectEditorSetupResultUVE PrepareProjectEditorUVE(
+    const std::filesystem::path& projectFile, const Core::VersionUVE& engineVersion, Core::EngineConfigUVE& config,
+    const ProjectCompatibilityPolicyUVE& policy = kDefaultProjectCompatibilityPolicyUVE);
 
 /// Records `engineVersion` as the engine that last edited the project, through the manifest's
 /// revision-checked update so a concurrent writer is never overwritten. A manifest that already
