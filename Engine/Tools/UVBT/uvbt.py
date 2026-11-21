@@ -907,6 +907,12 @@ class EngineBuilder:
             if project_templates.is_dir():
                 shutil.copytree(project_templates, bin_dir / "project_templates", dirs_exist_ok=True)
 
+        if any(m.name == "Online" for m in ordered_modules):
+            # Where the launcher finds engine releases; matches Online's kEngineFeedFileNameUVE.
+            engine_feed = self.repo_root / "Engine" / "Distribution" / "engine_feed.json"
+            if engine_feed.is_file():
+                shutil.copy2(engine_feed, bin_dir / "engine_feed.json")
+
         print(f"\033[92m[UVBT] BUILD SUCCESSFUL!\033[0m")
         print(f"[UVBT] Output Binary: {target_exe}")
         return target_exe

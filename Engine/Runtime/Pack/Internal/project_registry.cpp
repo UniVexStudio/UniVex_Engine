@@ -86,6 +86,7 @@ ProjectRegistryResultUVE ProjectRegistryUVE::LoadUVE(const std::filesystem::path
             entry.lastOpenedUnixSeconds = item.value("lastOpenedUnixSeconds", std::int64_t{0});
             entry.engineVersion = VersionFromJsonUVE(item.at("engineVersion"));
             entry.favorite = item.value("favorite", false);
+            entry.engineChoice = item.value("engineChoice", std::string{});
             if (std::none_of(entries.begin(), entries.end(), [&entry](const ProjectRegistryEntryUVE& existing) {
                     return existing.projectFile == entry.projectFile;
                 })) {
@@ -109,7 +110,8 @@ ProjectRegistryResultUVE ProjectRegistryUVE::SaveUVE(const std::filesystem::path
                             {"displayName", entry.displayName},
                             {"lastOpenedUnixSeconds", entry.lastOpenedUnixSeconds},
                             {"engineVersion", VersionToJsonUVE(entry.engineVersion)},
-                            {"favorite", entry.favorite}});
+                            {"favorite", entry.favorite},
+                            {"engineChoice", entry.engineChoice}});
     }
     const JsonUVE json{{"format", kProjectRegistryFormatUVE},
                        {"schemaVersion", kCurrentProjectRegistrySchemaVersionUVE},
@@ -169,6 +171,17 @@ bool ProjectRegistryUVE::SetFavoriteUVE(const std::filesystem::path& projectFile
         if (entry.projectFile == key) {
             entry.favorite = favorite;
             TrimUVE();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ProjectRegistryUVE::SetEngineChoiceUVE(const std::filesystem::path& projectFile, std::string engineVersion) {
+    const std::filesystem::path key = NormalizeProjectFileUVE(projectFile);
+    for (ProjectRegistryEntryUVE& entry : m_entries) {
+        if (entry.projectFile == key) {
+            entry.engineChoice = std::move(engineVersion);
             return true;
         }
     }

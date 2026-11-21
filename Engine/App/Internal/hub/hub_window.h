@@ -3,11 +3,16 @@
 #pragma once
 
 #include <filesystem>
+#include <future>
+#include <memory>
+#include <optional>
 #include <utility>
 #include <string>
 #include <vector>
 
 #include "engine_install.h"
+#include "engine_library.h"
+#include "engine_release_feed.h"
 #include "hub_widgets.h"
 #include "project_list.h"
 #include "project_registry.h"
@@ -27,11 +32,17 @@ struct HubContextUVE final {
     /// the editor is then pointed at the same file.
     bool registryOverridden = false;
     std::filesystem::path settingsFile;
+    /// Downloaded engines live here, one folder per version.
+    std::filesystem::path enginesRoot;
+    std::filesystem::path credentialsFile;
+    /// Where engine releases are published; absent when the Hub ships without a feed.
+    std::optional<Online::EngineFeedSourceUVE> feed;
 };
 
 enum class HubPageUVE : int {
     Projects = 0,
     NewProject,
+    Engines,
     Settings,
 };
 
@@ -44,12 +55,17 @@ public:
     /// Builds the widget tree; call once.
     [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
     void ShowPageUVE(HubPageUVE page);
+    /// Advances background work (release checks, downloads); call once a frame.
+    void TickUVE();
 
 private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildSidebarUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildProjectsPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildNewProjectPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildSettingsPageUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildEnginesPageUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildEngineRowUVE(const std::string& title, const std::string& detail,
+                                                              prism::Ref<prism::Widget> action);
     [[nodiscard]] prism::Ref<prism::Widget> BuildProjectRowUVE(const Pack::ProjectListRowUVE& row);
     [[nodiscard]] prism::Ref<NavItemUVE> MakeNavItemUVE(const std::string& label, prism::Icon icon, HubPageUVE page);
     /// A path field with a Browse button that opens the folder picker.
@@ -57,6 +73,11 @@ private:
                                                            const std::string& pickerTitle);
 
     void ReloadRegistryUVE();
+    void RefreshInstalledEnginesUVE();
+    void RefreshEngineListUVE();
+    void CheckForEnginesUVE();
+    void DownloadEngineUVE(const Online::EngineReleaseUVE& release);
+    [[nodiscard]] bool IsInstalledUVE(const Core::VersionUVE& version) const;
     void RefreshProjectListUVE();
     void RefreshTemplateListUVE();
     void SelectTemplateUVE(std::size_t index);
@@ -68,6 +89,7 @@ private:
     void OpenProjectFolderUVE(const std::filesystem::path& folder);
     void CreateProjectUVE();
     void SaveSettingsUVE();
+    void SaveAccessTokenUVE();
     void SetStatusUVE(const std::string& message, bool isError);
 
     HubContextUVE m_context;
@@ -76,6 +98,11 @@ private:
     std::vector<Pack::ProjectTemplateUVE> m_templates;
     std::size_t m_selectedTemplate = 0U;
     Pack::ProjectListSortUVE m_sort = Pack::ProjectListSortUVE::RecentlyOpened;
+
+    std::vector<Online::InstalledEngineUVE> m_engines;
+    Online::EngineFeedResultUVE m_feedResult;
+    std::future<Online::EngineFeedResultUVE> m_feedRequest;
+    std::unique_ptr<Online::EngineDownloadUVE> m_download;
 
     prism::Ref<prism::StackSwitcher> m_pages;
     std::vector<std::pair<HubPageUVE, prism::Ref<NavItemUVE>>> m_navigation;
@@ -90,6 +117,13 @@ private:
     prism::Ref<prism::Label> m_templateDescription;
     prism::Ref<prism::TextInput> m_projectName;
     prism::Ref<prism::TextInput> m_projectLocation;
+
+    prism::Ref<prism::Box> m_engineRows;
+    prism::Ref<prism::Label> m_feedStatus;
+    prism::Ref<prism::ProgressBar> m_downloadBar;
+    prism::Ref<prism::Label> m_downloadLabel;
+    prism::Ref<prism::TextInput> m_tokenField;
+    prism::Ref<prism::Label> m_tokenState;
 
     prism::Ref<prism::TextInput> m_settingsLocation;
     prism::Ref<prism::TextInput> m_settingsRecentLimit;

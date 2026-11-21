@@ -99,6 +99,7 @@ jobs:
             zlib1g-dev \
             libjpeg-dev \
             libfreetype-dev \
+            libcurl4-openssl-dev \
             xvfb \
             libvulkan1 \
             mesa-vulkan-drivers \

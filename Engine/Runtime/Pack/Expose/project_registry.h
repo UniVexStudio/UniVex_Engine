@@ -35,6 +35,8 @@ struct ProjectRegistryEntryUVE final {
     std::int64_t lastOpenedUnixSeconds = 0;
     Platform::EditorProjectVersionUVE engineVersion{};
     bool favorite = false;
+    /// The engine version the user chose to open this project with; empty lets the launcher choose.
+    std::string engineChoice;
 
     [[nodiscard]] bool operator==(const ProjectRegistryEntryUVE&) const = default;
 };
@@ -73,6 +75,9 @@ public:
     bool SetFavoriteUVE(const std::filesystem::path& projectFile, bool favorite);
     /// False when the project is not in the registry.
     bool RemoveUVE(const std::filesystem::path& projectFile);
+    /// Records the engine version to open the project with ("" to let the launcher choose). False when
+    /// the project is not in the registry.
+    bool SetEngineChoiceUVE(const std::filesystem::path& projectFile, std::string engineVersion);
 
     [[nodiscard]] const std::vector<ProjectRegistryEntryUVE>& EntriesUVE() const noexcept { return m_entries; }
     [[nodiscard]] const ProjectRegistryEntryUVE* FindUVE(const std::filesystem::path& projectFile) const;
