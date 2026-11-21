@@ -5,8 +5,10 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "engine_config.h"
+#include "engine_version.h"
 #include "editor_project_package.h"
 
 namespace UVE::Core {
@@ -55,6 +57,54 @@ struct ProjectRuntimeSetupResultUVE final {
         return code == ProjectRuntimeSetupCodeUVE::Ready && setup.has_value();
     }
 };
+
+/// Directory, relative to the project root, that receives the editor's log for that project.
+inline constexpr std::string_view kProjectEditorLogDirectoryNameUVE = "Logs";
+
+enum class ProjectEditorSetupCodeUVE : std::uint8_t {
+    Ready = 0,
+    InvalidProjectFile,
+    ContentRootInvalid,
+    StartupSceneInvalid,
+    DirectoryUnavailable,
+};
+
+/// The project an editor session authors. Every path is absolute and normalized.
+struct ProjectEditorSetupUVE final {
+    Platform::EditorProjectPackageUVE package;
+    std::filesystem::path projectFile;
+    std::filesystem::path projectRoot;
+    std::filesystem::path contentRoot;
+    /// The manifest's startup scene under the content root, or empty when none is configured. The
+    /// file itself may not exist yet: a freshly created project names the scene it will save first.
+    std::filesystem::path startupScene;
+};
+
+struct ProjectEditorSetupResultUVE final {
+    ProjectEditorSetupCodeUVE code = ProjectEditorSetupCodeUVE::InvalidProjectFile;
+    std::string message;
+    std::optional<ProjectEditorSetupUVE> setup;
+
+    [[nodiscard]] bool IsReadyUVE() const noexcept {
+        return code == ProjectEditorSetupCodeUVE::Ready && setup.has_value();
+    }
+};
+
+/// Points `config` at the project `projectFile` describes so the editor authors that project's
+/// content, settings, input map and asset database, before EngineCoreUVE::Init(). Unlike
+/// PrepareProjectRuntimeUVE, the project's shipped-application policy (window, icons, splash,
+/// user-data location) is left alone: the editor keeps its own window and per-user preferences, and
+/// a project without a startup scene is still a valid project to author. The log keeps the file name
+/// the caller chose and moves under kProjectEditorLogDirectoryNameUVE in the project root. On
+/// failure `config` is not modified.
+[[nodiscard]] ProjectEditorSetupResultUVE PrepareProjectEditorUVE(const std::filesystem::path& projectFile,
+                                                                  Core::EngineConfigUVE& config);
+
+/// Records `engineVersion` as the engine that last edited the project, through the manifest's
+/// revision-checked update so a concurrent writer is never overwritten. A manifest that already
+/// names this version is left untouched and reported as applied.
+[[nodiscard]] Platform::EditorProjectPackageResultUVE RecordProjectEngineVersionUVE(
+    const std::filesystem::path& projectFile, const Core::VersionUVE& engineVersion);
 
 /// Loads a validated project manifest and applies its application/user-data policy to the
 /// EngineConfig before EngineCoreUVE::Init(). This is the runtime bootstrap boundary: project paths

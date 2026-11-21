@@ -24,6 +24,7 @@
 
 #include "crash_reporter.h"
 #include "engine_core.h"
+#include "project_launcher.h"
 #include "logging_macros.h"
 #include "editor_bridge_stdio.h"
 #include "editor.h"
@@ -35,7 +36,26 @@
 
 namespace {
 
+/// File name of the editor log. Without a project it is written to the working directory; with one
+/// it moves under the project's log directory (see PrepareProjectEditorUVE).
+inline constexpr std::string_view kEditorLogFileNameUVE = "uve_editor.log";
+/// The level the editor opens when neither --scene nor the project's startup scene names one,
+/// relative to the content root.
+inline constexpr std::string_view kDefaultViewportFolderUVE = "Viewport";
+inline constexpr std::string_view kDefaultViewportSceneFileUVE = "Viewport.uvscene";
+/// Where levels were saved before the Viewport asset existed, relative to the working directory.
+inline constexpr std::string_view kLegacyEditorSceneFileUVE = "editor_scene.uvscene";
+inline constexpr std::string_view kProjectOptionUVE = "--project";
+/// Process exit code for a command line the editor cannot act on.
+inline constexpr int kInvalidCommandLineExitCodeUVE = 2;
+/// Process exit code for a project the editor cannot open.
+inline constexpr int kProjectUnavailableExitCodeUVE = 1;
+
 struct EditorLaunchOptionsUVE final {
+    /// The `.uvproject` to author. Empty keeps the working-directory layout.
+    std::filesystem::path projectFile;
+    /// Set when the command line cannot be acted on; the editor reports it and exits.
+    std::optional<std::string> error;
     /// Empty means the project's default Viewport: Content/Viewport/Viewport.uvscene.
     std::filesystem::path scenePath;
     std::optional<int> frameLimit;
@@ -106,6 +126,18 @@ struct EditorLaunchOptionsUVE final {
             options.decorated = true;
             continue;
         }
+        if (argument == kProjectOptionUVE) {
+            if (!options.projectFile.empty()) {
+                options.error = std::string(kProjectOptionUVE) + " may only be supplied once";
+                return options;
+            }
+            if (index + 1 >= argc || std::string_view{argv[index + 1]}.starts_with("--")) {
+                options.error = std::string(kProjectOptionUVE) + " requires a path to a .uvproject file";
+                return options;
+            }
+            options.projectFile = argv[++index];
+            continue;
+        }
         if (argument == "--scene" && index + 1 < argc) {
             options.scenePath = argv[++index];
             continue;
@@ -136,7 +168,9 @@ struct EditorLaunchOptionsUVE final {
 
 } // namespace
 
-/// Starts the standalone UniVex Editor Foundation v1. `--scene <path>` selects the `.uvscene`
+/// Starts the standalone UniVex Editor Foundation v1. `--project <file.uvproject>` opens that
+/// project: its content root, settings, input map and asset database replace the working-directory
+/// defaults, and its startup scene is the level opened when `--scene` is not given. `--scene <path>` selects the `.uvscene`
 /// document. `--frames <n>` bounds a run for automation, while the normal windowed invocation runs
 /// until the user closes the editor. `--gl-version <major.minor>` overrides the requested desktop
 /// OpenGL version for an explicitly chosen platform capability (for example virtual-display CI).
@@ -154,9 +188,13 @@ struct EditorLaunchOptionsUVE final {
 /// main() into std::terminate().
 int main(const int argc, char** argv) {
     EditorLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
+    if (options.error.has_value()) {
+        std::cerr << "uve_editor: " << *options.error << '\n';
+        return kInvalidCommandLineExitCodeUVE;
+    }
 
     UVE::Core::EngineConfigUVE config{};
-    config.logFilePath = "uve_editor.log";
+    config.logFilePath = std::filesystem::path(kEditorLogFileNameUVE);
     config.enableConsoleLogging = !options.bridgeStdio;
     config.headlessUVE = options.headless;
     config.windowBorderlessUVE = !options.decorated;
@@ -170,6 +208,23 @@ int main(const int argc, char** argv) {
     if (options.glMajor.has_value() && options.glMinor.has_value()) {
         config.windowGlVersionMajor = *options.glMajor;
         config.windowGlVersionMinor = *options.glMinor;
+    }
+
+    // A level named on the command line is opened as given; otherwise the editor chooses one and
+    // makes sure it exists.
+    const bool sceneNamedOnCommandLine = !options.scenePath.empty();
+    std::optional<UVE::Pack::ProjectEditorSetupUVE> project;
+    if (!options.projectFile.empty()) {
+        UVE::Pack::ProjectEditorSetupResultUVE setupResult =
+            UVE::Pack::PrepareProjectEditorUVE(options.projectFile, config);
+        if (!setupResult.IsReadyUVE()) {
+            std::cerr << "uve_editor: " << setupResult.message << '\n';
+            return kProjectUnavailableExitCodeUVE;
+        }
+        project = std::move(setupResult.setup);
+        if (options.scenePath.empty()) {
+            options.scenePath = project->startupScene;
+        }
     }
 
     UVE::Core::EngineCoreUVE engine(config);
@@ -201,17 +256,20 @@ int main(const int argc, char** argv) {
         }
 
         // The level is a Viewport asset in the Asset Table: Content/Viewport/Viewport.uvscene
-        // unless --scene names another. A level saved at the old default moves there once.
+        // unless --scene or the project's startup scene names another. Outside a project, a level
+        // saved at the old working-directory default moves there once.
         bool createDefaultViewport = false;
         if (options.scenePath.empty()) {
-            const std::filesystem::path folder =
-                engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / "Viewport";
-            options.scenePath = folder / "Viewport.uvscene";
+            options.scenePath = engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot /
+                                kDefaultViewportFolderUVE / kDefaultViewportSceneFileUVE;
+        }
+        if (!sceneNamedOnCommandLine) {
             std::error_code error;
-            std::filesystem::create_directories(folder, error);
+            std::filesystem::create_directories(options.scenePath.parent_path(), error);
             if (!std::filesystem::exists(options.scenePath, error)) {
-                if (std::filesystem::exists("editor_scene.uvscene", error)) {
-                    std::filesystem::copy_file("editor_scene.uvscene", options.scenePath, error);
+                const std::filesystem::path legacyScene{kLegacyEditorSceneFileUVE};
+                if (!project.has_value() && std::filesystem::exists(legacyScene, error)) {
+                    std::filesystem::copy_file(legacyScene, options.scenePath, error);
                 } else {
                     createDefaultViewport = true;
                 }
@@ -329,6 +387,14 @@ int main(const int argc, char** argv) {
         // destructor deletes real GL objects (framebuffers/textures) that must still be valid.
         viewportHost.reset();
         editor.ShutdownUVE();
+        if (project.has_value()) {
+            const UVE::Platform::EditorProjectPackageResultUVE recorded = UVE::Pack::RecordProjectEngineVersionUVE(
+                project->projectFile, UVE::Core::EngineCoreUVE::GetEngineVersionUVE());
+            if (!recorded.IsAcceptedUVE()) {
+                UVE_WARNING("uve_editor: could not record the engine version in {}: {}",
+                            project->projectFile.string(), recorded.message);
+            }
+        }
         engine.Shutdown();
         return 0;
     } catch (const std::exception& exception) {
