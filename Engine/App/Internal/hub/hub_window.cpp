@@ -13,7 +13,6 @@
 #include "folder_picker.h"
 #include "hub_project_opener.h"
 #include "hub_setup.h"
-#include "online_credentials.h"
 #include "process_launcher.h"
 #include "application_runtime.h"
 #include "project_compatibility.h"
@@ -300,32 +299,6 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSettingsPageUVE() {
     save->onClick = [this] { SaveSettingsUVE(); };
     page->add(save, prism::Slot{0.0F, {}, prism::HAlign::Left});
 
-    page->add(prism::make<prism::Spacer>(0.0F, kSectionSpacingUVE));
-    page->add(HeadingUVE("Engine downloads"));
-    auto explanation = prism::make<prism::Label>(
-        "Engine versions are published privately. Paste an access token that can read them; it is kept on "
-        "this computer only.",
-        prism::FontRole::Small);
-    explanation->setColor(&prism::Theme::textDim);
-    page->add(explanation);
-    m_tokenField = prism::make<prism::TextInput>("", "Access token");
-    page->add(FieldRowUVE("Access token", m_tokenField));
-    m_tokenState = prism::make<prism::Label>("", prism::FontRole::Small);
-    m_tokenState->setColor(&prism::Theme::textDim);
-    m_tokenState->setText(Online::LoadAccessTokenUVE(m_context.credentialsFile).empty() ? "No token saved."
-                                                                                     : "A token is saved.");
-    page->add(m_tokenState);
-    auto tokenActions = prism::hbox(kControlSpacingUVE);
-    auto saveToken = prism::make<prism::Button>("Save token", prism::Icon::Save, prism::ButtonStyle::Primary);
-    saveToken->onClick = [this] { SaveAccessTokenUVE(); };
-    tokenActions->add(saveToken);
-    auto forget = prism::make<prism::Button>("Forget token", prism::Icon::Trash);
-    forget->onClick = [this] {
-        m_tokenField->setText("");
-        SaveAccessTokenUVE();
-    };
-    tokenActions->add(forget);
-    page->add(tokenActions, prism::Slot{0.0F, {}, prism::HAlign::Left});
     return page;
 }
 
@@ -772,11 +745,10 @@ void HubWindowUVE::CheckForEnginesUVE() {
     }
     m_feedStatus->setText("Checking for engine versions...");
     const Online::EngineFeedSourceUVE source = *m_context.feed;
-    const std::string token = Online::LoadAccessTokenUVE(m_context.credentialsFile);
     const std::string target(Platform::GetApplicationTargetUVE());
-    m_feedRequest = std::async(std::launch::async, [source, token, target] {
+    m_feedRequest = std::async(std::launch::async, [source, target] {
         const std::unique_ptr<Online::IHttpClientUVE> client = Online::CreatePlatformHttpClientUVE();
-        return Online::FetchEngineReleasesUVE(*client, source, token, target);
+        return Online::FetchEngineReleasesUVE(*client, source, target);
     });
     RefreshEngineListUVE();
 }
@@ -786,7 +758,6 @@ void HubWindowUVE::DownloadEngineUVE(const Online::EngineReleaseUVE& release) {
         return;
     }
     m_download = std::make_unique<Online::EngineDownloadUVE>(Online::CreatePlatformHttpClientUVE(), release,
-                                                             Online::LoadAccessTokenUVE(m_context.credentialsFile),
                                                              m_context.enginesRoot);
     m_downloadLabel->setText("Downloading engine " + release.version.ToStringUVE());
     m_downloadBar->parent()->setVisible(true);
@@ -805,7 +776,7 @@ void HubWindowUVE::TickUVE() {
             m_feedStatus->setText("You are offline. Installed engines still work; new versions appear when you "
                                   "are back online.");
             break;
-        case Online::EngineFeedStateUVE::Unauthorized:
+        case Online::EngineFeedStateUVE::NotFound:
         case Online::EngineFeedStateUVE::Failed:
             m_feedStatus->setText(m_feedResult.message);
             break;
@@ -825,18 +796,6 @@ void HubWindowUVE::TickUVE() {
             RefreshProjectListUVE();
         }
     }
-}
-
-void HubWindowUVE::SaveAccessTokenUVE() {
-    const std::string token = m_tokenField->text();
-    if (!Online::SaveAccessTokenUVE(m_context.credentialsFile, token)) {
-        SetStatusUVE("Unable to save the access token.", true);
-        return;
-    }
-    m_tokenField->setText("");
-    m_tokenState->setText(token.empty() ? "No token saved." : "A token is saved.");
-    SetStatusUVE(token.empty() ? "Access token forgotten." : "Access token saved.", false);
-    CheckForEnginesUVE();
 }
 
 } // namespace UVE::Hub
