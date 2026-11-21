@@ -224,6 +224,7 @@ jobs:
           python3 -m unittest discover -s Engine/Tools -p 'test_*_installer.py'
           python3 -m unittest discover -s Engine/Tools -p 'test_package_engine.py'
           python3 -m unittest discover -s Engine/Tools -p 'test_shared_names.py'
+          python3 -m unittest discover -s Engine/Tools -p 'test_uvbt.py'
 
   # ---------------------------------------------------------------------------------------------
   # Windows: the editor is built as an actual Windows application, and the exe is started once with
