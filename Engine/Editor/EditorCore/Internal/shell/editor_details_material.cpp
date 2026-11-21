@@ -368,7 +368,7 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
     // the content catalogue's material entries use and leaves every texture alone.
     section("Preset");
     {
-        auto preview = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Material);
+        auto preview = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Material, 128.0F);
         preview->setAssetUVE(absolutePath);
         std::weak_ptr<AssetThumbnailUVE> weakPreview = preview;
         auto previewRow = std::make_shared<RowUVE>();

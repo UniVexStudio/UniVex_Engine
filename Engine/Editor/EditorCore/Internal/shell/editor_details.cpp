@@ -300,6 +300,9 @@ std::uint64_t EditorDetailsUVE::StructureSignatureUVE(const Scene::EntityUVE ent
     HashUVE(h, static_cast<std::uint64_t>(m_editor.m_playModeState));
     HashUVE(h, m_editor.IsAuthoringCommandAllowedUVE() ? 1U : 0U);
     if (!m_editor.IsDocumentEntityUVE(entity)) {
+        if (m_editor.m_selectedProjectFile.has_value()) {
+            HashUVE(h, m_editor.m_selectedProjectFile->relativePath.generic_string());
+        }
         return h;
     }
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
@@ -363,11 +366,9 @@ void EditorDetailsUVE::RefreshUVE() {
         RebuildUVE(entity);
         return;
     }
-    if (!m_editor.IsDocumentEntityUVE(entity)) {
-        return;
-    }
-    // Same rows: show the values as they are now (a gizmo drag, an undo, a script), except the one
-    // the author is editing.
+    const bool hasEntity = m_editor.IsDocumentEntityUVE(entity);
+    // Same rows: show the values as they are now (a gizmo drag, an undo, a script, or a live
+    // material preview refresh), except the one the author is editing.
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     for (const std::shared_ptr<RowUVE>& row : m_rows) {
         if (!row->sync || IsBeingEditedUVE(*row)) {
@@ -375,7 +376,7 @@ void EditorDetailsUVE::RefreshUVE() {
         }
         const void* instance = nullptr;
         if (row->entry != nullptr) {
-            if (!em.HasComponentUVE(entity, row->entry->typeIndex)) {
+            if (!hasEntity || !em.HasComponentUVE(entity, row->entry->typeIndex)) {
                 continue;
             }
             instance = em.GetComponentPointerUVE(entity, row->entry->typeIndex);
@@ -390,12 +391,17 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
     if (m_editor.m_selectedEntities.empty() || !m_editor.IsDocumentEntityUVE(entity)) {
         if (m_editor.m_selectedProjectFile.has_value() && !m_editor.m_selectedProjectFile->relativePath.empty()) {
             const auto& file = *m_editor.m_selectedProjectFile;
+            const auto itemType = m_editor.GetAssetTableEntryTypeUVE(file);
             m_title->setText(file.relativePath.filename().string());
-            m_subtitle->setText(EditorUVE::GetAssetTableItemTypeLabelUVE(m_editor.GetAssetTableEntryTypeUVE(file)));
+            m_subtitle->setText(EditorUVE::GetAssetTableItemTypeLabelUVE(itemType));
             const int section = m_grid->addCategory("Asset");
             m_grid->addRow(section, "Path", prism::make<prism::Label>(file.relativePath.generic_string()));
             m_grid->addRow(section, "Registered",
                            prism::make<prism::Label>(file.registeredAssetGuid.has_value() ? "Yes" : "No"));
+            if (itemType == EditorUVE::AssetTableItemTypeUVE::Material) {
+                const auto snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                AddMaterialSectionUVE(snapshot.contentRoot / file.relativePath, "Material");
+            }
             return;
         }
         m_title->setText("Nothing selected");

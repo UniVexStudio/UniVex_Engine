@@ -20,6 +20,7 @@
 #include <GLFW/glfw3.h>
 
 #include "gl_functions.h"
+#include "logging_macros.h"
 
 #include "mesh_asset.h"
 #include "material_thumbnail_renderer.h"
@@ -94,18 +95,18 @@ uniform sampler2D uAOTexture;
 uniform sampler2D uEmissiveTexture;
 
 float DistributionGGXUVE(vec3 normal, vec3 halfway, float roughness) {
-    const float alpha = roughness * roughness;
-    const float alphaSquared = alpha * alpha;
-    const float normalDotHalfway = max(dot(normal, halfway), 0.0);
-    const float denominator = normalDotHalfway * normalDotHalfway * (alphaSquared - 1.0) + 1.0;
+    float alpha = roughness * roughness;
+    float alphaSquared = alpha * alpha;
+    float normalDotHalfway = max(dot(normal, halfway), 0.0);
+    float denominator = normalDotHalfway * normalDotHalfway * (alphaSquared - 1.0) + 1.0;
     return alphaSquared / max(kPi * denominator * denominator, 1.0e-5);
 }
 
 float VisibilitySmithGGXCorrelatedUVE(float normalDotView, float normalDotLight, float roughness) {
-    const float alpha = roughness * roughness;
-    const float alphaSquared = alpha * alpha;
-    const float viewTerm = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alphaSquared) + alphaSquared);
-    const float lightTerm = normalDotView * sqrt(normalDotLight * normalDotLight * (1.0 - alphaSquared) + alphaSquared);
+    float alpha = roughness * roughness;
+    float alphaSquared = alpha * alpha;
+    float viewTerm = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alphaSquared) + alphaSquared);
+    float lightTerm = normalDotView * sqrt(normalDotLight * normalDotLight * (1.0 - alphaSquared) + alphaSquared);
     return 0.5 / max(viewTerm + lightTerm, 1.0e-5);
 }
 
@@ -115,51 +116,51 @@ vec3 FresnelSchlickUVE(float viewDotHalfway, vec3 baseReflectance) {
 
 vec3 DirectLightUVE(vec3 normal, vec3 view, vec3 lightDirection, vec3 radiance, vec3 albedo,
                     vec3 baseReflectance, float metallic, float roughness) {
-    const float normalDotLight = max(dot(normal, lightDirection), 0.0);
+    float normalDotLight = max(dot(normal, lightDirection), 0.0);
     if (normalDotLight <= 0.0) {
         return vec3(0.0);
     }
-    const vec3 halfway = normalize(view + lightDirection);
-    const float normalDotView = max(dot(normal, view), 1.0e-4);
-    const float distribution = DistributionGGXUVE(normal, halfway, roughness);
-    const float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
-    const vec3 fresnel = FresnelSchlickUVE(max(dot(halfway, view), 0.0), baseReflectance);
-    const vec3 specular = fresnel * distribution * visibility;
-    const vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+    vec3 halfway = normalize(view + lightDirection);
+    float normalDotView = max(dot(normal, view), 1.0e-4);
+    float distribution = DistributionGGXUVE(normal, halfway, roughness);
+    float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+    vec3 fresnel = FresnelSchlickUVE(max(dot(halfway, view), 0.0), baseReflectance);
+    vec3 specular = fresnel * distribution * visibility;
+    vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
     return (diffuseWeight * albedo / kPi + specular) * radiance * normalDotLight;
 }
 
 vec3 ToneMapUVE(vec3 color) {
-    const vec3 numerator = color * (2.51 * color + 0.03);
-    const vec3 denominator = color * (2.43 * color + 0.59) + 0.14;
+    vec3 numerator = color * (2.51 * color + 0.03);
+    vec3 denominator = color * (2.43 * color + 0.59) + 0.14;
     return clamp(numerator / denominator, 0.0, 1.0);
 }
 
 vec3 LinearToDisplayUVE(vec3 color) {
-    const vec3 low = color * 12.92;
-    const vec3 high = 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+    vec3 low = color * 12.92;
+    vec3 high = 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
     return mix(high, low, lessThanEqual(color, vec3(0.0031308)));
 }
 
 vec3 PerturbNormalUVE(vec3 geomNormal, vec3 worldPos, vec2 uv, vec3 tangentNormal) {
-    const vec3 dp1 = dFdx(worldPos);
-    const vec3 dp2 = dFdy(worldPos);
-    const vec2 duv1 = dFdx(uv);
-    const vec2 duv2 = dFdy(uv);
-    const vec3 dp2perp = cross(dp2, geomNormal);
-    const vec3 dp1perp = cross(geomNormal, dp1);
-    const vec3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
-    const vec3 bitangent = dp2perp * duv1.y + dp1perp * duv2.y;
-    const float maxLenSq = max(dot(tangent, tangent), dot(bitangent, bitangent));
+    vec3 dp1 = dFdx(worldPos);
+    vec3 dp2 = dFdy(worldPos);
+    vec2 duv1 = dFdx(uv);
+    vec2 duv2 = dFdy(uv);
+    vec3 dp2perp = cross(dp2, geomNormal);
+    vec3 dp1perp = cross(geomNormal, dp1);
+    vec3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 bitangent = dp2perp * duv1.y + dp1perp * duv2.y;
+    float maxLenSq = max(dot(tangent, tangent), dot(bitangent, bitangent));
     if (maxLenSq <= 1.0e-10) {
         return geomNormal;
     }
-    const float invMax = inversesqrt(maxLenSq);
+    float invMax = inversesqrt(maxLenSq);
     return normalize(mat3(tangent * invMax, bitangent * invMax, geomNormal) * tangentNormal);
 }
 
 void main() {
-    const vec2 uv = vTexCoord * uUvScale + uUvOffset;
+    vec2 uv = vTexCoord * uUvScale + uUvOffset;
     vec4 albedoSample = vec4(1.0);
     if (uHasAlbedoTexture) {
         albedoSample = texture(uAlbedoTexture, uv);
@@ -167,7 +168,7 @@ void main() {
             discard;
         }
     }
-    const vec3 albedo = uBaseColor * albedoSample.rgb;
+    vec3 albedo = uBaseColor * albedoSample.rgb;
     if (uUnshaded) {
         FragColor = vec4(LinearToDisplayUVE(clamp(albedo, 0.0, 1.0)), 1.0);
         return;
@@ -183,7 +184,7 @@ void main() {
         shadingNormal = PerturbNormalUVE(shadingNormal, vWorldPosition, uv, tangentNormal);
     }
 
-    const vec3 view = normalize(uCameraPosition - vWorldPosition);
+    vec3 view = normalize(uCameraPosition - vWorldPosition);
     if (dot(shadingNormal, view) < 0.0) {
         shadingNormal = -shadingNormal;
     }
@@ -191,7 +192,7 @@ void main() {
     float metallic = uMetallic;
     float roughness = uRoughness;
     if (uHasMetallicRoughnessTexture) {
-        const vec3 mr = texture(uMetallicRoughnessTexture, uv).rgb;
+        vec3 mr = texture(uMetallicRoughnessTexture, uv).rgb;
         metallic *= mr.b;
         roughness *= mr.g;
     }
@@ -203,32 +204,32 @@ void main() {
         occlusion = mix(1.0, texture(uAOTexture, uv).r, clamp(uOcclusionStrength, 0.0, 1.0));
     }
 
-    const float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
-    const vec3 baseReflectance = mix(vec3(0.16 * dielectricSpec * dielectricSpec), albedo, metallic);
+    float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
+    vec3 baseReflectance = mix(vec3(0.16 * dielectricSpec * dielectricSpec), albedo, metallic);
 
     // Balanced three-point studio rig matching MaterialThumbnailRendererUVE so mesh and material
     // thumbnails agree on exposure, roughness response, and metal reflections.
-    const vec3 keyDir = normalize(vec3(-0.45, 0.85, 0.55));
-    const vec3 keyColor = vec3(2.05, 1.98, 1.88);
-    const vec3 fillDir = normalize(vec3(0.75, -0.15, 0.65));
-    const vec3 fillColor = vec3(0.42, 0.46, 0.54);
-    const vec3 rimDir = normalize(vec3(0.10, 0.46, -0.95));
-    const vec3 rimColor = vec3(0.55, 0.58, 0.65);
-    const vec3 skyAmbient = vec3(0.16, 0.18, 0.22);
-    const vec3 groundAmbient = vec3(0.045, 0.042, 0.038);
+    vec3 keyDir = normalize(vec3(-0.45, 0.85, 0.55));
+    vec3 keyColor = vec3(2.05, 1.98, 1.88);
+    vec3 fillDir = normalize(vec3(0.75, -0.15, 0.65));
+    vec3 fillColor = vec3(0.42, 0.46, 0.54);
+    vec3 rimDir = normalize(vec3(0.10, 0.46, -0.95));
+    vec3 rimColor = vec3(0.55, 0.58, 0.65);
+    vec3 skyAmbient = vec3(0.16, 0.18, 0.22);
+    vec3 groundAmbient = vec3(0.045, 0.042, 0.038);
 
     vec3 color = DirectLightUVE(shadingNormal, view, keyDir, keyColor, albedo, baseReflectance, metallic, roughness) +
                  DirectLightUVE(shadingNormal, view, fillDir, fillColor, albedo, baseReflectance, metallic, roughness) +
                  DirectLightUVE(shadingNormal, view, rimDir, rimColor, albedo, baseReflectance, metallic, roughness);
 
-    const vec3 irradiance = mix(groundAmbient, skyAmbient, shadingNormal.y * 0.5 + 0.5) * occlusion;
-    const vec3 diffuseAmbient = albedo * (1.0 - metallic) * irradiance;
-    const vec3 reflection = reflect(-view, shadingNormal);
-    const vec3 environment = mix(groundAmbient, skyAmbient, reflection.y * 0.5 + 0.5);
-    const float normalDotView = max(dot(shadingNormal, view), 0.0);
-    const vec3 ambientFresnel =
+    vec3 irradiance = mix(groundAmbient, skyAmbient, shadingNormal.y * 0.5 + 0.5) * occlusion;
+    vec3 diffuseAmbient = albedo * (1.0 - metallic) * irradiance;
+    vec3 reflection = reflect(-view, shadingNormal);
+    vec3 environment = mix(groundAmbient, skyAmbient, reflection.y * 0.5 + 0.5);
+    float normalDotView = max(dot(shadingNormal, view), 0.0);
+    vec3 ambientFresnel =
         baseReflectance + (max(vec3(1.0 - roughness), baseReflectance) - baseReflectance) * pow(1.0 - normalDotView, 5.0);
-    const vec3 specularAmbient = environment * ambientFresnel * mix(1.0, occlusion, 0.6);
+    vec3 specularAmbient = environment * ambientFresnel * mix(1.0, occlusion, 0.6);
     color += diffuseAmbient + specularAmbient;
 
     if (uHasEmissiveTexture) {
@@ -338,6 +339,13 @@ namespace {
     GLint compiled = GL_FALSE;
     gl.table.glGetShaderiv(outShader, GL_COMPILE_STATUS, &compiled);
     if (compiled == GL_FALSE) {
+        char infoLog[1024]{};
+        GLsizei logLen = 0;
+        if (gl.table.glGetShaderInfoLog != nullptr) {
+            gl.table.glGetShaderInfoLog(outShader, static_cast<GLsizei>(sizeof(infoLog) - 1U), &logLen, infoLog);
+        }
+        UVE_ERROR("MeshThumbnailRendererUVE: shader compile failed (stage 0x{:X}): {}",
+                  static_cast<unsigned int>(stage), infoLog);
         gl.table.glDeleteShader(outShader);
         outShader = 0U;
         return false;
@@ -398,6 +406,7 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
     gl.table = Render::Detail::LoadGlFunctionsUVE(&GrabGlProcAddressUVE);
     gl.functionsLoaded = gl.table.IsCompleteUVE();
     if (!gl.functionsLoaded) {
+        UVE_ERROR("MeshThumbnailRendererUVE: OpenGL function table incomplete; PBR mesh thumbnails disabled");
         return;
     }
 
@@ -422,6 +431,12 @@ void MeshThumbnailRendererUVE::InitializeUVE() {
     gl.table.glDeleteShader(vertexShader);
     gl.table.glDeleteShader(fragmentShader);
     if (linked == GL_FALSE) {
+        char infoLog[1024]{};
+        GLsizei logLen = 0;
+        if (gl.table.glGetProgramInfoLog != nullptr) {
+            gl.table.glGetProgramInfoLog(gl.shaderProgram, static_cast<GLsizei>(sizeof(infoLog) - 1U), &logLen, infoLog);
+        }
+        UVE_ERROR("MeshThumbnailRendererUVE: shader link failed: {}", infoLog);
         gl.table.glDeleteProgram(gl.shaderProgram);
         gl.shaderProgram = 0U;
         return;
@@ -588,6 +603,10 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     // Invert Y in projection so OpenGL's bottom-up FBO maps right-side up to the UI's top-down (0,0)-(1,1) UV coordinates.
     projection.m[1][1] = -projection.m[1][1];
     const Math::Matrix4x4UVE viewProjection = projection * view;
+
+    // Drain pre-existing GL errors from unrelated passes so glGetError() below only reflects this draw.
+    while (glGetError() != GL_NO_ERROR) {
+    }
 
     GLint previousFramebuffer = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
