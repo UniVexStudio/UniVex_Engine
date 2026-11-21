@@ -27,6 +27,9 @@ name: Release
 on:
   push:
     tags: ['v*', 'hub-v*']
+    # The same release from a branch named release/<tag> (e.g. release/v0.2.0-beta), for setups that
+    # can push branches but not tags. The tag is the branch name without "release/".
+    branches: ['release/v*', 'release/hub-v*']
 
 permissions:
   contents: read
@@ -54,23 +57,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ${LINUX_PACKAGES}
       - name: Build and package the engine
-        if: startsWith(github.ref_name, 'v')
+        if: startsWith(github.ref_name, 'v') || startsWith(github.ref_name, 'release/v')
         run: |
           set -euo pipefail
+          RELEASE_TAG="${GITHUB_REF_NAME#release/}"
           for target in UniVexEditor UniVexRuntime UniVexPack; do
             ./uvbt build "$target" Linux Release -j"$(nproc)"
           done
           python3 Engine/Tools/package_engine.py --bin .uvbt/bin/Linux/Release --target linux \
-            --tag "${GITHUB_REF_NAME}" --output dist
+            --tag "${RELEASE_TAG}" --output dist
       - name: Build the Hub installer
-        if: startsWith(github.ref_name, 'hub-v')
+        if: startsWith(github.ref_name, 'hub-v') || startsWith(github.ref_name, 'release/hub-v')
         run: |
           set -euo pipefail
+          RELEASE_TAG="${GITHUB_REF_NAME#release/}"
           for target in UniVexHub UniVexHubSetup; do
             ./uvbt build "$target" Linux Release -j"$(nproc)"
           done
           python3 Engine/Tools/make_hub_installer.py --bin .uvbt/bin/Linux/Release --target linux \
-            --tag "${GITHUB_REF_NAME}" --output dist
+            --tag "${RELEASE_TAG}" --output dist
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux
@@ -101,25 +106,27 @@ jobs:
             mingw-w64-ucrt-x86_64-libjpeg-turbo
             mingw-w64-ucrt-x86_64-freetype
       - name: Build and package the engine
-        if: startsWith(github.ref_name, 'v')
+        if: startsWith(github.ref_name, 'v') || startsWith(github.ref_name, 'release/v')
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          RELEASE_TAG="${GITHUB_REF_NAME#release/}"
           for target in UniVexEditor UniVexRuntime UniVexPack; do
             ./uvbt build "$target" Windows Release -j4
           done
           python Engine/Tools/package_engine.py --bin .uvbt/bin/Windows/Release --target windows \
-            --tag "${GITHUB_REF_NAME}" --output dist
+            --tag "${RELEASE_TAG}" --output dist
       - name: Build the Hub installer
-        if: startsWith(github.ref_name, 'hub-v')
+        if: startsWith(github.ref_name, 'hub-v') || startsWith(github.ref_name, 'release/hub-v')
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          RELEASE_TAG="${GITHUB_REF_NAME#release/}"
           for target in UniVexHub UniVexHubSetup; do
             ./uvbt build "$target" Windows Release -j4
           done
           python Engine/Tools/make_hub_installer.py --bin .uvbt/bin/Windows/Release --target windows \
-            --tag "${GITHUB_REF_NAME}" --output dist
+            --tag "${RELEASE_TAG}" --output dist
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows
@@ -164,19 +171,20 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
           set -euo pipefail
+          RELEASE_TAG="${GITHUB_REF_NAME#release/}"
           if [ -z "${GH_TOKEN}" ]; then
             echo "::error::The RELEASES_TOKEN secret is not set; it needs Contents: write on ${RELEASES_REPOSITORY}."
             exit 1
           fi
-          case "${GITHUB_REF_NAME}" in
-            hub-v*) title="UniVex Hub ${GITHUB_REF_NAME#hub-v}" ;;
-            *)      title="UniVex Engine ${GITHUB_REF_NAME#v}" ;;
+          case "${RELEASE_TAG}" in
+            hub-v*) title="UniVex Hub ${RELEASE_TAG#hub-v}" ;;
+            *)      title="UniVex Engine ${RELEASE_TAG#v}" ;;
           esac
           flags=(--repo "${RELEASES_REPOSITORY}" --title "${title}" --notes "${title}")
-          case "${GITHUB_REF_NAME}" in
+          case "${RELEASE_TAG}" in
             *-beta) flags+=(--prerelease) ;;
           esac
-          gh release create "${GITHUB_REF_NAME}" "${flags[@]}" dist/*
+          gh release create "${RELEASE_TAG}" "${flags[@]}" dist/*
       # Only once published: if publishing fails the builds stay downloadable from this run.
       - name: Remove the hand-over artifacts
         env:
