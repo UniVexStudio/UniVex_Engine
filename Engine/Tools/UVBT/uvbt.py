@@ -625,15 +625,17 @@ class EngineBuilder:
             "-fPIC",
             "-pthread"
         ]
+        if os.environ.get("UVBT_WERROR", "").strip() in ("1", "true", "yes"):
+            base_cflags.append("-Werror")
 
         # Engine build profile definitions
         if configuration == "Shipping":
             base_defs = [
-                "UVE_BUILD_CONFIGURATION_RELEASE=1",
+                "UVE_BUILD_CONFIGURATION_SHIPPING=1",
                 "UVE_SHIPPING=1",
                 "UVE_PROFILE_ASSERTIONS_ENABLED=0",
                 "UVE_PROFILE_DEFAULT_LOG_LEVEL=3",
-                "UVE_COMPILED_LOG_LEVEL=2",
+                "UVE_COMPILED_LOG_LEVEL=3",
             ]
             base_cflags += ["-O3", "-DNDEBUG"]
         elif configuration == "Release":

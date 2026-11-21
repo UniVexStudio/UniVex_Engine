@@ -9,7 +9,7 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
 - **No Third-Party Commercial Engine Names**: By engine policy, do not reference or benchmark proprietary commercial game engines by name in codebase documentation, comments, commit messages, or PRs. Refer to architectural concepts generically (e.g., "current-generation standards", "analytic two-bone IK", "forward+ clustered shading").
 - **Strict Module Boundary Discipline**: Keep runtime dependencies cleanly separated. Core modules (`uve_core`, `uve_math`, `uve_memory`, `uve_entity`) must not depend on higher-level systems (`uve_render`, `uve_scene`, `uve_editor`).
 - **One Truth per Concept**: Component definitions belong in `Engine/Runtime/Component`. Node definitions and object recipes belong in `Engine/Runtime/Objects`. Do not duplicate component structs across directories.
-- **Survey Before Authoring**: Review existing implementations and relevant roadmaps (`ROADMAP.md`, `FOUNDATION.md`, `SETTINGS_ROADMAP.md`, `SCENE_NODES_ROADMAP.md`) before introducing new systems or abstractions.
+- **Survey Before Authoring**: Review existing implementations and `docs/ARCHITECTURE_GUIDE.md` before introducing new systems or abstractions.
 
 ---
 
@@ -33,13 +33,13 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
 
 ## 3. Testing Discipline
 
-- **GoogleTest Suite**: Every feature with non-trivial logic must be locked with unit or integration tests under the `Test/` directory.
+- **GoogleTest Suite**: Every feature with non-trivial logic must be locked with unit or integration tests in the module's `Tests/` directory (automatically compiled into `UniVexTests` via `Engine/Tests/CoreTests.Build.cs`).
 - **Coverage Standard**: Tests must verify:
   1. Default and valid configurations.
   2. Degenerate and invalid configurations (out-of-range, null/invalid handles, infinite/NaN inputs).
   3. Bounded limits and capacity saturation (e.g., `kMaximumConstraintsUVE`).
   4. Generation safety and stale handle rejection where generational handles are used.
-- Add newly created test files to `Test/CMakeLists.txt` under the appropriate test executable target (`uve_core_tests` or `uve_integration_tests`).
+- Build and run with UVBT: `./uvbt build UniVexTests Linux Debug && LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a ./.uvbt/bin/Linux/Debug/UniVexTests`.
 
 ---
 
@@ -52,8 +52,7 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
    - `docs(subsystem): short description`
    - `test(subsystem): short description`
 3. **Checklist Before Submitting**:
-   - [ ] Verified against the existing test suite (`ctest --output-on-failure`).
+   - [ ] Verified against the existing test suite (`./.uvbt/bin/Linux/Debug/UniVexTests` and `uve_prism_tests`).
    - [ ] All new tests pass cleanly.
-   - [ ] Zero compiler warnings.
-   - [ ] Checked off and described the completed item in `ROADMAP.md` (or relevant roadmap).
+   - [ ] Zero compiler warnings (`UVBT_WERROR=1`).
    - [ ] Filled out all sections of `.github/PULL_REQUEST_TEMPLATE.md`.

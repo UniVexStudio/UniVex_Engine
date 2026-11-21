@@ -26,6 +26,9 @@
 
 #include "editor_icon_set.h"
 
+#include <GL/gl.h>
+
+#include "material_asset.h"
 #include "mesh_asset.h"
 #include "texture_asset.h"
 #include "engine_core.h"
@@ -244,6 +247,14 @@ struct EditorUVEAccessUVE final {
     [[nodiscard]] static std::size_t GetMeshThumbnailCacheSizeUVE(const EditorUVE& editor) noexcept {
         return editor.m_meshThumbnailCache.size();
     }
+    [[nodiscard]] static std::uintptr_t GetMaterialThumbnailUVE(EditorUVE& editor,
+                                                                 const std::filesystem::path& relativePath) {
+        return editor.GetMaterialThumbnailUVE(relativePath);
+    }
+    static void InvalidateMaterialThumbnailCacheUVE(EditorUVE& editor, const std::filesystem::path& absolutePath) {
+        editor.InvalidateMaterialThumbnailCacheUVE(absolutePath);
+    }
+    static void RefreshProjectFileIndexUVE(EditorUVE& editor) { editor.RefreshProjectFileIndexUVE(); }
 
     [[nodiscard]] static Asset::AssetGuidUVE PublishTextureSourceUVE(EditorUVE& editor,
                                                                      const std::filesystem::path& source) {
@@ -6378,6 +6389,85 @@ TEST(EditorUVETest, HierarchyDoubleClick_TheViewportRowOpensTheLevelAndNeverDrop
         ASSERT_TRUE(editor.IsSceneDirtyUVE());
         EXPECT_TRUE(EditorUVEAccessUVE::OpenHierarchyRowTargetUVE(editor, reloadedViewport));
         EXPECT_TRUE(entityManager.IsAliveUVE(unsaved)) << "a double-click must not reload over edits";
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch);
+}
+
+TEST(EditorUVETest, MaterialThumbnailResolvesRelativeContentRootAndRendersRealPbr) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("pbr_thumb_relative_root");
+    const std::filesystem::path contentAbs = scratch / "Content";
+    std::filesystem::create_directories(contentAbs);
+
+    std::error_code ec;
+    const std::filesystem::path relRoot = std::filesystem::relative(contentAbs, std::filesystem::current_path(ec), ec);
+    const std::filesystem::path configuredRoot = (!ec && !relRoot.empty()) ? relRoot : contentAbs;
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.headlessUVE = false;
+    config.windowGlVersionMajor = 3;
+    config.windowGlVersionMinor = 3;
+    config.projectContentRootUVE = configuredRoot;
+    config.projectSettingsFilePath = scratch / "project.uvsettings";
+    config.assetDatabaseFilePath = scratch / "assets.json";
+    config.logFilePath = scratch / "log.txt";
+    config.settingsFilePath = scratch / "settings.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    if (!engine.Load() || !engine.GetServicesUVE().GetWindowManagerUVE().IsValidUVE()) {
+        engine.Shutdown();
+        std::filesystem::remove_all(scratch);
+        GTEST_SKIP() << "No display available for EditorUVE PBR thumbnail verification - skipping";
+    }
+
+    Asset::MaterialAssetUVE material{};
+    material.albedoColor = Math::ColorUVE{0.20F, 0.75F, 0.35F};
+    material.metallic = 0.25F;
+    material.roughness = 0.30F;
+    const std::filesystem::path matFile = configuredRoot / "M_Standard.uvmaterial";
+    ASSERT_TRUE(Asset::SaveMaterialAssetUVE(material, matFile));
+
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        EditorUVEAccessUVE::RefreshProjectFileIndexUVE(editor);
+
+        // Both a content-relative path and a root-prefixed relative path must produce a real PBR sphere
+        // (regression for the double-prefixed 'assets/assets/M_Standard.uvmaterial' bug).
+        const std::uintptr_t texRelative = EditorUVEAccessUVE::GetMaterialThumbnailUVE(editor, "M_Standard.uvmaterial");
+        ASSERT_NE(texRelative, 0U);
+        const std::uintptr_t texPrefixed = EditorUVEAccessUVE::GetMaterialThumbnailUVE(editor, matFile);
+        ASSERT_NE(texPrefixed, 0U);
+
+        GLint width = 0;
+        GLint height = 0;
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texPrefixed));
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+        ASSERT_GT(width, 0);
+        ASSERT_GT(height, 0);
+
+        std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4U, 0U);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        glBindTexture(GL_TEXTURE_2D, 0U);
+
+        const std::size_t centerIdx = (static_cast<std::size_t>(height / 2) * static_cast<std::size_t>(width) +
+                                       static_cast<std::size_t>(width / 2)) *
+                                      4U;
+        EXPECT_EQ(pixels[centerIdx + 3U], 255U);
+        EXPECT_GT(static_cast<int>(pixels[centerIdx + 1U]), 40);
+        EXPECT_EQ(pixels[3U], 0U);
+
+        EditorUVEAccessUVE::InvalidateMaterialThumbnailCacheUVE(editor, matFile);
+        const std::uintptr_t texAfterEdit = EditorUVEAccessUVE::GetMaterialThumbnailUVE(editor, "M_Standard.uvmaterial");
+        EXPECT_NE(texAfterEdit, 0U);
+
         editor.ShutdownUVE();
     }
     engine.Shutdown();

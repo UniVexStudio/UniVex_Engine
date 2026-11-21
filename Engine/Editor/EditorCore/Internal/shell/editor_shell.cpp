@@ -658,6 +658,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDockUVE() {
     m_dockPages->addPage(PanelUVE(m_dockPanels.BuildOutputLogUVE()));
     m_dockPages->addPage(PanelUVE(m_dockPanels.BuildConsoleUVE()));
     m_dockPages->addPage(PanelUVE(m_dockPanels.BuildProfilerUVE()));
+    m_dockPages->addPage(PanelUVE(m_dockPanels.BuildSearchUVE()));
     return m_dockPages;
 }
 
@@ -666,11 +667,12 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDockBarUVE() {
     auto bar = prism::hbox(2.0F);
     bar->setPadding(prism::Margin(4.0F, 1.0F, 8.0F, 1.0F));
     struct DockTabUVE { const char* label; prism::Icon icon; };
-    static constexpr std::array<DockTabUVE, 4> kTabs{{
+    static constexpr std::array<DockTabUVE, 5> kTabs{{
         {"Asset Table", prism::Icon::AssetBrowser},
         {"Output Log", prism::Icon::OutputLog},
         {"Console", prism::Icon::Terminal},
         {"Profiler", prism::Icon::Profiler},
+        {"Search", prism::Icon::Search},
     }};
     for (std::size_t i = 0; i < kTabs.size(); ++i) {
         auto tab = prism::make<prism::Button>(kTabs[i].label, kTabs[i].icon, prism::ButtonStyle::Toolbar);

@@ -2997,6 +2997,8 @@ private:
     /// by m_materialThumbnailRenderer. Same caching contract as m_textureThumbnailCache, plus
     /// targeted invalidation when the Inspector saves a material (InvalidateMaterialThumbnailCacheUVE).
     std::map<std::string, std::uintptr_t> m_materialThumbnailCache;
+    /// Bumped whenever a material thumbnail is invalidated or cleared so tiles re-read updated pixels.
+    std::uint64_t m_materialThumbnailGeneration = 0U;
     /// Material thumbnails invalidated during this frame. The Inspector saves a material on every
     /// edit - including every frame of a slider drag - so its preview is dropped from
     /// m_materialThumbnailCache immediately but the GL texture is only freed at the start of the

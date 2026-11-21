@@ -3,6 +3,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -16,7 +18,7 @@ namespace UVE::Scene {
 
 class IEntityManagerUVE;
 
-inline constexpr std::size_t kMaximumSoftBody3DPointsUVE = 1024U;
+inline constexpr std::size_t kMaximumSoftBody3DPointsUVE = 4096U;
 
 struct SoftBody3DPointUVE final {
     Math::Vector3UVE position{0.0F, 0.0F, 0.0F};
@@ -26,18 +28,41 @@ struct SoftBody3DPointUVE final {
     [[nodiscard]] bool operator==(const SoftBody3DPointUVE&) const = default;
 };
 
-/// Deformable cloth/jelly physics mesh component (`points`, `stiffness`, `damping`,
-/// `restSegmentLength`, `gravityScale`) built on `SurfaceInstance3DBaseUVE`.
+struct SoftBodySphereColliderUVE final {
+    Math::Vector3UVE center{0.0F, 0.0F, 0.0F};
+    float radius = 0.5F;
+};
+
+struct SoftBodyAabbColliderUVE final {
+    Math::AabbUVE bounds{};
+};
+
+/// Deformable XPBD cloth / soft-body physics component built on `SurfaceInstance3DBaseUVE`.
+/// When `gridWidth >= 2 && gridHeight >= 2 && points.size() == gridWidth * gridHeight`, solves
+/// structural, shear, and bending XPBD distance constraints; otherwise solves a 1D chain.
 struct SoftBody3DComponentUVE final {
     std::vector<SoftBody3DPointUVE> points{};
+    std::uint32_t gridWidth = 0U;
+    std::uint32_t gridHeight = 0U;
+    std::uint32_t substeps = 4U;
     float stiffness = 0.8F;
+    float compliance = 0.0005F;
+    float shearCompliance = 0.002F;
+    float bendCompliance = 0.02F;
     float damping = 0.05F;
     float restSegmentLength = 0.5F;
     float gravityScale = 1.0F;
+    Math::Vector3UVE windVelocity{0.0F, 0.0F, 0.0F};
+    float windDrag = 0.25F;
     bool enabled = true;
 
     [[nodiscard]] bool operator==(const SoftBody3DComponentUVE&) const = default;
 };
+
+[[nodiscard]] SoftBody3DComponentUVE BuildClothGridSoftBody3DUVE(
+    std::uint32_t width, std::uint32_t height, float spacingMetres,
+    const Math::Vector3UVE& origin = Math::Vector3UVE{0.0F, 0.0F, 0.0F},
+    bool pinTopRow = true);
 
 [[nodiscard]] bool IsSoftBody3DComponentValidUVE(const SoftBody3DComponentUVE& value) noexcept;
 
@@ -54,6 +79,13 @@ struct SoftBody3DObjectDefinitionUVE final {
 
 void ApplySoftBody3DObjectDefinitionUVE(IEntityManagerUVE& entityManager, EntityUVE entity,
                                         const SoftBody3DObjectDefinitionUVE& value);
+
+/// Steps all enabled `SoftBody3DComponentUVE` entities by `deltaTimeSeconds` under `gravity`
+/// with XPBD constraint solving and optional sphere/AABB collision resolution.
+std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,
+                                       const Math::Vector3UVE& gravity, float deltaTimeSeconds,
+                                       std::span<const SoftBodySphereColliderUVE> sphereColliders,
+                                       std::span<const SoftBodyAabbColliderUVE> boxColliders = {});
 
 /// Steps all enabled `SoftBody3DComponentUVE` entities by `deltaTimeSeconds` under `gravity`.
 std::size_t UpdateSoftBody3DObjectsUVE(IEntityManagerUVE& entityManager,

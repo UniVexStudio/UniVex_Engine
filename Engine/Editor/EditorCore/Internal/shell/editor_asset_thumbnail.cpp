@@ -4,6 +4,7 @@
 #include "editor.h"
 
 #include "prism/Application.h"
+#include "prism/AssetBrowser.h"
 #include "prism/Canvas.h"
 #include "prism/Theme.h"
 
@@ -21,7 +22,6 @@
 namespace UVE::Editor {
 namespace {
 
-constexpr float kSmallUVE = 64.0F;   // as big as the standard slot thumbnail
 constexpr float kLargeUVE = 240.0F;
 
 /// The large look at a slot's preview: the picture and the asset's name.
@@ -36,7 +36,7 @@ public:
         c.fillRoundRect(r, 5.0F, t.panel);
         c.strokeRoundRect(r, 5.0F, t.borderStrong, 1);
         const prism::Rect image{r.x + 6.0F, r.y + 6.0F, kLargeUVE, kLargeUVE};
-        c.fillRect(image, t.window);
+        prism::drawThumbnailBackdrop(c, image);
         c.blitBlend(m_pixels.data(), m_width, m_height, m_width, image);
         c.textIn(*t.small, prism::Rect{r.x + 8.0F, image.bottom() + 4.0F, r.w - 16.0F, 20.0F}, m_name, t.textBright,
                  prism::HAlign::Left, true);
@@ -52,6 +52,45 @@ private:
     int m_height = 0;
     std::string m_name;
 };
+
+[[nodiscard]] std::filesystem::path ResolveContentRelativePathUVE(const std::filesystem::path& path,
+                                                                  const std::filesystem::path& contentRoot) {
+    if (path.empty()) {
+        return {};
+    }
+    std::error_code error;
+    if (!contentRoot.empty()) {
+        std::filesystem::path relative = std::filesystem::relative(path, contentRoot, error);
+        if (!error && !relative.empty() && relative != "." && *relative.begin() != "..") {
+            return relative.lexically_normal();
+        }
+        error.clear();
+        const std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(path, error);
+        if (!error) {
+            const std::filesystem::path canonicalRoot = std::filesystem::weakly_canonical(contentRoot, error);
+            if (!error) {
+                relative = std::filesystem::relative(canonicalPath, canonicalRoot, error);
+                if (!error && !relative.empty() && relative != "." && *relative.begin() != "..") {
+                    return relative.lexically_normal();
+                }
+            }
+        }
+    }
+    if (!path.is_absolute()) {
+        error.clear();
+        if (!contentRoot.empty() && std::filesystem::is_regular_file(contentRoot / path, error)) {
+            return path.lexically_normal();
+        }
+        error.clear();
+        if (std::filesystem::is_regular_file(path, error)) {
+            const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, error);
+            return error ? path.lexically_normal() : canonical;
+        }
+        return path.lexically_normal();
+    }
+    error.clear();
+    return std::filesystem::is_regular_file(path, error) ? path.lexically_normal() : std::filesystem::path{};
+}
 
 } // namespace
 
@@ -94,25 +133,20 @@ bool ReadTexturePixelsUVE(const std::uintptr_t texture, const bool bottomUp, int
     return true;
 }
 
-AssetThumbnailUVE::AssetThumbnailUVE(EditorUVE& editor, const KindUVE kind) : m_editor(editor), m_kind(kind) {
+AssetThumbnailUVE::AssetThumbnailUVE(EditorUVE& editor, const KindUVE kind, const float side)
+    : m_editor(editor), m_kind(kind), m_side(std::clamp(side, 32.0F, 256.0F)) {
     setTooltip("Click to see it large");
 }
 
 void AssetThumbnailUVE::setAssetUVE(const std::filesystem::path& absolute) {
-    std::filesystem::path relative;
-    if (!absolute.empty()) {
-        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-        std::error_code error;
-        relative = std::filesystem::relative(absolute, root, error);
-        if (error) {
-            relative.clear();
-        }
-    }
+    const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+    const std::filesystem::path relative = ResolveContentRelativePathUVE(absolute, root);
     const bool has = !relative.empty();
     if (relative != m_relative || has != m_hasAsset) {
         m_relative = relative;
         m_hasAsset = has;
         m_texture = 0U;
+        m_generation = 0U;
         m_pixels.clear();
         invalidate();
     }
@@ -124,35 +158,43 @@ void AssetThumbnailUVE::refreshUVE() {
         return;
     }
     std::uintptr_t texture = 0U;
+    std::uint64_t generation = 0U;
     switch (m_kind) {
-        case KindUVE::Material: texture = m_editor.GetMaterialThumbnailUVE(m_relative); break;
-        case KindUVE::Mesh: texture = m_editor.GetMeshThumbnailUVE(m_relative); break;
+        case KindUVE::Material:
+            texture = m_editor.GetMaterialThumbnailUVE(m_relative);
+            generation = m_editor.m_materialThumbnailGeneration;
+            break;
+        case KindUVE::Mesh:
+            texture = m_editor.GetMeshThumbnailUVE(m_relative);
+            generation = m_editor.m_meshThumbnailGeneration;
+            break;
         case KindUVE::Texture: texture = m_editor.GetTextureThumbnailUVE(m_relative); break;
     }
-    if (texture == 0U || texture == m_texture) {
+    if (texture == 0U || (texture == m_texture && generation == m_generation && !m_pixels.empty())) {
         return;
     }
     // A material preview is a render target (bottom-up); a texture is an uploaded image, and the
     // mesh preview is drawn upright already (its projection is flipped for top-down images).
     if (ReadTexturePixelsUVE(texture, m_kind == KindUVE::Material, m_width, m_height, m_pixels)) {
         m_texture = texture;
+        m_generation = generation;
         invalidate();
     }
 }
 
 prism::Vec2 AssetThumbnailUVE::measure(prism::Vec2) {
-    const float side = kSmallUVE;
-    return m_desired = constrain(prism::Vec2(side, side));
+    return m_desired = constrain(prism::Vec2(m_side, m_side));
 }
 
 void AssetThumbnailUVE::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     const float side = std::min(rect().w, rect().h);
     const prism::Rect r{rect().x, rect().y, side, side};
-    c.fillRect(r, t.window);
     if (m_hasAsset && !m_pixels.empty()) {
+        prism::drawThumbnailBackdrop(c, r);
         c.blitBlend(m_pixels.data(), m_width, m_height, m_width, prism::Rect{r.x + 1.0F, r.y + 1.0F, r.w - 2.0F, r.h - 2.0F});
     } else {
+        c.fillRect(r, t.window);
         c.textIn(*t.small, r, m_hasAsset ? "..." : "Empty", t.textDim, prism::HAlign::Center, true);
     }
     c.strokeRect(r, hovered() ? t.accent : t.border, 1);

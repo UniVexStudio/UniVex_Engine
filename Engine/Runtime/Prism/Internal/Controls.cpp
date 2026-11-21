@@ -95,14 +95,30 @@ void Button::paint(Canvas& c) {
   if (!en) ic = t.textDisabled;
   if (m_checked && m_style == ButtonStyle::Toolbar && en && !m_hasIconColor) ic = t.accentHover.lighten(0.15f);
   const Font& f = *t.ui;
-  float tw = m_text.empty() ? 0 : std::ceil(f.width(m_text));
-  float cw = (m_icon != Icon::None ? 16.f : 0.f) + (m_icon != Icon::None && tw > 0 ? 6.f : 0.f) + tw;
-  float x = std::floor(m_rect.x + (m_rect.w - cw) * 0.5f);
-  if (m_icon != Icon::None) {
-    drawIcon(c, m_icon, {x, m_rect.y + (m_rect.h - 16) * 0.5f, 16, 16}, ic);
-    x += 22;
+  const float tw = m_text.empty() ? 0.f : std::ceil(f.width(m_text));
+  const float iconW = m_icon != Icon::None ? 16.f : 0.f;
+  const float gap = (m_icon != Icon::None && tw > 0.f) ? 6.f : 0.f;
+  const float cw = iconW + gap + tw;
+  const float pad = m_text.empty() ? 0.f : std::min(6.f, std::max(0.f, m_rect.w * 0.15f));
+  const Rect inner{m_rect.x + pad, m_rect.y, std::max(0.f, m_rect.w - pad * 2.f), m_rect.h};
+  if (cw <= inner.w) {
+    float x = std::floor(m_rect.x + (m_rect.w - cw) * 0.5f);
+    if (m_icon != Icon::None) {
+      drawIcon(c, m_icon, {x, m_rect.y + (m_rect.h - 16.f) * 0.5f, 16.f, 16.f}, ic);
+      x += 22.f;
+    }
+    if (tw > 0.f) c.textIn(f, {x, m_rect.y, tw + 1.f, m_rect.h}, m_text, fg, HAlign::Left, false);
+  } else if (m_rect.w > 0.f && m_rect.h > 0.f) {
+    c.pushClip(m_rect);
+    float x = inner.x;
+    if (m_icon != Icon::None) {
+      drawIcon(c, m_icon, {x, m_rect.y + (m_rect.h - 16.f) * 0.5f, 16.f, 16.f}, ic);
+      x += 22.f;
+    }
+    const float availW = inner.right() - x;
+    if (tw > 0.f && availW > 0.f) c.textIn(f, {x, m_rect.y, availW, m_rect.h}, m_text, fg, HAlign::Left, true);
+    c.popClip();
   }
-  if (tw > 0) c.textIn(f, {x, m_rect.y, tw + 1, m_rect.h}, m_text, fg, HAlign::Left, false);
 }
 
 bool Button::onMouseDown(const MouseEvent& e) {

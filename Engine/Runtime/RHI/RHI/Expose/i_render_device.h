@@ -201,6 +201,20 @@ public:
     /// Destroys `texture`.  A handle already destroyed (or never valid) is a safe no-op (logged).
     virtual void DestroyTextureUVE(TextureHandleUVE texture) = 0;
 
+    /// True when this backend exposes a bindless / descriptor-indexed texture table.
+    [[nodiscard]] virtual bool SupportsBindlessTexturesUVE() const noexcept {
+        return GetCapabilitiesUVE().bindlessTextures != RenderFeatureSupportUVE::Unsupported;
+    }
+
+    /// Registers a live texture in the device's bindless texture table, returning a 32-bit shader
+    /// index or `0xFFFFFFFFU` (`kInvalidBindlessTextureIndexUVE`) if unsupported or invalid.
+    [[nodiscard]] virtual std::uint32_t RegisterBindlessTextureUVE(TextureHandleUVE) {
+        return 0xFFFFFFFFU;
+    }
+
+    /// Releases a previously registered bindless texture slot. Safe no-op if invalid or unused.
+    virtual void UnregisterBindlessTextureUVE(std::uint32_t) {}
+
     /// Creates a sampler object per `desc` (Tier 2.2). The backend rejects malformed descs
     /// (see IsSamplerDescValidUVE) with kInvalidSamplerHandleUVE; above-limit anisotropy is
     /// clamped to the device maximum (warn-once), never a creation failure. Valid creation

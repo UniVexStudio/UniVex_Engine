@@ -114,4 +114,16 @@ extern const std::string_view kVfxSpriteSource;
 inline constexpr std::string_view kStudioFloorPbrVirtualPath = "shaders/studio_floor_pbr.glsl";
 extern const std::string_view kStudioFloorPbrSource;
 
+inline constexpr std::string_view kTaaResolveVirtualPath = "shaders/taa_resolve.glsl";
+extern const std::string_view kTaaResolveSource;
+
+inline constexpr std::string_view kWboitCompositeVirtualPath = "shaders/wboit_composite.glsl";
+extern const std::string_view kWboitCompositeSource;
+
+inline constexpr std::string_view kRtTraceVirtualPath = "shaders/rt_trace.glsl";
+extern const std::string_view kRtTraceSource;
+
+inline constexpr std::string_view kHiZDownsampleVirtualPath = "shaders/hiz_downsample.glsl";
+extern const std::string_view kHiZDownsampleSource;
+
 } // namespace UVE::Render::Shader::BuiltIn

@@ -21,6 +21,7 @@
 #include <GLFW/glfw3.h>
 
 #include "gl_functions.h"
+#include "logging_macros.h"
 
 #include "material_asset.h"
 #include "matrix4x4.h"
@@ -48,17 +49,17 @@ constexpr std::uint32_t kPreviewSphereSlicesUVE = 96U;
 constexpr std::uint32_t kPreviewSphereStacksUVE = 64U;
 constexpr float kPreviewSphereRadiusUVE = 0.5F;
 
-// One light, the sun (its direction points from the surface toward it), plus the sky's hemisphere
-// ambient, which keeps the far side of the sphere from going black. The fill and rim slots of the
-// shader stay, dark.
+// Balanced three-point studio rig (directions point from the surface toward each light) plus a
+// hemisphere ambient. Calibrated so whites and metals stay realistic and never blow out, while
+// shadow sides still show surface roughness and normal detail.
 constexpr float kKeyLightDirectionUVE[3] = {-0.45F, 0.85F, 0.55F};
-constexpr float kKeyLightColorUVE[3] = {3.30F, 3.18F, 3.00F};
+constexpr float kKeyLightColorUVE[3] = {2.05F, 1.98F, 1.88F};
 constexpr float kFillLightDirectionUVE[3] = {0.75F, -0.15F, 0.65F};
-constexpr float kFillLightColorUVE[3] = {0.0F, 0.0F, 0.0F};
+constexpr float kFillLightColorUVE[3] = {0.42F, 0.46F, 0.54F};
 constexpr float kRimLightDirectionUVE[3] = {0.10F, 0.46F, -0.95F};
-constexpr float kRimLightColorUVE[3] = {0.0F, 0.0F, 0.0F};
-constexpr float kSkyAmbientUVE[3] = {0.144F, 0.160F, 0.192F};
-constexpr float kGroundAmbientUVE[3] = {0.035F, 0.033F, 0.029F};
+constexpr float kRimLightColorUVE[3] = {0.55F, 0.58F, 0.65F};
+constexpr float kSkyAmbientUVE[3] = {0.16F, 0.18F, 0.22F};
+constexpr float kGroundAmbientUVE[3] = {0.045F, 0.042F, 0.038F};
 
 constexpr const char* kVertexShaderSourceUVE = R"GLSL(#version 330 core
 layout(location = 0) in vec3 aPosition;
@@ -137,18 +138,18 @@ uniform vec3 uGroundAmbient;
 
 // Cook-Torrance GGX: D (Trowbridge-Reitz), Smith height-correlated visibility, Schlick Fresnel.
 float DistributionGGXUVE(vec3 normal, vec3 halfway, float roughness) {
-    const float alpha = roughness * roughness;
-    const float alphaSquared = alpha * alpha;
-    const float normalDotHalfway = max(dot(normal, halfway), 0.0);
-    const float denominator = normalDotHalfway * normalDotHalfway * (alphaSquared - 1.0) + 1.0;
+    float alpha = roughness * roughness;
+    float alphaSquared = alpha * alpha;
+    float normalDotHalfway = max(dot(normal, halfway), 0.0);
+    float denominator = normalDotHalfway * normalDotHalfway * (alphaSquared - 1.0) + 1.0;
     return alphaSquared / max(kPi * denominator * denominator, 1.0e-5);
 }
 
 float VisibilitySmithGGXCorrelatedUVE(float normalDotView, float normalDotLight, float roughness) {
-    const float alpha = roughness * roughness;
-    const float alphaSquared = alpha * alpha;
-    const float viewTerm = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alphaSquared) + alphaSquared);
-    const float lightTerm = normalDotView * sqrt(normalDotLight * normalDotLight * (1.0 - alphaSquared) + alphaSquared);
+    float alpha = roughness * roughness;
+    float alphaSquared = alpha * alpha;
+    float viewTerm = normalDotLight * sqrt(normalDotView * normalDotView * (1.0 - alphaSquared) + alphaSquared);
+    float lightTerm = normalDotView * sqrt(normalDotLight * normalDotLight * (1.0 - alphaSquared) + alphaSquared);
     return 0.5 / max(viewTerm + lightTerm, 1.0e-5);
 }
 
@@ -158,19 +159,19 @@ vec3 FresnelSchlickUVE(float viewDotHalfway, vec3 baseReflectance) {
 
 vec3 DirectLightUVE(vec3 normal, vec3 view, vec3 lightDirection, vec3 radiance, vec3 albedo,
                     vec3 baseReflectance, float metallic, float roughness) {
-    const float normalDotLight = max(dot(normal, lightDirection), 0.0);
+    float normalDotLight = max(dot(normal, lightDirection), 0.0);
     if (normalDotLight <= 0.0) {
         return vec3(0.0);
     }
-    const vec3 halfway = normalize(view + lightDirection);
-    const float normalDotView = max(dot(normal, view), 1.0e-4);
-    const float distribution = DistributionGGXUVE(normal, halfway, roughness);
-    const float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
-    const vec3 fresnel = FresnelSchlickUVE(max(dot(halfway, view), 0.0), baseReflectance);
-    const vec3 specular = fresnel * distribution * visibility;
+    vec3 halfway = normalize(view + lightDirection);
+    float normalDotView = max(dot(normal, view), 1.0e-4);
+    float distribution = DistributionGGXUVE(normal, halfway, roughness);
+    float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+    vec3 fresnel = FresnelSchlickUVE(max(dot(halfway, view), 0.0), baseReflectance);
+    vec3 specular = fresnel * distribution * visibility;
     // Energy conservation: whatever the specular lobe reflects is not available to the diffuse
     // lobe, and a metal has no diffuse response at all.
-    const vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+    vec3 diffuseWeight = (vec3(1.0) - fresnel) * (1.0 - metallic);
     return (diffuseWeight * albedo / kPi + specular) * radiance * normalDotLight;
 }
 
@@ -178,15 +179,15 @@ vec3 DirectLightUVE(vec3 normal, vec3 view, vec3 lightDirection, vec3 radiance, 
 // the BRDF produces has to be compressed before it can be shown as an 8-bit sRGB image; without
 // this, every highlight above 1.0 clips to a flat white disc.
 vec3 ToneMapUVE(vec3 color) {
-    const vec3 numerator = color * (2.51 * color + 0.03);
-    const vec3 denominator = color * (2.43 * color + 0.59) + 0.14;
+    vec3 numerator = color * (2.51 * color + 0.03);
+    vec3 denominator = color * (2.43 * color + 0.59) + 0.14;
     return clamp(numerator / denominator, 0.0, 1.0);
 }
 
 // Exact sRGB transfer function (not a 2.2 gamma approximation), matching Math::LinearToDisplayUVE.
 vec3 LinearToDisplayUVE(vec3 color) {
-    const vec3 low = color * 12.92;
-    const vec3 high = 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+    vec3 low = color * 12.92;
+    vec3 high = 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
     return mix(high, low, lessThanEqual(color, vec3(0.0031308)));
 }
 
@@ -210,13 +211,13 @@ PreviewUvSetUVE BuildPreviewUvSetUVE() {
     set.weights = vec3(0.0, 1.0, 0.0);
     set.triNormal = normalize(vNormal);
     if (uUv1Triplanar != 0) {
-        const vec3 pos = vWorldPosition;
-        const vec3 n = set.triNormal;
-        const vec3 w = pow(max(abs(n), vec3(1.0e-4)), vec3(max(uUv1TriplanarSharpness, 0.001)));
+        vec3 pos = vWorldPosition;
+        vec3 n = set.triNormal;
+        vec3 w = pow(max(abs(n), vec3(1.0e-4)), vec3(max(uUv1TriplanarSharpness, 0.001)));
         set.weights = w / max(dot(w, vec3(1.0)), 1.0e-5);
-        const vec2 pX = vec2(n.x < 0.0 ? -pos.z : pos.z, -pos.y);
-        const vec2 pY = vec2(pos.x, n.y < 0.0 ? -pos.z : pos.z);
-        const vec2 pZ = vec2(n.z < 0.0 ? -pos.x : pos.x, -pos.y);
+        vec2 pX = vec2(n.x < 0.0 ? -pos.z : pos.z, -pos.y);
+        vec2 pY = vec2(pos.x, n.y < 0.0 ? -pos.z : pos.z);
+        vec2 pZ = vec2(n.z < 0.0 ? -pos.x : pos.x, -pos.y);
         set.uvX = pX * uUvScale + uUvOffset;
         set.uvY = pY * uUvScale + uUvOffset;
         set.uvZ = pZ * uUvScale + uUvOffset;
@@ -225,21 +226,21 @@ PreviewUvSetUVE BuildPreviewUvSetUVE() {
 }
 
 vec4 ReadMapUVE(sampler2D map, int slot, PreviewUvSetUVE set, vec4 neutral) {
-    const vec4 transform = uMapTransform[slot];
-    const vec4 control = uMapControl[slot];
-    const vec2 scale = vec2(1.0) + transform.xy;
+    vec4 transform = uMapTransform[slot];
+    vec4 control = uMapControl[slot];
+    vec2 scale = vec2(1.0) + transform.xy;
     vec4 value;
     if (control.w <= 0.5 && set.triplanar != 0) {
         value = texture(map, set.uvX * scale + transform.zw) * set.weights.x +
                 texture(map, set.uvY * scale + transform.zw) * set.weights.y +
                 texture(map, set.uvZ * scale + transform.zw) * set.weights.z;
     } else {
-        const vec2 base = control.w > 0.5 ? vTexCoord * uUv2Scale + uUv2Offset : set.uv;
+        vec2 base = control.w > 0.5 ? vTexCoord * uUv2Scale + uUv2Offset : set.uv;
         value = texture(map, base * scale + transform.zw);
     }
-    const int channel = int(control.x + 0.5);
+    int channel = int(control.x + 0.5);
     if (channel >= 1) {
-        const float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
+        float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
         value = vec4(grey, grey, grey, channel == 4 ? 1.0 : value.a);
     }
     if (control.y > 0.5) {
@@ -260,18 +261,18 @@ vec3 SamplePreviewTriplanarNormalUVE(sampler2D normalMap, PreviewUvSetUVE set) {
     tX.xy *= uNormalScale;
     tY.xy *= uNormalScale;
     tZ.xy *= uNormalScale;
-    const vec3 n = set.triNormal;
-    const float sX = n.x < 0.0 ? -1.0 : 1.0;
-    const float sY = n.y < 0.0 ? -1.0 : 1.0;
-    const float sZ = n.z < 0.0 ? -1.0 : 1.0;
-    const vec3 nX = vec3(n.x * tX.z, n.y - tX.y, n.z + tX.x * sX);
-    const vec3 nY = vec3(n.x + tY.x, n.y * tY.z, n.z + tY.y * sY);
-    const vec3 nZ = vec3(n.x + tZ.x * sZ, n.y - tZ.y, n.z * tZ.z);
+    vec3 n = set.triNormal;
+    float sX = n.x < 0.0 ? -1.0 : 1.0;
+    float sY = n.y < 0.0 ? -1.0 : 1.0;
+    float sZ = n.z < 0.0 ? -1.0 : 1.0;
+    vec3 nX = vec3(n.x * tX.z, n.y - tX.y, n.z + tX.x * sX);
+    vec3 nY = vec3(n.x + tY.x, n.y * tY.z, n.z + tY.y * sY);
+    vec3 nZ = vec3(n.x + tZ.x * sZ, n.y - tZ.y, n.z * tZ.z);
     return normalize(nX * set.weights.x + nY * set.weights.y + nZ * set.weights.z);
 }
 
 void main() {
-    const PreviewUvSetUVE uvSet = BuildPreviewUvSetUVE();
+    PreviewUvSetUVE uvSet = BuildPreviewUvSetUVE();
     vec4 albedoSample = vec4(1.0);
     if (uHasAlbedoTexture) {
         albedoSample = ReadMapUVE(uAlbedoTexture, 0, uvSet, vec4(1.0));
@@ -279,9 +280,9 @@ void main() {
     if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
         discard;
     }
-    const vec3 albedo = albedoSample.rgb * uAlbedoColor;
-    const float surfaceAlpha = clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0);
-    const float outputAlpha = uBlendEnabled ? surfaceAlpha : 1.0;
+    vec3 albedo = albedoSample.rgb * uAlbedoColor;
+    float surfaceAlpha = clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0);
+    float outputAlpha = uBlendEnabled ? surfaceAlpha : 1.0;
     if (uUnshaded) {
         FragColor = vec4(LinearToDisplayUVE(clamp(albedo, 0.0, 1.0)), outputAlpha);
         return;
@@ -294,7 +295,7 @@ void main() {
         } else {
             vec3 tangent = vTangent - shadingNormal * dot(shadingNormal, vTangent);
             if (dot(tangent, tangent) <= 1.0e-8) {
-                const vec3 fallbackAxis = abs(shadingNormal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+                vec3 fallbackAxis = abs(shadingNormal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
                 tangent = cross(fallbackAxis, shadingNormal);
             }
             tangent = normalize(tangent);
@@ -308,7 +309,7 @@ void main() {
         }
     }
 
-    const vec3 view = normalize(uCameraPosition - vWorldPosition);
+    vec3 view = normalize(uCameraPosition - vWorldPosition);
     // Two-sided safety, exactly like the runtime material shader: a preview must never show a
     // black hole where a normal happens to face away from the camera.
     if (dot(shadingNormal, view) < 0.0) {
@@ -318,7 +319,7 @@ void main() {
     float metallic = uMetallic;
     float roughness = uRoughness;
     if (uHasMetallicRoughnessTexture) {
-        const vec3 metallicRoughness = ReadMapUVE(uMetallicRoughnessTexture, 2, uvSet, vec4(1.0)).rgb;
+        vec3 metallicRoughness = ReadMapUVE(uMetallicRoughnessTexture, 2, uvSet, vec4(1.0)).rgb;
         metallic *= metallicRoughness.b;
         roughness *= metallicRoughness.g;
     }
@@ -332,8 +333,8 @@ void main() {
         occlusion = mix(1.0, ReadMapUVE(uAOTexture, 3, uvSet, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
     }
 
-    const float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
-    const vec3 baseReflectance = mix(vec3(0.16 * dielectricSpec * dielectricSpec), albedo, metallic);
+    float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
+    vec3 baseReflectance = mix(vec3(0.16 * dielectricSpec * dielectricSpec), albedo, metallic);
     vec3 color = DirectLightUVE(shadingNormal, view, normalize(uKeyDirection), uKeyColor, albedo, baseReflectance,
                                 metallic, roughness) +
                  DirectLightUVE(shadingNormal, view, normalize(uFillDirection), uFillColor, albedo, baseReflectance,
@@ -344,16 +345,16 @@ void main() {
     // Ambient as a hemisphere environment: diffuse gets the irradiance for the surface normal, and
     // specular gets the one for the reflection vector. A metal lit only by ambient would otherwise
     // be black - the reflection lobe is a metal's entire response.
-    const vec3 irradiance = mix(uGroundAmbient, uSkyAmbient, shadingNormal.y * 0.5 + 0.5) * occlusion;
-    const vec3 diffuseAmbient = albedo * (1.0 - metallic) * irradiance;
-    const vec3 reflection = reflect(-view, shadingNormal);
-    const vec3 environment = mix(uGroundAmbient, uSkyAmbient, reflection.y * 0.5 + 0.5);
-    const float normalDotView = max(dot(shadingNormal, view), 0.0);
+    vec3 irradiance = mix(uGroundAmbient, uSkyAmbient, shadingNormal.y * 0.5 + 0.5) * occlusion;
+    vec3 diffuseAmbient = albedo * (1.0 - metallic) * irradiance;
+    vec3 reflection = reflect(-view, shadingNormal);
+    vec3 environment = mix(uGroundAmbient, uSkyAmbient, reflection.y * 0.5 + 0.5);
+    float normalDotView = max(dot(shadingNormal, view), 0.0);
     // Roughness-aware Fresnel: a rough surface does not get the bright grazing-angle rim that
     // Schlick's white ceiling would give it.
-    const vec3 ambientFresnel =
+    vec3 ambientFresnel =
         baseReflectance + (max(vec3(1.0 - roughness), baseReflectance) - baseReflectance) * pow(1.0 - normalDotView, 5.0);
-    const vec3 specularAmbient = environment * ambientFresnel * mix(1.0, occlusion, 0.6);
+    vec3 specularAmbient = environment * ambientFresnel * mix(1.0, occlusion, 0.6);
     color += diffuseAmbient + specularAmbient;
 
     if (uHasEmissiveTexture) {
@@ -461,6 +462,13 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
     GLint compiled = GL_FALSE;
     table.glGetShaderiv(outShader, GL_COMPILE_STATUS, &compiled);
     if (compiled == GL_FALSE) {
+        char infoLog[1024]{};
+        GLsizei logLen = 0;
+        if (table.glGetShaderInfoLog != nullptr) {
+            table.glGetShaderInfoLog(outShader, static_cast<GLsizei>(sizeof(infoLog) - 1U), &logLen, infoLog);
+        }
+        UVE_ERROR("MaterialThumbnailRendererUVE: shader compile failed (stage 0x{:X}): {}",
+                  static_cast<unsigned int>(stage), infoLog);
         table.glDeleteShader(outShader);
         outShader = 0U;
         return false;
@@ -549,11 +557,16 @@ struct MaterialThumbnailRendererUVE::GlStateUVE {
 
     GLuint scratchFramebuffer = 0U;
     GLuint scratchDepthRenderbuffer = 0U;
+    GLuint scratchColorTexture = 0U;
+    GLuint resolveFramebuffer = 0U;
     int scratchWidth = 0;
     int scratchHeight = 0;
 };
 
 namespace {
+
+constexpr GLenum kReadFramebufferUVE = 0x8CA8U;
+constexpr GLenum kDrawFramebufferUVE = 0x8CA9U;
 
 /// Sets the blend factors through the resolved glBlendFuncSeparate, falling back to the GL 1.1
 /// glBlendFunc (which a context without the 1.4 entry point cannot distinguish from it anyway).
@@ -566,11 +579,10 @@ void SetBlendFactorsUVE(const MaterialThumbnailRendererUVE::GlStateUVE& gl, cons
     }
 }
 
-/// Creates (once) and resizes (as needed) the scratch framebuffer + depth-renderbuffer reused by
-/// every RenderThumbnailUVE() call, mirroring MeshThumbnailRendererUVE's target management. Leaves
-/// GL_FRAMEBUFFER/GL_RENDERBUFFER on the scratch objects; the caller saves/restores around it.
+/// Creates (once) and resizes (as needed) the scratch framebuffer + depth-renderbuffer (+ optional
+/// supersampled color texture & resolve framebuffer) reused by every RenderThumbnailUVE() call.
 [[nodiscard]] bool EnsureScratchTargetUVE(MaterialThumbnailRendererUVE::GlStateUVE& gl, const int width,
-                                          const int height) noexcept {
+                                          const int height, const bool supersample) noexcept {
     const bool firstTime = gl.scratchFramebuffer == 0U;
     if (firstTime) {
         gl.table.glGenFramebuffers(1, &gl.scratchFramebuffer);
@@ -579,9 +591,24 @@ void SetBlendFactorsUVE(const MaterialThumbnailRendererUVE::GlStateUVE& gl, cons
             return false;
         }
     }
+    if (supersample && gl.resolveFramebuffer == 0U) {
+        gl.table.glGenFramebuffers(1, &gl.resolveFramebuffer);
+        glGenTextures(1, &gl.scratchColorTexture);
+        if (gl.resolveFramebuffer == 0U || gl.scratchColorTexture == 0U) {
+            return false;
+        }
+    }
     if (firstTime || gl.scratchWidth != width || gl.scratchHeight != height) {
         gl.table.glBindRenderbuffer(GL_RENDERBUFFER, gl.scratchDepthRenderbuffer);
         gl.table.glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+        if (supersample && gl.scratchColorTexture != 0U) {
+            glBindTexture(GL_TEXTURE_2D, gl.scratchColorTexture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        }
         gl.scratchWidth = width;
         gl.scratchHeight = height;
     }
@@ -743,6 +770,7 @@ void MaterialThumbnailRendererUVE::InitializeUVE() {
     gl.blendFuncSeparate =
         reinterpret_cast<PFNGLBLENDFUNCSEPARATEPROC>(GrabGlProcAddressUVE("glBlendFuncSeparate"));
     if (!gl.functionsLoaded) {
+        UVE_ERROR("MaterialThumbnailRendererUVE: OpenGL function table incomplete; PBR material thumbnails disabled");
         return;
     }
 
@@ -768,6 +796,12 @@ void MaterialThumbnailRendererUVE::InitializeUVE() {
     gl.table.glDeleteShader(vertexShader);
     gl.table.glDeleteShader(fragmentShader);
     if (linked == GL_FALSE) {
+        char infoLog[1024]{};
+        GLsizei logLen = 0;
+        if (gl.table.glGetProgramInfoLog != nullptr) {
+            gl.table.glGetProgramInfoLog(gl.shaderProgram, static_cast<GLsizei>(sizeof(infoLog) - 1U), &logLen, infoLog);
+        }
+        UVE_ERROR("MaterialThumbnailRendererUVE: shader link failed: {}", infoLog);
         gl.table.glDeleteProgram(gl.shaderProgram);
         gl.shaderProgram = 0U;
         return;
@@ -836,6 +870,14 @@ void MaterialThumbnailRendererUVE::ShutdownUVE() noexcept {
             gl.table.glDeleteVertexArrays(1, &gl.previewVertexArray);
             gl.previewVertexArray = 0U;
         }
+        if (gl.scratchColorTexture != 0U) {
+            glDeleteTextures(1, &gl.scratchColorTexture);
+            gl.scratchColorTexture = 0U;
+        }
+        if (gl.resolveFramebuffer != 0U) {
+            gl.table.glDeleteFramebuffers(1, &gl.resolveFramebuffer);
+            gl.resolveFramebuffer = 0U;
+        }
         if (gl.scratchDepthRenderbuffer != 0U) {
             gl.table.glDeleteRenderbuffers(1, &gl.scratchDepthRenderbuffer);
             gl.scratchDepthRenderbuffer = 0U;
@@ -856,6 +898,9 @@ void MaterialThumbnailRendererUVE::ShutdownUVE() noexcept {
 std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MaterialAssetUVE& material,
                                                                 const MaterialThumbnailTexturesUVE& textures,
                                                                 const int width, const int height) {
+    if (!m_gl && glfwGetCurrentContext() != nullptr) {
+        InitializeUVE();
+    }
     if (!m_gl || !m_gl->functionsLoaded || !m_gl->programLinked) {
         return 0U;
     }
@@ -886,6 +931,10 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
     const float cameraPositionValues[3] = {cameraPosition.x, cameraPosition.y, cameraPosition.z};
 
     const bool blendEnabled = Asset::ShouldBucketMaterialTransparentUVE(material);
+
+    // Drain pre-existing GL errors from unrelated passes so glGetError() below only reflects this draw.
+    while (glGetError() != GL_NO_ERROR) {
+    }
 
     GLint previousFramebuffer = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
@@ -938,7 +987,10 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
     GLfloat previousClearColor[4] = {0.0F, 0.0F, 0.0F, 0.0F};
     glGetFloatv(GL_COLOR_CLEAR_VALUE, previousClearColor);
 
-    bool succeeded = EnsureScratchTargetUVE(gl, width, height);
+    const bool supersample = gl.table.glBlitFramebuffer != nullptr && width <= 1024 && height <= 1024;
+    const int renderWidth = supersample ? width * 2 : width;
+    const int renderHeight = supersample ? height * 2 : height;
+    bool succeeded = EnsureScratchTargetUVE(gl, renderWidth, renderHeight, supersample);
 
     GLuint colorTexture = 0U;
     if (succeeded) {
@@ -952,9 +1004,21 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
-        gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
-        succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        if (supersample) {
+            gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.resolveFramebuffer);
+            gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+            succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+            if (succeeded) {
+                gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
+                gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                                gl.scratchColorTexture, 0);
+                succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+            }
+        } else {
+            gl.table.glBindFramebuffer(GL_FRAMEBUFFER, gl.scratchFramebuffer);
+            gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+            succeeded = gl.table.glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        }
     }
 
     // Upload the material's maps. A slot whose bytes are missing/invalid uploads nothing, and the
@@ -969,7 +1033,7 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
     }
 
     if (succeeded) {
-        glViewport(0, 0, width, height);
+        glViewport(0, 0, renderWidth, renderHeight);
         glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         SetGlCapabilityUVE(GL_DEPTH_TEST, GL_TRUE);
         glDepthMask(GL_TRUE);
@@ -1072,6 +1136,13 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         gl.table.glBindVertexArray(0);
     }
 
+    if (succeeded && supersample) {
+        gl.table.glBindFramebuffer(kReadFramebufferUVE, gl.scratchFramebuffer);
+        gl.table.glBindFramebuffer(kDrawFramebufferUVE, gl.resolveFramebuffer);
+        gl.table.glBlitFramebuffer(0, 0, renderWidth, renderHeight, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        succeeded = glGetError() == GL_NO_ERROR;
+    }
+
     // The texture is rendered larger than it is ever drawn, so it needs a mip chain: without one,
     // a card sampling 256 px down to 64 with bilinear filtering reads four texels and still
     // aliases. The mipmap min filter is only switched on once the chain exists - a texture whose
@@ -1091,6 +1162,7 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
         }
     }
     if (colorTexture != 0U) {
+        gl.table.glBindFramebuffer(GL_FRAMEBUFFER, supersample ? gl.resolveFramebuffer : gl.scratchFramebuffer);
         gl.table.glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     }
 
@@ -1103,7 +1175,9 @@ std::uintptr_t MaterialThumbnailRendererUVE::RenderThumbnailUVE(const Asset::Mat
     // state restore. ARRAY_BUFFER is not VAO state and can be rebound before or after.
     gl.table.glBindVertexArray(static_cast<GLuint>(previousVertexArray));
     gl.table.glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
-    gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementArrayBuffer));
+    if (previousVertexArray != 0) {
+        gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementArrayBuffer));
+    }
     for (std::size_t unit = 0U; unit < kPreviewTextureUnitCountUVE; ++unit) {
         gl.table.glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextureBindings[unit]));

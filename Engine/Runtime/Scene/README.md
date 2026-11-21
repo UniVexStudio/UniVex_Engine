@@ -25,5 +25,3 @@ third corner of a triangle new contributors historically confuse:
 4. There *was* a compatibility-alias facade (`using XNodeUVE = XComponentUVE;` per node type);
    it was deliberately deleted when nothing used it (see `scene_object_uve.h`'s own header
    comment). Do not reintroduce alias shims.
-
-Cross-link: `SCENE_NODES_ROADMAP.md` at the repo root tracks the node-registry maturity plan.

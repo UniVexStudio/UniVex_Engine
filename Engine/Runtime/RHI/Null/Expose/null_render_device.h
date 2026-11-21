@@ -81,6 +81,8 @@ public:
     [[nodiscard]] bool SupportsTextureFormatUVE(
         TextureFormatUVE format, TextureColorSpaceUVE colorSpace = TextureColorSpaceUVE::Linear) const noexcept override;
     void DestroyTextureUVE(TextureHandleUVE texture) override;
+    [[nodiscard]] std::uint32_t RegisterBindlessTextureUVE(TextureHandleUVE texture) override;
+    void UnregisterBindlessTextureUVE(std::uint32_t bindlessIndex) override;
     [[nodiscard]] SamplerHandleUVE CreateSamplerUVE(const SamplerDescUVE& desc) override;
     void DestroySamplerUVE(SamplerHandleUVE sampler) override;
 

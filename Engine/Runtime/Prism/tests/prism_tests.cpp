@@ -3180,6 +3180,31 @@ static void testGradientEditor(Application& app) {
   nf->onMouseUp(mm);
 }
 
+static void testNarrowButtonClipping() {
+  SECTION("narrow_button_clipping");
+  Canvas c;
+  c.resize(200, 40);
+  c.clear(Color(0, 0, 0, 255));
+  auto btn = make<Button>("M_VeryLongMaterialNameForInspector", Icon::None, ButtonStyle::Default);
+  btn->measure({200, 40});
+  btn->arrange({80, 6, 36, 24});
+  btn->paint(c);
+
+  const uint32_t bg = c.pixels()[0];
+  bool paintedInside = false;
+  bool leakedOutside = false;
+  for (int y = 0; y < 40; ++y) {
+    for (int x = 0; x < 200; ++x) {
+      const uint32_t px = c.pixels()[size_t(y) * 200 + size_t(x)];
+      if (px == bg) continue;
+      if (x >= 80 && x < 116 && y >= 6 && y < 30) paintedInside = true;
+      else leakedOutside = true;
+    }
+  }
+  CHECK(paintedInside);
+  CHECK(!leakedOutside);
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -3197,6 +3222,7 @@ int main(int argc, char** argv) {
   testDialogDragAndDisabledChoices(app);
   testSmoothImageScaling();
   testTypedNumberField(app);
+  testNarrowButtonClipping();
   testDocking(app);
   testToastsAndTimers(app, *plat);
   testDrawList(app);
