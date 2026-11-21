@@ -402,7 +402,8 @@ jobs:
                 f"platforms;{build_apk.ANDROID_PLATFORM}")
           PY
           )
-          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          # `yes` ends with a broken pipe once the licenses are accepted; that is not a failure.
+          (yes || true) | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ${packages}
       - name: Build the Hub APK
         env:
