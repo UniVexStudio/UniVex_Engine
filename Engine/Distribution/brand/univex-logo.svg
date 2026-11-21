@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500" viewBox="0 0 1000 1000">
+<defs>
+<clipPath id="c"><circle cx="500" cy="500" r="500"/></clipPath>
+<radialGradient id="bg" cx="50%" cy="42%" r="70%"><stop offset="0" stop-color="#1b1d22"/><stop offset=".65" stop-color="#101114"/><stop offset="1" stop-color="#08090b"/></radialGradient>
+<radialGradient id="halo" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#9aa0aa" stop-opacity=".22"/><stop offset="1" stop-color="#9aa0aa" stop-opacity="0"/></radialGradient>
+<linearGradient id="tone" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1467" y2="2527">
+<stop offset="0" stop-color="#e4e5e8"/><stop offset=".5" stop-color="#bfc1c6"/><stop offset="1" stop-color="#8d9097"/></linearGradient>
+<filter id="drop" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="38"/></filter>
+<filter id="matte" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+<feGaussianBlur in="SourceAlpha" stdDeviation="26" result="b"/>
+<feDiffuseLighting in="b" surfaceScale="9" diffuseConstant="1.05" lighting-color="#ffffff" result="lit"><feDistantLight azimuth="235" elevation="58"/></feDiffuseLighting>
+<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" seed="7" result="n"/>
+<feColorMatrix in="n" type="matrix" values="0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  .9 .9 .9 0 -.9" result="gr"/>
+<feColorMatrix in="n" type="saturate" values="0" result="ng"/>
+<feComponentTransfer in="ng" result="nt"><feFuncR type="linear" slope=".18" intercept=".84"/><feFuncG type="linear" slope=".18" intercept=".84"/><feFuncB type="linear" slope=".18" intercept=".84"/><feFuncA type="linear" slope="0" intercept="1"/></feComponentTransfer>
+<feBlend in="lit" in2="nt" mode="multiply" result="ln"/>
+<feComposite in="SourceGraphic" in2="ln" operator="arithmetic" k1="1.0" k2="0" k3="0" k4="0" result="tinted"/>
+<feComposite in="tinted" in2="SourceAlpha" operator="in"/>
+</filter>
+<path id="u" fill-rule="evenodd" d="M950.0 2486.9C773.8 2479.9 587.8 2401.5 409.5 2259.0C185.1 2079.7 92.4 1944.2 193.9 1944.0C254.5 1943.9 364.8 1991.1 531.0 2088.2C829.7 2262.6 921.2 2277.2 1053.5 2171.6C1227.4 2032.7 1239.6 1813.1 1084.1 1623.0C1009.6 1531.9 927.0 1471.0 775.0 1395.0C487.1 1251.1 480.7 1233.1 659.0 1071.0C719.2 1016.2 731.1 1005.0 763.6 972.6C949.0 787.4 913.2 725.7 507.5 530.5C309.8 435.3 181.7 352.8 95.9 265.4C44.7 213.2 33.3 184.0 42.8 129.9C54.3 64.9 82.4 32.5 117.7 43.5C256.3 86.6 1299.0 620.3 1312.1 654.8C1323.0 683.4 1242.0 798.0 1107.9 943.5C1008.3 1051.6 953.7 1132.0 946.9 1180.2C943.8 1202.8 951.6 1211.5 976.9 1213.2C1008.0 1215.3 1028.1 1218.8 1051.0 1226.2C1351.7 1323.6 1536.9 1964.8 1357.0 2285.5C1294.5 2396.9 1180.6 2467.8 1038.0 2484.0C1022.9 2485.7 978.6 2488.2 971.0 2487.8C969.6 2487.7 960.2 2487.4 950.0 2486.9Z"/>
+</defs>
+<g clip-path="url(#c)">
+<rect width="1000" height="1000" fill="url(#bg)"/>
+<circle cx="500" cy="500" r="420" fill="url(#halo)"/>
+<g transform="translate(308.4 170.0) scale(0.26118)">
+<use href="#u" fill="#000" filter="url(#drop)" opacity=".7" transform="translate(30 70)"/>
+<use href="#u" fill="url(#tone)" filter="url(#matte)"/>
+</g></g></svg>
