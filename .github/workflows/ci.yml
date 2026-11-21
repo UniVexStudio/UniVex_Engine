@@ -127,6 +127,7 @@ jobs:
           ./uvbt build UniVexPack Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexAssetWorkload Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexEditor Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
+          ./uvbt build UniVexHub Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexPrismTests Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ccache -s
 
@@ -272,6 +273,7 @@ jobs:
           set -euo pipefail
           ccache -z
           ./uvbt build UniVexEditor Windows Release -j4
+          ./uvbt build UniVexHub Windows Release -j4
           ./uvbt build UniVexRuntime Windows Release -j4
           ./uvbt build UniVexPack Windows Release -j4
           ./uvbt build UniVexAssetWorkload Windows Release -j4

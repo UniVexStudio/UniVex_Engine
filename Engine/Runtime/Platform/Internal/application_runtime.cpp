@@ -144,6 +144,18 @@ ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE() {
 #endif
 }
 
+ApplicationUserDataDirectoryResultUVE ResolveUserHomeDirectoryUVE() {
+#if defined(_WIN32)
+    const char* const home = std::getenv("USERPROFILE");
+#else
+    const char* const home = std::getenv("HOME");
+#endif
+    if (home == nullptr || home[0] == '\0' || !std::filesystem::path(home).is_absolute()) {
+        return MakeDirectoryFailureUVE("The user's home directory is unavailable.");
+    }
+    return {true, std::filesystem::path(home), "Home directory resolved."};
+}
+
 ApplicationUserDataDirectoryResultUVE ResolveToolUserDataDirectoryUVE(const std::string_view directoryName) {
     const std::filesystem::path name{directoryName};
     if (name.empty() || name.is_absolute() || name.has_parent_path() || name == "." || name == "..") {

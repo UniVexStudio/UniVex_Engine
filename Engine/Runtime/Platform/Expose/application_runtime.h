@@ -23,6 +23,9 @@ struct ApplicationUserDataDirectoryResultUVE final {
 /// Application Support on macOS). Not created; callers create their own directory beneath it.
 [[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE();
 
+/// The current user's home directory (USERPROFILE on Windows, HOME elsewhere). Not created.
+[[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolveUserHomeDirectoryUVE();
+
 /// Resolves and creates `directoryName` under the per-user data root, for data a tool keeps on
 /// behalf of the user rather than of one project.
 [[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolveToolUserDataDirectoryUVE(std::string_view directoryName);

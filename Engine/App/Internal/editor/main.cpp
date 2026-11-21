@@ -27,6 +27,7 @@
 #include "project_launcher.h"
 #include "project_template.h"
 #include "project_registry.h"
+#include "engine_install.h"
 #include "quaternion.h"
 #include "scalar.h"
 #include "prism/Containers.h"
@@ -53,11 +54,11 @@ inline constexpr std::string_view kDefaultViewportFolderUVE = "Viewport";
 inline constexpr std::string_view kDefaultViewportSceneFileUVE = "Viewport.uvscene";
 /// Where levels were saved before the Viewport asset existed, relative to the working directory.
 inline constexpr std::string_view kLegacyEditorSceneFileUVE = "editor_scene.uvscene";
-inline constexpr std::string_view kProjectOptionUVE = "--project";
+inline constexpr std::string_view kProjectOptionUVE = UVE::Pack::kEditorProjectOptionUVE;
 /// Accepts upgrading an older project to this engine without asking, for runs with no one to ask.
 inline constexpr std::string_view kUpgradeProjectOptionUVE = "--upgrade-project";
 /// Records opened projects in this registry file instead of the user's own, for isolated runs.
-inline constexpr std::string_view kProjectRegistryOptionUVE = "--project-registry";
+inline constexpr std::string_view kProjectRegistryOptionUVE = UVE::Pack::kEditorProjectRegistryOptionUVE;
 inline constexpr float kUpgradeDialogWidthUVE = 520.0F;
 inline constexpr float kUpgradeDialogLineSpacingUVE = 6.0F;
 /// Process exit code for a command line the editor cannot act on.
