@@ -4,7 +4,7 @@
 
 namespace prism {
 
-const char* const kReferenceVertexGlsl = R"(#version 330 core
+const char* const kReferenceVertexGlsl = R"(
 layout(location=0) in vec2 aPos;
 layout(location=1) in vec2 aUV;
 layout(location=2) in vec4 aColor;
@@ -18,7 +18,7 @@ void main() {
 }
 )";
 
-const char* const kReferenceFragmentGlsl = R"(#version 330 core
+const char* const kReferenceFragmentGlsl = R"(
 in vec2 vUV; in vec4 vColor; in vec4 vS0; in vec4 vS1;
 uniform sampler2D uTex;
 uniform float uH;
