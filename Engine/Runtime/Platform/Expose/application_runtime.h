@@ -19,6 +19,17 @@ struct ApplicationUserDataDirectoryResultUVE final {
     std::string message;
 };
 
+/// The platform's per-user data root (for example XDG_DATA_HOME on Linux, LOCALAPPDATA on Windows,
+/// Application Support on macOS). Not created; callers create their own directory beneath it.
+[[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE();
+
+/// The current user's home directory (USERPROFILE on Windows, HOME elsewhere). Not created.
+[[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolveUserHomeDirectoryUVE();
+
+/// Resolves and creates `directoryName` under the per-user data root, for data a tool keeps on
+/// behalf of the user rather than of one project.
+[[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolveToolUserDataDirectoryUVE(std::string_view directoryName);
+
 /// Resolves and creates the application user-data directory. Portable projects use a sibling
 /// directory under `projectRoot`; regular projects use the platform's per-user data directory.
 /// An empty manifest directory name falls back to product short name, then a sanitized project ID.

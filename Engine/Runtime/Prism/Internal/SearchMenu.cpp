@@ -10,7 +10,6 @@
 namespace prism {
 namespace {
 
-const Color kPopupBg = Color::hex(0x252527);
 
 std::string lowered(std::string s) {
   for (char& ch : s) ch = char(std::tolower(static_cast<unsigned char>(ch)));
@@ -61,7 +60,7 @@ public:
   void paint(Canvas& c) override {
     const Theme& t = theme();
     c.shadow(m_rect, 5, 14, Color(0, 0, 0, 150));
-    c.fillRoundRect(m_rect, 5, kPopupBg);
+    c.fillRoundRect(m_rect, 5, t.popup);
     c.strokeRoundRect(m_rect, 5, t.borderStrong, 1);
     m_input->paint(c);
     const Rect list = listRect();
@@ -90,9 +89,9 @@ public:
       }
       const Entry& e = m_entries[size_t(row.entry)];
       const bool hot = int(i) == m_sel && e.item.enabled;
-      if (hot) c.fillRoundRect(rr.deflated(Margin(2, 1)), 3, t.accent);
-      const Color fg = !e.item.enabled ? t.textDisabled : (hot ? t.accentText : t.text);
-      const Color dim = !e.item.enabled ? t.textDisabled : (hot ? t.accentText.alpha(0.8f) : t.textDim);
+      if (hot) c.fillRoundRect(rr.deflated(Margin(2, 1)), 3, t.rowSelected);
+      const Color fg = !e.item.enabled ? t.textDisabled : (hot ? t.textBright : t.text);
+      const Color dim = !e.item.enabled ? t.textDisabled : (hot ? t.text : t.textDim);
       const Rect ic{rr.x + 8, rr.y + (rr.h - 16) * 0.5f, 16, 16};
       if (e.item.image && e.item.imageSize > 0) c.blitBlend(e.item.image, e.item.imageSize, e.item.imageSize, e.item.imageSize, ic);
       else if (e.item.icon != Icon::None) drawIcon(c, e.item.icon, ic, dim);

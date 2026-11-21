@@ -67,7 +67,7 @@ public:
         continue;
       }
       bool sel = int(i) == m_sel;
-      if (sel) c.fillRoundRect(rr.deflated(Margin(4, 1)), 4, t.accent.alpha(0.85f));
+      if (sel) c.fillRoundRect(rr.deflated(Margin(4, 1)), 4, t.rowSelected);
       const BlueprintNodeSpec& sp = m_lib[size_t(r.spec)];
       BlueprintNode probe = sp.make();
       Color cc = chromeFor(probe.category).left;

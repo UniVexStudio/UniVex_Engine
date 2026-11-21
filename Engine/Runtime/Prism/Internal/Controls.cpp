@@ -24,7 +24,6 @@ std::string fmtNum(float v, int dec, const std::string& suffix = "") {
   if (s == "-0" || (s.size() > 1 && s[0] == '-' && s.find_first_not_of("-0.") == std::string::npos)) s.erase(0, 1);
   return s + suffix;
 }
-const Color kPopupBg = Color::hex(0x252527);
 } // namespace
 
 // ------------------------------------------------------------------ Label
@@ -84,7 +83,7 @@ void Button::paint(Canvas& c) {
     fg = en ? Color(255, 255, 255) : t.textDisabled;
     break;
   case ButtonStyle::Toolbar:
-    if (m_checked) bg = down ? t.accentDim.darken(0.2f) : t.accentDim;
+    if (m_checked) bg = down ? t.rowSelected.darken(0.2f) : t.rowSelected;
     else bg = down ? t.controlPress : (hot ? t.controlHover : Color(0, 0, 0, 0));
     if (m_checked && en) fg = t.textBright;
     break;
@@ -93,7 +92,7 @@ void Button::paint(Canvas& c) {
   if (border.a) c.strokeRoundRect(m_rect, 3, border);
   Color ic = m_hasIconColor ? m_iconColor.get() : fg;
   if (!en) ic = t.textDisabled;
-  if (m_checked && m_style == ButtonStyle::Toolbar && en && !m_hasIconColor) ic = t.accentHover.lighten(0.15f);
+  if (m_checked && m_style == ButtonStyle::Toolbar && en && !m_hasIconColor) ic = t.textBright;
   const Font& f = *t.ui;
   const float tw = m_text.empty() ? 0.f : std::ceil(f.width(m_text));
   const float iconW = m_icon != Icon::None ? 16.f : 0.f;
@@ -158,8 +157,8 @@ void CheckBox::paint(Canvas& c) {
   bool en = enabled();
   Rect b{m_rect.x, std::floor(m_rect.y + (m_rect.h - 14) * 0.5f), 14, 14};
   if (m_checked && en) {
-    c.fillRoundRect(b, 3, m_hovered ? t.accentHover : t.accent);
-    drawIcon(c, Icon::Check, b.inflated(-1), t.accentText, 1.7f);
+    c.fillRoundRect(b, 3, m_hovered ? t.highlight.lighten(0.1f) : t.highlight);
+    drawIcon(c, Icon::Check, b.inflated(-1), t.window, 1.7f);
   } else {
     c.fillRoundRect(b, 3, t.field);
     c.strokeRoundRect(b, 3, m_hovered && en ? t.textDim : t.borderStrong);
@@ -213,9 +212,9 @@ void Segmented::paint(Canvas& c) {
     float w = segW(i);
     Rect r{x, m_rect.y + 2, w, m_rect.h - 4};
     bool sel = i == m_sel, hot = i == m_hot && m_hovered;
-    if (sel) c.fillRoundRect(r, 3, t.accent);
+    if (sel) c.fillRoundRect(r, 3, t.rowSelected);
     else if (hot) c.fillRoundRect(r, 3, t.controlHover);
-    Color fg = sel ? t.accentText : (hot ? t.textBright : t.text);
+    Color fg = sel ? t.textBright : (hot ? t.textBright : t.text);
     const Item& it = m_items[size_t(i)];
     float tw = it.text.empty() ? 0 : std::ceil(t.ui->width(it.text));
     float cw = (it.icon != Icon::None ? 16.f : 0.f) + (it.icon != Icon::None && tw > 0 ? 6.f : 0.f) + tw;
@@ -274,10 +273,10 @@ void Slider::paint(Canvas& c) {
   Rect fill{m_rect.x + 1, m_rect.y + 1, std::floor((m_rect.w - 2) * f), m_rect.h - 2};
   if (fill.w > 0 && en) {
     c.pushClip(fill);
-    c.fillRoundRect({m_rect.x + 1, m_rect.y + 1, m_rect.w - 2, m_rect.h - 2}, 2, (m_hovered || m_drag) ? t.accent.alpha(0.75f) : t.accent.alpha(0.6f));
+    c.fillRoundRect({m_rect.x + 1, m_rect.y + 1, m_rect.w - 2, m_rect.h - 2}, 2, (m_hovered || m_drag) ? t.highlight.alpha(0.75f) : t.highlight.alpha(0.6f));
     c.popClip();
   }
-  c.strokeRoundRect(m_rect, 3, m_drag ? t.accent : (m_hovered && en ? t.borderStrong : t.borderSoft));
+  c.strokeRoundRect(m_rect, 3, m_drag ? t.highlight : (m_hovered && en ? t.borderStrong : t.borderSoft));
   c.textIn(*t.ui, m_rect, fmtNum(m_value, m_dec, m_suffix), en ? t.textBright : t.textDisabled, HAlign::Center);
 }
 
@@ -296,15 +295,15 @@ public:
   }
   void paint(Canvas& c) override {
     const Theme& t = theme();
-    c.fillRoundRect(m_rect, 4, kPopupBg);
+    c.fillRoundRect(m_rect, 4, t.popup);
     c.strokeRoundRect(m_rect, 4, t.borderStrong);
     for (int i = 0; i < int(m_items.size()); i++) {
       Rect r = rowRect(i);
       const bool off = disabled(i);
       bool hot = i == m_hover && !off;
-      if (hot) c.fillRoundRect(r, 3, t.accent);
-      if (i == m_sel) drawIcon(c, Icon::Check, {r.x + 4, r.y + 3, 16, 16}, hot ? t.accentText : t.accent);
-      c.textIn(*t.ui, {r.x + 26, r.y, r.w - 30, r.h}, m_items[size_t(i)], off ? t.textDisabled : hot ? t.accentText : t.text);
+      if (hot) c.fillRoundRect(r, 3, t.rowSelected);
+      if (i == m_sel) drawIcon(c, Icon::Check, {r.x + 4, r.y + 3, 16, 16}, t.highlight);
+      c.textIn(*t.ui, {r.x + 26, r.y, r.w - 30, r.h}, m_items[size_t(i)], off ? t.textDisabled : hot ? t.textBright : t.text);
     }
   }
   bool onMouseMove(const MouseEvent& e) override {
@@ -372,7 +371,7 @@ void ComboBox::paint(Canvas& c) {
   const Theme& t = theme();
   bool en = enabled();
   c.fillRoundRect(m_rect, 3, m_hovered && en ? t.controlHover : t.control);
-  c.strokeRoundRect(m_rect, 3, m_open ? t.accent : (m_hovered && en ? t.borderStrong : t.borderSoft));
+  c.strokeRoundRect(m_rect, 3, m_open ? t.highlight : (m_hovered && en ? t.borderStrong : t.borderSoft));
   c.textIn(*t.ui, {m_rect.x + 8, m_rect.y, m_rect.w - 28, m_rect.h}, text(), en ? t.text : t.textDisabled);
   drawIcon(c, Icon::ChevronDown, {m_rect.right() - 20, m_rect.y + (m_rect.h - 16) * 0.5f, 16, 16}, en ? t.textDim : t.textDisabled, 1.4f);
 }
@@ -397,7 +396,7 @@ bool ComboBox::onMouseDown(const MouseEvent& e) {
 void ProgressBar::paint(Canvas& c) {
   const Theme& t = theme();
   c.fillRoundRect(m_rect, m_rect.h * 0.5f, t.field);
-  if (m_v > 0) c.fillRoundRect({m_rect.x, m_rect.y, std::max(m_rect.h, m_rect.w * m_v), m_rect.h}, m_rect.h * 0.5f, t.accent);
+  if (m_v > 0) c.fillRoundRect({m_rect.x, m_rect.y, std::max(m_rect.h, m_rect.w * m_v), m_rect.h}, m_rect.h * 0.5f, t.highlight);
 }
 
 void Separator::paint(Canvas& c) {

@@ -7,6 +7,16 @@
 
 namespace prism {
 
+namespace {
+constexpr const char* kDesktopGlslHeader = "#version 330 core\n";
+constexpr const char* kEsGlslHeader = "#version 300 es\nprecision highp float;\nprecision highp int;\n";
+// GLES contexts report a version string that starts with this.
+constexpr const char* kEsVersionPrefix = "OpenGL ES";
+// GLES reads pixels back only as RGBA bytes; ARGB in a little-endian word is BGRA bytes.
+constexpr int kRedShift = 16;
+constexpr uint32_t kRedMask = 0x00FF0000U, kBlueMask = 0x000000FFU;
+} // namespace
+
 #define PRISM_GL_FUNCS(X)                                                                                                         \
   X(PFNGLVIEWPORTPROC, glViewport) X(PFNGLCLEARCOLORPROC, glClearColor) X(PFNGLCLEARPROC, glClear)                             \
   X(PFNGLENABLEPROC, glEnable) X(PFNGLDISABLEPROC, glDisable) X(PFNGLSCISSORPROC, glScissor)                                   \
@@ -25,7 +35,8 @@ namespace prism {
   X(PFNGLFRAMEBUFFERTEXTURE2DPROC, glFramebufferTexture2D) X(PFNGLCHECKFRAMEBUFFERSTATUSPROC, glCheckFramebufferStatus)       \
   X(PFNGLBLITFRAMEBUFFERPROC, glBlitFramebuffer) X(PFNGLDELETESHADERPROC, glDeleteShader)                                      \
   X(PFNGLDELETEFRAMEBUFFERSPROC, glDeleteFramebuffers) X(PFNGLDELETEBUFFERSPROC, glDeleteBuffers)                              \
-  X(PFNGLDELETEVERTEXARRAYSPROC, glDeleteVertexArrays) X(PFNGLDELETEPROGRAMPROC, glDeleteProgram)
+  X(PFNGLDELETEVERTEXARRAYSPROC, glDeleteVertexArrays) X(PFNGLDELETEPROGRAMPROC, glDeleteProgram)                    \
+  X(PFNGLGETSTRINGPROC, glGetString)
 
 struct GlBackend::Impl {
 #define X(T, N) T N = nullptr;
@@ -42,6 +53,7 @@ struct GlBackend::Impl {
   GpuFrame frame;
   std::vector<uint32_t> readbuf, flipped;
   size_t drawCalls = 0;
+  bool es = false;
 
   bool load(Loader ld, std::string* err) {
 #define X(T, N) if (!(N = reinterpret_cast<T>(ld(#N)))) { if (err) *err = "missing GL function " #N; return false; }
@@ -51,7 +63,8 @@ struct GlBackend::Impl {
   }
   GLuint compile(GLenum type, const char* src, std::string* err) {
     GLuint s = glCreateShader(type);
-    glShaderSource(s, 1, &src, nullptr);
+    const char* parts[] = {es ? kEsGlslHeader : kDesktopGlslHeader, src};
+    glShaderSource(s, 2, parts, nullptr);
     glCompileShader(s);
     GLint ok = 0;
     glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
@@ -102,6 +115,8 @@ std::shared_ptr<GlBackend> GlBackend::create(Loader loader, std::function<void()
   if (!g.load(loader, error)) return nullptr;
   g.present = std::move(present);
   g.blit = blitToScreen;
+  const auto* version = reinterpret_cast<const char*>(g.glGetString(GL_VERSION));
+  g.es = version && std::strncmp(version, kEsVersionPrefix, std::strlen(kEsVersionPrefix)) == 0;
   GLuint vs = g.compile(GL_VERTEX_SHADER, kReferenceVertexGlsl, error);
   GLuint fs = vs ? g.compile(GL_FRAGMENT_SHADER, kReferenceFragmentGlsl, error) : 0;
   if (!vs || !fs) return nullptr;
@@ -215,7 +230,13 @@ PixelView GlBackend::readback() {
   g.flipped.resize(g.readbuf.size());
   g.glBindFramebuffer(GL_FRAMEBUFFER, g.fbo);
   g.glPixelStorei(GL_PACK_ALIGNMENT, 4);
-  g.glReadPixels(0, 0, g.w, g.h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, g.readbuf.data());
+  if (g.es) {
+    g.glReadPixels(0, 0, g.w, g.h, GL_RGBA, GL_UNSIGNED_BYTE, g.readbuf.data());
+    for (uint32_t& p : g.readbuf)   // RGBA bytes -> ARGB word: swap the red and blue bytes
+      p = (p & ~(kRedMask | kBlueMask)) | ((p & kBlueMask) << kRedShift) | ((p & kRedMask) >> kRedShift);
+  } else {
+    g.glReadPixels(0, 0, g.w, g.h, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, g.readbuf.data());
+  }
   for (int y = 0; y < g.h; y++)
     std::memcpy(&g.flipped[size_t(y) * size_t(g.w)], &g.readbuf[size_t(g.h - 1 - y) * size_t(g.w)], size_t(g.w) * 4);
   return {g.flipped.data(), g.w, g.h, g.w};

@@ -10,6 +10,9 @@
 #include "texture_asset.h"
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -323,6 +326,172 @@ TEST_F(ProjectLauncherUVETest, LoadAndActivate_RejectsMissingProjectFile) {
     EXPECT_FALSE(result.IsAcceptedUVE());
     EXPECT_EQ(result.code, ProjectLaunchCodeUVE::InvalidProjectFile);
     engine.Shutdown();
+}
+
+/// The engine version the authoring tests open projects with; MakeAuthoringPackageUVE records it.
+inline constexpr Core::VersionUVE kAuthoringEngineVersionUVE{0U, 0U, 1U, 0U};
+
+[[nodiscard]] Platform::EditorProjectPackageUVE MakeAuthoringPackageUVE() {
+    Platform::EditorProjectPackageUVE package;
+    package.revision = 1U;
+    package.projectId = "editor-authoring-project";
+    package.displayName = "Editor Authoring Project";
+    package.engineVersion = {kAuthoringEngineVersionUVE.major, kAuthoringEngineVersionUVE.minor,
+                             kAuthoringEngineVersionUVE.patch, kAuthoringEngineVersionUVE.build};
+    package.contentRoot = "content";
+    package.assetDatabasePath = ".uvassetdb";
+    package.settingsPath = "project.uvsettings";
+    return package;
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_PointsConfigAtProjectAuthoringData) {
+    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    package.startupScenePath = "scenes/not_saved_yet.uvscene";
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const std::filesystem::path userSettings = config.settingsFilePath;
+    const std::uint32_t editorWindowWidth = config.windowWidth;
+    const std::filesystem::path logFileName = config.logFilePath.filename();
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+
+    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
+    const std::filesystem::path root = std::filesystem::canonical(projectRoot);
+    EXPECT_EQ(result.setup->projectRoot, root);
+    EXPECT_EQ(result.setup->contentRoot, root / "content");
+    EXPECT_EQ(result.setup->startupScene, root / "content" / "scenes" / "not_saved_yet.uvscene");
+    EXPECT_EQ(config.projectContentRootUVE, root / "content");
+    EXPECT_EQ(config.projectRootDirectoryUVE, root);
+    EXPECT_EQ(config.projectSettingsFilePath, root / "project.uvsettings");
+    EXPECT_EQ(config.assetDatabaseFilePath, root / ".uvassetdb");
+    EXPECT_EQ(config.inputMapFilePath.parent_path(), root);
+    EXPECT_EQ(config.derivedArtifactCacheRootUVE.parent_path().parent_path().parent_path(), root);
+    EXPECT_EQ(config.projectDisplayNameUVE, package.displayName);
+    EXPECT_EQ(config.logFilePath,
+              root / kProjectEditorLogDirectoryNameUVE / logFileName);
+    EXPECT_TRUE(std::filesystem::is_directory(config.logFilePath.parent_path()));
+    // The editor keeps its own per-user preferences and window.
+    EXPECT_EQ(config.settingsFilePath, userSettings);
+    EXPECT_EQ(config.windowWidth, editorWindowWidth);
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_AcceptsProjectWithoutStartupScene) {
+    ASSERT_TRUE(
+        Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), MakeAuthoringPackageUVE()).IsAcceptedUVE());
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+
+    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
+    EXPECT_TRUE(result.setup->startupScene.empty());
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsStartupSceneOutsideContentRoot) {
+    // The codec refuses to save such a manifest, so the escaping path is written into the file
+    // directly, as a hand-edited or hostile project would carry it.
+    constexpr std::string_view kInsideScene = "scenes/inside.uvscene";
+    constexpr std::string_view kEscapingScene = "../outside.uvscene";
+    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    package.startupScenePath = kInsideScene;
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+    std::string manifest;
+    {
+        std::ifstream input(projectFile());
+        manifest.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    }
+    const std::size_t scenePosition = manifest.find(kInsideScene);
+    ASSERT_NE(scenePosition, std::string::npos);
+    manifest.replace(scenePosition, kInsideScene.size(), kEscapingScene);
+    {
+        std::ofstream output(projectFile(), std::ios::trunc);
+        output << manifest;
+    }
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const Core::EngineConfigUVE before = config;
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+
+    EXPECT_FALSE(result.IsReadyUVE());
+    EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
+    EXPECT_EQ(config.logFilePath, before.logFilePath);
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsMissingContentRootWithoutTouchingConfig) {
+    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    package.contentRoot = "missing_content";
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const Core::EngineConfigUVE before = config;
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+
+    EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::ContentRootInvalid);
+    EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
+    EXPECT_EQ(config.assetDatabaseFilePath, before.assetDatabaseFilePath);
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsMissingProjectFile) {
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectRoot / "does_not_exist.uvproject", kAuthoringEngineVersionUVE, config);
+
+    EXPECT_FALSE(result.IsReadyUVE());
+    EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::InvalidProjectFile);
+}
+
+TEST_F(ProjectLauncherUVETest, RecordEngineVersion_UpdatesManifestThroughRevisionCheck) {
+    ASSERT_TRUE(
+        Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), MakeAuthoringPackageUVE()).IsAcceptedUVE());
+    const Core::VersionUVE engineVersion{2U, 3U, 4U, 5U};
+
+    ASSERT_TRUE(RecordProjectEngineVersionUVE(projectFile(), engineVersion).IsAcceptedUVE());
+    const Platform::EditorProjectPackageLoadResultUVE updated =
+        Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile());
+    ASSERT_TRUE(updated.IsAcceptedUVE());
+    EXPECT_EQ(updated.package->engineVersion, (Platform::EditorProjectVersionUVE{2U, 3U, 4U, 5U}));
+    EXPECT_EQ(updated.package->revision, 2U);
+
+    // Recording the same version again leaves the manifest and its revision untouched.
+    ASSERT_TRUE(RecordProjectEngineVersionUVE(projectFile(), engineVersion).IsAcceptedUVE());
+    EXPECT_EQ(Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile()).package->revision, 2U);
+}
+
+TEST_F(ProjectLauncherUVETest, RecordEngineVersion_ReportsMissingProjectFile) {
+    EXPECT_FALSE(
+        RecordProjectEngineVersionUVE(projectRoot / "does_not_exist.uvproject", Core::VersionUVE{1U, 0U, 0U, 0U})
+            .IsAcceptedUVE());
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_RefusesProjectFromIncompatibleNewerEngine) {
+    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    package.engineVersion.major = kAuthoringEngineVersionUVE.major + 1U;
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const Core::EngineConfigUVE before = config;
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+
+    EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::EngineTooOld);
+    EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
+    EXPECT_EQ(config.logFilePath, before.logFilePath);
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_ReportsCompatibilityOfOlderProject) {
+    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    const Core::VersionUVE newerEngine{kAuthoringEngineVersionUVE.major, kAuthoringEngineVersionUVE.minor + 1U,
+                                       kAuthoringEngineVersionUVE.patch, kAuthoringEngineVersionUVE.build};
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const ProjectEditorSetupResultUVE result = PrepareProjectEditorUVE(projectFile(), newerEngine, config);
+
+    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
+    EXPECT_EQ(result.setup->compatibility.verdict, ProjectCompatibilityVerdictUVE::OlderNeedsUpgrade);
 }
 
 } // namespace

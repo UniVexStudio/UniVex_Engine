@@ -73,6 +73,8 @@ bool buildGpuFrame(const DrawList& list, GlyphAtlas& atlas, GpuFrame& out);
 // Modes: Solid: colour. BoxFill/BoxStroke: rounded-box SDF with s0=(cx,cy,hx,hy), s1.x=radius, s1.y=stroke width.
 // Ring: s0=(cx,cy,r,width). Line: s0=(ax,ay,bx,by), s1.x=half width. Glyph: atlas coverage with a 0.8 gamma curve.
 // Image: texel copy. These formulas match the CPU rasterizer so both back ends agree to within rounding.
+// GLSL bodies without a #version line: the backend prepends the one its context speaks (GLSL 3.30
+// core on desktop GL, GLSL ES 3.00 on GLES), since the bodies are valid in both.
 extern const char* const kReferenceVertexGlsl;
 extern const char* const kReferenceFragmentGlsl;
 

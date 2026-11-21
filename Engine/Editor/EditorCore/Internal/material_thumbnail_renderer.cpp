@@ -16,8 +16,7 @@
 // loading itself is not hand-rolled - this class shares the engine's one contract loader, exactly
 // like MeshThumbnailRendererUVE. The GL surface stays confined to this .cpp: the public header
 // never includes a GL header.
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include "gl_system_headers.h"
 #include <GLFW/glfw3.h>
 
 #include "gl_functions.h"

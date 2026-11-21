@@ -54,6 +54,7 @@ public class CoreTestsModule : ModuleRules
             "Localization",
             "UI",
             "Pack",
+            "Online",
             "VFX",
             "Prism",
             "EditorCore"
@@ -99,6 +100,7 @@ public class CoreTestsModule : ModuleRules
             "../Runtime/Objects/Core/Tests",
             "../Runtime/Objects/3D/Tests",
             "../Runtime/Objects/UI/Tests",
+            "../Runtime/Online/Tests",
             "../Runtime/Pack/Tests",
             "../Runtime/Physics/Tests",
             "../Runtime/Platform/Tests",

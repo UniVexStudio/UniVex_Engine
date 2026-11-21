@@ -8,6 +8,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "application_window_settings.h"
@@ -16,6 +17,8 @@ namespace UVE::Platform {
 
 inline constexpr std::uint32_t kCurrentEditorProjectSchemaVersionUVE = 1U;
 inline constexpr std::size_t kMaximumEditorProjectIdBytesUVE = 128U;
+/// File extension of a project manifest.
+inline constexpr std::string_view kEditorProjectFileExtensionUVE = ".uvproject";
 inline constexpr std::size_t kMaximumEditorProjectNameBytesUVE = 256U;
 inline constexpr std::size_t kMaximumEditorProjectPathBytesUVE = 256U;
 inline constexpr std::size_t kMaximumEditorProductNameBytesUVE = 256U;

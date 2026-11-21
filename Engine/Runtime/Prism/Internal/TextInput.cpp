@@ -123,7 +123,7 @@ void TextInput::paint(Canvas& c) {
   const Font& f = fontFor(m_font);
   if (!m_frameless) {
     c.fillRoundRect(m_rect, 3, t.field);
-    c.strokeRoundRect(m_rect, 3, m_focused ? t.accent : (m_hovered ? t.borderStrong : t.borderSoft));
+    c.strokeRoundRect(m_rect, 3, m_focused ? t.highlight : (m_hovered ? t.borderStrong : t.borderSoft));
   }
   if (m_icon != Icon::None)
     drawIcon(c, m_icon, {m_rect.x + 5, m_rect.y + (m_rect.h - 16) * 0.5f, 16, 16}, t.textDim, 1.3f);
@@ -139,7 +139,7 @@ void TextInput::paint(Canvas& c) {
   } else {
     if (m_ed.hasSelection() && m_focused) {
       float x0 = ox + f.widthTo(m_ed.text, m_ed.selStart()), x1 = ox + f.widthTo(m_ed.text, m_ed.selEnd());
-      c.fillRect({x0, m_rect.y + 3, x1 - x0, m_rect.h - 6}, t.accent.alpha(0.55f));
+      c.fillRect({x0, m_rect.y + 3, x1 - x0, m_rect.h - 6}, t.highlight.alpha(0.35f));
     }
     c.textIn(f, {ox, m_rect.y, f.width(m_ed.text) + 4, m_rect.h}, m_ed.text, enabled() ? t.text : t.textDisabled, HAlign::Left, false);
   }
@@ -266,7 +266,7 @@ void NumberField::paint(Canvas& c) {
   const Theme& t = theme();
   bool en = enabled();
   c.fillRoundRect(m_rect, 3, t.field);
-  Color border = m_editing || m_dragging ? t.accent : (m_hovered && en ? t.borderStrong : t.borderSoft);
+  Color border = m_editing || m_dragging ? t.highlight : (m_hovered && en ? t.borderStrong : t.borderSoft);
   if (m_hasStrip) {
     if (!m_axisLabel.empty()) {
       Rect tagRect{m_rect.x, m_rect.y, 16.0f, m_rect.h};

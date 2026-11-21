@@ -3,9 +3,10 @@
 
 #include "prism/Canvas.h"
 #include "prism/GlBackend.h"
+#include "prism/Icons.h"
+#include "png_metadata.h"
 
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include "gl_system_headers.h"
 #include <GLFW/glfw3.h>
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -20,11 +21,14 @@
 #include <cstdio>
 #include <map>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <fstream>
+#include <iterator>
 
 namespace UVE::Editor {
 namespace {
@@ -586,6 +590,33 @@ EditorHostUVE::WindowUVE* EditorHostUVE::FindUVE(const int id) const {
     return it != m_windows.end() ? it->second.get() : nullptr;
 }
 
+namespace {
+
+/// The UniVex mark every PRISM window shows in its title bar, inside PRISM's asset directory.
+inline constexpr std::string_view kBrandMarkFileUVE = "images/univex_logo.png";
+
+/// Hands the brand mark to PRISM; a missing or unreadable image leaves the title bars without one.
+void LoadBrandMarkUVE(const std::filesystem::path& file) {
+    std::ifstream input(file, std::ios::binary);
+    const std::vector<char> raw{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    std::vector<std::byte> bytes(raw.size());
+    std::transform(raw.begin(), raw.end(), bytes.begin(), [](const char value) { return static_cast<std::byte>(value); });
+    UVE::Asset::PngRgba8ImageUVE image;
+    if (bytes.empty() || !UVE::Asset::DecodePngRgba8ImageUVE(bytes, image) || image.width == 0U || image.height == 0U) {
+        return;
+    }
+    std::vector<std::uint32_t> argb(static_cast<std::size_t>(image.width) * image.height);
+    for (std::size_t index = 0U; index < argb.size(); ++index) {
+        const std::byte* const pixel = image.pixels.data() + index * UVE::Asset::kPngRgba8ChannelsUVE;
+        argb[index] = prism::Color(std::to_integer<std::uint8_t>(pixel[0]), std::to_integer<std::uint8_t>(pixel[1]),
+                                   std::to_integer<std::uint8_t>(pixel[2]), std::to_integer<std::uint8_t>(pixel[3]))
+                          .argb();
+    }
+    prism::setBrandMark(std::move(argb), static_cast<int>(image.width), static_cast<int>(image.height));
+}
+
+} // namespace
+
 bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesystem::path& assetDir) {
     if (m_ready || window == nullptr || g_activeHostUVE != nullptr) {
         return false;
@@ -609,6 +640,8 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
         m_main.reset();
         return false;
     }
+
+    LoadBrandMarkUVE(assetDir / kBrandMarkFileUVE);
 
     std::string error;
     m_backend = prism::GlBackend::create(&GlLoaderUVE, {}, /*blitToScreen*/ false, &error);

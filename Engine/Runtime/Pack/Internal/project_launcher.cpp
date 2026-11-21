@@ -161,6 +161,76 @@ namespace {
     return true;
 }
 
+/// What a `.uvproject` resolves to on disk, shared by the editor and runtime bootstraps.
+struct ProjectLayoutUVE final {
+    std::filesystem::path projectFile;
+    std::filesystem::path projectRoot;
+    std::filesystem::path contentRoot;
+};
+
+enum class ProjectLayoutErrorUVE : std::uint8_t {
+    None = 0,
+    ManifestInvalid,
+    PathUnresolvable,
+    ContentRootInvalid,
+};
+
+struct ProjectLayoutResultUVE final {
+    ProjectLayoutErrorUVE error = ProjectLayoutErrorUVE::ManifestInvalid;
+    std::string message;
+    /// Present whenever the manifest itself loaded, so callers can apply their own manifest checks
+    /// before reporting a layout failure.
+    std::optional<Platform::EditorProjectPackageUVE> package;
+    std::optional<ProjectLayoutUVE> layout;
+};
+
+[[nodiscard]] ProjectLayoutResultUVE ResolveProjectLayoutUVE(const std::filesystem::path& projectFile) {
+    ProjectLayoutResultUVE result;
+    Platform::EditorProjectPackageLoadResultUVE loaded = Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
+    if (!loaded.IsAcceptedUVE()) {
+        result.message = "Unable to load the .uvproject project file: " + loaded.result.message;
+        return result;
+    }
+    result.package = std::move(loaded.package);
+
+    std::error_code error;
+    std::filesystem::path absoluteProjectFile = std::filesystem::absolute(projectFile, error);
+    if (error) {
+        result.error = ProjectLayoutErrorUVE::PathUnresolvable;
+        result.message = "Unable to resolve the project file path: " + error.message();
+        return result;
+    }
+    absoluteProjectFile = absoluteProjectFile.lexically_normal();
+    std::filesystem::path projectRoot = absoluteProjectFile.parent_path();
+    std::filesystem::path contentRoot;
+    if (!ResolveContainedDirectoryUVE(projectRoot, projectRoot / result.package->contentRoot, contentRoot)) {
+        result.error = ProjectLayoutErrorUVE::ContentRootInvalid;
+        result.message = "The project content root must be a directory under the project root: " +
+                         (projectRoot / result.package->contentRoot).string();
+        return result;
+    }
+    result.error = ProjectLayoutErrorUVE::None;
+    result.layout = ProjectLayoutUVE{std::move(absoluteProjectFile), std::move(projectRoot), std::move(contentRoot)};
+    return result;
+}
+
+/// Points the configuration at the project's own authored data. The input map keeps the file name
+/// the engine uses by default, placed in the project root.
+void ApplyProjectAuthoringPathsUVE(Core::EngineConfigUVE& config, const Platform::EditorProjectPackageUVE& package,
+                                   const ProjectLayoutUVE& layout) {
+    static const Core::EngineConfigUVE kDefaultConfigUVE{};
+    config.projectContentRootUVE = layout.contentRoot;
+    config.projectRootDirectoryUVE = layout.projectRoot;
+    config.projectSettingsFilePath = layout.projectRoot / package.settingsPath;
+    config.inputMapFilePath = layout.projectRoot / kDefaultConfigUVE.inputMapFilePath.filename();
+    config.assetDatabaseFilePath = layout.projectRoot / package.assetDatabasePath;
+    config.projectDisplayNameUVE = package.displayName;
+}
+
+[[nodiscard]] Platform::EditorProjectVersionUVE ToProjectVersionUVE(const Core::VersionUVE& version) noexcept {
+    return {version.major, version.minor, version.patch, version.build};
+}
+
 [[nodiscard]] ProjectLaunchResultUVE LoadAndActivateSceneUVE(Core::EngineCoreUVE& engine,
                                                               const Platform::EditorProjectPackageUVE& package,
                                                               const std::filesystem::path& projectRoot) {
@@ -211,32 +281,25 @@ namespace {
 ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::path& projectFile,
                                                        Core::EngineConfigUVE& config,
                                                        const std::filesystem::path& nativeUserDataRoot) {
-    const Platform::EditorProjectPackageLoadResultUVE loaded =
-        Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
-    if (!loaded.IsAcceptedUVE()) {
-        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::InvalidProjectFile,
-                                  "Unable to load the .uvproject project file: " + loaded.result.message);
+    ProjectLayoutResultUVE resolved = ResolveProjectLayoutUVE(projectFile);
+    if (!resolved.package.has_value()) {
+        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::InvalidProjectFile, std::move(resolved.message));
     }
-    const Platform::EditorProjectPackageUVE& package = *loaded.package;
+    const Platform::EditorProjectPackageUVE& package = *resolved.package;
     if (package.startupScenePath.empty()) {
         return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::NoStartupSceneConfigured,
                                   "The project has no startup scene configured.");
     }
-
+    if (!resolved.layout.has_value()) {
+        const ProjectRuntimeSetupCodeUVE code = resolved.error == ProjectLayoutErrorUVE::ContentRootInvalid
+                                                    ? ProjectRuntimeSetupCodeUVE::ApplicationResourceInvalid
+                                                    : ProjectRuntimeSetupCodeUVE::InvalidProjectFile;
+        return MakeSetupResultUVE(code, std::move(resolved.message));
+    }
+    ProjectLayoutUVE& layout = *resolved.layout;
+    const std::filesystem::path& projectRoot = layout.projectRoot;
+    const std::filesystem::path& contentRoot = layout.contentRoot;
     std::error_code error;
-    std::filesystem::path absoluteProjectFile = std::filesystem::absolute(projectFile, error);
-    if (error) {
-        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::InvalidProjectFile,
-                                  "Unable to resolve the project file path: " + error.message());
-    }
-    absoluteProjectFile = absoluteProjectFile.lexically_normal();
-    const std::filesystem::path projectRoot = absoluteProjectFile.parent_path();
-    std::filesystem::path contentRoot;
-    if (!ResolveContainedDirectoryUVE(projectRoot, projectRoot / package.contentRoot, contentRoot)) {
-        return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::ApplicationResourceInvalid,
-                                  "The project content root must be a directory under the project root: " +
-                                      (projectRoot / package.contentRoot).string());
-    }
 
     Core::EngineConfigUVE candidateConfig = config;
     candidateConfig.windowIconsUVE.clear();
@@ -293,7 +356,6 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
     candidateConfig.splashSkippableUVE = package.applicationSettings.splashSkippable;
     candidateConfig.skipSplashInEditorPlayModeUVE = package.applicationSettings.skipSplashInEditorPlayMode;
     candidateConfig.windowTitle = productName;
-    candidateConfig.projectDisplayNameUVE = package.displayName;
     const Platform::EditorProjectApplicationSettingsUVE& windowSettings = package.applicationSettings;
     candidateConfig.windowWidth = windowSettings.windowWidth;
     candidateConfig.windowHeight = windowSettings.windowHeight;
@@ -346,9 +408,7 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
     candidateConfig.appendSceneNameInEditorPlayModeUVE = windowSettings.appendSceneNameInEditorPlayMode;
     candidateConfig.settingsFilePath = dataDirectory.directory / ".uvsettings";
     candidateConfig.platformSettingsFilePath.clear();
-    candidateConfig.projectSettingsFilePath = projectRoot / package.settingsPath;
-    candidateConfig.inputMapFilePath = projectRoot / "project.uvinput";
-    candidateConfig.assetDatabaseFilePath = projectRoot / package.assetDatabasePath;
+    ApplyProjectAuthoringPathsUVE(candidateConfig, package, layout);
     if (std::filesystem::exists(projectRoot/"cooked.json")) {
         try {
             std::ifstream input(projectRoot/"cooked.json");
@@ -361,8 +421,6 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
             return MakeSetupResultUVE(ProjectRuntimeSetupCodeUVE::InvalidProjectFile, exception.what());
         }
     }
-    candidateConfig.projectContentRootUVE = contentRoot;
-    candidateConfig.projectRootDirectoryUVE = projectRoot;
     candidateConfig.derivedArtifactCacheRootUVE = dataDirectory.directory / "DerivedData" / "Import";
     candidateConfig.saveDirectoryPath = dataDirectory.directory / "saves";
     candidateConfig.shaderCachePath = dataDirectory.directory / "shader_cache";
@@ -386,12 +444,90 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
     config = std::move(candidateConfig);
     ProjectRuntimeSetupUVE setup;
     setup.package = package;
-    setup.projectFile = std::move(absoluteProjectFile);
+    setup.projectFile = std::move(layout.projectFile);
     setup.projectRoot = projectRoot;
     setup.contentRoot = contentRoot;
     setup.userDataDirectory = dataDirectory.directory;
     setup.applicationIdentifier = applicationIdentifier;
     return {ProjectRuntimeSetupCodeUVE::Ready, "Project runtime configuration is ready.", std::move(setup)};
+}
+
+ProjectEditorSetupResultUVE PrepareProjectEditorUVE(const std::filesystem::path& projectFile,
+                                                     const Core::VersionUVE& engineVersion,
+                                                     Core::EngineConfigUVE& config,
+                                                     const ProjectCompatibilityPolicyUVE& policy) {
+    const auto fail = [](const ProjectEditorSetupCodeUVE code, std::string message) {
+        return ProjectEditorSetupResultUVE{code, std::move(message), std::nullopt};
+    };
+    ProjectLayoutResultUVE resolved = ResolveProjectLayoutUVE(projectFile);
+    if (!resolved.layout.has_value()) {
+        const ProjectEditorSetupCodeUVE code = resolved.error == ProjectLayoutErrorUVE::ContentRootInvalid
+                                                   ? ProjectEditorSetupCodeUVE::ContentRootInvalid
+                                                   : ProjectEditorSetupCodeUVE::InvalidProjectFile;
+        return fail(code, std::move(resolved.message));
+    }
+    Platform::EditorProjectPackageUVE& package = *resolved.package;
+    ProjectLayoutUVE& layout = *resolved.layout;
+
+    ProjectCompatibilityUVE compatibility =
+        EvaluateProjectCompatibilityUVE(package.engineVersion, engineVersion, policy);
+    if (!compatibility.CanOpenUVE()) {
+        return fail(ProjectEditorSetupCodeUVE::EngineTooOld, std::move(compatibility.message));
+    }
+
+    // The scene may not have been saved yet, so containment is checked on the normalized path
+    // rather than through canonical(), which requires the file to exist.
+    std::filesystem::path startupScene;
+    if (!package.startupScenePath.empty()) {
+        startupScene = (layout.contentRoot / package.startupScenePath).lexically_normal();
+        const std::filesystem::path relative = startupScene.lexically_relative(layout.contentRoot);
+        if (package.startupScenePath.is_absolute() || relative.empty() || *relative.begin() == "..") {
+            return fail(ProjectEditorSetupCodeUVE::StartupSceneInvalid,
+                        "The startup scene must be under the project content root: " +
+                            package.startupScenePath.string());
+        }
+    }
+
+    static const Core::EngineConfigUVE kDefaultConfigUVE{};
+    Core::EngineConfigUVE candidateConfig = config;
+    ApplyProjectAuthoringPathsUVE(candidateConfig, package, layout);
+    candidateConfig.derivedArtifactCacheRootUVE = layout.projectRoot / kDefaultConfigUVE.derivedArtifactCacheRootUVE;
+    candidateConfig.logFilePath =
+        layout.projectRoot / kProjectEditorLogDirectoryNameUVE / config.logFilePath.filename();
+
+    std::error_code error;
+    std::filesystem::create_directories(candidateConfig.logFilePath.parent_path(), error);
+    if (error) {
+        return fail(ProjectEditorSetupCodeUVE::DirectoryUnavailable,
+                    "Unable to create the project log directory: " + error.message());
+    }
+
+    config = std::move(candidateConfig);
+    ProjectEditorSetupUVE setup;
+    setup.package = std::move(package);
+    setup.projectFile = std::move(layout.projectFile);
+    setup.projectRoot = std::move(layout.projectRoot);
+    setup.contentRoot = std::move(layout.contentRoot);
+    setup.startupScene = std::move(startupScene);
+    setup.compatibility = std::move(compatibility);
+    return {ProjectEditorSetupCodeUVE::Ready, "Project editor configuration is ready.", std::move(setup)};
+}
+
+Platform::EditorProjectPackageResultUVE RecordProjectEngineVersionUVE(const std::filesystem::path& projectFile,
+                                                                     const Core::VersionUVE& engineVersion) {
+    Platform::EditorProjectPackageLoadResultUVE loaded = Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
+    if (!loaded.IsAcceptedUVE()) {
+        return loaded.result;
+    }
+    const Platform::EditorProjectVersionUVE recorded = ToProjectVersionUVE(engineVersion);
+    if (loaded.package->engineVersion == recorded) {
+        return {Platform::EditorProjectPackageCodeUVE::Applied, "The project already records this engine version."};
+    }
+    const std::uint64_t expectedRevision = loaded.package->revision;
+    Platform::EditorProjectPackageUVE replacement = std::move(*loaded.package);
+    replacement.engineVersion = recorded;
+    replacement.revision = expectedRevision + 1U;
+    return Platform::EditorProjectPackageCodecUVE::ApplyUpdateUVE(projectFile, expectedRevision, replacement);
 }
 
 ProjectLaunchResultUVE LoadAndActivateProjectSceneUVE(Core::EngineCoreUVE& engine,

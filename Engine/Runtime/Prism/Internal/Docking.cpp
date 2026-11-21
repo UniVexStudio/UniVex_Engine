@@ -35,10 +35,10 @@ public:
     // chamfered title tab
     float tw = tabRight() - m_rect.x;
     Vec2 poly[4] = {Vec2(m_rect.x, m_rect.y), Vec2(m_rect.x + tw, m_rect.y), Vec2(m_rect.x + tw + 9.0f, m_rect.bottom() - 1.0f), Vec2(m_rect.x, m_rect.bottom() - 1.0f)};
-    c.fillPolygon(std::span<const Vec2>(poly, 4), t.accent.alpha(0.20f), false);
-    c.fillRect(Rect{m_rect.x, m_rect.bottom() - 3.0f, tw + 6.0f, 2.0f}, t.accent);
+    c.fillPolygon(std::span<const Vec2>(poly, 4), t.highlight.alpha(0.10f), false);
+    c.fillRect(Rect{m_rect.x, m_rect.bottom() - 3.0f, tw + 6.0f, 2.0f}, t.highlight);
     float x = m_rect.x + 12.0f;
-    if (m_icon != Icon::None) { drawIcon(c, m_icon, Rect{x, m_rect.y + 7.0f, 16, 16}, t.accentHover); x += 22.0f; }
+    if (m_icon != Icon::None) { drawIcon(c, m_icon, Rect{x, m_rect.y + 7.0f, 16, 16}, t.highlight); x += 22.0f; }
     c.textIn(*t.semibold, Rect{x, m_rect.y, tw, m_rect.h - 2.0f}, m_title, t.textBright, HAlign::Left, false);
     // buttons
     if (m_shadeable) drawBtn(c, shadeRect(), shaded ? Icon::TriRight : Icon::TriDown, m_hover == 1, false);

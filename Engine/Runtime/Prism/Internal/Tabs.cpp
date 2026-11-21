@@ -215,11 +215,11 @@ void TabView::paintDrag(Canvas& c) {
     TabView* v = m_drop.view;
     if (m_drop.strip) {
       float x = v->count() == 0 ? v->m_rect.x + 2 : (m_drop.index < v->count() ? v->m_tabs[size_t(m_drop.index)].rect.x : v->m_tabs.back().rect.right());
-      c.fillRect({x - 1, v->m_rect.y + 3, 3, t.tabH - 6}, t.accentHover);
+      c.fillRect({x - 1, v->m_rect.y + 3, 3, t.tabH - 6}, t.highlight);
     } else {
       Rect highlight = m_drop.indicatorRect.w > 0 ? m_drop.indicatorRect : Rect{v->m_rect.x, v->m_rect.y + t.tabH, v->m_rect.w, v->m_rect.h - t.tabH};
-      c.fillRect(highlight, t.accent.alpha(0.20f));
-      c.strokeRect(highlight.deflated(1), t.accent, 2);
+      c.fillRect(highlight, t.highlight.alpha(0.12f));
+      c.strokeRect(highlight.deflated(1), t.highlight, 2);
     }
   }
   // ghost
@@ -228,9 +228,9 @@ void TabView::paintDrag(Canvas& c) {
   Rect g{m_dragPos.x - w * 0.5f, m_dragPos.y - t.tabH * 0.5f, w, t.tabH};
   c.shadow(g, 3, 8, Color(0, 0, 0, 255));
   c.fillRoundRect(g, 3, t.header);
-  c.strokeRoundRect(g, 3, m_drop.view ? t.accent : t.borderStrong);
+  c.strokeRoundRect(g, 3, m_drop.view ? t.highlight : t.borderStrong);
   float x = g.x + 14;
-  if (tab.icon != Icon::None) { drawIcon(c, tab.icon, {x, g.y + (g.h - 16) * 0.5f, 16, 16}, t.accentHover); x += 22; }
+  if (tab.icon != Icon::None) { drawIcon(c, tab.icon, {x, g.y + (g.h - 16) * 0.5f, 16, 16}, t.highlight); x += 22; }
   c.textIn(*t.medium, {x, g.y, g.w - (x - g.x), g.h}, tab.title, t.textBright, HAlign::Left, false);
 }
 
@@ -246,7 +246,7 @@ void TabView::paint(Canvas& c) {
     Rect r = tab.rect;
     if (cur) {
       c.fillRect({r.x, r.y, r.w, r.h}, t.panel);
-      c.fillRect({r.x, r.y, r.w, 2}, t.accent);
+      c.fillRect({r.x, r.y, r.w, 2}, t.highlight);
     } else {
       c.fillRect({r.right() - 1, r.y + 6, 1, r.h - 13}, t.borderSoft);
       if (hot) c.fillRect({r.x, r.y + 2, r.w - 1, r.h - 3}, Color(255, 255, 255, 8));
@@ -254,7 +254,7 @@ void TabView::paint(Canvas& c) {
     float x = r.x + 14;
     Color fg = cur ? t.textBright : (hot ? t.text : t.textDim);
     if (tab.icon != Icon::None) {
-      drawIcon(c, tab.icon, {x, r.y + (r.h - 16) * 0.5f + 1, 16, 16}, cur ? t.accentHover : fg);
+      drawIcon(c, tab.icon, {x, r.y + (r.h - 16) * 0.5f + 1, 16, 16}, cur ? t.highlight : fg);
       x += 22;
     }
     float tw = std::ceil((cur ? *t.medium : *t.ui).width(tab.title));

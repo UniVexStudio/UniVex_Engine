@@ -134,7 +134,7 @@ void AnimationLibraryGridUVE::paint(prism::Canvas& c) {
         c.textIn(*t.small, prism::Rect{r.x + 9.0F, art.bottom() + 28.0F, r.w - 16.0F, 15.0F}, tile.detail, t.textDim,
                  prism::HAlign::Left, true);
         if (picked) {
-            c.strokeRoundRect(r, 6.0F, t.accent, 2);
+            c.strokeRoundRect(r, 6.0F, t.highlight, 2);
         } else if (hovered) {
             c.strokeRoundRect(r, 6.0F, t.borderStrong, 1);
         }
@@ -143,10 +143,10 @@ void AnimationLibraryGridUVE::paint(prism::Canvas& c) {
     if (m_dragging && m_hover != kNoneUVE && m_hover != m_pressed) {
         const prism::Rect r = TileRectUVE(m_hover);
         const float x = m_hover < m_pressed ? r.x - kGapUVE * 0.5F - 1.5F : r.right() + kGapUVE * 0.5F - 1.5F;
-        c.fillRoundRect(prism::Rect{x, r.y, 3.0F, r.h}, 1.5F, t.accent);
+        c.fillRoundRect(prism::Rect{x, r.y, 3.0F, r.h}, 1.5F, t.highlight);
     }
     if (m_dropHot) {
-        c.strokeRoundRect(prism::Rect{rect().x + 3.0F, rect().y + 3.0F, rect().w - 6.0F, rect().h - 6.0F}, 6.0F, t.accent, 2);
+        c.strokeRoundRect(prism::Rect{rect().x + 3.0F, rect().y + 3.0F, rect().w - 6.0F, rect().h - 6.0F}, 6.0F, t.highlight, 2);
     }
 }
 

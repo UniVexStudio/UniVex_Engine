@@ -1,0 +1,7 @@
+{
+  "format": "uvenginefeed",
+  "schemaVersion": 1,
+  "apiRoot": "https://api.github.com",
+  "owner": "UniVexStudio",
+  "repository": "UniVexReleases"
+}
