@@ -8,7 +8,7 @@
 #include "prism/Canvas.h"
 #include "prism/Theme.h"
 
-#include <GL/gl.h>
+#include "gl_system_headers.h"
 
 #include <algorithm>
 #include <system_error>
@@ -114,7 +114,20 @@ bool ReadTexturePixelsUVE(const std::uintptr_t texture, const bool bottomUp, int
     GLint previousPack = 4;
     glGetIntegerv(GL_PACK_ALIGNMENT, &previousPack);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
+#if defined(__ANDROID__)
+    // OpenGL ES has no glGetTexImage: read the level through a temporary framebuffer instead.
+    GLint previousFramebuffer = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    GLuint framebuffer = 0U;
+    glGenFramebuffers(1, &framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, static_cast<GLuint>(texture), 0);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer));
+    glDeleteFramebuffers(1, &framebuffer);
+#else
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+#endif
     glPixelStorei(GL_PACK_ALIGNMENT, previousPack);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous));
     width = w;
@@ -197,7 +210,7 @@ void AssetThumbnailUVE::paint(prism::Canvas& c) {
         c.fillRect(r, t.window);
         c.textIn(*t.small, r, m_hasAsset ? "..." : "Empty", t.textDim, prism::HAlign::Center, true);
     }
-    c.strokeRect(r, hovered() ? t.accent : t.border, 1);
+    c.strokeRect(r, hovered() ? t.highlight : t.border, 1);
 }
 
 bool AssetThumbnailUVE::onMouseDown(const prism::MouseEvent& e) {

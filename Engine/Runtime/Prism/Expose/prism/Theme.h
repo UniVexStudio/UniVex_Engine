@@ -15,12 +15,16 @@ struct Theme {
   // Text
   Color text, textDim, textDisabled, textBright;
   // Accent & states
+  // Accent (amber) marks primary actions and the brand only. What is selected, active, focused or a
+  // drop target is shown with the neutral `highlight` (lines, rings, indicators) and `rowSelected`
+  // (fills), never with the accent.
   Color accent, accentHover, accentDim, accentText;
+  Color highlight;
   Color rowHover, rowSelected, rowSelectedInactive;
   Color success, warning, error, info;
   Color axisX, axisY, axisZ;
-  // Special surfaces
-  Color logBg, statusBar;
+  // Special surfaces: logs, the status bar, and floating popups (menus, dropdowns, search lists)
+  Color logBg, statusBar, popup;
 
   // Metrics
   float controlH = 22;     // standard control height

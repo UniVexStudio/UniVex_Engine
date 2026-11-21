@@ -6,7 +6,8 @@ colour while the screen is touched. It is a runtime validation app, not the desk
 
 Required on Linux: Java 17, Python 3, CMake 3.24+, Ninja, Android SDK platform 35,
 build tools 35.0.0 and NDK 29.0.14206865. Install SDK components with `sdkmanager`.
-NDK 29 is required for the floating-point charconv support used by the engine.
+NDK 29 is required for the floating-point charconv support used by the engine. UVBT finds the NDK
+through `ANDROID_NDK_HOME`, or `ANDROID_HOME` / `ANDROID_SDK_ROOT` with the NDK installed in it.
 
 ```sh
 python3 Engine/Tools/android/build_apk.py --sdk /path/to/android-sdk --build-dir /tmp/univex-android --abi arm64-v8a
@@ -14,9 +15,10 @@ adb install -r /tmp/univex-android/univex-runtime-arm64-v8a.apk
 adb shell am start -n com.univex.runtime/android.app.NativeActivity
 ```
 
-Use `--abi x86_64` for an x86 emulator. `--native-build-dir` reuses an existing native
-CMake build. `--dependency-source-cache` can point at another build's `_deps` directory
-so a second ABI reuses downloaded FetchContent sources. Each ABI still needs its own build.
+Use `--abi x86_64` for an x86 emulator. `--native-lib` packages an existing
+`libunivex_android.so` instead of building it. The native library alone is
+`ANDROID_HOME=/path/to/android-sdk ./uvbt build UniVexAndroid Android Release`, written to
+`.uvbt/bin/Android/<abi>/Release/` (`UVBT_ANDROID_ABI` picks the ABI). Each ABI has its own build.
 The script verifies APK signatures and 16 KB ZIP alignment. The generated debug key belongs
 to this build directory. This is local test signing, not store-ready release signing.
 
@@ -66,10 +68,11 @@ section is installed, and neither needs anything from CI.
 There is no Gradle in this project. `build_apk.py` is the whole build, and it is worth reading in the
 order it runs, because every step is a way an apk can come out wrong:
 
-1. **Native library.** CMake with the NDK's own toolchain file, `ANDROID_ABI` set from `--abi`,
-   `ANDROID_PLATFORM=android-28`, `UVE_BUILD_TESTS=OFF`, `CMAKE_BUILD_TYPE=Release`, building the one
-   target `univex_android`. The result is `libunivex_android.so`, which the manifest names through
-   `android.app.lib_name`.
+1. **Native library.** UVBT's `Android` platform: the NDK's clang for `--abi` at API level 28, the
+   target `UniVexAndroid` in Release. Build.cs entries qualified with `android:` or `desktop:` choose
+   the Android sources and libraries. FreeType and libjpeg-turbo, which the desktop takes from the
+   system, are fetched and built with the NDK's CMake toolchain the first time. The result is
+   `libunivex_android.so`, which the manifest names through `android.app.lib_name`.
 2. **Assets.** `Engine/Runtime/RHI/Shader/built_in` is staged as `assets/shaders`, because the runtime
    loads its shader sources from files rather than from the binary. With `--cooked-project`, the
    project's `runtimeFiles` list is copied into `assets/project` and written to
@@ -77,8 +80,8 @@ order it runs, because every step is a way an apk can come out wrong:
 3. **Resources.** `aapt2 link` with `Engine/App/Android/AndroidManifest.xml` and the staged asset
    directory produces an unsigned apk. There is no Java source (`hasCode=false`); the activity is the
    platform's `android.app.NativeActivity`.
-4. **Libraries.** The stripped `libunivex_android.so` and the NDK's `libc++_shared.so` are written into
-   `lib/<abi>/`, and every staged asset that `aapt2` skipped (it drops dotfiles such as `.uvassetdb`)
+4. **Libraries.** The stripped `libunivex_android.so` (with the C++ runtime linked in statically) is
+   written into `lib/<abi>/`, and every staged asset that `aapt2` skipped (it drops dotfiles such as `.uvassetdb`)
    is added to the archive. A missing cooked file fails the build here rather than the phone later.
 5. **Alignment and signature.** `zipalign -P 16` for 16 KB page alignment, a generated debug keystore
    (`android`/`android`) made with `keytool` if absent, then `apksigner sign` and `apksigner verify`.
@@ -129,7 +132,7 @@ python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME" --build-dir /tmp
 # The same runtime with Samples/CookedRuntimeSmoke packed in. Renders here, black in the demo?
 # That is the content, not the engine.
 python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME" --build-dir /tmp/univex-cooked \
-    --native-build-dir /tmp/univex-demo/native \
+    --native-lib .uvbt/bin/Android/arm64-v8a/Release/libunivex_android.so \
     --cooked-project Samples/CookedRuntimeSmoke/sample.uvproject --abi arm64-v8a
 ```
 

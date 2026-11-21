@@ -445,7 +445,7 @@ void Expander::paint(Canvas& c) {
   Rect headerRect(r.x, r.y, r.w, m_headerHeight);
 
   // Draw header bar
-  Color headerBg = m_hovered ? t.header.mix(t.accent, 0.08f) : t.header;
+  Color headerBg = m_hovered ? t.header.mix(t.highlight, 0.06f) : t.header;
   c.fillRect(headerRect, headerBg);
   c.strokeRect(headerRect, t.border);
 

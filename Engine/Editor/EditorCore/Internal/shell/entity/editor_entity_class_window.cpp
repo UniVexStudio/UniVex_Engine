@@ -83,7 +83,7 @@ public:
             const prism::Rect row{m_rect.x, m_rect.y + kRowHeightUVE * static_cast<float>(i), m_rect.w, kRowHeightUVE};
             if (static_cast<int>(i) == picked) {
                 c.fillRect(row, m_focused ? t.rowSelected : t.rowSelectedInactive);
-                c.fillRect(prism::Rect{row.x, row.y, 2.0F, row.h}, t.accent);
+                c.fillRect(prism::Rect{row.x, row.y, 2.0F, row.h}, t.highlight);
             } else if (static_cast<int>(i) == m_hover) {
                 c.fillRect(row, t.rowHover);
             }

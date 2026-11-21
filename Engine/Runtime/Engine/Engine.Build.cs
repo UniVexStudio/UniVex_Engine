@@ -40,7 +40,7 @@ public class EngineModule : ModuleRules
         });
 
         PublicDefinitions.AddRange(new string[] {
-            "UVE_HAS_DESKTOP_GL=1"
+            "desktop:UVE_HAS_DESKTOP_GL=1"
         });
     }
 }

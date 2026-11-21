@@ -18,6 +18,112 @@ import sys
 import time
 from pathlib import Path
 
+# Data that ships beside a built executable. The directory and file names are the ones the engine
+# looks for (Engine/Tools/test_shared_names.py checks them against the C++ constants).
+PRISM_ASSETS_SOURCE = ("Engine", "Runtime", "Prism", "assets")
+PRISM_ASSETS_DIRECTORY = "prism_assets"
+PROJECT_TEMPLATES_SOURCE = ("Engine", "Templates", "Projects")
+PROJECT_TEMPLATES_DIRECTORY = "project_templates"
+DISTRIBUTION_SOURCE = ("Engine", "Distribution")
+ENGINE_FEED_FILE = "engine_feed.json"
+
+# Build.cs entries may be qualified with a platform: "linux:X11" applies on Linux only. "desktop:"
+# covers the desktop platforms. Unqualified entries apply everywhere. This works for dependencies,
+# definitions, system libraries and excluded files alike.
+PLATFORM_QUALIFIERS = {
+    "linux": ("Linux",),
+    "win": ("Windows",),
+    "android": ("Android",),
+    "desktop": ("Linux", "Windows"),
+}
+
+# Android: the NDK release the engine is built and tested with, the oldest Android version it runs on
+# (the manifests' minSdk), and the ABIs it is built for (the first is the default).
+ANDROID_NDK_VERSION = "29.0.14206865"
+ANDROID_MIN_API_LEVEL = 28
+ANDROID_ABI_TRIPLES = {"arm64-v8a": "aarch64-linux-android", "x86_64": "x86_64-linux-android"}
+ANDROID_DEFAULT_ABI = "arm64-v8a"
+ANDROID_NDK_HOST_TAG = "linux-x86_64"
+# Android 15 devices may use 16 KB memory pages; native libraries must be aligned for them.
+ANDROID_PAGE_SIZE_BYTES = 16384
+ANDROID_SYSTEM_LIBRARIES = ["android", "log", "EGL", "GLESv3", "m", "dl"]
+# The entry point android_native_app_glue exports; it must survive the link.
+ANDROID_ACTIVITY_ENTRY = "ANativeActivity_onCreate"
+
+
+def select_for_platform(entries, platform):
+    """The entries that apply on `platform`, with any platform qualifier removed."""
+    selected = []
+    for entry in entries:
+        qualifier, sep, value = entry.partition(":")
+        if sep and qualifier in PLATFORM_QUALIFIERS:
+            if platform in PLATFORM_QUALIFIERS[qualifier]:
+                selected.append(value)
+        else:
+            selected.append(entry)
+    return selected
+
+
+class Toolchain:
+    """The compilers and flags for one platform. Android cross-compiles with the NDK's clang."""
+
+    def __init__(self, platform: str):
+        self.platform = platform
+        self.target_flags = []
+        self.is_android = platform == "Android"
+        # The NDK's libc++ implements std::format; the desktop toolchains fall back to {fmt}.
+        self.has_std_format = self.is_android
+        if self.is_android:
+            self.abi = os.environ.get("UVBT_ANDROID_ABI", ANDROID_DEFAULT_ABI)
+            if self.abi not in ANDROID_ABI_TRIPLES:
+                raise RuntimeError(f"[UVBT] Unknown Android ABI '{self.abi}'; use one of {sorted(ANDROID_ABI_TRIPLES)}")
+            self.ndk = self._find_ndk()
+            tools = self.ndk / "toolchains" / "llvm" / "prebuilt" / ANDROID_NDK_HOST_TAG / "bin"
+            self.cxx = str(tools / "clang++")
+            self.cc = str(tools / "clang")
+            self.ar = str(tools / "llvm-ar")
+            self.triple = f"{ANDROID_ABI_TRIPLES[self.abi]}{ANDROID_MIN_API_LEVEL}"
+            self.target_flags = [f"--target={self.triple}"]
+            self.output_dir = f"Android/{self.abi}"
+        else:
+            self.cxx = os.environ.get("CXX", "g++")
+            self.cc = os.environ.get("CC", "gcc")
+            self.ar = os.environ.get("AR", "ar")
+            self.output_dir = platform
+
+    @staticmethod
+    def ndk_revision(ndk: Path) -> str:
+        """The NDK release an install is, from its source.properties ("" when it has none)."""
+        properties = ndk / "source.properties"
+        if not properties.is_file():
+            return ""
+        for line in properties.read_text(encoding="utf-8", errors="ignore").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "Pkg.Revision":
+                return value.strip()
+        return ""
+
+    @staticmethod
+    def _find_ndk() -> Path:
+        # Only the release the engine is built with: hosts often point ANDROID_NDK_HOME at another one.
+        candidates = [os.environ.get("ANDROID_NDK_HOME"), os.environ.get("ANDROID_NDK_ROOT")]
+        for sdk_var in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+            sdk = os.environ.get(sdk_var)
+            if sdk:
+                candidates.append(str(Path(sdk) / "ndk" / ANDROID_NDK_VERSION))
+        for candidate in candidates:
+            if candidate and Toolchain.ndk_revision(Path(candidate)) == ANDROID_NDK_VERSION:
+                return Path(candidate)
+        raise RuntimeError(f"[UVBT] Android NDK {ANDROID_NDK_VERSION} not found: install it in the SDK that ANDROID_HOME "
+                           "names, or point ANDROID_NDK_HOME at it")
+
+    def cmake_toolchain_args(self):
+        """CMake arguments for building a third-party library with this toolchain."""
+        if not self.is_android:
+            return [f"-DCMAKE_C_COMPILER={self.cc}", f"-DCMAKE_CXX_COMPILER={self.cxx}"]
+        return [f"-DCMAKE_TOOLCHAIN_FILE={self.ndk / 'build' / 'cmake' / 'android.toolchain.cmake'}",
+                f"-DANDROID_ABI={self.abi}", f"-DANDROID_PLATFORM=android-{ANDROID_MIN_API_LEVEL}"]
+
 
 class ModuleInfo:
     def __init__(self, name, directory, module_type="StaticLibrary"):
@@ -33,6 +139,8 @@ class ModuleInfo:
         self.public_sys_libs = []
         self.private_sys_libs = []
         self.source_files = []
+        # Windows resource scripts (.rc): icons and version data, compiled and linked on Windows only.
+        self.resource_files = []
         self.excluded_files = []
 
     def __repr__(self):
@@ -56,7 +164,7 @@ class CSharpParser:
     """Parses *.Build.cs and *.Target.cs files without requiring Roslyn or .NET SDK."""
 
     @staticmethod
-    def parse_build_cs(filepath: Path) -> ModuleInfo:
+    def parse_build_cs(filepath: Path, platform: str = "Linux") -> ModuleInfo:
         text = filepath.read_text(encoding="utf-8", errors="ignore")
         mod_dir = filepath.parent
 
@@ -81,7 +189,7 @@ class CSharpParser:
                 return []
             content = m.group(1)
             raw_matches = re.findall(r'"((?:\\.|[^"\\])*)"', content)
-            return [s.replace('\\"', '"').replace('\\\\', '\\') for s in raw_matches]
+            return select_for_platform([s.replace('\\"', '"').replace('\\\\', '\\') for s in raw_matches], platform)
 
         mod.public_deps = extract_strings("PublicDependencyModuleNames")
         mod.private_deps = extract_strings("PrivateDependencyModuleNames")
@@ -113,8 +221,9 @@ class CSharpParser:
             if p.is_dir() and p not in mod.private_includes:
                 mod.private_includes.append(p)
 
-        # Discover source files (.cpp, .c)
+        # Discover source files (.cpp, .c) and Windows resource scripts (.rc)
         sources = []
+        resources = []
         if mod.module_type != "HeaderOnly":
             extra_dirs = [(mod_dir / d).resolve() for d in mod.extra_source_dirs if (mod_dir / d).is_dir()]
             search_dirs = [mod_dir] + extra_dirs
@@ -129,15 +238,16 @@ class CSharpParser:
                         continue
                     seen_roots.add(rpath)
                     for f in files:
-                        if f.endswith((".cpp", ".c", ".cc")):
+                        if f.endswith((".cpp", ".c", ".cc", ".rc")):
                             full_src = rpath / f
                             try:
                                 rel_str = str(full_src.relative_to(mod_dir)).replace("\\", "/")
                             except ValueError:
                                 rel_str = str(full_src.relative_to(s_dir)).replace("\\", "/")
                             if f not in mod.excluded_files and not any(ex in rel_str for ex in mod.excluded_files):
-                                sources.append(full_src)
+                                (resources if f.endswith(".rc") else sources).append(full_src)
         mod.source_files = sorted(list(dict.fromkeys(sources)))
+        mod.resource_files = sorted(list(dict.fromkeys(resources)))
 
         return mod
 
@@ -229,7 +339,10 @@ class EngineBuilder:
         self.modules = {}
         self.targets = {}
 
-    def _freetype_include_dirs(self):
+    def _freetype_include_dirs(self, toolchain=None):
+        if toolchain is not None and toolchain.is_android:
+            installed = self.repo_root / ".uvbt" / "tp_lib" / toolchain.output_dir / "freetype" / "include" / "freetype2"
+            return [installed] if installed.is_dir() else []
         dirs = []
         try:
             out = subprocess.run(["pkg-config", "--cflags-only-I", "freetype2"], stdout=subprocess.PIPE,
@@ -246,6 +359,38 @@ class EngineBuilder:
                 dirs.append(cand)
         return [d for d in dirs if d.is_dir()]
 
+    def _compile_resources(self, target, obj_dir, cxx):
+        """Compiles the root modules' Windows resource scripts (.rc) into objects to link.
+
+        Only the root modules' are used: a resource object inside a static library is never pulled
+        into the link, because nothing references it. windres is taken from WINDRES or from beside
+        the compiler, and each script runs from its own folder so relative file names in it work.
+        """
+        scripts = [rc for name in target.extra_modules if name in self.modules
+                   for rc in self.modules[name].resource_files]
+        if not scripts:
+            return []
+        windres = os.environ.get("WINDRES") or shutil.which("windres")
+        if windres is None:
+            compiler = shutil.which(cxx)
+            candidate = Path(compiler).with_name("windres.exe") if compiler else None
+            windres = str(candidate) if candidate and candidate.is_file() else None
+        if windres is None:
+            raise RuntimeError("[UVBT] windres is needed to compile Windows resources (.rc).")
+        objects = []
+        for script in scripts:
+            out_obj = obj_dir / "resources" / (script.stem + ".res.o")
+            out_obj.parent.mkdir(parents=True, exist_ok=True)
+            cmd = [windres, "--input", script.name, "--output", str(out_obj), "--output-format=coff"]
+            res = subprocess.run(cmd, cwd=script.parent, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode != 0:
+                print(res.stdout)
+                print(res.stderr)
+                raise RuntimeError(f"[UVBT] Resource compilation failed: {script}")
+            print(f"[UVBT] Compiled resources :: {script.name}")
+            objects.append(str(out_obj))
+        return objects
+
     def _ensure_uiautomation_import_lib(self, lib_dir: Path):
         implib = lib_dir / "libuiautomationcore.a"
         def_file = self.repo_root / "Engine" / "Runtime" / "Prism" / "Internal" / "windows" / "uiautomationcore.def"
@@ -256,7 +401,7 @@ class EngineBuilder:
             raise RuntimeError("[UVBT] dlltool not found: needed to build libuiautomationcore.a for PRISM on MinGW")
         subprocess.run([dlltool, "-d", str(def_file), "-l", str(implib)], check=True)
 
-    def discover(self):
+    def discover(self, platform: str = "Linux"):
         # Scan for *.Build.cs
         for root_dir, _, files in os.walk(self.repo_root):
             rpath = Path(root_dir)
@@ -264,7 +409,7 @@ class EngineBuilder:
                 continue
             for f in files:
                 if f.endswith(".Build.cs"):
-                    mod = CSharpParser.parse_build_cs(rpath / f)
+                    mod = CSharpParser.parse_build_cs(rpath / f, platform)
                     self.modules[mod.name] = mod
                 elif f.endswith(".Target.cs"):
                     target = CSharpParser.parse_target_cs(rpath / f)
@@ -424,7 +569,8 @@ class EngineBuilder:
 
         return [gen_dir, retarget_gen, ui_gen, editor_gen, vp_render_gen.parent, vp_render_gen]
 
-    def ensure_third_party(self, platform: str):
+    def ensure_third_party(self, toolchain):
+        platform = toolchain.platform
         tp_dir = self.repo_root / "ThirdParty"
         tp_dir.mkdir(parents=True, exist_ok=True)
         
@@ -458,12 +604,12 @@ class EngineBuilder:
                     (dest / bcs_name).write_text(content, encoding="utf-8")
 
 
-        tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / platform
+        tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / toolchain.output_dir
         tp_lib_dir.mkdir(parents=True, exist_ok=True)
 
-        cxx = os.environ.get("CXX", "g++")
-        cc = os.environ.get("CC", "gcc")
-        ar = os.environ.get("AR", "ar")
+        cxx = [toolchain.cxx] + toolchain.target_flags
+        cc = [toolchain.cc] + toolchain.target_flags
+        ar = toolchain.ar
 
         # 1. libgtest.a & libgtest_main.a
         gt_lib = tp_lib_dir / "libgtest.a"
@@ -475,7 +621,7 @@ class EngineBuilder:
                 shutil.copy2(fallback, gt_lib)
             elif (gt_src / "src" / "gtest-all.cc").exists():
                 obj = tp_lib_dir / "gtest-all.o"
-                subprocess.run([cxx, "-std=c++17", "-O2", f"-I{gt_src / 'include'}", f"-I{gt_src}", "-c", str(gt_src / "src" / "gtest-all.cc"), "-o", str(obj)], check=True)
+                subprocess.run([*cxx, "-std=c++17", "-O2", f"-I{gt_src / 'include'}", f"-I{gt_src}", "-c", str(gt_src / "src" / "gtest-all.cc"), "-o", str(obj)], check=True)
                 subprocess.run([ar, "rcs", str(gt_lib), str(obj)], check=True)
 
         if not gt_main_lib.exists():
@@ -484,7 +630,7 @@ class EngineBuilder:
                 shutil.copy2(fallback, gt_main_lib)
             elif (gt_src / "src" / "gtest_main.cc").exists():
                 obj = tp_lib_dir / "gtest_main.o"
-                subprocess.run([cxx, "-std=c++17", "-O2", f"-I{gt_src / 'include'}", "-c", str(gt_src / "src" / "gtest_main.cc"), "-o", str(obj)], check=True)
+                subprocess.run([*cxx, "-std=c++17", "-O2", f"-I{gt_src / 'include'}", "-c", str(gt_src / "src" / "gtest_main.cc"), "-o", str(obj)], check=True)
                 subprocess.run([ar, "rcs", str(gt_main_lib), str(obj)], check=True)
 
         # 2. libspirv-reflect-static.a
@@ -496,7 +642,7 @@ class EngineBuilder:
                 shutil.copy2(fallback, spv_lib)
             elif spv_src.exists():
                 obj = tp_lib_dir / "spirv_reflect.o"
-                subprocess.run([cc, "-O2", "-fPIC", "-c", str(spv_src), "-o", str(obj)], check=True)
+                subprocess.run([*cc, "-O2", "-fPIC", "-c", str(spv_src), "-o", str(obj)], check=True)
                 subprocess.run([ar, "rcs", str(spv_lib), str(obj)], check=True)
 
         # 3. libuve_ufbx.a
@@ -508,7 +654,7 @@ class EngineBuilder:
                 shutil.copy2(fallback, ufbx_lib)
             elif ufbx_src.exists():
                 obj = tp_lib_dir / "ufbx.o"
-                subprocess.run([cc, "-O2", "-fPIC", f"-I{tp_dir / 'ufbx'}", "-c", str(ufbx_src), "-o", str(obj)], check=True)
+                subprocess.run([*cc, "-O2", "-fPIC", f"-I{tp_dir / 'ufbx'}", "-c", str(ufbx_src), "-o", str(obj)], check=True)
                 subprocess.run([ar, "rcs", str(ufbx_lib), str(obj)], check=True)
 
         basis_defs = [
@@ -526,7 +672,7 @@ class EngineBuilder:
         bu_tc_src = tp_dir / "basis_universal" / "transcoder" / "basisu_transcoder.cpp"
         if bu_tc_src.exists() and (not bu_tc_lib.exists() or bu_tc_src.stat().st_mtime > bu_tc_lib.stat().st_mtime):
             obj = tp_lib_dir / "basisu_transcoder.o"
-            subprocess.run([cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing"] + basis_defs + [f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{tp_dir / 'basis_universal' / 'encoder'}", "-c", str(bu_tc_src), "-o", str(obj)], check=True)
+            subprocess.run([*cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing"] + basis_defs + [f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{tp_dir / 'basis_universal' / 'encoder'}", "-c", str(bu_tc_src), "-o", str(obj)], check=True)
             subprocess.run([ar, "rcs", str(bu_tc_lib), str(obj)], check=True)
 
         # 5. libuve_basisu_encoder.a
@@ -537,31 +683,98 @@ class EngineBuilder:
             enc_objs = []
             for ec in enc_cpps:
                 obj = tp_lib_dir / f"{ec.stem}.o"
-                subprocess.run([cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing"] + basis_defs + [f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{bu_enc_dir}", "-c", str(ec), "-o", str(obj)], check=True)
+                subprocess.run([*cxx, "-std=c++17", "-O2", "-fPIC", "-fno-strict-aliasing"] + basis_defs + [f"-I{tp_dir / 'basis_universal' / 'transcoder'}", f"-I{bu_enc_dir}", "-c", str(ec), "-o", str(obj)], check=True)
                 enc_objs.append(str(obj))
             subprocess.run([ar, "rcs", str(bu_enc_lib)] + enc_objs, check=True)
+
+        if toolchain.is_android:
+            self._ensure_android_libraries(toolchain, tp_dir, tp_lib_dir)
+
+    # Third-party libraries the desktop takes from the system but Android does not have: fetched at a
+    # fixed release and built with the NDK through CMake. Each installs under tp_lib/<platform>/<name>.
+    ANDROID_CMAKE_LIBRARIES = (
+        ("freetype", "https://github.com/freetype/freetype.git", "VER-2-13-3", "libfreetype.a",
+         ["-DFT_DISABLE_ZLIB=ON", "-DFT_DISABLE_BZIP2=ON", "-DFT_DISABLE_PNG=ON", "-DFT_DISABLE_HARFBUZZ=ON",
+          "-DFT_DISABLE_BROTLI=ON"]),
+        ("libjpeg-turbo", "https://github.com/libjpeg-turbo/libjpeg-turbo.git", "3.1.0", "libjpeg.a",
+         ["-DENABLE_SHARED=OFF", "-DWITH_TURBOJPEG=OFF", "-DWITH_SIMD=OFF"]),
+    )
+
+    # GLFW's header only: on Android the editor host's window calls are answered by the engine's own
+    # Android implementation of that API (Engine/Runtime/Window), not by GLFW.
+    ANDROID_GLFW_HEADERS = ("glfw", "https://github.com/glfw/glfw.git", "3.4")
+
+    def _ensure_android_libraries(self, toolchain, tp_dir: Path, tp_lib_dir: Path):
+        name, url, tag = self.ANDROID_GLFW_HEADERS
+        glfw = tp_dir / "android" / name
+        if not (glfw / "include" / "GLFW" / "glfw3.h").exists():
+            print(f"[UVBT] Fetching Android dependency '{name}' headers ({tag})...", flush=True)
+            subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(glfw)], check=True)
+
+        # android_native_app_glue: the NDK's bridge from NativeActivity to android_main.
+        glue_lib = tp_lib_dir / "libandroid_native_app_glue.a"
+        glue_src = toolchain.ndk / "sources" / "android" / "native_app_glue" / "android_native_app_glue.c"
+        if not glue_lib.exists():
+            obj = tp_lib_dir / "android_native_app_glue.o"
+            subprocess.run([toolchain.cc, *toolchain.target_flags, "-O2", "-fPIC", "-c", str(glue_src), "-o", str(obj)],
+                           check=True)
+            subprocess.run([toolchain.ar, "rcs", str(glue_lib), str(obj)], check=True)
+
+        for name, url, tag, library, options in self.ANDROID_CMAKE_LIBRARIES:
+            install = tp_lib_dir / name
+            if (install / "lib" / library).exists():
+                continue
+            source = tp_dir / "android" / name
+            if not source.is_dir():
+                print(f"[UVBT] Fetching Android dependency '{name}' ({tag})...", flush=True)
+                source.parent.mkdir(parents=True, exist_ok=True)
+                subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(source)], check=True)
+            build = tp_lib_dir / f"{name}-build"
+            print(f"[UVBT] Building Android dependency '{name}' for {toolchain.abi}...", flush=True)
+            subprocess.run(["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
+                            "-DBUILD_SHARED_LIBS=OFF", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+                            f"-DCMAKE_INSTALL_PREFIX={install}", "-DCMAKE_INSTALL_LIBDIR=lib",
+                            *toolchain.cmake_toolchain_args(), *options], check=True)
+            subprocess.run(["cmake", "--build", str(build)], check=True)
+            subprocess.run(["cmake", "--install", str(build)], check=True)
+
+    def android_library_dirs(self, toolchain):
+        """Where the Android third-party libraries are installed, for the link and includes."""
+        tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / toolchain.output_dir
+        return [tp_lib_dir] + [tp_lib_dir / name / "lib" for name, *_ in self.ANDROID_CMAKE_LIBRARIES]
+
+    def android_include_dirs(self, toolchain):
+        tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / toolchain.output_dir
+        glfw = self.repo_root / "ThirdParty" / "android" / self.ANDROID_GLFW_HEADERS[0] / "include"
+        return [toolchain.ndk / "sources" / "android" / "native_app_glue", glfw] + \
+               [tp_lib_dir / name / "include" for name, *_ in self.ANDROID_CMAKE_LIBRARIES]
 
     def build_target(self, target_name: str, platform: str = "Linux", configuration: str = "Debug", jobs: int = 4):
         target = self.targets.get(target_name)
         if not target:
             raise ValueError(f"Target '{target_name}' not found. Registered targets: {list(self.targets.keys())}")
 
+        toolchain = Toolchain(platform)
+        if toolchain.is_android and target.target_type == "Test":
+            raise ValueError(f"Target '{target_name}' is a test program; tests run on the desktop platforms.")
+
         # Prepare output directories
         uvbt_root = self.repo_root / ".uvbt"
-        obj_dir = uvbt_root / "obj" / platform / configuration
-        lib_dir = uvbt_root / "lib" / platform / configuration
-        bin_dir = uvbt_root / "bin" / platform / configuration
+        obj_dir = uvbt_root / "obj" / toolchain.output_dir / configuration
+        lib_dir = uvbt_root / "lib" / toolchain.output_dir / configuration
+        bin_dir = uvbt_root / "bin" / toolchain.output_dir / configuration
         cache_file = uvbt_root / "cache.json"
 
         for d in (obj_dir, lib_dir, bin_dir):
             d.mkdir(parents=True, exist_ok=True)
 
-        self.ensure_third_party(platform)
-        generated_includes = self.generate_prebuild_artifacts(uvbt_root, bin_dir)
+        self.ensure_third_party(toolchain)
+        # Host-side test tools and fixtures are only built for the desktop.
+        generated_includes = self.generate_prebuild_artifacts(uvbt_root, None if toolchain.is_android else bin_dir)
         cache = BuildCache(cache_file)
 
-        # Refresh discovery in case new sources were generated
-        self.discover()
+        # Refresh discovery in case new sources were generated, applying this platform's rules
+        self.discover(platform)
         target = self.targets.get(target_name)
 
         if "CoreTests" in self.modules:
@@ -611,15 +824,17 @@ class EngineBuilder:
 
         # System FreeType (PRISM text rendering). pkg-config first, then the usual install prefixes
         # (Debian/Ubuntu /usr/include/freetype2, MSYS2 <prefix>/include/freetype2 next to g++).
-        for ft_inc in self._freetype_include_dirs():
+        for ft_inc in self._freetype_include_dirs(toolchain):
             if ft_inc not in global_includes:
                 global_includes.append(ft_inc)
+        if toolchain.is_android:
+            global_includes += [d for d in self.android_include_dirs(toolchain) if d.is_dir()]
 
         # Base compiler flags
-        cxx = os.environ.get("CXX", "g++")
-        ar = os.environ.get("AR", "ar")
-        
-        base_cflags = [
+        cxx = toolchain.cxx
+        ar = toolchain.ar
+
+        base_cflags = toolchain.target_flags + [
             "-std=c++23",
             "-Wall", "-Wextra", "-Wpedantic",
             "-fPIC",
@@ -667,7 +882,9 @@ class EngineBuilder:
             base_cflags += ["-g", "-O0"]
 
         base_defs += [
-            "UVE_HAS_STD_FORMAT=0",
+            f"UVE_HAS_STD_FORMAT={1 if toolchain.has_std_format else 0}",
+            # GLFW's header must not pull in desktop GL; GL code includes gl_system_headers.h itself.
+            *(["GLFW_INCLUDE_NONE"] if toolchain.is_android else []),
             "FMT_HEADER_ONLY=1",
             f'UVE_SOURCE_DIR="{self.repo_root}"'
         ]
@@ -790,20 +1007,24 @@ class EngineBuilder:
                     ar_cmd = [ar, "rcs", str(lib_file)] + [str(o) for o in objs]
                     subprocess.run(ar_cmd, check=True)
 
-        # Link executable if TargetType is Test or Program
+        # Link executable if TargetType is Test or Program. On Android a program is the shared library
+        # the activity loads (lib<name>.so).
         if platform == "Windows":
             exe_name = target.output_name if target.output_name.endswith(".exe") else f"{target.output_name}.exe"
             all_sys_libs = ["pthread", "opengl32", "gdi32", "glfw3", "glew32", "z", "jpeg", "dbghelp", "ws2_32", "winmm", "ole32"]
+        elif toolchain.is_android:
+            exe_name = f"lib{target.output_name}.so"
+            all_sys_libs = list(ANDROID_SYSTEM_LIBRARIES)
         else:
             exe_name = target.output_name
             all_sys_libs = ["pthread", "dl", "m", "GL", "GLX", "X11"]
         target_exe = bin_dir / exe_name
-        print(f"\n[UVBT] Linking executable: {target_exe}")
+        print(f"\n[UVBT] Linking {'shared library' if toolchain.is_android else 'executable'}: {target_exe}")
 
         all_objs = []
         all_libs = []
 
-        tp_lib_dir = uvbt_root / "tp_lib" / platform
+        tp_lib_dir = uvbt_root / "tp_lib" / toolchain.output_dir
 
         # If testing, add gtest libraries
         if target.target_type == "Test":
@@ -844,14 +1065,7 @@ class EngineBuilder:
         for mod in ordered_modules:
             for sys_lib in mod.public_sys_libs + mod.private_sys_libs:
                 # "win:<lib>" / "linux:<lib>" restrict a system library to one platform.
-                if sys_lib.startswith("win:"):
-                    if platform == "Windows":
-                        all_sys_libs.append(sys_lib[4:])
-                    continue
-                if sys_lib.startswith("linux:"):
-                    if platform == "Linux":
-                        all_sys_libs.append(sys_lib[6:])
-                    continue
+                # Platform qualifiers ("win:", "linux:", ...) were applied when the Build.cs was read.
                 all_sys_libs.append(sys_lib)
             lib_p = module_libs.get(mod.name)
             if lib_p and lib_p.exists():
@@ -862,10 +1076,18 @@ class EngineBuilder:
         for s in all_sys_libs:
             if platform == "Windows" and s in ("dl", "X11", "GL", "GLX", "m"):
                 continue
+            # Bionic has threads in libc and no desktop GL or X11.
+            if toolchain.is_android and s in ("pthread", "rt", "X11", "GL", "GLX"):
+                continue
             if s not in unique_sys:
                 unique_sys.append(s)
 
         link_cmd = [cxx] + base_cflags + ["-o", str(target_exe)]
+        if toolchain.is_android:
+            link_cmd += ["-shared", "-static-libstdc++", f"-Wl,-u,{ANDROID_ACTIVITY_ENTRY}", "-Wl,--no-undefined",
+                         f"-Wl,-z,max-page-size={ANDROID_PAGE_SIZE_BYTES}"]
+            link_cmd += [f"-L{d}" for d in self.android_library_dirs(toolchain) if d.is_dir()]
+            all_libs.append(str(tp_lib_dir / "libandroid_native_app_glue.a"))
         if platform == "Windows" and "uiautomationcore" in unique_sys:
             # MinGW ships no UIAutomationCore import library: build one from the exported names PRISM uses.
             self._ensure_uiautomation_import_lib(lib_dir)
@@ -882,6 +1104,8 @@ class EngineBuilder:
             # main() (e.g. the Viewport demo app) would otherwise win symbol resolution over the
             # real entry point of the root module and the wrong program would be produced.
             root_objs = [str(o) for m in target.extra_modules for o in module_objects.get(m, [])]
+            if platform == "Windows":
+                root_objs += self._compile_resources(target, obj_dir, cxx)
             root_libs = {str(module_libs[m]) for m in target.extra_modules if m in module_libs}
             other_libs = [l for l in all_libs if l not in root_libs]
             link_cmd += root_objs
@@ -896,9 +1120,21 @@ class EngineBuilder:
 
         if any(m.name == "Prism" for m in ordered_modules):
             # PRISM loads fonts / themes / locales from disk: ship them next to the binary.
-            prism_assets = self.repo_root / "Engine" / "Runtime" / "Prism" / "assets"
+            prism_assets = self.repo_root.joinpath(*PRISM_ASSETS_SOURCE)
             if prism_assets.is_dir():
-                shutil.copytree(prism_assets, bin_dir / "prism_assets", dirs_exist_ok=True)
+                shutil.copytree(prism_assets, bin_dir / PRISM_ASSETS_DIRECTORY, dirs_exist_ok=True)
+
+        if any(m.name == "Pack" for m in ordered_modules):
+            # New projects are created from the templates shipped beside the binary.
+            project_templates = self.repo_root.joinpath(*PROJECT_TEMPLATES_SOURCE)
+            if project_templates.is_dir():
+                shutil.copytree(project_templates, bin_dir / PROJECT_TEMPLATES_DIRECTORY, dirs_exist_ok=True)
+
+        if any(m.name == "Online" for m in ordered_modules):
+            # Where the launcher finds engine releases.
+            engine_feed = self.repo_root.joinpath(*DISTRIBUTION_SOURCE, ENGINE_FEED_FILE)
+            if engine_feed.is_file():
+                shutil.copy2(engine_feed, bin_dir / ENGINE_FEED_FILE)
 
         print(f"\033[92m[UVBT] BUILD SUCCESSFUL!\033[0m")
         print(f"[UVBT] Output Binary: {target_exe}")

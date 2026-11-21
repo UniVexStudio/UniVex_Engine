@@ -5,38 +5,42 @@
 
 namespace prism {
 
+// The UniVex palette: graphite surfaces, neutral highlights for what is selected or active, and deep
+// amber only for primary actions and the brand.
 Theme Theme::dark() {
   Theme t;
-  t.window = Color::hex(0x121212);
-  t.panel = Color::hex(0x1e1e1f);
-  t.header = Color::hex(0x262627);
-  t.control = Color::hex(0x2e2e30);
-  t.controlHover = Color::hex(0x39393c);
-  t.controlPress = Color::hex(0x262628);
-  t.field = Color::hex(0x161617);
-  t.border = Color::hex(0x0d0d0e);
-  t.borderSoft = Color::hex(0x2c2c2e);
-  t.borderStrong = Color::hex(0x424245);
-  t.text = Color::hex(0xcfcfd1);
-  t.textDim = Color::hex(0x8b8b90);
-  t.textDisabled = Color::hex(0x5a5a5e);
-  t.textBright = Color::hex(0xf0f0f2);
-  t.accent = Color::hex(0x3b8eea);
-  t.accentHover = Color::hex(0x5aa2f5);
-  t.accentDim = Color::hex(0x2a4a75);
-  t.accentText = Color::hex(0xffffff);
-  t.rowHover = Color(255, 255, 255, 12);
-  t.rowSelected = Color::hex(0x2a4a75);
-  t.rowSelectedInactive = Color::hex(0x333338);
-  t.success = Color::hex(0x4fb06d);
-  t.warning = Color::hex(0xe0a83a);
-  t.error = Color::hex(0xe5534b);
-  t.info = Color::hex(0x5aa2f5);
+  t.window = Color::hex(0x17191d);       // main background
+  t.panel = Color::hex(0x22252b);        // secondary background
+  t.header = Color::hex(0x292d34);       // elevated surfaces: panel headers, title bars
+  t.control = Color::hex(0x292d34);
+  t.controlHover = Color::hex(0x31353d);
+  t.controlPress = Color::hex(0x1f2227);
+  t.field = Color::hex(0x1a1c20);        // inset fields sit below the panel they are on
+  t.border = Color::hex(0x101114);       // gaps between docked panels
+  t.borderSoft = Color::hex(0x383d46);   // outlines of controls and cards
+  t.borderStrong = Color::hex(0x4a505b);
+  t.text = Color::hex(0xe6e8ec);
+  t.textDim = Color::hex(0xa0a6b1);
+  t.textDisabled = Color::hex(0x707782);
+  t.textBright = Color::hex(0xf7f8fa);
+  t.accent = Color::hex(0xe5a126);
+  t.accentHover = Color::hex(0xf2b84b);
+  t.accentDim = Color::hex(0x3b2e19);    // subtle amber, for amber-tinted surfaces only
+  t.accentText = Color::hex(0x17191d);   // text on an amber fill
+  t.highlight = Color::hex(0xb9bfc9);    // selected, active and focused indicators
+  t.rowHover = Color(255, 255, 255, 10);
+  t.rowSelected = Color::hex(0x373c46);
+  t.rowSelectedInactive = Color::hex(0x2c3037);
+  t.success = Color::hex(0x55b982);
+  t.warning = Color::hex(0xe5a126);
+  t.error = Color::hex(0xe05c5c);
+  t.info = Color::hex(0x7aa7d9);
   t.axisX = Color::hex(0xe4574c);
   t.axisY = Color::hex(0x6fbf4a);
   t.axisZ = Color::hex(0x4a8fe7);
-  t.logBg = Color::hex(0x19191a);
-  t.statusBar = Color::hex(0x1a1a1b);
+  t.logBg = Color::hex(0x1a1c20);
+  t.statusBar = Color::hex(0x1d1f24);
+  t.popup = Color::hex(0x292d34);
   return t;
 }
 
@@ -68,6 +72,8 @@ Theme Theme::light() {
   t.info = Color::hex(0x2f7fe0);
   t.logBg = Color::hex(0xffffff);
   t.statusBar = Color::hex(0xdcdce1);
+  t.popup = Color::hex(0xffffff);
+  t.highlight = Color::hex(0x5a606b);
   return t;
 }
 
@@ -76,8 +82,8 @@ const std::vector<Theme::ColorToken>& Theme::colorTokens() {
 #define T(n) {#n, &Theme::n}
       T(window), T(panel), T(header), T(control), T(controlHover), T(controlPress), T(field), T(border), T(borderSoft),
       T(borderStrong), T(text), T(textDim), T(textDisabled), T(textBright), T(accent), T(accentHover), T(accentDim),
-      T(accentText), T(rowHover), T(rowSelected), T(rowSelectedInactive), T(success), T(warning), T(error), T(info),
-      T(axisX), T(axisY), T(axisZ), T(logBg), T(statusBar)
+      T(accentText), T(highlight), T(rowHover), T(rowSelected), T(rowSelectedInactive), T(success), T(warning), T(error), T(info),
+      T(axisX), T(axisY), T(axisZ), T(logBg), T(statusBar), T(popup)
 #undef T
   };
   return v;

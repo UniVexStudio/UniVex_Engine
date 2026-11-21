@@ -8,7 +8,6 @@ namespace prism {
 namespace {
 
 constexpr float kRowH = 24, kSepH = 9, kPadY = 4;
-const Color kPopupBg = Color::hex(0x252527);
 
 class MenuPopup : public Widget {
 public:
@@ -32,7 +31,7 @@ public:
 
   void paint(Canvas& c) override {
     const Theme& t = theme();
-    c.fillRoundRect(m_rect, 5, kPopupBg);
+    c.fillRoundRect(m_rect, 5, t.popup);
     c.strokeRoundRect(m_rect, 5, t.borderStrong);
     for (int i = 0; i < int(m_items.size()); i++) {
       const MenuItem& it = m_items[size_t(i)];
@@ -46,12 +45,12 @@ public:
         continue;
       }
       bool hot = i == m_hover && it.enabled;
-      if (hot) c.fillRoundRect(r, 3, t.accent);
-      Color fg = !it.enabled ? t.textDisabled : (hot ? t.accentText : t.text);
-      Color dim = !it.enabled ? t.textDisabled : (hot ? t.accentText.alpha(0.8f) : t.textDim);
+      if (hot) c.fillRoundRect(r, 3, t.rowSelected);
+      Color fg = !it.enabled ? t.textDisabled : (hot ? t.textBright : t.text);
+      Color dim = !it.enabled ? t.textDisabled : (hot ? t.text : t.textDim);
       Rect ic{r.x + 6, r.y + (r.h - 16) * 0.5f, 16, 16};
       if (it.checkable) {
-        if (it.checked) drawIcon(c, Icon::Check, ic, hot ? t.accentText : t.accent, 1.6f);
+        if (it.checked) drawIcon(c, Icon::Check, ic, t.highlight, 1.6f);
         else if (it.image && it.imageSize > 0) c.blitBlend(it.image, it.imageSize, it.imageSize, it.imageSize, ic);
         else if (it.icon != Icon::None) drawIcon(c, it.icon, ic, dim);
       } else if (it.image && it.imageSize > 0) {

@@ -181,7 +181,7 @@ void TableView::paint(Canvas& c) {
       int dr = m_view[size_t(v)];
       Rect row{m_rect.x, bd.y + m_tops[size_t(v)] - m_scrollY, viewW, m_tops[size_t(v) + 1] - m_tops[size_t(v)]};
       bool sel = m_sel.count(dr) > 0;
-      Color bg = sel ? t.accent.withAlpha(110) : (v % 2 ? Color(255, 255, 255, 6) : Color(0, 0, 0, 0));
+      Color bg = sel ? t.rowSelected : (v % 2 ? Color(255, 255, 255, 6) : Color(0, 0, 0, 0));
       if (!sel && v == m_hoverRow && m_hovered) bg = Color(255, 255, 255, 14);
       if (bg.a) c.fillRect(row, bg);
       for (int d = 0; d < int(m_order.size()); d++) {
@@ -205,7 +205,7 @@ void TableView::paint(Canvas& c) {
     if (r.right() < m_rect.x || r.x > m_rect.x + viewW) continue;
     bool dragging = m_drag == Drag::Reorder && m_dragCol == col && m_dragMoved;
     if (col == m_hoverHdr && m_drag == Drag::None) c.fillRect(r, t.controlHover);
-    if (dragging) c.fillRect(r, t.accent.withAlpha(60));
+    if (dragging) c.fillRect(r, t.highlight.withAlpha(40));
     float tx = r.x + 8;
     if (tc.icon != Icon::None) { drawIcon(c, tc.icon, {tx, r.y + (r.h - 14) / 2, 14, 14}, t.textDim); tx += 18; }
     float arrowW = col == m_sortCol ? 16.f : 0.f;
@@ -214,7 +214,7 @@ void TableView::paint(Canvas& c) {
       float cx = r.right() - 14, cy = r.y + r.h / 2;
       bool up = m_sortState == SortState::Ascending;
       Vec2 a = up ? Vec2{cx - 4, cy + 2} : Vec2{cx - 4, cy - 2}, b = up ? Vec2{cx, cy - 3} : Vec2{cx, cy + 3}, d2 = up ? Vec2{cx + 4, cy + 2} : Vec2{cx + 4, cy - 2};
-      c.line(a, b, t.accent, 1.6f); c.line(b, d2, t.accent, 1.6f);
+      c.line(a, b, t.highlight, 1.6f); c.line(b, d2, t.highlight, 1.6f);
     }
     c.vline(r.right() - 1, r.y + 5, r.y + r.h - 5, t.border);
   }
@@ -227,7 +227,7 @@ void TableView::paint(Canvas& c) {
       float edge = m_rect.x + colX(d) - m_scrollX;
       if (std::abs(edge - x) < best) { best = std::abs(edge - x); target = d; }
     }
-    c.fillRect({m_rect.x + colX(target) - m_scrollX - 1, m_rect.y, 2, m_rect.h}, t.accentHover);
+    c.fillRect({m_rect.x + colX(target) - m_scrollX - 1, m_rect.y, 2, m_rect.h}, t.highlight);
   }
   if (vbar) m_bar.paint(c, bd, contentHeight(), m_scrollY, m_hovered && Application::get().mousePos().x >= m_rect.right() - VScrollbar::W);
 }

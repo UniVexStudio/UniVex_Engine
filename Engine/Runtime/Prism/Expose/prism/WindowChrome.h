@@ -15,6 +15,7 @@ struct WindowChromeOptions {
   std::string title = "PRISM";
   Icon icon = Icon::None;
   bool minimize = true, maximize = true;     // buttons to show; close is always there
+  bool showIdentity = true;                  // false: no title tab, mark or title, only the drag strip and buttons
 };
 
 // Wraps `content` as [title bar | content] inside a frame. `windowId` is the PRISM window the chrome belongs to

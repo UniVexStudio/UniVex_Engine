@@ -467,7 +467,7 @@ void VfxCurveEditWidgetUVE::NotifyChangedUVE() {
 void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     c.fillRoundRect(m_rect, 4.0F, t.field);
-    c.strokeRoundRect(m_rect, 4.0F, focused() ? t.accent : t.border, 1.0F);
+    c.strokeRoundRect(m_rect, 4.0F, focused() ? t.highlight : t.border, 1.0F);
 
     const prism::Rect plot = PlotRectUVE();
     if (plot.w <= 4.0F || plot.h <= 4.0F) {
@@ -493,7 +493,7 @@ void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
         const float val = VFX::EvaluateVfxCurveExactUVE(m_curve, u);
         const prism::Vec2 curPt = KeyToScreenUVE(u, val, plot, range);
         if (s > 0) {
-            c.line(prevPt, curPt, t.accent, 2.0F);
+            c.line(prevPt, curPt, t.highlight, 2.0F);
         }
         prevPt = curPt;
     }
@@ -514,7 +514,7 @@ void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
             c.fillCircle(outPt, 3.0F, t.textBright);
             c.fillCircle(inPt, 3.0F, t.textBright);
         }
-        c.fillCircle(kp, sel ? 5.0F : 4.0F, sel ? t.accent : t.textBright);
+        c.fillCircle(kp, sel ? 5.0F : 4.0F, sel ? t.highlight : t.textBright);
         c.strokeCircle(kp, sel ? 5.0F : 4.0F, prism::Color(20, 22, 26), 1.2F);
     }
     c.popClip();

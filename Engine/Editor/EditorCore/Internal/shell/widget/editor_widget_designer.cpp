@@ -210,15 +210,15 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
                 const float mid = v.y + v.h * 0.5F;
                 c.fillRoundRect(prism::Rect{v.x, mid - 2.0F, v.w, 4.0F}, 2.0F, prism::Color(70, 74, 82));
                 const float knobX = v.x + v.w * std::clamp(item.value, 0.0F, 1.0F);
-                c.fillRoundRect(prism::Rect{v.x, mid - 2.0F, knobX - v.x, 4.0F}, 2.0F, t.accent);
+                c.fillRoundRect(prism::Rect{v.x, mid - 2.0F, knobX - v.x, 4.0F}, 2.0F, t.highlight);
                 c.fillCircle(prism::Vec2{knobX, mid}, std::max(4.0F, v.h * 0.35F), prism::Color(230, 232, 236));
                 break;
             }
             case KindUVE::CheckBox: {
                 const float side = std::min(v.w, v.h);
                 const prism::Rect box{v.x, v.y + (v.h - side) * 0.5F, side, side};
-                c.fillRoundRect(box, 3.0F, item.checked ? t.accent : prism::Color(36, 38, 42));
-                c.strokeRoundRect(box, 3.0F, prism::Color(110, 116, 126));
+                c.fillRoundRect(box, 3.0F, item.checked ? t.highlight : t.field);
+                c.strokeRoundRect(box, 3.0F, t.borderStrong);
                 if (item.checked) {
                     const prism::Vec2 a{box.x + side * 0.22F, box.y + side * 0.52F};
                     const prism::Vec2 b{box.x + side * 0.42F, box.y + side * 0.72F};
@@ -344,16 +344,16 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
         const prism::Rect v = ToViewUVE(item.rect);
         const prism::Rect frame{std::floor(v.x) - 1.0F, std::floor(v.y) - 1.0F, std::ceil(v.w) + 2.0F, std::ceil(v.h) + 2.0F};
         if (item.entity == m_selected) {
-            c.strokeRect(frame, t.accent, 2);
+            c.strokeRect(frame, t.highlight, 2);
             for (const prism::Vec2 corner : {frame.pos(), prism::Vec2{frame.right(), frame.y}, prism::Vec2{frame.x, frame.bottom()},
                                              prism::Vec2{frame.right(), frame.bottom()}}) {
                 c.fillRect(prism::Rect{corner.x - 3.0F, corner.y - 3.0F, 6.0F, 6.0F}, prism::Color(255, 255, 255));
-                c.strokeRect(prism::Rect{corner.x - 3.0F, corner.y - 3.0F, 6.0F, 6.0F}, t.accent);
+                c.strokeRect(prism::Rect{corner.x - 3.0F, corner.y - 3.0F, 6.0F, 6.0F}, t.highlight);
             }
-            c.textIn(*t.small, prism::Rect{frame.x, frame.bottom() + 3.0F, std::max(frame.w, 160.0F), 14.0F}, item.name, t.accent,
+            c.textIn(*t.small, prism::Rect{frame.x, frame.bottom() + 3.0F, std::max(frame.w, 160.0F), 14.0F}, item.name, t.highlight,
                      prism::HAlign::Left, true);
         } else {
-            c.strokeRect(frame, prism::Color(t.accent.r, t.accent.g, t.accent.b, 140));
+            c.strokeRect(frame, prism::Color(t.highlight.r, t.highlight.g, t.highlight.b, 140));
         }
     }
 }

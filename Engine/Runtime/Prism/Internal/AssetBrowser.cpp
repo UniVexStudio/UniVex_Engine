@@ -397,8 +397,8 @@ void drawAssetThumbnail(Canvas& c, const AssetRecord& asset, Rect thumb) {
   }
 }
 
-// One content tile: thumbnail well, chamfered type tab + type underline, name + type footer, accent
-// frame with corner brackets when selected. Shared by AssetBrowser and host asset tables.
+// One content tile: thumbnail well, chamfered type tab + type underline, name + type footer, and a
+// highlight frame with corner brackets when selected. Shared by AssetBrowser and host asset tables.
 float assetTileWellHeight(Rect tile) {
   // Square, leaving the footer its two lines.
   return std::max(0.0f, std::min(tile.w - 6.0f, tile.h - 44.0f));
@@ -406,9 +406,8 @@ float assetTileWellHeight(Rect tile) {
 
 void paintAssetTile(Canvas& c, Rect tr, const AssetRecord& asset, bool isSel, bool isHov) {
   const Theme& t = theme();
-  const Color accent = t.accent;
-  Color cardBg = isHov ? Color(44, 44, 47) : Color(32, 32, 34);
-  if (isSel) cardBg = Color(32, 32, 34).mix(accent, 0.18f);
+  Color cardBg = isHov ? t.controlHover : t.control;
+  if (isSel) cardBg = t.rowSelected;
   c.fillRoundRect(tr, 4.0f, cardBg);
 
   // Thumbnail well: square, as the thumbnails are, so the picture fills it exactly.
@@ -446,11 +445,11 @@ void paintAssetTile(Canvas& c, Rect tr, const AssetRecord& asset, bool isSel, bo
   c.textIn(*t.small, typeBox, asset.type, Color(128, 139, 156), HAlign::Left);
   c.popClip();
 
-  // Frame: soft border; selection gets an accent frame with corner brackets
-  c.strokeRoundRect(tr, 4.0f, isSel ? accent : (isHov ? Color(78, 78, 82) : Color(46, 46, 49)), isSel ? 1.5f : 1.0f);
+  // Frame: soft border; selection gets a highlight frame with corner brackets
+  c.strokeRoundRect(tr, 4.0f, isSel ? t.highlight : (isHov ? t.borderStrong : t.borderSoft), isSel ? 1.5f : 1.0f);
   if (isSel) {
     float L = 9.0f;
-    Color br = accent.lighten(0.25f);
+    Color br = t.textBright;
     Rect q = tr.inflated(-1.0f);
     c.line(Vec2(q.x, q.y + L), Vec2(q.x, q.y), br, 2.0f);   c.line(Vec2(q.x, q.y), Vec2(q.x + L, q.y), br, 2.0f);
     c.line(Vec2(q.right() - L, q.y), Vec2(q.right(), q.y), br, 2.0f); c.line(Vec2(q.right(), q.y), Vec2(q.right(), q.y + L), br, 2.0f);

@@ -1,45 +1,34 @@
 # What CI uploads
 
-One workflow (`.github/workflows/ci.yml`), two switches. They answer different
-questions, so they default differently.
+One workflow, `.github/workflows/ci.yml`, checks every push and makes every release.
 
-## Builds somebody can run - on by default
+## Releases
 
-`CREATE_ARTIFACTS` gates the upload that is a build you can actually try:
+Every push to `master` is a development release, and a tag `v<version>` is a versioned release.
+Every job builds as on any check; the Hub and Release jobs then package what they built, and
+**Publish the release** puts everything into one GitHub Release:
 
-- `UniVex-Editor-Windows-x64` - the Windows editor package, with the DLLs its exes
-  import collected beside it, from the `windows-editor` job. Unzip it, run
-  `Start-Editor.bat`, and you are looking at the editor that CI just built.
+- `univex-engine-<version>-<linux|windows>.uvpackage` - the engine, per platform
+- `UniVexHubSetup-<hub version>-<linux|windows>` - the Hub installers
+- `UniVexHub-<hub version>-android-<abi>.apk` - the Hub for Android
 
-Set the Actions repository variable `CREATE_ARTIFACTS` to `false` to stop it, or pass
-`create_artifacts=false` on a manual run (Actions, select CI, Run workflow). The manual
-checkbox overrides the repository variable for that run. This is a variable, not a
-secret.
+each with a `.sha256` beside it. The files travel between jobs as artifacts, which are deleted once
+the release is published (and kept for seven days if publishing fails, so the builds are not lost).
 
-The Android apk is not a CI artifact any more. It is a runtime with no editor in it,
-built locally with `Engine/Tools/android/build_apk.py` and inspected with
-`smoke_runtime.py` when somebody is working on mobile - see
-`Engine/Tools/android/README.md`. Building it for two ABIs and watching it draw on an
-emulator took about half an hour of every pull request, which is the wrong price for a
-build nobody could edit anything with.
+The repository variable `PUBLISH_RELEASES` decides where the release goes:
+
+- not `true` (default) - the development repository (`DEV_RELEASES_REPOSITORY`). The Hub does not
+  read it; install its engines with the Hub's **Engines → Import package...**.
+- `true` - tag releases go to the repository named in `Engine/Distribution/engine_feed.json`, which
+  the Hub reads. Master builds always stay in the development repository, as the prerelease
+  `v<engine version>-beta`, whose files each later push of that version replaces.
 
 ## Measurements - off by default
 
-`DIAGNOSTIC_ARTIFACTS` gates the uploads that answer questions about a run instead of
-giving anybody something to run:
+The repository variable `DIAGNOSTIC_ARTIFACTS` set to `true` uploads the test log of a failed Linux
+run. Nothing else changes when it is off; errors and test results remain in the job log.
 
-- `ctest-<mode>` - the full GoogleTest log.
-- `asset-workload-<mode>` - the asset residency measurement.
-- `editor-process-baseline-<mode>` - the headless editor process measurement.
+## Everything else
 
-Set the repository variable `DIAGNOSTIC_ARTIFACTS` to `true` to enable them. Nothing
-else changes when they are off; the measurements still run where they are part of a
-test, they are just not uploaded.
-
-## With both off
-
-Builds and correctness tests still run, and the checks still mean what they say. Linux
-skips the editor process baseline run and every upload, including failure-log uploads;
-errors and test results remain in the job log. Windows still prepares its runtime DLL
-folder and runs the packaged executable startup check; it skips uploading the ZIP - the
-package is built and started, just not kept.
+Checks and builds do not upload anything. Release / Windows still stages the editor with its DLLs and
+starts it, so the package a release would ship is proven to run.

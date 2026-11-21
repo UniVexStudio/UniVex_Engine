@@ -15,14 +15,17 @@ public class WindowModule : ModuleRules
             "Input",
         });
 
+        // The desktop windows through GLFW; Android draws into the activity's surface through EGL.
         ExcludedFiles.AddRange(new string[] {
-            "android_window_manager.cpp"
+            "desktop:android_window_manager.cpp",
+            "desktop:android_glfw.cpp",
+            "android:Internal/window_manager.cpp"
         });
 
         PublicSystemLibraries.AddRange(new string[] {
-            "X11",
-            "GL",
-            "GLX"
+            "linux:X11",
+            "linux:GL",
+            "linux:GLX"
         });
     }
 }

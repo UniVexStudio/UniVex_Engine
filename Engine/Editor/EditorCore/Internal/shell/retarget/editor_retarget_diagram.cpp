@@ -213,19 +213,19 @@ void RetargetSkeletonDiagramUVE::paint(prism::Canvas& c) {
             const prism::Color ring = ColourUVE(joint.colour, joint.faint ? 0.5F : 0.9F);
             c.strokeCircle(at[i], 3.2F, ring, 1.4F);
             if (picked || hovered) {
-                c.strokeCircle(at[i], 6.0F, picked ? t.accent : prism::Color(255, 255, 255, 200), 1.4F);
+                c.strokeCircle(at[i], 6.0F, picked ? t.highlight : prism::Color(255, 255, 255, 200), 1.4F);
             }
             continue;
         }
         const prism::Color colour = ColourUVE(joint.colour, joint.faint ? 0.55F : 1.0F);
         if (picked) {
-            c.fillCircle(at[i], radius + 6.0F, t.accent.alpha(0.25F));
+            c.fillCircle(at[i], radius + 6.0F, t.highlight.alpha(0.25F));
         }
         c.fillCircle(at[i], radius + 1.6F, prism::Color(10, 11, 14, 230));
         c.fillCircle(at[i], radius, colour);
         c.fillCircle(at[i] - prism::Vec2{radius * 0.3F, radius * 0.3F}, radius * 0.35F, prism::Color(255, 255, 255, joint.faint ? 30 : 70));
         if (picked || hovered) {
-            c.strokeCircle(at[i], radius + 2.6F, picked ? t.accent : prism::Color(255, 255, 255, 200), 1.6F);
+            c.strokeCircle(at[i], radius + 2.6F, picked ? t.highlight : prism::Color(255, 255, 255, 200), 1.6F);
         }
     }
 

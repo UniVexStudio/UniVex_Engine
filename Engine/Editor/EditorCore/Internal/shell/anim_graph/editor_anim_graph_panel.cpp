@@ -74,7 +74,7 @@ public:
             points.push_back(prism::Vec2{m_rect.x + 2.0F + (m_rect.w - 4.0F) * static_cast<float>(i) / static_cast<float>(n - 1U),
                                          m_rect.bottom() - 3.0F - ((*m_samples)[i] - *lo) / span * (m_rect.h - 6.0F)});
         }
-        c.polyline(points, t.accent, 1.2F);
+        c.polyline(points, t.highlight, 1.2F);
     }
 
 private:

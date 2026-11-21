@@ -443,8 +443,8 @@ void ColorPicker::paint(Canvas& c) {
   c.fillRect(m_rect, t.panel);
 
   auto chip = [&](Rect r, const char* label, bool on) {
-    c.fillRoundRect(r, 3.0f, on ? t.accent : t.control);
-    c.strokeRoundRect(r, 3.0f, on ? t.accent : t.border, 1.0f);
+    c.fillRoundRect(r, 3.0f, on ? t.rowSelected : t.control);
+    c.strokeRoundRect(r, 3.0f, on ? t.highlight : t.border, 1.0f);
     c.textIn(*t.small, r, label, on ? Color(255, 255, 255) : t.textDim, HAlign::Center);
   };
   chip(m_chipSquare, "Square", m_mode == ColorPickerMode::Square);
@@ -955,7 +955,7 @@ void GradientEditor::paint(Canvas& c) {
     Color col = evaluateDisplay(u);
     c.fillRect(Rect{b.x + float(i) * sw, b.y, sw + 0.8f, b.h}, col);
   }
-  c.strokeRoundRect(b, 2.0f, m_focused ? t.accent : t.borderStrong);
+  c.strokeRoundRect(b, 2.0f, m_focused ? t.highlight : t.borderStrong);
 
   // Colour stops above the bar (pointing down)
   for (int i = 0; i < int(m_colorStops.size()); ++i) {
@@ -967,7 +967,7 @@ void GradientEditor::paint(Canvas& c) {
     float sb = linearToSrgb(std::clamp(s.b, 0.0f, 1.0f));
     float cf[3] = {sr, sg, sb};
     Color fill = rgbF(cf, 1.0f);
-    Color ring = (i == m_selColor) ? t.accent : t.borderStrong;
+    Color ring = (i == m_selColor) ? t.highlight : t.borderStrong;
     Rect box{sx - 4.5f, sy - 9.5f, 9.0f, 7.0f};
     c.fillRoundRect(box, 1.5f, fill);
     c.strokeRoundRect(box, 1.5f, ring, (i == m_selColor) ? 1.8f : 1.0f);
@@ -982,7 +982,7 @@ void GradientEditor::paint(Canvas& c) {
     float sy = b.bottom() + 1.0f;
     uint8_t g = uint8_t(std::lround(std::clamp(s.alpha, 0.0f, 1.0f) * 255.0f));
     Color fill(g, g, g, 255);
-    Color ring = (i == m_selAlpha) ? t.accent : t.borderStrong;
+    Color ring = (i == m_selAlpha) ? t.highlight : t.borderStrong;
     Rect box{sx - 4.5f, sy + 2.5f, 9.0f, 7.0f};
     c.fillRoundRect(box, 1.5f, fill);
     c.strokeRoundRect(box, 1.5f, ring, (i == m_selAlpha) ? 1.8f : 1.0f);

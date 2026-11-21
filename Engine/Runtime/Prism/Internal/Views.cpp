@@ -13,7 +13,6 @@ std::string lower(std::string s) {
   for (auto& ch : s) ch = char(std::tolower(static_cast<unsigned char>(ch)));
   return s;
 }
-const Color kPopupBg = Color::hex(0x252527);
 } // namespace
 
 // ------------------------------------------------------------------ VirtualList
@@ -335,7 +334,7 @@ void TreeView::paintRow(Canvas& c, int row, Rect r, bool hover) {
   bool sel = isSelected(n);
   if (sel) {
     c.fillRect(r, m_focused ? t.rowSelected : t.rowSelectedInactive);
-    if (m_focused) c.fillRect({r.x, r.y, 2, r.h}, t.accent);
+    if (m_focused) c.fillRect({r.x, r.y, 2, r.h}, t.highlight);
   } else if (hover) {
     c.fillRect(r, t.rowHover);
   }
@@ -398,7 +397,7 @@ void TreeView::paintOverlay(Canvas& c) {
       if (rows()[size_t(i)].n->id != m_dropId) continue;
       Rect rr = rowRect(i);
       const float x = rr.x + 8 + float(rows()[size_t(i)].depth) * 14;
-      const Color accent = theme().accent;
+      const Color accent = theme().highlight;
       if (m_dropWhere == DropWhere::Inside) {
         c.strokeRoundRect(rr.deflated(1), 3, accent, 2);
       } else {
@@ -591,7 +590,7 @@ void LogView::paintRow(Canvas& c, int row, Rect r, bool hover) {
   case LogLevel::Info: col = t.text; ic = Icon::Info; break;
   case LogLevel::Warning: col = t.warning; ic = Icon::Warning; break;
   case LogLevel::Error: col = t.error; ic = Icon::Error; break;
-  case LogLevel::Command: col = t.accentHover; ic = Icon::ChevronRight; break;
+  case LogLevel::Command: col = t.highlight; ic = Icon::ChevronRight; break;
   case LogLevel::Success: col = t.success; ic = Icon::Check; break;
   }
   drawIcon(c, ic, {r.x + 8, r.y + (r.h - 12) * 0.5f, 12, 12}, e.level == LogLevel::Info ? t.textDim : col, 1.2f);
@@ -602,7 +601,7 @@ void LogView::paintRow(Canvas& c, int row, Rect r, bool hover) {
   if (!e.category.empty()) {                                      // category tag
     std::string tag = "[" + e.category + "]";
     float cw = std::ceil(f.width(tag));
-    c.textIn(f, {x, r.y, cw + 2, r.h}, tag, t.accentHover.mix(t.textDim, 0.35f), HAlign::Left, false);
+    c.textIn(f, {x, r.y, cw + 2, r.h}, tag, t.highlight.mix(t.textDim, 0.35f), HAlign::Left, false);
     x += cw + 8;
   }
   Rect tr{x, r.y, r.w - (x - r.x) - 8, r.h};
@@ -611,14 +610,14 @@ void LogView::paintRow(Canvas& c, int row, Rect r, bool hover) {
     size_t p = lower(e.text).find(m_filter);
     if (p != std::string::npos) {
       float a = x + f.width(e.text.substr(0, p)), b = x + f.width(e.text.substr(0, p + m_filter.size()));
-      c.fillRect({a - 1, r.y + 2, b - a + 2, r.h - 4}, t.accent.alpha(0.35f));
+      c.fillRect({a - 1, r.y + 2, b - a + 2, r.h - 4}, t.highlight.alpha(0.30f));
     }
   }
   c.textIn(f, tr, e.text, col, HAlign::Left, false);
   Source s;
   if (findSource(e.text, s)) {                                    // clickable source: underline
     float a = x + f.width(e.text.substr(0, s.begin)), b = x + f.width(e.text.substr(0, s.end));
-    c.fillRect({a, r.bottom() - 4, b - a, 1}, t.accentHover);
+    c.fillRect({a, r.bottom() - 4, b - a, 1}, t.highlight);
   }
 }
 
@@ -809,7 +808,7 @@ void ColorField::paint(Canvas& c) {
   const Theme& t = theme();
   bool en = enabled();
   c.fillRoundRect(m_rect, 3, t.control);
-  c.strokeRoundRect(m_rect, 3, m_open ? t.accent : (m_hovered && en ? t.borderStrong : t.borderSoft));
+  c.strokeRoundRect(m_rect, 3, m_open ? t.highlight : (m_hovered && en ? t.borderStrong : t.borderSoft));
   Rect sw{m_rect.x + 4, m_rect.y + 4, std::max(18.f, m_rect.h - 8) + 14, m_rect.h - 8};
   c.fillRoundRect(sw, 2, m_color);
   c.strokeRoundRect(sw, 2, Color(0, 0, 0, 110));

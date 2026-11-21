@@ -2,6 +2,7 @@
 #include "prism/Icons.h"
 #include <cmath>
 #include <initializer_list>
+#include <utility>
 
 namespace prism {
 namespace {
@@ -485,6 +486,31 @@ void drawLogo(Canvas& c, Rect box) {
   c.fillPolygon(f1, Color::hex(0x7ab8ff));
   c.fillPolygon(f2, Color::hex(0x3b82e0));
   c.fillPolygon(f3, Color::hex(0x1f4f9c));
+}
+
+namespace {
+std::vector<uint32_t> g_brandMark;
+int g_brandMarkW = 0, g_brandMarkH = 0;
+} // namespace
+
+void setBrandMark(std::vector<uint32_t> argb, int w, int h) {
+  if (w <= 0 || h <= 0 || argb.size() != size_t(w) * size_t(h)) {
+    g_brandMark.clear();
+    g_brandMarkW = g_brandMarkH = 0;
+    return;
+  }
+  g_brandMark = std::move(argb);
+  g_brandMarkW = w;
+  g_brandMarkH = h;
+}
+
+bool hasBrandMark() { return !g_brandMark.empty(); }
+
+void drawBrandMark(Canvas& c, Rect box) {
+  if (g_brandMark.empty()) return;
+  const float s = std::floor(std::min(box.w, box.h));
+  const Rect square{std::floor(box.x + (box.w - s) * 0.5f), std::floor(box.y + (box.h - s) * 0.5f), s, s};
+  c.blitBlend(g_brandMark.data(), g_brandMarkW, g_brandMarkH, g_brandMarkW, square);
 }
 
 } // namespace prism

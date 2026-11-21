@@ -24,18 +24,60 @@
 
 #include "crash_reporter.h"
 #include "engine_core.h"
+#include "project_launcher.h"
+#include "project_template.h"
+#include "project_registry.h"
+#include "engine_install.h"
+#include "quaternion.h"
+#include "scalar.h"
+#include "prism/Containers.h"
+#include "prism/Controls.h"
+#include "prism/Views.h"
 #include "logging_macros.h"
 #include "editor_bridge_stdio.h"
 #include "editor.h"
 #include "vector3.h"
 #include "light_component.h"
 #include "transform_component.h"
+#include "name_component.h"
 #include "i_entity_manager.h"
 #include "editor_viewport_host.h"
 
 namespace {
 
+/// File name of the editor log. Without a project it is written to the working directory; with one
+/// it moves under the project's log directory (see PrepareProjectEditorUVE).
+inline constexpr std::string_view kEditorLogFileNameUVE = "uve_editor.log";
+/// The level the editor opens when neither --scene nor the project's startup scene names one,
+/// relative to the content root.
+inline constexpr std::string_view kDefaultViewportFolderUVE = "Viewport";
+inline constexpr std::string_view kDefaultViewportSceneFileUVE = "Viewport.uvscene";
+/// Where levels were saved before the Viewport asset existed, relative to the working directory.
+inline constexpr std::string_view kLegacyEditorSceneFileUVE = "editor_scene.uvscene";
+inline constexpr std::string_view kProjectOptionUVE = UVE::Pack::kEditorProjectOptionUVE;
+/// Accepts upgrading an older project to this engine without asking, for runs with no one to ask.
+inline constexpr std::string_view kUpgradeProjectOptionUVE = "--upgrade-project";
+/// Prints the engine version and exits; release tooling checks a build against its tag with it.
+inline constexpr std::string_view kVersionOptionUVE = "--version";
+/// Records opened projects in this registry file instead of the user's own, for isolated runs.
+inline constexpr std::string_view kProjectRegistryOptionUVE = UVE::Pack::kEditorProjectRegistryOptionUVE;
+inline constexpr float kUpgradeDialogWidthUVE = 520.0F;
+inline constexpr float kUpgradeDialogLineSpacingUVE = 6.0F;
+/// Process exit code for a command line the editor cannot act on.
+inline constexpr int kInvalidCommandLineExitCodeUVE = 2;
+/// Process exit code for a project the editor cannot open.
+inline constexpr int kProjectUnavailableExitCodeUVE = 1;
+
 struct EditorLaunchOptionsUVE final {
+    /// The `.uvproject` to author. Empty keeps the working-directory layout.
+    std::filesystem::path projectFile;
+    /// Registry that records the opened project; empty uses the current user's registry.
+    std::filesystem::path projectRegistry;
+    /// Upgrade an older project to this engine without the confirmation dialog.
+    bool upgradeProject = false;
+    bool printVersion = false;
+    /// Set when the command line cannot be acted on; the editor reports it and exits.
+    std::optional<std::string> error;
     /// Empty means the project's default Viewport: Content/Viewport/Viewport.uvscene.
     std::filesystem::path scenePath;
     std::optional<int> frameLimit;
@@ -106,6 +148,34 @@ struct EditorLaunchOptionsUVE final {
             options.decorated = true;
             continue;
         }
+        if (argument == kProjectOptionUVE) {
+            if (!options.projectFile.empty()) {
+                options.error = std::string(kProjectOptionUVE) + " may only be supplied once";
+                return options;
+            }
+            if (index + 1 >= argc || std::string_view{argv[index + 1]}.starts_with("--")) {
+                options.error = std::string(kProjectOptionUVE) + " requires a path to a .uvproject file";
+                return options;
+            }
+            options.projectFile = argv[++index];
+            continue;
+        }
+        if (argument == kProjectRegistryOptionUVE) {
+            if (index + 1 >= argc || std::string_view{argv[index + 1]}.starts_with("--")) {
+                options.error = std::string(kProjectRegistryOptionUVE) + " requires a registry file path";
+                return options;
+            }
+            options.projectRegistry = argv[++index];
+            continue;
+        }
+        if (argument == kVersionOptionUVE) {
+            options.printVersion = true;
+            continue;
+        }
+        if (argument == kUpgradeProjectOptionUVE) {
+            options.upgradeProject = true;
+            continue;
+        }
         if (argument == "--scene" && index + 1 < argc) {
             options.scenePath = argv[++index];
             continue;
@@ -128,15 +198,80 @@ struct EditorLaunchOptionsUVE final {
             }
         }
     }
+    if (options.upgradeProject && options.projectFile.empty() && !options.error.has_value()) {
+        options.error = std::string(kUpgradeProjectOptionUVE) + " requires " + std::string(kProjectOptionUVE);
+    }
     if (options.headless && !options.frameLimit.has_value()) {
         options.frameLimit = 1;
     }
     return options;
 }
 
+/// Asks whether to upgrade `project` to this engine. Upgrade records the acceptance; Close ends the
+/// session without touching the project. Dismissing the dialog keeps the project open un-upgraded.
+void ShowProjectUpgradeDialogUVE(const UVE::Pack::ProjectEditorSetupUVE& project, bool& upgradeAccepted,
+                                 bool& closeRequested) {
+    const std::string projectVersion = UVE::Pack::FormatProjectVersionUVE(project.package.engineVersion);
+    const std::string engineVersion = UVE::Core::EngineCoreUVE::GetEngineVersionUVE().ToStringUVE();
+    auto body = prism::vbox(kUpgradeDialogLineSpacingUVE);
+    body->add(prism::make<prism::Label>("'" + project.package.displayName + "' was saved with engine " +
+                                        projectVersion + "."));
+    body->add(prism::make<prism::Label>("Upgrade it to engine " + engineVersion + "?"));
+    body->add(prism::make<prism::Label>("Once upgraded, older engines may no longer open it."));
+    prism::showDialog("Upgrade Project", body,
+                      {{"Close", false, [&closeRequested] { closeRequested = true; }},
+                       {"Upgrade", true, [&upgradeAccepted] { upgradeAccepted = true; }}},
+                      kUpgradeDialogWidthUVE);
+}
+
+/// Builds a new project's startup scene from the starter objects its template declared. Objects
+/// of a kind the editor does not know are reported and skipped. True when every object was placed.
+[[nodiscard]] bool PopulateStarterSceneUVE(UVE::Editor::EditorUVE& editor, UVE::Scene::IEntityManagerUVE& entities,
+                                           const UVE::Pack::StarterSceneUVE& scene) {
+    bool placedAll = true;
+    for (const UVE::Pack::StarterObjectUVE& object : scene.objects) {
+        // New objects join the selected object; starter objects all sit at the level's top.
+        editor.ClearSelectionUVE();
+        const std::optional<UVE::Editor::EditorEntityKindUVE> kind = UVE::Editor::ParseEditorEntityKindUVE(object.kind);
+        const UVE::Scene::EntityUVE entity =
+            kind.has_value() ? editor.CreateDocumentEntityUVE(*kind) : UVE::Scene::kInvalidEntityUVE;
+        if (entity == UVE::Scene::kInvalidEntityUVE) {
+            UVE_WARNING("uve_editor: the starter object kind '{}' cannot be created", object.kind);
+            placedAll = false;
+            continue;
+        }
+        // A new entity is the selection, so the rename applies to it. A name that is already the
+        // kind's default needs no rename.
+        const bool keepsDefaultName = !entities.HasComponentUVE<UVE::Scene::NameComponentUVE>(entity) ||
+                                      entities.GetComponentUVE<UVE::Scene::NameComponentUVE>(entity).name == object.name;
+        if (!object.name.empty() && !keepsDefaultName && !editor.SetSelectedEntityNameUVE(object.name)) {
+            UVE_WARNING("uve_editor: the starter object name '{}' is not usable", object.name);
+        }
+        if (entities.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
+            auto& transform = entities.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity);
+            transform.localPosition = object.position;
+            transform.localScale = object.scale;
+            const UVE::Math::Vector3UVE radians{UVE::Math::DegToRadUVE(object.rotationDegrees.x),
+                                                UVE::Math::DegToRadUVE(object.rotationDegrees.y),
+                                                UVE::Math::DegToRadUVE(object.rotationDegrees.z)};
+            UVE::Math::QuaternionUVE rotation{};
+            if (UVE::Math::TryMakeEulerOrderedUVE(radians, transform.eulerOrder, rotation)) {
+                transform.localEulerRadians = radians;
+                transform.localRotation = rotation;
+            }
+        }
+    }
+    editor.ClearSelectionUVE();
+    return placedAll;
+}
+
 } // namespace
 
-/// Starts the standalone UniVex Editor Foundation v1. `--scene <path>` selects the `.uvscene`
+/// Starts the standalone UniVex Editor Foundation v1. `--project <file.uvproject>` opens that
+/// project: its content root, settings, input map and asset database replace the working-directory
+/// defaults, and its startup scene is the level opened when `--scene` is not given. A project saved
+/// with a newer engine beyond the compatibility policy is refused; an older one asks before it is
+/// upgraded, unless `--upgrade-project` accepts in advance (headless runs never ask). `--scene <path>` selects the `.uvscene`
 /// document. `--frames <n>` bounds a run for automation, while the normal windowed invocation runs
 /// until the user closes the editor. `--gl-version <major.minor>` overrides the requested desktop
 /// OpenGL version for an explicitly chosen platform capability (for example virtual-display CI).
@@ -154,9 +289,17 @@ struct EditorLaunchOptionsUVE final {
 /// main() into std::terminate().
 int main(const int argc, char** argv) {
     EditorLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
+    if (options.error.has_value()) {
+        std::cerr << "uve_editor: " << *options.error << '\n';
+        return kInvalidCommandLineExitCodeUVE;
+    }
+    if (options.printVersion) {
+        std::cout << UVE::Core::EngineCoreUVE::GetEngineVersionUVE().ToStringUVE() << '\n';
+        return 0;
+    }
 
     UVE::Core::EngineConfigUVE config{};
-    config.logFilePath = "uve_editor.log";
+    config.logFilePath = std::filesystem::path(kEditorLogFileNameUVE);
     config.enableConsoleLogging = !options.bridgeStdio;
     config.headlessUVE = options.headless;
     config.windowBorderlessUVE = !options.decorated;
@@ -170,6 +313,24 @@ int main(const int argc, char** argv) {
     if (options.glMajor.has_value() && options.glMinor.has_value()) {
         config.windowGlVersionMajor = *options.glMajor;
         config.windowGlVersionMinor = *options.glMinor;
+    }
+
+    // A level named on the command line is opened as given; otherwise the editor chooses one and
+    // makes sure it exists.
+    const bool sceneNamedOnCommandLine = !options.scenePath.empty();
+    std::optional<UVE::Pack::ProjectEditorSetupUVE> project;
+    if (!options.projectFile.empty()) {
+        UVE::Pack::ProjectEditorSetupResultUVE setupResult =
+            UVE::Pack::PrepareProjectEditorUVE(options.projectFile, UVE::Core::EngineCoreUVE::GetEngineVersionUVE(),
+                                               config);
+        if (!setupResult.IsReadyUVE()) {
+            std::cerr << "uve_editor: " << setupResult.message << '\n';
+            return kProjectUnavailableExitCodeUVE;
+        }
+        project = std::move(setupResult.setup);
+        if (options.scenePath.empty()) {
+            options.scenePath = project->startupScene;
+        }
     }
 
     UVE::Core::EngineCoreUVE engine(config);
@@ -201,17 +362,20 @@ int main(const int argc, char** argv) {
         }
 
         // The level is a Viewport asset in the Asset Table: Content/Viewport/Viewport.uvscene
-        // unless --scene names another. A level saved at the old default moves there once.
+        // unless --scene or the project's startup scene names another. Outside a project, a level
+        // saved at the old working-directory default moves there once.
         bool createDefaultViewport = false;
         if (options.scenePath.empty()) {
-            const std::filesystem::path folder =
-                engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / "Viewport";
-            options.scenePath = folder / "Viewport.uvscene";
+            options.scenePath = engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot /
+                                kDefaultViewportFolderUVE / kDefaultViewportSceneFileUVE;
+        }
+        if (!sceneNamedOnCommandLine) {
             std::error_code error;
-            std::filesystem::create_directories(folder, error);
+            std::filesystem::create_directories(options.scenePath.parent_path(), error);
             if (!std::filesystem::exists(options.scenePath, error)) {
-                if (std::filesystem::exists("editor_scene.uvscene", error)) {
-                    std::filesystem::copy_file("editor_scene.uvscene", options.scenePath, error);
+                const std::filesystem::path legacyScene{kLegacyEditorSceneFileUVE};
+                if (!project.has_value() && std::filesystem::exists(legacyScene, error)) {
+                    std::filesystem::copy_file(legacyScene, options.scenePath, error);
                 } else {
                     createDefaultViewport = true;
                 }
@@ -230,11 +394,55 @@ int main(const int argc, char** argv) {
             editor.SetPrismUiEnabledUVE(true, assetDir);
         }
         editor.InitUVE();
+        if (project.has_value() &&
+            project->compatibility.verdict == UVE::Pack::ProjectCompatibilityVerdictUVE::NewerCompatible) {
+            UVE_WARNING("uve_editor: {}", project->compatibility.message);
+        }
+
+        if (project.has_value()) {
+            std::string registryError;
+            const std::optional<std::filesystem::path> registryFile =
+                options.projectRegistry.empty() ? UVE::Pack::DefaultProjectRegistryFileUVE(&registryError)
+                                                : std::optional<std::filesystem::path>(options.projectRegistry);
+            if (!registryFile.has_value()) {
+                UVE_WARNING("uve_editor: the recent-projects list is unavailable: {}", registryError);
+            } else if (const UVE::Pack::ProjectRegistryResultUVE recorded =
+                           UVE::Pack::RecordProjectOpenedUVE(*registryFile, project->projectFile, project->package);
+                       !recorded.IsAppliedUVE()) {
+                UVE_WARNING("uve_editor: could not record the project in the recent-projects list: {}",
+                            recorded.message);
+            }
+        }
+
+        bool upgradeAccepted = options.upgradeProject;
+        bool closeRequested = false;
+        if (project.has_value() && project->compatibility.NeedsUpgradeConfirmationUVE() && !upgradeAccepted &&
+            editor.IsPrismUiActiveUVE()) {
+            ShowProjectUpgradeDialogUVE(*project, upgradeAccepted, closeRequested);
+        }
 
         if (std::filesystem::exists(options.scenePath)) {
             static_cast<void>(editor.LoadSceneUVE());
         } else if (createDefaultViewport) {
-            static_cast<void>(editor.SaveSceneUVE()); // the default Viewport asset exists from the start
+            // A project created from a template begins with the objects the template listed.
+            bool starterSceneBuilt = false;
+            if (project.has_value()) {
+                const UVE::Pack::StarterSceneLoadResultUVE starter =
+                    UVE::Pack::LoadProjectStarterSceneUVE(project->projectRoot);
+                if (starter.code == UVE::Pack::StarterSceneCodeUVE::Invalid) {
+                    UVE_WARNING("uve_editor: {}", starter.message);
+                } else if (starter.code == UVE::Pack::StarterSceneCodeUVE::Loaded) {
+                    static_cast<void>(PopulateStarterSceneUVE(
+                        editor, engine.GetServicesUVE().GetEntityManagerUVE(), starter.scene));
+                    starterSceneBuilt = true;
+                }
+            }
+            // The default Viewport asset exists from the start.
+            if (editor.SaveSceneUVE() && starterSceneBuilt &&
+                !UVE::Pack::RemoveProjectStarterSceneUVE(project->projectRoot)) {
+                UVE_WARNING("uve_editor: could not remove the consumed starter scene from {}",
+                            project->projectRoot.string());
+            }
         }
         if (options.prismDemoObject) {
             static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Folder));
@@ -311,7 +519,7 @@ int main(const int argc, char** argv) {
         engine.SetPostRenderCallbackUVE([&editor] { editor.RenderOverlayUVE(); });
 
         int framesRun = 0;
-        while (!engine.GetServicesUVE().GetWindowManagerUVE().IsCloseRequestedUVE() &&
+        while (!closeRequested && !engine.GetServicesUVE().GetWindowManagerUVE().IsCloseRequestedUVE() &&
                (!options.frameLimit.has_value() || framesRun < *options.frameLimit)) {
             editor.TickUVE();
             engine.TickFrameUVE();
@@ -329,6 +537,15 @@ int main(const int argc, char** argv) {
         // destructor deletes real GL objects (framebuffers/textures) that must still be valid.
         viewportHost.reset();
         editor.ShutdownUVE();
+        if (project.has_value() &&
+            UVE::Pack::ShouldRecordEngineVersionUVE(project->compatibility.verdict, upgradeAccepted)) {
+            const UVE::Platform::EditorProjectPackageResultUVE recorded = UVE::Pack::RecordProjectEngineVersionUVE(
+                project->projectFile, UVE::Core::EngineCoreUVE::GetEngineVersionUVE());
+            if (!recorded.IsAcceptedUVE()) {
+                UVE_WARNING("uve_editor: could not record the engine version in {}: {}",
+                            project->projectFile.string(), recorded.message);
+            }
+        }
         engine.Shutdown();
         return 0;
     } catch (const std::exception& exception) {
