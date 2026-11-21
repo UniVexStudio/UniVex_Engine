@@ -87,6 +87,10 @@ private:
     void RefreshEngineListUVE();
     void CheckForEnginesUVE();
     void DownloadEngineUVE(const Online::EngineReleaseUVE& release);
+    /// Asks for a package file and installs it in the background.
+    void ImportEnginePackageUVE();
+    /// True while a download or an import is running; only one engine installs at a time.
+    [[nodiscard]] bool IsInstallingEngineUVE() const noexcept { return m_download != nullptr || m_import.valid(); }
     [[nodiscard]] bool IsInstalledUVE(const Core::VersionUVE& version) const;
     void RefreshProjectListUVE();
     void RefreshTemplateListUVE();
@@ -112,6 +116,9 @@ private:
     Online::EngineFeedResultUVE m_feedResult;
     std::future<Online::EngineFeedResultUVE> m_feedRequest;
     std::unique_ptr<Online::EngineDownloadUVE> m_download;
+    std::future<Online::EngineInstallOutcomeUVE> m_import;
+    /// Where the import picker opens next: the folder of the last imported package.
+    std::filesystem::path m_lastImportFolder;
 
     prism::Ref<prism::StackSwitcher> m_pages;
     std::vector<std::pair<HubPageUVE, prism::Ref<NavItemUVE>>> m_navigation;
@@ -133,6 +140,7 @@ private:
     prism::Ref<prism::Label> m_feedStatus;
     prism::Ref<prism::ProgressBar> m_downloadBar;
     prism::Ref<prism::Label> m_downloadLabel;
+    prism::Ref<prism::Button> m_importButton;
 
     prism::Ref<prism::TextInput> m_settingsLocation;
     prism::Ref<prism::TextInput> m_settingsRecentLimit;

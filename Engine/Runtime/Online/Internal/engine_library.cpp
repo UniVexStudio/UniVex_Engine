@@ -34,8 +34,62 @@ inline constexpr std::string_view kExtractSuffixUVE = ".extract";
 }
 
 /// A name unique to this attempt, so concurrent launchers never share scratch files.
-[[nodiscard]] std::string AttemptNameUVE(const Core::VersionUVE& version) {
-    return version.ToStringUVE() + "-" + std::to_string(Asset::GenerateAssetGuidUVE().value);
+[[nodiscard]] std::string AttemptNameUVE(const std::string_view label) {
+    return std::string(label) + "-" + std::to_string(Asset::GenerateAssetGuidUVE().value);
+}
+
+/// Scratch-file label for a package whose version is not known before it is unpacked.
+inline constexpr std::string_view kLocalPackageAttemptLabelUVE = "local";
+
+/// Unpacks an already-verified `archive` into staging and moves it into place under `enginesRoot`.
+/// When `expectedVersion` is set the package's manifest must name that version.
+[[nodiscard]] EngineInstallOutcomeUVE InstallVerifiedArchiveUVE(const std::filesystem::path& archive,
+                                                                const std::optional<Core::VersionUVE>& expectedVersion,
+                                                                const std::filesystem::path& enginesRoot) {
+    const std::string label = expectedVersion.has_value() ? expectedVersion->ToStringUVE()
+                                                          : std::string(kLocalPackageAttemptLabelUVE);
+    const std::filesystem::path extract =
+        enginesRoot / kEngineStagingDirectoryNameUVE / (AttemptNameUVE(label) + std::string(kExtractSuffixUVE));
+    std::error_code error;
+    std::filesystem::create_directories(extract, error);
+    if (error) {
+        return {false, "Unable to prepare the engines folder: " + error.message(), {}};
+    }
+    const auto discard = [&extract] {
+        std::error_code ignored;
+        std::filesystem::remove_all(extract, ignored);
+    };
+    const ArchiveExtractResultUVE extracted = ExtractTarGzUVE(archive, extract);
+    if (!extracted.extracted) {
+        discard();
+        return {false, "The package could not be unpacked: " + extracted.message, {}};
+    }
+    const std::optional<EngineManifestUVE> manifest = ReadEngineManifestUVE(extract);
+    if (!manifest.has_value() || manifest->target != Platform::GetApplicationTargetUVE() ||
+        (expectedVersion.has_value() && manifest->version != *expectedVersion)) {
+        discard();
+        return {false,
+                expectedVersion.has_value()
+                    ? "The package is not engine " + expectedVersion->ToStringUVE() + " for this platform."
+                    : std::string("The file is not an engine package for this platform."),
+                {}};
+    }
+    const std::string version = manifest->version.ToStringUVE();
+    const std::filesystem::path destination = enginesRoot / version;
+    if (std::filesystem::exists(destination, error)) {
+        discard();
+        return {false, "Engine " + version + " is already installed.", destination, manifest->version};
+    }
+    if (!Pack::ResolveEngineInstallUVE(extract, manifest->version).IsFoundUVE()) {
+        discard();
+        return {false, "The package has no editor in it.", {}, manifest->version};
+    }
+    std::filesystem::rename(extract, destination, error);
+    if (error) {
+        discard();
+        return {false, "Unable to move the engine into place: " + error.message(), {}, manifest->version};
+    }
+    return {true, "Installed engine " + version + ".", destination, manifest->version};
 }
 
 } // namespace
@@ -127,42 +181,44 @@ EngineInstallOutcomeUVE InstallEnginePackageUVE(const std::filesystem::path& arc
     if (!actual.has_value() || *actual != expected) {
         return {false, "The downloaded package does not match its published checksum.", {}};
     }
-    const std::filesystem::path destination = enginesRoot / expectedVersion.ToStringUVE();
     std::error_code error;
+    const std::filesystem::path destination = enginesRoot / expectedVersion.ToStringUVE();
     if (std::filesystem::exists(destination, error)) {
-        return {false, "Engine " + expectedVersion.ToStringUVE() + " is already installed.", destination};
+        return {false, "Engine " + expectedVersion.ToStringUVE() + " is already installed.", destination, expectedVersion};
     }
-    const std::filesystem::path extract =
-        enginesRoot / kEngineStagingDirectoryNameUVE / (AttemptNameUVE(expectedVersion) + std::string(kExtractSuffixUVE));
-    std::filesystem::create_directories(extract, error);
-    if (error) {
-        return {false, "Unable to prepare the engines folder: " + error.message(), {}};
+    EngineInstallOutcomeUVE outcome = InstallVerifiedArchiveUVE(archive, expectedVersion, enginesRoot);
+    outcome.verified = outcome.installed;
+    return outcome;
+}
+
+EngineInstallOutcomeUVE InstallLocalEnginePackageUVE(const std::filesystem::path& package,
+                                                     const std::filesystem::path& enginesRoot) {
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(package, error)) {
+        return {false, "There is no package file at " + package.string() + ".", {}};
     }
-    const auto discard = [&extract] {
-        std::error_code ignored;
-        std::filesystem::remove_all(extract, ignored);
-    };
-    const ArchiveExtractResultUVE extracted = ExtractTarGzUVE(archive, extract);
-    if (!extracted.extracted) {
-        discard();
-        return {false, "The package could not be unpacked: " + extracted.message, {}};
+    std::filesystem::path checksumFile = package;
+    checksumFile += kEngineChecksumSuffixUVE;
+    const bool hasChecksum = std::filesystem::is_regular_file(checksumFile, error);
+    if (hasChecksum) {
+        std::ifstream checksumInput(checksumFile);
+        std::string checksumText;
+        checksumInput >> checksumText;
+        const std::optional<Sha256DigestUVE> expected = ParseSha256HexUVE(checksumText);
+        const std::optional<Sha256DigestUVE> actual = HashFileSha256UVE(package);
+        if (!expected.has_value()) {
+            return {false, "The checksum file beside the package cannot be read.", {}};
+        }
+        if (!actual.has_value() || *actual != *expected) {
+            return {false, "The package does not match the checksum file beside it.", {}};
+        }
     }
-    const std::optional<EngineManifestUVE> manifest = ReadEngineManifestUVE(extract);
-    if (!manifest.has_value() || manifest->version != expectedVersion ||
-        manifest->target != Platform::GetApplicationTargetUVE()) {
-        discard();
-        return {false, "The package is not engine " + expectedVersion.ToStringUVE() + " for this platform.", {}};
+    EngineInstallOutcomeUVE outcome = InstallVerifiedArchiveUVE(package, std::nullopt, enginesRoot);
+    outcome.verified = outcome.installed && hasChecksum;
+    if (outcome.installed && !hasChecksum) {
+        outcome.message += " It had no checksum file, so it was not verified.";
     }
-    if (!Pack::ResolveEngineInstallUVE(extract, manifest->version).IsFoundUVE()) {
-        discard();
-        return {false, "The package has no editor in it.", {}};
-    }
-    std::filesystem::rename(extract, destination, error);
-    if (error) {
-        discard();
-        return {false, "Unable to move the engine into place: " + error.message(), {}};
-    }
-    return {true, "Installed engine " + expectedVersion.ToStringUVE() + ".", destination};
+    return outcome;
 }
 
 bool UninstallEngineUVE(const std::filesystem::path& enginesRoot, const Core::VersionUVE& version) {
@@ -216,7 +272,7 @@ void EngineDownloadUVE::RunUVE() {
     std::error_code error;
     std::filesystem::create_directories(staging, error);
     const std::filesystem::path package =
-        staging / (AttemptNameUVE(m_release.version) + std::string(kDownloadSuffixUVE));
+        staging / (AttemptNameUVE(m_release.version.ToStringUVE()) + std::string(kDownloadSuffixUVE));
     const auto cleanUp = [&package] {
         std::error_code ignored;
         std::filesystem::remove(package, ignored);
