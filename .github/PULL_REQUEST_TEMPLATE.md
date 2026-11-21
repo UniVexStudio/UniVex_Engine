@@ -4,8 +4,7 @@
 
 ## Motivation & Context
 
-<!-- Why is this change required? What issue or roadmap item does it solve? -->
-<!-- If applicable, link to the roadmap item in ROADMAP.md or related issue. -->
+<!-- Why is this change required? What issue does it solve? -->
 
 ## Changes
 
@@ -24,4 +23,3 @@
 - [ ] I have added unit or integration tests locking valid, degenerate, and edge-case behavior.
 - [ ] All existing and new tests pass with zero regressions.
 - [ ] No third-party commercial engine names are used in code, comments, or documentation.
-- [ ] `ROADMAP.md` has been updated if applicable.
