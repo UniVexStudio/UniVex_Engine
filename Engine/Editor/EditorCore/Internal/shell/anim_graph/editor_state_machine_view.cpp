@@ -312,7 +312,7 @@ void StateMachineViewUVE::paint(prism::Canvas& c) {
             color = kTakenColorUVE;
         }
         if (picked) {
-            color = t.accent;
+            color = t.highlight;
         }
         ArrowUVE(c, a, b, color, picked || taken ? 2.6F : 1.7F, !tr.enabled);
         // Its conditions at the middle: a dot with how many.
@@ -332,10 +332,10 @@ void StateMachineViewUVE::paint(prism::Canvas& c) {
         prism::Vec2 end = m_mouse;
         if (target >= 0 && target != m_dragBox) {
             const prism::Rect to = ScreenBoxUVE(*machine, target);
-            c.strokeRoundRect(to.inflated(3.0F), 8.0F * v.stateZoom, t.accent, 2);
+            c.strokeRoundRect(to.inflated(3.0F), 8.0F * v.stateZoom, t.highlight, 2);
             end = EdgePointUVE(to, prism::Vec2{to.x + to.w * 0.5F, to.y + to.h * 0.5F}, centre);
         }
-        ArrowUVE(c, EdgePointUVE(from, centre, m_mouse), end, t.accent, 2.2F, target < 0);
+        ArrowUVE(c, EdgePointUVE(from, centre, m_mouse), end, t.highlight, 2.2F, target < 0);
     }
     // Entry, Any and the states.
     const auto port = [&](const int box, const char* label, const prism::Color color) {
@@ -365,7 +365,7 @@ void StateMachineViewUVE::paint(prism::Canvas& c) {
         }
         // Its border lights where a drag starts a transition.
         if (m_drag == DragUVE::None && m_hoverBox == static_cast<int>(slot) && m_hoverEdge) {
-            c.strokeRoundRect(r.inflated(4.0F), radius + 4.0F, t.accent, 2);
+            c.strokeRoundRect(r.inflated(4.0F), radius + 4.0F, t.highlight, 2);
         }
         if (machine->entryState == slot) {
             prism::drawIcon(c, prism::Icon::NodeEntry, prism::Rect{r.right() - 20.0F * v.stateZoom, r.y + 4.0F * v.stateZoom, 14.0F * v.stateZoom, 14.0F * v.stateZoom},

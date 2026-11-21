@@ -180,7 +180,7 @@ public:
             toggle(col.solo, row.soloed, prism::Color(240, 200, 80), "S");
             const prism::Rect track{col.volume, y + 8.0F, col.volumeW, 6.0F};
             c.fillRoundRect(track, 3.0F, t.field);
-            c.fillRoundRect(prism::Rect{track.x, track.y, std::max(6.0F, track.w * std::clamp(row.volume, 0.0F, 1.0F)), track.h}, 3.0F, t.accent);
+            c.fillRoundRect(prism::Rect{track.x, track.y, std::max(6.0F, track.w * std::clamp(row.volume, 0.0F, 1.0F)), track.h}, 3.0F, t.highlight);
             c.textIn(*t.small, prism::Rect{col.volume + col.volumeW + 4.0F, y, 36.0F, kToolRowUVE},
                      std::to_string(static_cast<int>(std::lround(row.volume * 100.0F))) + "%", t.textDim);
             const prism::Rect meter{col.level, y + 8.0F, col.levelW - 70.0F, 6.0F};

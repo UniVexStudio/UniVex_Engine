@@ -117,12 +117,12 @@ void DocumentTabUVE::paint(prism::Canvas& c) {
     const prism::Rect tab{r.x + 6.0F, r.y + 2.0F, r.w - 6.0F, r.h - 2.0F};
     c.fillRoundRect(tab, 5.0F, t.panel);
     c.fillRect(prism::Rect{tab.x, tab.bottom() - 5.0F, tab.w, 5.0F}, t.panel);
-    c.fillRect(prism::Rect{tab.x, tab.y, tab.w, 2.0F}, t.accent);
+    c.fillRect(prism::Rect{tab.x, tab.y, tab.w, 2.0F}, t.highlight);
     const prism::Rect iconBox{tab.x + 10.0F, std::floor(tab.y + (tab.h - 16.0F) * 0.5F), 16.0F, 16.0F};
     if (m_icon != nullptr && m_iconSize > 0) {
         c.blitBlend(m_icon, m_iconSize, m_iconSize, m_iconSize, iconBox);
     } else {
-        prism::drawIcon(c, m_fallback, iconBox, t.accentHover);
+        prism::drawIcon(c, m_fallback, iconBox, t.highlight);
     }
     c.textIn(*t.ui, prism::Rect{tab.x + 32.0F, tab.y, tab.w - 52.0F, tab.h}, m_name, t.textBright, prism::HAlign::Left,
              true);

@@ -245,8 +245,8 @@ void Splitter::paint(Canvas& c) {
     bool active = int(i) == m_drag || (m_hovered && handleAt(Application::get().mousePos()) == int(i));
     if (active) {
       Rect h = m_handles[i];
-      if (m_orient == Orientation::Horizontal) c.fillRect({h.x + 1, h.y, h.w - 2, h.h}, t.accent.alpha(m_drag >= 0 ? 0.9f : 0.6f));
-      else c.fillRect({h.x, h.y + 1, h.w, h.h - 2}, t.accent.alpha(m_drag >= 0 ? 0.9f : 0.6f));
+      if (m_orient == Orientation::Horizontal) c.fillRect({h.x + 1, h.y, h.w - 2, h.h}, t.highlight.alpha(m_drag >= 0 ? 0.9f : 0.6f));
+      else c.fillRect({h.x, h.y + 1, h.w, h.h - 2}, t.highlight.alpha(m_drag >= 0 ? 0.9f : 0.6f));
     }
   }
   paintChildren(c);

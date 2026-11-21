@@ -33,7 +33,7 @@ public:
   Vec2 measure(Vec2 a) override { return m_desired = constrain(Vec2(a.x, 28)); }
   void paint(Canvas& c) override {
     const Theme& t = theme();
-    drawIcon(c, Icon::Search, {m_rect.x + 8, m_rect.y + 6, 16, 16}, t.accentHover);
+    drawIcon(c, Icon::Search, {m_rect.x + 8, m_rect.y + 6, 16, 16}, t.textDim);
     c.textIn(*t.semibold, {m_rect.x + 30, m_rect.y, 200, m_rect.h}, m_all ? "Find in All Graphs" : "Find in Graph", t.textBright);
     c.textIn(*t.ui, {m_rect.right() - 130, m_rect.y, 122, m_rect.h}, m_all ? "Ctrl+Shift+F" : "Ctrl+F", t.textDim, HAlign::Right);
     c.hline(m_rect.x, m_rect.right(), m_rect.bottom() - 1, t.border);

@@ -79,7 +79,7 @@ public:
         }
         const prism::Theme& t = prism::theme();
         c.fillRoundRect(m_rect, 4.0F, t.rowSelected);
-        c.strokeRoundRect(m_rect, 4.0F, t.accent, 1);
+        c.strokeRoundRect(m_rect, 4.0F, t.highlight, 1);
         c.textIn(*t.ui, prism::Rect{m_rect.x + 12.0F, m_rect.y, m_rect.w - 24.0F, m_rect.h},
                  "Press a key or a gamepad button, or push a stick.   Esc cancels.", t.textBright);
     }

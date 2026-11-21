@@ -219,7 +219,7 @@ void KeyframeViewUVE::paint(prism::Canvas& c) {
         emptyIcon(broken ? prism::Icon::Warning : prism::Icon::AnimClip, m_rect,
                   broken ? editor.m_timeline.loadError : "New Animation or Add from Project in the animation menu, or drop a .uvanim here");
         if (m_dropHot) {
-            c.strokeRoundRect(m_rect, 4.0F, t.accent, 2);
+            c.strokeRoundRect(m_rect, 4.0F, t.highlight, 2);
         }
         return;
     }
@@ -252,16 +252,16 @@ void KeyframeViewUVE::paint(prism::Canvas& c) {
     if (m_drag == DragUVE::Box) {
         const prism::Rect box{std::min(m_dragFrom.x, m_mouse.x), std::min(m_dragFrom.y, m_mouse.y), std::abs(m_mouse.x - m_dragFrom.x),
                               std::abs(m_mouse.y - m_dragFrom.y)};
-        c.fillRect(box, WithAlphaUVE(t.accent, 40));
-        c.strokeRect(box, WithAlphaUVE(t.accent, 200));
+        c.fillRect(box, WithAlphaUVE(t.highlight, 40));
+        c.strokeRect(box, WithAlphaUVE(t.highlight, 200));
     }
     DrawTimelinePlayheadUVE(c, area, kRulerUVE, scale, editor.m_timeline.timeSeconds,
                             FrameTextUVE(editor.m_timeline.timeSeconds, view.frameRate));
     if (m_dropHot) {
-        c.strokeRoundRect(m_rect, 4.0F, t.accent, 2);
+        c.strokeRoundRect(m_rect, 4.0F, t.highlight, 2);
     }
     if (focused()) {
-        c.fillRect(prism::Rect{m_rect.x, m_rect.y, m_rect.w, 1.0F}, WithAlphaUVE(t.accent, 160));
+        c.fillRect(prism::Rect{m_rect.x, m_rect.y, m_rect.w, 1.0F}, WithAlphaUVE(t.highlight, 160));
     }
 }
 

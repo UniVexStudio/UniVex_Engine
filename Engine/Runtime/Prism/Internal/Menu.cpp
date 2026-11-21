@@ -45,12 +45,12 @@ public:
         continue;
       }
       bool hot = i == m_hover && it.enabled;
-      if (hot) c.fillRoundRect(r, 3, t.accentDim);
+      if (hot) c.fillRoundRect(r, 3, t.rowSelected);
       Color fg = !it.enabled ? t.textDisabled : (hot ? t.textBright : t.text);
       Color dim = !it.enabled ? t.textDisabled : (hot ? t.text : t.textDim);
       Rect ic{r.x + 6, r.y + (r.h - 16) * 0.5f, 16, 16};
       if (it.checkable) {
-        if (it.checked) drawIcon(c, Icon::Check, ic, t.accent, 1.6f);
+        if (it.checked) drawIcon(c, Icon::Check, ic, t.highlight, 1.6f);
         else if (it.image && it.imageSize > 0) c.blitBlend(it.image, it.imageSize, it.imageSize, it.imageSize, ic);
         else if (it.icon != Icon::None) drawIcon(c, it.icon, ic, dim);
       } else if (it.image && it.imageSize > 0) {

@@ -52,18 +52,18 @@ void NavItemUVE::paint(prism::Canvas& canvas) {
     }
     if (m_active) {
         canvas.fillRect({m_rect.x, m_rect.y + kNavRadiusUVE, kNavAccentWidthUVE, m_rect.h - (2.0F * kNavRadiusUVE)},
-                        theme.accent);
+                        theme.highlight);
     }
     const prism::Color foreground = m_active ? theme.textBright : (hovered() ? theme.text : theme.textDim);
     const float iconX = m_rect.x + kNavItemIndentUVE;
     const float iconY = std::floor(m_rect.y + ((m_rect.h - kNavIconSizeUVE) * 0.5F));
     prism::drawIcon(canvas, m_icon, {iconX, iconY, kNavIconSizeUVE, kNavIconSizeUVE},
-                    m_active ? theme.accent : foreground);
+                    m_active ? theme.textBright : foreground);
     const prism::Font& font = *theme.ui;
     const float textY = std::floor(m_rect.y + ((m_rect.h - font.lineHeight()) * 0.5F));
     canvas.text(font, {iconX + kNavIconSizeUVE + kNavIconGapUVE, textY}, m_label, foreground);
     if (focused()) {
-        canvas.strokeRoundRect(m_rect, kNavRadiusUVE, theme.accent);
+        canvas.strokeRoundRect(m_rect, kNavRadiusUVE, theme.highlight);
     }
 }
 

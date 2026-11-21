@@ -197,7 +197,7 @@ void AssetThumbnailUVE::paint(prism::Canvas& c) {
         c.fillRect(r, t.window);
         c.textIn(*t.small, r, m_hasAsset ? "..." : "Empty", t.textDim, prism::HAlign::Center, true);
     }
-    c.strokeRect(r, hovered() ? t.accent : t.border, 1);
+    c.strokeRect(r, hovered() ? t.highlight : t.border, 1);
 }
 
 bool AssetThumbnailUVE::onMouseDown(const prism::MouseEvent& e) {

@@ -208,7 +208,7 @@ void BlendSpaceViewUVE::paint(prism::Canvas& c) {
         c.fillRect(prism::Rect{plot.x, plot.y + plot.h * 0.5F, plot.w, 1.0F}, prism::Color(255, 255, 255, 40));
     }
     if (m_dropHot || m_drag == DragUVE::Clip) {
-        c.strokeRoundRect(plot.inflated(3.0F), 5.0F, t.accent, 2);
+        c.strokeRoundRect(plot.inflated(3.0F), 5.0F, t.highlight, 2);
     }
 
     // The runtime's triangles and weights, when the preview has run it.
@@ -278,7 +278,7 @@ void BlendSpaceViewUVE::paint(prism::Canvas& c) {
     // A clip being dragged in from the list: where it would land.
     if (m_drag == DragUVE::Clip && plot.inflated(6.0F).contains(m_mouse)) {
         const prism::Vec2 at = ToScreenUVE(*space, ToSpaceUVE(*space, m_mouse, m_snap));
-        c.fillCircle(at, 7.0F, t.accent);
+        c.fillCircle(at, 7.0F, t.highlight);
         c.textIn(*t.small, prism::Rect{at.x + 10.0F, at.y - 16.0F, 200.0F, 14.0F}, m_panel.m_editor.AnimationClipNameUVE(m_dragClip), t.textBright);
     }
     PaintStripUVE(c);
