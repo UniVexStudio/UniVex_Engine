@@ -9,6 +9,7 @@
 
 #include "editor_host.h"
 #include "engine_core.h"
+#include "glfw_window_handle.h"
 #include "logging_macros.h"
 #include "prism/Application.h"
 #include "prism/WindowChrome.h"
@@ -41,6 +42,13 @@ int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
     config.focusedFrameRateCapUVE = kFocusedFrameRateCapUVE;
     config.unfocusedFrameRateCapUVE = kUnfocusedFrameRateCapUVE;
     config.commandLineArgs = desc.commandLine;
+    config.nativeWindowHandleUVE = desc.nativeSurface;
+    if (!desc.shaderDirectory.empty()) {
+        config.shaderSourceRealDirectoryUVE = desc.shaderDirectory;
+    }
+#if defined(__ANDROID__)
+    config.renderBackendPreferenceUVE = Core::RenderBackendPreferenceUVE::OpenGLUVE;
+#endif
 
     Core::EngineCoreUVE core(config);
     try {
@@ -57,7 +65,7 @@ int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
         }
         const std::filesystem::path& assets = desc.prismAssetsDirectory;
         Editor::EditorHostUVE host;
-        if (!host.InitializeUVE(static_cast<GLFWwindow*>(nativeWindow), assets)) {
+        if (!host.InitializeUVE(Window::GlfwWindowFromNativeHandleUVE(nativeWindow), assets)) {
             std::cerr << desc.title << ": the interface could not start\n";
             core.Shutdown();
             return kLauncherStartupFailedExitCodeUVE;
@@ -77,6 +85,9 @@ int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
         int framesRun = 0;
         while (!host.QuitRequestedUVE() && !core.GetServicesUVE().GetWindowManagerUVE().IsCloseRequestedUVE() &&
                (!desc.frameLimit.has_value() || framesRun < *desc.frameLimit)) {
+            if (desc.beforeFrame && !desc.beforeFrame(core)) {
+                break;
+            }
             core.TickFrameUVE();
             ++framesRun;
         }

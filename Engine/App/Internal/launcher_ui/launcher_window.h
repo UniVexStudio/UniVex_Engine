@@ -11,6 +11,10 @@
 
 #include "prism/Widget.h"
 
+namespace UVE::Core {
+class EngineCoreUVE;
+}
+
 namespace UVE::LauncherUI {
 
 /// PRISM's fonts, themes and locales ship beside every launcher executable under this name.
@@ -30,6 +34,13 @@ struct LauncherWindowDescUVE final {
     std::filesystem::path prismAssetsDirectory;
     std::filesystem::path logFile;
     std::vector<std::string> commandLine;
+    /// Android: the activity's surface to draw into (desktop builds open a window of their own), and
+    /// the engine's built-in shaders unpacked from the APK.
+    void* nativeSurface = nullptr;
+    std::filesystem::path shaderDirectory;
+    /// Runs before every frame with the running engine; returning false ends the loop. Android drives
+    /// the activity's event queue here.
+    std::function<bool(Core::EngineCoreUVE&)> beforeFrame;
     /// Automation: stop after this many frames, then save the window to `screenshot` if set.
     std::optional<int> frameLimit;
     std::filesystem::path screenshot;

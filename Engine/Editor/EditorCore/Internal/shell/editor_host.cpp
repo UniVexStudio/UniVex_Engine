@@ -6,8 +6,7 @@
 #include "prism/Icons.h"
 #include "png_metadata.h"
 
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include "gl_system_headers.h"
 #include <GLFW/glfw3.h>
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32

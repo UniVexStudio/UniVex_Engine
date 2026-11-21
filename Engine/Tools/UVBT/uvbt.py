@@ -687,7 +687,17 @@ class EngineBuilder:
          ["-DENABLE_SHARED=OFF", "-DWITH_TURBOJPEG=OFF", "-DWITH_SIMD=OFF"]),
     )
 
+    # GLFW's header only: on Android the editor host's window calls are answered by the engine's own
+    # Android implementation of that API (Engine/Runtime/Window), not by GLFW.
+    ANDROID_GLFW_HEADERS = ("glfw", "https://github.com/glfw/glfw.git", "3.4")
+
     def _ensure_android_libraries(self, toolchain, tp_dir: Path, tp_lib_dir: Path):
+        name, url, tag = self.ANDROID_GLFW_HEADERS
+        glfw = tp_dir / "android" / name
+        if not (glfw / "include" / "GLFW" / "glfw3.h").exists():
+            print(f"[UVBT] Fetching Android dependency '{name}' headers ({tag})...", flush=True)
+            subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(glfw)], check=True)
+
         # android_native_app_glue: the NDK's bridge from NativeActivity to android_main.
         glue_lib = tp_lib_dir / "libandroid_native_app_glue.a"
         glue_src = toolchain.ndk / "sources" / "android" / "native_app_glue" / "android_native_app_glue.c"
@@ -722,7 +732,8 @@ class EngineBuilder:
 
     def android_include_dirs(self, toolchain):
         tp_lib_dir = self.repo_root / ".uvbt" / "tp_lib" / toolchain.output_dir
-        return [toolchain.ndk / "sources" / "android" / "native_app_glue"] + \
+        glfw = self.repo_root / "ThirdParty" / "android" / self.ANDROID_GLFW_HEADERS[0] / "include"
+        return [toolchain.ndk / "sources" / "android" / "native_app_glue", glfw] + \
                [tp_lib_dir / name / "include" for name, *_ in self.ANDROID_CMAKE_LIBRARIES]
 
     def build_target(self, target_name: str, platform: str = "Linux", configuration: str = "Debug", jobs: int = 4):
@@ -859,6 +870,8 @@ class EngineBuilder:
 
         base_defs += [
             f"UVE_HAS_STD_FORMAT={1 if toolchain.has_std_format else 0}",
+            # GLFW's header must not pull in desktop GL; GL code includes gl_system_headers.h itself.
+            *(["GLFW_INCLUDE_NONE"] if toolchain.is_android else []),
             "FMT_HEADER_ONLY=1",
             f'UVE_SOURCE_DIR="{self.repo_root}"'
         ]
