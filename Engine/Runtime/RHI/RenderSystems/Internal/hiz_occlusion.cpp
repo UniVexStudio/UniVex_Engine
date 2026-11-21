@@ -96,7 +96,8 @@ bool HiZDepthPyramidUVE::TestWorldAabbVisibleUVE(const Math::AabbUVE& worldBound
         const float invW = 1.0F / cw;
         const float u = cx * invW * 0.5F + 0.5F;
         const float v = cy * invW * 0.5F + 0.5F;
-        const float depth01 = cz * invW * 0.5F + 0.5F;
+        // Matrix4x4UVE::PerspectiveUVE and OrthographicUVE already map [near, far] -> [0, 1].
+        const float depth01 = cz * invW;
         if (depth01 <= 0.0F) {
             return true;
         }

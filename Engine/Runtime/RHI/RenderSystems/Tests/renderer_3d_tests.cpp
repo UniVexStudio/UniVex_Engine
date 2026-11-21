@@ -398,8 +398,9 @@ TEST_F(Renderer3DUVETest, ReflectionProbeResolutionControlsCubeTargetAndRecaptur
     // Tier 2.3: each probe owns one six-layer cubemap (not six per-face 2D textures).
     const auto countProbeCubesAt = [&liveTextureDescs](const std::uint32_t resolution) {
         return std::count_if(liveTextureDescs.cbegin(), liveTextureDescs.cend(), [resolution](const auto& desc) {
-            return desc.width == resolution && desc.height == resolution &&
-                   desc.format == TextureFormatUVE::RGBA8Unorm &&
+            const bool expectedFormat =
+                desc.format == TextureFormatUVE::RGBA16Float || desc.format == TextureFormatUVE::RGBA8Unorm;
+            return desc.width == resolution && desc.height == resolution && expectedFormat &&
                    desc.type == TextureTypeUVE::Cubemap && desc.arrayLayers == 6U;
         });
     };

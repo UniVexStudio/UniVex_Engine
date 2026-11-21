@@ -3251,6 +3251,8 @@ TEST_F(GlRenderDeviceUVETest, LitShadowed3DShader_DepthPrepassDarkensOccludedFra
     colorCommandBuffer->SetUniformIntUVE("uUnshaded", 0);
     colorCommandBuffer->BindTextureUVE(reflectionCube, 6U);
     colorCommandBuffer->SetUniformIntUVE("uReflectionProbeCube", 6);
+    colorCommandBuffer->BindTextureUVE(reflectionCube, 7U);
+    colorCommandBuffer->SetUniformIntUVE("uReflectionProbeSecondaryCube", 7);
     colorCommandBuffer->SetUniformIntUVE("uReflectionProbeEnabled", 0);
     // Surface opacity became an explicit lit-shader uniform; this direct opaque receiver must
     // initialize it just like Renderer3DUVE does for an opaque SurfaceInstance3D.
