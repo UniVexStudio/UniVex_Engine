@@ -13,7 +13,7 @@
 #include "engine_install.h"
 #include "engine_library.h"
 #include "engine_release_feed.h"
-#include "hub_widgets.h"
+#include "launcher_widgets.h"
 #include "project_list.h"
 #include "project_registry.h"
 #include "project_template.h"
@@ -24,9 +24,15 @@
 
 namespace UVE::Hub {
 
+using LauncherUI::NavItemUVE;
+
 /// Where the Hub keeps its state and which engine it launches.
 struct HubContextUVE final {
-    Pack::EngineInstallUVE engine;
+    /// An engine built from source beside the Hub (a development setup), if there is one. An
+    /// installed Hub has none; its engines are downloaded into `enginesRoot`.
+    std::optional<Pack::EngineInstallUVE> localEngine;
+    /// The project templates the Hub ships.
+    std::filesystem::path templatesDirectory;
     std::filesystem::path registryFile;
     /// True when `registryFile` was chosen on the command line rather than being the user's own;
     /// the editor is then pointed at the same file.
@@ -57,9 +63,12 @@ public:
     void ShowPageUVE(HubPageUVE page);
     /// Advances background work (release checks, downloads); call once a frame.
     void TickUVE();
+    /// Shows a message in the status line.
+    void ShowMessageUVE(const std::string& message, bool isError) { SetStatusUVE(message, isError); }
 
 private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildSidebarUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildBrandHeaderUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildProjectsPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildNewProjectPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildSettingsPageUVE();
@@ -74,6 +83,8 @@ private:
 
     void ReloadRegistryUVE();
     void RefreshInstalledEnginesUVE();
+    /// The engine versions a new project can be made for: installed ones, then published ones.
+    void RefreshNewProjectEnginesUVE();
     void RefreshEngineListUVE();
     void CheckForEnginesUVE();
     void DownloadEngineUVE(const Online::EngineReleaseUVE& release);
@@ -117,6 +128,8 @@ private:
     prism::Ref<prism::Label> m_templateDescription;
     prism::Ref<prism::TextInput> m_projectName;
     prism::Ref<prism::TextInput> m_projectLocation;
+    prism::Ref<prism::ComboBox> m_newProjectEngine;
+    std::vector<Core::VersionUVE> m_newProjectEngineVersions;
 
     prism::Ref<prism::Box> m_engineRows;
     prism::Ref<prism::Label> m_feedStatus;

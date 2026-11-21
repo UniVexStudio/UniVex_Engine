@@ -39,18 +39,19 @@ struct EngineManifestUVE final {
 [[nodiscard]] std::optional<EngineManifestUVE> ReadEngineManifestUVE(const std::filesystem::path& engineDirectory);
 [[nodiscard]] bool WriteEngineManifestUVE(const std::filesystem::path& engineDirectory, const EngineManifestUVE& manifest);
 
-/// An engine available on this machine: the one installed with the launcher, or one it downloaded.
+/// An engine available on this machine: one the launcher downloaded, or a local build.
 struct InstalledEngineUVE final {
     Pack::EngineInstallUVE install;
     EngineChannelUVE channel = EngineChannelUVE::Stable;
-    /// The engine shipped with the launcher; it cannot be removed from the launcher.
-    bool bundled = false;
+    /// An engine built from source and found beside the launcher (a development setup). The launcher
+    /// did not install it and does not remove it.
+    bool localBuild = false;
 };
 
-/// The bundled engine followed by every valid engine under `enginesRoot`, newest version first.
-/// A downloaded engine with the bundled engine's version is not listed twice.
-[[nodiscard]] std::vector<InstalledEngineUVE> ListInstalledEnginesUVE(const std::filesystem::path& enginesRoot,
-                                                                      const InstalledEngineUVE& bundled);
+/// Every valid engine under `enginesRoot`, plus `localBuild` when there is one, newest version first.
+/// A downloaded engine with the local build's version is not listed twice; the local build wins.
+[[nodiscard]] std::vector<InstalledEngineUVE> ListInstalledEnginesUVE(
+    const std::filesystem::path& enginesRoot, const std::optional<InstalledEngineUVE>& localBuild = std::nullopt);
 
 /// Which installed engine opens a project. `choice` is a version the user picked for it ("" lets the
 /// launcher decide): that exact engine if installed; otherwise the engine matching the project's

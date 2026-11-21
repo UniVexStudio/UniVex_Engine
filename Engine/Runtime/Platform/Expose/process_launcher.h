@@ -33,6 +33,9 @@ struct ProcessLaunchResultUVE final {
 /// caller exits. Arguments are passed as-is, never through a shell.
 [[nodiscard]] ProcessLaunchResultUVE LaunchDetachedProcessUVE(const ProcessLaunchDescUVE& desc);
 
+/// The running program's own executable file, or empty when the platform cannot say.
+[[nodiscard]] std::filesystem::path CurrentExecutablePathUVE();
+
 /// Shows `directory` in the platform's file manager.
 [[nodiscard]] ProcessLaunchResultUVE RevealInFileManagerUVE(const std::filesystem::path& directory);
 

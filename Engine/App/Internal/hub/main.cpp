@@ -8,24 +8,23 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
 
 #include "application_runtime.h"
-#include "editor_host.h"
 #include "engine_core.h"
 #include "engine_install.h"
 #include "engine_library.h"
 #include "engine_release_feed.h"
 #include "online_credentials.h"
+#include "hub_project_opener.h"
+#include "hub_setup.h"
 #include "hub_window.h"
-#include "prism/Theme.h"
-#include "prism/WindowChrome.h"
+#include "project_template.h"
+#include "launcher_window.h"
 #include <fstream>
 #include <iterator>
-#include "logging_macros.h"
 #include "project_list.h"
 #include "project_registry.h"
 
@@ -35,15 +34,8 @@ inline constexpr std::string_view kHubWindowTitleUVE = "UniVex Hub";
 inline constexpr std::uint32_t kHubWindowWidthUVE = 1200U;
 inline constexpr std::uint32_t kHubWindowHeightUVE = 760U;
 inline constexpr std::string_view kHubLogFileNameUVE = "uve_hub.log";
-/// PRISM's fonts, themes and locales ship beside the executable under this name.
-inline constexpr std::string_view kPrismAssetsDirectoryNameUVE = "prism_assets";
-/// The Hub's colour and metric tokens, inside PRISM's asset directory.
-inline constexpr std::string_view kHubThemeFileUVE = "themes/univex-hub.json";
-/// Frame-rate caps: the Hub is a quiet window and needs no more.
-inline constexpr std::uint32_t kFocusedFrameRateCapUVE = 60U;
-inline constexpr std::uint32_t kUnfocusedFrameRateCapUVE = 10U;
 inline constexpr int kInvalidCommandLineExitCodeUVE = 2;
-inline constexpr int kStartupFailedExitCodeUVE = 1;
+inline constexpr int kStartupFailedExitCodeUVE = UVE::LauncherUI::kLauncherStartupFailedExitCodeUVE;
 
 inline constexpr std::string_view kFramesOptionUVE = "--frames";
 inline constexpr std::string_view kScreenshotOptionUVE = "--screenshot";
@@ -52,6 +44,8 @@ inline constexpr std::string_view kSettingsOptionUVE = "--settings";
 inline constexpr std::string_view kPageOptionUVE = "--page";
 /// Installs an engine package (with its checksum file beside it) without opening the window.
 inline constexpr std::string_view kInstallPackageOptionUVE = "--install-package";
+/// Prints the Hub's version and exits; release tooling checks it against the hub-v tag.
+inline constexpr std::string_view kVersionOptionUVE = "--version";
 
 struct PageChoiceUVE final {
     std::string_view word;
@@ -72,6 +66,9 @@ struct HubLaunchOptionsUVE final {
     std::filesystem::path settingsFile;
     UVE::Hub::HubPageUVE page = UVE::Hub::HubPageUVE::Projects;
     std::filesystem::path installPackage;
+    /// A project file named on the command line (opening a .uvproject from the file manager).
+    std::filesystem::path projectFile;
+    bool printVersion = false;
     std::optional<std::string> error;
 };
 
@@ -120,6 +117,11 @@ struct HubLaunchOptionsUVE final {
             options.page = choice->page;
         } else if (argument == kInstallPackageOptionUVE) {
             static_cast<void>(takeValue(index, kInstallPackageOptionUVE, options.installPackage));
+        } else if (argument == kVersionOptionUVE) {
+            options.printVersion = true;
+        } else if (!argument.starts_with("--") &&
+                   std::filesystem::path(argument).extension() == UVE::Platform::kEditorProjectFileExtensionUVE) {
+            options.projectFile = std::filesystem::path(argument);
         } else if (argument == kSettingsOptionUVE) {
             static_cast<void>(takeValue(index, kSettingsOptionUVE, options.settingsFile));
         } else {
@@ -170,18 +172,25 @@ int main(const int argc, char** argv) {
         std::cerr << "uve_hub: " << *options.error << '\n';
         return kInvalidCommandLineExitCodeUVE;
     }
+    if (options.printVersion) {
+        std::cout << UVE::Online::kHubVersionUVE.ToStringUVE() << '\n';
+        return 0;
+    }
     const std::filesystem::path executableDirectory = ExecutableDirectoryUVE(argv[0]);
 
-    const UVE::Pack::EngineInstallResultUVE engine = UVE::Pack::ResolveEngineInstallUVE(
+    UVE::Hub::HubContextUVE context;
+    // An installed Hub carries no engine; a development build sits beside the editor built from the
+    // same source, which then counts as a local engine of this source's version.
+    const UVE::Pack::EngineInstallResultUVE local = UVE::Pack::ResolveEngineInstallUVE(
         options.engineRoot.empty() ? executableDirectory : options.engineRoot,
         UVE::Core::EngineCoreUVE::GetEngineVersionUVE());
-    if (!engine.IsFoundUVE()) {
-        std::cerr << "uve_hub: " << engine.message << '\n';
+    if (local.IsFoundUVE()) {
+        context.localEngine = *local.install;
+    } else if (!options.engineRoot.empty()) {
+        std::cerr << "uve_hub: " << local.message << '\n';
         return kStartupFailedExitCodeUVE;
     }
-
-    UVE::Hub::HubContextUVE context;
-    context.engine = *engine.install;
+    context.templatesDirectory = executableDirectory / UVE::Pack::kProjectTemplatesDirectoryNameUVE;
     context.registryOverridden = !options.registryFile.empty();
     if (context.registryOverridden) {
         context.registryFile = options.registryFile;
@@ -206,80 +215,43 @@ int main(const int argc, char** argv) {
         return InstallPackageUVE(options.installPackage, context.enginesRoot);
     }
 
-    UVE::Core::EngineConfigUVE config{};
-    config.windowTitle = std::string(kHubWindowTitleUVE);
-    config.windowWidth = kHubWindowWidthUVE;
-    config.windowHeight = kHubWindowHeightUVE;
-    // The Hub draws its own title bar (PRISM window chrome) in place of the OS frame.
-    config.windowBorderlessUVE = true;
-    config.logFilePath = context.registryFile.parent_path() / kHubLogFileNameUVE;
-    config.focusedFrameRateCapUVE = kFocusedFrameRateCapUVE;
-    config.unfocusedFrameRateCapUVE = kUnfocusedFrameRateCapUVE;
-    config.commandLineArgs = std::vector<std::string>(argv + 1, argv + argc);
-
-    UVE::Core::EngineCoreUVE core(config);
-    try {
-        core.Init();
-        if (!core.Load()) {
-            core.Shutdown();
-            return kStartupFailedExitCodeUVE;
+    // Opening a project file goes straight to its engine; the window only appears when it cannot.
+    std::string openMessage;
+    if (!options.projectFile.empty()) {
+        std::optional<UVE::Online::InstalledEngineUVE> localEngine;
+        if (context.localEngine.has_value()) {
+            localEngine = UVE::Online::InstalledEngineUVE{*context.localEngine, UVE::Online::EngineChannelUVE::Stable, true};
         }
-        void* const nativeWindow = core.GetServicesUVE().GetWindowManagerUVE().GetNativeWindowHandleUVE();
-        if (nativeWindow == nullptr) {
-            std::cerr << "uve_hub: the Hub needs a window and none could be created\n";
-            core.Shutdown();
-            return kStartupFailedExitCodeUVE;
+        const UVE::Hub::ProjectOpenResultUVE opened = UVE::Hub::OpenProjectInEngineUVE(
+            std::filesystem::absolute(options.projectFile),
+            UVE::Online::ListInstalledEnginesUVE(context.enginesRoot, localEngine), context.registryFile,
+            context.registryOverridden ? context.registryFile : std::filesystem::path{});
+        if (opened.launched) {
+            return 0;
         }
-        UVE::Editor::EditorHostUVE host;
-        if (!host.InitializeUVE(static_cast<GLFWwindow*>(nativeWindow),
-                                executableDirectory / kPrismAssetsDirectoryNameUVE)) {
-            std::cerr << "uve_hub: the Hub's interface could not start\n";
-            core.Shutdown();
-            return kStartupFailedExitCodeUVE;
-        }
-        const std::filesystem::path themeFile =
-            executableDirectory / kPrismAssetsDirectoryNameUVE / std::filesystem::path(kHubThemeFileUVE);
-        std::ifstream themeInput(themeFile, std::ios::binary);
-        const std::string themeText{std::istreambuf_iterator<char>(themeInput), std::istreambuf_iterator<char>()};
-        std::string themeError;
-        if (themeText.empty() || !prism::themeMutable().applyJson(themeText, &themeError)) {
-            UVE_WARNING("uve_hub: the Hub theme {} could not be applied: {}", themeFile.string(), themeError);
-        }
-        UVE::Hub::HubWindowUVE hub(std::move(context));
-        prism::WindowChromeOptions chrome;
-        chrome.title = std::string(kHubWindowTitleUVE);
-        host.SetRootUVE(prism::wrapWithWindowChrome(hub.BuildUVE(), UVE::Editor::EditorHostUVE::kMainWindowUVE, chrome));
-        hub.ShowPageUVE(options.page);
-        core.SetPostRenderCallbackUVE([&host, &hub] {
-            hub.TickUVE();
-            host.BeginFrameUVE();
-            host.RenderUVE(std::span<const UVE::Editor::EditorHostUVE::ViewImageUVE>{});
-        });
-
-        int framesRun = 0;
-        while (!host.QuitRequestedUVE() && !core.GetServicesUVE().GetWindowManagerUVE().IsCloseRequestedUVE() &&
-               (!options.frameLimit.has_value() || framesRun < *options.frameLimit)) {
-            core.TickFrameUVE();
-            ++framesRun;
-        }
-        if (!options.screenshot.empty() && !host.SaveScreenshotUVE(options.screenshot)) {
-            std::fprintf(stderr, "uve_hub: could not save the screenshot\n");
-        }
-        core.SetPostRenderCallbackUVE({});
-        host.ShutdownUVE();
-        core.Shutdown();
-        return 0;
-    } catch (const std::exception& exception) {
-        UVE_FATAL("uve_hub: unhandled exception - shutting down: {}", exception.what());
-    } catch (...) {
-        UVE_FATAL("uve_hub: unhandled non-std::exception - shutting down");
+        openMessage = opened.message;
     }
-    if (core.GetStateUVE() == UVE::Core::EngineStateUVE::Running) {
-        try {
-            core.Shutdown();
-        } catch (...) {
-            UVE_FATAL("uve_hub: shutting down after an exception failed as well");
-        }
-    }
-    return UVE::Core::EngineCoreUVE::kUnhandledExceptionExitCodeUVE;
+
+    UVE::LauncherUI::LauncherWindowDescUVE window;
+    window.title = std::string(kHubWindowTitleUVE);
+    window.width = kHubWindowWidthUVE;
+    window.height = kHubWindowHeightUVE;
+    window.prismAssetsDirectory = executableDirectory / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE;
+    window.logFile = context.registryFile.parent_path() / kHubLogFileNameUVE;
+    window.commandLine = std::vector<std::string>(argv + 1, argv + argc);
+    window.frameLimit = options.frameLimit;
+    window.screenshot = options.screenshot;
+
+    UVE::Hub::HubWindowUVE hub(std::move(context));
+    return UVE::LauncherUI::RunLauncherWindowUVE(
+        window,
+        [&hub, &options, &openMessage] {
+            prism::Ref<prism::Widget> root = hub.BuildUVE();
+            hub.ShowPageUVE(options.page);
+            if (!openMessage.empty()) {
+                hub.ShowMessageUVE(openMessage, true);
+            }
+            return root;
+        },
+        [&hub] { hub.TickUVE(); });
 }

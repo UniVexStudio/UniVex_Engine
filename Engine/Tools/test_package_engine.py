@@ -45,9 +45,14 @@ class PackageEngineTest(unittest.TestCase):
             self.assertEqual(manifest["target"], "linux")
             self.assertTrue(members["uve_editor"].mode & 0o111)
             self.assertFalse(members["prism_assets/nested/file.txt"].mode & 0o111)
+            self.assertNotIn("project_templates", {name.split("/")[0] for name in members})
             self.assertTrue(all(m.isfile() or m.isdir() for m in members.values()))
             checksum = archive.with_name(archive.name + ".sha256").read_text().split()[0]
             self.assertEqual(checksum, hashlib.sha256(archive.read_bytes()).hexdigest())
+
+    def test_display_version(self) -> None:
+        self.assertEqual(package_engine.display_version("1.2.3+build.0"), "1.2.3")
+        self.assertEqual(package_engine.display_version("1.2.3+build.4"), "1.2.3+build.4")
 
     def test_missing_executable_fails(self) -> None:
         with tempfile.TemporaryDirectory() as scratch:

@@ -10,7 +10,9 @@
 #include <system_error>
 #include <utility>
 
-#include "hub_folder_picker.h"
+#include "folder_picker.h"
+#include "hub_project_opener.h"
+#include "hub_setup.h"
 #include "online_credentials.h"
 #include "process_launcher.h"
 #include "application_runtime.h"
@@ -18,12 +20,21 @@
 #include "prism/Theme.h"
 
 namespace UVE::Hub {
+
+using LauncherUI::ShowFolderPickerUVE;
+
 namespace {
 
 // Layout, in PRISM layout units.
 inline constexpr float kSidebarWidthUVE = 232.0F;
 inline constexpr float kSidebarInsetUVE = 12.0F;
 inline constexpr float kNavSpacingUVE = 2.0F;
+inline constexpr float kNavInsetTopUVE = 12.0F;
+inline constexpr float kFooterInsetUVE = 8.0F;
+inline constexpr float kBrandMarkSizeUVE = 36.0F;
+inline constexpr float kBrandGapUVE = 10.0F;
+inline constexpr float kBrandInsetUVE = 4.0F;
+inline constexpr float kBrandLineSpacingUVE = 1.0F;
 inline constexpr float kPagePaddingUVE = 24.0F;
 inline constexpr float kSectionSpacingUVE = 16.0F;
 inline constexpr float kRowSpacingUVE = 8.0F;
@@ -49,6 +60,8 @@ inline constexpr std::array<SortChoiceUVE, 2U> kSortChoicesUVE{{
     case Pack::ProjectListStatusUVE::NeedsUpgrade:
     case Pack::ProjectListStatusUVE::OpensWithWarning:
         return &prism::Theme::warning;
+    case Pack::ProjectListStatusUVE::EngineNotInstalled:
+        return &prism::Theme::textDim;
     case Pack::ProjectListStatusUVE::Incompatible:
     case Pack::ProjectListStatusUVE::Missing:
         return &prism::Theme::error;
@@ -68,6 +81,8 @@ inline constexpr std::array<SortChoiceUVE, 2U> kSortChoicesUVE{{
         return "Needs a newer engine";
     case Pack::ProjectListStatusUVE::Missing:
         return "Missing";
+    case Pack::ProjectListStatusUVE::EngineNotInstalled:
+        return "Engine not downloaded";
     }
     return {};
 }
@@ -131,10 +146,24 @@ prism::Ref<NavItemUVE> HubWindowUVE::MakeNavItemUVE(const std::string& label, co
     return item;
 }
 
+prism::Ref<prism::Widget> HubWindowUVE::BuildBrandHeaderUVE() {
+    auto names = prism::vbox(kBrandLineSpacingUVE);
+    names->add(prism::make<prism::Label>("UniVex Hub", prism::FontRole::Semibold));
+    auto version = prism::make<prism::Label>("Hub " + Online::FormatDisplayVersionUVE(Online::kHubVersionUVE), prism::FontRole::Small);
+    version->setColor(&prism::Theme::textDim);
+    names->add(version);
+
+    auto header = prism::hbox(kBrandGapUVE);
+    header->setPadding(prism::Margin(kSidebarInsetUVE + kBrandInsetUVE, kSectionSpacingUVE));
+    header->add(prism::make<LauncherUI::BrandMarkUVE>(kBrandMarkSizeUVE),
+                prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    header->add(names, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    return header;
+}
+
 prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
-    // The window's title bar already names the Hub, so the sidebar starts straight with the pages.
     auto navigation = prism::vbox(kNavSpacingUVE);
-    navigation->setPadding(prism::Margin(kSidebarInsetUVE, kSectionSpacingUVE));
+    navigation->setPadding(prism::Margin(kSidebarInsetUVE, kNavInsetTopUVE, kSidebarInsetUVE, 0.0F));
     navigation->add(MakeNavItemUVE("Projects", prism::Icon::Folder, HubPageUVE::Projects),
                     prism::Slot{0.0F, {}, prism::HAlign::Fill});
     navigation->add(MakeNavItemUVE("New Project", prism::Icon::Plus, HubPageUVE::NewProject),
@@ -144,15 +173,13 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
 
     // Settings is about the Hub itself, not a place to work in, so it sits apart at the bottom.
     auto footer = prism::vbox(kNavSpacingUVE);
-    footer->setPadding(prism::Margin(kSidebarInsetUVE, kSectionSpacingUVE));
+    footer->setPadding(prism::Margin(kSidebarInsetUVE, kFooterInsetUVE));
     footer->add(MakeNavItemUVE("Settings", prism::Icon::Settings, HubPageUVE::Settings),
                 prism::Slot{0.0F, {}, prism::HAlign::Fill});
-    auto engine = prism::make<prism::Label>("Engine " + m_context.engine.version.ToStringUVE(), prism::FontRole::Small);
-    engine->setColor(&prism::Theme::textDim);
-    engine->setPadding(prism::Margin(kSidebarInsetUVE, 0.0F));
-    footer->add(engine);
 
     auto sidebar = prism::vbox();
+    sidebar->add(BuildBrandHeaderUVE());
+    sidebar->add(prism::make<prism::Separator>(prism::Orientation::Horizontal));
     sidebar->add(navigation);
     sidebar->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     sidebar->add(prism::make<prism::Separator>(prism::Orientation::Horizontal));
@@ -246,6 +273,8 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildNewProjectPageUVE() {
     details->add(FieldRowUVE("Name", m_projectName));
     m_projectLocation = prism::make<prism::TextInput>(m_settings.defaultProjectLocation.string());
     details->add(FieldRowUVE("Location", FolderFieldUVE(m_projectLocation, "Where to create the project")));
+    m_newProjectEngine = prism::make<prism::ComboBox>();
+    details->add(FieldRowUVE("Engine", m_newProjectEngine));
     auto create = prism::make<prism::Button>("Create and Open", prism::Icon::Plus, prism::ButtonStyle::Primary);
     create->onClick = [this] { CreateProjectUVE(); };
     details->add(create, prism::Slot{0.0F, {}, prism::HAlign::Left});
@@ -333,7 +362,7 @@ void HubWindowUVE::ReloadRegistryUVE() {
 void HubWindowUVE::RefreshProjectListUVE() {
     m_projectRows->clearChildren();
     const std::vector<Pack::ProjectListRowUVE> rows =
-        Pack::BuildProjectListUVE(m_registry.EntriesUVE(), m_search->text(), m_sort, m_context.engine.version);
+        Pack::BuildProjectListUVE(m_registry.EntriesUVE(), m_search->text(), m_sort, Core::VersionUVE{});
     if (rows.empty()) {
         auto empty = prism::make<prism::Label>(m_registry.EntriesUVE().empty()
                                                    ? "No projects yet. Create one, or open a .uvproject file."
@@ -347,7 +376,7 @@ void HubWindowUVE::RefreshProjectListUVE() {
             const Online::InstalledEngineUVE* const engine =
                 Online::ChooseEngineForProjectUVE(m_engines, row.entry.engineVersion, row.entry.engineChoice);
             row.status = engine == nullptr
-                             ? Pack::ProjectListStatusUVE::Incompatible
+                             ? Pack::ProjectListStatusUVE::EngineNotInstalled
                              : Pack::ProjectListStatusForUVE(row.entry.engineVersion, engine->install.version);
         }
         m_projectRows->add(BuildProjectRowUVE(row));
@@ -370,7 +399,15 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectRowUVE(const Pack::ProjectLi
     line->add(text, prism::Slot{1.0F});
 
     const bool openable = row.status != Pack::ProjectListStatusUVE::Missing &&
-                          row.status != Pack::ProjectListStatusUVE::Incompatible;
+                          row.status != Pack::ProjectListStatusUVE::Incompatible &&
+                          row.status != Pack::ProjectListStatusUVE::EngineNotInstalled;
+    if (row.status == Pack::ProjectListStatusUVE::EngineNotInstalled) {
+        auto getEngine = prism::make<prism::Button>("Get engine", prism::Icon::Open);
+        getEngine->setTooltip("Download engine " + Pack::FormatProjectVersionUVE(row.entry.engineVersion) +
+                              " on the Engines page");
+        getEngine->onClick = [this] { ShowPageUVE(HubPageUVE::Engines); };
+        line->add(getEngine, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    }
     if (openable) {
         auto open = prism::make<prism::Button>("Open", prism::Icon::Play, prism::ButtonStyle::Primary);
         open->onClick = [this, projectFile] { OpenProjectUVE(projectFile); };
@@ -437,7 +474,7 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectRowUVE(const Pack::ProjectLi
 
 void HubWindowUVE::RefreshTemplateListUVE() {
     const Pack::ProjectTemplateDiscoveryUVE discovery =
-        Pack::DiscoverProjectTemplatesUVE(m_context.engine.templatesDirectory);
+        Pack::DiscoverProjectTemplatesUVE(m_context.templatesDirectory);
     m_templates = discovery.templates;
     m_templateRows->clearChildren();
     m_templateButtons.clear();
@@ -449,7 +486,7 @@ void HubWindowUVE::RefreshTemplateListUVE() {
     }
     if (m_templates.empty()) {
         m_templateDescription->setText("No project templates were found in " +
-                                       m_context.engine.templatesDirectory.string() + ".");
+                                       m_context.templatesDirectory.string() + ".");
     } else {
         SelectTemplateUVE(0U);
     }
@@ -470,52 +507,11 @@ void HubWindowUVE::SelectTemplateUVE(const std::size_t index) {
 }
 
 void HubWindowUVE::OpenProjectUVE(const std::filesystem::path& projectFile) {
-    if (projectFile.empty()) {
-        SetStatusUVE("Enter the path of a .uvproject file to open.", true);
-        return;
-    }
-    const Platform::EditorProjectPackageLoadResultUVE manifest =
-        Platform::EditorProjectPackageCodecUVE::LoadUVE(projectFile);
-    if (!manifest.IsAcceptedUVE()) {
-        SetStatusUVE("Cannot open " + projectFile.string() + ": " + manifest.result.message, true);
-        return;
-    }
-    const Pack::ProjectRegistryEntryUVE* const entry = m_registry.FindUVE(projectFile);
-    const Online::InstalledEngineUVE* const engine = Online::ChooseEngineForProjectUVE(
-        m_engines, manifest.package->engineVersion, entry != nullptr ? entry->engineChoice : std::string{});
-    if (engine == nullptr) {
-        SetStatusUVE("No installed engine can open " + manifest.package->displayName + ", which was saved with engine " +
-                         Pack::FormatProjectVersionUVE(manifest.package->engineVersion) +
-                         ". Download a matching engine on the Engines page.",
-                     true);
-        return;
-    }
-    const Pack::ProjectCompatibilityUVE compatibility =
-        Pack::EvaluateProjectCompatibilityUVE(manifest.package->engineVersion, engine->install.version);
-    if (!compatibility.CanOpenUVE()) {
-        SetStatusUVE(compatibility.message, true);
-        return;
-    }
-    const Platform::ProcessLaunchResultUVE launched = Platform::LaunchDetachedProcessUVE(
-        {engine->install.editorExecutable,
-         Pack::MakeEditorLaunchArgumentsUVE(Pack::ProjectRegistryUVE::NormalizeProjectFileUVE(projectFile),
-                                            m_context.registryOverridden ? m_context.registryFile
-                                                                         : std::filesystem::path{}),
-         projectFile.parent_path()});
-    if (!launched.launched) {
-        SetStatusUVE(launched.message, true);
-        return;
-    }
-    // The editor records the project itself; listing it now shows it at once.
-    UpdateRegistryUVE([&](Pack::ProjectRegistryUVE& registry) {
-        const auto now = std::chrono::duration_cast<std::chrono::seconds>(
-                             std::chrono::system_clock::now().time_since_epoch())
-                             .count();
-        registry.RecordOpenedUVE(projectFile, manifest.package->displayName, manifest.package->engineVersion, now);
-    });
-    SetStatusUVE("Opening " + manifest.package->displayName + " with engine " + engine->install.version.ToStringUVE() +
-                     "...",
-                 false);
+    const ProjectOpenResultUVE opened = OpenProjectInEngineUVE(
+        projectFile, m_engines, m_context.registryFile,
+        m_context.registryOverridden ? m_context.registryFile : std::filesystem::path{});
+    ReloadRegistryUVE();
+    SetStatusUVE(opened.message, !opened.launched);
 }
 
 void HubWindowUVE::OpenProjectFolderUVE(const std::filesystem::path& folder) {
@@ -546,15 +542,37 @@ void HubWindowUVE::CreateProjectUVE() {
     if (location.is_absolute()) {
         std::filesystem::create_directories(location, error);
     }
+    const int engineIndex = m_newProjectEngine->selected();
+    if (engineIndex < 0 || static_cast<std::size_t>(engineIndex) >= m_newProjectEngineVersions.size()) {
+        SetStatusUVE("No engine version is known yet. Go online once, or download an engine on the Engines page.",
+                     true);
+        return;
+    }
+    const Core::VersionUVE engineVersion = m_newProjectEngineVersions[static_cast<std::size_t>(engineIndex)];
+    const std::string displayName = m_projectName->text();
     const Pack::ProjectCreationResultUVE created = Pack::CreateProjectFromTemplateUVE(
-        m_templates[m_selectedTemplate], location, m_projectName->text(), m_context.engine.version);
+        m_templates[m_selectedTemplate], location, m_projectName->text(), engineVersion);
     if (!created.IsCreatedUVE()) {
         SetStatusUVE(created.message, true);
         return;
     }
     m_projectName->setText("");
     ShowPageUVE(HubPageUVE::Projects);
-    OpenProjectUVE(created.projectFile);
+    if (IsInstalledUVE(engineVersion)) {
+        OpenProjectUVE(created.projectFile);
+        return;
+    }
+    // The project is ready; it opens once its engine is downloaded.
+    UpdateRegistryUVE([&](Pack::ProjectRegistryUVE& registry) {
+        const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+        registry.RecordOpenedUVE(created.projectFile, displayName,
+                                 {engineVersion.major, engineVersion.minor, engineVersion.patch, engineVersion.build}, now);
+    });
+    SetStatusUVE("Project created. Download engine " + engineVersion.ToStringUVE() +
+                     " on the Engines page to open it.",
+                 false);
 }
 
 void HubWindowUVE::SaveSettingsUVE() {
@@ -638,10 +656,11 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildEngineRowUVE(const std::string& tit
 }
 
 void HubWindowUVE::RefreshInstalledEnginesUVE() {
-    Online::InstalledEngineUVE bundled;
-    bundled.install = m_context.engine;
-    bundled.bundled = true;
-    m_engines = Online::ListInstalledEnginesUVE(m_context.enginesRoot, bundled);
+    std::optional<Online::InstalledEngineUVE> local;
+    if (m_context.localEngine.has_value()) {
+        local = Online::InstalledEngineUVE{*m_context.localEngine, Online::EngineChannelUVE::Stable, true};
+    }
+    m_engines = Online::ListInstalledEnginesUVE(m_context.enginesRoot, local);
 }
 
 bool HubWindowUVE::IsInstalledUVE(const Core::VersionUVE& version) const {
@@ -649,14 +668,40 @@ bool HubWindowUVE::IsInstalledUVE(const Core::VersionUVE& version) const {
                        [&version](const Online::InstalledEngineUVE& engine) { return engine.install.version == version; });
 }
 
+void HubWindowUVE::RefreshNewProjectEnginesUVE() {
+    std::vector<std::string> labels;
+    m_newProjectEngineVersions.clear();
+    for (const Online::InstalledEngineUVE& engine : m_engines) {
+        m_newProjectEngineVersions.push_back(engine.install.version);
+        labels.push_back("Engine " + engine.install.version.ToStringUVE() + " (installed)");
+    }
+    for (const Online::EngineReleaseUVE& release : m_feedResult.releases) {
+        if (IsInstalledUVE(release.version)) {
+            continue;
+        }
+        m_newProjectEngineVersions.push_back(release.version);
+        labels.push_back("Engine " + release.version.ToStringUVE() + " (" +
+                         std::string(Online::EngineChannelNameUVE(release.channel)) + ", not downloaded)");
+    }
+    m_newProjectEngine->setItems(labels);
+    m_newProjectEngine->setSelected(labels.empty() ? -1 : 0);
+}
+
 void HubWindowUVE::RefreshEngineListUVE() {
+    RefreshNewProjectEnginesUVE();
     m_engineRows->clearChildren();
     m_engineRows->add(HeadingUVE("Installed"));
+    if (m_engines.empty()) {
+        auto none = prism::make<prism::Label>(
+            "No engine is downloaded yet. Projects can be created now and opened once their engine is here.");
+        none->setColor(&prism::Theme::textDim);
+        m_engineRows->add(none);
+    }
     for (const Online::InstalledEngineUVE& engine : m_engines) {
         const std::string channel(Online::EngineChannelNameUVE(engine.channel));
-        std::string detail = engine.bundled ? "Included with the Hub" : engine.install.root.string();
+        std::string detail = engine.localBuild ? "Local build: " + engine.install.root.string() : engine.install.root.string();
         prism::Ref<prism::Widget> action;
-        if (!engine.bundled) {
+        if (!engine.localBuild) {
             auto remove = prism::make<prism::Button>("Remove", prism::Icon::Trash, prism::ButtonStyle::Flat);
             const Core::VersionUVE version = engine.install.version;
             remove->onClick = [this, version] {

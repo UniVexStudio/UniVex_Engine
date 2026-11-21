@@ -70,7 +70,7 @@ bool WriteEngineManifestUVE(const std::filesystem::path& engineDirectory, const 
 }
 
 std::vector<InstalledEngineUVE> ListInstalledEnginesUVE(const std::filesystem::path& enginesRoot,
-                                                        const InstalledEngineUVE& bundled) {
+                                                        const std::optional<InstalledEngineUVE>& localBuild) {
     std::vector<InstalledEngineUVE> engines;
     std::error_code error;
     for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(enginesRoot, error)) {
@@ -78,7 +78,7 @@ std::vector<InstalledEngineUVE> ListInstalledEnginesUVE(const std::filesystem::p
             continue;
         }
         const std::optional<EngineManifestUVE> manifest = ReadEngineManifestUVE(entry.path());
-        if (!manifest.has_value() || manifest->version == bundled.install.version) {
+        if (!manifest.has_value() || (localBuild.has_value() && manifest->version == localBuild->install.version)) {
             continue;
         }
         Pack::EngineInstallResultUVE resolved = Pack::ResolveEngineInstallUVE(entry.path(), manifest->version);
@@ -86,7 +86,9 @@ std::vector<InstalledEngineUVE> ListInstalledEnginesUVE(const std::filesystem::p
             engines.push_back({std::move(*resolved.install), manifest->channel, false});
         }
     }
-    engines.push_back(bundled);
+    if (localBuild.has_value()) {
+        engines.push_back(*localBuild);
+    }
     std::sort(engines.begin(), engines.end(), [](const InstalledEngineUVE& lhs, const InstalledEngineUVE& rhs) {
         return VersionKeyUVE(lhs.install.version) > VersionKeyUVE(rhs.install.version);
     });
