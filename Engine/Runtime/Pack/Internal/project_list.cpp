@@ -82,6 +82,11 @@ std::vector<ProjectListRowUVE> BuildProjectListUVE(const std::vector<ProjectRegi
     return rows;
 }
 
+ProjectListStatusUVE ProjectListStatusForUVE(const Platform::EditorProjectVersionUVE& projectVersion,
+                                             const Core::VersionUVE& engineVersion) {
+    return StatusForUVE(EvaluateProjectCompatibilityUVE(projectVersion, engineVersion).verdict);
+}
+
 LauncherSettingsUVE LoadLauncherSettingsUVE(const std::filesystem::path& file) {
     LauncherSettingsUVE settings;
     const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();

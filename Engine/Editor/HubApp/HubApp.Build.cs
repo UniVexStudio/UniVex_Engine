@@ -12,7 +12,8 @@ public class HubAppModule : ModuleRules
         PublicDependencyModuleNames.AddRange(new string[] {
             "EditorCore",
             "Engine",
-            "Pack"
+            "Pack",
+            "Online"
         });
 
         // The Hub's entry point lives at Engine/App/Internal/hub/

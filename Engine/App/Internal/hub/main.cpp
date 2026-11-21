@@ -17,6 +17,9 @@
 #include "editor_host.h"
 #include "engine_core.h"
 #include "engine_install.h"
+#include "engine_library.h"
+#include "engine_release_feed.h"
+#include "online_credentials.h"
 #include "hub_window.h"
 #include "prism/Theme.h"
 #include "prism/WindowChrome.h"
@@ -52,9 +55,10 @@ struct PageChoiceUVE final {
     std::string_view word;
     UVE::Hub::HubPageUVE page;
 };
-inline constexpr std::array<PageChoiceUVE, 3U> kPageChoicesUVE{{
+inline constexpr std::array<PageChoiceUVE, 4U> kPageChoicesUVE{{
     {"projects", UVE::Hub::HubPageUVE::Projects},
     {"new-project", UVE::Hub::HubPageUVE::NewProject},
+    {"engines", UVE::Hub::HubPageUVE::Engines},
     {"settings", UVE::Hub::HubPageUVE::Settings},
 }};
 
@@ -107,7 +111,7 @@ struct HubLaunchOptionsUVE final {
             const auto choice = std::find_if(kPageChoicesUVE.begin(), kPageChoicesUVE.end(),
                                              [&value](const PageChoiceUVE& item) { return item.word == value.string(); });
             if (choice == kPageChoicesUVE.end()) {
-                options.error = std::string(kPageOptionUVE) + " must be projects, new-project or settings";
+                options.error = std::string(kPageOptionUVE) + " must be projects, new-project, engines or settings";
                 break;
             }
             options.page = choice->page;
@@ -131,7 +135,7 @@ struct HubLaunchOptionsUVE final {
 /// Starts the UniVex Hub: lists the user's projects, creates new ones from the engine's templates
 /// and opens them in the engine's editor. `--engine-root <dir>` names the engine installation
 /// (default: the Hub's own directory). `--project-registry <file>` and `--settings <file>` keep an
-/// isolated run away from the user's own lists. `--page <projects|new-project|settings>` chooses the
+/// isolated run away from the user's own lists. `--page <projects|new-project|engines|settings>` chooses the
 /// first page. `--frames <n>` and `--screenshot <png>` bound a run for automation.
 int main(const int argc, char** argv) {
     const HubLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
@@ -166,6 +170,10 @@ int main(const int argc, char** argv) {
     context.settingsFile = options.settingsFile.empty()
                                ? context.registryFile.parent_path() / UVE::Pack::kLauncherSettingsFileNameUVE
                                : options.settingsFile;
+    // Downloaded engines and the access token sit beside the lists, so an isolated run stays isolated.
+    context.enginesRoot = context.registryFile.parent_path() / UVE::Online::kEnginesDirectoryNameUVE;
+    context.credentialsFile = context.registryFile.parent_path() / UVE::Online::kOnlineCredentialsFileNameUVE;
+    context.feed = UVE::Online::LoadEngineFeedSourceUVE(executableDirectory / UVE::Online::kEngineFeedFileNameUVE);
 
     UVE::Core::EngineConfigUVE config{};
     config.windowTitle = std::string(kHubWindowTitleUVE);
@@ -211,7 +219,8 @@ int main(const int argc, char** argv) {
         chrome.title = std::string(kHubWindowTitleUVE);
         host.SetRootUVE(prism::wrapWithWindowChrome(hub.BuildUVE(), UVE::Editor::EditorHostUVE::kMainWindowUVE, chrome));
         hub.ShowPageUVE(options.page);
-        core.SetPostRenderCallbackUVE([&host] {
+        core.SetPostRenderCallbackUVE([&host, &hub] {
+            hub.TickUVE();
             host.BeginFrameUVE();
             host.RenderUVE(std::span<const UVE::Editor::EditorHostUVE::ViewImageUVE>{});
         });

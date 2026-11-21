@@ -1,0 +1,56 @@
+// Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+
+#pragma once
+
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace UVE::Online {
+
+struct HttpHeaderUVE final {
+    std::string name;
+    std::string value;
+};
+
+struct HttpRequestUVE final {
+    std::string url;
+    std::vector<HttpHeaderUVE> headers;
+    /// Gives up when nothing arrives for this long.
+    std::chrono::seconds stallTimeout{30};
+};
+
+struct HttpResponseUVE final {
+    /// False when no HTTP response arrived at all (no network, DNS, TLS, timeout, cancelled).
+    bool reached = false;
+    long status = 0;
+    std::string body;
+    std::string error;
+
+    [[nodiscard]] bool IsSuccessUVE() const noexcept { return reached && status >= 200 && status < 300; }
+};
+
+/// Called as a download progresses; `total` is 0 when the server did not say. Returning false
+/// cancels the transfer.
+using HttpProgressUVE = std::function<bool(std::uint64_t received, std::uint64_t total)>;
+
+/// HTTPS over the platform's own stack. Redirects are followed; an Authorization header is never
+/// carried to a different host. Implementations are safe to use from one thread at a time.
+class IHttpClientUVE {
+public:
+    virtual ~IHttpClientUVE() = default;
+    [[nodiscard]] virtual HttpResponseUVE GetUVE(const HttpRequestUVE& request) = 0;
+    /// Streams the response body into `file` (replacing it). The body of an error response is
+    /// returned in the response instead of being written.
+    [[nodiscard]] virtual HttpResponseUVE DownloadUVE(const HttpRequestUVE& request, const std::filesystem::path& file,
+                                                      const HttpProgressUVE& progress) = 0;
+};
+
+/// The client for the platform this build targets.
+[[nodiscard]] std::unique_ptr<IHttpClientUVE> CreatePlatformHttpClientUVE();
+
+} // namespace UVE::Online

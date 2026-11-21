@@ -2,6 +2,7 @@
 
 #include "hub_window.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <charconv>
@@ -10,7 +11,9 @@
 #include <utility>
 
 #include "hub_folder_picker.h"
+#include "online_credentials.h"
 #include "process_launcher.h"
+#include "application_runtime.h"
 #include "project_compatibility.h"
 #include "prism/Theme.h"
 
@@ -95,6 +98,7 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
     m_pages = prism::make<prism::StackSwitcher>();
     m_pages->addPage(BuildProjectsPageUVE());
     m_pages->addPage(BuildNewProjectPageUVE());
+    m_pages->addPage(BuildEnginesPageUVE());
     m_pages->addPage(BuildSettingsPageUVE());
 
     auto content = prism::vbox();
@@ -110,9 +114,12 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
     auto window = prism::make<prism::Border>();
     window->setBackground(&prism::Theme::window).setChild(root);
 
+    RefreshInstalledEnginesUVE();
     ReloadRegistryUVE();
     RefreshTemplateListUVE();
     ShowPageUVE(HubPageUVE::Projects);
+    // New engine versions only appear when the feed can be reached; offline, nothing is fetched.
+    CheckForEnginesUVE();
     return window;
 }
 
@@ -131,6 +138,8 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
     navigation->add(MakeNavItemUVE("Projects", prism::Icon::Folder, HubPageUVE::Projects),
                     prism::Slot{0.0F, {}, prism::HAlign::Fill});
     navigation->add(MakeNavItemUVE("New Project", prism::Icon::Plus, HubPageUVE::NewProject),
+                    prism::Slot{0.0F, {}, prism::HAlign::Fill});
+    navigation->add(MakeNavItemUVE("Engines", prism::Icon::Layers, HubPageUVE::Engines),
                     prism::Slot{0.0F, {}, prism::HAlign::Fill});
 
     // Settings is about the Hub itself, not a place to work in, so it sits apart at the bottom.
@@ -261,6 +270,33 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSettingsPageUVE() {
     auto save = prism::make<prism::Button>("Save", prism::Icon::Save, prism::ButtonStyle::Primary);
     save->onClick = [this] { SaveSettingsUVE(); };
     page->add(save, prism::Slot{0.0F, {}, prism::HAlign::Left});
+
+    page->add(prism::make<prism::Spacer>(0.0F, kSectionSpacingUVE));
+    page->add(HeadingUVE("Engine downloads"));
+    auto explanation = prism::make<prism::Label>(
+        "Engine versions are published privately. Paste an access token that can read them; it is kept on "
+        "this computer only.",
+        prism::FontRole::Small);
+    explanation->setColor(&prism::Theme::textDim);
+    page->add(explanation);
+    m_tokenField = prism::make<prism::TextInput>("", "Access token");
+    page->add(FieldRowUVE("Access token", m_tokenField));
+    m_tokenState = prism::make<prism::Label>("", prism::FontRole::Small);
+    m_tokenState->setColor(&prism::Theme::textDim);
+    m_tokenState->setText(Online::LoadAccessTokenUVE(m_context.credentialsFile).empty() ? "No token saved."
+                                                                                     : "A token is saved.");
+    page->add(m_tokenState);
+    auto tokenActions = prism::hbox(kControlSpacingUVE);
+    auto saveToken = prism::make<prism::Button>("Save token", prism::Icon::Save, prism::ButtonStyle::Primary);
+    saveToken->onClick = [this] { SaveAccessTokenUVE(); };
+    tokenActions->add(saveToken);
+    auto forget = prism::make<prism::Button>("Forget token", prism::Icon::Trash);
+    forget->onClick = [this] {
+        m_tokenField->setText("");
+        SaveAccessTokenUVE();
+    };
+    tokenActions->add(forget);
+    page->add(tokenActions, prism::Slot{0.0F, {}, prism::HAlign::Left});
     return page;
 }
 
@@ -305,7 +341,15 @@ void HubWindowUVE::RefreshProjectListUVE() {
         empty->setColor(&prism::Theme::textDim);
         m_projectRows->add(empty);
     }
-    for (const Pack::ProjectListRowUVE& row : rows) {
+    for (Pack::ProjectListRowUVE row : rows) {
+        // The badge describes the engine that would actually open the project.
+        if (row.status != Pack::ProjectListStatusUVE::Missing) {
+            const Online::InstalledEngineUVE* const engine =
+                Online::ChooseEngineForProjectUVE(m_engines, row.entry.engineVersion, row.entry.engineChoice);
+            row.status = engine == nullptr
+                             ? Pack::ProjectListStatusUVE::Incompatible
+                             : Pack::ProjectListStatusForUVE(row.entry.engineVersion, engine->install.version);
+        }
         m_projectRows->add(BuildProjectRowUVE(row));
     }
     m_projectRows->relayout();
@@ -331,6 +375,28 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectRowUVE(const Pack::ProjectLi
         auto open = prism::make<prism::Button>("Open", prism::Icon::Play, prism::ButtonStyle::Primary);
         open->onClick = [this, projectFile] { OpenProjectUVE(projectFile); };
         line->add(open, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    }
+    if (row.status != Pack::ProjectListStatusUVE::Missing) {
+        // "Automatic" lets the Hub pick; otherwise the exact installed version the user chose.
+        std::vector<std::string> choices{"Automatic"};
+        int selected = 0;
+        for (const Online::InstalledEngineUVE& engine : m_engines) {
+            choices.push_back("Engine " + engine.install.version.ToStringUVE());
+            if (engine.install.version.ToStringUVE() == row.entry.engineChoice) {
+                selected = static_cast<int>(choices.size()) - 1;
+            }
+        }
+        auto engine = prism::make<prism::ComboBox>(choices, selected);
+        engine->setTooltip("Engine used to open this project");
+        engine->onChange = [this, projectFile](const int index) {
+            const std::string choice =
+                index <= 0 ? std::string{}
+                           : m_engines[static_cast<std::size_t>(index - 1)].install.version.ToStringUVE();
+            UpdateRegistryUVE([&](Pack::ProjectRegistryUVE& registry) {
+                static_cast<void>(registry.SetEngineChoiceUVE(projectFile, choice));
+            });
+        };
+        line->add(engine, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
     }
     auto favorite = prism::make<prism::Button>(row.entry.favorite ? "Favorite" : "Add to favorites", prism::Icon::Check,
                                                prism::ButtonStyle::Flat);
@@ -414,14 +480,24 @@ void HubWindowUVE::OpenProjectUVE(const std::filesystem::path& projectFile) {
         SetStatusUVE("Cannot open " + projectFile.string() + ": " + manifest.result.message, true);
         return;
     }
+    const Pack::ProjectRegistryEntryUVE* const entry = m_registry.FindUVE(projectFile);
+    const Online::InstalledEngineUVE* const engine = Online::ChooseEngineForProjectUVE(
+        m_engines, manifest.package->engineVersion, entry != nullptr ? entry->engineChoice : std::string{});
+    if (engine == nullptr) {
+        SetStatusUVE("No installed engine can open " + manifest.package->displayName + ", which was saved with engine " +
+                         Pack::FormatProjectVersionUVE(manifest.package->engineVersion) +
+                         ". Download a matching engine on the Engines page.",
+                     true);
+        return;
+    }
     const Pack::ProjectCompatibilityUVE compatibility =
-        Pack::EvaluateProjectCompatibilityUVE(manifest.package->engineVersion, m_context.engine.version);
+        Pack::EvaluateProjectCompatibilityUVE(manifest.package->engineVersion, engine->install.version);
     if (!compatibility.CanOpenUVE()) {
         SetStatusUVE(compatibility.message, true);
         return;
     }
     const Platform::ProcessLaunchResultUVE launched = Platform::LaunchDetachedProcessUVE(
-        {m_context.engine.editorExecutable,
+        {engine->install.editorExecutable,
          Pack::MakeEditorLaunchArgumentsUVE(Pack::ProjectRegistryUVE::NormalizeProjectFileUVE(projectFile),
                                             m_context.registryOverridden ? m_context.registryFile
                                                                          : std::filesystem::path{}),
@@ -437,7 +513,9 @@ void HubWindowUVE::OpenProjectUVE(const std::filesystem::path& projectFile) {
                              .count();
         registry.RecordOpenedUVE(projectFile, manifest.package->displayName, manifest.package->engineVersion, now);
     });
-    SetStatusUVE("Opening " + manifest.package->displayName + "...", false);
+    SetStatusUVE("Opening " + manifest.package->displayName + " with engine " + engine->install.version.ToStringUVE() +
+                     "...",
+                 false);
 }
 
 void HubWindowUVE::OpenProjectFolderUVE(const std::filesystem::path& folder) {
@@ -506,6 +584,214 @@ void HubWindowUVE::SaveSettingsUVE() {
 void HubWindowUVE::SetStatusUVE(const std::string& message, const bool isError) {
     m_status->setText(message);
     m_status->setColor(isError ? prism::ThemeColor(&prism::Theme::error) : prism::ThemeColor(&prism::Theme::textDim));
+}
+
+prism::Ref<prism::Widget> HubWindowUVE::BuildEnginesPageUVE() {
+    auto page = prism::vbox(kSectionSpacingUVE);
+    page->setPadding(prism::Margin(kPagePaddingUVE));
+
+    auto header = prism::hbox(kControlSpacingUVE);
+    header->add(HeadingUVE("Engines"), prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    auto check = prism::make<prism::Button>("Check for new versions", prism::Icon::Refresh);
+    check->onClick = [this] { CheckForEnginesUVE(); };
+    header->add(check);
+    page->add(header);
+
+    m_feedStatus = prism::make<prism::Label>("", prism::FontRole::Small);
+    m_feedStatus->setColor(&prism::Theme::textDim);
+    page->add(m_feedStatus);
+
+    auto progress = prism::hbox(kControlSpacingUVE);
+    m_downloadLabel = prism::make<prism::Label>("", prism::FontRole::Small);
+    progress->add(m_downloadLabel, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    m_downloadBar = prism::make<prism::ProgressBar>();
+    progress->add(m_downloadBar, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    progress->setVisible(false);
+    page->add(progress);
+
+    m_engineRows = prism::vbox(kRowSpacingUVE);
+    auto scroll = prism::make<prism::ScrollView>();
+    scroll->setContent(m_engineRows);
+    page->add(scroll, prism::Slot{1.0F});
+    return page;
+}
+
+prism::Ref<prism::Widget> HubWindowUVE::BuildEngineRowUVE(const std::string& title, const std::string& detail,
+                                                          prism::Ref<prism::Widget> action) {
+    auto text = prism::vbox();
+    text->add(prism::make<prism::Label>(title, prism::FontRole::Semibold));
+    auto detailLabel = prism::make<prism::Label>(detail, prism::FontRole::Small);
+    detailLabel->setColor(&prism::Theme::textDim);
+    text->add(detailLabel);
+    auto line = prism::hbox(kControlSpacingUVE);
+    line->add(text, prism::Slot{1.0F});
+    if (action != nullptr) {
+        line->add(std::move(action), prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    }
+    auto card = prism::make<prism::Border>();
+    card->setBackground(&prism::Theme::panel)
+        .setBorder(&prism::Theme::borderSoft)
+        .setRadius(kRowRadiusUVE)
+        .setPadding(prism::Margin(kRowPaddingUVE))
+        .setChild(line);
+    return card;
+}
+
+void HubWindowUVE::RefreshInstalledEnginesUVE() {
+    Online::InstalledEngineUVE bundled;
+    bundled.install = m_context.engine;
+    bundled.bundled = true;
+    m_engines = Online::ListInstalledEnginesUVE(m_context.enginesRoot, bundled);
+}
+
+bool HubWindowUVE::IsInstalledUVE(const Core::VersionUVE& version) const {
+    return std::any_of(m_engines.begin(), m_engines.end(),
+                       [&version](const Online::InstalledEngineUVE& engine) { return engine.install.version == version; });
+}
+
+void HubWindowUVE::RefreshEngineListUVE() {
+    m_engineRows->clearChildren();
+    m_engineRows->add(HeadingUVE("Installed"));
+    for (const Online::InstalledEngineUVE& engine : m_engines) {
+        const std::string channel(Online::EngineChannelNameUVE(engine.channel));
+        std::string detail = engine.bundled ? "Included with the Hub" : engine.install.root.string();
+        prism::Ref<prism::Widget> action;
+        if (!engine.bundled) {
+            auto remove = prism::make<prism::Button>("Remove", prism::Icon::Trash, prism::ButtonStyle::Flat);
+            const Core::VersionUVE version = engine.install.version;
+            remove->onClick = [this, version] {
+                if (!Online::UninstallEngineUVE(m_context.enginesRoot, version)) {
+                    SetStatusUVE("Unable to remove engine " + version.ToStringUVE() + ".", true);
+                }
+                RefreshInstalledEnginesUVE();
+                RefreshEngineListUVE();
+                RefreshProjectListUVE();
+            };
+            action = remove;
+        }
+        m_engineRows->add(
+            BuildEngineRowUVE("Engine " + engine.install.version.ToStringUVE() + "  (" + channel + ")", detail, action));
+    }
+
+    if (m_feedResult.state != Online::EngineFeedStateUVE::Online) {
+        return;
+    }
+    const Online::EngineReleaseGroupsUVE groups = Online::GroupEngineReleasesUVE(m_feedResult.releases);
+    const auto addRelease = [this](const Online::EngineReleaseUVE& release, const std::string& label) {
+        constexpr double kBytesPerMegabyteUVE = 1024.0 * 1024.0;
+        const std::string size =
+            std::to_string(static_cast<long long>(static_cast<double>(release.packageBytes) / kBytesPerMegabyteUVE)) +
+            " MB";
+        prism::Ref<prism::Widget> action;
+        if (IsInstalledUVE(release.version)) {
+            auto installed = prism::make<prism::Label>("Installed", prism::FontRole::Small);
+            installed->setColor(&prism::Theme::success);
+            action = installed;
+        } else {
+            auto download = prism::make<prism::Button>("Download", prism::Icon::Open, prism::ButtonStyle::Primary);
+            download->setEnabled(m_download == nullptr);
+            download->onClick = [this, release] { DownloadEngineUVE(release); };
+            action = download;
+        }
+        m_engineRows->add(BuildEngineRowUVE(label + "  Engine " + release.version.ToStringUVE(),
+                                            release.title + " - " + size, action));
+    };
+    if (groups.stable.has_value() || groups.beta.has_value()) {
+        m_engineRows->add(prism::make<prism::Spacer>(0.0F, kRowSpacingUVE));
+        m_engineRows->add(HeadingUVE("Latest"));
+    }
+    if (groups.stable.has_value()) {
+        addRelease(*groups.stable, "Stable");
+    }
+    if (groups.beta.has_value()) {
+        addRelease(*groups.beta, "Beta");
+    }
+    if (!groups.previous.empty()) {
+        m_engineRows->add(prism::make<prism::Spacer>(0.0F, kRowSpacingUVE));
+        m_engineRows->add(HeadingUVE("Previous versions"));
+        for (const Online::EngineReleaseUVE& release : groups.previous) {
+            addRelease(release, "Stable");
+        }
+    }
+    m_engineRows->relayout();
+}
+
+void HubWindowUVE::CheckForEnginesUVE() {
+    if (!m_context.feed.has_value()) {
+        m_feedStatus->setText("This Hub has no engine release source configured; installed engines are shown.");
+        RefreshEngineListUVE();
+        return;
+    }
+    if (m_feedRequest.valid()) {
+        return;
+    }
+    m_feedStatus->setText("Checking for engine versions...");
+    const Online::EngineFeedSourceUVE source = *m_context.feed;
+    const std::string token = Online::LoadAccessTokenUVE(m_context.credentialsFile);
+    const std::string target(Platform::GetApplicationTargetUVE());
+    m_feedRequest = std::async(std::launch::async, [source, token, target] {
+        const std::unique_ptr<Online::IHttpClientUVE> client = Online::CreatePlatformHttpClientUVE();
+        return Online::FetchEngineReleasesUVE(*client, source, token, target);
+    });
+    RefreshEngineListUVE();
+}
+
+void HubWindowUVE::DownloadEngineUVE(const Online::EngineReleaseUVE& release) {
+    if (m_download != nullptr) {
+        return;
+    }
+    m_download = std::make_unique<Online::EngineDownloadUVE>(Online::CreatePlatformHttpClientUVE(), release,
+                                                             Online::LoadAccessTokenUVE(m_context.credentialsFile),
+                                                             m_context.enginesRoot);
+    m_downloadLabel->setText("Downloading engine " + release.version.ToStringUVE());
+    m_downloadBar->parent()->setVisible(true);
+    RefreshEngineListUVE();
+}
+
+void HubWindowUVE::TickUVE() {
+    if (m_feedRequest.valid() &&
+        m_feedRequest.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        m_feedResult = m_feedRequest.get();
+        switch (m_feedResult.state) {
+        case Online::EngineFeedStateUVE::Online:
+            m_feedStatus->setText(m_feedResult.message);
+            break;
+        case Online::EngineFeedStateUVE::Offline:
+            m_feedStatus->setText("You are offline. Installed engines still work; new versions appear when you "
+                                  "are back online.");
+            break;
+        case Online::EngineFeedStateUVE::Unauthorized:
+        case Online::EngineFeedStateUVE::Failed:
+            m_feedStatus->setText(m_feedResult.message);
+            break;
+        }
+        RefreshEngineListUVE();
+    }
+    if (m_download != nullptr) {
+        m_downloadBar->setValue(m_download->ProgressUVE());
+        const Online::EngineDownloadUVE::StateUVE state = m_download->GetStateUVE();
+        if (state != Online::EngineDownloadUVE::StateUVE::Running) {
+            const bool installed = state == Online::EngineDownloadUVE::StateUVE::Installed;
+            SetStatusUVE(m_download->MessageUVE(), !installed);
+            m_download.reset();
+            m_downloadBar->parent()->setVisible(false);
+            RefreshInstalledEnginesUVE();
+            RefreshEngineListUVE();
+            RefreshProjectListUVE();
+        }
+    }
+}
+
+void HubWindowUVE::SaveAccessTokenUVE() {
+    const std::string token = m_tokenField->text();
+    if (!Online::SaveAccessTokenUVE(m_context.credentialsFile, token)) {
+        SetStatusUVE("Unable to save the access token.", true);
+        return;
+    }
+    m_tokenField->setText("");
+    m_tokenState->setText(token.empty() ? "No token saved." : "A token is saved.");
+    SetStatusUVE(token.empty() ? "Access token forgotten." : "Access token saved.", false);
+    CheckForEnginesUVE();
 }
 
 } // namespace UVE::Hub

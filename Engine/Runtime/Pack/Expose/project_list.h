@@ -45,6 +45,10 @@ struct ProjectListRowUVE final {
     const Core::VersionUVE& engineVersion,
     const std::function<bool(const ProjectRegistryEntryUVE&)>& isMissing = &ProjectRegistryUVE::IsMissingUVE);
 
+/// What opening a project saved with `projectVersion` in engine `engineVersion` would do.
+[[nodiscard]] ProjectListStatusUVE ProjectListStatusForUVE(const Platform::EditorProjectVersionUVE& projectVersion,
+                                                           const Core::VersionUVE& engineVersion);
+
 /// Settings of the project launcher itself, kept beside the project registry.
 inline constexpr std::string_view kLauncherSettingsFileNameUVE = "launcher_settings.json";
 inline constexpr std::string_view kLauncherSettingsFormatUVE = "uvlaunchersettings";
