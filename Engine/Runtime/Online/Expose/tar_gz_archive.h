@@ -7,13 +7,22 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <string_view>
 
 namespace UVE::Online {
 
+/// File name extension of a gzip-compressed tar archive.
+inline constexpr std::string_view kTarGzFileExtensionUVE = ".tar.gz";
+
+/// Default ceiling on what one archive may write: far above any engine package, far below a full disk.
+inline constexpr std::uint64_t kDefaultArchiveMaximumTotalBytesUVE = std::uint64_t{8} << 30U;
+/// Default ceiling on the number of entries one archive may hold.
+inline constexpr std::size_t kDefaultArchiveMaximumEntriesUVE = 200000U;
+
 /// Bounds that keep a damaged or hostile archive from filling the disk.
 struct ArchiveLimitsUVE final {
-    std::uint64_t maximumTotalBytes = 8ULL * 1024ULL * 1024ULL * 1024ULL;
-    std::size_t maximumEntries = 200000U;
+    std::uint64_t maximumTotalBytes = kDefaultArchiveMaximumTotalBytesUVE;
+    std::size_t maximumEntries = kDefaultArchiveMaximumEntriesUVE;
     /// When set, only entries whose archive path it accepts are written; the rest are skipped. The
     /// safety checks still apply to every entry.
     std::function<bool(const std::filesystem::path&)> include;

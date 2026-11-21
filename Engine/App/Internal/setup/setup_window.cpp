@@ -8,8 +8,10 @@
 #include <utility>
 
 #include "folder_picker.h"
+#include "launcher_files.h"
 #include "launcher_window.h"
 #include "process_launcher.h"
+#include "tar_gz_archive.h"
 #include "prism/Theme.h"
 
 namespace UVE::Setup {
@@ -30,6 +32,16 @@ inline constexpr float kListIndentUVE = 12.0F;
 /// Share of the bar each stage has reached when it starts; unpacking takes most of the time.
 inline constexpr std::array<float, 4U> kStageProgressUVE{0.05F, 0.70F, 0.90F, 1.0F};
 
+/// Each step's name in the rail, per mode; an empty name is a step that mode skips. Steps that are
+/// shown are numbered in order.
+inline constexpr std::array<std::string_view, kSetupStepCountUVE> kInstallStepNamesUVE{"Welcome", "Location", "Install",
+                                                                                         "Done"};
+inline constexpr std::array<std::string_view, kSetupStepCountUVE> kUninstallStepNamesUVE{"Confirm", "", "Remove", "Done"};
+/// Space between a step's number and its name.
+inline constexpr std::string_view kStepNumberSeparatorUVE = "  ";
+/// Temporary copy of the payload while it is unpacked.
+inline constexpr std::string_view kPayloadScratchPrefixUVE = "univex-hub-setup-";
+
 [[nodiscard]] prism::Ref<prism::Label> HeadingUVE(const std::string& text) {
     return prism::make<prism::Label>(text, prism::FontRole::Semibold);
 }
@@ -46,7 +58,7 @@ inline constexpr std::array<float, 4U> kStageProgressUVE{0.05F, 0.70F, 0.90F, 1.
     }
     switch (stage) {
     case SetupJobUVE::StageUVE::Unpacking:
-        return "Unpacking the Hub and its engine...";
+        return "Unpacking UniVex Hub...";
     case SetupJobUVE::StageUVE::Installing:
         return "Putting the files in place...";
     case SetupJobUVE::StageUVE::Registering:
@@ -68,7 +80,7 @@ SetupJobUVE::SetupJobUVE(SetupContextUVE context, const bool addToApplications) 
 }
 
 bool SetupJobUVE::IsFinishedUVE() const {
-    return m_result.has_value() || m_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    return m_result.has_value() || m_future.wait_for(std::chrono::seconds::zero()) == std::future_status::ready;
 }
 
 Online::HubSetupResultUVE SetupJobUVE::ResultUVE() {
@@ -88,15 +100,13 @@ Online::HubSetupResultUVE SetupJobUVE::RunUVE(SetupContextUVE context, const boo
     if (!context.payload.has_value()) {
         return {false, "This setup program carries no files to install."};
     }
-    std::error_code error;
     const std::filesystem::path archive =
-        std::filesystem::temp_directory_path(error) /
-        ("univex-hub-setup-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".tar.gz");
+        LauncherUI::UniqueTemporaryPathUVE(kPayloadScratchPrefixUVE, Online::kTarGzFileExtensionUVE);
     const auto removeArchive = [&archive] {
         std::error_code ignored;
         std::filesystem::remove(archive, ignored);
     };
-    if (error || !Online::ExtractSetupPayloadUVE(context.setupExecutable, *context.payload, archive)) {
+    if (archive.empty() || !Online::ExtractSetupPayloadUVE(context.setupExecutable, *context.payload, archive)) {
         removeArchive();
         return {false, "This setup program is damaged; download it again."};
     }
@@ -192,13 +202,14 @@ prism::Ref<prism::Widget> SetupWindowUVE::BuildRailUVE() {
 
     // The steps are a real sequence, so they are numbered.
     auto steps = prism::vbox(kStepSpacingUVE);
-    const std::array<const char*, 4U> install{"1  Welcome", "2  Location", "3  Install", "4  Done"};
-    const std::array<const char*, 4U> uninstall{"1  Confirm", "", "2  Remove", "3  Done"};
-    const std::array<const char*, 4U>& labels = m_context.mode == SetupModeUVE::Install ? install : uninstall;
-    for (const char* const label : labels) {
+    const auto& names = m_context.mode == SetupModeUVE::Install ? kInstallStepNamesUVE : kUninstallStepNamesUVE;
+    std::size_t number = 0U;
+    for (const std::string_view name : names) {
+        const std::string label =
+            name.empty() ? std::string{} : std::to_string(++number) + std::string(kStepNumberSeparatorUVE) + std::string(name);
         auto item = prism::make<LauncherUI::NavItemUVE>(label, prism::Icon::None);
         item->setEnabled(false);
-        item->setVisible(label[0] != '\0');
+        item->setVisible(!name.empty());
         m_stepItems.push_back(item);
         steps->add(item, prism::Slot{0.0F, {}, prism::HAlign::Fill});
     }
@@ -270,11 +281,8 @@ prism::Ref<prism::Widget> SetupWindowUVE::BuildLocationPageUVE() {
 #endif
     page->add(m_addToApplications, prism::Slot{0.0F, {}, prism::HAlign::Left});
     if (m_context.payload.has_value()) {
-        constexpr double kBytesPerMegabyteUVE = 1024.0 * 1024.0;
-        page->add(ParagraphUVE("Download size " +
-                               std::to_string(static_cast<long long>(static_cast<double>(m_context.payload->size) /
-                                                                     kBytesPerMegabyteUVE)) +
-                               " MB; the installed files take a few times that."));
+        page->add(ParagraphUVE("Download size " + LauncherUI::FormatByteSizeUVE(m_context.payload->size) +
+                               "; the installed files take a few times that."));
     }
     m_locationProblem = prism::make<prism::Label>("", prism::FontRole::Small);
     m_locationProblem->setColor(&prism::Theme::error);

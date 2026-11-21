@@ -217,8 +217,8 @@ void WidgetDesignerViewUVE::paint(prism::Canvas& c) {
             case KindUVE::CheckBox: {
                 const float side = std::min(v.w, v.h);
                 const prism::Rect box{v.x, v.y + (v.h - side) * 0.5F, side, side};
-                c.fillRoundRect(box, 3.0F, item.checked ? t.highlight : prism::Color(36, 38, 42));
-                c.strokeRoundRect(box, 3.0F, prism::Color(110, 116, 126));
+                c.fillRoundRect(box, 3.0F, item.checked ? t.highlight : t.field);
+                c.strokeRoundRect(box, 3.0F, t.borderStrong);
                 if (item.checked) {
                     const prism::Vec2 a{box.x + side * 0.22F, box.y + side * 0.52F};
                     const prism::Vec2 b{box.x + side * 0.42F, box.y + side * 0.72F};

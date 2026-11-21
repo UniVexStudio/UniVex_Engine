@@ -13,6 +13,7 @@
 #include "application_runtime.h"
 #include "asset_guid.h"
 #include "project_compatibility.h"
+#include "pack_json.h"
 #include "tar_gz_archive.h"
 
 namespace UVE::Online {
@@ -65,7 +66,7 @@ bool WriteEngineManifestUVE(const std::filesystem::path& engineDirectory, const 
                        {"channel", EngineChannelNameUVE(manifest.channel)},
                        {"target", manifest.target}};
     std::ofstream output(engineDirectory / kEngineManifestFileNameUVE, std::ios::binary | std::ios::trunc);
-    output << json.dump(2);
+    output << json.dump(Pack::kPackJsonIndentUVE);
     return static_cast<bool>(output);
 }
 

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <future>
@@ -27,6 +28,7 @@ enum class SetupStepUVE : int {
     Installing,
     Done,
 };
+inline constexpr std::size_t kSetupStepCountUVE = static_cast<std::size_t>(SetupStepUVE::Done) + 1U;
 
 /// What the setup program was started to do.
 enum class SetupModeUVE : std::uint8_t {

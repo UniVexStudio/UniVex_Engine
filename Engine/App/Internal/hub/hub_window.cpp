@@ -13,6 +13,7 @@
 #include "folder_picker.h"
 #include "hub_project_opener.h"
 #include "hub_setup.h"
+#include "launcher_files.h"
 #include "process_launcher.h"
 #include "application_runtime.h"
 #include "project_compatibility.h"
@@ -696,10 +697,7 @@ void HubWindowUVE::RefreshEngineListUVE() {
     }
     const Online::EngineReleaseGroupsUVE groups = Online::GroupEngineReleasesUVE(m_feedResult.releases);
     const auto addRelease = [this](const Online::EngineReleaseUVE& release, const std::string& label) {
-        constexpr double kBytesPerMegabyteUVE = 1024.0 * 1024.0;
-        const std::string size =
-            std::to_string(static_cast<long long>(static_cast<double>(release.packageBytes) / kBytesPerMegabyteUVE)) +
-            " MB";
+        const std::string size = LauncherUI::FormatByteSizeUVE(release.packageBytes);
         prism::Ref<prism::Widget> action;
         if (IsInstalledUVE(release.version)) {
             auto installed = prism::make<prism::Label>("Installed", prism::FontRole::Small);
@@ -766,7 +764,7 @@ void HubWindowUVE::DownloadEngineUVE(const Online::EngineReleaseUVE& release) {
 
 void HubWindowUVE::TickUVE() {
     if (m_feedRequest.valid() &&
-        m_feedRequest.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        m_feedRequest.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
         m_feedResult = m_feedRequest.get();
         switch (m_feedResult.state) {
         case Online::EngineFeedStateUVE::Online:

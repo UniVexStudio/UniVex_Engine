@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include "application_runtime.h"
+#include "pack_json.h"
 
 namespace UVE::Pack {
 namespace {
@@ -125,7 +126,7 @@ bool SaveLauncherSettingsUVE(const std::filesystem::path& file, const LauncherSe
     temporary += kTemporaryFileSuffixUVE;
     {
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-        output << json.dump(2);
+        output << json.dump(kPackJsonIndentUVE);
         if (!output.good()) {
             return false;
         }

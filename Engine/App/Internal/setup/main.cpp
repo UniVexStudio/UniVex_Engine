@@ -15,6 +15,7 @@
 
 #include "tar_gz_archive.h"
 #include "hub_setup.h"
+#include "launcher_files.h"
 #include "launcher_window.h"
 #include "process_launcher.h"
 #include "setup_window.h"
@@ -39,6 +40,9 @@ inline constexpr int kSetupFailedExitCodeUVE = 1;
 inline constexpr std::chrono::milliseconds kSilentPollIntervalUVE{50};
 /// Temporary folder holding the interface assets unpacked from the payload.
 inline constexpr std::string_view kInterfaceScratchPrefixUVE = "univex-hub-setup-ui-";
+/// Inside that scratch folder: the payload's copy and the folder its interface assets unpack into.
+inline constexpr std::string_view kPayloadArchiveStemUVE = "payload";
+inline constexpr std::string_view kInterfaceUnpackDirectoryNameUVE = "ui";
 
 inline constexpr std::string_view kInstallDirOptionUVE = "--install-dir";
 inline constexpr std::string_view kSilentOptionUVE = "--silent";
@@ -160,9 +164,14 @@ struct SetupOptionsUVE final {
 /// those into `scratch` and returns their folder, or empty when the payload has none.
 [[nodiscard]] std::filesystem::path UnpackInterfaceAssetsUVE(const UVE::Setup::SetupContextUVE& context,
                                                              const std::filesystem::path& scratch) {
+    if (scratch.empty()) {
+        return {};
+    }
+    const std::filesystem::path unpacked = scratch / kInterfaceUnpackDirectoryNameUVE;
+    const std::filesystem::path archive =
+        scratch / (std::string(kPayloadArchiveStemUVE) + std::string(UVE::Online::kTarGzFileExtensionUVE));
     std::error_code error;
-    std::filesystem::create_directories(scratch / "ui", error);
-    const std::filesystem::path archive = scratch / "payload.tar.gz";
+    std::filesystem::create_directories(unpacked, error);
     if (error || !context.payload.has_value() ||
         !UVE::Online::ExtractSetupPayloadUVE(context.setupExecutable, *context.payload, archive)) {
         return {};
@@ -171,9 +180,9 @@ struct SetupOptionsUVE final {
     limits.include = [](const std::filesystem::path& path) {
         return !path.empty() && *path.begin() == UVE::LauncherUI::kPrismAssetsDirectoryNameUVE;
     };
-    const bool unpacked = UVE::Online::ExtractTarGzUVE(archive, scratch / "ui", limits).extracted;
+    const bool extracted = UVE::Online::ExtractTarGzUVE(archive, unpacked, limits).extracted;
     std::filesystem::remove(archive, error);
-    return unpacked ? scratch / "ui" / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE : std::filesystem::path{};
+    return extracted ? unpacked / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE : std::filesystem::path{};
 }
 
 } // namespace
@@ -234,9 +243,7 @@ int main(const int argc, char** argv) {
     // Assets beside the program (a development build, or the uninstaller inside an installation)
     // are used as they are; a downloaded setup unpacks its own.
     window.prismAssetsDirectory = selfDirectory / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE;
-    const std::filesystem::path scratch =
-        std::filesystem::temp_directory_path(error) /
-        (std::string(kInterfaceScratchPrefixUVE) + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const std::filesystem::path scratch = UVE::LauncherUI::UniqueTemporaryPathUVE(kInterfaceScratchPrefixUVE, {});
     if (!std::filesystem::is_directory(window.prismAssetsDirectory, error)) {
         window.prismAssetsDirectory = UnpackInterfaceAssetsUVE(context, scratch);
     }

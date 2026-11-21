@@ -606,13 +606,12 @@ void LoadBrandMarkUVE(const std::filesystem::path& file) {
     if (bytes.empty() || !UVE::Asset::DecodePngRgba8ImageUVE(bytes, image) || image.width == 0U || image.height == 0U) {
         return;
     }
-    const auto* const rgba = reinterpret_cast<const std::uint8_t*>(image.pixels.data());
     std::vector<std::uint32_t> argb(static_cast<std::size_t>(image.width) * image.height);
     for (std::size_t index = 0U; index < argb.size(); ++index) {
-        argb[index] = (static_cast<std::uint32_t>(rgba[index * 4U + 3U]) << 24U) |
-                      (static_cast<std::uint32_t>(rgba[index * 4U]) << 16U) |
-                      (static_cast<std::uint32_t>(rgba[index * 4U + 1U]) << 8U) |
-                      static_cast<std::uint32_t>(rgba[index * 4U + 2U]);
+        const std::byte* const pixel = image.pixels.data() + index * UVE::Asset::kPngRgba8ChannelsUVE;
+        argb[index] = prism::Color(std::to_integer<std::uint8_t>(pixel[0]), std::to_integer<std::uint8_t>(pixel[1]),
+                                   std::to_integer<std::uint8_t>(pixel[2]), std::to_integer<std::uint8_t>(pixel[3]))
+                          .argb();
     }
     prism::setBrandMark(std::move(argb), static_cast<int>(image.width), static_cast<int>(image.height));
 }

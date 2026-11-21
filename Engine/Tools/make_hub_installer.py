@@ -33,10 +33,13 @@ DISTRIBUTION_DIR = REPO_ROOT / "Engine" / "Distribution"
 BRAND_DIR = DISTRIBUTION_DIR / "brand"
 HUB_STEM = "uve_hub"
 SETUP_STEM = "uve_hub_setup"
-HUB_DIRECTORIES = ("prism_assets", "project_templates")
+PROJECT_TEMPLATES_DIRECTORY = "project_templates"
+HUB_DIRECTORIES = (package_engine.PRISM_ASSETS_DIRECTORY, PROJECT_TEMPLATES_DIRECTORY)
 FEED_FILE = "engine_feed.json"
-# Matches Online's kHubIconsDirectoryNameUVE: the brand icons the installed Hub registers.
+# The brand icons the installed Hub registers: the PNG sizes, and the icon file Windows uses.
 ICONS_DIRECTORY = "icons"
+BRAND_PNG_DIRECTORY = "png"
+WINDOWS_ICON_FILE = "univex-logo.ico"
 HUB_TAG_PREFIX = "hub-"
 INSTALLER_PREFIX = "UniVexHubSetup-"
 PAYLOAD_MAGIC = b"UVXSETUP"
@@ -64,7 +67,7 @@ def stage_payload(bin_dir: Path, target: str, stage: Path) -> set[str]:
     shutil.copy2(feed, stage / FEED_FILE)
     icons = stage / ICONS_DIRECTORY
     icons.mkdir()
-    for source in sorted((BRAND_DIR / "png").glob("*.png")) + [BRAND_DIR / "univex-logo.ico"]:
+    for source in sorted((BRAND_DIR / BRAND_PNG_DIRECTORY).glob("*.png")) + [BRAND_DIR / WINDOWS_ICON_FILE]:
         if not source.is_file():
             raise package_engine.PackagingError(f"missing {source}")
         shutil.copy2(source, icons / source.name)

@@ -41,7 +41,7 @@ std::size_t WriteDownloadUVE(char* data, const std::size_t size, const std::size
     long status = 0;
     curl_easy_getinfo(sink->handle, CURLINFO_RESPONSE_CODE, &status);
     // An error page is kept for the message rather than written as the file.
-    if (status >= 300) {
+    if (!IsHttpSuccessStatusUVE(status)) {
         sink->errorBody->append(data, size * count);
         return size * count;
     }

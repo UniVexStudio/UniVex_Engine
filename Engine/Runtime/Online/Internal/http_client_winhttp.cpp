@@ -87,7 +87,8 @@ template <class SinkUVE>
         response.error = LastErrorUVE("Unable to start WinHTTP");
         return response;
     }
-    const int timeoutMs = static_cast<int>(request.stallTimeout.count() * 1000);
+    const int timeoutMs =
+        static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(request.stallTimeout).count());
     WinHttpSetTimeouts(session.GetUVE(), timeoutMs, timeoutMs, timeoutMs, timeoutMs);
 
     std::wstring url = WidenUVE(request.url);
@@ -131,7 +132,7 @@ template <class SinkUVE>
         DWORD statusSize = sizeof(status);
         WinHttpQueryHeaders(handle.GetUVE(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                             WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize, WINHTTP_NO_HEADER_INDEX);
-        if (status >= 300U && status < 400U) {
+        if (IsHttpRedirectionStatusUVE(static_cast<long>(status))) {
             DWORD locationBytes = 0U;
             WinHttpQueryHeaders(handle.GetUVE(), WINHTTP_QUERY_LOCATION, WINHTTP_HEADER_NAME_BY_INDEX, nullptr,
                                 &locationBytes, WINHTTP_NO_HEADER_INDEX);

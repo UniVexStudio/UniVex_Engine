@@ -16,6 +16,7 @@
 
 #include "asset_guid.h"
 #include "engine_config.h"
+#include "pack_json.h"
 
 namespace UVE::Pack {
 namespace {
@@ -412,7 +413,7 @@ ProjectCreationResultUVE CreateProjectFromTemplateUVE(const ProjectTemplateUVE& 
         const JsonUVE starter{{"format", kProjectStarterSceneFormatUVE},
                               {"schemaVersion", kCurrentProjectStarterSceneSchemaVersionUVE},
                               {"starterObjects", StarterObjectsToJsonUVE(projectTemplate.starterScene)}};
-        if (!WriteTextAtomicallyUVE(staging.PathUVE() / kProjectStarterSceneFileNameUVE, starter.dump(2))) {
+        if (!WriteTextAtomicallyUVE(staging.PathUVE() / kProjectStarterSceneFileNameUVE, starter.dump(kPackJsonIndentUVE))) {
             return CreationFailureUVE(ProjectCreationCodeUVE::WriteFailed, "Unable to write the starter scene.");
         }
     }

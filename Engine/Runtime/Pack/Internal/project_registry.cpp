@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "application_runtime.h"
+#include "pack_json.h"
 
 namespace UVE::Pack {
 namespace {
@@ -130,7 +131,7 @@ ProjectRegistryResultUVE ProjectRegistryUVE::SaveUVE(const std::filesystem::path
     temporary += kTemporaryFileSuffixUVE;
     {
         std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-        output << json.dump(2);
+        output << json.dump(kPackJsonIndentUVE);
         if (!output.good()) {
             return MakeResultUVE(ProjectRegistryCodeUVE::WriteFailed,
                                  "Unable to write the project registry: " + temporary.string());

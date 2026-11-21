@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -41,6 +42,9 @@ enum class PngFilterTypeUVE : std::uint8_t { None = 0U, Sub = 1U, Up = 2U, Avera
 [[nodiscard]] bool ValidatePngRgba8PixelBudgetUVE(
     const PngMetadataUVE& metadata,
     std::uint64_t maximumBytes = kMaximumPngDecodedPixelBytesUVE) noexcept;
+
+/// Bytes per pixel of a decoded RGBA8 image, in R, G, B, A order.
+inline constexpr std::size_t kPngRgba8ChannelsUVE = 4U;
 
 struct PngRgba8ImageUVE final {
     std::uint32_t width = 0U;
