@@ -364,37 +364,6 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
         add((prefix + "Strength").c_str(), strength, "How strongly the map acts: 0 is as if there were no map, 1 the map as authored.");
     };
 
-    // Kind: a preset over the same physically based path; picking one applies the same defaults
-    // the content catalogue's material entries use and leaves every texture alone.
-    section("Preset");
-    {
-        auto preview = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Material, 128.0F);
-        preview->setAssetUVE(absolutePath);
-        std::weak_ptr<AssetThumbnailUVE> weakPreview = preview;
-        auto previewRow = std::make_shared<RowUVE>();
-        previewRow->sync = [weakPreview](const void*) {
-            if (auto t = weakPreview.lock()) {
-                t->refreshUVE();
-            }
-        };
-        previewRow->editor = preview.get();
-        m_rows.push_back(std::move(previewRow));
-        m_grid->addRow(category, "Preview", std::move(preview), "Live PBR material preview (click to enlarge).");
-    }
-    combo("Kind", {"Standard", "ORM", "Custom Shader"}, static_cast<int>(loaded.kind), [](MaterialUVE& m, const int i) {
-        m.kind = static_cast<Asset::MaterialKindUVE>(std::clamp(i, 0, 2));
-        switch (m.kind) {
-            case Asset::MaterialKindUVE::Standard: m.useCustomShaderCode = false; break;
-            case Asset::MaterialKindUVE::Orm:
-                m.useCustomShaderCode = false;
-                m.metallic = 1.0F;
-                m.occlusionStrength = 1.0F;
-                break;
-            case Asset::MaterialKindUVE::Shader: m.useCustomShaderCode = true; break;
-        }
-    }, "Standard: metallic / roughness values with optional maps. ORM: a packed occlusion / roughness / metallic map. "
-       "Custom Shader: the material supplies its own shader code.");
-
     section("Albedo");
     color("Color", &MaterialUVE::albedoColor, "The surface's base colour (multiplies the albedo texture).");
     slider("Alpha", &MaterialUVE::albedoAlpha, 0.0F, 1.0F, "Opacity, used by the alpha blend modes and the cutoff.");

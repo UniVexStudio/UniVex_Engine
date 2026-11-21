@@ -546,6 +546,9 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
                                                              const std::vector<MeshThumbnailLookUVE>& looksBySlot,
                                                              const std::vector<MeshThumbnailBoneUVE>& bones,
                                                              const float* const viewDirectionIn) {
+    if (!m_gl && glfwGetCurrentContext() != nullptr) {
+        InitializeUVE();
+    }
     if (!m_gl || !m_gl->functionsLoaded || !m_gl->programLinked) {
         return 0U;
     }
@@ -906,7 +909,9 @@ std::uintptr_t MeshThumbnailRendererUVE::RenderThumbnailUVE(const Asset::MeshAss
     gl.table.glUseProgram(static_cast<GLuint>(previousProgram));
     gl.table.glBindVertexArray(static_cast<GLuint>(previousVao));
     gl.table.glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
-    gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementArrayBuffer));
+    if (previousVao != 0) {
+        gl.table.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementArrayBuffer));
+    }
     for (std::size_t unit = 0U; unit < kTextureUnitCountUVE; ++unit) {
         gl.table.glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(unit));
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTextures[unit]));
