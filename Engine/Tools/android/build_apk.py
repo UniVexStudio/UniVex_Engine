@@ -4,7 +4,8 @@
 
     python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME" --build-dir build/android
 
-Each app in APPS names its UVBT target, manifest and the data it ships. The APK is signed with a
+Each app in APPS names its UVBT target, manifest and the data it ships; every app runs in the
+UniVexActivity compiled from JAVA_SOURCES. The APK is signed with a
 local debug key (created on first use) unless --keystore is given.
 """
 import argparse
@@ -45,6 +46,10 @@ BUILT_IN_SHADERS = ("Engine", "Runtime", "RHI", "Shader", "built_in")
 # Lists every file under assets/ for apps that unpack their data at startup (AAssetManager cannot
 # list folders); read by the app's android_main.
 ASSET_INDEX = "asset-index.txt"
+# The activity every app runs in (UniVexActivity: full screen, display cutouts), compiled to dex.
+JAVA_SOURCES = ("Engine", "App", "Android", "java")
+JAVA_RELEASE = "11"
+DEX_FILE = "classes.dex"
 
 
 @dataclass(frozen=True)
@@ -109,6 +114,23 @@ def stage_cooked_project(manifest: Path, assets: Path, parser) -> list:
     return lines
 
 
+def compile_java(build: Path, tools: Path, platform_jar: Path) -> Path:
+    """Compiles the activity's Java sources against the platform and converts them to one dex file."""
+    classes = build / "classes"
+    dex_dir = build / "dex"
+    for folder in (classes, dex_dir):
+        if folder.exists():
+            shutil.rmtree(folder)
+        folder.mkdir()
+    sources = sorted(REPO_ROOT.joinpath(*JAVA_SOURCES).rglob("*.java"))
+    if not sources:
+        raise RuntimeError("No Java sources for the activity under " + "/".join(JAVA_SOURCES))
+    run("javac", "--release", JAVA_RELEASE, "-Xlint:all", "-Werror", "-classpath", platform_jar, "-d", classes, *sources)
+    run(tools / "d8", "--release", "--min-api", uvbt.ANDROID_MIN_API_LEVEL, "--lib", platform_jar, "--output", dex_dir,
+        *sorted(classes.rglob("*.class")))
+    return dex_dir / DEX_FILE
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--sdk", type=Path, default=os.environ.get("ANDROID_HOME"), help="Android SDK (default: $ANDROID_HOME)")
@@ -133,7 +155,7 @@ def main():
     tools = sdk / "build-tools" / ANDROID_BUILD_TOOLS
     platform_jar = sdk / "platforms" / ANDROID_PLATFORM / "android.jar"
     ndk_bin = sdk / "ndk" / uvbt.ANDROID_NDK_VERSION / "toolchains" / "llvm" / "prebuilt" / uvbt.ANDROID_NDK_HOST_TAG / "bin"
-    for required in (tools / "aapt2", platform_jar, ndk_bin / "llvm-strip"):
+    for required in (tools / "aapt2", tools / "d8", platform_jar, ndk_bin / "llvm-strip"):
         if not required.is_file():
             parser.error(f"Missing Android tool: {required}")
 
@@ -166,6 +188,8 @@ def main():
         names = sorted(f.relative_to(assets).as_posix() for f in assets.rglob("*") if f.is_file())
         (assets / ASSET_INDEX).write_text("\n".join(names) + "\n", encoding="utf-8")
 
+    dex = compile_java(build, tools, platform_jar)
+
     unsigned = build / "unsigned.apk"
     run(tools / "aapt2", "link", "-I", platform_jar, "--manifest", REPO_ROOT.joinpath(*app.manifest), "-A", assets,
         "-o", unsigned)
@@ -173,6 +197,7 @@ def main():
     shutil.copy2(library, stripped)
     run(ndk_bin / "llvm-strip", "--strip-unneeded", stripped)
     with zipfile.ZipFile(unsigned, "a", compression=zipfile.ZIP_STORED) as package:
+        package.write(dex, DEX_FILE)
         # The C++ runtime is linked statically, so the library is the only native file.
         package.write(stripped, f"lib/{args.abi}/lib{app.library}.so")
         # aapt2 leaves out dotfiles (such as the .uvassetdb catalog); add whatever it skipped.

@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 
+#include "android_activity.h"
 #include "android_glfw.h"
 #include "android_window_manager.h"
 #include "engine_core.h"
@@ -42,6 +43,8 @@ struct HubActivityUVE final {
     bool resumed = false;
     /// The running Hub's window manager, once the loop has started.
     UVE::Window::AndroidWindowManagerUVE* windowManager = nullptr;
+    /// The screen edges display cutouts cover, read again whenever the window or its layout changes.
+    UVE::Window::AndroidSafeAreaUVE safeArea;
 };
 
 [[nodiscard]] std::string ReadAssetUVE(AAssetManager* const assets, const std::string& name) {
@@ -83,6 +86,7 @@ void HandleCommandUVE(android_app* const app, const int32_t command) {
     auto& activity = *static_cast<HubActivityUVE*>(app->userData);
     switch (command) {
     case APP_CMD_INIT_WINDOW:
+        activity.safeArea = UVE::Window::ReadAndroidSafeAreaUVE(app->activity);
         UVE::Window::SetAndroidGlfwSurfaceUVE(app->window);
         if (activity.windowManager != nullptr && !activity.windowManager->AttachNativeWindowUVE(app->window)) {
             __android_log_print(ANDROID_LOG_ERROR, kLogTagUVE, "UVE_HUB_FAILED the surface could not be reattached");
@@ -101,6 +105,12 @@ void HandleCommandUVE(android_app* const app, const int32_t command) {
         break;
     case APP_CMD_PAUSE:
         activity.resumed = false;
+        break;
+    case APP_CMD_WINDOW_RESIZED:
+    case APP_CMD_CONTENT_RECT_CHANGED:
+    case APP_CMD_CONFIG_CHANGED:
+        // Rotation and layout changes move the cutouts to other edges.
+        activity.safeArea = UVE::Window::ReadAndroidSafeAreaUVE(app->activity);
         break;
     case APP_CMD_GAINED_FOCUS:
     case APP_CMD_LOST_FOCUS:
@@ -208,6 +218,13 @@ extern "C" void android_main(android_app* const app) {
 
         UVE::LauncherUI::LauncherWindowDescUVE window;
         window.title = std::string(UVE::Hub::kHubWindowTitleUVE);
+        // Full screen on a phone: the system owns the window, so there is no title bar or buttons.
+        window.windowChrome = false;
+        window.safeArea = [&activity] {
+            const UVE::Window::AndroidSafeAreaUVE& area = activity.safeArea;
+            return prism::Margin(static_cast<float>(area.left), static_cast<float>(area.top),
+                                 static_cast<float>(area.right), static_cast<float>(area.bottom));
+        };
         window.nativeSurface = app->window;
         window.shaderDirectory = unpacked / kShadersDirectoryUVE;
         window.prismAssetsDirectory = unpacked / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE;
@@ -227,7 +244,7 @@ extern "C" void android_main(android_app* const app) {
     } catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTagUVE, "UVE_HUB_FAILED %s", error.what());
     }
-    // The activity finishes when the Hub closes itself (its close button), not only on destroy.
+    // The activity finishes when the Hub stops on its own (a failed start), not only on destroy.
     ANativeActivity_finish(app->activity);
     while (app->destroyRequested == 0) {
         android_poll_source* source = nullptr;

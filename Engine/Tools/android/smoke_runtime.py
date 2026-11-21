@@ -9,6 +9,9 @@ import subprocess
 import struct
 import time
 
+# The runtime APK's package and the activity it starts in (Engine/App/Android/AndroidManifest.xml).
+RUNTIME_ACTIVITY = 'com.univex.runtime/com.univex.app.UniVexActivity'
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -182,7 +185,7 @@ def main():
         adb('shell', 'am', 'force-stop', 'com.univex.runtime')
         # Fresh test log for this dedicated device session.
         adb('logcat', '-c')
-        adb('shell', 'am', 'start', '-n', 'com.univex.runtime/android.app.NativeActivity')
+        adb('shell', 'am', 'start', '-n', RUNTIME_ACTIVITY)
         wait_for('UVE_ANDROID_INITIALIZED')
         if args.expect_cooked_project:
             wait_for('UVE_ANDROID_COOKED_PROJECT_LOADED')
@@ -194,7 +197,7 @@ def main():
         wait_for('UVE_ANDROID_TOUCH_APPLIED active=0')
         adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
         wait_for('UVE_ANDROID_PAUSED')
-        adb('shell', 'am', 'start', '-n', 'com.univex.runtime/android.app.NativeActivity')
+        adb('shell', 'am', 'start', '-n', RUNTIME_ACTIVITY)
         wait_for('UVE_ANDROID_RESUMED', 2)
         text = wait_for('UVE_ANDROID_RENDERED', 2)
         if text.count('UVE_ANDROID_INITIALIZED') != 1:
@@ -232,7 +235,7 @@ def main():
             marker = 'files/user-data/cooked-smoke-marker'
             adb('shell', 'run-as', 'com.univex.runtime', 'touch', marker)
             adb('shell', 'am', 'force-stop', 'com.univex.runtime')
-            adb('shell', 'am', 'start', '-n', 'com.univex.runtime/android.app.NativeActivity')
+            adb('shell', 'am', 'start', '-n', RUNTIME_ACTIVITY)
             wait_for('UVE_ANDROID_COOKED_PROJECT_LOADED', 2)
             wait_for('UVE_ANDROID_RENDERED', 3)
             adb('shell', 'run-as', 'com.univex.runtime', 'cat', marker)
