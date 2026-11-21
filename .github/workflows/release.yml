@@ -69,6 +69,8 @@ jobs:
           name: release-linux
           path: dist/
           if-no-files-found: error
+          # Only carries the files to the publish job; deleted once the release is published.
+          retention-days: 1
 
   windows:
     name: Windows build
@@ -116,6 +118,8 @@ jobs:
           name: release-windows
           path: dist/
           if-no-files-found: error
+          # Only carries the files to the publish job; deleted once the release is published.
+          retention-days: 1
 
   publish:
     name: Publish the release
@@ -123,6 +127,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -146,3 +151,13 @@ jobs:
             *-beta) flags+=(--prerelease) ;;
           esac
           gh release create "${GITHUB_REF_NAME}" "${flags[@]}" dist/*
+      - name: Remove the hand-over artifacts
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" --jq '.artifacts[].id')
+          for id in ${ids}; do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"
+          done

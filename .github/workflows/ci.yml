@@ -5,16 +5,16 @@
 #   build-and-test   Linux, GCC, UVBT, Debug. Runs the source checkers in Engine/Tools, builds the
 #                    whole tree, smoke-tests a cooked project, then runs UniVexTests (against real
 #                    software GL and Vulkan drivers) and PRISM's own test harness.
-#   windows-editor   Windows, MSYS2 UCRT64, g++. Builds the editor as an actual Windows application,
-#                    packages it with the DLLs its exes import, and starts those exes once so the
-#                    package is proven to be the thing that runs - the same editor that runs on the
-#                    laptop, built from the same tree.
+#   windows-editor   Windows, MSYS2 UCRT64, g++. Builds the editor, the Hub and its installer as
+#                    actual Windows applications, stages the editor with the DLLs its exes import, and
+#                    starts those exes once so the staged set is proven to be the thing that runs.
+#                    Nothing is uploaded; releases come from release.yml.
 #
 # Both jobs compile through ccache (UVBT_COMPILER_LAUNCHER) with the cache kept between runs, so a
 # run recompiles only what changed since the last one instead of the whole tree.
 #
-# One file, because three files meant three trigger lists, three definitions of what CREATE_ARTIFACTS
-# means, and the same checkout boilerplate written out three times. A workflow is not a place to keep
+# One file, because three files meant three trigger lists, three definitions of which artifacts to
+# keep, and the same checkout boilerplate written out three times. A workflow is not a place to keep
 # the project's history of splitting things up.
 #
 # The Android apk is not in here. It is a runtime, not the editor - no project editing, no Inspector,
@@ -24,16 +24,12 @@
 # mobile runtime has no editor to be wrong about. The job is one `git log` away if that changes.
 name: CI
 
-# Two independent switches, and they mean different things.
+# CI checks, builds and tests; it hands out no builds. Engines and the Hub are distributed only
+# through release.yml, to the public releases repository the Hub reads.
 #
-# CREATE_ARTIFACTS (on by default) gates the upload that is a build somebody can try: the Windows
-# editor package. Set the repository variable to 'false' to stop it, or pass create_artifacts=false
-# on a manual run.
-#
-# DIAGNOSTIC_ARTIFACTS (off by default) gates the upload that answers questions about a failed run
-# instead of giving anybody something to run: the test log.
+# The one upload left is diagnostic: the test log of a failed run, and only when the repository
+# variable DIAGNOSTIC_ARTIFACTS is 'true' (off by default).
 env:
-  UNIVEX_CREATE_ARTIFACTS: ${{ vars.CREATE_ARTIFACTS != 'false' }}
   UNIVEX_DIAGNOSTIC_ARTIFACTS: ${{ vars.DIAGNOSTIC_ARTIFACTS == 'true' }}
 
 on:
@@ -41,11 +37,6 @@ on:
     branches: [master, 'kosuke/**', 'refactor/**', 'fix/**']
   pull_request:
   workflow_dispatch:
-    inputs:
-      create_artifacts:
-        description: 'Create downloadable build and diagnostic artifacts (on by default)'
-        type: boolean
-        default: true
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -335,12 +326,3 @@ jobs:
           ./uve_pack.exe --project ../cook-source/sample.uvproject --runtime ./uve_runtime.exe --output ../cooked --cook windows
           mv ../cook-source ../source-unavailable
           ../cooked/uve_runtime.exe --headless --project ../cooked/sample.uvproject --frames 3
-      - name: Upload the Windows editor package
-        uses: actions/upload-artifact@v4
-        if: env.UNIVEX_CREATE_ARTIFACTS == 'true' &&
-            (github.event_name != 'workflow_dispatch' || inputs.create_artifacts)
-        with:
-          name: UniVex-Editor-Windows-x64
-          path: package/UniVex-Editor/
-          if-no-files-found: error
-          retention-days: 7
