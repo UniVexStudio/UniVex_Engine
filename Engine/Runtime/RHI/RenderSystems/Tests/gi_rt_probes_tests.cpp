@@ -9,7 +9,9 @@
 
 #include "all_objects_3d.h"
 #include "entity_manager.h"
+#include "event_system.h"
 #include "gi_reflection_probes.h"
+#include "memory_manager.h"
 #include "primitive_mesh_component.h"
 #include "ray_traced_effects.h"
 #include "world_transform_component.h"
@@ -55,7 +57,9 @@ TEST(GiReflectionProbesUVETest, BakedProbeAssetRoundTripsOnDisk) {
 }
 
 TEST(GiReflectionProbesUVETest, HybridLightmapBakerGeneratesAtlasAndUpdatesProbes) {
-    Scene::EntityManagerUVE em;
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE em{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
     const Scene::EntityUVE giEntity = em.CreateEntityUVE();
     Scene::WorldTransformComponentUVE giWt{};
     giWt.dirty = false;

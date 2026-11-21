@@ -9,9 +9,11 @@
 #include <vector>
 
 #include "entity_manager.h"
+#include "event_system.h"
 #include "foliage_wind_3d.h"
 #include "hiz_occlusion.h"
 #include "matrix4x4.h"
+#include "memory_manager.h"
 #include "origin_rebase.h"
 #include "scalar.h"
 #include "transform_component.h"
@@ -43,7 +45,9 @@ TEST(HiZOcclusionUVETest, OccludesBoxBehindNearWallAndKeepsFrontBoxVisible) {
 }
 
 TEST(OriginRebaseUVETest, ShiftsRootsAndPreservesDoublePrecisionWorldPosition) {
-    Scene::EntityManagerUVE em;
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE em{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
     const Scene::EntityUVE e = em.CreateEntityUVE();
     Scene::TransformComponentUVE tr{};
     tr.localPosition = Math::Vector3UVE{3000.5F, 10.0F, -2500.25F};
