@@ -75,7 +75,7 @@ jobs:
           path: dist/
           if-no-files-found: error
           # Only carries the files to the publish job; deleted once the release is published.
-          retention-days: 1
+          retention-days: 7
 
   windows:
     name: Windows build
@@ -124,7 +124,7 @@ jobs:
           path: dist/
           if-no-files-found: error
           # Only carries the files to the publish job; deleted once the release is published.
-          retention-days: 1
+          retention-days: 7
 
   publish:
     name: Publish the release
@@ -176,8 +176,8 @@ jobs:
             *-beta) flags+=(--prerelease) ;;
           esac
           gh release create "${GITHUB_REF_NAME}" "${flags[@]}" dist/*
+      # Only once published: if publishing fails the builds stay downloadable from this run.
       - name: Remove the hand-over artifacts
-        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
