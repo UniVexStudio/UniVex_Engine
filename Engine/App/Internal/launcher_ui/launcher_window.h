@@ -19,7 +19,11 @@ inline constexpr std::string_view kPrismAssetsDirectoryNameUVE = "prism_assets";
 inline constexpr int kLauncherStartupFailedExitCodeUVE = 1;
 
 struct LauncherWindowDescUVE final {
+    /// The window's name for the operating system (taskbar, window switcher).
     std::string title;
+    /// Whether the title bar repeats the mark and title. Launchers keep it clean: their own content
+    /// already shows the brand, so the bar holds only the drag strip and the window buttons.
+    bool showTitleInChrome = false;
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     /// PRISM's fonts, themes and locales (normally kPrismAssetsDirectoryNameUVE beside the executable).

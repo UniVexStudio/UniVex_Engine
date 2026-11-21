@@ -22,6 +22,19 @@ public:
     }
   }
 
+  // The title tab: a tinted chamfered tab holding the window's mark (or icon) and title.
+  void paintIdentity(Canvas& c, float tr, bool active) {
+    const Theme& t = theme();
+    float tw = tr - m_rect.x;
+    Vec2 poly[4] = {Vec2(m_rect.x, m_rect.y), Vec2(m_rect.x + tw, m_rect.y), Vec2(m_rect.x + tw + 10.0f, m_rect.bottom() - 1.0f), Vec2(m_rect.x, m_rect.bottom() - 1.0f)};
+    c.fillPolygon(std::span<const Vec2>(poly, 4), t.highlight.alpha(active ? 0.10f : 0.05f), false);
+    c.fillRect(Rect{m_rect.x, m_rect.bottom() - 3.0f, tw + 7.0f, 2.0f}, active ? t.highlight : t.border);
+    float x = m_rect.x + 14.0f;
+    if (m_o.icon != Icon::None) { drawIcon(c, m_o.icon, Rect{x, m_rect.y + 8.0f, 16, 16}, active ? t.highlight : t.textDim); x += 24.0f; }
+    else if (hasBrandMark()) { drawBrandMark(c, Rect{x, m_rect.y + 7.0f, 18, 18}); x += 26.0f; }
+    c.textIn(*t.semibold, Rect{x, m_rect.y, tw, m_rect.h - 2.0f}, m_o.title, active ? t.textBright : t.textDim, HAlign::Left, false);
+  }
+
   void paint(Canvas& c) override {
     const Theme& t = theme();
     const bool active = !Application::exists() || Application::get().activeWindow() == m_id;
@@ -35,14 +48,7 @@ public:
         c.line(Vec2(x, hatch.bottom()), Vec2(x + hatch.h, hatch.y), Color(255, 255, 255, active ? 12 : 7), 1.0f);
       c.popClip();
     }
-    float tw = tr - m_rect.x;
-    Vec2 poly[4] = {Vec2(m_rect.x, m_rect.y), Vec2(m_rect.x + tw, m_rect.y), Vec2(m_rect.x + tw + 10.0f, m_rect.bottom() - 1.0f), Vec2(m_rect.x, m_rect.bottom() - 1.0f)};
-    c.fillPolygon(std::span<const Vec2>(poly, 4), t.accent.alpha(active ? 0.22f : 0.10f), false);
-    c.fillRect(Rect{m_rect.x, m_rect.bottom() - 3.0f, tw + 7.0f, 2.0f}, active ? t.accent : t.border);
-    float x = m_rect.x + 14.0f;
-    if (m_o.icon != Icon::None) { drawIcon(c, m_o.icon, Rect{x, m_rect.y + 8.0f, 16, 16}, active ? t.accentHover : t.textDim); x += 24.0f; }
-    else if (hasBrandMark()) { drawBrandMark(c, Rect{x, m_rect.y + 7.0f, 18, 18}); x += 26.0f; }
-    c.textIn(*t.semibold, Rect{x, m_rect.y, tw, m_rect.h - 2.0f}, m_o.title, active ? t.textBright : t.textDim, HAlign::Left, false);
+    if (m_o.showIdentity) paintIdentity(c, tr, active);
     for (int b = 0; b < 3; b++) {
       if (!has(b)) continue;
       Rect r = btnRect(b);
@@ -85,6 +91,7 @@ private:
     return m_rect.right();
   }
   float tabRight() const {
+    if (!m_o.showIdentity) return m_rect.x;
     const Theme& t = theme();
     const float mark = m_o.icon != Icon::None ? 24.0f : (hasBrandMark() ? 26.0f : 0.0f);
     return m_rect.x + 14.0f + mark + std::ceil(t.semibold->width(m_o.title)) + 18.0f;
