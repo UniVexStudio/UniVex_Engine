@@ -4,6 +4,7 @@
 
 #include <functional>
 
+#include "accessibility_bridge.h"
 #include "entity.h"
 #include "i_input_system.h"
 #include "localization.h"
@@ -85,6 +86,22 @@ public:
     [[nodiscard]] Scene::EntityUVE GetFocusedEntityUVE() const noexcept { return m_focusedEntity; }
     void ClearFocusUVE() noexcept { m_focusedEntity = Scene::kInvalidEntityUVE; }
 
+    /// Accessibility UI scale multiplier clamped to [0.5, 3.0].
+    void SetUiScaleFactorUVE(const float scaleFactor) noexcept {
+        if (scaleFactor >= 0.5F && scaleFactor <= 3.0F) {
+            m_uiScaleFactor = scaleFactor;
+        }
+    }
+    [[nodiscard]] float GetUiScaleFactorUVE() const noexcept { return m_uiScaleFactor; }
+
+    /// Optional OS screen-reader / accessibility bridge notified when UI focus changes.
+    void SetAccessibilityBridgeUVE(IAccessibilityBridgeUVE* const bridge) noexcept {
+        m_accessibilityBridge = bridge;
+    }
+    [[nodiscard]] IAccessibilityBridgeUVE* GetAccessibilityBridgeUVE() const noexcept {
+        return m_accessibilityBridge;
+    }
+
 private:
     UIFontAtlasUVE m_fontAtlas;
     UIDrawBatchUVE m_drawBatch;
@@ -94,6 +111,8 @@ private:
     UICoordinateTransformUVE m_coordinateTransform{};
     Math::Vector2UVE m_viewportSize{};
     float m_deltaTime = 0.0F;
+    float m_uiScaleFactor = 1.0F;
+    IAccessibilityBridgeUVE* m_accessibilityBridge = nullptr;
 };
 
 } // namespace UVE::UI

@@ -22,6 +22,7 @@
 
 
 #include "vulkan_render_device.h"
+#include "bindless_texture_table.h"
 #include "vulkan_composite_alpha_policy.h"
 #include "vulkan_present_mode_policy.h"
 #include "vulkan_validation_policy.h"
@@ -328,6 +329,7 @@ struct VulkanRenderDeviceUVE::ImplUVE {
     std::uint32_t maxTextureArrayLayers = 1U;
     std::uint32_t maxCubemapSize = 0U;
     std::uint32_t maxTexture3DSize = 0U;
+    BindlessTextureTableUVE bindlessTable{};
     std::uint32_t maxColorAttachments = 1U; // Tier 2.4: limits.maxColorAttachments
     bool textureCompressionETC2Enabled = false;
     bool textureCompressionASTCLdrEnabled = false;
@@ -4110,6 +4112,7 @@ void VulkanRenderDeviceUVE::DestroyTextureUVE(const TextureHandleUVE texture) {
         return;
     }
     const std::uint32_t destroyedValue = texture.value;
+    impl.bindlessTable.UnregisterTextureUVE(texture);
     (void)impl.vk.vkQueueWaitIdle(impl.presentQueue); // replay/transfer may still sample it
     // Invalidate every cached descriptor set that mentions this texture: after destruction
     // their image views dangle, and rebinding a stale set would be undefined. Sets with
@@ -7767,9 +7770,29 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
         caps.mipGeneration = RenderFeatureSupportUVE::Native;
     }
     caps.bufferCopyAlignment = 4U;
-    if (m_impl->useDynamicRendering)
+    if (m_impl->useDynamicRendering) {
         caps.memoryBarriers = RenderFeatureSupportUVE::Native;
+        caps.bindlessTextures = RenderFeatureSupportUVE::Native;
+        caps.maxBindlessTextures = kDefaultMaxBindlessTexturesUVE;
+    }
     return caps;
+}
+
+std::uint32_t VulkanRenderDeviceUVE::RegisterBindlessTextureUVE(const TextureHandleUVE texture) {
+    if (!IsUsableUVE() || !m_impl->useDynamicRendering) {
+        return kInvalidBindlessTextureIndexUVE;
+    }
+    if (m_impl->textures.find(texture.value) == m_impl->textures.end()) {
+        return kInvalidBindlessTextureIndexUVE;
+    }
+    return m_impl->bindlessTable.RegisterUVE(texture);
+}
+
+void VulkanRenderDeviceUVE::UnregisterBindlessTextureUVE(const std::uint32_t bindlessIndex) {
+    if (!IsUsableUVE()) {
+        return;
+    }
+    m_impl->bindlessTable.UnregisterSlotUVE(bindlessIndex);
 }
 RenderOperationResultUVE VulkanRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE texture,
                                                                   TextureDescUVE &out) const {

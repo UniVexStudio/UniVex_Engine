@@ -44,6 +44,8 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -300,6 +302,9 @@ std::uint64_t EditorDetailsUVE::StructureSignatureUVE(const Scene::EntityUVE ent
     HashUVE(h, static_cast<std::uint64_t>(m_editor.m_playModeState));
     HashUVE(h, m_editor.IsAuthoringCommandAllowedUVE() ? 1U : 0U);
     if (!m_editor.IsDocumentEntityUVE(entity)) {
+        if (m_editor.m_selectedProjectFile.has_value()) {
+            HashUVE(h, m_editor.m_selectedProjectFile->relativePath.generic_string());
+        }
         return h;
     }
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
@@ -327,6 +332,11 @@ std::uint64_t EditorDetailsUVE::StructureSignatureUVE(const Scene::EntityUVE ent
                 Asset::AssetGuidUVE value{};
                 property.getValue(instance, &value);
                 HashUVE(h, value.value);
+            } else if (property.typeId == Scene::kPropertyTypeStringUVE && instance != nullptr &&
+                       (property.customDrawerId == "file:uvmat" || property.customDrawerId == "file:uvmaterial")) {
+                std::string value;
+                property.getValue(instance, &value);
+                HashUVE(h, value);
             }
             // A skeleton's bones are drawn as a tree: a new source re-lays it.
             if (property.customDrawerId == "skeleton-source" && instance != nullptr) {
@@ -363,11 +373,9 @@ void EditorDetailsUVE::RefreshUVE() {
         RebuildUVE(entity);
         return;
     }
-    if (!m_editor.IsDocumentEntityUVE(entity)) {
-        return;
-    }
-    // Same rows: show the values as they are now (a gizmo drag, an undo, a script), except the one
-    // the author is editing.
+    const bool hasEntity = m_editor.IsDocumentEntityUVE(entity);
+    // Same rows: show the values as they are now (a gizmo drag, an undo, a script, or a live
+    // material preview refresh), except the one the author is editing.
     const Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
     for (const std::shared_ptr<RowUVE>& row : m_rows) {
         if (!row->sync || IsBeingEditedUVE(*row)) {
@@ -375,7 +383,7 @@ void EditorDetailsUVE::RefreshUVE() {
         }
         const void* instance = nullptr;
         if (row->entry != nullptr) {
-            if (!em.HasComponentUVE(entity, row->entry->typeIndex)) {
+            if (!hasEntity || !em.HasComponentUVE(entity, row->entry->typeIndex)) {
                 continue;
             }
             instance = em.GetComponentPointerUVE(entity, row->entry->typeIndex);
@@ -390,12 +398,30 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
     if (m_editor.m_selectedEntities.empty() || !m_editor.IsDocumentEntityUVE(entity)) {
         if (m_editor.m_selectedProjectFile.has_value() && !m_editor.m_selectedProjectFile->relativePath.empty()) {
             const auto& file = *m_editor.m_selectedProjectFile;
+            const auto itemType = m_editor.GetAssetTableEntryTypeUVE(file);
             m_title->setText(file.relativePath.filename().string());
-            m_subtitle->setText(EditorUVE::GetAssetTableItemTypeLabelUVE(m_editor.GetAssetTableEntryTypeUVE(file)));
+            m_subtitle->setText(EditorUVE::GetAssetTableItemTypeLabelUVE(itemType));
             const int section = m_grid->addCategory("Asset");
             m_grid->addRow(section, "Path", prism::make<prism::Label>(file.relativePath.generic_string()));
             m_grid->addRow(section, "Registered",
                            prism::make<prism::Label>(file.registeredAssetGuid.has_value() ? "Yes" : "No"));
+            if (itemType == EditorUVE::AssetTableItemTypeUVE::Material) {
+                const auto snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+                const std::filesystem::path matPath = snapshot.contentRoot / file.relativePath;
+                auto preview = prism::make<AssetThumbnailUVE>(m_editor, AssetThumbnailUVE::KindUVE::Material, 128.0F);
+                preview->setAssetUVE(matPath);
+                std::weak_ptr<AssetThumbnailUVE> weakPreview = preview;
+                auto previewRow = std::make_shared<RowUVE>();
+                previewRow->sync = [weakPreview](const void*) {
+                    if (auto t = weakPreview.lock()) {
+                        t->refreshUVE();
+                    }
+                };
+                previewRow->editor = preview.get();
+                m_rows.push_back(std::move(previewRow));
+                m_grid->addRow(section, "Preview", std::move(preview), "Live PBR material preview (click to enlarge).");
+                AddMaterialSectionUVE(matPath, "Material");
+            }
             return;
         }
         m_title->setText("Nothing selected");
@@ -474,6 +500,19 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
     }
     entries = std::move(ordered);
 
+    std::unordered_set<std::string> shownMaterials;
+    const auto addUniqueMaterial = [&](const std::filesystem::path& matPath, const std::string& slotLabel) {
+        if (matPath.empty()) {
+            return;
+        }
+        std::error_code ec;
+        const std::filesystem::path canonical = std::filesystem::weakly_canonical(matPath, ec);
+        const std::string key = (ec ? matPath.lexically_normal() : canonical).generic_string();
+        if (shownMaterials.insert(key).second) {
+            AddMaterialSectionUVE(matPath, slotLabel);
+        }
+    };
+
     bool transformDone = false;
     // A widget is placed by its rect (and anchors), not by a 3D transform: the transform is not shown.
     const bool widget = std::any_of(entries.begin(), entries.end(), [](const EntryUVE* const entry) {
@@ -516,7 +555,7 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
             AddPropertyUVE(category, *entry, property, instance, authoring && property.IsAuthoringWritableUVE());
         }
         for (const auto& [path, slot] : m_pendingMaterials) {
-            AddMaterialSectionUVE(path, slot);
+            addUniqueMaterial(path, slot);
         }
         m_pendingMaterials.clear();
         if (entry->typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
@@ -529,7 +568,7 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
             for (std::size_t i = 0; i < mesh->materialGuids.size(); ++i) {
                 const std::filesystem::path path = m_editor.m_services->GetAssetDatabaseUVE().ResolveUVE(mesh->materialGuids[i]);
                 if (!path.empty()) {
-                    AddMaterialSectionUVE(path, "Surface " + std::to_string(i));
+                    addUniqueMaterial(path, "Surface " + std::to_string(i));
                 }
             }
         }
@@ -1049,9 +1088,18 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
             // Content-relative, as these rows have always stored it; a file outside Content keeps its full path.
             const std::function<void(const std::filesystem::path&)> useFile = [this, e, p, scriptSlot](const std::filesystem::path& absolute) {
                 const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-                const std::filesystem::path relative = absolute.lexically_relative(root);
-                const std::string value = (relative.empty() || *relative.begin() == "..") ? absolute.generic_string()
-                                                                                            : relative.generic_string();
+                std::error_code error;
+                std::filesystem::path relative = std::filesystem::relative(absolute, root, error);
+                if (error || relative.empty() || relative == "." || *relative.begin() == "..") {
+                    error.clear();
+                    const std::filesystem::path canonicalAbs = std::filesystem::weakly_canonical(absolute, error);
+                    const std::filesystem::path canonicalRoot =
+                        error ? std::filesystem::path{} : std::filesystem::weakly_canonical(root, error);
+                    relative = error ? std::filesystem::path{} : std::filesystem::relative(canonicalAbs, canonicalRoot, error);
+                }
+                const std::string value = (relative.empty() || relative == "." || *relative.begin() == "..")
+                                              ? absolute.generic_string()
+                                              : relative.generic_string();
                 if (scriptSlot) {
                     if (!m_editor.AssignScriptToSelectedEntityUVE(value)) {
                         m_editor.m_contentStatusMessage = m_editor.DescribeScriptAssetProblemUVE(value);
@@ -1100,8 +1148,30 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
             };
             // The sky slot is the picker alone: its panorama is seen in the viewport, not in a box.
             const std::optional<AssetThumbnailUVE::KindUVE> kind = skySlot ? std::nullopt : ThumbnailKindForUVE(extensions);
+            if (kind == AssetThumbnailUVE::KindUVE::Material && instance != nullptr) {
+                std::string current;
+                p->getValue(instance, &current);
+                if (!current.empty()) {
+                    const std::filesystem::path stored{current};
+                    const std::filesystem::path resolved =
+                        stored.is_absolute()
+                            ? stored
+                            : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / stored;
+                    m_pendingMaterials.emplace_back(resolved, property.displayName.empty() ? property.name : property.displayName);
+                }
+            }
             if (kind.has_value()) {
                 auto thumb = prism::make<AssetThumbnailUVE>(m_editor, *kind);
+                if (instance != nullptr) {
+                    std::string current;
+                    p->getValue(instance, &current);
+                    if (!current.empty()) {
+                        const std::filesystem::path stored{current};
+                        thumb->setAssetUVE(stored.is_absolute()
+                                               ? stored
+                                               : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / stored);
+                    }
+                }
                 std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;
                 row->sync = [this, p, weakThumb, base = std::move(row->sync)](const void* inst) {
                     if (base) {
@@ -1190,15 +1260,14 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
         auto button = prism::make<prism::Button>("Empty", prism::Icon::None,
                                                  prism::ButtonStyle::Default);
         std::weak_ptr<prism::Button> weak = button;
-        row->sync = [this, p, weak, material](const void* inst) {
+        row->sync = [this, p, weak](const void* inst) {
             auto b = weak.lock();
             if (!b || inst == nullptr) {
                 return;
             }
             Asset::AssetGuidUVE value{};
             p->getValue(inst, &value);
-            // An empty material slot says what a click does: make one (and its maps appear here) or pick one.
-            std::string text = material ? "Create or pick..." : "Empty";
+            std::string text = "Empty";
             if (value != Asset::AssetGuidUVE{}) {
                 text = "Missing asset";
                 for (const Asset::ProjectFileEntryUVE& file : m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().entries) {
@@ -1312,6 +1381,11 @@ void EditorDetailsUVE::AddPropertyUVE(const int category, const EntryUVE& entry,
         // The standard slot layout: the asset's own preview beside its picker.
         if (const std::optional<AssetThumbnailUVE::KindUVE> kind = ThumbnailKindForUVE(extensions); kind.has_value()) {
             auto thumb = prism::make<AssetThumbnailUVE>(m_editor, *kind);
+            if (instance != nullptr) {
+                Asset::AssetGuidUVE value{};
+                p->getValue(instance, &value);
+                thumb->setAssetUVE(PathOfGuidUVE(value));
+            }
             std::weak_ptr<AssetThumbnailUVE> weakThumb = thumb;
             row->sync = [this, p, weakThumb, base = std::move(row->sync)](const void* inst) {
                 if (base) {

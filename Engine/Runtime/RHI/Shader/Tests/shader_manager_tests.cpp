@@ -508,7 +508,15 @@ INSTANTIATE_TEST_SUITE_P(
                        std::pair<std::string_view, std::string_view>{"vfx_sprite.glsl",
                                                                       BuiltIn::kVfxSpriteSource},
                        std::pair<std::string_view, std::string_view>{"studio_floor_pbr.glsl",
-                                                                      BuiltIn::kStudioFloorPbrSource}));
+                                                                      BuiltIn::kStudioFloorPbrSource},
+                       std::pair<std::string_view, std::string_view>{"taa_resolve.glsl",
+                                                                      BuiltIn::kTaaResolveSource},
+                       std::pair<std::string_view, std::string_view>{"wboit_composite.glsl",
+                                                                      BuiltIn::kWboitCompositeSource},
+                       std::pair<std::string_view, std::string_view>{"rt_trace.glsl",
+                                                                      BuiltIn::kRtTraceSource},
+                       std::pair<std::string_view, std::string_view>{"hiz_downsample.glsl",
+                                                                      BuiltIn::kHiZDownsampleSource}));
 
 
 // ---------------------------------------------------------------------------

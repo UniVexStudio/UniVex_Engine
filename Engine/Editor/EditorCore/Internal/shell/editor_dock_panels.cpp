@@ -2,6 +2,7 @@
 #include "editor_dock_panels.h"
 
 #include "developer_console.h"
+#include "editor_tooling_services.h"
 #include "log_sink.h"
 
 #include "prism/Application.h"
@@ -17,10 +18,11 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <utility>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <string>
+#include <utility>
 
 namespace UVE::Editor {
 namespace {
@@ -185,6 +187,9 @@ prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildOutputLogUVE() {
     row->add(clear, kCentreSlotUVE);
 
     m_log->onCountsChanged = [this] { UpdateLogCountsUVE(); };
+    m_log->onSourceClick = [this](const std::string& file, const int line) {
+        m_editor.m_contentStatusMessage = "Source: " + file + ":" + std::to_string(line);
+    };
     auto page = prism::vbox();
     page->add(BarUVE(row));
     page->add(m_log, prism::Slot{1.0F});
@@ -567,6 +572,57 @@ void EditorDockPanelsUVE::RefreshUVE(const bool consoleShown, const bool profile
     if (profilerShown) {
         RefreshProfilerUVE();
     }
+}
+
+prism::Ref<prism::Widget> EditorDockPanelsUVE::BuildSearchUVE() {
+    auto results = prism::make<prism::LogView>();
+    auto status = DimLabelUVE("Type a query to search scenes, materials, scripts, and assets.");
+    auto queryInput = prism::make<prism::TextInput>("", "Find in project...");
+    queryInput->setLeadingIcon(prism::Icon::Search);
+
+    const auto runSearch = [this, weakResults = std::weak_ptr<prism::LogView>(results),
+                            weakStatus = std::weak_ptr<prism::Label>(status)](const std::string& q) {
+        auto view = weakResults.lock();
+        auto lbl = weakStatus.lock();
+        if (!view || !lbl) {
+            return;
+        }
+        view->clear();
+        if (q.empty() || m_editor.m_services == nullptr) {
+            lbl->setText("0 matches");
+            return;
+        }
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        const auto hits = SearchProjectContentUVE(root, q, 200U);
+        for (const EditorProjectSearchHitUVE& hit : hits) {
+            std::string line = hit.relativePath;
+            if (hit.lineNumber > 0U) {
+                line += ":" + std::to_string(hit.lineNumber);
+            }
+            line += "  " + hit.previewLine;
+            view->add(prism::LogLevel::Info, std::move(line), "Search");
+        }
+        lbl->setText(std::to_string(hits.size()) + " match(es)");
+    };
+
+    queryInput->onCommit = runSearch;
+    auto searchBtn = BarButtonUVE(prism::Icon::Search, "Run project search", "Find");
+    searchBtn->onClick = [weakInput = std::weak_ptr<prism::TextInput>(queryInput), runSearch] {
+        if (auto inp = weakInput.lock()) {
+            runSearch(inp->text());
+        }
+    };
+
+    auto row = prism::hbox(4.0F);
+    row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
+    row->add(queryInput, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    row->add(searchBtn, kCentreSlotUVE);
+    row->add(status, kCentreSlotUVE);
+
+    auto page = prism::vbox();
+    page->add(BarUVE(row));
+    page->add(results, prism::Slot{1.0F});
+    return page;
 }
 
 } // namespace UVE::Editor

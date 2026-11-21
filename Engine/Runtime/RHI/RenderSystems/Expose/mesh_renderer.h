@@ -66,7 +66,7 @@ public:
     // --- Active View/Frustum State Management ---
 
     /// Sets an active camera/view frustum used by BuildVisibilitySetUVE(...) when no explicit frustum is passed.
-    void SetActiveCullFrustumUVE(const Math::FrustumUVE& frustum) const noexcept;
+    void SetActiveCullFrustumUVE(const Math::FrustumUVE& frustum) const noexcept override;
 
     /// Sets active camera view + shadow cascade frustums used by BuildVisibilitySetUVE(...).
     void SetActiveCullFrustumsUVE(std::vector<Math::FrustumUVE> frustums) const noexcept;
@@ -75,7 +75,7 @@ public:
     void SetActiveSceneBoundingRegionUVE(const Math::AabbUVE& region) const noexcept;
 
     /// Clears any configured active cull frustum.
-    void ClearActiveCullFrustumUVE() const noexcept;
+    void ClearActiveCullFrustumUVE() const noexcept override;
 
     /// Clears any configured active bounding region.
     void ClearActiveSceneBoundingRegionUVE() const noexcept;
@@ -103,7 +103,7 @@ public:
     /// Synchronizes the internal spatial BVH with all valid mesh entities in the scene entity manager.
     void SynchronizeSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,
                                           Asset::IAssetManagerUVE& assetManager,
-                                          Asset::IAssetDatabaseUVE& assetDatabase) const;
+                                          Asset::IAssetDatabaseUVE& assetDatabase) const override;
 
     /// Forces a full rebuild of the spatial BVH from scratch using median-split partitioning.
     void RebuildSpatialAccelerationUVE(Scene::IEntityManagerUVE& entityManager,

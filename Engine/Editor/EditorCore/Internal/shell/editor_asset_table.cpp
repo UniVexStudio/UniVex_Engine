@@ -868,6 +868,7 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
         }
         HashUVE(h, m_iconGenerationShown);
     }
+    HashUVE(h, m_editor.m_materialThumbnailGeneration);
     HashUVE(h, m_editor.m_assetTableDirectory.generic_string());
     HashUVE(h, m_editor.m_assetFilter);
     HashUVE(h, m_editor.m_assetTableShelf);
@@ -2244,7 +2245,8 @@ const EditorAssetTableUVE::PreviewUVE* EditorAssetTableUVE::PreviewForUVE(
         return nullptr;
     }
     PreviewUVE& preview = m_previews[entry.relativePath.generic_string()];
-    const std::uint64_t generation = m_editor.m_meshThumbnailGeneration;
+    const std::uint64_t generation =
+        type == ItemTypeUVE::Material ? m_editor.m_materialThumbnailGeneration : m_editor.m_meshThumbnailGeneration;
     if (preview.texture == texture && preview.generation == generation && !preview.pixels.empty()) {
         return &preview;
     }

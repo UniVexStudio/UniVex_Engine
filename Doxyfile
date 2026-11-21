@@ -1,0 +1,19 @@
+# Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+# Public API reference configuration for UniVex Engine (run `doxygen Doxyfile`).
+
+PROJECT_NAME           = "UniVex Engine"
+PROJECT_BRIEF          = "Production-grade real-time 3D engine & editor"
+OUTPUT_DIRECTORY       = Build/Docs/API
+CREATE_SUBDIRS         = NO
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+RECURSIVE              = YES
+INPUT                  = Engine/Runtime Engine/Editor
+FILE_PATTERNS          = *.h
+EXCLUDE_PATTERNS       = */Internal/* */Tests/* */ThirdParty/*
+USE_MDFILE_AS_MAINPAGE = README.md
+WARN_IF_UNDOCUMENTED   = NO
+QUIET                  = YES

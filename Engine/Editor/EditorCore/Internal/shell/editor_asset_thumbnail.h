@@ -24,7 +24,7 @@ bool ReadTexturePixelsUVE(std::uintptr_t texture, bool bottomUp, int& width, int
 class AssetThumbnailUVE final : public prism::Widget {
 public:
     enum class KindUVE : std::uint8_t { Material, Mesh, Texture };
-    AssetThumbnailUVE(EditorUVE& editor, KindUVE kind);
+    AssetThumbnailUVE(EditorUVE& editor, KindUVE kind, float side = 64.0F);
     /// The asset shown (absolute path, empty for none); re-reads the preview when it changed.
     void setAssetUVE(const std::filesystem::path& absolute);
     /// Picks up a preview that was rendered or re-rendered since the last call.
@@ -36,9 +36,11 @@ public:
 private:
     EditorUVE& m_editor;
     KindUVE m_kind;
+    float m_side = 64.0F;
     std::filesystem::path m_relative;
     bool m_hasAsset = false;
     std::uintptr_t m_texture = 0U;
+    std::uint64_t m_generation = 0U;
     int m_width = 0;
     int m_height = 0;
     std::vector<std::uint32_t> m_pixels;

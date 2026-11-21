@@ -17,6 +17,7 @@
 #include "lod_group_3d.h"
 #include "marker_3d.h"
 #include "multi_mesh_instance_3d.h"
+#include "foliage_wind_3d.h"
 #include "occluder_3d.h"
 #include "path_3d.h"
 #include "path_follow_3d.h"

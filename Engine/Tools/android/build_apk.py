@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--build-dir', type=Path, required=True)
     parser.add_argument('--dependency-source-cache', type=Path)
     parser.add_argument('--native-build-dir', type=Path)
+    parser.add_argument('--native-lib', type=Path, help='Prebuilt libunivex_android.so (e.g. built by UVBT)')
     parser.add_argument('--cooked-project', type=Path, help='Cooked .uvproject file for native scene launch')
     parser.add_argument('--abi', choices=['arm64-v8a', 'x86_64'], default='arm64-v8a')
     parser.add_argument('--jobs', type=int, default=4)
@@ -29,20 +30,20 @@ def main():
     tools = sdk / 'build-tools/35.0.0'
     if args.jobs < 1:
         parser.error('--jobs must be positive')
-    for required in [ndk / 'build/cmake/android.toolchain.cmake', tools / 'aapt2', sdk / 'platforms/android-35/android.jar']:
+    for required in [tools / 'aapt2', sdk / 'platforms/android-35/android.jar']:
         if not required.is_file():
             parser.error(f'Missing Android tool: {required}')
     build.mkdir(parents=True, exist_ok=True)
     native = args.native_build_dir.resolve() if args.native_build_dir else build / 'native'
-    cached_sources = []
-    if args.dependency_source_cache:
-        for source in args.dependency_source_cache.resolve().glob('*-src'):
-            cached_sources.append(f'-DFETCHCONTENT_SOURCE_DIR_{source.name[:-4].upper()}={source}')
-    run('cmake', '-S', root, '-B', native, '-G', 'Ninja',
-        f'-DCMAKE_TOOLCHAIN_FILE={ndk}/build/cmake/android.toolchain.cmake',
-        f'-DANDROID_ABI={args.abi}', '-DANDROID_PLATFORM=android-28',
-        '-DUVE_BUILD_TESTS=OFF', '-DCMAKE_BUILD_TYPE=Release', *cached_sources)
-    run('cmake', '--build', native, '--target', 'univex_android', '--parallel', args.jobs)
+    if args.native_lib:
+        prebuilt_lib = args.native_lib.resolve()
+        if not prebuilt_lib.is_file():
+            parser.error(f'Missing --native-lib: {prebuilt_lib}')
+    else:
+        run('python3', root / 'Engine/Tools/UVBT/uvbt.py', 'build', 'UniVexAndroid', 'Android', 'Release', f'-j{args.jobs}')
+        prebuilt_lib = root / '.uvbt/bin/Android/Release/libunivex_android.so'
+        if not prebuilt_lib.is_file():
+            prebuilt_lib = native / 'Engine/App/Android/libunivex_android.so'
     assets = build / 'assets'
     shutil.copytree(root / 'Engine/Runtime/RHI/Shader/built_in', assets / 'shaders', dirs_exist_ok=True)
     # Rebuild the staging assets to avoid shipping a previous project's stale content.
@@ -91,7 +92,7 @@ def main():
     unsigned = build / 'unsigned.apk'
     run(tools / 'aapt2', 'link', '-I', sdk / 'platforms/android-35/android.jar',
         '--manifest', root / 'Engine/App/Android/AndroidManifest.xml', '-A', assets, '-o', unsigned)
-    library = native / 'Engine/App/Android/libunivex_android.so'
+    library = prebuilt_lib
     stripped = build / 'libunivex_android.so'
     shutil.copy2(library, stripped)
     run(ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip', '--strip-unneeded', stripped)
