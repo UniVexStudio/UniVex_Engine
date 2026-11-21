@@ -18,6 +18,15 @@ import sys
 import time
 from pathlib import Path
 
+# Data that ships beside a built executable. The directory and file names are the ones the engine
+# looks for (Engine/Tools/test_shared_names.py checks them against the C++ constants).
+PRISM_ASSETS_SOURCE = ("Engine", "Runtime", "Prism", "assets")
+PRISM_ASSETS_DIRECTORY = "prism_assets"
+PROJECT_TEMPLATES_SOURCE = ("Engine", "Templates", "Projects")
+PROJECT_TEMPLATES_DIRECTORY = "project_templates"
+DISTRIBUTION_SOURCE = ("Engine", "Distribution")
+ENGINE_FEED_FILE = "engine_feed.json"
+
 
 class ModuleInfo:
     def __init__(self, name, directory, module_type="StaticLibrary"):
@@ -934,22 +943,21 @@ class EngineBuilder:
 
         if any(m.name == "Prism" for m in ordered_modules):
             # PRISM loads fonts / themes / locales from disk: ship them next to the binary.
-            prism_assets = self.repo_root / "Engine" / "Runtime" / "Prism" / "assets"
+            prism_assets = self.repo_root.joinpath(*PRISM_ASSETS_SOURCE)
             if prism_assets.is_dir():
-                shutil.copytree(prism_assets, bin_dir / "prism_assets", dirs_exist_ok=True)
+                shutil.copytree(prism_assets, bin_dir / PRISM_ASSETS_DIRECTORY, dirs_exist_ok=True)
 
         if any(m.name == "Pack" for m in ordered_modules):
-            # New projects are created from the templates shipped beside the binary. The directory
-            # name matches Pack's kProjectTemplatesDirectoryNameUVE.
-            project_templates = self.repo_root / "Engine" / "Templates" / "Projects"
+            # New projects are created from the templates shipped beside the binary.
+            project_templates = self.repo_root.joinpath(*PROJECT_TEMPLATES_SOURCE)
             if project_templates.is_dir():
-                shutil.copytree(project_templates, bin_dir / "project_templates", dirs_exist_ok=True)
+                shutil.copytree(project_templates, bin_dir / PROJECT_TEMPLATES_DIRECTORY, dirs_exist_ok=True)
 
         if any(m.name == "Online" for m in ordered_modules):
-            # Where the launcher finds engine releases; matches Online's kEngineFeedFileNameUVE.
-            engine_feed = self.repo_root / "Engine" / "Distribution" / "engine_feed.json"
+            # Where the launcher finds engine releases.
+            engine_feed = self.repo_root.joinpath(*DISTRIBUTION_SOURCE, ENGINE_FEED_FILE)
             if engine_feed.is_file():
-                shutil.copy2(engine_feed, bin_dir / "engine_feed.json")
+                shutil.copy2(engine_feed, bin_dir / ENGINE_FEED_FILE)
 
         print(f"\033[92m[UVBT] BUILD SUCCESSFUL!\033[0m")
         print(f"[UVBT] Output Binary: {target_exe}")

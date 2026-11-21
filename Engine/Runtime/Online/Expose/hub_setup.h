@@ -43,6 +43,10 @@ inline constexpr std::string_view kHubWindowsIconFileNameUVE = "univex-logo.ico"
 /// Project files (.uvproject) open with the Hub under this media type.
 inline constexpr std::string_view kProjectMediaTypeUVE = "application/x-univex-project";
 inline constexpr std::string_view kHubDisplayNameUVE = "UniVex Hub";
+/// What the Hub is, as applications menus describe it.
+inline constexpr std::string_view kHubDescriptionUVE = "Create, open and manage UniVex projects and engine versions";
+/// How file managers name a project file's type.
+inline constexpr std::string_view kProjectTypeDisplayNameUVE = "UniVex Project";
 
 struct SetupPayloadLocationUVE final {
     std::uint64_t offset = 0U;

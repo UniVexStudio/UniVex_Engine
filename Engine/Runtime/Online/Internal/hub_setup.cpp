@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <climits>
 #include <cstring>
 #include <fstream>
 #include <system_error>
@@ -37,6 +38,8 @@ inline constexpr std::string_view kPreviousSuffixUVE = ".previous";
 inline constexpr std::string_view kApplicationsDirectoryNameUVE = "applications";
 inline constexpr std::string_view kDesktopEntryFileNameUVE = "univex-hub.desktop";
 inline constexpr std::string_view kDesktopEntryCategoriesUVE = "Development;IDE;";
+/// Desktop Entry Specification version the generated entry follows.
+inline constexpr std::string_view kDesktopEntrySpecVersionUVE = "1.5";
 inline constexpr std::string_view kMimeDirectoryNameUVE = "mime";
 inline constexpr std::string_view kMimePackagesDirectoryNameUVE = "packages";
 inline constexpr std::string_view kMimeDefinitionFileNameUVE = "univex-project.xml";
@@ -60,7 +63,6 @@ inline constexpr std::string_view kUninstallOptionUVE = "--uninstall";
 /// Per-user file association: the extension's key names the program identifier's key.
 inline constexpr std::wstring_view kClassesRegistryKeyUVE = L"Software\\Classes\\";
 inline constexpr std::wstring_view kProjectProgramIdUVE = L"UniVex.Project";
-inline constexpr std::wstring_view kProjectTypeDescriptionUVE = L"UniVex Project";
 #endif
 
 [[nodiscard]] std::filesystem::path ExecutableUVE(const std::filesystem::path& directory, const std::string_view stem) {
@@ -178,7 +180,7 @@ std::optional<SetupPayloadLocationUVE> LocateSetupPayloadUVE(const std::filesyst
     std::memcpy(location.digest.data(), footer.data(), kSha256DigestBytesUVE);
     for (std::size_t index = 0U; index < kSetupPayloadSizeBytesUVE; ++index) {
         location.size |= static_cast<std::uint64_t>(static_cast<unsigned char>(footer[kSha256DigestBytesUVE + index]))
-                         << (8U * index);
+                         << (static_cast<std::size_t>(CHAR_BIT) * index);
     }
     const std::uint64_t available = static_cast<std::uint64_t>(fileSize) - kSetupFooterBytesUVE;
     if (location.size == 0U || location.size > available) {
@@ -315,7 +317,7 @@ HubSetupResultUVE RegisterHubWithDesktopUVE(const std::filesystem::path& install
                                    reinterpret_cast<void**>(&link)))) {
         link->SetPath(hub.c_str());
         link->SetWorkingDirectory(installDirectory.c_str());
-        link->SetDescription(WidenUVE(std::string(kHubDisplayNameUVE)).c_str());
+        link->SetDescription(WidenUVE(std::string(kHubDescriptionUVE)).c_str());
         IPersistFile* file = nullptr;
         if (SUCCEEDED(link->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&file)))) {
             shortcutMade = SUCCEEDED(file->Save((startMenu / kShortcutFileNameUVE).c_str(), TRUE));
@@ -348,7 +350,7 @@ HubSetupResultUVE RegisterHubWithDesktopUVE(const std::filesystem::path& install
         const std::filesystem::path icon = installDirectory / kHubIconsDirectoryNameUVE / kHubWindowsIconFileNameUVE;
         const std::array<std::pair<std::wstring, std::wstring>, 4U> values{{
             {classes + WidenUVE(std::string(Platform::kEditorProjectFileExtensionUVE)), programId},
-            {classes + programId, std::wstring(kProjectTypeDescriptionUVE)},
+            {classes + programId, WidenUVE(std::string(kProjectTypeDisplayNameUVE))},
             {classes + programId + L"\\DefaultIcon", L"\"" + icon.wstring() + L"\",0"},
             {classes + programId + L"\\shell\\open\\command", L"\"" + hub.wstring() + L"\" \"%1\""},
         }};
@@ -383,8 +385,8 @@ HubSetupResultUVE RegisterHubWithDesktopUVE(const std::filesystem::path& install
         entry << "[Desktop Entry]\n"
               << "Type=Application\n"
               << "Name=" << kHubDisplayNameUVE << "\n"
-              << "Comment=Create, open and manage UniVex projects and engine versions\n"
-              << "Version=1.5\n"
+              << "Comment=" << kHubDescriptionUVE << "\n"
+              << "Version=" << kDesktopEntrySpecVersionUVE << "\n"
               << "X-UniVex-Version=" << version << "\n"
               << "Exec=" << QuoteExecArgumentUVE(hub.string()) << " %f\n"
               << "Path=" << installDirectory.string() << "\n"
@@ -401,7 +403,7 @@ HubSetupResultUVE RegisterHubWithDesktopUVE(const std::filesystem::path& install
         mime << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
              << "<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">\n"
              << "  <mime-type type=\"" << kProjectMediaTypeUVE << "\">\n"
-             << "    <comment>UniVex project</comment>\n"
+             << "    <comment>" << kProjectTypeDisplayNameUVE << "</comment>\n"
              << "    <icon name=\"" << MediaTypeIconNameUVE() << "\"/>\n"
              << "    <glob pattern=\"*" << Platform::kEditorProjectFileExtensionUVE << "\"/>\n"
              << "  </mime-type>\n"

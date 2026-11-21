@@ -88,6 +88,8 @@ struct Color {
     return {uint8_t(rgb >> 16), uint8_t(rgb >> 8), uint8_t(rgb), a};
   }
   constexpr uint32_t rgb() const { return (uint32_t(r) << 16) | (uint32_t(g) << 8) | b; }
+  // Packed 0xAARRGGBB, the pixel layout of PRISM images (straight alpha).
+  constexpr uint32_t argb() const { return (uint32_t(a) << 24) | rgb(); }
   Color alpha(float f) const { return {r, g, b, uint8_t(std::clamp(a * f, 0.f, 255.f))}; }
   Color withAlpha(uint8_t na) const { return {r, g, b, na}; }
   Color mix(Color o, float t) const {

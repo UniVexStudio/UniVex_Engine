@@ -10,9 +10,9 @@
 #   hub-v0.1.0            A Hub version. The single-file installers (Engine/Tools/make_hub_installer.py)
 #                         carry the Hub alone; users download engines from it.
 #
-# The source repository stays private. Releases are published to the public repository named by
-# RELEASES_REPOSITORY, which the Hub reads without credentials (Engine/Distribution/engine_feed.json
-# names the same repository). Publishing needs the RELEASES_TOKEN secret: a fine-grained access
+# The source repository stays private. Releases are published to the public repository that
+# Engine/Distribution/engine_feed.json names, the same file the Hub reads (without credentials) to
+# find them, so the two cannot point at different places. Publishing needs the RELEASES_TOKEN secret: a fine-grained access
 # token with Contents: write on that repository only. It lives in this repository's secrets and is
 # never part of any build.
 
@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASES_REPOSITORY: UniVexStudio/UniVex-Releases
+  ENGINE_FEED_FILE: Engine/Distribution/engine_feed.json
   LINUX_PACKAGES: >-
     ninja-build libglfw3-dev libglew-dev libgl1-mesa-dev libglu1-mesa-dev zlib1g-dev
     libjpeg-dev libfreetype-dev libcurl4-openssl-dev xvfb
@@ -129,6 +129,15 @@ jobs:
       contents: write
       actions: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: ${{ env.ENGINE_FEED_FILE }}
+          sparse-checkout-cone-mode: false
+      - name: Read the releases repository from the engine feed
+        run: |
+          set -euo pipefail
+          repository=$(jq -er '.owner + "/" + .repository' "${ENGINE_FEED_FILE}")
+          echo "RELEASES_REPOSITORY=${repository}" >> "${GITHUB_ENV}"
       - uses: actions/download-artifact@v4
         with:
           path: dist
