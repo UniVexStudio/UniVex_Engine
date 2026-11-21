@@ -18,6 +18,9 @@ public class OnlineModule : ModuleRules
         PublicSystemLibraries.AddRange(new string[] {
             "linux:curl",
             "win:winhttp",
+            "win:ole32",
+            "win:uuid",
+            "win:advapi32",
             "z"
         });
     }

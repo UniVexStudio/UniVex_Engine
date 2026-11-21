@@ -14,6 +14,9 @@
 #else
 #include <fcntl.h>
 #include <spawn.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -145,6 +148,38 @@ ProcessLaunchResultUVE LaunchDetachedProcessUVE(const ProcessLaunchDescUVE& desc
         return {false, std::string("Unable to start ") + executable + ": " + std::strerror(childError)};
     }
     return {true, "Started " + executable + "."};
+#endif
+}
+
+std::filesystem::path CurrentExecutablePathUVE() {
+#if defined(_WIN32)
+    std::wstring buffer(MAX_PATH, L'\0');
+    while (true) {
+        const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (length == 0U) {
+            return {};
+        }
+        if (length < buffer.size()) {
+            buffer.resize(length);
+            return std::filesystem::path(buffer);
+        }
+        buffer.resize(buffer.size() * 2U);
+    }
+#elif defined(__APPLE__)
+    std::uint32_t size = 0U;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
+        return {};
+    }
+    buffer.resize(std::strlen(buffer.c_str()));
+    std::error_code error;
+    const std::filesystem::path resolved = std::filesystem::canonical(buffer, error);
+    return error ? std::filesystem::path(buffer) : resolved;
+#else
+    std::error_code error;
+    const std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", error);
+    return error ? std::filesystem::path{} : self;
 #endif
 }
 

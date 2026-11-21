@@ -45,11 +45,11 @@ private:
     bool m_pressed = false;
 };
 
-/// The UniVex mark, drawn from shapes at any size: a rounded square in the accent colour holding a
-/// white U.
-class LogoMarkUVE final : public prism::Widget {
+/// The UniVex mark at a fixed size, from the brand image the host loads into PRISM. Without that
+/// image (assets missing) it shows a plain accent disc of the same size.
+class BrandMarkUVE final : public prism::Widget {
 public:
-    explicit LogoMarkUVE(float size) : m_size(size) {}
+    explicit BrandMarkUVE(float size) : m_size(size) {}
     prism::Vec2 measure(prism::Vec2 available) override;
     void paint(prism::Canvas& canvas) override;
     [[nodiscard]] bool hitSelf() const override { return false; }

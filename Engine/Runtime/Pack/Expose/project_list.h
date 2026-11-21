@@ -28,6 +28,8 @@ enum class ProjectListStatusUVE : std::uint8_t {
     OpensWithWarning,
     Incompatible,
     Missing,
+    /// No installed engine can open it yet; one has to be downloaded first.
+    EngineNotInstalled,
 };
 
 struct ProjectListRowUVE final {

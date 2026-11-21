@@ -269,7 +269,11 @@ ArchiveExtractResultUVE ExtractTarGzUVE(const std::filesystem::path& archive, co
             return FailUVE(result, "The archive names a path outside its folder: " + name);
         }
 
+        const bool included = !limits.include || limits.include(std::filesystem::path(name).lexically_normal());
         if (type == EntryTypeUVE::Directory) {
+            if (!included) {
+                continue;
+            }
             std::filesystem::create_directories(*target, error);
             if (error) {
                 return FailUVE(result, "Unable to create " + target->string() + ": " + error.message());
@@ -278,6 +282,17 @@ ArchiveExtractResultUVE ExtractTarGzUVE(const std::filesystem::path& archive, co
         }
         if (type != EntryTypeUVE::Regular && type != EntryTypeUVE::RegularOld) {
             return FailUVE(result, "The archive holds a link or special file, which packages never contain: " + name);
+        }
+        if (!included) {
+            std::uint64_t skip = PaddedSizeUVE(*size);
+            while (skip > 0U) {
+                const std::size_t take = static_cast<std::size_t>(std::min<std::uint64_t>(skip, buffer.size()));
+                if (!reader.ReadUVE(buffer.data(), take)) {
+                    return FailUVE(result, "The archive ends inside " + name);
+                }
+                skip -= take;
+            }
+            continue;
         }
         if (result.bytesWritten + *size > limits.maximumTotalBytes) {
             return FailUVE(result, "The archive expands beyond the allowed size.");

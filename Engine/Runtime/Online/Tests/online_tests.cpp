@@ -129,11 +129,11 @@ inline constexpr Core::VersionUVE kPackagedVersionUVE{2U, 1U, 0U, 3U};
     return package;
 }
 
-[[nodiscard]] InstalledEngineUVE BundledUVE(const Core::VersionUVE& version) {
-    InstalledEngineUVE bundled;
-    bundled.install.version = version;
-    bundled.bundled = true;
-    return bundled;
+[[nodiscard]] InstalledEngineUVE LocalBuildUVE(const Core::VersionUVE& version) {
+    InstalledEngineUVE local;
+    local.install.version = version;
+    local.localBuild = true;
+    return local;
 }
 
 // --- SHA-256 ------------------------------------------------------------------------------------
@@ -180,6 +180,23 @@ TEST(TarGzArchiveUVETest, ExtractsFilesDirectoriesAndExecutableBits) {
     EXPECT_NE(std::filesystem::status(root / "out" / "bin" / "tool").permissions() & std::filesystem::perms::owner_exec,
               std::filesystem::perms::none);
 #endif
+    std::filesystem::remove_all(root);
+}
+
+TEST(TarGzArchiveUVETest, ExtractsOnlyTheEntriesAFilterAccepts) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("tarfilter");
+    TarGzWriterUVE writer;
+    writer.AddFileUVE("keep/a.txt", "a");
+    writer.AddFileUVE("skip/b.txt", std::string(2000U, 'b'));
+    writer.AddFileUVE("keep/c.txt", "c");
+    writer.WriteUVE(root / "f.tar.gz");
+    std::filesystem::create_directories(root / "out");
+    ArchiveLimitsUVE limits;
+    limits.include = [](const std::filesystem::path& path) { return *path.begin() == "keep"; };
+
+    ASSERT_TRUE(ExtractTarGzUVE(root / "f.tar.gz", root / "out", limits).extracted);
+    EXPECT_EQ(ReadTextUVE(root / "out" / "keep" / "c.txt"), "c");
+    EXPECT_FALSE(std::filesystem::exists(root / "out" / "skip"));
     std::filesystem::remove_all(root);
 }
 
@@ -334,15 +351,16 @@ TEST(EngineLibraryUVETest, InstallsVerifiedPackageAndListsIt) {
     EXPECT_FALSE(InstallEnginePackageUVE(package, *HashFileSha256UVE(package), kPackagedVersionUVE, engines).installed);
 
     const std::vector<InstalledEngineUVE> listed =
-        ListInstalledEnginesUVE(engines, BundledUVE(Core::VersionUVE{1U, 0U, 0U, 0U}));
+        ListInstalledEnginesUVE(engines, LocalBuildUVE(Core::VersionUVE{1U, 0U, 0U, 0U}));
     ASSERT_EQ(listed.size(), 2U);
     EXPECT_EQ(listed[0].install.version, kPackagedVersionUVE);
     EXPECT_EQ(listed[0].channel, EngineChannelUVE::Beta);
-    EXPECT_FALSE(listed[0].bundled);
-    EXPECT_TRUE(listed[1].bundled);
+    EXPECT_FALSE(listed[0].localBuild);
+    EXPECT_TRUE(listed[1].localBuild);
 
+    EXPECT_EQ(ListInstalledEnginesUVE(engines).size(), 1U);
     EXPECT_TRUE(UninstallEngineUVE(engines, kPackagedVersionUVE));
-    EXPECT_EQ(ListInstalledEnginesUVE(engines, BundledUVE(Core::VersionUVE{1U, 0U, 0U, 0U})).size(), 1U);
+    EXPECT_EQ(ListInstalledEnginesUVE(engines, LocalBuildUVE(Core::VersionUVE{1U, 0U, 0U, 0U})).size(), 1U);
     std::filesystem::remove_all(root);
 }
 
@@ -357,8 +375,8 @@ TEST(EngineLibraryUVETest, RefusesPackageForAnotherVersion) {
 }
 
 TEST(EngineLibraryUVETest, ChoosesTheEngineForAProject) {
-    std::vector<InstalledEngineUVE> engines{BundledUVE({2U, 0U, 0U, 0U}), BundledUVE({1U, 4U, 0U, 0U}),
-                                            BundledUVE({1U, 2U, 0U, 0U})};
+    std::vector<InstalledEngineUVE> engines{LocalBuildUVE({2U, 0U, 0U, 0U}), LocalBuildUVE({1U, 4U, 0U, 0U}),
+                                            LocalBuildUVE({1U, 2U, 0U, 0U})};
     EXPECT_EQ(ChooseEngineForProjectUVE(engines, {1U, 2U, 0U, 0U}, "")->install.version, (Core::VersionUVE{1U, 2U, 0U, 0U}));
     EXPECT_EQ(ChooseEngineForProjectUVE(engines, {1U, 3U, 0U, 0U}, "")->install.version, (Core::VersionUVE{2U, 0U, 0U, 0U}));
     EXPECT_EQ(ChooseEngineForProjectUVE(engines, {1U, 2U, 0U, 0U}, Core::VersionUVE{1U, 4U, 0U, 0U}.ToStringUVE())

@@ -11,6 +11,7 @@ public class HubAppModule : ModuleRules
         // The Hub hosts PRISM through the editor's GLFW host and launches the editor it ships with.
         PublicDependencyModuleNames.AddRange(new string[] {
             "EditorCore",
+            "LauncherUI",
             "Engine",
             "Pack",
             "Online"

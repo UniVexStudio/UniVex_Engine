@@ -7,6 +7,7 @@
 
 #include "prism/Canvas.h"
 #include "prism/Font.h"
+#include "prism/Icons.h"
 #include "prism/Theme.h"
 
 namespace UVE::LauncherUI {
@@ -20,12 +21,6 @@ inline constexpr float kNavAccentWidthUVE = 3.0F;
 inline constexpr float kNavRadiusUVE = 6.0F;
 inline constexpr float kNavMinimumWidthUVE = 120.0F;
 
-// The mark's proportions, as fractions of its size (matching Engine/Distribution/univex-hub.svg).
-inline constexpr float kLogoCornerUVE = 0.21F;
-inline constexpr float kLogoInsetXUVE = 0.30F;
-inline constexpr float kLogoTopUVE = 0.24F;
-inline constexpr float kLogoBottomUVE = 0.80F;
-inline constexpr float kLogoStrokeUVE = 0.12F;
 
 } // namespace
 
@@ -105,27 +100,17 @@ bool NavItemUVE::accessActivate() {
     return true;
 }
 
-prism::Vec2 LogoMarkUVE::measure(const prism::Vec2 /*available*/) {
+prism::Vec2 BrandMarkUVE::measure(const prism::Vec2 /*available*/) {
     return m_desired = constrain({m_size, m_size});
 }
 
-void LogoMarkUVE::paint(prism::Canvas& canvas) {
-    const prism::Theme& theme = prism::theme();
+void BrandMarkUVE::paint(prism::Canvas& canvas) {
     const prism::Rect box{m_rect.x, m_rect.y, m_size, m_size};
-    canvas.fillRoundRect(box, m_size * kLogoCornerUVE, theme.accent);
-    // The U: a white rounded slab, its inside cut back out in the accent colour, open at the top.
-    const float left = box.x + (m_size * kLogoInsetXUVE);
-    const float width = m_size * (1.0F - (2.0F * kLogoInsetXUVE));
-    const float top = box.y + (m_size * kLogoTopUVE);
-    const float height = m_size * (kLogoBottomUVE - kLogoTopUVE);
-    const float stroke = m_size * kLogoStrokeUVE;
-    const prism::Color white = theme.accentText;
-    canvas.fillRoundRect({left, top, width, height}, width * 0.5F, white);
-    canvas.fillRoundRect({left + stroke, top, width - (2.0F * stroke), height - stroke}, (width * 0.5F) - stroke,
-                         theme.accent);
-    canvas.fillRect({left, top, width, height * 0.5F}, theme.accent);
-    canvas.fillRect({left, top, stroke, height * 0.5F}, white);
-    canvas.fillRect({left + width - stroke, top, stroke, height * 0.5F}, white);
+    if (prism::hasBrandMark()) {
+        prism::drawBrandMark(canvas, box);
+    } else {
+        canvas.fillRoundRect(box, m_size * 0.5F, prism::theme().accent);
+    }
 }
 
 } // namespace UVE::LauncherUI

@@ -2,8 +2,8 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 """Packages a built engine for the Hub's engine feed.
 
-The package is a gzip-compressed ustar archive holding the engine's executables, the PRISM assets and
-the project templates, with an engine.json manifest at its root. Beside it goes a .sha256 file with
+The package is a gzip-compressed ustar archive holding the engine's executables and the PRISM
+assets, with an engine.json manifest at its root. Project templates ship with the Hub, not here. Beside it goes a .sha256 file with
 the archive's digest. The names and the manifest match what the Hub reads (Engine/Runtime/Online):
 
     univex-engine-<version>-<target>.tar.gz
@@ -37,7 +37,7 @@ MANIFEST_SCHEMA_VERSION = 1
 BETA_TAG_SUFFIX = "-beta"
 EDITOR_STEM = "uve_editor"
 EXECUTABLE_STEMS = ("uve_editor", "uve_runtime", "uve_pack")
-DATA_DIRECTORIES = ("prism_assets", "project_templates")
+DATA_DIRECTORIES = ("prism_assets",)
 EXECUTABLE_SUFFIX = {"linux": "", "windows": ".exe"}
 TAG_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:\+build\.(\d+)|\.(\d+))?$")
 FILE_MODE = 0o644
@@ -64,15 +64,21 @@ def parse_tag(tag: str) -> tuple[str, str]:
     return f"{int(major)}.{int(minor)}.{int(patch)}+build.{int(build)}", channel
 
 
+def display_version(version: str) -> str:
+    """"MAJOR.MINOR.PATCH", keeping "+build.N" only when N is not 0 (as the Hub shows versions)."""
+    core, _, build = version.partition("+build.")
+    return core if build in ("", "0") else version
+
+
 def package_name(version: str, target: str) -> str:
     return f"{PACKAGE_PREFIX}{version}-{target}{PACKAGE_EXTENSION}"
 
 
-def built_version(editor: Path) -> str:
-    """The version the built editor reports, so a package can never disagree with its binaries."""
-    result = subprocess.run([str(editor), "--version"], capture_output=True, text=True, check=False)
+def built_version(program: Path) -> str:
+    """The version a built program reports, so a package can never disagree with its binaries."""
+    result = subprocess.run([str(program), "--version"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
-        raise PackagingError(f"{editor} --version failed: {result.stderr.strip()}")
+        raise PackagingError(f"{program} --version failed: {result.stderr.strip()}")
     return result.stdout.strip()
 
 
@@ -97,20 +103,25 @@ def copy_windows_dlls(stage: Path) -> None:
             pending.append(target)
 
 
-def stage_engine(bin_dir: Path, target: str, version: str, channel: str, stage: Path) -> None:
+def stage_files(bin_dir: Path, target: str, stems: tuple[str, ...], directories: tuple[str, ...], stage: Path) -> None:
+    """Copies the named executables and directories of a build into `stage`, with their DLLs on Windows."""
     suffix = EXECUTABLE_SUFFIX[target]
-    for stem in EXECUTABLE_STEMS:
+    for stem in stems:
         source = bin_dir / f"{stem}{suffix}"
         if not source.is_file():
             raise PackagingError(f"missing executable {source}")
         shutil.copy2(source, stage / source.name)
-    for directory in DATA_DIRECTORIES:
+    for directory in directories:
         source = bin_dir / directory
         if not source.is_dir():
             raise PackagingError(f"missing directory {source}")
         shutil.copytree(source, stage / directory, symlinks=False)
     if target == "windows":
         copy_windows_dlls(stage)
+
+
+def stage_engine(bin_dir: Path, target: str, version: str, channel: str, stage: Path) -> None:
+    stage_files(bin_dir, target, EXECUTABLE_STEMS, DATA_DIRECTORIES, stage)
     manifest = {
         "format": MANIFEST_FORMAT,
         "schemaVersion": MANIFEST_SCHEMA_VERSION,

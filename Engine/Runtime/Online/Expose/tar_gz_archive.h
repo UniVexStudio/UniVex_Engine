@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 
 namespace UVE::Online {
@@ -13,6 +14,9 @@ namespace UVE::Online {
 struct ArchiveLimitsUVE final {
     std::uint64_t maximumTotalBytes = 8ULL * 1024ULL * 1024ULL * 1024ULL;
     std::size_t maximumEntries = 200000U;
+    /// When set, only entries whose archive path it accepts are written; the rest are skipped. The
+    /// safety checks still apply to every entry.
+    std::function<bool(const std::filesystem::path&)> include;
 };
 
 struct ArchiveExtractResultUVE final {
