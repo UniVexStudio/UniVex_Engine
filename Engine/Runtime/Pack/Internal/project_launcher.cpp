@@ -453,7 +453,9 @@ ProjectRuntimeSetupResultUVE PrepareProjectRuntimeUVE(const std::filesystem::pat
 }
 
 ProjectEditorSetupResultUVE PrepareProjectEditorUVE(const std::filesystem::path& projectFile,
-                                                     Core::EngineConfigUVE& config) {
+                                                     const Core::VersionUVE& engineVersion,
+                                                     Core::EngineConfigUVE& config,
+                                                     const ProjectCompatibilityPolicyUVE& policy) {
     const auto fail = [](const ProjectEditorSetupCodeUVE code, std::string message) {
         return ProjectEditorSetupResultUVE{code, std::move(message), std::nullopt};
     };
@@ -466,6 +468,12 @@ ProjectEditorSetupResultUVE PrepareProjectEditorUVE(const std::filesystem::path&
     }
     Platform::EditorProjectPackageUVE& package = *resolved.package;
     ProjectLayoutUVE& layout = *resolved.layout;
+
+    ProjectCompatibilityUVE compatibility =
+        EvaluateProjectCompatibilityUVE(package.engineVersion, engineVersion, policy);
+    if (!compatibility.CanOpenUVE()) {
+        return fail(ProjectEditorSetupCodeUVE::EngineTooOld, std::move(compatibility.message));
+    }
 
     // The scene may not have been saved yet, so containment is checked on the normalized path
     // rather than through canonical(), which requires the file to exist.
@@ -501,6 +509,7 @@ ProjectEditorSetupResultUVE PrepareProjectEditorUVE(const std::filesystem::path&
     setup.projectRoot = std::move(layout.projectRoot);
     setup.contentRoot = std::move(layout.contentRoot);
     setup.startupScene = std::move(startupScene);
+    setup.compatibility = std::move(compatibility);
     return {ProjectEditorSetupCodeUVE::Ready, "Project editor configuration is ready.", std::move(setup)};
 }
 

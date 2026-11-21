@@ -328,12 +328,16 @@ TEST_F(ProjectLauncherUVETest, LoadAndActivate_RejectsMissingProjectFile) {
     engine.Shutdown();
 }
 
+/// The engine version the authoring tests open projects with; MakeAuthoringPackageUVE records it.
+inline constexpr Core::VersionUVE kAuthoringEngineVersionUVE{0U, 0U, 1U, 0U};
+
 [[nodiscard]] Platform::EditorProjectPackageUVE MakeAuthoringPackageUVE() {
     Platform::EditorProjectPackageUVE package;
     package.revision = 1U;
     package.projectId = "editor-authoring-project";
     package.displayName = "Editor Authoring Project";
-    package.engineVersion = {0U, 0U, 1U, 0U};
+    package.engineVersion = {kAuthoringEngineVersionUVE.major, kAuthoringEngineVersionUVE.minor,
+                             kAuthoringEngineVersionUVE.patch, kAuthoringEngineVersionUVE.build};
     package.contentRoot = "content";
     package.assetDatabasePath = ".uvassetdb";
     package.settingsPath = "project.uvsettings";
@@ -349,7 +353,8 @@ TEST_F(ProjectLauncherUVETest, PrepareEditor_PointsConfigAtProjectAuthoringData)
     const std::filesystem::path userSettings = config.settingsFilePath;
     const std::uint32_t editorWindowWidth = config.windowWidth;
     const std::filesystem::path logFileName = config.logFilePath.filename();
-    const ProjectEditorSetupResultUVE result = PrepareProjectEditorUVE(projectFile(), config);
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
 
     ASSERT_TRUE(result.IsReadyUVE()) << result.message;
     const std::filesystem::path root = std::filesystem::canonical(projectRoot);
@@ -376,7 +381,8 @@ TEST_F(ProjectLauncherUVETest, PrepareEditor_AcceptsProjectWithoutStartupScene) 
         Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), MakeAuthoringPackageUVE()).IsAcceptedUVE());
 
     Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
-    const ProjectEditorSetupResultUVE result = PrepareProjectEditorUVE(projectFile(), config);
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
 
     ASSERT_TRUE(result.IsReadyUVE()) << result.message;
     EXPECT_TRUE(result.setup->startupScene.empty());
@@ -405,7 +411,8 @@ TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsStartupSceneOutsideContentRo
 
     Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
     const Core::EngineConfigUVE before = config;
-    const ProjectEditorSetupResultUVE result = PrepareProjectEditorUVE(projectFile(), config);
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
 
     EXPECT_FALSE(result.IsReadyUVE());
     EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
@@ -419,7 +426,8 @@ TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsMissingContentRootWithoutTou
 
     Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
     const Core::EngineConfigUVE before = config;
-    const ProjectEditorSetupResultUVE result = PrepareProjectEditorUVE(projectFile(), config);
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
 
     EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::ContentRootInvalid);
     EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
@@ -429,7 +437,7 @@ TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsMissingContentRootWithoutTou
 TEST_F(ProjectLauncherUVETest, PrepareEditor_RejectsMissingProjectFile) {
     Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
     const ProjectEditorSetupResultUVE result =
-        PrepareProjectEditorUVE(projectRoot / "does_not_exist.uvproject", config);
+        PrepareProjectEditorUVE(projectRoot / "does_not_exist.uvproject", kAuthoringEngineVersionUVE, config);
 
     EXPECT_FALSE(result.IsReadyUVE());
     EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::InvalidProjectFile);
@@ -456,6 +464,34 @@ TEST_F(ProjectLauncherUVETest, RecordEngineVersion_ReportsMissingProjectFile) {
     EXPECT_FALSE(
         RecordProjectEngineVersionUVE(projectRoot / "does_not_exist.uvproject", Core::VersionUVE{1U, 0U, 0U, 0U})
             .IsAcceptedUVE());
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_RefusesProjectFromIncompatibleNewerEngine) {
+    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    package.engineVersion.major = kAuthoringEngineVersionUVE.major + 1U;
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const Core::EngineConfigUVE before = config;
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+
+    EXPECT_EQ(result.code, ProjectEditorSetupCodeUVE::EngineTooOld);
+    EXPECT_EQ(config.projectContentRootUVE, before.projectContentRootUVE);
+    EXPECT_EQ(config.logFilePath, before.logFilePath);
+}
+
+TEST_F(ProjectLauncherUVETest, PrepareEditor_ReportsCompatibilityOfOlderProject) {
+    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    const Core::VersionUVE newerEngine{kAuthoringEngineVersionUVE.major, kAuthoringEngineVersionUVE.minor + 1U,
+                                       kAuthoringEngineVersionUVE.patch, kAuthoringEngineVersionUVE.build};
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    const ProjectEditorSetupResultUVE result = PrepareProjectEditorUVE(projectFile(), newerEngine, config);
+
+    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
+    EXPECT_EQ(result.setup->compatibility.verdict, ProjectCompatibilityVerdictUVE::OlderNeedsUpgrade);
 }
 
 } // namespace
