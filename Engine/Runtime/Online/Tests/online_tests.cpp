@@ -225,6 +225,7 @@ TEST(EngineReleaseFeedUVETest, ParsesVersionTags) {
     EXPECT_EQ(ParseEngineVersionTagUVE("v1.2.3.4"), (Core::VersionUVE{1U, 2U, 3U, 4U}));
     EXPECT_EQ(ParseEngineVersionTagUVE(Core::VersionUVE{0U, 1U, 0U, 1U}.ToStringUVE()),
               (Core::VersionUVE{0U, 1U, 0U, 1U}));
+    EXPECT_EQ(ParseEngineVersionTagUVE("v1.3.0-beta"), (Core::VersionUVE{1U, 3U, 0U, 0U}));
     EXPECT_FALSE(ParseEngineVersionTagUVE("v1.2").has_value());
     EXPECT_FALSE(ParseEngineVersionTagUVE("release-7").has_value());
     EXPECT_FALSE(ParseEngineVersionTagUVE("v1.2.3.4+build.5").has_value());
@@ -242,6 +243,13 @@ TEST(EngineReleaseFeedUVETest, ParsesVersionTags) {
     return R"({"tag_name":")" + tag + R"(","name":"UniVex )" + tag + R"(","prerelease":)" +
            (prerelease ? "true" : "false") + R"(,"draft":)" + (draft ? "true" : "false") + R"(,"assets":[)" + assets +
            "]}";
+}
+
+TEST(EngineReleaseFeedUVETest, PackageNamesRoundTrip) {
+    const Core::VersionUVE version{1U, 2U, 3U, 4U};
+    EXPECT_EQ(ParseEnginePackageNameUVE(EnginePackageNameUVE(version, "linux"), "linux"), version);
+    EXPECT_FALSE(ParseEnginePackageNameUVE(EnginePackageNameUVE(version, "linux"), "windows").has_value());
+    EXPECT_FALSE(ParseEnginePackageNameUVE("something.tar.gz", "linux").has_value());
 }
 
 TEST(EngineReleaseFeedUVETest, ParsesReleasesForThisTargetNewestFirst) {

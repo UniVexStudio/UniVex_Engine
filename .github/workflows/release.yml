@@ -1,0 +1,113 @@
+# Copyright (c) 2026 UniVex Studios. All Rights Reserved.
+#
+# Publishes an engine release for the Hub's engine feed.
+#
+# Pushing a tag such as v0.2.0 (Stable) or v0.2.0-beta (Beta) builds the engine on Linux and
+# Windows, checks that the build reports the version the tag names, packages it with
+# Engine/Tools/package_engine.py and attaches the packages and their checksums to a GitHub Release.
+# Beta tags become prereleases, which the Hub lists on its Beta channel. Hubs that are online pick
+# the new version up on their next check; offline ones keep the engines they have.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    name: Linux engine package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build libglfw3-dev libglew-dev libgl1-mesa-dev libglu1-mesa-dev zlib1g-dev \
+            libjpeg-dev libfreetype-dev libcurl4-openssl-dev xvfb
+      - name: Build
+        run: |
+          set -euo pipefail
+          for target in UniVexEditor UniVexRuntime UniVexPack UniVexHub; do
+            ./uvbt build "$target" Linux Release -j"$(nproc)"
+          done
+      - name: Package the engine
+        run: |
+          python3 Engine/Tools/package_engine.py --bin .uvbt/bin/Linux/Release --target linux \
+            --tag "${GITHUB_REF_NAME}" --output dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-linux
+          path: dist/
+          if-no-files-found: error
+
+  windows:
+    name: Windows engine package
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-glew
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-freetype
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          for target in UniVexEditor UniVexRuntime UniVexPack UniVexHub; do
+            ./uvbt build "$target" Windows Release -j4
+          done
+      - name: Package the engine
+        shell: msys2 {0}
+        run: |
+          python Engine/Tools/package_engine.py --bin .uvbt/bin/Windows/Release --target windows \
+            --tag "${GITHUB_REF_NAME}" --output dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-windows
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          flags=(--title "UniVex ${GITHUB_REF_NAME}" --generate-notes --verify-tag)
+          case "${GITHUB_REF_NAME}" in
+            *-beta) flags+=(--prerelease) ;;
+          esac
+          gh release create "${GITHUB_REF_NAME}" "${flags[@]}" dist/*

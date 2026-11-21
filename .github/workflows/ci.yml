@@ -227,6 +227,9 @@ jobs:
       - name: Validate the CI annotation helper
         run: python3 -m unittest discover -s Engine/Tools/ci -p 'test_*.py'
 
+      - name: Validate the engine packager
+        run: python3 -m unittest discover -s Engine/Tools -p 'test_package_engine.py'
+
   # ---------------------------------------------------------------------------------------------
   # Windows: the editor is built as an actual Windows application, and the exe is started once with
   # a cooked project so the packaged DLLs are proven to be the ones it needs.
