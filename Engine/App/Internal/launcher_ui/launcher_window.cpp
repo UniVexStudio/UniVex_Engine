@@ -12,6 +12,8 @@
 #include "glfw_window_handle.h"
 #include "logging_macros.h"
 #include "prism/Application.h"
+#include "prism/Containers.h"
+#include "prism/Theme.h"
 #include "prism/WindowChrome.h"
 
 namespace UVE::LauncherUI {
@@ -70,11 +72,27 @@ int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
             core.Shutdown();
             return kLauncherStartupFailedExitCodeUVE;
         }
-        prism::WindowChromeOptions chrome;
-        chrome.title = desc.title;
-        chrome.showIdentity = desc.showTitleInChrome;
-        host.SetRootUVE(prism::wrapWithWindowChrome(buildRoot(), Editor::EditorHostUVE::kMainWindowUVE, chrome));
-        core.SetPostRenderCallbackUVE([&host, &tick] {
+        // The safe area pads the content; the frame's background still fills the whole surface.
+        auto safeFrame = prism::make<prism::Border>();
+        safeFrame->setBackground(&prism::Theme::panel);
+        safeFrame->setChild(buildRoot());
+        prism::Margin safeArea;
+        if (desc.windowChrome) {
+            prism::WindowChromeOptions chrome;
+            chrome.title = desc.title;
+            chrome.showIdentity = desc.showTitleInChrome;
+            host.SetRootUVE(prism::wrapWithWindowChrome(safeFrame, Editor::EditorHostUVE::kMainWindowUVE, chrome));
+        } else {
+            host.SetRootUVE(safeFrame);
+        }
+        core.SetPostRenderCallbackUVE([&host, &tick, &desc, &safeFrame, &safeArea] {
+            if (desc.safeArea) {
+                const prism::Margin area = desc.safeArea();
+                if (area.l != safeArea.l || area.t != safeArea.t || area.r != safeArea.r || area.b != safeArea.b) {
+                    safeArea = area;
+                    safeFrame->setPadding(area);
+                }
+            }
             if (tick) {
                 tick();
             }

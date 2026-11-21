@@ -19,6 +19,7 @@ public class WindowModule : ModuleRules
         ExcludedFiles.AddRange(new string[] {
             "desktop:android_window_manager.cpp",
             "desktop:android_glfw.cpp",
+            "desktop:android_activity.cpp",
             "android:Internal/window_manager.cpp"
         });
 

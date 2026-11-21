@@ -12,7 +12,7 @@ through `ANDROID_NDK_HOME`, or `ANDROID_HOME` / `ANDROID_SDK_ROOT` with the NDK 
 ```sh
 python3 Engine/Tools/android/build_apk.py --sdk /path/to/android-sdk --build-dir /tmp/univex-android --abi arm64-v8a
 adb install -r /tmp/univex-android/univex-runtime-arm64-v8a.apk
-adb shell am start -n com.univex.runtime/android.app.NativeActivity
+adb shell am start -n com.univex.runtime/com.univex.app.UniVexActivity
 ```
 
 Use `--abi x86_64` for an x86 emulator. `--native-lib` packages an existing
@@ -78,8 +78,11 @@ order it runs, because every step is a way an apk can come out wrong:
    project's `runtimeFiles` list is copied into `assets/project` and written to
    `assets/project-files.txt`, which is the index the runtime extracts at startup.
 3. **Resources.** `aapt2 link` with `Engine/App/Android/AndroidManifest.xml` and the staged asset
-   directory produces an unsigned apk. There is no Java source (`hasCode=false`); the activity is the
-   platform's `android.app.NativeActivity`.
+   directory produces an unsigned apk. The activity is `com.univex.app.UniVexActivity`
+   (`Engine/App/Android/java`), a `NativeActivity` that runs full screen: the system bars are hidden
+   until a swipe from the edge, and the surface reaches under display cutouts, whose safe insets it
+   keeps for native code (`ReadAndroidSafeAreaUVE`). `javac` and the build tools' `d8` turn it into
+   `classes.dex`.
 4. **Libraries.** The stripped `libunivex_android.so` (with the C++ runtime linked in statically) is
    written into `lib/<abi>/`, and every staged asset that `aapt2` skipped (it drops dotfiles such as `.uvassetdb`)
    is added to the archive. A missing cooked file fails the build here rather than the phone later.
