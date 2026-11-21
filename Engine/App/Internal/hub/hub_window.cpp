@@ -21,6 +21,7 @@
 
 namespace UVE::Hub {
 
+using LauncherUI::ShowFilePickerUVE;
 using LauncherUI::ShowFolderPickerUVE;
 
 namespace {
@@ -587,6 +588,10 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildEnginesPageUVE() {
     auto check = prism::make<prism::Button>("Check for new versions", prism::Icon::Refresh);
     check->onClick = [this] { CheckForEnginesUVE(); };
     header->add(check);
+    m_importButton = prism::make<prism::Button>("Import package...", prism::Icon::Open);
+    m_importButton->setTooltip("Install an engine package file you already have, such as an offline copy");
+    m_importButton->onClick = [this] { ImportEnginePackageUVE(); };
+    header->add(m_importButton);
     page->add(header);
 
     m_feedStatus = prism::make<prism::Label>("", prism::FontRole::Small);
@@ -705,7 +710,7 @@ void HubWindowUVE::RefreshEngineListUVE() {
             action = installed;
         } else {
             auto download = prism::make<prism::Button>("Download", prism::Icon::Open, prism::ButtonStyle::Primary);
-            download->setEnabled(m_download == nullptr);
+            download->setEnabled(!IsInstallingEngineUVE());
             download->onClick = [this, release] { DownloadEngineUVE(release); };
             action = download;
         }
@@ -752,14 +757,38 @@ void HubWindowUVE::CheckForEnginesUVE() {
 }
 
 void HubWindowUVE::DownloadEngineUVE(const Online::EngineReleaseUVE& release) {
-    if (m_download != nullptr) {
+    if (IsInstallingEngineUVE()) {
         return;
     }
     m_download = std::make_unique<Online::EngineDownloadUVE>(Online::CreatePlatformHttpClientUVE(), release,
                                                              m_context.enginesRoot);
     m_downloadLabel->setText("Downloading engine " + release.version.ToStringUVE());
+    m_downloadBar->setVisible(true);
     m_downloadBar->parent()->setVisible(true);
     RefreshEngineListUVE();
+}
+
+void HubWindowUVE::ImportEnginePackageUVE() {
+    if (IsInstallingEngineUVE()) {
+        return;
+    }
+    ShowFilePickerUVE("Import an engine package", m_lastImportFolder,
+                      {std::string(Online::kEnginePackageExtensionUVE)}, "Import",
+                      [this](const std::filesystem::path& package) {
+                          if (IsInstallingEngineUVE()) {
+                              return;
+                          }
+                          m_lastImportFolder = package.parent_path();
+                          m_import = std::async(std::launch::async, [package, enginesRoot = m_context.enginesRoot] {
+                              return Online::InstallLocalEnginePackageUVE(package, enginesRoot);
+                          });
+                          m_importButton->setEnabled(false);
+                          // An import has no measurable progress; the line shows only what is installing.
+                          m_downloadLabel->setText("Installing " + package.filename().string() + "...");
+                          m_downloadBar->setVisible(false);
+                          m_downloadBar->parent()->setVisible(true);
+                          RefreshEngineListUVE();
+                      });
 }
 
 void HubWindowUVE::TickUVE() {
@@ -793,6 +822,15 @@ void HubWindowUVE::TickUVE() {
             RefreshEngineListUVE();
             RefreshProjectListUVE();
         }
+    }
+    if (m_import.valid() && m_import.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
+        const Online::EngineInstallOutcomeUVE outcome = m_import.get();
+        SetStatusUVE(outcome.message, !outcome.installed);
+        m_importButton->setEnabled(true);
+        m_downloadBar->parent()->setVisible(false);
+        RefreshInstalledEnginesUVE();
+        RefreshEngineListUVE();
+        RefreshProjectListUVE();
     }
 }
 

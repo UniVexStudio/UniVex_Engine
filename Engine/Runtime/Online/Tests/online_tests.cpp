@@ -377,6 +377,48 @@ TEST(EngineLibraryUVETest, RefusesPackageForAnotherVersion) {
     std::filesystem::remove_all(root);
 }
 
+TEST(EngineLibraryUVETest, ImportsLocalPackageVerifiedByItsChecksumFile) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_verified");
+    const std::filesystem::path package = WriteEnginePackageUVE(root);
+    std::filesystem::path checksum = package;
+    checksum += kEngineChecksumSuffixUVE;
+    std::ofstream(checksum) << ToHexUVE(*HashFileSha256UVE(package)) << "  " << package.filename().string() << '\n';
+
+    const EngineInstallOutcomeUVE outcome = InstallLocalEnginePackageUVE(package, root / "Engines");
+    ASSERT_TRUE(outcome.installed) << outcome.message;
+    EXPECT_TRUE(outcome.verified);
+    ASSERT_TRUE(outcome.version.has_value());
+    EXPECT_EQ(*outcome.version, kPackagedVersionUVE);
+    EXPECT_FALSE(InstallLocalEnginePackageUVE(package, root / "Engines").installed);
+    std::filesystem::remove_all(root);
+}
+
+TEST(EngineLibraryUVETest, ImportsRenamedPackageWithoutChecksumAsUnverified) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_unverified");
+    const std::filesystem::path renamed = root / "my-engine-copy.tar.gz";
+    std::filesystem::rename(WriteEnginePackageUVE(root), renamed);
+
+    const EngineInstallOutcomeUVE outcome = InstallLocalEnginePackageUVE(renamed, root / "Engines");
+    ASSERT_TRUE(outcome.installed) << outcome.message;
+    EXPECT_FALSE(outcome.verified);
+    EXPECT_NE(outcome.message.find("not verified"), std::string::npos);
+    EXPECT_TRUE(std::filesystem::is_directory(root / "Engines" / kPackagedVersionUVE.ToStringUVE()));
+    std::filesystem::remove_all(root);
+}
+
+TEST(EngineLibraryUVETest, RefusesLocalPackageThatDoesNotMatchItsChecksum) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_tampered");
+    const std::filesystem::path package = WriteEnginePackageUVE(root);
+    std::filesystem::path checksum = package;
+    checksum += kEngineChecksumSuffixUVE;
+    std::ofstream(checksum) << ToHexUVE(Sha256DigestUVE{}) << '\n';
+
+    EXPECT_FALSE(InstallLocalEnginePackageUVE(package, root / "Engines").installed);
+    EXPECT_FALSE(InstallLocalEnginePackageUVE(root / "missing.tar.gz", root / "Engines").installed);
+    EXPECT_FALSE(std::filesystem::exists(root / "Engines" / kPackagedVersionUVE.ToStringUVE()));
+    std::filesystem::remove_all(root);
+}
+
 TEST(EngineLibraryUVETest, ChoosesTheEngineForAProject) {
     std::vector<InstalledEngineUVE> engines{LocalBuildUVE({2U, 0U, 0U, 0U}), LocalBuildUVE({1U, 4U, 0U, 0U}),
                                             LocalBuildUVE({1U, 2U, 0U, 0U})};

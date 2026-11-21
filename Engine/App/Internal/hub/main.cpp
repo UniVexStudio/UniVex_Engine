@@ -22,7 +22,6 @@
 #include "hub_window.h"
 #include "project_template.h"
 #include "launcher_window.h"
-#include <fstream>
 #include <iterator>
 #include "project_list.h"
 #include "project_registry.h"
@@ -132,21 +131,7 @@ struct HubLaunchOptionsUVE final {
 
 /// Installs a package file for offline machines and release checks; returns the process exit code.
 [[nodiscard]] int InstallPackageUVE(const std::filesystem::path& package, const std::filesystem::path& enginesRoot) {
-    const std::optional<UVE::Core::VersionUVE> version = UVE::Online::ParseEnginePackageNameUVE(
-        package.filename().string(), UVE::Platform::GetApplicationTargetUVE());
-    std::filesystem::path checksumFile = package;
-    checksumFile += UVE::Online::kEngineChecksumSuffixUVE;
-    std::ifstream checksumInput(checksumFile);
-    std::string checksumText;
-    checksumInput >> checksumText;
-    const std::optional<UVE::Online::Sha256DigestUVE> expected = UVE::Online::ParseSha256HexUVE(checksumText);
-    if (!version.has_value() || !expected.has_value()) {
-        std::cerr << "uve_hub: " << package.string()
-                  << " is not an engine package for this platform with its checksum file beside it\n";
-        return kStartupFailedExitCodeUVE;
-    }
-    const UVE::Online::EngineInstallOutcomeUVE outcome =
-        UVE::Online::InstallEnginePackageUVE(package, *expected, *version, enginesRoot);
+    const UVE::Online::EngineInstallOutcomeUVE outcome = UVE::Online::InstallLocalEnginePackageUVE(package, enginesRoot);
     (outcome.installed ? std::cout : std::cerr) << "uve_hub: " << outcome.message << '\n';
     return outcome.installed ? 0 : kStartupFailedExitCodeUVE;
 }

@@ -3,7 +3,9 @@
 #include "folder_picker.h"
 
 #include <algorithm>
+#include <cctype>
 #include <memory>
+#include <optional>
 #include <system_error>
 #include <utility>
 
@@ -32,7 +34,43 @@ struct FolderPickerStateUVE final {
     prism::Ref<prism::Box> folders;
     prism::Ref<prism::Label> problem;
     prism::Ref<prism::TextInput> newFolder;
+    /// File mode: the name endings that are listed, and the file selected so far. Empty in folder mode.
+    std::vector<std::string> fileSuffixes;
+    std::optional<std::filesystem::path> selectedFile;
+    std::vector<prism::Ref<NavItemUVE>> fileRows;
 };
+
+[[nodiscard]] std::string LowercaseUVE(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(),
+                   [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    return text;
+}
+
+[[nodiscard]] bool IsHiddenNameUVE(const std::string& name) {
+    return name.empty() || name.front() == kHiddenPrefixUVE;
+}
+
+void SortByNameUVE(std::vector<std::filesystem::path>& paths) {
+    std::sort(paths.begin(), paths.end(), [](const std::filesystem::path& lhs, const std::filesystem::path& rhs) {
+        return lhs.filename().string() < rhs.filename().string();
+    });
+}
+
+/// Where a picker opens: the nearest existing folder of `start`, else the home folder.
+[[nodiscard]] std::filesystem::path FirstFolderUVE(const std::filesystem::path& start) {
+    std::error_code error;
+    std::filesystem::path first = start;
+    // Start at the nearest folder that exists, so a location not created yet still opens nearby.
+    while (!first.empty() && !std::filesystem::is_directory(first, error) && first.has_parent_path() &&
+           first.parent_path() != first) {
+        first = first.parent_path();
+    }
+    if (first.empty() || !std::filesystem::is_directory(first, error)) {
+        const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();
+        first = home.success ? home.directory : std::filesystem::current_path(error);
+    }
+    return first;
+}
 
 void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std::filesystem::path& directory) {
     std::error_code error;
@@ -44,9 +82,15 @@ void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std
     state->path->setText(state->current.string());
     state->problem->setText("");
     state->folders->clearChildren();
+    state->selectedFile.reset();
+    state->fileRows.clear();
+    const bool pickFiles = !state->fileSuffixes.empty();
     const std::vector<std::filesystem::path> children = ListPickableFoldersUVE(state->current);
-    if (children.empty()) {
-        auto empty = prism::make<prism::Label>("No folders here. Choose this one, or make a new folder.");
+    const std::vector<std::filesystem::path> files =
+        pickFiles ? ListPickableFilesUVE(state->current, state->fileSuffixes) : std::vector<std::filesystem::path>{};
+    if (children.empty() && files.empty()) {
+        auto empty = prism::make<prism::Label>(pickFiles ? "Nothing to choose here. Open another folder."
+                                                         : "No folders here. Choose this one, or make a new folder.");
         empty->setColor(&prism::Theme::textDim);
         state->folders->add(empty);
     }
@@ -60,54 +104,34 @@ void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std
         };
         state->folders->add(row, prism::Slot{0.0F, {}, prism::HAlign::Fill});
     }
+    for (const std::filesystem::path& file : files) {
+        auto row = prism::make<NavItemUVE>(file.filename().string(), prism::Icon::File);
+        const std::weak_ptr<FolderPickerStateUVE> weak = state;
+        NavItemUVE* const self = row.get();
+        row->onActivate = [weak, file, self] {
+            if (const std::shared_ptr<FolderPickerStateUVE> owner = weak.lock()) {
+                owner->selectedFile = file;
+                for (const prism::Ref<NavItemUVE>& other : owner->fileRows) {
+                    other->SetActiveUVE(other.get() == self);
+                }
+            }
+        };
+        state->fileRows.push_back(row);
+        state->folders->add(row, prism::Slot{0.0F, {}, prism::HAlign::Fill});
+    }
     state->folders->relayout();
 }
 
-} // namespace
-
-std::vector<std::filesystem::path> ListPickableFoldersUVE(const std::filesystem::path& directory) {
-    std::vector<std::filesystem::path> folders;
-    std::error_code error;
-    std::filesystem::directory_iterator iterator(directory, std::filesystem::directory_options::skip_permission_denied,
-                                                 error);
-    if (error) {
-        return folders;
-    }
-    for (const std::filesystem::directory_entry& entry : iterator) {
-        const std::string name = entry.path().filename().string();
-        if (name.empty() || name.front() == kHiddenPrefixUVE || !entry.is_directory(error)) {
-            continue;
-        }
-        folders.push_back(entry.path());
-    }
-    std::sort(folders.begin(), folders.end(), [](const std::filesystem::path& lhs, const std::filesystem::path& rhs) {
-        return lhs.filename().string() < rhs.filename().string();
-    });
-    return folders;
-}
-
-void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& start,
-                         std::function<void(const std::filesystem::path&)> onPicked) {
-    auto state = std::make_shared<FolderPickerStateUVE>();
-    std::error_code error;
-    std::filesystem::path first = start;
-    // Start at the nearest folder that exists, so a location not created yet still opens nearby.
-    while (!first.empty() && !std::filesystem::is_directory(first, error) && first.has_parent_path() &&
-           first.parent_path() != first) {
-        first = first.parent_path();
-    }
-    if (first.empty() || !std::filesystem::is_directory(first, error)) {
-        const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();
-        first = home.success ? home.directory : std::filesystem::current_path(error);
-    }
-
+/// The path field, the list and the problem line shared by both pickers; returns the dialog body.
+[[nodiscard]] prism::Ref<prism::Box> BuildPickerBodyUVE(const std::shared_ptr<FolderPickerStateUVE>& state) {
     auto body = prism::vbox(kPickerSpacingUVE);
     auto navigation = prism::hbox(kPickerSpacingUVE);
     auto up = prism::make<prism::Button>("", prism::Icon::ChevronUp);
     up->setTooltip("Up one folder");
-    up->onClick = [state] {
-        if (state->current.has_parent_path() && state->current.parent_path() != state->current) {
-            ShowFolderUVE(state, state->current.parent_path());
+    up->onClick = [weak = std::weak_ptr<FolderPickerStateUVE>(state)] {
+        const std::shared_ptr<FolderPickerStateUVE> owner = weak.lock();
+        if (owner && owner->current.has_parent_path() && owner->current.parent_path() != owner->current) {
+            ShowFolderUVE(owner, owner->current.parent_path());
         }
     };
     navigation->add(up);
@@ -129,6 +153,62 @@ void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& 
     frame->setBackground(&prism::Theme::field).setBorder(&prism::Theme::borderSoft).setChild(list);
     body->add(frame);
 
+    state->problem = prism::make<prism::Label>("", prism::FontRole::Small);
+    state->problem->setColor(&prism::Theme::error);
+    return body;
+}
+
+} // namespace
+
+std::vector<std::filesystem::path> ListPickableFoldersUVE(const std::filesystem::path& directory) {
+    std::vector<std::filesystem::path> folders;
+    std::error_code error;
+    std::filesystem::directory_iterator iterator(directory, std::filesystem::directory_options::skip_permission_denied,
+                                                 error);
+    if (error) {
+        return folders;
+    }
+    for (const std::filesystem::directory_entry& entry : iterator) {
+        if (IsHiddenNameUVE(entry.path().filename().string()) || !entry.is_directory(error)) {
+            continue;
+        }
+        folders.push_back(entry.path());
+    }
+    SortByNameUVE(folders);
+    return folders;
+}
+
+std::vector<std::filesystem::path> ListPickableFilesUVE(const std::filesystem::path& directory,
+                                                        const std::vector<std::string>& suffixes) {
+    std::vector<std::filesystem::path> files;
+    std::error_code error;
+    std::filesystem::directory_iterator iterator(directory, std::filesystem::directory_options::skip_permission_denied,
+                                                 error);
+    if (error) {
+        return files;
+    }
+    for (const std::filesystem::directory_entry& entry : iterator) {
+        const std::string name = LowercaseUVE(entry.path().filename().string());
+        if (IsHiddenNameUVE(name) || !entry.is_regular_file(error)) {
+            continue;
+        }
+        const bool matches = std::any_of(suffixes.begin(), suffixes.end(), [&name](const std::string& suffix) {
+            const std::string wanted = LowercaseUVE(suffix);
+            return name.size() > wanted.size() && name.compare(name.size() - wanted.size(), wanted.size(), wanted) == 0;
+        });
+        if (matches) {
+            files.push_back(entry.path());
+        }
+    }
+    SortByNameUVE(files);
+    return files;
+}
+
+void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& start,
+                         std::function<void(const std::filesystem::path&)> onPicked) {
+    auto state = std::make_shared<FolderPickerStateUVE>();
+    const prism::Ref<prism::Box> body = BuildPickerBodyUVE(state);
+
     auto creation = prism::hbox(kPickerSpacingUVE);
     state->newFolder = prism::make<prism::TextInput>("", "New folder name");
     creation->add(state->newFolder, prism::Slot{1.0F});
@@ -148,12 +228,9 @@ void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& 
     };
     creation->add(make);
     body->add(creation);
-
-    state->problem = prism::make<prism::Label>("", prism::FontRole::Small);
-    state->problem->setColor(&prism::Theme::error);
     body->add(state->problem);
 
-    ShowFolderUVE(state, first);
+    ShowFolderUVE(state, FirstFolderUVE(start));
     prism::showDialog(title, body,
                       {{"Cancel", false, [state] { state->folders->clearChildren(); }},
                        {"Choose this folder", true,
@@ -162,6 +239,32 @@ void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& 
                             state->folders->clearChildren();
                             if (onPicked) {
                                 onPicked(chosen);
+                            }
+                        }}},
+                      kPickerWidthUVE);
+}
+
+void ShowFilePickerUVE(const std::string& title, const std::filesystem::path& start, std::vector<std::string> suffixes,
+                       const std::string& confirmLabel, std::function<void(const std::filesystem::path&)> onPicked) {
+    auto state = std::make_shared<FolderPickerStateUVE>();
+    state->fileSuffixes = std::move(suffixes);
+    const prism::Ref<prism::Box> body = BuildPickerBodyUVE(state);
+    body->add(state->problem);
+
+    ShowFolderUVE(state, FirstFolderUVE(start));
+    // The rows hold the state weakly; clearing them on close releases everything.
+    const auto release = [state] {
+        state->fileRows.clear();
+        state->folders->clearChildren();
+    };
+    prism::showDialog(title, body,
+                      {{"Cancel", false, release},
+                       {confirmLabel, true,
+                        [state, release, onPicked = std::move(onPicked)] {
+                            const std::optional<std::filesystem::path> chosen = state->selectedFile;
+                            release();
+                            if (chosen.has_value() && onPicked) {
+                                onPicked(*chosen);
                             }
                         }}},
                       kPickerWidthUVE);

@@ -64,6 +64,10 @@ struct EngineInstallOutcomeUVE final {
     bool installed = false;
     std::string message;
     std::filesystem::path directory;
+    /// The engine version that was installed (or that the package holds, when that is known).
+    std::optional<Core::VersionUVE> version;
+    /// True when the package was checked against a published SHA-256 before it was installed.
+    bool verified = false;
 };
 
 /// Verifies `archive` against `expected`, extracts it beside `enginesRoot`'s final location and moves
@@ -73,6 +77,13 @@ struct EngineInstallOutcomeUVE final {
                                                               const Sha256DigestUVE& expected,
                                                               const Core::VersionUVE& expectedVersion,
                                                               const std::filesystem::path& enginesRoot);
+
+/// Installs a package file the user chose by hand (an offline copy, or one from another machine).
+/// The version comes from the package's own manifest, so the file may have any name. When a checksum
+/// file (<package>.sha256) sits beside it, the package must match it; without one the package is
+/// installed unverified and the outcome says so.
+[[nodiscard]] EngineInstallOutcomeUVE InstallLocalEnginePackageUVE(const std::filesystem::path& package,
+                                                                   const std::filesystem::path& enginesRoot);
 
 /// Removes a downloaded engine. The bundled engine is never under `enginesRoot`.
 [[nodiscard]] bool UninstallEngineUVE(const std::filesystem::path& enginesRoot, const Core::VersionUVE& version);
