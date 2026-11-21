@@ -5944,6 +5944,23 @@ bool DecodeRawImageThumbnailPixelsUVE(const std::filesystem::path& absolutePath,
     return outImage.IsValidUVE();
 }
 
+[[nodiscard]] std::filesystem::path ResolveThumbnailAssetPathUVE(const std::filesystem::path& contentRoot,
+                                                                 const std::filesystem::path& path) {
+    if (path.empty() || path.is_absolute()) {
+        return path;
+    }
+    std::error_code error;
+    const std::filesystem::path underRoot = contentRoot / path;
+    if (std::filesystem::is_regular_file(underRoot, error)) {
+        return underRoot;
+    }
+    error.clear();
+    if (std::filesystem::is_regular_file(path, error)) {
+        return path;
+    }
+    return underRoot;
+}
+
 } // namespace
 
 std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& relativePath) {
@@ -5953,7 +5970,7 @@ std::uintptr_t EditorUVE::GetTextureThumbnailUVE(const std::filesystem::path& re
         return cachedIt->second;
     }
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    const std::filesystem::path absolutePath = snapshot.contentRoot / relativePath;
+    const std::filesystem::path absolutePath = ResolveThumbnailAssetPathUVE(snapshot.contentRoot, relativePath);
     std::uintptr_t textureId = 0U;
     Asset::TextureAssetUVE texture;
     if (!IsRawSourceImagePathUVE(absolutePath) && Asset::LoadTextureAssetUVE(absolutePath, texture) &&
@@ -6109,7 +6126,8 @@ std::uintptr_t EditorUVE::GetMeshThumbnailUVE(const std::filesystem::path& relat
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     // A model source previews its imported mesh; until that exists there is nothing to render yet.
     const std::filesystem::path absolutePath =
-        IsModelSourcePathUVE(relativePath) ? GetImportedModelPathUVE(relativePath) : snapshot.contentRoot / relativePath;
+        IsModelSourcePathUVE(relativePath) ? GetImportedModelPathUVE(relativePath)
+                                           : ResolveThumbnailAssetPathUVE(snapshot.contentRoot, relativePath);
     MeshThumbnailEntryUVE entry;
     entry.checkedAt = now;
     const auto remember = [&entry](const std::filesystem::path& file) {
@@ -6244,9 +6262,11 @@ std::uintptr_t EditorUVE::GetMaterialThumbnailUVE(const std::filesystem::path& r
         return cachedIt->second;
     }
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path materialFile = ResolveThumbnailAssetPathUVE(snapshot.contentRoot, relativePath);
     Asset::MaterialAssetUVE material;
     std::uintptr_t textureId = 0U;
-    if (!Asset::LoadMaterialAssetUVE(snapshot.contentRoot / relativePath, material)) {
+    if (!Asset::LoadMaterialAssetUVE(materialFile, material)) {
+        UVE_WARNING("EditorUVE: failed to load material thumbnail source \"{}\"", materialFile.string());
         m_materialThumbnailCache.emplace(cacheKey, 0U);
         return 0U;
     }
@@ -6255,12 +6275,14 @@ std::uintptr_t EditorUVE::GetMaterialThumbnailUVE(const std::filesystem::path& r
     // through the inspector) previews as its flat value rather than blocking the material.
     Asset::IAssetDatabaseUVE& assetDatabase = m_services->GetAssetDatabaseUVE();
     MaterialThumbnailTexturesUVE textures;
-    const auto loadSlot = [&assetDatabase](const Asset::AssetGuidUVE guid, const bool rawImageSrgb,
-                                           MaterialThumbnailImageUVE& image) {
+    const auto loadSlot = [&assetDatabase, &snapshot](const Asset::AssetGuidUVE guid, const bool rawImageSrgb,
+                                                      MaterialThumbnailImageUVE& image) {
         if (guid == Asset::kInvalidAssetGuidUVE) {
             return;
         }
-        static_cast<void>(LoadMaterialPreviewImageUVE(assetDatabase.ResolveUVE(guid), rawImageSrgb, image));
+        const std::filesystem::path resolved = assetDatabase.ResolveUVE(guid);
+        static_cast<void>(LoadMaterialPreviewImageUVE(ResolveThumbnailAssetPathUVE(snapshot.contentRoot, resolved),
+                                                      rawImageSrgb, image));
     };
     loadSlot(material.albedoTexture, true, textures.albedo);
     loadSlot(material.normalTexture, false, textures.normal);
@@ -6294,17 +6316,21 @@ void EditorUVE::ClearMaterialThumbnailCacheUVE() noexcept {
 void EditorUVE::InvalidateMaterialThumbnailCacheUVE(const std::filesystem::path& absolutePath) {
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     std::error_code error;
-    std::filesystem::path relativePath = std::filesystem::relative(absolutePath, snapshot.contentRoot, error);
-    if (error || relativePath.empty() || *relativePath.begin() == "..") {
+    std::filesystem::path cachePath = std::filesystem::relative(absolutePath, snapshot.contentRoot, error);
+    if (error || cachePath.empty() || cachePath == "." || *cachePath.begin() == "..") {
+        error.clear();
         const std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(absolutePath, error);
         const std::filesystem::path canonicalRoot =
             error ? std::filesystem::path{} : std::filesystem::weakly_canonical(snapshot.contentRoot, error);
-        relativePath = error ? std::filesystem::path{} : std::filesystem::relative(canonicalPath, canonicalRoot, error);
+        cachePath = error ? std::filesystem::path{} : std::filesystem::relative(canonicalPath, canonicalRoot, error);
     }
-    if (relativePath.empty() || *relativePath.begin() == "..") {
-        return;
+    if (cachePath.empty() || cachePath == "." || *cachePath.begin() == "..") {
+        cachePath = absolutePath.lexically_normal();
     }
-    const auto cachedIt = m_materialThumbnailCache.find(relativePath.generic_string());
+    auto cachedIt = m_materialThumbnailCache.find(cachePath.generic_string());
+    if (cachedIt == m_materialThumbnailCache.end()) {
+        cachedIt = m_materialThumbnailCache.find(absolutePath.lexically_normal().generic_string());
+    }
     if (cachedIt == m_materialThumbnailCache.end()) {
         ++m_materialThumbnailGeneration;
         return;

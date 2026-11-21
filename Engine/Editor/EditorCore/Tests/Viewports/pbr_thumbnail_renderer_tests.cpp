@@ -86,6 +86,7 @@ TEST(PbrThumbnailRendererUVETest, MaterialAndMeshThumbnailsCompileAndRenderOnRea
     constexpr int kSize = 128;
     const std::uintptr_t matTex = materialRenderer.RenderThumbnailUVE(material, MaterialThumbnailTexturesUVE{}, kSize, kSize);
     ASSERT_NE(matTex, 0U) << "MaterialThumbnailRendererUVE failed to compile or render on OpenGL 3.3 Core";
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
 
     const std::vector<std::uint8_t> matPixels = ReadTextureRgba8UVE(matTex, kSize, kSize);
     const std::size_t centerIdx = (static_cast<std::size_t>(kSize / 2) * static_cast<std::size_t>(kSize) +
@@ -108,6 +109,7 @@ TEST(PbrThumbnailRendererUVETest, MaterialAndMeshThumbnailsCompileAndRenderOnRea
     look.roughness = 0.4F;
     const std::uintptr_t meshTex = meshRenderer.RenderThumbnailUVE(quad, kSize, kSize, {look});
     ASSERT_NE(meshTex, 0U) << "MeshThumbnailRendererUVE failed to compile or render on OpenGL 3.3 Core";
+    EXPECT_EQ(glGetError(), static_cast<GLenum>(GL_NO_ERROR));
 
     const std::vector<std::uint8_t> meshPixels = ReadTextureRgba8UVE(meshTex, kSize, kSize);
     EXPECT_EQ(meshPixels[centerIdx + 3U], 255U);

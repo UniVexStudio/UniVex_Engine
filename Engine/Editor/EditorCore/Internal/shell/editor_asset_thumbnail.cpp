@@ -58,27 +58,38 @@ private:
     if (path.empty()) {
         return {};
     }
+    std::error_code error;
+    if (!contentRoot.empty()) {
+        std::filesystem::path relative = std::filesystem::relative(path, contentRoot, error);
+        if (!error && !relative.empty() && relative != "." && *relative.begin() != "..") {
+            return relative.lexically_normal();
+        }
+        error.clear();
+        const std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(path, error);
+        if (!error) {
+            const std::filesystem::path canonicalRoot = std::filesystem::weakly_canonical(contentRoot, error);
+            if (!error) {
+                relative = std::filesystem::relative(canonicalPath, canonicalRoot, error);
+                if (!error && !relative.empty() && relative != "." && *relative.begin() != "..") {
+                    return relative.lexically_normal();
+                }
+            }
+        }
+    }
     if (!path.is_absolute()) {
+        error.clear();
+        if (!contentRoot.empty() && std::filesystem::is_regular_file(contentRoot / path, error)) {
+            return path.lexically_normal();
+        }
+        error.clear();
+        if (std::filesystem::is_regular_file(path, error)) {
+            const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, error);
+            return error ? path.lexically_normal() : canonical;
+        }
         return path.lexically_normal();
     }
-    std::error_code error;
-    std::filesystem::path relative = std::filesystem::relative(path, contentRoot, error);
-    if (!error && !relative.empty() && *relative.begin() != "..") {
-        return relative;
-    }
-    const std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(path, error);
-    if (error) {
-        return {};
-    }
-    const std::filesystem::path canonicalRoot = std::filesystem::weakly_canonical(contentRoot, error);
-    if (error) {
-        return {};
-    }
-    relative = std::filesystem::relative(canonicalPath, canonicalRoot, error);
-    if (error || relative.empty() || *relative.begin() == "..") {
-        return {};
-    }
-    return relative;
+    error.clear();
+    return std::filesystem::is_regular_file(path, error) ? path.lexically_normal() : std::filesystem::path{};
 }
 
 } // namespace
