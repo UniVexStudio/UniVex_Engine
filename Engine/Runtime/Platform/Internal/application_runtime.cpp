@@ -105,6 +105,63 @@ std::string_view GetApplicationTargetUVE() noexcept {
 #endif
 }
 
+ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE() {
+#if defined(_WIN32)
+    const char* const localAppData = std::getenv("LOCALAPPDATA");
+    const char* const roamingAppData = std::getenv("APPDATA");
+    const char* const home = std::getenv("USERPROFILE");
+    const char* const selected = localAppData != nullptr && localAppData[0] != '\0'
+                                     ? localAppData
+                                     : (roamingAppData != nullptr && roamingAppData[0] != '\0'
+                                            ? roamingAppData
+                                            : home);
+    if (selected == nullptr || selected[0] == '\0') {
+        return MakeDirectoryFailureUVE("No per-user Windows application-data directory is available.");
+    }
+    return {true, std::filesystem::path(selected), "Per-user data root resolved."};
+#elif defined(__APPLE__)
+    const char* const home = std::getenv("HOME");
+    if (home == nullptr || home[0] == '\0' || !std::filesystem::path(home).is_absolute()) {
+        return MakeDirectoryFailureUVE("HOME is unavailable for the Apple application-data directory.");
+    }
+    return {true, std::filesystem::path(home) / "Library" / "Application Support", "Per-user data root resolved."};
+#elif defined(__ANDROID__)
+    const char* const home = std::getenv("HOME");
+    if (home == nullptr || home[0] == '\0' || !std::filesystem::path(home).is_absolute()) {
+        return MakeDirectoryFailureUVE("An app-sandbox HOME is required for Android application data.");
+    }
+    return {true, std::filesystem::path(home), "Per-user data root resolved."};
+#else
+    const char* const xdgDataHome = std::getenv("XDG_DATA_HOME");
+    const char* const home = std::getenv("HOME");
+    if (xdgDataHome != nullptr && xdgDataHome[0] != '\0' && std::filesystem::path(xdgDataHome).is_absolute()) {
+        return {true, std::filesystem::path(xdgDataHome), "Per-user data root resolved."};
+    } else if (home != nullptr && home[0] != '\0') {
+        return {true, std::filesystem::path(home) / ".local" / "share", "Per-user data root resolved."};
+    } else {
+        return MakeDirectoryFailureUVE("Neither XDG_DATA_HOME nor HOME is available for application data.");
+    }
+#endif
+}
+
+ApplicationUserDataDirectoryResultUVE ResolveToolUserDataDirectoryUVE(const std::string_view directoryName) {
+    const std::filesystem::path name{directoryName};
+    if (name.empty() || name.is_absolute() || name.has_parent_path() || name == "." || name == "..") {
+        return MakeDirectoryFailureUVE("A tool data directory name must be a single path component.");
+    }
+    ApplicationUserDataDirectoryResultUVE root = ResolvePerUserDataRootUVE();
+    if (!root.success) {
+        return root;
+    }
+    const std::filesystem::path directory = root.directory / name;
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    if (error || !std::filesystem::is_directory(directory, error)) {
+        return MakeDirectoryFailureUVE("Unable to create the tool data directory '" + directory.string() + "'.");
+    }
+    return {true, directory, "Tool data directory resolved."};
+}
+
 ApplicationUserDataDirectoryResultUVE ResolveApplicationUserDataDirectoryUVE(
     const EditorProjectPackageUVE& package, const std::filesystem::path& projectRoot) {
     std::string directoryName = package.applicationSettings.userDataDirectoryName;
@@ -131,42 +188,11 @@ ApplicationUserDataDirectoryResultUVE ResolveApplicationUserDataDirectoryUVE(
     if (package.applicationSettings.portableUserData) {
         baseDirectory = absoluteProjectRoot;
     } else {
-#if defined(_WIN32)
-        const char* const localAppData = std::getenv("LOCALAPPDATA");
-        const char* const roamingAppData = std::getenv("APPDATA");
-        const char* const home = std::getenv("USERPROFILE");
-        const char* const selected = localAppData != nullptr && localAppData[0] != '\0'
-                                         ? localAppData
-                                         : (roamingAppData != nullptr && roamingAppData[0] != '\0'
-                                                ? roamingAppData
-                                                : home);
-        if (selected == nullptr || selected[0] == '\0') {
-            return MakeDirectoryFailureUVE("No per-user Windows application-data directory is available.");
+        ApplicationUserDataDirectoryResultUVE root = ResolvePerUserDataRootUVE();
+        if (!root.success) {
+            return root;
         }
-        baseDirectory = selected;
-#elif defined(__APPLE__)
-        const char* const home = std::getenv("HOME");
-        if (home == nullptr || home[0] == '\0' || !std::filesystem::path(home).is_absolute()) {
-            return MakeDirectoryFailureUVE("HOME is unavailable for the Apple application-data directory.");
-        }
-        baseDirectory = std::filesystem::path(home) / "Library" / "Application Support";
-#elif defined(__ANDROID__)
-        const char* const home = std::getenv("HOME");
-        if (home == nullptr || home[0] == '\0' || !std::filesystem::path(home).is_absolute()) {
-            return MakeDirectoryFailureUVE("An app-sandbox HOME is required for Android application data.");
-        }
-        baseDirectory = home;
-#else
-        const char* const xdgDataHome = std::getenv("XDG_DATA_HOME");
-        const char* const home = std::getenv("HOME");
-        if (xdgDataHome != nullptr && xdgDataHome[0] != '\0' && std::filesystem::path(xdgDataHome).is_absolute()) {
-            baseDirectory = xdgDataHome;
-        } else if (home != nullptr && home[0] != '\0') {
-            baseDirectory = std::filesystem::path(home) / ".local" / "share";
-        } else {
-            return MakeDirectoryFailureUVE("Neither XDG_DATA_HOME nor HOME is available for application data.");
-        }
-#endif
+        baseDirectory = std::move(root.directory);
     }
 
     const std::filesystem::path directory = baseDirectory / directoryName;
