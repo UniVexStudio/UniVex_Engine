@@ -24,4 +24,4 @@
 - [ ] I have added unit or integration tests locking valid, degenerate, and edge-case behavior.
 - [ ] All existing and new tests pass with zero regressions.
 - [ ] No third-party commercial engine names are used in code, comments, or documentation.
-- [ ] Relevant roadmap documents (`ROADMAP.md`, `SCENE_NODES_ROADMAP.md`, etc.) have been updated.
+- [ ] `ROADMAP.md` has been updated if applicable.
