@@ -40,7 +40,7 @@
 # Publishing needs the RELEASES_TOKEN secret: a fine-grained access token with Contents: write on
 # those two repositories only. An APK is signed with the key in the ANDROID_KEYSTORE secret (base64,
 # with ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS) when it is set, so installed copies update in
-# place; otherwise with a throwaway debug key.
+# place; otherwise with a throwaway debug key. Only a public release refuses to ship without it.
 #
 # Every build compiles through ccache (UVBT_COMPILER_LAUNCHER) with the cache kept between runs, so a
 # run recompiles only what changed since the last one instead of the whole tree.
@@ -417,7 +417,8 @@ jobs:
       - name: Build the Hub APK
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
-          RELEASING: ${{ env.IS_RELEASE }}
+          # Only a public release must carry the real key; development builds fall back to a debug key.
+          PUBLIC_RELEASE: ${{ vars.PUBLISH_RELEASES == 'true' && startsWith(github.ref, 'refs/tags/v') }}
           UVE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           UVE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
@@ -434,13 +435,15 @@ jobs:
               reason=$(printf '%s\n' "${check}" | grep -i 'error' | tail -n 1)
               size=$(wc -c < "${RUNNER_TEMP}/release.keystore")
               message="The ANDROID_KEYSTORE secret (${size} bytes once decoded) is not a keystore that ANDROID_KEYSTORE_PASSWORD opens: ${reason}. Paste the base64 of the .keystore/.jks file again, and check the password."
-              # A release must be signed with the real key; a check build can use a debug key.
-              if [ "${RELEASING}" = "true" ]; then
+              if [ "${PUBLIC_RELEASE}" = "true" ]; then
                 echo "::error::${message}"
                 exit 1
               fi
               echo "::warning::${message} This build is signed with a debug key."
             fi
+          elif [ "${PUBLIC_RELEASE}" = "true" ]; then
+            echo "::error::A public release needs the ANDROID_KEYSTORE secret, so installed copies can update."
+            exit 1
           else
             echo "::warning::ANDROID_KEYSTORE is not set: the APK is signed with a throwaway debug key, so it cannot update an installed copy."
           fi
