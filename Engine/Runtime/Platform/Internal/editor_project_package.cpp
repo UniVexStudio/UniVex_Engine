@@ -140,7 +140,7 @@ using JsonUVE = nlohmann::json;
 }
 
 [[nodiscard]] bool IsPackagePathUVE(const std::filesystem::path& path) noexcept {
-    return path.extension() == ".uvproject" && !path.filename().empty();
+    return path.extension() == kEditorProjectFileExtensionUVE && !path.filename().empty();
 }
 
 [[nodiscard]] std::optional<EditorProjectPackageUVE> DecodePackageUVE(const JsonUVE& json) {

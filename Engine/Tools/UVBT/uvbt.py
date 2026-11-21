@@ -900,6 +900,13 @@ class EngineBuilder:
             if prism_assets.is_dir():
                 shutil.copytree(prism_assets, bin_dir / "prism_assets", dirs_exist_ok=True)
 
+        if any(m.name == "Pack" for m in ordered_modules):
+            # New projects are created from the templates shipped beside the binary. The directory
+            # name matches Pack's kProjectTemplatesDirectoryNameUVE.
+            project_templates = self.repo_root / "Engine" / "Templates" / "Projects"
+            if project_templates.is_dir():
+                shutil.copytree(project_templates, bin_dir / "project_templates", dirs_exist_ok=True)
+
         print(f"\033[92m[UVBT] BUILD SUCCESSFUL!\033[0m")
         print(f"[UVBT] Output Binary: {target_exe}")
         return target_exe
