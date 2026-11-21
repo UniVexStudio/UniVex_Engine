@@ -1,18 +1,20 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #
-# Publishes an engine release for the Hub's engine feed.
+# Publishes UniVex releases. Engines and the Hub are released separately:
 #
-# Pushing a tag such as v0.2.0 (Stable) or v0.2.0-beta (Beta) builds the engine on Linux and
-# Windows, checks that the build reports the version the tag names, packages it with
-# Engine/Tools/package_engine.py and attaches the packages and their checksums to a GitHub Release.
-# Beta tags become prereleases, which the Hub lists on its Beta channel. Hubs that are online pick
-# the new version up on their next check; offline ones keep the engines they have.
+#   v0.2.0, v0.2.0-beta   An engine version. Built on Linux and Windows, checked against the version
+#                         the editor reports, packaged with Engine/Tools/package_engine.py and
+#                         attached with checksums to a GitHub Release. Beta tags become prereleases,
+#                         the Hub's Beta channel. Hubs that are online list the new version on their
+#                         next check; offline ones keep the engines they have.
+#   hub-v0.1.0            A Hub version. The single-file installers (Engine/Tools/make_hub_installer.py)
+#                         carry the Hub alone; users download engines from it.
 
 name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'hub-v*']
 
 permissions:
   contents: read
@@ -21,9 +23,14 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  LINUX_PACKAGES: >-
+    ninja-build libglfw3-dev libglew-dev libgl1-mesa-dev libglu1-mesa-dev zlib1g-dev
+    libjpeg-dev libfreetype-dev libcurl4-openssl-dev xvfb
+
 jobs:
   linux:
-    name: Linux engine package
+    name: Linux build
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -31,27 +38,33 @@ jobs:
       - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ninja-build libglfw3-dev libglew-dev libgl1-mesa-dev libglu1-mesa-dev zlib1g-dev \
-            libjpeg-dev libfreetype-dev libcurl4-openssl-dev xvfb
-      - name: Build
+          sudo apt-get install -y --no-install-recommends ${LINUX_PACKAGES}
+      - name: Build and package the engine
+        if: startsWith(github.ref_name, 'v')
         run: |
           set -euo pipefail
-          for target in UniVexEditor UniVexRuntime UniVexPack UniVexHub; do
+          for target in UniVexEditor UniVexRuntime UniVexPack; do
             ./uvbt build "$target" Linux Release -j"$(nproc)"
           done
-      - name: Package the engine
-        run: |
           python3 Engine/Tools/package_engine.py --bin .uvbt/bin/Linux/Release --target linux \
+            --tag "${GITHUB_REF_NAME}" --output dist
+      - name: Build the Hub installer
+        if: startsWith(github.ref_name, 'hub-v')
+        run: |
+          set -euo pipefail
+          for target in UniVexHub UniVexHubSetup; do
+            ./uvbt build "$target" Linux Release -j"$(nproc)"
+          done
+          python3 Engine/Tools/make_hub_installer.py --bin .uvbt/bin/Linux/Release --target linux \
             --tag "${GITHUB_REF_NAME}" --output dist
       - uses: actions/upload-artifact@v4
         with:
-          name: engine-linux
+          name: release-linux
           path: dist/
           if-no-files-found: error
 
   windows:
-    name: Windows engine package
+    name: Windows build
     runs-on: windows-latest
     timeout-minutes: 180
     steps:
@@ -71,21 +84,29 @@ jobs:
             mingw-w64-ucrt-x86_64-zlib
             mingw-w64-ucrt-x86_64-libjpeg-turbo
             mingw-w64-ucrt-x86_64-freetype
-      - name: Build
+      - name: Build and package the engine
+        if: startsWith(github.ref_name, 'v')
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          for target in UniVexEditor UniVexRuntime UniVexPack UniVexHub; do
+          for target in UniVexEditor UniVexRuntime UniVexPack; do
             ./uvbt build "$target" Windows Release -j4
           done
-      - name: Package the engine
+          python Engine/Tools/package_engine.py --bin .uvbt/bin/Windows/Release --target windows \
+            --tag "${GITHUB_REF_NAME}" --output dist
+      - name: Build the Hub installer
+        if: startsWith(github.ref_name, 'hub-v')
         shell: msys2 {0}
         run: |
-          python Engine/Tools/package_engine.py --bin .uvbt/bin/Windows/Release --target windows \
+          set -euo pipefail
+          for target in UniVexHub UniVexHubSetup; do
+            ./uvbt build "$target" Windows Release -j4
+          done
+          python Engine/Tools/make_hub_installer.py --bin .uvbt/bin/Windows/Release --target windows \
             --tag "${GITHUB_REF_NAME}" --output dist
       - uses: actions/upload-artifact@v4
         with:
-          name: engine-windows
+          name: release-windows
           path: dist/
           if-no-files-found: error
 
@@ -106,7 +127,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          flags=(--title "UniVex ${GITHUB_REF_NAME}" --generate-notes --verify-tag)
+          case "${GITHUB_REF_NAME}" in
+            hub-v*) title="UniVex Hub ${GITHUB_REF_NAME#hub-v}" ;;
+            *)      title="UniVex Engine ${GITHUB_REF_NAME#v}" ;;
+          esac
+          flags=(--title "${title}" --generate-notes --verify-tag)
           case "${GITHUB_REF_NAME}" in
             *-beta) flags+=(--prerelease) ;;
           esac
