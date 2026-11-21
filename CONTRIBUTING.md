@@ -9,7 +9,7 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
 - **No Third-Party Commercial Engine Names**: By engine policy, do not reference or benchmark proprietary commercial game engines by name in codebase documentation, comments, commit messages, or PRs. Refer to architectural concepts generically (e.g., "current-generation standards", "analytic two-bone IK", "forward+ clustered shading").
 - **Strict Module Boundary Discipline**: Keep runtime dependencies cleanly separated. Core modules (`uve_core`, `uve_math`, `uve_memory`, `uve_entity`) must not depend on higher-level systems (`uve_render`, `uve_scene`, `uve_editor`).
 - **One Truth per Concept**: Component definitions belong in `Engine/Runtime/Component`. Node definitions and object recipes belong in `Engine/Runtime/Objects`. Do not duplicate component structs across directories.
-- **Survey Before Authoring**: Review existing implementations and relevant roadmaps (`ROADMAP.md`, `FOUNDATION.md`, `SETTINGS_ROADMAP.md`, `SCENE_NODES_ROADMAP.md`) before introducing new systems or abstractions.
+- **Survey Before Authoring**: Review existing implementations, `docs/ARCHITECTURE_GUIDE.md`, and `ROADMAP.md` before introducing new systems or abstractions.
 
 ---
 
@@ -55,5 +55,5 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
    - [ ] Verified against the existing test suite (`./.uvbt/bin/Linux/Debug/UniVexTests` and `uve_prism_tests`).
    - [ ] All new tests pass cleanly.
    - [ ] Zero compiler warnings (`UVBT_WERROR=1`).
-   - [ ] Checked off and described the completed item in `ROADMAP.md` (or relevant roadmap).
+   - [ ] Updated `ROADMAP.md` if applicable.
    - [ ] Filled out all sections of `.github/PULL_REQUEST_TEMPLATE.md`.

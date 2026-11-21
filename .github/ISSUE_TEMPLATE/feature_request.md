@@ -10,7 +10,7 @@ assignees: ''
 <!-- A clear and concise description of the requested feature or capability. -->
 
 ## Roadmap Alignment
-<!-- Which section of ROADMAP.md or relevant roadmap document does this belong to? -->
+<!-- Which section of ROADMAP.md does this belong to? -->
 
 ## Proposed Architecture / API
 <!-- If known, describe proposed component structs, interfaces, or systems adhering to UVE conventions. -->
