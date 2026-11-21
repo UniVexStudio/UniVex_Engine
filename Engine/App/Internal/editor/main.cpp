@@ -26,6 +26,7 @@
 #include "engine_core.h"
 #include "project_launcher.h"
 #include "project_template.h"
+#include "project_registry.h"
 #include "quaternion.h"
 #include "scalar.h"
 #include "prism/Containers.h"
@@ -55,6 +56,8 @@ inline constexpr std::string_view kLegacyEditorSceneFileUVE = "editor_scene.uvsc
 inline constexpr std::string_view kProjectOptionUVE = "--project";
 /// Accepts upgrading an older project to this engine without asking, for runs with no one to ask.
 inline constexpr std::string_view kUpgradeProjectOptionUVE = "--upgrade-project";
+/// Records opened projects in this registry file instead of the user's own, for isolated runs.
+inline constexpr std::string_view kProjectRegistryOptionUVE = "--project-registry";
 inline constexpr float kUpgradeDialogWidthUVE = 520.0F;
 inline constexpr float kUpgradeDialogLineSpacingUVE = 6.0F;
 /// Process exit code for a command line the editor cannot act on.
@@ -65,6 +68,8 @@ inline constexpr int kProjectUnavailableExitCodeUVE = 1;
 struct EditorLaunchOptionsUVE final {
     /// The `.uvproject` to author. Empty keeps the working-directory layout.
     std::filesystem::path projectFile;
+    /// Registry that records the opened project; empty uses the current user's registry.
+    std::filesystem::path projectRegistry;
     /// Upgrade an older project to this engine without the confirmation dialog.
     bool upgradeProject = false;
     /// Set when the command line cannot be acted on; the editor reports it and exits.
@@ -149,6 +154,14 @@ struct EditorLaunchOptionsUVE final {
                 return options;
             }
             options.projectFile = argv[++index];
+            continue;
+        }
+        if (argument == kProjectRegistryOptionUVE) {
+            if (index + 1 >= argc || std::string_view{argv[index + 1]}.starts_with("--")) {
+                options.error = std::string(kProjectRegistryOptionUVE) + " requires a registry file path";
+                return options;
+            }
+            options.projectRegistry = argv[++index];
             continue;
         }
         if (argument == kUpgradeProjectOptionUVE) {
@@ -372,6 +385,21 @@ int main(const int argc, char** argv) {
         if (project.has_value() &&
             project->compatibility.verdict == UVE::Pack::ProjectCompatibilityVerdictUVE::NewerCompatible) {
             UVE_WARNING("uve_editor: {}", project->compatibility.message);
+        }
+
+        if (project.has_value()) {
+            std::string registryError;
+            const std::optional<std::filesystem::path> registryFile =
+                options.projectRegistry.empty() ? UVE::Pack::DefaultProjectRegistryFileUVE(&registryError)
+                                                : std::optional<std::filesystem::path>(options.projectRegistry);
+            if (!registryFile.has_value()) {
+                UVE_WARNING("uve_editor: the recent-projects list is unavailable: {}", registryError);
+            } else if (const UVE::Pack::ProjectRegistryResultUVE recorded =
+                           UVE::Pack::RecordProjectOpenedUVE(*registryFile, project->projectFile, project->package);
+                       !recorded.IsAppliedUVE()) {
+                UVE_WARNING("uve_editor: could not record the project in the recent-projects list: {}",
+                            recorded.message);
+            }
         }
 
         bool upgradeAccepted = options.upgradeProject;
