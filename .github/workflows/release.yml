@@ -12,12 +12,13 @@
 #
 # Where a release goes is switched by the PUBLISH_RELEASES repository variable:
 #
-#   not "true" (default)  Development builds go to the private repository named by the
-#                         DEV_RELEASES_REPOSITORY variable. Nothing reaches the public.
+#   not "true" (default)  Development builds go to the private repository in DEV_RELEASES_REPOSITORY
+#                         below (a repository variable of the same name overrides it). Nothing
+#                         reaches the public.
 #   "true"                Releases go to the public repository that Engine/Distribution/engine_feed.json
 #                         names, the same file the Hub reads (without credentials) to find them.
 #
-# The private repository's name lives only in that variable, never in code the Hub ships. Publishing
+# The private repository's name lives only in this workflow, never in code the Hub ships. Publishing
 # needs the RELEASES_TOKEN secret: a fine-grained access token with Contents: write on those two
 # repositories only. It lives in this repository's secrets and is never part of any build.
 
@@ -36,6 +37,7 @@ concurrency:
 
 env:
   ENGINE_FEED_FILE: Engine/Distribution/engine_feed.json
+  DEV_RELEASES_REPOSITORY: ${{ vars.DEV_RELEASES_REPOSITORY || 'UniVexStudio/UniVexReleases-Dev' }}
   LINUX_PACKAGES: >-
     ninja-build libglfw3-dev libglew-dev libgl1-mesa-dev libglu1-mesa-dev zlib1g-dev
     libjpeg-dev libfreetype-dev libcurl4-openssl-dev xvfb
@@ -141,7 +143,6 @@ jobs:
       - name: Choose the releases repository
         env:
           PUBLISH_RELEASES: ${{ vars.PUBLISH_RELEASES }}
-          DEV_RELEASES_REPOSITORY: ${{ vars.DEV_RELEASES_REPOSITORY }}
         run: |
           set -euo pipefail
           if [ "${PUBLISH_RELEASES}" = "true" ]; then
@@ -149,7 +150,7 @@ jobs:
           elif [ -n "${DEV_RELEASES_REPOSITORY}" ]; then
             repository="${DEV_RELEASES_REPOSITORY}"
           else
-            echo "::error::PUBLISH_RELEASES is off and the DEV_RELEASES_REPOSITORY variable is not set; set it to the private repository for development builds."
+            echo "::error::PUBLISH_RELEASES is off and DEV_RELEASES_REPOSITORY is empty; name the private repository for development builds."
             exit 1
           fi
           echo "RELEASES_REPOSITORY=${repository}" >> "${GITHUB_ENV}"
