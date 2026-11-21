@@ -125,8 +125,8 @@ class SharedNamesTest(unittest.TestCase):
         self.assertEqual(feed["schemaVersion"], self.cpp["kCurrentEngineFeedSchemaVersionUVE"])
         self.assertTrue(feed["owner"] and feed["repository"], "the feed must name the releases repository")
 
-    def test_release_workflow_reads_the_feed(self) -> None:
-        workflow = (REPO_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    def test_workflow_reads_the_feed(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         self.assertIn(f"ENGINE_FEED_FILE: {ENGINE_FEED}", workflow)
         feed = json.loads((REPO_ROOT / ENGINE_FEED).read_text(encoding="utf-8"))
         # The whole name only: a development repository may share its prefix.
