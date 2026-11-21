@@ -24,7 +24,6 @@ std::string fmtNum(float v, int dec, const std::string& suffix = "") {
   if (s == "-0" || (s.size() > 1 && s[0] == '-' && s.find_first_not_of("-0.") == std::string::npos)) s.erase(0, 1);
   return s + suffix;
 }
-const Color kPopupBg = Color::hex(0x252527);
 } // namespace
 
 // ------------------------------------------------------------------ Label
@@ -296,15 +295,15 @@ public:
   }
   void paint(Canvas& c) override {
     const Theme& t = theme();
-    c.fillRoundRect(m_rect, 4, kPopupBg);
+    c.fillRoundRect(m_rect, 4, t.popup);
     c.strokeRoundRect(m_rect, 4, t.borderStrong);
     for (int i = 0; i < int(m_items.size()); i++) {
       Rect r = rowRect(i);
       const bool off = disabled(i);
       bool hot = i == m_hover && !off;
-      if (hot) c.fillRoundRect(r, 3, t.accent);
-      if (i == m_sel) drawIcon(c, Icon::Check, {r.x + 4, r.y + 3, 16, 16}, hot ? t.accentText : t.accent);
-      c.textIn(*t.ui, {r.x + 26, r.y, r.w - 30, r.h}, m_items[size_t(i)], off ? t.textDisabled : hot ? t.accentText : t.text);
+      if (hot) c.fillRoundRect(r, 3, t.accentDim);
+      if (i == m_sel) drawIcon(c, Icon::Check, {r.x + 4, r.y + 3, 16, 16}, t.accent);
+      c.textIn(*t.ui, {r.x + 26, r.y, r.w - 30, r.h}, m_items[size_t(i)], off ? t.textDisabled : hot ? t.textBright : t.text);
     }
   }
   bool onMouseMove(const MouseEvent& e) override {

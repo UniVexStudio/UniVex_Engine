@@ -13,7 +13,6 @@ std::string lower(std::string s) {
   for (auto& ch : s) ch = char(std::tolower(static_cast<unsigned char>(ch)));
   return s;
 }
-const Color kPopupBg = Color::hex(0x252527);
 } // namespace
 
 // ------------------------------------------------------------------ VirtualList
