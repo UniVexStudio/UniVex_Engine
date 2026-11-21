@@ -84,6 +84,9 @@ std::optional<Core::VersionUVE> ParseEngineVersionTagUVE(std::string_view tag) {
     if (!tag.empty() && tag.front() == kTagPrefixUVE) {
         tag.remove_prefix(1U);
     }
+    if (tag.ends_with(kBetaTagSuffixUVE)) {
+        tag.remove_suffix(kBetaTagSuffixUVE.size());
+    }
     Core::VersionUVE version{};
     std::string_view numbers = tag;
     std::optional<std::uint32_t> separateBuild;
@@ -123,6 +126,16 @@ std::optional<Core::VersionUVE> ParseEngineVersionTagUVE(std::string_view tag) {
 std::string EnginePackageNameUVE(const Core::VersionUVE& version, const std::string_view target) {
     return std::string(kEnginePackagePrefixUVE) + version.ToStringUVE() + "-" + std::string(target) +
            std::string(kEnginePackageExtensionUVE);
+}
+
+std::optional<Core::VersionUVE> ParseEnginePackageNameUVE(std::string_view name, const std::string_view target) {
+    const std::string suffix = "-" + std::string(target) + std::string(kEnginePackageExtensionUVE);
+    if (!name.starts_with(kEnginePackagePrefixUVE) || !name.ends_with(suffix)) {
+        return std::nullopt;
+    }
+    name.remove_prefix(kEnginePackagePrefixUVE.size());
+    name.remove_suffix(suffix.size());
+    return ParseEngineVersionTagUVE(name);
 }
 
 std::vector<EngineReleaseUVE> ParseGitHubReleasesUVE(const std::string_view json, const std::string_view target,

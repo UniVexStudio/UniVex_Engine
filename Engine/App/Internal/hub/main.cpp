@@ -50,6 +50,8 @@ inline constexpr std::string_view kScreenshotOptionUVE = "--screenshot";
 inline constexpr std::string_view kEngineRootOptionUVE = "--engine-root";
 inline constexpr std::string_view kSettingsOptionUVE = "--settings";
 inline constexpr std::string_view kPageOptionUVE = "--page";
+/// Installs an engine package (with its checksum file beside it) without opening the window.
+inline constexpr std::string_view kInstallPackageOptionUVE = "--install-package";
 
 struct PageChoiceUVE final {
     std::string_view word;
@@ -69,6 +71,7 @@ struct HubLaunchOptionsUVE final {
     std::filesystem::path registryFile;
     std::filesystem::path settingsFile;
     UVE::Hub::HubPageUVE page = UVE::Hub::HubPageUVE::Projects;
+    std::filesystem::path installPackage;
     std::optional<std::string> error;
 };
 
@@ -115,6 +118,8 @@ struct HubLaunchOptionsUVE final {
                 break;
             }
             options.page = choice->page;
+        } else if (argument == kInstallPackageOptionUVE) {
+            static_cast<void>(takeValue(index, kInstallPackageOptionUVE, options.installPackage));
         } else if (argument == kSettingsOptionUVE) {
             static_cast<void>(takeValue(index, kSettingsOptionUVE, options.settingsFile));
         } else {
@@ -122,6 +127,27 @@ struct HubLaunchOptionsUVE final {
         }
     }
     return options;
+}
+
+/// Installs a package file for offline machines and release checks; returns the process exit code.
+[[nodiscard]] int InstallPackageUVE(const std::filesystem::path& package, const std::filesystem::path& enginesRoot) {
+    const std::optional<UVE::Core::VersionUVE> version = UVE::Online::ParseEnginePackageNameUVE(
+        package.filename().string(), UVE::Platform::GetApplicationTargetUVE());
+    std::filesystem::path checksumFile = package;
+    checksumFile += UVE::Online::kEngineChecksumSuffixUVE;
+    std::ifstream checksumInput(checksumFile);
+    std::string checksumText;
+    checksumInput >> checksumText;
+    const std::optional<UVE::Online::Sha256DigestUVE> expected = UVE::Online::ParseSha256HexUVE(checksumText);
+    if (!version.has_value() || !expected.has_value()) {
+        std::cerr << "uve_hub: " << package.string()
+                  << " is not an engine package for this platform with its checksum file beside it\n";
+        return kStartupFailedExitCodeUVE;
+    }
+    const UVE::Online::EngineInstallOutcomeUVE outcome =
+        UVE::Online::InstallEnginePackageUVE(package, *expected, *version, enginesRoot);
+    (outcome.installed ? std::cout : std::cerr) << "uve_hub: " << outcome.message << '\n';
+    return outcome.installed ? 0 : kStartupFailedExitCodeUVE;
 }
 
 [[nodiscard]] std::filesystem::path ExecutableDirectoryUVE(const char* const argv0) {
@@ -137,6 +163,7 @@ struct HubLaunchOptionsUVE final {
 /// (default: the Hub's own directory). `--project-registry <file>` and `--settings <file>` keep an
 /// isolated run away from the user's own lists. `--page <projects|new-project|engines|settings>` chooses the
 /// first page. `--frames <n>` and `--screenshot <png>` bound a run for automation.
+/// `--install-package <file>` installs an engine package file (checksum beside it) and exits.
 int main(const int argc, char** argv) {
     const HubLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
     if (options.error.has_value()) {
@@ -174,6 +201,10 @@ int main(const int argc, char** argv) {
     context.enginesRoot = context.registryFile.parent_path() / UVE::Online::kEnginesDirectoryNameUVE;
     context.credentialsFile = context.registryFile.parent_path() / UVE::Online::kOnlineCredentialsFileNameUVE;
     context.feed = UVE::Online::LoadEngineFeedSourceUVE(executableDirectory / UVE::Online::kEngineFeedFileNameUVE);
+
+    if (!options.installPackage.empty()) {
+        return InstallPackageUVE(options.installPackage, context.enginesRoot);
+    }
 
     UVE::Core::EngineConfigUVE config{};
     config.windowTitle = std::string(kHubWindowTitleUVE);

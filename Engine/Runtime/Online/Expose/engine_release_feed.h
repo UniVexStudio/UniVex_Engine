@@ -58,11 +58,17 @@ struct EngineReleaseUVE final {
     std::string checksumUrl;
 };
 
-/// The engine version a release tag names: "v1.2.3", "1.2.3", "v1.2.3+build.4" or "v1.2.3.4".
+/// Suffix of a release tag published to the Beta channel, e.g. "v1.3.0-beta".
+inline constexpr std::string_view kBetaTagSuffixUVE = "-beta";
+
+/// The engine version a release tag names: "v1.2.3", "1.2.3", "v1.2.3+build.4" or "v1.2.3.4",
+/// optionally followed by kBetaTagSuffixUVE.
 [[nodiscard]] std::optional<Core::VersionUVE> ParseEngineVersionTagUVE(std::string_view tag);
 
 /// The package asset name for `version` on `target`.
 [[nodiscard]] std::string EnginePackageNameUVE(const Core::VersionUVE& version, std::string_view target);
+/// The version a package file name carries for `target`, if it is one.
+[[nodiscard]] std::optional<Core::VersionUVE> ParseEnginePackageNameUVE(std::string_view name, std::string_view target);
 
 /// Releases from a GitHub "list releases" response that carry a package and a checksum for
 /// `target`, newest version first. Drafts are skipped; prereleases are the Beta channel.

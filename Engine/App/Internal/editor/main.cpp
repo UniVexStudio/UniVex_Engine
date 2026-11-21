@@ -57,6 +57,8 @@ inline constexpr std::string_view kLegacyEditorSceneFileUVE = "editor_scene.uvsc
 inline constexpr std::string_view kProjectOptionUVE = UVE::Pack::kEditorProjectOptionUVE;
 /// Accepts upgrading an older project to this engine without asking, for runs with no one to ask.
 inline constexpr std::string_view kUpgradeProjectOptionUVE = "--upgrade-project";
+/// Prints the engine version and exits; release tooling checks a build against its tag with it.
+inline constexpr std::string_view kVersionOptionUVE = "--version";
 /// Records opened projects in this registry file instead of the user's own, for isolated runs.
 inline constexpr std::string_view kProjectRegistryOptionUVE = UVE::Pack::kEditorProjectRegistryOptionUVE;
 inline constexpr float kUpgradeDialogWidthUVE = 520.0F;
@@ -73,6 +75,7 @@ struct EditorLaunchOptionsUVE final {
     std::filesystem::path projectRegistry;
     /// Upgrade an older project to this engine without the confirmation dialog.
     bool upgradeProject = false;
+    bool printVersion = false;
     /// Set when the command line cannot be acted on; the editor reports it and exits.
     std::optional<std::string> error;
     /// Empty means the project's default Viewport: Content/Viewport/Viewport.uvscene.
@@ -163,6 +166,10 @@ struct EditorLaunchOptionsUVE final {
                 return options;
             }
             options.projectRegistry = argv[++index];
+            continue;
+        }
+        if (argument == kVersionOptionUVE) {
+            options.printVersion = true;
             continue;
         }
         if (argument == kUpgradeProjectOptionUVE) {
@@ -285,6 +292,10 @@ int main(const int argc, char** argv) {
     if (options.error.has_value()) {
         std::cerr << "uve_editor: " << *options.error << '\n';
         return kInvalidCommandLineExitCodeUVE;
+    }
+    if (options.printVersion) {
+        std::cout << UVE::Core::EngineCoreUVE::GetEngineVersionUVE().ToStringUVE() << '\n';
+        return 0;
     }
 
     UVE::Core::EngineConfigUVE config{};
