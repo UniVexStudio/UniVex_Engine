@@ -3,5 +3,5 @@
   "schemaVersion": 1,
   "apiRoot": "https://api.github.com",
   "owner": "UniVexStudio",
-  "repository": "UniVex-Releases"
+  "repository": "UniVexReleases"
 }
