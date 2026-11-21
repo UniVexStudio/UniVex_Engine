@@ -19,8 +19,8 @@ struct Theme {
   Color rowHover, rowSelected, rowSelectedInactive;
   Color success, warning, error, info;
   Color axisX, axisY, axisZ;
-  // Special surfaces
-  Color logBg, statusBar;
+  // Special surfaces: logs, the status bar, and floating popups (menus, dropdowns, search lists)
+  Color logBg, statusBar, popup;
 
   // Metrics
   float controlH = 22;     // standard control height

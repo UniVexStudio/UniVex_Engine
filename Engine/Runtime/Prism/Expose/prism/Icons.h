@@ -2,6 +2,8 @@
 // PRISM - procedural vector icon set (drawn with the Canvas, tinted by any colour).
 #pragma once
 #include "Canvas.h"
+#include <cstdint>
+#include <vector>
 
 namespace prism {
 
@@ -41,5 +43,12 @@ enum class Icon : uint8_t {
 void drawIcon(Canvas& c, Icon icon, Rect box, Color color, float stroke = 1.3f);
 // The PRISM mark: a faceted prism.
 void drawLogo(Canvas& c, Rect box);
+
+// The product's own mark, from an image the host supplies (straight-alpha ARGB, row-major). Window
+// chrome shows it in the title tab when one is set and the window names no icon of its own.
+void setBrandMark(std::vector<uint32_t> argb, int w, int h);
+bool hasBrandMark();
+// Draws the brand mark scaled into `box`; nothing when none is set.
+void drawBrandMark(Canvas& c, Rect box);
 
 } // namespace prism

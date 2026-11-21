@@ -41,6 +41,7 @@ public:
     c.fillRect(Rect{m_rect.x, m_rect.bottom() - 3.0f, tw + 7.0f, 2.0f}, active ? t.accent : t.border);
     float x = m_rect.x + 14.0f;
     if (m_o.icon != Icon::None) { drawIcon(c, m_o.icon, Rect{x, m_rect.y + 8.0f, 16, 16}, active ? t.accentHover : t.textDim); x += 24.0f; }
+    else if (hasBrandMark()) { drawBrandMark(c, Rect{x, m_rect.y + 7.0f, 18, 18}); x += 26.0f; }
     c.textIn(*t.semibold, Rect{x, m_rect.y, tw, m_rect.h - 2.0f}, m_o.title, active ? t.textBright : t.textDim, HAlign::Left, false);
     for (int b = 0; b < 3; b++) {
       if (!has(b)) continue;
@@ -48,7 +49,7 @@ public:
       bool hot = m_hover == b;
       if (hot) {
         Vec2 q[4] = {Vec2(r.x + 5, r.y), Vec2(r.right(), r.y), Vec2(r.right() - 5, r.bottom()), Vec2(r.x, r.bottom())};
-        c.fillPolygon(std::span<const Vec2>(q, 4), b == 2 ? Color(206, 64, 64) : t.controlHover, false);
+        c.fillPolygon(std::span<const Vec2>(q, 4), b == 2 ? t.error : t.controlHover, false);
       }
       glyph(c, b, r, hot ? Color(255, 255, 255) : (active ? t.textDim : t.textDisabled));
     }
@@ -85,7 +86,8 @@ private:
   }
   float tabRight() const {
     const Theme& t = theme();
-    return m_rect.x + 14.0f + (m_o.icon != Icon::None ? 24.0f : 0.0f) + std::ceil(t.semibold->width(m_o.title)) + 18.0f;
+    const float mark = m_o.icon != Icon::None ? 24.0f : (hasBrandMark() ? 26.0f : 0.0f);
+    return m_rect.x + 14.0f + mark + std::ceil(t.semibold->width(m_o.title)) + 18.0f;
   }
   int hitButton(Vec2 p) const {
     for (int b = 0; b < 3; b++) if (has(b) && btnRect(b).contains(p)) return b;

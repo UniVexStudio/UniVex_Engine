@@ -1,6 +1,8 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "editor_chrome.h"
 
+#include "prism/Icons.h"
+
 #include "editor_host.h"
 
 #include "prism/Application.h"
@@ -55,21 +57,13 @@ void LogoBoxUVE::paint(prism::Canvas& c) {
     // The slot hugs the mark: a few pixels of the bar around it, no more.
     const float side = std::floor(std::min(r.w, r.h) - 8.0F);
     const prism::Rect mark{r.x + (r.w - side) * 0.5F, r.y + (r.h - side) * 0.5F, side, side};
-    c.fillRoundRect(mark, 5.0F, prism::Color(32, 112, 228));
-    c.strokeRoundRect(mark, 5.0F, prism::Color(82, 160, 255, 220), 1);
-    // The U, drawn: two stems joined by a rounded bowl.
-    const float uw = side * 0.46F;
-    const float uh = side * 0.52F;
-    const float th = std::max(2.0F, std::round(side * 0.12F));
-    const float ux = mark.x + (mark.w - uw) * 0.5F;
-    const float uy = mark.y + (mark.h - uh) * 0.5F;
-    const prism::Color white(255, 255, 255);
-    c.fillRect(prism::Rect{ux, uy, th, uh - uw * 0.5F}, white);
-    c.fillRect(prism::Rect{ux + uw - th, uy, th, uh - uw * 0.5F}, white);
-    const prism::Vec2 bowl{ux + uw * 0.5F, uy + uh - uw * 0.5F};
-    c.fillCircle(bowl, uw * 0.5F, white);
-    c.fillCircle(bowl, uw * 0.5F - th, prism::Color(32, 112, 228));
-    c.fillRect(prism::Rect{ux + th, uy, uw - 2.0F * th, uh - uw * 0.5F}, prism::Color(32, 112, 228));
+    if (prism::hasBrandMark()) {
+        prism::drawBrandMark(c, mark);
+    } else {
+        // Without the brand image (assets missing) the slot still reads as the product's: a plain
+        // accent tile.
+        c.fillRoundRect(mark, side * 0.5F, t.accent);
+    }
     c.fillRect(prism::Rect{r.right() - 1.0F, r.y, 1.0F, r.h}, t.border);
 }
 
