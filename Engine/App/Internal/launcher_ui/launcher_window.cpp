@@ -64,6 +64,7 @@ int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
         }
         prism::WindowChromeOptions chrome;
         chrome.title = desc.title;
+        chrome.showIdentity = desc.showTitleInChrome;
         host.SetRootUVE(prism::wrapWithWindowChrome(buildRoot(), Editor::EditorHostUVE::kMainWindowUVE, chrome));
         core.SetPostRenderCallbackUVE([&host, &tick] {
             if (tick) {

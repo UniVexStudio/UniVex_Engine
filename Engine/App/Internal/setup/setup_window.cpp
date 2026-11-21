@@ -17,7 +17,10 @@ namespace {
 
 inline constexpr float kRailWidthUVE = 248.0F;
 inline constexpr float kRailPaddingUVE = 24.0F;
-inline constexpr float kLogoSizeUVE = 56.0F;
+inline constexpr float kLogoSizeUVE = 64.0F;
+inline constexpr float kBrandTopSpaceUVE = 12.0F;
+inline constexpr float kBrandBottomSpaceUVE = 16.0F;
+inline constexpr float kBrandLineSpacingUVE = 2.0F;
 inline constexpr float kPagePaddingUVE = 32.0F;
 inline constexpr float kSectionSpacingUVE = 14.0F;
 inline constexpr float kStepSpacingUVE = 2.0F;
@@ -173,13 +176,19 @@ prism::Ref<prism::Widget> SetupWindowUVE::BuildUVE() {
 prism::Ref<prism::Widget> SetupWindowUVE::BuildRailUVE() {
     auto rail = prism::vbox(kSectionSpacingUVE);
     rail->setPadding(prism::Margin(kRailPaddingUVE));
-    rail->add(prism::make<LauncherUI::BrandMarkUVE>(kLogoSizeUVE), prism::Slot{0.0F, {}, prism::HAlign::Left});
-    auto name = prism::vbox();
-    name->add(prism::make<prism::Label>("UniVex Hub", prism::FontRole::Semibold));
+    // The brand block sits centred in the rail, above the steps.
+    rail->add(prism::make<prism::Spacer>(0.0F, kBrandTopSpaceUVE));
+    rail->add(prism::make<LauncherUI::BrandMarkUVE>(kLogoSizeUVE), prism::Slot{0.0F, {}, prism::HAlign::Center});
+    auto name = prism::vbox(kBrandLineSpacingUVE);
+    auto product = prism::make<prism::Label>("UniVex Hub", prism::FontRole::Semibold);
+    product->setAlign(prism::HAlign::Center);
+    name->add(product, prism::Slot{0.0F, {}, prism::HAlign::Fill});
     auto version = prism::make<prism::Label>("Hub " + m_context.version, prism::FontRole::Small);
     version->setColor(&prism::Theme::textDim);
-    name->add(version);
-    rail->add(name);
+    version->setAlign(prism::HAlign::Center);
+    name->add(version, prism::Slot{0.0F, {}, prism::HAlign::Fill});
+    rail->add(name, prism::Slot{0.0F, {}, prism::HAlign::Fill});
+    rail->add(prism::make<prism::Spacer>(0.0F, kBrandBottomSpaceUVE));
 
     // The steps are a real sequence, so they are numbered.
     auto steps = prism::vbox(kStepSpacingUVE);
