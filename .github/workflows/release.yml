@@ -10,11 +10,16 @@
 #   hub-v0.1.0            A Hub version. The single-file installers (Engine/Tools/make_hub_installer.py)
 #                         carry the Hub alone; users download engines from it.
 #
-# The source repository stays private. Releases are published to the public repository that
-# Engine/Distribution/engine_feed.json names, the same file the Hub reads (without credentials) to
-# find them, so the two cannot point at different places. Publishing needs the RELEASES_TOKEN secret: a fine-grained access
-# token with Contents: write on that repository only. It lives in this repository's secrets and is
-# never part of any build.
+# Where a release goes is switched by the PUBLISH_RELEASES repository variable:
+#
+#   not "true" (default)  Development builds go to the private repository named by the
+#                         DEV_RELEASES_REPOSITORY variable. Nothing reaches the public.
+#   "true"                Releases go to the public repository that Engine/Distribution/engine_feed.json
+#                         names, the same file the Hub reads (without credentials) to find them.
+#
+# The private repository's name lives only in that variable, never in code the Hub ships. Publishing
+# needs the RELEASES_TOKEN secret: a fine-grained access token with Contents: write on those two
+# repositories only. It lives in this repository's secrets and is never part of any build.
 
 name: Release
 
@@ -133,16 +138,27 @@ jobs:
         with:
           sparse-checkout: ${{ env.ENGINE_FEED_FILE }}
           sparse-checkout-cone-mode: false
-      - name: Read the releases repository from the engine feed
+      - name: Choose the releases repository
+        env:
+          PUBLISH_RELEASES: ${{ vars.PUBLISH_RELEASES }}
+          DEV_RELEASES_REPOSITORY: ${{ vars.DEV_RELEASES_REPOSITORY }}
         run: |
           set -euo pipefail
-          repository=$(jq -er '.owner + "/" + .repository' "${ENGINE_FEED_FILE}")
+          if [ "${PUBLISH_RELEASES}" = "true" ]; then
+            repository=$(jq -er '.owner + "/" + .repository' "${ENGINE_FEED_FILE}")
+          elif [ -n "${DEV_RELEASES_REPOSITORY}" ]; then
+            repository="${DEV_RELEASES_REPOSITORY}"
+          else
+            echo "::error::PUBLISH_RELEASES is off and the DEV_RELEASES_REPOSITORY variable is not set; set it to the private repository for development builds."
+            exit 1
+          fi
           echo "RELEASES_REPOSITORY=${repository}" >> "${GITHUB_ENV}"
+          echo "Publishing to ${repository}"
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-      - name: Publish to the public releases repository
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |

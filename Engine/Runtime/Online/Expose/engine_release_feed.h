@@ -11,7 +11,6 @@
 
 #include "engine_version.h"
 #include "http_client.h"
-#include "tar_gz_archive.h"
 
 namespace UVE::Online {
 
@@ -25,7 +24,8 @@ inline constexpr std::string_view kDefaultFeedApiRootUVE = "https://api.github.c
 /// Release assets are named <prefix><version>-<target><extension>, with a checksum file beside
 /// each package named <package><checksum suffix> holding its SHA-256 in hexadecimal.
 inline constexpr std::string_view kEnginePackagePrefixUVE = "univex-engine-";
-inline constexpr std::string_view kEnginePackageExtensionUVE = kTarGzFileExtensionUVE;
+/// A gzip-compressed tar archive under the engine's own extension, so it is recognisable as an engine.
+inline constexpr std::string_view kEnginePackageExtensionUVE = ".uvpackage";
 inline constexpr std::string_view kEngineChecksumSuffixUVE = ".sha256";
 
 enum class EngineChannelUVE : std::uint8_t {

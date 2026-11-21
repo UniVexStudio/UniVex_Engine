@@ -265,7 +265,7 @@ TEST(EngineReleaseFeedUVETest, PackageNamesRoundTrip) {
     const Core::VersionUVE version{1U, 2U, 3U, 4U};
     EXPECT_EQ(ParseEnginePackageNameUVE(EnginePackageNameUVE(version, "linux"), "linux"), version);
     EXPECT_FALSE(ParseEnginePackageNameUVE(EnginePackageNameUVE(version, "linux"), "windows").has_value());
-    EXPECT_FALSE(ParseEnginePackageNameUVE("something.tar.gz", "linux").has_value());
+    EXPECT_FALSE(ParseEnginePackageNameUVE("something.uvpackage", "linux").has_value());
 }
 
 TEST(EngineReleaseFeedUVETest, ParsesReleasesForThisTargetNewestFirst) {
@@ -395,7 +395,7 @@ TEST(EngineLibraryUVETest, ImportsLocalPackageVerifiedByItsChecksumFile) {
 
 TEST(EngineLibraryUVETest, ImportsRenamedPackageWithoutChecksumAsUnverified) {
     const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_unverified");
-    const std::filesystem::path renamed = root / "my-engine-copy.tar.gz";
+    const std::filesystem::path renamed = root / "my-engine-copy.uvpackage";
     std::filesystem::rename(WriteEnginePackageUVE(root), renamed);
 
     const EngineInstallOutcomeUVE outcome = InstallLocalEnginePackageUVE(renamed, root / "Engines");
