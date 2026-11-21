@@ -9,6 +9,7 @@
 #include <system_error>
 #include <utility>
 
+#include "hub_folder_picker.h"
 #include "process_launcher.h"
 #include "project_compatibility.h"
 #include "prism/Theme.h"
@@ -17,7 +18,9 @@ namespace UVE::Hub {
 namespace {
 
 // Layout, in PRISM layout units.
-inline constexpr float kSidebarWidthUVE = 220.0F;
+inline constexpr float kSidebarWidthUVE = 232.0F;
+inline constexpr float kSidebarInsetUVE = 12.0F;
+inline constexpr float kNavSpacingUVE = 2.0F;
 inline constexpr float kPagePaddingUVE = 24.0F;
 inline constexpr float kSectionSpacingUVE = 16.0F;
 inline constexpr float kRowSpacingUVE = 8.0F;
@@ -113,30 +116,56 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
     return window;
 }
 
-prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
-    auto sidebar = prism::vbox(kRowSpacingUVE);
-    sidebar->setPadding(prism::Margin(kSectionSpacingUVE));
-    sidebar->add(prism::make<prism::Label>("UniVex Hub", prism::FontRole::Semibold));
-    sidebar->add(prism::make<prism::Label>("Engine " + m_context.engine.version.ToStringUVE(), prism::FontRole::Small));
-    sidebar->add(prism::make<prism::Spacer>(0.0F, kSectionSpacingUVE));
+prism::Ref<NavItemUVE> HubWindowUVE::MakeNavItemUVE(const std::string& label, const prism::Icon icon,
+                                                    const HubPageUVE page) {
+    auto item = prism::make<NavItemUVE>(label, icon);
+    item->onActivate = [this, page] { ShowPageUVE(page); };
+    m_navigation.emplace_back(page, item);
+    return item;
+}
 
-    const std::array<std::pair<const char*, prism::Icon>, 3U> pages{{
-        {"Projects", prism::Icon::Folder},
-        {"New Project", prism::Icon::Plus},
-        {"Settings", prism::Icon::Settings},
-    }};
-    for (std::size_t index = 0U; index < pages.size(); ++index) {
-        auto button = prism::make<prism::Button>(pages[index].first, pages[index].second, prism::ButtonStyle::Toolbar);
-        button->setCheckable(true);
-        button->onClick = [this, index] { ShowPageUVE(static_cast<HubPageUVE>(index)); };
-        m_navigation.push_back(button);
-        sidebar->add(button, prism::Slot{0.0F, {}, prism::HAlign::Fill});
-    }
+prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
+    // The window's title bar already names the Hub, so the sidebar starts straight with the pages.
+    auto navigation = prism::vbox(kNavSpacingUVE);
+    navigation->setPadding(prism::Margin(kSidebarInsetUVE, kSectionSpacingUVE));
+    navigation->add(MakeNavItemUVE("Projects", prism::Icon::Folder, HubPageUVE::Projects),
+                    prism::Slot{0.0F, {}, prism::HAlign::Fill});
+    navigation->add(MakeNavItemUVE("New Project", prism::Icon::Plus, HubPageUVE::NewProject),
+                    prism::Slot{0.0F, {}, prism::HAlign::Fill});
+
+    // Settings is about the Hub itself, not a place to work in, so it sits apart at the bottom.
+    auto footer = prism::vbox(kNavSpacingUVE);
+    footer->setPadding(prism::Margin(kSidebarInsetUVE, kSectionSpacingUVE));
+    footer->add(MakeNavItemUVE("Settings", prism::Icon::Settings, HubPageUVE::Settings),
+                prism::Slot{0.0F, {}, prism::HAlign::Fill});
+    auto engine = prism::make<prism::Label>("Engine " + m_context.engine.version.ToStringUVE(), prism::FontRole::Small);
+    engine->setColor(&prism::Theme::textDim);
+    engine->setPadding(prism::Margin(kSidebarInsetUVE, 0.0F));
+    footer->add(engine);
+
+    auto sidebar = prism::vbox();
+    sidebar->add(navigation);
+    sidebar->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+    sidebar->add(prism::make<prism::Separator>(prism::Orientation::Horizontal));
+    sidebar->add(footer);
 
     auto frame = prism::make<prism::Border>();
     frame->setBackground(&prism::Theme::panel).setChild(sidebar);
     frame->setFixedWidth(kSidebarWidthUVE);
     return frame;
+}
+
+prism::Ref<prism::Widget> HubWindowUVE::FolderFieldUVE(const prism::Ref<prism::TextInput>& field,
+                                                       const std::string& pickerTitle) {
+    auto row = prism::hbox(kControlSpacingUVE);
+    row->add(field, prism::Slot{1.0F});
+    auto browse = prism::make<prism::Button>("Browse", prism::Icon::FolderOpen);
+    browse->onClick = [field, pickerTitle] {
+        ShowFolderPickerUVE(pickerTitle, field->text(),
+                            [field](const std::filesystem::path& chosen) { field->setText(chosen.string(), true); });
+    };
+    row->add(browse);
+    return row;
 }
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildProjectsPageUVE() {
@@ -173,6 +202,12 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectsPageUVE() {
     auto open = prism::make<prism::Button>("Open", prism::Icon::Open);
     open->onClick = [this] { OpenProjectUVE(m_openPath->text()); };
     openRow->add(open);
+    auto browse = prism::make<prism::Button>("Open project folder", prism::Icon::FolderOpen);
+    browse->onClick = [this] {
+        ShowFolderPickerUVE("Open a project folder", m_settings.defaultProjectLocation,
+                            [this](const std::filesystem::path& folder) { OpenProjectFolderUVE(folder); });
+    };
+    openRow->add(browse);
     page->add(openRow);
 
     m_projectRows = prism::vbox(kRowSpacingUVE);
@@ -201,7 +236,7 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildNewProjectPageUVE() {
     m_projectName = prism::make<prism::TextInput>("", "My Game");
     details->add(FieldRowUVE("Name", m_projectName));
     m_projectLocation = prism::make<prism::TextInput>(m_settings.defaultProjectLocation.string());
-    details->add(FieldRowUVE("Location", m_projectLocation));
+    details->add(FieldRowUVE("Location", FolderFieldUVE(m_projectLocation, "Where to create the project")));
     auto create = prism::make<prism::Button>("Create and Open", prism::Icon::Plus, prism::ButtonStyle::Primary);
     create->onClick = [this] { CreateProjectUVE(); };
     details->add(create, prism::Slot{0.0F, {}, prism::HAlign::Left});
@@ -216,7 +251,7 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSettingsPageUVE() {
     page->setPadding(prism::Margin(kPagePaddingUVE));
     page->add(HeadingUVE("Settings"));
     m_settingsLocation = prism::make<prism::TextInput>(m_settings.defaultProjectLocation.string());
-    page->add(FieldRowUVE("New projects in", m_settingsLocation));
+    page->add(FieldRowUVE("New projects in", FolderFieldUVE(m_settingsLocation, "Where new projects go")));
     m_settingsRecentLimit = prism::make<prism::TextInput>();
     page->add(FieldRowUVE("Recent projects", m_settingsRecentLimit));
     page->add(prism::make<prism::Label>("Favorites are always kept. Between " +
@@ -230,10 +265,9 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSettingsPageUVE() {
 }
 
 void HubWindowUVE::ShowPageUVE(const HubPageUVE page) {
-    const int index = static_cast<int>(page);
-    m_pages->setActiveIndex(index);
-    for (std::size_t button = 0U; button < m_navigation.size(); ++button) {
-        m_navigation[button]->setChecked(static_cast<int>(button) == index);
+    m_pages->setActiveIndex(static_cast<int>(page));
+    for (const auto& [itemPage, item] : m_navigation) {
+        item->SetActiveUVE(itemPage == page);
     }
 }
 
@@ -342,9 +376,8 @@ void HubWindowUVE::RefreshTemplateListUVE() {
     m_templateRows->clearChildren();
     m_templateButtons.clear();
     for (std::size_t index = 0U; index < m_templates.size(); ++index) {
-        auto button = prism::make<prism::Button>(m_templates[index].displayName, prism::Icon::Cube, prism::ButtonStyle::Toolbar);
-        button->setCheckable(true);
-        button->onClick = [this, index] { SelectTemplateUVE(index); };
+        auto button = prism::make<NavItemUVE>(m_templates[index].displayName, prism::Icon::Cube);
+        button->onActivate = [this, index] { SelectTemplateUVE(index); };
         m_templateButtons.push_back(button);
         m_templateRows->add(button, prism::Slot{0.0F, {}, prism::HAlign::Fill});
     }
@@ -365,7 +398,7 @@ void HubWindowUVE::SelectTemplateUVE(const std::size_t index) {
     }
     m_selectedTemplate = index;
     for (std::size_t button = 0U; button < m_templateButtons.size(); ++button) {
-        m_templateButtons[button]->setChecked(button == index);
+        m_templateButtons[button]->SetActiveUVE(button == index);
     }
     m_templateDescription->setText(m_templates[index].description);
 }
@@ -405,6 +438,24 @@ void HubWindowUVE::OpenProjectUVE(const std::filesystem::path& projectFile) {
         registry.RecordOpenedUVE(projectFile, manifest.package->displayName, manifest.package->engineVersion, now);
     });
     SetStatusUVE("Opening " + manifest.package->displayName + "...", false);
+}
+
+void HubWindowUVE::OpenProjectFolderUVE(const std::filesystem::path& folder) {
+    std::vector<std::filesystem::path> manifests;
+    std::error_code error;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(folder, error)) {
+        if (entry.path().extension() == Platform::kEditorProjectFileExtensionUVE && entry.is_regular_file(error)) {
+            manifests.push_back(entry.path());
+        }
+    }
+    if (manifests.size() != 1U) {
+        SetStatusUVE(manifests.empty() ? "That folder has no project file (" +
+                                             std::string(Platform::kEditorProjectFileExtensionUVE) + ")."
+                                       : "That folder has more than one project file; open one by its path.",
+                     true);
+        return;
+    }
+    OpenProjectUVE(manifests.front());
 }
 
 void HubWindowUVE::CreateProjectUVE() {
