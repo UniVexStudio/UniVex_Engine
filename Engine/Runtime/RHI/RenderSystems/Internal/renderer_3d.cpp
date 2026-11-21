@@ -6192,7 +6192,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
         });
 
     if (wboitActive) {
-        if (SizedTargetSetUVE* const wboitSet = m_impl->ActiveTargetSetMutableUVE(); wboitSet != nullptr) {
+        if (auto* const wboitSet = m_impl->ActiveTargetSetMutableUVE(); wboitSet != nullptr) {
             const RenderGraphResourceHandleUVE accumResource =
                 renderGraph.ImportTextureUVE(wboitSet->wboitAccumTarget, "WBOITAccum");
             const RenderGraphResourceHandleUVE revealResource =
@@ -6228,7 +6228,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                             continue;
                         }
                         m_impl->wboitLitProgram->SetMatrix4x4UVE("uModel", item.worldMatrix);
-                        m_impl->wboitLitProgram->SetMatrix3x3UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
+                        m_impl->wboitLitProgram->SetMatrix3x3UVE("uNormalMatrix", ImplUVE::ComputeNormalMatrixUVE(item.worldMatrix));
                         m_impl->ApplyFrameAndMaterialUniformsUVE(*m_impl->wboitLitProgram, *material, frameUniforms, true);
                         m_impl->wboitLitProgram->SetIntUVE("uMeshRenderLayers",
                                                            static_cast<std::int32_t>(item.renderLayers));
@@ -7028,7 +7028,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     RenderGraphResourceHandleUVE toneMappingColorResource = colorResource;
     TextureHandleUVE toneMappingColorTexture = m_impl->colorTarget;
     if (taaActive) {
-        if (SizedTargetSetUVE* const taaSet = m_impl->ActiveTargetSetMutableUVE(); taaSet != nullptr) {
+        if (auto* const taaSet = m_impl->ActiveTargetSetMutableUVE(); taaSet != nullptr) {
             const std::uint32_t writeIdx = taaSet->taaHistoryWriteIndex & 1U;
             const std::uint32_t readIdx = 1U - writeIdx;
             const TextureHandleUVE historyReadTex = taaSet->taaHistoryTargets[readIdx];
