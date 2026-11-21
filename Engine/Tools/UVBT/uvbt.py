@@ -92,17 +92,30 @@ class Toolchain:
             self.output_dir = platform
 
     @staticmethod
+    def ndk_revision(ndk: Path) -> str:
+        """The NDK release an install is, from its source.properties ("" when it has none)."""
+        properties = ndk / "source.properties"
+        if not properties.is_file():
+            return ""
+        for line in properties.read_text(encoding="utf-8", errors="ignore").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "Pkg.Revision":
+                return value.strip()
+        return ""
+
+    @staticmethod
     def _find_ndk() -> Path:
+        # Only the release the engine is built with: hosts often point ANDROID_NDK_HOME at another one.
         candidates = [os.environ.get("ANDROID_NDK_HOME"), os.environ.get("ANDROID_NDK_ROOT")]
         for sdk_var in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
             sdk = os.environ.get(sdk_var)
             if sdk:
                 candidates.append(str(Path(sdk) / "ndk" / ANDROID_NDK_VERSION))
         for candidate in candidates:
-            if candidate and (Path(candidate) / "toolchains" / "llvm").is_dir():
+            if candidate and Toolchain.ndk_revision(Path(candidate)) == ANDROID_NDK_VERSION:
                 return Path(candidate)
-        raise RuntimeError(f"[UVBT] Android NDK {ANDROID_NDK_VERSION} not found: set ANDROID_NDK_HOME, or ANDROID_HOME "
-                           "to an SDK that has it installed")
+        raise RuntimeError(f"[UVBT] Android NDK {ANDROID_NDK_VERSION} not found: install it in the SDK that ANDROID_HOME "
+                           "names, or point ANDROID_NDK_HOME at it")
 
     def cmake_toolchain_args(self):
         """CMake arguments for building a third-party library with this toolchain."""
