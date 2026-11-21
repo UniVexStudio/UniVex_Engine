@@ -82,7 +82,7 @@ class EngineDownloadUVE final {
 public:
     enum class StateUVE : std::uint8_t { Running, Installed, Failed, Cancelled };
 
-    EngineDownloadUVE(std::unique_ptr<IHttpClientUVE> client, EngineReleaseUVE release, std::string token,
+    EngineDownloadUVE(std::unique_ptr<IHttpClientUVE> client, EngineReleaseUVE release,
                       std::filesystem::path enginesRoot);
     EngineDownloadUVE(const EngineDownloadUVE&) = delete;
     EngineDownloadUVE& operator=(const EngineDownloadUVE&) = delete;
@@ -102,7 +102,6 @@ private:
 
     std::unique_ptr<IHttpClientUVE> m_client;
     EngineReleaseUVE m_release;
-    std::string m_token;
     std::filesystem::path m_enginesRoot;
     std::atomic<StateUVE> m_state{StateUVE::Running};
     std::atomic<std::uint64_t> m_received{0U};

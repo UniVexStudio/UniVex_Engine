@@ -40,7 +40,6 @@ struct HubContextUVE final {
     std::filesystem::path settingsFile;
     /// Downloaded engines live here, one folder per version.
     std::filesystem::path enginesRoot;
-    std::filesystem::path credentialsFile;
     /// Where engine releases are published; absent when the Hub ships without a feed.
     std::optional<Online::EngineFeedSourceUVE> feed;
 };
@@ -100,7 +99,6 @@ private:
     void OpenProjectFolderUVE(const std::filesystem::path& folder);
     void CreateProjectUVE();
     void SaveSettingsUVE();
-    void SaveAccessTokenUVE();
     void SetStatusUVE(const std::string& message, bool isError);
 
     HubContextUVE m_context;
@@ -135,8 +133,6 @@ private:
     prism::Ref<prism::Label> m_feedStatus;
     prism::Ref<prism::ProgressBar> m_downloadBar;
     prism::Ref<prism::Label> m_downloadLabel;
-    prism::Ref<prism::TextInput> m_tokenField;
-    prism::Ref<prism::Label> m_tokenState;
 
     prism::Ref<prism::TextInput> m_settingsLocation;
     prism::Ref<prism::TextInput> m_settingsRecentLimit;

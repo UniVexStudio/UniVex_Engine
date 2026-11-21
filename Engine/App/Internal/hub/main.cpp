@@ -17,7 +17,6 @@
 #include "engine_install.h"
 #include "engine_library.h"
 #include "engine_release_feed.h"
-#include "online_credentials.h"
 #include "hub_project_opener.h"
 #include "hub_setup.h"
 #include "hub_window.h"
@@ -206,9 +205,8 @@ int main(const int argc, char** argv) {
     context.settingsFile = options.settingsFile.empty()
                                ? context.registryFile.parent_path() / UVE::Pack::kLauncherSettingsFileNameUVE
                                : options.settingsFile;
-    // Downloaded engines and the access token sit beside the lists, so an isolated run stays isolated.
+    // Downloaded engines sit beside the lists, so an isolated run stays isolated.
     context.enginesRoot = context.registryFile.parent_path() / UVE::Online::kEnginesDirectoryNameUVE;
-    context.credentialsFile = context.registryFile.parent_path() / UVE::Online::kOnlineCredentialsFileNameUVE;
     context.feed = UVE::Online::LoadEngineFeedSourceUVE(executableDirectory / UVE::Online::kEngineFeedFileNameUVE);
 
     if (!options.installPackage.empty()) {

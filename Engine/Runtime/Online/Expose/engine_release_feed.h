@@ -88,8 +88,8 @@ enum class EngineFeedStateUVE : std::uint8_t {
     Online = 0,
     /// No response at all: no network. The launcher shows installed engines only.
     Offline,
-    /// The feed answered but refused the access token.
-    Unauthorized,
+    /// The feed answered that the release list does not exist (a wrong or unpublished source).
+    NotFound,
     /// The feed answered with something unusable.
     Failed,
 };
@@ -100,11 +100,11 @@ struct EngineFeedResultUVE final {
     std::vector<EngineReleaseUVE> releases;
 };
 
-/// The request headers every feed call sends; `token` is omitted when empty.
-[[nodiscard]] std::vector<HttpHeaderUVE> MakeFeedHeadersUVE(const std::string& token, std::string_view accept);
+/// The request headers every feed call sends. The feed is public: no credentials are ever sent.
+[[nodiscard]] std::vector<HttpHeaderUVE> MakeFeedHeadersUVE(std::string_view accept);
 
 /// Lists the releases for `target`. Never throws; an unreachable feed is Offline.
 [[nodiscard]] EngineFeedResultUVE FetchEngineReleasesUVE(IHttpClientUVE& client, const EngineFeedSourceUVE& source,
-                                                         const std::string& token, std::string_view target);
+                                                         std::string_view target);
 
 } // namespace UVE::Online

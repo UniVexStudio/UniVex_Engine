@@ -26,8 +26,7 @@ inline constexpr std::string_view kJsonMediaTypeUVE = "application/vnd.github+js
 inline constexpr std::string_view kApiVersionHeaderUVE = "X-GitHub-Api-Version";
 inline constexpr std::string_view kApiVersionUVE = "2022-11-28";
 inline constexpr std::string_view kUserAgentUVE = "UniVex-Hub";
-inline constexpr long kUnauthorizedStatusUVE = 401L;
-inline constexpr long kForbiddenStatusUVE = 403L;
+inline constexpr long kRateLimitedStatusUVE = 403L;
 inline constexpr long kNotFoundStatusUVE = 404L;
 
 [[nodiscard]] std::optional<std::uint32_t> ParseNumberUVE(const std::string_view text) {
@@ -171,7 +170,7 @@ std::vector<EngineReleaseUVE> ParseGitHubReleasesUVE(const std::string_view json
                 continue;
             }
             const std::string name = asset.value("name", std::string{});
-            // The API address downloads private assets with the token; the browser address cannot.
+            // The API address serves the file itself when asked for octet-stream.
             const std::string url = asset.value("url", std::string{});
             if (name == release.packageName) {
                 release.packageUrl = url;
@@ -211,22 +210,18 @@ EngineReleaseGroupsUVE GroupEngineReleasesUVE(const std::vector<EngineReleaseUVE
     return groups;
 }
 
-std::vector<HttpHeaderUVE> MakeFeedHeadersUVE(const std::string& token, const std::string_view accept) {
-    std::vector<HttpHeaderUVE> headers{{"Accept", std::string(accept)},
-                                       {std::string(kApiVersionHeaderUVE), std::string(kApiVersionUVE)},
-                                       {"User-Agent", std::string(kUserAgentUVE)}};
-    if (!token.empty()) {
-        headers.push_back({"Authorization", "Bearer " + token});
-    }
-    return headers;
+std::vector<HttpHeaderUVE> MakeFeedHeadersUVE(const std::string_view accept) {
+    return {{"Accept", std::string(accept)},
+            {std::string(kApiVersionHeaderUVE), std::string(kApiVersionUVE)},
+            {"User-Agent", std::string(kUserAgentUVE)}};
 }
 
 EngineFeedResultUVE FetchEngineReleasesUVE(IHttpClientUVE& client, const EngineFeedSourceUVE& source,
-                                           const std::string& token, const std::string_view target) {
+                                           const std::string_view target) {
     HttpRequestUVE request;
     request.url = source.apiRoot + "/repos/" + source.owner + "/" + source.repository +
                   "/releases?per_page=" + std::to_string(kReleasesPerPageUVE);
-    request.headers = MakeFeedHeadersUVE(token, kJsonMediaTypeUVE);
+    request.headers = MakeFeedHeadersUVE(kJsonMediaTypeUVE);
     const HttpResponseUVE response = client.GetUVE(request);
     EngineFeedResultUVE result;
     if (!response.reached) {
@@ -234,12 +229,15 @@ EngineFeedResultUVE FetchEngineReleasesUVE(IHttpClientUVE& client, const EngineF
         result.message = "Offline: " + response.error;
         return result;
     }
-    // A private repository answers 404 to a missing or wrong token, as if it did not exist.
-    if (response.status == kUnauthorizedStatusUVE || response.status == kForbiddenStatusUVE ||
-        response.status == kNotFoundStatusUVE) {
-        result.state = EngineFeedStateUVE::Unauthorized;
-        result.message = token.empty() ? "Engine releases need an access token. Add one in Settings."
-                                       : "The access token was refused. Check it in Settings.";
+    if (response.status == kNotFoundStatusUVE) {
+        result.state = EngineFeedStateUVE::NotFound;
+        result.message = "The engine release list could not be found; installed engines still work.";
+        return result;
+    }
+    // Unauthenticated requests are rate limited per address; the limit lifts within the hour.
+    if (response.status == kRateLimitedStatusUVE) {
+        result.state = EngineFeedStateUVE::Failed;
+        result.message = "The engine release list is busy right now; check again later.";
         return result;
     }
     if (!response.IsSuccessUVE()) {

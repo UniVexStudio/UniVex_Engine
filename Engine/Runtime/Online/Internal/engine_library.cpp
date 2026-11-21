@@ -174,10 +174,9 @@ bool UninstallEngineUVE(const std::filesystem::path& enginesRoot, const Core::Ve
     return !error;
 }
 
-EngineDownloadUVE::EngineDownloadUVE(std::unique_ptr<IHttpClientUVE> client, EngineReleaseUVE release, std::string token,
+EngineDownloadUVE::EngineDownloadUVE(std::unique_ptr<IHttpClientUVE> client, EngineReleaseUVE release,
                                      std::filesystem::path enginesRoot)
-    : m_client(std::move(client)), m_release(std::move(release)), m_token(std::move(token)),
-      m_enginesRoot(std::move(enginesRoot)) {
+    : m_client(std::move(client)), m_release(std::move(release)), m_enginesRoot(std::move(enginesRoot)) {
     m_total.store(m_release.packageBytes);
     m_worker = std::thread([this] { RunUVE(); });
 }
@@ -224,7 +223,7 @@ void EngineDownloadUVE::RunUVE() {
 
     HttpRequestUVE checksumRequest;
     checksumRequest.url = m_release.checksumUrl;
-    checksumRequest.headers = MakeFeedHeadersUVE(m_token, kOctetStreamMediaTypeUVE);
+    checksumRequest.headers = MakeFeedHeadersUVE(kOctetStreamMediaTypeUVE);
     const HttpResponseUVE checksumResponse = m_client->GetUVE(checksumRequest);
     // The checksum file is "<hex>" or "<hex>  <file name>".
     const std::optional<Sha256DigestUVE> expected =
@@ -239,7 +238,7 @@ void EngineDownloadUVE::RunUVE() {
 
     HttpRequestUVE packageRequest;
     packageRequest.url = m_release.packageUrl;
-    packageRequest.headers = MakeFeedHeadersUVE(m_token, kOctetStreamMediaTypeUVE);
+    packageRequest.headers = MakeFeedHeadersUVE(kOctetStreamMediaTypeUVE);
     const HttpResponseUVE downloaded = m_client->DownloadUVE(
         packageRequest, package, [this](const std::uint64_t received, const std::uint64_t total) {
             m_received.store(received);

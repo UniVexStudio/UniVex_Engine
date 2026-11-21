@@ -24,7 +24,6 @@
 #include "application_runtime.h"
 #include "engine_library.h"
 #include "engine_release_feed.h"
-#include "online_credentials.h"
 #include "process_launcher.h"
 #include "sha256.h"
 #include "tar_gz_archive.h"
@@ -301,24 +300,28 @@ TEST(EngineReleaseFeedUVETest, OlderBetaThanStableIsNotOffered) {
     EXPECT_FALSE(GroupEngineReleasesUVE(ParseGitHubReleasesUVE(json, target)).beta.has_value());
 }
 
-TEST(EngineReleaseFeedUVETest, FetchReportsOfflineUnauthorizedAndOnline) {
+TEST(EngineReleaseFeedUVETest, FetchReportsOfflineNotFoundBusyAndOnline) {
     const EngineFeedSourceUVE source{"https://api.example", "studio", "engine"};
     const std::string url = "https://api.example/repos/studio/engine/releases?per_page=100";
     FakeHttpClientUVE client;
-    EXPECT_EQ(FetchEngineReleasesUVE(client, source, "", "linux").state, EngineFeedStateUVE::Offline);
+    EXPECT_EQ(FetchEngineReleasesUVE(client, source, "linux").state, EngineFeedStateUVE::Offline);
 
     client.responses[url] = {true, 404, "{}", {}};
-    EXPECT_EQ(FetchEngineReleasesUVE(client, source, "", "linux").state, EngineFeedStateUVE::Unauthorized);
+    EXPECT_EQ(FetchEngineReleasesUVE(client, source, "linux").state, EngineFeedStateUVE::NotFound);
+
+    client.responses[url] = {true, 403, "{}", {}};
+    EXPECT_EQ(FetchEngineReleasesUVE(client, source, "linux").state, EngineFeedStateUVE::Failed);
 
     client.responses[url] = {true, 200, "[" + ReleaseJsonUVE("v1.0.0", false, false, "linux") + "]", {}};
-    const EngineFeedResultUVE online = FetchEngineReleasesUVE(client, source, "secret", "linux");
+    const EngineFeedResultUVE online = FetchEngineReleasesUVE(client, source, "linux");
     EXPECT_EQ(online.state, EngineFeedStateUVE::Online);
     EXPECT_EQ(online.releases.size(), 1U);
-    bool sentToken = false;
-    for (const HttpHeaderUVE& header : client.requests.back().headers) {
-        sentToken = sentToken || (header.name == "Authorization" && header.value == "Bearer secret");
+    // The feed is public: no request ever carries credentials.
+    for (const HttpRequestUVE& request : client.requests) {
+        for (const HttpHeaderUVE& header : request.headers) {
+            EXPECT_NE(header.name, "Authorization");
+        }
     }
-    EXPECT_TRUE(sentToken);
 }
 
 TEST(EngineReleaseFeedUVETest, LoadsFeedSourceAndRejectsInsecureOnes) {
@@ -396,7 +399,7 @@ TEST(EngineLibraryUVETest, DownloadJobFetchesVerifiesAndInstalls) {
     client->responses[release.checksumUrl] = {true, 200, ToHexUVE(*HashFileSha256UVE(package)) + "  pkg\n", {}};
     client->files[release.packageUrl] = package;
 
-    EngineDownloadUVE job(std::move(client), release, "token", root / "Engines");
+    EngineDownloadUVE job(std::move(client), release, root / "Engines");
     for (int attempt = 0; attempt < 500 && job.GetStateUVE() == EngineDownloadUVE::StateUVE::Running; ++attempt) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -411,29 +414,12 @@ TEST(EngineLibraryUVETest, DownloadJobReportsOffline) {
     release.version = kPackagedVersionUVE;
     release.packageUrl = "https://api.example/pkg";
     release.checksumUrl = "https://api.example/sum";
-    EngineDownloadUVE job(std::make_unique<FakeHttpClientUVE>(), release, "", root / "Engines");
+    EngineDownloadUVE job(std::make_unique<FakeHttpClientUVE>(), release, root / "Engines");
     for (int attempt = 0; attempt < 500 && job.GetStateUVE() == EngineDownloadUVE::StateUVE::Running; ++attempt) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT_EQ(job.GetStateUVE(), EngineDownloadUVE::StateUVE::Failed);
     EXPECT_NE(job.MessageUVE().find("Offline"), std::string::npos);
-    std::filesystem::remove_all(root);
-}
-
-// --- credentials --------------------------------------------------------------------------------
-
-TEST(OnlineCredentialsUVETest, StoresTokenForTheOwnerOnly) {
-    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("credentials");
-    const std::filesystem::path file = root / kOnlineCredentialsFileNameUVE;
-    EXPECT_TRUE(LoadAccessTokenUVE(file).empty());
-    ASSERT_TRUE(SaveAccessTokenUVE(file, "ghp_example"));
-    EXPECT_EQ(LoadAccessTokenUVE(file), "ghp_example");
-#if !defined(_WIN32)
-    const std::filesystem::perms others = std::filesystem::perms::group_all | std::filesystem::perms::others_all;
-    EXPECT_EQ(std::filesystem::status(file).permissions() & others, std::filesystem::perms::none);
-#endif
-    ASSERT_TRUE(SaveAccessTokenUVE(file, ""));
-    EXPECT_FALSE(std::filesystem::exists(file));
     std::filesystem::remove_all(root);
 }
 
