@@ -12,7 +12,8 @@ public class EditorAppModule : ModuleRules
             "EditorCore",
             "Viewport",
             "Engine",
-            "World"
+            "World",
+            "Pack"
         });
 
         // The product editor entry point lives at Engine/App/Internal/editor/
