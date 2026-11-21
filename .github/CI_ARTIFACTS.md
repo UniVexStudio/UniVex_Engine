@@ -4,9 +4,9 @@ One workflow, `.github/workflows/ci.yml`, checks every push and makes every rele
 
 ## Releases
 
-A release is a push of the tag `v<version>` or of a branch named `release/v<version>`. The `linux`,
-`windows` and `android` jobs build as on any push; `linux-release` adds the Linux Release build, and
-`publish` puts everything into one GitHub Release:
+A release is a push of the tag `v<version>` or of a branch named `release/v<version>`. Every job
+builds as on any push; the Hub and Release jobs then package what they built, and **Publish the
+release** puts everything into one GitHub Release:
 
 - `univex-engine-<version>-<linux|windows>.uvpackage` - the engine, per platform
 - `UniVexHubSetup-<hub version>-<linux|windows>` - the Hub installers
@@ -28,5 +28,5 @@ run. Nothing else changes when it is off; errors and test results remain in the 
 
 ## Everything else
 
-Checks and builds do not upload anything. The Windows job still stages the editor with its DLLs and
+Checks and builds do not upload anything. Release / Windows still stages the editor with its DLLs and
 starts it, so the package a release would ship is proven to run.
