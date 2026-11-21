@@ -129,8 +129,10 @@ class SharedNamesTest(unittest.TestCase):
         workflow = (REPO_ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         self.assertIn(f"ENGINE_FEED_FILE: {ENGINE_FEED}", workflow)
         feed = json.loads((REPO_ROOT / ENGINE_FEED).read_text(encoding="utf-8"))
-        self.assertNotIn(f"{feed['owner']}/{feed['repository']}", workflow,
-                         "the workflow must read the releases repository from the feed, not repeat it")
+        # The whole name only: a development repository may share its prefix.
+        public = re.escape(f"{feed['owner']}/{feed['repository']}") + r"(?![\w.-])"
+        self.assertIsNone(re.search(public, workflow),
+                          "the workflow must read the releases repository from the feed, not repeat it")
 
 
 if __name__ == "__main__":
