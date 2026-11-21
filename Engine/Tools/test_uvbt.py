@@ -2,7 +2,9 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 """Unit tests for the platform rules in Engine/Tools/UVBT/uvbt.py."""
 
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -29,6 +31,32 @@ class SelectForPlatformTest(unittest.TestCase):
         self.assertNotIn("android_window_manager.cpp", linux)
         self.assertIn("android_window_manager.cpp", android)
         self.assertNotIn("window_manager.cpp", android)
+
+
+class FindNdkTest(unittest.TestCase):
+    def make_ndk(self, root: Path, revision: str) -> Path:
+        ndk = root / revision
+        ndk.mkdir(parents=True)
+        (ndk / "source.properties").write_text(f"Pkg.Desc = Android NDK\nPkg.Revision = {revision}\n")
+        return ndk
+
+    def test_ignores_another_release_named_by_the_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            other = self.make_ndk(Path(scratch) / "other", "27.3.13750724")
+            sdk = Path(scratch) / "sdk"
+            pinned = self.make_ndk(sdk / "ndk", uvbt.ANDROID_NDK_VERSION)
+            saved = dict(os.environ)
+            try:
+                os.environ.update(ANDROID_NDK_HOME=str(other), ANDROID_HOME=str(sdk))
+                os.environ.pop("ANDROID_NDK_ROOT", None)
+                os.environ.pop("ANDROID_SDK_ROOT", None)
+                self.assertEqual(uvbt.Toolchain._find_ndk(), pinned)
+                os.environ["ANDROID_HOME"] = str(Path(scratch) / "empty")
+                with self.assertRaises(RuntimeError):
+                    uvbt.Toolchain._find_ndk()
+            finally:
+                os.environ.clear()
+                os.environ.update(saved)
 
 
 if __name__ == "__main__":
