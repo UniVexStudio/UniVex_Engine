@@ -6,9 +6,11 @@
 #include <vector>
 
 #include "entity_manager.h"
+#include "event_system.h"
 #include "light_cluster_grid.h"
 #include "light_component.h"
 #include "matrix4x4.h"
+#include "memory_manager.h"
 #include "quaternion.h"
 #include "scalar.h"
 #include "taa_math.h"
@@ -68,7 +70,9 @@ TEST(LightClusterGridUVETest, PointLightIsLocalizedAndBehindCameraLightIsCulled)
 }
 
 TEST(LightClusterGridUVETest, ExtractsMoreThanSixteenDynamicLightsUpToClusterCap) {
-    Scene::EntityManagerUVE em;
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE em{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
     for (int i = 0; i < 40; ++i) {
         const Scene::EntityUVE e = em.CreateEntityUVE();
         Scene::WorldTransformComponentUVE wt{};

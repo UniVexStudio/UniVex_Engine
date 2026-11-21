@@ -8,6 +8,8 @@
 
 #include "destructible_3d.h"
 #include "entity_manager.h"
+#include "event_system.h"
+#include "memory_manager.h"
 #include "soft_body_3d.h"
 #include "transform_component.h"
 #include "vehicle_3d.h"
@@ -17,7 +19,9 @@ namespace UVE::Scene {
 namespace {
 
 TEST(XpbdClothSoftBodyUVETest, Simulates2DClothGridWithWindAndSphereCollision) {
-    EntityManagerUVE em;
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    EntityManagerUVE em{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
     const EntityUVE clothEntity = em.CreateEntityUVE();
     SoftBody3DObjectDefinitionUVE def{};
     def.softBody = BuildClothGridSoftBody3DUVE(5U, 5U, 0.25F, Math::Vector3UVE{0.0F, 2.0F, 0.0F}, true);
@@ -53,7 +57,9 @@ TEST(Vehicle6DofRaycastUVETest, AckermannSteeringBrakeClampAndRaycastSuspension)
     EXPECT_GT(leftAngle, rightAngle);
     EXPECT_GT(rightAngle, 0.0F);
 
-    EntityManagerUVE em;
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    EntityManagerUVE em{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
     const EntityUVE chassis = em.CreateEntityUVE();
     VehicleBody3DObjectDefinitionUVE vehDef{};
     vehDef.vehicle.mass = 1200.0F;
@@ -127,7 +133,9 @@ TEST(Destructible3DUVETest, FracturesConservingVolumeAndExpiresDebris) {
     }
     EXPECT_NEAR(totalMass, 16.0F, 0.05F);
 
-    EntityManagerUVE em;
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    EntityManagerUVE em{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
     const EntityUVE crate = em.CreateEntityUVE();
     em.AddComponentUVE<TransformComponentUVE>(crate, TransformComponentUVE{});
     Destructible3DComponentUVE comp{};

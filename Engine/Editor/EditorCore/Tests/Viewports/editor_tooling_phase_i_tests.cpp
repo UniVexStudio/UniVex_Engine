@@ -7,6 +7,8 @@
 
 #include "editor_tooling_services.h"
 #include "entity_manager.h"
+#include "event_system.h"
+#include "memory_manager.h"
 #include "mesh_component.h"
 #include "rigid_3d.h"
 
@@ -45,7 +47,9 @@ TEST(EditorToolingPhaseIUVETest, DependencyIndexSearchAndValidatorWorkEndToEnd) 
     const auto hits = SearchProjectContentUVE(root, "Stone.uvtex");
     EXPECT_FALSE(hits.empty());
 
-    Scene::EntityManagerUVE em;
+    Memory::MemoryManagerUVE memoryManager;
+    Events::EventSystemUVE eventSystem;
+    Scene::EntityManagerUVE em{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
     const Scene::EntityUVE badMesh = em.CreateEntityUVE();
     em.AddComponentUVE<Scene::MeshComponentUVE>(badMesh, Scene::MeshComponentUVE{});
     const Scene::EntityUVE bareRigid = em.CreateEntityUVE();
