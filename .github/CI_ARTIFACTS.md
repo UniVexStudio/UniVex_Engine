@@ -4,9 +4,9 @@ One workflow, `.github/workflows/ci.yml`, checks every push and makes every rele
 
 ## Releases
 
-A release is a push of the tag `v<version>` or of a branch named `release/v<version>`. Every job
-builds as on any push; the Hub and Release jobs then package what they built, and **Publish the
-release** puts everything into one GitHub Release:
+Every push to `master` is a development release, and a tag `v<version>` is a versioned release.
+Every job builds as on any check; the Hub and Release jobs then package what they built, and
+**Publish the release** puts everything into one GitHub Release:
 
 - `univex-engine-<version>-<linux|windows>.uvpackage` - the engine, per platform
 - `UniVexHubSetup-<hub version>-<linux|windows>` - the Hub installers
@@ -19,7 +19,9 @@ The repository variable `PUBLISH_RELEASES` decides where the release goes:
 
 - not `true` (default) - the development repository (`DEV_RELEASES_REPOSITORY`). The Hub does not
   read it; install its engines with the Hub's **Engines → Import package...**.
-- `true` - the repository named in `Engine/Distribution/engine_feed.json`, which the Hub reads.
+- `true` - tag releases go to the repository named in `Engine/Distribution/engine_feed.json`, which
+  the Hub reads. Master builds always stay in the development repository, as the prerelease
+  `v<engine version>-beta`, whose files each later push of that version replaces.
 
 ## Measurements - off by default
 
