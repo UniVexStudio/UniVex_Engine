@@ -36,7 +36,7 @@ class PackageEngineTest(unittest.TestCase):
             root = Path(scratch)
             archive = package_engine.build_package(make_build(root), "linux", "v0.3.0-beta", root / "dist",
                                                    check_version=False)
-            self.assertEqual(archive.name, "univex-engine-0.3.0+build.0-linux.tar.gz")
+            self.assertEqual(archive.name, "univex-engine-0.3.0+build.0-linux.uvpackage")
             with tarfile.open(archive, "r:gz") as tar:
                 members = {member.name: member for member in tar.getmembers()}
                 manifest = json.loads(tar.extractfile("engine.json").read())

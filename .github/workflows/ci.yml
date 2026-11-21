@@ -34,7 +34,7 @@ env:
 
 on:
   push:
-    branches: [master, 'kosuke/**', 'refactor/**', 'fix/**']
+    branches: [master, 'kosuke/**', 'refactor/**', 'fix/**', 'feature/**']
   pull_request:
   workflow_dispatch:
 

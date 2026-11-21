@@ -83,7 +83,6 @@ class SharedNamesTest(unittest.TestCase):
     def test_engine_package_names(self) -> None:
         self.assert_cpp("kEnginePackagePrefixUVE", package_engine.PACKAGE_PREFIX)
         self.assert_cpp("kEnginePackageExtensionUVE", package_engine.PACKAGE_EXTENSION)
-        self.assert_cpp("kTarGzFileExtensionUVE", package_engine.PACKAGE_EXTENSION)
         self.assert_cpp("kEngineChecksumSuffixUVE", package_engine.CHECKSUM_SUFFIX)
         self.assert_cpp("kBetaTagSuffixUVE", package_engine.BETA_TAG_SUFFIX)
 

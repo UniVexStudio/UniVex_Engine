@@ -6,8 +6,8 @@ The package is a gzip-compressed ustar archive holding the engine's executables 
 assets, with an engine.json manifest at its root. Project templates ship with the Hub, not here. Beside it goes a .sha256 file with
 the archive's digest. The names and the manifest match what the Hub reads (Engine/Runtime/Online):
 
-    univex-engine-<version>-<target>.tar.gz
-    univex-engine-<version>-<target>.tar.gz.sha256
+    univex-engine-<version>-<target>.uvpackage          (a gzip-compressed tar archive)
+    univex-engine-<version>-<target>.uvpackage.sha256
 
 Only regular files and directories are archived, because the Hub refuses anything else.
 
@@ -29,7 +29,7 @@ import tempfile
 from pathlib import Path
 
 PACKAGE_PREFIX = "univex-engine-"
-PACKAGE_EXTENSION = ".tar.gz"
+PACKAGE_EXTENSION = ".uvpackage"  # a gzip-compressed tar archive
 CHECKSUM_SUFFIX = ".sha256"
 MANIFEST_NAME = "engine.json"
 MANIFEST_FORMAT = "uvengine"
