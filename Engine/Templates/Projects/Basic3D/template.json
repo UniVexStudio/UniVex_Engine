@@ -1,0 +1,14 @@
+{
+  "format": "uvtemplate",
+  "schemaVersion": 1,
+  "id": "basic-3d",
+  "displayName": "3D Basic",
+  "description": "A lit level with a camera, a sun, a floor and a cube, ready to play.",
+  "startupScenePath": "Maps/Main.uvscene",
+  "starterObjects": [
+    { "kind": "directionalLight", "name": "Sun", "position": [0, 6, 0], "rotationDegrees": [-50, 30, 0] },
+    { "kind": "camera", "name": "Camera", "position": [0, 2.5, 7], "rotationDegrees": [-15, 0, 0] },
+    { "kind": "plane", "name": "Floor", "scale": [20, 1, 20] },
+    { "kind": "cube", "name": "Cube", "position": [0, 0.5, 0] }
+  ]
+}

@@ -2497,6 +2497,31 @@ std::optional<EditorSelectionBoundsUVE> EditorUVE::TryGetEntityBoundsUVE(const S
     return bounds;
 }
 
+std::optional<EditorEntityKindUVE> ParseEditorEntityKindUVE(const std::string_view value) noexcept {
+    if (value == "object3d" || value == "empty" || value == "node3d") {
+        return EditorEntityKindUVE::Empty;
+    }
+    if (value == "camera") {
+        return EditorEntityKindUVE::Camera;
+    }
+    if (value == "directionalLight") {
+        return EditorEntityKindUVE::DirectionalLight;
+    }
+    if (value == "collisionBox") {
+        return EditorEntityKindUVE::CollisionBox;
+    }
+    if (value == "cube") {
+        return EditorEntityKindUVE::Cube;
+    }
+    if (value == "uvSphere") {
+        return EditorEntityKindUVE::UVSphere;
+    }
+    if (value == "plane") {
+        return EditorEntityKindUVE::Plane;
+    }
+    return std::nullopt;
+}
+
 Scene::EntityUVE EditorUVE::CreateDocumentEntityUVE(const EditorEntityKindUVE kind) {
     if (!IsAuthoringCommandAllowedUVE()) {
         return Scene::kInvalidEntityUVE;

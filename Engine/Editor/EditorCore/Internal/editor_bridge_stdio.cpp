@@ -434,32 +434,6 @@ enum class FrameReadResultUVE : std::uint8_t {
     return std::nullopt;
 }
 
-[[nodiscard]] std::optional<EditorEntityKindUVE> ParseEntityKindUVE(const std::string_view value) {
-    // "object3d" is the current protocol word; "empty" and "node3d" are the kinds' legacy names,
-    // kept readable so older clients and scripts keep working.
-    if (value == "object3d" || value == "empty" || value == "node3d") {
-        return EditorEntityKindUVE::Empty;
-    }
-    if (value == "camera") {
-        return EditorEntityKindUVE::Camera;
-    }
-    if (value == "directionalLight") {
-        return EditorEntityKindUVE::DirectionalLight;
-    }
-    if (value == "collisionBox") {
-        return EditorEntityKindUVE::CollisionBox;
-    }
-    if (value == "cube") {
-        return EditorEntityKindUVE::Cube;
-    }
-    if (value == "uvSphere") {
-        return EditorEntityKindUVE::UVSphere;
-    }
-    if (value == "plane") {
-        return EditorEntityKindUVE::Plane;
-    }
-    return std::nullopt;
-}
 
 [[nodiscard]] std::optional<EditorBridgeEntityRefUVE> ParseEntityUVE(const JsonUVE& json) {
     if (!json.is_object() || !json.contains("index") || !json.contains("generation")) {
@@ -494,7 +468,7 @@ enum class FrameReadResultUVE : std::uint8_t {
         request.entityName = params.at("entityName").get<std::string>();
     }
     if (params.contains("entityKind") && !params.at("entityKind").is_null()) {
-        request.entityKind = ParseEntityKindUVE(params.at("entityKind").get<std::string>());
+        request.entityKind = ParseEditorEntityKindUVE(params.at("entityKind").get<std::string>());
         if (!request.entityKind.has_value()) {
             return std::nullopt;
         }

@@ -25,6 +25,9 @@
 #include "crash_reporter.h"
 #include "engine_core.h"
 #include "project_launcher.h"
+#include "project_template.h"
+#include "quaternion.h"
+#include "scalar.h"
 #include "prism/Containers.h"
 #include "prism/Controls.h"
 #include "prism/Views.h"
@@ -34,6 +37,7 @@
 #include "vector3.h"
 #include "light_component.h"
 #include "transform_component.h"
+#include "name_component.h"
 #include "i_entity_manager.h"
 #include "editor_viewport_host.h"
 
@@ -199,6 +203,47 @@ void ShowProjectUpgradeDialogUVE(const UVE::Pack::ProjectEditorSetupUVE& project
                       kUpgradeDialogWidthUVE);
 }
 
+/// Builds a new project's startup scene from the starter objects its template declared. Objects
+/// of a kind the editor does not know are reported and skipped. True when every object was placed.
+[[nodiscard]] bool PopulateStarterSceneUVE(UVE::Editor::EditorUVE& editor, UVE::Scene::IEntityManagerUVE& entities,
+                                           const UVE::Pack::StarterSceneUVE& scene) {
+    bool placedAll = true;
+    for (const UVE::Pack::StarterObjectUVE& object : scene.objects) {
+        // New objects join the selected object; starter objects all sit at the level's top.
+        editor.ClearSelectionUVE();
+        const std::optional<UVE::Editor::EditorEntityKindUVE> kind = UVE::Editor::ParseEditorEntityKindUVE(object.kind);
+        const UVE::Scene::EntityUVE entity =
+            kind.has_value() ? editor.CreateDocumentEntityUVE(*kind) : UVE::Scene::kInvalidEntityUVE;
+        if (entity == UVE::Scene::kInvalidEntityUVE) {
+            UVE_WARNING("uve_editor: the starter object kind '{}' cannot be created", object.kind);
+            placedAll = false;
+            continue;
+        }
+        // A new entity is the selection, so the rename applies to it. A name that is already the
+        // kind's default needs no rename.
+        const bool keepsDefaultName = !entities.HasComponentUVE<UVE::Scene::NameComponentUVE>(entity) ||
+                                      entities.GetComponentUVE<UVE::Scene::NameComponentUVE>(entity).name == object.name;
+        if (!object.name.empty() && !keepsDefaultName && !editor.SetSelectedEntityNameUVE(object.name)) {
+            UVE_WARNING("uve_editor: the starter object name '{}' is not usable", object.name);
+        }
+        if (entities.HasComponentUVE<UVE::Scene::TransformComponentUVE>(entity)) {
+            auto& transform = entities.GetComponentUVE<UVE::Scene::TransformComponentUVE>(entity);
+            transform.localPosition = object.position;
+            transform.localScale = object.scale;
+            const UVE::Math::Vector3UVE radians{UVE::Math::DegToRadUVE(object.rotationDegrees.x),
+                                                UVE::Math::DegToRadUVE(object.rotationDegrees.y),
+                                                UVE::Math::DegToRadUVE(object.rotationDegrees.z)};
+            UVE::Math::QuaternionUVE rotation{};
+            if (UVE::Math::TryMakeEulerOrderedUVE(radians, transform.eulerOrder, rotation)) {
+                transform.localEulerRadians = radians;
+                transform.localRotation = rotation;
+            }
+        }
+    }
+    editor.ClearSelectionUVE();
+    return placedAll;
+}
+
 } // namespace
 
 /// Starts the standalone UniVex Editor Foundation v1. `--project <file.uvproject>` opens that
@@ -339,7 +384,25 @@ int main(const int argc, char** argv) {
         if (std::filesystem::exists(options.scenePath)) {
             static_cast<void>(editor.LoadSceneUVE());
         } else if (createDefaultViewport) {
-            static_cast<void>(editor.SaveSceneUVE()); // the default Viewport asset exists from the start
+            // A project created from a template begins with the objects the template listed.
+            bool starterSceneBuilt = false;
+            if (project.has_value()) {
+                const UVE::Pack::StarterSceneLoadResultUVE starter =
+                    UVE::Pack::LoadProjectStarterSceneUVE(project->projectRoot);
+                if (starter.code == UVE::Pack::StarterSceneCodeUVE::Invalid) {
+                    UVE_WARNING("uve_editor: {}", starter.message);
+                } else if (starter.code == UVE::Pack::StarterSceneCodeUVE::Loaded) {
+                    static_cast<void>(PopulateStarterSceneUVE(
+                        editor, engine.GetServicesUVE().GetEntityManagerUVE(), starter.scene));
+                    starterSceneBuilt = true;
+                }
+            }
+            // The default Viewport asset exists from the start.
+            if (editor.SaveSceneUVE() && starterSceneBuilt &&
+                !UVE::Pack::RemoveProjectStarterSceneUVE(project->projectRoot)) {
+                UVE_WARNING("uve_editor: could not remove the consumed starter scene from {}",
+                            project->projectRoot.string());
+            }
         }
         if (options.prismDemoObject) {
             static_cast<void>(editor.CreateDocumentSceneObjectUVE(UVE::Scene::Objects::SceneObjectKindUVE::Folder));

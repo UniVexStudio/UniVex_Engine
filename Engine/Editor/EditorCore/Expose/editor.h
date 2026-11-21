@@ -269,6 +269,10 @@ enum class EditorEntityKindUVE {
     Plane,
 };
 
+/// The editor's word for each entity kind, as the bridge protocol and starter scenes spell it.
+/// "object3d" is the current word for Empty; "empty" and "node3d" are older names still accepted.
+[[nodiscard]] std::optional<EditorEntityKindUVE> ParseEditorEntityKindUVE(std::string_view word) noexcept;
+
 /// EditorUVE composes the existing engine services into a first editor foundation: an editor-owned
 /// camera, deterministic hierarchy and collider-backed viewport selection, a transform inspector
 /// mutation path, world-space Translate, Rotate, and Scale gizmos, scene-document save/load, and the editor's

@@ -1,0 +1,8 @@
+{
+  "format": "uvtemplate",
+  "schemaVersion": 1,
+  "id": "blank",
+  "displayName": "Blank",
+  "description": "An empty project with one level to start from.",
+  "startupScenePath": "Maps/Main.uvscene"
+}
