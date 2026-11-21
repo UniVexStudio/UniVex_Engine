@@ -29,7 +29,7 @@ TEST(XpbdClothSoftBodyUVETest, Simulates2DClothGridWithWindAndSphereCollision) {
     def.softBody.windDrag = 1.5F;
     ApplySoftBody3DObjectDefinitionUVE(em, clothEntity, def);
 
-    const SoftBodySphereColliderUVE sphere{Math::Vector3UVE{0.5F, 1.4F, 0.1F}, 0.35F};
+    const SoftBodySphereColliderUVE sphere{Math::Vector3UVE{0.5F, 1.4F, 0.45F}, 0.25F};
     const std::vector<SoftBodySphereColliderUVE> spheres{sphere};
 
     for (int step = 0; step < 30; ++step) {
