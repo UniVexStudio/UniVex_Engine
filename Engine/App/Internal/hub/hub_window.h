@@ -8,6 +8,7 @@
 #include <optional>
 #include <utility>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "engine_install.h"
@@ -25,6 +26,10 @@
 namespace UVE::Hub {
 
 using LauncherUI::NavItemUVE;
+
+inline constexpr std::string_view kHubWindowTitleUVE = "UniVex Hub";
+/// The Hub's log, beside the project registry.
+inline constexpr std::string_view kHubLogFileNameUVE = "uve_hub.log";
 
 /// Where the Hub keeps its state and which engine it launches.
 struct HubContextUVE final {

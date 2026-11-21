@@ -42,6 +42,9 @@ MAX_COOKED_TOTAL_BYTES = 1024 * 1024 * 1024
 COOKED_INDEX = "project-files.txt"
 COOKED_ASSETS = "project"
 BUILT_IN_SHADERS = ("Engine", "Runtime", "RHI", "Shader", "built_in")
+# Lists every file under assets/ for apps that unpack their data at startup (AAssetManager cannot
+# list folders); read by the app's android_main.
+ASSET_INDEX = "asset-index.txt"
 
 
 @dataclass(frozen=True)
@@ -50,15 +53,23 @@ class AndroidApp:
     library: str
     manifest: tuple
     apk_prefix: str
-    # Asset folders: (source path under the repository, folder name inside the APK's assets).
+    # Assets: (source path under the repository, file or folder name inside the APK's assets).
     assets: tuple = field(default_factory=tuple)
     accepts_cooked_project: bool = False
+    index_assets: bool = False
 
 
 APPS = {
     "runtime": AndroidApp(
         target="UniVexAndroid", library="univex_android", manifest=("Engine", "App", "Android", "AndroidManifest.xml"),
         apk_prefix="univex-runtime", assets=((BUILT_IN_SHADERS, "shaders"),), accepts_cooked_project=True),
+    "hub": AndroidApp(
+        target="UniVexHubAndroid", library="univex_hub", manifest=("Engine", "App", "Android", "hub", "AndroidManifest.xml"),
+        apk_prefix="UniVexHub", index_assets=True,
+        assets=((uvbt.PRISM_ASSETS_SOURCE, uvbt.PRISM_ASSETS_DIRECTORY),
+                (uvbt.PROJECT_TEMPLATES_SOURCE, uvbt.PROJECT_TEMPLATES_DIRECTORY),
+                ((*uvbt.DISTRIBUTION_SOURCE, uvbt.ENGINE_FEED_FILE), uvbt.ENGINE_FEED_FILE),
+                (BUILT_IN_SHADERS, "shaders"))),
 }
 
 
@@ -145,8 +156,15 @@ def main():
         shutil.rmtree(assets)
     assets.mkdir()
     for source, name in app.assets:
-        shutil.copytree(REPO_ROOT.joinpath(*source), assets / name)
+        path = REPO_ROOT.joinpath(*source)
+        if path.is_dir():
+            shutil.copytree(path, assets / name)
+        else:
+            shutil.copy2(path, assets / name)
     cooked = stage_cooked_project(args.cooked_project.resolve(), assets, parser) if args.cooked_project else []
+    if app.index_assets:
+        names = sorted(f.relative_to(assets).as_posix() for f in assets.rglob("*") if f.is_file())
+        (assets / ASSET_INDEX).write_text("\n".join(names) + "\n", encoding="utf-8")
 
     unsigned = build / "unsigned.apk"
     run(tools / "aapt2", "link", "-I", platform_jar, "--manifest", REPO_ROOT.joinpath(*app.manifest), "-A", assets,

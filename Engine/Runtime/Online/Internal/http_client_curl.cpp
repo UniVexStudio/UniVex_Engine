@@ -2,7 +2,7 @@
 
 #include "http_client.h"
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__ANDROID__)
 
 #include <cstdio>
 #include <fstream>

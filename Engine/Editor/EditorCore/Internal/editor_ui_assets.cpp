@@ -10,8 +10,7 @@
 #include <string_view>
 #include <vector>
 
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include "gl_system_headers.h"
 
 #include "editor_icon_set.h"
 

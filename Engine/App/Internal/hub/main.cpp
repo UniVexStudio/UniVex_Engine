@@ -28,10 +28,8 @@
 
 namespace {
 
-inline constexpr std::string_view kHubWindowTitleUVE = "UniVex Hub";
 inline constexpr std::uint32_t kHubWindowWidthUVE = 1200U;
 inline constexpr std::uint32_t kHubWindowHeightUVE = 760U;
-inline constexpr std::string_view kHubLogFileNameUVE = "uve_hub.log";
 inline constexpr int kInvalidCommandLineExitCodeUVE = 2;
 inline constexpr int kStartupFailedExitCodeUVE = UVE::LauncherUI::kLauncherStartupFailedExitCodeUVE;
 
@@ -216,11 +214,11 @@ int main(const int argc, char** argv) {
     }
 
     UVE::LauncherUI::LauncherWindowDescUVE window;
-    window.title = std::string(kHubWindowTitleUVE);
+    window.title = std::string(UVE::Hub::kHubWindowTitleUVE);
     window.width = kHubWindowWidthUVE;
     window.height = kHubWindowHeightUVE;
     window.prismAssetsDirectory = executableDirectory / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE;
-    window.logFile = context.registryFile.parent_path() / kHubLogFileNameUVE;
+    window.logFile = context.registryFile.parent_path() / UVE::Hub::kHubLogFileNameUVE;
     window.commandLine = std::vector<std::string>(argv + 1, argv + argc);
     window.frameLimit = options.frameLimit;
     window.screenshot = options.screenshot;

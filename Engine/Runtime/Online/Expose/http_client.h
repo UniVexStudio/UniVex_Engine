@@ -68,4 +68,10 @@ public:
 /// The client for the platform this build targets.
 [[nodiscard]] std::unique_ptr<IHttpClientUVE> CreatePlatformHttpClientUVE();
 
+#if defined(__ANDROID__)
+/// Android transfers go through the platform's Java HTTP stack; the app hands over its Java VM
+/// (ANativeActivity::vm) once at startup, before the first request.
+void SetAndroidJavaVmUVE(void* javaVm);
+#endif
+
 } // namespace UVE::Online

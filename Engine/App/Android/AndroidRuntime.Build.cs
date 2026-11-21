@@ -15,6 +15,11 @@ public class AndroidRuntimeModule : ModuleRules
             "Pack"
         });
 
+        // The Hub app beside it is a module of its own.
+        ExcludedFiles.AddRange(new string[] {
+            "hub/"
+        });
+
         PublicSystemLibraries.AddRange(new string[] {
             "android:android",
             "android:log",

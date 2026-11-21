@@ -1,6 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
 #include "montage_sequencer_component.h"
+#include "glfw_window_handle.h"
 #include "shell/editor_shell.h"
 #include "shell/widget/editor_widget_icons.h"
 #include "logging_macros.h"
@@ -269,7 +270,7 @@ void EditorUVE::InitUVE() {
     if (m_prismUiRequested && windowManager.IsValidUVE() && windowManager.GetNativeWindowHandleUVE() != nullptr) {
         // The level editor is PRISM's.
         auto shell = std::make_unique<EditorShellUVE>(*this);
-        if (shell->InitializeUVE(static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()),
+        if (shell->InitializeUVE(Window::GlfwWindowFromNativeHandleUVE(windowManager.GetNativeWindowHandleUVE()),
                                  m_prismAssetDir)) {
             m_levelShell = std::move(shell);
         } else {
@@ -740,7 +741,7 @@ void EditorUVE::SetGameMouseCapturedUVE(const bool captured) {
     if (!windowManager.IsValidUVE()) {
         return;
     }
-    auto* const nativeWindow = static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE());
+    auto* const nativeWindow = Window::GlfwWindowFromNativeHandleUVE(windowManager.GetNativeWindowHandleUVE());
     if (nativeWindow == nullptr) {
         return;
     }
@@ -773,7 +774,7 @@ void EditorUVE::SetViewportFlyingUVE(const bool flying) {
         return;
     }
     Window::IWindowManagerUVE& windowManager = m_services->GetWindowManagerUVE();
-    auto* const nativeWindow = windowManager.IsValidUVE() ? static_cast<GLFWwindow*>(windowManager.GetNativeWindowHandleUVE()) : nullptr;
+    auto* const nativeWindow = windowManager.IsValidUVE() ? Window::GlfwWindowFromNativeHandleUVE(windowManager.GetNativeWindowHandleUVE()) : nullptr;
     if (nativeWindow == nullptr) {
         return;
     }
@@ -6779,7 +6780,7 @@ namespace {
 [[nodiscard]] std::string SourceStampUVE(const std::filesystem::path& source) {
     std::error_code error;
     const std::filesystem::file_time_type time = std::filesystem::last_write_time(source, error);
-    return error ? std::string{} : std::to_string(time.time_since_epoch().count());
+    return error ? std::string{} : std::to_string(static_cast<long long>(time.time_since_epoch().count()));
 }
 
 } // namespace
