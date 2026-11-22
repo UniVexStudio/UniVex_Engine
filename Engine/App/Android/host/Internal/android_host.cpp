@@ -10,8 +10,10 @@
 #include <GLFW/glfw3.h>
 
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
+#include <optional>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -252,6 +254,45 @@ void UpdateSoftKeyboardUVE(ActivityStateUVE& state) {
     }
 }
 
+[[nodiscard]] bool EndsWithAnyUVE(const std::string& name, const std::vector<std::string>& suffixes) {
+    const auto lower = [](std::string text) {
+        for (char& c : text) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        return text;
+    };
+    const std::string lowered = lower(name);
+    for (const std::string& suffix : suffixes) {
+        const std::string wanted = lower(suffix);
+        if (lowered.size() >= wanted.size() && lowered.compare(lowered.size() - wanted.size(), wanted.size(), wanted) == 0) {
+            return true;
+        }
+    }
+    return suffixes.empty();
+}
+
+/// Hands a finished system file pick to whoever asked for it.
+void UpdateFilePickUVE(ActivityStateUVE& state) {
+    if (!state.pendingPick) {
+        return;
+    }
+    const std::optional<std::string> picked = Window::TakeAndroidPickedFileUVE(state.app->activity);
+    if (!picked.has_value()) {
+        return;   // the picker is still open
+    }
+    const auto onPicked = std::move(state.pendingPick);
+    state.pendingPick = nullptr;
+    if (picked->empty()) {
+        return;   // cancelled
+    }
+    if (!EndsWithAnyUVE(std::filesystem::path(*picked).filename().string(), state.pickSuffixes)) {
+        __android_log_print(ANDROID_LOG_WARN, kLogTagUVE,
+                            "UVE_ANDROID_HOST_WARNING the picked file is not one that was asked for: %s", picked->c_str());
+        return;
+    }
+    onPicked(std::filesystem::path(*picked));
+}
+
 /// A finger held still long enough is a right click (context menus).
 void UpdateLongPressUVE(TouchGestureUVE& touch) {
     if (!touch.pending || touch.fingers != 1 || NowMsUVE() - touch.startMs < kLongPressMsUVE) {
@@ -385,11 +426,22 @@ bool PumpEventsUVE(ActivityStateUVE& state) {
 bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const char* const renderedMarker) {
     UpdateLongPressUVE(state.touch);
     UpdateSoftKeyboardUVE(state);
+    UpdateFilePickUVE(state);
     state.windowManager = dynamic_cast<Window::AndroidWindowManagerUVE*>(&core.GetServicesUVE().GetWindowManagerUVE());
     if (++state.framesStarted == 2U && renderedMarker != nullptr) {
         __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "%s", renderedMarker);
     }
     return PumpEventsUVE(state) && !Window::AndroidGlfwCloseRequestedUVE();
+}
+
+bool StartFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,
+                      std::function<void(const std::filesystem::path&)> onPicked) {
+    if (state.app == nullptr || !Window::StartAndroidFilePickUVE(state.app->activity)) {
+        return false;
+    }
+    state.pendingPick = std::move(onPicked);
+    state.pickSuffixes = suffixes;
+    return true;
 }
 
 void DetachEngineUVE(ActivityStateUVE& state) {

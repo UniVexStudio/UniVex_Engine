@@ -56,6 +56,10 @@ private:
     return env->GetIntField(object, field);
 }
 
+inline constexpr const char* kPickFileMethodUVE = "pickFile";
+inline constexpr const char* kPickFileSignatureUVE = "()V";
+inline constexpr const char* kTakePickedFileMethodUVE = "takePickedFile";
+inline constexpr const char* kTakePickedFileSignatureUVE = "()Ljava/lang/String;";
 inline constexpr const char* kKeyEventClassUVE = "android/view/KeyEvent";
 inline constexpr const char* kKeyEventConstructorUVE = "(II)V";
 inline constexpr const char* kUnicodeCharMethodUVE = "getUnicodeChar";
@@ -97,6 +101,64 @@ unsigned int AndroidKeyCharacterUVE(ANativeActivity* const activity, const int a
     }
     env->DeleteLocalRef(type);
     return character > 0 ? static_cast<unsigned int>(character) : 0U;
+}
+
+bool StartAndroidFilePickUVE(ANativeActivity* const activity) {
+    if (activity == nullptr) {
+        return false;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return false;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID pick = type != nullptr ? env->GetMethodID(type, kPickFileMethodUVE, kPickFileSignatureUVE) : nullptr;
+    bool started = false;
+    if (pick != nullptr) {
+        env->CallVoidMethod(activity->clazz, pick);
+        started = !env->ExceptionCheck();
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return started;
+}
+
+std::optional<std::string> TakeAndroidPickedFileUVE(ANativeActivity* const activity) {
+    if (activity == nullptr) {
+        return std::string{};
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return std::string{};
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID take =
+        type != nullptr ? env->GetMethodID(type, kTakePickedFileMethodUVE, kTakePickedFileSignatureUVE) : nullptr;
+    std::optional<std::string> result = std::string{};   // no picker: nothing will ever arrive
+    if (take != nullptr) {
+        const auto picked = static_cast<jstring>(env->CallObjectMethod(activity->clazz, take));
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        } else if (picked == nullptr) {
+            result = std::nullopt;
+        } else {
+            const char* const chars = env->GetStringUTFChars(picked, nullptr);
+            result = chars != nullptr ? std::string(chars) : std::string{};
+            if (chars != nullptr) {
+                env->ReleaseStringUTFChars(picked, chars);
+            }
+            env->DeleteLocalRef(picked);
+        }
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return result;
 }
 
 AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* const activity) {

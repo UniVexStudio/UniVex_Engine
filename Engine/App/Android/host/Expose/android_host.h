@@ -8,7 +8,9 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "android_activity.h"
 
@@ -67,7 +69,16 @@ struct ActivityStateUVE final {
     bool keyboardShown = false;
     /// Surface pixels per density-independent pixel (density / 160 dpi).
     float pixelsPerDp = 1.0F;
+    /// A system file pick in progress (StartFilePickUVE): what to call with the file, and the name
+    /// endings it accepts.
+    std::function<void(const std::filesystem::path&)> pendingPick;
+    std::vector<std::string> pickSuffixes;
 };
+
+/// Opens Android's file picker; `onPicked` runs (from BeforeFrameUVE) with the chosen file, copied
+/// into the app's cache, when its name ends with one of `suffixes`. False when no picker opened.
+[[nodiscard]] bool StartFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,
+                                    std::function<void(const std::filesystem::path&)> onPicked);
 
 /// Takes over the activity's callbacks for `state`, and tells this library's copies of the GLFW
 /// stand-in and the HTTP client about the activity (Java VM, screen density, current surface).

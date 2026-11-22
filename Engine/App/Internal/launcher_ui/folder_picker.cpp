@@ -244,8 +244,19 @@ void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& 
                       kPickerWidthUVE);
 }
 
+namespace {
+SystemFilePickerUVE g_systemFilePickerUVE;
+} // namespace
+
+void SetSystemFilePickerUVE(SystemFilePickerUVE picker) {
+    g_systemFilePickerUVE = std::move(picker);
+}
+
 void ShowFilePickerUVE(const std::string& title, const std::filesystem::path& start, std::vector<std::string> suffixes,
                        const std::string& confirmLabel, std::function<void(const std::filesystem::path&)> onPicked) {
+    if (g_systemFilePickerUVE && g_systemFilePickerUVE(suffixes, onPicked)) {
+        return;
+    }
     auto state = std::make_shared<FolderPickerStateUVE>();
     state->fileSuffixes = std::move(suffixes);
     const prism::Ref<prism::Box> body = BuildPickerBodyUVE(state);

@@ -21,6 +21,7 @@
 #include "engine_core.h"
 #include "engine_install.h"
 #include "engine_release_feed.h"
+#include "folder_picker.h"
 #include "hub_project_opener.h"
 #include "hub_window.h"
 #include "launcher_window.h"
@@ -75,10 +76,17 @@ enum class HubOutcomeUVE { Quit, OpenEditor };
         return UVE::AndroidHost::BeforeFrameUVE(activity, core, kHubRenderedMarkerUVE);
     };
 
+    // Engine packages are usually in Downloads, which only Android's own picker can reach.
+    UVE::LauncherUI::SetSystemFilePickerUVE(
+        [&activity](const std::vector<std::string>& suffixes, std::function<void(const std::filesystem::path&)> onPicked) {
+            return UVE::AndroidHost::StartFilePickUVE(activity, suffixes, std::move(onPicked));
+        });
     UVE::Hub::HubWindowUVE hub(std::move(context));
     __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "UVE_HUB_STARTED");
     const int exitCode = UVE::LauncherUI::RunLauncherWindowUVE(
         window, [&hub] { return hub.BuildUVE(); }, [&hub] { hub.TickUVE(); });
+    UVE::LauncherUI::SetSystemFilePickerUVE({});
+    activity.pendingPick = nullptr;
     UVE::AndroidHost::DetachEngineUVE(activity);
     __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "UVE_HUB_STOPPED %d", exitCode);
     return app->destroyRequested == 0 && exitCode == 0 ? HubOutcomeUVE::OpenEditor : HubOutcomeUVE::Quit;
