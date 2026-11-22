@@ -11,9 +11,11 @@ On failure it prints the whole device log, crash buffer included, so a native cr
 (logged by the system, not by the app) is in the job log.
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
+import tarfile
 import time
 from pathlib import Path
 
@@ -23,7 +25,9 @@ ACTIVITY = f"{PACKAGE}/com.univex.app.UniVexActivity"
 LOG_TAG = "UniVex"
 STARTED = "UVE_HUB_STARTED"
 RENDERED = "UVE_HUB_RENDERED"
-ENDED = ("UVE_HUB_FAILED", "UVE_HUB_STOPPED")
+EDITOR_STARTED = "UVE_EDITOR_STARTED"
+EDITOR_RENDERED = "UVE_EDITOR_RENDERED"
+ENDED = ("UVE_HUB_FAILED", "UVE_HUB_STOPPED", "UVE_HUB_EDITOR_FAILED", "UVE_EDITOR_FAILED")
 DEFAULT_TIMEOUT_SECONDS = 120.0
 POLL_SECONDS = 1.0
 # How long the Hub must stay alive after coming back to the foreground.
@@ -31,11 +35,22 @@ SETTLE_SECONDS = 5.0
 ANNOTATION_LIMIT = 3500
 
 
+def _read_package_version(package: Path) -> tuple[str, tuple[int, int, int, int]]:
+    with tarfile.open(package, "r:gz") as tar:
+        manifest = json.loads(tar.extractfile("engine.json").read().decode("utf-8"))
+    version = manifest["version"]
+    core, _, build = version.partition("+build.")
+    major, minor, patch = (int(part) for part in core.split("."))
+    return version, (major, minor, patch, int(build or "0"))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--adb", required=True)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--apk", type=Path, required=True)
+    parser.add_argument("--engine-package", type=Path,
+                        help="Optional ABI-matching .uvpackage to install and open in the Android editor")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     args = parser.parse_args()
     if args.timeout <= 0:
@@ -54,21 +69,62 @@ def main() -> int:
         except (subprocess.SubprocessError, OSError):
             return False
 
-    def wait_for(marker: str, count: int = 1) -> None:
+    def wait_for(marker: str, count: int = 1, allowed_ended: tuple[str, ...] = ()) -> None:
         deadline = time.monotonic() + args.timeout
         while time.monotonic() < deadline:
             text = app_log()
             for ended in ENDED:
+                if ended in allowed_ended:
+                    continue
                 if ended in text:
                     line = next(entry for entry in text.splitlines() if ended in entry)
-                    raise RuntimeError(f"the Hub ended before {marker}: {line.strip()}")
+                    raise RuntimeError(f"the app ended before {marker}: {line.strip()}")
             if text.count(marker) >= count:
                 print(marker, flush=True)
                 return
-            if STARTED in text and not alive():
-                raise RuntimeError(f"the Hub process died before {marker}")
+            if (STARTED in text or EDITOR_STARTED in text) and not alive():
+                raise RuntimeError(f"the app process died before {marker}")
             time.sleep(POLL_SECONDS)
         raise RuntimeError(f"no {marker} within {args.timeout:.0f} s")
+
+    def verify_engine_package(package: Path) -> None:
+        version, (major, minor, patch, build) = _read_package_version(package)
+        adb("shell", "am", "force-stop", PACKAGE)
+        remote_pkg = "/data/local/tmp/smoke_engine.uvpackage"
+        adb("push", str(package.resolve()), remote_pkg)
+        project_json = json.dumps({
+            "format": "uvproject",
+            "schemaVersion": 1,
+            "revision": 1,
+            "projectId": "smoke-project",
+            "displayName": "Smoke Project",
+            "engineVersion": {"major": major, "minor": minor, "patch": patch, "build": build},
+            "contentRoot": "Content",
+            "assetDatabasePath": ".uvassetdb",
+            "settingsPath": "Config/project_settings.json",
+            "startupScenePath": "Content/Viewport/Viewport.uvscene",
+        })
+        setup_script = (
+            f"set -e; "
+            f"FILES=$(pwd)/files; "
+            f"ENG=\"$FILES/.local/share/UniVex/Engines/{version}\"; "
+            f"rm -rf \"$ENG\" \"$FILES/smoke\"; "
+            f"mkdir -p \"$ENG\" \"$FILES/smoke/Content/Viewport\" \"$FILES/smoke/Config\"; "
+            f"tar -xzf {remote_pkg} -C \"$ENG\"; "
+            f"chmod 0555 \"$ENG/uve_editor\"; "
+            f"cat > \"$FILES/smoke/smoke.uvproject\" <<'JSON'\n{project_json}\nJSON"
+        )
+        adb("shell", "run-as", PACKAGE, "sh", "-c", setup_script)
+        adb("shell", "rm", "-f", remote_pkg)
+        adb("logcat", "-c")
+        project_path = f"/data/data/{PACKAGE}/files/smoke/smoke.uvproject"
+        adb("shell", "am", "start", "-W", "-n", ACTIVITY, "--es", "project", project_path)
+        wait_for(EDITOR_STARTED, allowed_ended=("UVE_HUB_STOPPED",))
+        wait_for(EDITOR_RENDERED, allowed_ended=("UVE_HUB_STOPPED",))
+        time.sleep(SETTLE_SECONDS)
+        if not alive():
+            raise RuntimeError("the Android editor died after rendering its first frame")
+        print("smoke_hub: Android editor loaded via dlopen and rendered cleanly", flush=True)
 
     try:
         if adb("shell", "getprop", "sys.boot_completed").strip() != "1":
@@ -84,6 +140,8 @@ def main() -> int:
         if not alive():
             raise RuntimeError("the Hub died after returning to the foreground")
         print("smoke_hub: the Hub started, drew and resumed", flush=True)
+        if args.engine_package is not None:
+            verify_engine_package(args.engine_package)
         return 0
     except (subprocess.SubprocessError, OSError, RuntimeError) as error:
         print(f"smoke_hub: FAILED: {error}", file=sys.stderr, flush=True)

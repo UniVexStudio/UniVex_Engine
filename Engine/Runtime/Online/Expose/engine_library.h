@@ -78,12 +78,14 @@ struct EngineInstallOutcomeUVE final {
                                                               const Core::VersionUVE& expectedVersion,
                                                               const std::filesystem::path& enginesRoot);
 
-/// Installs a package file the user chose by hand (an offline copy, or one from another machine).
+/// Installs a package file the user chose by hand (an offline copy, or a dev build).
 /// The version comes from the package's own manifest, so the file may have any name. When a checksum
 /// file (<package>.sha256) sits beside it, the package must match it; without one the package is
-/// installed unverified and the outcome says so.
+/// installed unverified and the outcome says so. When `replaceExisting` is true (the default), an
+/// existing install of the same version is atomically replaced so dev/beta builds update cleanly.
 [[nodiscard]] EngineInstallOutcomeUVE InstallLocalEnginePackageUVE(const std::filesystem::path& package,
-                                                                   const std::filesystem::path& enginesRoot);
+                                                                   const std::filesystem::path& enginesRoot,
+                                                                   bool replaceExisting = true);
 
 /// Removes a downloaded engine. The bundled engine is never under `enginesRoot`.
 [[nodiscard]] bool UninstallEngineUVE(const std::filesystem::path& enginesRoot, const Core::VersionUVE& version);

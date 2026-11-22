@@ -25,6 +25,7 @@
 #include "hub_project_opener.h"
 #include "hub_window.h"
 #include "launcher_window.h"
+#include "prism/Application.h"
 #include "project_list.h"
 #include "project_registry.h"
 
@@ -44,7 +45,8 @@ using EditorEntryPointUVE = int (*)(android_app*, int, char**);
 enum class HubOutcomeUVE { Quit, OpenEditor };
 
 /// Runs the Hub's window until it closes; leaves an editor launch pending when a project was opened.
-[[nodiscard]] HubOutcomeUVE RunHubUVE(UVE::AndroidHost::ActivityStateUVE& activity, const std::filesystem::path& unpacked) {
+[[nodiscard]] HubOutcomeUVE RunHubUVE(UVE::AndroidHost::ActivityStateUVE& activity, const std::filesystem::path& unpacked,
+                                      const std::string& initialError) {
     android_app* const app = activity.app;
     UVE::Hub::HubContextUVE context;
     context.templatesDirectory = unpacked / UVE::Pack::kProjectTemplatesDirectoryNameUVE;
@@ -58,15 +60,18 @@ enum class HubOutcomeUVE { Quit, OpenEditor };
     context.settingsFile = context.registryFile.parent_path() / UVE::Pack::kLauncherSettingsFileNameUVE;
     context.enginesRoot = context.registryFile.parent_path() / UVE::Online::kEnginesDirectoryNameUVE;
     context.feed = UVE::Online::LoadEngineFeedSourceUVE(unpacked / UVE::Online::kEngineFeedFileNameUVE);
+    context.compactLayout = true;
 
     UVE::LauncherUI::LauncherWindowDescUVE window;
     window.title = std::string(UVE::Hub::kHubWindowTitleUVE);
     // Full screen on a phone: the system owns the window, so there is no title bar or buttons.
     window.windowChrome = false;
     window.safeArea = [&activity] {
+        const float scale = prism::Application::exists() ? prism::Application::get().dpiScale() : 1.0F;
+        const float invScale = scale > 0.0F ? (1.0F / scale) : 1.0F;
         const UVE::Window::AndroidSafeAreaUVE& area = activity.safeArea;
-        return prism::Margin(static_cast<float>(area.left), static_cast<float>(area.top),
-                             static_cast<float>(area.right), static_cast<float>(area.bottom));
+        return prism::Margin(static_cast<float>(area.left) * invScale, static_cast<float>(area.top) * invScale,
+                             static_cast<float>(area.right) * invScale, static_cast<float>(area.bottom) * invScale);
     };
     window.nativeSurface = app->window;
     window.shaderDirectory = unpacked / kShadersDirectoryUVE;
@@ -78,35 +83,52 @@ enum class HubOutcomeUVE { Quit, OpenEditor };
 
     // Engine packages are usually in Downloads, which only Android's own picker can reach.
     UVE::LauncherUI::SetSystemFilePickerUVE(
-        [&activity](const std::vector<std::string>& suffixes, std::function<void(const std::filesystem::path&)> onPicked) {
-            return UVE::AndroidHost::StartFilePickUVE(activity, suffixes, std::move(onPicked));
+        [&activity](const std::vector<std::string>& suffixes, std::function<void(const std::filesystem::path&)> onPicked,
+                    std::function<void(const std::string&)> onError) {
+            return UVE::AndroidHost::StartFilePickUVE(activity, suffixes, std::move(onPicked), std::move(onError));
         });
     UVE::Hub::HubWindowUVE hub(std::move(context));
     __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "UVE_HUB_STARTED");
     const int exitCode = UVE::LauncherUI::RunLauncherWindowUVE(
-        window, [&hub] { return hub.BuildUVE(); }, [&hub] { hub.TickUVE(); });
+        window,
+        [&hub, &initialError] {
+            auto root = hub.BuildUVE();
+            if (!initialError.empty()) {
+                hub.ShowMessageUVE(initialError, true);
+            }
+            return root;
+        },
+        [&hub] { hub.TickUVE(); });
     UVE::LauncherUI::SetSystemFilePickerUVE({});
     activity.pendingPick = nullptr;
+    activity.pendingPickError = nullptr;
     UVE::AndroidHost::DetachEngineUVE(activity);
     __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "UVE_HUB_STOPPED %d", exitCode);
     return app->destroyRequested == 0 && exitCode == 0 ? HubOutcomeUVE::OpenEditor : HubOutcomeUVE::Quit;
 }
 
-/// Loads the engine's editor library and runs it on this activity until it returns.
-void RunEditorUVE(android_app* const app, const UVE::Platform::ProcessLaunchDescUVE& launch) {
+/// Loads the engine's editor library and runs it on this activity until it returns. Returns an
+/// error message for the Hub status line if loading or running failed, or empty on clean exit.
+[[nodiscard]] std::string RunEditorUVE(android_app* const app, const UVE::Platform::ProcessLaunchDescUVE& launch) {
     // The library stays loaded for the life of the process: its threads and static objects may
     // outlive the editor's return, and unloading it under them would crash.
     void* const library = dlopen(launch.executable.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (library == nullptr) {
-        __android_log_print(ANDROID_LOG_ERROR, kLogTagUVE, "UVE_HUB_EDITOR_FAILED %s", dlerror());
-        return;
+        const char* const reason = dlerror();
+        const std::string message = std::string("Could not load the engine editor: ") +
+                                    (reason != nullptr ? reason : "unknown loader error");
+        __android_log_print(ANDROID_LOG_ERROR, kLogTagUVE, "UVE_HUB_EDITOR_FAILED %s", message.c_str());
+        return message;
     }
     const auto entry = reinterpret_cast<EditorEntryPointUVE>(
         dlsym(library, std::string(UVE::Pack::kEditorAndroidEntryPointUVE).c_str()));
     if (entry == nullptr) {
-        __android_log_print(ANDROID_LOG_ERROR, kLogTagUVE, "UVE_HUB_EDITOR_FAILED %s is not an editor library: %s",
-                            launch.executable.c_str(), dlerror());
-        return;
+        const char* const reason = dlerror();
+        const std::string message = std::string("The installed engine package has no editor entry point: ") +
+                                    (reason != nullptr ? reason : "symbol not found");
+        __android_log_print(ANDROID_LOG_ERROR, kLogTagUVE, "UVE_HUB_EDITOR_FAILED %s: %s",
+                            launch.executable.c_str(), message.c_str());
+        return message;
     }
     std::vector<std::string> arguments{launch.executable.string()};
     arguments.insert(arguments.end(), launch.arguments.begin(), launch.arguments.end());
@@ -123,6 +145,10 @@ void RunEditorUVE(android_app* const app, const UVE::Platform::ProcessLaunchDesc
     const int exitCode = entry(app, static_cast<int>(arguments.size()), argv.data());
     __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "UVE_HUB_EDITOR_STOPPED %d", exitCode);
     UVE::AndroidHost::EnterDataDirectoryUVE(app);
+    if (exitCode != 0) {
+        return "The editor exited with code " + std::to_string(exitCode) + ". Check uve_editor.log for details.";
+    }
+    return {};
 }
 
 } // namespace
@@ -142,15 +168,45 @@ extern "C" void android_main(android_app* const app) {
     }
 
     try {
+        std::string lastEditorError;
+        const std::string launchProject = UVE::Window::TakeAndroidLaunchProjectUVE(app->activity);
+        if (!launchProject.empty()) {
+            std::string registryError;
+            const std::optional<std::filesystem::path> registry =
+                UVE::Pack::DefaultProjectRegistryFileUVE(&registryError);
+            if (!registry.has_value()) {
+                lastEditorError = registryError;
+            } else {
+                const std::filesystem::path enginesRoot =
+                    registry->parent_path() / UVE::Online::kEnginesDirectoryNameUVE;
+                const UVE::Hub::ProjectOpenResultUVE opened = UVE::Hub::OpenProjectInEngineUVE(
+                    std::filesystem::path(launchProject), UVE::Online::ListInstalledEnginesUVE(enginesRoot, std::nullopt),
+                    *registry, {});
+                if (!opened.launched) {
+                    lastEditorError = opened.message;
+                } else if (const std::optional<UVE::Platform::ProcessLaunchDescUVE> launch =
+                               UVE::Hub::TakePendingEditorLaunchUVE();
+                           launch.has_value()) {
+                    lastEditorError = RunEditorUVE(app, *launch);
+                    UVE::AndroidHost::AttachUVE(activity, app);
+                    if (!UVE::AndroidHost::WaitForWindowUVE(activity)) {
+                        ANativeActivity_finish(app->activity);
+                        UVE::AndroidHost::DrainUntilDestroyedUVE(app);
+                        return;
+                    }
+                }
+            }
+        }
         while (app->destroyRequested == 0) {
-            if (RunHubUVE(activity, unpacked) != HubOutcomeUVE::OpenEditor) {
+            if (RunHubUVE(activity, unpacked, lastEditorError) != HubOutcomeUVE::OpenEditor) {
                 break;
             }
+            lastEditorError.clear();
             const std::optional<UVE::Platform::ProcessLaunchDescUVE> launch = UVE::Hub::TakePendingEditorLaunchUVE();
             if (!launch.has_value()) {
                 break;   // the Hub closed itself
             }
-            RunEditorUVE(app, *launch);
+            lastEditorError = RunEditorUVE(app, *launch);
             // The editor had the activity's callbacks; take them back, and wait if it ended without a surface.
             UVE::AndroidHost::AttachUVE(activity, app);
             if (!UVE::AndroidHost::WaitForWindowUVE(activity)) {

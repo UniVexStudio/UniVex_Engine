@@ -13,7 +13,11 @@
 
 #include <array>
 #include <chrono>
+#include <optional>
 #include <string>
+#include <utility>
+
+#include "android_activity.h"
 
 struct GLFWwindow {
     ANativeWindow* surface = nullptr;
@@ -47,6 +51,7 @@ namespace {
 GLFWwindow g_windowUVE;
 GLFWmonitor g_monitorUVE;
 GLFWvidmode g_modeUVE{};
+ANativeActivity* g_activityUVE = nullptr;
 std::string g_clipboardUVE;
 const auto g_startUVE = std::chrono::steady_clock::now();
 /// The GLES library, for entry points eglGetProcAddress does not return.
@@ -68,6 +73,10 @@ namespace UVE::Window {
 
 GLFWwindow* AndroidGlfwWindowUVE() {
     return &g_windowUVE;
+}
+
+void SetAndroidGlfwActivityUVE(ANativeActivity* const activity) {
+    g_activityUVE = activity;
 }
 
 void SetAndroidGlfwSurfaceUVE(ANativeWindow* const surface) {
@@ -269,12 +278,15 @@ void glfwDestroyCursor(GLFWcursor* const cursor) {
 }
 void glfwSetCursor(GLFWwindow*, GLFWcursor*) {}
 
-// shortcut: the clipboard is kept inside the app, not shared with other apps; use the Android
-// ClipboardManager through JNI when copying between apps is needed.
 void glfwSetClipboardString(GLFWwindow*, const char* const text) {
     g_clipboardUVE = text != nullptr ? text : "";
+    UVE::Window::WriteAndroidClipboardUVE(g_activityUVE, g_clipboardUVE.c_str());
 }
 const char* glfwGetClipboardString(GLFWwindow*) {
+    if (std::optional<std::string> systemText = UVE::Window::ReadAndroidClipboardUVE(g_activityUVE);
+        systemText.has_value()) {
+        g_clipboardUVE = std::move(*systemText);
+    }
     return g_clipboardUVE.c_str();
 }
 

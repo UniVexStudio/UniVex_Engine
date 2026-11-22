@@ -105,6 +105,37 @@ std::string_view GetApplicationTargetUVE() noexcept {
 #endif
 }
 
+std::string_view GetEnginePackageTargetUVE() noexcept {
+#if defined(__ANDROID__)
+#if defined(__aarch64__)
+    return "android-arm64-v8a";
+#elif defined(__x86_64__)
+    return "android-x86_64";
+#elif defined(__arm__)
+    return "android-armeabi-v7a";
+#elif defined(__i386__)
+    return "android-x86";
+#else
+    return "android";
+#endif
+#else
+    return GetApplicationTargetUVE();
+#endif
+}
+
+bool IsCompatibleEnginePackageTargetUVE(const std::string_view manifestTarget) noexcept {
+    if (manifestTarget == GetEnginePackageTargetUVE()) {
+        return true;
+    }
+#if defined(__ANDROID__) && defined(__aarch64__)
+    // Earlier Android packages were always arm64-v8a and wrote bare "android" in engine.json.
+    if (manifestTarget == "android") {
+        return true;
+    }
+#endif
+    return false;
+}
+
 ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE() {
 #if defined(_WIN32)
     const char* const localAppData = std::getenv("LOCALAPPDATA");

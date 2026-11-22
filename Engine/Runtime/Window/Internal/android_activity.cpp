@@ -60,6 +60,10 @@ inline constexpr const char* kPickFileMethodUVE = "pickFile";
 inline constexpr const char* kPickFileSignatureUVE = "()V";
 inline constexpr const char* kTakePickedFileMethodUVE = "takePickedFile";
 inline constexpr const char* kTakePickedFileSignatureUVE = "()Ljava/lang/String;";
+inline constexpr const char* kGetClipboardMethodUVE = "getClipboardText";
+inline constexpr const char* kGetClipboardSignatureUVE = "()Ljava/lang/String;";
+inline constexpr const char* kSetClipboardMethodUVE = "setClipboardText";
+inline constexpr const char* kSetClipboardSignatureUVE = "(Ljava/lang/String;)V";
 inline constexpr const char* kKeyEventClassUVE = "android/view/KeyEvent";
 inline constexpr const char* kKeyEventConstructorUVE = "(II)V";
 inline constexpr const char* kUnicodeCharMethodUVE = "getUnicodeChar";
@@ -152,6 +156,97 @@ std::optional<std::string> TakeAndroidPickedFileUVE(ANativeActivity* const activ
                 env->ReleaseStringUTFChars(picked, chars);
             }
             env->DeleteLocalRef(picked);
+        }
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return result;
+}
+
+std::optional<std::string> ReadAndroidClipboardUVE(ANativeActivity* const activity) {
+    if (activity == nullptr) {
+        return std::nullopt;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return std::nullopt;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID getClipboard =
+        type != nullptr ? env->GetMethodID(type, kGetClipboardMethodUVE, kGetClipboardSignatureUVE) : nullptr;
+    std::optional<std::string> result;
+    if (getClipboard != nullptr) {
+        const auto value = static_cast<jstring>(env->CallObjectMethod(activity->clazz, getClipboard));
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        } else if (value != nullptr) {
+            const char* const chars = env->GetStringUTFChars(value, nullptr);
+            result = chars != nullptr ? std::string(chars) : std::string{};
+            if (chars != nullptr) {
+                env->ReleaseStringUTFChars(value, chars);
+            }
+            env->DeleteLocalRef(value);
+        }
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return result;
+}
+
+void WriteAndroidClipboardUVE(ANativeActivity* const activity, const char* const text) {
+    if (activity == nullptr) {
+        return;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID setClipboard =
+        type != nullptr ? env->GetMethodID(type, kSetClipboardMethodUVE, kSetClipboardSignatureUVE) : nullptr;
+    if (setClipboard != nullptr) {
+        const jstring value = env->NewStringUTF(text != nullptr ? text : "");
+        if (value != nullptr) {
+            env->CallVoidMethod(activity->clazz, setClipboard, value);
+            env->DeleteLocalRef(value);
+        }
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+}
+
+std::string TakeAndroidLaunchProjectUVE(ANativeActivity* const activity) {
+    if (activity == nullptr) {
+        return {};
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return {};
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID take =
+        type != nullptr ? env->GetMethodID(type, "takeLaunchProject", "()Ljava/lang/String;") : nullptr;
+    std::string result;
+    if (take != nullptr) {
+        const auto value = static_cast<jstring>(env->CallObjectMethod(activity->clazz, take));
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        } else if (value != nullptr) {
+            const char* const chars = env->GetStringUTFChars(value, nullptr);
+            if (chars != nullptr) {
+                result.assign(chars);
+                env->ReleaseStringUTFChars(value, chars);
+            }
+            env->DeleteLocalRef(value);
         }
     }
     env->ExceptionClear();

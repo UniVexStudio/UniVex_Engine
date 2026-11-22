@@ -11,6 +11,7 @@
 
 #include "application_runtime.h"
 #include "launcher_widgets.h"
+#include "prism/Application.h"
 #include "prism/Containers.h"
 #include "prism/Controls.h"
 #include "prism/Layouts.h"
@@ -18,14 +19,32 @@
 #include "prism/Theme.h"
 #include "prism/Views.h"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <cwchar>
+#include <windows.h>
+#endif
+
 namespace UVE::LauncherUI {
 namespace {
 
 inline constexpr float kPickerWidthUVE = 560.0F;
+inline constexpr float kPickerHorizontalMarginUVE = 24.0F;
+inline constexpr float kPickerMinWidthUVE = 280.0F;
 inline constexpr float kPickerListHeightUVE = 320.0F;
 inline constexpr float kPickerSpacingUVE = 8.0F;
 /// Leading character of a hidden folder on the platforms that hide by name.
 inline constexpr char kHiddenPrefixUVE = '.';
+
+[[nodiscard]] float ResponsivePickerWidthUVE() {
+    if (!prism::Application::exists()) {
+        return kPickerWidthUVE;
+    }
+    const float available = prism::Application::get().windowSize().x - kPickerHorizontalMarginUVE;
+    return std::clamp(available, kPickerMinWidthUVE, kPickerWidthUVE);
+}
 
 /// The picker's state, shared by its widgets' callbacks for as long as the window is open.
 struct FolderPickerStateUVE final {
@@ -71,6 +90,42 @@ void SortByNameUVE(std::vector<std::filesystem::path>& paths) {
     }
     return first;
 }
+
+void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std::filesystem::path& directory);
+
+#if defined(_WIN32)
+/// Lists Windows logical drives (C:\, D:\, ...) when moving up from a drive root.
+void ShowWindowsDrivesUVE(const std::shared_ptr<FolderPickerStateUVE>& state) {
+    state->current.clear();
+    state->path->setText("");
+    state->problem->setText("");
+    state->folders->clearChildren();
+    state->selectedFile.reset();
+    state->fileRows.clear();
+
+    const DWORD needed = GetLogicalDriveStringsW(0, nullptr);
+    std::vector<std::filesystem::path> drives;
+    if (needed > 0U) {
+        std::vector<wchar_t> buffer(static_cast<std::size_t>(needed) + 1U, L'\0');
+        if (GetLogicalDriveStringsW(needed, buffer.data()) > 0U) {
+            for (const wchar_t* cursor = buffer.data(); *cursor != L'\0'; cursor += std::wcslen(cursor) + 1U) {
+                drives.emplace_back(cursor);
+            }
+        }
+    }
+    for (const std::filesystem::path& drive : drives) {
+        auto row = prism::make<NavItemUVE>(drive.string(), prism::Icon::Folder);
+        const std::weak_ptr<FolderPickerStateUVE> weak = state;
+        row->onActivate = [weak, drive] {
+            if (const std::shared_ptr<FolderPickerStateUVE> owner = weak.lock()) {
+                ShowFolderUVE(owner, drive);
+            }
+        };
+        state->folders->add(row, prism::Slot{0.0F, {}, prism::HAlign::Fill});
+    }
+    state->folders->relayout();
+}
+#endif
 
 void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std::filesystem::path& directory) {
     std::error_code error;
@@ -130,9 +185,17 @@ void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std
     up->setTooltip("Up one folder");
     up->onClick = [weak = std::weak_ptr<FolderPickerStateUVE>(state)] {
         const std::shared_ptr<FolderPickerStateUVE> owner = weak.lock();
-        if (owner && owner->current.has_parent_path() && owner->current.parent_path() != owner->current) {
+        if (!owner || owner->current.empty()) {
+            return;
+        }
+        if (owner->current.has_parent_path() && owner->current.parent_path() != owner->current) {
             ShowFolderUVE(owner, owner->current.parent_path());
         }
+#if defined(_WIN32)
+        else {
+            ShowWindowsDrivesUVE(owner);
+        }
+#endif
     };
     navigation->add(up);
     state->path = prism::make<prism::TextInput>();
@@ -214,6 +277,10 @@ void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& 
     creation->add(state->newFolder, prism::Slot{1.0F});
     auto make = prism::make<prism::Button>("Make folder", prism::Icon::Plus);
     make->onClick = [state] {
+        if (state->current.empty()) {
+            state->problem->setText("Choose a drive first.");
+            return;
+        }
         const std::string name = state->newFolder->text();
         const std::filesystem::path created = state->current / name;
         std::error_code makeError;
@@ -237,11 +304,11 @@ void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& 
                         [state, onPicked = std::move(onPicked)] {
                             const std::filesystem::path chosen = state->current;
                             state->folders->clearChildren();
-                            if (onPicked) {
+                            if (!chosen.empty() && onPicked) {
                                 onPicked(chosen);
                             }
                         }}},
-                      kPickerWidthUVE);
+                      ResponsivePickerWidthUVE());
 }
 
 namespace {
@@ -253,8 +320,9 @@ void SetSystemFilePickerUVE(SystemFilePickerUVE picker) {
 }
 
 void ShowFilePickerUVE(const std::string& title, const std::filesystem::path& start, std::vector<std::string> suffixes,
-                       const std::string& confirmLabel, std::function<void(const std::filesystem::path&)> onPicked) {
-    if (g_systemFilePickerUVE && g_systemFilePickerUVE(suffixes, onPicked)) {
+                       const std::string& confirmLabel, std::function<void(const std::filesystem::path&)> onPicked,
+                       std::function<void(const std::string&)> onError) {
+    if (g_systemFilePickerUVE && g_systemFilePickerUVE(suffixes, onPicked, std::move(onError))) {
         return;
     }
     auto state = std::make_shared<FolderPickerStateUVE>();
@@ -278,7 +346,7 @@ void ShowFilePickerUVE(const std::string& title, const std::filesystem::path& st
                                 onPicked(*chosen);
                             }
                         }}},
-                      kPickerWidthUVE);
+                      ResponsivePickerWidthUVE());
 }
 
 } // namespace UVE::LauncherUI

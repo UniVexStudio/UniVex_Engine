@@ -18,6 +18,7 @@ public:
 
     void SetActiveUVE(bool active);
     [[nodiscard]] bool IsActiveUVE() const noexcept { return m_active; }
+    void SetCompactUVE(bool compact);
 
     prism::Callback<> onActivate;
 
@@ -43,6 +44,7 @@ private:
     prism::Icon m_icon;
     bool m_active = false;
     bool m_pressed = false;
+    bool m_compact = false;
 };
 
 /// The UniVex mark at a fixed size, from the brand image the host loads into PRISM. Without that

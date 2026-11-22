@@ -47,6 +47,9 @@ struct HubContextUVE final {
     std::filesystem::path enginesRoot;
     /// Where engine releases are published; absent when the Hub ships without a feed.
     std::optional<Online::EngineFeedSourceUVE> feed;
+    /// True on single-surface mobile screens: replaces the fixed left sidebar with a compact top
+    /// navigation bar and stacks wide forms vertically.
+    bool compactLayout = false;
 };
 
 enum class HubPageUVE : int {
@@ -72,6 +75,7 @@ public:
 
 private:
     [[nodiscard]] prism::Ref<prism::Widget> BuildSidebarUVE();
+    [[nodiscard]] prism::Ref<prism::Widget> BuildTopNavUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildBrandHeaderUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildProjectsPageUVE();
     [[nodiscard]] prism::Ref<prism::Widget> BuildNewProjectPageUVE();

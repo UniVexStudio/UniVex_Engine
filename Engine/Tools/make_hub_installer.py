@@ -93,6 +93,9 @@ def stage_payload(bin_dir: Path, target: str, stage: Path) -> set[str]:
         shutil.copy2(source, icons / source.name)
     executables = {f"{HUB_STEM}{package_engine.EXECUTABLE_SUFFIX[target]}"}
     executables.update(path.name for path in stage.glob("*.dll"))
+    linux_lib_dir = stage / package_engine.LINUX_LIB_DIRECTORY
+    if linux_lib_dir.is_dir():
+        executables.update(path.name for path in linux_lib_dir.iterdir() if path.is_file())
     return executables
 
 

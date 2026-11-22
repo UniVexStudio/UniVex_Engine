@@ -43,16 +43,31 @@
 #include "i_entity_manager.h"
 #include "editor_viewport_host.h"
 #include "editor_main.h"
+#include "process_launcher.h"
 
 namespace {
 
 /// File name of the editor log. Without a project it is written to the working directory; with one
 /// it moves under the project's log directory (see PrepareProjectEditorUVE).
 inline constexpr std::string_view kEditorLogFileNameUVE = "uve_editor.log";
+/// Built-in shader sources packaged beside the editor executable.
+inline constexpr std::string_view kShadersDirectoryNameUVE = "shaders";
 /// The level the editor opens when neither --scene nor the project's startup scene names one,
 /// relative to the content root.
 inline constexpr std::string_view kDefaultViewportFolderUVE = "Viewport";
 inline constexpr std::string_view kDefaultViewportSceneFileUVE = "Viewport.uvscene";
+
+[[nodiscard]] std::filesystem::path EditorExecutableDirectoryUVE(const char* const argv0) {
+#if !defined(__ANDROID__)
+    const std::filesystem::path self = UVE::Platform::CurrentExecutablePathUVE();
+    if (!self.empty()) {
+        return self.parent_path();
+    }
+#endif
+    std::error_code error;
+    const std::filesystem::path executable = std::filesystem::absolute(std::filesystem::path(argv0), error);
+    return error ? std::filesystem::current_path(error) : executable.parent_path();
+}
 /// Where levels were saved before the Viewport asset existed, relative to the working directory.
 inline constexpr std::string_view kLegacyEditorSceneFileUVE = "editor_scene.uvscene";
 inline constexpr std::string_view kProjectOptionUVE = UVE::Pack::kEditorProjectOptionUVE;
@@ -299,12 +314,19 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
         return 0;
     }
 
+    const std::filesystem::path executableDirectory = EditorExecutableDirectoryUVE(argv[0]);
     UVE::Core::EngineConfigUVE config{};
     config.logFilePath = platform.logDirectory.empty() ? std::filesystem::path(kEditorLogFileNameUVE)
                                                        : platform.logDirectory / kEditorLogFileNameUVE;
     config.nativeWindowHandleUVE = platform.nativeSurface;
     if (!platform.shaderDirectory.empty()) {
         config.shaderSourceRealDirectoryUVE = platform.shaderDirectory;
+    } else {
+        std::error_code shaderError;
+        const std::filesystem::path bundledShaders = executableDirectory / kShadersDirectoryNameUVE;
+        if (std::filesystem::is_directory(bundledShaders, shaderError)) {
+            config.shaderSourceRealDirectoryUVE = bundledShaders;
+        }
     }
 #if defined(__ANDROID__)
     config.renderBackendPreferenceUVE = UVE::Core::RenderBackendPreferenceUVE::OpenGLUVE;
@@ -395,8 +417,7 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
         if (options.prismUi && !options.headless) {
             // PRISM's fonts / themes / locales ship next to the executable (UVBT copies them).
             std::error_code assetError;
-            std::filesystem::path assetDir =
-                std::filesystem::absolute(std::filesystem::path(argv[0]), assetError).parent_path() / "prism_assets";
+            std::filesystem::path assetDir = executableDirectory / "prism_assets";
             if (!platform.prismAssetsDirectory.empty()) {
                 assetDir = platform.prismAssetsDirectory;
             } else if (!std::filesystem::is_directory(assetDir, assetError)) {

@@ -34,8 +34,18 @@ struct AndroidSafeAreaUVE final {
 
 /// Opens Android's file picker (UniVexActivity.pickFile). False when the activity has none.
 [[nodiscard]] bool StartAndroidFilePickUVE(ANativeActivity* activity);
-/// The outcome of the last pick: nothing while it runs, an empty string when it was cancelled or
-/// failed, else the path of the picked document copied into the app's cache. Returned once.
+/// The outcome of the last pick: nothing while it runs, an empty string when it was cancelled,
+/// "error:<reason>" when it failed, else the path of the picked document copied into the app's
+/// cache. Returned once.
 [[nodiscard]] std::optional<std::string> TakeAndroidPickedFileUVE(ANativeActivity* activity);
+
+/// Reads plain text from Android's system clipboard (UniVexActivity.getClipboardText), or empty
+/// optional when the activity does not provide it.
+[[nodiscard]] std::optional<std::string> ReadAndroidClipboardUVE(ANativeActivity* activity);
+/// Copies plain text to Android's system clipboard (UniVexActivity.setClipboardText).
+void WriteAndroidClipboardUVE(ANativeActivity* activity, const char* text);
+
+/// Returns a .uvproject path passed to UniVexActivity via Intent extra "project" once, or empty.
+[[nodiscard]] std::string TakeAndroidLaunchProjectUVE(ANativeActivity* activity);
 
 } // namespace UVE::Window
