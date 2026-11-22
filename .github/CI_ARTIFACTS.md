@@ -9,7 +9,9 @@ Every job builds as on any check; the Hub and Release jobs then package what the
 **Publish the release** puts everything into one GitHub Release:
 
 - `univex-engine-<version>-<linux|windows>.uvpackage` - the engine, per platform
-- `UniVexHubSetup-<hub version>-<linux|windows>` - the Hub installers
+- `UniVexHubSetup-<hub version>-<linux|windows>` - the Hub installers: on Windows a setup wizard
+  (Inno Setup, `Engine/Distribution/windows/UniVexHub.iss`), which Hub / Windows installs, starts
+  and uninstalls on every run with only Windows' own folders on `PATH`
 - `UniVexHub-<hub version>-android-<abi>.apk` - the Hub for Android
 
 each with a `.sha256` beside it. The files travel between jobs as artifacts, which are deleted once
