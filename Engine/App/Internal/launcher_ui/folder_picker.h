@@ -18,6 +18,14 @@ namespace UVE::LauncherUI {
 [[nodiscard]] std::vector<std::filesystem::path> ListPickableFilesUVE(const std::filesystem::path& directory,
                                                                       const std::vector<std::string>& suffixes);
 
+/// A platform's own file picker (Android's, which reaches the shared folders an app may not list).
+/// It shows itself for files ending with one of `suffixes` and calls `onPicked` with the chosen file
+/// later, from the UI thread; it returns false when it cannot open, and PRISM's picker is used.
+using SystemFilePickerUVE = std::function<bool(const std::vector<std::string>& suffixes,
+                                               std::function<void(const std::filesystem::path&)> onPicked)>;
+/// Makes ShowFilePickerUVE use `picker` (an empty one restores PRISM's).
+void SetSystemFilePickerUVE(SystemFilePickerUVE picker);
+
 /// Opens a modal window for choosing a folder, starting in `start` (or the home folder when it is
 /// not a directory). `onPicked` receives the chosen folder; cancelling calls nothing.
 void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& start,
