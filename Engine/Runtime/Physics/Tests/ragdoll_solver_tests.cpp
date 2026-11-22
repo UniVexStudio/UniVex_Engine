@@ -1,5 +1,7 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -8,9 +10,11 @@
 
 #include <gtest/gtest.h>
 
+#include "collider_debug_geometry.h"
 #include "quaternion.h"
 #include "vector3.h"
 #include "ragdoll_solver.h"
+#include "ragdoll_world.h"
 
 namespace UVE::Physics::Tests {
 namespace {
@@ -373,6 +377,161 @@ TEST(RagdollSolverUVETest, MakeHingeJointUVE_LocksBothSwingsAndLimitsTheTwist) {
     EXPECT_EQ(socket.swing2Motion, RagdollMotionUVE::Limited);
     EXPECT_FLOAT_EQ(socket.swing1LimitDegrees, 60.0F);
     EXPECT_FALSE(socket.twistAsymmetric) << "a ball socket has no one-way range";
+}
+
+// ---- AAA Solver Upgrades (Inertia Conditioning, Self-Collision, PD Motors, Exact Contacts, Debug) ----
+
+TEST(RagdollSolverUVETest, StabilizeInertiaUVE_BoundsPrincipalAndChainInertiaRatios) {
+    RagdollSolverUVE solver;
+    RagdollBodyUVE pelvis = MakeCapsuleUVE({0.0F, 1.0F, 0.0F}, 15.0F, 0.14F, 0.10F);
+    RagdollBodyUVE hand = MakeCapsuleUVE({0.0F, 1.4F, 0.0F}, 0.4F, 0.03F, 0.05F);
+    ASSERT_TRUE(solver.ResetUVE(std::vector<RagdollBodyUVE>{pelvis, hand}));
+    ASSERT_TRUE(solver.AddJointUVE(MakeBallSocketJointUVE(0U, 1U, {0.0F, 0.15F, 0.0F}, {0.0F, -0.25F, 0.0F}, 60.0F)));
+
+    solver.StabilizeInertiaUVE(4.0F, 16.0F);
+    const Math::Vector3UVE invPelvis = solver.GetBodyUVE(0U).inverseInertiaLocal;
+    const Math::Vector3UVE invHand = solver.GetBodyUVE(1U).inverseInertiaLocal;
+    const float pelvisMax = std::max({invPelvis.x, invPelvis.y, invPelvis.z});
+    const float handMax = std::max({invHand.x, invHand.y, invHand.z});
+    const float handMin = std::min({invHand.x, invHand.y, invHand.z});
+    EXPECT_LE(handMax / handMin, 4.01F);
+    EXPECT_LE(handMax / pelvisMax, 16.01F);
+
+    // High-speed off-center impact on extreme mass-ratio chain remains finite and tightly coupled.
+    solver.ApplyImpulseUVE(1U, {25.0F, 0.0F, 0.0F}, {0.0F, 1.45F, 0.0F});
+    RagdollStepReportUVE report;
+    for (int step = 0; step < 240; ++step) {
+        report = solver.StepUVE({0.0F, -9.81F, 0.0F}, kStepUVE, {});
+    }
+    EXPECT_TRUE(Math::IsFiniteUVE(solver.GetBodyUVE(1U).position));
+    EXPECT_TRUE(Math::IsFiniteUVE(solver.GetBodyUVE(1U).angularVelocity));
+    EXPECT_LT(report.maximumJointDrift, 0.02F);
+}
+
+TEST(RagdollSolverUVETest, OneSidedJointLimit_DoesNotStickWhenMovingAwayFromLimit) {
+    TwoBodyRigUVE rig = MakeTwoBodyRigUVE(/*hinge=*/true);
+    // Place child slightly below the -5 deg lower limit, but give it POSITIVE velocity moving BACK
+    // into the allowed range (towards +10 deg). A sticky two-sided limit would pull it back!
+    Math::QuaternionUVE rotated{};
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE({1.0F, 0.0F, 0.0F}, -8.0F * 3.14159265F / 180.0F, rotated));
+    rig.solver.GetBodyUVE(1U).rotation = rotated;
+    rig.solver.GetBodyUVE(1U).angularVelocity = {5.0F, 0.0F, 0.0F};
+
+    RagdollStepSettingsUVE settings;
+    settings.positionIterations = 0U;
+    settings.sleepDelaySeconds = 0.0F;
+    static_cast<void>(rig.solver.StepUVE({}, kStepUVE, {}, settings));
+    // Child velocity moving away from the lower limit must remain strongly positive (not reversed or damped to zero!).
+    EXPECT_GT(rig.solver.GetBodyUVE(1U).angularVelocity.x, 3.0F);
+}
+
+TEST(RagdollSolverUVETest, SelfCollision_SeparatesNonAdjacentBodiesWhileIgnoringParentChild) {
+    RagdollSolverUVE solver;
+    RagdollBodyUVE body0 = MakeCapsuleUVE({0.0F, 1.0F, 0.0F}, 5.0F, 0.12F, 0.2F);
+    RagdollBodyUVE body1 = MakeCapsuleUVE({0.0F, 1.5F, 0.0F}, 2.0F, 0.08F, 0.15F);
+    // Body 2 is non-adjacent (not jointed to body 0) and initially separated at bind, then pushed into body 0.
+    RagdollBodyUVE body2 = MakeCapsuleUVE({0.5F, 1.0F, 0.0F}, 2.0F, 0.10F, 0.2F);
+    ASSERT_TRUE(solver.ResetUVE(std::vector<RagdollBodyUVE>{body0, body1, body2}));
+    ASSERT_TRUE(solver.AddJointUVE(MakeBallSocketJointUVE(0U, 1U, {0.0F, 0.25F, 0.0F}, {0.0F, -0.25F, 0.0F})));
+    solver.RebuildSelfCollisionFilterUVE(/*disableCurrentPoseOverlaps=*/true, /*minimumJointHops=*/2U);
+
+    EXPECT_FALSE(solver.CanSelfCollideUVE(0U, 1U)) << "parent-child pair must be filtered";
+    EXPECT_TRUE(solver.CanSelfCollideUVE(0U, 2U)) << "non-adjacent separated pair must collide";
+
+    // Drive body 2 straight into body 0.
+    solver.GetBodyUVE(2U).position = {0.10F, 1.0F, 0.0F};
+    solver.GetBodyUVE(2U).linearVelocity = {-4.0F, 0.0F, 0.0F};
+
+    RagdollStepSettingsUVE settings;
+    settings.enableSelfCollision = true;
+    settings.sleepDelaySeconds = 0.0F;
+    RagdollStepReportUVE report;
+    for (int step = 0; step < 60; ++step) {
+        report = solver.StepUVE({}, kStepUVE, {}, settings);
+    }
+    const float separation = std::fabs(solver.GetBodyUVE(2U).position.x - solver.GetBodyUVE(0U).position.x);
+    EXPECT_GE(separation, body0.radius + body2.radius - 0.02F)
+        << "self-collision must push non-adjacent capsules apart";
+}
+
+TEST(RagdollSolverUVETest, ActiveJointMotor_DrivesLimbToTargetAngleAndStaysStableAtHighStiffness) {
+    TwoBodyRigUVE rig = MakeTwoBodyRigUVE(/*hinge=*/true);
+    rig.solver.GetBodyUVE(0U).kinematic = true; // Anchor parent like a partial ragdoll root!
+
+    Math::QuaternionUVE targetRel{};
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE({1.0F, 0.0F, 0.0F}, 60.0F * 3.14159265F / 180.0F, targetRel));
+    RagdollJointUVE& joint = rig.solver.GetJointUVE(0U);
+    joint.motor.enabled = true;
+    joint.motor.targetRelativeRotation = targetRel;
+    joint.motor.angularStiffness = 5000.0F; // Extreme stiffness must stay unconditionally stable!
+    joint.motor.angularDamping = 60.0F;
+    joint.motor.maxTorque = 250.0F;
+
+    RagdollStepSettingsUVE settings;
+    settings.sleepDelaySeconds = 0.0F;
+    for (int step = 0; step < 240; ++step) {
+        static_cast<void>(rig.solver.StepUVE({0.0F, -9.81F, 0.0F}, kStepUVE, {}, settings));
+    }
+
+    const Math::QuaternionUVE rel = Math::MultiplyUVE(
+        Math::ConjugateUVE(Math::MultiplyUVE(rig.solver.GetBodyUVE(0U).rotation, joint.firstFrame)),
+        Math::MultiplyUVE(rig.solver.GetBodyUVE(1U).rotation, joint.secondFrame));
+    const float twistDeg = (2.0F * std::atan2(rel.x, rel.w)) * 180.0F / 3.14159265F;
+    EXPECT_TRUE(Math::IsFiniteUVE(rig.solver.GetBodyUVE(1U).rotation));
+    EXPECT_NEAR(twistDeg, 60.0F, 8.0F) << "PD motor must drive limb to 60 deg target against gravity";
+}
+
+TEST(RagdollSolverUVETest, ExactBoxContactPoint_ProducesZeroSpuriousTorqueFarFromOrigin) {
+    // Regression test for Bug #4: a limb standing at x = +25 m on a 100 m floor box centered at
+    // (0, -0.5, 0) used to pick the endpoint closest to (0, -0.5, 0) instead of the floor surface!
+    RagdollSolverUVE solver;
+    RagdollBodyUVE limb = MakeCapsuleUVE({25.0F, 0.35F, 0.0F}, 3.0F, 0.1F, 0.2F);
+    limb.linearDamping = 0.05F;
+    limb.angularDamping = 0.2F;
+    ASSERT_TRUE(solver.ResetUVE(std::vector<RagdollBodyUVE>{limb}));
+
+    Detail::ColliderWorldAabbUVE floorCollider{};
+    floorCollider.entity = Scene::EntityUVE{99U, 1U};
+    floorCollider.collisionLayer = 1U;
+    floorCollider.collisionMask = 0xFFFFFFFFU;
+    floorCollider.shapeType = Scene::ColliderShapeTypeUVE::Box;
+    floorCollider.shapeHalfExtents = {50.0F, 0.5F, 50.0F};
+    floorCollider.shapeRotation = Math::QuaternionUVE{};
+    floorCollider.worldAabb = Math::AabbUVE{{-50.0F, -1.0F, -50.0F}, {50.0F, 0.0F, 50.0F}};
+
+    const std::array<Detail::ColliderWorldAabbUVE, 1U> colliders{floorCollider};
+    RagdollCollisionFilterUVE filter{};
+    std::array<RagdollContactUVE, 16U> contacts{};
+    for (int step = 0; step < 240; ++step) {
+        const RagdollContactStatsUVE stats =
+            BuildRagdollContactsUVE(solver, colliders, filter, std::span<RagdollContactUVE>{contacts});
+        static_cast<void>(solver.StepUVE(
+            {0.0F, -9.81F, 0.0F}, kStepUVE,
+            std::span<const RagdollContactUVE>{contacts.data(), stats.generatedContactCount}));
+    }
+    EXPECT_NEAR(solver.GetBodyUVE(0U).position.y, 0.3F, 0.015F);
+    EXPECT_LT(std::sqrt(Math::LengthSquaredUVE(solver.GetBodyUVE(0U).angularVelocity)), 0.05F)
+        << "standing vertically at x=+25m on a centered floor box must generate zero fake origin torque";
+}
+
+TEST(RagdollSolverUVETest, BuildRagdollDebugLinesUVE_EmitsFiniteCapsulesAndLimitCones) {
+    TwoBodyRigUVE hingeRig = MakeTwoBodyRigUVE(/*hinge=*/true);
+    std::array<ColliderDebugLineUVE, 512U> buffer{};
+    const ColliderDebugBuildResultUVE res =
+        BuildRagdollDebugLinesUVE(hingeRig.solver, std::span<ColliderDebugLineUVE>{buffer});
+    EXPECT_GT(res.lineCount, 40U);
+    EXPECT_FALSE(res.truncated);
+    for (std::size_t i = 0U; i < res.lineCount; ++i) {
+        EXPECT_TRUE(Math::IsFiniteUVE(buffer[i].from));
+        EXPECT_TRUE(Math::IsFiniteUVE(buffer[i].to));
+    }
+
+    // Small buffer degrades cleanly via truncation without writing out of bounds.
+    std::array<ColliderDebugLineUVE, 8U> tiny{};
+    const ColliderDebugBuildResultUVE trunc =
+        BuildRagdollDebugLinesUVE(hingeRig.solver, std::span<ColliderDebugLineUVE>{tiny});
+    EXPECT_EQ(trunc.lineCount, 8U);
+    EXPECT_TRUE(trunc.truncated);
 }
 
 } // namespace

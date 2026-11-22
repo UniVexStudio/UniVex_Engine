@@ -18,6 +18,7 @@
 #include "i_asset_database.h"
 #include "mesh_asset.h"
 #include "mesh_component.h"
+#include "ragdoll_3d.h"
 #include "skeleton_3d.h"
 #include "camera_component.h"
 #include "bone_attachment_3d.h"
@@ -345,6 +346,13 @@ std::uint64_t EditorDetailsUVE::StructureSignatureUVE(const Scene::EntityUVE ent
                 HashUVE(h, static_cast<std::uint64_t>(skeleton.bones.size()));
             }
         }
+        if (snapshot.typeIndex == std::type_index(typeid(Scene::Ragdoll3DComponentUVE)) && instance != nullptr) {
+            const auto& ragdoll = *static_cast<const Scene::Ragdoll3DComponentUVE*>(instance);
+            HashUVE(h, static_cast<std::uint64_t>(ragdoll.bones.size()));
+            HashUVE(h, ragdoll.initialized ? 1U : 0U);
+            HashUVE(h, ragdoll.editorPreviewSimulating ? 1U : 0U);
+            HashUVE(h, static_cast<std::uint64_t>(m_selectedRagdollBoneIndex));
+        }
     }
     return h;
 }
@@ -560,6 +568,9 @@ void EditorDetailsUVE::RebuildUVE(const Scene::EntityUVE entity) {
         m_pendingMaterials.clear();
         if (entry->typeIndex == std::type_index(typeid(Scene::CameraComponentUVE))) {
             AddCameraPreviewUVE(entity);
+        }
+        if (entry->typeIndex == std::type_index(typeid(Scene::Ragdoll3DComponentUVE))) {
+            AddRagdollBuilderUVE(entity);
         }
     }
     // A model's own materials (one per surface), edited in place like a slot's.

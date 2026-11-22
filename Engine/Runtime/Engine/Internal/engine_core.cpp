@@ -3496,12 +3496,17 @@ void EngineCoreUVE::SyncBoneAttachment3DObjectsUVE() {
 }
 
 void EngineCoreUVE::SyncRagdoll3DObjectsUVE() {
-    // The resolution rules live with the ragdolls they act on (Scene::UpdateRagdoll3DObjectsUVE).
-    // What this seam is for is the ORDER: after the animation pass that composed the skeleton's
-    // pose, and before the graph propagates world transforms, so the ragdoll wins the pose and the
-    // mesh follows it in the same frame.
-    static_cast<void>(Scene::UpdateRagdoll3DObjectsUVE(
-        *m_entityManager, static_cast<float>(m_frameStats.deltaTimeSeconds)));
+    // BUG #2 FIX: Gate normal ragdoll simulation strictly behind Running mode (scaled by
+    // m_simulationSpeedScale) so ragdolls never collapse in Edit mode or while paused, while
+    // still stepping ragdolls explicitly marked with `editorPreviewSimulating` for live Editor preview!
+    const float rawDt = static_cast<float>(m_frameStats.deltaTimeSeconds);
+    if (m_simulationExecutionMode == SimulationExecutionModeUVE::Running) {
+        static_cast<void>(Scene::UpdateRagdoll3DObjectsUVE(
+            *m_entityManager, rawDt * m_simulationSpeedScale, /*editorPreviewOnly=*/false));
+    } else {
+        static_cast<void>(Scene::UpdateRagdoll3DObjectsUVE(
+            *m_entityManager, rawDt, /*editorPreviewOnly=*/true));
+    }
 }
 
 void EngineCoreUVE::SyncCameraFollowUVE() {
@@ -4796,11 +4801,10 @@ void EngineCoreUVE::Update() {
         SyncPerceptionUVE(scaledFrameDelta);
         SyncAiBrainsUVE(scaledFrameDelta);
     }
-    // Bone attachments follow the pose that was just evaluated, and do it before the graph
-    // propagates world transforms: a weapon on a hand is on the hand in the same frame the hand
-    // moved, rather than a frame behind the animation that owns it.
-    SyncBoneAttachment3DObjectsUVE();
+    // Ragdolls finalize the skeleton pose before bone attachments & spring bones sample it, so
+    // weapons/helmets attached to a simulated limb stay glued in the exact same frame.
     SyncRagdoll3DObjectsUVE();
+    SyncBoneAttachment3DObjectsUVE();
     SyncCameraFollowUVE();
     m_sceneGraph->UpdateUVE(*m_entityManager);
     // The fraction of a fixed step already elapsed, handed to the renderer so it can draw between

@@ -3680,6 +3680,140 @@ void DeclareFullBodyIKUVE(std::vector<TypeMetadataEntryUVE>& entries) {
             }));
 }
 
+/// Ragdoll3D: articulated passive, active-motor, and partial-subtree ragdoll driving a Skeleton3D.
+void DeclareRagdoll3DUVE(std::vector<TypeMetadataEntryUVE>& entries) {
+    using R = Ragdoll3DComponentUVE;
+    const auto entityReference = [](TypeMetadataPropertyUVE property) {
+        property.flags = TypeMetadataPropertyFlagsUVE::EntityReference;
+        return property;
+    };
+    AddValidatedUVE<Ragdoll3DComponentUVE, &IsRagdoll3DComponentAuthoredValidUVE>(
+        entries,
+        MakeEntryUVE("component.ragdoll_3d", "Ragdoll3DComponentUVE", "Ragdoll3D", kSectionOrderTypeSpecificUVE,
+            {
+                entityReference(WithTooltipUVE(DeclareUVE<&R::skeleton>("skeleton", "Skeleton",
+                                                                        kPropertyTypeEntityUVE),
+                                               "Skeleton3D posed by this ragdoll.")),
+                WithTooltipUVE(DeclareUVE<&R::enabled>("enabled", "Enabled", kPropertyTypeBoolUVE),
+                               "Enable or pause ragdoll simulation."),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&R::mode>(
+                                              "mode", "Mode",
+                                              {
+                                                  {static_cast<std::int64_t>(RagdollModeUVE::Kinematic), "Kinematic"},
+                                                  {static_cast<std::int64_t>(RagdollModeUVE::Active), "Active"},
+                                                  {static_cast<std::int64_t>(RagdollModeUVE::Simulating), "Simulating"},
+                                                  {static_cast<std::int64_t>(RagdollModeUVE::BlendingOut), "BlendingOut"},
+                                              }),
+                                          "Kinematic tracks animation; Active uses PD motors; Simulating is full ragdoll."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(DeclareEnumUVE<&R::qualityPreset>(
+                                              "qualityPreset", "Quality Preset",
+                                              {
+                                                  {static_cast<std::int64_t>(RagdollQualityPresetUVE::DesktopAAA), "DesktopAAA"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPresetUVE::MobileBalanced), "MobileBalanced"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPresetUVE::MobileFast), "MobileFast"},
+                                                  {static_cast<std::int64_t>(RagdollQualityPresetUVE::Custom), "Custom"},
+                                              }),
+                                          "Balances solver substeps and self-collision for desktop vs low-end mobile."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::physicsBlendWeight>(
+                                                           "physicsBlendWeight", "Physics Blend",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 1.0, 0.05),
+                                          "Blend between animated pose (0) and physics ragdoll (1)."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::gravity>("gravity", "Gravity", kPropertyTypeVector3UVE),
+                                          "World gravity acceleration applied to dynamic limbs."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::initialVelocity>("initialVelocity", "Initial Velocity",
+                                                                          kPropertyTypeVector3UVE),
+                                          "Extra linear velocity added when simulation starts."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::partialRootBoneName>("partialRootBoneName", "Partial Root Bone",
+                                                                              kPropertyTypeStringUVE),
+                                          "Empty simulates full body; naming a bone simulates only its subtree."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::enableSelfCollision>("enableSelfCollision", "Self-Collision",
+                                                                              kPropertyTypeBoolUVE),
+                                          "Prevent non-adjacent limbs from clipping through the torso."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::enableDynamicPushback>("enableDynamicPushback", "Dynamic Pushback",
+                                                                                kPropertyTypeBoolUVE),
+                                          "Transfer ragdoll contact impulses back to dynamic Rigid3D props."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::driveEntityTransform>("driveEntityTransform", "Drive Entity Transform",
+                                                                               kPropertyTypeBoolUVE),
+                                          "Move the skeleton entity transform to follow the fallen pelvis."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(DeclareUVE<&R::inheritAnimatedVelocity>("inheritAnimatedVelocity", "Inherit Velocity",
+                                                                                  kPropertyTypeBoolUVE),
+                                          "Carry animated limb velocities into ragdoll upon activation."),
+                           "Simulation"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::motorStiffness>("motorStiffness", "Motor Stiffness",
+                                                                                      kPropertyTypeFloatUVE),
+                                                       0.0, 2000.0, 10.0),
+                                          "Joint PD spring stiffness in Active Ragdoll mode."),
+                           "Active Motors"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::motorDamping>("motorDamping", "Motor Damping",
+                                                                                    kPropertyTypeFloatUVE),
+                                                       0.0, 200.0, 2.0),
+                                          "Joint PD angular damping in Active Ragdoll mode."),
+                           "Active Motors"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::maxMotorTorque>("maxMotorTorque", "Max Motor Torque",
+                                                                                      kPropertyTypeFloatUVE),
+                                                       0.0, 2000.0, 10.0),
+                                          "Torque cap (N.m) allowing heavy impacts to overpower motors."),
+                           "Active Motors"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveLinearStiffness>(
+                                                           "rootDriveLinearStiffness", "Root Linear Stiffness",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 2000.0, 10.0),
+                                          "Optional world-space linear spring holding pelvis in Active mode."),
+                           "Root Drive"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveLinearDamping>(
+                                                           "rootDriveLinearDamping", "Root Linear Damping",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 200.0, 2.0),
+                                          "Damping for Active mode world-space root linear drive."),
+                           "Root Drive"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveMaxLinearForce>(
+                                                           "rootDriveMaxLinearForce", "Root Max Linear Force",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 5000.0, 25.0),
+                                          "Maximum force (N) for Active mode root linear drive."),
+                           "Root Drive"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveAngularStiffness>(
+                                                           "rootDriveAngularStiffness", "Root Angular Stiffness",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 2000.0, 10.0),
+                                          "World-space upright balance stiffness for pelvis in Active mode."),
+                           "Root Drive"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveAngularDamping>(
+                                                           "rootDriveAngularDamping", "Root Angular Damping",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 200.0, 2.0),
+                                          "Angular damping for Active mode root upright drive."),
+                           "Root Drive"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::rootDriveMaxAngularTorque>(
+                                                           "rootDriveMaxAngularTorque", "Root Max Angular Torque",
+                                                           kPropertyTypeFloatUVE),
+                                                       0.0, 2000.0, 10.0),
+                                          "Maximum torque (N.m) for Active mode root upright drive."),
+                           "Root Drive"),
+                InGroupUVE(WithTooltipUVE(WithRangeUVE(DeclareUVE<&R::maxSubstepsPerFrame>(
+                                                           "maxSubstepsPerFrame", "Max Substeps",
+                                                           kPropertyTypeUInt32UVE),
+                                                       1.0, static_cast<double>(Physics::kMaximumRagdollSubstepsUVE), 1.0),
+                                          "Maximum fixed physics substeps per frame."),
+                           "Solver"),
+                InGroupUVE(DeclareRuntimeStateUVE<&R::initialized>("initialized", "Initialized", kPropertyTypeBoolUVE),
+                           "State"),
+                InGroupUVE(DeclareRuntimeStateUVE<&R::editorPreviewSimulating>("editorPreviewSimulating", "Preview Active",
+                                                                               kPropertyTypeBoolUVE),
+                           "State"),
+            }));
+}
+
 /// Concrete RenderInstance3D children. Each brings exactly its own section; everything above it
 /// comes from the bases.
 void DeclareRenderInstanceObjectsUVE(std::vector<TypeMetadataEntryUVE>& entries) {
@@ -4074,6 +4208,7 @@ void DeclareObjectCommonUVE(std::vector<TypeMetadataEntryUVE>& entries) {
     DeclareBoneAttachmentUVE(entries);
     DeclareTwoBoneIKUVE(entries);
     DeclareFullBodyIKUVE(entries);
+    DeclareRagdoll3DUVE(entries);
     DeclareObjectCommonUVE(entries);
 
     TypeMetadataRegistryUVE registry;

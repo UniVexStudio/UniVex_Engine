@@ -21,6 +21,9 @@ namespace UVE::Physics {
 inline constexpr std::size_t kMaximumRagdollBodiesUVE = 24U;
 inline constexpr std::size_t kMaximumRagdollJointsUVE = 24U;
 inline constexpr std::size_t kMaximumRagdollContactsUVE = 128U;
+inline constexpr std::size_t kMaximumRagdollSelfContactsUVE = 64U;
+inline constexpr std::uint32_t kInvalidRagdollBodyUVE = 0xFFFFFFFFU;
+inline constexpr std::uint32_t kInvalidRagdollColliderIndexUVE = 0xFFFFFFFFU;
 
 /// Ragdolls are integrated in fixed steps so the same fall traces the same arc at 30, 60 or 144 fps.
 /// 1/240 s is chosen for the same reason every shipping engine does: a limb tip reaches 20 m/s in a
@@ -67,6 +70,27 @@ enum class RagdollMotionUVE : std::uint8_t {
     Locked,
 };
 
+/// World-space PD drive for a single ragdoll body (UE5 Chaos Physics Control / pelvis balance drive).
+///
+/// Joint motors only control relative orientation between parent and child; a world-space drive lets
+/// an active ragdoll or hit-reaction root track an animated pelvis position/orientation with bounded
+/// force/torque so bullets and heavy impacts can still overpower it naturally.
+struct RagdollBodyDriveUVE final {
+    bool enabled = false;
+    Math::Vector3UVE targetPosition{};
+    Math::QuaternionUVE targetRotation{};
+    Math::Vector3UVE targetLinearVelocity{};
+    Math::Vector3UVE targetAngularVelocity{};
+    float linearStiffness = 0.0F;
+    float linearDamping = 0.0F;
+    float maxLinearForce = 0.0F;
+    float angularStiffness = 0.0F;
+    float angularDamping = 0.0F;
+    float maxAngularTorque = 0.0F;
+
+    [[nodiscard]] bool operator==(const RagdollBodyDriveUVE&) const noexcept = default;
+};
+
 /// One simulated bone: a rigid capsule with mass, a diagonal local inertia tensor, and damping.
 ///
 /// Capsules, not boxes, because that is what every production physics asset generates for limbs: a
@@ -92,6 +116,11 @@ struct RagdollBodyUVE final {
     /// bounce; every engine default of 0.3-0.5 is what makes physical characters read as rubber.
     float restitution = 0.0F;
     bool gravityEnabled = true;
+    /// When true, the body acts as an infinite-mass animated anchor (used for partial ragdoll /
+    /// subtree hit reactions where e.g. legs remain animated while upper-body limbs simulate).
+    bool kinematic = false;
+    /// Optional world-space PD control drive for Active Ragdoll / Physical Animation.
+    RagdollBodyDriveUVE worldDrive{};
 
     // ---- Runtime ----
     Math::Vector3UVE position{};
@@ -103,6 +132,28 @@ struct RagdollBodyUVE final {
     float inverseMass = 0.0F;
 
     [[nodiscard]] bool operator==(const RagdollBodyUVE&) const noexcept = default;
+};
+
+/// Active Ragdoll / Physical Animation PD angular motor (UE5 Physics Control / Jolt DriveToPoseUsingMotors).
+///
+/// Solved with an unconditionally stable implicit spring-damper clamped by `maxTorque`, and executed
+/// before anatomical joint limits so motors can never snap a limb past its joint cone.
+struct RagdollJointMotorUVE final {
+    bool enabled = false;
+    /// Target relative rotation of `secondFrame` in `firstFrame` space (identity = bind pose).
+    Math::QuaternionUVE targetRelativeRotation{};
+    /// Desired relative angular velocity in `firstFrame` space (rad/s).
+    Math::Vector3UVE targetAngularVelocity{};
+    /// Proportional gain (s^-2). Higher values track animated poses more stiffly.
+    float angularStiffness = 140.0F;
+    /// Derivative damping gain (s^-1). Prevents ringing while tracking fast animation swings.
+    float angularDamping = 18.0F;
+    /// Maximum torque in N.m that the motor may exert (allows heavy hits to overpower the pose).
+    float maxTorque = 180.0F;
+    /// Per-joint strength multiplier in [0, 1] for hit-reaction / partial weakness profiles.
+    float strengthScale = 1.0F;
+
+    [[nodiscard]] bool operator==(const RagdollJointMotorUVE&) const noexcept = default;
 };
 
 /// One joint between two bodies.
@@ -153,12 +204,14 @@ struct RagdollJointUVE final {
     /// Whether position projection corrects this joint's drift. Others gate projection per joint
     /// because projecting a joint that is being pushed apart by a collision fights the collision.
     bool projectionEnabled = true;
+    /// Optional Active Ragdoll angular PD motor driving this joint toward an animated pose.
+    RagdollJointMotorUVE motor{};
 
     [[nodiscard]] bool operator==(const RagdollJointUVE&) const noexcept = default;
 };
 
-/// One contact between a ragdoll body and something the world layer found. The solver never looks at
-/// the scene: it is handed these and nothing else, which is what keeps it testable without an ECS.
+/// One contact between a ragdoll body and either world geometry or another ragdoll body. The solver
+/// never looks at the scene: it is handed these and nothing else, which keeps it testable without ECS.
 struct RagdollContactUVE final {
     std::uint32_t body = 0U;
     /// World-space contact position, on the body's surface.
@@ -169,8 +222,29 @@ struct RagdollContactUVE final {
     float depth = 0.0F;
     float friction = 0.8F;
     float restitution = 0.0F;
+    /// Optional second ragdoll body index for internal self-collision; `kInvalidRagdollBodyUVE` for
+    /// external world geometry contacts.
+    std::uint32_t otherBody = kInvalidRagdollBodyUVE;
+    /// Optional caller collider index used to report applied impulses back for dynamic Rigid3D pushback.
+    std::uint32_t colliderIndex = kInvalidRagdollColliderIndexUVE;
+    /// Surface velocity of the contacted external object at `point` (moving platforms / dynamic bodies).
+    Math::Vector3UVE otherVelocity{};
+    /// Effective inverse mass of an external dynamic body (0 for static geometry).
+    float otherInverseMass = 0.0F;
 
     [[nodiscard]] bool operator==(const RagdollContactUVE&) const noexcept = default;
+};
+
+/// World-space contact impulse reported back after a solver step so the scene layer can apply
+/// equal-and-opposite pushback impulses to dynamic `Rigid3DComponentUVE` entities.
+struct RagdollContactFeedbackUVE final {
+    std::uint32_t body = 0U;
+    std::uint32_t colliderIndex = kInvalidRagdollColliderIndexUVE;
+    Math::Vector3UVE worldPoint{};
+    /// Net world-space impulse (N.s) applied TO the ragdoll body (negate to push the other body).
+    Math::Vector3UVE appliedImpulse{};
+
+    [[nodiscard]] bool operator==(const RagdollContactFeedbackUVE&) const noexcept = default;
 };
 
 struct RagdollStepSettingsUVE final {
@@ -183,6 +257,15 @@ struct RagdollStepSettingsUVE final {
     float sleepDelaySeconds = kRagdollSleepDelaySecondsUVE;
     float sleepLinearSpeed = kRagdollSleepLinearSpeedUVE;
     float sleepAngularSpeed = kRagdollSleepAngularSpeedUVE;
+    /// Jolt/Havok-style inertia tensor conditioning inside the solver: bounds each body's principal
+    /// inertia axis ratio and cross-chain ratio so thin extremities never explode against heavy torsos.
+    bool stabilizeInertia = true;
+    float maxPrincipalInertiaRatio = 4.0F;
+    float maxChainInertiaRatio = 16.0F;
+    /// Enables Jolt-style non-adjacent limb self-collision (using the solver's collision filter table).
+    bool enableSelfCollision = false;
+
+    [[nodiscard]] bool operator==(const RagdollStepSettingsUVE&) const noexcept = default;
 };
 
 /// What one fixed step actually did. Reported rather than hidden because every number here is
@@ -193,6 +276,7 @@ struct RagdollStepReportUVE final {
     std::size_t velocityIterations = 0U;
     std::size_t positionIterations = 0U;
     std::size_t resolvedContactCount = 0U;
+    std::size_t selfContactCount = 0U;
     /// Joints carrying at least one non-Free angular motion - i.e. joints that actually constrain
     /// something. A rig wired entirely with Free joints reports zero, which is the fastest way to
     /// notice a physics asset whose limits never got authored.
@@ -203,28 +287,16 @@ struct RagdollStepReportUVE final {
     float maximumJointDrift = 0.0F;
 };
 
-/// A bounded, deterministic articulated-body solver for ragdolls.
+/// A bounded, deterministic articulated-body solver for passive, partial and active ragdolls.
 ///
-/// The method is sequential impulses (also called projected Gauss-Seidel), the family the standard
-/// PhysX-backed ragdolls, Bullet and Box2D all use: each joint and each contact is solved in turn,
-/// applying an impulse that removes the constraint's relative velocity, repeating until the
-/// corrections stop fighting each other. It is not an exact solver - a 19-body chain never fully
-/// converges - but it is unconditionally stable at any mass ratio, which a direct or a Jacobian
-/// solve is not, and it degrades into "slightly soft joints" rather than into an explosion.
+/// The method is sequential impulses (projected Gauss-Seidel) with accumulated clamped contact and
+/// one-sided joint limit impulses, Jolt/Havok principal inertia conditioning, non-adjacent limb
+/// self-collision filtering, unconditionally stable implicit PD joint/body motors, and elliptical
+/// swing-cone + linear re-projection.
 ///
 /// Determinism is structural rather than hoped-for: bodies are visited in index order, joints in
-/// index order, contacts in the order the caller supplied them, and there is no threading and no
-/// iteration over an unordered container anywhere in the step. Two runs of the same input produce
-/// the same bits, which is what `Test/Physics/ragdoll_solver_uve_tests.cpp` asserts directly.
-///
-/// Deliberately absent, and each for a reason:
-///  * No self-collision between the ragdoll's own bodies. Others disable collision between
-///    constrained bodies for the same reason: adjacent capsules overlap at bind, and solving that
-///    overlap costs more than the silhouette it would buy.
-///  * No joint motors, no pose matching, no get-up. This is a passive ragdoll, not an active one.
-///  * No warm starting across steps. It would help a resting stack and does nothing for a ragdoll
-///    that is mostly airborne, and it would make the result depend on history the digest does not
-///    carry.
+/// index order, contacts in deterministic order, with fixed-capacity arrays, zero heap allocation,
+/// and zero unordered containers anywhere in the step.
 class RagdollSolverUVE final {
 public:
     /// Clears every body and joint and re-seeds the inertia of each authored body from its shape.
@@ -232,7 +304,8 @@ public:
     [[nodiscard]] bool ResetUVE(std::span<const RagdollBodyUVE> bodies);
 
     /// Adds one joint. Refused (false, nothing stored) for a joint whose body indices are out of
-    /// range or equal, or when the joint table is full.
+    /// range or equal, or when the joint table is full. Automatically disables self-collision between
+    /// the directly jointed pair.
     [[nodiscard]] bool AddJointUVE(const RagdollJointUVE& joint);
 
     [[nodiscard]] std::size_t GetBodyCountUVE() const noexcept { return m_bodyCount; }
@@ -240,11 +313,29 @@ public:
     [[nodiscard]] const RagdollBodyUVE& GetBodyUVE(std::size_t index) const noexcept;
     [[nodiscard]] RagdollBodyUVE& GetBodyUVE(std::size_t index) noexcept;
     [[nodiscard]] const RagdollJointUVE& GetJointUVE(std::size_t index) const noexcept;
+    [[nodiscard]] RagdollJointUVE& GetJointUVE(std::size_t index) noexcept;
 
     /// Recomputes `inverseMass` and `inverseInertiaLocal` from the authored mass and capsule. Call it
     /// after changing those fields; `ResetUVE` and `AddJointUVE` do not do it for you, because a
     /// caller that knows better (a hand-tuned inertia tensor) must be able to override it.
     void RebuildInertiaUVE() noexcept;
+
+    /// Jolt/Havok-style permanent inertia tensor conditioning: clamps each body's principal inertia
+    /// ratio to `maxPrincipalRatio` and cross-body inverse inertia spread to `maxChainRatio`.
+    void StabilizeInertiaUVE(float maxPrincipalRatio = 4.0F, float maxChainRatio = 16.0F) noexcept;
+
+    /// Builds the Jolt-style non-adjacent self-collision filter table: disables body pairs separated
+    /// by fewer than `minimumJointHops` joints (default 2 = disables parent-child pairs) and
+    /// optionally disables any pairs whose capsules already overlap in the current (bind) pose.
+    void RebuildSelfCollisionFilterUVE(bool disableCurrentPoseOverlaps = true,
+                                       std::uint32_t minimumJointHops = 2U) noexcept;
+
+    /// Explicitly enables or disables self-collision between two ragdoll bodies.
+    void SetSelfCollisionPairEnabledUVE(std::uint32_t firstBody, std::uint32_t secondBody,
+                                        bool enabled) noexcept;
+
+    /// True if `firstBody` and `secondBody` are allowed to generate self-collision contacts.
+    [[nodiscard]] bool CanSelfCollideUVE(std::uint32_t firstBody, std::uint32_t secondBody) const noexcept;
 
     /// Total mass in kilograms - what a character's ragdoll should sum to, and the cheapest single
     /// check that a physics asset is not authored at ten times human density.
@@ -255,6 +346,13 @@ public:
     [[nodiscard]] RagdollStepReportUVE StepUVE(const Math::Vector3UVE& gravity, float deltaTimeSeconds,
                                                std::span<const RagdollContactUVE> contacts,
                                                const RagdollStepSettingsUVE& settings = {});
+
+    /// Impulses applied to external colliders carrying a valid `colliderIndex` during the most recent
+    /// `StepUVE` call, used for two-way dynamic `Rigid3D` pushback.
+    [[nodiscard]] std::span<const RagdollContactFeedbackUVE> GetLastContactFeedbackUVE() const noexcept {
+        return std::span<const RagdollContactFeedbackUVE>{m_lastContactFeedback.data(),
+                                                          m_lastContactFeedbackCount};
+    }
 
     /// Puts every body to sleep immediately and zeroes its velocity.
     void SleepUVE() noexcept;
@@ -269,27 +367,49 @@ public:
                          const Math::Vector3UVE& worldPoint) noexcept;
 
 private:
-    struct AngularConstraintUVE final {
-        std::size_t jointIndex = 0U;
-        /// World-space rotation axis, recomputed each time the joint is visited.
-        Math::Vector3UVE axis{};
-        /// Signed angle about `axis` and the interval it is allowed in, in radians.
-        float angle = 0.0F;
-        float lower = 0.0F;
-        float upper = 0.0F;
-        bool locked = false;
+    struct ContactSolveStateUVE final {
+        float accumulatedNormal = 0.0F;
+        float accumulatedTangent1 = 0.0F;
+        float accumulatedTangent2 = 0.0F;
+        Math::Vector3UVE normal{};
+        Math::Vector3UVE tangent1{};
+        Math::Vector3UVE tangent2{};
+        float restitutionTarget = 0.0F;
+        bool valid = false;
     };
 
+    struct JointAccumulatorsUVE final {
+        float twistLimit = 0.0F;
+        float swingConeLimit = 0.0F;
+        float swing1Limit = 0.0F;
+        float swing2Limit = 0.0F;
+        Math::Vector3UVE motorAngular{};
+    };
+
+    struct BodyDriveAccumulatorUVE final {
+        Math::Vector3UVE linearImpulse{};
+        Math::Vector3UVE angularImpulse{};
+    };
+
+    void PrepareEffectiveInertiasUVE(const RagdollStepSettingsUVE& settings) noexcept;
+    std::size_t GenerateSelfContactsUVE(std::span<RagdollContactUVE> outSelfContacts) const noexcept;
     void IntegrateVelocitiesUVE(const Math::Vector3UVE& gravity, float deltaTimeSeconds) noexcept;
     void SolveJointVelocityUVE(const RagdollJointUVE& joint) noexcept;
-    void SolveJointLimitsUVE(const RagdollJointUVE& joint) noexcept;
-    void SolveContactVelocityUVE(const RagdollContactUVE& contact) noexcept;
+    void SolveJointMotorUVE(const RagdollJointUVE& joint, JointAccumulatorsUVE& accum,
+                            float deltaTimeSeconds) noexcept;
+    void SolveJointLimitsUVE(const RagdollJointUVE& joint, JointAccumulatorsUVE& accum) noexcept;
+    void SolveBodyDriveUVE(std::size_t bodyIndex, BodyDriveAccumulatorUVE& accum,
+                           float deltaTimeSeconds) noexcept;
+    void PrepareContactSolveStateUVE(const RagdollContactUVE& contact,
+                                     ContactSolveStateUVE& outState) const noexcept;
+    void SolveContactVelocityUVE(const RagdollContactUVE& contact, ContactSolveStateUVE& state) noexcept;
     void IntegratePositionsUVE(float deltaTimeSeconds) noexcept;
     void ProjectJointsUVE() noexcept;
     void ProjectContactsUVE(std::span<const RagdollContactUVE> contacts, float contactSlop,
                             float alpha) noexcept;
     void UpdateSleepUVE(float deltaTimeSeconds, const RagdollStepSettingsUVE& settings) noexcept;
 
+    [[nodiscard]] float EffectiveInverseMassUVE(std::size_t bodyIndex) const noexcept;
     void ApplyImpulseAtPointUVE(std::size_t bodyIndex, const Math::Vector3UVE& impulse,
                                 const Math::Vector3UVE& worldOffset) noexcept;
     void ApplyRotationUVE(std::size_t bodyIndex, const Math::Vector3UVE& axis, float radians) noexcept;
@@ -302,9 +422,13 @@ private:
                                                      const Math::Vector3UVE& worldOffset) const noexcept;
 
     std::array<RagdollBodyUVE, kMaximumRagdollBodiesUVE> m_bodies{};
+    std::array<Math::Vector3UVE, kMaximumRagdollBodiesUVE> m_effectiveInverseInertiaLocal{};
+    std::array<std::uint32_t, kMaximumRagdollBodiesUVE> m_selfCollisionMask{};
     std::size_t m_bodyCount = 0U;
     std::array<RagdollJointUVE, kMaximumRagdollJointsUVE> m_joints{};
     std::size_t m_jointCount = 0U;
+    std::array<RagdollContactFeedbackUVE, kMaximumRagdollContactsUVE> m_lastContactFeedback{};
+    std::size_t m_lastContactFeedbackCount = 0U;
     /// The clamped step the current solve is using. The limit bias is `angle / dt`, so the solver
     /// needs the step size; passing it down every call site would be four more parameters for one
     /// value that cannot change mid-step.

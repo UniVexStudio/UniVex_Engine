@@ -227,4 +227,142 @@ ColliderDebugBuildResultUVE BuildColliderDebugLinesUVE(const Scene::ColliderComp
     return result;
 }
 
+ColliderDebugBuildResultUVE BuildRagdollDebugLinesUVE(const RagdollSolverUVE& solver,
+                                                      const std::span<ColliderDebugLineUVE> outLines,
+                                                      const RagdollDebugDrawOptionsUVE& options) noexcept {
+    ColliderDebugBuildResultUVE result;
+    const std::size_t bodyCount = solver.GetBodyCountUVE();
+    if (outLines.empty() || bodyCount == 0U) return result;
+
+    if (options.drawBodies) {
+        for (std::size_t index = 0U; index < bodyCount; ++index) {
+            if (result.lineCount >= outLines.size()) {
+                result.truncated = true;
+                return result;
+            }
+            const RagdollBodyUVE& body = solver.GetBodyUVE(index);
+            if (!std::isfinite(body.radius) || !(body.radius > 0.0F)) continue;
+            Scene::ColliderComponentUVE capsule;
+            capsule.shapeType = Scene::ColliderShapeTypeUVE::Capsule;
+            capsule.radius = body.radius;
+            capsule.height = 2.0F * (std::max(0.0F, body.halfHeight) + body.radius);
+            const ColliderDebugBuildResultUVE sub = BuildColliderDebugLinesUVE(
+                capsule, body.position, body.rotation,
+                outLines.subspan(result.lineCount), options.style);
+            result.lineCount += sub.lineCount;
+            if (sub.truncated) {
+                result.truncated = true;
+                return result;
+            }
+        }
+    }
+
+    if (!options.drawJointCones) return result;
+
+    const float coneLen =
+        std::isfinite(options.jointConeLength) && options.jointConeLength > 0.01F ? options.jointConeLength : 0.14F;
+    const float degToRad = kPiUVE / 180.0F;
+    constexpr std::size_t kConeSegments = 16U;
+
+    const std::size_t jointCount = solver.GetJointCountUVE();
+    for (std::size_t jointIndex = 0U; jointIndex < jointCount; ++jointIndex) {
+        const RagdollJointUVE& joint = solver.GetJointUVE(jointIndex);
+        if (joint.firstBody >= bodyCount || joint.secondBody >= bodyCount) continue;
+        const RagdollBodyUVE& first = solver.GetBodyUVE(joint.firstBody);
+        const RagdollBodyUVE& second = solver.GetBodyUVE(joint.secondBody);
+        if (!Math::IsFiniteUVE(first.position) || !Math::IsFiniteUVE(first.rotation) ||
+            !Math::IsFiniteUVE(second.position) || !Math::IsFiniteUVE(second.rotation)) {
+            continue;
+        }
+
+        const Math::Vector3UVE pivot = first.position + Math::RotateVectorUVE(first.rotation, joint.firstAnchor);
+        const Math::QuaternionUVE worldFrame = Math::MultiplyUVE(first.rotation, joint.firstFrame);
+        const Math::Vector3UVE twistAxis = Math::RotateVectorUVE(worldFrame, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+        const Math::Vector3UVE swing2Axis = Math::RotateVectorUVE(worldFrame, Math::Vector3UVE{0.0F, 1.0F, 0.0F});
+        const Math::Vector3UVE swing1Axis = Math::RotateVectorUVE(worldFrame, Math::Vector3UVE{0.0F, 0.0F, 1.0F});
+
+        const bool isHinge = joint.swing1Motion == RagdollMotionUVE::Locked &&
+                             joint.swing2Motion == RagdollMotionUVE::Locked &&
+                             joint.twistMotion == RagdollMotionUVE::Limited;
+
+        if (isHinge) {
+            // Hinge axis pin bar.
+            if (!PushLineUVE(pivot - twistAxis * (coneLen * 0.45F), pivot + twistAxis * (coneLen * 0.45F),
+                             outLines, result)) {
+                return result;
+            }
+            // Twist limit arc fan in the plane orthogonal to `twistAxis`.
+            const float lowerRad =
+                (joint.twistAsymmetric ? joint.twistLowerLimitDegrees : -joint.twistLimitDegrees) * degToRad;
+            const float upperRad =
+                (joint.twistAsymmetric ? joint.twistUpperLimitDegrees : joint.twistLimitDegrees) * degToRad;
+            const Math::Vector3UVE refDir = swing2Axis;
+            const Math::Vector3UVE orthoDir = swing1Axis;
+            const auto arcPoint = [&](const float angle) noexcept -> Math::Vector3UVE {
+                return pivot + (refDir * std::cos(angle) + orthoDir * std::sin(angle)) * coneLen;
+            };
+            const Math::Vector3UVE startPt = arcPoint(lowerRad);
+            const Math::Vector3UVE endPt = arcPoint(upperRad);
+            if (!PushLineUVE(pivot, startPt, outLines, result)) return result;
+            if (!PushLineUVE(pivot, endPt, outLines, result)) return result;
+
+            Math::Vector3UVE prev = startPt;
+            const float span = upperRad - lowerRad;
+            for (std::size_t s = 1U; s <= kConeSegments; ++s) {
+                const float angle = lowerRad + span * (static_cast<float>(s) / static_cast<float>(kConeSegments));
+                const Math::Vector3UVE cur = arcPoint(angle);
+                if (!PushLineUVE(prev, cur, outLines, result)) return result;
+                prev = cur;
+            }
+            continue;
+        }
+
+        // Elliptical swing limit cone around `twistAxis` (bone rest axis).
+        const float lim1 = joint.swing1Motion == RagdollMotionUVE::Limited
+                               ? std::clamp(joint.swing1LimitDegrees, 1.0F, 175.0F) * degToRad
+                               : 0.0F;
+        const float lim2 = joint.swing2Motion == RagdollMotionUVE::Limited
+                               ? std::clamp(joint.swing2LimitDegrees, 1.0F, 175.0F) * degToRad
+                               : 0.0F;
+        if (lim1 > 0.0F || lim2 > 0.0F) {
+            const auto conePoint = [&](const float phi) noexcept -> Math::Vector3UVE {
+                const float s1 = lim1 * std::cos(phi);
+                const float s2 = lim2 * std::sin(phi);
+                const float theta = std::hypot(s1, s2);
+                Math::Vector3UVE dir = twistAxis;
+                if (theta > 1.0e-5F) {
+                    const Math::Vector3UVE rotAxis = (swing1Axis * (s1 / theta)) + (swing2Axis * (s2 / theta));
+                    Math::QuaternionUVE q;
+                    if (Math::TryMakeAxisAngleUVE(rotAxis, theta, q)) {
+                        dir = Math::RotateVectorUVE(q, twistAxis);
+                    }
+                }
+                return pivot + dir * coneLen;
+            };
+            const float step = (2.0F * kPiUVE) / static_cast<float>(kConeSegments);
+            Math::Vector3UVE prev = conePoint(0.0F);
+            for (std::size_t s = 1U; s <= kConeSegments; ++s) {
+                const Math::Vector3UVE cur = conePoint(step * static_cast<float>(s));
+                if (!PushLineUVE(prev, cur, outLines, result)) return result;
+                prev = cur;
+            }
+            // Four cardinal meridian rays from joint pivot to cone rim.
+            for (std::size_t q = 0U; q < 4U; ++q) {
+                if (!PushLineUVE(pivot, conePoint(0.5F * kPiUVE * static_cast<float>(q)), outLines, result)) {
+                    return result;
+                }
+            }
+        }
+        // Current child frame axis ray so the author sees live deviation inside the limit cone.
+        const Math::QuaternionUVE secondWorldFrame = Math::MultiplyUVE(second.rotation, joint.secondFrame);
+        const Math::Vector3UVE currentAxis =
+            Math::RotateVectorUVE(secondWorldFrame, Math::Vector3UVE{1.0F, 0.0F, 0.0F});
+        if (!PushLineUVE(pivot, pivot + currentAxis * (coneLen * 1.15F), outLines, result)) {
+            return result;
+        }
+    }
+
+    return result;
+}
+
 } // namespace UVE::Physics

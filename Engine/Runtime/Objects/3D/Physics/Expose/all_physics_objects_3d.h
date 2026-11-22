@@ -15,6 +15,7 @@
 #include "joint_3d.h"
 #include "physical_bone_3d.h"
 #include "projectile_3d.h"
+#include "ragdoll_3d.h"
 #include "ray_cast_3d.h"
 #include "rigid_3d.h"
 #include "shape_cast_3d.h"
