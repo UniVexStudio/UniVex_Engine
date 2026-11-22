@@ -91,6 +91,7 @@ def main() -> int:
         version, (major, minor, patch, build) = _read_package_version(package)
         adb("shell", "am", "force-stop", PACKAGE)
         remote_pkg = "/data/local/tmp/smoke_engine.uvpackage"
+        remote_proj = "/data/local/tmp/smoke.uvproject"
         adb("push", str(package.resolve()), remote_pkg)
         project_json = json.dumps({
             "format": "uvproject",
@@ -104,18 +105,17 @@ def main() -> int:
             "settingsPath": "Config/project_settings.json",
             "startupScenePath": "Content/Viewport/Viewport.uvscene",
         })
-        setup_script = (
-            f"set -e; "
-            f"FILES=$(pwd)/files; "
-            f"ENG=\"$FILES/.local/share/UniVex/Engines/{version}\"; "
-            f"rm -rf \"$ENG\" \"$FILES/smoke\"; "
-            f"mkdir -p \"$ENG\" \"$FILES/smoke/Content/Viewport\" \"$FILES/smoke/Config\"; "
-            f"tar -xzf {remote_pkg} -C \"$ENG\"; "
-            f"chmod 0555 \"$ENG/uve_editor\"; "
-            f"cat > \"$FILES/smoke/smoke.uvproject\" <<'JSON'\n{project_json}\nJSON"
+        eng_rel = f"files/.local/share/UniVex/Engines/{version}"
+        adb("shell", f"run-as {PACKAGE} rm -rf {eng_rel} files/smoke")
+        adb("shell", f"run-as {PACKAGE} mkdir -p {eng_rel} files/smoke/Content/Viewport files/smoke/Config")
+        # Pipe from shell so SELinux does not block run-as from opening /data/local/tmp directly.
+        adb("shell", f"cat {remote_pkg} | run-as {PACKAGE} tar -xzf - -C {eng_rel}")
+        adb("shell", f"run-as {PACKAGE} chmod 0555 {eng_rel}/uve_editor")
+        subprocess.run(
+            [args.adb, "-s", args.serial, "shell", f"run-as {PACKAGE} tee files/smoke/smoke.uvproject >/dev/null"],
+            input=project_json, text=True, check=True,
         )
-        adb("shell", "run-as", PACKAGE, "sh", "-c", setup_script)
-        adb("shell", "rm", "-f", remote_pkg)
+        adb("shell", "rm", "-f", remote_pkg, remote_proj)
         adb("logcat", "-c")
         project_path = f"/data/data/{PACKAGE}/files/smoke/smoke.uvproject"
         adb("shell", "am", "start", "-W", "-n", ACTIVITY, "--es", "project", project_path)
