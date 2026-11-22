@@ -77,6 +77,9 @@ enum class SceneObjectKindUVE : std::uint8_t {
     /// Plays Motion Montages (attacks, reloads, emotes) on the character it is under, from its
     /// script. Appended so no existing kind's value moves.
     MontageSequencer,
+    /// Articulated passive/active physics ragdoll driving a Skeleton3D. Appended so no existing
+    /// kind's value moves.
+    Ragdoll3D,
 };
 
 struct SceneObjectDescriptorUVE final {

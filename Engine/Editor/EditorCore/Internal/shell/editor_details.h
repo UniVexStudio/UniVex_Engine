@@ -9,6 +9,7 @@
 
 #include "prism/Widget.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -95,6 +96,7 @@ private:
     void RebuildUVE(Scene::EntityUVE entity);
     // Rows some objects need beyond their properties (editor_details_objects.cpp).
     void AddCameraPreviewUVE(Scene::EntityUVE entity);
+    void AddRagdollBuilderUVE(Scene::EntityUVE entity);
     void AddSkeletonSourceUVE(int category, const EntryUVE& entry, const PropertyUVE& property, const void* instance,
                               bool writable);
     void AddSkeletonBonesUVE(int category, const void* instance);
@@ -133,6 +135,7 @@ private:
     bool m_cameraScreenOpen = true;
     // A row changed what the panel shows (a texture slot gained or lost its map): rebuild on the next refresh.
     bool m_rebuildRequested = false;
+    std::size_t m_selectedRagdollBoneIndex = 0U;
 };
 
 /// Wraps an asset slot so a file dragged from the Asset Library onto it is used (`use`), when its

@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "collider_component.h"
+#include "rigid_3d_component.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
 #include "entity_manager.h"
@@ -19,6 +20,7 @@
 #include "quaternion.h"
 #include "vector3.h"
 #include "memory_manager.h"
+#include "physical_bone_3d.h"
 #include "ragdoll_3d.h"
 #include "skeleton_3d.h"
 
@@ -388,6 +390,217 @@ TEST_F(Ragdoll3DUVETest, ApplyRagdollImpactUVE_RefusesAHitThatTouchesNothing) {
     for (std::size_t body = 0U; body < ragdoll.solver.GetBodyCountUVE(); ++body) {
         EXPECT_FLOAT_EQ(ragdoll.solver.GetBodyUVE(body).linearVelocity.x, 0.0F);
     }
+}
+
+// ---- AAA Overhaul Regression & Capability Tests -----------------------------------------------
+
+TEST_F(Ragdoll3DUVETest, RootPositionWriteBack_DropsRenderedPelvisToFloorInsteadOfFloating) {
+    // Regression test for Bug #1 (Floating Corpse): previously only rotation was written back,
+    // leaving `skeleton.pose[0].position` frozen in mid-air while physics fell to the ground!
+    const EntityUVE ragdollEntity = MakeHumanoidRagdollUVE();
+    const EntityUVE skeletonEntity = entityManager.GetComponentUVE<Ragdoll3DComponentUVE>(ragdollEntity).skeleton;
+    ASSERT_TRUE(InitializeRagdoll3DUVE(entityManager, ragdollEntity));
+
+    constexpr float kFloorTop = 0.0F;
+    static_cast<void>(MakeBoxColliderUVE({0.0F, kFloorTop - 0.5F, 0.0F}, {20.0F, 0.5F, 20.0F}));
+
+    const float initialPoseY = entityManager.GetComponentUVE<Skeleton3DComponentUVE>(skeletonEntity).pose[0].position.y;
+    for (int frame = 0; frame < 120; ++frame) {
+        UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F);
+    }
+    const float finalPoseY = entityManager.GetComponentUVE<Skeleton3DComponentUVE>(skeletonEntity).pose[0].position.y;
+    EXPECT_LT(finalPoseY, initialPoseY - 0.35F)
+        << "rendered root/pelvis pose must fall toward the floor instead of floating at bind height";
+    EXPECT_GT(finalPoseY, kFloorTop - 0.1F);
+}
+
+TEST_F(Ragdoll3DUVETest, SmartSleep_RestingCorpseSleepsAndStaysAsleepOnStaticFloorUntilHit) {
+    // Regression test for Bug #3: resting floor contacts previously woke the solver every frame forever!
+    const EntityUVE ragdollEntity = MakeHumanoidRagdollUVE();
+    Ragdoll3DComponentUVE& ragdoll = entityManager.GetComponentUVE<Ragdoll3DComponentUVE>(ragdollEntity);
+    ragdoll.stepSettings.sleepDelaySeconds = 0.2F;
+    ragdoll.stepSettings.sleepLinearSpeed = 0.15F;
+    ragdoll.stepSettings.sleepAngularSpeed = 0.4F;
+    ASSERT_TRUE(InitializeRagdoll3DUVE(entityManager, ragdollEntity));
+
+    static_cast<void>(MakeBoxColliderUVE({0.0F, -0.5F, 0.0F}, {20.0F, 0.5F, 20.0F}));
+
+    bool wentToSleep = false;
+    for (int frame = 0; frame < 360; ++frame) {
+        UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F);
+        if (ragdoll.solver.IsSleepingUVE()) {
+            wentToSleep = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(wentToSleep) << "settled ragdoll on a static floor must go to sleep";
+
+    // Must STAY asleep across subsequent frames despite resting floor contacts!
+    for (int frame = 0; frame < 60; ++frame) {
+        EXPECT_EQ(UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F), 0U);
+        EXPECT_TRUE(ragdoll.solver.IsSleepingUVE());
+    }
+
+    // External hit wakes it immediately.
+    const Math::Vector3UVE pelvisPos = ragdoll.solver.GetBodyUVE(0U).position;
+    ASSERT_TRUE(ApplyRagdollImpactUVE(entityManager, ragdollEntity, pelvisPos, {25.0F, 5.0F, 0.0F}, 1.0F));
+    EXPECT_FALSE(ragdoll.solver.IsSleepingUVE());
+}
+
+TEST_F(Ragdoll3DUVETest, DynamicRigid3DPushback_TransfersMomentumToDynamicCrate) {
+    const EntityUVE ragdollEntity = MakeHumanoidRagdollUVE();
+    ASSERT_TRUE(InitializeRagdoll3DUVE(entityManager, ragdollEntity));
+
+    // Dynamic Rigid3D crate directly beneath the falling ragdoll.
+    const EntityUVE crate = MakeBoxColliderUVE({0.0F, 0.0F, 0.0F}, {1.0F, 0.5F, 1.0F});
+    Rigid3DComponentUVE rigid{};
+    rigid.mass = 10.0F;
+    rigid.isKinematic = false;
+    entityManager.AddComponentUVE<Rigid3DComponentUVE>(crate, rigid);
+
+    for (int frame = 0; frame < 60; ++frame) {
+        UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F);
+    }
+    const Rigid3DComponentUVE& after = entityManager.GetComponentUVE<Rigid3DComponentUVE>(crate);
+    EXPECT_LT(after.velocity.y, -0.05F) << "falling ragdoll must impart downward momentum to a dynamic Rigid3D";
+}
+
+TEST_F(Ragdoll3DUVETest, MixamoTPoseRig_BuildsMultiChildPelvisUpwardAndOrthogonalElbowHinges) {
+    // Regression test for Bug #5: Mixamo names (`Hips`, `LeftUpLeg`, `LeftLeg`, `LeftArm`, `LeftForeArm`),
+    // with thighs listed BEFORE spine, and arms stretched laterally along +/-X (T-pose).
+    Skeleton3DComponentUVE mixamo;
+    mixamo.skeletonAssetPath = "MixamoTPose.glb";
+    auto addBone = [&](const char* name, std::int32_t parent, Math::Vector3UVE pos) {
+        SkeletonBoneUVE b;
+        b.name = name;
+        b.parentIndex = parent;
+        b.localPosition = pos;
+        mixamo.bones.push_back(b);
+    };
+    addBone("mixamorig:Hips", -1, {0.0F, 1.0F, 0.0F});          // 0
+    addBone("mixamorig:LeftUpLeg", 0, {0.1F, -0.05F, 0.0F});    // 1 (listed BEFORE spine!)
+    addBone("mixamorig:LeftLeg", 1, {0.0F, -0.45F, 0.0F});      // 2
+    addBone("mixamorig:Spine", 0, {0.0F, 0.25F, 0.0F});         // 3
+    addBone("mixamorig:LeftArm", 3, {0.2F, 0.2F, 0.0F});        // 4
+    addBone("mixamorig:LeftForeArm", 4, {0.3F, 0.0F, 0.0F});    // 5 (+X T-pose arm!)
+    addBone("mixamorig:LeftHand", 5, {0.28F, 0.0F, 0.0F});      // 6
+    addBone("mixamorig:RightArm", 3, {-0.2F, 0.2F, 0.0F});      // 7
+    addBone("mixamorig:RightForeArm", 7, {-0.3F, 0.0F, 0.0F});  // 8 (-X T-pose arm!)
+    addBone("mixamorig:RightHand", 8, {-0.28F, 0.0F, 0.0F});    // 9
+
+    const std::vector<RagdollBoneSetupUVE> built = BuildHumanoidRagdollBonesUVE(mixamo.bones);
+    EXPECT_EQ(built.size(), 10U) << "all 10 Mixamo bones should match the expanded profile";
+
+    const EntityUVE skelEnt = MakeSkeletonEntityUVE(mixamo);
+    const EntityUVE ragEnt = MakeRagdollUVE(skelEnt);
+    ASSERT_TRUE(InitializeRagdoll3DUVE(entityManager, ragEnt));
+
+    const Ragdoll3DComponentUVE& rag = entityManager.GetComponentUVE<Ragdoll3DComponentUVE>(ragEnt);
+    // Pelvis capsule axis must point UP toward Spine (+Y), NOT sideways down LeftUpLeg!
+    const Math::Vector3UVE pelvisAxis =
+        Math::RotateVectorUVE(rag.solver.GetBodyUVE(0U).rotation, {0.0F, 1.0F, 0.0F});
+    EXPECT_GT(pelvisAxis.y, 0.9F);
+
+    // Find LeftForeArm elbow joint: its twist axis MUST be orthogonal to the arm (+X), NOT parallel to +X!
+    bool checkedLeftElbow = false;
+    for (std::size_t j = 0U; j < rag.solver.GetJointCountUVE(); ++j) {
+        const Physics::RagdollJointUVE& joint = rag.solver.GetJointUVE(j);
+        for (const RagdollBoneBindingUVE& b : rag.bindings) {
+            if (b.bodyIndex == joint.secondBody && mixamo.bones[b.boneIndex].name == "mixamorig:LeftForeArm") {
+                const Physics::RagdollBodyUVE& parentBody = rag.solver.GetBodyUVE(joint.firstBody);
+                const Math::QuaternionUVE worldFrame = Math::MultiplyUVE(parentBody.rotation, joint.firstFrame);
+                const Math::Vector3UVE hingeWorldAxis = Math::RotateVectorUVE(worldFrame, {1.0F, 0.0F, 0.0F});
+                EXPECT_LT(std::fabs(hingeWorldAxis.x), 0.15F)
+                    << "T-pose elbow hinge axis must NOT be parallel to the arm (+X)";
+                EXPECT_GT(std::fabs(hingeWorldAxis.y), 0.85F)
+                    << "T-pose elbow hinge axis must be roughly vertical (+/-Y) to fold forearm forward";
+                checkedLeftElbow = true;
+            }
+        }
+    }
+    EXPECT_TRUE(checkedLeftElbow);
+}
+
+TEST_F(Ragdoll3DUVETest, ActiveModePartialSubtreeVelocityInheritanceAndGetUpBlendOut) {
+    const EntityUVE ragdollEntity = MakeHumanoidRagdollUVE();
+    const EntityUVE skeletonEntity = entityManager.GetComponentUVE<Ragdoll3DComponentUVE>(ragdollEntity).skeleton;
+    Ragdoll3DComponentUVE& ragdoll = entityManager.GetComponentUVE<Ragdoll3DComponentUVE>(ragdollEntity);
+    ragdoll.mode = RagdollModeUVE::Kinematic;
+    ASSERT_TRUE(InitializeRagdoll3DUVE(entityManager, ragdollEntity));
+
+    // Simulate 2 frames of rightward animated motion in Kinematic mode -> velocity inheritance!
+    Skeleton3DComponentUVE& skel = entityManager.GetComponentUVE<Skeleton3DComponentUVE>(skeletonEntity);
+    skel.pose[0].position = {0.0F, 1.0F, 0.0F};
+    UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F);
+    skel.pose[0].position = {0.1F, 1.0F, 0.0F}; // +6 m/s rightward
+    UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F);
+
+    ASSERT_TRUE(ActivateRagdollUVE(entityManager, ragdollEntity, RagdollModeUVE::Simulating));
+    EXPECT_GT(ragdoll.solver.GetBodyUVE(0U).linearVelocity.x, 3.0F)
+        << "activating ragdoll from Kinematic mode must inherit animated linear velocity";
+
+    // Test partial subtree mode: simulate ONLY spine_01+head while pelvis+leg stay kinematic!
+    ragdoll.partialRootBoneName = "spine_01";
+    ragdoll.mode = RagdollModeUVE::Active;
+    ragdoll.motorStiffness = 200.0F;
+    ragdoll.motorDamping = 24.0F;
+    ragdoll.maxMotorTorque = 200.0F;
+    UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F);
+    EXPECT_TRUE(ragdoll.solver.GetBodyUVE(0U).kinematic) << "pelvis outside partial subtree must be kinematic";
+    EXPECT_FALSE(ragdoll.solver.GetBodyUVE(1U).kinematic) << "spine_01 inside partial subtree must simulate";
+
+    // Test Prone/Supine Get-Up state classification & Pose Snapshot smooth BlendingOut!
+    ragdoll.partialRootBoneName.clear();
+    ragdoll.mode = RagdollModeUVE::Simulating;
+    Math::QuaternionUVE faceUpRot{};
+    ASSERT_TRUE(Math::TryMakeAxisAngleUVE({1.0F, 0.0F, 0.0F}, -1.5707963F, faceUpRot));
+    ragdoll.solver.GetBodyUVE(0U).rotation = faceUpRot; // Local +Z now points +Y (face up!)
+    RagdollGetUpStateUVE getUp{};
+    ASSERT_TRUE(EvaluateRagdollGetUpStateUVE(entityManager, ragdollEntity, getUp));
+    EXPECT_TRUE(getUp.valid);
+    EXPECT_EQ(getUp.orientation, RagdollLyingOrientationUVE::FaceUp);
+
+    ASSERT_TRUE(BeginBlendOutFromRagdollUVE(entityManager, ragdollEntity, 0.2F));
+    EXPECT_EQ(ragdoll.mode, RagdollModeUVE::BlendingOut);
+    for (int frame = 0; frame < 20; ++frame) {
+        UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F);
+    }
+    EXPECT_EQ(ragdoll.mode, RagdollModeUVE::Kinematic) << "completed BlendingOut transitions cleanly to Kinematic";
+
+    // Test Editor Live Preview backup & exact pose restoration!
+    skel.pose[0].position = {0.0F, 1.0F, 0.0F};
+    ASSERT_TRUE(StartRagdollEditorPreviewUVE(entityManager, ragdollEntity));
+    EXPECT_TRUE(ragdoll.editorPreviewSimulating);
+    for (int frame = 0; frame < 30; ++frame) {
+        UpdateRagdoll3DObjectsUVE(entityManager, 1.0F / 60.0F, /*editorPreviewOnly=*/true);
+    }
+    EXPECT_LT(skel.pose[0].position.y, 0.9F);
+    ASSERT_TRUE(StopRagdollEditorPreviewUVE(entityManager, ragdollEntity));
+    EXPECT_FALSE(ragdoll.editorPreviewSimulating);
+    EXPECT_NEAR(skel.pose[0].position.y, 1.0F, 1.0e-4F) << "stopping Editor Preview must restore exact bind pose";
+
+    // Test MobileFast preset scales down cost for low-end Android phones.
+    ApplyRagdollQualityPresetUVE(ragdoll, RagdollQualityPresetUVE::MobileFast);
+    EXPECT_FALSE(ragdoll.enableSelfCollision);
+    EXPECT_FALSE(ragdoll.enableDynamicPushback);
+    EXPECT_EQ(ragdoll.maxSubstepsPerFrame, 2U);
+}
+
+TEST_F(Ragdoll3DUVETest, PhysicalBone3D_DelegatesToAAASolverAndStopsOnFloorCollider) {
+    static_cast<void>(MakeBoxColliderUVE({0.0F, -0.5F, 0.0F}, {20.0F, 0.5F, 20.0F}));
+    const EntityUVE pbEntity = entityManager.CreateEntityUVE();
+    PhysicalBone3DObjectDefinitionUVE def{};
+    def.physicalBone.mass = 3.0F;
+    def.physicalBone.simulatePhysics = true;
+    ApplyPhysicalBone3DObjectDefinitionUVE(entityManager, pbEntity, def);
+    entityManager.GetComponentUVE<TransformComponentUVE>(pbEntity).localPosition = {0.0F, 0.6F, 0.0F};
+
+    for (int frame = 0; frame < 90; ++frame) {
+        EXPECT_EQ(UpdatePhysicalBone3DObjectsUVE(entityManager, {0.0F, -9.81F, 0.0F}, 1.0F / 60.0F), 1U);
+    }
+    const float finalY = entityManager.GetComponentUVE<TransformComponentUVE>(pbEntity).localPosition.y;
+    EXPECT_GT(finalY, 0.05F) << "upgraded PhysicalBone3D must rest on floor collider instead of tunneling forever";
+    EXPECT_LT(finalY, 0.35F);
 }
 
 } // namespace

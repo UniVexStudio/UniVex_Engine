@@ -7,6 +7,7 @@
 
 #include "bone_attachment_3d.h"
 #include "camera_component.h"
+#include "ragdoll_3d.h"
 #include "skeleton_3d.h"
 
 #include "prism/Application.h"
@@ -128,6 +129,195 @@ void EditorDetailsUVE::AddCameraPreviewUVE(const Scene::EntityUVE entity) {
     m_rows.push_back(row);
     m_grid->addRow(category, "View", buttons, "Preview looks through it in the viewport; Screen shows what it sees in the viewport's corner.");
 
+}
+
+// --------------------------------------------------------------------------------------- ragdoll
+
+void EditorDetailsUVE::AddRagdollBuilderUVE(const Scene::EntityUVE entity) {
+    if (!MatchesFilterUVE("Ragdoll") && !MatchesFilterUVE("Humanoid") && !MatchesFilterUVE("Preview") &&
+        !MatchesFilterUVE("Bone") && !MatchesFilterUVE("Limits")) {
+        return;
+    }
+    Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    if (!em.IsAliveUVE(entity) || !em.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(entity)) {
+        return;
+    }
+
+    const int category = m_grid->addCategory("Ragdoll3D / Builder & Preview", true);
+
+    auto generateBtn = prism::make<prism::Button>("Auto-Generate", prism::Icon::None, prism::ButtonStyle::Default);
+    generateBtn->setTooltip("Generate humanoid capsule bodies & joint limits from the linked Skeleton3D");
+    generateBtn->onClick = [this, entity] {
+        Scene::IEntityManagerUVE& entities = m_editor.m_services->GetEntityManagerUVE();
+        if (!entities.IsAliveUVE(entity) || !entities.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(entity)) return;
+        Scene::Ragdoll3DComponentUVE& ragdoll = entities.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(entity);
+        if (ragdoll.editorPreviewSimulating) {
+            static_cast<void>(Scene::StopRagdollEditorPreviewUVE(entities, entity));
+        }
+        if (ragdoll.skeleton != Scene::kInvalidEntityUVE && entities.IsAliveUVE(ragdoll.skeleton) &&
+            entities.HasComponentUVE<Scene::Skeleton3DComponentUVE>(ragdoll.skeleton)) {
+            const auto& skel = entities.GetComponentUVE<Scene::Skeleton3DComponentUVE>(ragdoll.skeleton);
+            ragdoll.bones = Scene::BuildHumanoidRagdollBonesUVE(skel.bones);
+            ragdoll.initialized = false;
+            static_cast<void>(Scene::InitializeRagdoll3DUVE(entities, entity));
+            m_selectedRagdollBoneIndex = 0U;
+            m_editor.m_sceneDirty = true;
+            m_rebuildRequested = true;
+        }
+    };
+
+    auto previewBtn = prism::make<prism::Button>("Simulate Preview", prism::Icon::Play, prism::ButtonStyle::Default);
+    previewBtn->setCheckable(true);
+    previewBtn->setTooltip("Drop and test this ragdoll live in Edit mode; turning off restores the bind pose");
+    previewBtn->onToggle = [this, entity](const bool on) {
+        Scene::IEntityManagerUVE& entities = m_editor.m_services->GetEntityManagerUVE();
+        if (!entities.IsAliveUVE(entity) || !entities.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(entity)) return;
+        if (on) {
+            static_cast<void>(Scene::StartRagdollEditorPreviewUVE(entities, entity));
+        } else {
+            static_cast<void>(Scene::StopRagdollEditorPreviewUVE(entities, entity));
+            static_cast<void>(Scene::InitializeRagdoll3DUVE(entities, entity));
+        }
+        m_rebuildRequested = true;
+    };
+
+    auto impulseBtn = prism::make<prism::Button>("Poke", prism::Icon::None, prism::ButtonStyle::Default);
+    impulseBtn->setTooltip("Apply a test sideways hit impulse to the ragdoll torso during preview");
+    impulseBtn->onClick = [this, entity] {
+        Scene::IEntityManagerUVE& entities = m_editor.m_services->GetEntityManagerUVE();
+        if (!entities.IsAliveUVE(entity) || !entities.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(entity)) return;
+        Scene::Ragdoll3DComponentUVE& ragdoll = entities.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(entity);
+        if (!ragdoll.editorPreviewSimulating) {
+            static_cast<void>(Scene::StartRagdollEditorPreviewUVE(entities, entity));
+        }
+        if (ragdoll.solver.GetBodyCountUVE() > 0U) {
+            const std::size_t targetIdx = ragdoll.solver.GetBodyCountUVE() > 1U ? 1U : 0U;
+            const Math::Vector3UVE hitPos = ragdoll.solver.GetBodyUVE(targetIdx).position;
+            static_cast<void>(Scene::ApplyRagdollImpactUVE(entities, entity, hitPos,
+                                                           Math::Vector3UVE{18.0F, 4.0F, -12.0F}, 1.0F));
+        }
+    };
+
+    auto actionBar = prism::hbox(4.0F);
+    actionBar->add(generateBtn, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    actionBar->add(previewBtn, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+    actionBar->add(impulseBtn, prism::Slot{0.0F, {}, prism::HAlign::Center, prism::VAlign::Center});
+
+    auto statusLabel = ValueLabelUVE("-");
+    auto syncRow = std::make_shared<RowUVE>();
+    std::weak_ptr<prism::Button> weakPreview = previewBtn;
+    std::weak_ptr<prism::Label> weakStatus = statusLabel;
+    syncRow->sync = [this, entity, weakPreview, weakStatus](const void*) {
+        Scene::IEntityManagerUVE& entities = m_editor.m_services->GetEntityManagerUVE();
+        if (!entities.IsAliveUVE(entity) || !entities.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(entity)) return;
+        const Scene::Ragdoll3DComponentUVE& ragdoll = entities.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(entity);
+        if (auto b = weakPreview.lock()) {
+            if (b->checked() != ragdoll.editorPreviewSimulating) {
+                b->setChecked(ragdoll.editorPreviewSimulating);
+            }
+        }
+        if (auto lbl = weakStatus.lock()) {
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "%zu bodies  |  %zu joints  |  %.1f kg  |  %s",
+                          ragdoll.solver.GetBodyCountUVE(), ragdoll.solver.GetJointCountUVE(),
+                          static_cast<double>(ragdoll.solver.GetTotalMassUVE()),
+                          ragdoll.solver.IsSleepingUVE() ? "Sleeping"
+                                                         : (ragdoll.initialized ? "Ready" : "Not Built"));
+            lbl->setText(buf);
+        }
+    };
+    syncRow->editor = actionBar.get();
+    syncRow->sync(nullptr);
+    m_rows.push_back(syncRow);
+    m_grid->addRow(category, "Actions", actionBar, "Auto-generate capsules, live preview in Edit mode, or test hit impulse.");
+    m_grid->addRow(category, "Rig Summary", statusLabel);
+
+    // Compact Per-Bone Body & Joint Limit Inspector.
+    const Scene::Ragdoll3DComponentUVE& ragdoll = em.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(entity);
+    if (ragdoll.bones.empty()) {
+        return;
+    }
+    if (m_selectedRagdollBoneIndex >= ragdoll.bones.size()) {
+        m_selectedRagdollBoneIndex = 0U;
+    }
+
+    std::vector<std::string> boneNames;
+    boneNames.reserve(ragdoll.bones.size());
+    for (const Scene::RagdollBoneSetupUVE& bone : ragdoll.bones) {
+        boneNames.push_back(bone.boneName);
+    }
+    auto bonePicker = prism::make<prism::ComboBox>(boneNames, static_cast<int>(m_selectedRagdollBoneIndex));
+    bonePicker->onChange = [this](const int index) {
+        if (index >= 0) {
+            m_selectedRagdollBoneIndex = static_cast<std::size_t>(index);
+            m_rebuildRequested = true;
+        }
+    };
+    m_grid->addRow(category, "Edit Bone", bonePicker, "Select a ragdoll body to tune mass, capsule size, and joint limits.");
+
+    const std::size_t boneIdx = m_selectedRagdollBoneIndex;
+    const Scene::RagdollBoneSetupUVE& currentBone = ragdoll.bones[boneIdx];
+
+    const auto addBoneFloatRow = [&](const std::string& label, const float initialValue, const float minVal,
+                                     const float maxVal, const float step, const int decimals,
+                                     auto setter) {
+        auto num = prism::make<prism::NumberField>(initialValue, step, decimals);
+        num->setRange(minVal, maxVal);
+        auto applyEdit = [this, entity, boneIdx, setter](const float value) {
+            Scene::IEntityManagerUVE& entities = m_editor.m_services->GetEntityManagerUVE();
+            if (!entities.IsAliveUVE(entity) || !entities.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(entity)) return;
+            Scene::Ragdoll3DComponentUVE& comp = entities.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(entity);
+            if (boneIdx >= comp.bones.size()) return;
+            setter(comp.bones[boneIdx], value);
+            if (!comp.editorPreviewSimulating) {
+                comp.initialized = false;
+                static_cast<void>(Scene::InitializeRagdoll3DUVE(entities, entity));
+            }
+            m_editor.m_sceneDirty = true;
+        };
+        num->onChange = applyEdit;
+        num->onCommit = applyEdit;
+        m_grid->addRow(category, label, num);
+    };
+
+    addBoneFloatRow("Bone Mass (kg)", currentBone.mass, 0.05F, 200.0F, 0.25F, 2,
+                    [](Scene::RagdollBoneSetupUVE& b, const float v) { b.mass = v; });
+    addBoneFloatRow("Capsule Radius", currentBone.radius, 0.01F, 1.0F, 0.005F, 3,
+                    [](Scene::RagdollBoneSetupUVE& b, const float v) { b.radius = v; });
+    addBoneFloatRow("Leaf Half-Height", currentBone.halfHeight, 0.0F, 2.0F, 0.01F, 3,
+                    [](Scene::RagdollBoneSetupUVE& b, const float v) { b.halfHeight = v; });
+    addBoneFloatRow("Swing 1 Limit (°)", currentBone.swing1LimitDegrees, 0.0F, 180.0F, 1.0F, 1,
+                    [](Scene::RagdollBoneSetupUVE& b, const float v) { b.swing1LimitDegrees = v; });
+    addBoneFloatRow("Swing 2 Limit (°)", currentBone.swing2LimitDegrees, 0.0F, 180.0F, 1.0F, 1,
+                    [](Scene::RagdollBoneSetupUVE& b, const float v) { b.swing2LimitDegrees = v; });
+    if (currentBone.twistAsymmetric) {
+        addBoneFloatRow("Twist Min (°)", currentBone.twistLowerLimitDegrees, -180.0F, 180.0F, 1.0F, 1,
+                        [](Scene::RagdollBoneSetupUVE& b, const float v) {
+                            b.twistLowerLimitDegrees = std::min(v, b.twistUpperLimitDegrees);
+                        });
+        addBoneFloatRow("Twist Max (°)", currentBone.twistUpperLimitDegrees, -180.0F, 180.0F, 1.0F, 1,
+                        [](Scene::RagdollBoneSetupUVE& b, const float v) {
+                            b.twistUpperLimitDegrees = std::max(v, b.twistLowerLimitDegrees);
+                        });
+    } else {
+        addBoneFloatRow("Twist Limit (°)", currentBone.twistLimitDegrees, 0.0F, 180.0F, 1.0F, 1,
+                        [](Scene::RagdollBoneSetupUVE& b, const float v) { b.twistLimitDegrees = v; });
+    }
+    addBoneFloatRow("Motor Scale", currentBone.motorStrengthScale, 0.0F, 1.0F, 0.05F, 2,
+                    [](Scene::RagdollBoneSetupUVE& b, const float v) { b.motorStrengthScale = v; });
+    addBoneFloatRow("Blend Weight", currentBone.blendWeight, 0.0F, 1.0F, 0.05F, 2,
+                    [](Scene::RagdollBoneSetupUVE& b, const float v) { b.blendWeight = v; });
+
+    auto simCheck = prism::make<prism::CheckBox>("Simulate Body", currentBone.simulate);
+    simCheck->onChange = [this, entity, boneIdx](const bool v) {
+        Scene::IEntityManagerUVE& entities = m_editor.m_services->GetEntityManagerUVE();
+        if (!entities.IsAliveUVE(entity) || !entities.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(entity)) return;
+        Scene::Ragdoll3DComponentUVE& comp = entities.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(entity);
+        if (boneIdx >= comp.bones.size()) return;
+        comp.bones[boneIdx].simulate = v;
+        m_editor.m_sceneDirty = true;
+    };
+    m_grid->addRow(category, "Simulate", simCheck);
 }
 
 

@@ -20,6 +20,7 @@
 #include "character_3d.h"
 #include "collider_3d.h"
 #include "collider_debug_scene.h"
+#include "ragdoll_3d.h"
 
 namespace UVE::Editor {
 namespace {
@@ -39,7 +40,7 @@ constexpr std::size_t kMaximumOverlayLinesUVE = 16384U;
 
 /// One collider's worth of lines, reused. Sized for the most tessellated shape at the finest style.
 [[nodiscard]] std::vector<Physics::ColliderDebugLineUVE>& HighlightScratchUVE() {
-    static thread_local std::vector<Physics::ColliderDebugLineUVE> scratch(512U);
+    static thread_local std::vector<Physics::ColliderDebugLineUVE> scratch(4096U);
     return scratch;
 }
 
@@ -47,42 +48,76 @@ constexpr std::size_t kMaximumOverlayLinesUVE = 16384U;
 
 void EditorUVE::BuildColliderOverlayUVE(std::vector<ViewportColliderLineUVE>& outLines) const {
     outLines.clear();
+    Scene::IEntityManagerUVE& entities = m_services->GetEntityManagerUVE();
+    const Scene::EntityUVE selected = GetSelectedEntityUVE();
+
+    if (m_viewportOverlayState.collisionShapesVisible) {
+        std::vector<Physics::ColliderDebugLineUVE>& scratch = OverlayScratchUVE();
+
+        Scene::ColliderDebugSceneSettingsUVE settings;
+        settings.maximumColliders = 1024U;
+        settings.excludedEntity = selected;
+
+        const Scene::ColliderDebugSceneStatsUVE stats = Scene::BuildColliderDebugSceneUVE(
+            entities, settings,
+            std::span<Physics::ColliderDebugLineUVE>{scratch.data(), kMaximumOverlayLinesUVE});
+
+        outLines.reserve(stats.lineCount + 512U);
+        for (std::size_t index = 0U; index < stats.lineCount; ++index) {
+            const Physics::ColliderDebugLineUVE& line = scratch[index];
+            outLines.push_back(ViewportColliderLineUVE{{line.from.x, line.from.y, line.from.z},
+                                                       {line.to.x, line.to.y, line.to.z}, false});
+        }
+
+        // Draw all non-selected initialized Ragdoll3D bodies when Show Collision is enabled.
+        Physics::RagdollDebugDrawOptionsUVE bulkRagdollOptions;
+        bulkRagdollOptions.style.circleSegments = 12U;
+        bulkRagdollOptions.drawBodies = true;
+        bulkRagdollOptions.drawJointCones = false;
+        entities.ForEachUVE<Scene::Ragdoll3DComponentUVE>(
+            [&](const Scene::EntityUVE entity, const Scene::Ragdoll3DComponentUVE& ragdoll) {
+                if (entity == selected || !ragdoll.enabled || !ragdoll.initialized) return;
+                const Physics::ColliderDebugBuildResultUVE built = Physics::BuildRagdollDebugLinesUVE(
+                    ragdoll.solver, std::span<Physics::ColliderDebugLineUVE>{scratch.data(), scratch.size()},
+                    bulkRagdollOptions);
+                for (std::size_t i = 0U; i < built.lineCount; ++i) {
+                    const Physics::ColliderDebugLineUVE& line = scratch[i];
+                    outLines.push_back(ViewportColliderLineUVE{{line.from.x, line.from.y, line.from.z},
+                                                               {line.to.x, line.to.y, line.to.z}, false});
+                }
+            });
+    }
+
+    if (selected == Scene::kInvalidEntityUVE || !entities.IsAliveUVE(selected)) {
+        return;
+    }
+
+    // Selected Ragdoll3D: always draw highlighted capsules + 3D swing cones + hinge twist arcs
+    // (initializing lazily from its linked Skeleton3D if needed so authors see capsules immediately!).
+    if (entities.HasComponentUVE<Scene::Ragdoll3DComponentUVE>(selected)) {
+        const Scene::Ragdoll3DComponentUVE& ragdoll =
+            entities.GetComponentUVE<Scene::Ragdoll3DComponentUVE>(selected);
+        if (ragdoll.initialized && ragdoll.solver.GetBodyCountUVE() > 0U) {
+            std::vector<Physics::ColliderDebugLineUVE>& highlight = HighlightScratchUVE();
+            Physics::RagdollDebugDrawOptionsUVE selectedRagdollOptions;
+            selectedRagdollOptions.style.circleSegments = 16U;
+            selectedRagdollOptions.drawBodies = true;
+            selectedRagdollOptions.drawJointCones = true;
+            const Physics::ColliderDebugBuildResultUVE built = Physics::BuildRagdollDebugLinesUVE(
+                ragdoll.solver, std::span<Physics::ColliderDebugLineUVE>{highlight.data(), highlight.size()},
+                selectedRagdollOptions);
+            for (std::size_t i = 0U; i < built.lineCount; ++i) {
+                const Physics::ColliderDebugLineUVE& line = highlight[i];
+                outLines.push_back(ViewportColliderLineUVE{{line.from.x, line.from.y, line.from.z},
+                                                           {line.to.x, line.to.y, line.to.z}, true});
+            }
+        }
+    }
+
     if (!m_viewportOverlayState.collisionShapesVisible) {
         return;
     }
 
-    std::vector<Physics::ColliderDebugLineUVE>& scratch = OverlayScratchUVE();
-
-    Scene::ColliderDebugSceneSettingsUVE settings;
-    // The overlay is a view of the whole document, so the layer filter stays open: narrowing it is
-    // a per-project need and belongs on the settings struct, not hard-coded here.
-    settings.maximumColliders = 1024U;
-    // The selected collider is drawn by the second pass below, not by the bulk one. Asking the
-    // bulk pass to leave it out keeps a shape from being drawn twice at two widths in the same
-    // pixels, which is what a highlight drawn straight over the base colour would do.
-    const Scene::EntityUVE selected = GetSelectedEntityUVE();
-    settings.excludedEntity = selected;
-
-    const Scene::ColliderDebugSceneStatsUVE stats = Scene::BuildColliderDebugSceneUVE(
-        m_services->GetEntityManagerUVE(), settings,
-        std::span<Physics::ColliderDebugLineUVE>{scratch.data(), kMaximumOverlayLinesUVE});
-
-    outLines.reserve(stats.lineCount + 256U);
-    for (std::size_t index = 0U; index < stats.lineCount; ++index) {
-        const Physics::ColliderDebugLineUVE& line = scratch[index];
-        outLines.push_back(ViewportColliderLineUVE{{line.from.x, line.from.y, line.from.z},
-                                                   {line.to.x, line.to.y, line.to.z}, false});
-    }
-
-    // Clicking the mesh marks its shape. The shape is resolved the same way the simulation
-    // resolves it, so a character whose body is the Collider3D under it highlights that one and a
-    // mesh with no collider highlights nothing at all - which is itself the useful answer.
-    if (selected == Scene::kInvalidEntityUVE) {
-        return;
-    }
-    Scene::IEntityManagerUVE& entities = m_services->GetEntityManagerUVE();
-    // A character's shape lives on a Collider3D under it, so the highlight has to ask the same
-    // question the stepper asks. For everything else this returns the entity itself.
     const Scene::EntityUVE highlighted =
         Scene::ResolveCharacterShapeEntityUVE(entities, m_services->GetSceneGraphUVE(), selected);
     if (!entities.HasComponentUVE<Scene::ColliderComponentUVE>(highlighted) ||
@@ -97,6 +132,7 @@ void EditorUVE::BuildColliderOverlayUVE(std::vector<ViewportColliderLineUVE>& ou
     const Scene::WorldTransformComponentUVE& worldTransform =
         entities.GetComponentUVE<Scene::WorldTransformComponentUVE>(highlighted);
     std::vector<Physics::ColliderDebugLineUVE>& highlight = HighlightScratchUVE();
+    Scene::ColliderDebugSceneSettingsUVE settings;
     const Physics::ColliderDebugBuildResultUVE built = Physics::BuildColliderDebugLinesUVE(
         collider, worldTransform.worldPosition, worldTransform.worldRotation,
         std::span<Physics::ColliderDebugLineUVE>{highlight.data(), highlight.size()}, settings.style,

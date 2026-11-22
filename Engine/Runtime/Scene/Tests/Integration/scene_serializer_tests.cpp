@@ -3574,6 +3574,66 @@ TEST_F(SceneSerializerUVETest, FullBodyIKPointingOutsideTheSavedSetLoadsInert) {
     EXPECT_EQ(restored.effectors[0].target, kInvalidEntityUVE);
 }
 
+TEST_F(SceneSerializerUVETest, Ragdoll3DComponent_RoundTripsWithResolvedSkeletonReference) {
+    const EntityUVE skeletonEntity = entityManager.CreateEntityUVE();
+    Skeleton3DComponentUVE skeleton;
+    skeleton.skeletonAssetPath = "Hero.glb";
+    SkeletonBoneUVE pelvis;
+    pelvis.name = "pelvis";
+    skeleton.bones = {pelvis};
+    entityManager.AddComponentUVE<Skeleton3DComponentUVE>(skeletonEntity, skeleton);
+
+    const EntityUVE ragdollEntity = entityManager.CreateEntityUVE();
+    Ragdoll3DComponentUVE ragdoll;
+    ragdoll.skeleton = skeletonEntity;
+    ragdoll.mode = RagdollModeUVE::Active;
+    ragdoll.qualityPreset = RagdollQualityPresetUVE::MobileBalanced;
+    ragdoll.physicsBlendWeight = 0.75F;
+    ragdoll.enableSelfCollision = true;
+    ragdoll.enableDynamicPushback = true;
+    ragdoll.motorStiffness = 220.0F;
+    ragdoll.motorDamping = 26.0F;
+    ragdoll.maxMotorTorque = 240.0F;
+    ragdoll.partialRootBoneName = "spine_01";
+    RagdollBoneSetupUVE bone;
+    bone.boneName = "pelvis";
+    bone.mass = 12.0F;
+    bone.radius = 0.12F;
+    bone.halfHeight = 0.08F;
+    bone.motorStrengthScale = 0.85F;
+    bone.blendWeight = 0.9F;
+    ragdoll.bones = {bone};
+    entityManager.AddComponentUVE<Ragdoll3DComponentUVE>(ragdollEntity, ragdoll);
+
+    const std::optional<SceneSnapshotUVE> snapshot =
+        serializer.CaptureUVE(entityManager, {skeletonEntity, ragdollEntity}, SceneAssetTypeUVE::Scene);
+    ASSERT_TRUE(snapshot.has_value());
+
+    EntityManagerUVE fresh{memoryManager.GetDefaultAllocatorUVE(), eventSystem};
+    const std::vector<EntityUVE> restoredRoots = serializer.RestoreUVE(fresh, *snapshot);
+    ASSERT_EQ(restoredRoots.size(), 2U);
+
+    EntityUVE restoredSkeleton = kInvalidEntityUVE;
+    EntityUVE restoredRagdoll = kInvalidEntityUVE;
+    for (const EntityUVE entity : restoredRoots) {
+        if (fresh.HasComponentUVE<Skeleton3DComponentUVE>(entity)) restoredSkeleton = entity;
+        if (fresh.HasComponentUVE<Ragdoll3DComponentUVE>(entity)) restoredRagdoll = entity;
+    }
+    ASSERT_NE(restoredSkeleton, kInvalidEntityUVE);
+    ASSERT_NE(restoredRagdoll, kInvalidEntityUVE);
+    const Ragdoll3DComponentUVE& revived = fresh.GetComponentUVE<Ragdoll3DComponentUVE>(restoredRagdoll);
+    EXPECT_EQ(revived.skeleton, restoredSkeleton);
+    EXPECT_EQ(revived.mode, RagdollModeUVE::Active);
+    EXPECT_EQ(revived.qualityPreset, RagdollQualityPresetUVE::MobileBalanced);
+    EXPECT_FLOAT_EQ(revived.physicsBlendWeight, 0.75F);
+    EXPECT_FLOAT_EQ(revived.motorStiffness, 220.0F);
+    EXPECT_EQ(revived.partialRootBoneName, "spine_01");
+    ASSERT_EQ(revived.bones.size(), 1U);
+    EXPECT_EQ(revived.bones[0].boneName, "pelvis");
+    EXPECT_FLOAT_EQ(revived.bones[0].motorStrengthScale, 0.85F);
+    EXPECT_FLOAT_EQ(revived.bones[0].blendWeight, 0.9F);
+}
+
 TEST_F(SceneSerializerUVETest, MorphTargetComponent_RoundTripsThroughCaptureRestore) {
     // The component is a sparse name/value list, so the round trip has to preserve both the names
     // (which is how shapes are addressed) and the fact that unnamed shapes simply have no row.
