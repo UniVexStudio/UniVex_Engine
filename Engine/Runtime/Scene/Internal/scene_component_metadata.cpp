@@ -83,6 +83,7 @@
 #include "player_3d.h"
 #include "two_bone_ik_3d.h"
 #include "full_body_ik_3d.h"
+#include "ragdoll_3d.h"
 #include "visibility_region_3d.h"
 #include "world_environment_3d.h"
 #include "world_partition_3d.h"
