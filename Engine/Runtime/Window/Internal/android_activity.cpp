@@ -279,4 +279,73 @@ AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* const activity) {
     return area;
 }
 
+bool SetAndroidSoftKeyboardUVE(ANativeActivity* const activity, const bool visible) {
+    if (activity == nullptr) {
+        return false;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return false;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID method =
+        type != nullptr ? env->GetMethodID(type, "setKeyboardVisible", "(Z)V") : nullptr;
+    bool handled = false;
+    if (method != nullptr) {
+        env->CallVoidMethod(activity->clazz, method, visible ? JNI_TRUE : JNI_FALSE);
+        handled = !env->ExceptionCheck();
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return handled;
+}
+
+std::vector<std::string> DrainAndroidImeEventsUVE(ANativeActivity* const activity) {
+    std::vector<std::string> events;
+    if (activity == nullptr) {
+        return events;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return events;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID method =
+        type != nullptr ? env->GetMethodID(type, "drainImeEvents", "()Ljava/lang/String;") : nullptr;
+    if (method != nullptr) {
+        const auto joined = static_cast<jstring>(env->CallObjectMethod(activity->clazz, method));
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        } else if (joined != nullptr) {
+            const char* const chars = env->GetStringUTFChars(joined, nullptr);
+            if (chars != nullptr) {
+                const std::string payload(chars);
+                env->ReleaseStringUTFChars(joined, chars);
+                std::size_t start = 0U;
+                while (start <= payload.size()) {
+                    const std::size_t sep = payload.find('\x1E', start);
+                    const std::size_t end = sep == std::string::npos ? payload.size() : sep;
+                    if (end > start) {
+                        events.emplace_back(payload.substr(start, end - start));
+                    }
+                    if (sep == std::string::npos) {
+                        break;
+                    }
+                    start = sep + 1U;
+                }
+            }
+            env->DeleteLocalRef(joined);
+        }
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return events;
+}
+
 } // namespace UVE::Window

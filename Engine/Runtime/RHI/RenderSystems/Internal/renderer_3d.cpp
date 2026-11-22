@@ -428,14 +428,15 @@ constexpr std::uint32_t kMainViewReceiverLayerMaskUVE = 0xFFFFFFFFU;
 // baseline; it is not an editor overlay and never counts as primitive presentation evidence in the
 // real-GL fixture tests.
 constexpr std::array<float, 4> kDefaultSceneClearColorUVE{0.050F, 0.050F, 0.050F, 1.0F};
-// GLES3 devices do not universally expose float color-buffer renderability as a core guarantee.
-// Keep desktop's HDR scene target, but use the core RGBA8 color-renderable format on Android so
-// the real NativeActivity viewport remains valid without requiring an optional extension.
-#if defined(__ANDROID__)
-constexpr TextureFormatUVE kSceneColorTargetFormatUVE = TextureFormatUVE::RGBA8Unorm;
-#else
-constexpr TextureFormatUVE kSceneColorTargetFormatUVE = TextureFormatUVE::RGBA16Float;
-#endif
+// Select HDR RGBA16Float whenever the active RHI backend advertises half-float color-attachment
+// renderability (all desktop GL 3.3+, Vulkan, Null model, and modern Android GPUs exposing
+// GL_EXT_color_buffer_float / GL_EXT_color_buffer_half_float), falling back to core RGBA8Unorm
+// only on constrained ES 3.0 implementations without float render target extensions.
+[[nodiscard]] TextureFormatUVE SceneColorTargetFormatUVE(const IRenderDeviceUVE& renderDevice) noexcept {
+    return renderDevice.GetCapabilitiesUVE().halfFloatColorTargets != RenderFeatureSupportUVE::Unsupported
+               ? TextureFormatUVE::RGBA16Float
+               : TextureFormatUVE::RGBA8Unorm;
+}
 constexpr std::size_t kShadowCascadeCountUVE = 3;
 constexpr std::uint32_t kShadowCascadeFirstTextureSlotUVE = kShadowMapTextureSlotUVE;
 constexpr std::uint32_t kReflectionProbeFirstTextureSlotUVE = 6U;
@@ -1397,12 +1398,13 @@ struct Renderer3DUVE::ImplUVE {
             cache.captureResolution = resolution;
         }
         if (cache.cube == kInvalidTextureHandleUVE) {
-            TextureDescUVE cubeDesc{resolution, resolution, kSceneColorTargetFormatUVE, 1};
+            const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
+            TextureDescUVE cubeDesc{resolution, resolution, sceneColorFormat, 1};
             cubeDesc.type = TextureTypeUVE::Cubemap;
             cubeDesc.arrayLayers =
                 static_cast<std::uint32_t>(Scene::kReflectionProbeCubemapFaceCountUVE);
             cache.cube = renderDevice.CreateTextureUVE(cubeDesc);
-            if (cache.cube == kInvalidTextureHandleUVE && kSceneColorTargetFormatUVE != TextureFormatUVE::RGBA8Unorm) {
+            if (cache.cube == kInvalidTextureHandleUVE && sceneColorFormat != TextureFormatUVE::RGBA8Unorm) {
                 cubeDesc.format = TextureFormatUVE::RGBA8Unorm;
                 cache.cube = renderDevice.CreateTextureUVE(cubeDesc);
             }
@@ -1816,20 +1818,21 @@ struct Renderer3DUVE::ImplUVE {
     /// not usable; higher bloom scales are added later, only when requested.
     [[nodiscard]] std::optional<SizedTargetSetUVE> CreateTargetSetUVE(const std::uint32_t width,
                                                                       const std::uint32_t height) {
+        const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
         SizedTargetSetUVE set;
         set.colorTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, kSceneColorTargetFormatUVE, 1});
+            renderDevice.CreateTextureUVE(TextureDescUVE{width, height, sceneColorFormat, 1});
         set.depthTarget =
             renderDevice.CreateTextureUVE(TextureDescUVE{width, height, TextureFormatUVE::Depth32Float, 1});
         const std::uint32_t halfWidth = HalfExtentUVE(width);
         const std::uint32_t halfHeight = HalfExtentUVE(height);
         BloomMipTargetsUVE& baseBloomTargets = set.bloomMipTargets[0U];
         baseBloomTargets.bright =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, sceneColorFormat, 1});
         baseBloomTargets.blurA =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, sceneColorFormat, 1});
         baseBloomTargets.blurB =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, kSceneColorTargetFormatUVE, 1});
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, sceneColorFormat, 1});
         const auto createSingleChannelTarget = [this](const std::uint32_t targetW, const std::uint32_t targetH) {
             TextureHandleUVE handle =
                 renderDevice.CreateTextureUVE(TextureDescUVE{targetW, targetH, TextureFormatUVE::R8Unorm, 1});
@@ -1842,8 +1845,8 @@ struct Renderer3DUVE::ImplUVE {
         set.ssaoBlurTarget = createSingleChannelTarget(halfWidth, halfHeight);
         set.contactShadowTarget = createSingleChannelTarget(width, height);
         set.ssrTarget =
-            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA16Float, 1});
-        if (set.ssrTarget == kInvalidTextureHandleUVE) {
+            renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, sceneColorFormat, 1});
+        if (set.ssrTarget == kInvalidTextureHandleUVE && sceneColorFormat != TextureFormatUVE::RGBA8Unorm) {
             set.ssrTarget =
                 renderDevice.CreateTextureUVE(TextureDescUVE{halfWidth, halfHeight, TextureFormatUVE::RGBA8Unorm, 1});
         }
@@ -1916,10 +1919,11 @@ struct Renderer3DUVE::ImplUVE {
             set->taaHistoryTargets[1] != kInvalidTextureHandleUVE) {
             return true;
         }
+        const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
         for (TextureHandleUVE& handle : set->taaHistoryTargets) {
             if (handle == kInvalidTextureHandleUVE) {
                 handle = renderDevice.CreateTextureUVE(
-                    TextureDescUVE{targetWidth, targetHeight, kSceneColorTargetFormatUVE, 1});
+                    TextureDescUVE{targetWidth, targetHeight, sceneColorFormat, 1});
             }
         }
         if (set->taaHistoryTargets[0] == kInvalidTextureHandleUVE ||
@@ -1943,13 +1947,14 @@ struct Renderer3DUVE::ImplUVE {
             set->wboitRevealTarget != kInvalidTextureHandleUVE) {
             return true;
         }
+        const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
         if (set->wboitAccumTarget == kInvalidTextureHandleUVE) {
             set->wboitAccumTarget = renderDevice.CreateTextureUVE(
-                TextureDescUVE{targetWidth, targetHeight, kSceneColorTargetFormatUVE, 1});
+                TextureDescUVE{targetWidth, targetHeight, sceneColorFormat, 1});
         }
         if (set->wboitRevealTarget == kInvalidTextureHandleUVE) {
             set->wboitRevealTarget = renderDevice.CreateTextureUVE(
-                TextureDescUVE{targetWidth, targetHeight, kSceneColorTargetFormatUVE, 1});
+                TextureDescUVE{targetWidth, targetHeight, sceneColorFormat, 1});
         }
         if (set->wboitAccumTarget == kInvalidTextureHandleUVE ||
             set->wboitRevealTarget == kInvalidTextureHandleUVE) {
@@ -2031,6 +2036,7 @@ struct Renderer3DUVE::ImplUVE {
             requestedMipCount, MaximumBloomMipCountForTargetUVE(targetWidth, targetHeight));
         std::uint32_t mipWidth = HalfExtentUVE(targetWidth);
         std::uint32_t mipHeight = HalfExtentUVE(targetHeight);
+        const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
         for (std::uint32_t mipIndex = 1U; mipIndex < targetMipCount; ++mipIndex) {
             mipWidth = HalfExtentUVE(mipWidth);
             mipHeight = HalfExtentUVE(mipHeight);
@@ -2040,11 +2046,11 @@ struct Renderer3DUVE::ImplUVE {
 
             BloomMipTargetsUVE targets;
             targets.bright = renderDevice.CreateTextureUVE(
-                TextureDescUVE{mipWidth, mipHeight, kSceneColorTargetFormatUVE, 1});
+                TextureDescUVE{mipWidth, mipHeight, sceneColorFormat, 1});
             targets.blurA = renderDevice.CreateTextureUVE(
-                TextureDescUVE{mipWidth, mipHeight, kSceneColorTargetFormatUVE, 1});
+                TextureDescUVE{mipWidth, mipHeight, sceneColorFormat, 1});
             targets.blurB = renderDevice.CreateTextureUVE(
-                TextureDescUVE{mipWidth, mipHeight, kSceneColorTargetFormatUVE, 1});
+                TextureDescUVE{mipWidth, mipHeight, sceneColorFormat, 1});
             if (targets.bright == kInvalidTextureHandleUVE || targets.blurA == kInvalidTextureHandleUVE ||
                 targets.blurB == kInvalidTextureHandleUVE) {
                 DestroyTextureIfValidUVE(renderDevice, targets.bright);

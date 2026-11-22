@@ -8,6 +8,7 @@ public class UniVexHubSetupTarget : TargetRules
     {
         Type = TargetType.Editor;
         OutputName = "uve_hub_setup";
+        IsGuiApp = true;
 
         ExtraModuleNames.AddRange(new string[] {
             "HubSetupApp"

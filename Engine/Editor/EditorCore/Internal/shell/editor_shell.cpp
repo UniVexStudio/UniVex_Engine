@@ -213,17 +213,25 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     window->add(BuildToolbarRowUVE());
     window->add(m_viewToolbar.BuildUVE());
 
+    const bool singleSurface = m_host.AppUVE().platform().singleSurface();
+    const float logicalWidth = m_host.AppUVE().windowSize().x;
+    const bool narrowLandscape = singleSurface && logicalWidth > 0.0F && logicalWidth < 760.0F;
+
     auto centre = prism::make<prism::Splitter>(prism::Orientation::Vertical);
-    centre->add(BuildViewportUVE(), prism::Splitter::Pane{400.0F, 160.0F, 1e9F, true});
+    centre->add(BuildViewportUVE(), prism::Splitter::Pane{400.0F, singleSurface ? 120.0F : 160.0F, 1e9F, true});
     m_dockArea = BuildDockUVE();
-    centre->add(m_dockArea, prism::Splitter::Pane{290.0F, 110.0F, 900.0F, false});
+    centre->add(m_dockArea, prism::Splitter::Pane{singleSurface ? 150.0F : 290.0F, singleSurface ? 90.0F : 110.0F, 900.0F, false});
+    if (singleSurface) {
+        m_dockVisible = false;
+        m_dockArea->setVisible(false);
+    }
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     m_outlinerColumn = BuildOutlinerUVE();
     m_detailsColumn = BuildDetailsUVE();
-    columns->add(m_outlinerColumn, prism::Splitter::Pane{250.0F, 170.0F, 700.0F, false});
-    columns->add(centre, prism::Splitter::Pane{800.0F, 320.0F, 1e9F, true});
-    columns->add(m_detailsColumn, prism::Splitter::Pane{330.0F, 220.0F, 800.0F, false});
+    columns->add(m_outlinerColumn, prism::Splitter::Pane{singleSurface ? 190.0F : 250.0F, singleSurface ? 150.0F : 170.0F, 700.0F, false});
+    columns->add(centre, prism::Splitter::Pane{800.0F, singleSurface ? 240.0F : 320.0F, 1e9F, true});
+    columns->add(m_detailsColumn, prism::Splitter::Pane{singleSurface ? 230.0F : 330.0F, singleSurface ? 180.0F : 220.0F, 800.0F, false});
     window->add(columns, prism::Slot{1.0F});
 
     // Docking: drag a panel's tab onto another panel's edge to split it there (the Details under
@@ -233,16 +241,21 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     m_dockSpace->attach(*m_outlinerTabs);
     m_dockSpace->attach(*m_detailsTabs);
     m_dockSpace->onChanged = [this] { UpdateDockColumnsUVE(); };
+    if (narrowLandscape) {
+        m_editor.m_scenePanelVisible = false;
+        m_editor.m_inspectorPanelVisible = false;
+        UpdateDockColumnsUVE();
+    }
 
     window->add(BuildDockBarUVE());
 
-    auto frame = prism::make<prism::Border>();
-    frame->setBackground(prism::ThemeColor(&prism::Theme::window));
-    frame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
-    frame->setChild(window);
+    m_safeFrame = prism::make<prism::Border>();
+    m_safeFrame->setBackground(prism::ThemeColor(&prism::Theme::window));
+    m_safeFrame->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(singleSurface ? 0.0F : 1.0F));
+    m_safeFrame->setChild(window);
     // The loading screen over everything while the editor starts (and a corner panel after).
     auto root = prism::make<prism::Overlay>();
-    root->add(frame);
+    root->add(m_safeFrame);
     m_loadingScreen = prism::make<EditorLoadingScreenUVE>();
     m_loadingScreen->onDismiss = [this] { m_editor.DismissStartupLoadingUVE(); };
     root->add(m_loadingScreen);
@@ -447,8 +460,42 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
 
 prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     // Sub row 1: #4 open folder, #5 save, #3 selection mode | #14 blueprint (beta) | transport.
+    const bool singleSurface = m_host.AppUVE().platform().singleSurface();
     auto row = prism::hbox(4.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
+
+    if (singleSurface) {
+        auto hubBtn = prism::make<prism::Button>("Hub", prism::Icon::ChevronLeft);
+        hubBtn->setTooltip("Return to UniVex Hub");
+        hubBtn->onClick = [] { prism::Application::get().quit(); };
+        row->add(hubBtn, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        row->add(HSeparatorUVE());
+
+        m_outlinerToggleButton = prism::make<prism::Button>("Outliner", prism::Icon::Layers);
+        m_outlinerToggleButton->setTooltip("Toggle Outliner panel");
+        m_outlinerToggleButton->onClick = [this] {
+            const bool next = !m_editor.m_scenePanelVisible;
+            m_editor.m_scenePanelVisible = next;
+            if (next && m_host.AppUVE().windowSize().x < 760.0F) {
+                m_editor.m_inspectorPanelVisible = false;
+            }
+            UpdateDockColumnsUVE();
+        };
+        row->add(m_outlinerToggleButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+
+        m_inspectorToggleButton = prism::make<prism::Button>("Inspector", prism::Icon::Properties);
+        m_inspectorToggleButton->setTooltip("Toggle Inspector panel");
+        m_inspectorToggleButton->onClick = [this] {
+            const bool next = !m_editor.m_inspectorPanelVisible;
+            m_editor.m_inspectorPanelVisible = next;
+            if (next && m_host.AppUVE().windowSize().x < 760.0F) {
+                m_editor.m_scenePanelVisible = false;
+            }
+            UpdateDockColumnsUVE();
+        };
+        row->add(m_inspectorToggleButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        row->add(HSeparatorUVE());
+    }
 
     // #4 open folder, then #5 save beside #3 selection mode.
     auto openFolder = ToolButtonUVE(prism::Icon::FolderOpen, "Open folder (Asset Table)");
@@ -466,7 +513,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
         m_editor.m_viewportOverlayState.gizmoMode = kModes[static_cast<std::size_t>(std::clamp(index, 0, 3))];
     };
     auto modeBox = prism::make<prism::SizeBox>();
-    modeBox->setWidthOverride(150.0F);
+    modeBox->setWidthOverride(singleSurface ? 112.0F : 150.0F);
     modeBox->setContent(m_selectionMode);
     row->add(modeBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     row->add(HSeparatorUVE());
@@ -1071,6 +1118,12 @@ void EditorShellUVE::RefreshDetailsUVE() {
 
 void EditorShellUVE::RefreshToolbarUVE() {
     const EditorPlayModeStateUVE play = m_editor.GetPlayModeStateUVE();
+    if (m_outlinerToggleButton) {
+        m_outlinerToggleButton->setChecked(m_editor.m_scenePanelVisible);
+    }
+    if (m_inspectorToggleButton) {
+        m_inspectorToggleButton->setChecked(m_editor.m_inspectorPanelVisible);
+    }
     if (m_playButton) {
         m_playButton->setChecked(play == EditorPlayModeStateUVE::Playing);
     }
@@ -1111,7 +1164,9 @@ void EditorShellUVE::RefreshToolbarUVE() {
         std::string text = m_editor.m_sceneDirty ? "unsaved" : "saved";
         text += " | " + std::to_string(m_editor.m_selectedEntities.size()) + " selected | ";
         text += state;
-        text += "    UVE Editor 0.1";
+        if (!m_host.AppUVE().platform().singleSurface()) {
+            text += "    UVE Editor 0.1";
+        }
         if (m_statusLabel->text() != text) {
             m_statusLabel->setText(text);
         }
@@ -1149,12 +1204,15 @@ void EditorShellUVE::AppendCameraScreenUVE(EditorUVE& editor, const EditorDetail
     state.studioView = false;
     state.entityAuthoringView = editor.IsEntityDocumentActiveUVE();
     state.input = EditorViewportInputUVE{};
+    const float dpiScale = std::max(1.0F, prism::Application::get().platform().dpiScale());
     Math::Vector2UVE used{0.0F, 0.0F};
-    const std::uint64_t texture =
-        editor.m_viewports.cameraPreview(Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used, state);
+    const std::uint64_t texture = editor.m_viewports.cameraPreview(
+        Math::Vector2UVE{std::max(1.0F, std::floor(rect.w * dpiScale)), std::max(1.0F, std::floor(rect.h * dpiScale))},
+        used, state);
     if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
+        const float invScale = dpiScale > 1.0F ? (1.0F / dpiScale) : 1.0F;
         EditorHostUVE::ViewImageUVE view{};
-        view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x, used.y};
+        view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x * invScale, used.y * invScale};
         view.texture = static_cast<std::uint32_t>(texture);
         view.usedWidth = used.x;
         view.usedHeight = used.y;
@@ -1167,6 +1225,13 @@ void EditorShellUVE::AppendCameraScreenUVE(EditorUVE& editor, const EditorDetail
 void EditorShellUVE::FrameUVE() {
     if (!m_host.IsReadyUVE()) {
         return;
+    }
+    if (m_safeFrame) {
+        const std::array<float, 4> area = m_editor.SafeAreaInsetsUVE();
+        if (area != m_safeArea) {
+            m_safeArea = area;
+            m_safeFrame->setPadding(prism::Margin(area[0], area[1], area[2], area[3]));
+        }
     }
     // The editor's own work per frame (UI, views, panels), logged every five seconds: what a slow
     // machine pays for the editor itself, apart from waiting on the display.
@@ -1319,9 +1384,12 @@ void EditorShellUVE::FrameUVE() {
                 state.orbitRequestY = orbit[1];
             }
             state.input = m_host.CaptureViewInputUVE(rect);
+            const float dpiScale = std::max(1.0F, state.input.dpiScale);
+            const float renderW = std::max(1.0F, std::floor(rect.w * dpiScale));
+            const float renderH = std::max(1.0F, std::floor(rect.h * dpiScale));
             Math::Vector2UVE used{0.0F, 0.0F};
             const std::uint64_t texture =
-                m_editor.m_viewports.level(Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used, state);
+                m_editor.m_viewports.level(Math::Vector2UVE{renderW, renderH}, used, state);
             m_host.ApplyViewCursorUVE(state.input);
             state.orbitRequestX = 0.0F;
             state.orbitRequestY = 0.0F;
@@ -1329,8 +1397,9 @@ void EditorShellUVE::FrameUVE() {
                 m_gizmos->SyncUVE();
             }
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
+                const float invScale = dpiScale > 1.0F ? (1.0F / dpiScale) : 1.0F;
                 EditorHostUVE::ViewImageUVE view{};
-                view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x, used.y};
+                view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x * invScale, used.y * invScale};
                 view.texture = static_cast<std::uint32_t>(texture);
                 view.usedWidth = used.x;
                 view.usedHeight = used.y;

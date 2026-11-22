@@ -769,6 +769,12 @@ struct EngineConfigUVE {
     bool telemetryAnalyticsOptInUVE = false;
     std::int64_t crashReportSubmissionPolicyUVE = 0; // 0=AskEachTime, 1=Always, 2=Never
     bool anonymousUsageStatsOptInUVE = false;
+    /// Opt-in lightweight UI-host mode (used by UniVex Hub & Setup): installs a zero-cost no-op
+    /// IRenderer3DUVE instead of compiling 3D shaders and allocating shadow/post-process targets.
+    bool skip3dRendererUVE = false;
+    /// Opt-in silent UI-host mode (used by UniVex Hub & Setup): uses NullAudioDeviceUVE directly
+    /// instead of opening an OS audio backend stream (miniaudio/AAudio).
+    bool skipAudioUVE = false;
 };
 
 } // namespace UVE::Core

@@ -8,6 +8,7 @@ public class UniVexEditorTarget : TargetRules
     {
         Type = TargetType.Editor;
         OutputName = "uve_editor";
+        IsGuiApp = true;
 
         ExtraModuleNames.AddRange(new string[] {
             "EditorApp"

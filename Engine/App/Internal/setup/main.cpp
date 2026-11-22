@@ -13,6 +13,7 @@
 #include <thread>
 #include <vector>
 
+#include "application_runtime.h"
 #include "tar_gz_archive.h"
 #include "hub_setup.h"
 #include "launcher_files.h"
@@ -194,6 +195,9 @@ struct SetupOptionsUVE final {
 /// elsewhere (isolated runs). `--step`, `--frames` and `--screenshot` drive the window for automation.
 int main(const int argc, char** argv) {
     const SetupOptionsUVE options = ParseOptionsUVE(argc, argv);
+    if (options.error.has_value() || options.silent) {
+        UVE::Platform::AttachParentConsoleForCliUVE();
+    }
     if (options.error.has_value()) {
         std::cerr << "uve_hub_setup: " << *options.error << '\n';
         return kInvalidCommandLineExitCodeUVE;

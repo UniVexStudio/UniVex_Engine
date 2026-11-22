@@ -249,6 +249,14 @@ void EditorUVE::SetPrismUiEnabledUVE(const bool enabled, std::filesystem::path a
     m_prismAssetDir = std::move(assetDir);
 }
 
+void EditorUVE::SetSafeAreaCallbackUVE(std::function<std::array<float, 4>()> callback) {
+    m_safeAreaCallback = std::move(callback);
+}
+
+std::array<float, 4> EditorUVE::SafeAreaInsetsUVE() const {
+    return m_safeAreaCallback ? m_safeAreaCallback() : std::array<float, 4>{0.0F, 0.0F, 0.0F, 0.0F};
+}
+
 bool EditorUVE::SavePrismScreenshotUVE(const std::filesystem::path& path) {
     return m_levelShell != nullptr && m_levelShell->SaveScreenshotUVE(path);
 }

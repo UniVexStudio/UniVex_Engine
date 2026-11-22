@@ -188,6 +188,137 @@ def build_installer(bin_dir: Path, target: str, tag: str, output: Path, check_ve
     return installer
 
 
+DEB_PACKAGE_NAME = "univex-hub"
+DEB_INSTALL_ROOT = "opt/univex-hub"
+DEB_ARCHITECTURE = "amd64"
+DEB_MAINTAINER = "UniVex Studios <support@univexstudios.com>"
+DEB_MIME_TYPE = "application/x-univex-project"
+DEB_ICON_NAME = "univex-hub"
+DEB_MIME_ICON_NAME = "application-x-univex-project"
+DEB_ICON_SIZES = (16, 24, 32, 48, 64, 128, 256, 512)
+
+
+def deb_installer_name(version: str, architecture: str = DEB_ARCHITECTURE) -> str:
+    return f"UniVexHub-{package_engine.display_version(version)}-linux-{architecture}.deb"
+
+
+def deb_package_version(version: str) -> str:
+    """Valid Debian package version (MAJOR.MINOR.PATCH[~buildN])."""
+    core, _, build = version.partition("+build.")
+    return core if build in ("", "0") else f"{core}.0.{build}"
+
+
+def build_linux_deb(bin_dir: Path, version: str, output: Path, architecture: str = DEB_ARCHITECTURE) -> Path:
+    """Builds a double-clickable Debian/Ubuntu .deb package for UniVex Hub (zero terminal needed)."""
+    dpkg_deb = shutil.which("dpkg-deb")
+    if dpkg_deb is None:
+        raise package_engine.PackagingError("dpkg-deb is needed to build the Linux .deb installer")
+    output.mkdir(parents=True, exist_ok=True)
+    deb_path = output / deb_installer_name(version, architecture)
+    display_ver = package_engine.display_version(version)
+    deb_ver = deb_package_version(version)
+    with tempfile.TemporaryDirectory() as scratch:
+        pkg_root = Path(scratch) / "pkg"
+        opt_dir = pkg_root / DEB_INSTALL_ROOT
+        opt_dir.mkdir(parents=True)
+        executables = stage_payload(bin_dir, "linux", opt_dir)
+        for path in opt_dir.rglob("*"):
+            if path.is_dir():
+                path.chmod(package_engine.DIRECTORY_MODE)
+            elif path.is_file():
+                mode = package_engine.EXECUTABLE_MODE if path.name in executables else package_engine.FILE_MODE
+                path.chmod(mode)
+
+        usr_bin = pkg_root / "usr" / "bin"
+        usr_bin.mkdir(parents=True)
+        (usr_bin / HUB_STEM).symlink_to(f"/{DEB_INSTALL_ROOT}/{HUB_STEM}")
+
+        apps_dir = pkg_root / "usr" / "share" / "applications"
+        apps_dir.mkdir(parents=True)
+        desktop_entry = (
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            f"Name={HUB_DISPLAY_NAME}\n"
+            f"Comment={HUB_DESCRIPTION}\n"
+            "Version=1.5\n"
+            f"X-UniVex-Version={display_ver}\n"
+            f"Exec=/{DEB_INSTALL_ROOT}/{HUB_STEM} %f\n"
+            f"Path=/{DEB_INSTALL_ROOT}\n"
+            f"Icon={DEB_ICON_NAME}\n"
+            f"StartupWMClass={HUB_DISPLAY_NAME}\n"
+            f"MimeType={DEB_MIME_TYPE};\n"
+            "Terminal=false\n"
+            "Categories=Development;IDE;\n"
+        )
+        desktop_file = apps_dir / "univex-hub.desktop"
+        desktop_file.write_text(desktop_entry, encoding="utf-8")
+        desktop_file.chmod(package_engine.FILE_MODE)
+
+        mime_dir = pkg_root / "usr" / "share" / "mime" / "packages"
+        mime_dir.mkdir(parents=True)
+        mime_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">\n'
+            f'  <mime-type type="{DEB_MIME_TYPE}">\n'
+            f"    <comment>{PROJECT_TYPE_NAME}</comment>\n"
+            f'    <icon name="{DEB_MIME_ICON_NAME}"/>\n'
+            f'    <glob pattern="*{PROJECT_EXTENSION}"/>\n'
+            "  </mime-type>\n"
+            "</mime-info>\n"
+        )
+        mime_file = mime_dir / "univex-project.xml"
+        mime_file.write_text(mime_xml, encoding="utf-8")
+        mime_file.chmod(package_engine.FILE_MODE)
+
+        for size in DEB_ICON_SIZES:
+            src_png = BRAND_DIR / BRAND_PNG_DIRECTORY / f"univex-logo-{size}.png"
+            if not src_png.is_file():
+                continue
+            for ctx, icon_stem in (("apps", DEB_ICON_NAME), ("mimetypes", DEB_MIME_ICON_NAME)):
+                dst_dir = pkg_root / "usr" / "share" / "icons" / "hicolor" / f"{size}x{size}" / ctx
+                dst_dir.mkdir(parents=True, exist_ok=True)
+                dst_png = dst_dir / f"{icon_stem}.png"
+                shutil.copy2(src_png, dst_png)
+                dst_png.chmod(package_engine.FILE_MODE)
+
+        installed_kb = max(1, sum(p.stat().st_size for p in pkg_root.rglob("*") if p.is_file()) // 1024)
+        debian_dir = pkg_root / "DEBIAN"
+        debian_dir.mkdir()
+        debian_dir.chmod(package_engine.DIRECTORY_MODE)
+        control = (
+            f"Package: {DEB_PACKAGE_NAME}\n"
+            f"Version: {deb_ver}\n"
+            "Section: devel\n"
+            "Priority: optional\n"
+            f"Architecture: {architecture}\n"
+            f"Installed-Size: {installed_kb}\n"
+            "Depends: libc6, libgl1, libx11-6, libcurl4 | libcurl4t64\n"
+            f"Maintainer: {DEB_MAINTAINER}\n"
+            f"Description: {HUB_DISPLAY_NAME}\n"
+            f" {HUB_DESCRIPTION}.\n"
+        )
+        control_file = debian_dir / "control"
+        control_file.write_text(control, encoding="utf-8")
+        control_file.chmod(package_engine.FILE_MODE)
+
+        refresh_script = (
+            "#!/bin/sh\n"
+            "set -e\n"
+            "command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q /usr/share/applications || true\n"
+            "command -v update-mime-database >/dev/null 2>&1 && update-mime-database /usr/share/mime || true\n"
+            "command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true\n"
+            "exit 0\n"
+        )
+        for script_name in ("postinst", "postrm"):
+            script_path = debian_dir / script_name
+            script_path.write_text(refresh_script, encoding="utf-8")
+            script_path.chmod(package_engine.EXECUTABLE_MODE)
+
+        subprocess.run([dpkg_deb, "--root-owner-group", "--build", str(pkg_root), str(deb_path)], check=True)
+    write_checksum(deb_path)
+    return deb_path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bin", required=True, type=Path, help="UVBT output directory of the release build")
@@ -195,15 +326,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tag", required=True, help="Hub release tag, e.g. hub-v0.1.0")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--skip-version-check", action="store_true")
+    parser.add_argument("--deb", action="store_true",
+                        help="Also build a double-clickable Debian/Ubuntu .deb package (Linux target)")
     parser.add_argument("--iscc", type=Path, help=f"Inno Setup's ISCC (Windows; default: ${ISCC_ENVIRONMENT} or the PATH)")
     args = parser.parse_args(argv)
     try:
         installer = build_installer(args.bin, args.target, args.tag, args.output, not args.skip_version_check,
                                     args.iscc)
+        print(installer)
+        if args.deb:
+            if args.target != "linux":
+                raise package_engine.PackagingError("--deb is only supported with --target linux")
+            deb = build_linux_deb(args.bin, parse_hub_tag(args.tag), args.output)
+            print(deb)
     except (package_engine.PackagingError, subprocess.CalledProcessError) as error:
         print(f"make_hub_installer: {error}", file=sys.stderr)
         return 1
-    print(installer)
     return 0
 
 

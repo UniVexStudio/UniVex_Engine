@@ -426,10 +426,14 @@ GlRenderDeviceUVE::GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
             for (GLint extensionIndex = 0; extensionIndex < extensionCount; ++extensionIndex) {
                 const char* const extensionName = reinterpret_cast<const char*>(
                     m_impl->state.gl.glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(extensionIndex)));
-                if (extensionName != nullptr &&
-                    std::strcmp(extensionName, "GL_EXT_texture_filter_anisotropic") == 0) {
+                if (extensionName == nullptr) {
+                    continue;
+                }
+                if (std::strcmp(extensionName, "GL_EXT_texture_filter_anisotropic") == 0) {
                     m_impl->state.samplerAnisotropySupported = true;
-                    break;
+                } else if (std::strcmp(extensionName, "GL_EXT_color_buffer_float") == 0 ||
+                           std::strcmp(extensionName, "GL_EXT_color_buffer_half_float") == 0) {
+                    m_impl->state.halfFloatColorTargetsSupported = true;
                 }
             }
             if (m_impl->state.samplerAnisotropySupported) {
@@ -451,6 +455,8 @@ GlRenderDeviceUVE::GlRenderDeviceUVE(Window::IWindowManagerUVE& windowManager)
             glGetIntegerv(kGlCompressedTextureFormatsUVE, m_impl->state.compressedTextureFormats.data());
         }
 #if !defined(__ANDROID__)
+        // Desktop OpenGL 3.3+ guarantees RGBA16F color-renderable FBO attachments in core.
+        m_impl->state.halfFloatColorTargetsSupported = true;
         // GL_MAJOR_VERSION/GL_MINOR_VERSION are valid integer queries from GL 3.0 onward, which
         // this engine's desktop baseline already requires - safe to call unconditionally here.
         GLint contextMajorVersion = 0;
@@ -1499,9 +1505,14 @@ RenderDeviceCapabilitiesUVE GlRenderDeviceUVE::GetCapabilitiesUVE() const noexce
     const bool syncVersion = major > 3 || (major == 3 && minor >= 2);
     const bool queryVersion = major > 3 || (major == 3 && minor >= 3);
     if (syncVersion) caps.geometryShaders = native; // Geometry is core since desktop GL 3.2.
-    if (m_impl->state.supportsComputeShadersUVE && gl.glMemoryBarrier)
-        caps.memoryBarriers = native;
+    if (m_impl->state.supportsComputeShadersUVE) {
+        caps.storageBuffers = native;
+        if (gl.glMemoryBarrier)
+            caps.memoryBarriers = native;
+    }
 #endif
+    if (m_impl->state.halfFloatColorTargetsSupported)
+        caps.halfFloatColorTargets = native;
     if (copyVersion && gl.glCopyBufferSubData)
         caps.bufferCopy = native;
     if (gl.glBlitFramebuffer && gl.glGenFramebuffers && gl.glDeleteFramebuffers && gl.glBindFramebuffer &&

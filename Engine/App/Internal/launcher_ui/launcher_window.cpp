@@ -43,10 +43,17 @@ int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
     // The window draws its own title bar (PRISM window chrome) in place of the OS frame.
     config.windowBorderlessUVE = true;
     config.logFilePath = desc.logFile;
+#if defined(__ANDROID__)
+    // Let EGL VSync pace native 60/90/120 Hz on Android instead of capping at 60 FPS on CPU.
+    config.focusedFrameRateCapUVE = 0U;
+#else
     config.focusedFrameRateCapUVE = kFocusedFrameRateCapUVE;
+#endif
     config.unfocusedFrameRateCapUVE = kUnfocusedFrameRateCapUVE;
     config.shadowMapResolution = kLauncherShadowMapResolutionUVE;
     config.ssaoEnabledUVE = false;
+    config.skip3dRendererUVE = true;
+    config.skipAudioUVE = true;
     config.commandLineArgs = desc.commandLine;
     config.nativeWindowHandleUVE = desc.nativeSurface;
     if (!desc.shaderDirectory.empty()) {

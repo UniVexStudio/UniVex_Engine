@@ -55,6 +55,7 @@ public:
   bool snap = true;
   float moveSnap = 0.5f, rotateSnap = 15.f, scaleSnap = 0.1f;
   float size = 1.f;                                  // on-screen size multiplier
+  float hitScale = 1.f;                              // hit-test radius multiplier (1 on desktop, >1 on touch)
   Color axisColor[3] = {Color(230, 78, 78), Color(110, 200, 70), Color(70, 140, 235)};
   Color hotColor = Color(255, 215, 90);
   int dotCount = 15;                                 // 15 = pivot + 6 faces + 8 corners (unit box); 1 = pivot only

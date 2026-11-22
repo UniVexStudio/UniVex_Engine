@@ -159,6 +159,7 @@ class TargetInfo:
         self.extra_modules = []
         self.global_defs = []
         self.output_name = name
+        self.is_gui_app = False
 
     def __repr__(self):
         return f"<Target {self.name} ({self.target_type})>"
@@ -276,6 +277,10 @@ class CSharpParser:
         pattern_out = re.search(r'OutputName\s*=\s*"([^"]+)"', text)
         if pattern_out:
             target.output_name = pattern_out.group(1)
+
+        pattern_gui = re.search(r"IsGuiApp\s*=\s*(true|false)\b", text)
+        if pattern_gui:
+            target.is_gui_app = pattern_gui.group(1) == "true"
 
         return target
 
@@ -910,6 +915,8 @@ class EngineBuilder:
         if toolchain.is_android:
             # Isolate internal symbols so dlopen(uve_editor) never collides with libunivex_hub.so.
             base_cflags.append("-fvisibility=hidden")
+            if configuration in ("Release", "Shipping"):
+                base_cflags += ["-ffunction-sections", "-fdata-sections"]
         if os.environ.get("UVBT_WERROR", "").strip() in ("1", "true", "yes"):
             base_cflags.append("-Werror")
 
@@ -1197,8 +1204,12 @@ class EngineBuilder:
             link_cmd += ["-shared", "-static-libstdc++", f"-Wl,-u,{ANDROID_ACTIVITY_ENTRY}", "-Wl,--no-undefined",
                          "-Wl,-Bsymbolic", f"-Wl,--version-script={export_map}",
                          f"-Wl,-z,max-page-size={ANDROID_PAGE_SIZE_BYTES}"]
+            if configuration in ("Release", "Shipping"):
+                link_cmd.append("-Wl,--gc-sections")
             link_cmd += [f"-L{d}" for d in self.android_library_dirs(toolchain) if d.is_dir()]
             all_libs.append(str(tp_lib_dir / "libandroid_native_app_glue.a"))
+        if platform == "Windows" and target.is_gui_app:
+            link_cmd.append("-mwindows")
         if platform == "Windows" and "uiautomationcore" in unique_sys:
             # MinGW ships no UIAutomationCore import library: build one from the exported names PRISM uses.
             self._ensure_uiautomation_import_lib(lib_dir)

@@ -79,7 +79,7 @@ ProcessLaunchResultUVE LaunchDetachedProcessUVE(const ProcessLaunchDescUVE& desc
     PROCESS_INFORMATION process{};
     const std::wstring workingDirectory = desc.workingDirectory.wstring();
     if (!CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, FALSE,
-                        DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, nullptr,
+                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr,
                         workingDirectory.empty() ? nullptr : workingDirectory.c_str(), &startup, &process)) {
         return {false, "Unable to start " + desc.executable.string() + ": " +
                            std::system_category().message(static_cast<int>(GetLastError()))};
