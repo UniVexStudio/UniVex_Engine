@@ -14,7 +14,8 @@ public class ViewportModule : ModuleRules
             "Scene",
             "Math",
             "Platform",
-            "Logging"
+            "Logging",
+            "Prism"
         });
 
         PublicIncludePaths.AddRange(new string[] {

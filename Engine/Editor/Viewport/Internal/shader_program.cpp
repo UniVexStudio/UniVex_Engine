@@ -1,7 +1,10 @@
 #include "univex/render/shader_program.h"
 
+#include <string>
 #include <utility>
 #include <vector>
+
+#include "prism/GlBackend.h"
 
 namespace univex::render {
 
@@ -9,8 +12,11 @@ namespace {
 
 GLuint CompileStage(GLenum stage, std::string_view source, std::string& outError) {
     const GLuint shader = glCreateShader(stage);
-    const auto* data = source.data();
-    const auto length = static_cast<GLint>(source.size());
+    // Written for desktop GLSL 3.30; on OpenGL ES the header becomes GLSL ES 3.00.
+    const std::string retargeted =
+        prism::glslForContext(source, reinterpret_cast<const char*>(glGetString(GL_VERSION)));
+    const auto* data = retargeted.data();
+    const auto length = static_cast<GLint>(retargeted.size());
     glShaderSource(shader, 1, &data, &length);
     glCompileShader(shader);
 

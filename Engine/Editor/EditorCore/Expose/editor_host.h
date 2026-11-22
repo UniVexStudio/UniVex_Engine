@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <vector>
 #include <memory>
 #include <span>
 #include <string>
@@ -144,6 +145,11 @@ private:
     void UpdateWindowDragUVE(WindowUVE& w);
     void CompositeUVE(WindowUVE& w, std::uint32_t uiTexture, std::uint32_t vao, std::span<const ViewImageUVE> views);
     void EndInputFrameUVE(WindowUVE& w);
+    /// Single-surface platforms (Android): another window is a page over the main one. The page on
+    /// top, unless hidden (its title bar's minimize), takes the screen and the input.
+    [[nodiscard]] WindowUVE* VisiblePageUVE() const;
+    void ShowPageUVE(int id);
+    void HidePageUVE(int id);
 
     std::shared_ptr<PlatformUVE> m_platform;
     std::unique_ptr<prism::Application> m_app;
@@ -152,6 +158,10 @@ private:
     std::unique_ptr<ChainUVE> m_chain;
     std::unique_ptr<WindowUVE> m_main;
     std::map<int, std::unique_ptr<WindowUVE>> m_windows;   // secondary windows by PRISM id
+    /// Every window shares the main surface (no OS windows): secondary windows are pages, in the
+    /// order they were last shown (the last one is on top).
+    bool m_singleSurface = false;
+    std::vector<int> m_pageOrder;
     bool m_ready = false;
     std::function<bool(int, int)> m_keyHook;
     /// The main window's UI was last painted at this paint generation and time (see RenderUVE).

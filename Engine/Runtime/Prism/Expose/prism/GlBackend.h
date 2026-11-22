@@ -6,6 +6,8 @@
 #pragma once
 #include "RenderBackend.h"
 #include <functional>
+#include <string>
+#include <string_view>
 
 namespace prism {
 
@@ -13,6 +15,9 @@ namespace prism {
 // precisions on OpenGL ES, "#version 330 core" otherwise. Shader sources written for both leave out their own
 // #version line and are compiled after this one.
 const char* glslHeaderFor(const char* glVersion);
+// `source` with its leading #version line (if any) replaced by glslHeaderFor(glVersion), so a shader written for
+// desktop GLSL 3.30 also compiles on OpenGL ES 3.0.
+std::string glslForContext(std::string_view source, const char* glVersion);
 
 class GlBackend : public RenderBackend {
 public:

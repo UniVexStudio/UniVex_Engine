@@ -22,6 +22,18 @@ const char* glslHeaderFor(const char* glVersion) {
   return es ? kEsGlslHeader : kDesktopGlslHeader;
 }
 
+std::string glslForContext(std::string_view source, const char* glVersion) {
+  constexpr std::string_view kVersionDirective = "#version";
+  const size_t start = source.find_first_not_of(" \t\r\n");
+  if (start != std::string_view::npos && source.substr(start).starts_with(kVersionDirective)) {
+    const size_t lineEnd = source.find('\n', start);
+    source = lineEnd == std::string_view::npos ? std::string_view{} : source.substr(lineEnd + 1);
+  }
+  std::string result(glslHeaderFor(glVersion));
+  result.append(source);
+  return result;
+}
+
 #define PRISM_GL_FUNCS(X)                                                                                                         \
   X(PFNGLVIEWPORTPROC, glViewport) X(PFNGLCLEARCOLORPROC, glClearColor) X(PFNGLCLEARPROC, glClear)                             \
   X(PFNGLENABLEPROC, glEnable) X(PFNGLDISABLEPROC, glDisable) X(PFNGLSCISSORPROC, glScissor)                                   \

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <cstring>
 #include <vector>
 
@@ -21,6 +22,7 @@
 
 #include "gl_functions.h"
 #include "logging_macros.h"
+#include "prism/GlBackend.h"
 
 #include "material_asset.h"
 #include "matrix4x4.h"
@@ -456,7 +458,11 @@ void SetGlCapabilityUVE(const GLenum capability, const GLboolean enabled) noexce
     if (outShader == 0U) {
         return false;
     }
-    table.glShaderSource(outShader, 1, &source, nullptr);
+    // Written for desktop GLSL 3.30; on OpenGL ES the header becomes GLSL ES 3.00.
+    const std::string retargeted =
+        prism::glslForContext(source, reinterpret_cast<const char*>(glGetString(GL_VERSION)));
+    const char* const retargetedSource = retargeted.c_str();
+    table.glShaderSource(outShader, 1, &retargetedSource, nullptr);
     table.glCompileShader(outShader);
     GLint compiled = GL_FALSE;
     table.glGetShaderiv(outShader, GL_COMPILE_STATUS, &compiled);

@@ -144,6 +144,19 @@ class SharedNamesTest(unittest.TestCase):
         self.assertIsNone(re.search(public, workflow),
                           "the workflow must read the releases repository from the feed, not repeat it")
 
+    def test_android_shaders(self) -> None:
+        # The Android APKs and the Android engine package ship the same built-in shader folder.
+        sys.path.insert(0, str(TOOLS_DIR / "android"))
+        import build_apk  # noqa: E402
+
+        self.assertEqual(package_engine.SHADERS_SOURCE, build_apk.BUILT_IN_SHADERS)
+        self.assertTrue(REPO_ROOT.joinpath(*package_engine.SHADERS_SOURCE).is_dir())
+        editor = (REPO_ROOT / "Engine/App/Android/editor/editor_android.cpp").read_text(encoding="utf-8")
+        self.assertIn(f'kShadersDirectoryUVE = "{package_engine.SHADERS_DIRECTORY}"', editor)
+        self.assertIn(f'kEditorAndroidEntryPointUVE = "UveEditorRunUVE"',
+                      (REPO_ROOT / "Engine/Runtime/Pack/Expose/engine_install.h").read_text(encoding="utf-8"))
+        self.assertIn("UveEditorRunUVE(", editor)
+
     def test_android_icon(self) -> None:
         # Every manifest's launcher icon must be among the resources build_apk.py compiles.
         sys.path.insert(0, str(TOOLS_DIR / "android"))

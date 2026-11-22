@@ -208,7 +208,10 @@ GLint ViewportSurfaceUVE::BeginPassUVE(const int width, const int height) {
     GLint previousFbo = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
     glBindFramebuffer(GL_FRAMEBUFFER, m_msaaFbo);
+#if !defined(UNIVEX_GL_ES)
+    // OpenGL ES always rasterises multisampled targets with all their samples; desktop GL asks.
     glEnable(GL_MULTISAMPLE);
+#endif
     m_renderPass->ClearUVE(width, height);
     return previousFbo;
 }
@@ -273,6 +276,10 @@ bool ViewportSurfaceUVE::EnsureGlewInitializedUVE() {
     if (m_glewInitialized) {
         return true;
     }
+#if defined(UNIVEX_GL_ES)
+    // OpenGL ES functions come straight from the platform library: there is nothing to load.
+    m_glewInitialized = true;
+#else
     glewExperimental = GL_TRUE;
     if (const GLenum status = glewInit(); status != GLEW_OK) {
         UVE_ERROR("uve_editor_app: glewInit failed for editor viewport: {}",
@@ -281,6 +288,7 @@ bool ViewportSurfaceUVE::EnsureGlewInitializedUVE() {
     }
     glGetError(); // discard GLEW's benign core-profile extension-probe error
     m_glewInitialized = true;
+#endif
     return true;
 }
 

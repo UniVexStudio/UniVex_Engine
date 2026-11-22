@@ -745,6 +745,8 @@ jobs:
           set -euo pipefail
           ccache -z
           ./uvbt build UniVexAndroid Android Release -j"$(nproc)"
+          # The editor as the library UniVex Hub loads on Android (the Android engine package).
+          ./uvbt build UniVexEditorAndroid Android Release -j"$(nproc)"
           ccache -s
       - name: Save the compiler cache
         if: always()
@@ -755,6 +757,27 @@ jobs:
             .uvbt/tp_lib/Android
             ThirdParty/android
           key: android-engine-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
+      # The engine package is made by the publish job, which knows the release's tag: this hands it the
+      # stripped editor library and the data beside it.
+      - name: Stage the editor for the engine package
+        if: env.IS_RELEASE == 'true'
+        run: |
+          set -euo pipefail
+          read -r abi ndk host <<< "$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools/UVBT'); import uvbt; print(uvbt.ANDROID_DEFAULT_ABI, uvbt.ANDROID_NDK_VERSION, uvbt.ANDROID_NDK_HOST_TAG)")"
+          bin=".uvbt/bin/Android/${abi}/Release"
+          library=$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools'); import package_engine; print(package_engine.ANDROID_EDITOR_LIBRARY)")
+          mkdir -p build/android-editor
+          cp "${bin}/${library}" build/android-editor/
+          cp -r "${bin}/prism_assets" build/android-editor/
+          "${ANDROID_HOME}/ndk/${ndk}/toolchains/llvm/prebuilt/${host}/bin/llvm-strip" --strip-unneeded "build/android-editor/${library}"
+      - name: Hand the editor to the publish job
+        if: env.IS_RELEASE == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-editor-build
+          path: build/android-editor/
+          if-no-files-found: error
+          retention-days: 7
 
   # ---------------------------------------------------------------------------------------------
   # Release only: one GitHub Release, once the tests passed and every platform is packaged.
@@ -790,10 +813,22 @@ jobs:
           fi
           echo "RELEASES_REPOSITORY=${repository}" >> "${GITHUB_ENV}"
           echo "Publishing to ${repository}"
-      - uses: actions/download-artifact@v4
+      - name: Collect the release files
+        uses: actions/download-artifact@v4
         with:
+          pattern: "{release,hub}-*"
           path: dist
           merge-multiple: true
+      - name: Collect the Android editor
+        uses: actions/download-artifact@v4
+        with:
+          name: android-editor-build
+          path: build/android-editor
+      - name: Package the engine for Android
+        run: |
+          set -euo pipefail
+          python3 Engine/Tools/package_engine.py --bin build/android-editor --target android \
+            --tag "${{ needs.release-linux.outputs.release-tag }}" --skip-version-check --output dist
       - name: Name the APK after the Hub's version
         env:
           HUB_VERSION: ${{ needs.hub-linux.outputs.hub-version }}

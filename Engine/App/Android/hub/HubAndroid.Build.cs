@@ -11,7 +11,8 @@ public class HubAndroidModule : ModuleRules
         Type = ModuleType.StaticLibrary;
 
         PublicDependencyModuleNames.AddRange(new string[] {
-            "HubApp"
+            "HubApp",
+            "AndroidHost"
         });
 
         PublicSystemLibraries.AddRange(new string[] {

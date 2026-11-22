@@ -50,6 +50,30 @@ class PackageEngineTest(unittest.TestCase):
             checksum = archive.with_name(archive.name + ".sha256").read_text().split()[0]
             self.assertEqual(checksum, hashlib.sha256(archive.read_bytes()).hexdigest())
 
+    def test_android_package_is_the_editor_library(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            (bin_dir / package_engine.ANDROID_EDITOR_LIBRARY).write_bytes(b"\x7fELF")
+            for directory in package_engine.DATA_DIRECTORIES:
+                (bin_dir / directory).mkdir()
+                (bin_dir / directory / "file.txt").write_text("data")
+            with self.assertRaises(package_engine.PackagingError):
+                package_engine.build_package(bin_dir, "android", "v0.3.0-beta", root / "dist")
+            archive = package_engine.build_package(bin_dir, "android", "v0.3.0-beta", root / "dist",
+                                                   check_version=False)
+            self.assertEqual(archive.name, "univex-engine-0.3.0+build.0-android.uvpackage")
+            with tarfile.open(archive, "r:gz") as tar:
+                names = set(tar.getnames())
+                manifest = json.loads(tar.extractfile("engine.json").read())
+            self.assertEqual(manifest["target"], "android")
+            self.assertIn("uve_editor", names)
+            self.assertIn("prism_assets/file.txt", names)
+            self.assertTrue(any(name.startswith("shaders/") for name in names))
+            self.assertNotIn("uve_runtime", names)
+            self.assertNotIn(package_engine.ANDROID_EDITOR_LIBRARY, names)
+
     def test_display_version(self) -> None:
         self.assertEqual(package_engine.display_version("1.2.3+build.0"), "1.2.3")
         self.assertEqual(package_engine.display_version("1.2.3+build.4"), "1.2.3+build.4")

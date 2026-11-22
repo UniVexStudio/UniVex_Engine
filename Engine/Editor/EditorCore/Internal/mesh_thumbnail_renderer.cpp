@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -20,6 +21,7 @@
 
 #include "gl_functions.h"
 #include "logging_macros.h"
+#include "prism/GlBackend.h"
 
 #include "mesh_asset.h"
 #include "material_thumbnail_renderer.h"
@@ -333,7 +335,11 @@ namespace {
     if (outShader == 0U) {
         return false;
     }
-    gl.table.glShaderSource(outShader, 1, &source, nullptr);
+    // Written for desktop GLSL 3.30; on OpenGL ES the header becomes GLSL ES 3.00.
+    const std::string retargeted =
+        prism::glslForContext(source, reinterpret_cast<const char*>(glGetString(GL_VERSION)));
+    const char* const retargetedSource = retargeted.c_str();
+    gl.table.glShaderSource(outShader, 1, &retargetedSource, nullptr);
     gl.table.glCompileShader(outShader);
     GLint compiled = GL_FALSE;
     gl.table.glGetShaderiv(outShader, GL_COMPILE_STATUS, &compiled);
