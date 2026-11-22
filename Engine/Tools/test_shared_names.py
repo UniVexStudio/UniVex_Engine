@@ -134,6 +134,19 @@ class SharedNamesTest(unittest.TestCase):
         self.assertIsNone(re.search(public, workflow),
                           "the workflow must read the releases repository from the feed, not repeat it")
 
+    def test_android_icon(self) -> None:
+        # Every manifest's launcher icon must be among the resources build_apk.py compiles.
+        sys.path.insert(0, str(TOOLS_DIR / "android"))
+        import build_apk  # noqa: E402
+
+        resources = REPO_ROOT.joinpath(*build_apk.RESOURCES)
+        for app in build_apk.APPS.values():
+            manifest = REPO_ROOT.joinpath(*app.manifest).read_text(encoding="utf-8")
+            for reference in re.findall(r'android:(?:round)?[iI]con="@mipmap/([\w]+)"', manifest):
+                found = list(resources.glob(f"mipmap-*/{reference}.*"))
+                self.assertTrue(found, f"{app.target}: no mipmap resource named {reference}")
+            self.assertRegex(manifest, r'android:icon="@mipmap/', f"{app.target} has no launcher icon")
+
 
 if __name__ == "__main__":
     unittest.main()

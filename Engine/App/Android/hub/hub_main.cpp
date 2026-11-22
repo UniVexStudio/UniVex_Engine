@@ -9,6 +9,7 @@
 #include <android/log.h>
 #include <android_native_app_glue.h>
 
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -45,6 +46,8 @@ struct HubActivityUVE final {
     UVE::Window::AndroidWindowManagerUVE* windowManager = nullptr;
     /// The screen edges display cutouts cover, read again whenever the window or its layout changes.
     UVE::Window::AndroidSafeAreaUVE safeArea;
+    /// Frames the loop has started; the first one is on screen once the second starts.
+    std::uint64_t framesStarted = 0;
 };
 
 [[nodiscard]] std::string ReadAssetUVE(AAssetManager* const assets, const std::string& name) {
@@ -194,8 +197,16 @@ extern "C" void android_main(android_app* const app) {
     }
 
     const std::filesystem::path data(app->activity->internalDataPath);
-    // The project list, settings and engines live under the app's private storage.
+    // The project list, settings and engines live under the app's private storage, and the engine's
+    // relative paths (settings, caches, logs) resolve there too: the process starts in "/", which is
+    // not writable.
     setenv("HOME", data.c_str(), 1);
+    std::error_code directoryError;
+    std::filesystem::current_path(data, directoryError);
+    if (directoryError) {
+        __android_log_print(ANDROID_LOG_WARN, kLogTagUVE, "UVE_HUB_WARNING the data directory could not be entered: %s",
+                            directoryError.message().c_str());
+    }
     const std::filesystem::path unpacked = data / kUnpackedAppDirectoryUVE;
     if (!UnpackAssetsUVE(app->activity->assetManager, unpacked)) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTagUVE, "UVE_HUB_FAILED the APK's data could not be unpacked");
@@ -232,6 +243,9 @@ extern "C" void android_main(android_app* const app) {
         window.beforeFrame = [&activity](UVE::Core::EngineCoreUVE& core) {
             activity.windowManager =
                 dynamic_cast<UVE::Window::AndroidWindowManagerUVE*>(&core.GetServicesUVE().GetWindowManagerUVE());
+            if (++activity.framesStarted == 2U) {
+                __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "UVE_HUB_RENDERED");
+            }
             return PumpEventsUVE(activity) && !UVE::Window::AndroidGlfwCloseRequestedUVE();
         };
 

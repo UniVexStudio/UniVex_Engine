@@ -382,6 +382,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
+      # The emulator the Hub is started on: an x86_64 system image (runs under KVM) of a recent Android.
+      EMULATOR_ABI: x86_64
+      EMULATOR_API_LEVEL: 34
       UVBT_COMPILER_LAUNCHER: ccache
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
@@ -459,6 +462,27 @@ jobs:
             .uvbt/tp_lib/Android
             ThirdParty/android
           key: android-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
+      # The Hub is started on an emulator before anything ships: an x86_64 build of the same APK
+      # (CI-only, debug key) must start, draw its first frame and survive a background/foreground.
+      - name: Build the Hub APK for the emulator
+        run: |
+          set -euo pipefail
+          python3 Engine/Tools/android/build_apk.py --sdk "${ANDROID_HOME}" --app hub --abi "${EMULATOR_ABI}" \
+            --build-dir build/android-emulator
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Start the Hub on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.EMULATOR_API_LEVEL }}
+          arch: ${{ env.EMULATOR_ABI }}
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: python3 Engine/Tools/android/smoke_hub.py --adb adb --serial emulator-5554 --apk build/android-emulator/UniVexHub-${{ env.EMULATOR_ABI }}.apk
       - name: Hand the release files to the publish job
         if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4

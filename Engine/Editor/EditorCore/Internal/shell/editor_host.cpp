@@ -4,6 +4,7 @@
 #include "prism/Canvas.h"
 #include "prism/GlBackend.h"
 #include "prism/Icons.h"
+#include "logging_macros.h"
 #include "png_metadata.h"
 
 #include "gl_system_headers.h"
@@ -41,6 +42,8 @@ using ViewCursorUVE = EditorViewportInputUVE::CursorUVE;
 constexpr double kDoubleClickSecondsUVE = 0.4;
 constexpr float kDoubleClickSlopUVE = 4.0F;
 constexpr float kResizeBorderUVE = 5.0F;
+/// Bytes kept of a compositor shader or program info log.
+constexpr std::size_t kShaderLogCapacityUVE = 1024;
 
 [[nodiscard]] prism::Key ToPrismKeyUVE(const int key) {
     if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
@@ -353,8 +356,12 @@ struct EditorHostUVE::CompositorUVE final {
     PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
     PFNGLACTIVETEXTUREPROC glActiveTexture = nullptr;
     PFNGLBLENDFUNCSEPARATEPROC glBlendFuncSeparate = nullptr;
+    PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog = nullptr;
+    PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog = nullptr;
 
     GLuint program = 0;
+    /// GLSL header of the current context (desktop core or GLES), put before each shader source.
+    const char* glslHeader = nullptr;
     GLuint vao = 0;
     GLint rectLoc = -1;
     GLint uvLoc = -1;
@@ -388,11 +395,16 @@ struct EditorHostUVE::CompositorUVE final {
         ok &= LoadUVE(glBindFramebuffer, "glBindFramebuffer");
         ok &= LoadUVE(glActiveTexture, "glActiveTexture");
         ok &= LoadUVE(glBlendFuncSeparate, "glBlendFuncSeparate");
+        ok &= LoadUVE(glGetShaderInfoLog, "glGetShaderInfoLog");
+        ok &= LoadUVE(glGetProgramInfoLog, "glGetProgramInfoLog");
         if (!ok) {
+            UVE_ERROR("Editor host: the GL context lacks a function the compositor needs");
             return false;
         }
+        glslHeader = prism::glslHeaderFor(reinterpret_cast<const char*>(glGetString(GL_VERSION)));
         // A quad from gl_VertexID: uRect = NDC (x0, y0, x1, y1), uUv = texture (u0, v0, u1, v1).
-        static const char* const kVertex = R"(#version 330 core
+        // No #version line: CompileUVE puts the context's header first (desktop core or GLES).
+        static const char* const kVertex = R"(
 uniform vec4 uRect;
 uniform vec4 uUv;
 out vec2 vUv;
@@ -401,7 +413,7 @@ void main() {
     gl_Position = vec4(mix(uRect.xy, uRect.zw, corner), 0.0, 1.0);
     vUv = mix(uUv.xy, uUv.zw, corner);
 })";
-        static const char* const kFragment = R"(#version 330 core
+        static const char* const kFragment = R"(
 uniform sampler2D uTex;
 in vec2 vUv;
 out vec4 fragColor;
@@ -420,6 +432,9 @@ void main() { fragColor = texture(uTex, vUv); })";
         GLint linked = 0;
         glGetProgramiv(program, GL_LINK_STATUS, &linked);
         if (linked == 0) {
+            std::array<char, kShaderLogCapacityUVE> log{};
+            glGetProgramInfoLog(program, static_cast<GLsizei>(log.size()), nullptr, log.data());
+            UVE_ERROR("Editor host: the compositor program did not link: {}", log.data());
             glDeleteProgram(program);
             program = 0;
             return false;
@@ -433,11 +448,15 @@ void main() { fragColor = texture(uTex, vUv); })";
 
     [[nodiscard]] GLuint CompileUVE(const GLenum type, const char* source) {
         const GLuint shader = glCreateShader(type);
-        glShaderSource(shader, 1, &source, nullptr);
+        const std::array<const char*, 2> parts{glslHeader, source};
+        glShaderSource(shader, static_cast<GLsizei>(parts.size()), parts.data(), nullptr);
         glCompileShader(shader);
         GLint compiled = 0;
         glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
         if (compiled == 0) {
+            std::array<char, kShaderLogCapacityUVE> log{};
+            glGetShaderInfoLog(shader, static_cast<GLsizei>(log.size()), nullptr, log.data());
+            UVE_ERROR("Editor host: a compositor shader did not compile: {}", log.data());
             glDeleteShader(shader);
             return 0;
         }

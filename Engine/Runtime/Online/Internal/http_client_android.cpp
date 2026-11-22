@@ -199,15 +199,37 @@ private:
                 response.error = TakeExceptionUVE(env);
                 return response;
             }
+            // Every call can throw; JNI must not be used again while an exception is pending.
+            const auto failed = [&] {
+                if (!env->ExceptionCheck()) {
+                    return false;
+                }
+                response.error = TakeExceptionUVE(env);
+                env->CallVoidMethod(connection, disconnect);
+                env->ExceptionClear();
+                return true;
+            };
             env->CallVoidMethod(connection, setFollow, JNI_FALSE);
+            if (failed()) {
+                return response;
+            }
             env->CallVoidMethod(connection, setConnectTimeout, static_cast<jint>(kConnectTimeoutUVE.count()));
+            if (failed()) {
+                return response;
+            }
             env->CallVoidMethod(connection, setReadTimeout, stallMs);
+            if (failed()) {
+                return response;
+            }
             for (const HttpHeaderUVE& header : request.headers) {
                 if (host != originalHost && header.name == kAuthorizationHeaderUVE) {
                     continue;
                 }
                 env->CallVoidMethod(connection, setProperty, env->NewStringUTF(header.name.c_str()),
                                     env->NewStringUTF(header.value.c_str()));
+                if (failed()) {
+                    return response;
+                }
             }
             const jint status = env->CallIntMethod(connection, responseCode);
             if (env->ExceptionCheck()) {

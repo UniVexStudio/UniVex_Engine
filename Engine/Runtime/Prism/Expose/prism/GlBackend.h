@@ -9,6 +9,11 @@
 
 namespace prism {
 
+// The GLSL header for a context whose glGetString(GL_VERSION) is `glVersion`: "#version 300 es" with default
+// precisions on OpenGL ES, "#version 330 core" otherwise. Shader sources written for both leave out their own
+// #version line and are compiled after this one.
+const char* glslHeaderFor(const char* glVersion);
+
 class GlBackend : public RenderBackend {
 public:
   using Loader = void* (*)(const char* name);
