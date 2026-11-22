@@ -254,7 +254,7 @@ void UpdateSoftKeyboardUVE(ActivityStateUVE& state) {
     }
 }
 
-[[nodiscard]] float ReadPixelsPerDpUVE(const AConfiguration* const config) {
+[[nodiscard]] float ReadPixelsPerDpUVE(AConfiguration* const config) {
     if (config == nullptr) {
         return 1.0F;
     }
