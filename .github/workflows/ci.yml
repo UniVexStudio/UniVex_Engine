@@ -573,7 +573,9 @@ jobs:
           api-level: ${{ env.EMULATOR_API_LEVEL }}
           arch: ${{ env.EMULATOR_ABI }}
           target: google_apis
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          # Emulator 37.x on API 34 segfaults QEMU intermittently under legacy swiftshader_indirect
+          # when sensorLandscape activities render GLES 3.0; ANGLE-over-SwiftShader is stable.
+          emulator-options: -no-window -gpu swangle_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: |
             python3 Engine/Tools/android/smoke_hub.py --adb adb --serial emulator-5554 --apk "build/android-emulator/UniVexHub-${EMULATOR_ABI}.apk" --engine-package build/android-emulator-pkg/univex-engine-*-android-${EMULATOR_ABI}.uvpackage

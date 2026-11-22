@@ -160,7 +160,7 @@ def main() -> int:
     except (subprocess.SubprocessError, OSError, RuntimeError) as error:
         print(f"smoke_hub: FAILED: {error}", file=sys.stderr, flush=True)
         try:
-            device_log = adb("logcat", "-d", "-b", "main,system,crash")
+            device_log = adb("logcat", "-d", "-b", "main,system,crash", timeout=20.0)
         except (subprocess.SubprocessError, OSError) as log_error:
             device_log = f"(no device log: {log_error})"
         print(device_log, flush=True)
