@@ -314,6 +314,9 @@ jobs:
   hub-windows:
     name: Hub / Windows
     runs-on: windows-latest
+    # Windows minutes count double and Android builds and the emulator are long: a pull request is
+    # checked on Linux, and these run on master, version tags and by hand.
+    if: github.event_name != 'pull_request'
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -412,6 +415,9 @@ jobs:
   hub-android:
     name: Hub / Android
     runs-on: ubuntu-latest
+    # Windows minutes count double and Android builds and the emulator are long: a pull request is
+    # checked on Linux, and these run on master, version tags and by hand.
+    if: github.event_name != 'pull_request'
     timeout-minutes: 90
     env:
       # The emulator the Hub is started on: an x86_64 system image (runs under KVM) of a recent Android.
@@ -593,6 +599,9 @@ jobs:
   release-windows:
     name: Release / Windows
     runs-on: windows-latest
+    # Windows minutes count double and Android builds and the emulator are long: a pull request is
+    # checked on Linux, and these run on master, version tags and by hand.
+    if: github.event_name != 'pull_request'
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -706,6 +715,9 @@ jobs:
   release-android:
     name: Release / Android
     runs-on: ubuntu-latest
+    # Windows minutes count double and Android builds and the emulator are long: a pull request is
+    # checked on Linux, and these run on master, version tags and by hand.
+    if: github.event_name != 'pull_request'
     timeout-minutes: 90
     env:
       UVBT_COMPILER_LAUNCHER: ccache
