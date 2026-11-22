@@ -8,6 +8,7 @@
 #include "prism/Application.h"
 #include "prism/Canvas.h"
 #include "prism/EngineView.h"
+#include "prism/Layouts.h"
 #include "prism/Theme.h"
 
 #include <algorithm>
