@@ -3257,7 +3257,7 @@ static void testRetinaGpuBatchAndFlingScroll(Application& app, TestPlatform& pla
   SECTION("retina_gpu_batch_and_fling_scroll");
 
   // 1. High-DPI FreeType sibling font caching & 2x GPU vertex/scissor scaling.
-  const Font& baseFont = *theme().body;
+  const Font& baseFont = *theme().ui;
   CHECK(&baseFont.atPixelScale(1.0f) == &baseFont);
   const Font& hiFont = baseFont.atPixelScale(2.0f);
   CHECK(hiFont.pixelSize() >= baseFont.pixelSize() * 2 - 1);
