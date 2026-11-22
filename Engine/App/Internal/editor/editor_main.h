@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <functional>
 
@@ -22,8 +23,12 @@ struct EditorPlatformUVE final {
     std::filesystem::path prismAssetsDirectory;
     /// The engine's built-in shader sources; empty: the engine's default location.
     std::filesystem::path shaderDirectory;
+    /// Persistent shader binary/cache directory; empty: engine default.
+    std::filesystem::path shaderCacheDirectory;
     /// Folder for the editor's log when no project gives it one; empty: the working directory.
     std::filesystem::path logDirectory;
+    /// Safe area insets {left, top, right, bottom} in PRISM logical units (cutouts + soft keyboard).
+    std::function<std::array<float, 4>()> safeArea;
     /// Runs before every frame; returning false closes the editor.
     std::function<bool(Core::EngineCoreUVE&)> beforeFrame;
 };

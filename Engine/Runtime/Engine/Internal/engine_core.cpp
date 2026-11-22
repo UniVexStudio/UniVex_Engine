@@ -1091,19 +1091,23 @@ void EngineCoreUVE::Init() {
     m_inputMap.ApplyUVE(*m_inputSystem);
     m_windowManager->AttachInputSystemUVE(m_inputSystem.get());
 
-    // AudioDevice twenty-ninth: no dependencies of its own. Prefers the real miniaudio backend;
-    // falls back to NullAudioDeviceUVE (with a warning) on machines with no usable audio output
-    // (headless CI, servers) so the whole audio stack above stays functional either way.
-    Audio::MiniaudioAudioDeviceUVE::OptionsUVE audioDeviceOptions{};
-    if (m_config.audioSampleRateUVE >= 8000 && m_config.audioSampleRateUVE <= 192000) {
-        audioDeviceOptions.outputSampleRate = static_cast<std::uint32_t>(m_config.audioSampleRateUVE);
-    }
-    if (auto miniaudioDevice = Audio::MiniaudioAudioDeviceUVE::CreateUVE(audioDeviceOptions)) {
-        m_audioDevice = std::move(miniaudioDevice);
-    } else {
-        UVE_WARNING("EngineCoreUVE: no usable audio output device - falling back to NullAudioDeviceUVE "
-                    "(all audio playback will be silent but functional)");
+    // AudioDevice twenty-ninth: no dependencies of its own. Lightweight UI hosts (Hub/Setup) opt
+    // into skipAudioUVE to avoid opening an unused OS audio stream; otherwise prefers miniaudio
+    // and falls back to NullAudioDeviceUVE when no audio output exists.
+    if (m_config.skipAudioUVE) {
         m_audioDevice = std::make_unique<Audio::NullAudioDeviceUVE>();
+    } else {
+        Audio::MiniaudioAudioDeviceUVE::OptionsUVE audioDeviceOptions{};
+        if (m_config.audioSampleRateUVE >= 8000 && m_config.audioSampleRateUVE <= 192000) {
+            audioDeviceOptions.outputSampleRate = static_cast<std::uint32_t>(m_config.audioSampleRateUVE);
+        }
+        if (auto miniaudioDevice = Audio::MiniaudioAudioDeviceUVE::CreateUVE(audioDeviceOptions)) {
+            m_audioDevice = std::move(miniaudioDevice);
+        } else {
+            UVE_WARNING("EngineCoreUVE: no usable audio output device - falling back to NullAudioDeviceUVE "
+                        "(all audio playback will be silent but functional)");
+            m_audioDevice = std::make_unique<Audio::NullAudioDeviceUVE>();
+        }
     }
 
     // AudioSystem thirtieth: needs AudioDevice (it pushes computed gain/position through it).
@@ -5474,10 +5478,32 @@ void ApplyEngineConfigToRenderer3DUVE(const EngineConfigUVE& config, Render::IRe
     }
 }
 
+namespace {
+
+/// Lightweight zero-cost renderer installed when EngineConfigUVE::skip3dRendererUVE is true (Hub,
+/// Setup): satisfies EngineServicesUVE's non-null IRenderer3DUVE contract without compiling 3D
+/// shaders or allocating shadow/HDR/post-process render targets.
+class NoOpRenderer3DUVE final : public Render::IRenderer3DUVE {
+public:
+    void RenderFrameUVE(Scene::IEntityManagerUVE& /*entityManager*/, Scene::EntityUVE /*cameraEntity*/) override {}
+    [[nodiscard]] bool ResizeTargetsUVE(const std::uint32_t /*width*/, const std::uint32_t /*height*/) override {
+        return true;
+    }
+    void SetPhysicsInterpolationAlphaUVE(const float /*alpha*/) noexcept override {}
+    [[nodiscard]] Render::Renderer3DFrameDiagnosticsUVE GetLastFrameDiagnosticsUVE() const noexcept override {
+        return {};
+    }
+};
+
+} // namespace
+
 std::unique_ptr<Render::IRenderer3DUVE> EngineCoreUVE::MakeRenderer3DUVE(Render::IMeshRendererUVE& meshRenderer,
                                                                   Render::ICameraSystemUVE& cameraSystem,
                                                                   Render::ILightSystemUVE& lightSystem,
                                                                   Events::IEventSystemUVE& eventSystem) {
+    if (m_config.skip3dRendererUVE) {
+        return std::make_unique<NoOpRenderer3DUVE>();
+    }
     std::unique_ptr<Render::IRenderer3DUVE> renderer = std::make_unique<Render::Renderer3DUVE>(
         *m_renderDevice, *m_renderSystem, meshRenderer, cameraSystem, lightSystem, *m_shaderManager,
         *m_assetManager, *m_assetDatabase, eventSystem, m_config.renderTargetWidth, m_config.renderTargetHeight,

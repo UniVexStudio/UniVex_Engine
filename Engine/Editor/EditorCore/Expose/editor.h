@@ -518,7 +518,9 @@ public:
     };
     [[nodiscard]] EditorLoadingStateUVE GetLoadingStateUVE() const;
     void DismissStartupLoadingUVE() noexcept { m_startupLoading = false; }
-        void SetPrismUiEnabledUVE(bool enabled, std::filesystem::path assetDir = {});
+    void SetPrismUiEnabledUVE(bool enabled, std::filesystem::path assetDir = {});
+    void SetSafeAreaCallbackUVE(std::function<std::array<float, 4>()> callback);
+    [[nodiscard]] std::array<float, 4> SafeAreaInsetsUVE() const;
     [[nodiscard]] bool IsPrismUiActiveUVE() const noexcept { return m_levelShell != nullptr; }
     /// Saves the current PRISM editor frame as PNG (false when the PRISM shell is not active).
     bool SavePrismScreenshotUVE(const std::filesystem::path& path);
@@ -3592,6 +3594,7 @@ private:
     std::map<std::string, std::uintptr_t> m_vfxThumbnailCache;
     bool m_prismUiRequested = false;
     std::filesystem::path m_prismAssetDir;
+    std::function<std::array<float, 4>()> m_safeAreaCallback;
     std::unique_ptr<EditorShellUVE> m_levelShell;
     // UI/render state is isolated per window, matching the dedicated per-window viewports.
     // Level remains the canonical settings-backed state; tool-window state is session-local.

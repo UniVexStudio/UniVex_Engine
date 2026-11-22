@@ -105,11 +105,13 @@ struct VScrollbar {
 
 class ScrollView : public Widget {
 public:
+  ~ScrollView() override;
   void setContent(Ref<Widget> w);
   Widget* content() const { return m_content.get(); }
   float scroll() const { return m_scroll; }
-  void setScroll(float y) { m_scroll = y; relayout(); }
-  void scrollToEnd() { m_toEnd = true; relayout(); }
+  float flingVelocity() const { return m_touchVelocity; }
+  void setScroll(float y) { stopFling(); m_scroll = y; relayout(); }
+  void scrollToEnd() { stopFling(); m_toEnd = true; relayout(); }
   bool atBottom() const { return m_scroll >= m_contentH - m_rect.h - 1; }
   void ensureVisible(Rect absRect);
   Vec2 measure(Vec2) override { return m_desired = constrain({0, 0}); }
@@ -124,7 +126,9 @@ public:
   bool onMouseUp(const MouseEvent& e) override;
   bool onMouseWheel(const MouseEvent& e) override;
 private:
-  bool overBar(Vec2 p) const { return VScrollbar::needed(m_contentH, m_rect.h) && p.x >= m_rect.right() - VScrollbar::W; }
+  bool overBar(Vec2 p) const;
+  void startFling();
+  void stopFling();
   Ref<Widget> m_content;
   float m_scroll = 0, m_contentH = 0;
   bool m_toEnd = false;
@@ -132,6 +136,10 @@ private:
   bool m_touchDragging = false;
   float m_touchStartY = 0.0f;
   float m_touchLastY = 0.0f;
+  float m_touchVelocity = 0.0f;
+  uint64_t m_touchLastMs = 0;
+  uint64_t m_flingLastMs = 0;
+  int m_flingTimerId = 0;
   VScrollbar m_bar;
 };
 

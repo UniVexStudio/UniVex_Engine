@@ -31,17 +31,17 @@ inline constexpr const char* kLogTagUVE = "UniVex";
 /// Written by build_apk.py: every file under the APK's assets/, one relative path per line.
 inline constexpr const char* kAssetIndexUVE = "asset-index.txt";
 
-/// Touch gestures, turned into what the editor and PRISM read from a mouse: one finger is the left
-/// button (pressed once it moves or lifts, so a second finger can still start a gesture), holding
-/// one finger still is a right click, two fingers drag with the right button and pinch with the
-/// wheel, three fingers drag with the middle button.
+/// Touch gestures, turned into what the editor and PRISM read from a mouse: one finger presses the
+/// left button immediately on ACTION_DOWN for instant UI press feedback (cancelled cleanly if held
+/// still into a long-press right click or joined by a second finger), two+ fingers drag with the
+/// middle button (Pan) while pinching smoothly sends continuous wheel deltas (Dolly Zoom).
 struct TouchGestureUVE final {
     int fingers = 0;
     /// GLFW mouse button the gesture holds down (-1: none yet).
     int button = -1;
-    /// One finger is down but not yet a press, a drag or a long press.
-    bool pending = false;
-    /// The gesture ended early (fingers lifted from a multi-finger gesture); the rest is ignored.
+    /// True while one finger has stayed inside touch slop and may still fire a long-press right click.
+    bool longPressArmed = false;
+    /// The gesture ended early (long press fired or fingers lifted from a multi-finger gesture); the rest is ignored.
     bool finished = false;
     float startX = 0.0F;
     float startY = 0.0F;
@@ -67,6 +67,10 @@ struct ActivityStateUVE final {
     bool backIsEscape = false;
     /// The soft keyboard is up because the interface asked for typed text.
     bool keyboardShown = false;
+    /// Remaining frames to keep draining the IME queue after keyboardShown turns false.
+    int imeDrainTailFrames = 0;
+    /// Timestamp (steady ms) of the last touch, key, IME, or lifecycle interaction (for smart idle).
+    std::int64_t lastInteractionMs = 0;
     /// Surface pixels per density-independent pixel (density / 160 dpi).
     float pixelsPerDp = 1.0F;
     /// A system file pick in progress (StartFilePickUVE): what to call with the file, what to call
@@ -90,14 +94,16 @@ void AttachUVE(ActivityStateUVE& state, android_app* app);
 /// Waits until the activity has a surface. False once the activity is closing.
 [[nodiscard]] bool WaitForWindowUVE(ActivityStateUVE& state);
 
-/// Handles pending events; blocks while the app is in the background. False once the activity is
-/// closing.
-[[nodiscard]] bool PumpEventsUVE(ActivityStateUVE& state);
+/// Handles pending events; blocks while the app is in the background. When `idleWaitMs > 0` and
+/// no recent interaction is active, waits up to `idleWaitMs` ms for the next event (waking
+/// immediately on any touch, key, or lifecycle event). False once the activity is closing.
+[[nodiscard]] bool PumpEventsUVE(ActivityStateUVE& state, int idleWaitMs = 0);
 
 /// A per-frame step for LauncherWindowDescUVE::beforeFrame and the editor's loop: picks up the
 /// engine's window manager, pumps events and reports the first drawn frame as `renderedMarker` in
 /// logcat. False when the app should stop.
-[[nodiscard]] bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const char* renderedMarker);
+[[nodiscard]] bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const char* renderedMarker,
+                                  int idleWaitMs = 0);
 
 /// Lets go of the surface before the engine that drew to it shuts down.
 void DetachEngineUVE(ActivityStateUVE& state);

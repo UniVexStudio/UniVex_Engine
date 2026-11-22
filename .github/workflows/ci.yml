@@ -302,11 +302,11 @@ jobs:
       - name: Read the Hub's version
         id: version
         run: echo "hub-version=$(.uvbt/bin/Linux/Release/uve_hub --version)" >> "${GITHUB_OUTPUT}"
-      # Packaged and smoke-tested on every run so the shipped Linux installer is always verified.
+      # Packaged and smoke-tested on every run so the shipped Linux installer and .deb are always verified.
       - name: Package the installer
         run: |
           python3 Engine/Tools/make_hub_installer.py --bin .uvbt/bin/Linux/Release --target linux \
-            --tag "hub-v${{ steps.version.outputs.hub-version }}" --output dist
+            --tag "hub-v${{ steps.version.outputs.hub-version }}" --output dist --deb
       - name: Verify, install, launch and uninstall the Linux Hub
         run: |
           set -euo pipefail
@@ -332,6 +332,21 @@ jobs:
             echo "::error::Linux Hub uninstall left uve_hub behind."
             exit 1
           fi
+          deb=$(ls dist/UniVexHub-*-linux-amd64.deb)
+          dpkg-deb --info "${deb}"
+          dpkg-deb --contents "${deb}" > /tmp/hub-deb-contents.txt
+          grep -q 'usr/share/applications/univex-hub.desktop' /tmp/hub-deb-contents.txt
+          deb_root="${RUNNER_TEMP}/UniVexHubDebTest"
+          rm -rf "${deb_root}" && mkdir -p "${deb_root}"
+          dpkg-deb -x "${deb}" "${deb_root}"
+          grep -q '^Terminal=false$' "${deb_root}/usr/share/applications/univex-hub.desktop"
+          ldd "${deb_root}/opt/univex-hub/uve_hub" | tee /tmp/hub-deb-ldd.txt
+          if grep -q 'not found' /tmp/hub-deb-ldd.txt; then
+            echo "::error::Debian package uve_hub has unresolved shared libraries."
+            exit 1
+          fi
+          HOME="${home_dir}" "${deb_root}/opt/univex-hub/uve_hub" --version
+          HOME="${home_dir}" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a "${deb_root}/opt/univex-hub/uve_hub" --frames 3
       - name: Hand the release files to the publish job
         if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
@@ -408,6 +423,8 @@ jobs:
         run: |
           set -euo pipefail
           bin=.uvbt/bin/Windows/Release
+          objdump -p "$bin/uve_hub.exe" > /tmp/hub-pe.txt
+          grep -q 'Subsystem.*Windows GUI' /tmp/hub-pe.txt
           hub_version=$("$bin/uve_hub.exe" --version | tr -d '\r')
           python Engine/Tools/make_hub_installer.py --bin "$bin" --target windows --tag "hub-v${hub_version}" --output dist
       # Installs silently with nothing but Windows itself on PATH (no MSYS2 libraries to hide a DLL the
@@ -422,8 +439,11 @@ jobs:
             -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=`"$target`"", "/LOG=`"$log`""
           if ($setup.ExitCode -ne 0) { Get-Content $log; Write-Error "setup exited with $($setup.ExitCode)"; exit 1 }
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-          $version = & (Join-Path $target "uve_hub.exe") --version
-          if ($LASTEXITCODE -ne 0 -or -not $version) { Write-Error "the installed Hub did not start (exit $LASTEXITCODE)"; exit 1 }
+          $versionOut = Join-Path $env:RUNNER_TEMP "uve_hub_version.txt"
+          $probe = Start-Process -FilePath (Join-Path $target "uve_hub.exe") -ArgumentList "--version" `
+            -NoNewWindow -Wait -PassThru -RedirectStandardOutput $versionOut
+          $version = if (Test-Path $versionOut) { (Get-Content -Raw $versionOut).Trim() } else { "" }
+          if ($probe.ExitCode -ne 0 -or -not $version) { Write-Error "the installed Hub did not start (exit $($probe.ExitCode))"; exit 1 }
           Write-Output "Installed Hub reports version $version"
           $uninstaller = Get-ChildItem (Join-Path $target "unins*.exe") | Select-Object -First 1
           $removal = Start-Process -FilePath $uninstaller.FullName -Wait -PassThru -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
@@ -737,7 +757,7 @@ jobs:
                   shutil.copy2(source, target)
                   pending.append(target)
           PY
-          printf '@echo off\r\ncd /d "%%~dp0"\r\nuve_editor.exe\r\n' > package/UniVex-Editor/Start-Editor.bat
+          printf '@echo off\r\nstart "" /D "%%~dp0" "%%~dp0uve_editor.exe"\r\n' > package/UniVex-Editor/Start-Editor.bat
       - name: PRISM UI tests
         shell: msys2 {0}
         run: ./.uvbt/bin/Windows/Release/uve_prism_tests.exe Engine/Runtime/Prism/assets
@@ -745,6 +765,9 @@ jobs:
         shell: msys2 {0}
         run: |
           cd package/UniVex-Editor
+          objdump -p ./uve_editor.exe > /tmp/editor-pe.txt && grep -q 'Subsystem.*Windows GUI' /tmp/editor-pe.txt
+          objdump -p ./uve_runtime.exe > /tmp/runtime-pe.txt && grep -q 'Subsystem.*Windows GUI' /tmp/runtime-pe.txt
+          objdump -p ./uve_pack.exe > /tmp/pack-pe.txt && grep -q 'Subsystem.*Windows CUI' /tmp/pack-pe.txt
           ./uve_editor.exe --bridge-stdio < /dev/null
           ./uve_asset_workload.exe --create-fixture ../cook-source
           ./uve_pack.exe --project ../cook-source/sample.uvproject --runtime ./uve_runtime.exe --output ../cooked --cook windows

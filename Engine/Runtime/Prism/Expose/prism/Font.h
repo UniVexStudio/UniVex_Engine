@@ -2,6 +2,7 @@
 // PRISM - FreeType-backed bitmap font with a lazy glyph cache.
 #pragma once
 #include "Core.h"
+#include <memory>
 #include <unordered_map>
 
 struct FT_FaceRec_;
@@ -38,6 +39,9 @@ public:
   bool hasColor() const;
   void* shaper() const;          // hb_font_t* owned by this font (null without HarfBuzz)                       // face maps this code point (not .notdef)
   const Glyph& glyph(char32_t cp) const;
+  /// Returns a sibling Font rasterized at pixelSize * scale (for crisp HiDPI/Retina rendering),
+  /// or *this when scale is ~1.0 or the font file cannot be reopened.
+  const Font& atPixelScale(float scale) const;
   float advance(char32_t cp) const { return glyph(cp).advance; }
   float width(std::string_view s) const;
   float widthTo(std::string_view s, size_t byteIndex) const;
@@ -45,10 +49,12 @@ public:
   std::string ellipsize(std::string_view s, float maxWidth) const;
 
 private:
+  std::string m_path;
   FT_FaceRec_* m_face = nullptr;
   int m_px = 0;
   float m_ascent = 0, m_descent = 0, m_cap = 0, m_bitmapScale = 1;
   mutable std::unordered_map<char32_t, Glyph> m_cache;
+  mutable std::unordered_map<int, std::unique_ptr<Font>> m_scaled;
   mutable void* m_hb = nullptr;
 };
 

@@ -22,6 +22,11 @@ namespace UVE::Platform {
 /// Accepts exact GetEnginePackageTargetUVE() matches, plus legacy "android" manifests on arm64-v8a.
 [[nodiscard]] bool IsCompatibleEnginePackageTargetUVE(std::string_view manifestTarget) noexcept;
 
+/// On Windows GUI-subsystem executables (-mwindows), attaches standard streams to an existing
+/// parent console when stdout/stderr are not already redirected to a pipe or file. Never allocates
+/// a new console window (no-op on double-click and on non-Windows platforms).
+void AttachParentConsoleForCliUVE() noexcept;
+
 struct ApplicationUserDataDirectoryResultUVE final {
     bool success = false;
     std::filesystem::path directory;

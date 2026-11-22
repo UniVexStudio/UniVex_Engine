@@ -66,8 +66,9 @@ private:
   int m_x = 1, m_y = 1, m_rowH = 0;
 };
 
-// Builds the GPU frame. Returns false only if it could not fit the glyphs even after resetting the atlas.
-bool buildGpuFrame(const DrawList& list, GlyphAtlas& atlas, GpuFrame& out);
+// Builds the GPU frame at `pixelScale` physical pixels per logical unit. Returns false only if it
+// could not fit the glyphs even after resetting the atlas.
+bool buildGpuFrame(const DrawList& list, GlyphAtlas& atlas, GpuFrame& out, float pixelScale = 1.0f);
 
 // Reference fragment program (GLSL 3.30). `uH` = target height in pixels; p = (gl_FragCoord.x, uH - gl_FragCoord.y).
 // Modes: Solid: colour. BoxFill/BoxStroke: rounded-box SDF with s0=(cx,cy,hx,hy), s1.x=radius, s1.y=stroke width.

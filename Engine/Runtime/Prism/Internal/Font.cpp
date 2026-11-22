@@ -12,7 +12,7 @@ FT_Library g_lib = nullptr;
 int g_refs = 0;
 } // namespace
 
-Font::Font(const std::string& path, int px) : m_px(px) {
+Font::Font(const std::string& path, int px) : m_path(path), m_px(px) {
   if (!g_lib && FT_Init_FreeType(&g_lib)) return;
   g_refs++;
   FT_Face face = nullptr;
@@ -36,6 +36,7 @@ Font::Font(const std::string& path, int px) : m_px(px) {
 }
 
 Font::~Font() {
+  m_scaled.clear(); // destroy child faces before g_refs can tear down g_lib
 #if defined(PRISM_HAS_HARFBUZZ)
   if (m_hb) hb_font_destroy(static_cast<hb_font_t*>(m_hb));   // before the FreeType face it references
 #endif
@@ -44,6 +45,18 @@ Font::~Font() {
     FT_Done_FreeType(g_lib);
     g_lib = nullptr;
   }
+}
+
+const Font& Font::atPixelScale(float scale) const {
+  if (!m_face || m_path.empty() || !std::isfinite(scale) || scale <= 1.05f) return *this;
+  int targetPx = std::clamp(int(std::lround(float(m_px) * scale)), m_px, 256);
+  if (targetPx <= m_px) return *this;
+  auto it = m_scaled.find(targetPx);
+  if (it != m_scaled.end()) return it->second && it->second->ok() ? *it->second : *this;
+  auto scaled = std::make_unique<Font>(m_path, targetPx);
+  const Font& result = scaled->ok() ? *scaled : *this;
+  m_scaled.emplace(targetPx, std::move(scaled));
+  return result;
 }
 
 bool Font::has(char32_t cp) const { return m_face && FT_Get_Char_Index(m_face, cp) != 0; }

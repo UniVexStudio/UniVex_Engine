@@ -124,7 +124,21 @@ def main() -> int:
         time.sleep(SETTLE_SECONDS)
         if not alive():
             raise RuntimeError("the Android editor died after rendering its first frame")
-        print("smoke_hub: Android editor loaded via dlopen and rendered cleanly", flush=True)
+        # Verify full PBR/VFX GLES 3.0 shader compilation with zero errors on Android.
+        shader_logs = adb("logcat", "-d")
+        try:
+            shader_logs += "\n" + adb("shell", f"run-as {PACKAGE} cat files/uve_editor.log")
+        except (subprocess.SubprocessError, OSError):
+            pass
+        shader_errors = [
+            line.strip()
+            for line in shader_logs.splitlines()
+            if "CreateShaderUVE compilation failed" in line
+        ]
+        if shader_errors:
+            sample = " | ".join(shader_errors[:5])
+            raise RuntimeError(f"Android GLES 3.0 shader compilation failed ({len(shader_errors)} error(s)): {sample}")
+        print("smoke_hub: Android editor loaded via dlopen and rendered cleanly with zero shader errors", flush=True)
 
     try:
         if adb("shell", "getprop", "sys.boot_completed").strip() != "1":

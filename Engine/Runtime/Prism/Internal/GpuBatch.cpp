@@ -108,13 +108,20 @@ struct Builder {
   const DrawList& list;
   GlyphAtlas& atlas;
   GpuFrame& out;
+  float scale = 1.0f;
   std::array<IRect, 64> stack{};
   std::vector<IRect> stackOverflow;
+  std::vector<Vec2> scaledPoly;
   int stackTop = 0;
   IRect clip;
   bool atlasFull = false;
 
-  Builder(const DrawList& l, GlyphAtlas& a, GpuFrame& o) : list(l), atlas(a), out(o) { clip = {0, 0, l.width, l.height}; }
+  Builder(const DrawList& l, GlyphAtlas& a, GpuFrame& o, float s) : list(l), atlas(a), out(o), scale(s) {
+    clip = {0, 0, o.width, o.height};
+  }
+
+  Rect sc(Rect r) const { return {r.x * scale, r.y * scale, r.w * scale, r.h * scale}; }
+  Vec2 sc(Vec2 v) const { return {v.x * scale, v.y * scale}; }
 
   static uint32_t pack(Color c) { return uint32_t(c.r) | (uint32_t(c.g) << 8) | (uint32_t(c.b) << 16) | (uint32_t(c.a) << 24); }
 
@@ -269,22 +276,24 @@ struct Builder {
 
   void text(const DrawCmd& d) {
     const Font& f = *d.font;
+    const Font& rf = f.atPixelScale(scale);
     std::string_view s(list.text.data() + d.i0, size_t(d.i1));
-    int base = int(std::lround(d.a.y + f.ascent()));
+    const float base = float(int(std::lround((d.a.y + f.ascent()) * scale)));
     float pen = d.a.x;
     for (size_t i = 0; i < s.size() && !atlasFull;) {
       char32_t cp = decodeUtf8(s, i);
-      glyph(f, cp, pen, float(base), d.c);
+      glyph(rf, cp, pen * scale, base, d.c);
       pen += f.glyph(cp).advance;
     }
   }
 
   void glyphRun(const DrawCmd& d) {
     const Font& f = *d.font;
-    float base = d.a.y + f.ascent();
+    const Font& rf = f.atPixelScale(scale);
+    const float base = d.a.y + f.ascent();
     for (int i = 0; i < d.i1 && !atlasFull; i++) {
       const Canvas::GlyphPos& g = list.glyphs[size_t(d.i0 + i)];
-      glyph(f, g.key, d.a.x + g.x, base + g.y, d.c);
+      glyph(rf, g.key, (d.a.x + g.x) * scale, (base + g.y) * scale, d.c);
     }
   }
 
@@ -343,18 +352,18 @@ struct Builder {
 
   void nineSlice(const DrawCmd& d) {
     Margin m(d.a.x, d.a.y, d.b.x, d.b.y);
-    Rect dst = d.r;
+    Rect dst = sc(d.r);
     int sw = d.w, sh = d.h;
     if (sw <= 0 || sh <= 0 || dst.w <= 0 || dst.h <= 0) return;
 
-    float ml = m.l, mr = m.r, mt = m.t, mb = m.b;
+    float ml = m.l * scale, mr = m.r * scale, mt = m.t * scale, mb = m.b * scale;
     if (ml + mr > dst.w && (ml + mr) > 0.f) {
-      float scale = dst.w / (ml + mr);
-      ml *= scale; mr *= scale;
+      float k = dst.w / (ml + mr);
+      ml *= k; mr *= k;
     }
     if (mt + mb > dst.h && (mt + mb) > 0.f) {
-      float scale = dst.h / (mt + mb);
-      mt *= scale; mb *= scale;
+      float k = dst.h / (mt + mb);
+      mt *= k; mb *= k;
     }
 
     float sx[4] = {0.f, m.l, float(sw) - m.r, float(sw)};
@@ -398,8 +407,9 @@ struct Builder {
         if (stackTop < 64) stack[size_t(stackTop)] = clip;
         else stackOverflow.push_back(clip);
         stackTop++;
-        int x0 = std::max(clip.x0, int(std::lround(d.r.x))), y0 = std::max(clip.y0, int(std::lround(d.r.y)));
-        int x1 = std::min(clip.x1, int(std::lround(d.r.x + d.r.w))), y1 = std::min(clip.y1, int(std::lround(d.r.y + d.r.h)));
+        const Rect cr = sc(d.r);
+        int x0 = std::max(clip.x0, int(std::lround(cr.x))), y0 = std::max(clip.y0, int(std::lround(cr.y)));
+        int x1 = std::min(clip.x1, int(std::lround(cr.x + cr.w))), y1 = std::min(clip.y1, int(std::lround(cr.y + cr.h)));
         clip = {x0, y0, std::max(x0, x1), std::max(y0, y1)};
         break;
       }
@@ -410,21 +420,31 @@ struct Builder {
           else { clip = stackOverflow.back(); stackOverflow.pop_back(); }
         }
         break;
-      case DrawOp::FillRect: fillRect(d.r, d.c); break;
-      case DrawOp::FillRoundRect: roundRect(d.r, d.f0, d.c, 0); break;
-      case DrawOp::StrokeRoundRect: roundRect(d.r, d.f0, d.c, d.i0); break;
-      case DrawOp::FillCircle: circle(d.a, d.f0, d.c); break;
-      case DrawOp::StrokeCircle: ring(d.a, d.f0, d.c, d.r.w); break;
-      case DrawOp::Line: line(d.a, d.b, d.c, d.f0); break;
-      case DrawOp::FillPolygon: polygon(list.points.data() + d.i0, d.i1, d.c, d.aa); break;
-      case DrawOp::GradientV: gradientV(d.r, d.c, d.c2); break;
-      case DrawOp::GradientH: gradientH(d.r, d.c, d.c2); break;
+      case DrawOp::FillRect: fillRect(sc(d.r), d.c); break;
+      case DrawOp::FillRoundRect: roundRect(sc(d.r), d.f0 * scale, d.c, 0); break;
+      case DrawOp::StrokeRoundRect:
+        roundRect(sc(d.r), d.f0 * scale, d.c, std::max(1, int(std::lround(float(d.i0) * scale))));
+        break;
+      case DrawOp::FillCircle: circle(sc(d.a), d.f0 * scale, d.c); break;
+      case DrawOp::StrokeCircle: ring(sc(d.a), d.f0 * scale, d.c, d.r.w * scale); break;
+      case DrawOp::Line: line(sc(d.a), sc(d.b), d.c, std::max(1.0f, d.f0 * scale)); break;
+      case DrawOp::FillPolygon:
+        if (scale == 1.0f) {
+          polygon(list.points.data() + d.i0, d.i1, d.c, d.aa);
+        } else {
+          scaledPoly.resize(size_t(d.i1));
+          for (int i = 0; i < d.i1; ++i) scaledPoly[size_t(i)] = sc(list.points[size_t(d.i0 + i)]);
+          polygon(scaledPoly.data(), d.i1, d.c, d.aa);
+        }
+        break;
+      case DrawOp::GradientV: gradientV(sc(d.r), d.c, d.c2); break;
+      case DrawOp::GradientH: gradientH(sc(d.r), d.c, d.c2); break;
       case DrawOp::NineSlice: nineSlice(d); break;
       case DrawOp::Text: text(d); break;
-      case DrawOp::Blit: image(d, Rect(d.a.x, d.a.y, float(d.w), float(d.h))); break;
-      case DrawOp::BlitScaled: image(d, d.r); break;
-      case DrawOp::BlitBlend: image(d, d.r, false); break;
-      case DrawOp::FillRaw: raw(d.r, d.raw); break;
+      case DrawOp::Blit: image(d, sc(Rect(d.a.x, d.a.y, float(d.w), float(d.h)))); break;
+      case DrawOp::BlitScaled: image(d, sc(d.r)); break;
+      case DrawOp::BlitBlend: image(d, sc(d.r), false); break;
+      case DrawOp::FillRaw: raw(sc(d.r), d.raw); break;
       case DrawOp::GlyphRun: glyphRun(d); break;
       }
       if (atlasFull) return;
@@ -434,12 +454,15 @@ struct Builder {
 
 } // namespace
 
-bool buildGpuFrame(const DrawList& list, GlyphAtlas& atlas, GpuFrame& out) {
+bool buildGpuFrame(const DrawList& list, GlyphAtlas& atlas, GpuFrame& out, float pixelScale) {
+  const float scale = (std::isfinite(pixelScale) && pixelScale > 0.0f) ? pixelScale : 1.0f;
+  const int targetW = list.width > 0 ? std::max(1, int(std::lround(float(list.width) * scale))) : 0;
+  const int targetH = list.height > 0 ? std::max(1, int(std::lround(float(list.height) * scale))) : 0;
   for (int attempt = 0; attempt < 4; attempt++) {
     out.clear();
-    out.width = list.width;
-    out.height = list.height;
-    Builder b(list, atlas, out);
+    out.width = targetW;
+    out.height = targetH;
+    Builder b(list, atlas, out, scale);
     b.run();
     if (!b.atlasFull) return true;
     if (attempt == 0) atlas.reset(); // atlas full: start over with only what this frame needs

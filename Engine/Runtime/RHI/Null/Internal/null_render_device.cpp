@@ -511,6 +511,8 @@ RenderDeviceCapabilitiesUVE NullRenderDeviceUVE::GetCapabilitiesUVE() const noex
     caps.timelineSemaphores = model;
     caps.bindlessTextures = model;
     caps.maxBindlessTextures = kDefaultMaxBindlessTexturesUVE;
+    caps.storageBuffers = model;
+    caps.halfFloatColorTargets = model;
     return caps;
 }
 RenderOperationResultUVE NullRenderDeviceUVE::GetTextureDescUVE(TextureHandleUVE handle,

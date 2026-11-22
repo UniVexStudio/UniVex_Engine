@@ -116,7 +116,7 @@ bool TransformGizmo::planeQuad(int n, Vec3 org, const Vec3 ax[3], float L, Vec2 
 // ------------------------------------------------------------------ hit testing
 int TransformGizmo::hitArcs(Vec2 p, Vec3 org, float L, float R, int idBase) const {
   int best = -1;
-  float bd = 7.f;
+  float bd = 7.f * std::max(1.f, hitScale);
   Vec3 view = (m_cam.eye - org).normalized();
   for (int a = 0; a < 3; a++) {
     if (std::fabs(worldAxis(a).dot(view)) < kEdgeOn) continue;   // an arc seen edge-on is a line: it would steal axis clicks
@@ -136,15 +136,16 @@ int TransformGizmo::hitArcs(Vec2 p, Vec3 org, float L, float R, int idBase) cons
 
 int TransformGizmo::hitUniversal(Vec2 p, Vec3 org, const Vec3 ax[3], float L, Vec2 so) const {
   (void)so;
+  const float hs = std::max(1.f, hitScale);
   int best = -1;
-  float bd = 8.f;
+  float bd = 8.f * hs;
   best = hitArcs(p, org, L, kArcR, 10);
   if (best >= 0) return best;
   for (int n = 0; n < 3; n++) {
     Vec2 q[4];
     if (planeQuad(n, org, ax, L, q, 0.15f, 0.33f) && inQuad(q, p)) return 4 + n;
   }
-  bd = 8.f;
+  bd = 8.f * hs;
   Vec3 view = (m_cam.eye - org).normalized();
   for (int a = 0; a < 3; a++) {
     if (std::fabs(ax[a].dot(view)) > kEndOn) continue;                // end-on axis: hidden, not clickable
@@ -157,6 +158,7 @@ int TransformGizmo::hitUniversal(Vec2 p, Vec3 org, const Vec3 ax[3], float L, Ve
 }
 
 int TransformGizmo::hit(Vec2 p) const {
+  const float hs = std::max(1.f, hitScale);
   if (mode != GizmoMode::Dots) {
     Vec3 org = origin(), ax[3];
     axes(ax);
@@ -165,10 +167,10 @@ int TransformGizmo::hit(Vec2 p) const {
     if (!m_cam.project(org, so)) return -1;
     if (mode == GizmoMode::Universal) return hitUniversal(p, org, ax, L, so);
     if (mode == GizmoMode::Rotate) return hitArcs(p, org, L, kRotR, 0);
-    if (mode == GizmoMode::Scale && (p - so).length() < 9.f) return 3;
+    if (mode == GizmoMode::Scale && (p - so).length() < 9.f * hs) return 3;
     const bool mv = mode != GizmoMode::Scale;
     int best = -1;
-    float bd = 8.f;
+    float bd = 8.f * hs;
     Vec3 view = (m_cam.eye - org).normalized();
     for (int a = 0; a < 3; a++) {
       if (std::fabs(ax[a].dot(view)) > kEndOn) continue;
@@ -185,7 +187,7 @@ int TransformGizmo::hit(Vec2 p) const {
     return best;
   }
   int bestDot = -1;
-  float bd = 9.f;
+  float bd = 9.f * hs;
   for (int i = 1; i < dotCount; i++) {          // 0 is the pivot: a marker, not a handle
     Vec2 s;
     if (m_cam.project(m_world.point(dotLocal(i)), s) && (s - p).length() < bd) { bd = (s - p).length(); bestDot = i; }

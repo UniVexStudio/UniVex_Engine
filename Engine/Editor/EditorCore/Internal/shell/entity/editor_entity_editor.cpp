@@ -2969,9 +2969,12 @@ void EditorEntityEditorUVE::RenderUVE() {
                 state.orbitRequestY = orbit[1];
             }
             state.input = m_host.CaptureViewInputUVE(m_window, rect);
+            const float dpiScale = std::max(1.0F, state.input.dpiScale);
+            const float renderW = std::max(1.0F, std::floor(rect.w * dpiScale));
+            const float renderH = std::max(1.0F, std::floor(rect.h * dpiScale));
             Math::Vector2UVE used{0.0F, 0.0F};
             const std::uint64_t texture =
-                m_editor.m_viewports.entity(Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used, state);
+                m_editor.m_viewports.entity(Math::Vector2UVE{renderW, renderH}, used, state);
             m_host.ApplyViewCursorUVE(m_window, state.input);
             state.orbitRequestX = 0.0F;
             state.orbitRequestY = 0.0F;
@@ -2979,8 +2982,9 @@ void EditorEntityEditorUVE::RenderUVE() {
                 m_gizmos->SyncUVE();
             }
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
+                const float invScale = dpiScale > 1.0F ? (1.0F / dpiScale) : 1.0F;
                 EditorHostUVE::ViewImageUVE view{};
-                view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x, used.y};
+                view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x * invScale, used.y * invScale};
                 view.texture = static_cast<std::uint32_t>(texture);
                 view.usedWidth = used.x;
                 view.usedHeight = used.y;
@@ -3020,8 +3024,11 @@ void EditorEntityEditorUVE::RenderUVE() {
                 }
                 request.stage = m_stageSnapshot;
             }
+            const float dpiScale = std::max(1.0F, m_host.AppUVE().platform().dpiScale());
             Math::Vector2UVE used{0.0F, 0.0F};
-            const std::uint64_t texture = m_editor.RenderWidgetPreviewUVE(request, Math::Vector2UVE{rect.w, rect.h}, used);
+            const std::uint64_t texture = m_editor.RenderWidgetPreviewUVE(
+                request, Math::Vector2UVE{std::max(1.0F, std::floor(rect.w * dpiScale)), std::max(1.0F, std::floor(rect.h * dpiScale))},
+                used);
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
                 EditorHostUVE::ViewImageUVE view{};
                 view.rect = rect;

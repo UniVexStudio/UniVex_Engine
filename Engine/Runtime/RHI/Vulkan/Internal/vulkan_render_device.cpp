@@ -7749,7 +7749,7 @@ RenderDeviceCapabilitiesUVE VulkanRenderDeviceUVE::GetCapabilitiesUVE() const no
     if (!IsUsableUVE())
         return caps;
     caps.fences = caps.bufferCopy = caps.surface = caps.retainedTextures =
-        RenderFeatureSupportUVE::Native;
+        caps.storageBuffers = caps.halfFloatColorTargets = RenderFeatureSupportUVE::Native;
     if (m_impl->timelineSemaphoresEnabled) {
         caps.timelineSemaphores = RenderFeatureSupportUVE::Native;
     }
