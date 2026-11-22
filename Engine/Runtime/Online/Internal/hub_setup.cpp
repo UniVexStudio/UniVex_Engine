@@ -58,11 +58,9 @@ inline constexpr std::string_view kUpdateDesktopDatabaseProgramUVE = "update-des
 inline constexpr std::wstring_view kUninstallRegistryKeyUVE =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\UniVexHub";
 inline constexpr std::wstring_view kShortcutFileNameUVE = L"UniVex Hub.lnk";
-inline constexpr std::string_view kPublisherUVE = "UniVex Studios";
 inline constexpr std::string_view kUninstallOptionUVE = "--uninstall";
 /// Per-user file association: the extension's key names the program identifier's key.
 inline constexpr std::wstring_view kClassesRegistryKeyUVE = L"Software\\Classes\\";
-inline constexpr std::wstring_view kProjectProgramIdUVE = L"UniVex.Project";
 #endif
 
 [[nodiscard]] std::filesystem::path ExecutableUVE(const std::filesystem::path& directory, const std::string_view stem) {
@@ -346,7 +344,7 @@ HubSetupResultUVE RegisterHubWithDesktopUVE(const std::filesystem::path& install
             RegCloseKey(key);
         }
         const std::wstring classes(kClassesRegistryKeyUVE);
-        const std::wstring programId(kProjectProgramIdUVE);
+        const std::wstring programId = WidenUVE(std::string(kProjectProgramIdUVE));
         const std::filesystem::path icon = installDirectory / kHubIconsDirectoryNameUVE / kHubWindowsIconFileNameUVE;
         const std::array<std::pair<std::wstring, std::wstring>, 4U> values{{
             {classes + WidenUVE(std::string(Platform::kEditorProjectFileExtensionUVE)), programId},
@@ -429,7 +427,7 @@ HubSetupResultUVE UninstallHubUVE(const std::filesystem::path& installDirectory,
     if (entriesRoot.empty()) {
         RegDeleteKeyW(HKEY_CURRENT_USER, kUninstallRegistryKeyUVE.data());
         const std::wstring classes(kClassesRegistryKeyUVE);
-        RegDeleteTreeW(HKEY_CURRENT_USER, (classes + std::wstring(kProjectProgramIdUVE)).c_str());
+        RegDeleteTreeW(HKEY_CURRENT_USER, (classes + WidenUVE(std::string(kProjectProgramIdUVE))).c_str());
         RegDeleteTreeW(HKEY_CURRENT_USER, (classes + WidenUVE(std::string(Platform::kEditorProjectFileExtensionUVE))).c_str());
         SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     }

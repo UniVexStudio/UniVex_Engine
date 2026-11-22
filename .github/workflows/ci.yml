@@ -350,8 +350,8 @@ jobs:
         run: |
           set -euo pipefail
           ccache -z
+          # The Windows installer is an Inno Setup wizard (make_hub_installer.py), so only the Hub is built.
           ./uvbt build UniVexHub Windows Release -j4
-          ./uvbt build UniVexHubSetup Windows Release -j4
           ccache -s
       - name: Save the compiler cache
         if: always()
@@ -359,14 +359,46 @@ jobs:
         with:
           path: .ccache
           key: ccache-windows-hub-${{ github.sha }}
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup --yes --no-progress
+            $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" | Select-Object -First 1
+          }
+          if (-not $iscc) { Write-Error "Inno Setup's ISCC.exe was not found after installing it"; exit 1 }
+          "UVE_ISCC=$($iscc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # Packaged on every run, so the check below proves the installer a release would ship.
       - name: Package the installer
-        if: env.IS_RELEASE == 'true'
         shell: msys2 {0}
         run: |
           set -euo pipefail
           bin=.uvbt/bin/Windows/Release
           hub_version=$("$bin/uve_hub.exe" --version | tr -d '\r')
           python Engine/Tools/make_hub_installer.py --bin "$bin" --target windows --tag "hub-v${hub_version}" --output dist
+      # Installs silently with nothing but Windows itself on PATH (no MSYS2 libraries to hide a DLL the
+      # installer forgot), starts the installed Hub, then uninstalls.
+      - name: Install, start and uninstall the Hub
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist\UniVexHubSetup-*-windows.exe | Select-Object -First 1
+          $target = Join-Path $env:RUNNER_TEMP "UniVexHubInstall"
+          $log = Join-Path $env:RUNNER_TEMP "UniVexHubSetup.log"
+          $setup = Start-Process -FilePath $installer.FullName -Wait -PassThru `
+            -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=`"$target`"", "/LOG=`"$log`""
+          if ($setup.ExitCode -ne 0) { Get-Content $log; Write-Error "setup exited with $($setup.ExitCode)"; exit 1 }
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $version = & (Join-Path $target "uve_hub.exe") --version
+          if ($LASTEXITCODE -ne 0 -or -not $version) { Write-Error "the installed Hub did not start (exit $LASTEXITCODE)"; exit 1 }
+          Write-Output "Installed Hub reports version $version"
+          $uninstaller = Get-ChildItem (Join-Path $target "unins*.exe") | Select-Object -First 1
+          $removal = Start-Process -FilePath $uninstaller.FullName -Wait -PassThru -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          if ($removal.ExitCode -ne 0) { Write-Error "uninstall exited with $($removal.ExitCode)"; exit 1 }
+          # The uninstaller hands over to a copy of itself in the temporary folder and returns at once.
+          $deadline = (Get-Date).AddSeconds(120)
+          while ((Test-Path (Join-Path $target "uve_hub.exe")) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          if (Test-Path (Join-Path $target "uve_hub.exe")) { Write-Error "uninstall left the Hub behind"; exit 1 }
       - name: Hand the release files to the publish job
         if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
