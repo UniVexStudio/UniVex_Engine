@@ -1178,6 +1178,8 @@ class EngineBuilder:
                         all_libs.append(str(static_path))
                     if lib_name in unique_sys:
                         unique_sys.remove(lib_name)
+                elif lib_name not in unique_sys:
+                    unique_sys.append(lib_name)
 
         link_cmd = [cxx] + base_cflags + ["-o", str(target_exe)]
         if platform == "Linux":
