@@ -318,10 +318,43 @@ Widget* ScrollView::hitTest(Vec2 p) {
   return this;
 }
 
+Reply ScrollView::onPreviewMouseDown(const MouseEvent& e) {
+  m_touchArmed = false;
+  m_touchDragging = false;
+  if (e.button == MouseButton::Left && Application::exists() && Application::get().platform().singleSurface() &&
+      VScrollbar::needed(m_contentH, m_rect.h) && !overBar(e.pos)) {
+    m_touchArmed = true;
+    m_touchStartY = m_touchLastY = e.pos.y;
+  }
+  return Reply::unhandled();
+}
+
+Reply ScrollView::onPreviewMouseMove(const MouseEvent& e) {
+  constexpr float kTouchScrollSlop = 8.0f;
+  if (!m_touchArmed || m_touchDragging) return Reply::unhandled();
+  if (std::abs(e.pos.y - m_touchStartY) >= kTouchScrollSlop) {
+    m_touchDragging = true;
+    float dy = e.pos.y - m_touchLastY;
+    m_touchLastY = e.pos.y;
+    m_scroll = std::clamp(m_scroll - dy, 0.f, std::max(0.f, m_contentH - m_rect.h));
+    relayout();
+    return Reply::handled().captureMouse(this);
+  }
+  return Reply::unhandled();
+}
+
+Reply ScrollView::onPreviewMouseUp(const MouseEvent&) {
+  m_touchArmed = false;
+  return Reply::unhandled();
+}
+
 bool ScrollView::onMouseDown(const MouseEvent& e) {
   if (e.button == MouseButton::Left && overBar(e.pos)) {
     m_bar.mouseDown(e.pos, m_rect, m_contentH, m_scroll);
     relayout();
+    return true;
+  }
+  if (m_touchArmed && e.button == MouseButton::Left) {
     return true;
   }
   return false;
@@ -329,12 +362,26 @@ bool ScrollView::onMouseDown(const MouseEvent& e) {
 
 bool ScrollView::onMouseMove(const MouseEvent& e) {
   if (m_bar.dragging && m_bar.mouseMove(e.pos, m_rect, m_contentH, m_scroll)) { relayout(); return true; }
+  constexpr float kTouchScrollSlop = 8.0f;
+  if (m_touchArmed && !m_touchDragging && std::abs(e.pos.y - m_touchStartY) >= kTouchScrollSlop) {
+    m_touchDragging = true;
+    m_touchLastY = e.pos.y;
+  }
+  if (m_touchDragging) {
+    float dy = e.pos.y - m_touchLastY;
+    m_touchLastY = e.pos.y;
+    m_scroll = std::clamp(m_scroll - dy, 0.f, std::max(0.f, m_contentH - m_rect.h));
+    relayout();
+    return true;
+  }
   return false;
 }
 
 bool ScrollView::onMouseUp(const MouseEvent&) {
-  bool was = m_bar.dragging;
+  bool was = m_bar.dragging || m_touchDragging;
   m_bar.mouseUp();
+  m_touchArmed = false;
+  m_touchDragging = false;
   return was;
 }
 

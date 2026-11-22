@@ -40,6 +40,48 @@ constexpr float kNavClickSlopPixelsUVE = 4.0F;
 // Scene depth for the PRISM shell's overlays: each output texel is the nearest surface of a 2x2
 // block of the renderer's depth target, as the distance along the editor view's forward axis from
 // its eye (world units), or 1e30 where nothing was drawn.
+#if defined(UNIVEX_GL_ES)
+constexpr float kHostDepthMaxRangeMetersUVE = 10000.0F;
+constexpr std::string_view kHostDepthFragmentShaderUVE = R"(#version 330 core
+uniform sampler2D uDepth;
+uniform mat4 uInvViewProj;
+uniform vec3 uEye;
+uniform vec3 uForward;
+uniform vec2 uOutSize;
+out vec4 FragColor;
+void main() {
+    ivec2 size = textureSize(uDepth, 0);
+    vec2 uv = gl_FragCoord.xy / uOutSize;
+    ivec2 base = ivec2(uv * vec2(size));
+    float d = 1.0;
+    float u = 0.0;
+    float v = 0.0;
+    for (int y = -1; y <= 0; ++y) {
+        for (int x = -1; x <= 0; ++x) {
+            ivec2 p = clamp(base + ivec2(x, y), ivec2(0), size - 1);
+            float s = texelFetch(uDepth, p, 0).r;
+            if (s < d) {
+                d = s;
+                u = (float(p.x) + 0.5) / float(size.x);
+                v = (float(p.y) + 0.5) / float(size.y);
+            }
+        }
+    }
+    if (d >= 0.999999) {
+        FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+    vec4 world = uInvViewProj * vec4(u * 2.0 - 1.0, v * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    world /= world.w;
+    float dist = clamp(dot(world.xyz - uEye, uForward) / 10000.0, 0.0, 1.0);
+    float scaled = floor(dist * 16777215.0 + 0.5);
+    float r = floor(scaled / 65536.0);
+    float g = floor(mod(scaled, 65536.0) / 256.0);
+    float b = mod(scaled, 256.0);
+    FragColor = vec4(r / 255.0, g / 255.0, b / 255.0, 1.0);
+}
+)";
+#else
 constexpr std::string_view kHostDepthFragmentShaderUVE = R"(#version 330 core
 uniform sampler2D uDepth;
 uniform mat4 uInvViewProj;
@@ -74,6 +116,7 @@ void main() {
     FragColor = vec4(dot(world.xyz - uEye, uForward));
 }
 )";
+#endif
 
 } // namespace
 
@@ -524,11 +567,41 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, m_hostDepthFbo);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, m_hostDepthPbo[write]);
+#if defined(UNIVEX_GL_ES)
+    glReadPixels(0, 0, m_hostDepthWidth, m_hostDepthHeight, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+#else
     glReadPixels(0, 0, m_hostDepthWidth, m_hostDepthHeight, GL_RED, GL_FLOAT, nullptr);
+#endif
     m_hostDepthPboFilled[write] = true;
     glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
     if (m_hostDepthPboFilled[read]) {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, m_hostDepthPbo[read]);
+#if defined(UNIVEX_GL_ES)
+        if (const auto* const rows =
+                static_cast<const std::uint8_t*>(glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, bytes, GL_MAP_READ_BIT))) {
+            overlayState.sceneDepth.resize(count);
+            const std::size_t stride = static_cast<std::size_t>(m_hostDepthWidth);
+            for (int y = 0; y < m_hostDepthHeight; ++y) {
+                const std::size_t srcRow = static_cast<std::size_t>(m_hostDepthHeight - 1 - y) * stride;
+                const std::size_t dstRow = static_cast<std::size_t>(y) * stride;
+                for (std::size_t x = 0; x < stride; ++x) {
+                    const std::uint8_t* const px = rows + (srcRow + x) * 4U;
+                    if (px[3] == 0U) {
+                        overlayState.sceneDepth[dstRow + x] = 1.0e30F;
+                    } else {
+                        const std::uint32_t packed = (static_cast<std::uint32_t>(px[0]) << 16U) |
+                                                     (static_cast<std::uint32_t>(px[1]) << 8U) |
+                                                     static_cast<std::uint32_t>(px[2]);
+                        overlayState.sceneDepth[dstRow + x] =
+                            (static_cast<float>(packed) / 16777215.0F) * kHostDepthMaxRangeMetersUVE;
+                    }
+                }
+            }
+            glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+            overlayState.sceneDepthWidth = m_hostDepthWidth;
+            overlayState.sceneDepthHeight = m_hostDepthHeight;
+        }
+#else
         if (const auto* const rows =
                 static_cast<const float*>(glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, bytes, GL_MAP_READ_BIT))) {
             overlayState.sceneDepth.resize(count);
@@ -541,6 +614,7 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
             overlayState.sceneDepthWidth = m_hostDepthWidth;
             overlayState.sceneDepthHeight = m_hostDepthHeight;
         }
+#endif
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     m_hostDepthPboNext = read;
@@ -985,7 +1059,11 @@ bool ViewportSceneInteractionUVE::EnsureHostDepthUVE(ViewportSurfaceUVE& surface
         glGenFramebuffers(1, &m_hostDepthFbo);
     }
     glBindTexture(GL_TEXTURE_2D, m_hostDepthTexture);
+#if defined(UNIVEX_GL_ES)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+#else
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, w, h, 0, GL_RED, GL_FLOAT, nullptr);
+#endif
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindTexture(GL_TEXTURE_2D, 0);

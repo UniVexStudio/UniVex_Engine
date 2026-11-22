@@ -3,11 +3,16 @@
 package com.univex.app;
 
 import android.app.NativeActivity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.view.DisplayCutout;
 import android.view.View;
@@ -20,26 +25,31 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The NativeActivity every UniVex app runs in, made full screen: the status and navigation bars are
  * hidden (a swipe from the edge shows them for a moment) and the surface reaches under display
- * cutouts. The parts of the surface a cutout covers are kept in the safeInset fields, in surface
- * pixels, for the native code to lay its interface out around.
+ * cutouts. The parts of the surface a cutout or the soft keyboard covers are kept in the safeInset
+ * fields, in surface pixels, for the native code to lay its interface out around.
  *
- * It also opens Android's own file picker for native code (pickFile, takePickedFile): an app may
- * not read the shared Downloads folder directly, so the chosen document is copied into the app's
- * cache and handed over as a path.
+ * It also opens Android's own file picker for native code (pickFile, takePickedFile) and bridges
+ * the system clipboard (getClipboardText, setClipboardText).
  */
 public class UniVexActivity extends NativeActivity {
     private static final int PICK_FILE_REQUEST = 0x5576;
     private static final String PICKED_FOLDER = "picked";
     private static final int COPY_BUFFER_BYTES = 1 << 16;
     private static final String ANY_TYPE = "*/*";
+    private static final String PICK_ERROR_PREFIX = "error:";
+    private static final long CLIPBOARD_READ_TIMEOUT_MS = 250L;
 
-    // The last pick: null while one is running or none was asked for, "" when cancelled or failed.
+    // The last pick: null while one is running or none was asked for, "" when cancelled,
+    // "error:<reason>" on failure, else the copied file path in cache.
     private volatile String pickedFile;
     private volatile boolean picking;
+    private volatile String launchProject;
 
     // Read from native code (Window module, android_activity.cpp); written on the UI thread.
     public volatile int safeInsetLeft;
@@ -56,15 +66,34 @@ public class UniVexActivity extends NativeActivity {
                 : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         window.setAttributes(attributes);
         super.onCreate(savedInstanceState);
-        window.getDecorView().setOnApplyWindowInsetsListener((view, insets) -> {
+        Intent launchIntent = getIntent();
+        if (launchIntent != null) {
+            String project = launchIntent.getStringExtra("project");
+            if (project != null && !project.isEmpty()) {
+                launchProject = project;
+            }
+        }
+        View decor = window.getDecorView();
+        decor.setOnApplyWindowInsetsListener((view, insets) -> {
             storeSafeInsets(insets);
             return view.onApplyWindowInsets(insets);
         });
         hideSystemBars();
+        decor.requestApplyInsets();
+    }
+
+    /** Returns a .uvproject path passed via Intent extra "project" once, then clears it. */
+    public String takeLaunchProject() {
+        String result = launchProject;
+        launchProject = null;
+        return result != null ? result : "";
     }
 
     /** Opens the system file picker; the result arrives through takePickedFile. Called from native code. */
     public void pickFile() {
+        if (picking) {
+            return;
+        }
         picking = true;
         pickedFile = null;
         runOnUiThread(() -> {
@@ -74,14 +103,14 @@ public class UniVexActivity extends NativeActivity {
             try {
                 startActivityForResult(intent, PICK_FILE_REQUEST);
             } catch (RuntimeException noPicker) {
-                finishPick("");
+                finishPick(PICK_ERROR_PREFIX + "No Android file picker is available on this device.");
             }
         });
     }
 
     /**
-     * The picked file's path in the app's cache, "" when the pick was cancelled or failed, or null
-     * while it is still running (or none was started). A finished result is returned once.
+     * The picked file's path in the app's cache, "" when cancelled, "error:<reason>" when failed,
+     * or null while it is still running (or none was started). A finished result is returned once.
      */
     public String takePickedFile() {
         if (picking) {
@@ -90,6 +119,61 @@ public class UniVexActivity extends NativeActivity {
         String result = pickedFile;
         pickedFile = null;
         return result;
+    }
+
+    /** Reads plain text from Android's system clipboard; safe to call from the native thread. */
+    public String getClipboardText() {
+        final String[] holder = new String[] {""};
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            holder[0] = readClipboardOnUiThread();
+            return holder[0];
+        }
+        CountDownLatch latch = new CountDownLatch(1);
+        runOnUiThread(() -> {
+            try {
+                holder[0] = readClipboardOnUiThread();
+            } finally {
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await(CLIPBOARD_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        return holder[0];
+    }
+
+    /** Copies plain text to Android's system clipboard; safe to call from the native thread. */
+    public void setClipboardText(final String text) {
+        final String value = text != null ? text : "";
+        runOnUiThread(() -> {
+            try {
+                ClipboardManager manager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (manager != null) {
+                    manager.setPrimaryClip(ClipData.newPlainText("UniVex", value));
+                }
+            } catch (RuntimeException ignored) {
+                // Background clipboard restrictions on Android 10+ are non-fatal.
+            }
+        });
+    }
+
+    private String readClipboardOnUiThread() {
+        try {
+            ClipboardManager manager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (manager == null || !manager.hasPrimaryClip()) {
+                return "";
+            }
+            ClipData clip = manager.getPrimaryClip();
+            if (clip == null || clip.getItemCount() <= 0) {
+                return "";
+            }
+            CharSequence coerced = clip.getItemAt(0).coerceToText(this);
+            return coerced != null ? coerced.toString() : "";
+        } catch (RuntimeException ignored) {
+            return "";
+        }
     }
 
     @Override
@@ -115,13 +199,22 @@ public class UniVexActivity extends NativeActivity {
     private String copyToCache(Uri uri) {
         File folder = new File(getCacheDir(), PICKED_FOLDER);
         if (!folder.isDirectory() && !folder.mkdirs()) {
-            return "";
+            return PICK_ERROR_PREFIX + "Unable to create the app cache folder for importing.";
+        }
+        File[] staleFiles = folder.listFiles();
+        if (staleFiles != null) {
+            for (File stale : staleFiles) {
+                if (stale.isFile()) {
+                    stale.delete();
+                }
+            }
         }
         File target = new File(folder, displayName(uri));
         try (InputStream input = getContentResolver().openInputStream(uri);
              OutputStream output = new FileOutputStream(target)) {
             if (input == null) {
-                return "";
+                target.delete();
+                return PICK_ERROR_PREFIX + "Unable to open the selected file.";
             }
             byte[] buffer = new byte[COPY_BUFFER_BYTES];
             for (int read; (read = input.read(buffer)) > 0; ) {
@@ -129,7 +222,10 @@ public class UniVexActivity extends NativeActivity {
             }
             return target.getAbsolutePath();
         } catch (Exception failed) {
-            return "";
+            target.delete();
+            String reason = failed.getMessage();
+            return PICK_ERROR_PREFIX + "Unable to copy the selected file into app storage"
+                    + (reason != null && !reason.isEmpty() ? ": " + reason : ".");
         }
     }
 
@@ -182,13 +278,23 @@ public class UniVexActivity extends NativeActivity {
         }
     }
 
-    // Only cutouts count: bars a swipe shows float over the surface for a moment, and laying the
-    // interface out around them would make it jump.
+    // Display cutouts plus the on-screen keyboard (API 30+ edge-to-edge) keep interactive UI visible;
+    // transient swipe-revealed system bars are excluded so the layout does not jump.
     private void storeSafeInsets(WindowInsets insets) {
         DisplayCutout cutout = insets.getDisplayCutout();
-        safeInsetLeft = cutout != null ? cutout.getSafeInsetLeft() : 0;
-        safeInsetTop = cutout != null ? cutout.getSafeInsetTop() : 0;
-        safeInsetRight = cutout != null ? cutout.getSafeInsetRight() : 0;
-        safeInsetBottom = cutout != null ? cutout.getSafeInsetBottom() : 0;
+        int left = cutout != null ? cutout.getSafeInsetLeft() : 0;
+        int top = cutout != null ? cutout.getSafeInsetTop() : 0;
+        int right = cutout != null ? cutout.getSafeInsetRight() : 0;
+        int bottom = cutout != null ? cutout.getSafeInsetBottom() : 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Insets ime = insets.getInsets(WindowInsets.Type.ime());
+            if (ime.bottom > bottom) {
+                bottom = ime.bottom;
+            }
+        }
+        safeInsetLeft = left;
+        safeInsetTop = top;
+        safeInsetRight = right;
+        safeInsetBottom = bottom;
     }
 }

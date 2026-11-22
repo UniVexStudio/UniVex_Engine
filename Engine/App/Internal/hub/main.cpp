@@ -22,6 +22,7 @@
 #include "hub_window.h"
 #include "project_template.h"
 #include "launcher_window.h"
+#include "process_launcher.h"
 #include <iterator>
 #include "project_list.h"
 #include "project_registry.h"
@@ -135,6 +136,10 @@ struct HubLaunchOptionsUVE final {
 }
 
 [[nodiscard]] std::filesystem::path ExecutableDirectoryUVE(const char* const argv0) {
+    const std::filesystem::path self = UVE::Platform::CurrentExecutablePathUVE();
+    if (!self.empty()) {
+        return self.parent_path();
+    }
     std::error_code error;
     const std::filesystem::path executable = std::filesystem::absolute(std::filesystem::path(argv0), error);
     return error ? std::filesystem::current_path(error) : executable.parent_path();

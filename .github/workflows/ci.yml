@@ -272,36 +272,65 @@ jobs:
       - name: Restore the compiler cache
         uses: actions/cache/restore@v4
         with:
-          path: .ccache
-          key: ccache-linux-hub-${{ github.sha }}
-          restore-keys: ccache-linux-hub-
+          path: |
+            .ccache
+            .uvbt/tp_lib/Linux
+          key: ccache-linux-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
+          restore-keys: ccache-linux-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-
       - name: Install native dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ninja-build libglfw3-dev libglew-dev libgl1-mesa-dev \
-            libglu1-mesa-dev zlib1g-dev libjpeg-dev libfreetype-dev libcurl4-openssl-dev xvfb ccache
+            libglu1-mesa-dev zlib1g-dev libjpeg-dev libfreetype-dev libcurl4-openssl-dev patchelf xvfb ccache
       - name: Build
         run: |
           set -euo pipefail
           ccache -z
-          for target in UniVexHub UniVexHubSetup; do
-            ./uvbt build "$target" Linux Release -j"$(nproc)"
-          done
+          ./uvbt build UniVexHub Linux Release -j"$(nproc)"
+          # Build the single-file setup executable with static UI libs so it runs on any Linux distro.
+          UVBT_STATIC_LINUX_UI=1 ./uvbt build UniVexHubSetup Linux Release -j"$(nproc)"
           ccache -s
       - name: Save the compiler cache
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: .ccache
-          key: ccache-linux-hub-${{ github.sha }}
+          path: |
+            .ccache
+            .uvbt/tp_lib/Linux
+          key: ccache-linux-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
       - name: Read the Hub's version
         id: version
         run: echo "hub-version=$(.uvbt/bin/Linux/Release/uve_hub --version)" >> "${GITHUB_OUTPUT}"
+      # Packaged and smoke-tested on every run so the shipped Linux installer is always verified.
       - name: Package the installer
-        if: env.IS_RELEASE == 'true'
         run: |
           python3 Engine/Tools/make_hub_installer.py --bin .uvbt/bin/Linux/Release --target linux \
             --tag "hub-v${{ steps.version.outputs.hub-version }}" --output dist
+      - name: Verify, install, launch and uninstall the Linux Hub
+        run: |
+          set -euo pipefail
+          installer=$(ls dist/UniVexHubSetup-*-linux)
+          ldd "${installer}" | tee /tmp/hub-setup-ldd.txt
+          if grep -Eq 'not found|libglfw|libGLEW|libjpeg|libfreetype' /tmp/hub-setup-ldd.txt; then
+            echo "::error::UniVexHubSetup carries non-portable shared library dependencies."
+            exit 1
+          fi
+          install_dir="${RUNNER_TEMP}/UniVexHubLinuxTest"
+          home_dir="${RUNNER_TEMP}/UniVexHubLinuxHome"
+          mkdir -p "${home_dir}"
+          HOME="${home_dir}" "${installer}" --silent --dir "${install_dir}"
+          ldd "${install_dir}/uve_hub" | tee /tmp/hub-installed-ldd.txt
+          if grep -q 'not found' /tmp/hub-installed-ldd.txt; then
+            echo "::error::Installed uve_hub has unresolved shared libraries."
+            exit 1
+          fi
+          HOME="${home_dir}" "${install_dir}/uve_hub" --version
+          HOME="${home_dir}" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a "${install_dir}/uve_hub" --frames 3
+          HOME="${home_dir}" "${install_dir}/uve_hub_setup" --uninstall --silent --dir "${install_dir}"
+          if [ -e "${install_dir}/uve_hub" ]; then
+            echo "::error::Linux Hub uninstall left uve_hub behind."
+            exit 1
+          fi
       - name: Hand the release files to the publish job
         if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
@@ -500,19 +529,24 @@ jobs:
             .uvbt/tp_lib/Android
             ThirdParty/android
           key: android-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
-      # The Hub is started on an emulator before anything ships: an x86_64 build of the same APK
-      # (CI-only, debug key) must start, draw its first frame and survive a background/foreground.
-      - name: Build the Hub APK for the emulator
+      # The Hub and an ABI-matching x86_64 engine package are tested together on the emulator so
+      # in-process dlopen, ELF isolation and Android 14 read-only library loading are proven end to end.
+      - name: Build the Hub APK and engine package for the emulator
         run: |
           set -euo pipefail
           python3 Engine/Tools/android/build_apk.py --sdk "${ANDROID_HOME}" --app hub --abi "${EMULATOR_ABI}" \
-            --build-dir build/android-emulator
+            --debuggable --build-dir build/android-emulator
+          UVBT_ANDROID_ABI="${EMULATOR_ABI}" ./uvbt build UniVexEditorAndroid Android Release -j"$(nproc)"
+          engine_tag=$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools/android'); import build_apk; M,m,p,b = build_apk.read_source_version('runtime'); print(f'v{M}.{m}.{p}+build.{b}-beta')")
+          python3 Engine/Tools/package_engine.py --bin ".uvbt/bin/Android/${EMULATOR_ABI}/Release" \
+            --target "android-${EMULATOR_ABI}" --tag "${engine_tag}" --skip-version-check \
+            --output build/android-emulator-pkg
       - name: Let the emulator use KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Start the Hub on an emulator
+      - name: Start the Hub and Editor on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.EMULATOR_API_LEVEL }}
@@ -520,7 +554,11 @@ jobs:
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: python3 Engine/Tools/android/smoke_hub.py --adb adb --serial emulator-5554 --apk build/android-emulator/UniVexHub-${{ env.EMULATOR_ABI }}.apk
+          script: |
+            pkg=$(ls build/android-emulator-pkg/univex-engine-*-android-${EMULATOR_ABI}.uvpackage)
+            python3 Engine/Tools/android/smoke_hub.py --adb adb --serial emulator-5554 \
+              --apk "build/android-emulator/UniVexHub-${EMULATOR_ABI}.apk" \
+              --engine-package "${pkg}"
       - name: Hand the release files to the publish job
         if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
@@ -532,7 +570,7 @@ jobs:
 
   # ---------------------------------------------------------------------------------------------
   # Release / <platform>: the engine (editor, runtime, packer) in Release. Built on every push;
-  # packaged as univex-engine-<version>-<platform>.uvpackage on a release.
+  # packaged as univex-engine-<version>-<platform>.uvpackage on every run and published on release.
   # ---------------------------------------------------------------------------------------------
   release-linux:
     name: Release / Linux
@@ -558,12 +596,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ninja-build libglfw3-dev libglew-dev libgl1-mesa-dev \
-            libglu1-mesa-dev zlib1g-dev libjpeg-dev libfreetype-dev libcurl4-openssl-dev xvfb ccache
+            libglu1-mesa-dev zlib1g-dev libjpeg-dev libfreetype-dev libcurl4-openssl-dev patchelf xvfb ccache
       - name: Build
         run: |
           set -euo pipefail
           ccache -z
-          for target in UniVexEditor UniVexRuntime UniVexPack; do
+          for target in UniVexEditor UniVexRuntime UniVexPack UniVexAssetWorkload; do
             ./uvbt build "$target" Linux Release -j"$(nproc)"
           done
           ccache -s
@@ -575,15 +613,36 @@ jobs:
           key: ccache-linux-Release-${{ github.sha }}
       - name: Package the engine
         id: package
-        if: env.IS_RELEASE == 'true'
         run: |
           set -euo pipefail
           bin=.uvbt/bin/Linux/Release
-          # A tag names its version; a master build is a development prerelease of the built version.
+          # A tag names its version; a master or PR build uses the built engine version.
           tag="${GITHUB_REF_NAME}"
           [ "${GITHUB_REF_TYPE}" = "tag" ] || tag="v$("$bin/uve_editor" --version)-beta"
           python3 Engine/Tools/package_engine.py --bin "$bin" --target linux --tag "${tag}" --output dist
           echo "release-tag=${tag}" >> "${GITHUB_OUTPUT}"
+      - name: Verify extracted Linux engine package
+        run: |
+          set -euo pipefail
+          pkg=$(ls dist/univex-engine-*-linux.uvpackage)
+          extract="${RUNNER_TEMP}/linux-engine-extracted"
+          rm -rf "${extract}" && mkdir -p "${extract}"
+          tar -xzf "${pkg}" -C "${extract}"
+          for exe in uve_editor uve_runtime uve_pack; do
+            ldd "${extract}/${exe}" | tee "/tmp/ldd-${exe}.txt"
+            if grep -q 'not found' "/tmp/ldd-${exe}.txt"; then
+              echo "::error::Extracted ${exe} has unresolved shared libraries."
+              exit 1
+            fi
+          done
+          test -d "${extract}/shaders"
+          test -d "${extract}/prism_assets"
+          "${extract}/uve_editor" --bridge-stdio < /dev/null
+          .uvbt/bin/Linux/Release/uve_asset_workload --create-fixture "${RUNNER_TEMP}/cook-src"
+          "${extract}/uve_pack" --project "${RUNNER_TEMP}/cook-src/sample.uvproject" \
+            --runtime "${extract}/uve_runtime" --output "${RUNNER_TEMP}/cooked" --cook linux
+          rm -rf "${RUNNER_TEMP}/cook-src"
+          "${RUNNER_TEMP}/cooked/uve_runtime" --headless --project "${RUNNER_TEMP}/cooked/sample.uvproject" --frames 3
       - name: Hand the release files to the publish job
         if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
@@ -658,6 +717,7 @@ jobs:
           cp .uvbt/bin/Windows/Release/uve_pack.exe package/UniVex-Editor/
           cp .uvbt/bin/Windows/Release/uve_asset_workload.exe package/UniVex-Editor/
           cp -r .uvbt/bin/Windows/Release/prism_assets package/UniVex-Editor/
+          cp -r Engine/Runtime/RHI/Shader/built_in package/UniVex-Editor/shaders
           python - <<'PY'
           import pathlib
           import re
@@ -710,15 +770,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # shortcut: builds the Android runtime as the engine's compile check; the Android engine package
-  # (univex-engine-<version>-android.uvpackage, the editor) ships from here once the editor runs there.
+  # Builds the Android engine (runtime + in-process Hub editor) for arm64-v8a and x86_64, verifies
+  # ELF symbol isolation, and stages both ABI builds for ABI-aware .uvpackage packaging.
   release-android:
     name: Release / Android
     runs-on: ubuntu-latest
     # Windows minutes count double and Android builds and the emulator are long: a pull request is
     # checked on Linux, and these run on master, version tags and by hand.
     if: github.event_name != 'pull_request'
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       UVBT_COMPILER_LAUNCHER: ccache
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -752,13 +812,14 @@ jobs:
           # `yes` ends with a broken pipe once the licenses are accepted; that is not a failure.
           (yes || true) | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ${packages}
-      - name: Build
+      - name: Build Android arm64-v8a and x86_64
         run: |
           set -euo pipefail
           ccache -z
-          ./uvbt build UniVexAndroid Android Release -j"$(nproc)"
-          # The editor as the library UniVex Hub loads on Android (the Android engine package).
-          ./uvbt build UniVexEditorAndroid Android Release -j"$(nproc)"
+          for abi in arm64-v8a x86_64; do
+            UVBT_ANDROID_ABI="${abi}" ./uvbt build UniVexAndroid Android Release -j"$(nproc)"
+            UVBT_ANDROID_ABI="${abi}" ./uvbt build UniVexEditorAndroid Android Release -j"$(nproc)"
+          done
           ccache -s
       - name: Save the compiler cache
         if: always()
@@ -769,20 +830,36 @@ jobs:
             .uvbt/tp_lib/Android
             ThirdParty/android
           key: android-engine-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
-      # The engine package is made by the publish job, which knows the release's tag: this hands it the
-      # stripped editor library and the data beside it.
-      - name: Stage the editor for the engine package
-        if: env.IS_RELEASE == 'true'
+      - name: Verify Android ELF symbol isolation and stage ABI builds
         run: |
           set -euo pipefail
-          read -r abi ndk host <<< "$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools/UVBT'); import uvbt; print(uvbt.ANDROID_DEFAULT_ABI, uvbt.ANDROID_NDK_VERSION, uvbt.ANDROID_NDK_HOST_TAG)")"
-          bin=".uvbt/bin/Android/${abi}/Release"
-          library=$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools'); import package_engine; print(package_engine.ANDROID_EDITOR_LIBRARY)")
-          mkdir -p build/android-editor
-          cp "${bin}/${library}" build/android-editor/
-          cp -r "${bin}/prism_assets" build/android-editor/
-          "${ANDROID_HOME}/ndk/${ndk}/toolchains/llvm/prebuilt/${host}/bin/llvm-strip" --strip-unneeded "build/android-editor/${library}"
-      - name: Hand the editor to the publish job
+          read -r ndk host <<< "$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools/UVBT'); import uvbt; print(uvbt.ANDROID_NDK_VERSION, uvbt.ANDROID_NDK_HOST_TAG)")"
+          ndk_bin="${ANDROID_HOME}/ndk/${ndk}/toolchains/llvm/prebuilt/${host}/bin"
+          read -r editor_lib runtime_lib <<< "$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools'); import package_engine; print(package_engine.ANDROID_EDITOR_LIBRARY, package_engine.ANDROID_RUNTIME_LIBRARY)")"
+          for abi in arm64-v8a x86_64; do
+            bin=".uvbt/bin/Android/${abi}/Release"
+            stage="build/android-editor/${abi}"
+            mkdir -p "${stage}"
+            cp "${bin}/${editor_lib}" "${bin}/${runtime_lib}" "${stage}/"
+            cp -r "${bin}/prism_assets" "${stage}/"
+            "${ndk_bin}/llvm-strip" --strip-unneeded "${stage}/${editor_lib}" "${stage}/${runtime_lib}"
+            # Verify ELF symbol isolation: only entry points are exported dynamically.
+            exported=$("${ndk_bin}/llvm-nm" -D --defined-only "${stage}/${editor_lib}" | awk '{print $3}')
+            echo "Exported symbols in ${abi}/${editor_lib}: ${exported}"
+            if ! printf '%s\n' "${exported}" | grep -qx 'UveEditorRunUVE'; then
+              echo "::error::${abi}/${editor_lib} does not export UveEditorRunUVE."
+              exit 1
+            fi
+            unexpected=$(printf '%s\n' "${exported}" | grep -Ev '^(UveEditorRunUVE|ANativeActivity_onCreate|_edata|_end|__bss_start)$' || true)
+            if [ -n "${unexpected}" ]; then
+              echo "::error::${abi}/${editor_lib} leaks unexpected dynamic symbols: ${unexpected}"
+              exit 1
+            fi
+            engine_tag=$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools/android'); import build_apk; M,m,p,b = build_apk.read_source_version('runtime'); print(f'v{M}.{m}.{p}+build.{b}-beta')")
+            python3 Engine/Tools/package_engine.py --bin "${stage}" --target "android-${abi}" \
+              --tag "${engine_tag}" --skip-version-check --require-runtime --output "${RUNNER_TEMP}/android-verify"
+          done
+      - name: Hand the Android builds to the publish job
         if: env.IS_RELEASE == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -808,6 +885,7 @@ jobs:
           sparse-checkout: |
             ${{ env.ENGINE_FEED_FILE }}
             Engine/Tools
+            Engine/Runtime/RHI/Shader/built_in
           sparse-checkout-cone-mode: false
       - name: Choose the releases repository
         env:
@@ -831,16 +909,18 @@ jobs:
           pattern: "{release,hub}-*"
           path: dist
           merge-multiple: true
-      - name: Collect the Android editor
+      - name: Collect the Android engine builds
         uses: actions/download-artifact@v4
         with:
           name: android-editor-build
           path: build/android-editor
-      - name: Package the engine for Android
+      - name: Package the engine for Android (arm64-v8a and x86_64)
         run: |
           set -euo pipefail
-          python3 Engine/Tools/package_engine.py --bin build/android-editor --target android \
-            --tag "${{ needs.release-linux.outputs.release-tag }}" --skip-version-check --output dist
+          for abi in arm64-v8a x86_64; do
+            python3 Engine/Tools/package_engine.py --bin "build/android-editor/${abi}" --target "android-${abi}" \
+              --tag "${{ needs.release-linux.outputs.release-tag }}" --skip-version-check --require-runtime --output dist
+          done
       - name: Name the APK after the Hub's version
         env:
           HUB_VERSION: ${{ needs.hub-linux.outputs.hub-version }}

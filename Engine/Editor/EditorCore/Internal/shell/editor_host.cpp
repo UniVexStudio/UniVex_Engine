@@ -160,6 +160,22 @@ void AppendUtf8UVE(std::string& out, const char32_t cp) {
     return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 
+/// Logical UI scale: 1.0 on desktop (pixel-exact), or the display density scale on single-surface
+/// mobile screens, clamped so the shorter logical edge stays at least 360 layout units wide.
+[[nodiscard]] float ComputeUiScaleUVE(GLFWwindow* const window, const int fbWidth, const int fbHeight,
+                                      const bool singleSurface) {
+    if (!singleSurface || window == nullptr || fbWidth <= 0 || fbHeight <= 0) {
+        return 1.0F;
+    }
+    float sx = 1.0F;
+    float sy = 1.0F;
+    glfwGetWindowContentScale(window, &sx, &sy);
+    const float rawScale = std::isfinite(sx) && sx > 0.0F ? sx : 1.0F;
+    constexpr float kMinLogicalShortEdgeUVE = 360.0F;
+    const float maxScale = std::max(1.0F, static_cast<float>(std::min(fbWidth, fbHeight)) / kMinLogicalShortEdgeUVE);
+    return std::clamp(rawScale, 1.0F, maxScale);
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------------------- window
@@ -172,6 +188,9 @@ struct EditorHostUVE::WindowUVE final {
     GLFWwindow* window = nullptr;
     int fbWidth = 1;
     int fbHeight = 1;
+    int uiWidth = 1;
+    int uiHeight = 1;
+    float uiScale = 1.0F;
     std::map<int, prism::Rect> captions;
     bool closeRequested = false;
     /// A page on the main surface (single-surface platforms) rather than an OS window of its own.
@@ -267,7 +286,7 @@ public:
         Window::SetAndroidGlfwTextInputUVE(active);   // the app shows or hides the soft keyboard
 #endif
     }
-    float dpiScale() const override { return 1.0F; }
+    float dpiScale() const override { return m_host.m_main != nullptr ? m_host.m_main->uiScale : 1.0F; }
     void requestQuit() override { glfwSetWindowShouldClose(m_window, GLFW_TRUE); }
     void* nativeWindowHandle() const override { return m_window; }
     /// Drag areas: id < kExtraCaptionIdUVE is a window's title strip (the window's own id); ids
@@ -701,12 +720,15 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
     glfwGetFramebufferSize(window, &m_main->fbWidth, &m_main->fbHeight);
     m_main->fbWidth = std::max(1, m_main->fbWidth);
     m_main->fbHeight = std::max(1, m_main->fbHeight);
+    m_main->uiScale = ComputeUiScaleUVE(window, m_main->fbWidth, m_main->fbHeight, m_singleSurface);
+    m_main->uiWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(m_main->fbWidth) / m_main->uiScale)));
+    m_main->uiHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(m_main->fbHeight) / m_main->uiScale)));
 
     m_platform = std::make_shared<PlatformUVE>(*this, window);
     m_app = std::make_unique<prism::Application>();
     prism::HostDesc desc{};
-    desc.width = m_main->fbWidth;
-    desc.height = m_main->fbHeight;
+    desc.width = m_main->uiWidth;
+    desc.height = m_main->uiHeight;
     desc.assetDir = assetDir.string();
     if (!m_app->initHosted(desc, m_platform)) {
         m_app.reset();
@@ -810,17 +832,20 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
         w->page = true;
         w->fbWidth = m_main->fbWidth;
         w->fbHeight = m_main->fbHeight;
+        w->uiScale = m_main->uiScale;
+        w->uiWidth = m_main->uiWidth;
+        w->uiHeight = m_main->uiHeight;
         std::string error;
         w->backend = prism::GlBackend::create(&GlLoaderUVE, {}, /*blitToScreen*/ false, &error);
         if (w->backend == nullptr) {
             UVE_ERROR("Editor host: no renderer for the page {}: {}", title, error);
             return 0;
         }
-        w->backend->resize(w->fbWidth, w->fbHeight);
+        w->backend->resize(w->uiWidth, w->uiHeight);
         prism::OsWindowDesc desc{};
         desc.title = title;
-        desc.width = w->fbWidth;
-        desc.height = w->fbHeight;
+        desc.width = w->uiWidth;
+        desc.height = w->uiHeight;
         const int id = m_app->openWindow(std::move(root), desc);
         if (id == 0) {
             return 0;
@@ -829,7 +854,7 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
         w->mouse = m_main->mouse;
         w->frameStartMouse = m_main->mouse;
         w->lastFrameTime = glfwGetTime();
-        m_app->windowResize(id, w->fbWidth, w->fbHeight);
+        m_app->windowResize(id, w->uiWidth, w->uiHeight);
         m_windows.emplace(id, std::move(w));
         ShowPageUVE(id);
         return id;
@@ -857,6 +882,9 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
     glfwGetFramebufferSize(window, &w->fbWidth, &w->fbHeight);
     w->fbWidth = std::max(1, w->fbWidth);
     w->fbHeight = std::max(1, w->fbHeight);
+    w->uiScale = 1.0F;
+    w->uiWidth = w->fbWidth;
+    w->uiHeight = w->fbHeight;
     std::string error;
     w->backend = prism::GlBackend::create(&GlLoaderUVE, {}, /*blitToScreen*/ false, &error);
     if (w->backend == nullptr) {
@@ -970,8 +998,8 @@ prism::Vec2 EditorHostUVE::ToUiUVE(const WindowUVE& w, const double x, const dou
     int winW = 0;
     int winH = 0;
     glfwGetWindowSize(w.window, &winW, &winH);
-    const float sx = winW > 0 ? static_cast<float>(w.fbWidth) / static_cast<float>(winW) : 1.0F;
-    const float sy = winH > 0 ? static_cast<float>(w.fbHeight) / static_cast<float>(winH) : 1.0F;
+    const float sx = winW > 0 ? static_cast<float>(w.uiWidth) / static_cast<float>(winW) : 1.0F;
+    const float sy = winH > 0 ? static_cast<float>(w.uiHeight) / static_cast<float>(winH) : 1.0F;
     return prism::Vec2{static_cast<float>(x) * sx, static_cast<float>(y) * sy};
 }
 
@@ -1025,16 +1053,23 @@ void EditorHostUVE::SyncSizeUVE(WindowUVE& w) {
     if (width <= 0 || height <= 0) {
         return; // minimized
     }
-    if (width != w.fbWidth || height != w.fbHeight) {
+    const float scale = ComputeUiScaleUVE(w.window, width, height, m_singleSurface);
+    const int uiWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(width) / scale)));
+    const int uiHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(height) / scale)));
+    if (width != w.fbWidth || height != w.fbHeight || uiWidth != w.uiWidth || uiHeight != w.uiHeight ||
+        std::abs(scale - w.uiScale) > 0.001F) {
         w.fbWidth = width;
         w.fbHeight = height;
-        m_app->windowResize(w.id, width, height);
+        w.uiScale = scale;
+        w.uiWidth = uiWidth;
+        w.uiHeight = uiHeight;
+        m_app->windowResize(w.id, uiWidth, uiHeight);
         if (w.id == kMainWindowUVE) {
             if (m_backend != nullptr) {
-                m_backend->resize(width, height);
+                m_backend->resize(uiWidth, uiHeight);
             }
         } else if (w.backend != nullptr) {
-            w.backend->resize(width, height);
+            w.backend->resize(uiWidth, uiHeight);
         }
     }
 }
@@ -1122,14 +1157,20 @@ void EditorHostUVE::CompositeUVE(WindowUVE& w, const std::uint32_t uiTexture, co
     c.glActiveTexture(GL_TEXTURE0);
     c.glUniform1i(c.texLoc, 0);
     glDisable(GL_BLEND);
+    const float scaleX = w.uiWidth > 0 ? static_cast<float>(w.fbWidth) / static_cast<float>(w.uiWidth) : 1.0F;
+    const float scaleY = w.uiHeight > 0 ? static_cast<float>(w.fbHeight) / static_cast<float>(w.uiHeight) : 1.0F;
+    const bool scaledUi = w.uiWidth != w.fbWidth || w.uiHeight != w.fbHeight;
     for (const ViewImageUVE& view : views) {
         if (view.texture == 0U || view.rect.w <= 0.0F || view.rect.h <= 0.0F) {
             continue;
         }
         const float u1 = view.textureWidth > 0.0F ? view.usedWidth / view.textureWidth : 1.0F;
         const float v1 = view.textureHeight > 0.0F ? view.usedHeight / view.textureHeight : 1.0F;
-        const prism::Rect shown{view.rect.x, view.rect.y, std::min(view.rect.w, view.usedWidth),
-                                std::min(view.rect.h, view.usedHeight)};
+        const prism::Rect shown = scaledUi
+                                      ? prism::Rect{view.rect.x * scaleX, view.rect.y * scaleY, view.rect.w * scaleX,
+                                                    view.rect.h * scaleY}
+                                      : prism::Rect{view.rect.x, view.rect.y, std::min(view.rect.w, view.usedWidth),
+                                                    std::min(view.rect.h, view.usedHeight)};
         c.DrawUVE(view.texture, shown, w.fbWidth, w.fbHeight, u1, v1);
     }
     glEnable(GL_BLEND);

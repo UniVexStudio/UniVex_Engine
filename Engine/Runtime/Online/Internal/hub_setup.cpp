@@ -54,11 +54,11 @@ inline constexpr std::string_view kIconFileExtensionUVE = ".png";
 inline constexpr std::string_view kUpdateMimeDatabaseProgramUVE = "update-mime-database";
 inline constexpr std::string_view kUpdateDesktopDatabaseProgramUVE = "update-desktop-database";
 #endif
+inline constexpr std::string_view kUninstallOptionUVE = "--uninstall";
 #if defined(_WIN32)
 inline constexpr std::wstring_view kUninstallRegistryKeyUVE =
     L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\UniVexHub";
 inline constexpr std::wstring_view kShortcutFileNameUVE = L"UniVex Hub.lnk";
-inline constexpr std::string_view kUninstallOptionUVE = "--uninstall";
 /// Per-user file association: the extension's key names the program identifier's key.
 inline constexpr std::wstring_view kClassesRegistryKeyUVE = L"Software\\Classes\\";
 #endif
@@ -375,9 +375,14 @@ HubSetupResultUVE RegisterHubWithDesktopUVE(const std::filesystem::path& install
         std::filesystem::create_directories(file->parent_path(), error);
     }
     const std::filesystem::path icon = installDirectory / kHubIconsDirectoryNameUVE / kHubIconFileNameUVE;
-    for (const std::filesystem::path* const target : {&files.applicationIcon, &files.fileIcon}) {
-        std::filesystem::copy_file(icon, *target, std::filesystem::copy_options::overwrite_existing, error);
+    if (std::filesystem::is_regular_file(icon, error)) {
+        for (const std::filesystem::path* const target : {&files.applicationIcon, &files.fileIcon}) {
+            std::filesystem::copy_file(icon, *target, std::filesystem::copy_options::overwrite_existing, error);
+            error.clear();
+        }
     }
+    const std::filesystem::path uninstaller = ExecutableUVE(installDirectory, kSetupExecutableStemUVE);
+    const bool hasUninstaller = std::filesystem::is_regular_file(uninstaller, error);
     {
         std::ofstream entry(files.desktopEntry, std::ios::trunc);
         entry << "[Desktop Entry]\n"
@@ -389,9 +394,16 @@ HubSetupResultUVE RegisterHubWithDesktopUVE(const std::filesystem::path& install
               << "Exec=" << QuoteExecArgumentUVE(hub.string()) << " %f\n"
               << "Path=" << installDirectory.string() << "\n"
               << "Icon=" << kHubIconThemeNameUVE << "\n"
+              << "StartupWMClass=" << kHubDisplayNameUVE << "\n"
               << "MimeType=" << kProjectMediaTypeUVE << ";\n"
               << "Terminal=false\n"
               << "Categories=" << kDesktopEntryCategoriesUVE << "\n";
+        if (hasUninstaller) {
+            entry << "Actions=Uninstall;\n\n"
+                  << "[Desktop Action Uninstall]\n"
+                  << "Name=Uninstall " << kHubDisplayNameUVE << "\n"
+                  << "Exec=" << QuoteExecArgumentUVE(uninstaller.string()) << " " << kUninstallOptionUVE << "\n";
+        }
         if (!entry) {
             return {false, "Unable to add UniVex Hub to the applications menu."};
         }

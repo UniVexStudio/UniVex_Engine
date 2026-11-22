@@ -170,6 +170,18 @@ class SharedNamesTest(unittest.TestCase):
                 self.assertTrue(found, f"{app.target}: no mipmap resource named {reference}")
             self.assertRegex(manifest, r'android:icon="@mipmap/', f"{app.target} has no launcher icon")
 
+    def test_android_apk_versions(self) -> None:
+        sys.path.insert(0, str(TOOLS_DIR / "android"))
+        import build_apk  # noqa: E402
+
+        for app_name in ("hub", "runtime"):
+            version = build_apk.read_source_version(app_name)
+            code, name = build_apk.android_version_metadata(version)
+            self.assertGreaterEqual(code, 1)
+            self.assertTrue(name)
+        self.assertGreater(build_apk.android_version_metadata((0, 2, 0, 0))[0],
+                           build_apk.android_version_metadata((0, 1, 0, 1))[0])
+
 
 if __name__ == "__main__":
     unittest.main()

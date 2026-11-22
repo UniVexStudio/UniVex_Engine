@@ -132,6 +132,8 @@ TEST_F(HubSetupUVETest, InstallsUpgradesRegistersAndUninstalls) {
     const std::string entryText{std::istreambuf_iterator<char>(desktop), std::istreambuf_iterator<char>()};
     EXPECT_NE(entryText.find(std::string("MimeType=") + std::string(kProjectMediaTypeUVE)), std::string::npos);
     EXPECT_NE(entryText.find(" %f"), std::string::npos);
+    EXPECT_NE(entryText.find("StartupWMClass="), std::string::npos);
+    EXPECT_NE(entryText.find("[Desktop Action Uninstall]"), std::string::npos);
 #else
     EXPECT_EQ(countFiles(), 1U);
 #endif

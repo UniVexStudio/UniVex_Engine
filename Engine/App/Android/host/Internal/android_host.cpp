@@ -254,21 +254,70 @@ void UpdateSoftKeyboardUVE(ActivityStateUVE& state) {
     }
 }
 
-[[nodiscard]] bool EndsWithAnyUVE(const std::string& name, const std::vector<std::string>& suffixes) {
-    const auto lower = [](std::string text) {
-        for (char& c : text) {
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        }
-        return text;
-    };
-    const std::string lowered = lower(name);
+[[nodiscard]] float ReadPixelsPerDpUVE(const AConfiguration* const config) {
+    if (config == nullptr) {
+        return 1.0F;
+    }
+    const int32_t density = AConfiguration_getDensity(config);
+    if (density <= 0 || density == ACONFIGURATION_DENSITY_NONE || density == ACONFIGURATION_DENSITY_ANY) {
+        return 1.0F;
+    }
+    return static_cast<float>(density) / kBaselineDensityUVE;
+}
+
+[[nodiscard]] std::string ToLowerAsciiUVE(std::string text) {
+    for (char& c : text) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return text;
+}
+
+[[nodiscard]] bool HasGzipMagicUVE(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    unsigned char header[2]{0U, 0U};
+    if (!file.read(reinterpret_cast<char*>(header), 2)) {
+        return false;
+    }
+    return header[0] == 0x1FU && header[1] == 0x8BU;
+}
+
+[[nodiscard]] bool MatchesPickedFileUVE(const std::filesystem::path& path, const std::vector<std::string>& suffixes) {
+    if (suffixes.empty()) {
+        return true;
+    }
+    const std::string lowered = ToLowerAsciiUVE(path.filename().string());
+    bool expectsUvPackage = false;
     for (const std::string& suffix : suffixes) {
-        const std::string wanted = lower(suffix);
-        if (lowered.size() >= wanted.size() && lowered.compare(lowered.size() - wanted.size(), wanted.size(), wanted) == 0) {
+        const std::string wanted = ToLowerAsciiUVE(suffix);
+        if (wanted == ".uvpackage") {
+            expectsUvPackage = true;
+        }
+        if (lowered.size() >= wanted.size() &&
+            lowered.compare(lowered.size() - wanted.size(), wanted.size(), wanted) == 0) {
             return true;
         }
+        // Android browsers frequently append ".bin" or " (1)" to downloaded ".uvpackage" files.
+        const std::size_t pos = lowered.find(wanted);
+        if (pos != std::string::npos) {
+            const std::size_t after = pos + wanted.size();
+            if (after == lowered.size() || lowered[after] == '.' || lowered[after] == ' ' || lowered[after] == '(') {
+                return true;
+            }
+        }
     }
-    return suffixes.empty();
+    return expectsUvPackage && HasGzipMagicUVE(path);
+}
+
+inline constexpr std::string_view kPickErrorPrefixUVE = "error:";
+inline constexpr std::string_view kAssetStampFileUVE = ".asset_stamp";
+inline constexpr std::uint64_t kFnvOffsetBasisUVE = 14695981039346656037ULL;
+inline constexpr std::uint64_t kFnvPrimeUVE = 1099511628211ULL;
+
+void HashBytesUVE(std::uint64_t& hash, const char* const data, const std::size_t length) {
+    for (std::size_t index = 0U; index < length; ++index) {
+        hash ^= static_cast<unsigned char>(data[index]);
+        hash *= kFnvPrimeUVE;
+    }
 }
 
 /// Hands a finished system file pick to whoever asked for it.
@@ -281,16 +330,34 @@ void UpdateFilePickUVE(ActivityStateUVE& state) {
         return;   // the picker is still open
     }
     const auto onPicked = std::move(state.pendingPick);
+    const auto onError = std::move(state.pendingPickError);
     state.pendingPick = nullptr;
+    state.pendingPickError = nullptr;
     if (picked->empty()) {
         return;   // cancelled
     }
-    if (!EndsWithAnyUVE(std::filesystem::path(*picked).filename().string(), state.pickSuffixes)) {
-        __android_log_print(ANDROID_LOG_WARN, kLogTagUVE,
-                            "UVE_ANDROID_HOST_WARNING the picked file is not one that was asked for: %s", picked->c_str());
+    if (picked->starts_with(kPickErrorPrefixUVE)) {
+        const std::string reason = picked->substr(kPickErrorPrefixUVE.size());
+        __android_log_print(ANDROID_LOG_WARN, kLogTagUVE, "UVE_ANDROID_HOST_WARNING file pick failed: %s",
+                            reason.c_str());
+        if (onError) {
+            onError(reason);
+        }
         return;
     }
-    onPicked(std::filesystem::path(*picked));
+    const std::filesystem::path pickedPath(*picked);
+    if (!MatchesPickedFileUVE(pickedPath, state.pickSuffixes)) {
+        const std::string filename = pickedPath.filename().string();
+        std::error_code removeError;
+        std::filesystem::remove(pickedPath, removeError);
+        __android_log_print(ANDROID_LOG_WARN, kLogTagUVE,
+                            "UVE_ANDROID_HOST_WARNING the picked file is not one that was asked for: %s", picked->c_str());
+        if (onError) {
+            onError("The chosen file '" + filename + "' is not a UniVex engine package (.uvpackage).");
+        }
+        return;
+    }
+    onPicked(pickedPath);
 }
 
 /// A finger held still long enough is a right click (context menus).
@@ -335,8 +402,12 @@ void HandleCommandUVE(android_app* const app, const int32_t command) {
         break;
     case APP_CMD_WINDOW_RESIZED:
     case APP_CMD_CONTENT_RECT_CHANGED:
-    case APP_CMD_CONFIG_CHANGED:
         // Rotation and layout changes move the cutouts to other edges.
+        state.safeArea = Window::ReadAndroidSafeAreaUVE(app->activity);
+        break;
+    case APP_CMD_CONFIG_CHANGED:
+        state.pixelsPerDp = ReadPixelsPerDpUVE(app->config);
+        Window::SetAndroidGlfwContentScaleUVE(state.pixelsPerDp);
         state.safeArea = Window::ReadAndroidSafeAreaUVE(app->activity);
         break;
     case APP_CMD_RESUME:
@@ -382,10 +453,11 @@ void AttachUVE(ActivityStateUVE& state, android_app* const app) {
     app->onAppCmd = HandleCommandUVE;
     app->onInputEvent = HandleInputUVE;
     Online::SetAndroidJavaVmUVE(app->activity->vm);
-    state.pixelsPerDp = static_cast<float>(AConfiguration_getDensity(app->config)) / kBaselineDensityUVE;
+    state.pixelsPerDp = ReadPixelsPerDpUVE(app->config);
     state.touch = TouchGestureUVE{};
     state.keyboardShown = false;
     Window::ResetAndroidGlfwWindowUVE();
+    Window::SetAndroidGlfwActivityUVE(app->activity);
     Window::SetAndroidGlfwContentScaleUVE(state.pixelsPerDp);
     Window::SetAndroidGlfwSurfaceUVE(app->window);
     state.safeArea = Window::ReadAndroidSafeAreaUVE(app->activity);
@@ -435,11 +507,13 @@ bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const ch
 }
 
 bool StartFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,
-                      std::function<void(const std::filesystem::path&)> onPicked) {
+                      std::function<void(const std::filesystem::path&)> onPicked,
+                      std::function<void(const std::string&)> onError) {
     if (state.app == nullptr || !Window::StartAndroidFilePickUVE(state.app->activity)) {
         return false;
     }
     state.pendingPick = std::move(onPicked);
+    state.pendingPickError = std::move(onError);
     state.pickSuffixes = suffixes;
     return true;
 }
@@ -460,17 +534,65 @@ void EnterDataDirectoryUVE(const android_app* const app) {
 }
 
 bool UnpackAssetsUVE(AAssetManager* const assets, const std::filesystem::path& destination) {
-    std::error_code error;
-    std::filesystem::remove_all(destination, error);
-    std::istringstream index(ReadAssetUVE(assets, kAssetIndexUVE));
-    std::string name;
-    bool any = false;
-    while (std::getline(index, name)) {
-        const std::filesystem::path relative(name);
-        if (name.empty() || relative.is_absolute() || name.find("..") != std::string::npos) {
+    const std::string indexText = ReadAssetUVE(assets, kAssetIndexUVE);
+    if (indexText.empty()) {
+        return false;
+    }
+
+    std::vector<std::string> entries;
+    std::uint64_t hash = kFnvOffsetBasisUVE;
+    HashBytesUVE(hash, indexText.data(), indexText.size());
+    bool allMatch = true;
+    std::istringstream scan(indexText);
+    std::string line;
+    while (std::getline(scan, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        const std::filesystem::path relative(line);
+        if (line.empty() || relative.is_absolute() || line.find("..") != std::string::npos) {
             continue;
         }
+        entries.push_back(line);
+        AAsset* const asset = AAssetManager_open(assets, line.c_str(), AASSET_MODE_BUFFER);
+        if (asset == nullptr) {
+            allMatch = false;
+            continue;
+        }
+        const auto length = static_cast<std::size_t>(AAsset_getLength(asset));
+        const auto* data = static_cast<const char*>(AAsset_getBuffer(asset));
+        HashBytesUVE(hash, line.data(), line.size());
+        if (data != nullptr && length > 0U) {
+            HashBytesUVE(hash, data, length);
+        }
+        AAsset_close(asset);
+
+        std::error_code statError;
         const std::filesystem::path target = destination / relative;
+        if (!std::filesystem::is_regular_file(target, statError) ||
+            std::filesystem::file_size(target, statError) != length || statError) {
+            allMatch = false;
+        }
+    }
+    if (entries.empty()) {
+        return false;
+    }
+
+    const std::string expectedStamp = std::to_string(hash) + ":" + std::to_string(entries.size());
+    const std::filesystem::path stampPath = destination / kAssetStampFileUVE;
+    if (allMatch) {
+        std::ifstream stampIn(stampPath, std::ios::binary);
+        std::string currentStamp;
+        if (std::getline(stampIn, currentStamp) && currentStamp == expectedStamp) {
+            return true;
+        }
+    }
+
+    std::error_code error;
+    std::filesystem::remove_all(destination, error);
+    bool any = false;
+    for (const std::string& name : entries) {
+        const std::filesystem::path target = destination / std::filesystem::path(name);
         std::filesystem::create_directories(target.parent_path(), error);
         std::ofstream output(target, std::ios::binary | std::ios::trunc);
         output << ReadAssetUVE(assets, name);
@@ -478,6 +600,10 @@ bool UnpackAssetsUVE(AAssetManager* const assets, const std::filesystem::path& d
             return false;
         }
         any = true;
+    }
+    if (any) {
+        std::ofstream stampOut(stampPath, std::ios::binary | std::ios::trunc);
+        stampOut << expectedStamp << '\n';
     }
     return any;
 }

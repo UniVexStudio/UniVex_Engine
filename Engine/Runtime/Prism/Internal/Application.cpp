@@ -432,6 +432,25 @@ void Application::dispatchMouseMove(MouseEvent e) {
     return;
   }
   if (auto cw = m_capture.lock()) {
+    if (m_platform && m_platform->singleSurface()) {
+      WidgetPath path = WidgetPath::build(cw.get());
+      for (Widget* w : path.widgets) {
+        if (w != cw.get() && w->enabled()) {
+          Reply r = w->onPreviewMouseMove(e);
+          if (r.isHandled()) {
+            if (r.captureTarget() && r.captureTarget() != cw.get()) {
+              MouseEvent cancel = e;
+              cancel.pos = {-1e6f, -1e6f};
+              cw->onMouseUp(cancel);
+              captureMouse(r.captureTarget());
+              r.captureTarget()->onMouseMove(e);
+            }
+            invalidate();
+            return;
+          }
+        }
+      }
+    }
     cw->onMouseMove(e);
     setCursor(cw->cursor());
     invalidate();

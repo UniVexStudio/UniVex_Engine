@@ -8,12 +8,15 @@
 
 #include <GLFW/glfw3.h>
 
+struct ANativeActivity;
 struct ANativeWindow;
 
 namespace UVE::Window {
 
 /// The one GLFW window, standing for the activity's surface.
 [[nodiscard]] GLFWwindow* AndroidGlfwWindowUVE();
+/// Binds the active Android activity so GLFW clipboard calls talk to Android's ClipboardManager.
+void SetAndroidGlfwActivityUVE(ANativeActivity* activity);
 /// The surface the window draws to (null while the activity has none).
 void SetAndroidGlfwSurfaceUVE(ANativeWindow* surface);
 void SetAndroidGlfwFocusUVE(bool focused);
