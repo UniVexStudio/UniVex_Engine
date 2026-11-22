@@ -421,8 +421,10 @@ TEST(RagdollSolverUVETest, OneSidedJointLimit_DoesNotStickWhenMovingAwayFromLimi
     settings.positionIterations = 0U;
     settings.sleepDelaySeconds = 0.0F;
     static_cast<void>(rig.solver.StepUVE({}, kStepUVE, {}, settings));
-    // Child velocity moving away from the lower limit must remain strongly positive (not reversed or damped to zero!).
-    EXPECT_GT(rig.solver.GetBodyUVE(1U).angularVelocity.x, 3.0F);
+    // Child velocity moving away from the lower limit must remain strongly positive after linear
+    // anchor coupling (not reversed or clamped to zero by a sticky bilateral limit!).
+    EXPECT_GT(rig.solver.GetBodyUVE(1U).angularVelocity.x, 2.0F);
+    EXPECT_GT(rig.solver.GetBodyUVE(1U).angularVelocity.x - rig.solver.GetBodyUVE(0U).angularVelocity.x, 3.0F);
 }
 
 TEST(RagdollSolverUVETest, SelfCollision_SeparatesNonAdjacentBodiesWhileIgnoringParentChild) {
