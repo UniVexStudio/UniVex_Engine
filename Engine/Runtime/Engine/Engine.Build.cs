@@ -40,7 +40,8 @@ public class EngineModule : ModuleRules
         });
 
         PublicDefinitions.AddRange(new string[] {
-            "desktop:UVE_HAS_DESKTOP_GL=1"
+            // Windowed rendering: GLFW and desktop OpenGL, or the activity surface and OpenGL ES on Android.
+            "UVE_HAS_DESKTOP_GL=1"
         });
     }
 }
