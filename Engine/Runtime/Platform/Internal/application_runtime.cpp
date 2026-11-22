@@ -2,6 +2,7 @@
 
 #include "application_runtime.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
@@ -134,6 +135,37 @@ bool IsCompatibleEnginePackageTargetUVE(const std::string_view manifestTarget) n
     }
 #endif
     return false;
+}
+
+void AttachParentConsoleForCliUVE() noexcept {
+#if defined(_WIN32)
+    const auto isRedirected = [](const DWORD stdHandleId) noexcept {
+        const HANDLE handle = GetStdHandle(stdHandleId);
+        if (handle == nullptr || handle == INVALID_HANDLE_VALUE) {
+            return false;
+        }
+        const DWORD type = GetFileType(handle);
+        return type == FILE_TYPE_PIPE || type == FILE_TYPE_DISK;
+    };
+    const bool outRedirected = isRedirected(STD_OUTPUT_HANDLE);
+    const bool errRedirected = isRedirected(STD_ERROR_HANDLE);
+    const bool inRedirected = isRedirected(STD_INPUT_HANDLE);
+    if (outRedirected && errRedirected) {
+        return;
+    }
+    if (AttachConsole(ATTACH_PARENT_PROCESS) == 0) {
+        return;
+    }
+    if (!outRedirected) {
+        static_cast<void>(std::freopen("CONOUT$", "w", stdout));
+    }
+    if (!errRedirected) {
+        static_cast<void>(std::freopen("CONOUT$", "w", stderr));
+    }
+    if (!inRedirected) {
+        static_cast<void>(std::freopen("CONIN$", "r", stdin));
+    }
+#endif
 }
 
 ApplicationUserDataDirectoryResultUVE ResolvePerUserDataRootUVE() {

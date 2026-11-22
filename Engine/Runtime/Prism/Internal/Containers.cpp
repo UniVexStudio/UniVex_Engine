@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include <algorithm>
+#include <cmath>
 #include "prism/Containers.h"
 #include "prism/Application.h"
 
@@ -178,8 +179,9 @@ void Splitter::arrange(Rect r) {
 }
 
 int Splitter::handleAt(Vec2 p) const {
+  const float pad = (Application::exists() && Application::get().platform().singleSurface()) ? 8.0f : 2.0f;
   for (size_t i = 0; i < m_handles.size(); i++)
-    if (m_handles[i].inflated(2).contains(p)) return int(i);
+    if (m_handles[i].inflated(pad).contains(p)) return int(i);
   return -1;
 }
 
@@ -285,6 +287,53 @@ bool VScrollbar::mouseMove(Vec2 p, Rect view, float contentH, float& scroll) {
 }
 
 // ------------------------------------------------------------------ ScrollView
+ScrollView::~ScrollView() {
+  stopFling();
+}
+
+bool ScrollView::overBar(Vec2 p) const {
+  if (!VScrollbar::needed(m_contentH, m_rect.h)) return false;
+  const float hitW = (Application::exists() && Application::get().platform().singleSurface()) ? 20.0f : VScrollbar::W;
+  return p.x >= m_rect.right() - hitW;
+}
+
+void ScrollView::stopFling() {
+  if (m_flingTimerId > 0 && Application::exists()) {
+    Application::get().cancelTimer(m_flingTimerId);
+  }
+  m_flingTimerId = 0;
+  m_touchVelocity = 0.0f;
+}
+
+void ScrollView::startFling() {
+  if (m_flingTimerId > 0 || !Application::exists()) return;
+  m_flingLastMs = Application::get().platform().nowMs();
+  std::weak_ptr<Widget> weakSelf = weak_from_this();
+  m_flingTimerId = Application::get().addTimer(8, [weakSelf]() -> bool {
+    auto locked = weakSelf.lock();
+    auto* self = static_cast<ScrollView*>(locked.get());
+    if (!self || !Application::exists()) return false;
+    const uint64_t now = Application::get().platform().nowMs();
+    const float dt = std::clamp(float(now - self->m_flingLastMs) * 0.001f, 0.004f, 0.05f);
+    self->m_flingLastMs = now;
+    const float maxScroll = std::max(0.0f, self->m_contentH - self->m_rect.h);
+    const float next = std::clamp(self->m_scroll + self->m_touchVelocity * dt, 0.0f, maxScroll);
+    const bool hitEdge = (next <= 0.0f && self->m_touchVelocity < 0.0f) ||
+                         (next >= maxScroll && self->m_touchVelocity > 0.0f);
+    if (std::abs(next - self->m_scroll) > 0.05f) {
+      self->m_scroll = next;
+      self->relayout();
+    }
+    self->m_touchVelocity *= std::exp(-4.2f * dt);
+    if (hitEdge || std::abs(self->m_touchVelocity) < 15.0f) {
+      self->m_touchVelocity = 0.0f;
+      self->m_flingTimerId = 0;
+      return false;
+    }
+    return true;
+  });
+}
+
 void ScrollView::setContent(Ref<Widget> w) {
   clearChildren();
   m_content = w;
@@ -323,19 +372,26 @@ Reply ScrollView::onPreviewMouseDown(const MouseEvent& e) {
   m_touchDragging = false;
   if (e.button == MouseButton::Left && Application::exists() && Application::get().platform().singleSurface() &&
       VScrollbar::needed(m_contentH, m_rect.h) && !overBar(e.pos)) {
+    stopFling();
     m_touchArmed = true;
     m_touchStartY = m_touchLastY = e.pos.y;
+    m_touchLastMs = Application::get().platform().nowMs();
+    m_touchVelocity = 0.0f;
   }
   return Reply::unhandled();
 }
 
 Reply ScrollView::onPreviewMouseMove(const MouseEvent& e) {
-  constexpr float kTouchScrollSlop = 8.0f;
+  constexpr float kTouchScrollSlop = 6.0f;
   if (!m_touchArmed || m_touchDragging) return Reply::unhandled();
   if (std::abs(e.pos.y - m_touchStartY) >= kTouchScrollSlop) {
     m_touchDragging = true;
-    float dy = e.pos.y - m_touchLastY;
+    const uint64_t now = Application::exists() ? Application::get().platform().nowMs() : 0;
+    const float dy = e.pos.y - m_touchLastY;
+    const float dt = std::clamp(float(now - m_touchLastMs) * 0.001f, 0.004f, 0.08f);
     m_touchLastY = e.pos.y;
+    m_touchLastMs = now;
+    m_touchVelocity = std::clamp((-dy) / dt, -4500.0f, 4500.0f);
     m_scroll = std::clamp(m_scroll - dy, 0.f, std::max(0.f, m_contentH - m_rect.h));
     relayout();
     return Reply::handled().captureMouse(this);
@@ -350,6 +406,7 @@ Reply ScrollView::onPreviewMouseUp(const MouseEvent&) {
 
 bool ScrollView::onMouseDown(const MouseEvent& e) {
   if (e.button == MouseButton::Left && overBar(e.pos)) {
+    stopFling();
     m_bar.mouseDown(e.pos, m_rect, m_contentH, m_scroll);
     relayout();
     return true;
@@ -362,14 +419,20 @@ bool ScrollView::onMouseDown(const MouseEvent& e) {
 
 bool ScrollView::onMouseMove(const MouseEvent& e) {
   if (m_bar.dragging && m_bar.mouseMove(e.pos, m_rect, m_contentH, m_scroll)) { relayout(); return true; }
-  constexpr float kTouchScrollSlop = 8.0f;
+  constexpr float kTouchScrollSlop = 6.0f;
   if (m_touchArmed && !m_touchDragging && std::abs(e.pos.y - m_touchStartY) >= kTouchScrollSlop) {
     m_touchDragging = true;
     m_touchLastY = e.pos.y;
+    m_touchLastMs = Application::exists() ? Application::get().platform().nowMs() : 0;
   }
   if (m_touchDragging) {
-    float dy = e.pos.y - m_touchLastY;
+    const uint64_t now = Application::exists() ? Application::get().platform().nowMs() : 0;
+    const float dy = e.pos.y - m_touchLastY;
+    const float dt = std::clamp(float(now - m_touchLastMs) * 0.001f, 0.004f, 0.08f);
     m_touchLastY = e.pos.y;
+    m_touchLastMs = now;
+    const float inst = std::clamp((-dy) / dt, -4500.0f, 4500.0f);
+    m_touchVelocity = m_touchVelocity * 0.45f + inst * 0.55f;
     m_scroll = std::clamp(m_scroll - dy, 0.f, std::max(0.f, m_contentH - m_rect.h));
     relayout();
     return true;
@@ -379,20 +442,30 @@ bool ScrollView::onMouseMove(const MouseEvent& e) {
 
 bool ScrollView::onMouseUp(const MouseEvent&) {
   bool was = m_bar.dragging || m_touchDragging;
+  const bool shouldFling = m_touchDragging && Application::exists() &&
+                           std::abs(m_touchVelocity) > 40.0f &&
+                           (Application::get().platform().nowMs() - m_touchLastMs) < 120;
   m_bar.mouseUp();
   m_touchArmed = false;
   m_touchDragging = false;
+  if (shouldFling) {
+    startFling();
+  } else {
+    m_touchVelocity = 0.0f;
+  }
   return was;
 }
 
 bool ScrollView::onMouseWheel(const MouseEvent& e) {
   if (!VScrollbar::needed(m_contentH, m_rect.h)) return false;
+  stopFling();
   m_scroll -= e.wheel.y * 44.f;
   relayout();
   return true;
 }
 
 void ScrollView::ensureVisible(Rect a) {
+  stopFling();
   if (a.y < m_rect.y) m_scroll -= m_rect.y - a.y;
   else if (a.bottom() > m_rect.bottom()) m_scroll += a.bottom() - m_rect.bottom();
   relayout();

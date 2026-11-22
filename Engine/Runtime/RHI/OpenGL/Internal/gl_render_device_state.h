@@ -119,6 +119,9 @@ struct GlDeviceStateUVE {
     float maxSamplerAnisotropy = 1.0F;
     /// Warn-once latch for anisotropy clamps (this backend has no VK-style bitmask infra).
     bool warnedSamplerAnisotropyClamped = false;
+    /// True when RGBA16Float color attachments are renderable (core on desktop GL 3.3+, or via
+    /// GL_EXT_color_buffer_float / GL_EXT_color_buffer_half_float on GLES 3.0).
+    bool halfFloatColorTargetsSupported = false;
 
     /// Cached FBO names keyed by the pair of UVE texture handles attached to them. The render
     /// device invalidates entries when a dependent texture is destroyed; the cache itself owns no

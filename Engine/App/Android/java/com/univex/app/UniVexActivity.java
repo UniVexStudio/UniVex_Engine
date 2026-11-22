@@ -14,17 +14,25 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
 import android.provider.OpenableColumns;
+import android.text.InputType;
 import android.view.DisplayCutout;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.inputmethod.BaseInputConnection;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -34,8 +42,10 @@ import java.util.concurrent.TimeUnit;
  * cutouts. The parts of the surface a cutout or the soft keyboard covers are kept in the safeInset
  * fields, in surface pixels, for the native code to lay its interface out around.
  *
- * It also opens Android's own file picker for native code (pickFile, takePickedFile) and bridges
- * the system clipboard (getClipboardText, setClipboardText).
+ * It also attaches a hidden IME InputView so modern Android soft keyboards (Gboard, Samsung
+ * Keyboard, SwiftKey) stream committed text and backspace/enter actions cleanly into native code,
+ * opens Android's own file picker for native code (pickFile, takePickedFile), and bridges the
+ * system clipboard (getClipboardText, setClipboardText).
  */
 public class UniVexActivity extends NativeActivity {
     private static final int PICK_FILE_REQUEST = 0x5576;
@@ -44,6 +54,7 @@ public class UniVexActivity extends NativeActivity {
     private static final String ANY_TYPE = "*/*";
     private static final String PICK_ERROR_PREFIX = "error:";
     private static final long CLIPBOARD_READ_TIMEOUT_MS = 250L;
+    private static final char IME_EVENT_SEPARATOR = '\u001E';
 
     // The last pick: null while one is running or none was asked for, "" when cancelled,
     // "error:<reason>" on failure, else the copied file path in cache.
@@ -51,11 +62,100 @@ public class UniVexActivity extends NativeActivity {
     private volatile boolean picking;
     private volatile String launchProject;
 
+    // Hidden 1x1 focusable view hosting the soft keyboard InputConnection.
+    private ImeBridgeView imeView;
+    private volatile boolean imeActive;
+    private final ConcurrentLinkedQueue<String> pendingImeEvents = new ConcurrentLinkedQueue<>();
+
     // Read from native code (Window module, android_activity.cpp); written on the UI thread.
     public volatile int safeInsetLeft;
     public volatile int safeInsetTop;
     public volatile int safeInsetRight;
     public volatile int safeInsetBottom;
+
+    private final class ImeBridgeView extends View {
+        ImeBridgeView(Context context) {
+            super(context);
+            setFocusable(true);
+            setFocusableInTouchMode(true);
+            setClickable(false);
+        }
+
+        @Override
+        public boolean onCheckIsTextEditor() {
+            return imeActive;
+        }
+
+        @Override
+        public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE
+                    | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                    | EditorInfo.IME_FLAG_NO_FULLSCREEN;
+            return new BaseInputConnection(this, false) {
+                @Override
+                public boolean commitText(CharSequence text, int newCursorPosition) {
+                    if (text != null && text.length() > 0) {
+                        pendingImeEvents.add("T:" + text.toString());
+                    }
+                    return true;
+                }
+
+                @Override
+                public boolean setComposingText(CharSequence text, int newCursorPosition) {
+                    // Forward incremental composition directly when a keyboard composes without
+                    // calling commitText until space/enter (no-suggestions mode usually commits directly).
+                    return super.setComposingText(text, newCursorPosition);
+                }
+
+                @Override
+                public boolean deleteSurroundingText(int beforeLength, int afterLength) {
+                    int count = Math.min(Math.max(beforeLength, 0), 32);
+                    for (int i = 0; i < count; ++i) {
+                        pendingImeEvents.add("K:" + KeyEvent.KEYCODE_DEL);
+                    }
+                    int forward = Math.min(Math.max(afterLength, 0), 32);
+                    for (int i = 0; i < forward; ++i) {
+                        pendingImeEvents.add("K:" + KeyEvent.KEYCODE_FORWARD_DEL);
+                    }
+                    return true;
+                }
+
+                @Override
+                public boolean sendKeyEvent(KeyEvent event) {
+                    if (event != null && event.getAction() == KeyEvent.ACTION_DOWN) {
+                        int keyCode = event.getKeyCode();
+                        if (keyCode == KeyEvent.KEYCODE_DEL
+                                || keyCode == KeyEvent.KEYCODE_FORWARD_DEL
+                                || keyCode == KeyEvent.KEYCODE_ENTER
+                                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                                || keyCode == KeyEvent.KEYCODE_TAB
+                                || keyCode == KeyEvent.KEYCODE_ESCAPE
+                                || keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                                || keyCode == KeyEvent.KEYCODE_DPAD_UP
+                                || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                            pendingImeEvents.add("K:" + keyCode);
+                            return true;
+                        }
+                        int ch = event.getUnicodeChar();
+                        if (ch >= 0x20 && ch != 0x7F) {
+                            pendingImeEvents.add("T:" + new String(Character.toChars(ch)));
+                            return true;
+                        }
+                    }
+                    return true;
+                }
+
+                @Override
+                public boolean performEditorAction(int editorAction) {
+                    pendingImeEvents.add("K:" + KeyEvent.KEYCODE_ENTER);
+                    setKeyboardVisible(false);
+                    return true;
+                }
+            };
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,6 +173,8 @@ public class UniVexActivity extends NativeActivity {
             }
         }
         super.onCreate(savedInstanceState);
+        imeView = new ImeBridgeView(this);
+        addContentView(imeView, new ViewGroup.LayoutParams(1, 1));
         View decor = window.getDecorView();
         decor.setOnApplyWindowInsetsListener((view, insets) -> {
             storeSafeInsets(insets);
@@ -80,6 +182,42 @@ public class UniVexActivity extends NativeActivity {
         });
         hideSystemBars();
         decor.requestApplyInsets();
+    }
+
+    /** Shows or hides the soft keyboard bound to the hidden IME bridge view. Called from native code. */
+    public void setKeyboardVisible(final boolean visible) {
+        imeActive = visible;
+        runOnUiThread(() -> {
+            if (imeView == null) {
+                return;
+            }
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm == null) {
+                return;
+            }
+            if (visible) {
+                imeView.requestFocus();
+                imm.restartInput(imeView);
+                imm.showSoftInput(imeView, InputMethodManager.SHOW_IMPLICIT);
+            } else {
+                imm.hideSoftInputFromWindow(imeView.getWindowToken(), 0);
+                imeView.clearFocus();
+                hideSystemBars();
+            }
+        });
+    }
+
+    /** Drains queued IME events ("T:<utf8>" or "K:<keycode>") separated by U+001E, or null when empty. */
+    public String drainImeEvents() {
+        String first = pendingImeEvents.poll();
+        if (first == null) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder(first);
+        for (String next = pendingImeEvents.poll(); next != null; next = pendingImeEvents.poll()) {
+            builder.append(IME_EVENT_SEPARATOR).append(next);
+        }
+        return builder.toString();
     }
 
     /** Returns a .uvproject path passed via Intent extra "project" once, then clears it. */

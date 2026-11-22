@@ -7,18 +7,21 @@
 #include <android/log.h>
 #include <android_native_app_glue.h>
 
+#include <array>
 #include <exception>
 #include <filesystem>
 
 #include "android_host.h"
 #include "editor_main.h"
 #include "launcher_window.h"
+#include "prism/Application.h"
 
 namespace {
 
 inline constexpr const char* kEditorRenderedMarkerUVE = "UVE_EDITOR_RENDERED";
 /// Folders of the engine package beside the editor library (Engine/Tools/package_engine.py).
 inline constexpr std::string_view kShadersDirectoryUVE = "shaders";
+inline constexpr std::string_view kShaderCacheDirectoryUVE = "shader_cache";
 /// Process exit code when the editor cannot start on this activity.
 inline constexpr int kEditorStartFailedExitCodeUVE = 1;
 
@@ -39,11 +42,20 @@ extern "C" __attribute__((visibility("default"))) int UveEditorRunUVE(android_ap
         return kEditorStartFailedExitCodeUVE;
     }
     const std::filesystem::path package = std::filesystem::path(argv[0]).parent_path();
+    const std::filesystem::path dataRoot(app->activity->internalDataPath);
     UVE::App::EditorPlatformUVE platform;
     platform.nativeSurface = app->window;
     platform.prismAssetsDirectory = package / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE;
     platform.shaderDirectory = package / kShadersDirectoryUVE;
-    platform.logDirectory = std::filesystem::path(app->activity->internalDataPath);
+    platform.shaderCacheDirectory = dataRoot / kShaderCacheDirectoryUVE;
+    platform.logDirectory = dataRoot;
+    platform.safeArea = [&activity]() -> std::array<float, 4> {
+        const float scale = prism::Application::exists() ? prism::Application::get().dpiScale() : 1.0F;
+        const float invScale = scale > 0.0F ? (1.0F / scale) : 1.0F;
+        const UVE::Window::AndroidSafeAreaUVE& area = activity.safeArea;
+        return {static_cast<float>(area.left) * invScale, static_cast<float>(area.top) * invScale,
+                static_cast<float>(area.right) * invScale, static_cast<float>(area.bottom) * invScale};
+    };
     platform.beforeFrame = [&activity](UVE::Core::EngineCoreUVE& core) {
         return UVE::AndroidHost::BeforeFrameUVE(activity, core, kEditorRenderedMarkerUVE);
     };

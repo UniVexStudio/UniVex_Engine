@@ -42,6 +42,7 @@
 #include "name_component.h"
 #include "i_entity_manager.h"
 #include "editor_viewport_host.h"
+#include "application_runtime.h"
 #include "editor_main.h"
 #include "process_launcher.h"
 
@@ -305,6 +306,9 @@ void ShowProjectUpgradeDialogUVE(const UVE::Pack::ProjectEditorSetupUVE& project
 /// main() into std::terminate().
 int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE& platform) {
     EditorLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
+    if (options.error.has_value() || options.printVersion || options.headless || options.bridgeStdio) {
+        UVE::Platform::AttachParentConsoleForCliUVE();
+    }
     if (options.error.has_value()) {
         std::cerr << "uve_editor: " << *options.error << '\n';
         return kInvalidCommandLineExitCodeUVE;
@@ -328,6 +332,9 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
             config.shaderSourceRealDirectoryUVE = bundledShaders;
         }
     }
+    if (!platform.shaderCacheDirectory.empty()) {
+        config.shaderCachePath = platform.shaderCacheDirectory;
+    }
 #if defined(__ANDROID__)
     config.renderBackendPreferenceUVE = UVE::Core::RenderBackendPreferenceUVE::OpenGLUVE;
 #endif
@@ -338,8 +345,12 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
     // The editor never needs more than the display shows: as many frames as the monitor refreshes
     // while one of its windows has focus (set once the window exists, below), 15 behind another
     // program's window (a minimised one draws nothing at all), so a laptop's GPU and fan are not
-    // spent on a scene nobody is looking at.
+    // spent on a scene nobody is looking at. On Android, EGL VSync paces natively at 60/90/120 Hz.
+#if defined(__ANDROID__)
+    config.focusedFrameRateCapUVE = 0U;
+#else
     config.focusedFrameRateCapUVE = 60U;
+#endif
     config.unfocusedFrameRateCapUVE = 15U;
     if (options.glMajor.has_value() && options.glMinor.has_value()) {
         config.windowGlVersionMajor = *options.glMajor;
@@ -424,6 +435,9 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
                 assetDir = "prism_assets";
             }
             editor.SetPrismUiEnabledUVE(true, assetDir);
+            if (platform.safeArea) {
+                editor.SetSafeAreaCallbackUVE(platform.safeArea);
+            }
         }
         editor.InitUVE();
         if (project.has_value() &&

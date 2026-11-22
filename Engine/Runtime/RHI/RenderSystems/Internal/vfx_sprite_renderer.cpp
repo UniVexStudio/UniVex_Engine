@@ -332,12 +332,14 @@ std::size_t ApplyVfxSpriteBudgetUVE(VfxDrawListUVE& drawList, const std::size_t 
 
 void VfxSpriteRendererUVE::InitializeUVE(IRenderDeviceUVE& renderDevice,
                                          Shader::IShaderManagerUVE& shaderManager) {
-    m_opaqueSsboProgram = CreateVfxProgramVariantUVE(
-        shaderManager, PipelineBlendModeUVE::Opaque, true, true, false, false, "VfxSpriteOpaqueSSBO");
-    m_alphaSsboProgram = CreateVfxProgramVariantUVE(
-        shaderManager, PipelineBlendModeUVE::PremultipliedAlpha, false, false, true, false, "VfxSpriteAlphaSSBO");
-    m_additiveSsboProgram = CreateVfxProgramVariantUVE(
-        shaderManager, PipelineBlendModeUVE::Additive, false, false, true, false, "VfxSpriteAdditiveSSBO");
+    if (renderDevice.GetCapabilitiesUVE().storageBuffers != RenderFeatureSupportUVE::Unsupported) {
+        m_opaqueSsboProgram = CreateVfxProgramVariantUVE(
+            shaderManager, PipelineBlendModeUVE::Opaque, true, true, false, false, "VfxSpriteOpaqueSSBO");
+        m_alphaSsboProgram = CreateVfxProgramVariantUVE(
+            shaderManager, PipelineBlendModeUVE::PremultipliedAlpha, false, false, true, false, "VfxSpriteAlphaSSBO");
+        m_additiveSsboProgram = CreateVfxProgramVariantUVE(
+            shaderManager, PipelineBlendModeUVE::Additive, false, false, true, false, "VfxSpriteAdditiveSSBO");
+    }
 
     m_opaqueFallbackProgram = CreateVfxProgramVariantUVE(
         shaderManager, PipelineBlendModeUVE::Opaque, true, true, false, true, "VfxSpriteOpaqueFallback");

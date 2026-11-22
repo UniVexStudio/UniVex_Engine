@@ -89,22 +89,24 @@ std::array<float, 2> EditorViewportGizmosUVE::TakeOrbitRequestUVE() {
 
 bool EditorViewportGizmosUVE::UpdateCameraUVE() {
     const auto& cam = m_editor.m_viewportOverlayState.viewCamera;
-    m_cameraValid = cam.valid && cam.height > 0.0F && rect().w > 1.0F;
+    m_cameraValid = cam.valid && cam.height > 0.0F && rect().w > 1.0F && rect().h > 1.0F;
     if (!m_cameraValid) {
         return false;
     }
     const prism::Rect r = rect();
+    // Project onto the PRISM widget's logical rect even when the underlying 3D viewport renders at
+    // higher physical pixel density (Retina/HiDPI), keeping gizmos, grids, and outlines 1:1 aligned.
     m_camera.eye = V3UVE(cam.eye);
     m_camera.right = V3UVE(cam.right);
     m_camera.up = V3UVE(cam.up);
     m_camera.fwd = V3UVE(cam.forward);
-    m_camera.cx = r.x + cam.width * 0.5F;
-    m_camera.cy = r.y + cam.height * 0.5F;
-    m_camera.viewH = cam.height;
+    m_camera.cx = r.x + r.w * 0.5F;
+    m_camera.cy = r.y + r.h * 0.5F;
+    m_camera.viewH = r.h;
     m_camera.nearPlane = std::max(0.01F, cam.nearPlane);
-    m_camera.focal = (cam.height * 0.5F) / std::max(1e-3F, std::tan(cam.fovYRadians * 0.5F));
+    m_camera.focal = (r.h * 0.5F) / std::max(1e-3F, std::tan(cam.fovYRadians * 0.5F));
     m_camera.ortho = cam.orthographic;
-    m_camera.orthoScale = (cam.height * 0.5F) / std::max(1e-3F, cam.orthographicHalfHeight);
+    m_camera.orthoScale = (r.h * 0.5F) / std::max(1e-3F, cam.orthographicHalfHeight);
     if (m_camera.ortho) {
         // Depth only orders and clips; keep the eye well behind anything on screen.
         m_camera.eye = m_camera.eye - m_camera.fwd * 1000.0F;
@@ -125,6 +127,7 @@ void EditorViewportGizmosUVE::SyncUVE() {
     }
     // gizmoSizePx is the preference's on-screen size; 96 px is the widget's nominal (size == 1).
     m_gizmo.size = static_cast<float>(m_editor.GetExtendedPreferencesUVE().gizmoSizePx / 96.0);
+    m_gizmo.hitScale = prism::Application::get().platform().singleSurface() ? 2.0F : 1.0F;
     // gizmoOpacity fades the axis and hot colours. Floored at 0.5 so the gizmo can never become hard to see.
     const double opacity = std::clamp(m_editor.GetExtendedPreferencesUVE().gizmoOpacity, 0.5, 1.0);
     const auto alphaByte = static_cast<std::uint8_t>(opacity * 255.0);
@@ -146,13 +149,12 @@ void EditorViewportGizmosUVE::SyncUVE() {
     }
     m_nav.setCamera(m_camera);
     const prism::Rect r = rect();
-    const auto& cam = state.viewCamera;
 
     // What this view paints, taken now: the level's and the Entity Editor's views share one overlay
     // state, so by paint time it holds whichever view rendered last.
     m_lines = state.gizmoLines;
     m_triangles = state.gizmoTriangles;
-    m_aspect = state.viewCamera.height > 0.0F ? state.viewCamera.width / state.viewCamera.height : 1.6F;
+    m_aspect = r.h > 0.0F ? r.w / r.h : 1.6F;
     m_gameWorkspace = state.gameWorkspaceActive;
     // Occlusion: the renderer's scene depth over the whole view.
     m_depth = prism::GizmoDepth{};
@@ -164,7 +166,7 @@ void EditorViewportGizmosUVE::SyncUVE() {
         m_depth.data = m_depthCopy.data();
         m_depth.width = state.sceneDepthWidth;
         m_depth.height = state.sceneDepthHeight;
-        m_depth.area = prism::Rect{r.x, r.y, cam.width, cam.height};
+        m_depth.area = prism::Rect{r.x, r.y, r.w, r.h};
         m_depth.zOffset = m_camera.ortho ? 1000.0F : 0.0F;
         // An orthographic eye sits far back, so a tolerance relative to its distance would swallow
         // whole objects; there the tolerance is absolute.
@@ -204,8 +206,8 @@ void EditorViewportGizmosUVE::SyncUVE() {
         if (prism::buildSelectionOutline(state.selectionMask.data(), state.selectionMaskWidth, state.selectionMaskHeight,
                                          state.selectionOutlineRadius, ColorUVE(state.selectionOutlineRgb),
                                          m_outlinePixels, box)) {
-            const float sx = cam.width / static_cast<float>(state.selectionMaskWidth);
-            const float sy = cam.height / static_cast<float>(state.selectionMaskHeight);
+            const float sx = r.w / static_cast<float>(state.selectionMaskWidth);
+            const float sy = r.h / static_cast<float>(state.selectionMaskHeight);
             m_outlineRect = prism::Rect{r.x + static_cast<float>(box[0]) * sx, r.y + static_cast<float>(box[1]) * sy,
                                         static_cast<float>(box[2]) * sx, static_cast<float>(box[3]) * sy};
             m_outlineSize = {box[2], box[3]};
@@ -301,19 +303,21 @@ void EditorViewportGizmosUVE::SyncUVE() {
 }
 
 int EditorViewportGizmosUVE::BillboardAtUVE(const prism::Vec2 p) const {
+    const float hitScale = prism::Application::get().platform().singleSurface() ? 1.75F : 1.0F;
+    const float halfIcon = kBillboardSizeUVE * 0.5F * hitScale;
     for (std::size_t i = 0; i < m_billboards.size(); ++i) {
         prism::Vec2 s;
         if (!m_camera.project(m_billboards[i].position, s)) {
             continue;
         }
         const bool iconShown = m_billboards[i].glyph != GlyphUVE::Camera;
-        if (iconShown && std::abs(p.x - s.x) <= kBillboardSizeUVE * 0.5F && std::abs(p.y - s.y) <= kBillboardSizeUVE * 0.5F) {
+        if (iconShown && std::abs(p.x - s.x) <= halfIcon && std::abs(p.y - s.y) <= halfIcon) {
             return static_cast<int>(i);
         }
     }
     // Then the glyphs themselves: a click on any of their lines picks the object.
     int best = -1;
-    float bestDistance = kGlyphPickPixelsUVE;
+    float bestDistance = kGlyphPickPixelsUVE * hitScale;
     for (std::size_t i = 0; i < m_billboards.size(); ++i) {
         const float d = prism::pickDistance(p, m_billboards[i].segments);
         if (d <= bestDistance) {

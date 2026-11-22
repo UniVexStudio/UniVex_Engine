@@ -49,6 +49,10 @@ struct RenderDeviceCapabilitiesUVE final {
     /// Descriptor-indexing / bindless sampled texture table support.
     RenderFeatureSupportUVE bindlessTextures = RenderFeatureSupportUVE::Unsupported;
     std::uint32_t maxBindlessTextures = 0U;
+    /// Shader storage buffers (SSBOs / std430) in graphics or compute stages.
+    RenderFeatureSupportUVE storageBuffers = RenderFeatureSupportUVE::Unsupported;
+    /// Color-attachment renderability for half-float HDR textures (RGBA16Float).
+    RenderFeatureSupportUVE halfFloatColorTargets = RenderFeatureSupportUVE::Unsupported;
 };
 /// Timeline semaphore: a monotonic 64-bit counter that orders work without a binary
 /// signal/unsignal cycle. Binary (queue-to-queue) semaphores are deliberately NOT part of this

@@ -395,6 +395,10 @@ void AuthorUIOverlayDemoFixtureUVE(UVE::Core::EngineCoreUVE& engine) {
 /// fixture above, and runs for `frameCount` frames (default 3000, ~ a minute at 60 Hz) so a real
 /// windowed run under Xvfb stays open long enough for an external xdotool screenshot/click pass.
 int main(int argc, char** argv) {
+    if (HasRawArgumentUVE(argc, argv, "--help") || HasRawArgumentUVE(argc, argv, "-h") ||
+        HasRawArgumentUVE(argc, argv, "--headless")) {
+        UVE::Platform::AttachParentConsoleForCliUVE();
+    }
     if (HasRawArgumentUVE(argc, argv, "--help") || HasRawArgumentUVE(argc, argv, "-h")) {
         std::cout << BuildRuntimeCommandLineHelpUVE();
         return 0;

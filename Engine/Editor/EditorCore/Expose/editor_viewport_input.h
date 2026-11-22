@@ -54,6 +54,10 @@ struct EditorViewportInputUVE final {
     bool shift = false;
     /// A text field owns the keyboard: hotkeys must not fire.
     bool wantTextInput = false;
+    /// Single-surface touch host (Android): enables direct 1-finger orbit + 2-finger pan/pinch.
+    bool touchNavigation = false;
+    /// Display pixel scale applied to viewport texture dimensions and pointer coordinates.
+    float dpiScale = 1.0F;
 
     std::array<bool, kButtonCountUVE> down{};
     std::array<bool, kButtonCountUVE> clicked{};

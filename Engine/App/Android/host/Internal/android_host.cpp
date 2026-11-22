@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <string_view>
 #include <system_error>
 
 #include "android_glfw.h"
@@ -30,11 +31,12 @@ namespace {
 /// Android reports density in dots per inch; 160 dpi is scale 1.
 inline constexpr float kBaselineDensityUVE = 160.0F;
 /// Touch gestures (TouchGestureUVE). Distances are density-independent pixels.
-inline constexpr float kTouchSlopDpUVE = 8.0F;              // a finger moving less than this is still
-inline constexpr std::int64_t kLongPressMsUVE = 450;         // held still this long: a right click
-inline constexpr float kPinchDpPerWheelNotchUVE = 40.0F;     // fingers spreading this far: one wheel notch
-inline constexpr int kTwoFingerButtonUVE = GLFW_MOUSE_BUTTON_RIGHT;
-inline constexpr int kThreeFingerButtonUVE = GLFW_MOUSE_BUTTON_MIDDLE;
+inline constexpr float kTouchSlopDpUVE = 6.0F;                 // finger stays inside this to keep long-press armed
+inline constexpr std::int64_t kLongPressMsUVE = 450;           // held still this long: a right click
+inline constexpr float kPinchDpPerWheelNotchUVE = 36.0F;       // fingers spreading this far: 1.0 wheel unit (continuous)
+inline constexpr int kMultiFingerButtonUVE = GLFW_MOUSE_BUTTON_MIDDLE;
+inline constexpr float kCancelOffscreenPosUVE = -100000.0F;
+inline constexpr std::int64_t kIdleWakeHoldMsUVE = 600;        // keep full-rate frames after touch/IME for fling decay
 
 [[nodiscard]] std::int64_t NowMsUVE() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
@@ -74,44 +76,53 @@ void ReleaseGestureButtonUVE(TouchGestureUVE& touch) {
     }
 }
 
-/// The one finger becomes a left-button press at where it went down (a drag or a tap).
-void PressPendingLeftUVE(TouchGestureUVE& touch) {
-    if (!touch.pending) {
-        return;
+/// Cancels a held mouse button without firing a widget click or viewport selection at its press spot.
+void CancelGestureButtonUVE(TouchGestureUVE& touch) {
+    if (touch.button >= 0) {
+        Window::DispatchAndroidGlfwCursorUVE(kCancelOffscreenPosUVE, kCancelOffscreenPosUVE);
+        Window::DispatchAndroidGlfwMouseButtonUVE(touch.button, false, kCancelOffscreenPosUVE, kCancelOffscreenPosUVE);
+        touch.button = -1;
     }
-    touch.pending = false;
-    touch.button = GLFW_MOUSE_BUTTON_LEFT;
-    Window::DispatchAndroidGlfwMouseButtonUVE(touch.button, true, touch.startX, touch.startY);
 }
 
-/// Multi-finger gesture: the button for that many fingers, held at the fingers' centre.
+/// Two+ finger gesture: cancels any single-finger left press cleanly and holds Middle (Pan) at the
+/// fingers' midpoint while tracking spread for continuous pinch Dolly Zoom.
 void StartMultiFingerUVE(TouchGestureUVE& touch, const TouchPointsUVE& points) {
-    touch.pending = false;
-    ReleaseGestureButtonUVE(touch);
-    touch.button = points.count >= 3 ? kThreeFingerButtonUVE : kTwoFingerButtonUVE;
+    touch.longPressArmed = false;
+    CancelGestureButtonUVE(touch);
+    touch.button = kMultiFingerButtonUVE;
     touch.lastX = points.x;
     touch.lastY = points.y;
     touch.pinchDistance = points.spread;
+    Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
     Window::DispatchAndroidGlfwMouseButtonUVE(touch.button, true, points.x, points.y);
 }
 
 void HandleTouchUVE(ActivityStateUVE& state, const AInputEvent* const event) {
+    state.lastInteractionMs = NowMsUVE();
     TouchGestureUVE& touch = state.touch;
     const TouchPointsUVE points = ReadPointsUVE(event);
     switch (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) {
     case AMOTION_EVENT_ACTION_DOWN:
         touch = TouchGestureUVE{};
         touch.fingers = 1;
-        touch.pending = true;
+        touch.longPressArmed = true;
         touch.startX = touch.lastX = points.x;
         touch.startY = touch.lastY = points.y;
-        touch.startMs = NowMsUVE();
+        touch.startMs = state.lastInteractionMs;
+        touch.button = GLFW_MOUSE_BUTTON_LEFT;
         Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
+        Window::DispatchAndroidGlfwMouseButtonUVE(GLFW_MOUSE_BUTTON_LEFT, true, points.x, points.y);
         break;
     case AMOTION_EVENT_ACTION_POINTER_DOWN:
         touch.fingers = points.count;
-        if (!touch.finished) {
+        if (!touch.finished && touch.button != kMultiFingerButtonUVE) {
             StartMultiFingerUVE(touch, points);
+        } else if (!touch.finished) {
+            touch.lastX = points.x;
+            touch.lastY = points.y;
+            touch.pinchDistance = points.spread;
+            Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
         }
         break;
     case AMOTION_EVENT_ACTION_MOVE:
@@ -120,24 +131,22 @@ void HandleTouchUVE(ActivityStateUVE& state, const AInputEvent* const event) {
         }
         if (touch.fingers == 1) {
             const float slop = kTouchSlopDpUVE * state.pixelsPerDp;
-            if (touch.pending && std::hypot(points.x - touch.startX, points.y - touch.startY) > slop) {
-                PressPendingLeftUVE(touch);
+            if (touch.longPressArmed && std::hypot(points.x - touch.startX, points.y - touch.startY) > slop) {
+                touch.longPressArmed = false;
             }
-            if (!touch.pending) {
-                touch.lastX = points.x;
-                touch.lastY = points.y;
-                Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
-            }
+            touch.lastX = points.x;
+            touch.lastY = points.y;
+            Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
         } else if (points.count >= 2) {
             touch.lastX = points.x;
             touch.lastY = points.y;
             Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
             const float notch = kPinchDpPerWheelNotchUVE * state.pixelsPerDp;
             if (points.count == 2 && notch > 0.0F) {
-                const float notches = (points.spread - touch.pinchDistance) / notch;
-                if (std::abs(notches) >= 1.0F) {
-                    Window::DispatchAndroidGlfwScrollUVE(std::trunc(notches));
-                    touch.pinchDistance += std::trunc(notches) * notch;
+                const float delta = (points.spread - touch.pinchDistance) / notch;
+                if (std::abs(delta) >= 0.02F) {
+                    Window::DispatchAndroidGlfwScrollUVE(delta);
+                    touch.pinchDistance = points.spread;
                 }
             }
         }
@@ -146,18 +155,16 @@ void HandleTouchUVE(ActivityStateUVE& state, const AInputEvent* const event) {
         // Lifting a finger ends a multi-finger gesture; the rest of it moves nothing.
         touch.fingers = points.count - 1;
         ReleaseGestureButtonUVE(touch);
-        touch.pending = false;
+        touch.longPressArmed = false;
         touch.finished = true;
         break;
     case AMOTION_EVENT_ACTION_UP:
-        // A tap is a press and a release where the finger went down.
-        PressPendingLeftUVE(touch);
         ReleaseGestureButtonUVE(touch);
         touch = TouchGestureUVE{};
         break;
     case AMOTION_EVENT_ACTION_CANCEL:
-        touch.pending = false;
-        ReleaseGestureButtonUVE(touch);
+        touch.longPressArmed = false;
+        CancelGestureButtonUVE(touch);
         touch = TouchGestureUVE{};
         break;
     default:
@@ -210,8 +217,37 @@ inline constexpr unsigned int kDeleteCharacterUVE = 0x7FU;
     return mods;
 }
 
+void DispatchUtf8TextUVE(const std::string_view utf8) {
+    std::size_t i = 0U;
+    while (i < utf8.size()) {
+        const auto c = static_cast<unsigned char>(utf8[i]);
+        unsigned int cp = 0U;
+        std::size_t len = 1U;
+        if (c < 0x80U) {
+            cp = c;
+        } else if ((c & 0xE0U) == 0xC0U && i + 1U < utf8.size()) {
+            cp = ((c & 0x1FU) << 6U) | (static_cast<unsigned char>(utf8[i + 1U]) & 0x3FU);
+            len = 2U;
+        } else if ((c & 0xF0U) == 0xE0U && i + 2U < utf8.size()) {
+            cp = ((c & 0x0FU) << 12U) | ((static_cast<unsigned char>(utf8[i + 1U]) & 0x3FU) << 6U) |
+                 (static_cast<unsigned char>(utf8[i + 2U]) & 0x3FU);
+            len = 3U;
+        } else if ((c & 0xF8U) == 0xF0U && i + 3U < utf8.size()) {
+            cp = ((c & 0x07U) << 18U) | ((static_cast<unsigned char>(utf8[i + 1U]) & 0x3FU) << 12U) |
+                 ((static_cast<unsigned char>(utf8[i + 2U]) & 0x3FU) << 6U) |
+                 (static_cast<unsigned char>(utf8[i + 3U]) & 0x3FU);
+            len = 4U;
+        }
+        i += len;
+        if (cp >= kFirstPrintableCharacterUVE && cp != kDeleteCharacterUVE) {
+            Window::DispatchAndroidGlfwCharUVE(cp);
+        }
+    }
+}
+
 /// A hardware or soft keyboard key: the GLFW key and, on press, the character it types.
-[[nodiscard]] int32_t HandleKeyUVE(const ActivityStateUVE& state, const AInputEvent* const event) {
+[[nodiscard]] int32_t HandleKeyUVE(ActivityStateUVE& state, const AInputEvent* const event) {
+    state.lastInteractionMs = NowMsUVE();
     const int32_t action = AKeyEvent_getAction(event);
     int32_t keyCode = AKeyEvent_getKeyCode(event);
     if (keyCode == AKEYCODE_BACK) {
@@ -240,17 +276,48 @@ inline constexpr unsigned int kDeleteCharacterUVE = 0x7FU;
     return glfwKey != GLFW_KEY_UNKNOWN ? 1 : 0;
 }
 
-/// Shows the soft keyboard while the interface wants typed text, and hides it after.
+/// Shows the soft keyboard while the interface wants typed text, hides it after, and drains any
+/// committed text/actions sent by Android soft keyboards through UniVexActivity's InputConnection.
 void UpdateSoftKeyboardUVE(ActivityStateUVE& state) {
     const bool wanted = Window::AndroidGlfwTextInputWantedUVE();
-    if (wanted == state.keyboardShown) {
-        return;
+    if (wanted != state.keyboardShown) {
+        state.keyboardShown = wanted;
+        state.lastInteractionMs = NowMsUVE();
+        if (!wanted) {
+            state.imeDrainTailFrames = 12;
+        }
+        if (!Window::SetAndroidSoftKeyboardUVE(state.app->activity, wanted)) {
+            if (wanted) {
+                ANativeActivity_showSoftInput(state.app->activity, ANATIVEACTIVITY_SHOW_SOFT_INPUT_IMPLICIT);
+            } else {
+                ANativeActivity_hideSoftInput(state.app->activity, 0);
+            }
+        }
     }
-    state.keyboardShown = wanted;
-    if (wanted) {
-        ANativeActivity_showSoftInput(state.app->activity, ANATIVEACTIVITY_SHOW_SOFT_INPUT_IMPLICIT);
-    } else {
-        ANativeActivity_hideSoftInput(state.app->activity, 0);
+    if (!state.keyboardShown) {
+        if (state.imeDrainTailFrames <= 0) {
+            return;
+        }
+        --state.imeDrainTailFrames;
+    }
+    const std::vector<std::string> events = Window::DrainAndroidImeEventsUVE(state.app->activity);
+    if (!events.empty()) {
+        state.lastInteractionMs = NowMsUVE();
+    }
+    for (const std::string& item : events) {
+        if (item.size() < 2U || item[1] != ':') {
+            continue;
+        }
+        if (item[0] == 'T') {
+            DispatchUtf8TextUVE(std::string_view(item).substr(2U));
+        } else if (item[0] == 'K') {
+            const int32_t androidKey = std::atoi(item.c_str() + 2);
+            const int glfwKey = GlfwKeyUVE(androidKey);
+            if (glfwKey != GLFW_KEY_UNKNOWN) {
+                Window::DispatchAndroidGlfwKeyUVE(glfwKey, GLFW_PRESS, 0);
+                Window::DispatchAndroidGlfwKeyUVE(glfwKey, GLFW_RELEASE, 0);
+            }
+        }
     }
 }
 
@@ -360,13 +427,15 @@ void UpdateFilePickUVE(ActivityStateUVE& state) {
     onPicked(pickedPath);
 }
 
-/// A finger held still long enough is a right click (context menus).
+/// A finger held still long enough cancels the initial left press cleanly and fires a right click.
 void UpdateLongPressUVE(TouchGestureUVE& touch) {
-    if (!touch.pending || touch.fingers != 1 || NowMsUVE() - touch.startMs < kLongPressMsUVE) {
+    if (!touch.longPressArmed || touch.fingers != 1 || NowMsUVE() - touch.startMs < kLongPressMsUVE) {
         return;
     }
-    touch.pending = false;
+    touch.longPressArmed = false;
     touch.finished = true;
+    CancelGestureButtonUVE(touch);
+    Window::DispatchAndroidGlfwCursorUVE(touch.startX, touch.startY);
     Window::DispatchAndroidGlfwMouseButtonUVE(GLFW_MOUSE_BUTTON_RIGHT, true, touch.startX, touch.startY);
     Window::DispatchAndroidGlfwMouseButtonUVE(GLFW_MOUSE_BUTTON_RIGHT, false, touch.startX, touch.startY);
 }
@@ -384,6 +453,7 @@ void UpdateLongPressUVE(TouchGestureUVE& touch) {
 
 void HandleCommandUVE(android_app* const app, const int32_t command) {
     auto& state = *static_cast<ActivityStateUVE*>(app->userData);
+    state.lastInteractionMs = NowMsUVE();
     switch (command) {
     case APP_CMD_INIT_WINDOW:
         state.safeArea = Window::ReadAndroidSafeAreaUVE(app->activity);
@@ -456,6 +526,8 @@ void AttachUVE(ActivityStateUVE& state, android_app* const app) {
     state.pixelsPerDp = ReadPixelsPerDpUVE(app->config);
     state.touch = TouchGestureUVE{};
     state.keyboardShown = false;
+    state.imeDrainTailFrames = 0;
+    state.lastInteractionMs = NowMsUVE();
     Window::ResetAndroidGlfwWindowUVE();
     Window::SetAndroidGlfwActivityUVE(app->activity);
     Window::SetAndroidGlfwContentScaleUVE(state.pixelsPerDp);
@@ -477,12 +549,21 @@ bool WaitForWindowUVE(ActivityStateUVE& state) {
     return true;
 }
 
-bool PumpEventsUVE(ActivityStateUVE& state) {
+bool PumpEventsUVE(ActivityStateUVE& state, const int idleWaitMs) {
     android_app* const app = state.app;
+    int firstPollWaitMs = 0;
+    if (idleWaitMs > 0 && state.resumed && app->window != nullptr && state.touch.fingers == 0 &&
+        !state.keyboardShown && state.imeDrainTailFrames <= 0 && !state.pendingPick &&
+        (NowMsUVE() - state.lastInteractionMs) >= kIdleWakeHoldMsUVE) {
+        firstPollWaitMs = idleWaitMs;
+    }
+    bool firstPoll = true;
     for (;;) {
         const bool active = state.resumed && app->window != nullptr;
+        const int timeoutMs = !active ? -1 : (firstPoll ? firstPollWaitMs : 0);
+        firstPoll = false;
         android_poll_source* source = nullptr;
-        const int result = ALooper_pollOnce(active ? 0 : -1, nullptr, nullptr, reinterpret_cast<void**>(&source));
+        const int result = ALooper_pollOnce(timeoutMs, nullptr, nullptr, reinterpret_cast<void**>(&source));
         if (result >= 0 && source != nullptr) {
             source->process(app, source);
         }
@@ -495,7 +576,8 @@ bool PumpEventsUVE(ActivityStateUVE& state) {
     }
 }
 
-bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const char* const renderedMarker) {
+bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const char* const renderedMarker,
+                    const int idleWaitMs) {
     UpdateLongPressUVE(state.touch);
     UpdateSoftKeyboardUVE(state);
     UpdateFilePickUVE(state);
@@ -503,7 +585,8 @@ bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const ch
     if (++state.framesStarted == 2U && renderedMarker != nullptr) {
         __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "%s", renderedMarker);
     }
-    return PumpEventsUVE(state) && !Window::AndroidGlfwCloseRequestedUVE();
+    const int effectiveIdleMs = state.framesStarted > 4U ? idleWaitMs : 0;
+    return PumpEventsUVE(state, effectiveIdleMs) && !Window::AndroidGlfwCloseRequestedUVE();
 }
 
 bool StartFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,

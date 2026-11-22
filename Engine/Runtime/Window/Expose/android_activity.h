@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 struct ANativeActivity;
 
@@ -47,5 +48,13 @@ void WriteAndroidClipboardUVE(ANativeActivity* activity, const char* text);
 
 /// Returns a .uvproject path passed to UniVexActivity via Intent extra "project" once, or empty.
 [[nodiscard]] std::string TakeAndroidLaunchProjectUVE(ANativeActivity* activity);
+
+/// Shows or hides the soft keyboard via UniVexActivity's IME InputConnection view. Returns false
+/// if the activity is not a UniVexActivity (caller may fall back to ANativeActivity_showSoftInput).
+[[nodiscard]] bool SetAndroidSoftKeyboardUVE(ANativeActivity* activity, bool visible);
+
+/// Drains queued IME events ("T:<utf8>" or "K:<androidKeyCode>") emitted by UniVexActivity's
+/// InputConnection since the previous call.
+[[nodiscard]] std::vector<std::string> DrainAndroidImeEventsUVE(ANativeActivity* activity);
 
 } // namespace UVE::Window

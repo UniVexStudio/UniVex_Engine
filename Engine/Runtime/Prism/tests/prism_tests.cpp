@@ -3253,6 +3253,77 @@ static void testTouchScrollViewDragAndButtonCancel(Application& app, TestPlatfor
   app.hostResize(600, 400);
 }
 
+static void testRetinaGpuBatchAndFlingScroll(Application& app, TestPlatform& plat) {
+  SECTION("retina_gpu_batch_and_fling_scroll");
+
+  // 1. High-DPI FreeType sibling font caching & 2x GPU vertex/scissor scaling.
+  const Font& baseFont = *theme().body;
+  CHECK(&baseFont.atPixelScale(1.0f) == &baseFont);
+  const Font& hiFont = baseFont.atPixelScale(2.0f);
+  CHECK(hiFont.pixelSize() >= baseFont.pixelSize() * 2 - 1);
+  CHECK(&baseFont.atPixelScale(2.0f) == &hiFont);
+
+  RecordingCanvas rec;
+  rec.resize(200, 100);
+  rec.beginFrame();
+  rec.clear(Color(18, 20, 24));
+  rec.fillRoundRect({10, 12, 80, 30}, 4.0f, Color(40, 120, 220));
+  rec.text(baseFont, {16, 18}, "HiDPI", Color(255, 255, 255));
+
+  GlyphAtlas atlas1x, atlas2x;
+  GpuFrame frame1x, frame2x;
+  buildGpuFrame(rec.list(), atlas1x, frame1x, 1.0f);
+  buildGpuFrame(rec.list(), atlas2x, frame2x, 2.0f);
+  CHECK(frame1x.width == 200 && frame1x.height == 100);
+  CHECK(frame2x.width == 400 && frame2x.height == 200);
+  CHECK(!frame1x.vertices.empty() && !frame2x.vertices.empty());
+  float maxX1x = 0.0f, maxX2x = 0.0f;
+  for (const GpuVertex& v : frame1x.vertices) maxX1x = std::max(maxX1x, v.x);
+  for (const GpuVertex& v : frame2x.vertices) maxX2x = std::max(maxX2x, v.x);
+  CHECK(maxX2x > maxX1x * 1.8f);
+  bool foundScaledScissor = false;
+  for (const GpuBatch& b : frame2x.batches) {
+    if (b.kind == GpuBatch::Kind::Draw && b.sw == 400 && b.sh == 200) foundScaledScissor = true;
+  }
+  CHECK(foundScaledScissor);
+
+  // 2. Inertial fling scrolling coasts after finger release and decays smoothly.
+  plat.single = true;
+  plat.ms = 1000;
+  app.hostResize(320, 120);
+  auto listBox = vbox(4.0f);
+  for (int i = 0; i < 30; ++i) {
+    auto b = make<Button>("Row " + std::to_string(i));
+    b->setFixedHeight(32.0f);
+    listBox->add(b);
+  }
+  auto scroll = make<ScrollView>();
+  scroll->setContent(listBox);
+  app.setRoot(scroll);
+  app.tick();
+  app.render();
+
+  app.hostMouseMove({100, 100});
+  app.hostMouseButton({100, 100}, MouseButton::Left, true);
+  plat.ms += 16;
+  app.hostMouseMove({100, 80});
+  plat.ms += 16;
+  app.hostMouseMove({100, 40});
+  plat.ms += 8;
+  app.hostMouseButton({100, 40}, MouseButton::Left, false);
+  const float atRelease = scroll->scroll();
+  CHECK(atRelease > 30.0f);
+  CHECK(std::fabs(scroll->flingVelocity()) > 50.0f);
+  for (int step = 0; step < 30; ++step) {
+    plat.ms += 16;
+    app.tick();
+  }
+  CHECK(scroll->scroll() > atRelease + 20.0f);
+
+  plat.single = false;
+  app.hostResize(600, 400);
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -3272,6 +3343,7 @@ int main(int argc, char** argv) {
   testTypedNumberField(app);
   testNarrowButtonClipping();
   testTouchScrollViewDragAndButtonCancel(app, *plat);
+  testRetinaGpuBatchAndFlingScroll(app, *plat);
   testDocking(app);
   testToastsAndTimers(app, *plat);
   testDrawList(app);

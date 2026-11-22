@@ -3132,7 +3132,10 @@ vec3 SampleTriplanarNormalUVE(sampler2D normalMap, UvSetUVE set, float normalSca
 // One map read its own way: its UV set, tiling and offset, then the channel, invert and strength
 // (strength 0 is `neutral`: what the material looks like without the map).
 vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 control, vec4 neutral) {
-    UvSetUVE set = control.w > 0.5 ? uv2 : uv1;
+    UvSetUVE set = uv1;
+    if (control.w > 0.5) {
+        set = uv2;
+    }
     vec2 tiling = vec2(1.0) + transform.xy;
     set.uv = set.uv * tiling + transform.zw;
     set.uvX = set.uvX * tiling + transform.zw;

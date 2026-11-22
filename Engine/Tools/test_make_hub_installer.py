@@ -109,5 +109,37 @@ class MakeHubInstallerTest(unittest.TestCase):
         self.assertFalse(used - given, f"the script uses defines make_hub_installer does not pass: {used - given}")
 
 
+    def test_linux_deb_package_layout(self) -> None:
+        fake_dpkg = f"""#!{sys.executable}
+import json, sys
+from pathlib import Path
+src = Path(sys.argv[-2])
+out = Path(sys.argv[-1])
+files = sorted(p.relative_to(src).as_posix() for p in src.rglob("*") if p.is_file() or p.is_symlink())
+desktop = (src / "usr/share/applications/univex-hub.desktop").read_text(encoding="utf-8")
+control = (src / "DEBIAN/control").read_text(encoding="utf-8")
+out.write_text(json.dumps({{"files": files, "desktop": desktop, "control": control}}), encoding="utf-8")
+"""
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            dpkg = root / "dpkg-deb"
+            dpkg.write_text(fake_dpkg, encoding="utf-8")
+            dpkg.chmod(0o755)
+            with mock.patch("shutil.which", return_value=str(dpkg)), \
+                 mock.patch.object(package_engine, "copy_linux_shared_libs", return_value=set()):
+                deb = make_hub_installer.build_linux_deb(make_hub_build(root), "1.2.0", root / "dist")
+            self.assertEqual(deb.name, "UniVexHub-1.2.0-linux-amd64.deb")
+            self.assertTrue(deb.with_name(deb.name + package_engine.CHECKSUM_SUFFIX).is_file())
+            manifest = json.loads(deb.read_text(encoding="utf-8"))
+            self.assertIn("Terminal=false", manifest["desktop"])
+            self.assertIn("Exec=/opt/univex-hub/uve_hub %f", manifest["desktop"])
+            self.assertIn("Package: univex-hub", manifest["control"])
+            for expected in ("opt/univex-hub/uve_hub", "usr/bin/uve_hub",
+                             "usr/share/applications/univex-hub.desktop",
+                             "usr/share/mime/packages/univex-project.xml",
+                             "DEBIAN/postinst", "DEBIAN/postrm"):
+                self.assertIn(expected, manifest["files"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@
   <uses-permission android:name="android.permission.INTERNET"/>
   <application android:label="UniVex Hub" android:hasCode="true" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:extractNativeLibs="false">
     <activity android:name="com.univex.app.UniVexActivity" android:exported="true" android:label="UniVex Hub"
+              android:screenOrientation="sensorLandscape"
               android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
               android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|density|uiMode"
               android:windowSoftInputMode="adjustResize">
