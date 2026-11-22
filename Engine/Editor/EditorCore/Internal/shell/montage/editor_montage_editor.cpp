@@ -384,11 +384,16 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildUVE() {
 }
 
 prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildTitleBarUVE() {
-    auto row = prism::hbox();
-    auto menus = prism::make<prism::MenuBar>();
-    menus->setShowLogo(false);
-    menus->setItemPadding(12.0F);
-    menus->addMenu("File", [this] {
+    m_tab = prism::make<DocumentTabUVE>();
+    m_tab->setFallbackIcon(prism::Icon::AnimMontage);
+    m_tab->setName(m_openPath.empty() && m_editor.MontageEditSessionPtrUVE() != nullptr
+                       ? m_editor.MontageEditSessionPtrUVE()->path.stem().string()
+                       : m_openPath.stem().string());
+
+    EditorHeaderDescUVE desc;
+    desc.documentTab = m_tab;
+    desc.onClose = [this] { RequestCloseUVE(); };
+    desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Save", [this] { static_cast<void>(m_editor.SaveMontageEditorUVE()); }, "", prism::Icon::Save));
         items.push_back(prism::MenuItem::Item("Show in Asset Table", [this] {
@@ -402,54 +407,26 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildTitleBarUVE() {
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Item("Close", [this] { RequestCloseUVE(); }, "", prism::Icon::Close));
         return items;
-    });
-    menus->addMenu("Edit", [this] {
+    }});
+    desc.menus.push_back({"Edit", [this] {
         const EditorUVE::MontageEditSessionUVE* const session = m_editor.MontageEditSessionPtrUVE();
         prism::MenuItem undo = prism::MenuItem::Item("Undo", [this] { static_cast<void>(m_editor.UndoMontageEditUVE()); }, "", prism::Icon::Undo);
         undo.enabled = session != nullptr && !session->undo.empty();
         prism::MenuItem redo = prism::MenuItem::Item("Redo", [this] { static_cast<void>(m_editor.RedoMontageEditUVE()); }, "", prism::Icon::Redo);
         redo.enabled = session != nullptr && !session->redo.empty();
         return std::vector<prism::MenuItem>{std::move(undo), std::move(redo)};
-    });
-    menus->addMenu("Help", [] {
+    }});
+    desc.menus.push_back({"Help", [] {
         return std::vector<prism::MenuItem>{
             prism::MenuItem::Item("Play it from a script: montage.play(\"<file name>\")", {}).disabled(),
             prism::MenuItem::Item("Events: montage_notify, montage_notify_begin / _end, montage_ended", {}).disabled()};
-    });
-    row->add(menus, CentreUVE());
-    row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*row, [this] { RequestCloseUVE(); });
-
-    auto tabRow = prism::hbox();
-    m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::AnimMontage);
-    m_tab->setName(m_openPath.empty() && m_editor.MontageEditSessionPtrUVE() != nullptr
-                       ? m_editor.MontageEditSessionPtrUVE()->path.stem().string()
-                       : m_openPath.stem().string());
-    tabRow->add(m_tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
-    tabRow->add(prism::make<DragStripUVE>(true), prism::Slot{1.0F});
-    auto titleRow = prism::make<prism::SizeBox>();
-    titleRow->setHeightOverride(kTitleRowUVE);
-    titleRow->setContent(row);
-    auto tabRowBox = prism::make<prism::SizeBox>();
-    tabRowBox->setHeightOverride(kTabRowUVE);
-    tabRowBox->setContent(tabRow);
-    auto right = prism::vbox();
-    right->add(titleRow);
-    right->add(tabRowBox);
-    auto top = prism::hbox();
-    top->add(prism::make<LogoBoxUVE>());
-    top->add(right, prism::Slot{1.0F});
-    auto bar = prism::make<prism::Border>();
-    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    bar->setChild(top);
-    return bar;
+    }});
+    return BuildEditorHeaderUVE(std::move(desc));
 }
 
 prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildToolbarUVE() {
-    auto row = prism::hbox(4.0F);
-    row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
+    auto row = prism::hbox(3.0F);
+    row->setPadding(prism::Margin(5.0F, 1.0F, 5.0F, 1.0F));
     auto save = ToolButtonUVE(prism::Icon::Save, "Save the motion montage", "Save");
     save->onClick = [this] { static_cast<void>(m_editor.SaveMontageEditorUVE()); };
     row->add(save, CentreUVE());

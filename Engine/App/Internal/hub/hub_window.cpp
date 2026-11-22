@@ -27,28 +27,28 @@ using LauncherUI::ShowFolderPickerUVE;
 namespace {
 
 // Layout, in PRISM layout units.
-inline constexpr float kSidebarWidthUVE = 232.0F;
-inline constexpr float kCompactSidebarWidthUVE = 164.0F;
+inline constexpr float kSidebarWidthUVE = 224.0F;
+inline constexpr float kCompactSidebarWidthUVE = 136.0F;
 inline constexpr float kSidebarInsetUVE = 12.0F;
-inline constexpr float kCompactSidebarInsetUVE = 8.0F;
+inline constexpr float kCompactSidebarInsetUVE = 6.0F;
 inline constexpr float kNavSpacingUVE = 2.0F;
-inline constexpr float kNavInsetTopUVE = 12.0F;
-inline constexpr float kFooterInsetUVE = 8.0F;
-inline constexpr float kBrandMarkSizeUVE = 36.0F;
+inline constexpr float kNavInsetTopUVE = 10.0F;
+inline constexpr float kFooterInsetUVE = 6.0F;
+inline constexpr float kBrandMarkSizeUVE = 34.0F;
 inline constexpr float kBrandGapUVE = 10.0F;
 inline constexpr float kBrandInsetUVE = 4.0F;
 inline constexpr float kBrandLineSpacingUVE = 1.0F;
-inline constexpr float kPagePaddingUVE = 24.0F;
-inline constexpr float kCompactPagePaddingUVE = 12.0F;
-inline constexpr float kSectionSpacingUVE = 16.0F;
-inline constexpr float kCompactSectionSpacingUVE = 10.0F;
-inline constexpr float kCompactBrandMarkSizeUVE = 26.0F;
-inline constexpr float kRowSpacingUVE = 8.0F;
-inline constexpr float kRowPaddingUVE = 12.0F;
+inline constexpr float kPagePaddingUVE = 22.0F;
+inline constexpr float kCompactPagePaddingUVE = 10.0F;
+inline constexpr float kSectionSpacingUVE = 14.0F;
+inline constexpr float kCompactSectionSpacingUVE = 8.0F;
+inline constexpr float kCompactBrandMarkSizeUVE = 22.0F;
+inline constexpr float kRowSpacingUVE = 6.0F;
+inline constexpr float kRowPaddingUVE = 10.0F;
 inline constexpr float kRowRadiusUVE = 6.0F;
-inline constexpr float kControlSpacingUVE = 8.0F;
-inline constexpr float kFieldLabelWidthUVE = 120.0F;
-inline constexpr float kTemplateListWidthUVE = 260.0F;
+inline constexpr float kControlSpacingUVE = 6.0F;
+inline constexpr float kFieldLabelWidthUVE = 116.0F;
+inline constexpr float kTemplateListWidthUVE = 240.0F;
 
 struct SortChoiceUVE final {
     const char* label;

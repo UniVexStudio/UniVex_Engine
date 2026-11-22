@@ -56,13 +56,14 @@ private:
     };
 
     void SyncPlayInEditorHooksUVE(const Math::Vector2UVE& availableSize,
-                                  const Editor::EditorViewportInputUVE& input);
+                                  const Editor::EditorViewportInputUVE& input,
+                                  float renderScale);
     void SyncPlayCameraPoseUVE();
     void UpdatePlayCapturedCameraUVE(const Editor::EditorViewportInputUVE& input);
 
     void EnsureUIFontAtlasTextureUVE(const UI::UIFontAtlasUVE& fontAtlas);
     [[nodiscard]] bool EnsureUIOverlayResourcesUVE();
-    void DrawUIOverlayUVE(int width, int height);
+    void DrawUIOverlayUVE(int width, int height, float renderScale);
 
     Editor::EditorUVE& m_editor;
     Core::EngineCoreUVE& m_engine;

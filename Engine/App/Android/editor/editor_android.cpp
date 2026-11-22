@@ -54,7 +54,7 @@ extern "C" __attribute__((visibility("default"))) int UveEditorRunUVE(android_ap
         const float invScale = scale > 0.0F ? (1.0F / scale) : 1.0F;
         const UVE::Window::AndroidSafeAreaUVE& area = activity.safeArea;
         return {static_cast<float>(area.left) * invScale, static_cast<float>(area.top) * invScale,
-                static_cast<float>(area.right) * invScale, static_cast<float>(area.bottom) * invScale};
+                static_cast<float>(area.right) * invScale, static_cast<float>(area.imeBottom) * invScale};
     };
     platform.beforeFrame = [&activity](UVE::Core::EngineCoreUVE& core) {
         return UVE::AndroidHost::BeforeFrameUVE(activity, core, kEditorRenderedMarkerUVE);

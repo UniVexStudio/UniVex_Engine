@@ -20,14 +20,35 @@ struct AndroidSafeAreaUVE final {
     int top = 0;
     int right = 0;
     int bottom = 0;
+    int imeBottom = 0;
 
     friend bool operator==(const AndroidSafeAreaUVE&, const AndroidSafeAreaUVE&) = default;
+};
+
+/// Well-known Android external storage directories reported by UniVexActivity.
+struct AndroidStoragePathsUVE final {
+    std::string publicStorageRoot;
+    std::string publicDocuments;
+    std::string publicDownloads;
+    std::string appExternalDocuments;
 };
 
 /// Reads the safe area the activity last reported. All zero when the activity is not a UniVex
 /// activity or Java cannot be reached. Call it from the app thread when the window or its layout
 /// changes, not every frame: it attaches the thread to Java for the read.
 [[nodiscard]] AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* activity);
+
+/// True while an external hardware mouse, touchpad, or non-virtual alphabetic keyboard is attached.
+[[nodiscard]] bool HasAndroidHardwareInputUVE(ANativeActivity* activity);
+
+/// True when the app currently has permission to read/write shared public external storage.
+[[nodiscard]] bool HasAndroidAllFilesAccessUVE(ANativeActivity* activity);
+
+/// Opens the Android All Files Access settings page (API 30+) or requests legacy storage access.
+void RequestAndroidAllFilesAccessUVE(ANativeActivity* activity);
+
+/// Queries Android's external storage paths (public storage root, Documents, Downloads, and app external Documents).
+[[nodiscard]] AndroidStoragePathsUVE ReadAndroidStoragePathsUVE(ANativeActivity* activity);
 
 /// The character a key event types (android.view.KeyEvent.getUnicodeChar), or 0 for none (a
 /// function key, or Java unreachable). Attaches the thread to Java for the call.

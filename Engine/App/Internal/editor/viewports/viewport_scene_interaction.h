@@ -152,14 +152,22 @@ private:
     [[nodiscard]] std::optional<CameraFlightPoseUVE> CameraEntityPoseUVE(Scene::EntityUVE entity) const;
 
     void UpdateSelectionGizmoUVE();
-    void UpdateSelectionFromMouseUVE(const Editor::EditorViewportInputUVE& input,
+    void UpdateSelectionFromMouseUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
                                      int width,
                                      int height,
                                      bool suppressed);
+    void CommitMarqueeSelectionUVE(const Editor::EditorViewportInputUVE& input,
+                                   int width,
+                                   int height,
+                                   float minX,
+                                   float minY,
+                                   float maxX,
+                                   float maxY);
     void UpdateEntityContextToolbarFromMouseUVE(const Editor::EditorViewportInputUVE& input,
                                                 int width,
                                                 int height,
                                                 bool suppressed);
+    void UpdateTouchControllerCameraUVE(const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
     void UpdateOrbitPanZoomFromMouseUVE(const Editor::EditorViewportInputUVE& input,
                                         int framebufferHeight,
                                         bool suppressOrbit);
@@ -188,8 +196,10 @@ private:
     bool m_flying = false;
     float m_flySpeed = 6.0F;
     univex::math::Vec3 m_flyVelocity{0.0F, 0.0F, 0.0F};
+    univex::math::Vec3 m_touchMoveVelocity{0.0F, 0.0F, 0.0F};
 
     bool m_selectionPressActive = false;
+    bool m_marqueeActive = false;
     float m_selectionPressX = 0.0F;
     float m_selectionPressY = 0.0F;
     bool m_contextToolbarPressActive = false;

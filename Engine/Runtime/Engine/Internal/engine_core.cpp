@@ -5425,7 +5425,7 @@ EngineServicesUVE& EngineCoreUVE::GetServicesUVE() {
 }
 
 VersionUVE EngineCoreUVE::GetEngineVersionUVE() noexcept {
-    return VersionUVE{0, 1, 0, 1};
+    return VersionUVE{0, 1, 1, 0};
 }
 
 

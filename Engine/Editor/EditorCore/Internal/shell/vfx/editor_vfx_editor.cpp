@@ -335,11 +335,16 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildUVE() {
 }
 
 prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
-    auto row = prism::hbox();
-    auto menus = prism::make<prism::MenuBar>();
-    menus->setShowLogo(false);
-    menus->setItemPadding(12.0F);
-    menus->addMenu("File", [this] {
+    m_tab = prism::make<DocumentTabUVE>();
+    m_tab->setFallbackIcon(prism::Icon::VfxGraph);
+    m_tab->setName(m_openPath.empty() && m_editor.VfxEditSessionPtrUVE() != nullptr
+                       ? m_editor.VfxEditSessionPtrUVE()->path.stem().string()
+                       : m_openPath.stem().string());
+
+    EditorHeaderDescUVE desc;
+    desc.documentTab = m_tab;
+    desc.onClose = [this] { RequestCloseUVE(); };
+    desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item(
             "Save", [this] { static_cast<void>(m_editor.SaveVfxEditorUVE()); }, "Ctrl+S", prism::Icon::Save));
@@ -361,8 +366,8 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Item("Close", [this] { RequestCloseUVE(); }, "", prism::Icon::Close));
         return items;
-    });
-    menus->addMenu("Edit", [this] {
+    }});
+    desc.menus.push_back({"Edit", [this] {
         const EditorUVE::VfxEditSessionUVE* const session = m_editor.VfxEditSessionPtrUVE();
         prism::MenuItem undo = prism::MenuItem::Item(
             "Undo", [this] { static_cast<void>(m_editor.UndoVfxEditUVE()); }, "Ctrl+Z", prism::Icon::Undo);
@@ -371,8 +376,8 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
             "Redo", [this] { static_cast<void>(m_editor.RedoVfxEditUVE()); }, "Ctrl+Y", prism::Icon::Redo);
         redo.enabled = session != nullptr && !session->redo.empty();
         return std::vector<prism::MenuItem>{std::move(undo), std::move(redo)};
-    });
-    menus->addMenu("Window", [this] {
+    }});
+    desc.menus.push_back({"Window", [this] {
         const EditorUVE::VfxEditSessionUVE* const session = m_editor.VfxEditSessionPtrUVE();
         return std::vector<prism::MenuItem>{
             prism::MenuItem::Item(
@@ -404,52 +409,20 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
                     }
                 }),
         };
-    });
-    menus->addMenu("Help", [] {
+    }});
+    desc.menus.push_back({"Help", [] {
         return std::vector<prism::MenuItem>{
             prism::MenuItem::Item("Spawn from Blueprint: vfx.spawn(\"assets/VFX_Effect.uvfx\", pos)", {}).disabled(),
             prism::MenuItem::Item("Right-click the Particle Graph canvas to add modules", {}).disabled(),
             prism::MenuItem::Item("Press Space to Play/Pause preview; scrub the timeline below the viewport", {}).disabled(),
         };
-    });
-    row->add(menus, CentreSlotUVE());
-    row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*row, [this] { RequestCloseUVE(); });
-
-    auto tabRow = prism::hbox();
-    m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::VfxGraph);
-    m_tab->setName(m_openPath.empty() && m_editor.VfxEditSessionPtrUVE() != nullptr
-                       ? m_editor.VfxEditSessionPtrUVE()->path.stem().string()
-                       : m_openPath.stem().string());
-    tabRow->add(m_tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
-    tabRow->add(prism::make<DragStripUVE>(true), prism::Slot{1.0F});
-
-    auto titleRow = prism::make<prism::SizeBox>();
-    titleRow->setHeightOverride(kTitleRowUVE);
-    titleRow->setContent(row);
-    auto tabRowBox = prism::make<prism::SizeBox>();
-    tabRowBox->setHeightOverride(kTabRowUVE);
-    tabRowBox->setContent(tabRow);
-
-    auto right = prism::vbox();
-    right->add(titleRow);
-    right->add(tabRowBox);
-
-    auto top = prism::hbox();
-    top->add(prism::make<LogoBoxUVE>());
-    top->add(right, prism::Slot{1.0F});
-
-    auto bar = prism::make<prism::Border>();
-    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    bar->setChild(top);
-    return bar;
+    }});
+    return BuildEditorHeaderUVE(std::move(desc));
 }
 
 prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
-    auto row = prism::hbox(4.0F);
-    row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
+    auto row = prism::hbox(3.0F);
+    row->setPadding(prism::Margin(5.0F, 1.0F, 5.0F, 1.0F));
 
     auto save = ToolButtonUVE(prism::Icon::Save, "Save Particle System (.uvfx) (Ctrl+S)", "Save");
     save->onClick = [this] { static_cast<void>(m_editor.SaveVfxEditorUVE()); };

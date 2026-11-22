@@ -12,7 +12,9 @@
 #include <utility>
 #include <vector>
 
+#include "aabb.h"
 #include "camera_component.h"
+#include "editor_internal_entity_component.h"
 #include "engine_services.h"
 #include "gl_render_device.h"
 #include "i_entity_manager.h"
@@ -20,11 +22,15 @@
 #include "integration/math_conversions.h"
 #include "integration/selection_outline_geometry.h"
 #include "logging_macros.h"
+#include "matrix4x4.h"
+#include "primitive_geometry.h"
+#include "primitive_mesh_component.h"
 #include "univex/gizmo/bone_shape.h"
 #include "univex/render/infinite_grid_renderer.h"
 #include "univex/render/selection_outline.h"
 #include "viewport_object_gizmos.h"
 #include "viewport_surface.h"
+#include "visibility_component.h"
 #include "world_transform_component.h"
 
 namespace UVE::App::Viewports {
@@ -359,13 +365,16 @@ void ViewportSceneInteractionUVE::UpdateInteractionUVE(const Editor::EditorUVE::
 
     const VpInputUVE& input = overlayState.input;
     constexpr bool kPointerTaken = false;
-    UpdateSelectionFromMouseUVE(input, width, height, kPointerTaken);
+    UpdateSelectionFromMouseUVE(overlayState, width, height, kPointerTaken);
     UpdateEntityContextToolbarFromMouseUVE(input, width, height, kPointerTaken);
 
-    if (!m_previewing && !skipAuthoringNavigation && !UpdateFlyCameraUVE(input, kPointerTaken)) {
-        UpdateOrbitPanZoomFromMouseUVE(input, height, kPointerTaken);
-        UpdateViewportViewHotkeysUVE(input);
-        UpdateViewportBookmarkHotkeysUVE(input);
+    if (!m_previewing && !skipAuthoringNavigation) {
+        UpdateTouchControllerCameraUVE(overlayState);
+        if (!UpdateFlyCameraUVE(input, kPointerTaken)) {
+            UpdateOrbitPanZoomFromMouseUVE(input, height, kPointerTaken);
+            UpdateViewportViewHotkeysUVE(input);
+            UpdateViewportBookmarkHotkeysUVE(input);
+        }
     }
 }
 
@@ -529,12 +538,18 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
     mixDepthKey(&entityCount, sizeof(entityCount));
     const bool hasCachedDepth = !m_cachedHostDepth.empty() && m_cachedHostDepthWidth == m_hostDepthWidth &&
                                 m_cachedHostDepthHeight == m_hostDepthHeight;
-    const bool pointerActive = overlayState.input.IsDownUVE(VpBtnUVE::Left) ||
+    const bool touchDriving = std::fabs(overlayState.touchMoveX) > 1e-3F ||
+                              std::fabs(overlayState.touchMoveY) > 1e-3F ||
+                              std::fabs(overlayState.touchMoveUp) > 1e-3F ||
+                              std::fabs(overlayState.touchLookX) > 1e-3F ||
+                              std::fabs(overlayState.touchLookY) > 1e-3F ||
+                              std::fabs(overlayState.touchZoomDelta) > 1e-3F;
+    const bool pointerActive = touchDriving || overlayState.input.IsDownUVE(VpBtnUVE::Left) ||
                                overlayState.input.IsDownUVE(VpBtnUVE::Middle) ||
                                overlayState.input.IsDownUVE(VpBtnUVE::Right);
     ++m_hostDepthFrameCounter;
     if (hasCachedDepth && ((depthKey == m_cachedHostDepthKey && !pointerActive) ||
-                           (depthKey != m_cachedHostDepthKey && (m_hostDepthFrameCounter % 4U) != 0U))) {
+                           ((depthKey != m_cachedHostDepthKey || touchDriving) && (m_hostDepthFrameCounter % 8U) != 0U))) {
         overlayState.sceneDepth = m_cachedHostDepth;
         overlayState.sceneDepthWidth = m_cachedHostDepthWidth;
         overlayState.sceneDepthHeight = m_cachedHostDepthHeight;
@@ -709,7 +724,7 @@ void ViewportSceneInteractionUVE::RenderSelectionOutlineOrMaskUVE(
     }
 
     auto& renderPass = surface.RenderPassUVE();
-    if (overlayState.hostDrawsGizmos) {
+    if (overlayState.hostDrawsGizmos && !surface.PreferGpuSelectionOutlineUVE()) {
         const univex::render::SelectionOutlineSettings& outline = renderPass.SelectionOutlineSettingsUVE();
         std::uint64_t maskKey = 1469598103934665603ULL;
         const auto mixKey = [&maskKey](const void* data, const std::size_t size) {
@@ -737,16 +752,17 @@ void ViewportSceneInteractionUVE::RenderSelectionOutlineOrMaskUVE(
             maskRead = true;
         }
         if (maskRead) {
-            const float dpiScale = std::max(1.0F, overlayState.input.dpiScale);
+            const float coordScale = std::max(0.25F, overlayState.input.dpiScale);
             overlayState.selectionMaskWidth = width;
             overlayState.selectionMaskHeight = height;
             overlayState.selectionOutlineRadius =
-                std::max(1, static_cast<int>(std::lround(outline.thicknessPixels * dpiScale)));
+                std::max(1, static_cast<int>(std::lround(outline.thicknessPixels * coordScale)));
             overlayState.selectionOutlineRgb = {outline.r, outline.g, outline.b};
         }
-        glBindFramebuffer(GL_FRAMEBUFFER, surface.MsaaFboUVE());
+        glBindFramebuffer(GL_FRAMEBUFFER, surface.ActiveDrawFboUVE());
         glViewport(0, 0, width, height);
     } else {
+        // Pure GPU selection outline: zero glReadPixels stall and automatically smoothed by FXAA 3.11.
         renderPass.RenderSelectionOutlineUVE(m_camera, width, height, m_cachedSelectionTriangles);
     }
 }
@@ -812,26 +828,70 @@ void ViewportSceneInteractionUVE::UpdateSelectionGizmoUVE() {
     }
 }
 
-void ViewportSceneInteractionUVE::UpdateSelectionFromMouseUVE(const Editor::EditorViewportInputUVE& input,
-                                                              const int width,
-                                                              const int height,
-                                                              const bool suppressed) {
-    if (suppressed) {
+void ViewportSceneInteractionUVE::UpdateSelectionFromMouseUVE(
+    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState,
+    const int width,
+    const int height,
+    const bool suppressed) {
+    const Editor::EditorViewportInputUVE& input = overlayState.input;
+    overlayState.marqueeActive = false;
+
+    const bool multiOrNav = input.alt || input.IsDownUVE(VpBtnUVE::Middle) || input.IsDownUVE(VpBtnUVE::Right) ||
+                            std::fabs(input.wheel) > 1e-4F;
+    if (suppressed || multiOrNav) {
         m_selectionPressActive = false;
+        m_marqueeActive = false;
         return;
     }
     if (!m_pointerOverOverlay && input.hovered && input.IsClickedUVE(VpBtnUVE::Left)) {
         const Math::Vector2UVE imageOrigin = input.imageOrigin;
         m_selectionPressActive = true;
+        m_marqueeActive = false;
         m_selectionPressX = input.mousePos.x - imageOrigin.x;
         m_selectionPressY = input.mousePos.y - imageOrigin.y;
     }
-    if (!m_selectionPressActive || !input.IsReleasedUVE(VpBtnUVE::Left)) {
+    if (!m_selectionPressActive) {
         return;
     }
-    m_selectionPressActive = false;
 
-    const float slop = (input.touchNavigation ? 8.0F : kNavClickSlopPixelsUVE) * std::max(1.0F, input.dpiScale);
+    const float coordScale = std::max(0.25F, input.dpiScale);
+    const float invCoordScale = 1.0F / coordScale;
+    const float localX = std::clamp(input.mousePos.x - input.imageOrigin.x, 0.0F, static_cast<float>(width));
+    const float localY = std::clamp(input.mousePos.y - input.imageOrigin.y, 0.0F, static_cast<float>(height));
+    const float slop = (input.touchNavigation ? 8.0F : 6.0F) * coordScale;
+
+    if (input.IsDownUVE(VpBtnUVE::Left) && !input.IsReleasedUVE(VpBtnUVE::Left)) {
+        if ((std::fabs(localX - m_selectionPressX) + std::fabs(localY - m_selectionPressY)) > slop) {
+            m_marqueeActive = true;
+        }
+        if (m_marqueeActive) {
+            overlayState.marqueeActive = true;
+            overlayState.marqueeStartX = std::clamp(m_selectionPressX, 0.0F, static_cast<float>(width)) * invCoordScale;
+            overlayState.marqueeStartY = std::clamp(m_selectionPressY, 0.0F, static_cast<float>(height)) * invCoordScale;
+            overlayState.marqueeEndX = localX * invCoordScale;
+            overlayState.marqueeEndY = localY * invCoordScale;
+        }
+        return;
+    }
+
+    if (!input.IsReleasedUVE(VpBtnUVE::Left)) {
+        m_selectionPressActive = false;
+        m_marqueeActive = false;
+        return;
+    }
+
+    const bool wasMarquee = m_marqueeActive;
+    m_selectionPressActive = false;
+    m_marqueeActive = false;
+
+    if (wasMarquee) {
+        const float startX = std::clamp(m_selectionPressX, 0.0F, static_cast<float>(width));
+        const float startY = std::clamp(m_selectionPressY, 0.0F, static_cast<float>(height));
+        CommitMarqueeSelectionUVE(input, width, height, std::min(startX, localX), std::min(startY, localY),
+                                  std::max(startX, localX), std::max(startY, localY));
+        return;
+    }
+
     const Math::Vector2UVE dragDelta = input.DragDeltaUVE(VpBtnUVE::Left);
     if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > slop) {
         return;
@@ -854,6 +914,114 @@ void ViewportSceneInteractionUVE::UpdateSelectionFromMouseUVE(const Editor::Edit
     }
 }
 
+void ViewportSceneInteractionUVE::CommitMarqueeSelectionUVE(const Editor::EditorViewportInputUVE& input,
+                                                            const int width,
+                                                            const int height,
+                                                            const float minX,
+                                                            const float minY,
+                                                            const float maxX,
+                                                            const float maxY) {
+    if (width <= 0 || height <= 0 || (maxX - minX) < 1.0F || (maxY - minY) < 1.0F) {
+        return;
+    }
+
+    std::vector<Scene::EntityUVE> hits;
+    m_entityManager.ForEachUVE<Scene::WorldTransformComponentUVE>(
+        [&](const Scene::EntityUVE entity, const Scene::WorldTransformComponentUVE& worldTransform) {
+            if (worldTransform.dirty || m_entityManager.HasComponentUVE<Scene::EditorInternalEntityComponentUVE>(entity) ||
+                m_editor.IsEntityLockedUVE(entity)) {
+                return;
+            }
+            if (m_entityManager.HasComponentUVE<Scene::VisibilityComponentUVE>(entity)) {
+                const auto& vis = m_entityManager.GetComponentUVE<Scene::VisibilityComponentUVE>(entity);
+                if (!vis.visible || !vis.visibleInHierarchy) {
+                    return;
+                }
+            }
+
+            bool matched = false;
+            float px = 0.0F;
+            float py = 0.0F;
+            if (univex::integration::ProjectWorldPointToPixelUVE(m_camera, width, height, worldTransform.worldPosition,
+                                                                 px, py)) {
+                if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
+                    matched = true;
+                }
+            }
+
+            if (!matched && m_entityManager.HasComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity)) {
+                const auto& primitive = m_entityManager.GetComponentUVE<Scene::PrimitiveMeshComponentUVE>(entity);
+                Math::Matrix4x4UVE worldMatrix{};
+                if (Scene::IsPrimitiveMeshComponentValidUVE(primitive) &&
+                    univex::integration::TryComputeWorldMatrixUVE(worldTransform, worldMatrix)) {
+                    const Math::AabbUVE bounds =
+                        Render::GetPrimitiveGeometryUVE(primitive.kind).localBounds.TransformUVE(worldMatrix);
+                    float boxMinX = std::numeric_limits<float>::max();
+                    float boxMinY = std::numeric_limits<float>::max();
+                    float boxMaxX = std::numeric_limits<float>::lowest();
+                    float boxMaxY = std::numeric_limits<float>::lowest();
+                    bool anyProjected = false;
+                    for (int cx = 0; cx < 2; ++cx) {
+                        for (int cy = 0; cy < 2; ++cy) {
+                            for (int cz = 0; cz < 2; ++cz) {
+                                const Math::Vector3UVE corner{cx == 0 ? bounds.min.x : bounds.max.x,
+                                                              cy == 0 ? bounds.min.y : bounds.max.y,
+                                                              cz == 0 ? bounds.min.z : bounds.max.z};
+                                float cornerX = 0.0F;
+                                float cornerY = 0.0F;
+                                if (univex::integration::ProjectWorldPointToPixelUVE(m_camera, width, height, corner,
+                                                                                     cornerX, cornerY)) {
+                                    boxMinX = std::min(boxMinX, cornerX);
+                                    boxMinY = std::min(boxMinY, cornerY);
+                                    boxMaxX = std::max(boxMaxX, cornerX);
+                                    boxMaxY = std::max(boxMaxY, cornerY);
+                                    anyProjected = true;
+                                }
+                            }
+                        }
+                    }
+                    if (anyProjected && boxMaxX >= minX && boxMinX <= maxX && boxMaxY >= minY && boxMinY <= maxY) {
+                        matched = true;
+                    }
+                }
+            }
+
+            if (matched) {
+                hits.push_back(entity);
+            }
+        });
+
+    const auto isSelected = [this](const Scene::EntityUVE entity) {
+        const auto& sel = m_editor.GetSelectedEntitiesUVE();
+        return std::find(sel.begin(), sel.end(), entity) != sel.end();
+    };
+
+    if (input.ctrl) {
+        for (const Scene::EntityUVE entity : hits) {
+            m_editor.ToggleEntitySelectionUVE(entity);
+        }
+        return;
+    }
+    if (input.shift) {
+        for (const Scene::EntityUVE entity : hits) {
+            if (!isSelected(entity)) {
+                m_editor.ToggleEntitySelectionUVE(entity);
+            }
+        }
+        return;
+    }
+
+    m_editor.ClearSelectionUVE();
+    if (!hits.empty()) {
+        m_editor.SelectEntityUVE(hits.front());
+        for (std::size_t i = 1U; i < hits.size(); ++i) {
+            if (!isSelected(hits[i])) {
+                m_editor.ToggleEntitySelectionUVE(hits[i]);
+            }
+        }
+    }
+}
+
 void ViewportSceneInteractionUVE::UpdateEntityContextToolbarFromMouseUVE(const Editor::EditorViewportInputUVE& input,
                                                                          const int width,
                                                                          const int height,
@@ -873,7 +1041,8 @@ void ViewportSceneInteractionUVE::UpdateEntityContextToolbarFromMouseUVE(const E
     }
     m_contextToolbarPressActive = false;
 
-    const float slop = (input.touchNavigation ? 8.0F : kNavClickSlopPixelsUVE) * std::max(1.0F, input.dpiScale);
+    const float coordScale = std::max(0.25F, input.dpiScale);
+    const float slop = (input.touchNavigation ? 8.0F : kNavClickSlopPixelsUVE) * coordScale;
     const Math::Vector2UVE dragDelta = input.DragDeltaUVE(VpBtnUVE::Right);
     if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > slop) {
         return;
@@ -896,10 +1065,60 @@ void ViewportSceneInteractionUVE::UpdateEntityContextToolbarFromMouseUVE(const E
     float anchorPixelY = 0.0F;
     if (univex::integration::ProjectWorldPointToPixelUVE(m_camera, width, height, worldTransform.worldPosition,
                                                          anchorPixelX, anchorPixelY)) {
-        const float invScale = input.dpiScale > 1.0F ? (1.0F / input.dpiScale) : 1.0F;
+        const float invScale = 1.0F / coordScale;
         m_editor.SetEntityContextToolbarAnchorUVE(pick.entity, anchorPixelX * invScale, anchorPixelY * invScale);
     } else {
         m_editor.ClearEntityContextToolbarUVE();
+    }
+}
+
+void ViewportSceneInteractionUVE::UpdateTouchControllerCameraUVE(
+    const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
+    const float dt = std::clamp(overlayState.input.deltaTime, 0.0F, 0.1F);
+    if (dt <= 0.0F) {
+        return;
+    }
+    const auto& prefs = m_editor.GetExtendedPreferencesUVE();
+    const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
+    const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
+
+    if (std::fabs(overlayState.touchLookX) > 1e-3F || std::fabs(overlayState.touchLookY) > 1e-3F) {
+        constexpr float kLookPixelsPerSecond = 340.0F;
+        m_camera.Look(overlayState.touchLookX * kLookPixelsPerSecond * orbitSens * dt,
+                      overlayState.touchLookY * kLookPixelsPerSecond * orbitSens * dt);
+        m_editor.NotifyViewportOrbitedUVE();
+    }
+    if (std::fabs(overlayState.touchZoomDelta) > 1e-3F) {
+        m_camera.Dolly(overlayState.touchZoomDelta * zoomSens * dt * 6.0F);
+    }
+
+    const bool hasMove = std::fabs(overlayState.touchMoveX) > 1e-3F || std::fabs(overlayState.touchMoveY) > 1e-3F ||
+                         std::fabs(overlayState.touchMoveUp) > 1e-3F;
+    univex::math::Vec3 wanted{0.0F, 0.0F, 0.0F};
+    if (hasMove) {
+        univex::math::Vec3 forward = univex::math::Normalize(m_camera.Target() - m_camera.Eye());
+        if (univex::math::Length(forward) < 0.001F) {
+            forward = univex::math::Vec3{0.0F, 0.0F, -1.0F};
+        }
+        const univex::math::Vec3 up{0.0F, 1.0F, 0.0F};
+        univex::math::Vec3 right = univex::math::Cross(forward, up);
+        right = univex::math::Length(right) < 0.001F ? univex::math::Vec3{1.0F, 0.0F, 0.0F}
+                                                     : univex::math::Normalize(right);
+        univex::math::Vec3 wish = forward * overlayState.touchMoveY + right * overlayState.touchMoveX +
+                                  up * overlayState.touchMoveUp;
+        const float wishLen = univex::math::Length(wish);
+        if (wishLen > 1.0F) {
+            wish = wish * (1.0F / wishLen);
+        }
+        wanted = wish * m_flySpeed;
+    }
+
+    const float blend = 1.0F - std::exp(-dt * 14.0F);
+    m_touchMoveVelocity = m_touchMoveVelocity + (wanted - m_touchMoveVelocity) * blend;
+    if (univex::math::Length(m_touchMoveVelocity) > 0.001F) {
+        m_camera.Translate(m_touchMoveVelocity * dt);
+    } else if (!hasMove) {
+        m_touchMoveVelocity = univex::math::Vec3{0.0F, 0.0F, 0.0F};
     }
 }
 
@@ -913,17 +1132,15 @@ void ViewportSceneInteractionUVE::UpdateOrbitPanZoomFromMouseUVE(const Editor::E
     const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
     const float panSens = static_cast<float>(std::clamp(prefs.panSensitivity, 0.05, 10.0));
     const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
-    const float dpiScale = std::max(1.0F, input.dpiScale);
-    const float invScale = 1.0F / dpiScale;
+    const float coordScale = std::max(0.25F, input.dpiScale);
+    const float invScale = 1.0F / coordScale;
 
-    // On touch hosts (Android), dragging empty viewport space with one finger orbits directly
-    // without requiring Alt; two-finger drag (Middle) pans while pinch (wheel) dollies smoothly.
-    const bool touchOrbit = input.touchNavigation && !suppressOrbit &&
-                            input.IsDraggingUVE(VpBtnUVE::Left, 6.0F * dpiScale) &&
-                            !input.IsDownUVE(VpBtnUVE::Middle);
+    // Desktop: Alt+LMB orbits, MMB pans, wheel dollies (plain LMB hold+drag draws Marquee Selection).
+    // Android touch: 1-finger empty drag draws Marquee Selection, on-screen dual-stick controller
+    // drives Move/Look/Up/Down/Zoom, and 2-finger drag (Middle) / pinch (wheel) pan & dolly smoothly.
     const bool desktopOrbit = !input.touchNavigation && !suppressOrbit && input.alt &&
                               input.IsDraggingUVE(VpBtnUVE::Left, 0.0F);
-    if (touchOrbit || desktopOrbit) {
+    if (desktopOrbit) {
         m_camera.Orbit(input.mouseDelta.x * invScale * orbitSens, input.mouseDelta.y * invScale * orbitSens);
         m_editor.NotifyViewportOrbitedUVE();
     } else if (input.IsDraggingUVE(VpBtnUVE::Middle, 0.0F)) {
@@ -1101,8 +1318,13 @@ bool ViewportSceneInteractionUVE::EnsureHostDepthUVE(ViewportSurfaceUVE& surface
     if (m_hostDepthFailed || !m_hostDepthProgram.has_value() || surface.FullscreenVaoUVE() == 0U) {
         return false;
     }
+#if defined(UNIVEX_GL_ES)
+    const int w = std::max(1, (width + 3) / 4);
+    const int h = std::max(1, (height + 3) / 4);
+#else
     const int w = std::max(1, (width + 1) / 2);
     const int h = std::max(1, (height + 1) / 2);
+#endif
     if (m_hostDepthFbo != 0U && w == m_hostDepthWidth && h == m_hostDepthHeight) {
         return true;
     }

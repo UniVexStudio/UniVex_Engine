@@ -403,14 +403,22 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildTitleBarUVE() {
         return item;
     };
 
-    auto row = prism::hbox();
-    auto menus = prism::make<prism::MenuBar>();
-    menus->setShowLogo(false);
-    menus->setItemPadding(12.0F);
-    menus->addMenu("File", [this] {
+    m_tab = prism::make<DocumentTabUVE>();
+    m_tab->setFallbackIcon(prism::Icon::EntityAsset);
+    m_tab->setName(m_editor.GetEntityEditorAssetPathUVE().stem().string());
+    m_tab->onClick = [this] {
+        const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
+        if (root != Scene::kInvalidEntityUVE) {
+            m_editor.SelectEntityUVE(root);
+        }
+    };
+
+    EditorHeaderDescUVE desc;
+    desc.documentTab = m_tab;
+    desc.onClose = [this] { RequestCloseUVE(); };
+    desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;
-        items.push_back(prism::MenuItem::Item("Save", [this] { SaveAllUVE(); }, "Ctrl+S",
-                                              prism::Icon::Save));
+        items.push_back(prism::MenuItem::Item("Save", [this] { SaveAllUVE(); }, "Ctrl+S", prism::Icon::Save));
         prism::MenuItem revert = prism::MenuItem::Item("Revert", [this] { static_cast<void>(m_editor.RevertEntityEditorUVE()); });
         revert.enabled = m_editor.HasEntityEditorUnsavedChangesUVE();
         items.push_back(std::move(revert));
@@ -422,13 +430,13 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildTitleBarUVE() {
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Item("Close", [this] { RequestCloseUVE(); }, "", prism::Icon::Close));
         return items;
-    });
-    menus->addMenu("Edit", [command] {
+    }});
+    desc.menus.push_back({"Edit", [command] {
         return std::vector<prism::MenuItem>{command("edit.undo"), command("edit.redo"), prism::MenuItem::Sep(),
                                             command("edit.cut"), command("edit.copy"), command("edit.paste"),
                                             command("edit.duplicate"), command("edit.delete")};
-    });
-    menus->addMenu("Window", [this] {
+    }});
+    desc.menus.push_back({"Window", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Check("Components", m_componentsPanel && m_componentsPanel->visible(), [this] {
             if (m_componentsPanel) {
@@ -441,8 +449,8 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildTitleBarUVE() {
             }
         }));
         return items;
-    });
-    menus->addMenu("Tools", [this] {
+    }});
+    desc.menus.push_back({"Tools", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Find in Entity", [this] {
             if (m_findInput) {
@@ -454,53 +462,18 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildTitleBarUVE() {
             ShowClassSettingsUVE(prism::Rect{360.0F, 64.0F, 0.0F, 0.0F});
         }, "", prism::Icon::Settings));
         return items;
-    });
-    menus->addMenu("Build", [command] { return std::vector<prism::MenuItem>{command("entity.compile")}; });
-    menus->addMenu("Help", [] {
+    }});
+    desc.menus.push_back({"Build", [command] { return std::vector<prism::MenuItem>{command("entity.compile")}; }});
+    desc.menus.push_back({"Help", [] {
         return std::vector<prism::MenuItem>{prism::MenuItem::Item("UVE Editor Reference", {}).disabled()};
-    });
-    row->add(menus, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*row, [this] { RequestCloseUVE(); });
-
-    // [#1 logo] [ title row          ]
-    //           [ #2 the entity's tab ]
-    auto tabRow = prism::hbox();
-    m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::EntityAsset);
-    m_tab->setName(m_editor.GetEntityEditorAssetPathUVE().stem().string());
-    m_tab->onClick = [this] {
-        const Scene::EntityUVE root = m_editor.GetEntityEditorRootUVE();
-        if (root != Scene::kInvalidEntityUVE) {
-            m_editor.SelectEntityUVE(root);
-        }
-    };
-    tabRow->add(m_tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
-    tabRow->add(prism::make<DragStripUVE>(true), prism::Slot{1.0F});
-    auto titleRow = prism::make<prism::SizeBox>();
-    titleRow->setHeightOverride(kTitleRowUVE);
-    titleRow->setContent(row);
-    auto tabRowBox = prism::make<prism::SizeBox>();
-    tabRowBox->setHeightOverride(kTabRowUVE);
-    tabRowBox->setContent(tabRow);
-    auto right = prism::vbox();
-    right->add(titleRow);
-    right->add(tabRowBox);
-    auto top = prism::hbox();
-    top->add(prism::make<LogoBoxUVE>());
-    top->add(right, prism::Slot{1.0F});
-
-    auto bar = prism::make<prism::Border>();
-    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    bar->setChild(top);
-    return bar;
+    }});
+    return BuildEditorHeaderUVE(std::move(desc));
 }
 
 prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildToolbarRowUVE() {
     // Sub row 1: compile and its result, save, revert | browse | status.
-    auto row = prism::hbox(4.0F);
-    row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
+    auto row = prism::hbox(3.0F);
+    row->setPadding(prism::Margin(5.0F, 1.0F, 5.0F, 1.0F));
 
     auto compile = prism::make<prism::Button>("Compile", prism::Icon::Compile, prism::ButtonStyle::Toolbar);
     compile->setTooltip("Check the whole entity: one root, and every object's script against its object (F7)");
@@ -2967,11 +2940,31 @@ void EditorEntityEditorUVE::RenderUVE() {
                 const std::array<float, 2> orbit = m_gizmos->TakeOrbitRequestUVE();
                 state.orbitRequestX = orbit[0];
                 state.orbitRequestY = orbit[1];
+                m_gizmos->ApplyTouchControllerToStateUVE(state);
             }
             state.input = m_host.CaptureViewInputUVE(m_window, rect);
             const float dpiScale = std::max(1.0F, state.input.dpiScale);
-            const float renderW = std::max(1.0F, std::floor(rect.w * dpiScale));
-            const float renderH = std::max(1.0F, std::floor(rect.h * dpiScale));
+            const bool compactSurface = prism::Application::get().platform().singleSurface();
+            const float renderScale = state.resolvedRenderScale > 0.1F
+                                          ? std::clamp(state.resolvedRenderScale, 0.5F, 1.0F)
+                                          : (compactSurface ? 0.80F : 1.0F);
+            const float effectiveScale = dpiScale * renderScale;
+            const float renderW = std::max(1.0F, std::floor(rect.w * effectiveScale));
+            const float renderH = std::max(1.0F, std::floor(rect.h * effectiveScale));
+            if (renderScale < 0.999F) {
+                state.input.imageOrigin = Math::Vector2UVE{state.input.imageOrigin.x * renderScale,
+                                                           state.input.imageOrigin.y * renderScale};
+                state.input.mousePos = Math::Vector2UVE{state.input.mousePos.x * renderScale,
+                                                        state.input.mousePos.y * renderScale};
+                state.input.mouseDelta = Math::Vector2UVE{state.input.mouseDelta.x * renderScale,
+                                                          state.input.mouseDelta.y * renderScale};
+                state.input.dpiScale = effectiveScale;
+                for (std::size_t i = 0U; i < EditorViewportInputUVE::kButtonCountUVE; ++i) {
+                    state.input.pressPos[i] = Math::Vector2UVE{state.input.pressPos[i].x * renderScale,
+                                                               state.input.pressPos[i].y * renderScale};
+                    state.input.dragDistance[i] *= renderScale;
+                }
+            }
             Math::Vector2UVE used{0.0F, 0.0F};
             const std::uint64_t texture =
                 m_editor.m_viewports.entity(Math::Vector2UVE{renderW, renderH}, used, state);
@@ -2982,9 +2975,8 @@ void EditorEntityEditorUVE::RenderUVE() {
                 m_gizmos->SyncUVE();
             }
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
-                const float invScale = dpiScale > 1.0F ? (1.0F / dpiScale) : 1.0F;
                 EditorHostUVE::ViewImageUVE view{};
-                view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x * invScale, used.y * invScale};
+                view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), std::floor(rect.w), std::floor(rect.h)};
                 view.texture = static_cast<std::uint32_t>(texture);
                 view.usedWidth = used.x;
                 view.usedHeight = used.y;

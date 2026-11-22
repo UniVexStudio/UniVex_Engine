@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <system_error>
@@ -30,13 +31,16 @@
 namespace UVE::LauncherUI {
 namespace {
 
-inline constexpr float kPickerWidthUVE = 560.0F;
-inline constexpr float kPickerHorizontalMarginUVE = 24.0F;
-inline constexpr float kPickerMinWidthUVE = 280.0F;
-inline constexpr float kPickerListHeightUVE = 320.0F;
-inline constexpr float kPickerSpacingUVE = 8.0F;
+inline constexpr float kPickerWidthUVE = 540.0F;
+inline constexpr float kPickerHorizontalMarginUVE = 20.0F;
+inline constexpr float kPickerMinWidthUVE = 260.0F;
+inline constexpr float kPickerListHeightUVE = 260.0F;
+inline constexpr float kPickerSpacingUVE = 6.0F;
 /// Leading character of a hidden folder on the platforms that hide by name.
 inline constexpr char kHiddenPrefixUVE = '.';
+
+std::function<bool()> g_hasStorageAccessUVE;
+std::function<void()> g_requestStorageAccessUVE;
 
 [[nodiscard]] float ResponsivePickerWidthUVE() {
     if (!prism::Application::exists()) {
@@ -44,6 +48,14 @@ inline constexpr char kHiddenPrefixUVE = '.';
     }
     const float available = prism::Application::get().windowSize().x - kPickerHorizontalMarginUVE;
     return std::clamp(available, kPickerMinWidthUVE, kPickerWidthUVE);
+}
+
+[[nodiscard]] float ResponsivePickerListHeightUVE() {
+    if (!prism::Application::exists()) {
+        return kPickerListHeightUVE;
+    }
+    const float h = prism::Application::get().windowSize().y;
+    return std::clamp(h * 0.36F, 96.0F, kPickerListHeightUVE);
 }
 
 /// The picker's state, shared by its widgets' callbacks for as long as the window is open.
@@ -75,7 +87,7 @@ void SortByNameUVE(std::vector<std::filesystem::path>& paths) {
     });
 }
 
-/// Where a picker opens: the nearest existing folder of `start`, else the home folder.
+/// Where a picker opens: the nearest existing folder of `start`, else Documents / public storage / home.
 [[nodiscard]] std::filesystem::path FirstFolderUVE(const std::filesystem::path& start) {
     std::error_code error;
     std::filesystem::path first = start;
@@ -85,8 +97,17 @@ void SortByNameUVE(std::vector<std::filesystem::path>& paths) {
         first = first.parent_path();
     }
     if (first.empty() || !std::filesystem::is_directory(first, error)) {
-        const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();
-        first = home.success ? home.directory : std::filesystem::current_path(error);
+        const Platform::ApplicationUserDataDirectoryResultUVE docs = Platform::ResolveUserDocumentsDirectoryUVE();
+        if (docs.success && std::filesystem::is_directory(docs.directory, error)) {
+            first = docs.directory;
+        } else if (const Platform::ApplicationUserDataDirectoryResultUVE storage =
+                       Platform::ResolvePublicStorageRootUVE();
+                   storage.success && std::filesystem::is_directory(storage.directory, error)) {
+            first = storage.directory;
+        } else {
+            const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();
+            first = home.success ? home.directory : std::filesystem::current_path(error);
+        }
     }
     return first;
 }
@@ -130,7 +151,7 @@ void ShowWindowsDrivesUVE(const std::shared_ptr<FolderPickerStateUVE>& state) {
 void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std::filesystem::path& directory) {
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error)) {
-        state->problem->setText("That folder does not exist.");
+        state->problem->setText("That folder does not exist or requires storage access.");
         return;
     }
     state->current = directory.lexically_normal();
@@ -144,13 +165,19 @@ void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std
     const std::vector<std::filesystem::path> files =
         pickFiles ? ListPickableFilesUVE(state->current, state->fileSuffixes) : std::vector<std::filesystem::path>{};
     if (children.empty() && files.empty()) {
-        auto empty = prism::make<prism::Label>(pickFiles ? "Nothing to choose here. Open another folder."
-                                                         : "No folders here. Choose this one, or make a new folder.");
+        const bool needsStorage = g_hasStorageAccessUVE && !g_hasStorageAccessUVE();
+        auto empty = prism::make<prism::Label>(
+            needsStorage ? "Tap 'Allow Storage' above to browse shared folders like Documents & Downloads."
+                         : (pickFiles ? "Nothing to choose here. Open another folder."
+                                      : "No folders here. Choose this one, or make a new folder."),
+            prism::FontRole::Small);
         empty->setColor(&prism::Theme::textDim);
         state->folders->add(empty);
     }
+    const bool compact = prism::Application::exists() && prism::Application::get().platform().singleSurface();
     for (const std::filesystem::path& child : children) {
         auto row = prism::make<NavItemUVE>(child.filename().string(), prism::Icon::Folder);
+        row->SetCompactUVE(compact);
         const std::weak_ptr<FolderPickerStateUVE> weak = state;
         row->onActivate = [weak, child] {
             if (const std::shared_ptr<FolderPickerStateUVE> owner = weak.lock()) {
@@ -161,6 +188,7 @@ void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std
     }
     for (const std::filesystem::path& file : files) {
         auto row = prism::make<NavItemUVE>(file.filename().string(), prism::Icon::File);
+        row->SetCompactUVE(compact);
         const std::weak_ptr<FolderPickerStateUVE> weak = state;
         NavItemUVE* const self = row.get();
         row->onActivate = [weak, file, self] {
@@ -177,7 +205,7 @@ void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std
     state->folders->relayout();
 }
 
-/// The path field, the list and the problem line shared by both pickers; returns the dialog body.
+/// The path field, quick-jump shortcuts, folder list, and problem line shared by both pickers.
 [[nodiscard]] prism::Ref<prism::Box> BuildPickerBodyUVE(const std::shared_ptr<FolderPickerStateUVE>& state) {
     auto body = prism::vbox(kPickerSpacingUVE);
     auto navigation = prism::hbox(kPickerSpacingUVE);
@@ -199,7 +227,6 @@ void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std
     };
     navigation->add(up);
     state->path = prism::make<prism::TextInput>();
-    // The field belongs to the state, so its callback holds the state weakly.
     state->path->onCommit = [weak = std::weak_ptr<FolderPickerStateUVE>(state)](const std::string& typed) {
         if (const std::shared_ptr<FolderPickerStateUVE> owner = weak.lock()) {
             ShowFolderUVE(owner, typed);
@@ -208,10 +235,81 @@ void ShowFolderUVE(const std::shared_ptr<FolderPickerStateUVE>& state, const std
     navigation->add(state->path, prism::Slot{1.0F});
     body->add(navigation);
 
+    // Quick-jump shortcut row (Storage / Documents / Downloads / App Files or Home / Desktop).
+    auto shortcuts = prism::hbox(4.0F);
+    const auto addJump = [&](const std::string& label, const std::filesystem::path& target) {
+        if (target.empty()) {
+            return;
+        }
+        auto chip = prism::make<prism::Button>(label, prism::Icon::Folder, prism::ButtonStyle::Toolbar);
+        chip->onClick = [weak = std::weak_ptr<FolderPickerStateUVE>(state), target] {
+            if (const std::shared_ptr<FolderPickerStateUVE> owner = weak.lock()) {
+                std::error_code mkErr;
+                if (!std::filesystem::is_directory(target, mkErr)) {
+                    std::filesystem::create_directories(target, mkErr);
+                }
+                ShowFolderUVE(owner, target);
+            }
+        };
+        shortcuts->add(chip);
+    };
+#if defined(__ANDROID__)
+    if (const Platform::ApplicationUserDataDirectoryResultUVE storage = Platform::ResolvePublicStorageRootUVE();
+        storage.success) {
+        addJump("Storage", storage.directory);
+    }
+    if (const char* const pubDocs = std::getenv("UNIVEX_ANDROID_PUBLIC_DOCS"); pubDocs != nullptr && pubDocs[0] != '\0') {
+        addJump("Documents", std::filesystem::path(pubDocs));
+    } else if (const Platform::ApplicationUserDataDirectoryResultUVE docs = Platform::ResolveUserDocumentsDirectoryUVE();
+               docs.success) {
+        addJump("Documents", docs.directory);
+    }
+    if (const Platform::ApplicationUserDataDirectoryResultUVE dl = Platform::ResolveUserDownloadsDirectoryUVE();
+        dl.success) {
+        addJump("Downloads", dl.directory);
+    }
+    if (const char* const appDocs = std::getenv("UNIVEX_ANDROID_APP_EXT_DOCS"); appDocs != nullptr && appDocs[0] != '\0') {
+        addJump("App Files", std::filesystem::path(appDocs));
+    }
+    if (g_hasStorageAccessUVE && g_requestStorageAccessUVE && !g_hasStorageAccessUVE()) {
+        auto grant = prism::make<prism::Button>("Allow Storage", prism::Icon::Lock, prism::ButtonStyle::Primary);
+        grant->setTooltip("Grant Android All Files Access to browse Documents & Downloads");
+        grant->onClick = [weak = std::weak_ptr<FolderPickerStateUVE>(state)] {
+            if (g_requestStorageAccessUVE) {
+                g_requestStorageAccessUVE();
+            }
+            if (const std::shared_ptr<FolderPickerStateUVE> owner = weak.lock()) {
+                owner->problem->setText("After granting access, tap Documents or Downloads above to refresh.");
+            }
+        };
+        shortcuts->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+        shortcuts->add(grant);
+    }
+#else
+    if (const Platform::ApplicationUserDataDirectoryResultUVE docs = Platform::ResolveUserDocumentsDirectoryUVE();
+        docs.success) {
+        addJump("Documents", docs.directory);
+    }
+    if (const Platform::ApplicationUserDataDirectoryResultUVE dl = Platform::ResolveUserDownloadsDirectoryUVE();
+        dl.success) {
+        addJump("Downloads", dl.directory);
+    }
+    if (const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();
+        home.success) {
+        addJump("Home", home.directory);
+        std::error_code err;
+        const std::filesystem::path desktop = home.directory / "Desktop";
+        if (std::filesystem::is_directory(desktop, err)) {
+            addJump("Desktop", desktop);
+        }
+    }
+#endif
+    body->add(shortcuts);
+
     state->folders = prism::vbox();
     auto list = prism::make<prism::ScrollView>();
     list->setContent(state->folders);
-    list->setFixedHeight(kPickerListHeightUVE);
+    list->setFixedHeight(ResponsivePickerListHeightUVE());
     auto frame = prism::make<prism::Border>();
     frame->setBackground(&prism::Theme::field).setBorder(&prism::Theme::borderSoft).setChild(list);
     body->add(frame);
@@ -317,6 +415,11 @@ SystemFilePickerUVE g_systemFilePickerUVE;
 
 void SetSystemFilePickerUVE(SystemFilePickerUVE picker) {
     g_systemFilePickerUVE = std::move(picker);
+}
+
+void SetStorageAccessProviderUVE(std::function<bool()> hasAccess, std::function<void()> requestAccess) {
+    g_hasStorageAccessUVE = std::move(hasAccess);
+    g_requestStorageAccessUVE = std::move(requestAccess);
 }
 
 void ShowFilePickerUVE(const std::string& title, const std::filesystem::path& start, std::vector<std::string> suffixes,

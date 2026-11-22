@@ -28,6 +28,10 @@ using SystemFilePickerUVE = std::function<bool(const std::vector<std::string>& s
 /// Makes ShowFilePickerUVE use `picker` (an empty one restores PRISM's).
 void SetSystemFilePickerUVE(SystemFilePickerUVE picker);
 
+/// Registers platform callbacks for checking and requesting broad external storage access
+/// (Android All Files Access), used by the folder picker to surface a one-tap grant button.
+void SetStorageAccessProviderUVE(std::function<bool()> hasAccess, std::function<void()> requestAccess);
+
 /// Opens a modal window for choosing a folder, starting in `start` (or the home folder when it is
 /// not a directory). `onPicked` receives the chosen folder; cancelling calls nothing.
 void ShowFolderPickerUVE(const std::string& title, const std::filesystem::path& start,

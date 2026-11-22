@@ -12,6 +12,10 @@
 #include "prism/Application.h"
 #include "prism/Theme.h"
 
+#if defined(__ANDROID__)
+#include "android_glfw.h"
+#endif
+
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
@@ -19,6 +23,7 @@
 #include <array>
 #include <cstddef>
 #include <utility>
+#include <vector>
 
 namespace UVE::Editor {
 namespace {
@@ -37,6 +42,23 @@ constexpr float kGlyphPickPixelsUVE = 5.0F;
 /// Camera and light glyph sizes in world units: about the size of a 1-unit box.
 constexpr float kCameraGlyphWorldUVE = 1.1F;
 constexpr float kLightGlyphWorldUVE = 0.9F;
+
+#if defined(__ANDROID__)
+EditorViewportGizmosUVE* g_activeTouchControllerUVE = nullptr;
+#endif
+
+[[nodiscard]] bool RectContainsExpandedUVE(const prism::Rect& rect, const prism::Vec2 p, const float pad) {
+    return p.x >= rect.x - pad && p.x <= rect.right() + pad && p.y >= rect.y - pad && p.y <= rect.bottom() + pad;
+}
+
+[[nodiscard]] float ApplyDeadzoneUVE(const float value, const float deadzone) {
+    const float absVal = std::abs(value);
+    if (absVal <= deadzone) {
+        return 0.0F;
+    }
+    const float rescaled = (absVal - deadzone) / std::max(1.0e-3F, 1.0F - deadzone);
+    return value < 0.0F ? -std::min(1.0F, rescaled) : std::min(1.0F, rescaled);
+}
 
 [[nodiscard]] prism::Vec3 V3UVE(const std::array<float, 3>& v) { return prism::Vec3{v[0], v[1], v[2]}; }
 
@@ -79,6 +101,219 @@ constexpr float kLightGlyphWorldUVE = 0.9F;
 EditorViewportGizmosUVE::EditorViewportGizmosUVE(EditorUVE& editor) : m_editor(editor) {
     // Snapping is the editor's (PreviewTranslate/PreviewTransformGestureUVE quantise), not the gizmo's.
     m_gizmo.snap = false;
+#if defined(__ANDROID__)
+    g_activeTouchControllerUVE = this;
+    Window::SetAndroidGlfwTouchClaimHookUVE([](const float px, const float py) -> bool {
+        return g_activeTouchControllerUVE != nullptr && g_activeTouchControllerUVE->TryClaimAndroidTouchUVE(px, py);
+    });
+#endif
+}
+
+EditorViewportGizmosUVE::~EditorViewportGizmosUVE() {
+#if defined(__ANDROID__)
+    if (g_activeTouchControllerUVE == this) {
+        g_activeTouchControllerUVE = nullptr;
+        Window::SetAndroidGlfwTouchClaimHookUVE({});
+    }
+#endif
+}
+
+bool EditorViewportGizmosUVE::TouchControllerVisibleUVE() const {
+#if defined(__ANDROID__)
+    if (Window::AndroidGlfwHasHardwareInputUVE()) {
+        return false;
+    }
+    const prism::Rect r = rect();
+    if (!visible() || m_gameWorkspace || r.w < 160.0F || r.h < 120.0F) {
+        return false;
+    }
+    if (prism::Application::exists()) {
+        const int winId = prism::Application::get().activeWindow();
+        if (prism::Application::get().windowHasBlockingPopup(winId)) {
+            return false;
+        }
+    }
+    return true;
+#else
+    return false;
+#endif
+}
+
+EditorViewportGizmosUVE::TouchControllerLayoutUVE EditorViewportGizmosUVE::ComputeTouchLayoutUVE() const {
+    TouchControllerLayoutUVE layout{};
+    const prism::Rect r = rect();
+    const float padRadius = std::clamp(std::min(r.w, r.h) * 0.14F, 30.0F, 44.0F);
+    constexpr float kMargin = 12.0F;
+    layout.padRadius = padRadius;
+    layout.thumbRadius = padRadius * 0.40F;
+    layout.leftCenter = prism::Vec2{r.x + kMargin + padRadius, r.bottom() - kMargin - padRadius};
+    layout.rightCenter = prism::Vec2{r.right() - kMargin - padRadius, r.bottom() - kMargin - padRadius};
+
+    constexpr float kBtnW = 28.0F;
+    constexpr float kBtnH = 24.0F;
+    constexpr float kBtnGap = 4.0F;
+    const float clusterRight = layout.rightCenter.x - padRadius - 10.0F;
+    const float clusterBottom = r.bottom() - kMargin;
+    const float col0X = clusterRight - (kBtnW * 2.0F + kBtnGap);
+    const float col1X = clusterRight - kBtnW;
+    const float row0Y = clusterBottom - (kBtnH * 2.0F + kBtnGap);
+    const float row1Y = clusterBottom - kBtnH;
+    layout.upBtn = prism::Rect{col0X, row0Y, kBtnW, kBtnH};
+    layout.downBtn = prism::Rect{col0X, row1Y, kBtnW, kBtnH};
+    layout.zoomInBtn = prism::Rect{col1X, row0Y, kBtnW, kBtnH};
+    layout.zoomOutBtn = prism::Rect{col1X, row1Y, kBtnW, kBtnH};
+    layout.toggleBtn = prism::Rect{r.x + 8.0F, r.y + 8.0F, 30.0F, 20.0F};
+    return layout;
+}
+
+bool EditorViewportGizmosUVE::TryClaimAndroidTouchUVE(const float physicalX, const float physicalY) {
+#if defined(__ANDROID__)
+    if (!TouchControllerVisibleUVE() || !prism::Application::exists()) {
+        return false;
+    }
+    const float uiScale = std::max(1.0F, prism::Application::get().platform().dpiScale());
+    const prism::Vec2 p{physicalX / uiScale, physicalY / uiScale};
+    const TouchControllerLayoutUVE layout = ComputeTouchLayoutUVE();
+    if (RectContainsExpandedUVE(layout.toggleBtn, p, 5.0F)) {
+        m_touchControllerEnabled = !m_touchControllerEnabled;
+        m_leftStickPointerId = -1;
+        m_rightStickPointerId = -1;
+        m_leftThumbOffset = prism::Vec2{0.0F, 0.0F};
+        m_rightThumbOffset = prism::Vec2{0.0F, 0.0F};
+        m_touchUpHeld = m_touchDownHeld = m_touchZoomInHeld = m_touchZoomOutHeld = false;
+        invalidate();
+        return true;
+    }
+    if (!m_touchControllerEnabled) {
+        return false;
+    }
+    const float stickHitRadius = layout.padRadius + 10.0F;
+    if (std::hypot(p.x - layout.leftCenter.x, p.y - layout.leftCenter.y) <= stickHitRadius) {
+        return true;
+    }
+    if (std::hypot(p.x - layout.rightCenter.x, p.y - layout.rightCenter.y) <= stickHitRadius) {
+        return true;
+    }
+    if (RectContainsExpandedUVE(layout.upBtn, p, 4.0F) || RectContainsExpandedUVE(layout.downBtn, p, 4.0F) ||
+        RectContainsExpandedUVE(layout.zoomInBtn, p, 4.0F) || RectContainsExpandedUVE(layout.zoomOutBtn, p, 4.0F)) {
+        return true;
+    }
+    return false;
+#else
+    static_cast<void>(physicalX);
+    static_cast<void>(physicalY);
+    return false;
+#endif
+}
+
+void EditorViewportGizmosUVE::ApplyTouchControllerToStateUVE(EditorUVE::ViewportOverlayStateUVE& state) {
+    state.touchMoveX = 0.0F;
+    state.touchMoveY = 0.0F;
+    state.touchMoveUp = 0.0F;
+    state.touchLookX = 0.0F;
+    state.touchLookY = 0.0F;
+    state.touchZoomDelta = 0.0F;
+
+#if defined(__ANDROID__)
+    g_activeTouchControllerUVE = this;
+    m_touchControllerVisible = TouchControllerVisibleUVE();
+    m_touchUpHeld = false;
+    m_touchDownHeld = false;
+    m_touchZoomInHeld = false;
+    m_touchZoomOutHeld = false;
+
+    if (!m_touchControllerVisible || !m_touchControllerEnabled || !prism::Application::exists()) {
+        m_leftStickPointerId = -1;
+        m_rightStickPointerId = -1;
+        m_leftThumbOffset = prism::Vec2{0.0F, 0.0F};
+        m_rightThumbOffset = prism::Vec2{0.0F, 0.0F};
+        return;
+    }
+
+    const float uiScale = std::max(1.0F, prism::Application::get().platform().dpiScale());
+    const TouchControllerLayoutUVE layout = ComputeTouchLayoutUVE();
+    const std::vector<Window::AndroidTouchContactUVE> contacts = Window::AndroidGlfwTouchContactsUVE();
+
+    bool leftAlive = false;
+    bool rightAlive = false;
+    for (const Window::AndroidTouchContactUVE& c : contacts) {
+        if (!c.claimed) {
+            continue;
+        }
+        if (c.id == m_leftStickPointerId) {
+            leftAlive = true;
+        }
+        if (c.id == m_rightStickPointerId) {
+            rightAlive = true;
+        }
+    }
+    if (!leftAlive) {
+        m_leftStickPointerId = -1;
+        m_leftThumbOffset = prism::Vec2{0.0F, 0.0F};
+    }
+    if (!rightAlive) {
+        m_rightStickPointerId = -1;
+        m_rightThumbOffset = prism::Vec2{0.0F, 0.0F};
+    }
+
+    const auto updateStick = [&](const prism::Vec2 p, const prism::Vec2 center, prism::Vec2& outOffset) {
+        float dx = p.x - center.x;
+        float dy = p.y - center.y;
+        const float len = std::hypot(dx, dy);
+        if (len > layout.padRadius && len > 1.0e-4F) {
+            const float k = layout.padRadius / len;
+            dx *= k;
+            dy *= k;
+        }
+        outOffset = prism::Vec2{dx, dy};
+    };
+
+    const float stickBindRadius = layout.padRadius + 14.0F;
+    for (const Window::AndroidTouchContactUVE& c : contacts) {
+        if (!c.claimed) {
+            continue;
+        }
+        const prism::Vec2 p{c.x / uiScale, c.y / uiScale};
+        if (c.id == m_leftStickPointerId) {
+            updateStick(p, layout.leftCenter, m_leftThumbOffset);
+            continue;
+        }
+        if (c.id == m_rightStickPointerId) {
+            updateStick(p, layout.rightCenter, m_rightThumbOffset);
+            continue;
+        }
+        if (m_leftStickPointerId < 0 &&
+            std::hypot(p.x - layout.leftCenter.x, p.y - layout.leftCenter.y) <= stickBindRadius) {
+            m_leftStickPointerId = c.id;
+            updateStick(p, layout.leftCenter, m_leftThumbOffset);
+        } else if (m_rightStickPointerId < 0 &&
+                   std::hypot(p.x - layout.rightCenter.x, p.y - layout.rightCenter.y) <= stickBindRadius) {
+            m_rightStickPointerId = c.id;
+            updateStick(p, layout.rightCenter, m_rightThumbOffset);
+        } else if (RectContainsExpandedUVE(layout.upBtn, p, 6.0F)) {
+            m_touchUpHeld = true;
+            state.touchMoveUp += 1.0F;
+        } else if (RectContainsExpandedUVE(layout.downBtn, p, 6.0F)) {
+            m_touchDownHeld = true;
+            state.touchMoveUp -= 1.0F;
+        } else if (RectContainsExpandedUVE(layout.zoomInBtn, p, 6.0F)) {
+            m_touchZoomInHeld = true;
+            state.touchZoomDelta += 1.0F;
+        } else if (RectContainsExpandedUVE(layout.zoomOutBtn, p, 6.0F)) {
+            m_touchZoomOutHeld = true;
+            state.touchZoomDelta -= 1.0F;
+        }
+    }
+
+    if (m_leftStickPointerId >= 0 && layout.padRadius > 1.0F) {
+        state.touchMoveX = ApplyDeadzoneUVE(m_leftThumbOffset.x / layout.padRadius, 0.08F);
+        state.touchMoveY = ApplyDeadzoneUVE(-m_leftThumbOffset.y / layout.padRadius, 0.08F);
+    }
+    if (m_rightStickPointerId >= 0 && layout.padRadius > 1.0F) {
+        state.touchLookX = ApplyDeadzoneUVE(m_rightThumbOffset.x / layout.padRadius, 0.06F);
+        state.touchLookY = ApplyDeadzoneUVE(m_rightThumbOffset.y / layout.padRadius, 0.06F);
+    }
+#endif
 }
 
 std::array<float, 2> EditorViewportGizmosUVE::TakeOrbitRequestUVE() {
@@ -295,7 +530,30 @@ void EditorViewportGizmosUVE::SyncUVE() {
             mix(&m_depth.data[i], sizeof(m_depth.data[i]));
         }
     }
+    m_marqueeActive = state.marqueeActive && !m_gameWorkspace;
+    if (m_marqueeActive) {
+        const float x0 = r.x + std::min(state.marqueeStartX, state.marqueeEndX);
+        const float y0 = r.y + std::min(state.marqueeStartY, state.marqueeEndY);
+        const float x1 = r.x + std::max(state.marqueeStartX, state.marqueeEndX);
+        const float y1 = r.y + std::max(state.marqueeStartY, state.marqueeEndY);
+        m_marqueeRect = prism::Rect{x0, y0, std::max(1.0F, x1 - x0), std::max(1.0F, y1 - y0)};
+    } else {
+        m_marqueeRect = prism::Rect{};
+    }
+    m_touchControllerVisible = TouchControllerVisibleUVE();
+
     mix(&m_gridVisible, sizeof(m_gridVisible));
+    mix(&m_marqueeActive, sizeof(m_marqueeActive));
+    mix(&m_marqueeRect, sizeof(m_marqueeRect));
+    mix(&m_touchControllerVisible, sizeof(m_touchControllerVisible));
+    mix(&m_touchControllerEnabled, sizeof(m_touchControllerEnabled));
+    mix(&m_leftThumbOffset, sizeof(m_leftThumbOffset));
+    mix(&m_rightThumbOffset, sizeof(m_rightThumbOffset));
+    const std::uint8_t touchBtnBits = static_cast<std::uint8_t>((m_touchUpHeld ? 1U : 0U) |
+                                                                (m_touchDownHeld ? 2U : 0U) |
+                                                                (m_touchZoomInHeld ? 4U : 0U) |
+                                                                (m_touchZoomOutHeld ? 8U : 0U));
+    mix(&touchBtnBits, sizeof(touchBtnBits));
     if (hash != m_drawnHash) {
         m_drawnHash = hash;
         invalidate();
@@ -593,6 +851,94 @@ void EditorViewportGizmosUVE::paint(prism::Canvas& c) {
     if (!m_gameWorkspace) {
         m_nav.draw(c);
     }
+    // Marquee box selection rectangle (Desktop LMB hold+drag & Android non-controller hold+drag).
+    if (m_marqueeActive && m_marqueeRect.w >= 1.0F && m_marqueeRect.h >= 1.0F) {
+        c.fillRect(m_marqueeRect, prism::Color(66, 150, 250, 46));
+        c.strokeRect(m_marqueeRect, prism::Color(110, 185, 255, 230), 1);
+    }
+#if defined(__ANDROID__)
+    // Android-only Godot-style floating dual-thumb viewport controller (auto-hidden when mouse/KB active).
+    if (m_touchControllerVisible) {
+        const TouchControllerLayoutUVE layout = ComputeTouchLayoutUVE();
+        const prism::Theme& t = prism::theme();
+
+        // Compact top-left toggle pill to show/hide the on-screen controller.
+        const prism::Color toggleBg = m_touchControllerEnabled ? prism::Color(16, 20, 28, 175)
+                                                               : prism::Color(16, 20, 28, 110);
+        const prism::Color toggleBorder = m_touchControllerEnabled ? prism::Color(102, 178, 255, 195)
+                                                                   : prism::Color(200, 210, 225, 90);
+        c.fillRoundRect(layout.toggleBtn, 4.0F, toggleBg);
+        c.strokeRoundRect(layout.toggleBtn, 4.0F, toggleBorder, 1);
+        c.textIn(*t.small, layout.toggleBtn, "PAD",
+                 m_touchControllerEnabled ? prism::Color(215, 235, 255, 235) : prism::Color(195, 202, 215, 160),
+                 prism::HAlign::Center, false);
+
+        if (m_touchControllerEnabled) {
+            const auto drawStick = [&](const prism::Vec2 center, const prism::Vec2 offset, const bool active,
+                                       const char* label) {
+                const float rad = layout.padRadius;
+                c.fillCircle(center, rad, prism::Color(14, 17, 24, active ? 138 : 94));
+                c.strokeCircle(center, rad,
+                               active ? prism::Color(102, 178, 255, 215) : prism::Color(220, 228, 242, 108), 1.5F);
+                const float tickIn = rad - 7.0F;
+                const float tickOut = rad - 2.0F;
+                const prism::Color tickCol(220, 228, 242, active ? 130 : 72);
+                c.line(prism::Vec2{center.x, center.y - tickOut}, prism::Vec2{center.x, center.y - tickIn}, tickCol,
+                       1.0F);
+                c.line(prism::Vec2{center.x, center.y + tickIn}, prism::Vec2{center.x, center.y + tickOut}, tickCol,
+                       1.0F);
+                c.line(prism::Vec2{center.x - tickOut, center.y}, prism::Vec2{center.x - tickIn, center.y}, tickCol,
+                       1.0F);
+                c.line(prism::Vec2{center.x + tickIn, center.y}, prism::Vec2{center.x + tickOut, center.y}, tickCol,
+                       1.0F);
+
+                const prism::Vec2 nub{center.x + offset.x, center.y + offset.y};
+                c.fillCircle(nub, layout.thumbRadius,
+                             active ? prism::Color(92, 168, 255, 215) : prism::Color(225, 232, 245, 145));
+                c.strokeCircle(nub, layout.thumbRadius,
+                               active ? prism::Color(255, 255, 255, 235) : prism::Color(255, 255, 255, 165), 1.25F);
+
+                const prism::Rect labelRect{center.x - rad, center.y + rad - 13.0F, rad * 2.0F, 12.0F};
+                c.textIn(*t.small, labelRect, label, prism::Color(215, 225, 240, active ? 205 : 135),
+                         prism::HAlign::Center, false);
+            };
+
+            drawStick(layout.leftCenter, m_leftThumbOffset, m_leftStickPointerId >= 0, "MOVE");
+            drawStick(layout.rightCenter, m_rightThumbOffset, m_rightStickPointerId >= 0, "LOOK");
+
+            const auto drawActionBtn = [&](const prism::Rect& btn, const bool held, const int glyphKind) {
+                c.fillRoundRect(btn, 5.0F,
+                                held ? prism::Color(86, 162, 255, 195) : prism::Color(14, 17, 24, 118));
+                c.strokeRoundRect(btn, 5.0F,
+                                  held ? prism::Color(190, 225, 255, 240) : prism::Color(220, 228, 242, 112), 1);
+                const prism::Color fg = held ? prism::Color(255, 255, 255, 250) : prism::Color(225, 232, 245, 215);
+                const float cx = btn.x + btn.w * 0.5F;
+                const float cy = btn.y + btn.h * 0.5F;
+                if (glyphKind == 0) {
+                    // Up chevron
+                    c.line(prism::Vec2{cx - 4.5F, cy + 2.0F}, prism::Vec2{cx, cy - 3.0F}, fg, 1.6F);
+                    c.line(prism::Vec2{cx, cy - 3.0F}, prism::Vec2{cx + 4.5F, cy + 2.0F}, fg, 1.6F);
+                } else if (glyphKind == 1) {
+                    // Down chevron
+                    c.line(prism::Vec2{cx - 4.5F, cy - 2.0F}, prism::Vec2{cx, cy + 3.0F}, fg, 1.6F);
+                    c.line(prism::Vec2{cx, cy + 3.0F}, prism::Vec2{cx + 4.5F, cy - 2.0F}, fg, 1.6F);
+                } else if (glyphKind == 2) {
+                    // Zoom in (+)
+                    c.line(prism::Vec2{cx - 4.5F, cy}, prism::Vec2{cx + 4.5F, cy}, fg, 1.6F);
+                    c.line(prism::Vec2{cx, cy - 4.5F}, prism::Vec2{cx, cy + 4.5F}, fg, 1.6F);
+                } else {
+                    // Zoom out (-)
+                    c.line(prism::Vec2{cx - 4.5F, cy}, prism::Vec2{cx + 4.5F, cy}, fg, 1.6F);
+                }
+            };
+
+            drawActionBtn(layout.upBtn, m_touchUpHeld, 0);
+            drawActionBtn(layout.downBtn, m_touchDownHeld, 1);
+            drawActionBtn(layout.zoomInBtn, m_touchZoomInHeld, 2);
+            drawActionBtn(layout.zoomOutBtn, m_touchZoomOutHeld, 3);
+        }
+    }
+#endif
     c.popClip();
 }
 

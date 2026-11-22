@@ -727,6 +727,26 @@ public:
         /// shell right before it calls the viewport renderer (see editor_viewport_input.h).
         EditorViewportInputUVE input;
 
+        /// Viewport render quality preset: 0=Auto, 1=Low, 2=Medium, 3=High, 4=Ultra.
+        int qualityPreset = 0;
+        /// Output: effective 3D render resolution scale (0.5..1.0; 0.0 until first resolved).
+        mutable float resolvedRenderScale = 0.0F;
+
+        /// On-screen Android virtual viewport controller inputs for this frame.
+        float touchMoveX = 0.0F;
+        float touchMoveY = 0.0F;
+        float touchMoveUp = 0.0F;
+        float touchLookX = 0.0F;
+        float touchLookY = 0.0F;
+        float touchZoomDelta = 0.0F;
+
+        /// Output: active 2D marquee box-selection rectangle in viewport-local logical coordinates.
+        mutable bool marqueeActive = false;
+        mutable float marqueeStartX = 0.0F;
+        mutable float marqueeStartY = 0.0F;
+        mutable float marqueeEndX = 0.0F;
+        mutable float marqueeEndY = 0.0F;
+
         // ---- Gizmos drawn by the editor shell (PRISM) ------------------------------------------
         /// Set by a shell that draws the viewport's gizmos itself: the renderer then draws none of
         /// its own (corner navigation, transform handles, object gizmos, bones, colliders), nor the
