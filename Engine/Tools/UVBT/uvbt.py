@@ -1186,8 +1186,10 @@ class EngineBuilder:
                 link_cmd += ["-Wl,-rpath,$ORIGIN/lib:$ORIGIN", "-Wl,--disable-new-dtags"]
         if toolchain.is_android:
             export_map = obj_dir / "android_exports.map"
+            # Glob form: only the editor library defines the entry, and lld rejects unmatched exact names.
+            editor_entry_glob = f"{ANDROID_EDITOR_ENTRY[:-1]}[{ANDROID_EDITOR_ENTRY[-1]}]"
             export_map.write_text(
-                f"{{\n  global:\n    {ANDROID_ACTIVITY_ENTRY};\n    {ANDROID_EDITOR_ENTRY};\n  local:\n    *;\n}};\n",
+                f"{{\n  global:\n    {ANDROID_ACTIVITY_ENTRY};\n    {editor_entry_glob};\n  local:\n    *;\n}};\n",
                 encoding="utf-8",
             )
             link_cmd += ["-shared", "-static-libstdc++", f"-Wl,-u,{ANDROID_ACTIVITY_ENTRY}", "-Wl,--no-undefined",

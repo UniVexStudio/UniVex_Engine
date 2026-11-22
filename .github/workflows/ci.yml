@@ -640,7 +640,7 @@ jobs:
           "${extract}/uve_editor" --bridge-stdio < /dev/null
           .uvbt/bin/Linux/Release/uve_asset_workload --create-fixture "${RUNNER_TEMP}/cook-src"
           "${extract}/uve_pack" --project "${RUNNER_TEMP}/cook-src/sample.uvproject" \
-            --runtime "${extract}/uve_runtime" --output "${RUNNER_TEMP}/cooked" --cook linux
+            --runtime "${extract}/uve_runtime" --output "${RUNNER_TEMP}/cooked"
           rm -rf "${RUNNER_TEMP}/cook-src"
           "${RUNNER_TEMP}/cooked/uve_runtime" --headless --project "${RUNNER_TEMP}/cooked/sample.uvproject" --frames 3
       - name: Hand the release files to the publish job
