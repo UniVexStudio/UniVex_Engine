@@ -37,7 +37,10 @@ inline constexpr float kBrandGapUVE = 10.0F;
 inline constexpr float kBrandInsetUVE = 4.0F;
 inline constexpr float kBrandLineSpacingUVE = 1.0F;
 inline constexpr float kPagePaddingUVE = 24.0F;
+inline constexpr float kCompactPagePaddingUVE = 12.0F;
 inline constexpr float kSectionSpacingUVE = 16.0F;
+inline constexpr float kCompactSectionSpacingUVE = 10.0F;
+inline constexpr float kCompactBrandMarkSizeUVE = 24.0F;
 inline constexpr float kRowSpacingUVE = 8.0F;
 inline constexpr float kRowPaddingUVE = 12.0F;
 inline constexpr float kRowRadiusUVE = 6.0F;
@@ -88,7 +91,16 @@ inline constexpr std::array<SortChoiceUVE, 2U> kSortChoicesUVE{{
     return {};
 }
 
-[[nodiscard]] prism::Ref<prism::Widget> FieldRowUVE(const std::string& label, prism::Ref<prism::Widget> field) {
+[[nodiscard]] prism::Ref<prism::Widget> FieldRowUVE(const std::string& label, prism::Ref<prism::Widget> field,
+                                                    const bool stacked = false) {
+    if (stacked) {
+        auto column = prism::vbox(4.0F);
+        auto caption = prism::make<prism::Label>(label, prism::FontRole::Small);
+        caption->setColor(&prism::Theme::textDim);
+        column->add(caption);
+        column->add(std::move(field));
+        return column;
+    }
     auto row = prism::hbox(kControlSpacingUVE);
     auto caption = prism::make<prism::Label>(label);
     caption->setFixedWidth(kFieldLabelWidthUVE);
@@ -108,8 +120,9 @@ HubWindowUVE::HubWindowUVE(HubContextUVE context) : m_context(std::move(context)
 }
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
+    const float pagePadding = m_context.compactLayout ? kCompactPagePaddingUVE : kPagePaddingUVE;
     m_status = prism::make<prism::Label>("", prism::FontRole::Small);
-    m_status->setPadding(prism::Margin(kPagePaddingUVE, kRowSpacingUVE));
+    m_status->setPadding(prism::Margin(pagePadding, kRowSpacingUVE));
 
     m_pages = prism::make<prism::StackSwitcher>();
     m_pages->addPage(BuildProjectsPageUVE());
@@ -122,10 +135,20 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
     content->add(prism::make<prism::Separator>(prism::Orientation::Horizontal));
     content->add(m_status);
 
-    auto root = prism::hbox();
-    root->add(BuildSidebarUVE());
-    root->add(prism::make<prism::Separator>(prism::Orientation::Vertical));
-    root->add(content, prism::Slot{1.0F});
+    prism::Ref<prism::Widget> root;
+    if (m_context.compactLayout) {
+        auto stacked = prism::vbox();
+        stacked->add(BuildTopNavUVE());
+        stacked->add(prism::make<prism::Separator>(prism::Orientation::Horizontal));
+        stacked->add(content, prism::Slot{1.0F});
+        root = stacked;
+    } else {
+        auto split = prism::hbox();
+        split->add(BuildSidebarUVE());
+        split->add(prism::make<prism::Separator>(prism::Orientation::Vertical));
+        split->add(content, prism::Slot{1.0F});
+        root = split;
+    }
 
     auto window = prism::make<prism::Border>();
     window->setBackground(&prism::Theme::window).setChild(root);
@@ -142,6 +165,7 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
 prism::Ref<NavItemUVE> HubWindowUVE::MakeNavItemUVE(const std::string& label, const prism::Icon icon,
                                                     const HubPageUVE page) {
     auto item = prism::make<NavItemUVE>(label, icon);
+    item->SetCompactUVE(m_context.compactLayout);
     item->onActivate = [this, page] { ShowPageUVE(page); };
     m_navigation.emplace_back(page, item);
     return item;
@@ -192,6 +216,34 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
     return frame;
 }
 
+prism::Ref<prism::Widget> HubWindowUVE::BuildTopNavUVE() {
+    auto brand = prism::hbox(kRowSpacingUVE);
+    brand->setPadding(prism::Margin(kCompactPagePaddingUVE, 8.0F, kCompactPagePaddingUVE, 4.0F));
+    brand->add(prism::make<LauncherUI::BrandMarkUVE>(kCompactBrandMarkSizeUVE),
+               prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    brand->add(prism::make<prism::Label>("UniVex Hub", prism::FontRole::Semibold),
+               prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    auto version = prism::make<prism::Label>("v" + Online::FormatDisplayVersionUVE(Online::kHubVersionUVE),
+                                             prism::FontRole::Small);
+    version->setColor(&prism::Theme::textDim);
+    brand->add(version, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
+
+    auto tabs = prism::hbox(4.0F);
+    tabs->setPadding(prism::Margin(8.0F, 2.0F, 8.0F, 6.0F));
+    tabs->add(MakeNavItemUVE("Projects", prism::Icon::Folder, HubPageUVE::Projects), prism::Slot{1.0F});
+    tabs->add(MakeNavItemUVE("New", prism::Icon::Plus, HubPageUVE::NewProject), prism::Slot{1.0F});
+    tabs->add(MakeNavItemUVE("Engines", prism::Icon::Layers, HubPageUVE::Engines), prism::Slot{1.0F});
+    tabs->add(MakeNavItemUVE("Settings", prism::Icon::Settings, HubPageUVE::Settings), prism::Slot{1.0F});
+
+    auto bar = prism::vbox();
+    bar->add(brand);
+    bar->add(tabs);
+
+    auto frame = prism::make<prism::Border>();
+    frame->setBackground(&prism::Theme::panel).setChild(bar);
+    return frame;
+}
+
 prism::Ref<prism::Widget> HubWindowUVE::FolderFieldUVE(const prism::Ref<prism::TextInput>& field,
                                                        const std::string& pickerTitle) {
     auto row = prism::hbox(kControlSpacingUVE);
@@ -206,8 +258,10 @@ prism::Ref<prism::Widget> HubWindowUVE::FolderFieldUVE(const prism::Ref<prism::T
 }
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildProjectsPageUVE() {
-    auto page = prism::vbox(kSectionSpacingUVE);
-    page->setPadding(prism::Margin(kPagePaddingUVE));
+    const float pagePadding = m_context.compactLayout ? kCompactPagePaddingUVE : kPagePaddingUVE;
+    const float sectionSpacing = m_context.compactLayout ? kCompactSectionSpacingUVE : kSectionSpacingUVE;
+    auto page = prism::vbox(sectionSpacing);
+    page->setPadding(prism::Margin(pagePadding));
 
     auto header = prism::hbox(kControlSpacingUVE);
     header->add(HeadingUVE("Projects"), prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -221,7 +275,9 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectsPageUVE() {
         RefreshProjectListUVE();
     };
     header->add(sort);
-    auto refresh = prism::make<prism::Button>("Refresh", prism::Icon::Refresh);
+    auto refresh =
+        prism::make<prism::Button>(m_context.compactLayout ? "" : "Refresh", prism::Icon::Refresh);
+    refresh->setTooltip("Refresh projects");
     refresh->onClick = [this] { ReloadRegistryUVE(); };
     header->add(refresh);
     page->add(header);
@@ -239,12 +295,14 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectsPageUVE() {
     auto open = prism::make<prism::Button>("Open", prism::Icon::Open);
     open->onClick = [this] { OpenProjectUVE(m_openPath->text()); };
     openRow->add(open);
-    auto browse = prism::make<prism::Button>("Open project folder", prism::Icon::FolderOpen);
-    browse->onClick = [this] {
-        ShowFolderPickerUVE("Open a project folder", m_settings.defaultProjectLocation,
-                            [this](const std::filesystem::path& folder) { OpenProjectFolderUVE(folder); });
-    };
-    openRow->add(browse);
+    if (!m_context.compactLayout) {
+        auto browse = prism::make<prism::Button>("Open project folder", prism::Icon::FolderOpen);
+        browse->onClick = [this] {
+            ShowFolderPickerUVE("Open a project folder", m_settings.defaultProjectLocation,
+                                [this](const std::filesystem::path& folder) { OpenProjectFolderUVE(folder); });
+        };
+        openRow->add(browse);
+    }
     page->add(openRow);
 
     m_projectRows = prism::vbox(kRowSpacingUVE);
@@ -255,29 +313,46 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectsPageUVE() {
 }
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildNewProjectPageUVE() {
-    auto page = prism::vbox(kSectionSpacingUVE);
-    page->setPadding(prism::Margin(kPagePaddingUVE));
+    const float pagePadding = m_context.compactLayout ? kCompactPagePaddingUVE : kPagePaddingUVE;
+    const float sectionSpacing = m_context.compactLayout ? kCompactSectionSpacingUVE : kSectionSpacingUVE;
+    auto page = prism::vbox(sectionSpacing);
+    page->setPadding(prism::Margin(pagePadding));
     page->add(HeadingUVE("New Project"));
 
-    auto body = prism::hbox(kSectionSpacingUVE);
     m_templateRows = prism::vbox(kRowSpacingUVE);
+    m_templateDescription = prism::make<prism::Label>();
+    m_templateDescription->setColor(&prism::Theme::textDim);
+    m_projectName = prism::make<prism::TextInput>("", "My Game");
+    m_projectLocation = prism::make<prism::TextInput>(m_settings.defaultProjectLocation.string());
+    m_newProjectEngine = prism::make<prism::ComboBox>();
+    auto create = prism::make<prism::Button>("Create and Open", prism::Icon::Plus, prism::ButtonStyle::Primary);
+    create->onClick = [this] { CreateProjectUVE(); };
+
+    if (m_context.compactLayout) {
+        auto stacked = prism::vbox(sectionSpacing);
+        stacked->add(m_templateRows);
+        stacked->add(m_templateDescription);
+        stacked->add(FieldRowUVE("Name", m_projectName, true));
+        stacked->add(FieldRowUVE("Location", FolderFieldUVE(m_projectLocation, "Where to create the project"), true));
+        stacked->add(FieldRowUVE("Engine", m_newProjectEngine, true));
+        stacked->add(create, prism::Slot{0.0F, {}, prism::HAlign::Fill});
+        auto scroll = prism::make<prism::ScrollView>();
+        scroll->setContent(stacked);
+        page->add(scroll, prism::Slot{1.0F});
+        return page;
+    }
+
+    auto body = prism::hbox(kSectionSpacingUVE);
     auto templates = prism::make<prism::ScrollView>();
     templates->setContent(m_templateRows);
     templates->setFixedWidth(kTemplateListWidthUVE);
     body->add(templates);
 
     auto details = prism::vbox(kSectionSpacingUVE);
-    m_templateDescription = prism::make<prism::Label>();
-    m_templateDescription->setColor(&prism::Theme::textDim);
     details->add(m_templateDescription);
-    m_projectName = prism::make<prism::TextInput>("", "My Game");
     details->add(FieldRowUVE("Name", m_projectName));
-    m_projectLocation = prism::make<prism::TextInput>(m_settings.defaultProjectLocation.string());
     details->add(FieldRowUVE("Location", FolderFieldUVE(m_projectLocation, "Where to create the project")));
-    m_newProjectEngine = prism::make<prism::ComboBox>();
     details->add(FieldRowUVE("Engine", m_newProjectEngine));
-    auto create = prism::make<prism::Button>("Create and Open", prism::Icon::Plus, prism::ButtonStyle::Primary);
-    create->onClick = [this] { CreateProjectUVE(); };
     details->add(create, prism::Slot{0.0F, {}, prism::HAlign::Left});
     body->add(details, prism::Slot{1.0F});
 
@@ -286,19 +361,36 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildNewProjectPageUVE() {
 }
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildSettingsPageUVE() {
-    auto page = prism::vbox(kSectionSpacingUVE);
-    page->setPadding(prism::Margin(kPagePaddingUVE));
+    const float pagePadding = m_context.compactLayout ? kCompactPagePaddingUVE : kPagePaddingUVE;
+    const float sectionSpacing = m_context.compactLayout ? kCompactSectionSpacingUVE : kSectionSpacingUVE;
+    auto page = prism::vbox(sectionSpacing);
+    page->setPadding(prism::Margin(pagePadding));
     page->add(HeadingUVE("Settings"));
     m_settingsLocation = prism::make<prism::TextInput>(m_settings.defaultProjectLocation.string());
-    page->add(FieldRowUVE("New projects in", FolderFieldUVE(m_settingsLocation, "Where new projects go")));
     m_settingsRecentLimit = prism::make<prism::TextInput>();
-    page->add(FieldRowUVE("Recent projects", m_settingsRecentLimit));
-    page->add(prism::make<prism::Label>("Favorites are always kept. Between " +
-                                            std::to_string(Pack::kMinimumRecentProjectLimitUVE) + " and " +
-                                            std::to_string(Pack::kMaximumRecentProjectLimitUVE) + ".",
-                                        prism::FontRole::Small));
+    auto hint = prism::make<prism::Label>("Favorites are always kept. Between " +
+                                              std::to_string(Pack::kMinimumRecentProjectLimitUVE) + " and " +
+                                              std::to_string(Pack::kMaximumRecentProjectLimitUVE) + ".",
+                                          prism::FontRole::Small);
+    hint->setColor(&prism::Theme::textDim);
     auto save = prism::make<prism::Button>("Save", prism::Icon::Save, prism::ButtonStyle::Primary);
     save->onClick = [this] { SaveSettingsUVE(); };
+
+    if (m_context.compactLayout) {
+        auto fields = prism::vbox(sectionSpacing);
+        fields->add(FieldRowUVE("New projects in", FolderFieldUVE(m_settingsLocation, "Where new projects go"), true));
+        fields->add(FieldRowUVE("Recent projects", m_settingsRecentLimit, true));
+        fields->add(hint);
+        fields->add(save, prism::Slot{0.0F, {}, prism::HAlign::Left});
+        auto scroll = prism::make<prism::ScrollView>();
+        scroll->setContent(fields);
+        page->add(scroll, prism::Slot{1.0F});
+        return page;
+    }
+
+    page->add(FieldRowUVE("New projects in", FolderFieldUVE(m_settingsLocation, "Where new projects go")));
+    page->add(FieldRowUVE("Recent projects", m_settingsRecentLimit));
+    page->add(hint);
     page->add(save, prism::Slot{0.0F, {}, prism::HAlign::Left});
 
     return page;
@@ -370,24 +462,23 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectRowUVE(const Pack::ProjectLi
     badge->setColor(StatusColorUVE(row.status));
     text->add(badge);
 
-    auto line = prism::hbox(kControlSpacingUVE);
-    line->add(text, prism::Slot{1.0F});
-
     const bool openable = row.status != Pack::ProjectListStatusUVE::Missing &&
                           row.status != Pack::ProjectListStatusUVE::Incompatible &&
                           row.status != Pack::ProjectListStatusUVE::EngineNotInstalled;
+    prism::Ref<prism::Widget> primaryAction;
     if (row.status == Pack::ProjectListStatusUVE::EngineNotInstalled) {
         auto getEngine = prism::make<prism::Button>("Get engine", prism::Icon::Open);
         getEngine->setTooltip("Download engine " + Pack::FormatProjectVersionUVE(row.entry.engineVersion) +
                               " on the Engines page");
         getEngine->onClick = [this] { ShowPageUVE(HubPageUVE::Engines); };
-        line->add(getEngine, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    }
-    if (openable) {
+        primaryAction = getEngine;
+    } else if (openable) {
         auto open = prism::make<prism::Button>("Open", prism::Icon::Play, prism::ButtonStyle::Primary);
         open->onClick = [this, projectFile] { OpenProjectUVE(projectFile); };
-        line->add(open, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        primaryAction = open;
     }
+
+    prism::Ref<prism::Widget> engineChoice;
     if (row.status != Pack::ProjectListStatusUVE::Missing) {
         // "Automatic" lets the Hub pick; otherwise the exact installed version the user chose.
         std::vector<std::string> choices{"Automatic"};
@@ -408,10 +499,13 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectRowUVE(const Pack::ProjectLi
                 static_cast<void>(registry.SetEngineChoiceUVE(projectFile, choice));
             });
         };
-        line->add(engine, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        engineChoice = engine;
     }
-    auto favorite = prism::make<prism::Button>(row.entry.favorite ? "Favorite" : "Add to favorites", prism::Icon::Check,
-                                               prism::ButtonStyle::Flat);
+
+    const std::string favoriteLabel =
+        m_context.compactLayout ? (row.entry.favorite ? "Starred" : "Star")
+                                : (row.entry.favorite ? "Favorite" : "Add to favorites");
+    auto favorite = prism::make<prism::Button>(favoriteLabel, prism::Icon::Check, prism::ButtonStyle::Flat);
     favorite->setCheckable(true);
     favorite->setChecked(row.entry.favorite);
     favorite->onClick = [this, projectFile, wasFavorite = row.entry.favorite] {
@@ -419,31 +513,64 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectRowUVE(const Pack::ProjectLi
             static_cast<void>(registry.SetFavoriteUVE(projectFile, !wasFavorite));
         });
     };
-    line->add(favorite, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    if (row.status != Pack::ProjectListStatusUVE::Missing) {
-        auto reveal = prism::make<prism::Button>("Show in folder", prism::Icon::FolderOpen, prism::ButtonStyle::Flat);
-        reveal->onClick = [this, projectFile] {
-            const Platform::ProcessLaunchResultUVE revealed =
-                Platform::RevealInFileManagerUVE(projectFile.parent_path());
-            if (!revealed.launched) {
-                SetStatusUVE(revealed.message, true);
-            }
-        };
-        line->add(reveal, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
-    }
+
     auto remove = prism::make<prism::Button>("", prism::Icon::Trash, prism::ButtonStyle::Flat);
     remove->setTooltip("Remove from the list (the project stays on disk)");
     remove->onClick = [this, projectFile] {
         UpdateRegistryUVE([&](Pack::ProjectRegistryUVE& registry) { static_cast<void>(registry.RemoveUVE(projectFile)); });
     };
-    line->add(remove, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+
+    prism::Ref<prism::Widget> content;
+    if (m_context.compactLayout) {
+        auto top = prism::hbox(kControlSpacingUVE);
+        top->add(text, prism::Slot{1.0F});
+        if (primaryAction != nullptr) {
+            top->add(primaryAction, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        }
+        auto controls = prism::hbox(kControlSpacingUVE);
+        if (engineChoice != nullptr) {
+            controls->add(engineChoice, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        } else {
+            controls->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+        }
+        controls->add(favorite, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        controls->add(remove, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+
+        auto stacked = prism::vbox(kRowSpacingUVE);
+        stacked->add(top);
+        stacked->add(controls);
+        content = stacked;
+    } else {
+        auto line = prism::hbox(kControlSpacingUVE);
+        line->add(text, prism::Slot{1.0F});
+        if (primaryAction != nullptr) {
+            line->add(primaryAction, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        }
+        if (engineChoice != nullptr) {
+            line->add(engineChoice, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        }
+        line->add(favorite, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        if (row.status != Pack::ProjectListStatusUVE::Missing) {
+            auto reveal = prism::make<prism::Button>("Show in folder", prism::Icon::FolderOpen, prism::ButtonStyle::Flat);
+            reveal->onClick = [this, projectFile] {
+                const Platform::ProcessLaunchResultUVE revealed =
+                    Platform::RevealInFileManagerUVE(projectFile.parent_path());
+                if (!revealed.launched) {
+                    SetStatusUVE(revealed.message, true);
+                }
+            };
+            line->add(reveal, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        }
+        line->add(remove, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
+        content = line;
+    }
 
     auto card = prism::make<prism::Border>();
     card->setBackground(&prism::Theme::panel)
         .setBorder(&prism::Theme::borderSoft)
         .setRadius(kRowRadiusUVE)
         .setPadding(prism::Margin(kRowPaddingUVE))
-        .setChild(line);
+        .setChild(content);
     return card;
 }
 
@@ -580,15 +707,20 @@ void HubWindowUVE::SetStatusUVE(const std::string& message, const bool isError) 
 }
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildEnginesPageUVE() {
-    auto page = prism::vbox(kSectionSpacingUVE);
-    page->setPadding(prism::Margin(kPagePaddingUVE));
+    const float pagePadding = m_context.compactLayout ? kCompactPagePaddingUVE : kPagePaddingUVE;
+    const float sectionSpacing = m_context.compactLayout ? kCompactSectionSpacingUVE : kSectionSpacingUVE;
+    auto page = prism::vbox(sectionSpacing);
+    page->setPadding(prism::Margin(pagePadding));
 
     auto header = prism::hbox(kControlSpacingUVE);
     header->add(HeadingUVE("Engines"), prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    auto check = prism::make<prism::Button>("Check for new versions", prism::Icon::Refresh);
+    auto check = prism::make<prism::Button>(m_context.compactLayout ? "Check" : "Check for new versions",
+                                            prism::Icon::Refresh);
+    check->setTooltip("Check for new engine versions");
     check->onClick = [this] { CheckForEnginesUVE(); };
     header->add(check);
-    m_importButton = prism::make<prism::Button>("Import package...", prism::Icon::Open);
+    m_importButton =
+        prism::make<prism::Button>(m_context.compactLayout ? "Import..." : "Import package...", prism::Icon::Open);
     m_importButton->setTooltip("Install an engine package file you already have, such as an offline copy");
     m_importButton->onClick = [this] { ImportEnginePackageUVE(); };
     header->add(m_importButton);
@@ -748,7 +880,7 @@ void HubWindowUVE::CheckForEnginesUVE() {
     }
     m_feedStatus->setText("Checking for engine versions...");
     const Online::EngineFeedSourceUVE source = *m_context.feed;
-    const std::string target(Platform::GetApplicationTargetUVE());
+    const std::string target(Platform::GetEnginePackageTargetUVE());
     m_feedRequest = std::async(std::launch::async, [source, target] {
         const std::unique_ptr<Online::IHttpClientUVE> client = Online::CreatePlatformHttpClientUVE();
         return Online::FetchEngineReleasesUVE(*client, source, target);
@@ -772,23 +904,39 @@ void HubWindowUVE::ImportEnginePackageUVE() {
     if (IsInstallingEngineUVE()) {
         return;
     }
-    ShowFilePickerUVE("Import an engine package", m_lastImportFolder,
-                      {std::string(Online::kEnginePackageExtensionUVE)}, "Import",
-                      [this](const std::filesystem::path& package) {
-                          if (IsInstallingEngineUVE()) {
-                              return;
-                          }
-                          m_lastImportFolder = package.parent_path();
-                          m_import = std::async(std::launch::async, [package, enginesRoot = m_context.enginesRoot] {
-                              return Online::InstallLocalEnginePackageUVE(package, enginesRoot);
-                          });
-                          m_importButton->setEnabled(false);
-                          // An import has no measurable progress; the line shows only what is installing.
-                          m_downloadLabel->setText("Installing " + package.filename().string() + "...");
-                          m_downloadBar->setVisible(false);
-                          m_downloadBar->parent()->setVisible(true);
-                          RefreshEngineListUVE();
-                      });
+    ShowFilePickerUVE(
+        "Import an engine package", m_lastImportFolder, {std::string(Online::kEnginePackageExtensionUVE)}, "Import",
+        [this](const std::filesystem::path& package) {
+            if (IsInstallingEngineUVE()) {
+                return;
+            }
+            const bool isAndroidTempCopy =
+#if defined(__ANDROID__)
+                package.parent_path().filename() == "picked";
+#else
+                false;
+#endif
+            if (!isAndroidTempCopy) {
+                m_lastImportFolder = package.parent_path();
+            }
+            m_import =
+                std::async(std::launch::async, [package, enginesRoot = m_context.enginesRoot, isAndroidTempCopy] {
+                    const Online::EngineInstallOutcomeUVE outcome =
+                        Online::InstallLocalEnginePackageUVE(package, enginesRoot);
+                    if (isAndroidTempCopy) {
+                        std::error_code cleanupError;
+                        std::filesystem::remove(package, cleanupError);
+                    }
+                    return outcome;
+                });
+            m_importButton->setEnabled(false);
+            // An import has no measurable progress; the line shows only what is installing.
+            m_downloadLabel->setText("Installing " + package.filename().string() + "...");
+            m_downloadBar->setVisible(false);
+            m_downloadBar->parent()->setVisible(true);
+            RefreshEngineListUVE();
+        },
+        [this](const std::string& message) { SetStatusUVE(message, true); });
 }
 
 void HubWindowUVE::TickUVE() {

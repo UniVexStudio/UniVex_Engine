@@ -47,8 +47,12 @@ ANDROID_NDK_HOST_TAG = "linux-x86_64"
 # Android 15 devices may use 16 KB memory pages; native libraries must be aligned for them.
 ANDROID_PAGE_SIZE_BYTES = 16384
 ANDROID_SYSTEM_LIBRARIES = ["android", "log", "EGL", "GLESv3", "m", "dl"]
-# The entry point android_native_app_glue exports; it must survive the link.
+# The entry points Android loads dynamically (NativeActivity glue and Hub's dlopen editor entry).
 ANDROID_ACTIVITY_ENTRY = "ANativeActivity_onCreate"
+ANDROID_EDITOR_ENTRY = "UveEditorRunUVE"
+# Optional static Linux UI libraries built when system packages are absent or UVBT_STATIC_LINUX_UI=1.
+LINUX_GLFW_REPO = ("glfw", "https://github.com/glfw/glfw.git", "3.4")
+LINUX_GLEW_REPO = ("glew", "https://github.com/Perlmint/glew-cmake.git", "glew-cmake-2.2.0")
 
 
 def select_for_platform(entries, platform):
@@ -689,6 +693,8 @@ class EngineBuilder:
 
         if toolchain.is_android:
             self._ensure_android_libraries(toolchain, tp_dir, tp_lib_dir)
+        elif platform == "Linux":
+            self._ensure_linux_libraries(toolchain, tp_dir, tp_lib_dir)
 
     # Third-party libraries the desktop takes from the system but Android does not have: fetched at a
     # fixed release and built with the NDK through CMake. Each installs under tp_lib/<platform>/<name>.
@@ -737,6 +743,67 @@ class EngineBuilder:
                             *toolchain.cmake_toolchain_args(), *options], check=True)
             subprocess.run(["cmake", "--build", str(build)], check=True)
             subprocess.run(["cmake", "--install", str(build)], check=True)
+
+    @staticmethod
+    def _want_static_linux_ui() -> bool:
+        return os.environ.get("UVBT_STATIC_LINUX_UI", "").strip().lower() in ("1", "true", "yes")
+
+    @staticmethod
+    def _system_header_exists(relative_header: str) -> bool:
+        return any((root / relative_header).is_file() for root in (Path("/usr/include"), Path("/usr/local/include")))
+
+    @staticmethod
+    def _resolve_static_system_lib(compiler: str, lib_name: str):
+        res = subprocess.run([compiler, f"-print-file-name=lib{lib_name}.a"], stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, text=True, check=False)
+        candidate = Path(res.stdout.strip())
+        return candidate if candidate.is_file() else None
+
+    def _ensure_linux_libraries(self, toolchain, tp_dir: Path, tp_lib_dir: Path):
+        static_ui = self._want_static_linux_ui()
+        need_glfw = static_ui or not self._system_header_exists("GLFW/glfw3.h")
+        if need_glfw:
+            glfw_lib = tp_lib_dir / "libglfw3.a"
+            glfw_src = tp_dir / "glfw"
+            if not (glfw_src / "include" / "GLFW" / "glfw3.h").is_file():
+                name, url, tag = LINUX_GLFW_REPO
+                print(f"[UVBT] Fetching Linux dependency '{name}' ({tag})...", flush=True)
+                subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(glfw_src)], check=True)
+            if not glfw_lib.exists():
+                glfw_build = tp_lib_dir / "glfw-build"
+                print("[UVBT] Building static libglfw3.a for Linux...", flush=True)
+                subprocess.run(
+                    ["cmake", "-S", str(glfw_src), "-B", str(glfw_build), "-G", "Ninja",
+                     "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIBS=OFF",
+                     "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+                     "-DGLFW_BUILD_EXAMPLES=OFF", "-DGLFW_BUILD_TESTS=OFF", "-DGLFW_BUILD_DOCS=OFF",
+                     "-DGLFW_BUILD_WAYLAND=OFF", "-DGLFW_BUILD_X11=ON",
+                     *toolchain.cmake_toolchain_args()],
+                    check=True,
+                )
+                subprocess.run(["cmake", "--build", str(glfw_build)], check=True)
+                built = glfw_build / "src" / "libglfw3.a"
+                if not built.is_file():
+                    raise RuntimeError(f"[UVBT] Expected {built} after building GLFW")
+                shutil.copy2(built, glfw_lib)
+
+        need_glew = static_ui or not self._system_header_exists("GL/glew.h")
+        if need_glew:
+            glew_lib = tp_lib_dir / "libGLEW.a"
+            glew_src = tp_dir / "glew"
+            if not (glew_src / "include" / "GL" / "glew.h").is_file():
+                name, url, tag = LINUX_GLEW_REPO
+                print(f"[UVBT] Fetching Linux dependency '{name}' ({tag})...", flush=True)
+                subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(glew_src)], check=True)
+            if not glew_lib.exists():
+                print("[UVBT] Building static libGLEW.a for Linux...", flush=True)
+                glew_obj = tp_lib_dir / "glew.o"
+                subprocess.run(
+                    [toolchain.cc, *toolchain.target_flags, "-O2", "-fPIC", "-DGLEW_NO_GLU", "-DGLEW_STATIC",
+                     f"-I{glew_src / 'include'}", "-c", str(glew_src / "src" / "glew.c"), "-o", str(glew_obj)],
+                    check=True,
+                )
+                subprocess.run([toolchain.ar, "rcs", str(glew_lib), str(glew_obj)], check=True)
 
     def android_library_dirs(self, toolchain):
         """Where the Android third-party libraries are installed, for the link and includes."""
@@ -840,6 +907,9 @@ class EngineBuilder:
             "-fPIC",
             "-pthread"
         ]
+        if toolchain.is_android:
+            # Isolate internal symbols so dlopen(uve_editor) never collides with libunivex_hub.so.
+            base_cflags.append("-fvisibility=hidden")
         if os.environ.get("UVBT_WERROR", "").strip() in ("1", "true", "yes"):
             base_cflags.append("-Werror")
 
@@ -885,6 +955,7 @@ class EngineBuilder:
             f"UVE_HAS_STD_FORMAT={1 if toolchain.has_std_format else 0}",
             # GLFW's header must not pull in desktop GL; GL code includes gl_system_headers.h itself.
             *(["GLFW_INCLUDE_NONE"] if toolchain.is_android else []),
+            *(["GLEW_NO_GLU"] if platform == "Linux" else []),
             "FMT_HEADER_ONLY=1",
             f'UVE_SOURCE_DIR="{self.repo_root}"'
         ]
@@ -1082,9 +1153,49 @@ class EngineBuilder:
             if s not in unique_sys:
                 unique_sys.append(s)
 
+        if platform == "Linux" and self._want_static_linux_ui():
+            static_candidates = []
+            for lib_name in ("freetype", "jpeg", "z"):
+                if lib_name in unique_sys:
+                    static_candidates.append(lib_name)
+                    if lib_name == "freetype":
+                        try:
+                            pc_out = subprocess.run(
+                                ["pkg-config", "--static", "--libs-only-l", "freetype2"],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False,
+                            ).stdout
+                            for tok in pc_out.split():
+                                if tok.startswith("-l"):
+                                    dep = tok[2:]
+                                    if dep not in ("m", "dl", "pthread", "c", "rt") and dep not in static_candidates:
+                                        static_candidates.append(dep)
+                        except OSError:
+                            pass
+            for lib_name in static_candidates:
+                static_path = self._resolve_static_system_lib(cxx, lib_name)
+                if static_path is not None:
+                    if str(static_path) not in all_libs:
+                        all_libs.append(str(static_path))
+                    if lib_name in unique_sys:
+                        unique_sys.remove(lib_name)
+                elif lib_name not in unique_sys:
+                    unique_sys.append(lib_name)
+
         link_cmd = [cxx] + base_cflags + ["-o", str(target_exe)]
+        if platform == "Linux":
+            link_cmd.append("-Wl,--as-needed")
+            if target.target_type != "Test":
+                link_cmd += ["-Wl,-rpath,$ORIGIN/lib:$ORIGIN", "-Wl,--disable-new-dtags"]
         if toolchain.is_android:
+            export_map = obj_dir / "android_exports.map"
+            # Glob form: only the editor library defines the entry, and lld rejects unmatched exact names.
+            editor_entry_glob = f"{ANDROID_EDITOR_ENTRY[:-1]}[{ANDROID_EDITOR_ENTRY[-1]}]"
+            export_map.write_text(
+                f"{{\n  global:\n    {ANDROID_ACTIVITY_ENTRY};\n    {editor_entry_glob};\n  local:\n    *;\n}};\n",
+                encoding="utf-8",
+            )
             link_cmd += ["-shared", "-static-libstdc++", f"-Wl,-u,{ANDROID_ACTIVITY_ENTRY}", "-Wl,--no-undefined",
+                         "-Wl,-Bsymbolic", f"-Wl,--version-script={export_map}",
                          f"-Wl,-z,max-page-size={ANDROID_PAGE_SIZE_BYTES}"]
             link_cmd += [f"-L{d}" for d in self.android_library_dirs(toolchain) if d.is_dir()]
             all_libs.append(str(tp_lib_dir / "libandroid_native_app_glue.a"))

@@ -11,15 +11,22 @@
 #include <android/native_window.h>
 #include <dlfcn.h>
 
+#include <array>
 #include <chrono>
+#include <optional>
 #include <string>
+#include <utility>
+
+#include "android_activity.h"
 
 struct GLFWwindow {
     ANativeWindow* surface = nullptr;
     float contentScale = 1.0F;
     bool focused = true;
     bool shouldClose = false;
-    bool pressed = false;
+    bool pressed = false;   // the left button (DispatchAndroidGlfwPointerUVE)
+    bool textInput = false; // the interface wants the soft keyboard
+    std::array<bool, GLFW_MOUSE_BUTTON_LAST + 1> buttons{};
     double cursorX = 0.0;
     double cursorY = 0.0;
     void* user = nullptr;
@@ -44,6 +51,7 @@ namespace {
 GLFWwindow g_windowUVE;
 GLFWmonitor g_monitorUVE;
 GLFWvidmode g_modeUVE{};
+ANativeActivity* g_activityUVE = nullptr;
 std::string g_clipboardUVE;
 const auto g_startUVE = std::chrono::steady_clock::now();
 /// The GLES library, for entry points eglGetProcAddress does not return.
@@ -65,6 +73,10 @@ namespace UVE::Window {
 
 GLFWwindow* AndroidGlfwWindowUVE() {
     return &g_windowUVE;
+}
+
+void SetAndroidGlfwActivityUVE(ANativeActivity* const activity) {
+    g_activityUVE = activity;
 }
 
 void SetAndroidGlfwSurfaceUVE(ANativeWindow* const surface) {
@@ -95,9 +107,44 @@ void DispatchAndroidGlfwPointerUVE(const AndroidPointerPhaseUVE phase, const flo
     const bool down = phase == AndroidPointerPhaseUVE::Down || phase == AndroidPointerPhaseUVE::Move;
     if (down != w.pressed) {
         w.pressed = down;
+        w.buttons[GLFW_MOUSE_BUTTON_LEFT] = down;
         if (w.mouseButton != nullptr) {
             w.mouseButton(&w, GLFW_MOUSE_BUTTON_LEFT, down ? GLFW_PRESS : GLFW_RELEASE, 0);
         }
+    }
+}
+
+void DispatchAndroidGlfwCursorUVE(const float x, const float y) {
+    GLFWwindow& w = g_windowUVE;
+    w.cursorX = x;
+    w.cursorY = y;
+    if (w.cursorPos != nullptr) {
+        w.cursorPos(&w, x, y);
+    }
+}
+
+void DispatchAndroidGlfwMouseButtonUVE(const int button, const bool down, const float x, const float y) {
+    if (button < 0 || button > GLFW_MOUSE_BUTTON_LAST) {
+        return;
+    }
+    DispatchAndroidGlfwCursorUVE(x, y);
+    GLFWwindow& w = g_windowUVE;
+    auto& held = w.buttons[static_cast<std::size_t>(button)];
+    if (held == down) {
+        return;
+    }
+    held = down;
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        w.pressed = down;
+    }
+    if (w.mouseButton != nullptr) {
+        w.mouseButton(&w, button, down ? GLFW_PRESS : GLFW_RELEASE, 0);
+    }
+}
+
+void DispatchAndroidGlfwScrollUVE(const float dy) {
+    if (g_windowUVE.scroll != nullptr) {
+        g_windowUVE.scroll(&g_windowUVE, 0.0, static_cast<double>(dy));
     }
 }
 
@@ -113,8 +160,24 @@ void DispatchAndroidGlfwKeyUVE(const int glfwKey, const int action, const int mo
     }
 }
 
+void SetAndroidGlfwTextInputUVE(const bool wanted) {
+    g_windowUVE.textInput = wanted;
+}
+
+bool AndroidGlfwTextInputWantedUVE() {
+    return g_windowUVE.textInput;
+}
+
 bool AndroidGlfwCloseRequestedUVE() {
     return g_windowUVE.shouldClose;
+}
+
+void ResetAndroidGlfwWindowUVE() {
+    GLFWwindow& w = g_windowUVE;
+    w.shouldClose = false;
+    w.pressed = false;
+    w.buttons.fill(false);
+    w.textInput = false;
 }
 
 } // namespace UVE::Window
@@ -215,12 +278,15 @@ void glfwDestroyCursor(GLFWcursor* const cursor) {
 }
 void glfwSetCursor(GLFWwindow*, GLFWcursor*) {}
 
-// shortcut: the clipboard is kept inside the app, not shared with other apps; use the Android
-// ClipboardManager through JNI when copying between apps is needed.
 void glfwSetClipboardString(GLFWwindow*, const char* const text) {
     g_clipboardUVE = text != nullptr ? text : "";
+    UVE::Window::WriteAndroidClipboardUVE(g_activityUVE, g_clipboardUVE.c_str());
 }
 const char* glfwGetClipboardString(GLFWwindow*) {
+    if (std::optional<std::string> systemText = UVE::Window::ReadAndroidClipboardUVE(g_activityUVE);
+        systemText.has_value()) {
+        g_clipboardUVE = std::move(*systemText);
+    }
     return g_clipboardUVE.c_str();
 }
 

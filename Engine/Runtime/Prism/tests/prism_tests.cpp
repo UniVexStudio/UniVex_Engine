@@ -99,7 +99,9 @@ static bool near(float a, float b, float eps = 0.51f) { return std::fabs(a - b) 
 class TestPlatform : public HeadlessPlatform {
 public:
   uint64_t nowMs() const override { return ms; }
+  bool singleSurface() const override { return single; }
   uint64_t ms = 0;
+  bool single = false;
 };
 
 static void testChords() {
@@ -3205,6 +3207,52 @@ static void testNarrowButtonClipping() {
   CHECK(!leakedOutside);
 }
 
+static void testTouchScrollViewDragAndButtonCancel(Application& app, TestPlatform& plat) {
+  SECTION("touch_scroll_drag_and_button_cancel");
+  plat.single = true;
+  app.hostResize(320, 120);
+
+  int clicks = 0;
+  auto list = vbox(4.0f);
+  Ref<Button> firstBtn;
+  for (int i = 0; i < 12; ++i) {
+    auto b = make<Button>("Item " + std::to_string(i));
+    b->setFixedHeight(32.0f);
+    b->onClick = [&] { ++clicks; };
+    if (i == 0) {
+      firstBtn = b;
+    }
+    list->add(b);
+  }
+  auto scroll = make<ScrollView>();
+  scroll->setContent(list);
+  app.setRoot(scroll);
+  app.tick();
+  app.render();
+
+  // 1. Short tap on button fires onClick and keeps scroll at top.
+  const Vec2 startPos = firstBtn->rect().center();
+  app.hostMouseMove(startPos);
+  app.hostMouseButton(startPos, MouseButton::Left, true);
+  app.hostMouseMove({startPos.x, startPos.y - 2.0f});
+  app.hostMouseButton({startPos.x, startPos.y - 2.0f}, MouseButton::Left, false);
+  CHECK(clicks == 1);
+  CHECK(scroll->scroll() < 1.0f);
+
+  // 2. Vertical drag starting on a button crosses slop, scrolls the list, and cancels onClick.
+  const Vec2 dragStart = {startPos.x, 90.0f};
+  app.hostMouseMove(dragStart);
+  app.hostMouseButton(dragStart, MouseButton::Left, true);
+  app.hostMouseMove({dragStart.x, dragStart.y - 20.0f});
+  app.hostMouseMove({dragStart.x, dragStart.y - 60.0f});
+  app.hostMouseButton({dragStart.x, dragStart.y - 60.0f}, MouseButton::Left, false);
+  CHECK(scroll->scroll() > 25.0f);
+  CHECK(clicks == 1);
+
+  plat.single = false;
+  app.hostResize(600, 400);
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -3223,6 +3271,7 @@ int main(int argc, char** argv) {
   testSmoothImageScaling();
   testTypedNumberField(app);
   testNarrowButtonClipping();
+  testTouchScrollViewDragAndButtonCancel(app, *plat);
   testDocking(app);
   testToastsAndTimers(app, *plat);
   testDrawList(app);

@@ -101,6 +101,8 @@ private:
 
 /// Appends minimize / maximize-restore / close for the window the buttons are in. `onClose`
 /// runs for the close button (the level editor quits; an asset editor asks to close its document).
-void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose);
+/// On one full-screen surface (phones) the main window (`mainWindow`) gets none and another window
+/// gets minimize and close.
+void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose, bool mainWindow = false);
 
 } // namespace UVE::Editor

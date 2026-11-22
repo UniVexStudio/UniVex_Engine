@@ -77,7 +77,7 @@ public:
   Cursor cursor() const override { return Cursor::Arrow; }
 
 private:
-  bool has(int b) const { return b == 2 || (b == 0 && m_o.minimize) || (b == 1 && m_o.maximize); }
+  bool has(int b) const { return (b == 2 && m_o.close) || (b == 0 && m_o.minimize) || (b == 1 && m_o.maximize); }
   Rect btnRect(int b) const {            // 0 minimize, 1 maximize / restore, 2 close (right-aligned)
     const float w = 36.0f, h = 22.0f, gap = 2.0f;
     int fromRight = 2 - b;

@@ -8,12 +8,15 @@
 
 #include <GLFW/glfw3.h>
 
+struct ANativeActivity;
 struct ANativeWindow;
 
 namespace UVE::Window {
 
 /// The one GLFW window, standing for the activity's surface.
 [[nodiscard]] GLFWwindow* AndroidGlfwWindowUVE();
+/// Binds the active Android activity so GLFW clipboard calls talk to Android's ClipboardManager.
+void SetAndroidGlfwActivityUVE(ANativeActivity* activity);
 /// The surface the window draws to (null while the activity has none).
 void SetAndroidGlfwSurfaceUVE(ANativeWindow* surface);
 void SetAndroidGlfwFocusUVE(bool focused);
@@ -23,12 +26,25 @@ void SetAndroidGlfwContentScaleUVE(float scale);
 enum class AndroidPointerPhaseUVE { Down, Move, Up, Cancel };
 /// A touch of the primary finger, in surface pixels.
 void DispatchAndroidGlfwPointerUVE(AndroidPointerPhaseUVE phase, float x, float y);
+/// The pointer moved to (x, y), in surface pixels, with no button change (gestures).
+void DispatchAndroidGlfwCursorUVE(float x, float y);
+/// A mouse button (GLFW_MOUSE_BUTTON_*) pressed or released at (x, y): what touch gestures stand for.
+void DispatchAndroidGlfwMouseButtonUVE(int button, bool down, float x, float y);
+/// A scroll of the mouse wheel by `dy` notches (a pinch).
+void DispatchAndroidGlfwScrollUVE(float dy);
 /// Text the soft keyboard typed (UTF-32 code point).
 void DispatchAndroidGlfwCharUVE(unsigned int codepoint);
 /// A key from the soft keyboard or a hardware keyboard, as a GLFW key code.
 void DispatchAndroidGlfwKeyUVE(int glfwKey, int action, int mods);
 
+/// The interface wants typed text (a text field has focus): the app shows the soft keyboard.
+void SetAndroidGlfwTextInputUVE(bool wanted);
+[[nodiscard]] bool AndroidGlfwTextInputWantedUVE();
+
 /// True once something called glfwSetWindowShouldClose on the window.
 [[nodiscard]] bool AndroidGlfwCloseRequestedUVE();
+/// Starts the window afresh for an app taking over the activity (the editor opened a second time
+/// from the Hub): no close request, no held buttons, no text input.
+void ResetAndroidGlfwWindowUVE();
 
 } // namespace UVE::Window

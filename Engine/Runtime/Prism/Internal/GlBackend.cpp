@@ -17,6 +17,23 @@ constexpr int kRedShift = 16;
 constexpr uint32_t kRedMask = 0x00FF0000U, kBlueMask = 0x000000FFU;
 } // namespace
 
+const char* glslHeaderFor(const char* glVersion) {
+  const bool es = glVersion && std::strncmp(glVersion, kEsVersionPrefix, std::strlen(kEsVersionPrefix)) == 0;
+  return es ? kEsGlslHeader : kDesktopGlslHeader;
+}
+
+std::string glslForContext(std::string_view source, const char* glVersion) {
+  constexpr std::string_view kVersionDirective = "#version";
+  const size_t start = source.find_first_not_of(" \t\r\n");
+  if (start != std::string_view::npos && source.substr(start).starts_with(kVersionDirective)) {
+    const size_t lineEnd = source.find('\n', start);
+    source = lineEnd == std::string_view::npos ? std::string_view{} : source.substr(lineEnd + 1);
+  }
+  std::string result(glslHeaderFor(glVersion));
+  result.append(source);
+  return result;
+}
+
 #define PRISM_GL_FUNCS(X)                                                                                                         \
   X(PFNGLVIEWPORTPROC, glViewport) X(PFNGLCLEARCOLORPROC, glClearColor) X(PFNGLCLEARPROC, glClear)                             \
   X(PFNGLENABLEPROC, glEnable) X(PFNGLDISABLEPROC, glDisable) X(PFNGLSCISSORPROC, glScissor)                                   \
@@ -54,6 +71,7 @@ struct GlBackend::Impl {
   std::vector<uint32_t> readbuf, flipped;
   size_t drawCalls = 0;
   bool es = false;
+  const char* glslHeader = kDesktopGlslHeader;
 
   bool load(Loader ld, std::string* err) {
 #define X(T, N) if (!(N = reinterpret_cast<T>(ld(#N)))) { if (err) *err = "missing GL function " #N; return false; }
@@ -63,7 +81,7 @@ struct GlBackend::Impl {
   }
   GLuint compile(GLenum type, const char* src, std::string* err) {
     GLuint s = glCreateShader(type);
-    const char* parts[] = {es ? kEsGlslHeader : kDesktopGlslHeader, src};
+    const char* parts[] = {glslHeader, src};
     glShaderSource(s, 2, parts, nullptr);
     glCompileShader(s);
     GLint ok = 0;
@@ -77,8 +95,10 @@ struct GlBackend::Impl {
     glGenTextures(1, &colorTex);
     glBindTexture(GL_TEXTURE_2D, colorTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex, 0);
@@ -116,7 +136,8 @@ std::shared_ptr<GlBackend> GlBackend::create(Loader loader, std::function<void()
   g.present = std::move(present);
   g.blit = blitToScreen;
   const auto* version = reinterpret_cast<const char*>(g.glGetString(GL_VERSION));
-  g.es = version && std::strncmp(version, kEsVersionPrefix, std::strlen(kEsVersionPrefix)) == 0;
+  g.glslHeader = glslHeaderFor(version);
+  g.es = g.glslHeader == kEsGlslHeader;
   GLuint vs = g.compile(GL_VERTEX_SHADER, kReferenceVertexGlsl, error);
   GLuint fs = vs ? g.compile(GL_FRAGMENT_SHADER, kReferenceFragmentGlsl, error) : 0;
   if (!vs || !fs) return nullptr;

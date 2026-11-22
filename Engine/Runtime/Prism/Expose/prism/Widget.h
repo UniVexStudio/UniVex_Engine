@@ -113,6 +113,7 @@ public:
 
   // Preview (Tunnel) Phase: Top-Down event routing
   virtual Reply onPreviewMouseDown(const MouseEvent&) { return Reply::unhandled(); }
+  virtual Reply onPreviewMouseMove(const MouseEvent&) { return Reply::unhandled(); }
   virtual Reply onPreviewMouseUp(const MouseEvent&) { return Reply::unhandled(); }
   virtual Reply onPreviewKeyDown(const KeyEvent&) { return Reply::unhandled(); }
 

@@ -4,12 +4,14 @@
 
     python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME" --build-dir build/android
 
-Each app in APPS names its UVBT target, manifest and the data it ships. The APK is signed with a
+Each app in APPS names its UVBT target, manifest and the data it ships; every app runs in the
+UniVexActivity compiled from JAVA_SOURCES, with the resources (launcher icon) under RESOURCES. The APK is signed with a
 local debug key (created on first use) unless --keystore is given.
 """
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -45,6 +47,15 @@ BUILT_IN_SHADERS = ("Engine", "Runtime", "RHI", "Shader", "built_in")
 # Lists every file under assets/ for apps that unpack their data at startup (AAssetManager cannot
 # list folders); read by the app's android_main.
 ASSET_INDEX = "asset-index.txt"
+# The activity every app runs in (UniVexActivity: full screen, display cutouts), compiled to dex.
+JAVA_SOURCES = ("Engine", "App", "Android", "java")
+JAVA_RELEASE = "11"
+DEX_FILE = "classes.dex"
+# Android resources every app ships: the launcher icon (written by Engine/Tools/brand/build_brand_assets.py).
+RESOURCES = ("Engine", "App", "Android", "res")
+COMPILED_RESOURCES = "resources.zip"
+HUB_VERSION_HEADER = ("Engine", "Runtime", "Online", "Expose", "hub_setup.h")
+ENGINE_VERSION_SOURCE = ("Engine", "Runtime", "Engine", "Internal", "engine_core.cpp")
 
 
 @dataclass(frozen=True)
@@ -75,6 +86,40 @@ APPS = {
 
 def run(*command):
     subprocess.run([str(part) for part in command], check=True)
+
+
+def parse_version_tuple(text: str) -> tuple[int, int, int, int]:
+    """Parses 'MAJOR.MINOR.PATCH[+build.BUILD]' into a 4-int tuple."""
+    match = re.match(r"^v?(\d+)\.(\d+)\.(\d+)(?:\+build\.(\d+)|\.(\d+))?$", text.strip())
+    if not match:
+        raise RuntimeError(f"Invalid version '{text}'; expected MAJOR.MINOR.PATCH[+build.BUILD]")
+    major, minor, patch, build_a, build_b = match.groups()
+    return int(major), int(minor), int(patch), int(build_a or build_b or 0)
+
+
+def read_source_version(app_name: str) -> tuple[int, int, int, int]:
+    """Reads the version tuple from hub_setup.h (hub) or engine_core.cpp (runtime)."""
+    if app_name == "hub":
+        source = REPO_ROOT.joinpath(*HUB_VERSION_HEADER).read_text(encoding="utf-8")
+        match = re.search(r"kHubVersionUVE\s*\{\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*\}", source)
+    else:
+        source = REPO_ROOT.joinpath(*ENGINE_VERSION_SOURCE).read_text(encoding="utf-8")
+        match = re.search(
+            r"GetEngineVersionUVE\s*\(\s*\)[^{]*\{\s*return\s+VersionUVE\s*\{\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*\}",
+            source,
+            re.DOTALL,
+        )
+    if not match:
+        raise RuntimeError(f"Could not read source version for Android app '{app_name}'")
+    return tuple(int(part) for part in match.groups())
+
+
+def android_version_metadata(version: tuple[int, int, int, int]) -> tuple[int, str]:
+    """Converts (major, minor, patch, build) to a monotonic Android versionCode and display versionName."""
+    major, minor, patch, build = version
+    version_code = max(1, major * 1_000_000 + minor * 10_000 + patch * 100 + build)
+    version_name = f"{major}.{minor}.{patch}" + (f"+build.{build}" if build else "")
+    return version_code, version_name
 
 
 def stage_cooked_project(manifest: Path, assets: Path, parser) -> list:
@@ -109,6 +154,23 @@ def stage_cooked_project(manifest: Path, assets: Path, parser) -> list:
     return lines
 
 
+def compile_java(build: Path, tools: Path, platform_jar: Path) -> Path:
+    """Compiles the activity's Java sources against the platform and converts them to one dex file."""
+    classes = build / "classes"
+    dex_dir = build / "dex"
+    for folder in (classes, dex_dir):
+        if folder.exists():
+            shutil.rmtree(folder)
+        folder.mkdir()
+    sources = sorted(REPO_ROOT.joinpath(*JAVA_SOURCES).rglob("*.java"))
+    if not sources:
+        raise RuntimeError("No Java sources for the activity under " + "/".join(JAVA_SOURCES))
+    run("javac", "--release", JAVA_RELEASE, "-Xlint:all", "-Werror", "-classpath", platform_jar, "-d", classes, *sources)
+    run(tools / "d8", "--release", "--min-api", uvbt.ANDROID_MIN_API_LEVEL, "--lib", platform_jar, "--output", dex_dir,
+        *sorted(classes.rglob("*.class")))
+    return dex_dir / DEX_FILE
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--sdk", type=Path, default=os.environ.get("ANDROID_HOME"), help="Android SDK (default: $ANDROID_HOME)")
@@ -117,6 +179,9 @@ def main():
     parser.add_argument("--abi", choices=sorted(uvbt.ANDROID_ABI_TRIPLES), default=uvbt.ANDROID_DEFAULT_ABI)
     parser.add_argument("--native-lib", type=Path, help="Use this prebuilt native library instead of building it")
     parser.add_argument("--cooked-project", type=Path, help="Cooked .uvproject to ship (runtime app)")
+    parser.add_argument("--version", help="Override APK version (MAJOR.MINOR.PATCH[+build.BUILD])")
+    parser.add_argument("--debuggable", action="store_true",
+                        help="Mark APK debuggable for CI emulator inspection (never use on release builds)")
     parser.add_argument("--keystore", type=Path, help="Release keystore; its passwords come from the "
                         "UVE_ANDROID_KEYSTORE_PASSWORD and UVE_ANDROID_KEY_ALIAS environment variables")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
@@ -128,12 +193,14 @@ def main():
     app = APPS[args.app]
     if args.cooked_project and not app.accepts_cooked_project:
         parser.error(f"the {args.app} app does not ship a cooked project")
+    version_tuple = parse_version_tuple(args.version) if args.version else read_source_version(args.app)
+    version_code, version_name = android_version_metadata(version_tuple)
 
     sdk = args.sdk.resolve()
     tools = sdk / "build-tools" / ANDROID_BUILD_TOOLS
     platform_jar = sdk / "platforms" / ANDROID_PLATFORM / "android.jar"
     ndk_bin = sdk / "ndk" / uvbt.ANDROID_NDK_VERSION / "toolchains" / "llvm" / "prebuilt" / uvbt.ANDROID_NDK_HOST_TAG / "bin"
-    for required in (tools / "aapt2", platform_jar, ndk_bin / "llvm-strip"):
+    for required in (tools / "aapt2", tools / "d8", platform_jar, ndk_bin / "llvm-strip"):
         if not required.is_file():
             parser.error(f"Missing Android tool: {required}")
 
@@ -166,13 +233,25 @@ def main():
         names = sorted(f.relative_to(assets).as_posix() for f in assets.rglob("*") if f.is_file())
         (assets / ASSET_INDEX).write_text("\n".join(names) + "\n", encoding="utf-8")
 
+    dex = compile_java(build, tools, platform_jar)
+    resources = build / COMPILED_RESOURCES
+    run(tools / "aapt2", "compile", "--dir", REPO_ROOT.joinpath(*RESOURCES), "-o", resources)
+
     unsigned = build / "unsigned.apk"
-    run(tools / "aapt2", "link", "-I", platform_jar, "--manifest", REPO_ROOT.joinpath(*app.manifest), "-A", assets,
-        "-o", unsigned)
+    aapt2_link = [
+        tools / "aapt2", "link", "-I", platform_jar, "--manifest", REPO_ROOT.joinpath(*app.manifest),
+        "-A", assets, "-R", resources, "--auto-add-overlay",
+        "--version-code", str(version_code), "--version-name", version_name,
+    ]
+    if args.debuggable:
+        aapt2_link.append("--debug-mode")
+    aapt2_link += ["-o", unsigned]
+    run(*aapt2_link)
     stripped = build / f"lib{app.library}.so"
     shutil.copy2(library, stripped)
     run(ndk_bin / "llvm-strip", "--strip-unneeded", stripped)
     with zipfile.ZipFile(unsigned, "a", compression=zipfile.ZIP_STORED) as package:
+        package.write(dex, DEX_FILE)
         # The C++ runtime is linked statically, so the library is the only native file.
         package.write(stripped, f"lib/{args.abi}/lib{app.library}.so")
         # aapt2 leaves out dotfiles (such as the .uvassetdb catalog); add whatever it skipped.
