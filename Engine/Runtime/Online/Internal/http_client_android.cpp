@@ -109,7 +109,7 @@ public:
             body.append(data, size);
             return true;
         }, nullptr);
-        if (response.reached) {
+        if (response.IsSuccessUVE()) {
             response.body = std::move(body);
         }
         return response;
@@ -157,6 +157,7 @@ private:
         }
         jmethodID urlFromString = env->GetMethodID(urlClass, "<init>", "(Ljava/lang/String;)V");
         jmethodID urlRelative = env->GetMethodID(urlClass, "<init>", "(Ljava/net/URL;Ljava/lang/String;)V");
+        jmethodID urlToString = env->GetMethodID(urlClass, "toString", "()Ljava/lang/String;");
         jmethodID urlProtocol = env->GetMethodID(urlClass, "getProtocol", "()Ljava/lang/String;");
         jmethodID urlHost = env->GetMethodID(urlClass, "getHost", "()Ljava/lang/String;");
         jmethodID openConnection = env->GetMethodID(urlClass, "openConnection", "()Ljava/net/URLConnection;");
@@ -178,10 +179,13 @@ private:
         }
 
         const auto stallMs = static_cast<jint>(std::chrono::duration_cast<std::chrono::milliseconds>(request.stallTimeout).count());
-        jobject url = env->NewObject(urlClass, urlFromString, env->NewStringUTF(request.url.c_str()));
+        std::string currentUrl = request.url;
         std::string originalHost;
         for (int redirect = 0; redirect <= kMaximumRedirectsUVE; ++redirect) {
-            if (env->ExceptionCheck()) {
+            // Each redirect hop gets its own local reference frame so ART's 64-ref table cannot overflow.
+            const LocalFrameUVE hopFrame(env, kLocalReferencesPerRequestUVE);
+            jobject url = env->NewObject(urlClass, urlFromString, env->NewStringUTF(currentUrl.c_str()));
+            if (env->ExceptionCheck() || url == nullptr) {
                 response.error = TakeExceptionUVE(env);
                 return response;
             }
@@ -199,15 +203,37 @@ private:
                 response.error = TakeExceptionUVE(env);
                 return response;
             }
+            // Every call can throw; JNI must not be used again while an exception is pending.
+            const auto failed = [&] {
+                if (!env->ExceptionCheck()) {
+                    return false;
+                }
+                response.error = TakeExceptionUVE(env);
+                env->CallVoidMethod(connection, disconnect);
+                env->ExceptionClear();
+                return true;
+            };
             env->CallVoidMethod(connection, setFollow, JNI_FALSE);
+            if (failed()) {
+                return response;
+            }
             env->CallVoidMethod(connection, setConnectTimeout, static_cast<jint>(kConnectTimeoutUVE.count()));
+            if (failed()) {
+                return response;
+            }
             env->CallVoidMethod(connection, setReadTimeout, stallMs);
+            if (failed()) {
+                return response;
+            }
             for (const HttpHeaderUVE& header : request.headers) {
                 if (host != originalHost && header.name == kAuthorizationHeaderUVE) {
                     continue;
                 }
                 env->CallVoidMethod(connection, setProperty, env->NewStringUTF(header.name.c_str()),
                                     env->NewStringUTF(header.value.c_str()));
+                if (failed()) {
+                    return response;
+                }
             }
             const jint status = env->CallIntMethod(connection, responseCode);
             if (env->ExceptionCheck()) {
@@ -224,7 +250,12 @@ private:
                     response.error = "A redirect had no location.";
                     return response;
                 }
-                url = env->NewObject(urlClass, urlRelative, url, env->NewStringUTF(location.c_str()));
+                jobject resolved = env->NewObject(urlClass, urlRelative, url, env->NewStringUTF(location.c_str()));
+                if (env->ExceptionCheck() || resolved == nullptr) {
+                    response.error = TakeExceptionUVE(env);
+                    return response;
+                }
+                currentUrl = ToStringUVE(env, static_cast<jstring>(env->CallObjectMethod(resolved, urlToString)));
                 continue;
             }
 

@@ -4,10 +4,14 @@
 #include "prism/Canvas.h"
 #include "prism/GlBackend.h"
 #include "prism/Icons.h"
+#include "logging_macros.h"
 #include "png_metadata.h"
 
 #include "gl_system_headers.h"
 #include <GLFW/glfw3.h>
+#if defined(__ANDROID__)
+#include "android_glfw.h"
+#endif
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <windows.h>
@@ -41,6 +45,15 @@ using ViewCursorUVE = EditorViewportInputUVE::CursorUVE;
 constexpr double kDoubleClickSecondsUVE = 0.4;
 constexpr float kDoubleClickSlopUVE = 4.0F;
 constexpr float kResizeBorderUVE = 5.0F;
+/// Platforms with one full-screen surface and no OS windows: every extra window is a page over the
+/// main one.
+#if defined(__ANDROID__)
+constexpr bool kSingleSurfaceUVE = true;
+#else
+constexpr bool kSingleSurfaceUVE = false;
+#endif
+/// Bytes kept of a compositor shader or program info log.
+constexpr std::size_t kShaderLogCapacityUVE = 1024;
 
 [[nodiscard]] prism::Key ToPrismKeyUVE(const int key) {
     if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
@@ -147,6 +160,22 @@ void AppendUtf8UVE(std::string& out, const char32_t cp) {
     return reinterpret_cast<void*>(glfwGetProcAddress(name));
 }
 
+/// Logical UI scale: 1.0 on desktop (pixel-exact), or the display density scale on single-surface
+/// mobile screens, clamped so the shorter logical edge stays at least 360 layout units wide.
+[[nodiscard]] float ComputeUiScaleUVE(GLFWwindow* const window, const int fbWidth, const int fbHeight,
+                                      const bool singleSurface) {
+    if (!singleSurface || window == nullptr || fbWidth <= 0 || fbHeight <= 0) {
+        return 1.0F;
+    }
+    float sx = 1.0F;
+    float sy = 1.0F;
+    glfwGetWindowContentScale(window, &sx, &sy);
+    const float rawScale = std::isfinite(sx) && sx > 0.0F ? sx : 1.0F;
+    constexpr float kMinLogicalShortEdgeUVE = 360.0F;
+    const float maxScale = std::max(1.0F, static_cast<float>(std::min(fbWidth, fbHeight)) / kMinLogicalShortEdgeUVE);
+    return std::clamp(rawScale, 1.0F, maxScale);
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------------------- window
@@ -159,8 +188,14 @@ struct EditorHostUVE::WindowUVE final {
     GLFWwindow* window = nullptr;
     int fbWidth = 1;
     int fbHeight = 1;
+    int uiWidth = 1;
+    int uiHeight = 1;
+    float uiScale = 1.0F;
     std::map<int, prism::Rect> captions;
     bool closeRequested = false;
+    /// A page on the main surface (single-surface platforms) rather than an OS window of its own.
+    bool page = false;
+    bool pageHidden = false;
     int dragOverWindow = -1;  ///< the other window a PRISM drag from this one is over (-1: none)
 
     // A secondary window's own UI renderer (its texture lives in the main context) and the
@@ -245,8 +280,13 @@ public:
         m_uiCursor[window] = c;
         ApplyCursorUVE(window, m_cursors[static_cast<int>(c)]);
     }
-    void setTextInputActive(const bool active) override { m_textInput = active; }
-    float dpiScale() const override { return 1.0F; }
+    void setTextInputActive(const bool active) override {
+        m_textInput = active;
+#if defined(__ANDROID__)
+        Window::SetAndroidGlfwTextInputUVE(active);   // the app shows or hides the soft keyboard
+#endif
+    }
+    float dpiScale() const override { return m_host.m_main != nullptr ? m_host.m_main->uiScale : 1.0F; }
     void requestQuit() override { glfwSetWindowShouldClose(m_window, GLFW_TRUE); }
     void* nativeWindowHandle() const override { return m_window; }
     /// Drag areas: id < kExtraCaptionIdUVE is a window's title strip (the window's own id); ids
@@ -259,13 +299,18 @@ public:
     }
     void minimizeWindow(const int id) override {
         if (WindowUVE* w = m_host.FindUVE(id)) {
-            glfwIconifyWindow(w->window);
+            if (w->page) {
+                m_host.HidePageUVE(id);
+            } else {
+                glfwIconifyWindow(w->window);
+            }
         }
     }
+    bool singleSurface() const override { return m_host.m_singleSurface; }
     void toggleMaximizeWindow(const int id) override {
         WindowUVE* w = m_host.FindUVE(id);
-        if (w == nullptr) {
-            return;
+        if (w == nullptr || w->page || (id == kMainWindowUVE && m_host.m_singleSurface)) {
+            return;   // a page and a single surface always fill the screen
         }
         if (glfwGetWindowAttrib(w->window, GLFW_MAXIMIZED) != 0) {
             glfwRestoreWindow(w->window);
@@ -353,8 +398,12 @@ struct EditorHostUVE::CompositorUVE final {
     PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
     PFNGLACTIVETEXTUREPROC glActiveTexture = nullptr;
     PFNGLBLENDFUNCSEPARATEPROC glBlendFuncSeparate = nullptr;
+    PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog = nullptr;
+    PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog = nullptr;
 
     GLuint program = 0;
+    /// GLSL header of the current context (desktop core or GLES), put before each shader source.
+    const char* glslHeader = nullptr;
     GLuint vao = 0;
     GLint rectLoc = -1;
     GLint uvLoc = -1;
@@ -388,11 +437,16 @@ struct EditorHostUVE::CompositorUVE final {
         ok &= LoadUVE(glBindFramebuffer, "glBindFramebuffer");
         ok &= LoadUVE(glActiveTexture, "glActiveTexture");
         ok &= LoadUVE(glBlendFuncSeparate, "glBlendFuncSeparate");
+        ok &= LoadUVE(glGetShaderInfoLog, "glGetShaderInfoLog");
+        ok &= LoadUVE(glGetProgramInfoLog, "glGetProgramInfoLog");
         if (!ok) {
+            UVE_ERROR("Editor host: the GL context lacks a function the compositor needs");
             return false;
         }
+        glslHeader = prism::glslHeaderFor(reinterpret_cast<const char*>(glGetString(GL_VERSION)));
         // A quad from gl_VertexID: uRect = NDC (x0, y0, x1, y1), uUv = texture (u0, v0, u1, v1).
-        static const char* const kVertex = R"(#version 330 core
+        // No #version line: CompileUVE puts the context's header first (desktop core or GLES).
+        static const char* const kVertex = R"(
 uniform vec4 uRect;
 uniform vec4 uUv;
 out vec2 vUv;
@@ -401,7 +455,7 @@ void main() {
     gl_Position = vec4(mix(uRect.xy, uRect.zw, corner), 0.0, 1.0);
     vUv = mix(uUv.xy, uUv.zw, corner);
 })";
-        static const char* const kFragment = R"(#version 330 core
+        static const char* const kFragment = R"(
 uniform sampler2D uTex;
 in vec2 vUv;
 out vec4 fragColor;
@@ -420,6 +474,9 @@ void main() { fragColor = texture(uTex, vUv); })";
         GLint linked = 0;
         glGetProgramiv(program, GL_LINK_STATUS, &linked);
         if (linked == 0) {
+            std::array<char, kShaderLogCapacityUVE> log{};
+            glGetProgramInfoLog(program, static_cast<GLsizei>(log.size()), nullptr, log.data());
+            UVE_ERROR("Editor host: the compositor program did not link: {}", log.data());
             glDeleteProgram(program);
             program = 0;
             return false;
@@ -433,11 +490,15 @@ void main() { fragColor = texture(uTex, vUv); })";
 
     [[nodiscard]] GLuint CompileUVE(const GLenum type, const char* source) {
         const GLuint shader = glCreateShader(type);
-        glShaderSource(shader, 1, &source, nullptr);
+        const std::array<const char*, 2> parts{glslHeader, source};
+        glShaderSource(shader, static_cast<GLsizei>(parts.size()), parts.data(), nullptr);
         glCompileShader(shader);
         GLint compiled = 0;
         glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
         if (compiled == 0) {
+            std::array<char, kShaderLogCapacityUVE> log{};
+            glGetShaderInfoLog(shader, static_cast<GLsizei>(log.size()), nullptr, log.data());
+            UVE_ERROR("Editor host: a compositor shader did not compile: {}", log.data());
             glDeleteShader(shader);
             return 0;
         }
@@ -483,13 +544,34 @@ struct EditorHostUVE::ChainUVE final {
     [[nodiscard]] static EditorHostUVE::WindowUVE* MainUVE() {
         return g_activeHostUVE != nullptr ? g_activeHostUVE->m_main.get() : nullptr;
     }
+    /// On a single surface the page on screen takes the main window's input; runs `fn` on it (in its
+    /// scope) and returns true, or false when the main window has the screen.
+    template <typename F>
+    [[nodiscard]] static bool ToPageUVE(F&& fn) {
+        WindowUVE* const page = g_activeHostUVE != nullptr ? g_activeHostUVE->VisiblePageUVE() : nullptr;
+        if (page == nullptr) {
+            return false;
+        }
+        if (page->scope) {
+            page->scope(std::function<void()>([&fn, page] { fn(*page); }));
+        } else {
+            fn(*page);
+        }
+        return true;
+    }
     static void CursorPosUVE(GLFWwindow* w, const double x, const double y) {
+        if (ToPageUVE([x, y](WindowUVE& page) { g_activeHostUVE->OnCursorPosUVE(page, x, y); })) {
+            return;
+        }
         if (WindowUVE* main = MainUVE()) {
             if (g_activeHostUVE->m_chain->cursorPos != nullptr) { g_activeHostUVE->m_chain->cursorPos(w, x, y); }
             g_activeHostUVE->OnCursorPosUVE(*main, x, y);
         }
     }
     static void MouseButtonUVE(GLFWwindow* w, const int button, const int action, const int mods) {
+        if (ToPageUVE([=](WindowUVE& page) { g_activeHostUVE->OnMouseButtonUVE(page, button, action, mods); })) {
+            return;
+        }
         if (WindowUVE* main = MainUVE()) {
             if (g_activeHostUVE->m_chain->mouseButton != nullptr) {
                 g_activeHostUVE->m_chain->mouseButton(w, button, action, mods);
@@ -498,18 +580,27 @@ struct EditorHostUVE::ChainUVE final {
         }
     }
     static void ScrollUVE(GLFWwindow* w, const double dx, const double dy) {
+        if (ToPageUVE([=](WindowUVE& page) { g_activeHostUVE->OnScrollUVE(page, dx, dy); })) {
+            return;
+        }
         if (WindowUVE* main = MainUVE()) {
             if (g_activeHostUVE->m_chain->scroll != nullptr) { g_activeHostUVE->m_chain->scroll(w, dx, dy); }
             g_activeHostUVE->OnScrollUVE(*main, dx, dy);
         }
     }
     static void KeyUVE(GLFWwindow* w, const int key, const int scancode, const int action, const int mods) {
+        if (ToPageUVE([=](WindowUVE& page) { g_activeHostUVE->OnKeyUVE(page, key, scancode, action, mods); })) {
+            return;
+        }
         if (WindowUVE* main = MainUVE()) {
             if (g_activeHostUVE->m_chain->key != nullptr) { g_activeHostUVE->m_chain->key(w, key, scancode, action, mods); }
             g_activeHostUVE->OnKeyUVE(*main, key, scancode, action, mods);
         }
     }
     static void CharUVE(GLFWwindow* w, const unsigned int codepoint) {
+        if (ToPageUVE([=](WindowUVE& page) { g_activeHostUVE->OnCharUVE(page, codepoint); })) {
+            return;
+        }
         if (WindowUVE* main = MainUVE()) {
             if (g_activeHostUVE->m_chain->character != nullptr) { g_activeHostUVE->m_chain->character(w, codepoint); }
             g_activeHostUVE->OnCharUVE(*main, codepoint);
@@ -625,15 +716,19 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
     m_main->host = this;
     m_main->id = kMainWindowUVE;
     m_main->window = window;
+    m_singleSurface = kSingleSurfaceUVE;
     glfwGetFramebufferSize(window, &m_main->fbWidth, &m_main->fbHeight);
     m_main->fbWidth = std::max(1, m_main->fbWidth);
     m_main->fbHeight = std::max(1, m_main->fbHeight);
+    m_main->uiScale = ComputeUiScaleUVE(window, m_main->fbWidth, m_main->fbHeight, m_singleSurface);
+    m_main->uiWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(m_main->fbWidth) / m_main->uiScale)));
+    m_main->uiHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(m_main->fbHeight) / m_main->uiScale)));
 
     m_platform = std::make_shared<PlatformUVE>(*this, window);
     m_app = std::make_unique<prism::Application>();
     prism::HostDesc desc{};
-    desc.width = m_main->fbWidth;
-    desc.height = m_main->fbHeight;
+    desc.width = m_main->uiWidth;
+    desc.height = m_main->uiHeight;
     desc.assetDir = assetDir.string();
     if (!m_app->initHosted(desc, m_platform)) {
         m_app.reset();
@@ -728,6 +823,42 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
     if (!m_ready || root == nullptr) {
         return 0;
     }
+    if (m_singleSurface) {
+        // A page over the main window: the same surface and context, the full screen, and the main
+        // window's input while it is on top.
+        auto w = std::make_unique<WindowUVE>();
+        w->host = this;
+        w->window = m_main->window;
+        w->page = true;
+        w->fbWidth = m_main->fbWidth;
+        w->fbHeight = m_main->fbHeight;
+        w->uiScale = m_main->uiScale;
+        w->uiWidth = m_main->uiWidth;
+        w->uiHeight = m_main->uiHeight;
+        std::string error;
+        w->backend = prism::GlBackend::create(&GlLoaderUVE, {}, /*blitToScreen*/ false, &error);
+        if (w->backend == nullptr) {
+            UVE_ERROR("Editor host: no renderer for the page {}: {}", title, error);
+            return 0;
+        }
+        w->backend->resize(w->uiWidth, w->uiHeight);
+        prism::OsWindowDesc desc{};
+        desc.title = title;
+        desc.width = w->uiWidth;
+        desc.height = w->uiHeight;
+        const int id = m_app->openWindow(std::move(root), desc);
+        if (id == 0) {
+            return 0;
+        }
+        w->id = id;
+        w->mouse = m_main->mouse;
+        w->frameStartMouse = m_main->mouse;
+        w->lastFrameTime = glfwGetTime();
+        m_app->windowResize(id, w->uiWidth, w->uiHeight);
+        m_windows.emplace(id, std::move(w));
+        ShowPageUVE(id);
+        return id;
+    }
     GLFWwindow* const main = m_main->window;
     // The same kind of context as the main window, sharing its objects: textures rendered there
     // (the UI, the engine views) are drawn here.
@@ -751,6 +882,9 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
     glfwGetFramebufferSize(window, &w->fbWidth, &w->fbHeight);
     w->fbWidth = std::max(1, w->fbWidth);
     w->fbHeight = std::max(1, w->fbHeight);
+    w->uiScale = 1.0F;
+    w->uiWidth = w->fbWidth;
+    w->uiHeight = w->fbHeight;
     std::string error;
     w->backend = prism::GlBackend::create(&GlLoaderUVE, {}, /*blitToScreen*/ false, &error);
     if (w->backend == nullptr) {
@@ -800,6 +934,17 @@ void EditorHostUVE::CloseWindowUVE(const int id) {
     m_windows.erase(it);
     m_app->closeWindow(id);
     m_platform->ForgetWindowUVE(id);
+    if (w->page) {
+        // The main surface stays; the page only had its own UI renderer.
+        m_pageOrder.erase(std::remove(m_pageOrder.begin(), m_pageOrder.end(), id), m_pageOrder.end());
+        w->backend.reset();
+        if (WindowUVE* const shown = VisiblePageUVE()) {
+            m_app->activateWindow(shown->id);
+        } else {
+            m_app->activateWindow(kMainWindowUVE);
+        }
+        return;
+    }
     if (w->vao != 0) {
         // The vertex array belongs to that window's context.
         glfwMakeContextCurrent(w->window);
@@ -838,6 +983,10 @@ void EditorHostUVE::FocusWindowUVE(const int id) {
     if (w == nullptr) {
         return;
     }
+    if (w->page) {
+        ShowPageUVE(id);
+        return;
+    }
     m_app->activateWindow(id);
     if (glfwGetWindowAttrib(w->window, GLFW_FOCUSED) == 0) {
         glfwShowWindow(w->window);
@@ -849,8 +998,8 @@ prism::Vec2 EditorHostUVE::ToUiUVE(const WindowUVE& w, const double x, const dou
     int winW = 0;
     int winH = 0;
     glfwGetWindowSize(w.window, &winW, &winH);
-    const float sx = winW > 0 ? static_cast<float>(w.fbWidth) / static_cast<float>(winW) : 1.0F;
-    const float sy = winH > 0 ? static_cast<float>(w.fbHeight) / static_cast<float>(winH) : 1.0F;
+    const float sx = winW > 0 ? static_cast<float>(w.uiWidth) / static_cast<float>(winW) : 1.0F;
+    const float sy = winH > 0 ? static_cast<float>(w.uiHeight) / static_cast<float>(winH) : 1.0F;
     return prism::Vec2{static_cast<float>(x) * sx, static_cast<float>(y) * sy};
 }
 
@@ -904,16 +1053,23 @@ void EditorHostUVE::SyncSizeUVE(WindowUVE& w) {
     if (width <= 0 || height <= 0) {
         return; // minimized
     }
-    if (width != w.fbWidth || height != w.fbHeight) {
+    const float scale = ComputeUiScaleUVE(w.window, width, height, m_singleSurface);
+    const int uiWidth = std::max(1, static_cast<int>(std::lround(static_cast<float>(width) / scale)));
+    const int uiHeight = std::max(1, static_cast<int>(std::lround(static_cast<float>(height) / scale)));
+    if (width != w.fbWidth || height != w.fbHeight || uiWidth != w.uiWidth || uiHeight != w.uiHeight ||
+        std::abs(scale - w.uiScale) > 0.001F) {
         w.fbWidth = width;
         w.fbHeight = height;
-        m_app->windowResize(w.id, width, height);
+        w.uiScale = scale;
+        w.uiWidth = uiWidth;
+        w.uiHeight = uiHeight;
+        m_app->windowResize(w.id, uiWidth, uiHeight);
         if (w.id == kMainWindowUVE) {
             if (m_backend != nullptr) {
-                m_backend->resize(width, height);
+                m_backend->resize(uiWidth, uiHeight);
             }
         } else if (w.backend != nullptr) {
-            w.backend->resize(width, height);
+            w.backend->resize(uiWidth, uiHeight);
         }
     }
 }
@@ -1001,14 +1157,20 @@ void EditorHostUVE::CompositeUVE(WindowUVE& w, const std::uint32_t uiTexture, co
     c.glActiveTexture(GL_TEXTURE0);
     c.glUniform1i(c.texLoc, 0);
     glDisable(GL_BLEND);
+    const float scaleX = w.uiWidth > 0 ? static_cast<float>(w.fbWidth) / static_cast<float>(w.uiWidth) : 1.0F;
+    const float scaleY = w.uiHeight > 0 ? static_cast<float>(w.fbHeight) / static_cast<float>(w.uiHeight) : 1.0F;
+    const bool scaledUi = w.uiWidth != w.fbWidth || w.uiHeight != w.fbHeight;
     for (const ViewImageUVE& view : views) {
         if (view.texture == 0U || view.rect.w <= 0.0F || view.rect.h <= 0.0F) {
             continue;
         }
         const float u1 = view.textureWidth > 0.0F ? view.usedWidth / view.textureWidth : 1.0F;
         const float v1 = view.textureHeight > 0.0F ? view.usedHeight / view.textureHeight : 1.0F;
-        const prism::Rect shown{view.rect.x, view.rect.y, std::min(view.rect.w, view.usedWidth),
-                                std::min(view.rect.h, view.usedHeight)};
+        const prism::Rect shown = scaledUi
+                                      ? prism::Rect{view.rect.x * scaleX, view.rect.y * scaleY, view.rect.w * scaleX,
+                                                    view.rect.h * scaleY}
+                                      : prism::Rect{view.rect.x, view.rect.y, std::min(view.rect.w, view.usedWidth),
+                                                    std::min(view.rect.h, view.usedHeight)};
         c.DrawUVE(view.texture, shown, w.fbWidth, w.fbHeight, u1, v1);
     }
     glEnable(GL_BLEND);
@@ -1054,6 +1216,15 @@ void EditorHostUVE::RenderWindowUVE(const int id, const std::span<const ViewImag
         return;
     }
     WindowUVE& w = *found;
+    if (w.page) {
+        // Only the page on screen is drawn, over the main window on the shared surface.
+        if (VisiblePageUVE() == &w) {
+            m_app->renderWindowTo(id, *w.backend);
+            CompositeUVE(w, w.backend->colorTexture(), m_compositor->vao, views);
+        }
+        EndInputFrameUVE(w);
+        return;
+    }
     if (glfwGetWindowAttrib(w.window, GLFW_ICONIFIED) != 0) {
         EndInputFrameUVE(w);
         return;
@@ -1073,8 +1244,46 @@ void EditorHostUVE::RenderWindowUVE(const int id, const std::span<const ViewImag
     EndInputFrameUVE(w);
 }
 
+EditorHostUVE::WindowUVE* EditorHostUVE::VisiblePageUVE() const {
+    for (auto order = m_pageOrder.rbegin(); order != m_pageOrder.rend(); ++order) {
+        const auto found = m_windows.find(*order);
+        if (found != m_windows.end() && !found->second->pageHidden) {
+            return found->second.get();
+        }
+    }
+    return nullptr;
+}
+
+void EditorHostUVE::ShowPageUVE(const int id) {
+    WindowUVE* const w = FindUVE(id);
+    if (w == nullptr || !w->page) {
+        return;
+    }
+    w->pageHidden = false;
+    m_pageOrder.erase(std::remove(m_pageOrder.begin(), m_pageOrder.end(), id), m_pageOrder.end());
+    m_pageOrder.push_back(id);
+    m_app->activateWindow(id);
+}
+
+void EditorHostUVE::HidePageUVE(const int id) {
+    WindowUVE* const w = FindUVE(id);
+    if (w == nullptr || !w->page) {
+        return;
+    }
+    w->pageHidden = true;
+    w->down.fill(false);
+    if (WindowUVE* const shown = VisiblePageUVE()) {
+        m_app->activateWindow(shown->id);
+    } else {
+        m_app->activateWindow(kMainWindowUVE);
+    }
+}
+
 bool EditorHostUVE::IsWindowFocusedUVE(const int id) const {
     const auto found = m_windows.find(id);
+    if (m_ready && found != m_windows.end() && found->second->page) {
+        return VisiblePageUVE() == found->second.get() && glfwGetWindowAttrib(m_main->window, GLFW_FOCUSED) != 0;
+    }
     return m_ready && found != m_windows.end() && found->second->window != nullptr &&
            glfwGetWindowAttrib(found->second->window, GLFW_FOCUSED) != 0;
 }

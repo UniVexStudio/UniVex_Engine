@@ -116,6 +116,9 @@ public:
   void arrange(Rect r) override;
   void paint(Canvas& c) override;
   Widget* hitTest(Vec2 p) override;
+  Reply onPreviewMouseDown(const MouseEvent& e) override;
+  Reply onPreviewMouseMove(const MouseEvent& e) override;
+  Reply onPreviewMouseUp(const MouseEvent& e) override;
   bool onMouseDown(const MouseEvent& e) override;
   bool onMouseMove(const MouseEvent& e) override;
   bool onMouseUp(const MouseEvent& e) override;
@@ -125,6 +128,10 @@ private:
   Ref<Widget> m_content;
   float m_scroll = 0, m_contentH = 0;
   bool m_toEnd = false;
+  bool m_touchArmed = false;
+  bool m_touchDragging = false;
+  float m_touchStartY = 0.0f;
+  float m_touchLastY = 0.0f;
   VScrollbar m_bar;
 };
 

@@ -42,6 +42,9 @@ public:
   virtual void minimizeWindow(int id) { (void)id; }
   virtual void toggleMaximizeWindow(int id) { (void)id; }
   virtual bool windowMaximized(int id) const { (void)id; return false; }
+  // True when every window shares one full-screen surface (phones): the main window cannot be minimized, resized
+  // or closed from its title bar, and another window shows as a page over it, which minimize hides and close ends.
+  virtual bool singleSurface() const { return false; }
 };
 
 // Platform with no OS access: monotonic clock, in-memory clipboard, records the cursor and text state.

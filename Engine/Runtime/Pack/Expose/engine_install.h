@@ -12,8 +12,13 @@
 
 namespace UVE::Pack {
 
-/// File stem of the editor executable inside an engine installation.
+/// File stem of the editor executable inside an engine installation. On Android, where an app runs
+/// no second program, the file of that name is the editor as a shared library, which the Hub loads
+/// and calls through kEditorAndroidEntryPointUVE.
 inline constexpr std::string_view kEditorExecutableStemUVE = "uve_editor";
+/// The C function an Android editor library exports:
+/// int UveEditorRunUVE(android_app* app, int argc, char** argv), which returns the editor's exit code.
+inline constexpr std::string_view kEditorAndroidEntryPointUVE = "UveEditorRunUVE";
 /// Editor options a launcher passes; they match the editor's own command line.
 inline constexpr std::string_view kEditorProjectOptionUVE = "--project";
 inline constexpr std::string_view kEditorProjectRegistryOptionUVE = "--project-registry";

@@ -28,6 +28,9 @@ struct LauncherWindowDescUVE final {
     /// Whether the title bar repeats the mark and title. Launchers keep it clean: their own content
     /// already shows the brand, so the bar holds only the drag strip and the window buttons.
     bool showTitleInChrome = false;
+    /// Whether to draw the title bar and window buttons at all. Off where the system owns the window
+    /// (Android runs full screen), so the content fills the screen.
+    bool windowChrome = true;
     std::uint32_t width = 0U;
     std::uint32_t height = 0U;
     /// PRISM's fonts, themes and locales (normally kPrismAssetsDirectoryNameUVE beside the executable).
@@ -41,14 +44,17 @@ struct LauncherWindowDescUVE final {
     /// Runs before every frame with the running engine; returning false ends the loop. Android drives
     /// the activity's event queue here.
     std::function<bool(Core::EngineCoreUVE&)> beforeFrame;
+    /// Edges of the surface the interface keeps clear (display cutouts), in surface pixels; checked
+    /// every frame. The background still reaches the screen's edges.
+    std::function<prism::Margin()> safeArea;
     /// Automation: stop after this many frames, then save the window to `screenshot` if set.
     std::optional<int> frameLimit;
     std::filesystem::path screenshot;
 };
 
-/// Opens a borderless window with PRISM's own title bar in the shared UniVex palette, shows the
-/// widget tree `buildRoot` returns, and runs until the window closes. `tick` runs once a frame before
-/// the interface is drawn. Returns the process exit code.
+/// Opens a borderless window with PRISM's own title bar (unless `windowChrome` is off) in the shared
+/// UniVex palette, shows the widget tree `buildRoot` returns, and runs until the window closes.
+/// `tick` runs once a frame before the interface is drawn. Returns the process exit code.
 [[nodiscard]] int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
                                        const std::function<prism::Ref<prism::Widget>()>& buildRoot,
                                        const std::function<void()>& tick);

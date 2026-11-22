@@ -8,8 +8,12 @@ Every push to `master` is a development release, and a tag `v<version>` is a ver
 Every job builds as on any check; the Hub and Release jobs then package what they built, and
 **Publish the release** puts everything into one GitHub Release:
 
-- `univex-engine-<version>-<linux|windows>.uvpackage` - the engine, per platform
-- `UniVexHubSetup-<hub version>-<linux|windows>` - the Hub installers
+- `univex-engine-<version>-<linux|windows|android>.uvpackage` - the engine, per platform. The
+  Android package is the editor as a library (`uve_editor`), which UniVex Hub on Android loads to
+  open a project; Release / Android builds it and Publish packages it with the release's tag
+- `UniVexHubSetup-<hub version>-<linux|windows>` - the Hub installers: on Windows a setup wizard
+  (Inno Setup, `Engine/Distribution/windows/UniVexHub.iss`), which Hub / Windows installs, starts
+  and uninstalls on every run with only Windows' own folders on `PATH`
 - `UniVexHub-<hub version>-android-<abi>.apk` - the Hub for Android
 
 each with a `.sha256` beside it. The files travel between jobs as artifacts, which are deleted once

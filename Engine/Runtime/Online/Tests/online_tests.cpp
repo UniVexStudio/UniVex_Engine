@@ -389,8 +389,48 @@ TEST(EngineLibraryUVETest, ImportsLocalPackageVerifiedByItsChecksumFile) {
     EXPECT_TRUE(outcome.verified);
     ASSERT_TRUE(outcome.version.has_value());
     EXPECT_EQ(*outcome.version, kPackagedVersionUVE);
-    EXPECT_FALSE(InstallLocalEnginePackageUVE(package, root / "Engines").installed);
+    EXPECT_FALSE(InstallLocalEnginePackageUVE(package, root / "Engines", false).installed);
     std::filesystem::remove_all(root);
+}
+
+TEST(EngineLibraryUVETest, ReimportingLocalPackageAtomicallyReplacesExistingInstall) {
+    const std::filesystem::path root = ::UVE::Tests::MakeTestCaseDirectoryUVE("import_replace");
+    const std::filesystem::path engines = root / "Engines";
+    const std::string editorFile =
+        std::string(Pack::kEditorExecutableStemUVE) + std::string(Platform::kExecutableSuffixUVE);
+
+    const auto writeCustom = [&](const std::string& filename, const std::string& payload) {
+        TarGzWriterUVE writer;
+        const std::string manifest = std::string(R"({"format":"uvengine","schemaVersion":1,"version":")") +
+                                     kPackagedVersionUVE.ToStringUVE() + R"(","channel":"beta","target":")" +
+                                     std::string(Platform::GetEnginePackageTargetUVE()) + "\"}";
+        writer.AddFileUVE(std::string(kEngineManifestFileNameUVE), manifest);
+        writer.AddFileUVE(editorFile, payload, 0755U);
+        const std::filesystem::path path = root / filename;
+        writer.WriteUVE(path);
+        return path;
+    };
+
+    const std::filesystem::path v1 = writeCustom("dev-v1.uvpackage", "editor-v1");
+    const std::filesystem::path v2 = writeCustom("dev-v2.uvpackage", "editor-v2");
+    ASSERT_TRUE(InstallLocalEnginePackageUVE(v1, engines).installed);
+    const std::filesystem::path installedEditor = engines / kPackagedVersionUVE.ToStringUVE() / editorFile;
+    EXPECT_EQ(ReadTextUVE(installedEditor), "editor-v1");
+
+    const EngineInstallOutcomeUVE replaced = InstallLocalEnginePackageUVE(v2, engines);
+    ASSERT_TRUE(replaced.installed) << replaced.message;
+    EXPECT_EQ(ReadTextUVE(installedEditor), "editor-v2");
+    EXPECT_EQ(ListInstalledEnginesUVE(engines).size(), 1U);
+    std::filesystem::remove_all(root);
+}
+
+TEST(EngineLibraryUVETest, TargetCompatibilityMatchesCurrentPlatform) {
+    EXPECT_TRUE(Platform::IsCompatibleEnginePackageTargetUVE(Platform::GetEnginePackageTargetUVE()));
+    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTargetUVE("nonexistent-target"));
+#if defined(__linux__) && !defined(__ANDROID__)
+    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTargetUVE("windows"));
+    EXPECT_FALSE(Platform::IsCompatibleEnginePackageTargetUVE("android-arm64-v8a"));
+#endif
 }
 
 TEST(EngineLibraryUVETest, ImportsRenamedPackageWithoutChecksumAsUnverified) {

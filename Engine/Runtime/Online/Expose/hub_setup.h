@@ -47,6 +47,10 @@ inline constexpr std::string_view kHubDisplayNameUVE = "UniVex Hub";
 inline constexpr std::string_view kHubDescriptionUVE = "Create, open and manage UniVex projects and engine versions";
 /// How file managers name a project file's type.
 inline constexpr std::string_view kProjectTypeDisplayNameUVE = "UniVex Project";
+/// Who installed programs and the Windows Apps & features list name as the Hub's publisher.
+inline constexpr std::string_view kPublisherUVE = "UniVex Studios";
+/// Windows file association: the program identifier .uvproject files point at.
+inline constexpr std::string_view kProjectProgramIdUVE = "UniVex.Project";
 
 struct SetupPayloadLocationUVE final {
     std::uint64_t offset = 0U;

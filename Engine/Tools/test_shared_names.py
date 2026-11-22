@@ -29,6 +29,7 @@ HEADERS = (
     "Engine/Runtime/Pack/Expose/engine_install.h",
     "Engine/Runtime/Pack/Expose/project_template.h",
     "Engine/App/Internal/launcher_ui/launcher_window.h",
+    "Engine/Runtime/Platform/Expose/editor_project_package.h",
 )
 TARGETS_DIR = "Engine/Source/Targets"
 ENGINE_FEED = "Engine/Distribution/engine_feed.json"
@@ -115,6 +116,15 @@ class SharedNamesTest(unittest.TestCase):
         self.assertTrue((brand_pngs / str(self.cpp["kHubIconFileNameUVE"])).is_file(),
                         "the icon the Hub registers is not among the brand images the installer ships")
 
+    def test_windows_wizard_names(self) -> None:
+        self.assert_cpp("kHubDisplayNameUVE", make_hub_installer.HUB_DISPLAY_NAME)
+        self.assert_cpp("kHubDescriptionUVE", make_hub_installer.HUB_DESCRIPTION)
+        self.assert_cpp("kHubInstallFolderNameUVE", make_hub_installer.HUB_INSTALL_FOLDER)
+        self.assert_cpp("kPublisherUVE", make_hub_installer.PUBLISHER)
+        self.assert_cpp("kEditorProjectFileExtensionUVE", make_hub_installer.PROJECT_EXTENSION)
+        self.assert_cpp("kProjectProgramIdUVE", make_hub_installer.PROJECT_PROGRAM_ID)
+        self.assert_cpp("kProjectTypeDisplayNameUVE", make_hub_installer.PROJECT_TYPE_NAME)
+
     def test_engine_feed(self) -> None:
         for name in (make_hub_installer.FEED_FILE, uvbt.ENGINE_FEED_FILE):
             self.assert_cpp("kEngineFeedFileNameUVE", name)
@@ -133,6 +143,44 @@ class SharedNamesTest(unittest.TestCase):
         public = re.escape(f"{feed['owner']}/{feed['repository']}") + r"(?![\w.-])"
         self.assertIsNone(re.search(public, workflow),
                           "the workflow must read the releases repository from the feed, not repeat it")
+
+    def test_android_shaders(self) -> None:
+        # The Android APKs and the Android engine package ship the same built-in shader folder.
+        sys.path.insert(0, str(TOOLS_DIR / "android"))
+        import build_apk  # noqa: E402
+
+        self.assertEqual(package_engine.SHADERS_SOURCE, build_apk.BUILT_IN_SHADERS)
+        self.assertTrue(REPO_ROOT.joinpath(*package_engine.SHADERS_SOURCE).is_dir())
+        editor = (REPO_ROOT / "Engine/App/Android/editor/editor_android.cpp").read_text(encoding="utf-8")
+        self.assertIn(f'kShadersDirectoryUVE = "{package_engine.SHADERS_DIRECTORY}"', editor)
+        self.assertIn(f'kEditorAndroidEntryPointUVE = "UveEditorRunUVE"',
+                      (REPO_ROOT / "Engine/Runtime/Pack/Expose/engine_install.h").read_text(encoding="utf-8"))
+        self.assertIn("UveEditorRunUVE(", editor)
+
+    def test_android_icon(self) -> None:
+        # Every manifest's launcher icon must be among the resources build_apk.py compiles.
+        sys.path.insert(0, str(TOOLS_DIR / "android"))
+        import build_apk  # noqa: E402
+
+        resources = REPO_ROOT.joinpath(*build_apk.RESOURCES)
+        for app in build_apk.APPS.values():
+            manifest = REPO_ROOT.joinpath(*app.manifest).read_text(encoding="utf-8")
+            for reference in re.findall(r'android:(?:round)?[iI]con="@mipmap/([\w]+)"', manifest):
+                found = list(resources.glob(f"mipmap-*/{reference}.*"))
+                self.assertTrue(found, f"{app.target}: no mipmap resource named {reference}")
+            self.assertRegex(manifest, r'android:icon="@mipmap/', f"{app.target} has no launcher icon")
+
+    def test_android_apk_versions(self) -> None:
+        sys.path.insert(0, str(TOOLS_DIR / "android"))
+        import build_apk  # noqa: E402
+
+        for app_name in ("hub", "runtime"):
+            version = build_apk.read_source_version(app_name)
+            code, name = build_apk.android_version_metadata(version)
+            self.assertGreaterEqual(code, 1)
+            self.assertTrue(name)
+        self.assertGreater(build_apk.android_version_metadata((0, 2, 0, 0))[0],
+                           build_apk.android_version_metadata((0, 1, 0, 1))[0])
 
 
 if __name__ == "__main__":

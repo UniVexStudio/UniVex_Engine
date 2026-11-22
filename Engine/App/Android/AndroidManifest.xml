@@ -1,8 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.univex.runtime" android:versionCode="1" android:versionName="0.1">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
-    <application android:label="UniVex Runtime" android:hasCode="false" android:debuggable="false" android:allowBackup="false">
-        <activity android:name="android.app.NativeActivity" android:exported="true"
+    <application android:label="UniVex Runtime" android:hasCode="true" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:debuggable="false" android:allowBackup="false" android:extractNativeLibs="false">
+        <activity android:name="com.univex.app.UniVexActivity" android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|density|uiMode">
             <meta-data android:name="android.app.lib_name" android:value="univex_android" />
             <intent-filter>

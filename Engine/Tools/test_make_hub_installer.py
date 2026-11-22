@@ -4,20 +4,37 @@
 
 import hashlib
 import io
+import json
 import struct
+import sys
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import make_hub_installer
 import package_engine
 
 
-def make_hub_build(root: Path) -> Path:
+# Stands in for Inno Setup's ISCC: records the /D defines and the staged files, writes the installer.
+FAKE_ISCC = """#!{python}
+import json, os, sys
+from pathlib import Path
+defines = dict(arg[2:].split("=", 1) for arg in sys.argv[1:] if arg.startswith("/D"))
+stage = Path(defines["StageDir"])
+defines["staged"] = sorted(p.relative_to(stage).as_posix() for p in stage.rglob("*") if p.is_file())
+defines["script"] = sys.argv[-1]
+output = Path(defines["OutputDir"]) / (defines["OutputName"] + ".exe")
+output.write_bytes(b"WIZARD")
+(Path(defines["OutputDir"]) / "iscc.json").write_text(json.dumps(defines))
+"""
+
+
+def make_hub_build(root: Path, suffix: str = "") -> Path:
     bin_dir = root / "bin"
     bin_dir.mkdir()
-    (bin_dir / "uve_hub").write_text("hub")
+    (bin_dir / f"uve_hub{suffix}").write_text("hub")
     (bin_dir / "uve_hub_setup").write_bytes(b"SETUP-PROGRAM")
     (bin_dir / "engine_feed.json").write_text("{}")
     for directory in make_hub_installer.HUB_DIRECTORIES:
@@ -52,6 +69,44 @@ class MakeHubInstallerTest(unittest.TestCase):
                 self.assertIn(expected, names)
             self.assertNotIn("uve_editor", names)
             self.assertNotIn("engine.json", names)
+
+    def test_windows_installer_is_the_inno_setup_wizard(self) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            iscc = root / "iscc"
+            iscc.write_text(FAKE_ISCC.format(python=sys.executable))
+            iscc.chmod(0o755)
+            # The DLL scan needs MinGW's objdump; the staging around it is what this test checks.
+            with mock.patch.object(package_engine, "copy_windows_dlls"):
+                installer = make_hub_installer.build_installer(make_hub_build(root, ".exe"), "windows", "hub-v1.2.0",
+                                                               root / "dist", check_version=False, iscc=iscc)
+            self.assertEqual(installer.name, "UniVexHubSetup-1.2.0-windows.exe")
+            self.assertEqual(installer.read_bytes(), b"WIZARD")
+            self.assertTrue(installer.with_name(installer.name + package_engine.CHECKSUM_SUFFIX).is_file())
+            defines = json.loads((root / "dist" / "iscc.json").read_text())
+            self.assertEqual(Path(defines["script"]), make_hub_installer.WINDOWS_INSTALLER_SCRIPT)
+            self.assertEqual(defines["AppVersion"], "1.2.0")
+            self.assertEqual(defines["NumericVersion"], "1.2.0.0")
+            self.assertEqual(defines["HubExe"], "uve_hub.exe")
+            self.assertEqual(defines["ProjectExtension"], ".uvproject")
+            for expected in ("uve_hub.exe", "engine_feed.json", "project_templates/file.txt", "icons/univex-logo.ico"):
+                self.assertIn(expected, defines["staged"])
+            self.assertNotIn("uve_hub_setup.exe", defines["staged"])
+
+    def test_wizard_script_uses_only_defines_it_is_given(self) -> None:
+        import re
+        script = make_hub_installer.WINDOWS_INSTALLER_SCRIPT.read_text(encoding="utf-8")
+        used = set(re.findall(r"\{#(\w+)\}", script))
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            iscc = root / "iscc"
+            iscc.write_text(FAKE_ISCC.format(python=sys.executable))
+            iscc.chmod(0o755)
+            with mock.patch.object(package_engine, "copy_windows_dlls"):
+                make_hub_installer.build_installer(make_hub_build(root, ".exe"), "windows", "hub-v1.2.0",
+                                                   root / "dist", check_version=False, iscc=iscc)
+            given = set(json.loads((root / "dist" / "iscc.json").read_text()))
+        self.assertFalse(used - given, f"the script uses defines make_hub_installer does not pass: {used - given}")
 
 
 if __name__ == "__main__":

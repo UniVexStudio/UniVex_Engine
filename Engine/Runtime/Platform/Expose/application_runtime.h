@@ -13,6 +13,15 @@ namespace UVE::Platform {
 /// Stable target key used by project application identifiers and icon sets.
 [[nodiscard]] std::string_view GetApplicationTargetUVE() noexcept;
 
+/// Target key identifying engine packages (.uvpackage) runnable on this device.
+/// Desktop platforms match GetApplicationTargetUVE() ("linux", "windows", "macos");
+/// Android includes the native ABI ("android-arm64-v8a", "android-x86_64").
+[[nodiscard]] std::string_view GetEnginePackageTargetUVE() noexcept;
+
+/// True when an engine package manifest targeting `manifestTarget` can run on this device.
+/// Accepts exact GetEnginePackageTargetUVE() matches, plus legacy "android" manifests on arm64-v8a.
+[[nodiscard]] bool IsCompatibleEnginePackageTargetUVE(std::string_view manifestTarget) noexcept;
+
 struct ApplicationUserDataDirectoryResultUVE final {
     bool success = false;
     std::filesystem::path directory;

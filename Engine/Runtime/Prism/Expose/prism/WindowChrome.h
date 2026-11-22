@@ -14,7 +14,7 @@ constexpr float kOsTitleBarH = 32.0f;
 struct WindowChromeOptions {
   std::string title = "PRISM";
   Icon icon = Icon::None;
-  bool minimize = true, maximize = true;     // buttons to show; close is always there
+  bool minimize = true, maximize = true, close = true;   // buttons to show
   bool showIdentity = true;                  // false: no title tab, mark or title, only the drag strip and buttons
 };
 
