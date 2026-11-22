@@ -43,6 +43,7 @@ private:
     std::shared_ptr<prism::Button> m_gridButton;
     std::shared_ptr<prism::Button> m_projectionButton;
     std::shared_ptr<prism::Button> m_shadingButton;
+    std::shared_ptr<prism::Button> m_qualityButton;
     std::shared_ptr<prism::Button> m_sunButton;
     std::shared_ptr<prism::Button> m_skyButton;
 };

@@ -337,6 +337,17 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
     }
 #if defined(__ANDROID__)
     config.renderBackendPreferenceUVE = UVE::Core::RenderBackendPreferenceUVE::OpenGLUVE;
+    // Start mobile editor with mobile-friendly shadow & SSAO budgets so low-end GPUs hit 60-120 FPS
+    // immediately while keeping FXAA 3.11 + subtle sharpening on for crisp, smooth edges.
+    config.shadowMapResolution = 1024U;
+    config.ssaoEnabledUVE = false;
+    config.postProcessAAMethodUVE = UVE::Core::PostProcessAAMethodUVE::FastApproximateUVE;
+    config.screenSpaceAAQualityUVE = 1U;
+    config.sharpeningAmountUVE = 0.28F;
+#else
+    config.postProcessAAMethodUVE = UVE::Core::PostProcessAAMethodUVE::FastApproximateUVE;
+    config.screenSpaceAAQualityUVE = 2U;
+    config.sharpeningAmountUVE = 0.22F;
 #endif
     config.enableConsoleLogging = !options.bridgeStdio;
     config.headlessUVE = options.headless;

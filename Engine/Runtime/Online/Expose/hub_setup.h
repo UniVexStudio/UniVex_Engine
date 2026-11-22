@@ -16,7 +16,7 @@ namespace UVE::Online {
 
 /// The Hub's own version, separate from any engine's. `uve_hub --version` prints it, and a release
 /// tag hub-v<version> must match it before an installer is published.
-inline constexpr Core::VersionUVE kHubVersionUVE{0U, 1U, 0U, 0U};
+inline constexpr Core::VersionUVE kHubVersionUVE{0U, 1U, 1U, 0U};
 
 /// A version as people read it: "MAJOR.MINOR.PATCH", with "+build.N" only when N is not 0.
 [[nodiscard]] std::string FormatDisplayVersionUVE(const Core::VersionUVE& version);

@@ -349,11 +349,14 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildUVE() {
 }
 
 prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildTitleBarUVE() {
-    auto row = prism::hbox();
-    auto menus = prism::make<prism::MenuBar>();
-    menus->setShowLogo(false);
-    menus->setItemPadding(12.0F);
-    menus->addMenu("File", [this] {
+    m_tab = prism::make<DocumentTabUVE>();
+    m_tab->setFallbackIcon(prism::Icon::AnimLibrary);
+    m_tab->setName(m_openPath.stem().string());
+
+    EditorHeaderDescUVE desc;
+    desc.documentTab = m_tab;
+    desc.onClose = [this] { m_editor.CloseAnimationLibraryWindowUVE(); };
+    desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Item("Add Animation...", [this] { ShowAddMenuUVE(m_addButton ? m_addButton->rect() : prism::Rect{}); }, "",
                                               prism::Icon::Plus));
@@ -368,8 +371,8 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildTitleBarUVE() {
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Item("Close", [this] { m_editor.CloseAnimationLibraryWindowUVE(); }, "", prism::Icon::Close));
         return items;
-    });
-    menus->addMenu("Edit", [this] {
+    }});
+    desc.menus.push_back({"Edit", [this] {
         const std::size_t picked = m_grid ? m_grid->SelectedUVE() : AnimationLibraryGridUVE::kNoneUVE;
         const std::size_t count = m_editor.m_animationLibraryWindow.has_value() ? m_editor.m_animationLibraryWindow->library.entries.size() : 0U;
         const bool has = picked < count;
@@ -378,43 +381,18 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildTitleBarUVE() {
         prism::MenuItem remove = prism::MenuItem::Item("Remove", [this, picked] { RemoveUVE(picked); }, "Del", prism::Icon::Trash);
         remove.enabled = has;
         return std::vector<prism::MenuItem>{std::move(rename), std::move(remove)};
-    });
-    menus->addMenu("Help", [] {
+    }});
+    desc.menus.push_back({"Help", [] {
         return std::vector<prism::MenuItem>{
             prism::MenuItem::Item("A library is a list of clips an Timeline can use by name.", {}).disabled(),
             prism::MenuItem::Item("Every edit is saved at once.", {}).disabled()};
-    });
-    row->add(menus, CentreUVE());
-    row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*row, [this] { m_editor.CloseAnimationLibraryWindowUVE(); });
-    auto tabRow = prism::hbox();
-    m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::AnimLibrary);
-    m_tab->setName(m_openPath.stem().string());
-    tabRow->add(m_tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
-    tabRow->add(prism::make<DragStripUVE>(true), prism::Slot{1.0F});
-    auto titleRow = prism::make<prism::SizeBox>();
-    titleRow->setHeightOverride(kTitleRowUVE);
-    titleRow->setContent(row);
-    auto tabRowBox = prism::make<prism::SizeBox>();
-    tabRowBox->setHeightOverride(kTabRowUVE);
-    tabRowBox->setContent(tabRow);
-    auto right = prism::vbox();
-    right->add(titleRow);
-    right->add(tabRowBox);
-    auto top = prism::hbox();
-    top->add(prism::make<LogoBoxUVE>());
-    top->add(right, prism::Slot{1.0F});
-    auto bar = prism::make<prism::Border>();
-    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    bar->setChild(top);
-    return bar;
+    }});
+    return BuildEditorHeaderUVE(std::move(desc));
 }
 
 prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildToolbarUVE() {
-    auto row = prism::hbox(6.0F);
-    row->setPadding(prism::Margin(8.0F, 4.0F, 8.0F, 4.0F));
+    auto row = prism::hbox(4.0F);
+    row->setPadding(prism::Margin(6.0F, 1.0F, 6.0F, 1.0F));
     auto add = prism::make<prism::Button>("Add Animation", prism::Icon::Plus, prism::ButtonStyle::Primary);
     add->setTooltip("Add clips of the project that are not in the library yet");
     std::weak_ptr<prism::Button> weakAdd = add;

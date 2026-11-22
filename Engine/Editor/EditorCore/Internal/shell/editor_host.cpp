@@ -4,6 +4,7 @@
 #include "prism/Canvas.h"
 #include "prism/GlBackend.h"
 #include "prism/Icons.h"
+#include "prism/Theme.h"
 #include "logging_macros.h"
 #include "png_metadata.h"
 
@@ -171,7 +172,7 @@ void AppendUtf8UVE(std::string& out, const char32_t cp) {
     float sy = 1.0F;
     glfwGetWindowContentScale(window, &sx, &sy);
     const float rawScale = std::isfinite(sx) && sx > 0.0F ? sx : 1.0F;
-    constexpr float kMinLogicalShortEdgeUVE = 360.0F;
+    constexpr float kMinLogicalShortEdgeUVE = 500.0F;
     const float maxScale = std::max(1.0F, static_cast<float>(std::min(fbWidth, fbHeight)) / kMinLogicalShortEdgeUVE);
     return std::clamp(rawScale, 1.0F, maxScale);
 }
@@ -736,6 +737,29 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
         return false;
     }
 
+    {
+        prism::Theme& t = prism::themeMutable();
+        if (m_singleSurface) {
+            t.controlH = 20.0F;
+            t.rowH = 19.0F;
+            t.menuBarH = 20.0F;
+            t.toolbarH = 22.0F;
+            t.tabH = 20.0F;
+            t.statusH = 19.0F;
+            t.pad = 5.0F;
+            t.gap = 3.0F;
+        } else {
+            t.controlH = 22.0F;
+            t.rowH = 20.0F;
+            t.menuBarH = 20.0F;
+            t.toolbarH = 24.0F;
+            t.tabH = 22.0F;
+            t.statusH = 20.0F;
+            t.pad = 6.0F;
+            t.gap = 4.0F;
+        }
+    }
+
     LoadBrandMarkUVE(assetDir / kBrandMarkFileUVE);
 
     std::string error;
@@ -1122,7 +1146,11 @@ EditorViewportInputUVE EditorHostUVE::CaptureViewInputUVE(const int id, const pr
     input.shift = (w.mods & prism::ModShift) != 0;
     input.ctrl = (w.mods & prism::ModCtrl) != 0;
     input.alt = (w.mods & prism::ModAlt) != 0;
+#if defined(__ANDROID__)
+    input.touchNavigation = m_singleSurface && !Window::AndroidGlfwHasHardwareInputUVE();
+#else
     input.touchNavigation = m_singleSurface;
+#endif
     input.dpiScale = scale;
     // Keys reach the view only while its window has the keyboard.
     const bool windowHasKeys = m_app->activeWindow() == id;
@@ -1168,18 +1196,14 @@ void EditorHostUVE::CompositeUVE(WindowUVE& w, const std::uint32_t uiTexture, co
     glDisable(GL_BLEND);
     const float scaleX = w.uiWidth > 0 ? static_cast<float>(w.fbWidth) / static_cast<float>(w.uiWidth) : 1.0F;
     const float scaleY = w.uiHeight > 0 ? static_cast<float>(w.fbHeight) / static_cast<float>(w.uiHeight) : 1.0F;
-    const bool scaledUi = w.uiWidth != w.fbWidth || w.uiHeight != w.fbHeight;
     for (const ViewImageUVE& view : views) {
         if (view.texture == 0U || view.rect.w <= 0.0F || view.rect.h <= 0.0F) {
             continue;
         }
         const float u1 = view.textureWidth > 0.0F ? view.usedWidth / view.textureWidth : 1.0F;
         const float v1 = view.textureHeight > 0.0F ? view.usedHeight / view.textureHeight : 1.0F;
-        const prism::Rect shown = scaledUi
-                                      ? prism::Rect{view.rect.x * scaleX, view.rect.y * scaleY, view.rect.w * scaleX,
-                                                    view.rect.h * scaleY}
-                                      : prism::Rect{view.rect.x, view.rect.y, std::min(view.rect.w, view.usedWidth),
-                                                    std::min(view.rect.h, view.usedHeight)};
+        const prism::Rect shown{view.rect.x * scaleX, view.rect.y * scaleY, view.rect.w * scaleX,
+                                view.rect.h * scaleY};
         c.DrawUVE(view.texture, shown, w.fbWidth, w.fbHeight, u1, v1);
     }
     glEnable(GL_BLEND);

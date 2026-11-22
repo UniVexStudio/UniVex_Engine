@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <system_error>
@@ -217,6 +218,185 @@ ApplicationUserDataDirectoryResultUVE ResolveUserHomeDirectoryUVE() {
         return MakeDirectoryFailureUVE("The user's home directory is unavailable.");
     }
     return {true, std::filesystem::path(home), "Home directory resolved."};
+}
+
+namespace {
+
+#if defined(_WIN32)
+[[nodiscard]] std::filesystem::path ResolveWindowsKnownFolderUVE(const GUID& folderId) {
+    using ShGetKnownFolderPathFn = HRESULT(WINAPI*)(const GUID&, DWORD, HANDLE, PWSTR*);
+    using CoTaskMemFreeFn = void(WINAPI*)(LPVOID);
+    HMODULE const shell32 = LoadLibraryW(L"shell32.dll");
+    HMODULE const ole32 = LoadLibraryW(L"ole32.dll");
+    std::filesystem::path result;
+    if (shell32 != nullptr && ole32 != nullptr) {
+        const auto getKnown =
+            reinterpret_cast<ShGetKnownFolderPathFn>(GetProcAddress(shell32, "SHGetKnownFolderPath"));
+        const auto freeMem = reinterpret_cast<CoTaskMemFreeFn>(GetProcAddress(ole32, "CoTaskMemFree"));
+        if (getKnown != nullptr && freeMem != nullptr) {
+            PWSTR rawPath = nullptr;
+            if (SUCCEEDED(getKnown(folderId, 0, nullptr, &rawPath)) && rawPath != nullptr) {
+                result = std::filesystem::path(rawPath);
+                freeMem(rawPath);
+            }
+        }
+    }
+    if (ole32 != nullptr) {
+        FreeLibrary(ole32);
+    }
+    if (shell32 != nullptr) {
+        FreeLibrary(shell32);
+    }
+    return result;
+}
+#elif !defined(__APPLE__) && !defined(__ANDROID__)
+[[nodiscard]] std::filesystem::path ParseXdgUserDirUVE(const std::filesystem::path& home,
+                                                       const std::string_view key) {
+    const std::filesystem::path configFile = home / ".config" / "user-dirs.dirs";
+    std::ifstream input(configFile);
+    if (!input.is_open()) {
+        return {};
+    }
+    std::string line;
+    const std::string prefix = std::string(key) + "=";
+    while (std::getline(input, line)) {
+        if (line.rfind(prefix, 0U) != 0U) {
+            continue;
+        }
+        std::string value = line.substr(prefix.size());
+        if (value.size() >= 2U && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1U, value.size() - 2U);
+        }
+        if (value.rfind("$HOME/", 0U) == 0U) {
+            return home / value.substr(6U);
+        }
+        if (value == "$HOME") {
+            return home;
+        }
+        const std::filesystem::path parsed(value);
+        if (parsed.is_absolute()) {
+            return parsed;
+        }
+    }
+    return {};
+}
+#endif
+
+} // namespace
+
+ApplicationUserDataDirectoryResultUVE ResolveUserDocumentsDirectoryUVE() {
+#if defined(_WIN32)
+    // FOLDERID_Documents: {FDD39AD0-238F-46AF-ADB4-6C85480369C7}
+    static constexpr GUID kFolderIdDocumentsUVE = {
+        0xFDD39AD0UL, 0x238FU, 0x46AFU, {0xADU, 0xB4U, 0x6CU, 0x85U, 0x48U, 0x03U, 0x69U, 0xC7U}};
+    const std::filesystem::path known = ResolveWindowsKnownFolderUVE(kFolderIdDocumentsUVE);
+    if (!known.empty() && known.is_absolute()) {
+        return {true, known, "Windows Documents directory resolved."};
+    }
+    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    if (home.success) {
+        return {true, home.directory / "Documents", "Windows Documents directory resolved."};
+    }
+    return MakeDirectoryFailureUVE("The Windows Documents directory is unavailable.");
+#elif defined(__ANDROID__)
+    const char* const publicDocs = std::getenv("UNIVEX_ANDROID_PUBLIC_DOCS");
+    const char* const allFiles = std::getenv("UNIVEX_ANDROID_ALL_FILES");
+    const char* const appExtDocs = std::getenv("UNIVEX_ANDROID_APP_EXT_DOCS");
+    const bool hasAllFiles = allFiles != nullptr && allFiles[0] == '1';
+    if (publicDocs != nullptr && publicDocs[0] != '\0' && hasAllFiles) {
+        return {true, std::filesystem::path(publicDocs), "Android public Documents directory resolved."};
+    }
+    if (publicDocs != nullptr && publicDocs[0] != '\0') {
+        std::error_code probeError;
+        const std::filesystem::path candidate(publicDocs);
+        if (std::filesystem::is_directory(candidate, probeError)) {
+            const std::filesystem::path testDir = candidate / "UniVex Projects";
+            std::filesystem::create_directories(testDir, probeError);
+            if (!probeError && std::filesystem::is_directory(testDir, probeError)) {
+                return {true, candidate, "Android public Documents directory resolved."};
+            }
+        }
+    }
+    if (appExtDocs != nullptr && appExtDocs[0] != '\0') {
+        return {true, std::filesystem::path(appExtDocs), "Android external app Documents directory resolved."};
+    }
+    return ResolveUserHomeDirectoryUVE();
+#elif defined(__APPLE__)
+    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    if (home.success) {
+        return {true, home.directory / "Documents", "Apple Documents directory resolved."};
+    }
+    return MakeDirectoryFailureUVE("The user's Documents directory is unavailable.");
+#else
+    const char* const xdgDocs = std::getenv("XDG_DOCUMENTS_DIR");
+    if (xdgDocs != nullptr && xdgDocs[0] != '\0' && std::filesystem::path(xdgDocs).is_absolute()) {
+        return {true, std::filesystem::path(xdgDocs), "XDG Documents directory resolved."};
+    }
+    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    if (!home.success) {
+        return MakeDirectoryFailureUVE("The user's Documents directory is unavailable.");
+    }
+    const std::filesystem::path configured = ParseXdgUserDirUVE(home.directory, "XDG_DOCUMENTS_DIR");
+    if (!configured.empty()) {
+        return {true, configured, "XDG Documents directory resolved."};
+    }
+    return {true, home.directory / "Documents", "Documents directory resolved."};
+#endif
+}
+
+ApplicationUserDataDirectoryResultUVE ResolveUserDownloadsDirectoryUVE() {
+#if defined(_WIN32)
+    // FOLDERID_Downloads: {374DE290-123F-4565-9164-39C4925E467B}
+    static constexpr GUID kFolderIdDownloadsUVE = {
+        0x374DE290UL, 0x123FU, 0x4565U, {0x91U, 0x64U, 0x39U, 0xC4U, 0x92U, 0x5EU, 0x46U, 0x7BU}};
+    const std::filesystem::path known = ResolveWindowsKnownFolderUVE(kFolderIdDownloadsUVE);
+    if (!known.empty() && known.is_absolute()) {
+        return {true, known, "Windows Downloads directory resolved."};
+    }
+    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    if (home.success) {
+        return {true, home.directory / "Downloads", "Windows Downloads directory resolved."};
+    }
+    return MakeDirectoryFailureUVE("The Downloads directory is unavailable.");
+#elif defined(__ANDROID__)
+    const char* const downloads = std::getenv("UNIVEX_ANDROID_DOWNLOADS");
+    if (downloads != nullptr && downloads[0] != '\0') {
+        return {true, std::filesystem::path(downloads), "Android Downloads directory resolved."};
+    }
+    return {true, std::filesystem::path("/storage/emulated/0/Download"), "Android Downloads directory resolved."};
+#elif defined(__APPLE__)
+    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    if (home.success) {
+        return {true, home.directory / "Downloads", "Apple Downloads directory resolved."};
+    }
+    return MakeDirectoryFailureUVE("The Downloads directory is unavailable.");
+#else
+    const char* const xdgDownloads = std::getenv("XDG_DOWNLOAD_DIR");
+    if (xdgDownloads != nullptr && xdgDownloads[0] != '\0' && std::filesystem::path(xdgDownloads).is_absolute()) {
+        return {true, std::filesystem::path(xdgDownloads), "XDG Downloads directory resolved."};
+    }
+    const ApplicationUserDataDirectoryResultUVE home = ResolveUserHomeDirectoryUVE();
+    if (!home.success) {
+        return MakeDirectoryFailureUVE("The Downloads directory is unavailable.");
+    }
+    const std::filesystem::path configured = ParseXdgUserDirUVE(home.directory, "XDG_DOWNLOAD_DIR");
+    if (!configured.empty()) {
+        return {true, configured, "XDG Downloads directory resolved."};
+    }
+    return {true, home.directory / "Downloads", "Downloads directory resolved."};
+#endif
+}
+
+ApplicationUserDataDirectoryResultUVE ResolvePublicStorageRootUVE() {
+#if defined(__ANDROID__)
+    const char* const root = std::getenv("UNIVEX_ANDROID_STORAGE_ROOT");
+    if (root != nullptr && root[0] != '\0') {
+        return {true, std::filesystem::path(root), "Android shared storage root resolved."};
+    }
+    return {true, std::filesystem::path("/storage/emulated/0"), "Android shared storage root resolved."};
+#else
+    return ResolveUserHomeDirectoryUVE();
+#endif
 }
 
 ApplicationUserDataDirectoryResultUVE ResolveToolUserDataDirectoryUVE(const std::string_view directoryName) {

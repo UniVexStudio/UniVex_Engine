@@ -322,11 +322,14 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
 }
 
 prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildTitleBarUVE() {
-    auto row = prism::hbox();
-    auto menus = prism::make<prism::MenuBar>();
-    menus->setShowLogo(false);
-    menus->setItemPadding(12.0F);
-    menus->addMenu("File", [this] {
+    m_tab = prism::make<DocumentTabUVE>();
+    m_tab->setFallbackIcon(prism::Icon::Skeleton);
+    m_tab->setName("Retarget");
+
+    EditorHeaderDescUVE desc;
+    desc.documentTab = m_tab;
+    desc.onClose = [this] { m_editor.CloseRetargetWindowUVE(); };
+    desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;
         prism::MenuItem generate = prism::MenuItem::Item("Generate Retarget", [this] { static_cast<void>(m_editor.StartRetargetUVE()); }, "",
                                                          prism::Icon::Play);
@@ -339,8 +342,8 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildTitleBarUVE() {
         items.push_back(prism::MenuItem::Sep());
         items.push_back(prism::MenuItem::Item("Close", [this] { m_editor.CloseRetargetWindowUVE(); }, "", prism::Icon::Close));
         return items;
-    });
-    menus->addMenu("View", [this] {
+    }});
+    desc.menus.push_back({"View", [this] {
         std::vector<prism::MenuItem> items;
         items.push_back(prism::MenuItem::Check("Problems only", m_problemsOnly && m_problemsOnly->checked(), [this] {
             if (m_problemsOnly) {
@@ -348,47 +351,21 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildTitleBarUVE() {
             }
         }));
         return items;
-    });
-    menus->addMenu("Help", [] {
+    }});
+    desc.menus.push_back({"Help", [] {
         return std::vector<prism::MenuItem>{
             prism::MenuItem::Item("Green: found and fine. Yellow: found, look at it. Red: broken. Grey: missing.", {}).disabled(),
             prism::MenuItem::Item("The Source box draws the skeleton the character answers; click a joint to find it everywhere.", {}).disabled(),
             prism::MenuItem::Item("Generate keeps the character's own rest pose: no vertex moves.", {}).disabled(),
             prism::MenuItem::Item("Missing core bones (root, IK, sockets ...) are made; correctives are optional.", {}).disabled(),
             prism::MenuItem::Item("The Rig Brain finds bones whose names say nothing; every bone takes the engine's name.", {}).disabled()};
-    });
-    row->add(menus, CentreUVE());
-    row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*row, [this] { m_editor.CloseRetargetWindowUVE(); });
-
-    auto tabRow = prism::hbox();
-    m_tab = prism::make<DocumentTabUVE>();
-    m_tab->setFallbackIcon(prism::Icon::Skeleton);
-    m_tab->setName("Retarget");
-    tabRow->add(m_tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
-    tabRow->add(prism::make<DragStripUVE>(true), prism::Slot{1.0F});
-    auto titleRow = prism::make<prism::SizeBox>();
-    titleRow->setHeightOverride(kTitleRowUVE);
-    titleRow->setContent(row);
-    auto tabRowBox = prism::make<prism::SizeBox>();
-    tabRowBox->setHeightOverride(kTabRowUVE);
-    tabRowBox->setContent(tabRow);
-    auto rightColumn = prism::vbox();
-    rightColumn->add(titleRow);
-    rightColumn->add(tabRowBox);
-    auto top = prism::hbox();
-    top->add(prism::make<LogoBoxUVE>());
-    top->add(rightColumn, prism::Slot{1.0F});
-    auto bar = prism::make<prism::Border>();
-    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    bar->setChild(top);
-    return bar;
+    }});
+    return BuildEditorHeaderUVE(std::move(desc));
 }
 
 prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildToolbarUVE() {
-    auto row = prism::hbox(6.0F);
-    row->setPadding(prism::Margin(8.0F, 4.0F, 8.0F, 4.0F));
+    auto row = prism::hbox(4.0F);
+    row->setPadding(prism::Margin(6.0F, 1.0F, 6.0F, 1.0F));
     auto label = prism::make<prism::Label>("Character");
     row->add(label, CentreUVE());
     m_character = prism::make<prism::ComboBox>(std::vector<std::string>{"Animation skeleton only (no mesh)"}, 0);

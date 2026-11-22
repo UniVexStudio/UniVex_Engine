@@ -70,8 +70,8 @@ enum class HubOutcomeUVE { Quit, OpenEditor };
         const float scale = prism::Application::exists() ? prism::Application::get().dpiScale() : 1.0F;
         const float invScale = scale > 0.0F ? (1.0F / scale) : 1.0F;
         const UVE::Window::AndroidSafeAreaUVE& area = activity.safeArea;
-        return prism::Margin(static_cast<float>(area.left) * invScale, static_cast<float>(area.top) * invScale,
-                             static_cast<float>(area.right) * invScale, static_cast<float>(area.bottom) * invScale);
+        // Fill 100% edge-to-edge across camera cutouts; only shift upward when the soft keyboard is up.
+        return prism::Margin(0.0F, 0.0F, 0.0F, static_cast<float>(area.imeBottom) * invScale);
     };
     window.nativeSurface = app->window;
     window.shaderDirectory = unpacked / kShadersDirectoryUVE;
@@ -89,6 +89,9 @@ enum class HubOutcomeUVE { Quit, OpenEditor };
                     std::function<void(const std::string&)> onError) {
             return UVE::AndroidHost::StartFilePickUVE(activity, suffixes, std::move(onPicked), std::move(onError));
         });
+    UVE::LauncherUI::SetStorageAccessProviderUVE(
+        [app] { return UVE::Window::HasAndroidAllFilesAccessUVE(app->activity); },
+        [app] { UVE::Window::RequestAndroidAllFilesAccessUVE(app->activity); });
     UVE::Hub::HubWindowUVE hub(std::move(context));
     __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "UVE_HUB_STARTED");
     const int exitCode = UVE::LauncherUI::RunLauncherWindowUVE(
@@ -102,6 +105,7 @@ enum class HubOutcomeUVE { Quit, OpenEditor };
         },
         [&hub] { hub.TickUVE(); });
     UVE::LauncherUI::SetSystemFilePickerUVE({});
+    UVE::LauncherUI::SetStorageAccessProviderUVE({}, {});
     activity.pendingPick = nullptr;
     activity.pendingPickError = nullptr;
     UVE::AndroidHost::DetachEngineUVE(activity);

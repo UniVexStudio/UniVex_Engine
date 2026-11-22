@@ -104,7 +104,9 @@ public:
       default: return false;
     }
   }
-  void focusInput() { Application::get().setFocus(m_input.get()); }
+  void focusInput() {
+    if (!Application::get().platform().singleSurface()) Application::get().setFocus(m_input.get());
+  }
 
 private:
   static constexpr float kRow = 26;

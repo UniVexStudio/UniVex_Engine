@@ -35,9 +35,13 @@ namespace UVE::Editor {
 class EditorViewportGizmosUVE final : public prism::Widget {
 public:
     explicit EditorViewportGizmosUVE(EditorUVE& editor);
+    ~EditorViewportGizmosUVE() override;
 
-    /// Refreshes the camera, pivot and billboards from the view the renderer just produced.
+    /// Refreshes the camera, pivot, marquee box, and billboards from the view the renderer just produced.
     void SyncUVE();
+    /// Samples the Android-only floating dual-stick touch controller into `state` (no-op on Desktop
+    /// and auto-hidden whenever a hardware mouse or external keyboard is connected).
+    void ApplyTouchControllerToStateUVE(EditorUVE::ViewportOverlayStateUVE& state);
     /// Pixels the navigation gizmo wants the view orbited by this frame (consumed on read).
     [[nodiscard]] std::array<float, 2> TakeOrbitRequestUVE();
 
@@ -69,10 +73,25 @@ private:
         std::vector<std::pair<prism::Vec2, prism::Vec2>> segments;
     };
 
+    struct TouchControllerLayoutUVE final {
+        prism::Vec2 leftCenter{};
+        prism::Vec2 rightCenter{};
+        float padRadius = 40.0F;
+        float thumbRadius = 16.0F;
+        prism::Rect upBtn{};
+        prism::Rect downBtn{};
+        prism::Rect zoomInBtn{};
+        prism::Rect zoomOutBtn{};
+        prism::Rect toggleBtn{};
+    };
+
     [[nodiscard]] bool UpdateCameraUVE();
     void UpdateHoverUVE(prism::Vec2 p);
     [[nodiscard]] int BillboardAtUVE(prism::Vec2 p) const;
     [[nodiscard]] bool TransformGizmoActiveUVE() const;
+    [[nodiscard]] bool TouchControllerVisibleUVE() const;
+    [[nodiscard]] TouchControllerLayoutUVE ComputeTouchLayoutUVE() const;
+    [[nodiscard]] bool TryClaimAndroidTouchUVE(float physicalX, float physicalY);
 
     EditorUVE& m_editor;
     EditorIconsUVE m_icons;
@@ -104,6 +123,23 @@ private:
     prism::Rect m_outlineRect{};
     std::array<int, 2> m_outlineSize{0, 0};
     Math::Vector3UVE m_baselineScale{1.0F, 1.0F, 1.0F};
+
+    // Marquee box-selection overlay (Desktop LMB hold+drag & Android non-controller hold+drag).
+    bool m_marqueeActive = false;
+    prism::Rect m_marqueeRect{};
+
+    // Android-only floating dual-thumb viewport controller state.
+    bool m_touchControllerVisible = false;
+    bool m_touchControllerEnabled = true;
+    std::int32_t m_leftStickPointerId = -1;
+    std::int32_t m_rightStickPointerId = -1;
+    prism::Vec2 m_leftThumbOffset{0.0F, 0.0F};
+    prism::Vec2 m_rightThumbOffset{0.0F, 0.0F};
+    bool m_touchUpHeld = false;
+    bool m_touchDownHeld = false;
+    bool m_touchZoomInHeld = false;
+    bool m_touchZoomOutHeld = false;
+
     /// What the overlay last painted, hashed (see SyncUVE): unchanged, it is not painted again.
     std::uint64_t m_drawnHash = 0U;
 };

@@ -40,6 +40,19 @@ struct ApplicationUserDataDirectoryResultUVE final {
 /// The current user's home directory (USERPROFILE on Windows, HOME elsewhere). Not created.
 [[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolveUserHomeDirectoryUVE();
 
+/// The user's visible Documents directory for default project storage:
+/// - Windows: FOLDERID_Documents (OneDrive/localized aware) or USERPROFILE/Documents
+/// - Linux/macOS: XDG_DOCUMENTS_DIR or HOME/Documents
+/// - Android: /storage/emulated/0/Documents when writable (All Files Access), else app-visible
+///   external Documents (Android/data/<pkg>/files/Documents) instead of private /data/user/0.
+[[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolveUserDocumentsDirectoryUVE();
+
+/// The user's Downloads directory (for folder picker quick-jump shortcuts). Not created.
+[[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolveUserDownloadsDirectoryUVE();
+
+/// Public shared storage root on Android (/storage/emulated/0) or user home on Desktop.
+[[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolvePublicStorageRootUVE();
+
 /// Resolves and creates `directoryName` under the per-user data root, for data a tool keeps on
 /// behalf of the user rather than of one project.
 [[nodiscard]] ApplicationUserDataDirectoryResultUVE ResolveToolUserDataDirectoryUVE(std::string_view directoryName);
