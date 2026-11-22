@@ -2,6 +2,8 @@
 #include "prism/GlBackend.h"
 #include "prism/GpuBatch.h"
 #include <GL/glcorearb.h>
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -62,6 +64,7 @@ struct GlBackend::Impl {
   std::function<void()> present;
   bool blit = true;
   int w = 0, h = 0;
+  float pixelScale = 1.0f;
   GLuint fbo = 0, colorTex = 0, prog = 0, vao = 0, vbo = 0, ebo = 0, atlasTex = 0;
   GLint uSize = -1, uH = -1, uTex = -1;
   std::vector<GLuint> imageTex;
@@ -177,14 +180,21 @@ void GlBackend::resize(int w, int h) {
   m->makeTarget();
 }
 
+void GlBackend::setPixelScale(float scale) {
+  m->pixelScale = (std::isfinite(scale) && scale > 0.0f) ? scale : 1.0f;
+}
+float GlBackend::pixelScale() const { return m->pixelScale; }
 unsigned GlBackend::colorTexture() const { return m->colorTex; }
 size_t GlBackend::lastDrawCalls() const { return m->drawCalls; }
 
 void GlBackend::submit(const DrawList& list) {
   Impl& g = *m;
-  resize(list.width, list.height);
+  const float s = (std::isfinite(g.pixelScale) && g.pixelScale > 0.0f) ? g.pixelScale : 1.0f;
+  const int targetW = list.width > 0 ? std::max(1, int(std::lround(float(list.width) * s))) : 0;
+  const int targetH = list.height > 0 ? std::max(1, int(std::lround(float(list.height) * s))) : 0;
+  resize(targetW, targetH);
   if (!g.fbo) return;
-  buildGpuFrame(list, g.atlas, g.frame);
+  buildGpuFrame(list, g.atlas, g.frame, s);
   const GpuFrame& f = g.frame;
 
   g.glBindFramebuffer(GL_FRAMEBUFFER, g.fbo);
@@ -201,7 +211,7 @@ void GlBackend::submit(const DrawList& list) {
     g.glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, g.atlas.size, g.atlas.size, 0, GL_RED, GL_UNSIGNED_BYTE, g.atlas.pixels.data());
     g.atlasVersion = g.atlas.version;
   }
-  while (g.imageTex.size() < f.images.size()) g.imageTex.push_back(g.tex2d(GL_NEAREST));
+  while (g.imageTex.size() < f.images.size()) g.imageTex.push_back(g.tex2d(GL_LINEAR));
   for (size_t i = 0; i < f.images.size(); i++) {
     g.glBindTexture(GL_TEXTURE_2D, g.imageTex[i]);
     g.glPixelStorei(GL_UNPACK_ALIGNMENT, 4);

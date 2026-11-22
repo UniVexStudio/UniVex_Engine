@@ -155,6 +155,9 @@ struct HubLaunchOptionsUVE final {
 /// `--install-package <file>` installs an engine package file (checksum beside it) and exits.
 int main(const int argc, char** argv) {
     const HubLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
+    if (options.error.has_value() || options.printVersion || !options.installPackage.empty()) {
+        UVE::Platform::AttachParentConsoleForCliUVE();
+    }
     if (options.error.has_value()) {
         std::cerr << "uve_hub: " << *options.error << '\n';
         return kInvalidCommandLineExitCodeUVE;

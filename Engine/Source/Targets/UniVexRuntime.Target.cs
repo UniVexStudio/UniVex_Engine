@@ -8,6 +8,7 @@ public class UniVexRuntimeTarget : TargetRules
     {
         Type = TargetType.Game;
         OutputName = "uve_runtime";
+        IsGuiApp = true;
 
         ExtraModuleNames.AddRange(new string[] {
             "EngineApp"

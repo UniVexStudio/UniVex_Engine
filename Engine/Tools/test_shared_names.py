@@ -183,5 +183,15 @@ class SharedNamesTest(unittest.TestCase):
                            build_apk.android_version_metadata((0, 1, 0, 1))[0])
 
 
+    def test_android_manifests_lock_landscape(self) -> None:
+        sys.path.insert(0, str(TOOLS_DIR / "android"))
+        import build_apk  # noqa: E402
+
+        for app in build_apk.APPS.values():
+            manifest = REPO_ROOT.joinpath(*app.manifest).read_text(encoding="utf-8")
+            self.assertIn('android:screenOrientation="sensorLandscape"', manifest,
+                          f"{app.target} manifest must lock orientation to sensorLandscape")
+
+
 if __name__ == "__main__":
     unittest.main()

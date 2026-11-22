@@ -510,6 +510,38 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
         !EnsureHostDepthUVE(surface, width, height)) {
         return;
     }
+
+#if defined(UNIVEX_GL_ES)
+    // On mobile TBDR GPUs, reading back scene depth every frame forces an unnecessary tile flush
+    // when nothing changed. Reuse the last depth snapshot while static, and refresh every 4th frame
+    // while camera/scene is moving.
+    std::uint64_t depthKey = 1469598103934665603ULL;
+    const auto mixDepthKey = [&depthKey](const void* data, const std::size_t size) {
+        const auto* bytes = static_cast<const unsigned char*>(data);
+        for (std::size_t i = 0U; i < size; ++i) {
+            depthKey = (depthKey ^ bytes[i]) * 1099511628211ULL;
+        }
+    };
+    mixDepthKey(&depth.inverseViewProjection, sizeof(depth.inverseViewProjection));
+    const int depthDims[2] = {m_hostDepthWidth, m_hostDepthHeight};
+    mixDepthKey(depthDims, sizeof(depthDims));
+    const std::size_t entityCount = m_entityManager.GetEntityCountUVE();
+    mixDepthKey(&entityCount, sizeof(entityCount));
+    const bool hasCachedDepth = !m_cachedHostDepth.empty() && m_cachedHostDepthWidth == m_hostDepthWidth &&
+                                m_cachedHostDepthHeight == m_hostDepthHeight;
+    const bool pointerActive = overlayState.input.IsDownUVE(VpBtnUVE::Left) ||
+                               overlayState.input.IsDownUVE(VpBtnUVE::Middle) ||
+                               overlayState.input.IsDownUVE(VpBtnUVE::Right);
+    ++m_hostDepthFrameCounter;
+    if (hasCachedDepth && ((depthKey == m_cachedHostDepthKey && !pointerActive) ||
+                           (depthKey != m_cachedHostDepthKey && (m_hostDepthFrameCounter % 4U) != 0U))) {
+        overlayState.sceneDepth = m_cachedHostDepth;
+        overlayState.sceneDepthWidth = m_cachedHostDepthWidth;
+        overlayState.sceneDepthHeight = m_cachedHostDepthHeight;
+        return;
+    }
+#endif
+
     const GLuint depthTexture = static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture));
     const GLuint fullscreenVao = surface.FullscreenVaoUVE();
     if (depthTexture == 0U || fullscreenVao == 0U) {
@@ -600,6 +632,10 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
             overlayState.sceneDepthWidth = m_hostDepthWidth;
             overlayState.sceneDepthHeight = m_hostDepthHeight;
+            m_cachedHostDepth = overlayState.sceneDepth;
+            m_cachedHostDepthWidth = m_hostDepthWidth;
+            m_cachedHostDepthHeight = m_hostDepthHeight;
+            m_cachedHostDepthKey = depthKey;
         }
 #else
         if (const auto* const rows =
@@ -701,9 +737,11 @@ void ViewportSceneInteractionUVE::RenderSelectionOutlineOrMaskUVE(
             maskRead = true;
         }
         if (maskRead) {
+            const float dpiScale = std::max(1.0F, overlayState.input.dpiScale);
             overlayState.selectionMaskWidth = width;
             overlayState.selectionMaskHeight = height;
-            overlayState.selectionOutlineRadius = static_cast<int>(std::lround(outline.thicknessPixels));
+            overlayState.selectionOutlineRadius =
+                std::max(1, static_cast<int>(std::lround(outline.thicknessPixels * dpiScale)));
             overlayState.selectionOutlineRgb = {outline.r, outline.g, outline.b};
         }
         glBindFramebuffer(GL_FRAMEBUFFER, surface.MsaaFboUVE());
@@ -793,8 +831,9 @@ void ViewportSceneInteractionUVE::UpdateSelectionFromMouseUVE(const Editor::Edit
     }
     m_selectionPressActive = false;
 
+    const float slop = (input.touchNavigation ? 8.0F : kNavClickSlopPixelsUVE) * std::max(1.0F, input.dpiScale);
     const Math::Vector2UVE dragDelta = input.DragDeltaUVE(VpBtnUVE::Left);
-    if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
+    if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > slop) {
         return;
     }
 
@@ -834,8 +873,9 @@ void ViewportSceneInteractionUVE::UpdateEntityContextToolbarFromMouseUVE(const E
     }
     m_contextToolbarPressActive = false;
 
+    const float slop = (input.touchNavigation ? 8.0F : kNavClickSlopPixelsUVE) * std::max(1.0F, input.dpiScale);
     const Math::Vector2UVE dragDelta = input.DragDeltaUVE(VpBtnUVE::Right);
-    if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > kNavClickSlopPixelsUVE) {
+    if ((std::fabs(dragDelta.x) + std::fabs(dragDelta.y)) > slop) {
         return;
     }
 
@@ -856,7 +896,8 @@ void ViewportSceneInteractionUVE::UpdateEntityContextToolbarFromMouseUVE(const E
     float anchorPixelY = 0.0F;
     if (univex::integration::ProjectWorldPointToPixelUVE(m_camera, width, height, worldTransform.worldPosition,
                                                          anchorPixelX, anchorPixelY)) {
-        m_editor.SetEntityContextToolbarAnchorUVE(pick.entity, anchorPixelX, anchorPixelY);
+        const float invScale = input.dpiScale > 1.0F ? (1.0F / input.dpiScale) : 1.0F;
+        m_editor.SetEntityContextToolbarAnchorUVE(pick.entity, anchorPixelX * invScale, anchorPixelY * invScale);
     } else {
         m_editor.ClearEntityContextToolbarUVE();
     }
@@ -872,9 +913,18 @@ void ViewportSceneInteractionUVE::UpdateOrbitPanZoomFromMouseUVE(const Editor::E
     const float orbitSens = static_cast<float>(std::clamp(prefs.orbitSensitivity, 0.05, 10.0));
     const float panSens = static_cast<float>(std::clamp(prefs.panSensitivity, 0.05, 10.0));
     const float zoomSens = static_cast<float>(std::clamp(prefs.zoomSensitivity, 0.05, 10.0));
+    const float dpiScale = std::max(1.0F, input.dpiScale);
+    const float invScale = 1.0F / dpiScale;
 
-    if (!suppressOrbit && input.alt && input.IsDraggingUVE(VpBtnUVE::Left, 0.0F)) {
-        m_camera.Orbit(input.mouseDelta.x * orbitSens, input.mouseDelta.y * orbitSens);
+    // On touch hosts (Android), dragging empty viewport space with one finger orbits directly
+    // without requiring Alt; two-finger drag (Middle) pans while pinch (wheel) dollies smoothly.
+    const bool touchOrbit = input.touchNavigation && !suppressOrbit &&
+                            input.IsDraggingUVE(VpBtnUVE::Left, 6.0F * dpiScale) &&
+                            !input.IsDownUVE(VpBtnUVE::Middle);
+    const bool desktopOrbit = !input.touchNavigation && !suppressOrbit && input.alt &&
+                              input.IsDraggingUVE(VpBtnUVE::Left, 0.0F);
+    if (touchOrbit || desktopOrbit) {
+        m_camera.Orbit(input.mouseDelta.x * invScale * orbitSens, input.mouseDelta.y * invScale * orbitSens);
         m_editor.NotifyViewportOrbitedUVE();
     } else if (input.IsDraggingUVE(VpBtnUVE::Middle, 0.0F)) {
         m_camera.Pan(input.mouseDelta.x * panSens, input.mouseDelta.y * panSens, framebufferHeight);
@@ -886,6 +936,10 @@ void ViewportSceneInteractionUVE::UpdateOrbitPanZoomFromMouseUVE(const Editor::E
 
 bool ViewportSceneInteractionUVE::UpdateFlyCameraUVE(const Editor::EditorViewportInputUVE& input,
                                                      const bool suppressed) {
+    // Pure-touch hosts use long-press Right click strictly for context menus, never WASD fly mode.
+    if (input.touchNavigation) {
+        return false;
+    }
     if (!input.IsDownUVE(VpBtnUVE::Right)) {
         if (m_flying || m_flyArmed) {
             m_flying = false;

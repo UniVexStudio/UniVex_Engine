@@ -78,7 +78,9 @@ enum class HubOutcomeUVE { Quit, OpenEditor };
     window.prismAssetsDirectory = unpacked / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE;
     window.logFile = context.registryFile.parent_path() / UVE::Hub::kHubLogFileNameUVE;
     window.beforeFrame = [&activity](UVE::Core::EngineCoreUVE& core) {
-        return UVE::AndroidHost::BeforeFrameUVE(activity, core, kHubRenderedMarkerUVE);
+        const bool uiBusy = prism::Application::exists() && prism::Application::get().needsRender();
+        const int idleWaitMs = uiBusy ? 0 : 50;
+        return UVE::AndroidHost::BeforeFrameUVE(activity, core, kHubRenderedMarkerUVE, idleWaitMs);
     };
 
     // Engine packages are usually in Downloads, which only Android's own picker can reach.

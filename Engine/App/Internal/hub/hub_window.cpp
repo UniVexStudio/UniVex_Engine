@@ -28,7 +28,9 @@ namespace {
 
 // Layout, in PRISM layout units.
 inline constexpr float kSidebarWidthUVE = 232.0F;
+inline constexpr float kCompactSidebarWidthUVE = 164.0F;
 inline constexpr float kSidebarInsetUVE = 12.0F;
+inline constexpr float kCompactSidebarInsetUVE = 8.0F;
 inline constexpr float kNavSpacingUVE = 2.0F;
 inline constexpr float kNavInsetTopUVE = 12.0F;
 inline constexpr float kFooterInsetUVE = 8.0F;
@@ -40,7 +42,7 @@ inline constexpr float kPagePaddingUVE = 24.0F;
 inline constexpr float kCompactPagePaddingUVE = 12.0F;
 inline constexpr float kSectionSpacingUVE = 16.0F;
 inline constexpr float kCompactSectionSpacingUVE = 10.0F;
-inline constexpr float kCompactBrandMarkSizeUVE = 24.0F;
+inline constexpr float kCompactBrandMarkSizeUVE = 26.0F;
 inline constexpr float kRowSpacingUVE = 8.0F;
 inline constexpr float kRowPaddingUVE = 12.0F;
 inline constexpr float kRowRadiusUVE = 6.0F;
@@ -135,20 +137,11 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
     content->add(prism::make<prism::Separator>(prism::Orientation::Horizontal));
     content->add(m_status);
 
-    prism::Ref<prism::Widget> root;
-    if (m_context.compactLayout) {
-        auto stacked = prism::vbox();
-        stacked->add(BuildTopNavUVE());
-        stacked->add(prism::make<prism::Separator>(prism::Orientation::Horizontal));
-        stacked->add(content, prism::Slot{1.0F});
-        root = stacked;
-    } else {
-        auto split = prism::hbox();
-        split->add(BuildSidebarUVE());
-        split->add(prism::make<prism::Separator>(prism::Orientation::Vertical));
-        split->add(content, prism::Slot{1.0F});
-        root = split;
-    }
+    auto split = prism::hbox();
+    split->add(BuildSidebarUVE());
+    split->add(prism::make<prism::Separator>(prism::Orientation::Vertical));
+    split->add(content, prism::Slot{1.0F});
+    prism::Ref<prism::Widget> root = split;
 
     auto window = prism::make<prism::Border>();
     window->setBackground(&prism::Theme::window).setChild(root);
@@ -172,23 +165,28 @@ prism::Ref<NavItemUVE> HubWindowUVE::MakeNavItemUVE(const std::string& label, co
 }
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildBrandHeaderUVE() {
+    const bool compact = m_context.compactLayout;
     auto names = prism::vbox(kBrandLineSpacingUVE);
     names->add(prism::make<prism::Label>("UniVex Hub", prism::FontRole::Semibold));
-    auto version = prism::make<prism::Label>("Hub " + Online::FormatDisplayVersionUVE(Online::kHubVersionUVE), prism::FontRole::Small);
+    auto version = prism::make<prism::Label>(
+        (compact ? "v" : "Hub ") + Online::FormatDisplayVersionUVE(Online::kHubVersionUVE), prism::FontRole::Small);
     version->setColor(&prism::Theme::textDim);
     names->add(version);
 
-    auto header = prism::hbox(kBrandGapUVE);
-    header->setPadding(prism::Margin(kSidebarInsetUVE + kBrandInsetUVE, kSectionSpacingUVE));
-    header->add(prism::make<LauncherUI::BrandMarkUVE>(kBrandMarkSizeUVE),
+    auto header = prism::hbox(compact ? kRowSpacingUVE : kBrandGapUVE);
+    const float inset = compact ? kCompactSidebarInsetUVE : kSidebarInsetUVE;
+    header->setPadding(prism::Margin(inset + kBrandInsetUVE, compact ? kCompactSectionSpacingUVE : kSectionSpacingUVE));
+    header->add(prism::make<LauncherUI::BrandMarkUVE>(compact ? kCompactBrandMarkSizeUVE : kBrandMarkSizeUVE),
                 prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     header->add(names, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     return header;
 }
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
+    const bool compact = m_context.compactLayout;
+    const float inset = compact ? kCompactSidebarInsetUVE : kSidebarInsetUVE;
     auto navigation = prism::vbox(kNavSpacingUVE);
-    navigation->setPadding(prism::Margin(kSidebarInsetUVE, kNavInsetTopUVE, kSidebarInsetUVE, 0.0F));
+    navigation->setPadding(prism::Margin(inset, compact ? kRowSpacingUVE : kNavInsetTopUVE, inset, 0.0F));
     navigation->add(MakeNavItemUVE("Projects", prism::Icon::Folder, HubPageUVE::Projects),
                     prism::Slot{0.0F, {}, prism::HAlign::Fill});
     navigation->add(MakeNavItemUVE("New Project", prism::Icon::Plus, HubPageUVE::NewProject),
@@ -198,7 +196,7 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
 
     // Settings is about the Hub itself, not a place to work in, so it sits apart at the bottom.
     auto footer = prism::vbox(kNavSpacingUVE);
-    footer->setPadding(prism::Margin(kSidebarInsetUVE, kFooterInsetUVE));
+    footer->setPadding(prism::Margin(inset, kFooterInsetUVE));
     footer->add(MakeNavItemUVE("Settings", prism::Icon::Settings, HubPageUVE::Settings),
                 prism::Slot{0.0F, {}, prism::HAlign::Fill});
 
@@ -212,7 +210,7 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildSidebarUVE() {
 
     auto frame = prism::make<prism::Border>();
     frame->setBackground(&prism::Theme::panel).setChild(sidebar);
-    frame->setFixedWidth(kSidebarWidthUVE);
+    frame->setFixedWidth(compact ? kCompactSidebarWidthUVE : kSidebarWidthUVE);
     return frame;
 }
 

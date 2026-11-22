@@ -225,6 +225,11 @@ private:
     std::size_t m_hostDepthPboNext = 0U;
     int m_hostDepthWidth = 0;
     int m_hostDepthHeight = 0;
+    std::vector<float> m_cachedHostDepth;
+    int m_cachedHostDepthWidth = 0;
+    int m_cachedHostDepthHeight = 0;
+    std::uint64_t m_cachedHostDepthKey = 0U;
+    std::uint32_t m_hostDepthFrameCounter = 0U;
 };
 
 } // namespace UVE::App::Viewports

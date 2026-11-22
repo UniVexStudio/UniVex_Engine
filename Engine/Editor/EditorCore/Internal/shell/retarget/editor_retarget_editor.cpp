@@ -759,12 +759,16 @@ void EditorRetargetWindowUVE::RenderUVE() {
         const prism::Rect rect = m_viewport->rect();
         if (rect.w >= 1.0F && rect.h >= 1.0F) {
             const EditorViewportInputUVE input = m_host.CaptureViewInputUVE(m_window, rect);
+            const float dpiScale = std::max(1.0F, input.dpiScale);
             Math::Vector2UVE used{0.0F, 0.0F};
-            const std::uint64_t texture = m_editor.RenderRetargetPreviewUVE(Math::Vector2UVE{std::floor(rect.w), std::floor(rect.h)}, used, input);
+            const std::uint64_t texture = m_editor.RenderRetargetPreviewUVE(
+                Math::Vector2UVE{std::max(1.0F, std::floor(rect.w * dpiScale)), std::max(1.0F, std::floor(rect.h * dpiScale))},
+                used, input);
             m_host.ApplyViewCursorUVE(m_window, input);
             if (texture != 0U && used.x > 0.0F && used.y > 0.0F) {
+                const float invScale = dpiScale > 1.0F ? (1.0F / dpiScale) : 1.0F;
                 EditorHostUVE::ViewImageUVE view{};
-                view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x, used.y};
+                view.rect = prism::Rect{std::floor(rect.x), std::floor(rect.y), used.x * invScale, used.y * invScale};
                 view.texture = static_cast<std::uint32_t>(texture);
                 view.usedWidth = used.x;
                 view.usedHeight = used.y;

@@ -31,6 +31,9 @@ public:
   void resize(int width, int height) override;
   void submit(const DrawList& list) override;
   PixelView readback() override;
+  /// Sets the physical-pixel-per-logical-unit scale factor (e.g., Android/Retina DPI scale).
+  void setPixelScale(float scale);
+  float pixelScale() const;
   unsigned colorTexture() const;           // GL texture holding the last frame (RGBA8, bottom-up), for compositing in a host renderer
   size_t lastDrawCalls() const;
 private:

@@ -746,6 +746,8 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
         m_main.reset();
         return false;
     }
+    m_backend->setPixelScale(m_main->uiScale);
+    m_backend->resize(m_main->fbWidth, m_main->fbHeight);
     m_app->setRenderBackend(m_backend);
 
     m_compositor = std::make_unique<CompositorUVE>();
@@ -841,7 +843,8 @@ int EditorHostUVE::OpenWindowUVE(prism::Ref<prism::Widget> root, const std::stri
             UVE_ERROR("Editor host: no renderer for the page {}: {}", title, error);
             return 0;
         }
-        w->backend->resize(w->uiWidth, w->uiHeight);
+        w->backend->setPixelScale(w->uiScale);
+        w->backend->resize(w->fbWidth, w->fbHeight);
         prism::OsWindowDesc desc{};
         desc.title = title;
         desc.width = w->uiWidth;
@@ -1066,10 +1069,12 @@ void EditorHostUVE::SyncSizeUVE(WindowUVE& w) {
         m_app->windowResize(w.id, uiWidth, uiHeight);
         if (w.id == kMainWindowUVE) {
             if (m_backend != nullptr) {
-                m_backend->resize(uiWidth, uiHeight);
+                m_backend->setPixelScale(scale);
+                m_backend->resize(width, height);
             }
         } else if (w.backend != nullptr) {
-            w.backend->resize(uiWidth, uiHeight);
+            w.backend->setPixelScale(scale);
+            w.backend->resize(width, height);
         }
     }
 }
@@ -1102,19 +1107,23 @@ EditorViewportInputUVE EditorHostUVE::CaptureViewInputUVE(const int id, const pr
         return input;
     }
     const WindowUVE& w = *found;
+    const float scale = std::max(1.0F, w.uiScale);
     const bool inside = w.mouseInside && w.mouse.x >= rect.x && w.mouse.y >= rect.y && w.mouse.x < rect.x + rect.w &&
                         w.mouse.y < rect.y + rect.h;
     // A floating panel (Details torn off, ...) leaves the viewport usable; a menu or a modal does not.
     input.hovered = inside && w.dragMode == WindowUVE::DragModeUVE::None && !m_app->windowHasBlockingPopup(id) &&
                     !m_app->windowWantsPointerAt(id, w.mouse);
-    input.imageOrigin = Math::Vector2UVE{rect.x, rect.y};
-    input.mousePos = Math::Vector2UVE{w.mouse.x, w.mouse.y};
-    input.mouseDelta = Math::Vector2UVE{w.mouse.x - w.frameStartMouse.x, w.mouse.y - w.frameStartMouse.y};
+    input.imageOrigin = Math::Vector2UVE{rect.x * scale, rect.y * scale};
+    input.mousePos = Math::Vector2UVE{w.mouse.x * scale, w.mouse.y * scale};
+    input.mouseDelta = Math::Vector2UVE{(w.mouse.x - w.frameStartMouse.x) * scale,
+                                        (w.mouse.y - w.frameStartMouse.y) * scale};
     input.wheel = w.wheel;
     input.deltaTime = w.deltaTime;
     input.shift = (w.mods & prism::ModShift) != 0;
     input.ctrl = (w.mods & prism::ModCtrl) != 0;
     input.alt = (w.mods & prism::ModAlt) != 0;
+    input.touchNavigation = m_singleSurface;
+    input.dpiScale = scale;
     // Keys reach the view only while its window has the keyboard.
     const bool windowHasKeys = m_app->activeWindow() == id;
     input.wantTextInput = !windowHasKeys || m_app->windowWantsKeyboard(id) || m_platform->TextInputActiveUVE();
@@ -1122,8 +1131,8 @@ EditorViewportInputUVE EditorHostUVE::CaptureViewInputUVE(const int id, const pr
         input.down[i] = w.down[i];
         input.clicked[i] = w.clicked[i];
         input.released[i] = w.released[i];
-        input.pressPos[i] = Math::Vector2UVE{w.pressPos[i].x, w.pressPos[i].y};
-        input.dragDistance[i] = w.dragDistance[i];
+        input.pressPos[i] = Math::Vector2UVE{w.pressPos[i].x * scale, w.pressPos[i].y * scale};
+        input.dragDistance[i] = w.dragDistance[i] * scale;
     }
     if (!input.wantTextInput) {
         input.keysDown = w.keysDown;
