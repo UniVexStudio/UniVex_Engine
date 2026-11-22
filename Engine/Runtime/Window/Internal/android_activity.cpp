@@ -56,7 +56,48 @@ private:
     return env->GetIntField(object, field);
 }
 
+inline constexpr const char* kKeyEventClassUVE = "android/view/KeyEvent";
+inline constexpr const char* kKeyEventConstructorUVE = "(II)V";
+inline constexpr const char* kUnicodeCharMethodUVE = "getUnicodeChar";
+inline constexpr const char* kUnicodeCharSignatureUVE = "(I)I";
+
 } // namespace
+
+unsigned int AndroidKeyCharacterUVE(ANativeActivity* const activity, const int action, const int keyCode,
+                                    const int metaState) {
+    if (activity == nullptr) {
+        return 0U;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return 0U;
+    }
+    const jclass type = env->FindClass(kKeyEventClassUVE);
+    if (type == nullptr) {
+        env->ExceptionClear();
+        return 0U;
+    }
+    const jmethodID constructor = env->GetMethodID(type, "<init>", kKeyEventConstructorUVE);
+    const jmethodID unicode = env->GetMethodID(type, kUnicodeCharMethodUVE, kUnicodeCharSignatureUVE);
+    if (constructor == nullptr || unicode == nullptr) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(type);
+        return 0U;
+    }
+    const jobject event = env->NewObject(type, constructor, static_cast<jint>(action), static_cast<jint>(keyCode));
+    jint character = 0;
+    if (event != nullptr) {
+        character = env->CallIntMethod(event, unicode, static_cast<jint>(metaState));
+        env->DeleteLocalRef(event);
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        character = 0;
+    }
+    env->DeleteLocalRef(type);
+    return character > 0 ? static_cast<unsigned int>(character) : 0U;
+}
 
 AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* const activity) {
     if (activity == nullptr) {

@@ -33,6 +33,8 @@ extern "C" __attribute__((visibility("default"))) int UveEditorRunUVE(android_ap
     }
     UVE::AndroidHost::ActivityStateUVE activity;
     UVE::AndroidHost::AttachUVE(activity, app);
+    // Back closes the editor's menus and dialogs (Escape); leaving the editor is its own command.
+    activity.backIsEscape = true;
     if (!UVE::AndroidHost::WaitForWindowUVE(activity)) {
         return kEditorStartFailedExitCodeUVE;
     }

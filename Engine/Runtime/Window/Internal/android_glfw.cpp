@@ -11,6 +11,7 @@
 #include <android/native_window.h>
 #include <dlfcn.h>
 
+#include <array>
 #include <chrono>
 #include <string>
 
@@ -19,7 +20,9 @@ struct GLFWwindow {
     float contentScale = 1.0F;
     bool focused = true;
     bool shouldClose = false;
-    bool pressed = false;
+    bool pressed = false;   // the left button (DispatchAndroidGlfwPointerUVE)
+    bool textInput = false; // the interface wants the soft keyboard
+    std::array<bool, GLFW_MOUSE_BUTTON_LAST + 1> buttons{};
     double cursorX = 0.0;
     double cursorY = 0.0;
     void* user = nullptr;
@@ -95,9 +98,44 @@ void DispatchAndroidGlfwPointerUVE(const AndroidPointerPhaseUVE phase, const flo
     const bool down = phase == AndroidPointerPhaseUVE::Down || phase == AndroidPointerPhaseUVE::Move;
     if (down != w.pressed) {
         w.pressed = down;
+        w.buttons[GLFW_MOUSE_BUTTON_LEFT] = down;
         if (w.mouseButton != nullptr) {
             w.mouseButton(&w, GLFW_MOUSE_BUTTON_LEFT, down ? GLFW_PRESS : GLFW_RELEASE, 0);
         }
+    }
+}
+
+void DispatchAndroidGlfwCursorUVE(const float x, const float y) {
+    GLFWwindow& w = g_windowUVE;
+    w.cursorX = x;
+    w.cursorY = y;
+    if (w.cursorPos != nullptr) {
+        w.cursorPos(&w, x, y);
+    }
+}
+
+void DispatchAndroidGlfwMouseButtonUVE(const int button, const bool down, const float x, const float y) {
+    if (button < 0 || button > GLFW_MOUSE_BUTTON_LAST) {
+        return;
+    }
+    DispatchAndroidGlfwCursorUVE(x, y);
+    GLFWwindow& w = g_windowUVE;
+    auto& held = w.buttons[static_cast<std::size_t>(button)];
+    if (held == down) {
+        return;
+    }
+    held = down;
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        w.pressed = down;
+    }
+    if (w.mouseButton != nullptr) {
+        w.mouseButton(&w, button, down ? GLFW_PRESS : GLFW_RELEASE, 0);
+    }
+}
+
+void DispatchAndroidGlfwScrollUVE(const float dy) {
+    if (g_windowUVE.scroll != nullptr) {
+        g_windowUVE.scroll(&g_windowUVE, 0.0, static_cast<double>(dy));
     }
 }
 
@@ -113,8 +151,24 @@ void DispatchAndroidGlfwKeyUVE(const int glfwKey, const int action, const int mo
     }
 }
 
+void SetAndroidGlfwTextInputUVE(const bool wanted) {
+    g_windowUVE.textInput = wanted;
+}
+
+bool AndroidGlfwTextInputWantedUVE() {
+    return g_windowUVE.textInput;
+}
+
 bool AndroidGlfwCloseRequestedUVE() {
     return g_windowUVE.shouldClose;
+}
+
+void ResetAndroidGlfwWindowUVE() {
+    GLFWwindow& w = g_windowUVE;
+    w.shouldClose = false;
+    w.pressed = false;
+    w.buttons.fill(false);
+    w.textInput = false;
 }
 
 } // namespace UVE::Window

@@ -344,6 +344,11 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
                                                               "file.keyboardShortcuts", "file.commandPalette"});
         items.push_back(prism::MenuItem::Item("Save Editor Preferences",
                                               [this] { static_cast<void>(m_editor.SaveSessionSettingsUVE()); }));
+        // Where the title bar has no close button (one full-screen surface), the project closes here.
+        if (prism::Application::get().platform().singleSurface()) {
+            items.push_back(prism::MenuItem::Sep());
+            items.push_back(prism::MenuItem::Item("Close Project", [] { prism::Application::get().quit(); }));
+        }
         return items;
     });
     menus->addMenu("Edit", [this] {
@@ -404,7 +409,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
     row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
 
     // - [] x
-    AddWindowButtonsUVE(*row, [] { prism::Application::get().quit(); });
+    AddWindowButtonsUVE(*row, [] { prism::Application::get().quit(); }, /*mainWindow*/ true);
 
     // [#1 logo] [ #15 title row      ]
     //           [ #2 viewport name tab ]
