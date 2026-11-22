@@ -112,7 +112,7 @@ private:
 /// One top-level menu entry used by BuildEditorHeaderUVE.
 struct EditorHeaderMenuEntryUVE final {
     std::string title;
-    prism::MenuBar::MenuFactory factory;
+    prism::MenuFactory factory;
 };
 
 /// Configuration for BuildEditorHeaderUVE: shared by the Level Editor and all secondary asset editors
