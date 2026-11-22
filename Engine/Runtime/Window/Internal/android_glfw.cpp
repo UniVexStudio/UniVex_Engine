@@ -53,6 +53,9 @@ GLFWmonitor g_monitorUVE;
 GLFWvidmode g_modeUVE{};
 ANativeActivity* g_activityUVE = nullptr;
 std::string g_clipboardUVE;
+bool g_hardwareInputActiveUVE = false;
+std::vector<UVE::Window::AndroidTouchContactUVE> g_touchContactsUVE;
+std::function<bool(float, float)> g_touchClaimHookUVE;
 const auto g_startUVE = std::chrono::steady_clock::now();
 /// The GLES library, for entry points eglGetProcAddress does not return.
 inline constexpr const char* kGlesLibraryUVE = "libGLESv3.so";
@@ -160,6 +163,46 @@ void DispatchAndroidGlfwKeyUVE(const int glfwKey, const int action, const int mo
     }
 }
 
+void SetAndroidGlfwHardwareInputUVE(const bool active) {
+    g_hardwareInputActiveUVE = active;
+}
+
+bool AndroidGlfwHasHardwareInputUVE() {
+    return g_hardwareInputActiveUVE;
+}
+
+void SetAndroidGlfwTouchContactsUVE(std::vector<AndroidTouchContactUVE> contacts) {
+    g_touchContactsUVE = std::move(contacts);
+}
+
+std::vector<AndroidTouchContactUVE> AndroidGlfwTouchContactsUVE() {
+    return g_touchContactsUVE;
+}
+
+void SetAndroidGlfwTouchClaimHookUVE(std::function<bool(float x, float y)> hook) {
+    g_touchClaimHookUVE = std::move(hook);
+}
+
+bool AndroidGlfwClaimTouchAtUVE(const float x, const float y) {
+    return g_touchClaimHookUVE && g_touchClaimHookUVE(x, y);
+}
+
+bool AndroidGlfwHasAllFilesAccessUVE() {
+    return HasAndroidAllFilesAccessUVE(g_activityUVE);
+}
+
+void RequestAndroidGlfwAllFilesAccessUVE() {
+    RequestAndroidAllFilesAccessUVE(g_activityUVE);
+}
+
+AndroidStoragePathsUVE ReadAndroidGlfwStoragePathsUVE() {
+    return ReadAndroidStoragePathsUVE(g_activityUVE);
+}
+
+AndroidSafeAreaUVE ReadAndroidGlfwSafeAreaUVE() {
+    return ReadAndroidSafeAreaUVE(g_activityUVE);
+}
+
 void SetAndroidGlfwTextInputUVE(const bool wanted) {
     g_windowUVE.textInput = wanted;
 }
@@ -178,6 +221,8 @@ void ResetAndroidGlfwWindowUVE() {
     w.pressed = false;
     w.buttons.fill(false);
     w.textInput = false;
+    g_touchContactsUVE.clear();
+    g_touchClaimHookUVE = nullptr;
 }
 
 } // namespace UVE::Window

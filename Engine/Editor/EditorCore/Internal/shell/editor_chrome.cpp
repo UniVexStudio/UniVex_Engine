@@ -8,6 +8,7 @@
 #include "prism/Application.h"
 #include "prism/Canvas.h"
 #include "prism/EngineView.h"
+#include "prism/Layouts.h"
 #include "prism/Theme.h"
 
 #include <algorithm>
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace UVE::Editor {
 
@@ -47,6 +49,9 @@ namespace {
 // ------------------------------------------------------------------------------------------ logo
 
 prism::Vec2 LogoBoxUVE::measure(prism::Vec2) {
+    if (m_compact) {
+        return m_desired = constrain(prism::Vec2(kCompactLogoBoxUVE, kCompactTitleRowUVE));
+    }
     return m_desired = constrain(prism::Vec2(kLogoBoxUVE, kTitleRowUVE + kTabRowUVE));
 }
 
@@ -54,14 +59,12 @@ void LogoBoxUVE::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     const prism::Rect r = rect();
     c.fillRect(r, t.header);
-    // The slot hugs the mark: a few pixels of the bar around it, no more.
-    const float side = std::floor(std::min(r.w, r.h) - 8.0F);
+    const float inset = m_compact ? 4.0F : 7.0F;
+    const float side = std::max(10.0F, std::floor(std::min(r.w, r.h) - inset));
     const prism::Rect mark{r.x + (r.w - side) * 0.5F, r.y + (r.h - side) * 0.5F, side, side};
     if (prism::hasBrandMark()) {
         prism::drawBrandMark(c, mark);
     } else {
-        // Without the brand image (assets missing) the slot still reads as the product's: a plain
-        // accent tile.
         c.fillRoundRect(mark, side * 0.5F, t.accent);
     }
     c.fillRect(prism::Rect{r.right() - 1.0F, r.y, 1.0F, r.h}, t.border);
@@ -98,6 +101,13 @@ void DocumentTabUVE::setDirty(const bool dirty) {
     }
 }
 
+void DocumentTabUVE::setCompact(const bool compact) {
+    if (compact != m_compact) {
+        m_compact = compact;
+        relayout();
+    }
+}
+
 bool DocumentTabUVE::onMouseDown(const prism::MouseEvent& e) {
     if (e.button == prism::MouseButton::Left && onClick) {
         onClick();
@@ -107,28 +117,34 @@ bool DocumentTabUVE::onMouseDown(const prism::MouseEvent& e) {
 }
 
 prism::Vec2 DocumentTabUVE::measure(prism::Vec2) {
-    const float w = std::max(170.0F, std::ceil(prism::theme().ui->width(m_name)) + 60.0F);
-    return m_desired = constrain(prism::Vec2(w, kTabRowUVE));
+    const float minW = m_compact ? 112.0F : 152.0F;
+    const float extra = m_compact ? 44.0F : 54.0F;
+    const float w = std::max(minW, std::ceil(prism::theme().ui->width(m_name)) + extra);
+    return m_desired = constrain(prism::Vec2(w, m_compact ? kCompactTitleRowUVE : kTabRowUVE));
 }
 
 void DocumentTabUVE::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     const prism::Rect r = rect();
-    const prism::Rect tab{r.x + 6.0F, r.y + 2.0F, r.w - 6.0F, r.h - 2.0F};
-    c.fillRoundRect(tab, 5.0F, t.panel);
-    c.fillRect(prism::Rect{tab.x, tab.bottom() - 5.0F, tab.w, 5.0F}, t.panel);
+    const float leftPad = m_compact ? 3.0F : 6.0F;
+    const prism::Rect tab{r.x + leftPad, r.y + 2.0F, std::max(24.0F, r.w - leftPad), r.h - 2.0F};
+    c.fillRoundRect(tab, 4.0F, t.panel);
+    c.fillRect(prism::Rect{tab.x, tab.bottom() - 4.0F, tab.w, 4.0F}, t.panel);
     c.fillRect(prism::Rect{tab.x, tab.y, tab.w, 2.0F}, t.highlight);
-    const prism::Rect iconBox{tab.x + 10.0F, std::floor(tab.y + (tab.h - 16.0F) * 0.5F), 16.0F, 16.0F};
+    const float iconSz = m_compact ? 13.0F : 14.0F;
+    const prism::Rect iconBox{tab.x + (m_compact ? 7.0F : 9.0F), std::floor(tab.y + (tab.h - iconSz) * 0.5F), iconSz,
+                              iconSz};
     if (m_icon != nullptr && m_iconSize > 0) {
         c.blitBlend(m_icon, m_iconSize, m_iconSize, m_iconSize, iconBox);
     } else {
         prism::drawIcon(c, m_fallback, iconBox, t.highlight);
     }
-    c.textIn(*t.ui, prism::Rect{tab.x + 32.0F, tab.y, tab.w - 52.0F, tab.h}, m_name, t.textBright, prism::HAlign::Left,
-             true);
+    const float textX = m_compact ? 24.0F : 28.0F;
+    const float textPadR = m_compact ? 18.0F : 20.0F;
+    c.textIn(*t.ui, prism::Rect{tab.x + textX, tab.y, std::max(16.0F, tab.w - textX - textPadR), tab.h}, m_name,
+             t.textBright, prism::HAlign::Left, true);
     if (m_dirty) {
-        // Unsaved changes: the dot at the tab's end, as editors mark a modified document.
-        c.fillCircle(prism::Vec2{tab.right() - 12.0F, tab.y + tab.h * 0.5F}, 3.5F, t.textBright);
+        c.fillCircle(prism::Vec2{tab.right() - 10.0F, tab.y + tab.h * 0.5F}, 3.0F, t.textBright);
     }
 }
 
@@ -248,6 +264,102 @@ void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose, const b
         row.add(maximize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     }
     row.add(close, prism::Slot{0.0F, prism::Margin(0.0F, 0.0F, 4.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
+}
+
+prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc) {
+    const bool singleSurface = prism::Application::exists() && prism::Application::get().platform().singleSurface();
+    if (singleSurface) {
+        // Consolidated single slim row on mobile:
+        // [Slim Logo] [Menu ▾] [Viewport / Document Tab] [Spacer] [- x (sub-windows only)]
+        auto row = prism::hbox(2.0F);
+        row->add(prism::make<LogoBoxUVE>(/*compact*/ true),
+                 prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
+
+        auto menuBtn = prism::make<prism::Button>("Menu", prism::Icon::ChevronDown, prism::ButtonStyle::Toolbar);
+        menuBtn->setTooltip("Editor menu");
+        auto entries = std::make_shared<std::vector<EditorHeaderMenuEntryUVE>>(std::move(desc.menus));
+        auto tail = std::move(desc.compactMenuTail);
+        std::weak_ptr<prism::Button> weakBtn = menuBtn;
+        menuBtn->onClick = [entries, tail, weakBtn] {
+            std::vector<prism::MenuItem> items;
+            for (const EditorHeaderMenuEntryUVE& entry : *entries) {
+                std::vector<prism::MenuItem> sub = entry.factory ? entry.factory() : std::vector<prism::MenuItem>{};
+                prism::MenuExtensions::global().merge(entry.title, sub);
+                items.push_back(prism::MenuItem::Sub(entry.title, std::move(sub)));
+            }
+            if (tail) {
+                for (prism::MenuItem& extra : tail()) {
+                    items.push_back(std::move(extra));
+                }
+            }
+            const prism::Rect anchor = weakBtn.lock() ? weakBtn.lock()->rect() : prism::Rect{0.0F, kCompactTitleRowUVE, 0.0F, 0.0F};
+            prism::showMenu(std::move(items), anchor, prism::PopupPlacement::Below);
+        };
+        row->add(menuBtn, prism::Slot{0.0F, prism::Margin(2.0F, 0.0F, 2.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
+
+        if (desc.documentTab) {
+            desc.documentTab->setCompact(true);
+            row->add(desc.documentTab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
+        }
+        row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
+        AddWindowButtonsUVE(*row, std::move(desc.onClose), desc.mainWindow);
+        if (desc.outTitleRow != nullptr) {
+            *desc.outTitleRow = row;
+        }
+
+        auto sized = prism::make<prism::SizeBox>();
+        sized->setHeightOverride(kCompactTitleRowUVE);
+        sized->setContent(row);
+
+        auto bar = prism::make<prism::Border>();
+        bar->setBackground(prism::ThemeColor(&prism::Theme::header));
+        bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+        bar->setChild(sized);
+        return bar;
+    }
+
+    // Desktop: slim classic 2-row header with MenuBar on Row 1 and DocumentTab on Row 2 beside LogoBox.
+    auto row = prism::hbox();
+    auto menus = prism::make<prism::MenuBar>();
+    menus->setShowLogo(false);
+    menus->setItemPadding(10.0F);
+    for (EditorHeaderMenuEntryUVE& entry : desc.menus) {
+        menus->addMenu(std::move(entry.title), std::move(entry.factory));
+    }
+    row->add(menus, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
+    AddWindowButtonsUVE(*row, std::move(desc.onClose), desc.mainWindow);
+
+    auto tabRow = prism::hbox();
+    if (desc.documentTab) {
+        desc.documentTab->setCompact(false);
+        tabRow->add(desc.documentTab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
+    }
+    tabRow->add(prism::make<DragStripUVE>(true), prism::Slot{1.0F});
+
+    auto titleRow = prism::make<prism::SizeBox>();
+    titleRow->setHeightOverride(kTitleRowUVE);
+    titleRow->setContent(row);
+    auto tabRowBox = prism::make<prism::SizeBox>();
+    tabRowBox->setHeightOverride(kTabRowUVE);
+    tabRowBox->setContent(tabRow);
+
+    auto right = prism::vbox();
+    right->add(titleRow);
+    right->add(tabRowBox);
+
+    auto top = prism::hbox();
+    top->add(prism::make<LogoBoxUVE>(/*compact*/ false));
+    top->add(right, prism::Slot{1.0F});
+    if (desc.outTitleRow != nullptr) {
+        *desc.outTitleRow = top;
+    }
+
+    auto bar = prism::make<prism::Border>();
+    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
+    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+    bar->setChild(top);
+    return bar;
 }
 
 } // namespace UVE::Editor

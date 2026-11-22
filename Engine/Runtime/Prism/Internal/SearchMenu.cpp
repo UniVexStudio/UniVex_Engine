@@ -26,9 +26,11 @@ public:
 
   SearchMenuPopup(std::vector<MenuItem> items, std::string placeholder, bool flyouts) : m_flyouts(flyouts) {
     collect(items, "");
+    const bool compact = isCompact();
     float labels = 0;
     for (const Entry& e : m_entries) labels = std::max(labels, std::ceil(theme().ui->width(e.item.label)));
-    m_width = std::clamp(labels + 150.f, 260.f, 420.f);
+    const float maxW = Application::exists() ? std::max(180.f, Application::get().windowSize().x - 16.f) : 380.f;
+    m_width = std::clamp(labels + (compact ? 96.f : 136.f), compact ? 200.f : 250.f, std::min(compact ? 320.f : 400.f, maxW));
     m_input = make<TextInput>("", std::move(placeholder));
     m_input->setLeadingIcon(Icon::Search);
     m_input->setClearable(true);
@@ -40,32 +42,39 @@ public:
   }
 
   Vec2 measure(Vec2 avail) override {
+    const bool compact = isCompact();
     float listH = 0;
     for (const Row& r : m_rows) listH += rowHeight(r);
-    const float maxH = std::max(160.f, std::min(480.f, avail.y > 0 ? avail.y - 16 : 480.f));
-    // As tall as it first opened, while typing narrows the list: it stays where it is instead of
-    // jumping to another side of its anchor.
-    const float h = std::clamp(kTop + std::max(listH, kRow) + 6, 80.f, maxH);
+    const float cap = compact ? 300.f : 440.f;
+    const float maxH = std::max(110.f, std::min(cap, avail.y > 0 ? avail.y - 16.f : cap));
+    const float h = std::clamp(topHeight() + std::max(listH, rowPx()) + 6.f, 76.f, maxH);
     if (m_height <= 0) m_height = h;
-    m_desired = {m_width, std::max(m_height, h)};
+    const float w = avail.x > 0 ? std::min(m_width, std::max(160.f, avail.x - 16.f)) : m_width;
+    m_desired = {w, std::min(maxH, std::max(m_height, h))};
     return m_desired;
   }
   void arrange(Rect r) override {
     m_rect = r;
-    m_input->measure({r.w - 12, 28});
-    m_input->arrange({r.x + 6, r.y + 6, r.w - 12, 28});
+    const float inputH = isCompact() ? 22.f : 26.f;
+    m_input->measure({r.w - 12.f, inputH});
+    m_input->arrange({r.x + 6.f, r.y + 5.f, r.w - 12.f, inputH});
   }
   bool hitSelf() const override { return true; }
 
   void paint(Canvas& c) override {
     const Theme& t = theme();
+    const bool compact = isCompact();
     c.shadow(m_rect, 5, 14, Color(0, 0, 0, 150));
     c.fillRoundRect(m_rect, 5, t.popup);
     c.strokeRoundRect(m_rect, 5, t.borderStrong, 1);
     m_input->paint(c);
     const Rect list = listRect();
+    const float totalH = contentHeight();
+    const float maxScroll = std::max(0.f, totalH - list.h);
+    m_scroll = std::clamp(m_scroll, 0.f, maxScroll);
     c.pushClip(list);
     float y = list.y - m_scroll;
+    const float iconSz = compact ? 14.f : 16.f;
     for (size_t i = 0; i < m_rows.size(); i++) {
       const Row& row = m_rows[i];
       const Rect rr{list.x, y, list.w, rowHeight(row)};
@@ -76,14 +85,13 @@ public:
         continue;
       }
       if (row.header) {
-        // A section title ("GET", "CREATE") is small and dim with a rule after it; a group's name reads as a heading.
         const bool section = row.entry >= 0;
         if (section) {
-          c.textIn(*t.small, {rr.x + 10, rr.y + 2, rr.w - 20, rr.h - 2}, row.text, t.textDisabled, HAlign::Left, true);
+          c.textIn(*t.small, {rr.x + 8, rr.y + 1, rr.w - 16, rr.h - 1}, row.text, t.textDisabled, HAlign::Left, true);
           const float tw = t.small->width(row.text);
-          c.fillRect({rr.x + 18 + tw, std::floor(rr.y + rr.h * 0.5f + 1), rr.w - 28 - tw, 1}, t.borderSoft);
+          c.fillRect({rr.x + 14 + tw, std::floor(rr.y + rr.h * 0.5f + 1), rr.w - 22 - tw, 1}, t.borderSoft);
         } else {
-          c.textIn(*t.semibold, {rr.x + 10, rr.y + 2, rr.w - 20, rr.h - 2}, row.text, t.textDim, HAlign::Left, true);
+          c.textIn(*t.semibold, {rr.x + 8, rr.y + 1, rr.w - 16, rr.h - 1}, row.text, t.textDim, HAlign::Left, true);
         }
         continue;
       }
@@ -92,34 +100,72 @@ public:
       if (hot) c.fillRoundRect(rr.deflated(Margin(2, 1)), 3, t.rowSelected);
       const Color fg = !e.item.enabled ? t.textDisabled : (hot ? t.textBright : t.text);
       const Color dim = !e.item.enabled ? t.textDisabled : (hot ? t.text : t.textDim);
-      const Rect ic{rr.x + 8, rr.y + (rr.h - 16) * 0.5f, 16, 16};
+      const Rect ic{rr.x + 6, rr.y + (rr.h - iconSz) * 0.5f, iconSz, iconSz};
       if (e.item.image && e.item.imageSize > 0) c.blitBlend(e.item.image, e.item.imageSize, e.item.imageSize, e.item.imageSize, ic);
       else if (e.item.icon != Icon::None) drawIcon(c, e.item.icon, ic, dim);
       const bool searching = !m_query.empty();
-      const float labelW = searching && !e.group.empty() ? rr.w * 0.62f : rr.w - 40;
-      c.textIn(*t.ui, {rr.x + 32, rr.y, labelW - 32, rr.h}, e.item.label, fg, HAlign::Left, true);
+      const float textX = compact ? 26.f : 30.f;
+      const float labelW = searching && !e.group.empty() ? rr.w * 0.62f : rr.w - 34.f;
+      c.textIn(*t.ui, {rr.x + textX, rr.y, std::max(24.f, labelW - textX), rr.h}, e.item.label, fg, HAlign::Left, true);
       if (e.flyout) {
-        drawIcon(c, Icon::ChevronRight, {rr.right() - 22, ic.y, 16, 16}, dim, 1.4f);
+        drawIcon(c, Icon::ChevronRight, {rr.right() - 20, ic.y, iconSz, iconSz}, dim, 1.4f);
       } else if (searching && !e.group.empty()) {
-        c.textIn(*t.small, {rr.x + labelW, rr.y, rr.w - labelW - 10, rr.h}, e.group, dim, HAlign::Right, true);
+        c.textIn(*t.small, {rr.x + labelW, rr.y, rr.w - labelW - 8, rr.h}, e.group, dim, HAlign::Right, true);
       } else if (!e.item.shortcut.empty()) {
-        c.textIn(*t.small, {rr.x, rr.y, rr.w - 10, rr.h}, e.item.shortcut, dim, HAlign::Right, true);
+        c.textIn(*t.small, {rr.x, rr.y, rr.w - 8, rr.h}, e.item.shortcut, dim, HAlign::Right, true);
       }
     }
     c.popClip();
+    if (maxScroll > 0.f) {
+      const float trackH = std::max(16.f, list.h - 4.f);
+      const float thumbH = std::clamp(trackH * (list.h / totalH), 18.f, trackH);
+      const float thumbY = list.y + 2.f + (trackH - thumbH) * (m_scroll / maxScroll);
+      c.fillRoundRect({m_rect.right() - 5.f, thumbY, 3.f, thumbH}, 1.5f, t.textDim);
+    }
   }
 
   bool onMouseMove(const MouseEvent& e) override {
+    if (m_listPressed && contentHeight() > listRect().h + 0.5f) {
+      const float dy = e.pos.y - m_pressY;
+      if (!m_didDragScroll && std::abs(dy) > 6.f) {
+        m_didDragScroll = true;
+        closeSub();
+      }
+      if (m_didDragScroll) {
+        m_scroll = std::clamp(m_pressScroll - dy, 0.f, std::max(0.f, contentHeight() - listRect().h));
+        invalidate();
+        return true;
+      }
+    }
     const int i = rowAt(e.pos);
     if (i >= 0 && pickable(i) && i != m_sel) { m_sel = i; invalidate(); }
-    // A category opens beside the menu while the pointer is on it.
     if (i >= 0 && pickable(i) && isFlyout(i)) openSub(i);
-    else if (i != m_subRow && m_rect.contains(e.pos)) closeSub();   // anywhere else in the menu (the search field too)
+    else if (i != m_subRow && m_rect.contains(e.pos)) closeSub();
     return true;
   }
   bool onMouseDown(const MouseEvent& e) override {
-    const int i = rowAt(e.pos);
-    if (i >= 0 && pickable(i)) { m_sel = i; accept(); }
+    if (e.button == MouseButton::Left) {
+      if (listRect().contains(e.pos)) {
+        m_listPressed = true;
+        m_didDragScroll = false;
+        m_pressY = e.pos.y;
+        m_pressScroll = m_scroll;
+        const int i = rowAt(e.pos);
+        if (i >= 0 && pickable(i)) { m_sel = i; invalidate(); }
+      }
+    }
+    return true;
+  }
+  bool onMouseUp(const MouseEvent& e) override {
+    if (e.button != MouseButton::Left) return true;
+    const bool wasPressed = m_listPressed;
+    const bool dragged = m_didDragScroll;
+    m_listPressed = false;
+    m_didDragScroll = false;
+    if (wasPressed && !dragged) {
+      const int i = rowAt(e.pos);
+      if (i >= 0 && pickable(i)) { m_sel = i; accept(); }
+    }
     return true;
   }
   bool onMouseWheel(const MouseEvent& e) override {
@@ -142,7 +188,13 @@ public:
   void focusInput() { Application::get().setFocus(m_input.get()); }
 
 private:
-  static constexpr float kRow = 24, kHeader = 24, kSep = 9, kTop = 40;
+  static bool isCompact() {
+    return Application::exists() && Application::get().platform().singleSurface();
+  }
+  static float rowPx() { return isCompact() ? 20.f : 22.f; }
+  static float headerPx() { return isCompact() ? 19.f : 22.f; }
+  static float topHeight() { return isCompact() ? 31.f : 36.f; }
+  static constexpr float kSep = 7.f;
 
   void collect(const std::vector<MenuItem>& items, const std::string& group) {
     for (const MenuItem& it : items) {
@@ -163,13 +215,13 @@ private:
       m_entries.push_back({it, group});
     }
   }
-  static float rowHeight(const Row& r) { return r.separator ? kSep : r.header ? kHeader : kRow; }
+  static float rowHeight(const Row& r) { return r.separator ? kSep : r.header ? headerPx() : rowPx(); }
   float contentHeight() const {
     float h = 0;
     for (const Row& r : m_rows) h += rowHeight(r);
     return h;
   }
-  Rect listRect() const { return {m_rect.x + 4, m_rect.y + kTop, m_rect.w - 8, m_rect.h - kTop - 4}; }
+  Rect listRect() const { return {m_rect.x + 4, m_rect.y + topHeight(), m_rect.w - 8, std::max(0.f, m_rect.h - topHeight() - 4)}; }
   int rowAt(Vec2 p) const {
     const Rect l = listRect();
     if (!l.contains(p)) return -1;
@@ -217,7 +269,7 @@ private:
     m_sel = i;
     float top = 0;
     for (int k = 0; k < m_sel; k++) top += rowHeight(m_rows[size_t(k)]);
-    const float bottom = top + kRow, vh = listRect().h;
+    const float bottom = top + rowPx(), vh = listRect().h;
     if (top < m_scroll) m_scroll = top;
     if (bottom > m_scroll + vh) m_scroll = bottom - vh;
     invalidate();
@@ -307,6 +359,10 @@ private:
   int m_subRow = -1;
   int m_sel = -1;
   float m_scroll = 0;
+  bool m_listPressed = false;
+  bool m_didDragScroll = false;
+  float m_pressY = 0;
+  float m_pressScroll = 0;
 };
 
 } // namespace
@@ -317,7 +373,11 @@ void showSearchMenu(std::vector<MenuItem> items, Rect anchor, PopupPlacement pla
   o.placement = placement;
   o.anchor = anchor;
   Application::get().showPopup(popup, o);
-  popup->focusInput();
+  // On touch/mobile hosts, avoid auto-focusing the search box so the soft keyboard does not pop up
+  // over the menu items before the user explicitly taps the search field.
+  if (!Application::get().platform().singleSurface()) {
+    popup->focusInput();
+  }
 }
 
 } // namespace prism

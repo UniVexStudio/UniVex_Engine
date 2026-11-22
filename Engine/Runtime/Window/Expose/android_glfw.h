@@ -8,10 +8,24 @@
 
 #include <GLFW/glfw3.h>
 
+#include <cstdint>
+#include <functional>
+#include <vector>
+
+#include "android_activity.h"
+
 struct ANativeActivity;
 struct ANativeWindow;
 
 namespace UVE::Window {
+
+/// One live finger contact on the Android surface, in physical surface pixels.
+struct AndroidTouchContactUVE final {
+    std::int32_t id = -1;
+    float x = 0.0F;
+    float y = 0.0F;
+    bool claimed = false;
+};
 
 /// The one GLFW window, standing for the activity's surface.
 [[nodiscard]] GLFWwindow* AndroidGlfwWindowUVE();
@@ -36,6 +50,24 @@ void DispatchAndroidGlfwScrollUVE(float dy);
 void DispatchAndroidGlfwCharUVE(unsigned int codepoint);
 /// A key from the soft keyboard or a hardware keyboard, as a GLFW key code.
 void DispatchAndroidGlfwKeyUVE(int glfwKey, int action, int mods);
+
+/// True while a hardware mouse or external keyboard is connected or actively used on Android.
+void SetAndroidGlfwHardwareInputUVE(bool active);
+[[nodiscard]] bool AndroidGlfwHasHardwareInputUVE();
+
+/// Multi-touch contact stream for the on-screen Android viewport touch controller.
+void SetAndroidGlfwTouchContactsUVE(std::vector<AndroidTouchContactUVE> contacts);
+[[nodiscard]] std::vector<AndroidTouchContactUVE> AndroidGlfwTouchContactsUVE();
+/// Registers a hit-test callback (in physical surface pixels) that returns true when a finger
+/// landing at (x, y) belongs to the on-screen viewport touch controller.
+void SetAndroidGlfwTouchClaimHookUVE(std::function<bool(float x, float y)> hook);
+[[nodiscard]] bool AndroidGlfwClaimTouchAtUVE(float x, float y);
+
+/// Storage permission and public external directory queries routed through the bound activity.
+[[nodiscard]] bool AndroidGlfwHasAllFilesAccessUVE();
+void RequestAndroidGlfwAllFilesAccessUVE();
+[[nodiscard]] AndroidStoragePathsUVE ReadAndroidGlfwStoragePathsUVE();
+[[nodiscard]] AndroidSafeAreaUVE ReadAndroidGlfwSafeAreaUVE();
 
 /// The interface wants typed text (a text field has focus): the app shows the soft keyboard.
 void SetAndroidGlfwTextInputUVE(bool wanted);

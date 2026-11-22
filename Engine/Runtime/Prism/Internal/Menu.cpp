@@ -7,48 +7,62 @@
 namespace prism {
 namespace {
 
-constexpr float kRowH = 24, kSepH = 9, kPadY = 4;
+constexpr float kDesktopRowH = 22.f, kCompactRowH = 20.f, kSepH = 7.f, kPadY = 3.f;
 
 class MenuPopup : public Widget {
 public:
   MenuPopup(std::vector<MenuItem> items) : m_items(std::move(items)) {}
 
-  Vec2 measure(Vec2) override {
+  Vec2 measure(Vec2 avail) override {
     const Theme& t = theme();
+    const bool compact = isCompact();
     float lw = 0, sw = 0;
     for (auto& it : m_items) {
       if (it.separator) continue;
       lw = std::max(lw, std::ceil(t.ui->width(it.label)));
       sw = std::max(sw, std::ceil(t.ui->width(it.shortcut)));
     }
-    // The label is drawn from x+30 in a box 60 narrower than the row, and the row is inset 4 on
-    // each side of the menu: the menu is that much wider than its longest label.
-    float w = 30 + lw + 30 + 8 + 4 + (sw > 0 ? 28 + sw : 0);
-    float h = kPadY * 2;
-    for (auto& it : m_items) h += it.separator ? kSepH : kRowH;
-    return m_desired = {std::max(w, 190.f), h};
+    const float iconPad = compact ? 26.f : 30.f;
+    const float trailPad = compact ? 24.f : 30.f;
+    float w = iconPad + lw + trailPad + 12.f + (sw > 0 ? 22.f + sw : 0.f);
+    w = std::max(w, compact ? 156.f : 184.f);
+    const Vec2 ws = Application::exists() ? Application::get().windowSize() : avail;
+    if (ws.x > 0.f) w = std::min(w, std::max(140.f, ws.x - 16.f));
+    const float contentH = totalContentHeight();
+    const float maxH = ws.y > 0.f ? std::max(80.f, ws.y - 16.f) : contentH;
+    return m_desired = {w, std::min(contentH, maxH)};
   }
 
   void paint(Canvas& c) override {
     const Theme& t = theme();
+    const bool compact = isCompact();
     c.fillRoundRect(m_rect, 5, t.popup);
     c.strokeRoundRect(m_rect, 5, t.borderStrong);
+    const Rect clip = m_rect.deflated(Margin(1.f, kPadY));
+    const float totalH = totalContentHeight();
+    const bool scrollable = totalH > m_rect.h + 0.5f;
+    const float maxScroll = std::max(0.f, totalH - m_rect.h);
+    m_scroll = std::clamp(m_scroll, 0.f, maxScroll);
+    c.pushClip(clip);
+    const float iconPad = compact ? 26.f : 30.f;
+    const float iconSz = compact ? 14.f : 16.f;
     for (int i = 0; i < int(m_items.size()); i++) {
       const MenuItem& it = m_items[size_t(i)];
       Rect r = rowRect(i);
+      if (r.bottom() < clip.y || r.y > clip.bottom()) continue;
       if (it.separator) {
         c.fillRect({r.x + 6, std::floor(r.y + r.h * 0.5f), r.w - 12, 1}, t.borderSoft);
         continue;
       }
       if (it.header) {
-        c.textIn(*t.small, {r.x + 8, r.y, r.w - 16, r.h}, it.label, t.textDim, HAlign::Left, false);
+        c.textIn(*t.small, {r.x + 8, r.y, r.w - 16, r.h}, it.label, t.textDim, HAlign::Left, true);
         continue;
       }
       bool hot = i == m_hover && it.enabled;
       if (hot) c.fillRoundRect(r, 3, t.rowSelected);
       Color fg = !it.enabled ? t.textDisabled : (hot ? t.textBright : t.text);
       Color dim = !it.enabled ? t.textDisabled : (hot ? t.text : t.textDim);
-      Rect ic{r.x + 6, r.y + (r.h - 16) * 0.5f, 16, 16};
+      Rect ic{r.x + 6, r.y + (r.h - iconSz) * 0.5f, iconSz, iconSz};
       if (it.checkable) {
         if (it.checked) drawIcon(c, Icon::Check, ic, t.highlight, 1.6f);
         else if (it.image && it.imageSize > 0) c.blitBlend(it.image, it.imageSize, it.imageSize, it.imageSize, ic);
@@ -58,22 +72,62 @@ public:
       } else if (it.icon != Icon::None) {
         drawIcon(c, it.icon, ic, dim);
       }
-      c.textIn(*t.ui, {r.x + 30, r.y, r.w - 60, r.h}, it.label, fg, HAlign::Left, false);
-      if (!it.sub.empty()) drawIcon(c, Icon::ChevronRight, {r.right() - 20, ic.y, 16, 16}, dim, 1.4f);
-      else if (!it.shortcut.empty()) c.textIn(*t.ui, {r.x, r.y, r.w - 12, r.h}, it.shortcut, dim, HAlign::Right, false);
+      const float rightReserve = !it.sub.empty() ? 22.f : (!it.shortcut.empty() ? 14.f : 8.f);
+      c.textIn(*t.ui, {r.x + iconPad, r.y, std::max(24.f, r.w - iconPad - rightReserve), r.h}, it.label, fg, HAlign::Left, true);
+      if (!it.sub.empty()) drawIcon(c, Icon::ChevronRight, {r.right() - 18, ic.y, iconSz, iconSz}, dim, 1.4f);
+      else if (!it.shortcut.empty()) c.textIn(*t.small, {r.x, r.y, r.w - 10, r.h}, it.shortcut, dim, HAlign::Right, false);
+    }
+    c.popClip();
+    if (scrollable && maxScroll > 0.f) {
+      const float trackH = std::max(16.f, m_rect.h - 8.f);
+      const float thumbH = std::clamp(trackH * (m_rect.h / totalH), 18.f, trackH);
+      const float thumbY = m_rect.y + 4.f + (trackH - thumbH) * (m_scroll / maxScroll);
+      c.fillRoundRect({m_rect.right() - 5.f, thumbY, 3.f, thumbH}, 1.5f, t.textDim);
     }
   }
 
   bool onMouseMove(const MouseEvent& e) override {
+    if (m_pressed && totalContentHeight() > m_rect.h + 0.5f) {
+      const float dy = e.pos.y - m_pressY;
+      if (!m_didDragScroll && std::abs(dy) > 6.f) {
+        m_didDragScroll = true;
+        closeSub();
+      }
+      if (m_didDragScroll) {
+        const float maxScroll = std::max(0.f, totalContentHeight() - m_rect.h);
+        m_scroll = std::clamp(m_pressScroll - dy, 0.f, maxScroll);
+        invalidate();
+        return true;
+      }
+    }
     int i = rowAt(e.pos);
     if (i >= 0 && !m_items[size_t(i)].separator && i != m_hover) hoverRow(i);
     return true;
   }
-  bool onMouseDown(const MouseEvent& /*e*/) override { return true; }
+  bool onMouseDown(const MouseEvent& e) override {
+    if (e.button == MouseButton::Left) {
+      m_pressed = true;
+      m_didDragScroll = false;
+      m_pressY = e.pos.y;
+      m_pressScroll = m_scroll;
+    }
+    return true;
+  }
   bool onMouseUp(const MouseEvent& e) override {
     if (e.button != MouseButton::Left) return true;
+    const bool dragged = m_didDragScroll;
+    m_pressed = false;
+    m_didDragScroll = false;
+    if (dragged) return true;
     int i = rowAt(e.pos);
     if (i >= 0) activate(i);
+    return true;
+  }
+  bool onMouseWheel(const MouseEvent& e) override {
+    const float maxScroll = std::max(0.f, totalContentHeight() - m_rect.h);
+    if (maxScroll <= 0.f) return false;
+    m_scroll = std::clamp(m_scroll - e.wheel.y * 36.f, 0.f, maxScroll);
+    invalidate();
     return true;
   }
   void onMouseLeave() override {
@@ -85,7 +139,7 @@ public:
     auto step = [&](int dir) {
       for (int k = 1; k <= n; k++) {
         int j = ((m_hover < 0 ? (dir > 0 ? -1 : 0) : m_hover) + dir * k + n * 2) % n;
-        if (!m_items[size_t(j)].separator && m_items[size_t(j)].enabled) { hoverRow(j); return; }
+        if (!m_items[size_t(j)].separator && m_items[size_t(j)].enabled) { hoverRow(j); ensureVisible(j); return; }
       }
     };
     switch (e.key) {
@@ -100,12 +154,32 @@ public:
   void setParentMenu(bool p) { m_parentMenu = p; }
 
 private:
+  static bool isCompact() {
+    return Application::exists() && Application::get().platform().singleSurface();
+  }
+  static float itemHeight(const MenuItem& it) {
+    return it.separator ? kSepH : (isCompact() ? kCompactRowH : kDesktopRowH);
+  }
+  float totalContentHeight() const {
+    float h = kPadY * 2.f;
+    for (const auto& it : m_items) h += itemHeight(it);
+    return h;
+  }
   Rect rowRect(int i) const {
-    float y = m_rect.y + kPadY;
-    for (int k = 0; k < i; k++) y += m_items[size_t(k)].separator ? kSepH : kRowH;
-    return {m_rect.x + 4, y, m_rect.w - 8, m_items[size_t(i)].separator ? kSepH : kRowH};
+    float y = m_rect.y + kPadY - m_scroll;
+    for (int k = 0; k < i; k++) y += itemHeight(m_items[size_t(k)]);
+    return {m_rect.x + 4, y, m_rect.w - 8, itemHeight(m_items[size_t(i)])};
+  }
+  void ensureVisible(int i) {
+    float top = kPadY;
+    for (int k = 0; k < i; k++) top += itemHeight(m_items[size_t(k)]);
+    const float bot = top + itemHeight(m_items[size_t(i)]);
+    if (top < m_scroll) m_scroll = top;
+    if (bot > m_scroll + m_rect.h) m_scroll = bot - m_rect.h;
+    m_scroll = std::clamp(m_scroll, 0.f, std::max(0.f, totalContentHeight() - m_rect.h));
   }
   int rowAt(Vec2 p) const {
+    if (!m_rect.deflated(Margin(1.f, kPadY)).contains(p)) return -1;
     for (int i = 0; i < int(m_items.size()); i++) if (rowRect(i).contains(p)) return i;
     return -1;
   }
@@ -151,6 +225,11 @@ private:
   int m_hover = -1, m_subRow = -1;
   Ref<Widget> m_sub;
   bool m_parentMenu = false;
+  float m_scroll = 0.f;
+  bool m_pressed = false;
+  bool m_didDragScroll = false;
+  float m_pressY = 0.f;
+  float m_pressScroll = 0.f;
 };
 
 } // namespace

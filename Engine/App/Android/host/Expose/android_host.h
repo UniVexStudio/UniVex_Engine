@@ -49,6 +49,10 @@ struct TouchGestureUVE final {
     float lastY = 0.0F;
     float pinchDistance = 0.0F;
     std::int64_t startMs = 0;
+    /// Android pointer IDs currently claimed by the on-screen viewport touch controller.
+    std::vector<std::int32_t> claimedPointerIds;
+    /// Last AMotionEvent_getButtonState bitmask seen from a hardware mouse.
+    std::int32_t mouseButtonMask = 0;
 };
 
 /// What the attached app knows about its activity.
@@ -69,6 +73,8 @@ struct ActivityStateUVE final {
     bool keyboardShown = false;
     /// Remaining frames to keep draining the IME queue after keyboardShown turns false.
     int imeDrainTailFrames = 0;
+    /// Last polled hardware mouse/keyboard connection state from UniVexActivity.
+    bool lastHardwareInputConnected = false;
     /// Timestamp (steady ms) of the last touch, key, IME, or lifecycle interaction (for smart idle).
     std::int64_t lastInteractionMs = 0;
     /// Surface pixels per density-independent pixel (density / 160 dpi).

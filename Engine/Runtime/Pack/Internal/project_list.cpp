@@ -90,8 +90,11 @@ ProjectListStatusUVE ProjectListStatusForUVE(const Platform::EditorProjectVersio
 
 LauncherSettingsUVE LoadLauncherSettingsUVE(const std::filesystem::path& file) {
     LauncherSettingsUVE settings;
-    const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();
-    if (home.success) {
+    const Platform::ApplicationUserDataDirectoryResultUVE documents = Platform::ResolveUserDocumentsDirectoryUVE();
+    if (documents.success) {
+        settings.defaultProjectLocation = documents.directory / kDefaultProjectsDirectoryNameUVE;
+    } else if (const Platform::ApplicationUserDataDirectoryResultUVE home = Platform::ResolveUserHomeDirectoryUVE();
+               home.success) {
         settings.defaultProjectLocation = home.directory / kDefaultProjectsDirectoryNameUVE;
     }
     std::ifstream input(file, std::ios::binary);
@@ -106,7 +109,19 @@ LauncherSettingsUVE LoadLauncherSettingsUVE(const std::filesystem::path& file) {
     }
     const std::string location = json.value("defaultProjectLocation", std::string{});
     if (!location.empty() && std::filesystem::path(location).is_absolute()) {
+#if defined(__ANDROID__)
+        // Auto-migrate legacy private internal /data/user/... default to user-visible external storage.
+        const Platform::ApplicationUserDataDirectoryResultUVE internalHome = Platform::ResolveUserHomeDirectoryUVE();
+        const bool isLegacyPrivateDefault =
+            internalHome.success &&
+            std::filesystem::path(location).lexically_normal() ==
+                (internalHome.directory / kDefaultProjectsDirectoryNameUVE).lexically_normal();
+        if (!isLegacyPrivateDefault) {
+            settings.defaultProjectLocation = location;
+        }
+#else
         settings.defaultProjectLocation = location;
+#endif
     }
     return settings;
 }

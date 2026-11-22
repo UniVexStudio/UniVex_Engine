@@ -57,7 +57,32 @@ void main() {
     [[nodiscard]] Scene::IEntityManagerUVE& EntityManagerUVE() noexcept { return m_entityManager; }
     [[nodiscard]] const Scene::IEntityManagerUVE& EntityManagerUVE() const noexcept { return m_entityManager; }
 
-    /// Ensures GLEW, `ViewportRenderPass`, and sized MSAA/resolve framebuffers are ready.
+    /// Resolved quality settings for a viewport surface preset (`0=Auto, 1=Low, 2=Medium, 3=High, 4=Ultra`).
+    struct QualityConfigUVE final {
+        float renderScale = 1.0F;
+        int msaaSamples = 0;
+        int fxaaQuality = 1;
+        float casSharpen = 0.25F;
+        bool ssaoEnabled = false;
+        std::uint32_t ssaoQuality = 0U;
+        std::uint32_t shadowAtlasResolution = 1024U;
+        float maxAnisotropy = 4.0F;
+        std::int32_t scalabilityMode = 1;
+        bool gpuOutlineOnly = false;
+    };
+
+    /// Resolves quality settings for `qualityPreset` (with one-time GPU-tier auto-detection for Auto).
+    [[nodiscard]] QualityConfigUVE ResolveQualityConfigUVE(int qualityPreset);
+
+    /// Applies the selected quality preset to this surface, the 3D renderer, and publishes
+    /// `overlayState.resolvedRenderScale`.
+    void ApplyQualityPresetUVE(int qualityPreset,
+                               const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
+
+    /// True when the active quality preset prefers GPU-side selection outlines (avoiding glReadPixels).
+    [[nodiscard]] bool PreferGpuSelectionOutlineUVE() const noexcept { return m_gpuOutlineOnly; }
+
+    /// Ensures GLEW, `ViewportRenderPass`, and sized scene/MSAA/resolve framebuffers are ready.
     [[nodiscard]] bool PrepareFrameUVE(int width, int height);
 
     [[nodiscard]] univex::app::ViewportRenderPass& RenderPassUVE() noexcept { return *m_renderPass; }
@@ -65,7 +90,9 @@ void main() {
     [[nodiscard]] univex::integration::EditorMeshLayerUVE& MeshLayerUVE() noexcept { return m_meshLayer; }
     [[nodiscard]] const univex::render::StudioBackdropRenderer* StudioBackdropUVE();
 
-    [[nodiscard]] GLuint MsaaFboUVE() const noexcept { return m_msaaFbo; }
+    /// Returns the active drawing framebuffer (MSAA FBO when multisampled, otherwise single-sample scene FBO).
+    [[nodiscard]] GLuint ActiveDrawFboUVE() const noexcept { return m_msaaFbo != 0U ? m_msaaFbo : m_sceneFbo; }
+    [[nodiscard]] GLuint MsaaFboUVE() const noexcept { return ActiveDrawFboUVE(); }
     [[nodiscard]] GLuint ResolveFboUVE() const noexcept { return m_resolveFbo; }
     [[nodiscard]] GLuint ResolveColorTextureUVE() const noexcept { return m_resolveColorTexture; }
     [[nodiscard]] GLuint FullscreenVaoUVE();
@@ -89,7 +116,7 @@ void main() {
         int height,
         std::optional<Scene::EntityUVE> lookThroughCamera = std::nullopt);
 
-    /// Binds the MSAA framebuffer, enables multisampling, clears it, and returns the previous FBO.
+    /// Binds the active draw framebuffer, configures multisampling, clears it, and returns the previous FBO.
     [[nodiscard]] GLint BeginPassUVE(int width, int height);
 
     /// Writes `EditorMeshLayerUVE` colour and real scene depth into the currently bound framebuffer.
@@ -98,8 +125,8 @@ void main() {
                           int width,
                           int height);
 
-    /// Resolves the MSAA framebuffer into the 2D display texture, restores `previousFbo`, and
-    /// returns the resolved native GL texture id.
+    /// Resolves the scene framebuffer through the Post-Composite FXAA 3.11 + CAS sharpen pass into
+    /// the 2D display texture, restores `previousFbo`, and returns the resolved native GL texture id.
     [[nodiscard]] std::uint64_t EndPassAndResolveUVE(int width, int height, GLint previousFbo);
 
 private:
@@ -108,6 +135,7 @@ private:
     [[nodiscard]] bool EnsureFramebuffersUVE(int width, int height);
     void DestroyFramebuffersUVE();
     [[nodiscard]] bool EnsureMeshBlitResourcesUVE();
+    [[nodiscard]] bool EnsurePostAaResourcesUVE();
     void SeedEditorAxisColorsFromDefaultsUVE(Editor::EditorUVE& editor);
 
     Core::EngineServicesUVE& m_services;
@@ -121,12 +149,33 @@ private:
     GLuint m_msaaFbo = 0U;
     GLuint m_msaaColorRb = 0U;
     GLuint m_msaaDepthRb = 0U;
+    GLuint m_sceneFbo = 0U;
+    GLuint m_sceneColorTexture = 0U;
+    GLuint m_sceneDepthRb = 0U;
     GLuint m_resolveFbo = 0U;
     GLuint m_resolveColorTexture = 0U;
     int m_framebufferWidth = 0;
     int m_framebufferHeight = 0;
+    int m_allocatedMsaaSamples = -1;
+
+#if defined(UNIVEX_GL_ES)
+    int m_desiredMsaaSamples = 0;
+    int m_fxaaQuality = 1;
+    float m_casSharpen = 0.28F;
+    bool m_gpuOutlineOnly = true;
+#else
+    int m_desiredMsaaSamples = 2;
+    int m_fxaaQuality = 2;
+    float m_casSharpen = 0.22F;
+    bool m_gpuOutlineOnly = false;
+#endif
+    int m_appliedQualityPreset = -1;
+    bool m_gpuTierProbed = false;
+    int m_detectedMobileTier = 1; // 0=Low, 1=Medium, 2=High
 
     std::optional<univex::render::ShaderProgram> m_meshBlitProgram;
+    std::optional<univex::render::ShaderProgram> m_postAaProgram;
+    bool m_postAaFailed = false;
     GLuint m_meshBlitVao = 0U;
     bool m_lastRenderUsedLookThroughCamera = false;
 };

@@ -17,6 +17,7 @@ std::uint64_t EntityViewportUVE::RenderUVE(const Math::Vector2UVE& availableSize
                                            const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
     const int width = std::max(1, static_cast<int>(availableSize.x));
     const int height = std::max(1, static_cast<int>(availableSize.y));
+    m_surface.ApplyQualityPresetUVE(overlayState.qualityPreset, overlayState);
     if (!m_surface.PrepareFrameUVE(width, height)) {
         return 0U;
     }

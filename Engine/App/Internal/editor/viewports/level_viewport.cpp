@@ -99,11 +99,13 @@ std::uint64_t LevelViewportUVE::RenderUVE(const Math::Vector2UVE& availableSize,
                                           const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
     const int width = std::max(1, static_cast<int>(availableSize.x));
     const int height = std::max(1, static_cast<int>(availableSize.y));
+    m_surface.ApplyQualityPresetUVE(overlayState.qualityPreset, overlayState);
     if (!m_surface.PrepareFrameUVE(width, height)) {
         return 0U;
     }
 
-    SyncPlayInEditorHooksUVE(availableSize, overlayState.input);
+    const float appliedScale = overlayState.resolvedRenderScale > 0.1F ? overlayState.resolvedRenderScale : 1.0F;
+    SyncPlayInEditorHooksUVE(availableSize, overlayState.input, appliedScale);
     SyncPlayCameraPoseUVE();
 
     const bool gameWorkspaceActive = overlayState.gameWorkspaceActive;
@@ -165,15 +167,19 @@ std::uint64_t LevelViewportUVE::RenderUVE(const Math::Vector2UVE& availableSize,
 
     const std::uint64_t resolvedTexture = m_surface.EndPassAndResolveUVE(width, height, previousFbo);
     if (gameWorkspaceActive) {
-        DrawUIOverlayUVE(width, height);
+        DrawUIOverlayUVE(width, height, appliedScale);
     }
     return resolvedTexture;
 }
 
 void LevelViewportUVE::SyncPlayInEditorHooksUVE(const Math::Vector2UVE& availableSize,
-                                                const Editor::EditorViewportInputUVE& input) {
-    m_engine.SetUIPointerOriginUVE(input.imageOrigin);
-    m_engine.SetUIViewportSizeUVE(Math::Vector2UVE{std::floor(availableSize.x), std::floor(availableSize.y)});
+                                                const Editor::EditorViewportInputUVE& input,
+                                                const float renderScale) {
+    const float invRenderScale = renderScale > 0.1F ? (1.0F / renderScale) : 1.0F;
+    m_engine.SetUIPointerOriginUVE(
+        Math::Vector2UVE{input.imageOrigin.x * invRenderScale, input.imageOrigin.y * invRenderScale});
+    m_engine.SetUIViewportSizeUVE(Math::Vector2UVE{std::floor(availableSize.x * invRenderScale),
+                                                   std::floor(availableSize.y * invRenderScale)});
     if (!m_engine.HasMouseCursorHandlerUVE()) {
         m_engine.SetMouseCursorHandlerUVE([this](const bool show) { m_editor.SetGameMouseCapturedUVE(!show); });
         m_engine.SetFocusProviderUVE([this] { return m_editor.IsAnyEditorWindowFocusedUVE(); });
@@ -311,7 +317,7 @@ bool LevelViewportUVE::EnsureUIOverlayResourcesUVE() {
     return true;
 }
 
-void LevelViewportUVE::DrawUIOverlayUVE(const int width, const int height) {
+void LevelViewportUVE::DrawUIOverlayUVE(const int width, const int height, const float renderScale) {
     const UI::UIDrawBatchUVE& batch = m_engine.GetUIRuntimeUVE().GetDrawBatchUVE();
     if (batch.quads.empty() || width <= 0 || height <= 0 || !EnsureUIOverlayResourcesUVE()) {
         return;
@@ -349,8 +355,9 @@ void LevelViewportUVE::DrawUIOverlayUVE(const int width, const int height) {
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     m_uiOverlayProgram->Use();
-    glUniform2f(m_uiOverlayProgram->UniformLocation("uViewSize"), static_cast<float>(width),
-                static_cast<float>(height));
+    const float invRenderScale = renderScale > 0.1F ? (1.0F / renderScale) : 1.0F;
+    glUniform2f(m_uiOverlayProgram->UniformLocation("uViewSize"), static_cast<float>(width) * invRenderScale,
+                static_cast<float>(height) * invRenderScale);
     glUniform1i(m_uiOverlayProgram->UniformLocation("uAtlas"), 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_uiFontAtlasTexture);

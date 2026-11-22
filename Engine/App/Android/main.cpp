@@ -134,6 +134,9 @@ struct Host {
             config.renderBackendPreferenceUVE = UVE::Core::RenderBackendPreferenceUVE::OpenGLUVE;
             config.shadowMapResolution = 512U;
             config.ssaoEnabledUVE = false;
+            config.postProcessAAMethodUVE = UVE::Core::PostProcessAAMethodUVE::FastApproximateUVE;
+            config.screenSpaceAAQualityUVE = 1U;
+            config.sharpeningAmountUVE = 0.25F;
             config.ambientColor = {0.7F, 0.7F, 0.7F};
             config.shaderSourceRealDirectoryUVE = "shaders";
             std::optional<UVE::Pack::ProjectRuntimeSetupUVE> setup;

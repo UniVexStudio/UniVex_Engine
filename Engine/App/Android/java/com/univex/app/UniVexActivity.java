@@ -2,20 +2,26 @@
 
 package com.univex.app;
 
+import android.Manifest;
 import android.app.NativeActivity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Insets;
+import android.hardware.input.InputManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Looper;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.DisplayCutout;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -38,17 +44,19 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * The NativeActivity every UniVex app runs in, made full screen: the status and navigation bars are
- * hidden (a swipe from the edge shows them for a moment) and the surface reaches under display
- * cutouts. The parts of the surface a cutout or the soft keyboard covers are kept in the safeInset
- * fields, in surface pixels, for the native code to lay its interface out around.
+ * hidden (a swipe from the edge shows them for a moment) and the surface reaches edge-to-edge under
+ * display cutouts. Display cutout insets and soft-keyboard insets are tracked separately in surface
+ * pixels so the 3D viewport and backgrounds can fill 100% edge-to-edge under camera punch-holes.
  *
  * It also attaches a hidden IME InputView so modern Android soft keyboards (Gboard, Samsung
  * Keyboard, SwiftKey) stream committed text and backspace/enter actions cleanly into native code,
- * opens Android's own file picker for native code (pickFile, takePickedFile), and bridges the
- * system clipboard (getClipboardText, setClipboardText).
+ * tracks connected hardware mouse/keyboard devices to auto-hide touch viewport controllers,
+ * exposes public storage paths and All Files Access permission helpers, opens Android's own file
+ * picker for native code (pickFile, takePickedFile), and bridges the system clipboard.
  */
 public class UniVexActivity extends NativeActivity {
     private static final int PICK_FILE_REQUEST = 0x5576;
+    private static final int STORAGE_PERMISSION_REQUEST = 0x5577;
     private static final String PICKED_FOLDER = "picked";
     private static final int COPY_BUFFER_BYTES = 1 << 16;
     private static final String ANY_TYPE = "*/*";
@@ -66,12 +74,18 @@ public class UniVexActivity extends NativeActivity {
     private ImeBridgeView imeView;
     private volatile boolean imeActive;
     private final ConcurrentLinkedQueue<String> pendingImeEvents = new ConcurrentLinkedQueue<>();
+    private InputManager.InputDeviceListener inputDeviceListener;
 
     // Read from native code (Window module, android_activity.cpp); written on the UI thread.
+    // Display cutout insets only (kept separate from IME so backgrounds fill under camera bumps).
     public volatile int safeInsetLeft;
     public volatile int safeInsetTop;
     public volatile int safeInsetRight;
     public volatile int safeInsetBottom;
+    // Soft keyboard bottom inset in surface pixels (0 while hidden).
+    public volatile int imeInsetBottom;
+    // True while an external hardware mouse, touchpad, or non-virtual alphabetic keyboard is attached.
+    public volatile boolean hardwareInputConnected;
 
     private final class ImeBridgeView extends View {
         ImeBridgeView(Context context) {
@@ -158,8 +172,10 @@ public class UniVexActivity extends NativeActivity {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     protected void onCreate(Bundle savedInstanceState) {
         Window window = getWindow();
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         WindowManager.LayoutParams attributes = window.getAttributes();
         attributes.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                 ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -180,8 +196,160 @@ public class UniVexActivity extends NativeActivity {
             storeSafeInsets(insets);
             return view.onApplyWindowInsets(insets);
         });
+        registerHardwareInputListener();
+        refreshHardwareInputState();
         hideSystemBars();
         decor.requestApplyInsets();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshHardwareInputState();
+        hideSystemBars();
+    }
+
+    @Override
+    protected void onDestroy() {
+        unregisterHardwareInputListener();
+        super.onDestroy();
+    }
+
+    private void registerHardwareInputListener() {
+        InputManager manager = (InputManager) getSystemService(Context.INPUT_SERVICE);
+        if (manager == null) {
+            return;
+        }
+        inputDeviceListener = new InputManager.InputDeviceListener() {
+            @Override
+            public void onInputDeviceAdded(int deviceId) {
+                refreshHardwareInputState();
+            }
+
+            @Override
+            public void onInputDeviceRemoved(int deviceId) {
+                refreshHardwareInputState();
+            }
+
+            @Override
+            public void onInputDeviceChanged(int deviceId) {
+                refreshHardwareInputState();
+            }
+        };
+        manager.registerInputDeviceListener(inputDeviceListener, null);
+    }
+
+    private void unregisterHardwareInputListener() {
+        if (inputDeviceListener == null) {
+            return;
+        }
+        InputManager manager = (InputManager) getSystemService(Context.INPUT_SERVICE);
+        if (manager != null) {
+            manager.unregisterInputDeviceListener(inputDeviceListener);
+        }
+        inputDeviceListener = null;
+    }
+
+    private void refreshHardwareInputState() {
+        boolean connected = false;
+        try {
+            int[] ids = InputDevice.getDeviceIds();
+            if (ids != null) {
+                for (int id : ids) {
+                    InputDevice device = InputDevice.getDevice(id);
+                    if (device == null || device.isVirtual()) {
+                        continue;
+                    }
+                    int sources = device.getSources();
+                    boolean isMouse = (sources & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE
+                            || (sources & InputDevice.SOURCE_MOUSE_RELATIVE) == InputDevice.SOURCE_MOUSE_RELATIVE;
+                    boolean isKeyboard = (sources & InputDevice.SOURCE_KEYBOARD) == InputDevice.SOURCE_KEYBOARD
+                            && device.getKeyboardType() == InputDevice.KEYBOARD_TYPE_ALPHABETIC;
+                    if (isMouse || isKeyboard) {
+                        connected = true;
+                        break;
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+            connected = false;
+        }
+        hardwareInputConnected = connected;
+    }
+
+    /** True when the app can directly read and write shared public storage (/storage/emulated/0). */
+    public boolean hasAllFilesAccess() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return Environment.isExternalStorageManager();
+            }
+            return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    /** Prompts the user to grant All Files Access (API 30+) or legacy external storage permission. */
+    public void requestAllFilesAccess() {
+        runOnUiThread(() -> {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:" + getPackageName()));
+                    try {
+                        startActivity(intent);
+                    } catch (RuntimeException fallback) {
+                        startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+                    }
+                } else {
+                    requestPermissions(new String[] {
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    }, STORAGE_PERMISSION_REQUEST);
+                }
+            } catch (RuntimeException ignored) {
+                // Settings activity unavailable on restricted/headless test images.
+            }
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    public String getPublicStorageRoot() {
+        try {
+            File dir = Environment.getExternalStorageDirectory();
+            return dir != null ? dir.getAbsolutePath() : "";
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public String getPublicDocumentsDir() {
+        try {
+            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+            return dir != null ? dir.getAbsolutePath() : "";
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public String getPublicDownloadsDir() {
+        try {
+            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            return dir != null ? dir.getAbsolutePath() : "";
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+    }
+
+    public String getAppExternalDocumentsDir() {
+        try {
+            File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+            return dir != null ? dir.getAbsolutePath() : "";
+        } catch (RuntimeException ignored) {
+            return "";
+        }
     }
 
     /** Shows or hides the soft keyboard bound to the hidden IME bridge view. Called from native code. */
@@ -416,23 +584,27 @@ public class UniVexActivity extends NativeActivity {
         }
     }
 
-    // Display cutouts plus the on-screen keyboard (API 30+ edge-to-edge) keep interactive UI visible;
-    // transient swipe-revealed system bars are excluded so the layout does not jump.
+    // Display cutouts and the soft keyboard (IME) are tracked separately so the 3D viewport and
+    // panel backgrounds always fill 100% edge-to-edge across camera punch-holes, while only
+    // interactive top-bar icons dodge cutouts and the root shifts up only when the IME opens.
+    @SuppressWarnings("deprecation")
     private void storeSafeInsets(WindowInsets insets) {
         DisplayCutout cutout = insets.getDisplayCutout();
         int left = cutout != null ? cutout.getSafeInsetLeft() : 0;
         int top = cutout != null ? cutout.getSafeInsetTop() : 0;
         int right = cutout != null ? cutout.getSafeInsetRight() : 0;
         int bottom = cutout != null ? cutout.getSafeInsetBottom() : 0;
+        int imeBottom = 0;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Insets ime = insets.getInsets(WindowInsets.Type.ime());
-            if (ime.bottom > bottom) {
-                bottom = ime.bottom;
-            }
+            imeBottom = Math.max(0, ime.bottom);
+        } else if (imeActive) {
+            imeBottom = Math.max(0, insets.getSystemWindowInsetBottom() - bottom);
         }
         safeInsetLeft = left;
         safeInsetTop = top;
         safeInsetRight = right;
         safeInsetBottom = bottom;
+        imeInsetBottom = imeBottom;
     }
 }

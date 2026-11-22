@@ -9,6 +9,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <chrono>
@@ -51,22 +52,108 @@ struct TouchPointsUVE final {
     float spread = 0.0F;
 };
 
-[[nodiscard]] TouchPointsUVE ReadPointsUVE(const AInputEvent* const event) {
+[[nodiscard]] bool IsPointerClaimedUVE(const TouchGestureUVE& touch, const std::int32_t id) {
+    return std::find(touch.claimedPointerIds.begin(), touch.claimedPointerIds.end(), id) !=
+           touch.claimedPointerIds.end();
+}
+
+void EraseClaimedPointerUVE(TouchGestureUVE& touch, const std::int32_t id) {
+    touch.claimedPointerIds.erase(std::remove(touch.claimedPointerIds.begin(), touch.claimedPointerIds.end(), id),
+                                  touch.claimedPointerIds.end());
+}
+
+[[nodiscard]] bool IsHardwareMouseEventUVE(const AInputEvent* const event) {
+    const std::int32_t source = AInputEvent_getSource(event);
+    if ((source & AINPUT_SOURCE_MOUSE) == AINPUT_SOURCE_MOUSE) {
+        return true;
+    }
+    return AMotionEvent_getPointerCount(event) > 0 &&
+           AMotionEvent_getToolType(event, 0) == AMOTION_EVENT_TOOL_TYPE_MOUSE;
+}
+
+void HandleMouseEventUVE(ActivityStateUVE& state, const AInputEvent* const event) {
+    state.lastInteractionMs = NowMsUVE();
+    Window::SetAndroidGlfwHardwareInputUVE(true);
+    const float x = AMotionEvent_getX(event, 0);
+    const float y = AMotionEvent_getY(event, 0);
+    const std::int32_t action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
+    if (action == AMOTION_EVENT_ACTION_SCROLL) {
+        const float vscroll = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_VSCROLL, 0);
+        if (std::abs(vscroll) > 1.0e-4F) {
+            Window::DispatchAndroidGlfwScrollUVE(vscroll);
+        }
+        return;
+    }
+    Window::DispatchAndroidGlfwCursorUVE(x, y);
+    const std::int32_t buttons = AMotionEvent_getButtonState(event);
+    const std::int32_t prev = state.touch.mouseButtonMask;
+    const auto syncButton = [&](const std::int32_t androidMask, const int glfwButton) {
+        const bool wasDown = (prev & androidMask) != 0;
+        const bool isDown = (buttons & androidMask) != 0;
+        if (wasDown != isDown) {
+            Window::DispatchAndroidGlfwMouseButtonUVE(glfwButton, isDown, x, y);
+        }
+    };
+    syncButton(AMOTION_EVENT_BUTTON_PRIMARY, GLFW_MOUSE_BUTTON_LEFT);
+    syncButton(AMOTION_EVENT_BUTTON_SECONDARY, GLFW_MOUSE_BUTTON_RIGHT);
+    syncButton(AMOTION_EVENT_BUTTON_TERTIARY, GLFW_MOUSE_BUTTON_MIDDLE);
+    state.touch.mouseButtonMask = buttons;
+}
+
+[[nodiscard]] TouchPointsUVE ReadUnclaimedPointsUVE(const AInputEvent* const event, const TouchGestureUVE& touch,
+                                                    const std::int32_t ignorePointerId = -1) {
     TouchPointsUVE points;
-    points.count = static_cast<int>(AMotionEvent_getPointerCount(event));
-    for (int i = 0; i < points.count; ++i) {
-        points.x += AMotionEvent_getX(event, static_cast<std::size_t>(i));
-        points.y += AMotionEvent_getY(event, static_cast<std::size_t>(i));
+    const std::size_t count = AMotionEvent_getPointerCount(event);
+    float firstX = 0.0F;
+    float firstY = 0.0F;
+    float secondX = 0.0F;
+    float secondY = 0.0F;
+    for (std::size_t i = 0U; i < count; ++i) {
+        const std::int32_t id = AMotionEvent_getPointerId(event, i);
+        if (id == ignorePointerId || IsPointerClaimedUVE(touch, id)) {
+            continue;
+        }
+        const float px = AMotionEvent_getX(event, i);
+        const float py = AMotionEvent_getY(event, i);
+        if (points.count == 0) {
+            firstX = px;
+            firstY = py;
+        } else if (points.count == 1) {
+            secondX = px;
+            secondY = py;
+        }
+        points.x += px;
+        points.y += py;
+        ++points.count;
     }
     if (points.count > 0) {
         points.x /= static_cast<float>(points.count);
         points.y /= static_cast<float>(points.count);
     }
     if (points.count >= 2) {
-        points.spread = std::hypot(AMotionEvent_getX(event, 0) - AMotionEvent_getX(event, 1),
-                                   AMotionEvent_getY(event, 0) - AMotionEvent_getY(event, 1));
+        points.spread = std::hypot(firstX - secondX, firstY - secondY);
     }
     return points;
+}
+
+void PublishTouchContactsUVE(const AInputEvent* const event, const TouchGestureUVE& touch,
+                             const std::int32_t liftedPointerId = -1, const bool clearAll = false) {
+    if (clearAll) {
+        Window::SetAndroidGlfwTouchContactsUVE({});
+        return;
+    }
+    const std::size_t count = AMotionEvent_getPointerCount(event);
+    std::vector<Window::AndroidTouchContactUVE> contacts;
+    contacts.reserve(count);
+    for (std::size_t i = 0U; i < count; ++i) {
+        const std::int32_t id = AMotionEvent_getPointerId(event, i);
+        if (id == liftedPointerId) {
+            continue;
+        }
+        contacts.push_back(Window::AndroidTouchContactUVE{id, AMotionEvent_getX(event, i), AMotionEvent_getY(event, i),
+                                                          IsPointerClaimedUVE(touch, id)});
+    }
+    Window::SetAndroidGlfwTouchContactsUVE(std::move(contacts));
 }
 
 void ReleaseGestureButtonUVE(TouchGestureUVE& touch) {
@@ -99,37 +186,90 @@ void StartMultiFingerUVE(TouchGestureUVE& touch, const TouchPointsUVE& points) {
 }
 
 void HandleTouchUVE(ActivityStateUVE& state, const AInputEvent* const event) {
+    if (IsHardwareMouseEventUVE(event)) {
+        HandleMouseEventUVE(state, event);
+        return;
+    }
     state.lastInteractionMs = NowMsUVE();
+    if (!state.lastHardwareInputConnected) {
+        Window::SetAndroidGlfwHardwareInputUVE(false);
+    }
     TouchGestureUVE& touch = state.touch;
-    const TouchPointsUVE points = ReadPointsUVE(event);
-    switch (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) {
-    case AMOTION_EVENT_ACTION_DOWN:
+    const std::int32_t rawAction = AMotionEvent_getAction(event);
+    const std::int32_t action = rawAction & AMOTION_EVENT_ACTION_MASK;
+    const std::size_t actionIndex =
+        static_cast<std::size_t>((rawAction & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >>
+                                 AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
+    const std::size_t pointerCount = AMotionEvent_getPointerCount(event);
+    const std::int32_t actionPointerId =
+        actionIndex < pointerCount ? AMotionEvent_getPointerId(event, actionIndex) : -1;
+
+    switch (action) {
+    case AMOTION_EVENT_ACTION_DOWN: {
+        const std::int32_t prevButtons = touch.mouseButtonMask;
         touch = TouchGestureUVE{};
-        touch.fingers = 1;
+        touch.mouseButtonMask = prevButtons;
+        if (actionPointerId >= 0) {
+            const float px = AMotionEvent_getX(event, actionIndex);
+            const float py = AMotionEvent_getY(event, actionIndex);
+            if (Window::AndroidGlfwClaimTouchAtUVE(px, py)) {
+                touch.claimedPointerIds.push_back(actionPointerId);
+                PublishTouchContactsUVE(event, touch);
+                break;
+            }
+        }
+        const TouchPointsUVE points = ReadUnclaimedPointsUVE(event, touch);
+        touch.fingers = points.count;
         touch.longPressArmed = true;
         touch.startX = touch.lastX = points.x;
         touch.startY = touch.lastY = points.y;
         touch.startMs = state.lastInteractionMs;
         touch.button = GLFW_MOUSE_BUTTON_LEFT;
+        PublishTouchContactsUVE(event, touch);
         Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
         Window::DispatchAndroidGlfwMouseButtonUVE(GLFW_MOUSE_BUTTON_LEFT, true, points.x, points.y);
         break;
-    case AMOTION_EVENT_ACTION_POINTER_DOWN:
+    }
+    case AMOTION_EVENT_ACTION_POINTER_DOWN: {
+        if (actionPointerId >= 0) {
+            const float px = AMotionEvent_getX(event, actionIndex);
+            const float py = AMotionEvent_getY(event, actionIndex);
+            if (Window::AndroidGlfwClaimTouchAtUVE(px, py)) {
+                if (!IsPointerClaimedUVE(touch, actionPointerId)) {
+                    touch.claimedPointerIds.push_back(actionPointerId);
+                }
+                PublishTouchContactsUVE(event, touch);
+                break;
+            }
+        }
+        const TouchPointsUVE points = ReadUnclaimedPointsUVE(event, touch);
         touch.fingers = points.count;
-        if (!touch.finished && touch.button != kMultiFingerButtonUVE) {
+        PublishTouchContactsUVE(event, touch);
+        if (points.count == 1 && touch.button < 0 && !touch.finished) {
+            touch.longPressArmed = true;
+            touch.startX = touch.lastX = points.x;
+            touch.startY = touch.lastY = points.y;
+            touch.startMs = state.lastInteractionMs;
+            touch.button = GLFW_MOUSE_BUTTON_LEFT;
+            Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
+            Window::DispatchAndroidGlfwMouseButtonUVE(GLFW_MOUSE_BUTTON_LEFT, true, points.x, points.y);
+        } else if (points.count >= 2 && !touch.finished && touch.button != kMultiFingerButtonUVE) {
             StartMultiFingerUVE(touch, points);
-        } else if (!touch.finished) {
+        } else if (points.count >= 2 && !touch.finished) {
             touch.lastX = points.x;
             touch.lastY = points.y;
             touch.pinchDistance = points.spread;
             Window::DispatchAndroidGlfwCursorUVE(points.x, points.y);
         }
         break;
-    case AMOTION_EVENT_ACTION_MOVE:
+    }
+    case AMOTION_EVENT_ACTION_MOVE: {
+        PublishTouchContactsUVE(event, touch);
         if (touch.finished) {
             break;
         }
-        if (touch.fingers == 1) {
+        const TouchPointsUVE points = ReadUnclaimedPointsUVE(event, touch);
+        if (points.count == 1 && touch.fingers == 1) {
             const float slop = kTouchSlopDpUVE * state.pixelsPerDp;
             if (touch.longPressArmed && std::hypot(points.x - touch.startX, points.y - touch.startY) > slop) {
                 touch.longPressArmed = false;
@@ -151,22 +291,40 @@ void HandleTouchUVE(ActivityStateUVE& state, const AInputEvent* const event) {
             }
         }
         break;
-    case AMOTION_EVENT_ACTION_POINTER_UP:
-        // Lifting a finger ends a multi-finger gesture; the rest of it moves nothing.
-        touch.fingers = points.count - 1;
+    }
+    case AMOTION_EVENT_ACTION_POINTER_UP: {
+        if (actionPointerId >= 0 && IsPointerClaimedUVE(touch, actionPointerId)) {
+            EraseClaimedPointerUVE(touch, actionPointerId);
+            PublishTouchContactsUVE(event, touch, actionPointerId);
+            break;
+        }
+        const TouchPointsUVE remaining = ReadUnclaimedPointsUVE(event, touch, actionPointerId);
+        touch.fingers = remaining.count;
+        PublishTouchContactsUVE(event, touch, actionPointerId);
         ReleaseGestureButtonUVE(touch);
         touch.longPressArmed = false;
-        touch.finished = true;
+        if (remaining.count > 0) {
+            touch.finished = true;
+        }
         break;
-    case AMOTION_EVENT_ACTION_UP:
+    }
+    case AMOTION_EVENT_ACTION_UP: {
+        const std::int32_t prevButtons = touch.mouseButtonMask;
         ReleaseGestureButtonUVE(touch);
+        PublishTouchContactsUVE(event, touch, -1, true);
         touch = TouchGestureUVE{};
+        touch.mouseButtonMask = prevButtons;
         break;
-    case AMOTION_EVENT_ACTION_CANCEL:
+    }
+    case AMOTION_EVENT_ACTION_CANCEL: {
+        const std::int32_t prevButtons = touch.mouseButtonMask;
         touch.longPressArmed = false;
         CancelGestureButtonUVE(touch);
+        PublishTouchContactsUVE(event, touch, -1, true);
         touch = TouchGestureUVE{};
+        touch.mouseButtonMask = prevButtons;
         break;
+    }
     default:
         break;
     }
@@ -260,6 +418,11 @@ void DispatchUtf8TextUVE(const std::string_view utf8) {
         return 0;
     }
     const int glfwKey = GlfwKeyUVE(keyCode);
+    if (glfwKey != GLFW_KEY_UNKNOWN && AInputEvent_getDeviceId(event) > 0 &&
+        keyCode != AKEYCODE_ESCAPE && keyCode != AKEYCODE_VOLUME_UP && keyCode != AKEYCODE_VOLUME_DOWN &&
+        (AInputEvent_getSource(event) & AINPUT_SOURCE_KEYBOARD) == AINPUT_SOURCE_KEYBOARD) {
+        Window::SetAndroidGlfwHardwareInputUVE(true);
+    }
     const int32_t metaState = AKeyEvent_getMetaState(event);
     if (glfwKey != GLFW_KEY_UNKNOWN) {
         const int glfwAction = action == AKEY_EVENT_ACTION_UP ? GLFW_RELEASE
@@ -451,6 +614,37 @@ void UpdateLongPressUVE(TouchGestureUVE& touch) {
     return text;
 }
 
+void SyncStorageEnvironmentUVE(ANativeActivity* const activity) {
+    if (activity == nullptr) {
+        return;
+    }
+    const Window::AndroidStoragePathsUVE paths = Window::ReadAndroidStoragePathsUVE(activity);
+    if (!paths.publicStorageRoot.empty()) {
+        setenv("UNIVEX_ANDROID_STORAGE_ROOT", paths.publicStorageRoot.c_str(), 1);
+    }
+    if (!paths.publicDocuments.empty()) {
+        setenv("UNIVEX_ANDROID_PUBLIC_DOCS", paths.publicDocuments.c_str(), 1);
+    }
+    if (!paths.publicDownloads.empty()) {
+        setenv("UNIVEX_ANDROID_DOWNLOADS", paths.publicDownloads.c_str(), 1);
+    }
+    if (!paths.appExternalDocuments.empty()) {
+        setenv("UNIVEX_ANDROID_APP_EXT_DOCS", paths.appExternalDocuments.c_str(), 1);
+    }
+    setenv("UNIVEX_ANDROID_ALL_FILES", Window::HasAndroidAllFilesAccessUVE(activity) ? "1" : "0", 1);
+}
+
+void SyncHardwareInputStateUVE(ActivityStateUVE& state, const bool forceSet) {
+    if (state.app == nullptr || state.app->activity == nullptr) {
+        return;
+    }
+    const bool connected = Window::HasAndroidHardwareInputUVE(state.app->activity);
+    if (forceSet || connected != state.lastHardwareInputConnected) {
+        state.lastHardwareInputConnected = connected;
+        Window::SetAndroidGlfwHardwareInputUVE(connected);
+    }
+}
+
 void HandleCommandUVE(android_app* const app, const int32_t command) {
     auto& state = *static_cast<ActivityStateUVE*>(app->userData);
     state.lastInteractionMs = NowMsUVE();
@@ -479,9 +673,13 @@ void HandleCommandUVE(android_app* const app, const int32_t command) {
         state.pixelsPerDp = ReadPixelsPerDpUVE(app->config);
         Window::SetAndroidGlfwContentScaleUVE(state.pixelsPerDp);
         state.safeArea = Window::ReadAndroidSafeAreaUVE(app->activity);
+        SyncHardwareInputStateUVE(state, false);
         break;
     case APP_CMD_RESUME:
         state.resumed = true;
+        state.safeArea = Window::ReadAndroidSafeAreaUVE(app->activity);
+        SyncHardwareInputStateUVE(state, false);
+        SyncStorageEnvironmentUVE(app->activity);
         break;
     case APP_CMD_PAUSE:
         state.resumed = false;
@@ -489,6 +687,11 @@ void HandleCommandUVE(android_app* const app, const int32_t command) {
     case APP_CMD_GAINED_FOCUS:
     case APP_CMD_LOST_FOCUS:
         Window::SetAndroidGlfwFocusUVE(command == APP_CMD_GAINED_FOCUS);
+        if (command == APP_CMD_GAINED_FOCUS) {
+            state.safeArea = Window::ReadAndroidSafeAreaUVE(app->activity);
+            SyncHardwareInputStateUVE(state, false);
+            SyncStorageEnvironmentUVE(app->activity);
+        }
         if (state.windowManager != nullptr) {
             state.windowManager->SetFocusedUVE(command == APP_CMD_GAINED_FOCUS);
         }
@@ -533,6 +736,8 @@ void AttachUVE(ActivityStateUVE& state, android_app* const app) {
     Window::SetAndroidGlfwContentScaleUVE(state.pixelsPerDp);
     Window::SetAndroidGlfwSurfaceUVE(app->window);
     state.safeArea = Window::ReadAndroidSafeAreaUVE(app->activity);
+    SyncHardwareInputStateUVE(state, true);
+    SyncStorageEnvironmentUVE(app->activity);
 }
 
 bool WaitForWindowUVE(ActivityStateUVE& state) {
@@ -553,8 +758,8 @@ bool PumpEventsUVE(ActivityStateUVE& state, const int idleWaitMs) {
     android_app* const app = state.app;
     int firstPollWaitMs = 0;
     if (idleWaitMs > 0 && state.resumed && app->window != nullptr && state.touch.fingers == 0 &&
-        !state.keyboardShown && state.imeDrainTailFrames <= 0 && !state.pendingPick &&
-        (NowMsUVE() - state.lastInteractionMs) >= kIdleWakeHoldMsUVE) {
+        state.touch.claimedPointerIds.empty() && !state.keyboardShown && state.imeDrainTailFrames <= 0 &&
+        !state.pendingPick && (NowMsUVE() - state.lastInteractionMs) >= kIdleWakeHoldMsUVE) {
         firstPollWaitMs = idleWaitMs;
     }
     bool firstPoll = true;
@@ -585,6 +790,10 @@ bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const ch
     if (++state.framesStarted == 2U && renderedMarker != nullptr) {
         __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "%s", renderedMarker);
     }
+    if ((state.framesStarted % 30U) == 0U && state.app != nullptr && state.app->activity != nullptr) {
+        SyncHardwareInputStateUVE(state, false);
+        state.safeArea = Window::ReadAndroidSafeAreaUVE(state.app->activity);
+    }
     const int effectiveIdleMs = state.framesStarted > 4U ? idleWaitMs : 0;
     return PumpEventsUVE(state, effectiveIdleMs) && !Window::AndroidGlfwCloseRequestedUVE();
 }
@@ -608,6 +817,7 @@ void DetachEngineUVE(ActivityStateUVE& state) {
 void EnterDataDirectoryUVE(const android_app* const app) {
     const std::filesystem::path data(app->activity->internalDataPath);
     setenv("HOME", data.c_str(), 1);
+    SyncStorageEnvironmentUVE(app->activity);
     std::error_code error;
     std::filesystem::current_path(data, error);
     if (error) {

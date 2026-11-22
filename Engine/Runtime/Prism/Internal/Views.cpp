@@ -874,11 +874,21 @@ private:
 
 void showDialog(const std::string& title, Ref<Widget> content, std::vector<DialogButton> buttons, float width) {
   const Theme& t = theme();
+  const bool compact = Application::exists() && Application::get().platform().singleSurface();
+  const Vec2 ws = Application::exists() ? Application::get().windowSize() : Vec2{1280.f, 720.f};
+  const float effectiveW = ws.x > 0.f ? std::min(width, std::max(240.f, ws.x - 16.f)) : width;
+  const float barH = compact ? 30.f : 36.f;
+  const float footPadY = compact ? 7.f : 9.f;
+  const float footH = t.controlH + footPadY * 2.f + 2.f;
+  const float maxDialogH = ws.y > 0.f ? std::max(140.f, ws.y - 16.f) : 640.f;
+  const float maxBodyH = std::max(64.f, maxDialogH - barH - footH);
+
   auto root = make<Border>();
   root->setBackground(Color::hex(0x232325));
   root->setBorder(t.borderStrong);
   root->setRadius(6);
-  root->setFixedWidth(width);
+  root->setFixedWidth(effectiveW);
+  root->setMaxSize(effectiveW, maxDialogH);
   std::weak_ptr<Widget> wr = root;
   auto close = [wr] { if (auto r = wr.lock()) Application::get().closePopup(r.get()); };
 
@@ -886,8 +896,8 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   auto bar = make<DialogTitleDrag>();
   bar->dialog = root;
   bar->setBorder(t.borderSoft, Margin(0, 0, 0, 1));
-  bar->setPadding(Margin(16, 0, 8, 0));
-  bar->setFixedHeight(38);
+  bar->setPadding(Margin(compact ? 12.f : 16.f, 0, 6.f, 0));
+  bar->setFixedHeight(barH);
   auto row = hbox();
   auto lbl = make<Label>(title, FontRole::Semibold);
   row->add(lbl, {.fill = 1, .v = VAlign::Center});
@@ -898,13 +908,16 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   col->add(bar);
 
   auto body = make<Border>();
-  body->setPadding(Margin(18, 16));
+  body->setPadding(compact ? Margin(12.f, 10.f) : Margin(16.f, 14.f));
   body->setChild(std::move(content));
-  col->add(body);
+  auto scroll = make<ScrollView>();
+  scroll->setContent(body);
+  scroll->setMaxSize(effectiveW, maxBodyH);
+  col->add(scroll, {.fill = 1.f});
 
   auto foot = make<Border>();
   foot->setBorder(t.borderSoft, Margin(0, 1, 0, 0));
-  foot->setPadding(Margin(14, 10));
+  foot->setPadding(Margin(compact ? 10.f : 14.f, footPadY));
   auto frow = hbox(8);
   frow->add(make<Spacer>(), {.fill = 1});
   for (auto& b : buttons) {
@@ -918,7 +931,7 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
       if (act) act();
       if (keep) Application::get().closePopup(keep.get());
     };
-    btn->setMinSize(76, 0);
+    btn->setMinSize(compact ? 64.f : 76.f, 0);
     frow->add(btn);
   }
   foot->setChild(frow);

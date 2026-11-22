@@ -10,21 +10,26 @@
 #include "prism/Containers.h"
 #include "prism/Controls.h"
 #include "prism/Icons.h"
+#include "prism/Menu.h"
 #include "prism/Widget.h"
 
 #include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace UVE::Editor {
 
-// Title bar (#15) and document tab (#2) row heights, and the logo box (#1) spanning both.
-inline constexpr float kTitleRowUVE = 24.0F;
-inline constexpr float kTabRowUVE = 24.0F;
-inline constexpr float kLogoBoxUVE = kTitleRowUVE + kTabRowUVE; // square: as wide as the two rows are tall
+// Slimmed AAA window chrome row heights (Desktop 2-row header, Android single-row consolidated header).
+inline constexpr float kTitleRowUVE = 20.0F;
+inline constexpr float kTabRowUVE = 20.0F;
+inline constexpr float kLogoBoxUVE = kTitleRowUVE + kTabRowUVE; // square: spans both rows on desktop
+inline constexpr float kCompactTitleRowUVE = 22.0F;             // single consolidated top row on Android
+inline constexpr float kCompactLogoBoxUVE = 22.0F;
 // Sub row 2: the viewport settings strip.
-inline constexpr float kSubRow2UVE = 27.0F;
+inline constexpr float kSubRow2UVE = 22.0F;
+inline constexpr float kCompactSubRow2UVE = 20.0F;
 
 /// The viewport shading modes, in ViewportOverlayStateUVE::shadingMode order.
 inline constexpr std::array<const char*, 5> kShadingNamesUVE{"Lit", "Unshaded", "Wireframe", "Lighting", "Normals"};
@@ -33,13 +38,16 @@ inline constexpr std::array<const char*, 5> kShadingNamesUVE{"Lit", "Unshaded", 
 [[nodiscard]] prism::Ref<prism::Button> ToolButtonUVE(prism::Icon icon, std::string tooltip, std::string text = {});
 [[nodiscard]] prism::Ref<prism::Widget> HSeparatorUVE();
 
-/// #1: the engine logo box. It spans the title bar row and the document-tab row, the same mark the
-/// editor has always shown there (a rounded blue square with the U), kept small like a desktop
-/// editor's app mark so the title bar stays thin.
+/// #1: the engine logo box. Spans the title bar and document-tab rows on desktop, or fits neatly
+/// into the single consolidated top bar row when `compact` is true (Android).
 class LogoBoxUVE final : public prism::Widget {
 public:
+    explicit LogoBoxUVE(bool compact = false) : m_compact(compact) {}
     prism::Vec2 measure(prism::Vec2) override;
     void paint(prism::Canvas& c) override;
+
+private:
+    bool m_compact = false;
 };
 
 /// #2: the window's document - the level's Viewport object, or the asset an asset editor has open -
@@ -50,6 +58,7 @@ public:
     void setName(std::string name);
     void setFallbackIcon(prism::Icon icon);
     void setDirty(bool dirty);
+    void setCompact(bool compact);
     std::function<void()> onClick;
     bool onMouseDown(const prism::MouseEvent& e) override;
     prism::Vec2 measure(prism::Vec2) override;
@@ -61,6 +70,7 @@ private:
     int m_iconSize = 0;
     prism::Icon m_fallback = prism::Icon::Globe;
     bool m_dirty = false;
+    bool m_compact = false;
 };
 
 /// #15: a drag strip. Reports itself to the host as caption area of the window it is in (the
@@ -98,6 +108,30 @@ private:
     prism::Rect m_viewRect{};
     std::string m_title;
 };
+
+/// One top-level menu entry used by BuildEditorHeaderUVE.
+struct EditorHeaderMenuEntryUVE final {
+    std::string title;
+    prism::MenuFactory factory;
+};
+
+/// Configuration for BuildEditorHeaderUVE: shared by the Level Editor and all secondary asset editors
+/// (Entity, Montage, Retarget, VFX, Animation Library). On desktop builds a slim classic 2-row
+/// header (MenuBar + DocumentTab beside LogoBox); on Android/single-surface collapses into a single
+/// slim row: [Slim Logo] [Menu] [DocumentTab] ... [Window buttons].
+struct EditorHeaderDescUVE final {
+    std::vector<EditorHeaderMenuEntryUVE> menus;
+    /// Optional trailing items added to the collapsed single Menu dropdown on single-surface hosts
+    /// (for example: separator + "Return to Hub").
+    std::function<std::vector<prism::MenuItem>()> compactMenuTail;
+    prism::Ref<DocumentTabUVE> documentTab;
+    std::function<void()> onClose;
+    bool mainWindow = false;
+    /// Optional pointer receiving the outer header row container (for display-cutout horizontal padding).
+    prism::Ref<prism::Box>* outTitleRow = nullptr;
+};
+
+[[nodiscard]] prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc);
 
 /// Appends minimize / maximize-restore / close for the window the buttons are in. `onClose`
 /// runs for the close button (the level editor quits; an asset editor asks to close its document).

@@ -256,6 +256,41 @@ std::string TakeAndroidLaunchProjectUVE(ANativeActivity* const activity) {
     return result;
 }
 
+namespace {
+
+[[nodiscard]] bool ReadBoolFieldUVE(JNIEnv* const env, jobject const object, jclass const type, const char* const name) {
+    const jfieldID field = env->GetFieldID(type, name, "Z");
+    if (field == nullptr) {
+        env->ExceptionClear();
+        return false;
+    }
+    return env->GetBooleanField(object, field) != JNI_FALSE;
+}
+
+[[nodiscard]] std::string CallStringMethodUVE(JNIEnv* const env, jobject const object, jclass const type,
+                                              const char* const name) {
+    const jmethodID method = env->GetMethodID(type, name, "()Ljava/lang/String;");
+    if (method == nullptr) {
+        env->ExceptionClear();
+        return {};
+    }
+    std::string out;
+    const auto value = static_cast<jstring>(env->CallObjectMethod(object, method));
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    } else if (value != nullptr) {
+        const char* const chars = env->GetStringUTFChars(value, nullptr);
+        if (chars != nullptr) {
+            out.assign(chars);
+            env->ReleaseStringUTFChars(value, chars);
+        }
+        env->DeleteLocalRef(value);
+    }
+    return out;
+}
+
+} // namespace
+
 AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* const activity) {
     if (activity == nullptr) {
         return {};
@@ -275,8 +310,97 @@ AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* const activity) {
     area.top = ReadIntFieldUVE(env, activity->clazz, type, kSafeInsetTopFieldUVE);
     area.right = ReadIntFieldUVE(env, activity->clazz, type, kSafeInsetRightFieldUVE);
     area.bottom = ReadIntFieldUVE(env, activity->clazz, type, kSafeInsetBottomFieldUVE);
+    area.imeBottom = ReadIntFieldUVE(env, activity->clazz, type, "imeInsetBottom");
     env->DeleteLocalRef(type);
     return area;
+}
+
+bool HasAndroidHardwareInputUVE(ANativeActivity* const activity) {
+    if (activity == nullptr) {
+        return false;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return false;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    if (type == nullptr) {
+        env->ExceptionClear();
+        return false;
+    }
+    const bool connected = ReadBoolFieldUVE(env, activity->clazz, type, "hardwareInputConnected");
+    env->DeleteLocalRef(type);
+    return connected;
+}
+
+bool HasAndroidAllFilesAccessUVE(ANativeActivity* const activity) {
+    if (activity == nullptr) {
+        return false;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return false;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID method = type != nullptr ? env->GetMethodID(type, "hasAllFilesAccess", "()Z") : nullptr;
+    bool granted = false;
+    if (method != nullptr) {
+        granted = env->CallBooleanMethod(activity->clazz, method) != JNI_FALSE;
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            granted = false;
+        }
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return granted;
+}
+
+void RequestAndroidAllFilesAccessUVE(ANativeActivity* const activity) {
+    if (activity == nullptr) {
+        return;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID method = type != nullptr ? env->GetMethodID(type, "requestAllFilesAccess", "()V") : nullptr;
+    if (method != nullptr) {
+        env->CallVoidMethod(activity->clazz, method);
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+}
+
+AndroidStoragePathsUVE ReadAndroidStoragePathsUVE(ANativeActivity* const activity) {
+    AndroidStoragePathsUVE paths;
+    if (activity == nullptr) {
+        return paths;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return paths;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    if (type == nullptr) {
+        env->ExceptionClear();
+        return paths;
+    }
+    paths.publicStorageRoot = CallStringMethodUVE(env, activity->clazz, type, "getPublicStorageRoot");
+    paths.publicDocuments = CallStringMethodUVE(env, activity->clazz, type, "getPublicDocumentsDir");
+    paths.publicDownloads = CallStringMethodUVE(env, activity->clazz, type, "getPublicDownloadsDir");
+    paths.appExternalDocuments = CallStringMethodUVE(env, activity->clazz, type, "getAppExternalDocumentsDir");
+    env->DeleteLocalRef(type);
+    return paths;
 }
 
 bool SetAndroidSoftKeyboardUVE(ANativeActivity* const activity, const bool visible) {

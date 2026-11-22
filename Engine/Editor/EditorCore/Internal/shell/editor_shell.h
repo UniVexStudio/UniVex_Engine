@@ -178,6 +178,7 @@ private:
 
     // Widgets the frame updates.
     std::shared_ptr<prism::Border> m_safeFrame;
+    std::shared_ptr<prism::Box> m_titleBarRow;
     std::array<float, 4> m_safeArea{0.0F, 0.0F, 0.0F, 0.0F};
     std::shared_ptr<prism::TreeView> m_outliner;
     std::shared_ptr<prism::TextInput> m_outlinerSearch;
@@ -187,8 +188,6 @@ private:
     std::shared_ptr<EditorViewportGizmosUVE> m_gizmos;
     std::shared_ptr<CameraScreenUVE> m_cameraScreen;
     std::shared_ptr<prism::ComboBox> m_selectionMode;
-    std::shared_ptr<prism::Button> m_outlinerToggleButton;
-    std::shared_ptr<prism::Button> m_inspectorToggleButton;
     std::shared_ptr<prism::Button> m_playButton;
     std::shared_ptr<prism::Button> m_pauseButton;
     std::shared_ptr<prism::Button> m_stopButton;
