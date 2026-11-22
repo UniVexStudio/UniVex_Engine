@@ -29,6 +29,7 @@ HEADERS = (
     "Engine/Runtime/Pack/Expose/engine_install.h",
     "Engine/Runtime/Pack/Expose/project_template.h",
     "Engine/App/Internal/launcher_ui/launcher_window.h",
+    "Engine/Runtime/Platform/Expose/editor_project_package.h",
 )
 TARGETS_DIR = "Engine/Source/Targets"
 ENGINE_FEED = "Engine/Distribution/engine_feed.json"
@@ -114,6 +115,15 @@ class SharedNamesTest(unittest.TestCase):
         brand_pngs = make_hub_installer.BRAND_DIR / make_hub_installer.BRAND_PNG_DIRECTORY
         self.assertTrue((brand_pngs / str(self.cpp["kHubIconFileNameUVE"])).is_file(),
                         "the icon the Hub registers is not among the brand images the installer ships")
+
+    def test_windows_wizard_names(self) -> None:
+        self.assert_cpp("kHubDisplayNameUVE", make_hub_installer.HUB_DISPLAY_NAME)
+        self.assert_cpp("kHubDescriptionUVE", make_hub_installer.HUB_DESCRIPTION)
+        self.assert_cpp("kHubInstallFolderNameUVE", make_hub_installer.HUB_INSTALL_FOLDER)
+        self.assert_cpp("kPublisherUVE", make_hub_installer.PUBLISHER)
+        self.assert_cpp("kEditorProjectFileExtensionUVE", make_hub_installer.PROJECT_EXTENSION)
+        self.assert_cpp("kProjectProgramIdUVE", make_hub_installer.PROJECT_PROGRAM_ID)
+        self.assert_cpp("kProjectTypeDisplayNameUVE", make_hub_installer.PROJECT_TYPE_NAME)
 
     def test_engine_feed(self) -> None:
         for name in (make_hub_installer.FEED_FILE, uvbt.ENGINE_FEED_FILE):
