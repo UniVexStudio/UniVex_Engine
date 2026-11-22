@@ -334,7 +334,8 @@ jobs:
           fi
           deb=$(ls dist/UniVexHub-*-linux-amd64.deb)
           dpkg-deb --info "${deb}"
-          dpkg-deb --contents "${deb}" | grep -q 'usr/share/applications/univex-hub.desktop'
+          dpkg-deb --contents "${deb}" > /tmp/hub-deb-contents.txt
+          grep -q 'usr/share/applications/univex-hub.desktop' /tmp/hub-deb-contents.txt
           deb_root="${RUNNER_TEMP}/UniVexHubDebTest"
           rm -rf "${deb_root}" && mkdir -p "${deb_root}"
           dpkg-deb -x "${deb}" "${deb_root}"
@@ -422,7 +423,8 @@ jobs:
         run: |
           set -euo pipefail
           bin=.uvbt/bin/Windows/Release
-          objdump -p "$bin/uve_hub.exe" | grep -q 'Subsystem.*Windows GUI'
+          objdump -p "$bin/uve_hub.exe" > /tmp/hub-pe.txt
+          grep -q 'Subsystem.*Windows GUI' /tmp/hub-pe.txt
           hub_version=$("$bin/uve_hub.exe" --version | tr -d '\r')
           python Engine/Tools/make_hub_installer.py --bin "$bin" --target windows --tag "hub-v${hub_version}" --output dist
       # Installs silently with nothing but Windows itself on PATH (no MSYS2 libraries to hide a DLL the
@@ -437,8 +439,11 @@ jobs:
             -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=`"$target`"", "/LOG=`"$log`""
           if ($setup.ExitCode -ne 0) { Get-Content $log; Write-Error "setup exited with $($setup.ExitCode)"; exit 1 }
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-          $version = & (Join-Path $target "uve_hub.exe") --version
-          if ($LASTEXITCODE -ne 0 -or -not $version) { Write-Error "the installed Hub did not start (exit $LASTEXITCODE)"; exit 1 }
+          $versionOut = Join-Path $env:RUNNER_TEMP "uve_hub_version.txt"
+          $probe = Start-Process -FilePath (Join-Path $target "uve_hub.exe") -ArgumentList "--version" `
+            -NoNewWindow -Wait -PassThru -RedirectStandardOutput $versionOut
+          $version = if (Test-Path $versionOut) { (Get-Content -Raw $versionOut).Trim() } else { "" }
+          if ($probe.ExitCode -ne 0 -or -not $version) { Write-Error "the installed Hub did not start (exit $($probe.ExitCode))"; exit 1 }
           Write-Output "Installed Hub reports version $version"
           $uninstaller = Get-ChildItem (Join-Path $target "unins*.exe") | Select-Object -First 1
           $removal = Start-Process -FilePath $uninstaller.FullName -Wait -PassThru -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
@@ -760,9 +765,9 @@ jobs:
         shell: msys2 {0}
         run: |
           cd package/UniVex-Editor
-          objdump -p ./uve_editor.exe | grep -q 'Subsystem.*Windows GUI'
-          objdump -p ./uve_runtime.exe | grep -q 'Subsystem.*Windows GUI'
-          objdump -p ./uve_pack.exe | grep -q 'Subsystem.*Windows CUI'
+          objdump -p ./uve_editor.exe > /tmp/editor-pe.txt && grep -q 'Subsystem.*Windows GUI' /tmp/editor-pe.txt
+          objdump -p ./uve_runtime.exe > /tmp/runtime-pe.txt && grep -q 'Subsystem.*Windows GUI' /tmp/runtime-pe.txt
+          objdump -p ./uve_pack.exe > /tmp/pack-pe.txt && grep -q 'Subsystem.*Windows CUI' /tmp/pack-pe.txt
           ./uve_editor.exe --bridge-stdio < /dev/null
           ./uve_asset_workload.exe --create-fixture ../cook-source
           ./uve_pack.exe --project ../cook-source/sample.uvproject --runtime ./uve_runtime.exe --output ../cooked --cook windows
