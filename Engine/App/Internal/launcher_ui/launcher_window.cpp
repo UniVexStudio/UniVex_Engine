@@ -4,7 +4,6 @@
 
 #include <cstdio>
 #include <exception>
-#include <iostream>
 #include <span>
 
 #include "editor_host.h"
@@ -22,6 +21,9 @@ namespace {
 /// Frame-rate caps: a launcher is a quiet window and needs no more.
 inline constexpr std::uint32_t kFocusedFrameRateCapUVE = 60U;
 inline constexpr std::uint32_t kUnfocusedFrameRateCapUVE = 10U;
+/// A launcher draws no 3D scene, so it keeps the renderer's shadow and ambient-occlusion targets at
+/// their smallest (the same settings the Android runtime app starts with on a phone).
+inline constexpr std::uint32_t kLauncherShadowMapResolutionUVE = 512U;
 
 } // namespace
 
@@ -43,6 +45,8 @@ int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
     config.logFilePath = desc.logFile;
     config.focusedFrameRateCapUVE = kFocusedFrameRateCapUVE;
     config.unfocusedFrameRateCapUVE = kUnfocusedFrameRateCapUVE;
+    config.shadowMapResolution = kLauncherShadowMapResolutionUVE;
+    config.ssaoEnabledUVE = false;
     config.commandLineArgs = desc.commandLine;
     config.nativeWindowHandleUVE = desc.nativeSurface;
     if (!desc.shaderDirectory.empty()) {
@@ -61,14 +65,14 @@ int RunLauncherWindowUVE(const LauncherWindowDescUVE& desc,
         }
         void* const nativeWindow = core.GetServicesUVE().GetWindowManagerUVE().GetNativeWindowHandleUVE();
         if (nativeWindow == nullptr) {
-            std::cerr << desc.title << ": no window could be created\n";
+            UVE_ERROR("{}: no window could be created", desc.title);
             core.Shutdown();
             return kLauncherStartupFailedExitCodeUVE;
         }
         const std::filesystem::path& assets = desc.prismAssetsDirectory;
         Editor::EditorHostUVE host;
         if (!host.InitializeUVE(Window::GlfwWindowFromNativeHandleUVE(nativeWindow), assets)) {
-            std::cerr << desc.title << ": the interface could not start\n";
+            UVE_ERROR("{}: the interface could not start", desc.title);
             core.Shutdown();
             return kLauncherStartupFailedExitCodeUVE;
         }

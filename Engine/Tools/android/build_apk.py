@@ -5,7 +5,7 @@
     python3 Engine/Tools/android/build_apk.py --sdk "$ANDROID_HOME" --build-dir build/android
 
 Each app in APPS names its UVBT target, manifest and the data it ships; every app runs in the
-UniVexActivity compiled from JAVA_SOURCES. The APK is signed with a
+UniVexActivity compiled from JAVA_SOURCES, with the resources (launcher icon) under RESOURCES. The APK is signed with a
 local debug key (created on first use) unless --keystore is given.
 """
 import argparse
@@ -50,6 +50,9 @@ ASSET_INDEX = "asset-index.txt"
 JAVA_SOURCES = ("Engine", "App", "Android", "java")
 JAVA_RELEASE = "11"
 DEX_FILE = "classes.dex"
+# Android resources every app ships: the launcher icon (written by Engine/Tools/brand/build_brand_assets.py).
+RESOURCES = ("Engine", "App", "Android", "res")
+COMPILED_RESOURCES = "resources.zip"
 
 
 @dataclass(frozen=True)
@@ -189,10 +192,12 @@ def main():
         (assets / ASSET_INDEX).write_text("\n".join(names) + "\n", encoding="utf-8")
 
     dex = compile_java(build, tools, platform_jar)
+    resources = build / COMPILED_RESOURCES
+    run(tools / "aapt2", "compile", "--dir", REPO_ROOT.joinpath(*RESOURCES), "-o", resources)
 
     unsigned = build / "unsigned.apk"
     run(tools / "aapt2", "link", "-I", platform_jar, "--manifest", REPO_ROOT.joinpath(*app.manifest), "-A", assets,
-        "-o", unsigned)
+        "-R", resources, "--auto-add-overlay", "-o", unsigned)
     stripped = build / f"lib{app.library}.so"
     shutil.copy2(library, stripped)
     run(ndk_bin / "llvm-strip", "--strip-unneeded", stripped)
