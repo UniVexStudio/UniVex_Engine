@@ -41,7 +41,16 @@ PACK_STEM = "uve_pack"
 EXECUTABLE_STEMS = (EDITOR_STEM, RUNTIME_STEM, PACK_STEM)
 PRISM_ASSETS_DIRECTORY = "prism_assets"
 DATA_DIRECTORIES = (PRISM_ASSETS_DIRECTORY,)
-EXECUTABLE_SUFFIX = {"linux": "", "windows": ".exe"}
+EXECUTABLE_SUFFIX = {"linux": "", "windows": ".exe", "android": ""}
+# Android: an app runs no second program, so the package is the editor as a shared library, which the
+# Hub loads (engine_install.h, kEditorAndroidEntryPointUVE). UVBT names it lib<name>.so; the package
+# keeps the editor's own name so installs resolve the same way on every platform.
+ANDROID_TARGET = "android"
+ANDROID_EDITOR_LIBRARY = f"lib{EDITOR_STEM}.so"
+# The engine's built-in shader sources, read from files at run time (as the Android APKs ship them).
+SHADERS_DIRECTORY = "shaders"
+SHADERS_SOURCE = ("Engine", "Runtime", "RHI", "Shader", "built_in")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 TAG_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:\+build\.(\d+)|\.(\d+))?$")
 FILE_MODE = 0o644
 EXECUTABLE_MODE = 0o755
@@ -123,8 +132,25 @@ def stage_files(bin_dir: Path, target: str, stems: tuple[str, ...], directories:
         copy_windows_dlls(stage)
 
 
+def stage_android_editor(bin_dir: Path, stage: Path) -> None:
+    """The Android package: the editor library under the editor's name, PRISM's assets and the shaders."""
+    library = bin_dir / ANDROID_EDITOR_LIBRARY
+    if not library.is_file():
+        raise PackagingError(f"missing editor library {library}")
+    shutil.copy2(library, stage / EDITOR_STEM)
+    for directory in DATA_DIRECTORIES:
+        source = bin_dir / directory
+        if not source.is_dir():
+            raise PackagingError(f"missing directory {source}")
+        shutil.copytree(source, stage / directory, symlinks=False)
+    shutil.copytree(REPO_ROOT.joinpath(*SHADERS_SOURCE), stage / SHADERS_DIRECTORY, symlinks=False)
+
+
 def stage_engine(bin_dir: Path, target: str, version: str, channel: str, stage: Path) -> None:
-    stage_files(bin_dir, target, EXECUTABLE_STEMS, DATA_DIRECTORIES, stage)
+    if target == ANDROID_TARGET:
+        stage_android_editor(bin_dir, stage)
+    else:
+        stage_files(bin_dir, target, EXECUTABLE_STEMS, DATA_DIRECTORIES, stage)
     manifest = {
         "format": MANIFEST_FORMAT,
         "schemaVersion": MANIFEST_SCHEMA_VERSION,
@@ -163,6 +189,8 @@ def sha256_of(path: Path) -> str:
 def build_package(bin_dir: Path, target: str, tag: str, output: Path, check_version: bool = True) -> Path:
     version, channel = parse_tag(tag)
     editor = bin_dir / f"{EDITOR_STEM}{EXECUTABLE_SUFFIX[target]}"
+    if check_version and target == ANDROID_TARGET:
+        raise PackagingError("an Android editor library cannot report its version here; pass --skip-version-check")
     if check_version:
         reported = built_version(editor)
         if reported != version:

@@ -15,9 +15,11 @@ public class AndroidRuntimeModule : ModuleRules
             "Pack"
         });
 
-        // The Hub app beside it is a module of its own.
+        // The Hub, the editor and the shared activity host beside it are modules of their own.
         ExcludedFiles.AddRange(new string[] {
-            "hub/"
+            "hub/",
+            "editor/",
+            "host/"
         });
 
         PublicSystemLibraries.AddRange(new string[] {

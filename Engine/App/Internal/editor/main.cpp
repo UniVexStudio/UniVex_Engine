@@ -42,6 +42,7 @@
 #include "name_component.h"
 #include "i_entity_manager.h"
 #include "editor_viewport_host.h"
+#include "editor_main.h"
 
 namespace {
 
@@ -287,7 +288,7 @@ void ShowProjectUpgradeDialogUVE(const UVE::Pack::ProjectEditorSetupUVE& project
 /// EngineStateUVE::Running by the time something threw, and return
 /// EngineCoreUVE::kUnhandledExceptionExitCodeUVE instead of letting the exception unwind out of
 /// main() into std::terminate().
-int main(const int argc, char** argv) {
+int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE& platform) {
     EditorLaunchOptionsUVE options = ParseOptionsUVE(argc, argv);
     if (options.error.has_value()) {
         std::cerr << "uve_editor: " << *options.error << '\n';
@@ -299,7 +300,15 @@ int main(const int argc, char** argv) {
     }
 
     UVE::Core::EngineConfigUVE config{};
-    config.logFilePath = std::filesystem::path(kEditorLogFileNameUVE);
+    config.logFilePath = platform.logDirectory.empty() ? std::filesystem::path(kEditorLogFileNameUVE)
+                                                       : platform.logDirectory / kEditorLogFileNameUVE;
+    config.nativeWindowHandleUVE = platform.nativeSurface;
+    if (!platform.shaderDirectory.empty()) {
+        config.shaderSourceRealDirectoryUVE = platform.shaderDirectory;
+    }
+#if defined(__ANDROID__)
+    config.renderBackendPreferenceUVE = UVE::Core::RenderBackendPreferenceUVE::OpenGLUVE;
+#endif
     config.enableConsoleLogging = !options.bridgeStdio;
     config.headlessUVE = options.headless;
     config.windowBorderlessUVE = !options.decorated;
@@ -388,7 +397,9 @@ int main(const int argc, char** argv) {
             std::error_code assetError;
             std::filesystem::path assetDir =
                 std::filesystem::absolute(std::filesystem::path(argv[0]), assetError).parent_path() / "prism_assets";
-            if (!std::filesystem::is_directory(assetDir, assetError)) {
+            if (!platform.prismAssetsDirectory.empty()) {
+                assetDir = platform.prismAssetsDirectory;
+            } else if (!std::filesystem::is_directory(assetDir, assetError)) {
                 assetDir = "prism_assets";
             }
             editor.SetPrismUiEnabledUVE(true, assetDir);
@@ -521,6 +532,9 @@ int main(const int argc, char** argv) {
         int framesRun = 0;
         while (!closeRequested && !engine.GetServicesUVE().GetWindowManagerUVE().IsCloseRequestedUVE() &&
                (!options.frameLimit.has_value() || framesRun < *options.frameLimit)) {
+            if (platform.beforeFrame && !platform.beforeFrame(engine)) {
+                break;
+            }
             editor.TickUVE();
             engine.TickFrameUVE();
             ++framesRun;
@@ -574,3 +588,9 @@ int main(const int argc, char** argv) {
     }
     return UVE::Core::EngineCoreUVE::kUnhandledExceptionExitCodeUVE;
 }
+
+#if !defined(__ANDROID__)
+int main(const int argc, char** argv) {
+    return UVE::App::RunEditorUVE(argc, argv, {});
+}
+#endif

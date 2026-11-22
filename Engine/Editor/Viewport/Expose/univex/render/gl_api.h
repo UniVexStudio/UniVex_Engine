@@ -14,7 +14,13 @@
 // -----------------------------------------------------------------------
 #pragma once
 
-#if defined(UNIVEX_GL_LOADER_HEADER)
+#if defined(__ANDROID__)
+// OpenGL ES 3.2: the functions are the platform library's own, so no loader is needed. Shaders are
+// written for desktop GLSL 3.30 and retargeted at compile time (prism::glslForContext).
+#include <GLES3/gl32.h>
+#include <GLES2/gl2ext.h>
+#define UNIVEX_GL_ES 1
+#elif defined(UNIVEX_GL_LOADER_HEADER)
 #include UNIVEX_GL_LOADER_HEADER
 #else
 #ifndef GLEW_NO_GLU

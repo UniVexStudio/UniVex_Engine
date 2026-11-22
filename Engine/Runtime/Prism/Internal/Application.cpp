@@ -95,6 +95,7 @@ void Application::setRoot(Ref<Widget> r) {
     WindowChromeOptions o;
     o.title = m_desc.title;
     o.icon = Icon(m_desc.icon);
+    if (m_platform && m_platform->singleSurface()) o.minimize = o.maximize = o.close = false;   // the system owns it
     r = wrapWithWindowChrome(std::move(r), 0, o);
   }
   m_root = std::move(r);
@@ -701,6 +702,7 @@ int Application::openWindow(Ref<Widget> root, const OsWindowDesc& desc) {
     WindowChromeOptions o;
     o.title = desc.title;
     o.icon = Icon(desc.icon);
+    if (m_platform && m_platform->singleSurface()) o.maximize = false;   // a page is always full screen
     root = wrapWithWindowChrome(std::move(root), w.id, o);
   }
   w.root = std::move(root);

@@ -3,13 +3,25 @@
 #include "hub_project_opener.h"
 
 #include <chrono>
+#include <utility>
 
 #include "editor_project_package.h"
 #include "engine_install.h"
+#include "launcher_window.h"
 #include "process_launcher.h"
 #include "project_compatibility.h"
 
 namespace UVE::Hub {
+namespace {
+
+/// The editor launch Android carries out after the Hub's window closes.
+std::optional<Platform::ProcessLaunchDescUVE> g_pendingEditorLaunchUVE;
+
+} // namespace
+
+std::optional<Platform::ProcessLaunchDescUVE> TakePendingEditorLaunchUVE() {
+    return std::exchange(g_pendingEditorLaunchUVE, std::nullopt);
+}
 
 ProjectOpenResultUVE OpenProjectInEngineUVE(const std::filesystem::path& projectFile,
                                             const std::vector<Online::InstalledEngineUVE>& engines,
@@ -46,13 +58,19 @@ ProjectOpenResultUVE OpenProjectInEngineUVE(const std::filesystem::path& project
     if (!compatibility.CanOpenUVE()) {
         return {false, compatibility.message};
     }
-    const Platform::ProcessLaunchResultUVE launched = Platform::LaunchDetachedProcessUVE(
-        {engine->install.editorExecutable,
-         Pack::MakeEditorLaunchArgumentsUVE(Pack::ProjectRegistryUVE::NormalizeProjectFileUVE(projectFile), registryOverride),
-         projectFile.parent_path()});
+    Platform::ProcessLaunchDescUVE launch{
+        engine->install.editorExecutable,
+        Pack::MakeEditorLaunchArgumentsUVE(Pack::ProjectRegistryUVE::NormalizeProjectFileUVE(projectFile), registryOverride),
+        projectFile.parent_path()};
+#if defined(__ANDROID__)
+    g_pendingEditorLaunchUVE = std::move(launch);
+    LauncherUI::RequestLauncherCloseUVE();
+#else
+    const Platform::ProcessLaunchResultUVE launched = Platform::LaunchDetachedProcessUVE(launch);
     if (!launched.launched) {
         return {false, launched.message};
     }
+#endif
     return {true, "Opening " + package.displayName + " with engine " + engine->install.version.ToStringUVE() + "..."};
 }
 
