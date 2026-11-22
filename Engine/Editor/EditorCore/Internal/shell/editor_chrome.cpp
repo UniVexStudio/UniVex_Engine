@@ -223,7 +223,13 @@ bool CameraScreenUVE::onMouseDown(const prism::MouseEvent& e) {
 
 // -------------------------------------------------------------------------------- window buttons
 
-void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose) {
+void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose, const bool mainWindow) {
+    // One full-screen surface (phones): the main window belongs to the system and has no buttons;
+    // another window is a page over it, which minimize hides and close ends - it cannot be resized.
+    const bool singleSurface = prism::Application::exists() && prism::Application::get().platform().singleSurface();
+    if (singleSurface && mainWindow) {
+        return;
+    }
     auto minimize = prism::make<prism::Button>("", prism::Icon::Minus, prism::ButtonStyle::Flat);
     minimize->setTooltip("Minimize");
     minimize->onClick = [] { prism::Application::get().platform().minimizeWindow(CurrentWindowUVE()); };
@@ -238,7 +244,9 @@ void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose) {
         }
     };
     row.add(minimize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    row.add(maximize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    if (!singleSurface) {
+        row.add(maximize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    }
     row.add(close, prism::Slot{0.0F, prism::Margin(0.0F, 0.0F, 4.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
 }
 

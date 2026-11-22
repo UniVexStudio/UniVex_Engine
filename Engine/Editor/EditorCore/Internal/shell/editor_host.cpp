@@ -9,6 +9,9 @@
 
 #include "gl_system_headers.h"
 #include <GLFW/glfw3.h>
+#if defined(__ANDROID__)
+#include "android_glfw.h"
+#endif
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <windows.h>
@@ -258,7 +261,12 @@ public:
         m_uiCursor[window] = c;
         ApplyCursorUVE(window, m_cursors[static_cast<int>(c)]);
     }
-    void setTextInputActive(const bool active) override { m_textInput = active; }
+    void setTextInputActive(const bool active) override {
+        m_textInput = active;
+#if defined(__ANDROID__)
+        Window::SetAndroidGlfwTextInputUVE(active);   // the app shows or hides the soft keyboard
+#endif
+    }
     float dpiScale() const override { return 1.0F; }
     void requestQuit() override { glfwSetWindowShouldClose(m_window, GLFW_TRUE); }
     void* nativeWindowHandle() const override { return m_window; }

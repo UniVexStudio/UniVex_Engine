@@ -29,6 +29,26 @@ inline constexpr const char* kLogTagUVE = "UniVex";
 /// Written by build_apk.py: every file under the APK's assets/, one relative path per line.
 inline constexpr const char* kAssetIndexUVE = "asset-index.txt";
 
+/// Touch gestures, turned into what the editor and PRISM read from a mouse: one finger is the left
+/// button (pressed once it moves or lifts, so a second finger can still start a gesture), holding
+/// one finger still is a right click, two fingers drag with the right button and pinch with the
+/// wheel, three fingers drag with the middle button.
+struct TouchGestureUVE final {
+    int fingers = 0;
+    /// GLFW mouse button the gesture holds down (-1: none yet).
+    int button = -1;
+    /// One finger is down but not yet a press, a drag or a long press.
+    bool pending = false;
+    /// The gesture ended early (fingers lifted from a multi-finger gesture); the rest is ignored.
+    bool finished = false;
+    float startX = 0.0F;
+    float startY = 0.0F;
+    float lastX = 0.0F;
+    float lastY = 0.0F;
+    float pinchDistance = 0.0F;
+    std::int64_t startMs = 0;
+};
+
 /// What the attached app knows about its activity.
 struct ActivityStateUVE final {
     android_app* app = nullptr;
@@ -39,6 +59,14 @@ struct ActivityStateUVE final {
     Window::AndroidSafeAreaUVE safeArea;
     /// Frames started since attaching; the first is on screen once the second starts.
     std::uint64_t framesStarted = 0;
+    TouchGestureUVE touch;
+    /// The system Back key acts as Escape (the editor: it closes menus and dialogs) instead of
+    /// leaving the app (the Hub).
+    bool backIsEscape = false;
+    /// The soft keyboard is up because the interface asked for typed text.
+    bool keyboardShown = false;
+    /// Surface pixels per density-independent pixel (density / 160 dpi).
+    float pixelsPerDp = 1.0F;
 };
 
 /// Takes over the activity's callbacks for `state`, and tells this library's copies of the GLFW

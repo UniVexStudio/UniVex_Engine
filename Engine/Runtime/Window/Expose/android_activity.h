@@ -25,4 +25,8 @@ struct AndroidSafeAreaUVE final {
 /// changes, not every frame: it attaches the thread to Java for the read.
 [[nodiscard]] AndroidSafeAreaUVE ReadAndroidSafeAreaUVE(ANativeActivity* activity);
 
+/// The character a key event types (android.view.KeyEvent.getUnicodeChar), or 0 for none (a
+/// function key, or Java unreachable). Attaches the thread to Java for the call.
+[[nodiscard]] unsigned int AndroidKeyCharacterUVE(ANativeActivity* activity, int action, int keyCode, int metaState);
+
 } // namespace UVE::Window
