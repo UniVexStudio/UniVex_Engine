@@ -65,7 +65,6 @@ public class UniVexActivity extends NativeActivity {
                 ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
                 : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         window.setAttributes(attributes);
-        super.onCreate(savedInstanceState);
         Intent launchIntent = getIntent();
         if (launchIntent != null) {
             String project = launchIntent.getStringExtra("project");
@@ -73,6 +72,7 @@ public class UniVexActivity extends NativeActivity {
                 launchProject = project;
             }
         }
+        super.onCreate(savedInstanceState);
         View decor = window.getDecorView();
         decor.setOnApplyWindowInsetsListener((view, insets) -> {
             storeSafeInsets(insets);

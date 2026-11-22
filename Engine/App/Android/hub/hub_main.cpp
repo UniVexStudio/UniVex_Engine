@@ -184,6 +184,7 @@ extern "C" void android_main(android_app* const app) {
                     *registry, {});
                 if (!opened.launched) {
                     lastEditorError = opened.message;
+                    __android_log_print(ANDROID_LOG_ERROR, kLogTagUVE, "UVE_HUB_LAUNCH_FAILED %s", opened.message.c_str());
                 } else if (const std::optional<UVE::Platform::ProcessLaunchDescUVE> launch =
                                UVE::Hub::TakePendingEditorLaunchUVE();
                            launch.has_value()) {
