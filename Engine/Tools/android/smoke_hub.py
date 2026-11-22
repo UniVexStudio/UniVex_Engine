@@ -105,7 +105,7 @@ def main() -> int:
             "settingsPath": "Config/project_settings.json",
             "startupScenePath": "Content/Viewport/Viewport.uvscene",
         })
-        eng_rel = f"files/.local/share/UniVex/Engines/{version}"
+        eng_rel = f"files/UniVex/Engines/{version}"
         adb("shell", f"run-as {PACKAGE} rm -rf {eng_rel} files/smoke")
         adb("shell", f"run-as {PACKAGE} mkdir -p {eng_rel} files/smoke/Content/Viewport files/smoke/Config")
         # Pipe from shell so SELinux does not block run-as from opening /data/local/tmp directly.
