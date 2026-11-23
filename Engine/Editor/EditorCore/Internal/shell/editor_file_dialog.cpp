@@ -32,6 +32,13 @@ namespace {
 constexpr int kWidthUVE = 940;
 constexpr int kHeightUVE = 600;
 
+// UTF-8 on every platform: path::string() throws on Windows for names outside the ANSI code page, so a
+// folder holding one crashed the dialog when opened.
+[[nodiscard]] std::string Utf8UVE(const std::filesystem::path& path) {
+    const std::u8string text = path.u8string();
+    return std::string(text.begin(), text.end());
+}
+
 [[nodiscard]] std::string LowerUVE(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(),
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -105,7 +112,7 @@ constexpr int kHeightUVE = 600;
         "/storage", std::filesystem::directory_options::skip_permission_denied, error);
     if (!error) {
         for (const std::filesystem::directory_entry& entry : storageIt) {
-            const std::string vol = entry.path().filename().string();
+            const std::string vol = Utf8UVE(entry.path().filename());
             if (vol.empty() || vol == "self" || vol == "emulated" || vol.front() == '.') {
                 continue;
             }
@@ -246,7 +253,7 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
         } else if (std::filesystem::is_regular_file(typed, error)) {
             GoToUVE(typed.parent_path());
             if (m_fileName) {
-                m_fileName->setText(typed.filename().string());
+                m_fileName->setText(Utf8UVE(typed.filename()));
             }
         } else if (m_status) {
             m_status->setText("There is no folder at " + text + ".");
@@ -268,7 +275,7 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
         auto place = prism::make<prism::Button>(name, name == "Content" || name == "Project" ? prism::Icon::Folder
                                                                                             : prism::Icon::FolderOpen,
                                                 prism::ButtonStyle::Flat);
-        place->setTooltip(path.string());
+        place->setTooltip(Utf8UVE(path));
         place->onClick = [this, p = path] { GoToUVE(p); };
         places->add(place, prism::Slot{0.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
     }
@@ -285,8 +292,8 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
         }
         const EntryUVE& entry = m_entries[static_cast<std::size_t>(row)];
         switch (col) {
-            case 0: return entry.path.filename().string();
-            case 1: return entry.directory ? std::string("Folder") : LowerUVE(entry.path.extension().string());
+            case 0: return Utf8UVE(entry.path.filename());
+            case 1: return entry.directory ? std::string("Folder") : LowerUVE(Utf8UVE(entry.path.extension()));
             case 2: return entry.directory ? std::string() : SizeTextUVE(entry.size);
             default: return TimeTextUVE(entry.modified);
         }
@@ -300,8 +307,8 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
         switch (col) {
             case 2: return x.size < y.size;
             case 3: return x.modified < y.modified;
-            case 1: return LowerUVE(x.path.extension().string()) < LowerUVE(y.path.extension().string());
-            default: return LowerUVE(x.path.filename().string()) < LowerUVE(y.path.filename().string());
+            case 1: return LowerUVE(Utf8UVE(x.path.extension())) < LowerUVE(Utf8UVE(y.path.extension()));
+            default: return LowerUVE(Utf8UVE(x.path.filename())) < LowerUVE(Utf8UVE(y.path.filename()));
         }
     };
     m_table->paintCell = [this](prism::Canvas& c, const int row, const int col, const prism::Rect r, const bool selected) {
@@ -327,7 +334,7 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
         }
         const EntryUVE& entry = m_entries[static_cast<std::size_t>(rows.front())];
         if (!entry.directory && m_fileName) {
-            m_fileName->setText(entry.path.filename().string());
+            m_fileName->setText(Utf8UVE(entry.path.filename()));
         }
     };
     m_table->onActivate = [this](const int row) {
@@ -339,7 +346,7 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
             GoToUVE(entry.path);
         } else {
             if (m_fileName) {
-                m_fileName->setText(entry.path.filename().string());
+                m_fileName->setText(Utf8UVE(entry.path.filename()));
             }
             ConfirmUVE();
         }
@@ -447,7 +454,7 @@ bool EditorFileDialogUVE::FolderHasKindUVE(const std::filesystem::path& folder) 
         if (++visited > 4000U || it.depth() > 8) {
             return true;
         }
-        const std::string name = it->path().filename().string();
+        const std::string name = Utf8UVE(it->path().filename());
         if (!name.empty() && name.front() == '.') {
             if (it->is_directory(error)) {
                 it.disable_recursion_pending();
@@ -466,7 +473,7 @@ bool EditorFileDialogUVE::MatchesKindUVE(const std::filesystem::path& file) cons
     if (m_allKinds || m_request.extensions.empty()) {
         return true;
     }
-    const std::string extension = LowerUVE(file.extension().string());
+    const std::string extension = LowerUVE(Utf8UVE(file.extension()));
     return std::any_of(m_request.extensions.begin(), m_request.extensions.end(),
                        [&](const std::string& kind) { return LowerUVE(kind) == extension; });
 }
@@ -476,7 +483,7 @@ void EditorFileDialogUVE::GoToUVE(const std::filesystem::path& directory) {
     const std::filesystem::path canonical = std::filesystem::weakly_canonical(directory, error);
     m_directory = error ? directory : canonical;
     if (m_pathInput) {
-        m_pathInput->setText(m_directory.string());
+        m_pathInput->setText(Utf8UVE(m_directory));
     }
     if (m_search) {
         m_search->setText("");
@@ -493,7 +500,7 @@ void EditorFileDialogUVE::RebuildListUVE() {
                                                        error);
          !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
         const std::filesystem::path path = it->path();
-        const std::string name = path.filename().string();
+        const std::string name = Utf8UVE(path.filename());
         if (name.empty() || name.front() == '.') {
             continue;   // hidden files and folders
         }
@@ -521,7 +528,7 @@ void EditorFileDialogUVE::RebuildListUVE() {
         if (a.directory != b.directory) {
             return a.directory;
         }
-        return LowerUVE(a.path.filename().string()) < LowerUVE(b.path.filename().string());
+        return LowerUVE(Utf8UVE(a.path.filename())) < LowerUVE(Utf8UVE(b.path.filename()));
     });
     if (m_table) {
         m_table->setRowCount(static_cast<int>(m_entries.size()));
@@ -586,7 +593,7 @@ void EditorFileDialogUVE::ConfirmUVE() {
     std::filesystem::path chosen = std::filesystem::path{name}.is_absolute() ? std::filesystem::path{name} : m_directory / name;
 
     if (m_request.mode == FilePickerModeUVE::Save) {
-        if (!m_request.extensions.empty() && LowerUVE(chosen.extension().string()) != LowerUVE(m_request.extensions.front())) {
+        if (!m_request.extensions.empty() && LowerUVE(Utf8UVE(chosen.extension())) != LowerUVE(m_request.extensions.front())) {
             chosen += m_request.extensions.front();
         }
         if (std::filesystem::exists(chosen, error)) {
@@ -610,7 +617,7 @@ void EditorFileDialogUVE::ConfirmUVE() {
             std::filesystem::copy_file(chosen, copy, error);
             if (error) {
                 if (m_status) {
-                    m_status->setText("Could not copy " + chosen.filename().string() + ": " + error.message());
+                    m_status->setText("Could not copy " + Utf8UVE(chosen.filename()) + ": " + error.message());
                 }
                 return;
             }
