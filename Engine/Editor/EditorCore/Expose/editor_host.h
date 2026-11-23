@@ -109,6 +109,9 @@ public:
 
     /// True once the PRISM close button (or quit) asked the editor to exit.
     [[nodiscard]] bool QuitRequestedUVE() const noexcept;
+    /// True on single-surface platforms when a full-screen sub-editor/tool page completely covers
+    /// the main window (so the Level Editor can skip rendering its occluded 3D viewport).
+    [[nodiscard]] bool HasOpaqueFullPageUVE() const;
 
     /// Saves the main window's current frame as PNG (CPU readback of the GL backend).
     bool SaveScreenshotUVE(const std::filesystem::path& path);
@@ -142,8 +145,10 @@ private:
     /// in its UI coordinates.
     [[nodiscard]] WindowUVE* DragTargetUVE(const WindowUVE& source, prism::Vec2& local) const;
     void SyncSizeUVE(WindowUVE& w);
+    void ApplyPageLayoutUVE(WindowUVE& w);
     void UpdateWindowDragUVE(WindowUVE& w);
     void CompositeUVE(WindowUVE& w, std::uint32_t uiTexture, std::uint32_t vao, std::span<const ViewImageUVE> views);
+    void CompositePageOverlayUVE(WindowUVE& w, std::uint32_t uiTexture, std::span<const ViewImageUVE> views);
     void EndInputFrameUVE(WindowUVE& w);
     /// Single-surface platforms (Android): another window is a page over the main one. The page on
     /// top, unless hidden (its title bar's minimize), takes the screen and the input.

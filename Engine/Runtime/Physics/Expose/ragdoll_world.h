@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 #include "entity.h"
 #include "collider_world_aabb_cache.h"
@@ -27,38 +28,48 @@ struct RagdollCollisionFilterUVE final {
     Scene::EntityUVE alsoIgnoreEntity = Scene::kInvalidEntityUVE;
 };
 
+/// Optional velocity and dynamic-body metadata aligned 1:1 with the `colliders` snapshot.
+/// Allows ragdolls to react to moving platforms / dynamic `Rigid3D` props and apply two-way pushback
+/// while keeping sleeping corpses asleep on stationary floors.
+struct RagdollColliderMotionUVE final {
+    Math::Vector3UVE linearVelocity{};
+    Math::Vector3UVE angularVelocity{};
+    Math::Vector3UVE worldCenter{};
+    float inverseMass = 0.0F;
+    bool isDynamic = false;
+
+    [[nodiscard]] bool operator==(const RagdollColliderMotionUVE&) const noexcept = default;
+};
+
 struct RagdollContactStatsUVE final {
     std::size_t testedColliderCount = 0U;
+    std::size_t broadphaseRejectedCount = 0U;
     std::size_t generatedContactCount = 0U;
-    /// True when the caller's output buffer filled up. The solver still gets a consistent subset -
-    /// the deepest contacts, not whichever ones happened to come first - so a truncated frame
-    /// degrades rather than resolving the wrong thing.
+    std::size_t dynamicContactCount = 0U;
+    /// True if at least one contact hit a collider moving faster than the sleep wake speed.
+    bool hasMovingColliderContact = false;
+    /// True if at least one contact provides upward floor support (normal.y > 0.35).
+    bool hasFloorSupport = false;
+    /// True when the caller's output buffer filled up.
     bool truncated = false;
 };
 
-/// One body's capsule against one world collider.
+/// Pre-filters `colliders` against the ragdoll's aggregate world AABB (expanded by `expandMargin`)
+/// and collision filter so multi-substep frames only run narrow-phase against nearby geometry.
+void BuildRagdollBroadphaseCandidatesUVE(const RagdollSolverUVE& solver,
+                                         std::span<const Detail::ColliderWorldAabbUVE> colliders,
+                                         const RagdollCollisionFilterUVE& filter, float expandMargin,
+                                         std::vector<std::size_t>& outCandidateIndices);
+
+/// Builds exact world-space contacts between all ragdoll body capsules and world colliders.
 ///
-/// This is the whole "the ragdoll reacts when it hits the mesh" contract, and it is deliberately a
-/// pure function over a collider snapshot: no ECS access, no allocation, no hidden state. The caller
-/// builds the snapshot with `Detail::BuildColliderWorldAabbCacheUVE` once per frame and hands the
-/// same array to every ragdoll in the scene.
-///
-/// Exact shape pairs, in the order the narrow-phase helpers already implement them:
-///  * body capsule vs sphere collider   - capsule/sphere
-///  * body capsule vs capsule collider  - capsule/capsule
-///  * body capsule vs box collider      - capsule/oriented box, so a rotated ramp is not approximated
-///  * body capsule vs cylinder collider - capsule/AABB, the one documented approximation: a cylinder
-///    has no dedicated narrow phase in this engine yet, and its cached AABB is what a cylinder
-///    collider already reports to collision and raycasts.
-///
-/// The returned normals push the BODY out, which is why every one of them is the negation of the
-/// narrow-phase axis: those helpers all report an axis pointing from the capsule toward the other
-/// shape, because they were written for the pair resolver that moves the second body.
-///
-/// Friction and restitution are the combination of the body's authored values and the collider's own
-/// material, so a corpse on ice slides and a corpse on carpet does not.
+/// Uses AABB broadphase rejection, exact closest-point contact generation for Sphere, Capsule,
+/// Oriented Box (with 2-point flat-surface capsule manifold for zero-rocking floor stability), and
+/// Cylinder AABBs, plus optional dynamic-collider velocity and pushback tagging.
 [[nodiscard]] RagdollContactStatsUVE BuildRagdollContactsUVE(
     const RagdollSolverUVE& solver, std::span<const Detail::ColliderWorldAabbUVE> colliders,
-    const RagdollCollisionFilterUVE& filter, std::span<RagdollContactUVE> outContacts) noexcept;
+    const RagdollCollisionFilterUVE& filter, std::span<RagdollContactUVE> outContacts,
+    std::span<const RagdollColliderMotionUVE> colliderMotions = {},
+    std::span<const std::size_t> candidateIndices = {}) noexcept;
 
 } // namespace UVE::Physics

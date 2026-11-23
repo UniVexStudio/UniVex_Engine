@@ -222,6 +222,7 @@ void EditorUVE::OpenCommandPaletteUVE() noexcept {
 
 void EditorUVE::OpenKeyboardShortcutsUVE() noexcept {
     m_shortcutsWindow.visible = true;
+    m_shortcutsWindow.focusPending = true;
 }
 
 bool EditorUVE::AssignCommandShortcutUVE(const std::string_view id, const std::size_t slot, const EditorShortcutUVE& shortcut) {

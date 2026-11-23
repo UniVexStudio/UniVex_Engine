@@ -169,7 +169,7 @@ prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildUVE() {
 prism::Ref<prism::Widget> EditorSequencerPanelUVE::BuildToolbarUVE() {
     auto row = prism::hbox(3.0F);
     row->setPadding(prism::Margin(6.0F, 3.0F, 6.0F, 3.0F));
-    m_playerButton = ToolButtonUVE(prism::Icon::ChevronDown, "The AnimationSequencer shown (selecting one in Components picks it too)",
+    m_playerButton = ToolButtonUVE(prism::Icon::None, "The AnimationSequencer shown (selecting one in Components picks it too)",
                                    "Player");
     m_playerButton->onClick = [this] { ShowPlayerMenuUVE(); };
     row->add(m_playerButton, CentreSlotUVE());

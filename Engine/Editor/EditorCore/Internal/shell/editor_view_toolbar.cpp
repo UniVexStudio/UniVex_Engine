@@ -63,7 +63,7 @@ prism::Ref<prism::Widget> EditorViewToolbarUVE::BuildUVE(const bool gizmoOnly, p
     settings->add(m_snapButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     // How far a snap steps: the grid for moves, the angle for rotations, and the scale step (whose
     // own magnet sits beside Scale in Details).
-    m_snapLevelButton = ToolButtonUVE(prism::Icon::ChevronDown, "Snap levels: the grid step for moves, the angle for rotations, the scale step", "1");
+    m_snapLevelButton = ToolButtonUVE(prism::Icon::None, "Snap levels: the grid step for moves, the angle for rotations, the scale step", "1");
     m_snapLevelButton->onClick = [this] { ShowSnapLevelsUVE(); };
     settings->add(m_snapLevelButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     settings->add(m_gridButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});

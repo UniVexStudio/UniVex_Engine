@@ -181,6 +181,7 @@ public class UniVexActivity extends NativeActivity {
                 ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
                 : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
         window.setAttributes(attributes);
+        requestHighRefreshRate(window);
         Intent launchIntent = getIntent();
         if (launchIntent != null) {
             String project = launchIntent.getStringExtra("project");
@@ -205,8 +206,43 @@ public class UniVexActivity extends NativeActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        requestHighRefreshRate(getWindow());
         refreshHardwareInputState();
         hideSystemBars();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void requestHighRefreshRate(Window window) {
+        if (window == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return;
+        }
+        try {
+            android.view.Display display = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    ? getDisplay()
+                    : getWindowManager().getDefaultDisplay();
+            if (display == null) {
+                return;
+            }
+            android.view.Display.Mode current = display.getMode();
+            android.view.Display.Mode best = current;
+            android.view.Display.Mode[] modes = display.getSupportedModes();
+            if (modes != null && current != null) {
+                for (android.view.Display.Mode mode : modes) {
+                    if (mode.getPhysicalWidth() == current.getPhysicalWidth()
+                            && mode.getPhysicalHeight() == current.getPhysicalHeight()
+                            && mode.getRefreshRate() > best.getRefreshRate() + 0.5f) {
+                        best = mode;
+                    }
+                }
+            }
+            if (best != null && (current == null || best.getModeId() != current.getModeId())) {
+                WindowManager.LayoutParams lp = window.getAttributes();
+                lp.preferredDisplayModeId = best.getModeId();
+                window.setAttributes(lp);
+            }
+        } catch (RuntimeException ignored) {
+            // Headless or virtual displays may not expose mode switching.
+        }
     }
 
     @Override

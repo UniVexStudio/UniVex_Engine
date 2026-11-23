@@ -344,24 +344,10 @@ void EditorInputMapWindowUVE::RebuildDetailUVE() {
 
 prism::Ref<prism::Widget> EditorInputMapWindowUVE::BuildUVE() {
     auto window = prism::vbox();
-    auto title = prism::hbox(6.0F);
-    title->setPadding(prism::Margin(10.0F, 0.0F, 0.0F, 0.0F));
-    auto titleText = prism::make<prism::Label>("Input Map");
-    titleText->setColor(prism::ThemeColor(&prism::Theme::textBright));
-    title->add(titleText, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    title->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*title, [this] {
+    window->add(BuildToolWindowTitleBarUVE("Input Map", prism::Icon::Settings, [this] {
         m_editor.m_inputMapWindow.visible = false;
         m_closePending = true;
-    });
-    auto titleBox = prism::make<prism::SizeBox>();
-    titleBox->setHeightOverride(kTitleRowUVE + 4.0F);
-    titleBox->setContent(title);
-    auto titleBar = prism::make<prism::Border>();
-    titleBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    titleBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    titleBar->setChild(titleBox);
-    window->add(titleBar);
+    }));
 
     // Left: the actions.
     auto left = prism::vbox(6.0F);
@@ -475,7 +461,8 @@ void EditorInputMapWindowUVE::FrameUVE() {
     if (!state.visible) {
         return;
     }
-    if (m_window == 0) {
+    const bool freshlyOpened = (m_window == 0);
+    if (freshlyOpened) {
         m_window = m_host.OpenWindowUVE(BuildUVE(), "Input Map", kWidthUVE, kHeightUVE);
         if (m_window == 0) {
             state.visible = false;
@@ -483,6 +470,9 @@ void EditorInputMapWindowUVE::FrameUVE() {
         }
         m_listDirty = true;
         m_detailDirty = true;
+    }
+    if (freshlyOpened || state.focusPending) {
+        state.focusPending = false;
         m_host.FocusWindowUVE(m_window);
     }
     // While listening, a gamepad button or a stick pushed anywhere binds (keys come through the

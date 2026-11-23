@@ -28,7 +28,10 @@ constexpr std::array<GroupUVE, 12> kGroupsUVE{{
     {"Lights", {Kind::DirectionalLight3D, Kind::Light3D}, 2},
     {"Environment", {Kind::WorldEnvironment3D, Kind::Sky, Kind::ReflectionProbe3D, Kind::FogVolume3D, Kind::Decal3D}, 5},
     {"Camera", {Kind::Camera3D, Kind::SpringArm3D}, 2},
-    {"Physics", {Kind::Static3D, Kind::Rigid3D, Kind::Kinematic3D, Kind::Collider3D, Kind::Area3D, Kind::RayCast3D}, 6},
+    {"Physics",
+     {Kind::Static3D, Kind::Rigid3D, Kind::Kinematic3D, Kind::Collider3D, Kind::Area3D, Kind::RayCast3D,
+      Kind::Ragdoll3D},
+     7},
     {"Animation",
      {Kind::Skeleton3D, Kind::AnimationSequencer, Kind::AnimationGraph, Kind::MontageSequencer, Kind::BoneAttachment3D,
       Kind::TwoBoneIK3D, Kind::FullBodyIK3D},
@@ -94,11 +97,12 @@ bool IsObjectOfferedForRootUVE(const Kind kind, const EntityRootUVE root) noexce
         case Kind::Character3D:
         case Kind::Player3D:
             return false;
-        // A character's own: its rig, its animation brain, its navigation and its camera arm.
+        // A character's own: its rig, its ragdoll, its animation brain, its navigation and its camera arm.
         case Kind::Skeleton3D:
         case Kind::TwoBoneIK3D:
         case Kind::FullBodyIK3D:
         case Kind::BoneAttachment3D:
+        case Kind::Ragdoll3D:
         case Kind::AnimationGraph:
         case Kind::MontageSequencer:
         case Kind::NavSeeker3D:
@@ -135,6 +139,7 @@ prism::Icon ObjectKindGlyphUVE(const Kind kind) noexcept {
         case Kind::Static3D: return prism::Icon::Static3D;
         case Kind::Rigid3D: return prism::Icon::Rigid3D;
         case Kind::Collider3D: return prism::Icon::Collider;
+        case Kind::Ragdoll3D: return prism::Icon::Skeleton;
         case Kind::Skeleton3D: return prism::Icon::Skeleton;
         case Kind::AnimationSequencer: return prism::Icon::AnimSequencer;
         case Kind::AnimationGraph: return prism::Icon::AnimGraph;

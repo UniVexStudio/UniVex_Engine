@@ -45,14 +45,16 @@ void main() {
         gl_FragDepth = 0.0;
         return;
     }
+    ivec2 depthSize = textureSize(uSceneDepth, 0);
     vec2 uv = gl_FragCoord.xy / max(uOutSize, vec2(1.0));
-    float d = texture(uSceneDepth, uv).r;
+    ivec2 depthCoord = clamp(ivec2(uv * vec2(depthSize)), ivec2(0), max(depthSize - ivec2(1), ivec2(0)));
+    float d = texelFetch(uSceneDepth, depthCoord, 0).r;
     if (d >= 0.999999) {
         gl_FragDepth = 1.0;
         return;
     }
     if (uDirectSceneDepth != 0) {
-        gl_FragDepth = clamp(d * 2.0 - 1.0, 0.0, 1.0);
+        gl_FragDepth = clamp(d, 0.0, 1.0);
         return;
     }
     vec4 world = uSceneInvViewProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
@@ -268,27 +270,27 @@ ViewportSurfaceUVE::QualityConfigUVE ViewportSurfaceUVE::ResolveQualityConfigUVE
     const int effective = clamped == 0 ? (m_detectedMobileTier == 0 ? 1 : (m_detectedMobileTier == 2 ? 3 : 2)) : clamped;
     switch (effective) {
         case 1: // Low (60-120 FPS)
-            return QualityConfigUVE{0.65F, 0, 1, 0.32F, false, 0U, 512U, 2.0F, 0, true};
+            return QualityConfigUVE{0.65F, 0, 1, 0.32F, false, 0U, 512U, 2.0F, 0, true, false};
         case 2: // Medium (Balanced)
-            return QualityConfigUVE{0.80F, 0, 1, 0.28F, false, 0U, 1024U, 4.0F, 1, true};
+            return QualityConfigUVE{0.80F, 0, 1, 0.28F, false, 0U, 1024U, 4.0F, 1, true, false};
         case 3: // High (Crisp Native-Near + FXAA)
-            return QualityConfigUVE{0.92F, 0, 2, 0.26F, false, 0U, 1024U, 8.0F, 2, true};
+            return QualityConfigUVE{0.92F, 0, 2, 0.26F, false, 0U, 1024U, 8.0F, 2, true, true};
         case 4: // Ultra (Native + 2x MSAA + SSAO)
         default:
-            return QualityConfigUVE{1.00F, 2, 2, 0.24F, true, 1U, 2048U, 16.0F, 2, true};
+            return QualityConfigUVE{1.00F, 2, 2, 0.24F, true, 1U, 2048U, 16.0F, 2, true, true};
     }
 #else
     const int effective = clamped == 0 ? 3 : clamped;
     switch (effective) {
         case 1: // Low
-            return QualityConfigUVE{0.70F, 0, 1, 0.30F, false, 0U, 512U, 2.0F, 0, true};
+            return QualityConfigUVE{0.70F, 0, 1, 0.30F, false, 0U, 512U, 2.0F, 0, true, false};
         case 2: // Medium
-            return QualityConfigUVE{0.85F, 0, 1, 0.26F, false, 0U, 1024U, 4.0F, 1, true};
+            return QualityConfigUVE{0.85F, 0, 1, 0.26F, false, 0U, 1024U, 4.0F, 1, true, true};
         case 3: // High (Desktop default)
-            return QualityConfigUVE{1.00F, 2, 2, 0.22F, true, 1U, 2048U, 8.0F, 2, false};
+            return QualityConfigUVE{1.00F, 2, 2, 0.22F, true, 1U, 2048U, 8.0F, 2, false, true};
         case 4: // Ultra
         default:
-            return QualityConfigUVE{1.00F, 4, 2, 0.20F, true, 2U, 2048U, 16.0F, 2, false};
+            return QualityConfigUVE{1.00F, 4, 2, 0.20F, true, 2U, 2048U, 16.0F, 2, false, true};
     }
 #endif
 }
@@ -310,7 +312,7 @@ void ViewportSurfaceUVE::ApplyQualityPresetUVE(const int qualityPreset,
 
     Render::IRenderer3DUVE& renderer = m_services.GetRenderer3DUVE();
     Render::PostProcessSettingsUVE post{};
-    post.bloomEnabledUVE = true;
+    post.bloomEnabledUVE = cfg.bloomEnabled;
     post.ssaoEnabledUVE = cfg.ssaoEnabled;
     post.ssaoQualityUVE = cfg.ssaoQuality;
     post.ssaoBlurEnabledUVE = cfg.ssaoEnabled;
@@ -441,8 +443,10 @@ void ViewportSurfaceUVE::ApplyGridAppearanceUVE(const Editor::EditorUVE& editor,
     m_renderPass->SetGridCellSizeUVE(overlayState.gridCellSize);
     const auto& prefs = editor.GetExtendedPreferencesUVE();
     if (prefs.gridFadeDistance > 0.0) {
-        m_renderPass->Grid().Settings().fadeEndDistanceScale =
-            static_cast<float>(std::clamp(prefs.gridFadeDistance * 0.25, 10.0, 500.0));
+        auto& gridSettings = m_renderPass->Grid().Settings();
+        const float minEnd = gridSettings.fadeStartDistanceScale + 1.0F;
+        gridSettings.fadeEndDistanceScale =
+            std::max(minEnd, static_cast<float>(std::clamp(prefs.gridFadeDistance * 0.25, 10.0, 500.0)));
     }
     m_renderPass->SetGridPlaneUVE(plane);
 }
@@ -462,6 +466,10 @@ GLint ViewportSurfaceUVE::BeginPassUVE(const int width, const int height) {
     GLint previousFbo = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
     glBindFramebuffer(GL_FRAMEBUFFER, ActiveDrawFboUVE());
+    // Renderer3DUVE may leave GL_SCISSOR_TEST or GL_CULL_FACE enabled at pass end; clear them so
+    // the full viewport clears and fullscreen backdrop/mesh-blit/grid triangles are never clipped.
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_CULL_FACE);
 #if !defined(UNIVEX_GL_ES)
     // OpenGL ES always rasterises multisampled targets with all their samples; desktop GL asks.
     if (m_msaaFbo != 0U) {
@@ -483,6 +491,8 @@ void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshL
     }
     // GL_ALWAYS rather than disabling GL_DEPTH_TEST: OpenGL skips depth writes while depth testing
     // is disabled regardless of glDepthMask.
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_ALWAYS);
     glDepthMask(GL_TRUE);
@@ -491,26 +501,43 @@ void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshL
     m_meshBlitProgram->Use();
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, meshResult.colorTextureId);
-    glUniform1i(m_meshBlitProgram->UniformLocation("uMeshColor"), 0);
+    if (m_meshBlitUniforms.meshColor >= 0) {
+        glUniform1i(m_meshBlitUniforms.meshColor, 0);
+    }
 
     const Render::SceneDepthExportUVE depth = m_services.GetRenderer3DUVE().GetLastSceneDepthUVE();
     auto* const glDevice = dynamic_cast<Render::GlRenderDeviceUVE*>(&m_services.GetRenderDeviceUVE());
     const GLuint depthTexture =
         depth.valid && glDevice != nullptr ? static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture))
                                            : 0U;
-    glUniform1i(m_meshBlitProgram->UniformLocation("uHasDepth"), depthTexture != 0U ? 1 : 0);
-    glUniform1i(m_meshBlitProgram->UniformLocation("uDirectSceneDepth"),
-                m_lastRenderUsedLookThroughCamera ? 1 : 0);
+    if (m_meshBlitUniforms.hasDepth >= 0) {
+        glUniform1i(m_meshBlitUniforms.hasDepth, depthTexture != 0U ? 1 : 0);
+    }
+    if (m_meshBlitUniforms.directSceneDepth >= 0) {
+        glUniform1i(m_meshBlitUniforms.directSceneDepth, m_lastRenderUsedLookThroughCamera ? 1 : 0);
+    }
     if (depthTexture != 0U) {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, depthTexture);
-        glUniform1i(m_meshBlitProgram->UniformLocation("uSceneDepth"), 1);
-        glUniformMatrix4fv(m_meshBlitProgram->UniformLocation("uSceneInvViewProj"), 1, GL_TRUE,
-                           &depth.inverseViewProjection.m[0][0]);
+        if (m_meshBlitUniforms.sceneDepth >= 0) {
+            glUniform1i(m_meshBlitUniforms.sceneDepth, 1);
+        }
+        if (m_meshBlitUniforms.sceneInvViewProj >= 0) {
+            std::array<float, 16> invColMajor{};
+            for (std::size_t r = 0U; r < 4U; ++r) {
+                for (std::size_t c = 0U; c < 4U; ++c) {
+                    invColMajor[c * 4U + r] = depth.inverseViewProjection.m[r][c];
+                }
+            }
+            glUniformMatrix4fv(m_meshBlitUniforms.sceneInvViewProj, 1, GL_FALSE, invColMajor.data());
+        }
         const float aspect = static_cast<float>(width) / static_cast<float>(std::max(height, 1));
-        m_meshBlitProgram->SetMat4("uViewProj", camera.ViewProjection(aspect).Data());
-        glUniform2f(m_meshBlitProgram->UniformLocation("uOutSize"), static_cast<float>(width),
-                    static_cast<float>(height));
+        if (m_meshBlitUniforms.viewProj >= 0) {
+            glUniformMatrix4fv(m_meshBlitUniforms.viewProj, 1, GL_FALSE, camera.ViewProjection(aspect).Data());
+        }
+        if (m_meshBlitUniforms.outSize >= 0) {
+            glUniform2f(m_meshBlitUniforms.outSize, static_cast<float>(width), static_cast<float>(height));
+        }
         glActiveTexture(GL_TEXTURE0);
     }
 
@@ -547,12 +574,20 @@ std::uint64_t ViewportSurfaceUVE::EndPassAndResolveUVE(const int width, const in
         m_postAaProgram->Use();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_sceneColorTexture);
-        glUniform1i(m_postAaProgram->UniformLocation("uSceneColor"), 0);
-        glUniform2f(m_postAaProgram->UniformLocation("uInvSize"),
-                    1.0F / static_cast<float>(std::max(width, 1)),
-                    1.0F / static_cast<float>(std::max(height, 1)));
-        glUniform1i(m_postAaProgram->UniformLocation("uFxaaQuality"), m_fxaaQuality);
-        glUniform1f(m_postAaProgram->UniformLocation("uCasSharpen"), m_casSharpen);
+        if (m_postAaUniforms.sceneColor >= 0) {
+            glUniform1i(m_postAaUniforms.sceneColor, 0);
+        }
+        if (m_postAaUniforms.invSize >= 0) {
+            glUniform2f(m_postAaUniforms.invSize,
+                        1.0F / static_cast<float>(std::max(width, 1)),
+                        1.0F / static_cast<float>(std::max(height, 1)));
+        }
+        if (m_postAaUniforms.fxaaQuality >= 0) {
+            glUniform1i(m_postAaUniforms.fxaaQuality, m_fxaaQuality);
+        }
+        if (m_postAaUniforms.casSharpen >= 0) {
+            glUniform1f(m_postAaUniforms.casSharpen, m_casSharpen);
+        }
 
         glBindVertexArray(m_meshBlitVao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -735,6 +770,13 @@ bool ViewportSurfaceUVE::EnsureMeshBlitResourcesUVE() {
         UVE_ERROR("uve_editor_app: viewport mesh blit shader build failed: {}", error);
         return false;
     }
+    m_meshBlitUniforms.meshColor = m_meshBlitProgram->UniformLocation("uMeshColor");
+    m_meshBlitUniforms.hasDepth = m_meshBlitProgram->UniformLocation("uHasDepth");
+    m_meshBlitUniforms.directSceneDepth = m_meshBlitProgram->UniformLocation("uDirectSceneDepth");
+    m_meshBlitUniforms.sceneDepth = m_meshBlitProgram->UniformLocation("uSceneDepth");
+    m_meshBlitUniforms.sceneInvViewProj = m_meshBlitProgram->UniformLocation("uSceneInvViewProj");
+    m_meshBlitUniforms.viewProj = m_meshBlitProgram->UniformLocation("uViewProj");
+    m_meshBlitUniforms.outSize = m_meshBlitProgram->UniformLocation("uOutSize");
     if (m_meshBlitVao == 0U) {
         glGenVertexArrays(1, &m_meshBlitVao);
     }
@@ -754,6 +796,10 @@ bool ViewportSurfaceUVE::EnsurePostAaResourcesUVE() {
             m_postAaFailed = true;
             return false;
         }
+        m_postAaUniforms.sceneColor = m_postAaProgram->UniformLocation("uSceneColor");
+        m_postAaUniforms.invSize = m_postAaProgram->UniformLocation("uInvSize");
+        m_postAaUniforms.fxaaQuality = m_postAaProgram->UniformLocation("uFxaaQuality");
+        m_postAaUniforms.casSharpen = m_postAaProgram->UniformLocation("uCasSharpen");
     }
     if (m_meshBlitVao == 0U) {
         glGenVertexArrays(1, &m_meshBlitVao);

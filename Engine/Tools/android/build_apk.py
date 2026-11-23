@@ -114,10 +114,11 @@ def read_source_version(app_name: str) -> tuple[int, int, int, int]:
     return tuple(int(part) for part in match.groups())
 
 
-def android_version_metadata(version: tuple[int, int, int, int]) -> tuple[int, str]:
-    """Converts (major, minor, patch, build) to a monotonic Android versionCode and display versionName."""
+def android_version_metadata(version: tuple[int, int, int, int], build_number: int = 0) -> tuple[int, str]:
+    """Converts (major, minor, patch, build) and optional CI build_number to a monotonic Android versionCode and versionName."""
     major, minor, patch, build = version
-    version_code = max(1, major * 1_000_000 + minor * 10_000 + patch * 100 + build)
+    effective_build = max(0, build) + max(0, build_number)
+    version_code = max(1, major * 100_000_000 + minor * 1_000_000 + patch * 10_000 + min(effective_build, 9_999))
     version_name = f"{major}.{minor}.{patch}" + (f"+build.{build}" if build else "")
     return version_code, version_name
 
@@ -180,6 +181,8 @@ def main():
     parser.add_argument("--native-lib", type=Path, help="Use this prebuilt native library instead of building it")
     parser.add_argument("--cooked-project", type=Path, help="Cooked .uvproject to ship (runtime app)")
     parser.add_argument("--version", help="Override APK version (MAJOR.MINOR.PATCH[+build.BUILD])")
+    parser.add_argument("--build-number", type=int, default=0,
+                        help="Monotonic CI run number added to Android versionCode for seamless in-place updates")
     parser.add_argument("--debuggable", action="store_true",
                         help="Mark APK debuggable for CI emulator inspection (never use on release builds)")
     parser.add_argument("--keystore", type=Path, help="Release keystore; its passwords come from the "
@@ -194,7 +197,8 @@ def main():
     if args.cooked_project and not app.accepts_cooked_project:
         parser.error(f"the {args.app} app does not ship a cooked project")
     version_tuple = parse_version_tuple(args.version) if args.version else read_source_version(args.app)
-    version_code, version_name = android_version_metadata(version_tuple)
+    version_code, version_name = android_version_metadata(version_tuple, args.build_number)
+    print(f"Android APK version: versionName={version_name} versionCode={version_code}")
 
     sdk = args.sdk.resolve()
     tools = sdk / "build-tools" / ANDROID_BUILD_TOOLS

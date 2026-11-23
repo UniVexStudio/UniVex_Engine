@@ -40,26 +40,51 @@ void VirtualList::paint(Canvas& c) {
 }
 
 bool VirtualList::onMouseDown(const MouseEvent& e) {
-  if (e.button == MouseButton::Left && VScrollbar::needed(contentH(), m_rect.h) && e.pos.x >= m_rect.right() - VScrollbar::W) {
+  const bool singleSurf = Application::exists() && Application::get().platform().singleSurface();
+  const float barHitW = singleSurf ? 20.f : VScrollbar::W;
+  if (e.button == MouseButton::Left && VScrollbar::needed(contentH(), m_rect.h) && e.pos.x >= m_rect.right() - barHitW) {
     m_bar.mouseDown(e.pos, m_rect, contentH(), m_scroll);
-    relayout();
+    m_scroll = std::clamp(m_scroll, 0.f, std::max(0.f, contentH() - m_rect.h));
+    invalidate();
     return true;
   }
+  m_touchArmed = false;
+  m_touchDragging = false;
+  if (e.button == MouseButton::Left && singleSurf && VScrollbar::needed(contentH(), m_rect.h)) {
+    m_touchArmed = true;
+    m_touchStartY = m_touchLastY = e.pos.y;
+  }
   int row = rowAt(e.pos);
-  return row >= 0 ? onRowDown(row, e, rowRect(row)) : false;
+  const bool handled = row >= 0 ? onRowDown(row, e, rowRect(row)) : false;
+  return handled || m_touchArmed;
 }
 
 bool VirtualList::onMouseUp(const MouseEvent&) {
-  bool was = m_bar.dragging;
+  bool was = m_bar.dragging || m_touchDragging;
   m_bar.mouseUp();
+  m_touchArmed = false;
+  m_touchDragging = false;
   return was;
 }
 
 bool VirtualList::onMouseMove(const MouseEvent& e) {
   if (m_bar.dragging) {
     m_bar.mouseMove(e.pos, m_rect, contentH(), m_scroll);
-    relayout();
+    m_scroll = std::clamp(m_scroll, 0.f, std::max(0.f, contentH() - m_rect.h));
+    invalidate();
     return true;
+  }
+  if (m_touchArmed) {
+    if (!m_touchDragging && std::abs(e.pos.y - m_touchStartY) >= 6.f) {
+      m_touchDragging = true;
+      m_touchLastY = e.pos.y;
+    }
+    if (m_touchDragging) {
+      m_scroll = std::clamp(m_scroll - (e.pos.y - m_touchLastY), 0.f, std::max(0.f, contentH() - m_rect.h));
+      m_touchLastY = e.pos.y;
+      invalidate();
+      return true;
+    }
   }
   int r = rowAt(e.pos);
   if (r != m_hoverRow) { m_hoverRow = r; invalidate(); }
@@ -68,8 +93,8 @@ bool VirtualList::onMouseMove(const MouseEvent& e) {
 
 bool VirtualList::onMouseWheel(const MouseEvent& e) {
   if (!VScrollbar::needed(contentH(), m_rect.h)) return false;
-  m_scroll -= e.wheel.y * m_rowH * 3;
-  relayout();
+  m_scroll = std::clamp(m_scroll - e.wheel.y * m_rowH * 3, 0.f, std::max(0.f, contentH() - m_rect.h));
+  invalidate();
   return true;
 }
 
@@ -884,8 +909,8 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   const float maxBodyH = std::max(64.f, maxDialogH - barH - footH);
 
   auto root = make<Border>();
-  root->setBackground(Color::hex(0x232325));
-  root->setBorder(t.borderStrong);
+  root->setBackground(ThemeColor(&Theme::panel));
+  root->setBorder(ThemeColor(&Theme::borderStrong));
   root->setRadius(6);
   root->setFixedWidth(effectiveW);
   root->setMaxSize(effectiveW, maxDialogH);
@@ -895,7 +920,8 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   auto col = vbox();
   auto bar = make<DialogTitleDrag>();
   bar->dialog = root;
-  bar->setBorder(t.borderSoft, Margin(0, 0, 0, 1));
+  bar->setBackground(ThemeColor(&Theme::header));
+  bar->setBorder(ThemeColor(&Theme::borderSoft), Margin(0, 0, 0, 1));
   bar->setPadding(Margin(compact ? 12.f : 16.f, 0, 6.f, 0));
   bar->setFixedHeight(barH);
   auto row = hbox();

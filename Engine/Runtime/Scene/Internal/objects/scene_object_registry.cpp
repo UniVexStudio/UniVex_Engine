@@ -53,8 +53,9 @@ constexpr std::array<std::string_view, 1U> kUITextContracts{"UITextComponentUVE"
 constexpr std::array<std::string_view, 1U> kUIImageContracts{"UIImageComponentUVE"};
 constexpr std::array<std::string_view, 1U> kUIButtonContracts{"UIButtonComponentUVE"};
 constexpr std::array<std::string_view, 1U> kSkyContracts{"Sky3DComponentUVE"};
+constexpr std::array<std::string_view, 1U> kRagdoll3DContracts{"Ragdoll3DComponentUVE"};
 
-constexpr std::array<SceneObjectDescriptorUVE, 52U> kDescriptors{
+constexpr std::array<SceneObjectDescriptorUVE, 53U> kDescriptors{
     // The document's structural root: created by the document lifecycle (new document,
     // load-time migration), never through the Add-Object library - libraryCreatable is false.
     SceneObjectDescriptorUVE{SceneObjectKindUVE::SceneRoot, "scene_root", "SceneRoot", "Scene", "Scene/SceneRootObjectDefinitionUVE", kNoContracts, false},
@@ -101,6 +102,7 @@ constexpr std::array<SceneObjectDescriptorUVE, 52U> kDescriptors{
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Light3D, "light_3d", "Light3D", "Rendering", "Render/LightSystemUVE", kLightContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Collider3D, "collider_3d", "Collider3D", "Physics", "Physics/CollisionSystemUVE", kColliderContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Rigid3D, "rigid_3d", "Rigid3D", "Physics", "Physics/PhysicsSystemUVE", kRigid3DContracts, true},
+    SceneObjectDescriptorUVE{SceneObjectKindUVE::Ragdoll3D, "ragdoll_3d", "Ragdoll3D", "Physics", "Scene/Ragdoll3DComponentUVE", kRagdoll3DContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::AudioSource3D, "audio_source_3d", "AudioSource3D", "Audio", "Audio/AudioSourceSystemUVE", kAudioContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::ParticleEmitter3D, "particle_emitter_3d", "ParticleEmitter3D", "VFX", "Scene/ParticleRuntimeUVE", kParticleContracts, true},
     SceneObjectDescriptorUVE{SceneObjectKindUVE::Script, "script", "Script", "Logic", "Scripting/ScriptRuntimeUVE", kScriptContracts, true},
@@ -191,6 +193,7 @@ SceneObjectPlacementUVE GetSceneObjectPlacementUVE(const SceneObjectKindUVE kind
         case SceneObjectKindUVE::TwoBoneIK3D:
         case SceneObjectKindUVE::FullBodyIK3D:
         case SceneObjectKindUVE::BoneAttachment3D:
+        case SceneObjectKindUVE::Ragdoll3D:
         case SceneObjectKindUVE::NavSeeker3D:
         case SceneObjectKindUVE::SpringArm3D:
         case SceneObjectKindUVE::Hitbox3D:

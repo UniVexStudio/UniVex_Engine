@@ -140,8 +140,14 @@ void Application::arrangePopup(Popup& p) {
     break;
   case PopupPlacement::AtPoint:
     pos = {a.x, a.y};
-    if (pos.x + ds.x > ws.x - 4) pos.x = a.x - ds.x;
-    if (pos.y + ds.y > ws.y - 4) pos.y = a.y - ds.y;
+    if (p.opt.dismissOnOutside) {
+      if (pos.x + ds.x > ws.x - 4) pos.x = a.x - ds.x;
+      if (pos.y + ds.y > ws.y - 4) pos.y = a.y - ds.y;
+    } else {
+      // Non-dismissing floating windows clamp gently inside the viewport instead of flipping across the anchor.
+      if (pos.x + ds.x > ws.x - 4) pos.x = std::max(4.f, ws.x - 4 - ds.x);
+      if (pos.y + ds.y > ws.y - 4) pos.y = std::max(4.f, ws.y - 4 - ds.y);
+    }
     break;
   case PopupPlacement::Center: pos = (ws - ds) * 0.5f; break;
   }
@@ -279,6 +285,34 @@ void Application::accessNotify(AccessEvent e, Widget* w) { if (m_a11y && w) m_a1
 
 void Application::captureMouse(Widget* w) { m_capture = w ? w->weak_from_this() : std::weak_ptr<Widget>(); }
 void Application::releaseMouse() { m_capture.reset(); }
+
+void Application::onWidgetHidden(const Widget* w) {
+  if (!w) return;
+  if (auto cw = m_capture.lock(); cw && (cw.get() == w || cw->isDescendantOf(w))) {
+    m_capture.reset();
+  }
+  if (auto f = m_focus.lock(); f && (f.get() == w || f->isDescendantOf(w))) {
+    setFocus(nullptr);
+  }
+  bool hoverChanged = false;
+  for (auto it = m_hoverChain.begin(); it != m_hoverChain.end();) {
+    auto hw = it->lock();
+    if (!hw || hw.get() == w || hw->isDescendantOf(w)) {
+      if (hw) {
+        hw->m_hovered = false;
+        hw->onMouseLeave();
+      }
+      it = m_hoverChain.erase(it);
+      hoverChanged = true;
+    } else {
+      ++it;
+    }
+  }
+  if (hoverChanged) {
+    hideTooltip();
+    invalidate();
+  }
+}
 
 int Application::addTimer(int ms, std::function<bool()> cb) {
   int id = m_nextTimerId++;
@@ -432,29 +466,36 @@ void Application::dispatchMouseMove(MouseEvent e) {
     return;
   }
   if (auto cw = m_capture.lock()) {
-    if (m_platform && m_platform->singleSurface()) {
-      WidgetPath path = WidgetPath::build(cw.get());
-      for (Widget* w : path.widgets) {
-        if (w != cw.get() && w->enabled()) {
-          Reply r = w->onPreviewMouseMove(e);
-          if (r.isHandled()) {
-            if (r.captureTarget() && r.captureTarget() != cw.get()) {
-              MouseEvent cancel = e;
-              cancel.pos = {-1e6f, -1e6f};
-              cw->onMouseUp(cancel);
-              captureMouse(r.captureTarget());
-              r.captureTarget()->onMouseMove(e);
+    bool ancestorVisible = true;
+    for (const Widget* a = cw.get(); a; a = a->parent()) {
+      if (!a->visible()) { ancestorVisible = false; break; }
+    }
+    if (!ancestorVisible) {
+      m_capture.reset();
+    } else {
+      if (m_platform && m_platform->singleSurface()) {
+        WidgetPath path = WidgetPath::build(cw.get());
+        for (Widget* w : path.widgets) {
+          if (w != cw.get() && w->enabled() && w->visible()) {
+            Reply r = w->onPreviewMouseMove(e);
+            if (r.isHandled()) {
+              if (r.captureTarget() && r.captureTarget() != cw.get()) {
+                MouseEvent cancel = e;
+                cancel.pos = {-1e6f, -1e6f};
+                cw->onMouseUp(cancel);
+                captureMouse(r.captureTarget());
+                r.captureTarget()->onMouseMove(e);
+              }
+              invalidate();
+              return;
             }
-            invalidate();
-            return;
           }
         }
       }
+      if (cw->onMouseMove(e)) invalidate();
+      setCursor(cw->cursor());
+      return;
     }
-    cw->onMouseMove(e);
-    setCursor(cw->cursor());
-    invalidate();
-    return;
   }
   Widget* t = hitTestAll(e.pos);
   Widget* prev = m_hoverChain.empty() ? nullptr : m_hoverChain.front().lock().get();
@@ -468,8 +509,9 @@ void Application::dispatchMouseMove(MouseEvent e) {
     if (tip.empty() && !w->tooltipAt(e.pos).empty()) tip = w->tooltipAt(e.pos);
   }
   setCursor(cur);
+  bool movedHandled = false;
   for (Widget* w = t; w; w = w->m_parent)
-    if (w->enabled() && w->onMouseMove(e)) break;
+    if (w->enabled() && w->onMouseMove(e)) { movedHandled = true; break; }
   if (t != prev || m_tooltipRect.w > 0) hideTooltip();
   m_activeTooltipWidget = richTip;
   if (tip != m_tooltipText || (t != prev && !tip.empty()) || richTip) {
@@ -478,7 +520,7 @@ void Application::dispatchMouseMove(MouseEvent e) {
   }
   if ((!tip.empty() || richTip) && m_tooltipRect.w <= 0 && !m_tooltipTimer)
     m_tooltipTimer = addTimer(550, [this] { showTooltip(); return false; });
-  invalidate();
+  if (movedHandled || m_inspector) invalidate();
 }
 
 void Application::dispatchMouseDown(MouseEvent e) {

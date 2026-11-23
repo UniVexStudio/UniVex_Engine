@@ -86,8 +86,8 @@ constexpr int kHeightUVE = 620;
 } // namespace
 
 EditorSettingsWindowUVE::EditorSettingsWindowUVE(EditorUVE& editor, EditorHostUVE& host, bool& visible,
-                                                 std::function<SourceUVE()> source)
-    : m_editor(editor), m_host(host), m_visible(visible), m_sourceOf(std::move(source)) {}
+                                                 std::function<SourceUVE()> source, bool* focusPending)
+    : m_editor(editor), m_host(host), m_visible(visible), m_focusPending(focusPending), m_sourceOf(std::move(source)) {}
 
 EditorSettingsWindowUVE::~EditorSettingsWindowUVE() = default;
 
@@ -329,22 +329,7 @@ void EditorSettingsWindowUVE::RebuildRowsUVE() {
 
 prism::Ref<prism::Widget> EditorSettingsWindowUVE::BuildUVE() {
     auto window = prism::vbox();
-
-    auto title = prism::hbox(6.0F);
-    title->setPadding(prism::Margin(10.0F, 0.0F, 0.0F, 0.0F));
-    auto titleText = prism::make<prism::Label>(m_source.title);
-    titleText->setColor(prism::ThemeColor(&prism::Theme::textBright));
-    title->add(titleText, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    title->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*title, [this] { CloseUVE(); });
-    auto titleBox = prism::make<prism::SizeBox>();
-    titleBox->setHeightOverride(kTitleRowUVE + 4.0F);
-    titleBox->setContent(title);
-    auto titleBar = prism::make<prism::Border>();
-    titleBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    titleBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    titleBar->setChild(titleBox);
-    window->add(titleBar);
+    window->add(BuildToolWindowTitleBarUVE(m_source.title, prism::Icon::Settings, [this] { CloseUVE(); }));
 
     auto filters = prism::hbox(10.0F);
     filters->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 6.0F));
@@ -441,7 +426,8 @@ void EditorSettingsWindowUVE::FrameUVE() {
     if (!m_visible) {
         return;
     }
-    if (m_window == 0) {
+    const bool freshlyOpened = (m_window == 0);
+    if (freshlyOpened) {
         m_source = m_sourceOf();
         if (m_source.registry == nullptr) {
             m_visible = false;
@@ -464,10 +450,17 @@ void EditorSettingsWindowUVE::FrameUVE() {
         m_host.AppUVE().runInWindow(m_window, [this] {
             RebuildTreeUVE();
             RebuildRowsUVE();
-            if (m_search && prism::Application::exists()) {
+            if (m_search && prism::Application::exists() &&
+                !prism::Application::get().platform().singleSurface()) {
                 prism::Application::get().setFocus(m_search.get());
             }
         });
+    }
+    const bool focusRequested = m_focusPending != nullptr && *m_focusPending;
+    if (freshlyOpened || focusRequested) {
+        if (m_focusPending != nullptr) {
+            *m_focusPending = false;
+        }
         m_host.FocusWindowUVE(m_window);
     }
     if (m_rowsDirty) {
