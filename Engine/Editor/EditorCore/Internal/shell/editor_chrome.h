@@ -21,12 +21,14 @@
 
 namespace UVE::Editor {
 
-// Slimmed AAA window chrome row heights (Desktop 2-row header, Android single-row consolidated header).
+// Slimmed AAA window chrome row heights (Desktop 2-row header, Android compact 2-row header with prominent logo).
 inline constexpr float kTitleRowUVE = 20.0F;
 inline constexpr float kTabRowUVE = 20.0F;
 inline constexpr float kLogoBoxUVE = kTitleRowUVE + kTabRowUVE; // square: spans both rows on desktop
-inline constexpr float kCompactTitleRowUVE = 22.0F;             // single consolidated top row on Android
+inline constexpr float kCompactTitleRowUVE = 22.0F;
+inline constexpr float kCompactToolbarRowUVE = 22.0F;
 inline constexpr float kCompactLogoBoxUVE = 22.0F;
+inline constexpr float kCompactTwoRowLogoUVE = kCompactTitleRowUVE + kCompactToolbarRowUVE; // prominent 44x44 logo spanning title + play/toolbar row
 // Sub row 2: the viewport settings strip.
 inline constexpr float kSubRow2UVE = 22.0F;
 inline constexpr float kCompactSubRow2UVE = 20.0F;
@@ -38,16 +40,18 @@ inline constexpr std::array<const char*, 5> kShadingNamesUVE{"Lit", "Unshaded", 
 [[nodiscard]] prism::Ref<prism::Button> ToolButtonUVE(prism::Icon icon, std::string tooltip, std::string text = {});
 [[nodiscard]] prism::Ref<prism::Widget> HSeparatorUVE();
 
-/// #1: the engine logo box. Spans the title bar and document-tab rows on desktop, or fits neatly
-/// into the single consolidated top bar row when `compact` is true (Android).
+/// #1: the engine logo box. Spans the title bar and document-tab rows on desktop, or spans Row 1
+/// + Row 2 (play/toolbar) on mobile when `spansTwoRows` is true so the logo stays prominent.
 class LogoBoxUVE final : public prism::Widget {
 public:
-    explicit LogoBoxUVE(bool compact = false) : m_compact(compact) {}
+    explicit LogoBoxUVE(bool compact = false, bool spansTwoRows = false)
+        : m_compact(compact), m_spansTwoRows(spansTwoRows) {}
     prism::Vec2 measure(prism::Vec2) override;
     void paint(prism::Canvas& c) override;
 
 private:
     bool m_compact = false;
+    bool m_spansTwoRows = false;
 };
 
 /// #2: the window's document - the level's Viewport object, or the asset an asset editor has open -
@@ -116,15 +120,18 @@ struct EditorHeaderMenuEntryUVE final {
 };
 
 /// Configuration for BuildEditorHeaderUVE: shared by the Level Editor and all secondary asset editors
-/// (Entity, Montage, Retarget, VFX, Animation Library). On desktop builds a slim classic 2-row
-/// header (MenuBar + DocumentTab beside LogoBox); on Android/single-surface collapses into a single
-/// slim row: [Slim Logo] [Menu] [DocumentTab] ... [Window buttons].
+/// (Entity, Montage, Retarget, VFX, Animation Library).
+/// - On Desktop: LogoBox spans MenuBar + DocumentTab; if `toolbarRow` is supplied it sits directly below.
+/// - On Mobile (single-surface): if `toolbarRow` is supplied, LogoBox spans BOTH Row 1 ([Menu] [DocTab]
+///   [DragStrip] [Float/Full] [X]) AND Row 2 (`toolbarRow`), keeping the brand logo prominent and clean.
 struct EditorHeaderDescUVE final {
     std::vector<EditorHeaderMenuEntryUVE> menus;
     /// Optional trailing items added to the collapsed single Menu dropdown on single-surface hosts
     /// (for example: separator + "Return to Hub").
     std::function<std::vector<prism::MenuItem>()> compactMenuTail;
     prism::Ref<DocumentTabUVE> documentTab;
+    /// Optional toolbar / Play row. Integrated alongside the 2-row LogoBox on mobile, or stacked below on desktop.
+    prism::Ref<prism::Widget> toolbarRow;
     std::function<void()> onClose;
     bool mainWindow = false;
     /// Optional pointer receiving the outer header row container (for display-cutout horizontal padding).
@@ -133,10 +140,15 @@ struct EditorHeaderDescUVE final {
 
 [[nodiscard]] prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc);
 
-/// Appends minimize / maximize-restore / close for the window the buttons are in. `onClose`
-/// runs for the close button (the level editor quits; an asset editor asks to close its document).
-/// On one full-screen surface (phones) the main window (`mainWindow`) gets none and another window
-/// gets minimize and close.
+/// Shared PRISM title bar for secondary tool windows (Entity Class, Settings, Shortcuts, Input Map,
+/// File Dialog, Network Capture, Audio Mixer) with icon, title, DragStrip, Floating/Full toggle, and Close.
+[[nodiscard]] prism::Ref<prism::Widget> BuildToolWindowTitleBarUVE(std::string title, prism::Icon icon,
+                                                                    std::function<void()> onClose,
+                                                                    prism::Ref<prism::Box>* outRow = nullptr);
+
+/// Appends window chrome controls for the current window:
+/// - Desktop: Minimize (-), single Floating/Full toggle, and Close (x) with red danger hover.
+/// - Mobile (single-surface): hidden on mainWindow; sub-windows get a single Floating/Full toggle + Close (x).
 void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose, bool mainWindow = false);
 
 } // namespace UVE::Editor

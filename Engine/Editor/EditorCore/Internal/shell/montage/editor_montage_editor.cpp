@@ -285,7 +285,6 @@ void EditorMontageEditorUVE::RequestCloseUVE() {
 prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildUVE() {
     auto window = prism::vbox();
     window->add(BuildTitleBarUVE());
-    window->add(BuildToolbarUVE());
 
     // Centre: the preview over the timeline. Right: Details, Sections, Asset Browser.
     m_viewport = prism::make<prism::EngineView>();
@@ -392,6 +391,7 @@ prism::Ref<prism::Widget> EditorMontageEditorUVE::BuildTitleBarUVE() {
 
     EditorHeaderDescUVE desc;
     desc.documentTab = m_tab;
+    desc.toolbarRow = BuildToolbarUVE();
     desc.onClose = [this] { RequestCloseUVE(); };
     desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;

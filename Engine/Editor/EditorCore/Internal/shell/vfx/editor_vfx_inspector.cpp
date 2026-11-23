@@ -480,8 +480,8 @@ void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
         const float f = static_cast<float>(i) * 0.25F;
         const float gx = plot.x + f * plot.w;
         const float gy = plot.y + f * plot.h;
-        c.line({gx, plot.y}, {gx, plot.bottom()}, prism::Color(255, 255, 255, 18), 1.0F);
-        c.line({plot.x, gy}, {plot.right(), gy}, prism::Color(255, 255, 255, 18), 1.0F);
+        c.line({gx, plot.y}, {gx, plot.bottom()}, t.borderSoft, 1.0F);
+        c.line({plot.x, gy}, {plot.right(), gy}, t.borderSoft, 1.0F);
     }
 
     // Sample curve across 64 segments.
@@ -515,7 +515,7 @@ void VfxCurveEditWidgetUVE::paint(prism::Canvas& c) {
             c.fillCircle(inPt, 3.0F, t.textBright);
         }
         c.fillCircle(kp, sel ? 5.0F : 4.0F, sel ? t.highlight : t.textBright);
-        c.strokeCircle(kp, sel ? 5.0F : 4.0F, prism::Color(20, 22, 26), 1.2F);
+        c.strokeCircle(kp, sel ? 5.0F : 4.0F, t.window, 1.2F);
     }
     c.popClip();
 }

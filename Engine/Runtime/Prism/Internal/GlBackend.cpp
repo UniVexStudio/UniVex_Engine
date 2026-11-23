@@ -61,13 +61,23 @@ struct GlBackend::Impl {
 #define X(T, N) T N = nullptr;
   PRISM_GL_FUNCS(X)
 #undef X
+  PFNGLBUFFERSUBDATAPROC glBufferSubData = nullptr;
+  PFNGLTEXSUBIMAGE2DPROC glTexSubImage2D = nullptr;
+  struct ImageUploadCache {
+    const uint32_t* argb = nullptr;
+    int width = 0;
+    int height = 0;
+    uint64_t hash = 0;
+  };
   std::function<void()> present;
   bool blit = true;
   int w = 0, h = 0;
   float pixelScale = 1.0f;
   GLuint fbo = 0, colorTex = 0, prog = 0, vao = 0, vbo = 0, ebo = 0, atlasTex = 0;
   GLint uSize = -1, uH = -1, uTex = -1;
+  GLsizeiptr vboCap = 0, eboCap = 0;
   std::vector<GLuint> imageTex;
+  std::vector<ImageUploadCache> imageCache;
   GlyphAtlas atlas;
   uint64_t atlasVersion = 0, atlasGen = 0;
   GpuFrame frame;
@@ -76,10 +86,22 @@ struct GlBackend::Impl {
   bool es = false;
   const char* glslHeader = kDesktopGlslHeader;
 
+  static uint64_t hashPixels(const uint32_t* px, int width, int height) {
+    uint64_t h = 1469598103934665603ULL;
+    if (!px || width <= 0 || height <= 0) return h;
+    const size_t n = size_t(width) * size_t(height);
+    for (size_t k = 0; k < n; ++k) {
+      h = (h ^ px[k]) * 1099511628211ULL;
+    }
+    return h;
+  }
+
   bool load(Loader ld, std::string* err) {
 #define X(T, N) if (!(N = reinterpret_cast<T>(ld(#N)))) { if (err) *err = "missing GL function " #N; return false; }
     PRISM_GL_FUNCS(X)
 #undef X
+    glBufferSubData = reinterpret_cast<PFNGLBUFFERSUBDATAPROC>(ld("glBufferSubData"));
+    glTexSubImage2D = reinterpret_cast<PFNGLTEXSUBIMAGE2DPROC>(ld("glTexSubImage2D"));
     return true;
   }
   GLuint compile(GLenum type, const char* src, std::string* err) {
@@ -211,19 +233,45 @@ void GlBackend::submit(const DrawList& list) {
     g.glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, g.atlas.size, g.atlas.size, 0, GL_RED, GL_UNSIGNED_BYTE, g.atlas.pixels.data());
     g.atlasVersion = g.atlas.version;
   }
-  while (g.imageTex.size() < f.images.size()) g.imageTex.push_back(g.tex2d(GL_LINEAR));
+  while (g.imageTex.size() < f.images.size()) {
+    g.imageTex.push_back(g.tex2d(GL_LINEAR));
+    g.imageCache.push_back({});
+  }
   for (size_t i = 0; i < f.images.size(); i++) {
+    const auto& img = f.images[i];
+    const uint64_t hash = Impl::hashPixels(img.argb, img.width, img.height);
+    auto& cached = g.imageCache[i];
+    if (cached.argb == img.argb && cached.width == img.width && cached.height == img.height && cached.hash == hash) {
+      continue;
+    }
     g.glBindTexture(GL_TEXTURE_2D, g.imageTex[i]);
     g.glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     // ARGB words are B,G,R,A in memory on little-endian hosts; uploaded as RGBA so the shader's .bgra swizzle fixes the order.
-    g.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, f.images[i].width, f.images[i].height, 0, GL_RGBA, GL_UNSIGNED_BYTE, f.images[i].argb);
+    if (g.glTexSubImage2D && cached.width == img.width && cached.height == img.height) {
+      g.glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, img.width, img.height, GL_RGBA, GL_UNSIGNED_BYTE, img.argb);
+    } else {
+      g.glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img.width, img.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.argb);
+    }
+    cached = {img.argb, img.width, img.height, hash};
   }
 
   g.glBindVertexArray(g.vao);
   g.glBindBuffer(GL_ARRAY_BUFFER, g.vbo);
-  g.glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(f.vertices.size() * sizeof(GpuVertex)), f.vertices.data(), GL_STREAM_DRAW);
+  const GLsizeiptr vbBytes = GLsizeiptr(f.vertices.size() * sizeof(GpuVertex));
+  if (g.glBufferSubData && vbBytes > 0 && vbBytes <= g.vboCap) {
+    g.glBufferSubData(GL_ARRAY_BUFFER, 0, vbBytes, f.vertices.data());
+  } else {
+    g.glBufferData(GL_ARRAY_BUFFER, vbBytes, f.vertices.data(), GL_STREAM_DRAW);
+    g.vboCap = vbBytes;
+  }
   g.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g.ebo);
-  g.glBufferData(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(f.indices.size() * sizeof(uint32_t)), f.indices.data(), GL_STREAM_DRAW);
+  const GLsizeiptr ebBytes = GLsizeiptr(f.indices.size() * sizeof(uint32_t));
+  if (g.glBufferSubData && ebBytes > 0 && ebBytes <= g.eboCap) {
+    g.glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, ebBytes, f.indices.data());
+  } else {
+    g.glBufferData(GL_ELEMENT_ARRAY_BUFFER, ebBytes, f.indices.data(), GL_STREAM_DRAW);
+    g.eboCap = ebBytes;
+  }
 
   g.drawCalls = 0;
   for (const GpuBatch& b : f.batches) {

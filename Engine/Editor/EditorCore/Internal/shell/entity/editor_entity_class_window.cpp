@@ -168,7 +168,41 @@ private:
 class ClassDetailUVE final : public prism::Widget {
 public:
     explicit ClassDetailUVE(EditorEntityClassWindowUVE& window) : m_window(window) {}
-    prism::Vec2 measure(const prism::Vec2 avail) override { return avail; }
+    prism::Vec2 measure(const prism::Vec2 avail) override {
+        const float w = std::max(180.0F, avail.x);
+        const float textW = std::max(120.0F, w - 32.0F);
+        float h = 240.0F;
+        const int picked = m_window.PickedIndexUVE();
+        const std::vector<std::string>& shown = m_window.ShownUVE();
+        if (picked >= 0 && picked < static_cast<int>(shown.size())) {
+            if (const ContentCatalogueItemUVE* const item =
+                    FindContentCatalogueItemUVE(shown[static_cast<std::size_t>(picked)])) {
+                const prism::Theme& t = prism::theme();
+                float y = 14.0F + 64.0F;
+                const auto measureBlock = [&](const std::string_view text) {
+                    y += 18.0F;
+                    if (t.ui) {
+                        y += 18.0F * static_cast<float>(std::max<std::size_t>(1U, WrapUVE(*t.ui, text, textW).size()));
+                    } else {
+                        y += 36.0F;
+                    }
+                    y += 10.0F;
+                };
+                for (const ContentCatalogueEntityClassUVE& candidate : GetContentCatalogueEntityClassesUVE()) {
+                    if (candidate.itemId == item->id) {
+                        measureBlock(candidate.detail);
+                        break;
+                    }
+                }
+                measureBlock(m_window.MakesTextUVE(item->id));
+                measureBlock(item->objects.size() <= 1U
+                                 ? std::string_view("Only the body itself: what it wears is yours to add once it is open.")
+                                 : std::string_view("The body and the objects it starts with."));
+                h = y + 16.0F;
+            }
+        }
+        return m_desired = constrain({w, std::max(avail.y, h)});
+    }
     void paint(prism::Canvas& c) override {
         const prism::Theme& t = prism::theme();
         c.fillRect(m_rect, t.panel);
@@ -322,22 +356,7 @@ void EditorEntityClassWindowUVE::RefreshDetailUVE() {
 
 prism::Ref<prism::Widget> EditorEntityClassWindowUVE::BuildUVE() {
     auto window = prism::vbox();
-
-    auto title = prism::hbox(6.0F);
-    title->setPadding(prism::Margin(10.0F, 0.0F, 0.0F, 0.0F));
-    auto titleText = prism::make<prism::Label>("Entity Class");
-    titleText->setColor(prism::ThemeColor(&prism::Theme::textBright));
-    title->add(titleText, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    title->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*title, [this] { CancelUVE(); });
-    auto titleBox = prism::make<prism::SizeBox>();
-    titleBox->setHeightOverride(kTitleRowUVE + 4.0F);
-    titleBox->setContent(title);
-    auto titleBar = prism::make<prism::Border>();
-    titleBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    titleBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    titleBar->setChild(titleBox);
-    window->add(titleBar);
+    window->add(BuildToolWindowTitleBarUVE("Entity Class", prism::Icon::BlueprintClass, [this] { CancelUVE(); }));
 
     auto searchRow = prism::hbox(6.0F);
     searchRow->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 6.0F));
@@ -355,9 +374,13 @@ prism::Ref<prism::Widget> EditorEntityClassWindowUVE::BuildUVE() {
 
     m_list = prism::make<ClassListUVE>(*this);
     m_detail = prism::make<ClassDetailUVE>(*this);
+    auto listScroll = prism::make<prism::ScrollView>();
+    listScroll->setContent(m_list);
+    auto detailScroll = prism::make<prism::ScrollView>();
+    detailScroll->setContent(m_detail);
     auto body = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
-    body->add(PanelUVE(m_list), prism::Splitter::Pane{300.0F, 220.0F, 500.0F, false});
-    body->add(PanelUVE(m_detail), prism::Splitter::Pane{480.0F, 300.0F, 1e9F, true});
+    body->add(PanelUVE(listScroll), prism::Splitter::Pane{300.0F, 180.0F, 500.0F, false});
+    body->add(PanelUVE(detailScroll), prism::Splitter::Pane{480.0F, 240.0F, 1e9F, true});
     window->add(body, prism::Slot{1.0F});
 
     auto buttons = prism::hbox(6.0F);
@@ -403,7 +426,8 @@ void EditorEntityClassWindowUVE::FrameUVE() {
     if (!open) {
         return;
     }
-    if (m_window == 0) {
+    const bool freshlyOpened = (m_window == 0);
+    if (freshlyOpened) {
         m_window = m_host.OpenWindowUVE(BuildUVE(), "Entity Class", kWidthUVE, kHeightUVE);
         if (m_window == 0) {
             m_editor.CloseEntityClassPickerUVE();
@@ -415,6 +439,12 @@ void EditorEntityClassWindowUVE::FrameUVE() {
                 prism::Application::get().setFocus(m_list.get());
             }
         });
+    }
+    if (m_editor.m_entityClassPicker.has_value() && (freshlyOpened || m_editor.m_entityClassPicker->focusPending)) {
+        m_editor.m_entityClassPicker->focusPending = false;
+        if (!freshlyOpened) {
+            m_host.AppUVE().runInWindow(m_window, [this] { RebuildUVE(); });
+        }
         m_host.FocusWindowUVE(m_window);
     }
     m_host.RenderWindowUVE(m_window, {});

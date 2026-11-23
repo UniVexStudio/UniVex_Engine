@@ -2054,7 +2054,9 @@ private:
     std::filesystem::path m_animationIconCacheDir;
     /// Window > Network Capture / Audio Mixer (PRISM windows of their own, shown while set).
     bool m_showCaptureWindow = false;
+    bool m_captureFocusPending = false;
     bool m_showAudioMixerWindow = false;
+    bool m_audioMixerFocusPending = false;
     /// Reloads every loaded asset whose file is one of `files`, under whichever path spelling it was
     /// registered (a relative and an absolute spelling are two GUIDs with two loaded copies).
     void ReloadRetargetedFilesUVE(const std::vector<std::filesystem::path>& files);
@@ -2511,6 +2513,7 @@ private:
     // One settings window's view state (Editor Preferences, Project Settings). Session-only.
     struct SettingsWindowStateUVE final {
         bool visible = false;
+        bool focusPending = false;
         bool focusSearch = false;
         bool modifiedOnly = false;
         bool showAdvanced = false;
@@ -2523,6 +2526,7 @@ private:
     // The Input Map window (editor_panel_input_map_uve.cpp). Session-only view state.
     struct InputMapWindowStateUVE final {
         bool visible = false;
+        bool focusPending = false;
         std::size_t selected = 0U;
         std::array<char, 64> filter{};
         // The name field's buffer, and which action and name it was filled from.
@@ -2544,6 +2548,7 @@ private:
     };
     struct ShortcutsWindowStateUVE final {
         bool visible = false;
+        bool focusPending = false;
         std::array<char, 64> filter{};
         bool listening = false;
         std::size_t listenCommand = 0U;

@@ -235,9 +235,12 @@ void TableView::paint(Canvas& c) {
 bool TableView::onMouseDown(const MouseEvent& e) {
   rebuild();
   Rect bd = body();
-  if (e.button == MouseButton::Left && vBarNeeded() && e.pos.x >= m_rect.right() - VScrollbar::W && e.pos.y >= bd.y) {
+  const bool singleSurf = Application::exists() && Application::get().platform().singleSurface();
+  const float barHitW = singleSurf ? 20.f : VScrollbar::W;
+  if (e.button == MouseButton::Left && vBarNeeded() && e.pos.x >= m_rect.right() - barHitW && e.pos.y >= bd.y) {
     m_bar.mouseDown(e.pos, bd, contentHeight(), m_scrollY);
-    m_drag = Drag::VBar; relayout(); return true;
+    clampScroll();
+    m_drag = Drag::VBar; invalidate(); return true;
   }
   bool edge = false;
   int col = hdrAt(e.pos, &edge);
@@ -251,6 +254,11 @@ bool TableView::onMouseDown(const MouseEvent& e) {
     return true;
   }
   if (e.pos.y < bd.y) return false;
+  if (e.button == MouseButton::Left && singleSurf && vBarNeeded()) {
+    m_drag = Drag::TouchScroll;
+    m_touchStartY = m_touchLastY = e.pos.y;
+    m_dragMoved = false;
+  }
   int v = e.pos.y >= bd.y && e.pos.x <= m_rect.right() ? viewRowAt(e.pos.y - bd.y + m_scrollY) : -1;
   if (v < 0 || e.pos.y - bd.y + m_scrollY > contentHeight()) {
     if (e.button == MouseButton::Left && !m_sel.empty()) { m_sel.clear(); fire(); invalidate(); }
@@ -278,6 +286,11 @@ bool TableView::onMouseDown(const MouseEvent& e) {
 
 bool TableView::onMouseUp(const MouseEvent& e) {
   Drag d = m_drag; m_drag = Drag::None; m_bar.mouseUp();
+  if (d == Drag::TouchScroll) {
+    const bool moved = m_dragMoved;
+    m_dragMoved = false;
+    return moved;
+  }
   if (d == Drag::Reorder) {
     if (m_dragMoved) {
       float x = e.pos.x; int target = 0; float best = 1e9f;
@@ -300,7 +313,21 @@ bool TableView::onMouseUp(const MouseEvent& e) {
 }
 
 bool TableView::onMouseMove(const MouseEvent& e) {
-  if (m_drag == Drag::VBar) { m_bar.mouseMove(e.pos, body(), contentHeight(), m_scrollY); relayout(); return true; }
+  if (m_drag == Drag::VBar) { m_bar.mouseMove(e.pos, body(), contentHeight(), m_scrollY); clampScroll(); invalidate(); return true; }
+  if (m_drag == Drag::TouchScroll) {
+    if (!m_dragMoved && std::abs(e.pos.y - m_touchStartY) >= 6.f) {
+      m_dragMoved = true;
+      m_touchLastY = e.pos.y;
+    }
+    if (m_dragMoved) {
+      m_scrollY -= (e.pos.y - m_touchLastY);
+      m_touchLastY = e.pos.y;
+      clampScroll();
+      invalidate();
+      return true;
+    }
+    return false;
+  }
   if (m_drag == Drag::Resize) { setColumnWidth(m_dragCol, m_dragStartW + e.pos.x - m_dragStartX); return true; }
   if (m_drag == Drag::Reorder) {
     m_dragMouseX = e.pos.x;

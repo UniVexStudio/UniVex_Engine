@@ -92,24 +92,10 @@ void EditorShortcutsWindowUVE::RebuildUVE() {
 
 prism::Ref<prism::Widget> EditorShortcutsWindowUVE::BuildUVE() {
     auto window = prism::vbox();
-    auto title = prism::hbox(6.0F);
-    title->setPadding(prism::Margin(10.0F, 0.0F, 0.0F, 0.0F));
-    auto titleText = prism::make<prism::Label>("Keyboard Shortcuts");
-    titleText->setColor(prism::ThemeColor(&prism::Theme::textBright));
-    title->add(titleText, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    title->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*title, [this] {
+    window->add(BuildToolWindowTitleBarUVE("Keyboard Shortcuts", prism::Icon::Settings, [this] {
         m_editor.m_shortcutsWindow.visible = false;
         m_closePending = true;
-    });
-    auto titleBox = prism::make<prism::SizeBox>();
-    titleBox->setHeightOverride(kTitleRowUVE + 4.0F);
-    titleBox->setContent(title);
-    auto titleBar = prism::make<prism::Border>();
-    titleBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    titleBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    titleBar->setChild(titleBox);
-    window->add(titleBar);
+    }));
 
     auto searchRow = prism::hbox(6.0F);
     searchRow->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 6.0F));
@@ -143,7 +129,8 @@ void EditorShortcutsWindowUVE::FrameUVE() {
     if (!visible) {
         return;
     }
-    if (m_window == 0) {
+    const bool freshlyOpened = (m_window == 0);
+    if (freshlyOpened) {
         m_window = m_host.OpenWindowUVE(BuildUVE(), "Keyboard Shortcuts", kWidthUVE, kHeightUVE);
         if (m_window == 0) {
             visible = false;
@@ -151,10 +138,14 @@ void EditorShortcutsWindowUVE::FrameUVE() {
         }
         m_host.AppUVE().runInWindow(m_window, [this] {
             RebuildUVE();
-            if (m_search && prism::Application::exists()) {
+            if (m_search && prism::Application::exists() &&
+                !prism::Application::get().platform().singleSurface()) {
                 prism::Application::get().setFocus(m_search.get());
             }
         });
+    }
+    if (freshlyOpened || m_editor.m_shortcutsWindow.focusPending) {
+        m_editor.m_shortcutsWindow.focusPending = false;
         m_host.FocusWindowUVE(m_window);
     }
     if (m_dirty) {

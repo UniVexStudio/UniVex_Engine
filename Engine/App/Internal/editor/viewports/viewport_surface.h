@@ -69,6 +69,7 @@ void main() {
         float maxAnisotropy = 4.0F;
         std::int32_t scalabilityMode = 1;
         bool gpuOutlineOnly = false;
+        bool bloomEnabled = true;
     };
 
     /// Resolves quality settings for `qualityPreset` (with one-time GPU-tier auto-detection for Auto).
@@ -173,8 +174,26 @@ private:
     bool m_gpuTierProbed = false;
     int m_detectedMobileTier = 1; // 0=Low, 1=Medium, 2=High
 
+    struct MeshBlitUniformsUVE final {
+        GLint meshColor = -1;
+        GLint hasDepth = -1;
+        GLint directSceneDepth = -1;
+        GLint sceneDepth = -1;
+        GLint sceneInvViewProj = -1;
+        GLint viewProj = -1;
+        GLint outSize = -1;
+    };
+    struct PostAaUniformsUVE final {
+        GLint sceneColor = -1;
+        GLint invSize = -1;
+        GLint fxaaQuality = -1;
+        GLint casSharpen = -1;
+    };
+
     std::optional<univex::render::ShaderProgram> m_meshBlitProgram;
+    MeshBlitUniformsUVE m_meshBlitUniforms{};
     std::optional<univex::render::ShaderProgram> m_postAaProgram;
+    PostAaUniformsUVE m_postAaUniforms{};
     bool m_postAaFailed = false;
     GLuint m_meshBlitVao = 0U;
     bool m_lastRenderUsedLookThroughCamera = false;

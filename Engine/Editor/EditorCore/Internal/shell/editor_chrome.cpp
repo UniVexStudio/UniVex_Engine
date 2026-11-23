@@ -50,6 +50,9 @@ namespace {
 
 prism::Vec2 LogoBoxUVE::measure(prism::Vec2) {
     if (m_compact) {
+        if (m_spansTwoRows) {
+            return m_desired = constrain(prism::Vec2(kCompactTwoRowLogoUVE, kCompactTwoRowLogoUVE));
+        }
         return m_desired = constrain(prism::Vec2(kCompactLogoBoxUVE, kCompactTitleRowUVE));
     }
     return m_desired = constrain(prism::Vec2(kLogoBoxUVE, kTitleRowUVE + kTabRowUVE));
@@ -59,7 +62,7 @@ void LogoBoxUVE::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     const prism::Rect r = rect();
     c.fillRect(r, t.header);
-    const float inset = m_compact ? 4.0F : 7.0F;
+    const float inset = (m_compact && !m_spansTwoRows) ? 4.0F : 7.0F;
     const float side = std::max(10.0F, std::floor(std::min(r.w, r.h) - inset));
     const prism::Rect mark{r.x + (r.w - side) * 0.5F, r.y + (r.h - side) * 0.5F, side, side};
     if (prism::hasBrandMark()) {
@@ -190,6 +193,111 @@ bool DragStripUVE::onMouseDown(const prism::MouseEvent& e) {
 namespace {
 constexpr float kCameraScreenCaptionUVE = 20.0F;
 constexpr float kCameraScreenMarginUVE = 12.0F;
+
+/// Clean PRISM window chrome button: Minimize, single Floating/Full toggle, or Close (red hover).
+class WindowChromeButtonUVE final : public prism::Widget {
+public:
+    enum class KindUVE : std::uint8_t { Minimize, ToggleFloatFull, Close };
+    WindowChromeButtonUVE(const KindUVE kind, std::function<void()> action)
+        : m_kind(kind), m_action(std::move(action)) {}
+
+    prism::Vec2 measure(prism::Vec2) override {
+        const bool singleSurface = prism::Application::exists() && prism::Application::get().platform().singleSurface();
+        const float w = singleSurface ? 28.0F : 26.0F;
+        const float h = singleSurface ? 20.0F : 18.0F;
+        return m_desired = constrain(prism::Vec2(w, h));
+    }
+
+    const std::string& tooltipAt(prism::Vec2) const override {
+        static const std::string kMinimize{"Minimize"};
+        static const std::string kClose{"Close"};
+        static const std::string kFloating{"Floating Window"};
+        static const std::string kFull{"Full Screen"};
+        if (m_kind == KindUVE::Minimize) {
+            return kMinimize;
+        }
+        if (m_kind == KindUVE::Close) {
+            return kClose;
+        }
+        return IsMaximizedUVE() ? kFloating : kFull;
+    }
+
+    void paint(prism::Canvas& c) override {
+        const prism::Theme& t = prism::theme();
+        const prism::Rect r = rect();
+        const bool danger = m_kind == KindUVE::Close;
+        if (m_pressed || m_hovered) {
+            const prism::Color bg = danger ? (m_pressed ? t.error.darken(0.15F) : t.error)
+                                           : (m_pressed ? t.controlPress : t.controlHover);
+            c.fillRoundRect(r.inflated(-1.0F), 3.0F, bg);
+        }
+        const prism::Color fg = (danger && (m_hovered || m_pressed)) ? t.textBright
+                                : (m_hovered ? t.textBright : t.textDim);
+        if (m_kind == KindUVE::Minimize) {
+            const float y = std::floor(r.y + r.h * 0.5F + 2.0F);
+            c.hline(r.x + 8.0F, r.right() - 8.0F, y, fg);
+        } else if (m_kind == KindUVE::Close) {
+            const float s = 8.0F;
+            const prism::Rect box{std::floor(r.x + (r.w - s) * 0.5F), std::floor(r.y + (r.h - s) * 0.5F), s, s};
+            prism::drawIcon(c, prism::Icon::Close, box, fg, 1.35F);
+        } else {
+            const bool full = IsMaximizedUVE();
+            const float cx = std::floor(r.x + r.w * 0.5F);
+            const float cy = std::floor(r.y + r.h * 0.5F);
+            if (full) {
+                // Currently Full -> show dual-pane Floating Window icon.
+                const prism::Rect back{cx - 3.0F, cy - 5.0F, 8.0F, 7.0F};
+                const prism::Rect front{cx - 5.0F, cy - 2.0F, 8.0F, 7.0F};
+                c.strokeRect(back, fg, 1);
+                c.fillRect(front, (m_hovered || m_pressed) ? t.controlHover : t.header);
+                c.strokeRect(front, fg, 1);
+                c.hline(front.x + 1.0F, front.right() - 1.0F, front.y + 1.0F, fg);
+            } else {
+                // Currently Floating -> show crisp Full Screen frame icon.
+                const prism::Rect box{cx - 5.0F, cy - 4.0F, 10.0F, 8.0F};
+                c.strokeRect(box, fg, 1);
+                c.hline(box.x + 1.0F, box.right() - 1.0F, box.y + 1.0F, fg);
+            }
+        }
+    }
+
+    bool onMouseDown(const prism::MouseEvent& e) override {
+        if (e.button != prism::MouseButton::Left) {
+            return false;
+        }
+        m_pressed = true;
+        invalidate();
+        return true;
+    }
+
+    bool onMouseUp(const prism::MouseEvent& e) override {
+        if (!m_pressed) {
+            return false;
+        }
+        m_pressed = false;
+        invalidate();
+        if (rect().contains(e.pos) && m_action) {
+            m_action();
+        }
+        return true;
+    }
+
+    void onMouseLeave() override {
+        m_pressed = false;
+        invalidate();
+    }
+
+private:
+    [[nodiscard]] static bool IsMaximizedUVE() {
+        return prism::Application::exists() &&
+               prism::Application::get().platform().windowMaximized(CurrentWindowUVE());
+    }
+
+    KindUVE m_kind;
+    std::function<void()> m_action;
+    bool m_pressed = false;
+};
+
 } // namespace
 
 CameraScreenUVE::CameraScreenUVE() {
@@ -240,43 +348,64 @@ bool CameraScreenUVE::onMouseDown(const prism::MouseEvent& e) {
 // -------------------------------------------------------------------------------- window buttons
 
 void AddWindowButtonsUVE(prism::Box& row, std::function<void()> onClose, const bool mainWindow) {
-    // One full-screen surface (phones): the main window belongs to the system and has no buttons;
-    // another window is a page over it, which minimize hides and close ends - it cannot be resized.
     const bool singleSurface = prism::Application::exists() && prism::Application::get().platform().singleSurface();
     if (singleSurface && mainWindow) {
         return;
     }
-    auto minimize = prism::make<prism::Button>("", prism::Icon::Minus, prism::ButtonStyle::Flat);
-    minimize->setTooltip("Minimize");
-    minimize->onClick = [] { prism::Application::get().platform().minimizeWindow(CurrentWindowUVE()); };
-    auto maximize = prism::make<prism::Button>("", prism::Icon::Frame, prism::ButtonStyle::Flat);
-    maximize->setTooltip("Maximize / Restore");
-    maximize->onClick = [] { prism::Application::get().platform().toggleMaximizeWindow(CurrentWindowUVE()); };
-    auto close = prism::make<prism::Button>("", prism::Icon::Close, prism::ButtonStyle::Flat);
-    close->setTooltip("Close");
-    close->onClick = [onClose = std::move(onClose)] {
-        if (onClose) {
-            onClose();
-        }
-    };
-    row.add(minimize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     if (!singleSurface) {
-        row.add(maximize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+        auto minimize = prism::make<WindowChromeButtonUVE>(
+            WindowChromeButtonUVE::KindUVE::Minimize,
+            [] { prism::Application::get().platform().minimizeWindow(CurrentWindowUVE()); });
+        row.add(minimize, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     }
-    row.add(close, prism::Slot{0.0F, prism::Margin(0.0F, 0.0F, 4.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
+    // Single Floating <-> Full toggle button (works on both Desktop OS windows and Mobile single-surface pages).
+    auto toggleFloatFull = prism::make<WindowChromeButtonUVE>(
+        WindowChromeButtonUVE::KindUVE::ToggleFloatFull,
+        [] { prism::Application::get().platform().toggleMaximizeWindow(CurrentWindowUVE()); });
+    auto close = prism::make<WindowChromeButtonUVE>(WindowChromeButtonUVE::KindUVE::Close, std::move(onClose));
+    row.add(toggleFloatFull, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    row.add(close, prism::Slot{0.0F, prism::Margin(0.0F, 0.0F, 3.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
+}
+
+prism::Ref<prism::Widget> BuildToolWindowTitleBarUVE(std::string title, const prism::Icon icon,
+                                                     std::function<void()> onClose,
+                                                     prism::Ref<prism::Box>* const outRow) {
+    const bool singleSurface = prism::Application::exists() && prism::Application::get().platform().singleSurface();
+    auto row = prism::hbox(5.0F);
+    row->setPadding(prism::Margin(8.0F, 0.0F, 2.0F, 0.0F));
+    if (icon != prism::Icon::None) {
+        auto iconBtn = prism::make<prism::Button>("", icon, prism::ButtonStyle::Flat);
+        iconBtn->setEnabled(false);
+        row->add(iconBtn, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    }
+    auto titleText = prism::make<prism::Label>(std::move(title), prism::FontRole::Semibold);
+    titleText->setColor(prism::ThemeColor(&prism::Theme::textBright));
+    row->add(titleText, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    row->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
+    AddWindowButtonsUVE(*row, std::move(onClose), /*mainWindow*/ false);
+    if (outRow != nullptr) {
+        *outRow = row;
+    }
+    auto sized = prism::make<prism::SizeBox>();
+    sized->setHeightOverride(singleSurface ? kCompactTitleRowUVE + 2.0F : kTitleRowUVE + 4.0F);
+    sized->setContent(row);
+    auto bar = prism::make<prism::Border>();
+    bar->setBackground(prism::ThemeColor(&prism::Theme::header));
+    bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+    bar->setChild(sized);
+    return bar;
 }
 
 prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc) {
     const bool singleSurface = prism::Application::exists() && prism::Application::get().platform().singleSurface();
     if (singleSurface) {
-        // Consolidated single slim row on mobile:
-        // [Slim Logo] [Menu ▾] [Viewport / Document Tab] [Spacer] [- x (sub-windows only)]
-        auto row = prism::hbox(2.0F);
-        row->add(prism::make<LogoBoxUVE>(/*compact*/ true),
-                 prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
-
-        auto menuBtn = prism::make<prism::Button>("Menu", prism::Icon::ChevronDown, prism::ButtonStyle::Toolbar);
-        menuBtn->setTooltip("Editor menu");
+        // Mobile header:
+        // - Clean plain "Menu" button (no arrow/chevron)
+        // - When toolbarRow is present, LogoBox spans BOTH Row 1 (Menu + DocumentTab + Buttons) AND
+        //   Row 2 (Play/Toolbar row) as a prominent 44x44 square!
+        auto row1 = prism::hbox(2.0F);
+        auto menuBtn = prism::make<prism::Button>("Menu", prism::Icon::None, prism::ButtonStyle::Toolbar);
+        menuBtn->setTooltip("Menu");
         auto entries = std::make_shared<std::vector<EditorHeaderMenuEntryUVE>>(std::move(desc.menus));
         auto tail = std::move(desc.compactMenuTail);
         std::weak_ptr<prism::Button> weakBtn = menuBtn;
@@ -295,26 +424,46 @@ prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc) {
             const prism::Rect anchor = weakBtn.lock() ? weakBtn.lock()->rect() : prism::Rect{0.0F, kCompactTitleRowUVE, 0.0F, 0.0F};
             prism::showMenu(std::move(items), anchor, prism::PopupPlacement::Below);
         };
-        row->add(menuBtn, prism::Slot{0.0F, prism::Margin(2.0F, 0.0F, 2.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
+        row1->add(menuBtn, prism::Slot{0.0F, prism::Margin(2.0F, 0.0F, 2.0F, 0.0F), prism::HAlign::Left, prism::VAlign::Center});
 
         if (desc.documentTab) {
             desc.documentTab->setCompact(true);
-            row->add(desc.documentTab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
+            row1->add(desc.documentTab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
         }
-        row->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
-        AddWindowButtonsUVE(*row, std::move(desc.onClose), desc.mainWindow);
-        if (desc.outTitleRow != nullptr) {
-            *desc.outTitleRow = row;
+        row1->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
+        AddWindowButtonsUVE(*row1, std::move(desc.onClose), desc.mainWindow);
+
+        auto row1Sized = prism::make<prism::SizeBox>();
+        row1Sized->setHeightOverride(kCompactTitleRowUVE);
+        row1Sized->setContent(row1);
+
+        const bool hasSecondRow = desc.toolbarRow != nullptr;
+        auto outer = prism::hbox();
+        outer->add(prism::make<LogoBoxUVE>(/*compact*/ true, /*spansTwoRows*/ hasSecondRow),
+                   prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
+
+        if (hasSecondRow) {
+            auto row1Border = prism::make<prism::Border>();
+            row1Border->setBackground(prism::ThemeColor(&prism::Theme::header));
+            row1Border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
+            row1Border->setChild(row1Sized);
+
+            auto rightCol = prism::vbox();
+            rightCol->add(row1Border);
+            rightCol->add(desc.toolbarRow);
+            outer->add(rightCol, prism::Slot{1.0F});
+        } else {
+            outer->add(row1Sized, prism::Slot{1.0F});
         }
 
-        auto sized = prism::make<prism::SizeBox>();
-        sized->setHeightOverride(kCompactTitleRowUVE);
-        sized->setContent(row);
+        if (desc.outTitleRow != nullptr) {
+            *desc.outTitleRow = outer;
+        }
 
         auto bar = prism::make<prism::Border>();
         bar->setBackground(prism::ThemeColor(&prism::Theme::header));
         bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-        bar->setChild(sized);
+        bar->setChild(outer);
         return bar;
     }
 
@@ -349,7 +498,7 @@ prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc) {
     right->add(tabRowBox);
 
     auto top = prism::hbox();
-    top->add(prism::make<LogoBoxUVE>(/*compact*/ false));
+    top->add(prism::make<LogoBoxUVE>(/*compact*/ false, /*spansTwoRows*/ false));
     top->add(right, prism::Slot{1.0F});
     if (desc.outTitleRow != nullptr) {
         *desc.outTitleRow = top;
@@ -359,6 +508,12 @@ prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc) {
     bar->setBackground(prism::ThemeColor(&prism::Theme::header));
     bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
     bar->setChild(top);
+    if (desc.toolbarRow != nullptr) {
+        auto combined = prism::vbox();
+        combined->add(bar);
+        combined->add(desc.toolbarRow);
+        return combined;
+    }
     return bar;
 }
 

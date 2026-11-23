@@ -74,9 +74,33 @@ public:
     void Draw(const univex::camera::OrbitCamera& camera, int framebufferWidth, int framebufferHeight) const;
 
 private:
+    struct CachedUniforms {
+        GLint viewProj = -1;
+        GLint invViewProj = -1;
+        GLint cameraPos = -1;
+        GLint baseSpacing = -1;
+        GLint targetCellPixels = -1;
+        GLint lineWidthPixels = -1;
+        GLint axisWidthPixels = -1;
+        GLint thinColor = -1;
+        GLint midColor = -1;
+        GLint thickColor = -1;
+        GLint thinIntensity = -1;
+        GLint midIntensity = -1;
+        GLint thickIntensity = -1;
+        GLint axisColorX = -1;
+        GLint axisColorY = -1;
+        GLint axisColorZ = -1;
+        GLint fadeStart = -1;
+        GLint fadeEnd = -1;
+        GLint opacity = -1;
+        GLint gridPlane = -1;
+    };
+
     void Destroy() noexcept;
 
     ShaderProgram program_;
+    CachedUniforms uniforms_{};
     GLuint vao_ = 0;
     GLuint vbo_ = 0;
     GridSettings settings_{};

@@ -14,6 +14,7 @@ using Input::InputActionUVE;
 
 void EditorUVE::OpenInputMapUVE() noexcept {
     m_inputMapWindow.visible = true;
+    m_inputMapWindow.focusPending = true;
 }
 
 bool EditorUVE::SaveInputMapUVE() {

@@ -1696,12 +1696,31 @@ void EditorAssetTableUVE::CreateBlueprintUVE() {
     auto objectPicker = prism::make<prism::ComboBox>(std::vector<std::string>{}, 0);
     auto note = prism::make<prism::Label>("", prism::FontRole::Small);
     note->setColor(prism::ThemeColor(&prism::Theme::textDim));
-    auto form = prism::make<prism::PropertyGrid>();
-    const int cat = form->addCategory("New Blueprint Class");
-    form->addRow(cat, "Name", name, "The file's name");
-    form->addRow(cat, "Entity Class", entityCombo, "The entity whose object runs the graph");
-    form->addRow(cat, "Object", objectPicker, "None: the entity itself. Or one of the objects under it.");
-    form->addRow(cat, "", note, "");
+
+    const auto makeFieldBlock = [](const char* heading, prism::Ref<prism::Widget> control) {
+        auto block = prism::vbox(3.0F);
+        auto lbl = prism::make<prism::Label>(heading, prism::FontRole::Small);
+        lbl->setColor(prism::ThemeColor(&prism::Theme::textDim));
+        block->add(lbl);
+        block->add(std::move(control));
+        return block;
+    };
+
+    auto noteCard = prism::make<prism::Border>();
+    noteCard->setBackground(prism::ThemeColor(&prism::Theme::field));
+    noteCard->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
+    noteCard->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 6.0F));
+    noteCard->setRadius(3.0F);
+    noteCard->setChild(note);
+
+    auto form = prism::vbox(8.0F);
+    auto intro = prism::make<prism::Label>("Create a Blueprint graph attached to an object of an Entity Class.", prism::FontRole::Small);
+    intro->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    form->add(intro);
+    form->add(makeFieldBlock("Blueprint Name", name));
+    form->add(makeFieldBlock("Entity Class", entityCombo));
+    form->add(makeFieldBlock("Target Object", objectPicker));
+    form->add(noteCard);
 
     auto rebuild = std::make_shared<std::function<void()>>();
     std::weak_ptr<prism::ComboBox> weakPicker = objectPicker;
@@ -1709,8 +1728,11 @@ void EditorAssetTableUVE::CreateBlueprintUVE() {
     std::weak_ptr<prism::Label> weakNote = note;
     const auto showPick = [state, weakNote] {
         if (const auto n = weakNote.lock()) {
-            n->setText(state->object < 0 ? "Every object of this entity already has a Blueprint."
-                                         : "Runs on: " + state->objects[static_cast<std::size_t>(state->object)].name);
+            const bool noneAvailable = state->object < 0;
+            n->setColor(noneAvailable ? prism::ThemeColor(&prism::Theme::warning)
+                                      : prism::ThemeColor(&prism::Theme::text));
+            n->setText(noneAvailable ? "Every object of this entity already has a Blueprint."
+                                     : "Runs on: " + state->objects[static_cast<std::size_t>(state->object)].name);
         }
     };
     *rebuild = [state, weakPicker, showPick] {
@@ -1793,7 +1815,10 @@ void EditorAssetTableUVE::CreateBlueprintUVE() {
             prism::Application::get().closeAllPopups();
         }
     };
-    prism::showDialog("Blueprint Class", form, {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 520.0F);
+    const bool compact = prism::Application::exists() && prism::Application::get().platform().singleSurface();
+    prism::showDialog("New Blueprint Class", form,
+                      {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}},
+                      compact ? 400.0F : 480.0F);
 }
 
 void EditorAssetTableUVE::CreateParticleSystemUVE() {
@@ -1807,10 +1832,59 @@ void EditorAssetTableUVE::CreateParticleSystemUVE() {
     }
     auto name = prism::make<prism::TextInput>("VFX_NewEffect", "Name");
     auto picker = prism::make<prism::ComboBox>(labels, 0);
-    auto form = prism::make<prism::PropertyGrid>();
-    const int cat = form->addCategory("New Particle System");
-    form->addRow(cat, "Name", name, "The file's name");
-    form->addRow(cat, "Template", picker, "The effect to start from");
+
+    auto tplTitle = prism::make<prism::Label>(
+        templates.empty() ? std::string("Empty") : std::string(templates.front().name),
+        prism::FontRole::Semibold);
+    tplTitle->setColor(prism::ThemeColor(&prism::Theme::textBright));
+    auto tplDesc = prism::make<prism::Label>(
+        templates.empty() ? std::string("Blank particle system.") : std::string(templates.front().description),
+        prism::FontRole::Small);
+    tplDesc->setColor(prism::ThemeColor(&prism::Theme::textDim));
+
+    auto tplCardBody = prism::vbox(3.0F);
+    tplCardBody->add(tplTitle);
+    tplCardBody->add(tplDesc);
+    auto tplCard = prism::make<prism::Border>();
+    tplCard->setBackground(prism::ThemeColor(&prism::Theme::field));
+    tplCard->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
+    tplCard->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 6.0F));
+    tplCard->setRadius(3.0F);
+    tplCard->setChild(tplCardBody);
+
+    std::weak_ptr<prism::Label> weakTitle = tplTitle;
+    std::weak_ptr<prism::Label> weakDesc = tplDesc;
+    picker->onChange = [weakTitle, weakDesc](const int idx) {
+        const std::vector<VFX::ParticleTemplateInfoUVE>& infos = VFX::GetParticleTemplatesUVE();
+        if (infos.empty()) {
+            return;
+        }
+        const auto clamped = static_cast<std::size_t>(std::clamp(idx, 0, static_cast<int>(infos.size()) - 1));
+        if (const auto t = weakTitle.lock()) {
+            t->setText(std::string(infos[clamped].name));
+        }
+        if (const auto d = weakDesc.lock()) {
+            d->setText(std::string(infos[clamped].description));
+        }
+    };
+
+    const auto makeFieldBlock = [](const char* heading, prism::Ref<prism::Widget> control) {
+        auto block = prism::vbox(3.0F);
+        auto lbl = prism::make<prism::Label>(heading, prism::FontRole::Small);
+        lbl->setColor(prism::ThemeColor(&prism::Theme::textDim));
+        block->add(lbl);
+        block->add(std::move(control));
+        return block;
+    };
+
+    auto form = prism::vbox(8.0F);
+    auto intro = prism::make<prism::Label>("Choose a name and starting template for the new VFX asset (.uvfx).", prism::FontRole::Small);
+    intro->setColor(prism::ThemeColor(&prism::Theme::textDim));
+    form->add(intro);
+    form->add(makeFieldBlock("Asset Name", name));
+    form->add(makeFieldBlock("Starting Template", picker));
+    form->add(tplCard);
+
     std::weak_ptr<prism::TextInput> weakName = name;
     std::weak_ptr<prism::ComboBox> weakPicker = picker;
     auto made = std::make_shared<bool>(false);
@@ -1841,8 +1915,10 @@ void EditorAssetTableUVE::CreateParticleSystemUVE() {
             prism::Application::get().closeAllPopups();
         }
     };
-    prism::showDialog("Particle System", form,
-                      {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}}, 460.0F);
+    const bool compact = prism::Application::exists() && prism::Application::get().platform().singleSurface();
+    prism::showDialog("New Particle System", form,
+                      {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Create", true, create}},
+                      compact ? 380.0F : 460.0F);
 }
 
 void EditorAssetTableUVE::CreateWidgetBlueprintUVE() {

@@ -31,25 +31,6 @@ namespace UVE::Editor {
 
 constexpr float kToolRowUVE = 22.0F;
 
-/// The title bar every tool window has: its name, a drag strip, minimise / maximise / close.
-[[nodiscard]] static prism::Ref<prism::Widget> TitleBarUVE(const std::string& name, std::function<void()> onClose) {
-    auto title = prism::hbox(6.0F);
-    title->setPadding(prism::Margin(10.0F, 0.0F, 0.0F, 0.0F));
-    auto titleText = prism::make<prism::Label>(name);
-    titleText->setColor(prism::ThemeColor(&prism::Theme::textBright));
-    title->add(titleText, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    title->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*title, std::move(onClose));
-    auto titleBox = prism::make<prism::SizeBox>();
-    titleBox->setHeightOverride(kTitleRowUVE + 4.0F);
-    titleBox->setContent(title);
-    auto titleBar = prism::make<prism::Border>();
-    titleBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    titleBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    titleBar->setChild(titleBox);
-    return titleBar;
-}
-
 // ------------------------------------------------------------------------------ network capture
 
 /// The captured packets as rows (the filtered ones, newest at the bottom); a click picks one.
@@ -76,7 +57,7 @@ public:
                 c.fillRect(row, t.rowSelected);
             }
             c.textIn(*t.mono, prism::Rect{row.x + 8.0F, row.y, row.w - 16.0F, row.h}, Network::DescribePacketUVE(*packet),
-                     packet->malformed ? prism::Color(255, 115, 115) : t.text);
+                     packet->malformed ? t.error : t.text);
         }
         if (rows.empty()) {
             c.textIn(*t.ui, prism::Rect{m_rect.x + 12.0F, m_rect.y + 8.0F, m_rect.w - 24.0F, 20.0F},
@@ -123,7 +104,7 @@ public:
         y += 22.0F;
         const std::string meta = "t=" + std::to_string(packet->timestampMs) + " ms, " + std::to_string(packet->raw.size()) + " bytes" +
                                  (packet->malformed ? ", MALFORMED" : "");
-        c.textIn(*t.small, prism::Rect{x, y, w, 18.0F}, meta, packet->malformed ? prism::Color(255, 115, 115) : t.textDim);
+        c.textIn(*t.small, prism::Rect{x, y, w, 18.0F}, meta, packet->malformed ? t.error : t.textDim);
         y += 24.0F;
         const std::string dump = Network::HexdumpPacketUVE(packet->raw);
         std::size_t start = 0U;
@@ -168,16 +149,16 @@ public:
         for (std::size_t i = 0U; i < snapshot.rows.size(); ++i) {
             const EditorAudioMixerRowUVE& row = snapshot.rows[i];
             const float y = m_rect.y + kToolRowUVE * static_cast<float>(i + 1U);
-            const prism::Color nameColour = row.isSilencedWithSources ? prism::Color(242, 184, 89) : t.text;
+            const prism::Color nameColour = row.isSilencedWithSources ? t.warning : t.text;
             c.textIn(*t.ui, prism::Rect{col.name + 14.0F * static_cast<float>(row.depth), y, col.mute - col.name - 8.0F, kToolRowUVE}, row.name,
                      nameColour);
             const auto toggle = [&](const float x, const bool on, const prism::Color colour, const char* letter) {
                 const prism::Rect box{x, y + 2.0F, 20.0F, kToolRowUVE - 4.0F};
                 c.fillRoundRect(box, 3.0F, on ? colour : t.control);
-                c.textIn(*t.small, box, letter, on ? prism::Color(16, 16, 16) : t.textDim, prism::HAlign::Center);
+                c.textIn(*t.small, box, letter, on ? t.window : t.textDim, prism::HAlign::Center);
             };
-            toggle(col.mute, row.muted, prism::Color(230, 90, 80), "M");
-            toggle(col.solo, row.soloed, prism::Color(240, 200, 80), "S");
+            toggle(col.mute, row.muted, t.error, "M");
+            toggle(col.solo, row.soloed, t.warning, "S");
             const prism::Rect track{col.volume, y + 8.0F, col.volumeW, 6.0F};
             c.fillRoundRect(track, 3.0F, t.field);
             c.fillRoundRect(prism::Rect{track.x, track.y, std::max(6.0F, track.w * std::clamp(row.volume, 0.0F, 1.0F)), track.h}, 3.0F, t.highlight);
@@ -186,7 +167,7 @@ public:
             const prism::Rect meter{col.level, y + 8.0F, col.levelW - 70.0F, 6.0F};
             c.fillRoundRect(meter, 3.0F, t.field);
             c.fillRoundRect(prism::Rect{meter.x, meter.y, meter.w * std::clamp(row.levelNormalized, 0.0F, 1.0F), meter.h}, 3.0F,
-                            row.isClipping ? prism::Color(235, 77, 66) : prism::Color(90, 200, 120));
+                            row.isClipping ? t.error : t.success);
             c.textIn(*t.small, prism::Rect{meter.x + meter.w + 6.0F, y, 64.0F, kToolRowUVE}, row.levelText, t.textDim);
         }
         if (snapshot.rows.empty()) {
@@ -270,7 +251,7 @@ EditorNetworkCaptureWindowUVE::~EditorNetworkCaptureWindowUVE() = default;
 
 prism::Ref<prism::Widget> EditorNetworkCaptureWindowUVE::BuildUVE() {
     auto window = prism::vbox();
-    window->add(TitleBarUVE("Network Capture", [this] {
+    window->add(BuildToolWindowTitleBarUVE("Network Capture", prism::Icon::Globe, [this] {
         m_editor.m_showCaptureWindow = false;
         m_closePending = true;
     }));
@@ -333,12 +314,16 @@ void EditorNetworkCaptureWindowUVE::FrameUVE() {
     if (!visible) {
         return;
     }
-    if (m_window == 0) {
+    const bool freshlyOpened = (m_window == 0);
+    if (freshlyOpened) {
         m_window = m_host.OpenWindowUVE(BuildUVE(), "Network Capture", 900, 600);
         if (m_window == 0) {
             visible = false;
             return;
         }
+    }
+    if (freshlyOpened || m_editor.m_captureFocusPending) {
+        m_editor.m_captureFocusPending = false;
         m_host.FocusWindowUVE(m_window);
     }
     // The filter and the rows a few times a second: packets arrive live.
@@ -380,7 +365,7 @@ EditorAudioMixerWindowUVE::~EditorAudioMixerWindowUVE() = default;
 
 prism::Ref<prism::Widget> EditorAudioMixerWindowUVE::BuildUVE() {
     auto window = prism::vbox();
-    window->add(TitleBarUVE("Audio Mixer", [this] {
+    window->add(BuildToolWindowTitleBarUVE("Audio Mixer", prism::Icon::NodeMixer, [this] {
         m_editor.m_showAudioMixerWindow = false;
         m_closePending = true;
     }));
@@ -419,12 +404,16 @@ void EditorAudioMixerWindowUVE::FrameUVE() {
     if (!visible) {
         return;
     }
-    if (m_window == 0) {
+    const bool freshlyOpened = (m_window == 0);
+    if (freshlyOpened) {
         m_window = m_host.OpenWindowUVE(BuildUVE(), "Audio Mixer", 760, 460);
         if (m_window == 0) {
             visible = false;
             return;
         }
+    }
+    if (freshlyOpened || m_editor.m_audioMixerFocusPending) {
+        m_editor.m_audioMixerFocusPending = false;
         m_host.FocusWindowUVE(m_window);
     }
     Audio::IAudioSystemUVE& audio = m_editor.m_services->GetAudioSystemUVE();

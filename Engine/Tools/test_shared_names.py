@@ -179,8 +179,15 @@ class SharedNamesTest(unittest.TestCase):
             code, name = build_apk.android_version_metadata(version)
             self.assertGreaterEqual(code, 1)
             self.assertTrue(name)
+            code_b1, name_b1 = build_apk.android_version_metadata(version, build_number=101)
+            code_b2, name_b2 = build_apk.android_version_metadata(version, build_number=102)
+            self.assertEqual(name_b1, name)
+            self.assertEqual(name_b2, name)
+            self.assertGreater(code_b2, code_b1)
         self.assertGreater(build_apk.android_version_metadata((0, 2, 0, 0))[0],
                            build_apk.android_version_metadata((0, 1, 0, 1))[0])
+        self.assertGreater(build_apk.android_version_metadata((0, 1, 1, 0), build_number=2)[0],
+                           build_apk.android_version_metadata((0, 1, 1, 0), build_number=1)[0])
 
 
     def test_android_manifests_lock_landscape(self) -> None:

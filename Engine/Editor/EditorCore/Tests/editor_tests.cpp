@@ -105,6 +105,27 @@ struct EditorUVEAccessUVE final {
         return editor.m_modelImportJobs.contains(source);
     }
 
+    [[nodiscard]] static bool EntityClassFocusPendingUVE(const EditorUVE& editor) {
+        return editor.m_entityClassPicker.has_value() && editor.m_entityClassPicker->focusPending;
+    }
+    static void ClearEntityClassFocusPendingUVE(EditorUVE& editor) {
+        if (editor.m_entityClassPicker.has_value()) {
+            editor.m_entityClassPicker->focusPending = false;
+        }
+    }
+    [[nodiscard]] static bool& PreferencesFocusPendingUVE(EditorUVE& editor) {
+        return editor.m_preferencesWindow.focusPending;
+    }
+    [[nodiscard]] static bool& ProjectSettingsFocusPendingUVE(EditorUVE& editor) {
+        return editor.m_projectSettingsWindow.focusPending;
+    }
+    [[nodiscard]] static bool& InputMapFocusPendingUVE(EditorUVE& editor) {
+        return editor.m_inputMapWindow.focusPending;
+    }
+    [[nodiscard]] static bool& ShortcutsFocusPendingUVE(EditorUVE& editor) {
+        return editor.m_shortcutsWindow.focusPending;
+    }
+
     [[nodiscard]] static bool IsRetargetPreviewActiveUVE(const EditorUVE& editor) {
         return editor.m_retargetPreview.has_value();
     }
@@ -6468,6 +6489,68 @@ TEST(EditorUVETest, MaterialThumbnailResolvesRelativeContentRootAndRendersRealPb
         EditorUVEAccessUVE::InvalidateMaterialThumbnailCacheUVE(editor, matFile);
         const std::uintptr_t texAfterEdit = EditorUVEAccessUVE::GetMaterialThumbnailUVE(editor, "M_Standard.uvmaterial");
         EXPECT_NE(texAfterEdit, 0U);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch);
+}
+
+TEST(EditorUVETest, ToolWindowsSetFocusPendingOnReopenUVE) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("tool_windows_reopen_focus");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content);
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    config.projectSettingsFilePath = scratch / "project.uvsettings";
+    config.assetDatabaseFilePath = scratch / "assets.json";
+    config.logFilePath = scratch / "log.txt";
+    config.settingsFilePath = scratch / "settings.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+
+        // Entity Class: opening sets focusPending; clearing (first focus) then reopening re-arms focusPending.
+        editor.OpenEntityClassPickerUVE(content);
+        EXPECT_TRUE(editor.IsEntityClassPickerOpenUVE());
+        EXPECT_TRUE(EditorUVEAccessUVE::EntityClassFocusPendingUVE(editor));
+        EditorUVEAccessUVE::ClearEntityClassFocusPendingUVE(editor);
+        EXPECT_FALSE(EditorUVEAccessUVE::EntityClassFocusPendingUVE(editor));
+        editor.OpenEntityClassPickerUVE(content);
+        EXPECT_TRUE(EditorUVEAccessUVE::EntityClassFocusPendingUVE(editor));
+
+        // Preferences, Project Settings, Input Map, and Keyboard Shortcuts all re-arm focusPending on reopen.
+        editor.OpenEditorPreferencesUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::PreferencesFocusPendingUVE(editor));
+        EditorUVEAccessUVE::PreferencesFocusPendingUVE(editor) = false;
+        editor.OpenEditorPreferencesUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::PreferencesFocusPendingUVE(editor));
+
+        editor.OpenProjectSettingsUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::ProjectSettingsFocusPendingUVE(editor));
+        EditorUVEAccessUVE::ProjectSettingsFocusPendingUVE(editor) = false;
+        editor.OpenProjectSettingsUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::ProjectSettingsFocusPendingUVE(editor));
+
+        editor.OpenInputMapUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::InputMapFocusPendingUVE(editor));
+        EditorUVEAccessUVE::InputMapFocusPendingUVE(editor) = false;
+        editor.OpenInputMapUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::InputMapFocusPendingUVE(editor));
+
+        editor.OpenKeyboardShortcutsUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::ShortcutsFocusPendingUVE(editor));
+        EditorUVEAccessUVE::ShortcutsFocusPendingUVE(editor) = false;
+        editor.OpenKeyboardShortcutsUVE();
+        EXPECT_TRUE(EditorUVEAccessUVE::ShortcutsFocusPendingUVE(editor));
 
         editor.ShutdownUVE();
     }

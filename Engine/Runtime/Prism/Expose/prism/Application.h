@@ -117,6 +117,7 @@ public:
   Widget* focus() const { return m_focus.lock().get(); }
   void captureMouse(Widget* w);
   void releaseMouse();
+  void onWidgetHidden(const Widget* w);
 
   // popups
   void showPopup(Ref<Widget> w, const PopupOptions& o);

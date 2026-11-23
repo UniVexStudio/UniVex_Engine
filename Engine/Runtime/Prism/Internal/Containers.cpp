@@ -1,10 +1,15 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include "prism/Containers.h"
 #include "prism/Application.h"
 
 namespace prism {
+
+namespace {
+std::atomic<int> g_activeSplitterDrags{0};
+} // namespace
 
 // ------------------------------------------------------------------ Box
 Box& Box::add(Ref<Widget> w, Slot s) {
@@ -105,6 +110,24 @@ void Border::paint(Canvas& c) {
 }
 
 // ------------------------------------------------------------------ Splitter
+Splitter::~Splitter() {
+  endDrag();
+}
+
+bool Splitter::anyDragging() noexcept {
+  return g_activeSplitterDrags.load(std::memory_order_relaxed) > 0;
+}
+
+void Splitter::endDrag() {
+  if (m_draggingCounted) {
+    g_activeSplitterDrags.fetch_sub(1, std::memory_order_relaxed);
+    m_draggingCounted = false;
+  }
+  m_drag = -1;
+  m_dragPane = -1;
+  m_dragPaneB = -1;
+}
+
 void Splitter::add(Ref<Widget> w, Pane p) {
   m_panes.push_back(p);
   addChild(std::move(w));
@@ -154,22 +177,28 @@ void Splitter::arrange(Rect r) {
   size_t flex = n - 1;
   for (size_t i = 0; i < n; i++) if (panes[i]->flex) { flex = i; break; }
   float gap = theme().splitter, total = h ? r.w : r.h;
-  float avail = total - gap * float(n - 1), fixedSum = 0;
+  float avail = std::max(0.f, total - gap * float(n - 1)), fixedSum = 0;
   for (size_t i = 0; i < n; i++)
-    if (i != flex) { panes[i]->size = std::clamp(panes[i]->size, panes[i]->minSize, panes[i]->maxSize); fixedSum += panes[i]->size; }
+    if (i != flex) {
+      float lo = panes[i]->minSize;
+      float hi = std::max(lo, panes[i]->maxSize);
+      panes[i]->size = std::clamp(panes[i]->size, lo, hi);
+      fixedSum += panes[i]->size;
+    }
   float flexSize = avail - fixedSum;
   if (flexSize < panes[flex]->minSize) {
     float deficit = panes[flex]->minSize - flexSize;
     for (size_t i = 0; i < n && deficit > 0; i++)
       if (i != flex) {
-        float give = std::min(deficit, panes[i]->size - panes[i]->minSize);
+        float give = std::min(deficit, std::max(0.f, panes[i]->size - panes[i]->minSize));
         if (give > 0) { panes[i]->size -= give; deficit -= give; }
       }
-    flexSize = panes[flex]->minSize;
+    flexSize = std::max(0.f, avail - std::min(avail, fixedSum - (panes[flex]->minSize - flexSize - deficit)));
+    if (deficit <= 0.f) flexSize = panes[flex]->minSize;
   }
   float pos = h ? r.x : r.y;
   for (size_t i = 0; i < n; i++) {
-    float sz = i == flex ? flexSize : panes[i]->size;
+    float sz = std::max(0.f, i == flex ? flexSize : panes[i]->size);
     Rect cell = h ? Rect(pos, r.y, sz, r.h) : Rect(r.x, pos, r.w, sz);
     m_kids[i]->measure(cell.size());
     m_kids[i]->arrange(cell);
@@ -189,7 +218,8 @@ Widget* Splitter::hitTest(Vec2 p) {
   if (!m_visible || !m_rect.contains(p)) return nullptr;
   if (handleAt(p) >= 0) return this;
   for (auto it = m_children.rbegin(); it != m_children.rend(); ++it)
-    if (Widget* w = (*it)->hitTest(p)) return w;
+    if ((*it)->visible())
+      if (Widget* w = (*it)->hitTest(p)) return w;
   return nullptr;
 }
 
@@ -203,17 +233,49 @@ bool Splitter::onMouseDown(const MouseEvent& e) {
   if (e.button != MouseButton::Left) return false;
   int i = handleAt(e.pos);
   if (i < 0) return false;
-  // find the pane indices (in visible order) on either side of the handle
+  // Find the pane indices (in visible order) on either side of the handle.
   std::vector<Pane*> panes;
-  for (size_t k = 0; k < m_children.size(); k++) if (m_children[k]->visible()) panes.push_back(&m_panes[k]);
-  size_t n = panes.size(), flex = n - 1;
+  std::vector<Widget*> kids;
+  for (size_t k = 0; k < m_children.size(); k++) {
+    if (m_children[k]->visible()) {
+      panes.push_back(&m_panes[k]);
+      kids.push_back(m_children[k].get());
+    }
+  }
+  size_t n = panes.size();
+  if (size_t(i + 1) >= n) return false;
+  size_t flex = n - 1;
   for (size_t k = 0; k < n; k++) if (panes[k]->flex) { flex = k; break; }
-  if (size_t(i) != flex) { m_dragPane = i; m_dragSign = 1; }
-  else if (size_t(i + 1) != flex) { m_dragPane = i + 1; m_dragSign = -1; }
-  else return true;
+  const bool horiz = m_orient == Orientation::Horizontal;
+  const auto renderedSize = [&](size_t idx) {
+    const Rect rc = kids[idx]->rect();
+    const float actual = horiz ? rc.w : rc.h;
+    return actual > 0.f ? actual : panes[idx]->size;
+  };
+  m_dragPaneB = -1;
+  m_dragSizeB = 0.f;
+  if (size_t(i) == flex) {
+    m_dragPane = i + 1;
+    m_dragSign = -1.f;
+    m_dragSize = renderedSize(size_t(m_dragPane));
+  } else if (size_t(i + 1) == flex) {
+    m_dragPane = i;
+    m_dragSign = 1.f;
+    m_dragSize = renderedSize(size_t(m_dragPane));
+  } else {
+    // Handle separates two non-flex panes: transfer size 1:1 between them while keeping their sum constant.
+    m_dragPane = i;
+    m_dragPaneB = i + 1;
+    m_dragSign = 1.f;
+    m_dragSize = renderedSize(size_t(m_dragPane));
+    m_dragSizeB = renderedSize(size_t(m_dragPaneB));
+  }
   m_drag = i;
-  m_dragStart = m_orient == Orientation::Horizontal ? e.pos.x : e.pos.y;
-  m_dragSize = panes[size_t(m_dragPane)]->size;
+  m_dragStart = horiz ? e.pos.x : e.pos.y;
+  if (!m_draggingCounted) {
+    g_activeSplitterDrags.fetch_add(1, std::memory_order_relaxed);
+    m_draggingCounted = true;
+  }
   invalidate();
   return true;
 }
@@ -222,22 +284,40 @@ bool Splitter::onMouseMove(const MouseEvent& e) {
   if (m_drag < 0) return false;
   std::vector<Pane*> panes;
   for (size_t k = 0; k < m_children.size(); k++) if (m_children[k]->visible()) panes.push_back(&m_panes[k]);
-  size_t n = panes.size(), flex = n - 1;
+  size_t n = panes.size();
+  if (m_dragPane < 0 || size_t(m_dragPane) >= n) { endDrag(); return false; }
+  size_t flex = n - 1;
   for (size_t k = 0; k < n; k++) if (panes[k]->flex) { flex = k; break; }
   float d = (m_orient == Orientation::Horizontal ? e.pos.x : e.pos.y) - m_dragStart;
-  Pane& p = *panes[size_t(m_dragPane)];
-  float total = m_orient == Orientation::Horizontal ? m_rect.w : m_rect.h;
-  float others = theme().splitter * float(n - 1) + panes[flex]->minSize;
-  for (size_t k = 0; k < n; k++) if (k != flex && int(k) != m_dragPane) others += panes[k]->size;
-  p.size = std::clamp(m_dragSize + m_dragSign * d, p.minSize, std::min(p.maxSize, total - others));
-  relayout();
+  if (m_dragPaneB >= 0 && size_t(m_dragPaneB) < n) {
+    Pane& pa = *panes[size_t(m_dragPane)];
+    Pane& pb = *panes[size_t(m_dragPaneB)];
+    const float pairSum = m_dragSize + m_dragSizeB;
+    const float minA = std::max(pa.minSize, pairSum - pb.maxSize);
+    const float maxA = std::max(minA, std::min(pa.maxSize, pairSum - pb.minSize));
+    const float nextA = std::clamp(m_dragSize + d, minA, maxA);
+    pa.size = nextA;
+    pb.size = std::max(pb.minSize, pairSum - nextA);
+  } else {
+    Pane& p = *panes[size_t(m_dragPane)];
+    float total = m_orient == Orientation::Horizontal ? m_rect.w : m_rect.h;
+    float others = theme().splitter * float(n - 1) + panes[flex]->minSize;
+    for (size_t k = 0; k < n; k++) if (k != flex && int(k) != m_dragPane) others += panes[k]->size;
+    // Never pass hi < lo to std::clamp when the container is tighter than the sum of minimums.
+    const float lo = p.minSize;
+    const float hi = std::max(lo, std::min(p.maxSize, total - others));
+    p.size = std::clamp(m_dragSize + m_dragSign * d, lo, hi);
+  }
+  arrange(m_rect);
+  invalidate();
   return true;
 }
 
 bool Splitter::onMouseUp(const MouseEvent&) {
-  m_drag = -1;
-  invalidate();
-  return true;
+  const bool was = m_drag >= 0;
+  endDrag();
+  if (was) invalidate();
+  return was;
 }
 
 void Splitter::paint(Canvas& c) {
@@ -322,7 +402,11 @@ void ScrollView::startFling() {
                          (next >= maxScroll && self->m_touchVelocity > 0.0f);
     if (std::abs(next - self->m_scroll) > 0.05f) {
       self->m_scroll = next;
-      self->relayout();
+      if (self->m_content) {
+        const float w = VScrollbar::needed(self->m_contentH, self->m_rect.h) ? self->m_rect.w - VScrollbar::W : self->m_rect.w;
+        self->m_content->arrange({self->m_rect.x, std::floor(self->m_rect.y - self->m_scroll), w, self->m_contentH});
+      }
+      self->invalidate();
     }
     self->m_touchVelocity *= std::exp(-4.2f * dt);
     if (hitEdge || std::abs(self->m_touchVelocity) < 15.0f) {
@@ -393,7 +477,11 @@ Reply ScrollView::onPreviewMouseMove(const MouseEvent& e) {
     m_touchLastMs = now;
     m_touchVelocity = std::clamp((-dy) / dt, -4500.0f, 4500.0f);
     m_scroll = std::clamp(m_scroll - dy, 0.f, std::max(0.f, m_contentH - m_rect.h));
-    relayout();
+    if (m_content) {
+      const float w = VScrollbar::needed(m_contentH, m_rect.h) ? m_rect.w - VScrollbar::W : m_rect.w;
+      m_content->arrange({m_rect.x, std::floor(m_rect.y - m_scroll), w, m_contentH});
+    }
+    invalidate();
     return Reply::handled().captureMouse(this);
   }
   return Reply::unhandled();
@@ -408,7 +496,12 @@ bool ScrollView::onMouseDown(const MouseEvent& e) {
   if (e.button == MouseButton::Left && overBar(e.pos)) {
     stopFling();
     m_bar.mouseDown(e.pos, m_rect, m_contentH, m_scroll);
-    relayout();
+    m_scroll = std::clamp(m_scroll, 0.f, std::max(0.f, m_contentH - m_rect.h));
+    if (m_content) {
+      const float w = VScrollbar::needed(m_contentH, m_rect.h) ? m_rect.w - VScrollbar::W : m_rect.w;
+      m_content->arrange({m_rect.x, std::floor(m_rect.y - m_scroll), w, m_contentH});
+    }
+    invalidate();
     return true;
   }
   if (m_touchArmed && e.button == MouseButton::Left) {
@@ -418,7 +511,15 @@ bool ScrollView::onMouseDown(const MouseEvent& e) {
 }
 
 bool ScrollView::onMouseMove(const MouseEvent& e) {
-  if (m_bar.dragging && m_bar.mouseMove(e.pos, m_rect, m_contentH, m_scroll)) { relayout(); return true; }
+  if (m_bar.dragging && m_bar.mouseMove(e.pos, m_rect, m_contentH, m_scroll)) {
+    m_scroll = std::clamp(m_scroll, 0.f, std::max(0.f, m_contentH - m_rect.h));
+    if (m_content) {
+      const float w = VScrollbar::needed(m_contentH, m_rect.h) ? m_rect.w - VScrollbar::W : m_rect.w;
+      m_content->arrange({m_rect.x, std::floor(m_rect.y - m_scroll), w, m_contentH});
+    }
+    invalidate();
+    return true;
+  }
   constexpr float kTouchScrollSlop = 6.0f;
   if (m_touchArmed && !m_touchDragging && std::abs(e.pos.y - m_touchStartY) >= kTouchScrollSlop) {
     m_touchDragging = true;
@@ -434,7 +535,11 @@ bool ScrollView::onMouseMove(const MouseEvent& e) {
     const float inst = std::clamp((-dy) / dt, -4500.0f, 4500.0f);
     m_touchVelocity = m_touchVelocity * 0.45f + inst * 0.55f;
     m_scroll = std::clamp(m_scroll - dy, 0.f, std::max(0.f, m_contentH - m_rect.h));
-    relayout();
+    if (m_content) {
+      const float w = VScrollbar::needed(m_contentH, m_rect.h) ? m_rect.w - VScrollbar::W : m_rect.w;
+      m_content->arrange({m_rect.x, std::floor(m_rect.y - m_scroll), w, m_contentH});
+    }
+    invalidate();
     return true;
   }
   return false;
@@ -459,8 +564,12 @@ bool ScrollView::onMouseUp(const MouseEvent&) {
 bool ScrollView::onMouseWheel(const MouseEvent& e) {
   if (!VScrollbar::needed(m_contentH, m_rect.h)) return false;
   stopFling();
-  m_scroll -= e.wheel.y * 44.f;
-  relayout();
+  m_scroll = std::clamp(m_scroll - e.wheel.y * 44.f, 0.f, std::max(0.f, m_contentH - m_rect.h));
+  if (m_content) {
+    const float w = VScrollbar::needed(m_contentH, m_rect.h) ? m_rect.w - VScrollbar::W : m_rect.w;
+    m_content->arrange({m_rect.x, std::floor(m_rect.y - m_scroll), w, m_contentH});
+  }
+  invalidate();
   return true;
 }
 
@@ -468,7 +577,12 @@ void ScrollView::ensureVisible(Rect a) {
   stopFling();
   if (a.y < m_rect.y) m_scroll -= m_rect.y - a.y;
   else if (a.bottom() > m_rect.bottom()) m_scroll += a.bottom() - m_rect.bottom();
-  relayout();
+  m_scroll = std::clamp(m_scroll, 0.f, std::max(0.f, m_contentH - m_rect.h));
+  if (m_content) {
+    const float w = VScrollbar::needed(m_contentH, m_rect.h) ? m_rect.w - VScrollbar::W : m_rect.w;
+    m_content->arrange({m_rect.x, std::floor(m_rect.y - m_scroll), w, m_contentH});
+  }
+  invalidate();
 }
 
 } // namespace prism
