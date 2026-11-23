@@ -2,6 +2,7 @@
 #include "prism/Controls.h"
 #include "prism/AccessibilityBridge.h"
 #include "prism/Application.h"
+#include "prism/Containers.h"
 
 namespace prism {
 
