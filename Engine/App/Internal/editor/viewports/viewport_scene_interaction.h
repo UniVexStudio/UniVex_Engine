@@ -232,6 +232,7 @@ private:
     std::array<GLuint, 2> m_hostDepthPbo{};
     std::array<GLsizeiptr, 2> m_hostDepthPboBytes{};
     std::array<bool, 2> m_hostDepthPboFilled{};
+    std::array<GLsync, 2> m_hostDepthFence{};   // set after each PBO's glReadPixels; mapped only once signalled
     std::size_t m_hostDepthPboNext = 0U;
     int m_hostDepthWidth = 0;
     int m_hostDepthHeight = 0;

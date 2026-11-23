@@ -895,6 +895,17 @@ private:
   bool m_drag = false;
 };
 
+/// A dialog's body: a ScrollView that asks for its content's height (up to maxH). A plain
+/// ScrollView measures as 0 high, which left every dialog body empty, only the buttons showing.
+class DialogBodyScroll : public ScrollView {
+public:
+  float maxH = 0;
+  Vec2 measure(Vec2 avail) override {
+    const Vec2 c = content() ? content()->measure({avail.x, 1e6f}) : Vec2{};
+    return m_desired = constrain({c.x, std::min(c.y, maxH)});
+  }
+};
+
 } // namespace
 
 void showDialog(const std::string& title, Ref<Widget> content, std::vector<DialogButton> buttons, float width) {
@@ -936,7 +947,8 @@ void showDialog(const std::string& title, Ref<Widget> content, std::vector<Dialo
   auto body = make<Border>();
   body->setPadding(compact ? Margin(12.f, 10.f) : Margin(16.f, 14.f));
   body->setChild(std::move(content));
-  auto scroll = make<ScrollView>();
+  auto scroll = make<DialogBodyScroll>();
+  scroll->maxH = maxBodyH;
   scroll->setContent(body);
   scroll->setMaxSize(effectiveW, maxBodyH);
   col->add(scroll, {.fill = 1.f});
