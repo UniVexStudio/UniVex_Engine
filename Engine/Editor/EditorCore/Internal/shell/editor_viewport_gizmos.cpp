@@ -453,6 +453,10 @@ void EditorViewportGizmosUVE::SyncUVE() {
     // Billboards for objects with no surface of their own, at their world position.
     m_billboards.clear();
     Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    Scene::SceneGraphUVE& sceneGraph = m_editor.m_services->GetSceneGraphUVE();
+    if (!m_gameWorkspace) {
+        sceneGraph.RebuildChildrenIndexUVE(em);
+    }
     const std::function<void(Scene::EntityUVE)> visit = [&](const Scene::EntityUVE e) {
         const KindUVE kind = Scene::ResolveSceneObjectKindUVE(em, e);
         if (HasBillboardUVE(kind) && em.HasComponentUVE<Scene::WorldTransformComponentUVE>(e)) {
@@ -490,7 +494,7 @@ void EditorViewportGizmosUVE::SyncUVE() {
             }
             m_billboards.push_back(std::move(board));
         }
-        for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, e)) {
+        for (const Scene::EntityUVE child : sceneGraph.GetIndexedChildrenUVE(e)) {
             visit(child);
         }
     };

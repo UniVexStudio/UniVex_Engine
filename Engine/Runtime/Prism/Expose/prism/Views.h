@@ -42,6 +42,10 @@ protected:
   float m_rowH = 22, m_scroll = 0;
   int m_hoverRow = -1;
   bool m_toEnd = false;
+  bool m_touchArmed = false;
+  bool m_touchDragging = false;
+  float m_touchStartY = 0.f;
+  float m_touchLastY = 0.f;
   VScrollbar m_bar;
 };
 

@@ -107,10 +107,12 @@ private:
   Ref<TextInput> m_searchInput;
   Ref<WrapBox> m_filterChips;
 
-  // Dragging state
+  // Dragging & touch scroll state
   int m_pressIdx = -1;
   Vec2 m_pressPos;
   bool m_dragging = false;
+  bool m_touchScrolling = false;
+  float m_touchLastY = 0.0f;
 
 
   float m_sourcesW = 145.0f;

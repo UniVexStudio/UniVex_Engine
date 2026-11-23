@@ -59,7 +59,11 @@ public:
     if (m_dragging && m_move) m_move(e.pos - m_grab);
     return m_dragging;
   }
-  bool onMouseUp(const MouseEvent&) override { m_dragging = false; return false; }
+  bool onMouseUp(const MouseEvent&) override {
+    const bool was = m_dragging;
+    m_dragging = false;
+    return was;
+  }
   void onMouseLeave() override { m_hover = 0; invalidate(); }
   Cursor cursor() const override { return Cursor::SizeAll; }
 private:
@@ -109,17 +113,32 @@ public:
     if (e.button != MouseButton::Left || !window) return false;
     m_start = e.pos;
     m_size = Vec2(window->rect().w, window->rect().h);
+    // Lock current top-left anchor so resizing never re-centers or flips a floating window.
+    if (Application::exists()) {
+      Application::get().movePopup(window, Vec2(window->rect().x, window->rect().y));
+    }
     m_drag = true;
     return true;
   }
   bool onMouseMove(const MouseEvent& e) override {
     if (!m_drag || !window) return false;
     Vec2 s = m_size + (e.pos - m_start);
+    if (Application::exists()) {
+      const Vec2 ws = Application::get().windowSize();
+      const float maxW = std::max(minSize.x, ws.x - window->rect().x - 4.0f);
+      const float maxH = std::max(minSize.y, ws.y - window->rect().y - 4.0f);
+      s.x = std::min(s.x, maxW);
+      s.y = std::min(s.y, maxH);
+    }
     window->setFixedWidth(std::max(minSize.x, s.x));
     window->setFixedHeight(std::max(minSize.y, s.y));
     return true;
   }
-  bool onMouseUp(const MouseEvent&) override { m_drag = false; return false; }
+  bool onMouseUp(const MouseEvent&) override {
+    const bool was = m_drag;
+    m_drag = false;
+    return was;
+  }
   Cursor cursor() const override { return Cursor::SizeAll; }
 private:
   Vec2 m_start, m_size;

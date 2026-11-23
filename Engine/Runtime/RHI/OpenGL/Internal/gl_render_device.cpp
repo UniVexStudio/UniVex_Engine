@@ -613,18 +613,13 @@ bool GlRenderDeviceUVE::UpdateBufferUVE(BufferHandleUVE buffer, std::span<const 
                    data.size(), offsetBytes, it->second.sizeBytes);
         return false;
     }
-    const GLenum bindingQuery = BufferTargetToBindingQueryUVE(it->second.target);
-    if (bindingQuery == 0U) {
-        UVE_ERROR("GlRenderDeviceUVE: UpdateBufferUVE resolved an unsupported GL buffer target");
-        return false;
-    }
-    GLint previousBufferBinding = 0;
-    glGetIntegerv(bindingQuery, &previousBufferBinding);
-    m_impl->state.gl.glBindBuffer(it->second.target, it->second.glBuffer);
-    m_impl->state.gl.glBufferSubData(it->second.target, static_cast<GLintptr>(offsetBytes),
-                                       static_cast<GLsizeiptr>(data.size()), data.data());
+    // Upload via GL_COPY_WRITE_BUFFER (core in GL 3.1+ and GLES 3.0) so we never disturb VAO
+    // vertex/index bindings and avoid a synchronous glGetIntegerv stall on every dynamic upload.
+    m_impl->state.gl.glBindBuffer(GL_COPY_WRITE_BUFFER, it->second.glBuffer);
+    m_impl->state.gl.glBufferSubData(GL_COPY_WRITE_BUFFER, static_cast<GLintptr>(offsetBytes),
+                                     static_cast<GLsizeiptr>(data.size()), data.data());
     UVE_GL_CHECK_ERROR_UVE("UpdateBufferUVE");
-    m_impl->state.gl.glBindBuffer(it->second.target, static_cast<GLuint>(previousBufferBinding));
+    m_impl->state.gl.glBindBuffer(GL_COPY_WRITE_BUFFER, 0U);
     return true;
 }
 
@@ -830,9 +825,13 @@ TextureHandleUVE GlRenderDeviceUVE::CreateTextureUVE(const TextureDescUVE& desc,
         levelHeight = levelHeight > 1U ? levelHeight / 2U : 1U;
     }
     glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
-    glTexParameteri(textureTarget, GL_TEXTURE_MIN_FILTER,
-                    desc.mipLevels > 1U ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
-    glTexParameteri(textureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    const bool isDepthTexture =
+        desc.format == TextureFormatUVE::Depth32Float || desc.format == TextureFormatUVE::Depth24Stencil8;
+    const GLint defaultMinFilter =
+        isDepthTexture ? GL_NEAREST : (desc.mipLevels > 1U ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+    const GLint defaultMagFilter = isDepthTexture ? GL_NEAREST : GL_LINEAR;
+    glTexParameteri(textureTarget, GL_TEXTURE_MIN_FILTER, defaultMinFilter);
+    glTexParameteri(textureTarget, GL_TEXTURE_MAG_FILTER, defaultMagFilter);
     glTexParameteri(textureTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(textureTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     if (isArray || isVolume) {

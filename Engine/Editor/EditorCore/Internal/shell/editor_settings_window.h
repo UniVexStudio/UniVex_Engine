@@ -55,7 +55,8 @@ public:
     };
 
     /// `visible` is the editor's flag for this window (opened by its command, cleared on close).
-    EditorSettingsWindowUVE(EditorUVE& editor, EditorHostUVE& host, bool& visible, std::function<SourceUVE()> source);
+    EditorSettingsWindowUVE(EditorUVE& editor, EditorHostUVE& host, bool& visible, std::function<SourceUVE()> source,
+                            bool* focusPending = nullptr);
     ~EditorSettingsWindowUVE();
     EditorSettingsWindowUVE(const EditorSettingsWindowUVE&) = delete;
     EditorSettingsWindowUVE& operator=(const EditorSettingsWindowUVE&) = delete;
@@ -76,6 +77,7 @@ private:
     EditorUVE& m_editor;
     EditorHostUVE& m_host;
     bool& m_visible;
+    bool* m_focusPending = nullptr;
     std::function<SourceUVE()> m_sourceOf;
     SourceUVE m_source;
     int m_window = 0;

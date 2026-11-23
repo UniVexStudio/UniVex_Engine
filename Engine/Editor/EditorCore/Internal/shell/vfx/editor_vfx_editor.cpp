@@ -273,7 +273,6 @@ void EditorVfxEditorUVE::RequestCloseUVE() {
 prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildUVE() {
     auto window = prism::vbox();
     window->add(BuildTitleBarUVE());
-    window->add(BuildToolbarUVE());
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     columns->add(BuildLeftColumnUVE(), prism::Splitter::Pane{395.0F, 330.0F, 640.0F, false});
@@ -343,6 +342,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
 
     EditorHeaderDescUVE desc;
     desc.documentTab = m_tab;
+    desc.toolbarRow = BuildToolbarUVE();
     desc.onClose = [this] { RequestCloseUVE(); };
     desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;
@@ -479,10 +479,10 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildLeftColumnUVE() {
     previewHeaderRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
 
     m_previewStateBadge = prism::make<prism::Label>("STOPPED", prism::FontRole::Small);
-    m_previewStateBadge->setColor(prism::Color(168, 178, 194));
+    m_previewStateBadge->setColor(prism::ThemeColor(&prism::Theme::textDim));
     m_previewStatePill = prism::make<prism::Border>();
-    m_previewStatePill->setBackground(prism::Color(36, 40, 48));
-    m_previewStatePill->setBorder(prism::Color(68, 76, 90), prism::Margin(1.0F));
+    m_previewStatePill->setBackground(prism::ThemeColor(&prism::Theme::control));
+    m_previewStatePill->setBorder(prism::ThemeColor(&prism::Theme::borderStrong), prism::Margin(1.0F));
     m_previewStatePill->setPadding(prism::Margin(6.0F, 1.0F, 6.0F, 1.0F));
     m_previewStatePill->setRadius(3.0F);
     m_previewStatePill->setChild(m_previewStateBadge);
@@ -502,10 +502,10 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildLeftColumnUVE() {
     m_viewport->onInput = [](const prism::EngineInput&) {};
 
     m_statsOverlayLabel = prism::make<prism::Label>("", prism::FontRole::Mono);
-    m_statsOverlayLabel->setColor(prism::Color(225, 232, 245));
+    m_statsOverlayLabel->setColor(prism::ThemeColor(&prism::Theme::textBright));
     auto statsCard = prism::make<prism::Border>();
-    statsCard->setBackground(prism::Color(16, 18, 22, 196));
-    statsCard->setBorder(prism::Color(58, 66, 78, 190), prism::Margin(1.0F));
+    statsCard->setBackground(prism::theme().popup.withAlpha(205));
+    statsCard->setBorder(prism::ThemeColor(&prism::Theme::borderStrong), prism::Margin(1.0F));
     statsCard->setPadding(prism::Margin(8.0F, 5.0F, 8.0F, 5.0F));
     statsCard->setRadius(3.0F);
     statsCard->setChild(m_statsOverlayLabel);
@@ -574,7 +574,7 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildLeftColumnUVE() {
     transportRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
 
     m_timecodeLabel = prism::make<prism::Label>("0.00 / 0.00s", prism::FontRole::Mono);
-    m_timecodeLabel->setColor(prism::Color(208, 218, 232));
+    m_timecodeLabel->setColor(prism::ThemeColor(&prism::Theme::text));
     transportRow->add(m_timecodeLabel, CentreSlotUVE());
 
     auto transportBar = prism::make<prism::Border>();
@@ -862,8 +862,11 @@ void EditorVfxEditorUVE::RebuildEmittersListUVE() {
         const bool solo = (session->soloEmitter.has_value() && *session->soloEmitter == i);
 
         auto card = prism::make<prism::Border>();
-        card->setBackground(selected ? prism::Color(44, 62, 88) : prism::Color(30, 32, 37));
-        card->setBorder(selected ? prism::theme().highlight : prism::theme().border, prism::Margin(1.0F));
+        card->setBackground(selected ? prism::ThemeColor(&prism::Theme::rowSelected)
+                                     : prism::ThemeColor(&prism::Theme::panel));
+        card->setBorder(selected ? prism::ThemeColor(&prism::Theme::highlight)
+                                 : prism::ThemeColor(&prism::Theme::border),
+                        prism::Margin(1.0F));
         card->setPadding(prism::Margin(6.0F, 4.0F, 6.0F, 4.0F));
 
         auto col = prism::vbox(3.0F);
@@ -1062,8 +1065,8 @@ void EditorVfxEditorUVE::RebuildParametersListUVE() {
     for (std::size_t i = 0U; i < session->system.parameters.size(); ++i) {
         const Asset::ParticleUserParameterUVE& param = session->system.parameters[i];
         auto card = prism::make<prism::Border>();
-        card->setBackground(prism::Color(30, 32, 37));
-        card->setBorder(prism::theme().border, prism::Margin(1.0F));
+        card->setBackground(prism::ThemeColor(&prism::Theme::panel));
+        card->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(1.0F));
         card->setPadding(prism::Margin(6.0F, 4.0F, 6.0F, 4.0F));
 
         auto col = prism::vbox(3.0F);
@@ -1309,16 +1312,16 @@ void EditorVfxEditorUVE::RebuildCompileTableUVE() {
             }
         }
         std::string summary;
-        prism::Color summaryColor(126, 200, 146);
+        prism::ThemeColor summaryColor(&prism::Theme::success);
         if (errorCount > 0U) {
             summary = std::to_string(errorCount) + (errorCount == 1U ? " error" : " errors");
             if (warnCount > 0U) {
                 summary += ", " + std::to_string(warnCount) + (warnCount == 1U ? " warning" : " warnings");
             }
-            summaryColor = prism::Color(240, 114, 114);
+            summaryColor = prism::ThemeColor(&prism::Theme::error);
         } else if (warnCount > 0U) {
             summary = std::to_string(warnCount) + (warnCount == 1U ? " warning" : " warnings");
-            summaryColor = prism::Color(238, 194, 96);
+            summaryColor = prism::ThemeColor(&prism::Theme::warning);
         } else {
             summary = "Ready (0 issues)";
         }
@@ -1356,21 +1359,22 @@ void EditorVfxEditorUVE::RefreshUVE() {
                                            : (session->playhead > 1.0e-4 ? kPreviewStatePausedUVE : kPreviewStateStoppedUVE);
         if (nextState != m_shownPreviewState) {
             m_shownPreviewState = nextState;
+            const prism::Theme& t = prism::theme();
             if (nextState == kPreviewStatePlayingUVE) {
                 m_previewStateBadge->setText("PLAYING");
-                m_previewStateBadge->setColor(prism::Color(154, 240, 178));
-                m_previewStatePill->setBackground(prism::Color(26, 56, 38));
-                m_previewStatePill->setBorder(prism::Color(62, 146, 90), prism::Margin(1.0F));
+                m_previewStateBadge->setColor(prism::ThemeColor(&prism::Theme::success));
+                m_previewStatePill->setBackground(t.panel.mix(t.success, 0.18F));
+                m_previewStatePill->setBorder(t.success.withAlpha(165), prism::Margin(1.0F));
             } else if (nextState == kPreviewStatePausedUVE) {
                 m_previewStateBadge->setText("PAUSED");
-                m_previewStateBadge->setColor(prism::Color(246, 206, 122));
-                m_previewStatePill->setBackground(prism::Color(62, 48, 22));
-                m_previewStatePill->setBorder(prism::Color(156, 118, 44), prism::Margin(1.0F));
+                m_previewStateBadge->setColor(prism::ThemeColor(&prism::Theme::warning));
+                m_previewStatePill->setBackground(t.panel.mix(t.warning, 0.18F));
+                m_previewStatePill->setBorder(t.warning.withAlpha(165), prism::Margin(1.0F));
             } else {
                 m_previewStateBadge->setText("STOPPED");
-                m_previewStateBadge->setColor(prism::Color(168, 178, 194));
-                m_previewStatePill->setBackground(prism::Color(36, 40, 48));
-                m_previewStatePill->setBorder(prism::Color(68, 76, 90), prism::Margin(1.0F));
+                m_previewStateBadge->setColor(prism::ThemeColor(&prism::Theme::textDim));
+                m_previewStatePill->setBackground(prism::ThemeColor(&prism::Theme::control));
+                m_previewStatePill->setBorder(prism::ThemeColor(&prism::Theme::borderStrong), prism::Margin(1.0F));
             }
         }
     }

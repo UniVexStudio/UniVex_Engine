@@ -103,7 +103,8 @@ EditorShellUVE::EditorShellUVE(EditorUVE& editor)
                               };
                               source.note = [] { return std::string("Changes apply at once and are kept with your editor session."); };
                               return source;
-                          }),
+                          },
+                          &editor.m_preferencesWindow.focusPending),
       m_projectSettingsWindow(editor, m_host, editor.m_projectSettingsWindow.visible,
                               [&editor] {
                                   Config::SettingsDocumentUVE& project = editor.m_services->GetProjectSettingsUVE();
@@ -121,7 +122,8 @@ EditorShellUVE::EditorShellUVE(EditorUVE& editor)
                                   source.dirty = [&project] { return project.IsDirtyUVE(); };
                                   source.save = [&editor] { return editor.SaveProjectSettingsUVE(); };
                                   return source;
-                              }),
+                              },
+                              &editor.m_projectSettingsWindow.focusPending),
       m_shortcutsWindow(editor, m_host), m_inputMapWindow(editor, m_host), m_captureWindow(editor, m_host), m_audioMixerWindow(editor, m_host), m_montageEditor(editor, m_host), m_vfxEditor(editor, m_host), m_retargetEditor(editor, m_host), m_animationLibraryEditor(editor, m_host), m_assetTable(editor), m_details2(editor), m_dockPanels(editor),
       m_viewToolbar(editor) {
     m_entityEditor.onBrowse = [this](const std::filesystem::path& path) {
@@ -211,7 +213,6 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     //   #16 dock bar: Asset Table, Output Log, Console, Profiler ...
     auto window = prism::vbox();
     window->add(BuildTitleBarUVE());
-    window->add(BuildToolbarRowUVE());
     window->add(m_viewToolbar.BuildUVE());
 
     const bool singleSurface = m_host.AppUVE().platform().singleSurface();
@@ -359,6 +360,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
 
     EditorHeaderDescUVE desc;
     desc.documentTab = viewportTab;
+    desc.toolbarRow = BuildToolbarRowUVE();
     desc.onClose = [] { prism::Application::get().quit(); };
     desc.mainWindow = true;
     desc.outTitleRow = &m_titleBarRow;
@@ -395,10 +397,18 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
         }, prism::Icon::Frame));
         items.push_back(prism::MenuItem::Item("Reset Panel Layout", [this] { ApplyLayoutPresetUVE(0); }));
         items.push_back(prism::MenuItem::Sep());
-        items.push_back(prism::MenuItem::Check("Network Capture", m_editor.m_showCaptureWindow,
-                                               [this] { m_editor.m_showCaptureWindow = !m_editor.m_showCaptureWindow; }));
-        items.push_back(prism::MenuItem::Check("Audio Mixer", m_editor.m_showAudioMixerWindow,
-                                               [this] { m_editor.m_showAudioMixerWindow = !m_editor.m_showAudioMixerWindow; }));
+        items.push_back(prism::MenuItem::Check("Network Capture", m_editor.m_showCaptureWindow, [this] {
+            m_editor.m_showCaptureWindow = !m_editor.m_showCaptureWindow;
+            if (m_editor.m_showCaptureWindow) {
+                m_editor.m_captureFocusPending = true;
+            }
+        }));
+        items.push_back(prism::MenuItem::Check("Audio Mixer", m_editor.m_showAudioMixerWindow, [this] {
+            m_editor.m_showAudioMixerWindow = !m_editor.m_showAudioMixerWindow;
+            if (m_editor.m_showAudioMixerWindow) {
+                m_editor.m_audioMixerFocusPending = true;
+            }
+        }));
         items.push_back(prism::MenuItem::Check("Bottom Dock", m_dockVisible, [this] {
             ShowDockPanelUVE(m_dockPages ? m_dockPages->activeIndex() : 0, false);
         }));
@@ -680,7 +690,7 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildDockBarUVE() {
     for (std::size_t i = 0; i < kTabs.size(); ++i) {
         auto tab = prism::make<prism::Button>(kTabs[i].label, kTabs[i].icon, prism::ButtonStyle::Toolbar);
         tab->setCheckable(true);
-        tab->setChecked(i == 0);
+        tab->setChecked(m_dockVisible && i == 0);
         tab->onClick = [this, index = static_cast<int>(i)] { ShowDockPanelUVE(index, false); };
         m_dockTabs.push_back(tab);
         bar->add(tab, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
@@ -1318,13 +1328,14 @@ void EditorShellUVE::FrameUVE() {
     }
     m_host.BeginFrameUVE();
 
+    const bool occludedByFullPage = m_host.HasOpaqueFullPageUVE();
     std::vector<EditorHostUVE::ViewImageUVE> views;
-    if (entityEditorFocused && m_lastView.texture != 0U) {
+    if (occludedByFullPage || (entityEditorFocused && m_lastView.texture != 0U)) {
         renderView = false;
     }
-    if (!renderView && !m_startupCovered && m_viewport && m_viewport->visible() && m_lastView.texture != 0U) {
+    if (!occludedByFullPage && !renderView && !m_startupCovered && m_viewport && m_viewport->visible() && m_lastView.texture != 0U) {
         views.push_back(m_lastView); // the last frame again, between warm-up frames
-    } else if (renderView && m_viewport && m_viewport->visible() && m_editor.m_viewports.level) {
+    } else if (!occludedByFullPage && renderView && m_viewport && m_viewport->visible() && m_editor.m_viewports.level) {
         const prism::Rect rect = m_viewport->rect();
         if (rect.w >= 1.0F && rect.h >= 1.0F) {
             EditorUVE::ViewportOverlayStateUVE& state = m_editor.m_viewportOverlayState;
@@ -1352,8 +1363,14 @@ void EditorShellUVE::FrameUVE() {
                                           ? std::clamp(state.resolvedRenderScale, 0.5F, 1.0F)
                                           : (compactSurface ? 0.80F : 1.0F);
             const float effectiveScale = dpiScale * renderScale;
-            const float renderW = std::max(1.0F, std::floor(rect.w * effectiveScale));
-            const float renderH = std::max(1.0F, std::floor(rect.h * effectiveScale));
+            float renderW = std::max(1.0F, std::floor(rect.w * effectiveScale));
+            float renderH = std::max(1.0F, std::floor(rect.h * effectiveScale));
+            if (prism::Splitter::anyDragging() && m_lastView.usedWidth >= 1.0F && m_lastView.usedHeight >= 1.0F) {
+                // Hold FBO dimensions steady while a panel splitter is being dragged so resizing stays
+                // smooth with zero framebuffer reallocation mid-drag; snaps cleanly on release.
+                renderW = m_lastView.usedWidth;
+                renderH = m_lastView.usedHeight;
+            }
             if (renderScale < 0.999F) {
                 state.input.imageOrigin = Math::Vector2UVE{state.input.imageOrigin.x * renderScale,
                                                            state.input.imageOrigin.y * renderScale};
@@ -1390,8 +1407,10 @@ void EditorShellUVE::FrameUVE() {
             }
         }
     }
-    AppendCameraScreenUVE(m_editor, m_details2, m_cameraScreen.get(), views);
-    m_host.RenderUVE(views);
+    if (!occludedByFullPage) {
+        AppendCameraScreenUVE(m_editor, m_details2, m_cameraScreen.get(), views);
+        m_host.RenderUVE(views);
+    }
     {
         const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
         m_entityEditor.RenderUVE();

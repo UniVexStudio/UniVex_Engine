@@ -648,6 +648,13 @@ bool AssetBrowser::onMouseDown(const MouseEvent& e) {
     Rect contentRect{gridLeftX, tileAreaY, m_rect.right() - gridLeftX - 8.0f, std::max(0.0f, m_rect.bottom() - statusH - tileAreaY)};
 
     int idx = tileAt(e.pos, contentRect);
+    if (contentRect.contains(e.pos) && Application::exists() && Application::get().platform().singleSurface()) {
+      m_touchScrolling = true;
+      m_touchLastY = e.pos.y;
+      m_pressPos = e.pos;
+    } else {
+      m_touchScrolling = false;
+    }
     if (idx >= 0) {
       m_selectedIdx = idx;
       m_pressIdx = idx;
@@ -655,6 +662,9 @@ bool AssetBrowser::onMouseDown(const MouseEvent& e) {
       m_dragging = false;
       invalidate();
       if (onAssetSelected) onAssetSelected(m_assets[m_filteredIndices[size_t(idx)]]);
+      return true;
+    }
+    if (m_touchScrolling) {
       return true;
     }
   }
@@ -667,6 +677,21 @@ bool AssetBrowser::onMouseMove(const MouseEvent& e) {
   float tileAreaY = m_rect.y + navH + 34.0f;
   float gridLeftX = (m_showSourcesPanel ? m_rect.x + m_sourcesW + 8.0f : m_rect.x + 8.0f);
   Rect contentRect{gridLeftX, tileAreaY, m_rect.right() - gridLeftX - 8.0f, std::max(0.0f, m_rect.bottom() - statusH - tileAreaY)};
+
+  // Vertical touch-drag scrolling on singleSurface (mobile) before drag-drop takes over
+  if (m_touchScrolling && !m_dragging && std::abs(e.pos.y - m_pressPos.y) >= 6.0f) {
+    int cols = std::max(1, int(std::floor((contentRect.w + m_tileSpacing) / (m_tileW + m_tileSpacing))));
+    int rows = int(std::ceil(float(m_filteredIndices.size()) / float(cols)));
+    float totalH = float(rows) * (m_tileH + m_tileSpacing);
+    float maxScroll = std::max(0.0f, totalH - contentRect.h);
+    if (maxScroll > 0.0f) {
+      m_scrollY = std::clamp(m_scrollY - (e.pos.y - m_touchLastY), 0.0f, maxScroll);
+      m_touchLastY = e.pos.y;
+      m_pressIdx = -1;
+      invalidate();
+      return true;
+    }
+  }
 
   // Check Drag initiation
   if (m_pressIdx >= 0 && !m_dragging && (e.pos - m_pressPos).length() > 6.0f) {
@@ -715,9 +740,11 @@ bool AssetBrowser::onMouseMove(const MouseEvent& e) {
 }
 
 bool AssetBrowser::onMouseUp(const MouseEvent&) {
+  const bool wasScroll = m_touchScrolling;
   m_pressIdx = -1;
   m_dragging = false;
-  return false;
+  m_touchScrolling = false;
+  return wasScroll;
 }
 
 bool AssetBrowser::onMouseWheel(const MouseEvent& e) {

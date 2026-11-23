@@ -316,7 +316,6 @@ void EditorAnimationLibraryWindowUVE::SyncUVE() {
 prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildUVE() {
     auto window = prism::vbox();
     window->add(BuildTitleBarUVE());
-    window->add(BuildToolbarUVE());
     m_grid = prism::make<AnimationLibraryGridUVE>();
     m_grid->onActivated = [this](const std::size_t entry) { RenameUVE(entry); };
     m_grid->onContext = [this](const std::size_t entry, const prism::Vec2 at) { ShowEntryMenuUVE(entry, at); };
@@ -355,6 +354,7 @@ prism::Ref<prism::Widget> EditorAnimationLibraryWindowUVE::BuildTitleBarUVE() {
 
     EditorHeaderDescUVE desc;
     desc.documentTab = m_tab;
+    desc.toolbarRow = BuildToolbarUVE();
     desc.onClose = [this] { m_editor.CloseAnimationLibraryWindowUVE(); };
     desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;

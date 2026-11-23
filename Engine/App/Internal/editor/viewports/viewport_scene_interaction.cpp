@@ -580,8 +580,14 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, depthTexture);
     glUniform1i(m_hostDepthProgram->UniformLocation("uDepth"), 0);
-    glUniformMatrix4fv(m_hostDepthProgram->UniformLocation("uInvViewProj"), 1, GL_TRUE,
-                       &depth.inverseViewProjection.m[0][0]);
+    std::array<float, 16> invViewProjColMajor{};
+    for (std::size_t r = 0U; r < 4U; ++r) {
+        for (std::size_t col = 0U; col < 4U; ++col) {
+            invViewProjColMajor[col * 4U + r] = depth.inverseViewProjection.m[r][col];
+        }
+    }
+    glUniformMatrix4fv(m_hostDepthProgram->UniformLocation("uInvViewProj"), 1, GL_FALSE,
+                       invViewProjColMajor.data());
     const univex::math::Vec3 eye = m_camera.Eye();
     const univex::math::Vec3 forward = univex::math::Normalize(m_camera.Target() - eye);
     glUniform3f(m_hostDepthProgram->UniformLocation("uEye"), eye.x, eye.y, eye.z);

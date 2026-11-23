@@ -63,6 +63,8 @@ class Splitter : public Widget {
 public:
   struct Pane { float size = 200, minSize = 80, maxSize = 1e9f; bool flex = false; };
   explicit Splitter(Orientation o) : m_orient(o) {}
+  ~Splitter() override;
+  static bool anyDragging() noexcept;
   void add(Ref<Widget> w, Pane p);
   // Structure editing (used by docking): all keep the pane parameters in sync with the children.
   void insert(int index, Ref<Widget> w, Pane p);
@@ -82,12 +84,14 @@ public:
   Cursor cursor() const override;
 private:
   int handleAt(Vec2 p) const;
+  void endDrag();
   Orientation m_orient;
   std::vector<Pane> m_panes;
   std::vector<Widget*> m_kids;
   std::vector<Rect> m_handles;
-  int m_drag = -1, m_dragPane = -1;
-  float m_dragStart = 0, m_dragSize = 0, m_dragSign = 1;
+  int m_drag = -1, m_dragPane = -1, m_dragPaneB = -1;
+  float m_dragStart = 0, m_dragSize = 0, m_dragSizeB = 0, m_dragSign = 1;
+  bool m_draggingCounted = false;
 };
 
 // Shared vertical scrollbar behaviour (used by ScrollView and virtualised lists).

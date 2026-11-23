@@ -181,7 +181,7 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
 
     // 1. Ruler background & track dark studio canvas.
     c.fillRect(rulerRect, t.header);
-    c.fillRect(trackRect, prism::Color(19, 21, 25));
+    c.fillRect(trackRect, t.field);
     c.hline(m_rect.x, m_rect.right(), rulerRect.bottom() - 1.0F, t.border);
 
     // 2. Adaptive major & minor ticks across [0, duration], plus subtle vertical grid lines.
@@ -198,7 +198,7 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
         c.fillRect(prism::Rect{x, tickTop, 1.0F, rulerRect.bottom() - 1.0F - tickTop},
                    isMajor ? t.textDim : t.borderStrong);
         if (isMajor) {
-            c.fillRect(prism::Rect{x, trackRect.y, 1.0F, trackRect.h}, prism::Color(255, 255, 255, 13));
+            c.fillRect(prism::Rect{x, trackRect.y, 1.0F, trackRect.h}, t.borderSoft);
             const std::string label = FormatTickLabelUVE(s, majorStep);
             const float labelW = t.small->width(label) + 4.0F;
             const float labelX = std::clamp(x + 3.0F, m_rect.x + 3.0F, std::max(m_rect.x + 3.0F, m_rect.right() - labelW - 3.0F));
@@ -212,8 +212,8 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
     const float durationEndX = std::round(TimeToScreenXUVE(sysDuration));
     if (durationEndX < m_rect.right() - 1.0F) {
         c.fillRect(prism::Rect{durationEndX, trackRect.y, m_rect.right() - durationEndX, trackRect.h},
-                   prism::Color(0, 0, 0, 72));
-        c.fillRect(prism::Rect{durationEndX, trackRect.y, 1.0F, trackRect.h}, prism::Color(255, 255, 255, 42));
+                   t.window.withAlpha(110));
+        c.fillRect(prism::Rect{durationEndX, trackRect.y, 1.0F, trackRect.h}, t.borderStrong);
     }
 
     // 4. Warm-up shaded region [0, warmUpSeconds] when warmUpSeconds > 0.
@@ -222,12 +222,12 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
         const float warmW = std::max(0.0F, warmEndX - left);
         if (warmW > 1.0F) {
             const prism::Rect warmRect{left, trackRect.y + 2.0F, warmW, trackRect.h - 4.0F};
-            c.fillRoundRect(warmRect, 3.0F, prism::Color(235, 168, 64, 38));
-            c.fillRect(prism::Rect{warmRect.x, warmRect.y, warmRect.w, 2.0F}, prism::Color(245, 186, 78, 195));
-            c.strokeRoundRect(warmRect, 3.0F, prism::Color(235, 168, 64, 130), 1);
+            c.fillRoundRect(warmRect, 3.0F, t.warning.withAlpha(42));
+            c.fillRect(prism::Rect{warmRect.x, warmRect.y, warmRect.w, 2.0F}, t.warning.withAlpha(200));
+            c.strokeRoundRect(warmRect, 3.0F, t.warning.withAlpha(135), 1);
             if (warmW >= 46.0F) {
                 c.textIn(*t.small, prism::Rect{warmRect.x + 5.0F, warmRect.y + 3.0F, warmW - 10.0F, 14.0F},
-                         "Warm-Up", prism::Color(248, 204, 120), prism::HAlign::Left, true);
+                         "Warm-Up", t.warning, prism::HAlign::Left, true);
             }
         }
     }
@@ -236,14 +236,14 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
     const float railY = trackRect.bottom() - 13.0F;
     const float railH = 6.0F;
     const prism::Rect railRect{left, railY, usableW, railH};
-    c.fillRoundRect(railRect, 3.0F, prism::Color(35, 39, 47));
-    c.strokeRoundRect(railRect, 3.0F, prism::Color(56, 62, 74), 1);
+    c.fillRoundRect(railRect, 3.0F, t.control);
+    c.strokeRoundRect(railRect, 3.0F, t.border, 1);
 
     const float playheadX = std::round(TimeToScreenXUVE(session->playhead));
     const float fillW = std::clamp(playheadX - left, 0.0F, usableW);
     if (fillW > 1.0F) {
         const prism::Color fillColor =
-            session->playing ? prism::Color(66, 168, 255, 220) : prism::Color(104, 136, 178, 185);
+            session->playing ? t.info.withAlpha(220) : t.highlight.withAlpha(185);
         c.fillRoundRect(prism::Rect{left, railY, fillW, railH}, 3.0F, fillColor);
     }
 
@@ -261,13 +261,10 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
             }
             const double burstTime = std::clamp(static_cast<double>(ReadBurstTimeInputUVE(mod)), 0.0, duration);
             const float bx = std::round(TimeToScreenXUVE(burstTime));
-            const prism::Color stemColor =
-                isSelectedEmitter ? prism::Color(90, 200, 250, 120) : prism::Color(140, 165, 195, 80);
+            const prism::Color markerColor = isSelectedEmitter ? t.info : t.textDim;
             c.fillRect(prism::Rect{bx, markerCenterY + 5.0F, 1.0F, std::max(0.0F, railY - (markerCenterY + 5.0F))},
-                       stemColor);
-            DrawTimelineKeyUVE(c, prism::Vec2{bx, markerCenterY}, 5.0F,
-                               isSelectedEmitter ? prism::Color(90, 200, 250) : prism::Color(140, 165, 195),
-                               isSelectedEmitter);
+                       markerColor.withAlpha(isSelectedEmitter ? 130 : 85));
+            DrawTimelineKeyUVE(c, prism::Vec2{bx, markerCenterY}, 5.0F, markerColor, isSelectedEmitter);
         }
     }
 
@@ -275,14 +272,14 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
     if (m_hoverValid && !m_scrubbing) {
         const float hx = std::round(TimeToScreenXUVE(m_hoverTime));
         if (std::abs(hx - playheadX) > 2.0F) {
-            c.fillRect(prism::Rect{hx, rulerRect.y, 1.0F, m_rect.h}, prism::Color(255, 255, 255, 58));
+            c.fillRect(prism::Rect{hx, rulerRect.y, 1.0F, m_rect.h}, t.text.withAlpha(64));
         }
     }
 
     // 8. High-contrast playhead needle, rail knot, and clamped ruler time pill.
     const prism::Color headColor = TimelinePlayheadColorUVE();
     c.fillRect(prism::Rect{playheadX, rulerRect.bottom() - 3.0F, 2.0F, trackRect.h + 3.0F}, headColor);
-    c.fillCircle(prism::Vec2{playheadX + 0.5F, railY + railH * 0.5F}, 4.5F, prism::Color(255, 255, 255));
+    c.fillCircle(prism::Vec2{playheadX + 0.5F, railY + railH * 0.5F}, 4.5F, t.textBright);
     c.fillCircle(prism::Vec2{playheadX + 0.5F, railY + railH * 0.5F}, 3.0F, headColor);
 
     const std::string timeLabel = FormatSecondsShortUVE(session->playhead);
@@ -297,7 +294,7 @@ void VfxTimelineWidgetUVE::paint(prism::Canvas& c) {
         {playheadX + 0.5F, tagRect.bottom() + 4.0F},
     };
     c.fillPolygon(pointer, headColor);
-    c.textIn(*t.small, tagRect, timeLabel, prism::Color(255, 255, 255), prism::HAlign::Center, false);
+    c.textIn(*t.small, tagRect, timeLabel, t.textBright, prism::HAlign::Center, false);
 
     c.popClip();
     c.strokeRect(m_rect, t.border, 1);

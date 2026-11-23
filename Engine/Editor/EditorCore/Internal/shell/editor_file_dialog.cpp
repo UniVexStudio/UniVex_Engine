@@ -80,6 +80,41 @@ constexpr int kHeightUVE = 600;
     if (!content.empty() && content.has_parent_path() && content.parent_path() != content) {
         places.emplace_back("Project", content.parent_path());
     }
+#if defined(__ANDROID__)
+    const auto addPlace = [&](const std::string& label, const std::filesystem::path& path) {
+        if (!path.empty() && std::filesystem::is_directory(path, error)) {
+            places.emplace_back(label, path);
+        }
+    };
+    const char* const pubStorage = std::getenv("UNIVEX_ANDROID_PUBLIC_STORAGE");
+    const std::filesystem::path storageRoot =
+        (pubStorage != nullptr && *pubStorage != '\0') ? std::filesystem::path{pubStorage}
+                                                       : std::filesystem::path{"/storage/emulated/0"};
+    addPlace("Storage", storageRoot);
+    if (const char* const pubDocs = std::getenv("UNIVEX_ANDROID_PUBLIC_DOCS"); pubDocs != nullptr && *pubDocs != '\0') {
+        addPlace("Documents", std::filesystem::path{pubDocs});
+    } else {
+        addPlace("Documents", storageRoot / "Documents");
+    }
+    addPlace("Downloads", storageRoot / "Download");
+    addPlace("Pictures", storageRoot / "Pictures");
+    if (const char* const appDocs = std::getenv("UNIVEX_ANDROID_APP_EXT_DOCS"); appDocs != nullptr && *appDocs != '\0') {
+        addPlace("App Files", std::filesystem::path{appDocs});
+    }
+    std::filesystem::directory_iterator storageIt(
+        "/storage", std::filesystem::directory_options::skip_permission_denied, error);
+    if (!error) {
+        for (const std::filesystem::directory_entry& entry : storageIt) {
+            const std::string vol = entry.path().filename().string();
+            if (vol.empty() || vol == "self" || vol == "emulated" || vol.front() == '.') {
+                continue;
+            }
+            if (entry.is_directory(error)) {
+                places.emplace_back("SD: " + vol, entry.path());
+            }
+        }
+    }
+#else
 #if defined(_WIN32)
     const char* home = std::getenv("USERPROFILE");
 #else
@@ -103,6 +138,7 @@ constexpr int kHeightUVE = 600;
     }
 #else
     places.emplace_back("Computer", std::filesystem::path{"/"});
+#endif
 #endif
     return places;
 }
@@ -187,22 +223,9 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
     const bool save = m_request.mode == FilePickerModeUVE::Save;
     auto window = prism::vbox();
 
-    // Title bar: what is being picked, the drag strip, the window buttons.
-    auto title = prism::hbox(6.0F);
-    title->setPadding(prism::Margin(10.0F, 0.0F, 0.0F, 0.0F));
-    auto titleText = prism::make<prism::Label>(m_request.title.empty() ? std::string("Open File") : m_request.title);
-    titleText->setColor(prism::ThemeColor(&prism::Theme::textBright));
-    title->add(titleText, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    title->add(prism::make<DragStripUVE>(), prism::Slot{1.0F});
-    AddWindowButtonsUVE(*title, [this] { CancelUVE(); });
-    auto titleBox = prism::make<prism::SizeBox>();
-    titleBox->setHeightOverride(kTitleRowUVE + 4.0F);
-    titleBox->setContent(title);
-    auto titleBar = prism::make<prism::Border>();
-    titleBar->setBackground(prism::ThemeColor(&prism::Theme::header));
-    titleBar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-    titleBar->setChild(titleBox);
-    window->add(titleBar);
+    // Title bar: shared PRISM tool window chrome with icon, DragStrip, Floating/Full toggle, and Close.
+    window->add(BuildToolWindowTitleBarUVE(m_request.title.empty() ? std::string("Open File") : m_request.title,
+                                           prism::Icon::FolderOpen, [this] { CancelUVE(); }));
 
     // Navigation: up, the path (type one and press Enter), search.
     auto nav = prism::hbox(4.0F);
