@@ -7,6 +7,7 @@
 
 #include "collider_component.h"
 #include "quaternion.h"
+#include "ragdoll_solver.h"
 #include "vector3.h"
 
 namespace UVE::Physics {
@@ -60,26 +61,6 @@ struct ColliderDebugBuildResultUVE final {
 };
 
 /// World-space wireframe of one collider.
-///
-/// `worldCenter`, `worldRotation` and `worldScale` are the entity's world transform. The scale is
-/// applied exactly as the simulation applies it - both go through `ScaleColliderUVE` - so the
-/// wireframe is the shape things are really colliding against. That matters more than it sounds:
-/// the previous convention ignored scale, so an object scaled up four times drew a wireframe a
-/// quarter of its collider, and a floor scaled 500x looked like it had no collider at all.
-///
-/// Shape by shape, all in the collider's own local frame before `worldRotation` is applied:
-///  * Box       - 12 edges of the authored half extents.
-///  * Sphere    - 3 great circles, XY / XZ / YZ.
-///  * Capsule   - a ring at each end of the barrel, 4 barrel lines, and a semicircle fan over each
-///                cap in two orthogonal planes. The barrel's half length is
-///                `height * 0.5 - radius`, clamped at zero, so a "capsule" shorter than its own
-///                diameter is drawn as the sphere it actually is rather than as an inside-out ring.
-///  * Cylinder  - a ring at each end and 4 barrel lines. Its ends are drawn flat, which is a
-///                cylinder's only difference from a capsule at this level of detail.
-///
-/// Refused (zero lines, `truncated` false) for a non-finite centre or rotation, a collider that
-/// fails `IsColliderComponentValidUVE`, or a buffer that is empty. Nothing here allocates, and the
-/// same input always produces the same lines in the same order.
 [[nodiscard]] ColliderDebugBuildResultUVE BuildColliderDebugLinesUVE(
     const Scene::ColliderComponentUVE& collider, const Math::Vector3UVE& worldCenter,
     const Math::QuaternionUVE& worldRotation, std::span<ColliderDebugLineUVE> outLines,
@@ -87,13 +68,25 @@ struct ColliderDebugBuildResultUVE final {
     const Math::Vector3UVE& worldScale = Math::Vector3UVE{1.0F, 1.0F, 1.0F}) noexcept;
 
 /// The 12 edges of an oriented box, as its own entry point.
-///
-/// Exposed because it is the one shape with no tessellation and no ambiguity, which makes it the
-/// useful thing to test the transform path against - and because an AABB drawn from a broadphase
-/// entry is the same 12 edges.
 void BuildOrientedBoxDebugLinesUVE(const Math::Vector3UVE& center, const Math::Vector3UVE& halfExtents,
                                    const Math::QuaternionUVE& rotation,
                                    std::span<ColliderDebugLineUVE> outLines,
                                    ColliderDebugBuildResultUVE& outResult) noexcept;
+
+/// Options controlling which parts of a ragdoll solver are emitted as viewport debug wireframes.
+struct RagdollDebugDrawOptionsUVE final {
+    ColliderDebugStyleUVE style{16U, false};
+    bool drawBodies = true;
+    bool drawJointCones = true;
+    float jointConeLength = 0.14F;
+
+    [[nodiscard]] bool operator==(const RagdollDebugDrawOptionsUVE&) const noexcept = default;
+};
+
+/// Emits world-space wireframe lines for every body capsule and (when enabled) every joint's
+/// elliptical swing limit cone and hinge twist arc fan. Zero heap allocation, deterministic.
+[[nodiscard]] ColliderDebugBuildResultUVE BuildRagdollDebugLinesUVE(
+    const RagdollSolverUVE& solver, std::span<ColliderDebugLineUVE> outLines,
+    const RagdollDebugDrawOptionsUVE& options = {}) noexcept;
 
 } // namespace UVE::Physics

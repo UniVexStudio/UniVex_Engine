@@ -293,14 +293,14 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildProjectsPageUVE() {
     auto open = prism::make<prism::Button>("Open", prism::Icon::Open);
     open->onClick = [this] { OpenProjectUVE(m_openPath->text()); };
     openRow->add(open);
-    if (!m_context.compactLayout) {
-        auto browse = prism::make<prism::Button>("Open project folder", prism::Icon::FolderOpen);
-        browse->onClick = [this] {
-            ShowFolderPickerUVE("Open a project folder", m_settings.defaultProjectLocation,
-                                [this](const std::filesystem::path& folder) { OpenProjectFolderUVE(folder); });
-        };
-        openRow->add(browse);
-    }
+    auto browse = prism::make<prism::Button>(m_context.compactLayout ? "Folder" : "Open project folder",
+                                             prism::Icon::FolderOpen);
+    browse->setTooltip("Browse for a project folder");
+    browse->onClick = [this] {
+        ShowFolderPickerUVE("Open a project folder", m_settings.defaultProjectLocation,
+                            [this](const std::filesystem::path& folder) { OpenProjectFolderUVE(folder); });
+    };
+    openRow->add(browse);
     page->add(openRow);
 
     m_projectRows = prism::vbox(kRowSpacingUVE);

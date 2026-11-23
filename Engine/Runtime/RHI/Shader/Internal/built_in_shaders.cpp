@@ -2062,6 +2062,7 @@ uniform mat4 uNormalMatrix;
 uniform mat4 uViewProjection;
 uniform mat4 uLightSpaceMatrix;
 uniform mat4 uLightSpaceMatrices[3];
+uniform int uShadowCascadeCount;
 uniform float uShadowMapResolution;
 
 void main() {
@@ -2099,10 +2100,18 @@ void main() {
     vLightSpacePosition = uLightSpaceMatrix * worldPosition;
     // Slope-scaled normal offset: surfaces facing the light shift minimally to keep contact
     // shadows grounded without peter-panning, while grazing angles shift by ~1.35 texels to
-    // prevent self-shadowing acne.
-    float worldNormalLen = length(vWorldNormal);
-    vec3 offsetNormal = worldNormalLen > 1.0e-5 ? (vWorldNormal / worldNormalLen) : vec3(0.0, 1.0, 0.0);
+    // prevent self-shadowing acne. Skip unused cascades when uShadowCascadeCount < 3.
+    int activeCascades = clamp(uShadowCascadeCount, 0, 3);
+    vec3 offsetNormal = vec3(0.0, 1.0, 0.0);
+    if (activeCascades > 0) {
+        float worldNormalLen = length(vWorldNormal);
+        offsetNormal = worldNormalLen > 1.0e-5 ? (vWorldNormal / worldNormalLen) : vec3(0.0, 1.0, 0.0);
+    }
     for (int cascadeIndex = 0; cascadeIndex < 3; ++cascadeIndex) {
+        if (cascadeIndex >= activeCascades) {
+            vLightSpacePositions[cascadeIndex] = vec4(0.0);
+            continue;
+        }
         mat4 lightMatrix = uLightSpaceMatrices[cascadeIndex];
         float texelWorld = 0.0;
         float scale = length(vec3(lightMatrix[0][0], lightMatrix[1][0], lightMatrix[2][0]));
@@ -2739,6 +2748,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         float sinA = sin(angle);
         mat2 rotation = mat2(cosA, sinA, -sinA, cosA);
         float radius = 2.0;
+#if !defined(UVE_MOBILE)
         if (filterMode == 2) {
             mat4 lightMat = cascadeIndex < 0 ? uLightSpaceMatrix : uLightSpaceMatrices[clamp(cascadeIndex, 0, 2)];
             float xyScale = length(vec3(lightMat[0][0], lightMat[1][0], lightMat[2][0]));
@@ -2762,7 +2772,13 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
                 radius = 1.5;
             }
         }
-        for (int i = 0; i < 16; ++i) {
+#endif
+#if defined(UVE_MOBILE)
+        int tapStep = filterMode >= 2 ? 2 : 4;
+#else
+        int tapStep = 1;
+#endif
+        for (int i = 0; i < 16; i += tapStep) {
             vec2 offset = kVogelDisk16UVE[i];
             vec2 sampleCoord = projected.xy + rotation * offset * texelSize * radius;
             float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, sampleCoord).r
@@ -3132,6 +3148,9 @@ vec3 SampleTriplanarNormalUVE(sampler2D normalMap, UvSetUVE set, float normalSca
 // One map read its own way: its UV set, tiling and offset, then the channel, invert and strength
 // (strength 0 is `neutral`: what the material looks like without the map).
 vec4 ReadMapUVE(sampler2D map, UvSetUVE uv1, UvSetUVE uv2, vec4 transform, vec4 control, vec4 neutral) {
+    if (control.z >= 0.999) {
+        return neutral;
+    }
     UvSetUVE set = uv1;
     if (control.w > 0.5) {
         set = uv2;
@@ -3182,23 +3201,25 @@ void main() {
         geometricNormal = vec3(0.0, 0.0, 1.0);
     }
     vec3 normal = geometricNormal;
-    if (uv1.triplanar != 0) {
-        normal = SampleTriplanarNormalUVE(uNormalTexture, uv1, uNormalScale, uNormalFlipGreen);
-    } else {
-        vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
-        if (dot(tangent, tangent) <= 0.00000001) {
-            vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-            tangent = cross(fallbackAxis, normal);
+    if (uNormalMapControl.z < 0.999) {
+        if (uv1.triplanar != 0) {
+            normal = SampleTriplanarNormalUVE(uNormalTexture, uv1, uNormalScale, uNormalFlipGreen);
+        } else {
+            vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
+            if (dot(tangent, tangent) <= 0.00000001) {
+                vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+                tangent = cross(fallbackAxis, normal);
+            }
+            tangent = SafeNormalizeUVE(tangent);
+            vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
+            bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
+            vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+            if (uNormalFlipGreen != 0) {
+                tangentSpaceNormal.y = -tangentSpaceNormal.y;
+            }
+            tangentSpaceNormal.xy *= uNormalScale;
+            normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
         }
-        tangent = SafeNormalizeUVE(tangent);
-        vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent));
-        bitangent *= vTangentHandedness < 0.0 ? -1.0 : 1.0;
-        vec3 tangentSpaceNormal = ReadMapUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
-        if (uNormalFlipGreen != 0) {
-            tangentSpaceNormal.y = -tangentSpaceNormal.y;
-        }
-        tangentSpaceNormal.xy *= uNormalScale;
-        normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tangentSpaceNormal);
     }
 
     if (uShadingMode == 4) {
@@ -3366,7 +3387,7 @@ void main() {
     } else
 #endif
     {
-        int activeLightCount = uActiveLightCount > 0 ? min(uActiveLightCount, 16) : 16;
+        int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, 16) : 16);
         for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
             LightUVE light = uLights[lightIndex];
             if (light.intensity <= 0.0) {

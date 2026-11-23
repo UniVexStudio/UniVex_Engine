@@ -234,7 +234,6 @@ void EditorEntityEditorUVE::RequestCloseUVE() {
 prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
     auto window = prism::vbox();
     window->add(BuildTitleBarUVE());
-    window->add(BuildToolbarRowUVE());
     // Beside the gizmo settings: Blueprint - pick one of the entity's objects, open or make its class.
     m_blueprintButton = prism::make<prism::Button>("Blueprint", prism::Icon::BlueprintClass, prism::ButtonStyle::Toolbar);
     m_blueprintButton->setTooltip("Blueprint Class: open or create the Blueprint of one of this entity's objects");
@@ -415,6 +414,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildTitleBarUVE() {
 
     EditorHeaderDescUVE desc;
     desc.documentTab = m_tab;
+    desc.toolbarRow = BuildToolbarRowUVE();
     desc.onClose = [this] { RequestCloseUVE(); };
     desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;

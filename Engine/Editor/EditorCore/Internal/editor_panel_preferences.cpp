@@ -11,11 +11,13 @@ namespace UVE::Editor {
 void EditorUVE::OpenEditorPreferencesUVE() noexcept {
     m_preferencesWindow.visible = true;
     m_preferencesWindow.focusSearch = true;
+    m_preferencesWindow.focusPending = true;
 }
 
 void EditorUVE::OpenProjectSettingsUVE() noexcept {
     m_projectSettingsWindow.visible = true;
     m_projectSettingsWindow.focusSearch = true;
+    m_projectSettingsWindow.focusPending = true;
 }
 
 bool EditorUVE::SaveProjectSettingsUVE() {

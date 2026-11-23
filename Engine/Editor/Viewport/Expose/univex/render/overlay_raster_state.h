@@ -48,7 +48,7 @@ inline constexpr OverlayRasterState kGizmoStrokeState{true, false, OverlayDepthC
                                                       OverlayBlendMode::Alpha, OverlayCullMode::None};
 /// Infinite grid: tested against the scene, never occluding it, alpha-faded by the shader.
 inline constexpr OverlayRasterState kInfiniteGridState{true, false, OverlayDepthCompare::Less,
-                                                       OverlayBlendMode::Alpha, OverlayCullMode::Inherit};
+                                                       OverlayBlendMode::Alpha, OverlayCullMode::None};
 /// Studio backdrop sky: drawn at the far plane behind everything (LessOrEqual against a cleared
 /// depth of 1), opaque, never written.
 inline constexpr OverlayRasterState kStudioBackdropSkyState{true, false, OverlayDepthCompare::LessOrEqual,

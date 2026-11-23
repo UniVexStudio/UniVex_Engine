@@ -163,10 +163,10 @@ void ReleaseGestureButtonUVE(TouchGestureUVE& touch) {
     }
 }
 
-/// Cancels a held mouse button without firing a widget click or viewport selection at its press spot.
+/// Cancels a held mouse button without firing a widget click or viewport selection at its press spot,
+/// and without sending a bogus offscreen cursor move that would slam a captured Splitter or Slider.
 void CancelGestureButtonUVE(TouchGestureUVE& touch) {
     if (touch.button >= 0) {
-        Window::DispatchAndroidGlfwCursorUVE(kCancelOffscreenPosUVE, kCancelOffscreenPosUVE);
         Window::DispatchAndroidGlfwMouseButtonUVE(touch.button, false, kCancelOffscreenPosUVE, kCancelOffscreenPosUVE);
         touch.button = -1;
     }

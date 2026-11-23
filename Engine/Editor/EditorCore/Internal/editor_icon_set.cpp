@@ -42,8 +42,12 @@ std::span<const EditorIconSourceUVE> GetEditorIconSourcesUVE() noexcept {
 
 const EditorIconSourceUVE* FindEditorIconSourceUVE(const EditorIconGroupUVE group,
                                                    const std::string_view name) noexcept {
+    const std::string_view resolvedName =
+        (group == EditorIconGroupUVE::Object && EqualsIgnoringCaseUVE(name, "ragdoll_3d"))
+            ? std::string_view{"physical_bone_3d"}
+            : name;
     for (const EditorIconSourceUVE& source : kEditorIconSourcesUVE) {
-        if (source.group == group && EqualsIgnoringCaseUVE(source.name, name)) {
+        if (source.group == group && EqualsIgnoringCaseUVE(source.name, resolvedName)) {
             return &source;
         }
     }

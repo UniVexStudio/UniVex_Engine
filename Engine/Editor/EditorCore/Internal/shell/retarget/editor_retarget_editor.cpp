@@ -139,7 +139,6 @@ void EditorRetargetWindowUVE::SyncUVE() {
 prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
     auto window = prism::vbox();
     window->add(BuildTitleBarUVE());
-    window->add(BuildToolbarUVE());
 
     // Left: the animations, and the character's bones the humanoid has no place for.
     m_animations = prism::make<prism::TableView>();
@@ -328,6 +327,7 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildTitleBarUVE() {
 
     EditorHeaderDescUVE desc;
     desc.documentTab = m_tab;
+    desc.toolbarRow = BuildToolbarUVE();
     desc.onClose = [this] { m_editor.CloseRetargetWindowUVE(); };
     desc.menus.push_back({"File", [this] {
         std::vector<prism::MenuItem> items;

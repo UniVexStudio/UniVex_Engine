@@ -6,6 +6,7 @@
 #include "light_component.h"
 #include "directional_light_3d.h"
 #include "camera_component.h"
+#include "children_index.h"
 #include "transform_component.h"
 #include "world_transform_component.h"
 
@@ -453,6 +454,10 @@ void EditorViewportGizmosUVE::SyncUVE() {
     // Billboards for objects with no surface of their own, at their world position.
     m_billboards.clear();
     Scene::IEntityManagerUVE& em = m_editor.m_services->GetEntityManagerUVE();
+    Scene::ChildrenIndexUVE childrenIndex;
+    if (!m_gameWorkspace) {
+        childrenIndex.RebuildUVE(em);
+    }
     const std::function<void(Scene::EntityUVE)> visit = [&](const Scene::EntityUVE e) {
         const KindUVE kind = Scene::ResolveSceneObjectKindUVE(em, e);
         if (HasBillboardUVE(kind) && em.HasComponentUVE<Scene::WorldTransformComponentUVE>(e)) {
@@ -490,7 +495,7 @@ void EditorViewportGizmosUVE::SyncUVE() {
             }
             m_billboards.push_back(std::move(board));
         }
-        for (const Scene::EntityUVE child : m_editor.m_services->GetSceneGraphUVE().GetChildrenUVE(em, e)) {
+        for (const Scene::EntityUVE child : childrenIndex.GetChildrenUVE(e)) {
             visit(child);
         }
     };

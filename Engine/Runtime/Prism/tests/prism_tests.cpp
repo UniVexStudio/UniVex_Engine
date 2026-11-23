@@ -3324,6 +3324,113 @@ static void testRetinaGpuBatchAndFlingScroll(Application& app, TestPlatform& pla
   app.hostResize(600, 400);
 }
 
+static void testGhostTouchAndSmoothSplitterResize(Application& app, TestPlatform& plat) {
+  plat.single = false;
+  app.hostResize(600, 400);
+
+  // 1. Hidden StackSwitcher, Expander, ScrollBox and Splitter panes must never swallow pointer hits.
+  auto overlay = make<Overlay>();
+  int underlyingClicks = 0;
+  auto underlying = make<Button>("ViewportAction");
+  underlying->onClick = [&] { ++underlyingClicks; };
+  overlay->add(underlying);
+
+  auto hiddenStack = make<StackSwitcher>();
+  hiddenStack->addPage(make<Button>("GhostDock"));
+  hiddenStack->setVisible(false);
+  overlay->add(hiddenStack);
+
+  auto hiddenExpander = make<Expander>("GhostExpander", true);
+  hiddenExpander->setContent(make<Button>("GhostInner"));
+  hiddenExpander->setVisible(false);
+  overlay->add(hiddenExpander);
+
+  auto hiddenScroll = make<ScrollBox>();
+  hiddenScroll->setContent(make<Button>("GhostScroll"));
+  hiddenScroll->setVisible(false);
+  overlay->add(hiddenScroll);
+
+  app.setRoot(overlay);
+  app.tick();
+  app.render();
+
+  CHECK(hiddenStack->hitTest({100, 100}) == nullptr);
+  CHECK(hiddenExpander->hitTest({100, 100}) == nullptr);
+  CHECK(hiddenScroll->hitTest({100, 100}) == nullptr);
+  app.hostMouseButton({100, 100}, MouseButton::Left, true);
+  app.hostMouseButton({100, 100}, MouseButton::Left, false);
+  CHECK(underlyingClicks == 1);
+
+  // Hiding a captured widget must release capture so ghost drag never sticks.
+  auto transientBtn = make<Button>("Transient");
+  auto box = vbox();
+  box->add(transientBtn);
+  app.setRoot(box);
+  app.tick();
+  app.render();
+  app.captureMouse(transientBtn.get());
+  app.setFocus(transientBtn.get());
+  transientBtn->setVisible(false);
+  CHECK(app.focus() != transientBtn.get());
+
+  // 2. Splitter smooth 1:1 resize (adjacent non-flex panes + tight container without clamp UB) & anyDragging().
+  auto split = make<Splitter>(Orientation::Horizontal);
+  auto leftPane = make<Border>();
+  auto rightPane = make<Border>();
+  auto hiddenPane = make<Border>();
+  hiddenPane->setVisible(false);
+  split->add(leftPane, Splitter::Pane{200.0f, 100.0f, 450.0f, false});
+  split->add(rightPane, Splitter::Pane{300.0f, 100.0f, 450.0f, false});
+  split->add(hiddenPane, Splitter::Pane{120.0f, 80.0f, 300.0f, false});
+  app.setRoot(split);
+  app.hostResize(500, 300);
+  app.tick();
+  app.render();
+
+  const float startLeftW = leftPane->rect().w;
+  const float startRightW = rightPane->rect().w;
+  const float handleX = leftPane->rect().right() + 2.0f;
+  CHECK(!Splitter::anyDragging());
+  app.hostMouseButton({handleX, 150.0f}, MouseButton::Left, true);
+  CHECK(Splitter::anyDragging());
+  app.hostMouseMove({handleX + 40.0f, 150.0f});
+  CHECK(std::fabs((leftPane->rect().w - startLeftW) - 40.0f) < 2.0f);
+  CHECK(std::fabs((startRightW - rightPane->rect().w) - 40.0f) < 2.0f);
+  app.hostMouseButton({handleX + 40.0f, 150.0f}, MouseButton::Left, false);
+  CHECK(!Splitter::anyDragging());
+
+  // Tight container where min sizes exceed width must not crash or invert.
+  app.hostResize(120, 300);
+  app.tick();
+  app.render();
+  const float tightHandleX = leftPane->rect().right() + 2.0f;
+  app.hostMouseButton({tightHandleX, 150.0f}, MouseButton::Left, true);
+  app.hostMouseMove({tightHandleX + 20.0f, 150.0f});
+  app.hostMouseButton({tightHandleX + 20.0f, 150.0f}, MouseButton::Left, false);
+  CHECK(!Splitter::anyDragging());
+
+  // 3. Long ComboBox ListPopup clamps height inside viewport instead of overflowing off-screen.
+  app.hostResize(360, 220);
+  std::vector<std::string> items;
+  for (int i = 0; i < 30; ++i) items.push_back("Option " + std::to_string(i));
+  auto combo = make<ComboBox>(items, 0);
+  auto comboWrap = vbox();
+  comboWrap->add(combo);
+  app.setRoot(comboWrap);
+  app.tick();
+  app.render();
+  app.hostMouseButton(combo->rect().center(), MouseButton::Left, true);
+  app.hostMouseButton(combo->rect().center(), MouseButton::Left, false);
+  app.tick();
+  app.render();
+  CHECK(app.hasPopup());
+  if (Widget* popup = app.topPopup()) {
+    CHECK(popup->rect().h <= 220.0f);
+  }
+  app.closeAllPopups();
+  app.hostResize(600, 400);
+}
+
 int main(int argc, char** argv) {
   std::string assets = argc > 1 ? argv[1] : "assets";
   auto plat = std::make_shared<TestPlatform>();
@@ -3344,6 +3451,7 @@ int main(int argc, char** argv) {
   testNarrowButtonClipping();
   testTouchScrollViewDragAndButtonCancel(app, *plat);
   testRetinaGpuBatchAndFlingScroll(app, *plat);
+  testGhostTouchAndSmoothSplitterResize(app, *plat);
   testDocking(app);
   testToastsAndTimers(app, *plat);
   testDrawList(app);

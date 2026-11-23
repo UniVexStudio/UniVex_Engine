@@ -32,6 +32,9 @@ void Widget::arrange(Rect r) {
 void Widget::setVisible(bool v) {
   if (m_visible == v) return;
   m_visible = v;
+  if (!v && Application::exists()) {
+    Application::get().onWidgetHidden(this);
+  }
   relayout();
 }
 
@@ -76,7 +79,8 @@ void Widget::paintChildren(Canvas& c) {
 Widget* Widget::hitTest(Vec2 p) {
   if (!m_visible || !m_rect.contains(p)) return nullptr;
   for (auto it = m_children.rbegin(); it != m_children.rend(); ++it)
-    if (Widget* h = (*it)->hitTest(p)) return h;
+    if ((*it)->visible())
+      if (Widget* h = (*it)->hitTest(p)) return h;
   return hitSelf() ? this : nullptr;
 }
 

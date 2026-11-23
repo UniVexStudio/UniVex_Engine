@@ -1716,6 +1716,12 @@ struct Renderer3DUVE::ImplUVE {
     std::array<std::vector<ShadowPrimitiveDrawUVE>, kShadowCascadeCountUVE> shadowPrimitiveQueues;
     std::array<std::vector<ShadowPrimitiveDrawUVE>, kMaxShadowTilesUVE> shadowAtlasPrimitiveQueues;
     std::vector<PrimitiveRenderItemUVE> primitiveItems;
+    struct ActiveSkeletonEntryUVE final {
+        Scene::EntityUVE entity = Scene::kInvalidEntityUVE;
+        Scene::EntityUVE parent = Scene::kInvalidEntityUVE;
+        const Scene::Skeleton3DComponentUVE* component = nullptr;
+    };
+    std::vector<ActiveSkeletonEntryUVE> frameSkeletons;
 
     /// Last frame's primitive placement per entity, reused when nothing about that entity changed.
     ///
@@ -2852,51 +2858,36 @@ struct Renderer3DUVE::ImplUVE {
         if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(entity)) {
             skeleton = &entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(entity);
         }
-        if (skeleton == nullptr) {
-            entityManager.ForEachUVE<Scene::Skeleton3DComponentUVE>(
-                [&](const Scene::EntityUVE skelEntity, const Scene::Skeleton3DComponentUVE& skelComp) {
-                    if (skeleton != nullptr || !skelComp.enabled || skelComp.bones.empty()) {
-                        return;
-                    }
-                    if (skelEntity == entity) {
-                        skeleton = &skelComp;
-                        return;
-                    }
-                    if (entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(skelEntity)) {
-                        const Scene::EntityUVE skelParent =
-                            entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(skelEntity).parent;
-                        if (skelParent == entity) {
-                            skeleton = &skelComp;
-                            return;
-                        }
-                        if (entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
-                            const Scene::EntityUVE entityParent =
-                                entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
-                            if (entityParent != Scene::kInvalidEntityUVE &&
-                                (skelParent == entityParent || skelEntity == entityParent)) {
-                                skeleton = &skelComp;
-                                return;
-                            }
-                        }
-                    }
-                });
+        if (skeleton == nullptr && !frameSkeletons.empty()) {
+            const Scene::EntityUVE entityParent =
+                entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)
+                    ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent
+                    : Scene::kInvalidEntityUVE;
+            for (const ActiveSkeletonEntryUVE& entry : frameSkeletons) {
+                if (entry.entity == entity || entry.parent == entity) {
+                    skeleton = entry.component;
+                    break;
+                }
+                if (entityParent != Scene::kInvalidEntityUVE &&
+                    (entry.parent == entityParent || entry.entity == entityParent)) {
+                    skeleton = entry.component;
+                    break;
+                }
+            }
         }
-        if (skeleton == nullptr && entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
+        if (skeleton == nullptr && !frameSkeletons.empty() &&
+            entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(entity)) {
             // A mesh inside a group (Geo > Soldier_head) with the skeleton beside the group: the nearest
             // ancestor that has a skeleton as a child. Nearest first, so two characters in one scene each bind to
             // their own rig, and the far ancestors are only a last resort.
             Scene::EntityUVE ancestor = entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(entity).parent;
             for (std::size_t depth = 0U; depth < 64U && skeleton == nullptr && ancestor != Scene::kInvalidEntityUVE; ++depth) {
-                entityManager.ForEachUVE<Scene::Skeleton3DComponentUVE>(
-                    [&](const Scene::EntityUVE skelEntity, const Scene::Skeleton3DComponentUVE& skelComp) {
-                        if (skeleton != nullptr || !skelComp.enabled || skelComp.bones.empty() ||
-                            !entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(skelEntity)) {
-                            return;
-                        }
-                        if (entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(skelEntity).parent == ancestor) {
-                            skeleton = &skelComp;
-                        }
-                    });
+                for (const ActiveSkeletonEntryUVE& entry : frameSkeletons) {
+                    if (entry.parent == ancestor) {
+                        skeleton = entry.component;
+                        break;
+                    }
+                }
                 ancestor = entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(ancestor)
                                ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(ancestor).parent
                                : Scene::kInvalidEntityUVE;
@@ -3096,6 +3087,18 @@ struct Renderer3DUVE::ImplUVE {
             ++skinnedFrame;
             skinnedMeshesThisFrame = 0U;
         }
+        frameSkeletons.clear();
+        entityManager.ForEachUVE<Scene::Skeleton3DComponentUVE>(
+            [&](const Scene::EntityUVE skelEntity, const Scene::Skeleton3DComponentUVE& skelComp) {
+                if (!skelComp.enabled || skelComp.bones.empty()) {
+                    return;
+                }
+                const Scene::EntityUVE parent =
+                    entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(skelEntity)
+                        ? entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(skelEntity).parent
+                        : Scene::kInvalidEntityUVE;
+                frameSkeletons.push_back(ActiveSkeletonEntryUVE{skelEntity, parent, &skelComp});
+            });
         std::vector<Scene::Occluder3DSnapshotUVE> occluders;
         Scene::CollectOccluder3DSnapshotsUVE(entityManager, occluders);
         entityManager.ForEachUVE<Scene::WorldTransformComponentUVE, Scene::MeshComponentUVE>(
@@ -3694,8 +3697,9 @@ struct Renderer3DUVE::ImplUVE {
         program.SetIntUVE("uAmbientEnvironmentMap",
                           static_cast<std::int32_t>(kAmbientEnvironmentTextureSlotUVE));
         program.SetIntUVE("uAmbientEnvironmentMapEnabled", frameUniforms.ambientEnvironmentMapEnabled ? 1 : 0);
+        const std::size_t activeLightCount = std::min(frameUniforms.lights.SizeUVE(), frameUniforms.activeLightCap);
         program.SetIntUVE("uActiveLightCount",
-                          static_cast<std::int32_t>(std::min(frameUniforms.lights.SizeUVE(), frameUniforms.activeLightCap)));
+                          activeLightCount == 0U ? -1 : static_cast<std::int32_t>(activeLightCount));
 #if !defined(__ANDROID__)
         program.SetIntUVE("uClusteredLightingEnabled", frameUniforms.clusteredLightingEnabled ? 1 : 0);
         if (frameUniforms.clusteredLightingEnabled) {
@@ -3815,22 +3819,30 @@ struct Renderer3DUVE::ImplUVE {
         // Each map's own reading (all zero: as authored). AO and Emission also follow the material's
         // older "on UV2" switches.
         const auto setMap = [&program, &material](const char* transformName, const char* controlName,
-                                                  const Asset::MaterialMapUVE map, const bool alsoOnUv2) {
+                                                  const Asset::MaterialMapUVE map, const Asset::AssetGuidUVE texGuid,
+                                                  const bool alsoOnUv2) {
             const Asset::MaterialMapSettingsUVE& settings = material.MapUVE(map);
             const float channel = settings.channel == Asset::MaterialTextureChannelUVE::Rgb
                                       ? 0.0F
                                       : static_cast<float>(static_cast<int>(settings.channel) + 1);
+            const bool unboundNeutral = texGuid == Asset::kInvalidAssetGuidUVE && !settings.invert &&
+                                        settings.channel == Asset::MaterialTextureChannelUVE::Rgb;
+            const float neutralWeight =
+                unboundNeutral ? 1.0F : (1.0F - std::clamp(settings.strength, 0.0F, 1.0F));
             program.SetVector4UVE(transformName, Math::Vector4UVE{settings.tiling.x - 1.0F, settings.tiling.y - 1.0F,
                                                                   settings.offset.x, settings.offset.y});
             program.SetVector4UVE(controlName, Math::Vector4UVE{channel, settings.invert ? 1.0F : 0.0F,
-                                                                1.0F - std::clamp(settings.strength, 0.0F, 1.0F),
+                                                                neutralWeight,
                                                                 (settings.onUv2 || alsoOnUv2) ? 1.0F : 0.0F});
         };
-        setMap("uAlbedoMapTransform", "uAlbedoMapControl", Asset::MaterialMapUVE::Albedo, false);
-        setMap("uNormalMapTransform", "uNormalMapControl", Asset::MaterialMapUVE::Normal, false);
-        setMap("uMetallicRoughnessMapTransform", "uMetallicRoughnessMapControl", Asset::MaterialMapUVE::MetallicRoughness, false);
-        setMap("uOcclusionMapTransform", "uOcclusionMapControl", Asset::MaterialMapUVE::Occlusion, material.aoOnUv2);
-        setMap("uEmissiveMapTransform", "uEmissiveMapControl", Asset::MaterialMapUVE::Emissive, material.emissionOnUv2);
+        setMap("uAlbedoMapTransform", "uAlbedoMapControl", Asset::MaterialMapUVE::Albedo, material.albedoTexture, false);
+        setMap("uNormalMapTransform", "uNormalMapControl", Asset::MaterialMapUVE::Normal, material.normalTexture, false);
+        setMap("uMetallicRoughnessMapTransform", "uMetallicRoughnessMapControl",
+               Asset::MaterialMapUVE::MetallicRoughness, material.metallicRoughnessTexture, false);
+        setMap("uOcclusionMapTransform", "uOcclusionMapControl", Asset::MaterialMapUVE::Occlusion, material.aoTexture,
+               material.aoOnUv2);
+        setMap("uEmissiveMapTransform", "uEmissiveMapControl", Asset::MaterialMapUVE::Emissive, material.emissiveTexture,
+               material.emissionOnUv2);
         program.SetIntUVE("uUnshaded", material.unshaded ? 1 : 0);
         program.SetIntUVE("uShadingMode", shadingMode);
         program.SetFloatUVE("uAlphaCutoff", material.alphaCutoff);
@@ -4081,6 +4093,14 @@ struct Renderer3DUVE::ImplUVE {
                                                           const FrameUniformsUVE& frameUniforms,
                                                           ICommandBufferUVE& commandBuffer) {
         std::size_t drawCalls = 0U;
+        const Shader::ShaderProgramUVE* lastProgram = nullptr;
+        const Asset::MaterialAssetUVE* lastMaterial = nullptr;
+        const MaterialGpuResourcesUVE* lastMaterialResources = nullptr;
+        bool lastBlendedVariant = false;
+        BufferHandleUVE lastVertexBuffer = kInvalidBufferHandleUVE;
+        BufferHandleUVE lastIndexBuffer = kInvalidBufferHandleUVE;
+        std::uint32_t lastRenderLayers = 0U;
+        float lastOpacity = -1.0F;
         for (std::size_t itemIndex = firstItem; itemIndex < firstItem + itemCount; ++itemIndex) {
             const RenderItemUVE& item = items[itemIndex];
             const MaterialGpuResourcesUVE* const materialResources = ResolveMaterialGpuResourcesUVE(item.materialHandle);
@@ -4098,17 +4118,46 @@ struct Renderer3DUVE::ImplUVE {
                 continue; // Still compiling or invalid: never bind a stale raw material pipeline.
             }
 
-            program->SetMatrix4x4UVE("uModel", item.worldMatrix);
-            // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, which the
-            // instanced path shares so the two cannot disagree about how a normal is transformed.
-            program->SetMatrix3x3UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
-            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms, blendedVariant);
-            program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
-            program->SetFloatUVE("uSurfaceOpacity", item.opacity);
-            program->ApplyToUVE(commandBuffer);
-            BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
-            commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
-            commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+            const Math::Matrix3x3UVE normalMatrix = ComputeNormalMatrixUVE(item.worldMatrix);
+            const bool stateChanged = program != lastProgram || material != lastMaterial ||
+                                      materialResources != lastMaterialResources ||
+                                      blendedVariant != lastBlendedVariant;
+            if (stateChanged) {
+                program->SetMatrix4x4UVE("uModel", item.worldMatrix);
+                // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, which the
+                // instanced path shares so the two cannot disagree about how a normal is transformed.
+                program->SetMatrix3x3UVE("uNormalMatrix", normalMatrix);
+                ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms, blendedVariant);
+                program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                program->SetFloatUVE("uSurfaceOpacity", item.opacity);
+                program->ApplyToUVE(commandBuffer);
+                BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
+                lastProgram = program;
+                lastMaterial = material;
+                lastMaterialResources = materialResources;
+                lastBlendedVariant = blendedVariant;
+                lastRenderLayers = item.renderLayers;
+                lastOpacity = item.opacity;
+            } else {
+                commandBuffer.SetUniformMatrix4x4UVE("uModel", item.worldMatrix);
+                commandBuffer.SetUniformMatrix4x4UVE("uNormalMatrix", Math::ToMatrix4x4UVE(normalMatrix));
+                if (item.renderLayers != lastRenderLayers) {
+                    commandBuffer.SetUniformIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                    lastRenderLayers = item.renderLayers;
+                }
+                if (item.opacity != lastOpacity) {
+                    commandBuffer.SetUniformFloatUVE("uSurfaceOpacity", item.opacity);
+                    lastOpacity = item.opacity;
+                }
+            }
+            if (meshResources.vertexBuffer != lastVertexBuffer) {
+                commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
+                lastVertexBuffer = meshResources.vertexBuffer;
+            }
+            if (meshResources.indexBuffer != lastIndexBuffer) {
+                commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+                lastIndexBuffer = meshResources.indexBuffer;
+            }
             commandBuffer.DrawIndexedUVE(ResolveItemIndexCountUVE(item, meshResources), 1U,
                                          ResolveItemFirstIndexUVE(item));
             ++drawCalls;
@@ -4448,6 +4497,15 @@ struct Renderer3DUVE::ImplUVE {
                                                        const FrameUniformsUVE& frameUniforms,
                                                        ICommandBufferUVE& commandBuffer) {
         std::size_t drawCalls = 0U;
+        const Shader::ShaderProgramUVE* lastProgram = nullptr;
+        const Asset::MaterialAssetUVE* lastMaterial = nullptr;
+        const MaterialGpuResourcesUVE* lastMaterialResources = nullptr;
+        bool lastBlendedVariant = false;
+        BufferHandleUVE lastVertexBuffer = kInvalidBufferHandleUVE;
+        BufferHandleUVE lastIndexBuffer = kInvalidBufferHandleUVE;
+        std::uint32_t lastRenderLayers = 0U;
+        float lastOpacity = -1.0F;
+        Math::Vector3UVE lastAlbedoColor{-1.0F, -1.0F, -1.0F};
         for (const PrimitiveRenderItemUVE& item : items) {
             const MeshGpuResourcesUVE& meshResources =
                 item.skinned != nullptr ? *item.skinned
@@ -4509,23 +4567,62 @@ struct Renderer3DUVE::ImplUVE {
                 continue; // Still compiling or invalid: never bind a stale pipeline.
             }
 
-            program->SetMatrix4x4UVE("uModel", item.worldMatrix);
-            // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, shared with
-            // the lit mesh path so the two cannot disagree under non-uniform scale.
-            program->SetMatrix3x3UVE("uNormalMatrix", ComputeNormalMatrixUVE(item.worldMatrix));
-            ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms, blendedVariant);
-            // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
-            // (white) albedo. An assigned material owns the surface outright - tinting it here would
-            // mean a primitive could never show the material an author picked.
-            if (usesDefaultMaterial || materialResources == &defaultLitMaterialResources) {
-                program->SetVector3UVE("uAlbedoColor", item.baseColor);
+            const Math::Matrix3x3UVE normalMatrix = ComputeNormalMatrixUVE(item.worldMatrix);
+            const bool overrideAlbedo = usesDefaultMaterial || materialResources == &defaultLitMaterialResources;
+            const Math::Vector3UVE effectiveAlbedo =
+                overrideAlbedo ? item.baseColor : Math::ToVector3UVE(material->albedoColor);
+            const bool stateChanged = program != lastProgram || material != lastMaterial ||
+                                      materialResources != lastMaterialResources ||
+                                      blendedVariant != lastBlendedVariant;
+            if (stateChanged) {
+                program->SetMatrix4x4UVE("uModel", item.worldMatrix);
+                // Normal matrix = transpose(inverse(model)); see ComputeNormalMatrixUVE, shared with
+                // the lit mesh path so the two cannot disagree under non-uniform scale.
+                program->SetMatrix3x3UVE("uNormalMatrix", normalMatrix);
+                ApplyFrameAndMaterialUniformsUVE(*program, *material, frameUniforms, blendedVariant);
+                // Base Color is the DEFAULT material's albedo, so it only replaces that material's own
+                // (white) albedo. An assigned material owns the surface outright - tinting it here would
+                // mean a primitive could never show the material an author picked.
+                if (overrideAlbedo) {
+                    program->SetVector3UVE("uAlbedoColor", item.baseColor);
+                }
+                program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                program->SetFloatUVE("uSurfaceOpacity", item.opacity);
+                program->ApplyToUVE(commandBuffer);
+                BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
+                lastProgram = program;
+                lastMaterial = material;
+                lastMaterialResources = materialResources;
+                lastBlendedVariant = blendedVariant;
+                lastRenderLayers = item.renderLayers;
+                lastOpacity = item.opacity;
+                lastAlbedoColor = effectiveAlbedo;
+            } else {
+                commandBuffer.SetUniformMatrix4x4UVE("uModel", item.worldMatrix);
+                commandBuffer.SetUniformMatrix4x4UVE("uNormalMatrix", Math::ToMatrix4x4UVE(normalMatrix));
+                if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
+                                       effectiveAlbedo.y != lastAlbedoColor.y ||
+                                       effectiveAlbedo.z != lastAlbedoColor.z)) {
+                    commandBuffer.SetUniformVector3UVE("uAlbedoColor", effectiveAlbedo);
+                    lastAlbedoColor = effectiveAlbedo;
+                }
+                if (item.renderLayers != lastRenderLayers) {
+                    commandBuffer.SetUniformIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                    lastRenderLayers = item.renderLayers;
+                }
+                if (item.opacity != lastOpacity) {
+                    commandBuffer.SetUniformFloatUVE("uSurfaceOpacity", item.opacity);
+                    lastOpacity = item.opacity;
+                }
             }
-            program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
-            program->SetFloatUVE("uSurfaceOpacity", item.opacity);
-            program->ApplyToUVE(commandBuffer);
-            BindMaterialTexturesUVE(*materialResources, frameUniforms, commandBuffer);
-            commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
-            commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+            if (meshResources.vertexBuffer != lastVertexBuffer) {
+                commandBuffer.BindVertexBufferUVE(meshResources.vertexBuffer);
+                lastVertexBuffer = meshResources.vertexBuffer;
+            }
+            if (meshResources.indexBuffer != lastIndexBuffer) {
+                commandBuffer.BindIndexBufferUVE(meshResources.indexBuffer);
+                lastIndexBuffer = meshResources.indexBuffer;
+            }
             const std::uint32_t count = item.indexCount == 0U ? meshResources.indexCount : item.indexCount;
             const std::uint32_t first = item.indexCount == 0U ? 0U : item.firstIndex;
             commandBuffer.DrawIndexedUVE(count, 1U, first);
@@ -5593,6 +5690,23 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 m_impl->primitiveItems.push_back(item);
             }
         });
+    if (m_impl->primitiveItems.size() > 1U) {
+        std::sort(m_impl->primitiveItems.begin(), m_impl->primitiveItems.end(),
+                  [](const PrimitiveRenderItemUVE& a, const PrimitiveRenderItemUVE& b) noexcept {
+                      const bool aBlend = a.opacity < 1.0F;
+                      const bool bBlend = b.opacity < 1.0F;
+                      if (aBlend != bBlend) {
+                          return !aBlend;
+                      }
+                      if (a.materialGuid != b.materialGuid) {
+                          return a.materialGuid.value < b.materialGuid.value;
+                      }
+                      if (a.meshGuid != b.meshGuid) {
+                          return a.meshGuid.value < b.meshGuid.value;
+                      }
+                      return static_cast<int>(a.kind) < static_cast<int>(b.kind);
+                  });
+    }
     m_impl->lastFrameDiagnostics.primitiveItemsExtracted = m_impl->primitiveItems.size();
     m_impl->lastFrameDiagnostics.skinnedMeshesDrawn = m_impl->skinnedMeshesThisFrame;
 
@@ -5602,6 +5716,12 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     ShadowCascadeMatricesUVE lightSpaceMatrices{};
     ShadowCascadeSplitsUVE cascadeSplits{};
     std::int32_t cascadeCount = 0;
+#if defined(__ANDROID__)
+    const std::size_t activeCascadeCount =
+        m_impl->scalabilityMode <= 0 ? 1U : std::min<std::size_t>(2U, kShadowCascadeCountUVE);
+#else
+    const std::size_t activeCascadeCount = kShadowCascadeCountUVE;
+#endif
     if (shadowsReady) {
         // The caster may keep its shadow closer than the camera sees (a sharper shadow where it
         // matters) and choose how its cascades share that distance.
@@ -5622,6 +5742,14 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             UVE_ERROR("Renderer3DUVE: shadow cascade split math produced invalid output; skipping shadow cascades");
             shadowsReady = false;
         } else {
+            if (activeCascadeCount < kShadowCascadeCountUVE) {
+                if (activeCascadeCount == 1U) {
+                    cascadeSplits[0] = std::min(shadowFar, std::max(camera.nearPlane * 2.0F, 45.0F));
+                } else {
+                    cascadeSplits[0] = std::min(shadowFar * 0.25F, std::max(camera.nearPlane * 2.0F, 18.0F));
+                    cascadeSplits[1] = shadowFar;
+                }
+            }
             const Math::Matrix4x4UVE lightView =
                 Math::Matrix4x4UVE::ViewFromPositionAndRotationUVE(shadowCaster->position, shadowCaster->rotation);
             const CameraFrustumCornersUVE cameraCorners =
@@ -5637,7 +5765,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             }
             float cascadeNearPlane = camera.nearPlane;
             for (std::size_t cascadeIndex = 0;
-                 cascadeIndex < kShadowCascadeCountUVE && shadowsReady; ++cascadeIndex) {
+                 cascadeIndex < activeCascadeCount && shadowsReady; ++cascadeIndex) {
             const float cascadeFarPlane = cascadeSplits[cascadeIndex];
             const float nearRatio = (cascadeNearPlane - camera.nearPlane) / (camera.farPlane - camera.nearPlane);
             const float farRatio = (cascadeFarPlane - camera.nearPlane) / (camera.farPlane - camera.nearPlane);
@@ -5682,7 +5810,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                 cascadeNearPlane = cascadeFarPlane;
             }
             if (shadowsReady) {
-                cascadeCount = static_cast<std::int32_t>(kShadowCascadeCountUVE);
+                cascadeCount = static_cast<std::int32_t>(activeCascadeCount);
             } else {
                 cascadeSplits = ShadowCascadeSplitsUVE{};
                 lightSpaceMatrices = ShadowCascadeMatricesUVE{};
@@ -5711,6 +5839,9 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             shadowPcfKernelRadius =
                 static_cast<std::int32_t>(std::clamp(std::lround(shadowCaster->shadowBlur), 0L, 2L));
         }
+#if defined(__ANDROID__)
+        shadowPcfKernelRadius = std::min(shadowPcfKernelRadius, m_impl->shadowPcfKernelRadius);
+#endif
     }
 
     // ---- Atlas shadows (spot + point) ----------------------------------------------------------
@@ -6031,7 +6162,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     const RenderGraphResourceHandleUVE depthResource = renderGraph.ImportTextureUVE(m_impl->depthTarget, "MainDepth");
 
     if (shadowsReady) {
-        for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
+        for (std::size_t cascadeIndex = 0; cascadeIndex < activeCascadeCount; ++cascadeIndex) {
             const std::string_view passName = GetRendererUniformNamesUVE().shadowPasses[cascadeIndex];
             const std::array<RenderGraphResourceUseUVE, 1U> shadowPassResources{
                 RenderGraphResourceUseUVE{shadowResources[cascadeIndex], RenderGraphResourceAccessUVE::Write}};

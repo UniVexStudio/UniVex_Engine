@@ -389,6 +389,7 @@ void StackSwitcher::paint(Canvas& c) {
 }
 
 Widget* StackSwitcher::hitTest(Vec2 p) {
+  if (!m_visible || !m_rect.contains(p)) return nullptr;
   if (m_active >= 0 && m_active < int(m_children.size())) {
     auto& activeChild = m_children[size_t(m_active)];
     if (activeChild->visible() && activeChild->rect().contains(p)) {
@@ -472,7 +473,7 @@ bool Expander::onMouseDown(const MouseEvent& e) {
 }
 
 Widget* Expander::hitTest(Vec2 p) {
-  if (!m_rect.contains(p)) return nullptr;
+  if (!m_visible || !m_rect.contains(p)) return nullptr;
   Rect headerRect(m_rect.x, m_rect.y, m_rect.w, m_headerHeight);
   if (headerRect.contains(p)) return this;
   if (m_content && m_expanded && m_content->visible() && m_content->rect().contains(p)) {
@@ -523,7 +524,7 @@ void ScrollBox::paint(Canvas& c) {
 }
 
 Widget* ScrollBox::hitTest(Vec2 p) {
-  if (!m_rect.contains(p)) return nullptr;
+  if (!m_visible || !m_rect.contains(p)) return nullptr;
   if (VScrollbar::needed(m_contentSize.y, m_rect.h) && p.x >= m_rect.right() - VScrollbar::W) {
     return this;
   }

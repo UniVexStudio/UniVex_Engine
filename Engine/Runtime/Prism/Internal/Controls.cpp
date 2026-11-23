@@ -2,6 +2,7 @@
 #include "prism/Controls.h"
 #include "prism/AccessibilityBridge.h"
 #include "prism/Application.h"
+#include "prism/Containers.h"
 
 namespace prism {
 
@@ -288,33 +289,103 @@ public:
             std::vector<bool> disabled = {})
       : m_items(std::move(items)), m_disabled(std::move(disabled)), m_sel(sel), m_hover(sel), m_minW(minW),
         m_pick(std::move(pick)) {}
-  Vec2 measure(Vec2) override {
+  float rowH() const { return std::max(20.f, theme().rowH); }
+  float contentH() const { return float(m_items.size()) * rowH(); }
+  Vec2 measure(Vec2 avail) override {
     float w = m_minW;
     for (auto& s : m_items) w = std::max(w, std::ceil(theme().ui->width(s)) + 40);
-    return m_desired = {w, float(m_items.size()) * 22 + 8};
+    const float maxH = avail.y > 48.f ? std::min(avail.y - 24.f, 420.f) : 420.f;
+    const float rawH = contentH() + 8.f;
+    const float h = std::min(rawH, maxH);
+    if (rawH > h + 0.5f) w += VScrollbar::W;
+    if (avail.x > 64.f) w = std::min(w, avail.x - 16.f);
+    return m_desired = {w, h};
+  }
+  void arrange(Rect r) override {
+    m_rect = r;
+    clampScroll();
   }
   void paint(Canvas& c) override {
     const Theme& t = theme();
     c.fillRoundRect(m_rect, 4, t.popup);
     c.strokeRoundRect(m_rect, 4, t.borderStrong);
-    for (int i = 0; i < int(m_items.size()); i++) {
+    const Rect inner = listRect();
+    c.pushClip(inner);
+    const float rh = rowH();
+    const int n = int(m_items.size());
+    const int first = std::max(0, int(std::floor(m_scroll / rh)));
+    const int last = std::min(n - 1, int(std::floor((m_scroll + inner.h) / rh)));
+    for (int i = first; i <= last; i++) {
       Rect r = rowRect(i);
       const bool off = disabled(i);
       bool hot = i == m_hover && !off;
       if (hot) c.fillRoundRect(r, 3, t.rowSelected);
-      if (i == m_sel) drawIcon(c, Icon::Check, {r.x + 4, r.y + 3, 16, 16}, t.highlight);
-      c.textIn(*t.ui, {r.x + 26, r.y, r.w - 30, r.h}, m_items[size_t(i)], off ? t.textDisabled : hot ? t.textBright : t.text);
+      if (i == m_sel) drawIcon(c, Icon::Check, {r.x + 4, r.y + (r.h - 14.f) * 0.5f, 14, 14}, t.highlight);
+      c.textIn(*t.ui, {r.x + 24, r.y, r.w - 28, r.h}, m_items[size_t(i)], off ? t.textDisabled : hot ? t.textBright : t.text);
+    }
+    c.popClip();
+    if (VScrollbar::needed(contentH(), inner.h)) {
+      m_bar.paint(c, inner, contentH(), m_scroll, m_hovered && Application::get().mousePos().x >= inner.right() - VScrollbar::W);
     }
   }
   bool onMouseMove(const MouseEvent& e) override {
+    const Rect inner = listRect();
+    if (m_bar.dragging) {
+      m_bar.mouseMove(e.pos, inner, contentH(), m_scroll);
+      clampScroll();
+      invalidate();
+      return true;
+    }
+    if (m_touchArmed) {
+      if (!m_touchDragged && std::abs(e.pos.y - m_touchStartY) >= 6.f) {
+        m_touchDragged = true;
+      }
+      if (m_touchDragged) {
+        m_scroll -= (e.pos.y - m_touchLastY);
+        m_touchLastY = e.pos.y;
+        clampScroll();
+        invalidate();
+        return true;
+      }
+    }
     int i = rowAt(e.pos);
     if (i != m_hover && i >= 0) { m_hover = i; invalidate(); }
     return true;
   }
-  bool onMouseDown(const MouseEvent& e) override { return e.button == MouseButton::Left; }
+  bool onMouseDown(const MouseEvent& e) override {
+    if (e.button != MouseButton::Left) return false;
+    const Rect inner = listRect();
+    const bool needBar = VScrollbar::needed(contentH(), inner.h);
+    const float barHitW = (Application::exists() && Application::get().platform().singleSurface()) ? 20.f : VScrollbar::W;
+    if (needBar && e.pos.x >= inner.right() - barHitW) {
+      m_bar.mouseDown(e.pos, inner, contentH(), m_scroll);
+      clampScroll();
+      invalidate();
+      return true;
+    }
+    if (needBar && Application::exists() && Application::get().platform().singleSurface()) {
+      m_touchArmed = true;
+      m_touchDragged = false;
+      m_touchStartY = m_touchLastY = e.pos.y;
+    }
+    return true;
+  }
   bool onMouseUp(const MouseEvent& e) override {
+    const bool wasBar = m_bar.dragging;
+    const bool wasDrag = m_touchDragged;
+    m_bar.mouseUp();
+    m_touchArmed = false;
+    m_touchDragged = false;
+    if (wasBar || wasDrag) return true;
     int i = rowAt(e.pos);
     if (i >= 0 && !disabled(i)) pick(i);
+    return true;
+  }
+  bool onMouseWheel(const MouseEvent& e) override {
+    if (!VScrollbar::needed(contentH(), listRect().h)) return false;
+    m_scroll -= e.wheel.y * rowH() * 2.5f;
+    clampScroll();
+    invalidate();
     return true;
   }
   bool onKeyDown(const KeyEvent& e) override {
@@ -326,6 +397,11 @@ public:
         m_hover = (m_hover + dir + n) % n;
         if (!disabled(m_hover)) break;
       }
+      const float top = float(m_hover) * rowH();
+      const float viewH = listRect().h;
+      if (top < m_scroll) m_scroll = top;
+      else if (top + rowH() > m_scroll + viewH) m_scroll = top + rowH() - viewH;
+      clampScroll();
     };
     if (e.key == Key::Down) step(1);
     else if (e.key == Key::Up) step(-1);
@@ -335,10 +411,18 @@ public:
     return true;
   }
 private:
-  Rect rowRect(int i) const { return {m_rect.x + 4, m_rect.y + 4 + float(i) * 22, m_rect.w - 8, 22}; }
+  Rect listRect() const { return {m_rect.x + 4.f, m_rect.y + 4.f, std::max(0.f, m_rect.w - 8.f), std::max(0.f, m_rect.h - 8.f)}; }
+  void clampScroll() { m_scroll = std::clamp(m_scroll, 0.f, std::max(0.f, contentH() - listRect().h)); }
+  Rect rowRect(int i) const {
+    const Rect inner = listRect();
+    const float w = inner.w - (VScrollbar::needed(contentH(), inner.h) ? VScrollbar::W : 0.f);
+    return {inner.x, inner.y + float(i) * rowH() - m_scroll, w, rowH()};
+  }
   int rowAt(Vec2 p) const {
-    for (int i = 0; i < int(m_items.size()); i++) if (rowRect(i).contains(p)) return i;
-    return -1;
+    const Rect inner = listRect();
+    if (!inner.contains(p)) return -1;
+    const int i = int(std::floor((p.y - inner.y + m_scroll) / rowH()));
+    return (i >= 0 && i < int(m_items.size())) ? i : -1;
   }
   void pick(int i) {
     auto cb = m_pick;
@@ -350,6 +434,11 @@ private:
   std::vector<bool> m_disabled;
   int m_sel, m_hover;
   float m_minW;
+  float m_scroll = 0.f;
+  bool m_touchArmed = false;
+  bool m_touchDragged = false;
+  float m_touchStartY = 0.f, m_touchLastY = 0.f;
+  VScrollbar m_bar;
   std::function<void(int)> m_pick;
 };
 } // namespace

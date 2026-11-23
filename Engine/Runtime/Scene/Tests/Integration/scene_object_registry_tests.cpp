@@ -14,8 +14,8 @@ namespace {
 
 TEST(SceneObjectRegistryUVETest, BuiltInDescriptorsUVE_AreStableUniqueAndRuntimeBound) {
     const std::span<const SceneObjectDescriptorUVE> descriptors = GetSceneObjectDescriptorsUVE();
-    // 52 kinds: the 50 an object list offers plus the document's own two structural rows.
-    ASSERT_EQ(descriptors.size(), 52U);
+    // 53 kinds: the 51 an object list offers plus the document's own two structural rows.
+    ASSERT_EQ(descriptors.size(), 53U);
 
     std::unordered_set<std::string_view> ids;
     for (const SceneObjectDescriptorUVE& descriptor : descriptors) {
@@ -55,6 +55,7 @@ TEST(SceneObjectRegistryUVETest, RealObjectTypesUVE_AreReachableFromTheAggregate
     static_assert(std::is_class_v<BoneAttachment3DComponentUVE>);          // BoneAttachment3D
     static_assert(std::is_class_v<TwoBoneIK3DComponentUVE>);              // TwoBoneIK3D
     static_assert(std::is_class_v<FullBodyIK3DComponentUVE>);            // FullBodyIK3D
+    static_assert(std::is_class_v<Ragdoll3DComponentUVE>);               // Ragdoll3D
     static_assert(std::is_class_v<SpringArm3DComponentUVE>);               // SpringArm3D
     static_assert(std::is_class_v<Marker3DComponentUVE>);                  // Marker3D
     static_assert(std::is_class_v<Hitbox3DComponentUVE>);                  // Hitbox3D
@@ -103,6 +104,7 @@ TEST(SceneObjectRegistryUVETest, PlacementSeparatesTheLevelFromEntityParts) {
     EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::Player3D), SceneObjectPlacementUVE::Entity);
     EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::AnimationGraph), SceneObjectPlacementUVE::Entity);
     EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::Hitbox3D), SceneObjectPlacementUVE::Entity);
+    EXPECT_EQ(GetSceneObjectPlacementUVE(SceneObjectKindUVE::Ragdoll3D), SceneObjectPlacementUVE::Entity);
 }
 
 } // namespace UVE::Scene::Objects::Tests

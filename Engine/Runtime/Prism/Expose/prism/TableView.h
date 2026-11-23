@@ -95,8 +95,9 @@ private:
   float m_headerH = 24, m_rowH = 22, m_scrollX = 0, m_scrollY = 0;
   int m_hoverRow = -1, m_hoverHdr = -1;
   // header interaction
-  enum class Drag { None, Resize, Reorder, VBar } m_drag = Drag::None;
+  enum class Drag { None, Resize, Reorder, VBar, TouchScroll } m_drag = Drag::None;
   int m_dragCol = -1; float m_dragStartX = 0, m_dragStartW = 0, m_dragMouseX = 0; bool m_dragMoved = false;
+  float m_touchStartY = 0, m_touchLastY = 0;
   VScrollbar m_bar;
 };
 
