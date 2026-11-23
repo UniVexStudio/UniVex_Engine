@@ -1131,9 +1131,27 @@ bool buildSelectionOutline(const uint8_t* mask, int w, int h, int radius, Color 
       if (d <= float(radius) + 0.5f && (dx != 0 || dy != 0)) offs.push_back({dx, dy, d});
     }
   std::sort(offs.begin(), offs.end(), [](const Off& a, const Off& b) { return a.d < b.d; });
+  // Count of mask pixels in any box, from a summed-area table: a pixel with none in its (2r+1)^2 box can't
+  // be in the band, so it skips the disc search (which ran ~200 checks for every such pixel, every frame).
+  thread_local std::vector<uint32_t> sat;
+  const size_t sw = size_t(w) + 1;
+  sat.assign(sw * (size_t(h) + 1), 0u);
+  for (int y = 0; y < h; ++y) {
+    uint32_t run = 0;
+    for (int x = 0; x < w; ++x) {
+      run += mask[size_t(y) * size_t(w) + size_t(x)] ? 1u : 0u;
+      sat[size_t(y + 1) * sw + size_t(x + 1)] = sat[size_t(y) * sw + size_t(x + 1)] + run;
+    }
+  }
+  const auto anyNear = [&](int x, int y) {
+    const size_t ax = size_t(std::max(0, x - radius)), bx = size_t(std::min(w, x + radius + 1));
+    const size_t ay = size_t(std::max(0, y - radius)), by = size_t(std::min(h, y + radius + 1));
+    return sat[by * sw + bx] - sat[ay * sw + bx] - sat[by * sw + ax] + sat[ay * sw + ax] != 0u;
+  };
   for (int y = y0; y <= y1; ++y) {
     for (int x = x0; x <= x1; ++x) {
       if (mask[size_t(y) * size_t(w) + size_t(x)]) continue;     // the band sits outside the object
+      if (!anyNear(x, y)) continue;
       float nearest = 1e9f;
       int strongest = 0;
       for (const Off& o : offs) {
