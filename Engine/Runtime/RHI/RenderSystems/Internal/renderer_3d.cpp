@@ -5699,10 +5699,10 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                           return !aBlend;
                       }
                       if (a.materialGuid != b.materialGuid) {
-                          return a.materialGuid < b.materialGuid;
+                          return a.materialGuid.value < b.materialGuid.value;
                       }
                       if (a.meshGuid != b.meshGuid) {
-                          return a.meshGuid < b.meshGuid;
+                          return a.meshGuid.value < b.meshGuid.value;
                       }
                       return static_cast<int>(a.kind) < static_cast<int>(b.kind);
                   });
