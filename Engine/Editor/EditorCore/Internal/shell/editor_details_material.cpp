@@ -3,6 +3,7 @@
 // that uses it - the same fields, presets and save path as the previous Inspector's inline material
 // editor (DrawMaterialPbrEditorInlineUVE).
 #include "editor_details.h"
+#include "editor_touch_controls.h"
 
 #include "texture_asset.h"
 
@@ -467,6 +468,9 @@ void EditorDetailsUVE::AddMaterialSectionUVE(const std::filesystem::path& absolu
             graphBox->setContent(bpGraph);
             body->add(graphBox);
             body->add(statusLbl);
+            if (prism::Ref<prism::Widget> controls = MakeTouchControlsButtonUVE()) {   // touch: Undo, Ctrl, ...
+                body->add(controls, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+            }
 
             const auto compiled = Asset::CompileMaterialGraphToGlslUVE(*graphAsset);
             if (compiled.ok) {

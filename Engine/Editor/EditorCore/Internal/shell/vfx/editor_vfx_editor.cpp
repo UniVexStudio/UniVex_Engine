@@ -4,6 +4,7 @@
 #include "editor.h"
 #include "editor_chrome.h"
 #include "editor_fit_width.h"
+#include "editor_touch_controls.h"
 #include "editor_host.h"
 #include "editor_vfx_graph.h"
 #include "editor_vfx_inspector.h"
@@ -462,8 +463,11 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
         }
     };
     row->add(m_boundsButton, CentreSlotUVE());
+    if (prism::Ref<prism::Widget> controls = MakeTouchControlsButtonUVE()) {   // touch screens: Undo, Ctrl, ...
+        row->add(controls, CentreSlotUVE());
+    }
 
-    m_status = prism::make<prism::Label>("", prism::FontRole::Small);
+    m_status =prism::make<prism::Label>("", prism::FontRole::Small);
     m_status->setColor(prism::ThemeColor(&prism::Theme::textDim));
     row->add(m_status, prism::Slot{1.0F, prism::Margin(10.0F, 0.0F, 0.0F, 0.0F), prism::HAlign::Right, prism::VAlign::Center});
 
