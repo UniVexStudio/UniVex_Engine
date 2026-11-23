@@ -46,6 +46,7 @@ public:
     void FrameUVE();
 
 private:
+    void CancelDragUVE();
     static constexpr int kEntryUVE = -1;
     static constexpr int kAnyUVE = -2;
     static constexpr int kNoneUVE = -3;

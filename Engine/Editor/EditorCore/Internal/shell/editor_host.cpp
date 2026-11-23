@@ -44,7 +44,6 @@ using ViewKeyUVE = EditorViewportInputUVE::KeyUVE;
 using ViewCursorUVE = EditorViewportInputUVE::CursorUVE;
 
 constexpr double kDoubleClickSecondsUVE = 0.4;
-constexpr float kDoubleClickSlopUVE = 4.0F;
 constexpr float kResizeBorderUVE = 5.0F;
 /// Platforms with one full-screen surface and no OS windows: every extra window is a page over the
 /// main one.
@@ -53,6 +52,8 @@ constexpr bool kSingleSurfaceUVE = true;
 #else
 constexpr bool kSingleSurfaceUVE = false;
 #endif
+/// How far a double-click's second press may land from the first: a finger never taps the same pixel.
+constexpr float kDoubleClickSlopUVE = kSingleSurfaceUVE ? 12.0F : 4.0F;
 /// Bytes kept of a compositor shader or program info log.
 constexpr std::size_t kShaderLogCapacityUVE = 1024;
 
