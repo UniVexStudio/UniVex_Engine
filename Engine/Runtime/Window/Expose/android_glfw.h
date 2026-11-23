@@ -44,12 +44,19 @@ void DispatchAndroidGlfwPointerUVE(AndroidPointerPhaseUVE phase, float x, float 
 void DispatchAndroidGlfwCursorUVE(float x, float y);
 /// A mouse button (GLFW_MOUSE_BUTTON_*) pressed or released at (x, y): what touch gestures stand for.
 void DispatchAndroidGlfwMouseButtonUVE(int button, bool down, float x, float y);
-/// A scroll of the mouse wheel by `dy` notches (a pinch).
-void DispatchAndroidGlfwScrollUVE(float dy);
+/// A scroll of the mouse wheel by `dy` notches (a pinch), and `dx` sideways (a mouse's horizontal wheel).
+void DispatchAndroidGlfwScrollUVE(float dy, float dx = 0.0F);
 /// Text the soft keyboard typed (UTF-32 code point).
 void DispatchAndroidGlfwCharUVE(unsigned int codepoint);
 /// A key from the soft keyboard or a hardware keyboard, as a GLFW key code.
 void DispatchAndroidGlfwKeyUVE(int glfwKey, int action, int mods);
+
+/// Modifiers (GLFW_MOD_*) every key and mouse-button event carries: the ones held on a hardware
+/// keyboard, set from each input event's meta state, OR the sticky ones latched by the on-screen
+/// Controls panel (Ctrl/Shift/Alt for touch).
+void SetAndroidGlfwHeldModsUVE(int glfwMods);
+void SetAndroidGlfwStickyModsUVE(int glfwMods);
+[[nodiscard]] int AndroidGlfwStickyModsUVE();
 
 /// True while a hardware mouse or external keyboard is connected or actively used on Android.
 void SetAndroidGlfwHardwareInputUVE(bool active);

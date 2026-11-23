@@ -71,16 +71,21 @@ void EraseClaimedPointerUVE(TouchGestureUVE& touch, const std::int32_t id) {
            AMotionEvent_getToolType(event, 0) == AMOTION_EVENT_TOOL_TYPE_MOUSE;
 }
 
+[[nodiscard]] int GlfwModsUVE(int32_t metaState);
+
 void HandleMouseEventUVE(ActivityStateUVE& state, const AInputEvent* const event) {
     state.lastInteractionMs = NowMsUVE();
     Window::SetAndroidGlfwHardwareInputUVE(true);
+    // Ctrl/Shift/Alt held on a keyboard while clicking: Ctrl+click toggles a selection, and so on.
+    Window::SetAndroidGlfwHeldModsUVE(GlfwModsUVE(AMotionEvent_getMetaState(event)));
     const float x = AMotionEvent_getX(event, 0);
     const float y = AMotionEvent_getY(event, 0);
     const std::int32_t action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
     if (action == AMOTION_EVENT_ACTION_SCROLL) {
         const float vscroll = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_VSCROLL, 0);
-        if (std::abs(vscroll) > 1.0e-4F) {
-            Window::DispatchAndroidGlfwScrollUVE(vscroll);
+        const float hscroll = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HSCROLL, 0);
+        if (std::abs(vscroll) > 1.0e-4F || std::abs(hscroll) > 1.0e-4F) {
+            Window::DispatchAndroidGlfwScrollUVE(vscroll, hscroll);
         }
         return;
     }
@@ -359,6 +364,16 @@ inline constexpr unsigned int kDeleteCharacterUVE = 0x7FU;
     if (keyCode >= AKEYCODE_0 && keyCode <= AKEYCODE_9) {
         return GLFW_KEY_0 + (keyCode - AKEYCODE_0);
     }
+    // A hardware keyboard's F-keys (F5 Play, F2 Rename, ...) and numpad (the view hotkeys).
+    if (keyCode >= AKEYCODE_F1 && keyCode <= AKEYCODE_F12) {
+        return GLFW_KEY_F1 + (keyCode - AKEYCODE_F1);
+    }
+    if (keyCode >= AKEYCODE_NUMPAD_0 && keyCode <= AKEYCODE_NUMPAD_9) {
+        return GLFW_KEY_KP_0 + (keyCode - AKEYCODE_NUMPAD_0);
+    }
+    if (keyCode == AKEYCODE_INSERT) {
+        return GLFW_KEY_INSERT;
+    }
     for (const KeyMappingUVE& key : kNamedKeysUVE) {
         if (key.android == keyCode) {
             return key.glfw;
@@ -424,6 +439,7 @@ void DispatchUtf8TextUVE(const std::string_view utf8) {
         Window::SetAndroidGlfwHardwareInputUVE(true);
     }
     const int32_t metaState = AKeyEvent_getMetaState(event);
+    Window::SetAndroidGlfwHeldModsUVE(GlfwModsUVE(metaState));   // so a click right after sees Ctrl/Shift held
     if (glfwKey != GLFW_KEY_UNKNOWN) {
         const int glfwAction = action == AKEY_EVENT_ACTION_UP ? GLFW_RELEASE
                                : AKeyEvent_getRepeatCount(event) > 0 ? GLFW_REPEAT
