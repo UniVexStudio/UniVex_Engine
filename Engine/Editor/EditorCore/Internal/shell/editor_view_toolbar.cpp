@@ -3,6 +3,7 @@
 
 #include "editor.h"
 #include "editor_chrome.h"
+#include "editor_touch_controls.h"
 
 #include "prism/Application.h"
 #include "prism/Containers.h"
@@ -67,6 +68,9 @@ prism::Ref<prism::Widget> EditorViewToolbarUVE::BuildUVE(const bool gizmoOnly, p
     m_snapLevelButton->onClick = [this] { ShowSnapLevelsUVE(); };
     settings->add(m_snapLevelButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     settings->add(m_gridButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    if (prism::Ref<prism::Widget> controls = MakeTouchControlsButtonUVE()) {   // touch screens only
+        settings->add(controls, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    }
     if (gizmoOnly) {
         // The Entity Editor's view: the gizmo and its snapping only; the camera, shading and preview
         // lighting are the studio's own.

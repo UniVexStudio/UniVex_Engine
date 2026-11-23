@@ -5,6 +5,7 @@
 #include "editor_blend_space_view.h"
 #include "editor_chrome.h"
 #include "editor_state_machine_view.h"
+#include "editor_touch_controls.h"
 
 #include "animation_graph_editing.h"
 #include "animation_sequencer_component.h"
@@ -253,7 +254,10 @@ prism::Ref<prism::Widget> EditorAnimGraphPanelUVE::BuildToolbarUVE() {
         m_editor.m_animGraph.previewStepOnce = true;
     };
     row->add(step, CentreSlotUVE());
-    auto rate = prism::make<prism::ComboBox>(std::vector<std::string>{"0.25x", "0.5x", "1x", "2x"}, 2);
+    if (prism::Ref<prism::Widget> controls = MakeTouchControlsButtonUVE()) {   // touch screens: Undo, Ctrl, ...
+        row->add(controls, CentreSlotUVE());
+    }
+    auto rate =prism::make<prism::ComboBox>(std::vector<std::string>{"0.25x", "0.5x", "1x", "2x"}, 2);
     rate->onChange = [this](const int i) {
         static constexpr std::array<float, 4> kRates{0.25F, 0.5F, 1.0F, 2.0F};
         if (i >= 0 && i < 4) {

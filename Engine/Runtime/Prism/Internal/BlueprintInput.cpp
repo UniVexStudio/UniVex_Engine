@@ -22,6 +22,13 @@ namespace {
 
 std::string lower(std::string s) { for (auto& ch : s) ch = char(std::tolower(static_cast<unsigned char>(ch))); return s; }
 
+// Touch screens (single-surface hosts): bigger slop and hit areas, one finger pans.
+bool touchUi() { return Application::exists() && Application::get().platform().singleSurface(); }
+float dragSlop() { return touchUi() ? 10.f : 3.f; }
+// A release or move far off the canvas is a host cancel: Android lifts the first finger's button at
+// (-100000, -100000) when a second finger or a long press takes over the gesture.
+bool cancelPos(Vec2 p) { return std::fabs(p.x) > 1e4f || std::fabs(p.y) > 1e4f; }
+
 class Palette : public Widget {
 public:
   struct Row { bool header = false; std::string text, category; int spec = -1; };
@@ -80,17 +87,34 @@ public:
   }
 
   bool onMouseMove(const MouseEvent& e) override {
+    if (m_touchDown) {   // touch: dragging the list scrolls it
+      if (std::fabs(e.pos.y - m_touchStartY) > dragSlop()) m_touchScrolled = true;
+      if (m_touchScrolled && !cancelPos(e.pos)) { m_scroll = clampScroll(m_touchStartScroll - (e.pos.y - m_touchStartY)); invalidate(); }
+      return true;
+    }
     int i = rowAt(e.pos);
     if (i >= 0 && !m_rows[size_t(i)].header && i != m_sel) { m_sel = i; invalidate(); }
     return true;
   }
   bool onMouseDown(const MouseEvent& e) override {
     int i = rowAt(e.pos);
+    if (touchUi()) {     // touch: a row is picked on release, so a drag can scroll instead
+      if (i >= 0) { m_touchDown = true; m_touchScrolled = false; m_touchStartY = e.pos.y; m_touchStartScroll = m_scroll; }
+      return true;
+    }
+    if (i >= 0 && !m_rows[size_t(i)].header) { m_sel = i; accept(); }
+    return true;
+  }
+  bool onMouseUp(const MouseEvent& e) override {
+    if (!m_touchDown) return false;
+    m_touchDown = false;
+    if (m_touchScrolled || cancelPos(e.pos)) return true;
+    int i = rowAt(e.pos);
     if (i >= 0 && !m_rows[size_t(i)].header) { m_sel = i; accept(); }
     return true;
   }
   bool onMouseWheel(const MouseEvent& e) override {
-    m_scroll = std::clamp(m_scroll - e.wheel.y * 40.f, 0.f, std::max(0.f, float(m_rows.size()) * kRow - listRect().h));
+    m_scroll = clampScroll(m_scroll - e.wheel.y * 40.f);
     invalidate();
     return true;
   }
@@ -110,6 +134,9 @@ public:
 
 private:
   static constexpr float kRow = 26;
+  bool m_touchDown = false, m_touchScrolled = false;
+  float m_touchStartY = 0, m_touchStartScroll = 0;
+  float clampScroll(float s) const { return std::clamp(s, 0.f, std::max(0.f, float(m_rows.size()) * kRow - listRect().h)); }
   Rect listRect() const { return {m_rect.x + 4, m_rect.y + 64, m_rect.w - 8, m_rect.h - 70}; }
   int rowAt(Vec2 p) const {
     Rect l = listRect();
@@ -351,7 +378,7 @@ void BlueprintGraph::finishSpawn(const BlueprintNodeSpec& spec, Vec2 world, cons
 
 // ============================================================================ hit testing
 BlueprintGraph::PinHit BlueprintGraph::pinAt(Vec2 p) const {
-  float rad = std::max(9.f, 12.f * m_zoom);
+  float rad = std::max(9.f, 12.f * m_zoom) * (touchUi() ? 2.f : 1.f);
   PinHit best;
   float bestD = rad;
   for (const auto& n : m_nodes) {
@@ -379,7 +406,7 @@ const BlueprintNode* BlueprintGraph::nodeAt(Vec2 p) const {
 int BlueprintGraph::wireAt(Vec2 p) const {
   if (m_wires.size() > 600) return -1;
   int best = -1;
-  float bestD = std::max(5.f, 6.f * m_zoom);
+  float bestD = std::max(5.f, 6.f * m_zoom) * (touchUi() ? 2.f : 1.f);
   for (size_t wi = 0; wi < m_wires.size(); wi++) {
     const auto& w = m_wires[wi];
     const BlueprintNode* a = findNode(w.fromNodeId);
@@ -411,7 +438,8 @@ BlueprintComment* BlueprintGraph::commentResizeAt(Vec2 p) {
   for (auto it = m_comments.rbegin(); it != m_comments.rend(); ++it) {
     Vec2 o = worldToScreen(it->bounds.pos());
     Rect r{o.x, o.y, it->bounds.w * m_zoom, it->bounds.h * m_zoom};
-    if (Rect{r.right() - 18, r.bottom() - 18, 18, 18}.contains(p)) return &*it;
+    const float h = touchUi() ? 36.f : 18.f;
+    if (Rect{r.right() - h, r.bottom() - h, h, h}.contains(p)) return &*it;
   }
   return nullptr;
 }
@@ -691,6 +719,7 @@ bool BlueprintGraph::onMouseDown(const MouseEvent& e) {
   m_dragStartScreen = m_dragCurrent = e.pos;
   m_dragMoved = false;
   m_rightDown = false;
+  m_leftPan = false;
   if (e.pos.y < m_graphRect.y) return e.button == MouseButton::Left ? toolbarClick(e.pos) || true : true;
 
   if (m_features.minimap && m_showMinimap && m_minimapRect.w > 0 && m_minimapRect.contains(e.pos) && e.button == MouseButton::Left) {
@@ -774,6 +803,14 @@ bool BlueprintGraph::onMouseDown(const MouseEvent& e) {
     if (e.mods & ModAlt) { m_wires.erase(m_wires.begin() + wi); touch(); commit("Delete wire"); return true; }
     if (e.clicks == 2) { insertReroute(wi, screenToWorld(e.pos)); return true; }
   }
+  // empty space: one finger pans on a touch screen (a tap clears the selection); Ctrl/Shift (e.g. from the
+  // Controls panel) or a mouse marquees.
+  if (touchUi() && !additive) {
+    m_drag = Drag::Pan;
+    m_panStart = m_pan;
+    m_leftPan = true;
+    return true;
+  }
   // empty space: marquee
   m_dragOrigin.clear();
   if (!additive) clearSelection();
@@ -797,7 +834,8 @@ bool BlueprintGraph::onMouseMove(const MouseEvent& e) {
     if (changed) invalidate();
     return false;
   }
-  if ((e.pos - m_dragStartScreen).length() > 3) m_dragMoved = true;
+  if (cancelPos(e.pos)) { cancelDrag(); return true; }
+  if ((e.pos - m_dragStartScreen).length() > dragSlop()) m_dragMoved = true;
   switch (m_drag) {
     case Drag::Pan:
       m_pan = m_panStart + (e.pos - m_dragStartScreen);
@@ -890,13 +928,56 @@ bool BlueprintGraph::onMouseMove(const MouseEvent& e) {
   return true;
 }
 
-bool BlueprintGraph::onMouseUpInner(const MouseEvent& e) {
-  Drag d = m_drag;
-  if (d == Drag::Wire) { m_dragMoved = m_dragMoved || (e.pos - m_dragStartScreen).length() > 3; finishWire(e.pos); invalidate(); return true; }
+void BlueprintGraph::cancelDrag() {
+  switch (m_drag) {
+    case Drag::Nodes:
+      for (auto& [id, org] : m_dragOrigin) if (BlueprintNode* n = nodeById(id)) n->pos = org;
+      break;
+    case Drag::Comment:
+      for (auto& [id, org] : m_commentOrigin) for (auto& c : m_comments) if (c.id == id) { c.bounds.x = org.x; c.bounds.y = org.y; }
+      for (auto& [id, org] : m_dragOrigin) if (BlueprintNode* n = nodeById(id)) n->pos = org;
+      break;
+    case Drag::CommentResize:
+      for (auto& c : m_comments) if (c.id == m_dragCommentId) { c.bounds.w = m_commentSizeStart.x; c.bounds.h = m_commentSizeStart.y; }
+      break;
+    case Drag::Marquee:   // back to the selection the press left
+      for (auto& n : m_nodes)
+        n.selected = std::any_of(m_dragOrigin.begin(), m_dragOrigin.end(), [&](auto& o) { return o.first == n.id; });
+      break;
+    case Drag::Wire:
+      if (m_pickedWire) {   // the press picked a wire up: put it back
+        m_wires.push_back(*m_pickedWire);
+        m_pickedWire.reset();
+        touch();
+        m_drag = Drag::None;
+        m_wireFrom = {};
+        m_wireTarget = {};
+      } else {              // as a tap on the pin: no palette
+        m_wireTarget = {};
+        m_dragMoved = false;
+        finishWire({});
+      }
+      break;
+    default: break;   // Pan / Minimap: the view stays where it is
+  }
   m_drag = Drag::None;
+  m_pendingSelect = -1;
+  m_rightDown = false;
+  m_leftPan = false;
+  invalidate();
+}
+
+bool BlueprintGraph::onMouseUpInner(const MouseEvent& e) {
+  if (cancelPos(e.pos)) { cancelDrag(); return true; }
+  Drag d = m_drag;
+  if (d == Drag::Wire) { m_dragMoved = m_dragMoved || (e.pos - m_dragStartScreen).length() > dragSlop(); finishWire(e.pos); invalidate(); return true; }
+  m_drag = Drag::None;
+  const bool leftPan = m_leftPan;
+  m_leftPan = false;
   switch (d) {
     case Drag::Pan:
       if (m_rightDown && !m_dragMoved) openContextAt(e.pos);
+      else if (leftPan && !m_dragMoved) clearSelection();
       break;
     case Drag::Nodes:
       if (m_dragMoved) commit("Move nodes");

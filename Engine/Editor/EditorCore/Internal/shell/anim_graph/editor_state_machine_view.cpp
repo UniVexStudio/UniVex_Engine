@@ -29,6 +29,10 @@ namespace {
 using Kind = Scene::AnimationGraphNodeKindUVE;
 using NodeUVE = Scene::AnimationGraphNodeUVE;
 
+// Android lifts the first finger's button far off-screen (-100000) when a second finger or a long press
+// takes over the gesture: that is a cancel, not a drag to there.
+[[nodiscard]] bool IsGestureCancelUVE(const prism::Vec2 p) { return std::fabs(p.x) > 1.0e4F || std::fabs(p.y) > 1.0e4F; }
+
 constexpr float kStateWUVE = 168.0F;
 constexpr float kStateHUVE = 52.0F;
 constexpr float kPortWUVE = 96.0F;
@@ -456,6 +460,10 @@ bool StateMachineViewUVE::onMouseDown(const prism::MouseEvent& e) {
 }
 
 bool StateMachineViewUVE::onMouseMove(const prism::MouseEvent& e) {
+    if (IsGestureCancelUVE(e.pos)) {
+        CancelDragUVE();
+        return true;
+    }
     if (const NodeUVE* machine = MachineUVE(); machine != nullptr && m_drag == DragUVE::None) {
         const int box = BoxAtUVE(*machine, e.pos);
         const bool edge = box != kNoneUVE && OnEdgeUVE(*machine, box, e.pos);
@@ -478,6 +486,10 @@ bool StateMachineViewUVE::onMouseMove(const prism::MouseEvent& e) {
 }
 
 bool StateMachineViewUVE::onMouseUp(const prism::MouseEvent& e) {
+    if (IsGestureCancelUVE(e.pos)) {
+        CancelDragUVE();
+        return true;
+    }
     m_mouse = e.pos;
     const NodeUVE* machine = MachineUVE();
     if (machine != nullptr && m_drag == DragUVE::Move && (std::abs(e.pos.x - m_dragFrom.x) > 2.0F || std::abs(e.pos.y - m_dragFrom.y) > 2.0F)) {
@@ -517,10 +529,18 @@ bool StateMachineViewUVE::onMouseUp(const prism::MouseEvent& e) {
     return true;
 }
 
+void StateMachineViewUVE::CancelDragUVE() {
+    // A move or link in progress is dropped (the pan already applied stays).
+    m_drag = DragUVE::None;
+    m_dragBox = kNoneUVE;
+    invalidate();
+}
+
 bool StateMachineViewUVE::onMouseWheel(const prism::MouseEvent& e) {
     EditorUVE::AnimationGraphViewStateUVE& v = m_panel.m_editor.m_animGraph;
     const Math::Vector2UVE anchor = ToWorldUVE(e.pos);
-    v.stateZoom = std::clamp(v.stateZoom * (e.wheel.y > 0.0F ? 1.15F : 1.0F / 1.15F), 0.3F, 2.0F);
+    // In proportion to the wheel: a pinch sends many small deltas, a fixed step per event over-zoomed.
+    v.stateZoom = std::clamp(v.stateZoom * std::pow(1.15F, e.wheel.y), 0.3F, 2.0F);
     v.statePanX = anchor.x - (e.pos.x - m_rect.x) / v.stateZoom;
     v.statePanY = anchor.y - (e.pos.y - m_rect.y) / v.stateZoom;
     invalidate();
