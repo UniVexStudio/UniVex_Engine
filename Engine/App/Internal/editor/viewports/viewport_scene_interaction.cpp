@@ -140,6 +140,12 @@ ViewportSceneInteractionUVE::~ViewportSceneInteractionUVE() {
         glDeleteBuffers(2, m_hostDepthPbo.data());
         m_hostDepthPbo = {};
     }
+    for (GLsync& fence : m_hostDepthFence) {
+        if (fence != nullptr) {
+            glDeleteSync(fence);
+            fence = nullptr;
+        }
+    }
     if (m_hostDepthTexture != 0U) {
         glDeleteTextures(1, &m_hostDepthTexture);
         m_hostDepthTexture = 0U;
@@ -626,8 +632,26 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
     glReadPixels(0, 0, m_hostDepthWidth, m_hostDepthHeight, GL_RED, GL_FLOAT, nullptr);
 #endif
     m_hostDepthPboFilled[write] = true;
+    if (m_hostDepthFence[write] != nullptr) {
+        glDeleteSync(m_hostDepthFence[write]);
+    }
+    m_hostDepthFence[write] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
-    if (m_hostDepthPboFilled[read]) {
+    // Map last frame's buffer only once the GPU has written it: mapping earlier made the CPU wait for
+    // the GPU to finish that whole frame, so a GPU-heavy view (a mesh filling it) also stalled the CPU.
+    // Until then the previous depth is kept, at most a frame or two older.
+    bool readReady = m_hostDepthPboFilled[read];
+    if (readReady && m_hostDepthFence[read] != nullptr) {
+        const GLenum wait = glClientWaitSync(m_hostDepthFence[read], 0, 0);
+        readReady = wait == GL_ALREADY_SIGNALED || wait == GL_CONDITION_SATISFIED;
+    }
+    if (!readReady && m_hostDepthPboFilled[read] && !m_cachedHostDepth.empty() &&
+        m_cachedHostDepthWidth == m_hostDepthWidth && m_cachedHostDepthHeight == m_hostDepthHeight) {
+        overlayState.sceneDepth = m_cachedHostDepth;
+        overlayState.sceneDepthWidth = m_cachedHostDepthWidth;
+        overlayState.sceneDepthHeight = m_cachedHostDepthHeight;
+    }
+    if (readReady) {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, m_hostDepthPbo[read]);
 #if defined(UNIVEX_GL_ES)
         if (const auto* const rows =
@@ -670,6 +694,9 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
             overlayState.sceneDepthWidth = m_hostDepthWidth;
             overlayState.sceneDepthHeight = m_hostDepthHeight;
+            m_cachedHostDepth = overlayState.sceneDepth;
+            m_cachedHostDepthWidth = m_hostDepthWidth;
+            m_cachedHostDepthHeight = m_hostDepthHeight;
         }
 #endif
     }

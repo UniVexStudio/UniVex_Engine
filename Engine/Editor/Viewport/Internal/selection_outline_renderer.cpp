@@ -239,16 +239,55 @@ void SelectionOutlineRenderer::Draw(const univex::math::Mat4& viewProjection, co
         glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
         glBlendEquation(GL_FUNC_ADD);
         ApplyOverlayRasterState(kScreenSpaceCompositeState);
+        // The band only lands within `radius` of the selection, so scissor the full-screen pass to the
+        // selection's screen box: elsewhere every pixel ran (2r+1)^2 mask fetches only to discard.
+        // No scissor when a vertex is at or behind the eye (its clipped shape can reach anywhere).
+        const int radius = static_cast<int>(std::lround(settings.thicknessPixels));
+        const float* vp = viewProjection.Data();   // column-major
+        float x0 = 1e30f, y0 = 1e30f, x1 = -1e30f, y1 = -1e30f;
+        bool boxed = true;
+        for (const SelectionOutlineVertex& v : triangles) {
+            const float cx = vp[0] * v.x + vp[4] * v.y + vp[8] * v.z + vp[12];
+            const float cy = vp[1] * v.x + vp[5] * v.y + vp[9] * v.z + vp[13];
+            const float cw = vp[3] * v.x + vp[7] * v.y + vp[11] * v.z + vp[15];
+            if (!(cw > 1e-6f)) {
+                boxed = false;
+                break;
+            }
+            const float px = (cx / cw * 0.5f + 0.5f) * static_cast<float>(width);
+            const float py = (cy / cw * 0.5f + 0.5f) * static_cast<float>(height);
+            x0 = std::min(x0, px); x1 = std::max(x1, px);
+            y0 = std::min(y0, py); y1 = std::max(y1, py);
+        }
+        const GLboolean scissorWas = glIsEnabled(GL_SCISSOR_TEST);
+        std::array<GLint, 4> scissorBox{};
+        glGetIntegerv(GL_SCISSOR_BOX, scissorBox.data());
+        bool draw = true;
+        if (boxed) {
+            const int pad = radius + 2;
+            const int sx0 = std::clamp(static_cast<int>(std::floor(x0)) - pad, 0, width);
+            const int sy0 = std::clamp(static_cast<int>(std::floor(y0)) - pad, 0, height);
+            const int sx1 = std::clamp(static_cast<int>(std::ceil(x1)) + pad, 0, width);
+            const int sy1 = std::clamp(static_cast<int>(std::ceil(y1)) + pad, 0, height);
+            draw = sx1 > sx0 && sy1 > sy0;
+            glEnable(GL_SCISSOR_TEST);
+            glScissor(sx0, sy0, std::max(0, sx1 - sx0), std::max(0, sy1 - sy0));
+        }
         outlineProgram_.Use();
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, maskTexture_);
         glUniform1i(outlineProgram_.UniformLocation("uMask"), 0);
-        glUniform1i(outlineProgram_.UniformLocation("uRadius"),
-                    static_cast<GLint>(std::lround(settings.thicknessPixels)));
+        glUniform1i(outlineProgram_.UniformLocation("uRadius"), static_cast<GLint>(radius));
         outlineProgram_.SetVec3("uColor", settings.r, settings.g, settings.b);
         glBindVertexArray(fullscreenVao_);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        if (draw) {
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+        }
         glBindTexture(GL_TEXTURE_2D, 0);
+        glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+        if (!scissorWas) {
+            glDisable(GL_SCISSOR_TEST);
+        }
     }
     glBindVertexArray(0);
 
