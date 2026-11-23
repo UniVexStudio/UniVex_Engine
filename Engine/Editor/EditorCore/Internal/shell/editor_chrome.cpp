@@ -48,23 +48,25 @@ namespace {
 
 // ------------------------------------------------------------------------------------------ logo
 
+// The slot is as wide as the logo plus its 1px border: the logo keeps its size, the empty space that
+// stood beside it is gone.
 prism::Vec2 LogoBoxUVE::measure(prism::Vec2) {
     if (m_compact) {
         if (m_spansTwoRows) {
-            return m_desired = constrain(prism::Vec2(kCompactTwoRowLogoUVE, kCompactTwoRowLogoUVE));
+            return m_desired = constrain(prism::Vec2(kCompactTwoRowLogoUVE - 6.0F, kCompactTwoRowLogoUVE));
         }
-        return m_desired = constrain(prism::Vec2(kCompactLogoBoxUVE, kCompactTitleRowUVE));
+        return m_desired = constrain(prism::Vec2(kCompactLogoBoxUVE - 3.0F, kCompactTitleRowUVE));
     }
-    return m_desired = constrain(prism::Vec2(kLogoBoxUVE, kTitleRowUVE + kTabRowUVE));
+    return m_desired = constrain(prism::Vec2(kLogoBoxUVE - 6.0F, kTitleRowUVE + kTabRowUVE));
 }
 
 void LogoBoxUVE::paint(prism::Canvas& c) {
     const prism::Theme& t = prism::theme();
     const prism::Rect r = rect();
     c.fillRect(r, t.header);
-    const float inset = (m_compact && !m_spansTwoRows) ? 4.0F : 7.0F;
+    const float inset = 1.0F;   // the right border
     const float side = std::max(10.0F, std::floor(std::min(r.w, r.h) - inset));
-    const prism::Rect mark{r.x + (r.w - side) * 0.5F, r.y + (r.h - side) * 0.5F, side, side};
+    const prism::Rect mark{r.x + (r.w - inset - side) * 0.5F, r.y + (r.h - side) * 0.5F, side, side};
     if (prism::hasBrandMark()) {
         prism::drawBrandMark(c, mark);
     } else {

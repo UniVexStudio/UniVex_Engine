@@ -426,6 +426,7 @@ private:
   std::vector<int> m_lastSelection;
   void notifySelection();
   bool onMouseUpInner(const MouseEvent& e);
+  void cancelDrag();   // undoes the drag in progress without committing (a touch gesture took over)
   Rect bodyScreenRect(const BlueprintNode& n) const;
   void paintScaledBody(Canvas& c, const BlueprintNode& n, Widget& body, Rect screen, float zoom);
   BlueprintGraphPreset m_preset = BlueprintGraphPreset::WidgetBlueprint;
@@ -449,6 +450,7 @@ private:
   int m_dragCommentId = -1;
   int m_pendingSelect = -1;      // node to select alone if the press turns out to be a click, not a drag
   Vec2 m_commentSizeStart{0, 0};
+  bool m_leftPan = false;   // a one-finger pan from empty space (touch): a tap without moving clears the selection
   // wiring
   PinHit m_wireFrom;
   // The wire picked up off a connected input (pose graphs): a node added from the palette at the end

@@ -54,6 +54,8 @@ GLFWvidmode g_modeUVE{};
 ANativeActivity* g_activityUVE = nullptr;
 std::string g_clipboardUVE;
 bool g_hardwareInputActiveUVE = false;
+int g_heldModsUVE = 0;
+int g_stickyModsUVE = 0;
 std::vector<UVE::Window::AndroidTouchContactUVE> g_touchContactsUVE;
 std::function<bool(float, float)> g_touchClaimHookUVE;
 const auto g_startUVE = std::chrono::steady_clock::now();
@@ -112,7 +114,7 @@ void DispatchAndroidGlfwPointerUVE(const AndroidPointerPhaseUVE phase, const flo
         w.pressed = down;
         w.buttons[GLFW_MOUSE_BUTTON_LEFT] = down;
         if (w.mouseButton != nullptr) {
-            w.mouseButton(&w, GLFW_MOUSE_BUTTON_LEFT, down ? GLFW_PRESS : GLFW_RELEASE, 0);
+            w.mouseButton(&w, GLFW_MOUSE_BUTTON_LEFT, down ? GLFW_PRESS : GLFW_RELEASE, g_heldModsUVE | g_stickyModsUVE);
         }
     }
 }
@@ -141,13 +143,13 @@ void DispatchAndroidGlfwMouseButtonUVE(const int button, const bool down, const 
         w.pressed = down;
     }
     if (w.mouseButton != nullptr) {
-        w.mouseButton(&w, button, down ? GLFW_PRESS : GLFW_RELEASE, 0);
+        w.mouseButton(&w, button, down ? GLFW_PRESS : GLFW_RELEASE, g_heldModsUVE | g_stickyModsUVE);
     }
 }
 
-void DispatchAndroidGlfwScrollUVE(const float dy) {
+void DispatchAndroidGlfwScrollUVE(const float dy, const float dx) {
     if (g_windowUVE.scroll != nullptr) {
-        g_windowUVE.scroll(&g_windowUVE, 0.0, static_cast<double>(dy));
+        g_windowUVE.scroll(&g_windowUVE, static_cast<double>(dx), static_cast<double>(dy));
     }
 }
 
@@ -159,7 +161,7 @@ void DispatchAndroidGlfwCharUVE(const unsigned int codepoint) {
 
 void DispatchAndroidGlfwKeyUVE(const int glfwKey, const int action, const int mods) {
     if (g_windowUVE.key != nullptr) {
-        g_windowUVE.key(&g_windowUVE, glfwKey, 0, action, mods);
+        g_windowUVE.key(&g_windowUVE, glfwKey, 0, action, mods | g_stickyModsUVE);
     }
 }
 
@@ -169,6 +171,18 @@ void SetAndroidGlfwHardwareInputUVE(const bool active) {
 
 bool AndroidGlfwHasHardwareInputUVE() {
     return g_hardwareInputActiveUVE;
+}
+
+void SetAndroidGlfwHeldModsUVE(const int glfwMods) {
+    g_heldModsUVE = glfwMods;
+}
+
+void SetAndroidGlfwStickyModsUVE(const int glfwMods) {
+    g_stickyModsUVE = glfwMods;
+}
+
+int AndroidGlfwStickyModsUVE() {
+    return g_stickyModsUVE;
 }
 
 void SetAndroidGlfwTouchContactsUVE(std::vector<AndroidTouchContactUVE> contacts) {

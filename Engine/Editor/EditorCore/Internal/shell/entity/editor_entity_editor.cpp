@@ -4,6 +4,7 @@
 
 #include "editor.h"
 #include "editor_chrome.h"
+#include "editor_touch_controls.h"
 #include "editor_host.h"
 #include "editor_shell.h"
 #include "animation_graph_component.h"
@@ -525,6 +526,9 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildToolbarRowUVE() {
         }
     };
     row->add(classSettings, CentreUVE());
+    if (prism::Ref<prism::Widget> controls = MakeTouchControlsButtonUVE()) {   // touch screens: Undo, Ctrl, ...
+        row->add(controls, CentreUVE());
+    }
     row->add(HSeparatorUVE());
 
     // Simulate is on the sub row, beside the Blueprint button.

@@ -1442,6 +1442,43 @@ static void testBlueprintInteraction(Application& app) {
   app.closeAllPopups();
 }
 
+// A touch host cancels a press by lifting the button far off-screen (Android: -100000) when a second
+// finger or a long press takes over: a node drag in progress goes back, a marquee keeps the selection.
+static void testBlueprintGestureCancel(Application& app) {
+  SECTION("blueprint_gesture_cancel");
+  app.closeAllPopups();
+  app.hostResize(1000, 700);
+  auto g = make<BlueprintGraph>();
+  app.setRoot(g);
+  g->clear();
+  g->setView({0, 0}, 1.0f);
+  const BlueprintNodeSpec* rnd = nullptr;
+  for (auto& sp : blueprintNodeLibrary()) if (sp.name == "Random Float") rnd = &sp;
+  int a = g->spawnNode(*rnd, {80, 80});
+  int b = g->spawnNode(*rnd, {400, 300});
+  app.tick(); app.render();
+  g->commit("setup");
+  const Vec2 far{-100000, -100000};
+  // node drag, then cancel: the node is back where it was
+  Vec2 hdr = g->worldToScreen({80, 80}) + Vec2(30, 14);
+  Vec2 before = g->findNode(a)->pos;
+  app.hostMouseButton(hdr, MouseButton::Left, true);
+  app.hostMouseMove(hdr + Vec2(60, 40));
+  CHECK(g->findNode(a)->pos.x != before.x);
+  app.hostMouseMove(far);
+  app.hostMouseButton(far, MouseButton::Left, false);
+  CHECK(g->findNode(a)->pos.x == before.x && g->findNode(a)->pos.y == before.y);
+  // marquee from empty space, then cancel: nothing new is selected
+  g->clearSelection();
+  Vec2 empty{900, 650};
+  app.hostMouseButton(empty, MouseButton::Left, true);
+  app.hostMouseMove({20, 20});
+  app.hostMouseMove(far);
+  app.hostMouseButton(far, MouseButton::Left, false);
+  CHECK(!g->findNode(a)->selected && !g->findNode(b)->selected);
+  app.closeAllPopups();
+}
+
 // An embedded graph: no chrome, its own library and spawn hook, commit / selection callbacks, the
 // host's connection rule, an icon override, and a settings widget inside a node that takes clicks.
 static void testBlueprintEmbedded(Application& app) {
@@ -3482,6 +3519,7 @@ int main(int argc, char** argv) {
   testBlueprintEditing();
   testBlueprintPinValues(app);
   testBlueprintInteraction(app);
+  testBlueprintGestureCancel(app);
   testColorPickerWindow(app);
   testBlueprintGraphTypes(app);
   testBlueprintAdvanced(app);
