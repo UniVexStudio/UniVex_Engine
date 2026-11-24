@@ -887,7 +887,7 @@ TEST(FbxMeshConverterUVETest, TheImporterPublishesAUveModelAndRegistersIt) {
 
 TEST(FbxMeshConverterUVETest, ExtractFbxImportBundleUVE_MatchesIndividualReadersOnMultiMeshScene) {
     const std::string fbx = MakeTwoMeshFbxUVE();
-    const std::vector<std::byte> bytes = BytesUVE(fbx);
+    const std::span<const std::byte> bytes = BytesUVE(fbx);
 
     FbxSceneImportBundleUVE bundle;
     ASSERT_TRUE(ExtractFbxImportBundleUVE(bytes, bundle));
