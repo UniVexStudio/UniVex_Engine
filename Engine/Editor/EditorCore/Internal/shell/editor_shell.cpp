@@ -153,6 +153,11 @@ bool EditorShellUVE::InitializeUVE(GLFWwindow* const window, const std::filesyst
     LoadThumbnailBackdropUVE(assetDir / "images" / "thumbnail_backdrop.png");
     m_dockPanels.AttachLogUVE();
     m_editor.SetFilePickerHostUVE([this](FilePickerRequestUVE request) { m_fileDialog.OpenUVE(std::move(request)); });
+    // Dropped from the file manager: imported into the folder the Asset Table shows.
+    m_host.onFilesDropped = [this](std::vector<std::filesystem::path> files) {
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        static_cast<void>(m_editor.ImportExternalFilesUVE(files, root / m_editor.m_assetTableDirectory));
+    };
     m_host.SetRootUVE(BuildLayoutUVE());
     // Every keyboard shortcut is an editor command's (the same registry the menus use).
     m_host.AppUVE().setShortcutHandler([this](const prism::Key key, const std::uint8_t mods) {

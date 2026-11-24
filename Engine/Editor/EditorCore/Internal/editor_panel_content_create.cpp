@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -244,7 +245,8 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
                 L"Scripts & Shaders (*.uvs;*.uvshader;*.glsl)\0*.uvs;*.uvshader;*.glsl\0"
                 L"All Files (*.*)\0*.*\0\0";
             ofn.nFilterIndex = 1;
-            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
+            // NOCHANGEDIR: the project's relative paths stay valid after browsing elsewhere.
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_NOCHANGEDIR;
 
             if (pGetOpenFileNameW(&ofn)) {
                 FreeLibrary(comdlg);
@@ -266,6 +268,8 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
                 }
                 return ImportExternalFilesUVE(chosenFiles, destDir);
             }
+            FreeLibrary(comdlg);
+            return false;   // cancelled: no second dialog
         }
         FreeLibrary(comdlg);
     }
@@ -277,6 +281,25 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
     request.title = "Import Assets";
     request.extensions = {".fbx", ".gltf", ".glb", ".obj", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg", ".mp3", ".uvshader", ".glsl"};
     request.onPick = [this, destDir](const std::filesystem::path& chosen) { static_cast<void>(ImportExternalFilesUVE({chosen}, destDir)); };
+    // Start where downloaded models usually are, not in the (often empty) project folder.
+    {
+#if defined(__ANDROID__)
+        const char* const storage = std::getenv("UNIVEX_ANDROID_PUBLIC_STORAGE");
+        const std::filesystem::path home = (storage != nullptr && *storage != '\0') ? std::filesystem::path(storage)
+                                                                                  : std::filesystem::path("/storage/emulated/0");
+        const std::filesystem::path downloads = home / "Download";
+#else
+#if defined(_WIN32)
+        const char* const homeEnv = std::getenv("USERPROFILE");
+#else
+        const char* const homeEnv = std::getenv("HOME");
+#endif
+        const std::filesystem::path home = homeEnv != nullptr ? std::filesystem::path(homeEnv) : std::filesystem::path();
+        const std::filesystem::path downloads = home / "Downloads";
+#endif
+        std::error_code error;
+        request.startDirectory = std::filesystem::is_directory(downloads, error) ? downloads : home;
+    }
     OpenFilePickerUVE(std::move(request));
     return false;
 }

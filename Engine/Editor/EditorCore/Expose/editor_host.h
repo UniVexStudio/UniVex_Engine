@@ -47,6 +47,8 @@ inline constexpr int kExtraCaptionIdUVE = 100;
 
 class EditorHostUVE final {
 public:
+    /// Files dragged from the system's file manager and dropped on the main window (desktop).
+    std::function<void(std::vector<std::filesystem::path>)> onFilesDropped;
     /// One engine render target to place under an EngineView hole this frame.
     struct ViewImageUVE final {
         prism::Rect rect;              ///< window pixels, top-left origin

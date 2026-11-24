@@ -1536,12 +1536,24 @@ bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
     if (!ApplyMeshSourceStateUVE(m_selectedEntity, afterMesh, afterShape)) {
         return false;
     }
-    // A skinned mesh takes the bones of the model it now draws.
-    if (!shape.has_value() && model != Asset::kInvalidAssetGuidUVE &&
-        entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
-        auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
-        AutoPopulateSkinFromModelUVE(m_selectedEntity, skin);
-        entityManager.AddComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity, skin);
+    // A skinned mesh takes the bones of the model it now draws. A rigged model on an object with no
+    // Skin yet gets one when a Skeleton3D with bones stands beside it (on it, a child, the parent or a
+    // sibling); with none, the status says how to get its skeleton.
+    if (!shape.has_value() && model != Asset::kInvalidAssetGuidUVE) {
+        if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
+            auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
+            AutoPopulateSkinFromModelUVE(m_selectedEntity, skin);
+            entityManager.AddComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity, skin);
+        } else if (const std::optional<Asset::MeshAssetUVE> meshAsset = LoadEntityMeshAssetUVE(m_selectedEntity);
+                   meshAsset.has_value() && !meshAsset->joints.empty()) {
+            Scene::SkinComponentUVE skin;
+            if (AutoPopulateSkinFromModelUVE(m_selectedEntity, skin)) {
+                entityManager.AddComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity, skin);
+            } else {
+                m_contentStatusMessage = "This model is rigged: use Place in Scene on it in the Asset Table to get "
+                                         "its skeleton, or add a Skeleton3D and set its Source to this model.";
+            }
+        }
     }
     m_sceneDirty = true;
     RecordHistoryUVE(MeshSourceHistoryEntryUVE{m_selectedEntity, beforeMesh, beforeShape, afterMesh, afterShape,

@@ -560,6 +560,13 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
     createRow->setPadding(prism::Margin(4.0F, 3.0F, 4.0F, 3.0F));
     createRow->add(addButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(saveAllButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    auto importButton = prism::make<prism::Button>("Import", prism::Icon::Open, prism::ButtonStyle::Toolbar);
+    importButton->setTooltip("Import models, textures and sounds into this folder");
+    importButton->onClick = [this] {
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        static_cast<void>(m_editor.PromptImportFilesUVE(root / m_editor.m_assetTableDirectory));
+    };
+    createRow->add(importButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto createBar = prism::make<prism::Border>();
     createBar->setBackground(prism::ThemeColor(&prism::Theme::header));

@@ -72,7 +72,7 @@ namespace {
     if (size > 0U && !file.read(bytes.data(), static_cast<std::streamsize>(size))) {
         return std::nullopt;
     }
-    return Asset::ReadFbxSkeletonUVE(std::as_bytes(std::span<const char>(bytes)), maximumBones);
+    return Asset::ReadFbxSkeletonUVE(std::as_bytes(std::span<const char>(bytes)), maximumBones, Asset::FbxBoneOverflowUVE::Truncate);
 }
 
 /// A helper bone rather than a part of the body: the root on the ground, IK targets, sockets.

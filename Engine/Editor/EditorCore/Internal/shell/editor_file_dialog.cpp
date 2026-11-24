@@ -442,36 +442,6 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
 
 // ------------------------------------------------------------------------------------ navigation
 
-bool EditorFileDialogUVE::FolderHasKindUVE(const std::filesystem::path& folder, std::size_t& budget) const {
-    if (m_allKinds || m_request.extensions.empty()) {
-        return true;
-    }
-    // Bounded by one budget for the whole listing: a folder past it, or this deep, is shown rather than
-    // searched. Per folder it was 4000 entries each, which on Android's slow shared storage froze the
-    // dialog for long enough that the system killed the app.
-    std::error_code error;
-    for (auto it = std::filesystem::recursive_directory_iterator(
-             folder, std::filesystem::directory_options::skip_permission_denied, error);
-         !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
-        if (budget == 0U || it.depth() > 8) {
-            return true;
-        }
-        --budget;
-        const std::string name = Utf8UVE(it->path().filename());
-        if (!name.empty() && name.front() == '.') {
-            if (it->is_directory(error)) {
-                it.disable_recursion_pending();
-            }
-            continue;
-        }
-        std::error_code statError;
-        if (it->is_regular_file(statError) && MatchesKindUVE(it->path())) {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool EditorFileDialogUVE::MatchesKindUVE(const std::filesystem::path& file) const {
     if (m_allKinds || m_request.extensions.empty()) {
         return true;
@@ -499,7 +469,6 @@ void EditorFileDialogUVE::RebuildListUVE() {
     const std::string needle = m_search ? LowerUVE(m_search->text()) : std::string();
     std::error_code error;
     std::size_t hidden = 0U;
-    std::size_t scanBudget = 2000U;   // entries looked at, over every folder of this listing
     for (auto it = std::filesystem::directory_iterator(m_directory, std::filesystem::directory_options::skip_permission_denied,
                                                        error);
          !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
@@ -512,10 +481,6 @@ void EditorFileDialogUVE::RebuildListUVE() {
         const bool directory = it->is_directory(statError);
         if (!directory && !MatchesKindUVE(path)) {
             ++hidden;
-            continue;
-        }
-        // A folder is worth opening only when something of the asked kinds is inside it.
-        if (directory && !FolderHasKindUVE(path, scanBudget)) {
             continue;
         }
         if (!needle.empty() && LowerUVE(name).find(needle) == std::string::npos) {

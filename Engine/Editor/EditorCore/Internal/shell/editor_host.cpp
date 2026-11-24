@@ -696,6 +696,9 @@ struct EditorHostUVE::ChainUVE final {
     GLFWkeyfun key = nullptr;
     GLFWcharfun character = nullptr;
     GLFWcursorenterfun cursorEnter = nullptr;
+#if !defined(__ANDROID__)
+    GLFWdropfun drop = nullptr;
+#endif
 
     [[nodiscard]] static EditorHostUVE::WindowUVE* MainUVE() {
         return g_activeHostUVE != nullptr ? g_activeHostUVE->m_main.get() : nullptr;
@@ -804,6 +807,25 @@ struct EditorHostUVE::ChainUVE final {
             g_activeHostUVE->OnCursorEnterUVE(*main, entered);
         }
     }
+#if !defined(__ANDROID__)
+    static void DropUVE(GLFWwindow* w, const int count, const char** paths) {
+        if (g_activeHostUVE == nullptr) {
+            return;
+        }
+        if (g_activeHostUVE->m_chain->drop != nullptr) { g_activeHostUVE->m_chain->drop(w, count, paths); }
+        if (!g_activeHostUVE->onFilesDropped || count <= 0 || paths == nullptr) {
+            return;
+        }
+        std::vector<std::filesystem::path> files;
+        for (int i = 0; i < count; ++i) {
+            if (paths[i] != nullptr) {   // GLFW hands UTF-8
+                const std::string utf8(paths[i]);
+                files.emplace_back(std::u8string(utf8.begin(), utf8.end()));
+            }
+        }
+        g_activeHostUVE->onFilesDropped(std::move(files));
+    }
+#endif
 };
 
 namespace {
@@ -983,6 +1005,9 @@ bool EditorHostUVE::InitializeUVE(GLFWwindow* const window, const std::filesyste
     m_chain->key = glfwSetKeyCallback(window, &ChainUVE::KeyUVE);
     m_chain->character = glfwSetCharCallback(window, &ChainUVE::CharUVE);
     m_chain->cursorEnter = glfwSetCursorEnterCallback(window, &ChainUVE::CursorEnterUVE);
+#if !defined(__ANDROID__)
+    m_chain->drop = glfwSetDropCallback(window, &ChainUVE::DropUVE);
+#endif
 
     double x = 0.0;
     double y = 0.0;
@@ -1009,6 +1034,9 @@ void EditorHostUVE::ShutdownUVE() {
         glfwSetKeyCallback(window, m_chain->key);
         glfwSetCharCallback(window, m_chain->character);
         glfwSetCursorEnterCallback(window, m_chain->cursorEnter);
+#if !defined(__ANDROID__)
+        glfwSetDropCallback(window, m_chain->drop);
+#endif
     }
     if (g_activeHostUVE == this) {
         g_activeHostUVE = nullptr;
