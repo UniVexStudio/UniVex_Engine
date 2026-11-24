@@ -1006,9 +1006,11 @@ public:
     ///   |     +- <File> Mesh      (MeshInstance3D, when the file has a mesh)
     ///   +- AnimationSequencer        playing the file's first take, looping (when it has takes)
     /// and a file without bones becomes one MeshInstance3D. Refused while the converted mesh a
-    /// file needs is not imported yet.
+    /// file needs is not imported yet. `relativeClip`, one of the file's `.uvanim` takes, is the
+    /// one the AnimationSequencer plays instead of the first.
     [[nodiscard]] Scene::EntityUVE PlaceModelSourceUVE(const std::filesystem::path& relativeSource,
-                                                       Scene::EntityUVE parent = Scene::kInvalidEntityUVE);
+                                                       Scene::EntityUVE parent = Scene::kInvalidEntityUVE,
+                                                       const std::filesystem::path& relativeClip = {});
 
     /// The Entity Editor: an entity asset opened on its own, in its own window. While it is open
     /// the entity *is* the document - the scene is put aside in a snapshot (the way Play does),
@@ -1537,6 +1539,14 @@ public:
     /// selection is cleared. Returns false without mutation for the same invalid/safety states as
     /// DuplicateSelectedEntityUVE().
     [[nodiscard]] bool DeleteSelectedEntityUVE();
+
+    /// Deletes every selected object Delete may remove, each with everything under it, as one
+    /// Undo/Redo step. Roots, blocked objects (ObjectActionBlockReasonUVE()) and objects under
+    /// another deleted one are skipped; a single object deletes exactly as DeleteSelectedEntityUVE().
+    /// False without mutation when nothing selected can be deleted.
+    [[nodiscard]] bool DeleteSelectedEntitiesUVE();
+    /// DeleteSelectedEntitiesUVE(), after asking when it would delete more than one object.
+    void RequestDeleteSelectedEntitiesUVE();
 
     /// Copies the selected object and everything under it (the Outliner's Copy; it works across
     /// documents, so a level object can be pasted into an open entity). False when nothing copyable
@@ -2316,6 +2326,16 @@ private:
         std::size_t siblingIndex = 0U;
     };
 
+    /// Several subtrees deleted as one step. Undo restores them in reverse order, so each sibling
+    /// index lands in the layout it was captured from.
+    struct MultiDeletionHistoryEntryUVE final {
+        std::vector<DeletionHistoryEntryUVE> deletions;
+        EditorSelectionSnapshotUVE selectionBefore;
+        EditorSelectionSnapshotUVE selectionAfter;
+        bool dirtyBefore = false;
+        bool dirtyAfter = false;
+    };
+
     /// A hierarchy move restores its parent, place among its siblings and authored local
     /// Transform atomically on replay. A move up or down is one with the same parent.
     struct ReparentHistoryEntryUVE final {
@@ -2338,8 +2358,14 @@ private:
                      SceneComponentHistoryEntryUVE, ComponentPropertyHistoryEntryUVE,
                      CreationHistoryEntryUVE, SceneObjectCreationHistoryEntryUVE,
                      DuplicationHistoryEntryUVE,
-                     DeletionHistoryEntryUVE,
+                     DeletionHistoryEntryUVE, MultiDeletionHistoryEntryUVE,
                      ReparentHistoryEntryUVE>;
+
+    /// The selected objects DeleteSelectedEntitiesUVE() deletes, in selection order.
+    [[nodiscard]] std::vector<Scene::EntityUVE> CollectDeletableSelectionUVE();
+    /// Captures `target`'s subtree, parent and sibling place, then destroys it; the selection and
+    /// dirty fields are the caller's. Null, with nothing destroyed, when it cannot be captured.
+    [[nodiscard]] std::optional<DeletionHistoryEntryUVE> DestroyForDeletionUVE(Scene::EntityUVE target);
 
     /// Writes `text` to a project file: through the VFS when a mount covers `path`, else at `path`
     /// itself relative to the working directory.
@@ -2784,6 +2810,9 @@ private:
     [[nodiscard]] Asset::AssetGuidUVE RegisterImportedModelArtifactsUVE(const std::filesystem::path& importedModel);
     /// What the last project refresh read from a model source's file, or null if it is not one.
     [[nodiscard]] const EditorModelSourceInfoUVE* FindModelSourceInfoUVE(const std::filesystem::path& relativeSource) const;
+    /// The animation-only model source a `.uvanim` clip was imported from (`<source>.uvanim` or
+    /// `<source>_<take>.uvanim` beside it), by content-relative path; empty when it has none.
+    [[nodiscard]] std::filesystem::path FindAnimationClipSourceUVE(const std::filesystem::path& relativeClip) const;
     /// What a model source's file holds, read now if the last refresh did not cover it.
     ///
     /// The refresh cache is an optimisation for the panels that draw many entries; it must never be

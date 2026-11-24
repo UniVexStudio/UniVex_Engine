@@ -609,9 +609,11 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildComponentsUVE() {
     };
     m_components->onDelete = [this](prism::TreeNode* node) {
         const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
-        if (entity != Scene::kInvalidEntityUVE && entity != m_editor.GetEntityEditorRootUVE()) {
+        if (m_editor.IsEntitySelectedUVE(entity)) {
+            m_editor.RequestDeleteSelectedEntitiesUVE();
+        } else if (entity != Scene::kInvalidEntityUVE && entity != m_editor.GetEntityEditorRootUVE()) {
             m_editor.SelectEntityUVE(entity);
-            static_cast<void>(m_editor.DeleteSelectedEntityUVE());
+            m_editor.RequestDeleteSelectedEntitiesUVE();
         }
     };
     // Drag a row onto another: inside it (a child), or before / after it (a sibling).

@@ -80,6 +80,41 @@ void HashUVE(std::uint64_t& h, const std::string& s) {
     return extension == ".uventity" || extension == ".uvprefab";
 }
 
+/// `path` is `folder` or lies inside it (generic content-relative paths).
+[[nodiscard]] bool IsSameOrInsideUVE(const std::string& path, const std::string& folder) {
+    return path == folder ||
+           (!folder.empty() && path.size() > folder.size() && path.starts_with(folder) && path[folder.size()] == '/');
+}
+
+/// `paths` without repeats, the content root, or any path inside another listed folder.
+[[nodiscard]] std::vector<std::filesystem::path> TopLevelContentPathsUVE(const std::vector<std::filesystem::path>& paths) {
+    std::vector<std::string> names;
+    names.reserve(paths.size());
+    for (const std::filesystem::path& path : paths) {
+        names.push_back(path.generic_string());
+    }
+    std::vector<std::filesystem::path> top;
+    std::vector<std::string> topNames;
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        const std::string& name = names[i];
+        if (name.empty() || std::ranges::find(topNames, name) != topNames.end()) {
+            continue;
+        }
+        const bool inside = std::ranges::any_of(names, [&name](const std::string& other) {
+            return other != name && IsSameOrInsideUVE(name, other);
+        });
+        if (!inside) {
+            top.push_back(paths[i]);
+            topNames.push_back(name);
+        }
+    }
+    return top;
+}
+
+[[nodiscard]] std::string CountItemsUVE(const std::size_t count) {
+    return count == 1U ? std::string("1 item") : std::to_string(count) + " items";
+}
+
 [[nodiscard]] std::string FormatSizeUVE(const std::uintmax_t bytes) {
     char buffer[32];
     if (bytes >= 1024U * 1024U) {
@@ -448,6 +483,17 @@ public:
         }
         return false;
     }
+    // Delete here removes the picked files; it must not go on to the editor's object Delete.
+    bool onKeyDown(const prism::KeyEvent& e) override {
+        if (e.key != prism::Key::Delete) {
+            return false;
+        }
+        if (!e.repeat) {
+            m_owner.AskDeleteContentUVE(m_owner.PickedContentUVE());
+        }
+        return true;
+    }
+    bool focusable() const override { return true; }
 
 private:
     EditorAssetTableUVE& m_owner;
@@ -912,14 +958,38 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
         shelf != nullptr ? ListContentShelfUVE(snapshot.entries, *shelf, m_editor.m_assetFilter)
         : wholeTree      ? ListContentTreeUVE(snapshot.entries, directory, m_editor.m_assetFilter)
                          : ListContentFolderUVE(snapshot.entries, directory, m_editor.m_assetFilter);
+    // "<folder>/<stem>" of every .uvanim, sorted; read only when an animation-only source is listed.
+    std::vector<std::string> clipStems;
+    bool clipStemsRead = false;
+    const auto hasImportedClips = [&snapshot, &clipStems, &clipStemsRead](const std::filesystem::path& source) {
+        if (!clipStemsRead) {
+            clipStemsRead = true;
+            for (const Asset::ProjectFileEntryUVE& other : snapshot.entries) {
+                if (other.kind == Asset::ProjectFileEntryKindUVE::File && other.relativePath.extension() == ".uvanim") {
+                    clipStems.push_back((other.relativePath.parent_path() / other.relativePath.stem()).generic_string());
+                }
+            }
+            std::ranges::sort(clipStems);
+        }
+        // "<source>.uvanim" or "<source>_<take>.uvanim", as ImportModelAnimationsUVE names them.
+        const std::string stem = (source.parent_path() / source.stem()).generic_string();
+        const auto take = std::ranges::lower_bound(clipStems, stem + "_");
+        return std::ranges::binary_search(clipStems, stem) || (take != clipStems.end() && take->starts_with(stem + "_"));
+    };
     std::vector<std::size_t> candidates;
     for (const std::size_t i : listed) {
+        const ItemTypeUVE type = m_editor.GetAssetTableEntryTypeUVE(snapshot.entries[i]);
         // Gameplay is written as Blueprints: loose script files are not listed.
-        if (m_editor.GetAssetTableEntryTypeUVE(snapshot.entries[i]) == ItemTypeUVE::Script) {
+        if (type == ItemTypeUVE::Script) {
             continue;
         }
         // An image's import settings (<image>.uvimport) belong to the image, not beside it as a file.
         if (snapshot.entries[i].relativePath.extension() == ".uvimport") {
+            continue;
+        }
+        // An animation-only file is listed as the clips imported from it, not a second time beside them.
+        if (type == ItemTypeUVE::Animation && EditorUVE::IsModelSourcePathUVE(snapshot.entries[i].relativePath) &&
+            hasImportedClips(snapshot.entries[i].relativePath)) {
             continue;
         }
         if (m_editor.DoesAssetTableEntryMatchFocusUVE(snapshot.entries[i])) {
@@ -1053,9 +1123,12 @@ void EditorAssetTableUVE::UpdatePickUVE(const Asset::ProjectFileSnapshotUVE& sna
                 rows.push_back(static_cast<int>(n));
             }
         }
-        m_syncingFolders = true;
-        m_table->select(rows);
-        m_syncingFolders = false;
+        // A pick the table made itself is left as is, so its Shift+click keeps running from its own anchor.
+        if (!std::ranges::equal(m_table->selection(), rows)) {
+            m_syncingFolders = true;
+            m_table->select(rows);
+            m_syncingFolders = false;
+        }
     }
 }
 
@@ -1138,13 +1211,34 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
         ChangedUVE();
     };
     table->onSelect = [this](const std::vector<int>& rows) {
-        if (m_syncingFolders || rows.empty()) {
+        if (m_syncingFolders) {
             return;
         }
-        const int row = rows.back();
-        if (row >= 0 && static_cast<std::size_t>(row) < m_shown.size()) {
-            SelectEntryUVE(m_shown[static_cast<std::size_t>(row)], false, false);
+        // The table does its own Ctrl / Shift picking: the content selection takes its rows as they are.
+        const std::vector<std::string>& shown = m_editor.m_contentShownOrderPrevious;
+        std::vector<std::size_t> picked;
+        for (const int row : rows) {
+            if (row >= 0 && static_cast<std::size_t>(row) < m_shown.size() && static_cast<std::size_t>(row) < shown.size()) {
+                picked.push_back(static_cast<std::size_t>(row));
+            }
         }
+        if (picked.empty()) {
+            m_editor.m_contentSelection.ClearUVE();
+            m_editor.m_selectedProjectFile.reset();
+            m_editor.m_selectedAsset.reset();
+            return;
+        }
+        // The details follow the row just added to the pick, else the last one.
+        const auto added = std::ranges::find_if(
+            picked, [this, &shown](const std::size_t n) { return !m_editor.m_contentSelection.ContainsUVE(shown[n]); });
+        const std::size_t primary = added != picked.end() ? *added : picked.back();
+        m_editor.m_contentSelection.ClearUVE();
+        for (const std::size_t n : picked) {
+            if (n != primary) {
+                m_editor.m_contentSelection.ClickUVE(shown, shown[n], true, false);
+            }
+        }
+        SelectEntryUVE(m_shown[primary], true, false);
     };
     table->onActivate = [this](const int row) {
         if (row >= 0 && static_cast<std::size_t>(row) < m_shown.size()) {
@@ -1172,12 +1266,25 @@ void EditorAssetTableUVE::BuildTableUVE(const Asset::ProjectFileSnapshotUVE& sna
         table->sortBy(sortColumn, prism::SortState::Ascending);
         m_syncingFolders = false;
     }
+    // Picked as UpdatePickUVE picks; the file the details follow goes last, as the table's Shift+click anchor.
     std::vector<int> picked;
+    int primary = -1;
     for (std::size_t n = 0; n < m_shown.size(); ++n) {
         const Asset::ProjectFileEntryUVE& entry = snapshot.entries[m_shown[n]];
-        if (m_editor.m_selectedProjectFile.has_value() && m_editor.m_selectedProjectFile->relativePath == entry.relativePath) {
+        const bool current =
+            m_editor.m_selectedProjectFile.has_value() && m_editor.m_selectedProjectFile->relativePath == entry.relativePath;
+        if (!m_editor.m_contentSelection.ContainsUVE(entry.relativePath.generic_string()) &&
+            !(current && m_editor.m_contentSelection.IsEmptyUVE())) {
+            continue;
+        }
+        if (current) {
+            primary = static_cast<int>(n);
+        } else {
             picked.push_back(static_cast<int>(n));
         }
+    }
+    if (primary >= 0) {
+        picked.push_back(primary);
     }
     m_syncingFolders = true;
     table->select(picked);
@@ -1246,6 +1353,7 @@ void EditorAssetTableUVE::BuildColumnsUVE(const Asset::ProjectFileSnapshotUVE& s
                 ShowEmptyMenuUVE(at);
             }
         };
+        list->onDelete = [this](prism::TreeNode*) { AskDeleteContentUVE(PickedContentUVE()); };
         list->refresh();
         auto column = prism::make<prism::Border>();
         column->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 1.0F, 0.0F));
@@ -1342,6 +1450,7 @@ void EditorAssetTableUVE::BuildBoardUVE(const Asset::ProjectFileSnapshotUVE& sna
                 ShowItemMenuUVE(ids[static_cast<std::size_t>(node->id - 1)], at);
             }
         };
+        list->onDelete = [this](prism::TreeNode*) { AskDeleteContentUVE(PickedContentUVE()); };
         list->refresh();
         lane->add(list, prism::Slot{1.0F});
         auto card = prism::make<prism::Border>();
@@ -2088,9 +2197,15 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
     const bool modelReady = !importedModel.empty() && std::filesystem::is_regular_file(importedModel, ec);
     const bool uvmodel = entry.registeredAssetGuid.has_value() && extension == ".uvmodel";
     const EditorModelSourceInfoUVE* const info = modelSource ? m_editor.FindModelSourceInfoUVE(entry.relativePath) : nullptr;
-    if (modelReady || (info != nullptr && info->hasSkeleton)) {
-        add(prism::MenuItem::Item("Place in Scene", [this, rel = entry.relativePath, name] {
-            if (m_editor.PlaceModelSourceUVE(rel) == Scene::kInvalidEntityUVE && m_editor.m_contentStatusMessage.empty()) {
+    // A clip of an animation-only file places that file, playing this clip.
+    const std::filesystem::path clipSource =
+        extension == ".uvanim" ? m_editor.FindAnimationClipSourceUVE(entry.relativePath) : std::filesystem::path{};
+    if (modelReady || (info != nullptr && info->hasSkeleton) || !clipSource.empty()) {
+        add(prism::MenuItem::Item("Place in Scene", [this, rel = entry.relativePath, clipSource, name] {
+            const Scene::EntityUVE placed = clipSource.empty()
+                                                ? m_editor.PlaceModelSourceUVE(rel)
+                                                : m_editor.PlaceModelSourceUVE(clipSource, Scene::kInvalidEntityUVE, rel);
+            if (placed == Scene::kInvalidEntityUVE && m_editor.m_contentStatusMessage.empty()) {
                 m_editor.m_contentStatusMessage = "Could not place " + name + ".";
             }
         }, "", prism::Icon::Plus), allowed);
@@ -2178,35 +2293,25 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
         m_folderSignature = 0;
         ChangedUVE();
     }, "", prism::Icon::Duplicate), allowed);
-    // Deleting cannot be undone, so it asks once more in a submenu instead of acting on one click.
-    std::vector<prism::MenuItem> confirm;
-    confirm.push_back(prism::MenuItem::Item(directory ? "Delete folder and everything in it" : "Delete permanently",
-                                            [this, absolute, name, rel = entry.relativePath] {
-        std::error_code error;
-        std::filesystem::remove_all(absolute, error);
-        if (error) {
-            m_editor.m_contentStatusMessage = "Could not delete " + name + ".";
-            return;
+    // Part of a multi-pick: deletes every picked item, after one question.
+    if (m_editor.m_contentSelection.ItemsUVE().size() > 1U &&
+        m_editor.m_contentSelection.ContainsUVE(entry.relativePath.generic_string())) {
+        const std::vector<std::filesystem::path> picked = TopLevelContentPathsUVE(PickedContentUVE());
+        add(prism::MenuItem::Item("Delete " + CountItemsUVE(picked.size()), [this, picked] { AskDeleteContentUVE(picked); },
+                                  "Delete", prism::Icon::Trash),
+            allowed);
+    } else {
+        // Deleting cannot be undone, so it asks once more in a submenu instead of acting on one click.
+        std::vector<prism::MenuItem> confirm;
+        confirm.push_back(prism::MenuItem::Item(directory ? "Delete folder and everything in it" : "Delete permanently",
+                                                [this, rel = entry.relativePath] { DeleteContentUVE({rel}); }, "",
+                                                prism::Icon::Trash));
+        prism::MenuItem del = prism::MenuItem::Sub("Delete", std::move(confirm), prism::Icon::Trash);
+        if (!allowed) {
+            del.disabled();
         }
-        if (m_editor.m_onContentDeletedUVE) {
-            m_editor.m_onContentDeletedUVE(absolute);
-        }
-        if (m_editor.GetDefaultPlayerEntityUVE() == rel.generic_string()) {
-            static_cast<void>(m_editor.SetDefaultPlayerEntityUVE({}));
-        }
-        if (m_editor.m_selectedProjectFile.has_value() && m_editor.m_selectedProjectFile->relativePath == rel) {
-            m_editor.m_selectedProjectFile.reset();
-            m_editor.m_selectedAsset.reset();
-        }
-        m_editor.RefreshProjectFileIndexUVE();
-        m_folderSignature = 0;
-        ChangedUVE();
-    }, "", prism::Icon::Trash));
-    prism::MenuItem del = prism::MenuItem::Sub("Delete", std::move(confirm), prism::Icon::Trash);
-    if (!allowed) {
-        del.disabled();
+        items.push_back(std::move(del));
     }
-    items.push_back(std::move(del));
     prism::showMenu(std::move(items), prism::Rect{at.x, at.y, 1.0F, 1.0F}, prism::PopupPlacement::Below);
 }
 
@@ -2349,6 +2454,85 @@ void EditorAssetTableUVE::SelectEntryUVE(const std::size_t entryIndex, const boo
     } else {
         m_editor.m_selectedAsset.reset();
     }
+}
+
+std::vector<std::filesystem::path> EditorAssetTableUVE::PickedContentUVE() const {
+    std::vector<std::filesystem::path> picked;
+    for (const std::string& item : m_editor.m_contentSelection.ItemsUVE()) {
+        picked.emplace_back(item);
+    }
+    if (picked.empty() && m_editor.m_selectedProjectFile.has_value()) {
+        picked.push_back(m_editor.m_selectedProjectFile->relativePath);
+    }
+    return picked;
+}
+
+void EditorAssetTableUVE::AskDeleteContentUVE(std::vector<std::filesystem::path> relativePaths) {
+    relativePaths = TopLevelContentPathsUVE(relativePaths);
+    if (relativePaths.empty() || !m_editor.IsAuthoringCommandAllowedUVE() || !prism::Application::exists()) {
+        return;
+    }
+    const std::string what =
+        relativePaths.size() == 1U ? relativePaths.front().filename().string() : CountItemsUVE(relativePaths.size());
+    auto text = prism::make<prism::Label>("Delete " + what + "? This cannot be undone.");
+    prism::showDialog("Delete", text,
+                      {prism::DialogButton{"Cancel", false, {}},
+                       prism::DialogButton{"Delete", true, [this, relativePaths] { DeleteContentUVE(relativePaths); }}},
+                      380.0F);
+}
+
+void EditorAssetTableUVE::DeleteContentUVE(const std::vector<std::filesystem::path>& relativePaths) {
+    const std::filesystem::path contentRoot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+    const std::vector<std::filesystem::path> paths = TopLevelContentPathsUVE(relativePaths);
+    if (contentRoot.empty() || paths.empty()) {
+        return;
+    }
+    std::vector<std::string> deleted;
+    std::vector<std::string> failed;
+    for (const std::filesystem::path& rel : paths) {
+        const std::filesystem::path absolute = contentRoot / rel;
+        std::error_code error;
+        std::filesystem::remove_all(absolute, error);
+        if (error) {
+            failed.push_back(rel.filename().string());
+            continue;
+        }
+        const std::string key = rel.generic_string();
+        deleted.push_back(key);
+        if (m_editor.m_onContentDeletedUVE) {
+            m_editor.m_onContentDeletedUVE(absolute);
+        }
+        if (IsSameOrInsideUVE(m_editor.GetDefaultPlayerEntityUVE(), key)) {
+            static_cast<void>(m_editor.SetDefaultPlayerEntityUVE({}));
+        }
+        if (m_editor.m_selectedProjectFile.has_value() &&
+            IsSameOrInsideUVE(m_editor.m_selectedProjectFile->relativePath.generic_string(), key)) {
+            m_editor.m_selectedProjectFile.reset();
+            m_editor.m_selectedAsset.reset();
+        }
+    }
+    std::vector<std::string> kept;
+    for (const std::string& item : m_editor.m_contentSelection.ItemsUVE()) {
+        if (std::ranges::none_of(deleted, [&item](const std::string& gone) { return IsSameOrInsideUVE(item, gone); })) {
+            kept.push_back(item);
+        }
+    }
+    m_editor.m_contentSelection.KeepOnlyUVE(kept);
+    std::string message = deleted.empty() ? std::string() : "Deleted " + CountItemsUVE(deleted.size()) + ".";
+    if (!failed.empty()) {
+        std::string names;
+        for (std::size_t i = 0; i < failed.size() && i < 3U; ++i) {
+            names += (i == 0U ? "" : ", ") + failed[i];
+        }
+        if (failed.size() > 3U) {
+            names += " and " + std::to_string(failed.size() - 3U) + " more";
+        }
+        message += (message.empty() ? "Could not delete " : " Could not delete ") + names + ".";
+    }
+    m_editor.m_contentStatusMessage = message;
+    m_editor.RefreshProjectFileIndexUVE();
+    m_folderSignature = 0;
+    ChangedUVE();
 }
 
 void EditorAssetTableUVE::OpenEntryUVE(const std::size_t entryIndex) {

@@ -516,7 +516,7 @@ void EditorDockPanelsUVE::RefreshProfilerUVE() {
     m_breadcrumbsShown = shown.breadcrumbs.size();
 }
 
-void EditorDockPanelsUVE::FeedTimelineUVE() {
+void EditorDockPanelsUVE::FeedTimelineUVE(const bool shown, const float gpuMs) {
     // One frame for PRISM's profiler: the frame's time, the renderer's draw counts, and - while a
     // capture runs - the spans the engine recorded for its latest frame (CPU / Render / GPU tracks).
     if (!m_timeline) {
@@ -533,6 +533,7 @@ void EditorDockPanelsUVE::FeedTimelineUVE() {
         m_editor.m_services->GetRenderer3DUVE().GetLastFrameDiagnosticsUVE();
     prism::ProfileFrame frame;
     frame.cpuMs = frameMs;
+    frame.gpuMs = gpuMs;
     frame.drawCalls = static_cast<int>(diagnostics.meshDrawCallsRecorded + diagnostics.decalDrawCallsRecorded +
                                        diagnostics.primitiveItemsExtracted);
     frame.triangles = static_cast<int>(diagnostics.decalTrianglesExtracted);
@@ -560,12 +561,13 @@ void EditorDockPanelsUVE::FeedTimelineUVE() {
             frame.scopes.push_back(std::move(scope));
         }
     }
-    m_timeline->pushFrame(std::move(frame));
+    // Recorded always, repainted only on screen: a hidden Timeline otherwise redraws the whole UI every frame.
+    m_timeline->pushFrame(std::move(frame), shown);
 }
 
-void EditorDockPanelsUVE::RefreshUVE(const bool consoleShown, const bool profilerShown) {
+void EditorDockPanelsUVE::RefreshUVE(const bool consoleShown, const bool profilerShown, const float gpuMs) {
     PullLogUVE();
-    FeedTimelineUVE();
+    FeedTimelineUVE(profilerShown, gpuMs);
     if (consoleShown) {
         RefreshConsoleUVE();
     }

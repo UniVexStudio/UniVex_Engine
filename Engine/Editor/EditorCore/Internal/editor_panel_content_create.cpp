@@ -306,9 +306,7 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
 
     if (importedCount > 0U) {
         m_projectFileSnapshotInitialized = false;
-        RefreshProjectFileIndexUVE();
-        const Asset::ProjectFileSnapshotUVE freshSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        QueueModelAutoImportsUVE(freshSnapshot);
+        RefreshProjectFileIndexUVE(); // queues the new files' model and animation imports
         m_contentStatusMessage = "Imported " + std::to_string(importedCount) + " asset(s) into " +
                                  (destDir.filename().empty() ? "Content" : destDir.filename().generic_string()) + ".";
         return true;

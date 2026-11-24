@@ -193,7 +193,8 @@ std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const 
 }
 
 Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& relativeSource,
-                                                Scene::EntityUVE parent) {
+                                                Scene::EntityUVE parent,
+                                                const std::filesystem::path& relativeClip) {
     if (!IsAuthoringCommandAllowedUVE() || !IsModelSourcePathUVE(relativeSource)) {
         return Scene::kInvalidEntityUVE;
     }
@@ -433,11 +434,17 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
         }
         if (!clips.empty()) {
             Scene::AnimationSequencerObjectDefinitionUVE player;
-            // Every take of the file is the player's; the first one plays.
+            // Every take of the file is the player's; the one asked for plays, else the first.
+            const std::filesystem::path chosenClip = relativeClip.empty() ? std::filesystem::path{} : project.contentRoot / relativeClip;
             for (const std::filesystem::path& clipPath : clips) {
                 player.player.library.push_back(m_services->GetAssetDatabaseUVE().RegisterUVE(clipPath));
+                if (!chosenClip.empty() && clipPath == chosenClip) {
+                    player.player.clip = player.player.library.back();
+                }
             }
-            player.player.clip = player.player.library.front();
+            if (player.player.clip == Asset::kInvalidAssetGuidUVE) {
+                player.player.clip = player.player.library.front();
+            }
             player.player.loopMode = Scene::AnimationLoopModeUVE::Loop;
             static_cast<void>(make("AnimationSequencer", Kind::AnimationSequencer, player, Scene::ApplyAnimationSequencerObjectDefinitionUVE, rootContainer));
         }

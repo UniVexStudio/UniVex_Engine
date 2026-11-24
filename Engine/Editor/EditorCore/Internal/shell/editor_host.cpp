@@ -553,6 +553,139 @@ void main() { fragColor = texture(uTex, vUv); })";
     }
 };
 
+// ------------------------------------------------------------------------------------ GPU timer
+
+/// The GPU time of the main window's frame: a ring of time-elapsed queries, each read only once the
+/// GPU reports it finished, so the CPU never waits for a result. Nothing is measured where the GL
+/// has no timer queries (desktop GL before 3.3, GLES without GL_EXT_disjoint_timer_query).
+struct EditorHostUVE::GpuTimerUVE final {
+    static constexpr std::size_t kSlotsUVE = 4U;
+#if defined(__ANDROID__)
+    static constexpr GLenum kTargetUVE = GL_TIME_ELAPSED_EXT;
+    PFNGLGETQUERYOBJECTUI64VEXTPROC getQueryObjectui64v = nullptr;
+#else
+    static constexpr GLenum kTargetUVE = GL_TIME_ELAPSED;
+    PFNGLGETQUERYOBJECTUI64VPROC getQueryObjectui64v = nullptr;
+#endif
+    PFNGLGENQUERIESPROC genQueries = nullptr;
+    PFNGLDELETEQUERIESPROC deleteQueries = nullptr;
+    PFNGLBEGINQUERYPROC beginQuery = nullptr;
+    PFNGLENDQUERYPROC endQuery = nullptr;
+    PFNGLGETQUERYOBJECTUIVPROC getQueryObjectuiv = nullptr;
+
+    std::array<GLuint, kSlotsUVE> queries{};
+    std::array<bool, kSlotsUVE> pending{};
+    /// The GPU's clock jumped (power state change, context reset) while the query ran: no result.
+    std::array<bool, kSlotsUVE> tainted{};
+    std::size_t next = 0U;   ///< the slot the next frame uses, which is also the oldest one issued
+    bool supported = false;
+    bool active = false;
+    float lastMs = 0.0F;
+
+    template <typename T>
+    static bool LoadUVE(T& fn, const std::string& name) {
+#if defined(__ANDROID__)
+        // GLES: the extension's own entry point, else the ES 3 core one it aliases.
+        fn = reinterpret_cast<T>(glfwGetProcAddress((name + "EXT").c_str()));
+        if (fn != nullptr) {
+            return true;
+        }
+#endif
+        fn = reinterpret_cast<T>(glfwGetProcAddress(name.c_str()));
+        return fn != nullptr;
+    }
+
+    void InitializeUVE() {
+#if defined(__ANDROID__)
+        const char* const extensions = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+        if (extensions == nullptr ||
+            (" " + std::string(extensions) + " ").find(" GL_EXT_disjoint_timer_query ") == std::string::npos) {
+            return;
+        }
+#else
+        const char* const version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+        int major = 0;
+        int minor = 0;
+        if (version == nullptr || std::sscanf(version, "%d.%d", &major, &minor) != 2 || major < 3 ||
+            (major == 3 && minor < 3)) {
+            return;
+        }
+#endif
+        bool ok = LoadUVE(genQueries, "glGenQueries");
+        ok &= LoadUVE(deleteQueries, "glDeleteQueries");
+        ok &= LoadUVE(beginQuery, "glBeginQuery");
+        ok &= LoadUVE(endQuery, "glEndQuery");
+        ok &= LoadUVE(getQueryObjectuiv, "glGetQueryObjectuiv");
+        ok &= LoadUVE(getQueryObjectui64v, "glGetQueryObjectui64v");
+        if (!ok) {
+            return;
+        }
+        genQueries(static_cast<GLsizei>(kSlotsUVE), queries.data());
+        supported = true;
+    }
+
+    /// Takes every finished result, oldest first, so lastMs ends on the newest one.
+    void PollUVE() {
+#if defined(__ANDROID__)
+        GLint disjoint = 0;
+        glGetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint);
+#endif
+        for (std::size_t k = 0U; k < kSlotsUVE; ++k) {
+            const std::size_t i = (next + k) % kSlotsUVE;
+            if (!pending[i]) {
+                continue;
+            }
+#if defined(__ANDROID__)
+            if (disjoint != 0) {
+                tainted[i] = true;
+            }
+#endif
+            GLuint available = 0U;
+            getQueryObjectuiv(queries[i], GL_QUERY_RESULT_AVAILABLE, &available);
+            if (available == 0U) {
+                continue;
+            }
+            GLuint64 nanoseconds = 0U;
+            getQueryObjectui64v(queries[i], GL_QUERY_RESULT, &nanoseconds);
+            pending[i] = false;
+            if (!tainted[i]) {
+                lastMs = static_cast<float>(static_cast<double>(nanoseconds) / 1.0e6);
+            }
+        }
+    }
+
+    void BeginUVE() {
+        if (!supported || active) {
+            return;
+        }
+        PollUVE();
+        if (pending[next]) {
+            return;   // the GPU is a whole ring behind: this frame goes untimed rather than waited for
+        }
+        tainted[next] = false;
+        beginQuery(kTargetUVE, queries[next]);
+        active = true;
+    }
+
+    void EndUVE() {
+        if (!active) {
+            return;
+        }
+        endQuery(kTargetUVE);
+        pending[next] = true;
+        next = (next + 1U) % kSlotsUVE;
+        active = false;
+    }
+
+    void ShutdownUVE() {
+        EndUVE();
+        if (supported) {
+            deleteQueries(static_cast<GLsizei>(kSlotsUVE), queries.data());
+            supported = false;
+        }
+    }
+};
+
 // ------------------------------------------------------------------------------- GLFW callbacks
 
 /// The main window's callbacks, chained to what the engine installed before.
@@ -881,6 +1014,10 @@ void EditorHostUVE::ShutdownUVE() {
         g_activeHostUVE = nullptr;
     }
     m_chain.reset();
+    if (m_gpuTimer != nullptr) {
+        m_gpuTimer->ShutdownUVE();
+        m_gpuTimer.reset();
+    }
     if (m_compositor != nullptr) {
         m_compositor->ShutdownUVE();
         m_compositor.reset();
@@ -1414,6 +1551,27 @@ void EditorHostUVE::RenderUVE(const std::span<const ViewImageUVE> views) {
     }
     CompositeUVE(*m_main, m_backend->colorTexture(), m_compositor->vao, views);
     EndInputFrameUVE(*m_main);
+}
+
+void EditorHostUVE::BeginGpuTimerUVE() {
+    if (!m_ready) {
+        return;
+    }
+    if (m_gpuTimer == nullptr) {
+        m_gpuTimer = std::make_unique<GpuTimerUVE>();
+        m_gpuTimer->InitializeUVE();
+    }
+    m_gpuTimer->BeginUVE();
+}
+
+void EditorHostUVE::EndGpuTimerUVE() {
+    if (m_gpuTimer != nullptr) {
+        m_gpuTimer->EndUVE();
+    }
+}
+
+float EditorHostUVE::GpuFrameMsUVE() const noexcept {
+    return m_gpuTimer != nullptr ? m_gpuTimer->lastMs : 0.0F;
 }
 
 void EditorHostUVE::RenderWindowUVE(const int id, const std::span<const ViewImageUVE> views) {
