@@ -50,7 +50,7 @@ enum class DisplayOrientationUVE : std::uint8_t {
     PortraitUpsideDown,
 };
 
-/// Godot-style rendering profile persisted per project in `.uvproject`.
+/// Project rendering profile persisted per project in `.uvproject`.
 /// Runtime GPU capability checks may automatically fall back to a lower profile when required
 /// features (such as SSBOs or HDR16F render targets) are unavailable on the active device.
 enum class RendererProfileUVE : std::uint8_t {

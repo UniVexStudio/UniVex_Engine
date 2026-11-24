@@ -522,7 +522,7 @@ public:
         static_cast<void>(scalabilityMode);
     }
 
-    /// Sets the Godot-style project renderer profile (`Compatibility`, `Mobile`, `Forward+`).
+    /// Sets the project renderer profile (`Compatibility`, `Mobile`, `Forward+`).
     /// Implementations resolve this against real device capabilities and may step down cleanly.
     virtual void SetRendererProfileUVE(Platform::RendererProfileUVE profile) noexcept {
         static_cast<void>(profile);

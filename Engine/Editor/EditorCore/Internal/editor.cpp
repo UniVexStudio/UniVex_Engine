@@ -7551,7 +7551,7 @@ void EditorUVE::EnsureBackgroundModelImportWorkerUVE() {
                 }
             }
 
-            // Gentle Godot-style pacing between items in a multi-item batch so low-end CPUs and
+            // Gentle per-item pacing between items in a multi-item batch so low-end CPUs and
             // Snapdragon 665 Android devices stay responsive and cool without thermal/RAM spikes.
             std::unique_lock<std::mutex> lock(m_bgImportMutex);
             const bool morePending = !m_bgCopyQueue.empty() || !m_bgProbeQueue.empty() ||
