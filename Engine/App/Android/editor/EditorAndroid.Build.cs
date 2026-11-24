@@ -12,8 +12,11 @@ public class EditorAndroidModule : ModuleRules
 
         PublicDependencyModuleNames.AddRange(new string[] {
             "EditorApp",
-            "AndroidHost",
-            "LauncherUI"
+            "AndroidHost"
+        });
+
+        PrivateIncludePaths.AddRange(new string[] {
+            "../../../../contracts/v1"
         });
 
         PublicSystemLibraries.AddRange(new string[] {

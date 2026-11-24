@@ -8,25 +8,32 @@
 #include <android_native_app_glue.h>
 
 #include <array>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 
 #include "android_host.h"
 #include "editor.h"
 #include "editor_main.h"
-#include "launcher_window.h"
 #include "prism/Application.h"
+#include "univex_android_editor_abi.h"
 
 namespace {
 
 inline constexpr const char* kEditorRenderedMarkerUVE = "UVE_EDITOR_RENDERED";
 /// Folders of the engine package beside the editor library (Engine/Tools/package_engine.py).
+inline constexpr std::string_view kPrismAssetsDirectoryNameUVE = "prism_assets";
 inline constexpr std::string_view kShadersDirectoryUVE = "shaders";
 inline constexpr std::string_view kShaderCacheDirectoryUVE = "shader_cache";
 /// Process exit code when the editor cannot start on this activity.
 inline constexpr int kEditorStartFailedExitCodeUVE = 1;
 
 } // namespace
+
+/// Reports the Android editor host ABI version implemented by this library (contracts/v1).
+extern "C" __attribute__((visibility("default"))) std::uint32_t UveEditorAbiVersionUVE(void) {
+    return UVE_ANDROID_EDITOR_ABI_VERSION;
+}
 
 /// The editor's entry point on Android (engine_install.h, kEditorAndroidEntryPointUVE): runs the
 /// editor on `app`'s activity with the given command line and returns its exit code.
@@ -46,7 +53,7 @@ extern "C" __attribute__((visibility("default"))) int UveEditorRunUVE(android_ap
     const std::filesystem::path dataRoot(app->activity->internalDataPath);
     UVE::App::EditorPlatformUVE platform;
     platform.nativeSurface = app->window;
-    platform.prismAssetsDirectory = package / UVE::LauncherUI::kPrismAssetsDirectoryNameUVE;
+    platform.prismAssetsDirectory = package / kPrismAssetsDirectoryNameUVE;
     platform.shaderDirectory = package / kShadersDirectoryUVE;
     platform.shaderCacheDirectory = dataRoot / kShaderCacheDirectoryUVE;
     platform.logDirectory = dataRoot;

@@ -22,6 +22,8 @@ xvfb-run -a ./.uvbt/bin/Linux/Debug/UniVexTests
 ./uvbt build UniVexEditor Linux Release
 ```
 
+UniVex Hub (the desktop launcher, Linux/Windows installers, and Android Hub APK host) is developed in its own standalone repository at [UniVexStudio/UniVex_Hub](https://github.com/UniVexStudio/UniVex_Hub) and integrates with engine `.uvpackage` releases through the frozen contracts in [contracts/v1/](contracts/v1/README.md).
+
 ## License
 
 UniVex Engine and UniVex Hub are source-available under the [UniVex Engine & Hub EULA v1.0](LICENSE). You can use the engine and ship personal, indie, or commercial games and applications free of charge with no royalties; redistributing or rebranding the engine, editor, Hub, or source code itself is not permitted.
