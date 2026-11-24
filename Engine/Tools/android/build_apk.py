@@ -51,10 +51,9 @@ ASSET_INDEX = "asset-index.txt"
 JAVA_SOURCES = ("Engine", "App", "Android", "java")
 JAVA_RELEASE = "11"
 DEX_FILE = "classes.dex"
-# Android resources every app ships: the launcher icon (written by Engine/Tools/brand/build_brand_assets.py).
+# Android resources the runtime app ships: the launcher icon (written by Engine/Tools/brand/build_brand_assets.py).
 RESOURCES = ("Engine", "App", "Android", "res")
 COMPILED_RESOURCES = "resources.zip"
-HUB_VERSION_HEADER = ("Engine", "Runtime", "Online", "Expose", "hub_setup.h")
 ENGINE_VERSION_SOURCE = ("Engine", "Runtime", "Engine", "Internal", "engine_core.cpp")
 
 
@@ -74,13 +73,6 @@ APPS = {
     "runtime": AndroidApp(
         target="UniVexAndroid", library="univex_android", manifest=("Engine", "App", "Android", "AndroidManifest.xml"),
         apk_prefix="univex-runtime", assets=((BUILT_IN_SHADERS, "shaders"),), accepts_cooked_project=True),
-    "hub": AndroidApp(
-        target="UniVexHubAndroid", library="univex_hub", manifest=("Engine", "App", "Android", "hub", "AndroidManifest.xml"),
-        apk_prefix="UniVexHub", index_assets=True,
-        assets=((uvbt.PRISM_ASSETS_SOURCE, uvbt.PRISM_ASSETS_DIRECTORY),
-                (uvbt.PROJECT_TEMPLATES_SOURCE, uvbt.PROJECT_TEMPLATES_DIRECTORY),
-                ((*uvbt.DISTRIBUTION_SOURCE, uvbt.ENGINE_FEED_FILE), uvbt.ENGINE_FEED_FILE),
-                (BUILT_IN_SHADERS, "shaders"))),
 }
 
 
@@ -97,18 +89,16 @@ def parse_version_tuple(text: str) -> tuple[int, int, int, int]:
     return int(major), int(minor), int(patch), int(build_a or build_b or 0)
 
 
-def read_source_version(app_name: str) -> tuple[int, int, int, int]:
-    """Reads the version tuple from hub_setup.h (hub) or engine_core.cpp (runtime)."""
-    if app_name == "hub":
-        source = REPO_ROOT.joinpath(*HUB_VERSION_HEADER).read_text(encoding="utf-8")
-        match = re.search(r"kHubVersionUVE\s*\{\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*\}", source)
-    else:
-        source = REPO_ROOT.joinpath(*ENGINE_VERSION_SOURCE).read_text(encoding="utf-8")
-        match = re.search(
-            r"GetEngineVersionUVE\s*\(\s*\)[^{]*\{\s*return\s+VersionUVE\s*\{\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*\}",
-            source,
-            re.DOTALL,
-        )
+def read_source_version(app_name: str = "runtime") -> tuple[int, int, int, int]:
+    """Reads the engine version tuple from engine_core.cpp."""
+    if app_name != "runtime":
+        raise RuntimeError(f"Unsupported Android app '{app_name}' (UniVex Hub now builds in UniVexStudio/UniVex_Hub)")
+    source = REPO_ROOT.joinpath(*ENGINE_VERSION_SOURCE).read_text(encoding="utf-8")
+    match = re.search(
+        r"GetEngineVersionUVE\s*\(\s*\)[^{]*\{\s*return\s+VersionUVE\s*\{\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*,\s*(\d+)U?\s*\}",
+        source,
+        re.DOTALL,
+    )
     if not match:
         raise RuntimeError(f"Could not read source version for Android app '{app_name}'")
     return tuple(int(part) for part in match.groups())
