@@ -129,8 +129,9 @@ BuildBaselineUVE(const std::filesystem::path& configuredContentRoot, const IAsse
             baselineEntry.fileSize = size;
             baselineEntry.contentFingerprint = ComputeAssetContentFingerprintUVE(absoluteEntryPath);
             if (!baselineEntry.contentFingerprint.has_value()) {
-                outDiagnostic = "Unable to fingerprint a project content file.";
-                return false;
+                // Unreadable for now (still being copied in, locked): leave it out so the next poll
+                // reports it as new, instead of the whole scan failing and no change being seen at all.
+                return true;
             }
             const auto registeredIt = registeredAssetsByRelativePath.find(key);
             if (registeredIt != registeredAssetsByRelativePath.end()) {

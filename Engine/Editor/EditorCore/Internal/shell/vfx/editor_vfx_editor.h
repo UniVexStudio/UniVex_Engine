@@ -92,6 +92,12 @@ private:
     std::shared_ptr<prism::Button> m_seedButton;
     std::shared_ptr<prism::Button> m_gridButton;
     std::shared_ptr<prism::Button> m_boundsButton;
+    // Focus: the graph alone (phones), with the side columns and the compile results hidden.
+    std::shared_ptr<prism::Widget> m_leftColumn;
+    std::shared_ptr<prism::Widget> m_rightColumn;
+    std::shared_ptr<prism::Widget> m_compilePanel;
+    bool m_graphFocus = false;
+    void SetGraphFocusUVE(bool on);
     std::shared_ptr<prism::ComboBox> m_speedCombo;
     std::shared_ptr<prism::Border> m_previewStatePill;
     std::shared_ptr<prism::Label> m_previewStateBadge;

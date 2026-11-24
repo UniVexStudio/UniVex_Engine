@@ -66,7 +66,6 @@ private:
     void CancelUVE();
     void ShowImportTargetMenuUVE();
     [[nodiscard]] bool MatchesKindUVE(const std::filesystem::path& file) const;
-    [[nodiscard]] bool FolderHasKindUVE(const std::filesystem::path& folder, std::size_t& budget) const;
     [[nodiscard]] std::filesystem::path ContentRootUVE() const;
 
     EditorUVE& m_editor;

@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -220,6 +221,14 @@ void EditorUVE::BeginContentRenameUVE(const std::filesystem::path& relativePath)
     m_contentRenameFocus = true;
 }
 
+namespace {
+SystemImportPickerUVE g_systemImportPickerUVE;
+} // namespace
+
+void SetSystemImportPickerUVE(SystemImportPickerUVE picker) {
+    g_systemImportPickerUVE = std::move(picker);
+}
+
 bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirectory) {
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
@@ -244,7 +253,8 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
                 L"Scripts & Shaders (*.uvs;*.uvshader;*.glsl)\0*.uvs;*.uvshader;*.glsl\0"
                 L"All Files (*.*)\0*.*\0\0";
             ofn.nFilterIndex = 1;
-            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER;
+            // NOCHANGEDIR: the project's relative paths stay valid after browsing elsewhere.
+            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_NOCHANGEDIR;
 
             if (pGetOpenFileNameW(&ofn)) {
                 FreeLibrary(comdlg);
@@ -266,10 +276,21 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
                 }
                 return ImportExternalFilesUVE(chosenFiles, destDir);
             }
+            FreeLibrary(comdlg);
+            return false;   // cancelled: no second dialog
         }
         FreeLibrary(comdlg);
     }
 #endif
+
+    // Android: straight into the system file manager (it reaches Downloads, Drive, USB); the file
+    // comes back as a copy in the app cache and is imported into destDir.
+    if (g_systemImportPickerUVE &&
+        g_systemImportPickerUVE([this, destDir](const std::filesystem::path& chosen) {
+            static_cast<void>(ImportExternalFilesUVE({chosen}, destDir));
+        })) {
+        return false;   // the import happens when the pick comes back
+    }
 
     // Any file on this computer, through the editor's own file dialog; it is imported into destDir.
     FilePickerRequestUVE request;
@@ -277,6 +298,25 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
     request.title = "Import Assets";
     request.extensions = {".fbx", ".gltf", ".glb", ".obj", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg", ".mp3", ".uvshader", ".glsl"};
     request.onPick = [this, destDir](const std::filesystem::path& chosen) { static_cast<void>(ImportExternalFilesUVE({chosen}, destDir)); };
+    // Start where downloaded models usually are, not in the (often empty) project folder.
+    {
+#if defined(__ANDROID__)
+        const char* const storage = std::getenv("UNIVEX_ANDROID_PUBLIC_STORAGE");
+        const std::filesystem::path home = (storage != nullptr && *storage != '\0') ? std::filesystem::path(storage)
+                                                                                  : std::filesystem::path("/storage/emulated/0");
+        const std::filesystem::path downloads = home / "Download";
+#else
+#if defined(_WIN32)
+        const char* const homeEnv = std::getenv("USERPROFILE");
+#else
+        const char* const homeEnv = std::getenv("HOME");
+#endif
+        const std::filesystem::path home = homeEnv != nullptr ? std::filesystem::path(homeEnv) : std::filesystem::path();
+        const std::filesystem::path downloads = home / "Downloads";
+#endif
+        std::error_code error;
+        request.startDirectory = std::filesystem::is_directory(downloads, error) ? downloads : home;
+    }
     OpenFilePickerUVE(std::move(request));
     return false;
 }
@@ -306,9 +346,7 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
 
     if (importedCount > 0U) {
         m_projectFileSnapshotInitialized = false;
-        RefreshProjectFileIndexUVE();
-        const Asset::ProjectFileSnapshotUVE freshSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-        QueueModelAutoImportsUVE(freshSnapshot);
+        RefreshProjectFileIndexUVE(); // queues the new files' model and animation imports
         m_contentStatusMessage = "Imported " + std::to_string(importedCount) + " asset(s) into " +
                                  (destDir.filename().empty() ? "Content" : destDir.filename().generic_string()) + ".";
         return true;

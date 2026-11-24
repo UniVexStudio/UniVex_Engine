@@ -116,6 +116,12 @@ private:
     /// A motion montage library's list: open a montage, or take it off.
     void ShowMontageLibraryUVE(const std::filesystem::path& libraryPath);
     void SelectEntryUVE(std::size_t entryIndex, bool additive, bool range);
+    /// The picked items (content-relative): the content selection, else the one picked file.
+    [[nodiscard]] std::vector<std::filesystem::path> PickedContentUVE() const;
+    /// Asks once ("Delete N items? This cannot be undone."), then deletes `relativePaths`.
+    void AskDeleteContentUVE(std::vector<std::filesystem::path> relativePaths);
+    /// Deletes content-relative paths for good, refreshes the index once and drops them from the pick.
+    void DeleteContentUVE(const std::vector<std::filesystem::path>& relativePaths);
     void GoToFolderUVE(const std::filesystem::path& directory);
     void RevealUVE(const std::filesystem::path& relativePath);
     void ChangedUVE();

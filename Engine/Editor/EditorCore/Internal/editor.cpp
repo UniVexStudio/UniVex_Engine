@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <chrono>
 #include <unordered_map>
+#include <unordered_set>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -1535,12 +1536,24 @@ bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
     if (!ApplyMeshSourceStateUVE(m_selectedEntity, afterMesh, afterShape)) {
         return false;
     }
-    // A skinned mesh takes the bones of the model it now draws.
-    if (!shape.has_value() && model != Asset::kInvalidAssetGuidUVE &&
-        entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
-        auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
-        AutoPopulateSkinFromModelUVE(m_selectedEntity, skin);
-        entityManager.AddComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity, skin);
+    // A skinned mesh takes the bones of the model it now draws. A rigged model on an object with no
+    // Skin yet gets one when a Skeleton3D with bones stands beside it (on it, a child, the parent or a
+    // sibling); with none, the status says how to get its skeleton.
+    if (!shape.has_value() && model != Asset::kInvalidAssetGuidUVE) {
+        if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
+            auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
+            AutoPopulateSkinFromModelUVE(m_selectedEntity, skin);
+            entityManager.AddComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity, skin);
+        } else if (const std::optional<Asset::MeshAssetUVE> meshAsset = LoadEntityMeshAssetUVE(m_selectedEntity);
+                   meshAsset.has_value() && !meshAsset->joints.empty()) {
+            Scene::SkinComponentUVE skin;
+            if (AutoPopulateSkinFromModelUVE(m_selectedEntity, skin)) {
+                entityManager.AddComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity, skin);
+            } else {
+                m_contentStatusMessage = "This model is rigged: use Place in Scene on it in the Asset Table to get "
+                                         "its skeleton, or add a Skeleton3D and set its Source to this model.";
+            }
+        }
     }
     m_sceneDirty = true;
     RecordHistoryUVE(MeshSourceHistoryEntryUVE{m_selectedEntity, beforeMesh, beforeShape, afterMesh, afterShape,
@@ -3008,15 +3021,38 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
         return false;
     }
 
-    const Scene::EntityUVE target = m_selectedEntity;
-    const std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(target);
-    if (!snapshot.has_value()) {
+    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
+    const bool dirtyBefore = m_sceneDirty;
+    std::optional<DeletionHistoryEntryUVE> deletion = DestroyForDeletionUVE(m_selectedEntity);
+    if (!deletion.has_value()) {
         return false;
+    }
+    const Scene::EntityUVE selectionAfter = IsDocumentEntityUVE(deletion->originalParent)
+                                                ? deletion->originalParent
+                                                : Scene::kInvalidEntityUVE;
+    RestoreSelectionUVE(EditorSelectionSnapshotUVE{
+        selectionAfter == Scene::kInvalidEntityUVE ? std::vector<Scene::EntityUVE>{}
+                                                    : std::vector<Scene::EntityUVE>{selectionAfter},
+        selectionAfter});
+    m_sceneDirty = true;
+    InvalidateHierarchyFilterCacheUVE();
+    deletion->selectionBefore = selectionBefore;
+    deletion->selectionAfter = CaptureSelectionSnapshotUVE();
+    deletion->dirtyBefore = dirtyBefore;
+    deletion->dirtyAfter = true;
+    RecordHistoryUVE(std::move(*deletion));
+    return true;
+}
+
+std::optional<EditorUVE::DeletionHistoryEntryUVE> EditorUVE::DestroyForDeletionUVE(const Scene::EntityUVE target) {
+    std::optional<Scene::SceneSnapshotUVE> snapshot = CaptureSubtreeUVE(target);
+    if (!snapshot.has_value()) {
+        return std::nullopt;
     }
 
     Scene::EntityUVE originalParent = Scene::kInvalidEntityUVE;
     if (!TryGetDocumentParentUVE(target, originalParent)) {
-        return false;
+        return std::nullopt;
     }
 
     const std::size_t siblingIndex =
@@ -3026,21 +3062,85 @@ bool EditorUVE::DeleteSelectedEntityUVE() {
     }
     ClearEntityContextToolbarUVE();
     m_hierarchyPendingRowOpen.erase(target);
-
-    const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
-    const bool dirtyBefore = m_sceneDirty;
     DestroyDocumentSubtreeUVE(target);
-    const Scene::EntityUVE selectionAfter = IsDocumentEntityUVE(originalParent)
-                                                ? originalParent
-                                                : Scene::kInvalidEntityUVE;
+
+    DeletionHistoryEntryUVE deletion{};
+    deletion.snapshot = std::move(*snapshot);
+    deletion.originalParent = originalParent;
+    deletion.activeEntity = target;
+    deletion.siblingIndex = siblingIndex;
+    return deletion;
+}
+
+std::vector<Scene::EntityUVE> EditorUVE::CollectDeletableSelectionUVE() {
+    std::unordered_set<Scene::EntityUVE> deletable;
+    for (const Scene::EntityUVE entity : m_selectedEntities) {
+        if (!IsStructuralRootUVE(entity) && ObjectActionBlockReasonUVE(entity).empty()) {
+            deletable.insert(entity);
+        }
+    }
+    std::vector<Scene::EntityUVE> roots;
+    for (const Scene::EntityUVE entity : m_selectedEntities) {
+        if (!deletable.contains(entity) || std::find(roots.begin(), roots.end(), entity) != roots.end()) {
+            continue;
+        }
+        // The ancestry ends with the entity itself; a deleted ancestor takes it along.
+        const std::vector<Scene::EntityUVE> ancestry = GetDocumentAncestryUVE(entity);
+        const bool underDeleted = !ancestry.empty() &&
+                                  std::any_of(ancestry.begin(), ancestry.end() - 1,
+                                              [&deletable](const Scene::EntityUVE ancestor) {
+                                                  return deletable.contains(ancestor);
+                                              });
+        if (!underDeleted) {
+            roots.push_back(entity);
+        }
+    }
+    return roots;
+}
+
+bool EditorUVE::DeleteSelectedEntitiesUVE() {
+    const std::vector<Scene::EntityUVE> roots = CollectDeletableSelectionUVE();
+    if (roots.empty()) {
+        return false;
+    }
+    if (roots.size() == 1U) {
+        const EditorSelectionSnapshotUVE selection = CaptureSelectionSnapshotUVE();
+        RestoreSelectionUVE(EditorSelectionSnapshotUVE{{roots.front()}, roots.front()});
+        if (DeleteSelectedEntityUVE()) {
+            return true;
+        }
+        RestoreSelectionUVE(selection);
+        return false;
+    }
+
+    MultiDeletionHistoryEntryUVE entry{};
+    entry.selectionBefore = CaptureSelectionSnapshotUVE();
+    entry.dirtyBefore = m_sceneDirty;
+    for (const Scene::EntityUVE root : roots) {
+        std::optional<DeletionHistoryEntryUVE> deletion = DestroyForDeletionUVE(root);
+        if (deletion.has_value()) {
+            entry.deletions.push_back(std::move(*deletion));
+        }
+    }
+    if (entry.deletions.empty()) {
+        return false;
+    }
+
+    // As a single Delete does: the shared parent stays selected when every root had the same one.
+    const Scene::EntityUVE parent = entry.deletions.front().originalParent;
+    const bool sharedParent = IsDocumentEntityUVE(parent) &&
+                              std::all_of(entry.deletions.begin(), entry.deletions.end(),
+                                          [parent](const DeletionHistoryEntryUVE& deletion) {
+                                              return deletion.originalParent == parent;
+                                          });
     RestoreSelectionUVE(EditorSelectionSnapshotUVE{
-        selectionAfter == Scene::kInvalidEntityUVE ? std::vector<Scene::EntityUVE>{}
-                                                    : std::vector<Scene::EntityUVE>{selectionAfter},
-        selectionAfter});
+        sharedParent ? std::vector<Scene::EntityUVE>{parent} : std::vector<Scene::EntityUVE>{},
+        sharedParent ? parent : Scene::kInvalidEntityUVE});
     m_sceneDirty = true;
     InvalidateHierarchyFilterCacheUVE();
-    RecordHistoryUVE(DeletionHistoryEntryUVE{std::move(*snapshot), originalParent, target, selectionBefore,
-                                             CaptureSelectionSnapshotUVE(), dirtyBefore, true, siblingIndex});
+    entry.selectionAfter = CaptureSelectionSnapshotUVE();
+    entry.dirtyAfter = true;
+    RecordHistoryUVE(std::move(entry));
     return true;
 }
 
@@ -4376,6 +4476,41 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
+            } else if constexpr (std::is_same_v<EntryType, MultiDeletionHistoryEntryUVE>) {
+                for (const DeletionHistoryEntryUVE& deletion : typedEntry.deletions) {
+                    if (deletion.activeEntity != Scene::kInvalidEntityUVE &&
+                        m_services->GetEntityManagerUVE().IsAliveUVE(deletion.activeEntity)) {
+                        return false;
+                    }
+                }
+                std::vector<Scene::EntityUVE> restoredRoots(typedEntry.deletions.size(), Scene::kInvalidEntityUVE);
+                Scene::EntityUVE restoredActive = Scene::kInvalidEntityUVE;
+                for (std::size_t index = typedEntry.deletions.size(); index-- > 0U;) {
+                    DeletionHistoryEntryUVE& deletion = typedEntry.deletions[index];
+                    const Scene::EntityUVE restored = RestoreSubtreeUnderParentUVE(deletion.snapshot, deletion.originalParent);
+                    if (restored == Scene::kInvalidEntityUVE) {
+                        // Leave no half-done undo behind: remove the subtrees this undo already brought back.
+                        for (std::size_t r = index + 1U; r < restoredRoots.size(); ++r) {
+                            if (IsDocumentEntityUVE(restoredRoots[r])) {
+                                DestroyDocumentSubtreeUVE(restoredRoots[r]);
+                            }
+                        }
+                        return false;
+                    }
+                    static_cast<void>(m_services->GetSceneGraphUVE().SetSiblingIndexUVE(
+                        m_services->GetEntityManagerUVE(), restored, deletion.siblingIndex));
+                    if (deletion.activeEntity != Scene::kInvalidEntityUVE &&
+                        deletion.activeEntity == typedEntry.selectionBefore.activeEntity) {
+                        restoredActive = restored;
+                    }
+                    deletion.activeEntity = restored;
+                    restoredRoots[index] = restored;
+                }
+                typedEntry.selectionBefore = EditorSelectionSnapshotUVE{std::move(restoredRoots), restoredActive};
+                RestoreSelectionUVE(typedEntry.selectionBefore);
+                m_sceneDirty = typedEntry.dirtyBefore;
+                InvalidateHierarchyFilterCacheUVE();
+                return true;
             } else {
                 // A move among siblings keeps its parent, so it needs neither a reparent nor a
                 // transform - and a pure Object, which has no transform, can make one.
@@ -4519,6 +4654,20 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 typedEntry.activeEntity = Scene::kInvalidEntityUVE;
                 RestoreSelectionUVE(typedEntry.selectionAfter);
                 m_sceneDirty = typedEntry.dirtyAfter;
+                return true;
+            } else if constexpr (std::is_same_v<EntryType, MultiDeletionHistoryEntryUVE>) {
+                for (const DeletionHistoryEntryUVE& deletion : typedEntry.deletions) {
+                    if (!IsDocumentEntityUVE(deletion.activeEntity)) {
+                        return false;
+                    }
+                }
+                for (DeletionHistoryEntryUVE& deletion : typedEntry.deletions) {
+                    DestroyDocumentSubtreeUVE(deletion.activeEntity);
+                    deletion.activeEntity = Scene::kInvalidEntityUVE;
+                }
+                RestoreSelectionUVE(typedEntry.selectionAfter);
+                m_sceneDirty = typedEntry.dirtyAfter;
+                InvalidateHierarchyFilterCacheUVE();
                 return true;
             } else {
                 const bool reparented = typedEntry.parentBefore != typedEntry.parentAfter;
@@ -6500,6 +6649,27 @@ const EditorModelSourceInfoUVE* EditorUVE::FindModelSourceInfoUVE(
     return found != m_modelSources.end() ? &found->second : nullptr;
 }
 
+std::filesystem::path EditorUVE::FindAnimationClipSourceUVE(const std::filesystem::path& relativeClip) const {
+    const std::string folder = relativeClip.parent_path().generic_string();
+    const std::string clipStem = relativeClip.stem().string();
+    std::filesystem::path found;
+    std::size_t foundStemSize = 0U;
+    for (const auto& [key, info] : m_modelSources) {
+        if (!info.animationOnly) {
+            continue;
+        }
+        const std::filesystem::path source(key);
+        const std::string stem = source.stem().string();
+        // The longest stem wins: "Hero_Run.uvanim" is Hero_Run.fbx's own clip before a take of Hero.fbx.
+        if (stem.size() > foundStemSize && source.parent_path().generic_string() == folder &&
+            (clipStem == stem || clipStem.starts_with(stem + "_"))) {
+            found = source;
+            foundStemSize = stem.size();
+        }
+    }
+    return found;
+}
+
 const std::string* EditorUVE::FindModelImportFailureUVE(const std::filesystem::path& relativeSource) const {
     const auto found = m_modelImportFailures.find(relativeSource.generic_string());
     return found != m_modelImportFailures.end() ? &found->second : nullptr;
@@ -6647,7 +6817,8 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE);
 
     // Suppress generic exporter takes (e.g. "Take 001") if named takes exist in the FBX.
-    // If only generic takes exist, keep only the first one to avoid duplicate files.
+    // If only generic takes exist ("Take 001" + "mixamo.com"), keep only one, the first that moves,
+    // to avoid duplicate files.
     std::vector<Asset::AnimationClipAssetUVE> takes;
     bool hasNonGeneric = false;
     for (const auto& take : rawTakes) {
@@ -6661,13 +6832,19 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     for (const auto& take : rawTakes) {
         const std::size_t bar = take.clipId.find_last_of('|');
         const std::string id = bar == std::string::npos ? take.clipId : take.clipId.substr(bar + 1U);
-        if (hasNonGeneric && IsGenericTakeNameUVE(id)) {
-            continue; // Drop redundant generic "Take 001"
+        if (hasNonGeneric && !IsGenericTakeNameUVE(id)) {
+            takes.push_back(take); // generic "Take 001" beside named takes is redundant
         }
-        takes.push_back(take);
     }
     if (takes.empty() && !rawTakes.empty()) {
-        takes.push_back(rawTakes.front());
+        const auto moving = std::ranges::find_if(rawTakes, [](const Asset::AnimationClipAssetUVE& take) {
+            return take.durationSeconds > 0.0 &&
+                   (!take.samples.empty() ||
+                    std::ranges::any_of(take.bones, [](const Asset::AnimationAssetBoneTrackUVE& bone) {
+                        return !bone.samples.empty();
+                    }));
+        });
+        takes.push_back(moving != rawTakes.end() ? *moving : rawTakes.front());
     }
 
     if (keepInModel) {

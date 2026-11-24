@@ -697,6 +697,7 @@ void showColorPickerWindow(Color initialColor, Callback<Color> onApply, Callback
     if (onCancel) onCancel();
   };
   Application::get().showPopup(root, o);
+  Application::get().setFocus(pk);   // keys (Escape cancels) go to the picker until the user clicks elsewhere
 }
 
 // ---------------------------------------------------------------- GradientEditor
