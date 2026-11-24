@@ -1,5 +1,6 @@
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #include "prism/Icons.h"
+#include <algorithm>
 #include <cmath>
 #include <initializer_list>
 #include <utility>
@@ -507,10 +508,26 @@ void setBrandMark(std::vector<uint32_t> argb, int w, int h) {
 bool hasBrandMark() { return !g_brandMark.empty(); }
 
 void drawBrandMark(Canvas& c, Rect box) {
-  if (g_brandMark.empty()) return;
+  drawBrandMark(c, box, 1.0f);
+}
+
+void drawBrandMark(Canvas& c, Rect box, float alpha) {
+  if (g_brandMark.empty() || alpha <= 0.001f) return;
   const float s = std::floor(std::min(box.w, box.h));
+  if (s <= 0.0f) return;
   const Rect square{std::floor(box.x + (box.w - s) * 0.5f), std::floor(box.y + (box.h - s) * 0.5f), s, s};
-  c.blitBlend(g_brandMark.data(), g_brandMarkW, g_brandMarkH, g_brandMarkW, square);
+  if (alpha >= 0.999f) {
+    c.blitBlend(g_brandMark.data(), g_brandMarkW, g_brandMarkH, g_brandMarkW, square);
+    return;
+  }
+  const uint32_t scale = static_cast<uint32_t>(std::clamp(alpha, 0.0f, 1.0f) * 255.0f + 0.5f);
+  std::vector<uint32_t> faded(g_brandMark.size());
+  for (size_t i = 0; i < g_brandMark.size(); ++i) {
+    const uint32_t px = g_brandMark[i];
+    const uint32_t a = (((px >> 24U) & 0xFFU) * scale + 127U) / 255U;
+    faded[i] = (a << 24U) | (px & 0x00FFFFFFU);
+  }
+  c.blitBlend(faded.data(), g_brandMarkW, g_brandMarkH, g_brandMarkW, square);
 }
 
 } // namespace prism

@@ -375,6 +375,14 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
         }
     }
 
+    if (options.prismUi && !options.headless) {
+        // Interactive PRISM sessions detect external Content/ additions asynchronously in
+        // EditorUVE::TickExternalContentWatcherUVE (focus regain + 2s off-thread metadata scan
+        // with 300ms write-stability debounce), preventing synchronous SHA-256 hashing of large
+        // externally pasted folders on the UI thread inside EngineCoreUVE::TickFrameUVE().
+        config.projectChangeWatchPollIntervalSecondsUVE = 86400.0;
+    }
+
     UVE::Core::EngineCoreUVE engine(config);
     UVE::Platform::CrashReporterUVE crashReporter;
     try {

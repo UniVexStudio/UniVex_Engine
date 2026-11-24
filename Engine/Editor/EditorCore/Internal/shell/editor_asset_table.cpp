@@ -562,12 +562,19 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
     createRow->add(addButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(saveAllButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     auto importButton = prism::make<prism::Button>("Import", prism::Icon::Open, prism::ButtonStyle::Toolbar);
-    importButton->setTooltip("Import models, textures and sounds into this folder");
+    importButton->setTooltip("Import one or more models, animations, textures, or sounds into this folder");
     importButton->onClick = [this] {
         const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
         static_cast<void>(m_editor.PromptImportFilesUVE(root / m_editor.m_assetTableDirectory));
     };
+    auto importFolderButton = prism::make<prism::Button>("Import Folder", prism::Icon::FolderOpen, prism::ButtonStyle::Toolbar);
+    importFolderButton->setTooltip("Import an entire folder (preserving subfolders) into this directory");
+    importFolderButton->onClick = [this] {
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        static_cast<void>(m_editor.PromptImportFolderUVE(root / m_editor.m_assetTableDirectory));
+    };
     createRow->add(importButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    createRow->add(importFolderButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto createBar = prism::make<prism::Border>();
     createBar->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -1625,7 +1632,11 @@ std::vector<prism::MenuItem> EditorAssetTableUVE::CatalogueMenuUVE() {
     };
 
     items.push_back(prism::MenuItem::Header("GET"));
-    items.push_back(prism::MenuItem::Item("Import to Current Folder", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Item("Import Files to Current Folder...", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Item("Import Folder to Current Folder...", [this] {
+        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        static_cast<void>(m_editor.PromptImportFolderUVE(snapshot.contentRoot / m_editor.m_assetTableDirectory));
+    }, "", prism::Icon::FolderOpen));
     items.push_back(prism::MenuItem::Header("CREATE"));
     items.push_back(item("New Folder", "folder", prism::Icon::Folder, "Folder"));
     items.push_back(prism::MenuItem::Sep());

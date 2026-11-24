@@ -6734,4 +6734,149 @@ TEST(EditorUVETest, SetSelectedMeshSourceAutoAttachesAPoseUvskelSkeletonUnderPla
     std::filesystem::remove_all(scratch);
 }
 
+TEST(EditorUVETest, ExternalContentWatcher_PollNowDetectsExternalFilesAndIgnoresTempCopies) {
+    const std::filesystem::path scratch = std::filesystem::temp_directory_path() / "uve_ext_watch_test";
+    std::error_code ec;
+    std::filesystem::remove_all(scratch, ec);
+    const std::filesystem::path content = scratch / "Content";
+    ASSERT_TRUE(std::filesystem::create_directories(content / "Existing"));
+    {
+        std::ofstream f(content / "Existing" / "Seed.txt", std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(f.is_open());
+        f << "seed";
+    }
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    config.projectChangeWatchPollIntervalSecondsUVE = 3600.0;
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        editor.TickUVE();
+
+        // Quiet poll right after baseline finds no delta.
+        EXPECT_FALSE(editor.PollExternalContentChangesNowUVE());
+
+        // Transient .uvcopy-tmp files must stay hidden from both index and watcher.
+        {
+            std::ofstream tmp(content / "InFlight.fbx.uvcopy-tmp", std::ios::binary | std::ios::trunc);
+            ASSERT_TRUE(tmp.is_open());
+            tmp << "partial";
+        }
+        EXPECT_FALSE(editor.PollExternalContentChangesNowUVE());
+
+        // Simulate adding an external folder + file outside the Editor (OS/Android File Manager).
+        ASSERT_TRUE(std::filesystem::create_directories(content / "ExternalPack" / "Locomotion"));
+        {
+            std::ofstream ext(content / "ExternalPack" / "Locomotion" / "Walk.txt", std::ios::binary | std::ios::trunc);
+            ASSERT_TRUE(ext.is_open());
+            ext << "external-drop";
+        }
+
+        EXPECT_TRUE(editor.PollExternalContentChangesNowUVE());
+        const Asset::ProjectFileSnapshotUVE refreshed =
+            engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE();
+        const bool foundExternal = std::any_of(
+            refreshed.entries.begin(), refreshed.entries.end(),
+            [](const Asset::ProjectFileEntryUVE& entry) {
+                return entry.relativePath == std::filesystem::path{"ExternalPack/Locomotion/Walk.txt"};
+            });
+        const bool foundTemp = std::any_of(
+            refreshed.entries.begin(), refreshed.entries.end(),
+            [](const Asset::ProjectFileEntryUVE& entry) {
+                return entry.relativePath.extension() == ".uvcopy-tmp";
+            });
+        EXPECT_TRUE(foundExternal);
+        EXPECT_FALSE(foundTemp);
+
+        // Next poll with no further disk writes reports no delta.
+        EXPECT_FALSE(editor.PollExternalContentChangesNowUVE());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch, ec);
+}
+
+TEST(EditorUVETest, ImportExternalFilesUVE_RecursivelyCopiesFoldersPreservesSubfoldersSkipsHiddenAndSelfCopy) {
+    const std::filesystem::path scratch = std::filesystem::temp_directory_path() / "uve_import_folder_test";
+    std::error_code ec;
+    std::filesystem::remove_all(scratch, ec);
+    const std::filesystem::path content = scratch / "Content";
+    const std::filesystem::path externalRoot = scratch / "ExternalDownloads" / "MixamoAnims";
+    ASSERT_TRUE(std::filesystem::create_directories(content / "Characters"));
+    ASSERT_TRUE(std::filesystem::create_directories(externalRoot / "Locomotion"));
+    ASSERT_TRUE(std::filesystem::create_directories(externalRoot / "Combat"));
+    ASSERT_TRUE(std::filesystem::create_directories(externalRoot / ".hidden_meta"));
+
+    const auto writeText = [](const std::filesystem::path& p, const std::string& body) {
+        std::ofstream out(p, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(out.is_open());
+        out << body;
+    };
+    writeText(externalRoot / "Locomotion" / "Walk.txt", "walk-data");
+    writeText(externalRoot / "Combat" / "Slash.txt", "slash-data");
+    writeText(externalRoot / ".DS_Store", "macos-junk");
+    writeText(externalRoot / ".hidden_meta" / "Secret.txt", "hidden");
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        editor.TickUVE();
+
+        // Import entire folder preserving its subfolder layout inside Content/Characters.
+        ASSERT_TRUE(editor.ImportExternalFilesUVE({externalRoot}, content / "Characters"));
+        EXPECT_TRUE(std::filesystem::is_regular_file(content / "Characters" / "MixamoAnims" / "Locomotion" / "Walk.txt"));
+        EXPECT_TRUE(std::filesystem::is_regular_file(content / "Characters" / "MixamoAnims" / "Combat" / "Slash.txt"));
+        EXPECT_FALSE(std::filesystem::exists(content / "Characters" / "MixamoAnims" / ".DS_Store"));
+        EXPECT_FALSE(std::filesystem::exists(content / "Characters" / "MixamoAnims" / ".hidden_meta"));
+
+        // Self-recursive folder copy (destination inside source) must be rejected cleanly.
+        EXPECT_FALSE(editor.ImportExternalFilesUVE({content}, content / "Characters" / "Nested"));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch, ec);
+}
+
+TEST(EditorUVETest, BackgroundImportCancel_ClearsPendingQueuesSafely) {
+    const std::filesystem::path scratch = std::filesystem::temp_directory_path() / "uve_cancel_import_test";
+    std::error_code ec;
+    std::filesystem::remove_all(scratch, ec);
+    const std::filesystem::path content = scratch / "Content";
+    ASSERT_TRUE(std::filesystem::create_directories(content));
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        editor.DismissStartupLoadingUVE();
+        editor.TickUVE();
+
+        // Cancelling when idle or queued leaves loading state clean and non-busy.
+        editor.CancelBackgroundImportsUVE();
+        const EditorUVE::EditorLoadingStateUVE state = editor.GetLoadingStateUVE();
+        EXPECT_FALSE(state.startup);
+        EXPECT_FALSE(state.busy);
+        EXPECT_EQ(state.total, 0U);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch, ec);
+}
+
 } // namespace UVE::Editor::Tests

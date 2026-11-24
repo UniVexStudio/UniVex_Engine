@@ -84,6 +84,11 @@ struct ActivityStateUVE final {
     std::function<void(const std::filesystem::path&)> pendingPick;
     std::function<void(const std::string&)> pendingPickError;
     std::vector<std::string> pickSuffixes;
+    /// A multi-file or folder pick in progress (StartMultiFilePickUVE / StartFolderPickUVE).
+    std::function<void(const std::vector<std::filesystem::path>&)> pendingMultiPick;
+    std::function<void(const std::string&)> pendingMultiPickError;
+    std::vector<std::string> multiPickSuffixes;
+    bool multiPickFolders = false;
 };
 
 /// Opens Android's file picker; `onPicked` runs (from BeforeFrameUVE) with the chosen file, copied
@@ -92,6 +97,14 @@ struct ActivityStateUVE final {
 [[nodiscard]] bool StartFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,
                                     std::function<void(const std::filesystem::path&)> onPicked,
                                     std::function<void(const std::string&)> onError = {});
+/// Opens Android's native multi-select file manager (ACTION_OPEN_DOCUMENT + EXTRA_ALLOW_MULTIPLE).
+[[nodiscard]] bool StartMultiFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,
+                                         std::function<void(const std::vector<std::filesystem::path>&)> onPicked,
+                                         std::function<void(const std::string&)> onError = {});
+/// Opens Android's native folder tree picker (ACTION_OPEN_DOCUMENT_TREE), staging subfolders into cache.
+[[nodiscard]] bool StartFolderPickUVE(ActivityStateUVE& state,
+                                      std::function<void(const std::vector<std::filesystem::path>&)> onPicked,
+                                      std::function<void(const std::string&)> onError = {});
 
 /// Takes over the activity's callbacks for `state`, and tells this library's copies of the GLFW
 /// stand-in and the HTTP client about the activity (Java VM, screen density, current surface).

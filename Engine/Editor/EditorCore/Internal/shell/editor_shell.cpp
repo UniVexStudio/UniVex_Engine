@@ -264,7 +264,13 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildLayoutUVE() {
     auto root = prism::make<prism::Overlay>();
     root->add(m_safeFrame);
     m_loadingScreen = prism::make<EditorLoadingScreenUVE>();
+    {
+        const Core::VersionUVE version = Core::EngineCoreUVE::GetEngineVersionUVE();
+        m_loadingScreen->SetVersionUVE("v" + std::to_string(version.major) + "." + std::to_string(version.minor) + "." +
+                                       std::to_string(version.patch) + "." + std::to_string(version.build));
+    }
     m_loadingScreen->onDismiss = [this] { m_editor.DismissStartupLoadingUVE(); };
+    m_loadingScreen->onCancel = [this] { m_editor.CancelBackgroundImportsUVE(); };
     root->add(m_loadingScreen);
     return root;
 }
@@ -371,9 +377,20 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildTitleBarUVE() {
     desc.outTitleRow = &m_titleBarRow;
 
     desc.menus.push_back({"File", [this] {
-        std::vector<prism::MenuItem> items = CommandItemsUVE({"file.saveScene", "file.saveAll", "file.loadScene", nullptr,
-                                                              "file.projectSettings", "file.inputMap", "file.preferences",
-                                                              "file.keyboardShortcuts", "file.commandPalette"});
+        std::vector<prism::MenuItem> items = CommandItemsUVE({"file.saveScene", "file.saveAll", "file.loadScene", nullptr});
+        items.push_back(prism::MenuItem::Item("Import Files...", [this] {
+            const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+            static_cast<void>(m_editor.PromptImportFilesUVE(root / m_editor.m_assetTableDirectory));
+        }, "", prism::Icon::Open));
+        items.push_back(prism::MenuItem::Item("Import Folder...", [this] {
+            const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+            static_cast<void>(m_editor.PromptImportFolderUVE(root / m_editor.m_assetTableDirectory));
+        }, "", prism::Icon::FolderOpen));
+        items.push_back(prism::MenuItem::Sep());
+        for (prism::MenuItem& item : CommandItemsUVE({"file.projectSettings", "file.inputMap", "file.preferences",
+                                                      "file.keyboardShortcuts", "file.commandPalette"})) {
+            items.push_back(std::move(item));
+        }
         items.push_back(prism::MenuItem::Item("Save Editor Preferences",
                                               [this] { static_cast<void>(m_editor.SaveSessionSettingsUVE()); }));
         items.push_back(prism::MenuItem::Sep());
@@ -960,9 +977,12 @@ void EditorShellUVE::ShowAddMenuUVE() {
 
     std::vector<prism::MenuItem> items;
     items.push_back(prism::MenuItem::Header("GET CONTENT"));
-    items.push_back(prism::MenuItem::Item("Import Content...", [this] {
+    items.push_back(prism::MenuItem::Item("Import Files...", [this] {
         static_cast<void>(m_editor.PromptImportFilesUVE(m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot));
     }, "", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Item("Import Folder...", [this] {
+        static_cast<void>(m_editor.PromptImportFolderUVE(m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot));
+    }, "", prism::Icon::FolderOpen));
     items.push_back(prism::MenuItem::Header("PLACE OBJECTS"));
 
     // The project's own entities (a player, a character): placed as they are in Content.

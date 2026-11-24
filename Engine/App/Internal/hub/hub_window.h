@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <future>
 #include <memory>
@@ -64,6 +65,7 @@ enum class HubPageUVE : int {
 class HubWindowUVE final {
 public:
     explicit HubWindowUVE(HubContextUVE context);
+    ~HubWindowUVE();
 
     /// Builds the widget tree; call once.
     [[nodiscard]] prism::Ref<prism::Widget> BuildUVE();
@@ -113,6 +115,7 @@ private:
     void CreateProjectUVE();
     void SaveSettingsUVE();
     void SetStatusUVE(const std::string& message, bool isError);
+    void StepStartupLoadingUVE();
 
     HubContextUVE m_context;
     Pack::ProjectRegistryUVE m_registry;
@@ -128,6 +131,12 @@ private:
     std::future<Online::EngineInstallOutcomeUVE> m_import;
     /// Where the import picker opens next: the folder of the last imported package.
     std::filesystem::path m_lastImportFolder;
+
+    class HubLoadingOverlayUVE;
+    prism::Ref<HubLoadingOverlayUVE> m_loadingOverlay;
+    int m_startupStep = 0;
+    std::chrono::steady_clock::time_point m_startupBegan{};
+    std::chrono::steady_clock::time_point m_startupFadeBegan{};
 
     prism::Ref<prism::StackSwitcher> m_pages;
     std::vector<std::pair<HubPageUVE, prism::Ref<NavItemUVE>>> m_navigation;

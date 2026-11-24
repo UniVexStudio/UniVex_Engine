@@ -60,6 +60,13 @@ void RequestAndroidAllFilesAccessUVE(ANativeActivity* activity);
 /// "error:<reason>" when it failed, else the path of the picked document copied into the app's
 /// cache. Returned once.
 [[nodiscard]] std::optional<std::string> TakeAndroidPickedFileUVE(ANativeActivity* activity);
+/// Opens Android's multi-select file picker (UniVexActivity.pickFiles). False when unavailable.
+[[nodiscard]] bool StartAndroidMultiFilePickUVE(ANativeActivity* activity);
+/// Opens Android's folder tree picker (UniVexActivity.pickFolder). False when unavailable.
+[[nodiscard]] bool StartAndroidFolderPickUVE(ANativeActivity* activity);
+/// The outcome of the last multi-file or folder pick: nullopt while running, empty string when
+/// cancelled, "error:<reason>" on failure, else '\x1E'-separated staged cache paths. Returned once.
+[[nodiscard]] std::optional<std::string> TakeAndroidPickedPathsUVE(ANativeActivity* activity);
 
 /// Reads plain text from Android's system clipboard (UniVexActivity.getClipboardText), or empty
 /// optional when the activity does not provide it.

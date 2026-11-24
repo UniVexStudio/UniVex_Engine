@@ -6,6 +6,7 @@
 #include <array>
 #include <chrono>
 #include <charconv>
+#include <cmath>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -17,6 +18,7 @@
 #include "process_launcher.h"
 #include "application_runtime.h"
 #include "project_compatibility.h"
+#include "prism/Icons.h"
 #include "prism/Theme.h"
 
 namespace UVE::Hub {
@@ -49,6 +51,13 @@ inline constexpr float kRowRadiusUVE = 6.0F;
 inline constexpr float kControlSpacingUVE = 6.0F;
 inline constexpr float kFieldLabelWidthUVE = 116.0F;
 inline constexpr float kTemplateListWidthUVE = 240.0F;
+inline constexpr double kHubSplashMinSecondsUVE = 0.80;
+inline constexpr double kHubSplashFadeSecondsUVE = 0.25;
+
+[[nodiscard]] float SmoothStepUVE(const float x) noexcept {
+    const float t = std::clamp(x, 0.0F, 1.0F);
+    return t * t * (3.0F - 2.0F * t);
+}
 
 struct SortChoiceUVE final {
     const char* label;
@@ -117,9 +126,100 @@ inline constexpr std::array<SortChoiceUVE, 2U> kSortChoicesUVE{{
 
 } // namespace
 
+/// Branded UniVex Hub startup splash using the real `univex_logo.png` mark (`prism::drawBrandMark`),
+/// version label, live startup step text, sleek progress bar, and smooth fade-out.
+class HubWindowUVE::HubLoadingOverlayUVE final : public prism::Widget {
+public:
+    explicit HubLoadingOverlayUVE(const bool compact)
+        : m_compact(compact),
+          m_version("v" + Online::FormatDisplayVersionUVE(Online::kHubVersionUVE)) {}
+
+    void SetProgressUVE(std::string step, const float targetProgress, const float alpha) {
+        m_step = std::move(step);
+        m_targetProgress = std::clamp(targetProgress, 0.0F, 1.0F);
+        m_shownProgress += (m_targetProgress - m_shownProgress) * 0.28F;
+        m_alpha = std::clamp(alpha, 0.0F, 1.0F);
+        if (m_alpha <= 0.005F) {
+            if (visible()) {
+                setVisible(false);
+            }
+            return;
+        }
+        if (!visible()) {
+            setVisible(true);
+        }
+        invalidate();
+    }
+
+    prism::Vec2 measure(const prism::Vec2 avail) override {
+        return m_desired = constrain(avail);
+    }
+
+    bool hitSelf() const override {
+        return visible() && m_alpha >= 0.99F;
+    }
+
+    void paint(prism::Canvas& c) override {
+        if (m_alpha <= 0.005F) {
+            return;
+        }
+        const prism::Theme& t = prism::theme();
+        const prism::Rect r = rect();
+        const float a = m_alpha;
+        const prism::Color accent = t.accent;
+
+        c.gradientV(r, prism::Color(17, 19, 24).alpha(a), prism::Color(11, 12, 16).alpha(a));
+        c.fillRect(prism::Rect{r.x, r.y, r.w, 2.0F}, accent.alpha(a * 0.85F));
+
+        const bool compact = m_compact || r.h < 420.0F || r.w < 500.0F;
+        const float logoSide = compact ? 72.0F : 96.0F;
+        const float barWidth = std::min(300.0F, std::max(168.0F, r.w - 56.0F));
+        const float blockHeight = logoSide + (compact ? 104.0F : 122.0F);
+        const float topY = std::floor(r.y + (r.h - blockHeight) * 0.5F);
+        const float centerX = r.x + r.w * 0.5F;
+
+        const prism::Rect mark{std::floor(centerX - logoSide * 0.5F), topY, logoSide, logoSide};
+        if (prism::hasBrandMark()) {
+            prism::drawBrandMark(c, mark, a);
+        } else {
+            c.fillRoundRect(mark, logoSide * 0.22F, accent.alpha(a * 0.22F));
+            c.strokeRoundRect(mark, logoSide * 0.22F, accent.alpha(a), 2);
+        }
+
+        float y = mark.bottom() + (compact ? 14.0F : 18.0F);
+        c.textIn(*t.semibold, prism::Rect{r.x + 24.0F, y, r.w - 48.0F, 24.0F}, "UniVex Hub",
+                 t.textBright.alpha(a), prism::HAlign::Center);
+        y += 22.0F;
+        c.textIn(*t.small, prism::Rect{r.x + 24.0F, y, r.w - 48.0F, 18.0F}, m_version,
+                 t.textDim.alpha(a), prism::HAlign::Center);
+        y += 24.0F;
+
+        const prism::Rect bar{std::floor(centerX - barWidth * 0.5F), y, barWidth, 5.0F};
+        c.fillRoundRect(bar, 2.5F, prism::Color(30, 33, 42).alpha(a));
+        c.fillRoundRect(prism::Rect{bar.x, bar.y, std::clamp(bar.w * m_shownProgress, 6.0F, bar.w), bar.h}, 2.5F,
+                        accent.alpha(a));
+        y += 14.0F;
+
+        const int percent = static_cast<int>(std::round(std::clamp(m_shownProgress, 0.0F, 1.0F) * 100.0F));
+        c.textIn(*t.small, prism::Rect{bar.x, y, bar.w - 40.0F, 16.0F}, m_step, t.text.alpha(a), prism::HAlign::Left);
+        c.textIn(*t.small, prism::Rect{bar.x, y, bar.w, 16.0F}, std::to_string(percent) + "%",
+                 t.textDim.alpha(a), prism::HAlign::Right);
+    }
+
+private:
+    bool m_compact = false;
+    std::string m_version;
+    std::string m_step = "Starting UniVex Hub...";
+    float m_targetProgress = 0.12F;
+    float m_shownProgress = 0.08F;
+    float m_alpha = 1.0F;
+};
+
 HubWindowUVE::HubWindowUVE(HubContextUVE context) : m_context(std::move(context)) {
     m_settings = Pack::LoadLauncherSettingsUVE(m_context.settingsFile);
 }
+
+HubWindowUVE::~HubWindowUVE() = default;
 
 prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
     const float pagePadding = m_context.compactLayout ? kCompactPagePaddingUVE : kPagePaddingUVE;
@@ -146,13 +246,19 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildUVE() {
     auto window = prism::make<prism::Border>();
     window->setBackground(&prism::Theme::window).setChild(root);
 
-    RefreshInstalledEnginesUVE();
-    ReloadRegistryUVE();
-    RefreshTemplateListUVE();
     ShowPageUVE(HubPageUVE::Projects);
-    // New engine versions only appear when the feed can be reached; offline, nothing is fetched.
-    CheckForEnginesUVE();
-    return window;
+
+    // Stepwise initialization runs across the first frames in TickUVE() under the branded loading
+    // screen so Frame 1 renders immediately and never appears abruptly half-populated.
+    m_startupStep = 0;
+    m_startupBegan = std::chrono::steady_clock::now();
+    m_startupFadeBegan = {};
+    m_loadingOverlay = prism::make<HubLoadingOverlayUVE>(m_context.compactLayout);
+
+    auto overlay = prism::make<prism::Overlay>();
+    overlay->add(window);
+    overlay->add(m_loadingOverlay);
+    return overlay;
 }
 
 prism::Ref<NavItemUVE> HubWindowUVE::MakeNavItemUVE(const std::string& label, const prism::Icon icon,
@@ -959,7 +1065,58 @@ void HubWindowUVE::ImportEnginePackageUVE() {
         [this](const std::string& message) { SetStatusUVE(message, true); });
 }
 
+void HubWindowUVE::StepStartupLoadingUVE() {
+    if (!m_loadingOverlay || !m_loadingOverlay->visible()) {
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (m_startupBegan == std::chrono::steady_clock::time_point{}) {
+        m_startupBegan = now;
+    }
+    switch (m_startupStep) {
+    case 0:
+        m_loadingOverlay->SetProgressUVE("Loading installed engines...", 0.30F, 1.0F);
+        RefreshInstalledEnginesUVE();
+        m_startupStep = 1;
+        return;
+    case 1:
+        m_loadingOverlay->SetProgressUVE("Loading projects...", 0.65F, 1.0F);
+        ReloadRegistryUVE();
+        m_startupStep = 2;
+        return;
+    case 2:
+        m_loadingOverlay->SetProgressUVE("Preparing templates...", 0.94F, 1.0F);
+        RefreshTemplateListUVE();
+        // New engine versions only appear when the feed can be reached; offline, nothing is fetched.
+        CheckForEnginesUVE();
+        m_startupStep = 3;
+        return;
+    case 3: {
+        const double shownSeconds = std::chrono::duration<double>(now - m_startupBegan).count();
+        if (shownSeconds < kHubSplashMinSecondsUVE) {
+            m_loadingOverlay->SetProgressUVE("Ready", 1.0F, 1.0F);
+            return;
+        }
+        if (m_startupFadeBegan == std::chrono::steady_clock::time_point{}) {
+            m_startupFadeBegan = now;
+        }
+        const double fadeElapsed = std::chrono::duration<double>(now - m_startupFadeBegan).count();
+        const float t = static_cast<float>(std::clamp(fadeElapsed / kHubSplashFadeSecondsUVE, 0.0, 1.0));
+        const float alpha = 1.0F - SmoothStepUVE(t);
+        m_loadingOverlay->SetProgressUVE("Ready", 1.0F, alpha);
+        if (t >= 1.0F) {
+            m_startupStep = 4;
+        }
+        return;
+    }
+    default:
+        m_loadingOverlay->SetProgressUVE("Ready", 1.0F, 0.0F);
+        return;
+    }
+}
+
 void HubWindowUVE::TickUVE() {
+    StepStartupLoadingUVE();
     if (m_feedRequest.valid() &&
         m_feedRequest.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
         m_feedResult = m_feedRequest.get();
