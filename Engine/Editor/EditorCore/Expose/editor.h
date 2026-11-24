@@ -5,6 +5,7 @@
 #include "texture_import_settings.h"
 #include <array>
 #include <chrono>
+#include <condition_variable>
 #include <limits>
 #include <map>
 #include <memory>
@@ -20,6 +21,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <typeindex>
 #include <unordered_map>
 #include <unordered_set>
@@ -104,6 +106,7 @@
 
 namespace UVE::Asset {
 struct AnimationClipAssetUVE;
+class AssetImportQueueUVE;
 } // namespace UVE::Asset
 
 namespace UVE::Editor::Tests {
@@ -373,6 +376,21 @@ struct RetargetWindowStateUVE final {
     std::future<Retarget::RetargetFilesResultUVE> job;
     /// The character file the running job conforms.
     std::filesystem::path jobModel;
+    /// True when the running job conformed the character mesh itself (not only its animations).
+    bool jobConformedModel = false;
+    /// Un-imported animation model sources queued from a folder/multi-select retarget, drained
+    /// incrementally within a per-frame time budget so the editor stays responsive.
+    std::deque<std::filesystem::path> pendingFolderImports;
+    std::size_t pendingImportTotal = 0U;
+    std::size_t pendingImportDone = 0U;
+    /// Background plan scan for large animation batches so opening a 1,000-clip folder never stalls UI.
+    std::future<RetargetPlanUVE> planJob;
+    std::shared_ptr<std::atomic<bool>> planCancel = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<Progress> planProgress = std::make_shared<Progress>();
+    std::filesystem::path planModelFile;
+    /// True when an empty target should auto-pick the first project character; false for explicit
+    /// animation-only multi-select or folder batches.
+    bool autoSelectDefaultCandidate = true;
     /// Characters conformed or restored while the window was open: the scene put aside by the
     /// preview still holds their old bones until it is back.
     std::vector<std::filesystem::path> changedModels;
@@ -394,10 +412,11 @@ struct AnimationLibraryWindowStateUVE final {
     std::string entryName;
 };
 
-/// Open an existing file, or name a new one.
+/// Open an existing file, pick a folder, or name a new one.
 enum class FilePickerModeUVE {
     Open,
     Save,
+    OpenFolder,
 };
 
 /// One floating file pick: what it picks and where the choice goes. `extensions` holds the
@@ -409,6 +428,13 @@ enum class FilePickerModeUVE {
 /// the chosen file; false when it could not open.
 using SystemImportPickerUVE = std::function<bool(std::function<void(const std::filesystem::path&)> onPicked)>;
 void SetSystemImportPickerUVE(SystemImportPickerUVE picker);
+/// Multi-file system picker (Android SAF ACTION_OPEN_DOCUMENT + EXTRA_ALLOW_MULTIPLE); calls `onPicked`
+/// with one or more staged file paths in app cache.
+using SystemImportFilesPickerUVE = std::function<bool(std::function<void(const std::vector<std::filesystem::path>&)> onPicked)>;
+void SetSystemImportFilesPickerUVE(SystemImportFilesPickerUVE picker);
+/// Folder system picker (Android SAF ACTION_OPEN_DOCUMENT_TREE); calls `onPicked` with staged folder paths.
+using SystemImportFolderPickerUVE = std::function<bool(std::function<void(const std::vector<std::filesystem::path>&)> onPicked)>;
+void SetSystemImportFolderPickerUVE(SystemImportFolderPickerUVE picker);
 
 struct FilePickerRequestUVE final {
     FilePickerModeUVE mode = FilePickerModeUVE::Open;
@@ -418,7 +444,10 @@ struct FilePickerRequestUVE final {
     std::string saveName;
     /// Quick Import: the picked file is copied into a Content folder first, and the copy is picked.
     bool quickImport = false;
+    /// True when the dialog permits selecting multiple files at once and invoking `onPickMany`.
+    bool allowMultiSelect = false;
     std::function<void(const std::filesystem::path&)> onPick;
+    std::function<void(const std::vector<std::filesystem::path>&)> onPickMany;
 };
 
 /// The picker's live state: the request plus its navigation.
@@ -518,13 +547,26 @@ public:
     struct EditorLoadingStateUVE final {
         bool startup = false;
         bool busy = false;
+        bool cancellable = false;
         float progress = 0.0F;
+        std::size_t done = 0U;
+        std::size_t total = 0U;
         std::string step;
         std::string detail;
+        std::string currentItem;
     };
     [[nodiscard]] EditorLoadingStateUVE GetLoadingStateUVE() const;
     void DismissStartupLoadingUVE() noexcept { m_startupLoading = false; }
+    /// Cancels queued background asset copies, probes, model conversions, and animation extractions
+    /// after the single active item finishes atomically.
+    void CancelBackgroundImportsUVE();
+    /// Synchronously polls the project Content directory for externally added, modified, or removed
+    /// files and refreshes the project file index when changes are detected.
+    bool PollExternalContentChangesNowUVE();
     void SetPrismUiEnabledUVE(bool enabled, std::filesystem::path assetDir = {});
+    void SetProjectFilePathUVE(std::filesystem::path projectFile);
+    void SetRendererProfileUVE(Platform::RendererProfileUVE profile);
+    [[nodiscard]] Render::RendererProfileResolutionUVE GetRendererProfileResolutionUVE() const noexcept;
     void SetSafeAreaCallbackUVE(std::function<std::array<float, 4>()> callback);
     [[nodiscard]] std::array<float, 4> SafeAreaInsetsUVE() const;
     [[nodiscard]] bool IsPrismUiActiveUVE() const noexcept { return m_levelShell != nullptr; }
@@ -1104,6 +1146,11 @@ public:
     /// Opens the Retarget window for `animations` (absolute `.uvanim` paths). `target` is the
     /// character's content-relative model source or `.uvmodel`, or empty to choose in the window.
     void OpenRetargetWindowUVE(std::vector<std::filesystem::path> animations, std::filesystem::path target = {});
+    /// Opens the Retarget window for an explicit multi-selection of content-relative files/folders:
+    /// strictly only the selected items (expanding any selected folders recursively) are included.
+    void OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem::path>& relativePaths);
+    /// Opens the Retarget window for all animations inside a content-relative folder (recursively).
+    void OpenRetargetWindowForFolderUVE(const std::filesystem::path& relativeFolder);
     [[nodiscard]] bool IsRetargetWindowOpenUVE() const noexcept { return m_retargetWindow.has_value(); }
     void CloseRetargetWindowUVE();
     /// Opens `assetPath` (absolute `.uvanimlib`) in the Animation Library window. Opening another
@@ -1772,9 +1819,13 @@ public:
                                   std::function<void(const std::filesystem::path&)> onCreated = nullptr);
     /// Prompts the user to pick external asset files (models, textures, audio, scripts) and imports them.
     bool PromptImportFilesUVE(const std::filesystem::path& targetDirectory = {});
-    /// Imports external files from disk into the project's content directory.
+    /// Prompts the user to pick one or more external folders and imports them while preserving subfolders.
+    bool PromptImportFolderUVE(const std::filesystem::path& targetDirectory = {});
+    /// Imports external files or folders from disk into the project's content directory.
+    /// When `deleteStagedSources` is true (e.g. Android SAF staged cache files), deletes temporary staged copies after import.
     bool ImportExternalFilesUVE(const std::vector<std::filesystem::path>& sourceFiles,
-                                const std::filesystem::path& targetDirectory = {});
+                                const std::filesystem::path& targetDirectory = {},
+                                bool deleteStagedSources = false);
     [[nodiscard]] const std::optional<UVScriptDocumentUVE>& GetOpenUVScriptUVE() const noexcept;
     /// Replaces the open script's text and re-checks it. No effect when nothing is open.
     void SetOpenUVScriptTextUVE(std::string text);
@@ -2242,6 +2293,13 @@ private:
         std::optional<Scene::PrimitiveMeshComponentUVE> beforeShape;
         Scene::MeshComponentUVE afterMesh{};
         std::optional<Scene::PrimitiveMeshComponentUVE> afterShape;
+        std::optional<Scene::SkinComponentUVE> beforeSkin;
+        std::optional<Scene::SkinComponentUVE> afterSkin;
+        Scene::EntityUVE syncedSkeletonEntity = Scene::kInvalidEntityUVE;
+        std::optional<Scene::Skeleton3DComponentUVE> beforeSkeleton;
+        std::optional<Scene::Skeleton3DComponentUVE> afterSkeleton;
+        Scene::EntityUVE createdSkeletonEntity = Scene::kInvalidEntityUVE;
+        std::optional<Scene::SceneSnapshotUVE> createdSkeletonSnapshot;
         EditorSelectionSnapshotUVE selectionBefore;
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
@@ -2779,6 +2837,8 @@ private:
     [[nodiscard]] std::filesystem::path GetImportedModelPathUVE(const std::filesystem::path& relativeSource) const;
     /// The skeleton a model source gives a Skeleton3D: the imported model's when it has been
     /// conformed to the humanoid (Retarget), else the source file's own bones.
+    [[nodiscard]] std::optional<Asset::GltfSkeletonUVE> ReadSkeletonForModelFileUVE(const std::filesystem::path& importedModelPath,
+                                                                                    std::size_t maximumBones) const;
     [[nodiscard]] std::optional<Asset::GltfSkeletonUVE> ReadSkeletonForSourceUVE(const std::filesystem::path& relativeSource,
                                                                                  std::size_t maximumBones) const;
     /// Queues an import for every model source in `snapshot` that is not already in flight. An
@@ -2803,6 +2863,16 @@ private:
     std::size_t m_startupIconPeak = 0U;
     /// Collects finished auto-imports; a successful one refreshes the mesh thumbnails.
     void PollModelImportJobsUVE();
+    [[nodiscard]] Asset::IAssetImportQueueUVE& ActiveModelImportQueueUVE() const noexcept;
+    void EnsureBackgroundModelImportWorkerUVE();
+    void StopBackgroundModelImportWorkerUVE();
+    void EnqueueBackgroundExternalCopiesUVE(std::vector<std::pair<std::filesystem::path, std::filesystem::path>> items,
+                                            std::vector<std::filesystem::path> cleanupDirs);
+    void EnqueueModelSourceIfReadyUVE(const std::string& key, const std::filesystem::path& source,
+                                      const EditorModelSourceInfoUVE& info,
+                                      std::uint32_t maxEmbeddedTextureResolution);
+    void TickExternalContentWatcherUVE();
+    void SeedObservedContentTreeUVE(const Asset::ProjectFileSnapshotUVE& snapshot);
     /// Registers the converted mesh at `importedModel` and every published asset beside it -
     /// its `.uvmat` materials, its `.uvtex` textures, its `.uvskel` rig.
     ///
@@ -3414,6 +3484,112 @@ private:
     std::map<std::string, std::string> m_modelImportFailures;
     /// Every content-relative model source, as the last project refresh read it.
     std::map<std::string, EditorModelSourceInfoUVE> m_modelSources;
+    struct CachedModelSourceStampUVE final {
+        std::string stamp;
+        std::uintmax_t size = 0U;
+        EditorModelSourceInfoUVE info;
+        bool modelImported = false;
+        bool animsImported = false;
+    };
+    std::unordered_map<std::string, CachedModelSourceStampUVE> m_modelSourceStampCache;
+    enum class BackgroundImportPhaseUVE : std::uint8_t {
+        Idle,
+        Copying,
+        Probing,
+        ImportingModel,
+        ExtractingAnimations,
+    };
+    struct BgCopyTaskUVE final {
+        std::filesystem::path source;
+        std::filesystem::path destination;
+    };
+    struct BgModelProbeTaskUVE final {
+        std::string key;
+        std::filesystem::path source;
+        std::string stamp;
+        std::uintmax_t size = 0U;
+    };
+    struct BgModelProbeResultUVE final {
+        std::string key;
+        std::filesystem::path source;
+        std::string stamp;
+        std::uintmax_t size = 0U;
+        EditorModelSourceInfoUVE info;
+    };
+    struct BgModelConvertTaskUVE final {
+        std::string key;
+        Asset::AssetImportRequestUVE request;
+    };
+    struct BgModelConvertResultUVE final {
+        std::string key;
+        bool succeeded = false;
+        bool cacheHit = false;
+        std::string errorReason;
+    };
+    struct BgAnimExtractTaskUVE final {
+        std::filesystem::path absoluteSource;
+        std::filesystem::path contentRoot;
+        std::filesystem::path importedModel;
+        bool keepInModel = false;
+        bool retargetedCurrent = false;
+    };
+    struct BgAnimExtractResultUVE final {
+        std::filesystem::path absoluteSource;
+        std::filesystem::path contentRoot;
+        std::filesystem::path importedModel;
+        bool keepInModel = false;
+        std::vector<std::string> embeddedTakes;
+        std::vector<std::filesystem::path> writtenLooseFiles;
+    };
+    struct ExternalFileStatUVE final {
+        bool isDirectory = false;
+        std::uintmax_t size = 0U;
+        std::int64_t mtimeTicks = 0;
+        bool operator==(const ExternalFileStatUVE&) const noexcept = default;
+    };
+    struct StabilizingExternalFileUVE final {
+        std::uintmax_t size = 0U;
+        std::int64_t mtimeTicks = 0;
+        std::chrono::steady_clock::time_point lastChangedAt{};
+    };
+    std::unique_ptr<Asset::AssetImportQueueUVE> m_bgModelImportQueue;
+    mutable std::mutex m_bgImportMutex;
+    std::condition_variable m_bgImportCv;
+    bool m_bgImportStop = false;
+    bool m_bgImportCancel = false;
+    bool m_bgImportHasPending = false;
+    BackgroundImportPhaseUVE m_bgImportPhase = BackgroundImportPhaseUVE::Idle;
+    std::string m_bgImportCurrentItem;
+    std::deque<BgCopyTaskUVE> m_bgCopyQueue;
+    std::vector<std::filesystem::path> m_bgCopyCleanupDirs;
+    std::vector<std::filesystem::path> m_bgCompletedCopies;
+    std::size_t m_bgCopyBatchTotal = 0U;
+    std::size_t m_bgCopyBatchDone = 0U;
+    std::size_t m_bgCopiesSinceRefresh = 0U;
+    std::deque<BgModelProbeTaskUVE> m_bgProbeQueue;
+    std::unordered_set<std::string> m_bgProbeQueuedKeys;
+    std::vector<BgModelProbeResultUVE> m_bgCompletedProbes;
+    std::size_t m_bgProbeBatchTotal = 0U;
+    std::size_t m_bgProbeBatchDone = 0U;
+    std::deque<BgModelConvertTaskUVE> m_bgModelConvertQueue;
+    std::unordered_set<std::string> m_bgModelConvertInFlightKeys;
+    std::vector<BgModelConvertResultUVE> m_bgCompletedModels;
+    std::deque<BgAnimExtractTaskUVE> m_bgAnimQueue;
+    std::unordered_set<std::string> m_bgAnimQueuedKeys;
+    std::vector<BgAnimExtractResultUVE> m_bgCompletedAnims;
+    std::size_t m_bgAnimBatchTotal = 0U;
+    std::size_t m_bgAnimBatchDone = 0U;
+    std::thread m_bgImportWorker;
+    // External filesystem watcher (OS / Android file manager additions into Content/).
+    std::shared_ptr<std::atomic<bool>> m_externalScanCancel = std::make_shared<std::atomic<bool>>(false);
+    std::future<std::unordered_map<std::string, ExternalFileStatUVE>> m_externalScanFuture;
+    std::unordered_map<std::string, ExternalFileStatUVE> m_lastObservedContentTree;
+    std::unordered_map<std::string, StabilizingExternalFileUVE> m_stabilizingExternalFiles;
+    std::chrono::steady_clock::time_point m_lastExternalWatchPoll{};
+    bool m_wasAnyWindowFocused = false;
+    bool m_externalWatchImmediateRequested = false;
+    std::uint64_t m_lastContentSnapshotSignature = 0U;
+    bool m_hasContentSnapshotSignature = false;
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;
     MaterialThumbnailRendererUVE m_materialThumbnailRenderer;
     AssetTableTypeFocusUVE m_assetTableTypeFocus = AssetTableTypeFocusUVE::All;
@@ -3654,6 +3830,7 @@ private:
     std::map<std::string, std::uintptr_t> m_vfxThumbnailCache;
     bool m_prismUiRequested = false;
     std::filesystem::path m_prismAssetDir;
+    std::filesystem::path m_projectFilePath;
     std::function<std::array<float, 4>()> m_safeAreaCallback;
     std::unique_ptr<EditorShellUVE> m_levelShell;
     // UI/render state is isolated per window, matching the dedicated per-window viewports.

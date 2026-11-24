@@ -125,10 +125,12 @@ struct ProjectCreationResultUVE final {
 /// `projectTemplate`. The project is assembled in a hidden sibling directory and moved into place
 /// only once complete, so a failure leaves nothing behind. An existing, non-empty destination is
 /// never touched. The manifest records `engineVersion` and a freshly generated project ID.
-[[nodiscard]] ProjectCreationResultUVE CreateProjectFromTemplateUVE(const ProjectTemplateUVE& projectTemplate,
-                                                                    const std::filesystem::path& parentDirectory,
-                                                                    std::string_view displayName,
-                                                                    const Core::VersionUVE& engineVersion);
+[[nodiscard]] ProjectCreationResultUVE CreateProjectFromTemplateUVE(
+    const ProjectTemplateUVE& projectTemplate,
+    const std::filesystem::path& parentDirectory,
+    std::string_view displayName,
+    const Core::VersionUVE& engineVersion,
+    Platform::RendererProfileUVE rendererProfile = Platform::DefaultRendererProfileForHostUVE());
 
 enum class StarterSceneCodeUVE : std::uint8_t {
     Loaded = 0,

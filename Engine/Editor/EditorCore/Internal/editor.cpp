@@ -7,6 +7,7 @@
 #include "logging_macros.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
+#include "asset_import_queue.h"
 #include "montage_library_asset.h"
 #include "fbx_mesh_converter.h"
 #include "gltf_metadata.h"
@@ -243,11 +244,47 @@ EditorUVE::EditorUVE(Core::EngineServicesUVE& services, std::filesystem::path ac
 
 EditorUVE::~EditorUVE() {
     ShutdownUVE();
+    StopBackgroundModelImportWorkerUVE();
 }
 
 void EditorUVE::SetPrismUiEnabledUVE(const bool enabled, std::filesystem::path assetDir) {
     m_prismUiRequested = enabled;
     m_prismAssetDir = std::move(assetDir);
+}
+
+void EditorUVE::SetProjectFilePathUVE(std::filesystem::path projectFile) {
+    m_projectFilePath = std::move(projectFile);
+}
+
+void EditorUVE::SetRendererProfileUVE(const Platform::RendererProfileUVE profile) {
+    m_services->GetRenderer3DUVE().SetRendererProfileUVE(profile);
+    if (m_projectFilePath.empty()) {
+        return;
+    }
+    const Platform::EditorProjectPackageLoadResultUVE loaded =
+        Platform::EditorProjectPackageCodecUVE::LoadUVE(m_projectFilePath);
+    if (!loaded.IsAcceptedUVE()) {
+        UVE_WARNING("EditorUVE: could not load {} to persist renderer profile: {}",
+                    m_projectFilePath.string(), loaded.result.message);
+        return;
+    }
+    if (loaded.package->rendererProfile == profile) {
+        return;
+    }
+    Platform::EditorProjectPackageUVE updated = *loaded.package;
+    updated.rendererProfile = profile;
+    updated.revision = loaded.package->revision + 1U;
+    const Platform::EditorProjectPackageResultUVE saved =
+        Platform::EditorProjectPackageCodecUVE::ApplyUpdateUVE(
+            m_projectFilePath, loaded.package->revision, updated);
+    if (!saved.IsAcceptedUVE()) {
+        UVE_WARNING("EditorUVE: could not persist renderer profile to {}: {}",
+                    m_projectFilePath.string(), saved.message);
+    }
+}
+
+Render::RendererProfileResolutionUVE EditorUVE::GetRendererProfileResolutionUVE() const noexcept {
+    return m_services->GetRenderer3DUVE().GetRendererProfileResolutionUVE();
 }
 
 void EditorUVE::SetSafeAreaCallbackUVE(std::function<std::array<float, 4>()> callback) {
@@ -315,6 +352,8 @@ void EditorUVE::TickUVE() {
         return;
     }
 
+    TickExternalContentWatcherUVE();
+
     const Asset::ProjectChangeSnapshotUVE changeSnapshot = m_services->GetProjectChangeWatcherUVE().GetSnapshotUVE();
     const bool firstProjectIndexRefresh = !m_projectFileSnapshotInitialized;
     const bool newProjectChangeBaseline = changeSnapshot.latestSequence > m_projectFileLastObservedChangeSequence;
@@ -324,8 +363,11 @@ void EditorUVE::TickUVE() {
         RefreshProjectFileIndexUVE();
     }
     PollModelImportJobsUVE();
-    // Behind the loading screen nothing else is drawn, so the takes get most of the frame.
-    ProcessPendingModelAnimationImportsUVE(m_startupLoading ? 0.12 : 0.025);
+    // In interactive PRISM sessions, animation extraction runs one-by-one on the background worker;
+    // headless/test sessions drain any directly queued clips synchronously here.
+    if (!m_pendingModelAnimations.empty()) {
+        ProcessPendingModelAnimationImportsUVE(m_startupLoading ? 0.12 : 0.025);
+    }
     if (m_startupLoading) {
         UpdateStartupLoadingUVE();
     }
@@ -1533,13 +1575,140 @@ bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
     }
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
+    std::optional<Scene::SkinComponentUVE> beforeSkin;
+    if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
+        beforeSkin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
+    }
     if (!ApplyMeshSourceStateUVE(m_selectedEntity, afterMesh, afterShape)) {
         return false;
     }
-    // A skinned mesh takes the bones of the model it now draws. A rigged model on an object with no
-    // Skin yet gets one when a Skeleton3D with bones stands beside it (on it, a child, the parent or a
-    // sibling); with none, the status says how to get its skeleton.
+    Scene::EntityUVE syncedSkeletonEntity = Scene::kInvalidEntityUVE;
+    std::optional<Scene::Skeleton3DComponentUVE> beforeSkeleton;
+    std::optional<Scene::Skeleton3DComponentUVE> afterSkeleton;
+    Scene::EntityUVE createdSkeletonEntity = Scene::kInvalidEntityUVE;
+    std::optional<Scene::SceneSnapshotUVE> createdSkeletonSnapshot;
+    // A skinned mesh takes the bones of the model it now draws. When a rigged model is assigned to
+    // a MeshInstance3D (e.g. under Player3D / Character3D / Entity), ensure a matching Skeleton3D
+    // loaded from its sibling .uvskel (A-pose once retargeted) stands beside it so the renderer
+    // skins into the skeleton's rest pose instead of falling back to raw unskinned T-pose vertices.
     if (!shape.has_value() && model != Asset::kInvalidAssetGuidUVE) {
+        if (const std::optional<Asset::MeshAssetUVE> meshAsset = LoadEntityMeshAssetUVE(m_selectedEntity);
+            meshAsset.has_value() && !meshAsset->joints.empty()) {
+            const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+            std::filesystem::path resolvedModel = m_services->GetAssetDatabaseUVE().ResolveUVE(model);
+            std::error_code ec;
+            if (resolvedModel.extension() != ".uvmodel" || !std::filesystem::is_regular_file(resolvedModel, ec)) {
+                const std::filesystem::path rel = resolvedModel.lexically_relative(project.contentRoot);
+                if (!rel.empty() && *rel.begin() != "..") {
+                    const std::filesystem::path imported = GetImportedModelPathUVE(rel);
+                    if (std::filesystem::is_regular_file(imported, ec)) {
+                        resolvedModel = imported;
+                    }
+                }
+            }
+            const std::optional<Asset::GltfSkeletonUVE> modelSkeleton =
+                ReadSkeletonForModelFileUVE(resolvedModel, Scene::kMaximumSkeletonBonesUVE);
+            if (modelSkeleton.has_value() && !modelSkeleton->joints.empty()) {
+                // Recover the cleanest asset path for Skeleton3DComponentUVE::skeletonAssetPath so
+                // future Retarget / Undo runs keep this skeleton synchronized automatically.
+                std::string skelAssetPath;
+                const std::filesystem::path relToContent = resolvedModel.lexically_relative(project.contentRoot);
+                if (!relToContent.empty() && *relToContent.begin() != "..") {
+                    skelAssetPath = relToContent.generic_string();
+                } else {
+                    const std::filesystem::path cacheRoot = m_services->GetDerivedArtifactCacheUVE().GetCacheRootUVE();
+                    std::filesystem::path importedRoot =
+                        cacheRoot.has_filename() ? cacheRoot.parent_path() : cacheRoot.parent_path().parent_path();
+                    importedRoot /= "Imported";
+                    const std::filesystem::path relToImported = resolvedModel.lexically_relative(importedRoot);
+                    if (!relToImported.empty() && *relToImported.begin() != ".." && relToImported.extension() == ".uvmodel") {
+                        std::filesystem::path sourceRel = relToImported;
+                        sourceRel.replace_extension();
+                        skelAssetPath = sourceRel.generic_string();
+                    } else {
+                        skelAssetPath = resolvedModel.generic_string();
+                    }
+                }
+
+                // Locate an existing Skeleton3D in SkinForEntityUVE's scope (self, child, parent, sibling).
+                Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+                Scene::EntityUVE existingSkel = Scene::kInvalidEntityUVE;
+                if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_selectedEntity)) {
+                    existingSkel = m_selectedEntity;
+                } else {
+                    for (const Scene::EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, m_selectedEntity)) {
+                        if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(child)) {
+                            existingSkel = child;
+                            break;
+                        }
+                    }
+                    if (existingSkel == Scene::kInvalidEntityUVE &&
+                        entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(m_selectedEntity)) {
+                        const Scene::EntityUVE parent =
+                            entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(m_selectedEntity).parent;
+                        if (parent != Scene::kInvalidEntityUVE) {
+                            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(parent)) {
+                                existingSkel = parent;
+                            } else {
+                                for (const Scene::EntityUVE sibling : sceneGraph.GetChildrenUVE(entityManager, parent)) {
+                                    if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(sibling)) {
+                                        existingSkel = sibling;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                const auto fillBones = [&modelSkeleton](Scene::Skeleton3DComponentUVE& comp, const std::string& path) {
+                    comp.skeletonAssetPath = path;
+                    comp.bones.clear();
+                    comp.bones.reserve(modelSkeleton->joints.size());
+                    for (const Asset::GltfJointUVE& joint : modelSkeleton->joints) {
+                        comp.bones.push_back(Scene::SkeletonBoneUVE{
+                            joint.name, joint.parentIndex, joint.translation, joint.rotation, joint.scale});
+                    }
+                    comp.pose.clear();
+                };
+
+                if (existingSkel != Scene::kInvalidEntityUVE) {
+                    Scene::Skeleton3DComponentUVE& skelComp =
+                        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(existingSkel);
+                    bool anyOverlap = false;
+                    if (!skelComp.bones.empty()) {
+                        Scene::SkeletonBoneLookupUVE lookup;
+                        lookup.BuildUVE(skelComp);
+                        std::uint32_t unused = 0U;
+                        for (const Asset::MeshJointUVE& joint : meshAsset->joints) {
+                            if (lookup.TryFindUVE(joint.name, unused)) {
+                                anyOverlap = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (skelComp.bones.empty() || !anyOverlap) {
+                        syncedSkeletonEntity = existingSkel;
+                        beforeSkeleton = skelComp;
+                        fillBones(skelComp, skelAssetPath);
+                        afterSkeleton = skelComp;
+                    }
+                } else {
+                    Scene::Skeleton3DObjectDefinitionUVE skelDef;
+                    fillBones(skelDef.skeleton, skelAssetPath);
+                    const Scene::EntityUVE skelEntity =
+                        CreateDocumentEntityShellInternalUVE(MakeUniqueDocumentEntityNameUVE("Skeleton3D"));
+                    if (skelEntity != Scene::kInvalidEntityUVE) {
+                        Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skelEntity, skelDef);
+                        Scene::SetSceneObjectKindUVE(entityManager, skelEntity, Scene::Objects::SceneObjectKindUVE::Skeleton3D);
+                        sceneGraph.SetParentUVE(entityManager, skelEntity, m_selectedEntity);
+                        InvalidateHierarchyFilterCacheUVE();
+                        createdSkeletonEntity = skelEntity;
+                        createdSkeletonSnapshot = CaptureSubtreeUVE(skelEntity);
+                    }
+                }
+            }
+        }
         if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
             auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
             AutoPopulateSkinFromModelUVE(m_selectedEntity, skin);
@@ -1555,9 +1724,27 @@ bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
             }
         }
     }
+    std::optional<Scene::SkinComponentUVE> afterSkin;
+    if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
+        afterSkin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
+    }
     m_sceneDirty = true;
-    RecordHistoryUVE(MeshSourceHistoryEntryUVE{m_selectedEntity, beforeMesh, beforeShape, afterMesh, afterShape,
-                                               selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    RecordHistoryUVE(MeshSourceHistoryEntryUVE{m_selectedEntity,
+                                               beforeMesh,
+                                               beforeShape,
+                                               afterMesh,
+                                               afterShape,
+                                               beforeSkin,
+                                               afterSkin,
+                                               syncedSkeletonEntity,
+                                               beforeSkeleton,
+                                               afterSkeleton,
+                                               createdSkeletonEntity,
+                                               createdSkeletonSnapshot,
+                                               selectionBefore,
+                                               CaptureSelectionSnapshotUVE(),
+                                               dirtyBefore,
+                                               true});
     return true;
 }
 
@@ -4415,6 +4602,25 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (!ApplyMeshSourceStateUVE(typedEntry.entity, typedEntry.beforeMesh, typedEntry.beforeShape)) {
                     return false;
                 }
+                Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
+                if (typedEntry.createdSkeletonEntity != Scene::kInvalidEntityUVE &&
+                    IsDocumentEntityUVE(typedEntry.createdSkeletonEntity)) {
+                    DestroyDocumentSubtreeUVE(typedEntry.createdSkeletonEntity);
+                    typedEntry.createdSkeletonEntity = Scene::kInvalidEntityUVE;
+                }
+                if (typedEntry.syncedSkeletonEntity != Scene::kInvalidEntityUVE &&
+                    typedEntry.beforeSkeleton.has_value() &&
+                    IsDocumentEntityUVE(typedEntry.syncedSkeletonEntity) &&
+                    em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(typedEntry.syncedSkeletonEntity)) {
+                    em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(typedEntry.syncedSkeletonEntity) =
+                        *typedEntry.beforeSkeleton;
+                }
+                if (typedEntry.beforeSkin.has_value()) {
+                    em.AddComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity, *typedEntry.beforeSkin);
+                } else if (em.HasComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity)) {
+                    em.RemoveComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity);
+                }
+                InvalidateHierarchyFilterCacheUVE();
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
@@ -4570,6 +4776,29 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (!ApplyMeshSourceStateUVE(typedEntry.entity, typedEntry.afterMesh, typedEntry.afterShape)) {
                     return false;
                 }
+                Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
+                if (typedEntry.createdSkeletonSnapshot.has_value() &&
+                    (typedEntry.createdSkeletonEntity == Scene::kInvalidEntityUVE ||
+                     !em.IsAliveUVE(typedEntry.createdSkeletonEntity))) {
+                    const Scene::EntityUVE restored =
+                        RestoreSubtreeUnderParentUVE(*typedEntry.createdSkeletonSnapshot, typedEntry.entity);
+                    if (restored != Scene::kInvalidEntityUVE) {
+                        typedEntry.createdSkeletonEntity = restored;
+                    }
+                }
+                if (typedEntry.syncedSkeletonEntity != Scene::kInvalidEntityUVE &&
+                    typedEntry.afterSkeleton.has_value() &&
+                    IsDocumentEntityUVE(typedEntry.syncedSkeletonEntity) &&
+                    em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(typedEntry.syncedSkeletonEntity)) {
+                    em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(typedEntry.syncedSkeletonEntity) =
+                        *typedEntry.afterSkeleton;
+                }
+                if (typedEntry.afterSkin.has_value()) {
+                    em.AddComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity, *typedEntry.afterSkin);
+                } else if (em.HasComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity)) {
+                    em.RemoveComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity);
+                }
+                InvalidateHierarchyFilterCacheUVE();
                 RestoreSelectionUVE(typedEntry.selectionAfter);
                 m_sceneDirty = typedEntry.dirtyAfter;
                 return true;
@@ -5079,6 +5308,7 @@ void EditorUVE::SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferenc
 }
 
 void EditorUVE::ShutdownUVE() {
+    StopBackgroundModelImportWorkerUVE();
     if (m_state == EditorStateUVE::Shutdown || m_state == EditorStateUVE::Uninitialized) {
         return;
     }
@@ -6563,11 +6793,13 @@ namespace {
         std::filesystem::file_time_type writeTime{};
         EditorModelSourceInfoUVE info{};
     };
+    static std::mutex s_modelInfoCacheMutex;
     static std::unordered_map<std::string, CachedModelInfoUVE> s_modelInfoCache;
     std::error_code timeError;
     const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, timeError);
     const std::string cacheKey = path.generic_string();
     if (!timeError) {
+        std::lock_guard<std::mutex> lock(s_modelInfoCacheMutex);
         if (const auto it = s_modelInfoCache.find(cacheKey); it != s_modelInfoCache.end() && it->second.writeTime == writeTime) {
             return it->second.info;
         }
@@ -6626,6 +6858,7 @@ namespace {
                            (summary->animationCount == 1U ? " animation, " : " animations, ") + length;
         }
         if (!timeError) {
+            std::lock_guard<std::mutex> lock(s_modelInfoCacheMutex);
             s_modelInfoCache[cacheKey] = CachedModelInfoUVE{writeTime, info};
         }
         return info;
@@ -6636,6 +6869,7 @@ namespace {
     info.rigged = metadata.has_value() && metadata->meshCount > 0U && metadata->skinCount > 0U;
     info.hasSkeleton = metadata.has_value() && metadata->skinCount > 0U; // A glTF skeleton is read from its skin.
     if (!timeError) {
+        std::lock_guard<std::mutex> lock(s_modelInfoCacheMutex);
         s_modelInfoCache[cacheKey] = CachedModelInfoUVE{writeTime, info};
     }
     return info;
@@ -6701,55 +6935,77 @@ namespace {
 /// A loose take an earlier import reduced (its original is in the project's animation backup):
 /// it is written again from its source, every frame as the source has it.
 [[nodiscard]] bool WasReducedEarlierUVE(const std::filesystem::path& contentRoot, const std::filesystem::path& clip) {
+    static std::mutex s_reducedMutex;
     static std::unordered_map<std::string, std::unordered_set<std::string>> s_reduced;
     const std::filesystem::path backupRoot = contentRoot.parent_path() / ".uvcache" / "animation-backup";
-    auto [it, added] = s_reduced.try_emplace(backupRoot.generic_string());
-    if (added) {
-        std::error_code error;
-        for (std::filesystem::recursive_directory_iterator walk(backupRoot, error), end; !error && walk != end; walk.increment(error)) {
-            if (walk->is_regular_file(error) && walk->path().extension() == ".uvanim") {
-                const std::filesystem::path relative = std::filesystem::relative(walk->path(), backupRoot, error);
-                if (!error && relative.begin() != relative.end()) {
-                    // <stamp>/<path in Content>: the part after the stamp folder.
-                    std::filesystem::path inContent;
-                    for (auto part = std::next(relative.begin()); part != relative.end(); ++part) {
-                        inContent /= *part;
-                    }
-                    it->second.insert(inContent.generic_string());
-                }
-                error.clear();
-            }
-        }
-    }
+    const std::string backupKey = backupRoot.generic_string();
     std::error_code error;
     const std::filesystem::path relative = std::filesystem::relative(clip, contentRoot, error);
-    return !error && it->second.contains(relative.generic_string());
+    if (error) {
+        return false;
+    }
+    const std::string relKey = relative.generic_string();
+    {
+        std::lock_guard<std::mutex> lock(s_reducedMutex);
+        if (const auto found = s_reduced.find(backupKey); found != s_reduced.end()) {
+            return found->second.contains(relKey);
+        }
+    }
+    std::unordered_set<std::string> entries;
+    std::error_code walkError;
+    for (std::filesystem::recursive_directory_iterator walk(backupRoot, walkError), end; !walkError && walk != end;
+         walk.increment(walkError)) {
+        if (walk->is_regular_file(walkError) && walk->path().extension() == ".uvanim") {
+            const std::filesystem::path rel = std::filesystem::relative(walk->path(), backupRoot, walkError);
+            if (!walkError && rel.begin() != rel.end()) {
+                // <stamp>/<path in Content>: the part after the stamp folder.
+                std::filesystem::path inContent;
+                for (auto part = std::next(rel.begin()); part != rel.end(); ++part) {
+                    inContent /= *part;
+                }
+                entries.insert(inContent.generic_string());
+            }
+            walkError.clear();
+        }
+    }
+    std::lock_guard<std::mutex> lock(s_reducedMutex);
+    const auto it = s_reduced.try_emplace(backupKey, std::move(entries)).first;
+    return it->second.contains(relKey);
 }
-} // namespace
 
-std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource) {
-    std::vector<std::filesystem::path> written;
+struct ExtractedModelAnimationsUVE final {
+    std::filesystem::path absoluteSource;
+    std::filesystem::path contentRoot;
+    std::filesystem::path importedModel;
+    bool keepInModel = false;
+    std::vector<std::string> embeddedTakes;
+    std::vector<std::filesystem::path> writtenLooseFiles;
+};
+
+/// Pure filesystem & FBX extraction step: safe to run on the serialized background import worker
+/// (never touches EditorUVE state or IAssetDatabaseUVE).
+[[nodiscard]] ExtractedModelAnimationsUVE ExtractModelAnimationsOffThreadUVE(
+    const std::filesystem::path& absoluteSource, const std::filesystem::path& contentRoot,
+    const std::filesystem::path& importedModel, const bool keepInModel, const bool retargetedCurrent) {
+    ExtractedModelAnimationsUVE result;
+    result.absoluteSource = absoluteSource;
+    result.contentRoot = contentRoot;
+    result.importedModel = importedModel;
+    result.keepInModel = keepInModel;
+
     std::error_code error;
     const std::filesystem::file_time_type sourceTime = std::filesystem::last_write_time(absoluteSource, error);
     if (error) {
-        return written;
+        return result;
     }
     struct CachedAnimationImportUVE {
         std::filesystem::file_time_type sourceTime{};
         std::vector<std::filesystem::path> files;
     };
+    static std::mutex s_importedAnimCacheMutex;
     static std::unordered_map<std::string, CachedAnimationImportUVE> s_importedAnimCache;
     const std::string cacheKey = absoluteSource.generic_string();
-    // A model with a mesh keeps its takes inside its .uvmodel: none is written beside it as a
-    // loose file. Only a file of animations alone (no mesh) gives .uvanim files.
-    const Asset::ProjectFileSnapshotUVE projectSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    std::filesystem::path relativeSource = std::filesystem::relative(absoluteSource, projectSnapshot.contentRoot, error);
-    if (error) {
-        error.clear();
-        relativeSource.clear();
-    }
-    const bool keepInModel = !relativeSource.empty() && !ReadModelSourceInfoForSourceUVE(relativeSource).animationOnly;
-    const std::filesystem::path importedModel = keepInModel ? GetImportedModelPathUVE(relativeSource) : std::filesystem::path{};
+
     // The version of the import is part of the stamp: takes kept by an earlier import (when they
     // were reduced as they came in) are taken again from the source, every frame as it has them.
     constexpr std::uint64_t kTakesImportVersionUVE = 0x7A00000000000000ULL;
@@ -6757,24 +7013,37 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     if (keepInModel) {
         std::error_code modelError;
         if (!std::filesystem::is_regular_file(importedModel, modelError)) {
-            return written;   // after its mesh is imported (the next refresh)
+            return result; // after its mesh is imported (the next refresh)
         }
         if (Asset::ReadModelAnimationStampUVE(importedModel) == stamp) {
-            return written;   // its takes came from this version of the source already
+            return result; // its takes came from this version of the source already
+        }
+        // Never overwrite embedded takes on a retargeted model whose source has not changed.
+        if (retargetedCurrent && !Asset::ListModelAnimationsUVE(importedModel).empty()) {
+            return result;
         }
     }
-    if (const auto cacheIt = s_importedAnimCache.find(cacheKey);
-        cacheIt != s_importedAnimCache.end() && cacheIt->second.sourceTime == sourceTime) {
-        bool allPresent = true;
-        for (const std::filesystem::path& expectedFile : cacheIt->second.files) {
-            std::error_code existsErr;
-            if (!std::filesystem::is_regular_file(expectedFile, existsErr)) {
-                allPresent = false;
-                break;
+    {
+        std::optional<std::vector<std::filesystem::path>> cachedFiles;
+        {
+            std::lock_guard<std::mutex> lock(s_importedAnimCacheMutex);
+            if (const auto cacheIt = s_importedAnimCache.find(cacheKey);
+                cacheIt != s_importedAnimCache.end() && cacheIt->second.sourceTime == sourceTime) {
+                cachedFiles = cacheIt->second.files;
             }
         }
-        if (allPresent) {
-            return written;
+        if (cachedFiles.has_value()) {
+            bool allPresent = true;
+            for (const std::filesystem::path& expectedFile : *cachedFiles) {
+                std::error_code existsErr;
+                if (!std::filesystem::is_regular_file(expectedFile, existsErr)) {
+                    allPresent = false;
+                    break;
+                }
+            }
+            if (allPresent) {
+                return result;
+            }
         }
     }
     const std::string stem = absoluteSource.stem().string();
@@ -6783,7 +7052,7 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         absoluteSource.parent_path() / (stem + ".uvanim");
     const std::filesystem::file_time_type existingPrimary = std::filesystem::last_write_time(primaryDestination, error);
     if (!keepInModel && !error && existingPrimary >= sourceTime) {
-        return written; // fast-path: primary clip already imported since FBX last changed
+        return result; // fast-path: primary clip already imported since FBX last changed
     }
     error.clear();
     for (const std::filesystem::directory_entry& entry :
@@ -6799,7 +7068,7 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
             std::error_code entryErr;
             const auto entryTime = std::filesystem::last_write_time(entry.path(), entryErr);
             if (!entryErr && entryTime >= sourceTime) {
-                return written; // fast-path: multi-take clip already imported since FBX last changed
+                return result; // fast-path: multi-take clip already imported since FBX last changed
             }
         }
     }
@@ -6807,11 +7076,11 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     std::ifstream file(absoluteSource, std::ios::binary);
     const std::uintmax_t size = std::filesystem::file_size(absoluteSource, error);
     if (!file || error || size > Asset::kMaximumFbxMeshSourceBytesUVE) {
-        return written;
+        return result;
     }
     std::vector<char> bytes(static_cast<std::size_t>(size));
     if (size > 0U && !file.read(bytes.data(), static_cast<std::streamsize>(size))) {
-        return written;
+        return result;
     }
     const std::vector<Asset::AnimationClipAssetUVE> rawTakes =
         Asset::ReadFbxAnimationsUVE(std::as_bytes(std::span<const char>(bytes)), Asset::kMaximumAnimationAssetBonesUVE);
@@ -6848,10 +7117,6 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
     }
 
     if (keepInModel) {
-        // Each take named as its file would have been (the take, or the model's own name for one),
-        // optimised, and kept in the model; loose files an earlier import left beside the source
-        // move in: their asset ids now name the take in the model, so whatever used them still does.
-        Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
         std::vector<Asset::AnimationClipAssetUVE> kept;
         std::vector<std::string> names;
         for (Asset::AnimationClipAssetUVE clip : takes) {
@@ -6874,30 +7139,10 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         }
         if (!Asset::SaveModelAnimationsUVE(importedModel, kept, stamp)) {
             UVE_WARNING("EditorUVE: could not keep the animations of {} in its model", absoluteSource.string());
-            return written;
+            return result;
         }
-        const std::filesystem::path backup = projectSnapshot.contentRoot.parent_path() / ".uvcache" / "animation-backup" / "moved-into-models";
-        for (const std::string& take : names) {
-            const std::filesystem::path embedded = Asset::MakeEmbeddedClipPathUVE(importedModel, take);
-            const std::filesystem::path loose = absoluteSource.parent_path() / ((take == stem ? stem : stem + "_" + take) + ".uvanim");
-            std::error_code looseError;
-            if (std::filesystem::is_regular_file(loose, looseError)) {
-                const Asset::AssetGuidUVE guid = database.RegisterUVE(loose);
-                static_cast<void>(database.RelocateUVE(guid, embedded));
-                std::filesystem::create_directories(backup, looseError);
-                std::filesystem::rename(loose, backup / loose.filename(), looseError);
-                if (looseError) {
-                    looseError.clear();
-                    std::filesystem::copy_file(loose, backup / loose.filename(), std::filesystem::copy_options::overwrite_existing, looseError);
-                    std::filesystem::remove(loose, looseError);
-                }
-            } else {
-                static_cast<void>(database.RegisterUVE(embedded));
-            }
-            written.push_back(embedded);
-        }
-        static_cast<void>(database.SaveUVE());
-        return written;
+        result.embeddedTakes = std::move(names);
+        return result;
     }
 
     // Clean up any stale duplicate take001 files that might have been created previously
@@ -6940,20 +7185,90 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         const std::filesystem::path destination = clipPath(clip.clipId);
         clip.clipId = destination.stem().string();
         const std::filesystem::file_time_type existing = std::filesystem::last_write_time(destination, error);
-        if (!error && existing >= sourceTime && !WasReducedEarlierUVE(projectSnapshot.contentRoot, destination)) {
+        if (!error && existing >= sourceTime && !WasReducedEarlierUVE(contentRoot, destination)) {
             allDestinations.push_back(destination);
             continue; // imported since the FBX last changed
         }
         error.clear();
         if (Asset::SaveAnimationClipAssetUVE(clip, destination)) {
-            written.push_back(destination);
+            result.writtenLooseFiles.push_back(destination);
             allDestinations.push_back(destination);
         } else {
             UVE_WARNING("EditorUVE: could not write animation {}", destination.string());
         }
     }
-    s_importedAnimCache[cacheKey] = CachedAnimationImportUVE{sourceTime, std::move(allDestinations)};
+    {
+        std::lock_guard<std::mutex> lock(s_importedAnimCacheMutex);
+        s_importedAnimCache[cacheKey] = CachedAnimationImportUVE{sourceTime, std::move(allDestinations)};
+    }
+    return result;
+}
+
+[[nodiscard]] std::vector<std::filesystem::path> RegisterExtractedModelAnimationsUVE(
+    Asset::IAssetDatabaseUVE& database, const std::filesystem::path& absoluteSource,
+    const std::filesystem::path& contentRoot, const std::filesystem::path& importedModel, const bool keepInModel,
+    const std::vector<std::string>& embeddedTakes, const std::vector<std::filesystem::path>& writtenLooseFiles,
+    const bool saveDatabase) {
+    std::vector<std::filesystem::path> written;
+    if (keepInModel) {
+        if (embeddedTakes.empty()) {
+            return written;
+        }
+        const std::string stem = absoluteSource.stem().string();
+        const std::filesystem::path backup = contentRoot.parent_path() / ".uvcache" / "animation-backup" / "moved-into-models";
+        for (const std::string& take : embeddedTakes) {
+            const std::filesystem::path embedded = Asset::MakeEmbeddedClipPathUVE(importedModel, take);
+            const std::filesystem::path loose =
+                absoluteSource.parent_path() / ((take == stem ? stem : stem + "_" + take) + ".uvanim");
+            std::error_code looseError;
+            if (std::filesystem::is_regular_file(loose, looseError)) {
+                const Asset::AssetGuidUVE guid = database.RegisterUVE(loose);
+                static_cast<void>(database.RelocateUVE(guid, embedded));
+                std::filesystem::create_directories(backup, looseError);
+                std::filesystem::rename(loose, backup / loose.filename(), looseError);
+                if (looseError) {
+                    looseError.clear();
+                    std::filesystem::copy_file(loose, backup / loose.filename(),
+                                               std::filesystem::copy_options::overwrite_existing, looseError);
+                    std::filesystem::remove(loose, looseError);
+                }
+            } else {
+                static_cast<void>(database.RegisterUVE(embedded));
+            }
+            written.push_back(embedded);
+        }
+        if (saveDatabase) {
+            static_cast<void>(database.SaveUVE());
+        }
+        return written;
+    }
+    for (const std::filesystem::path& loosePath : writtenLooseFiles) {
+        static_cast<void>(database.RegisterUVE(loosePath));
+        written.push_back(loosePath);
+    }
+    if (saveDatabase && !written.empty()) {
+        static_cast<void>(database.SaveUVE());
+    }
     return written;
+}
+
+} // namespace
+
+std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std::filesystem::path& absoluteSource) {
+    const Asset::ProjectFileSnapshotUVE projectSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::error_code error;
+    std::filesystem::path relativeSource = std::filesystem::relative(absoluteSource, projectSnapshot.contentRoot, error);
+    if (error) {
+        relativeSource.clear();
+    }
+    const bool keepInModel = !relativeSource.empty() && !ReadModelSourceInfoForSourceUVE(relativeSource).animationOnly;
+    const std::filesystem::path importedModel = keepInModel ? GetImportedModelPathUVE(relativeSource) : std::filesystem::path{};
+    const bool retargetedCurrent = keepInModel && IsRetargetedModelCurrentUVE(relativeSource);
+    const ExtractedModelAnimationsUVE extracted = ExtractModelAnimationsOffThreadUVE(
+        absoluteSource, projectSnapshot.contentRoot, importedModel, keepInModel, retargetedCurrent);
+    return RegisterExtractedModelAnimationsUVE(m_services->GetAssetDatabaseUVE(), extracted.absoluteSource,
+                                               extracted.contentRoot, extracted.importedModel, extracted.keepInModel,
+                                               extracted.embeddedTakes, extracted.writtenLooseFiles, true);
 }
 
 EditorModelSourceInfoUVE EditorUVE::ReadModelSourceInfoForSourceUVE(const std::filesystem::path& relativeSource) {
@@ -6984,6 +7299,9 @@ namespace {
 } // namespace
 
 bool EditorUVE::IsRetargetedModelCurrentUVE(const std::filesystem::path& relativeSource) const {
+    if (!IsModelSourcePathUVE(relativeSource)) {
+        return false;
+    }
     const std::filesystem::path imported = GetImportedModelPathUVE(relativeSource);
     std::error_code error;
     if (imported.empty() || !std::filesystem::is_regular_file(imported, error)) {
@@ -7012,45 +7330,670 @@ void EditorUVE::MarkRetargetedModelUVE(const std::filesystem::path& relativeSour
     out << SourceStampUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource) << "\n";
 }
 
+namespace {
+
+constexpr std::chrono::milliseconds kBatchItemBreathingYieldUVE{15};
+constexpr std::chrono::milliseconds kExternalWriteStabilityDelayUVE{300};
+constexpr double kExternalWatchIdleIntervalSecondsUVE = 2.0;
+constexpr double kExternalWatchStabilizingIntervalSecondsUVE = 0.35;
+constexpr std::size_t kExternalCopyRefreshStrideUVE = 10U;
+
+void HashCombine64UVE(std::uint64_t& seed, const std::uint64_t value) noexcept {
+    seed ^= value + 0x9E3779B97F4A7C15ULL + (seed << 6U) + (seed >> 2U);
+}
+
+void HashString64UVE(std::uint64_t& seed, const std::string_view text) noexcept {
+    std::uint64_t h = 1469598103934665603ULL;
+    for (const unsigned char ch : text) {
+        h = (h ^ ch) * 1099511628211ULL;
+    }
+    HashCombine64UVE(seed, h);
+}
+
+[[nodiscard]] bool CopyFileAtomicallyUVE(const std::filesystem::path& source,
+                                         const std::filesystem::path& destination) {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(source, ec)) {
+        return false;
+    }
+    if (destination.has_parent_path()) {
+        std::filesystem::create_directories(destination.parent_path(), ec);
+        if (ec) {
+            return false;
+        }
+    }
+    std::filesystem::path tempDestination = destination;
+    tempDestination += ".uvcopy-tmp";
+    std::filesystem::remove(tempDestination, ec);
+    ec.clear();
+    std::filesystem::copy_file(source, tempDestination, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        std::error_code rmErr;
+        std::filesystem::remove(tempDestination, rmErr);
+        return false;
+    }
+    std::filesystem::rename(tempDestination, destination, ec);
+    if (ec) {
+        // Fallback when target cannot be replaced atomically (e.g. Windows replace semantics).
+        ec.clear();
+        std::filesystem::remove(destination, ec);
+        ec.clear();
+        std::filesystem::rename(tempDestination, destination, ec);
+        if (ec) {
+            ec.clear();
+            std::filesystem::copy_file(tempDestination, destination, std::filesystem::copy_options::overwrite_existing, ec);
+            std::error_code rmErr;
+            std::filesystem::remove(tempDestination, rmErr);
+            return !ec;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+Asset::IAssetImportQueueUVE& EditorUVE::ActiveModelImportQueueUVE() const noexcept {
+    if (m_bgModelImportQueue != nullptr) {
+        return *m_bgModelImportQueue;
+    }
+    return m_services->GetAssetImportQueueUVE();
+}
+
+void EditorUVE::EnsureBackgroundModelImportWorkerUVE() {
+    if (m_bgImportWorker.joinable()) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        m_bgImportStop = false;
+        m_bgImportCancel = false;
+        m_bgImportHasPending = false;
+    }
+    m_bgImportWorker = std::thread([this]() {
+        for (;;) {
+            BgCopyTaskUVE copyTask;
+            bool hasCopy = false;
+            BgModelProbeTaskUVE probeTask;
+            bool hasProbe = false;
+            BgModelConvertTaskUVE modelTask;
+            bool hasModel = false;
+            BgAnimExtractTaskUVE animTask;
+            bool hasAnim = false;
+            bool cleanupCopyDirs = false;
+            std::vector<std::filesystem::path> dirsToClean;
+
+            {
+                std::unique_lock<std::mutex> lock(m_bgImportMutex);
+                m_bgImportCv.wait(lock, [this]() {
+                    return m_bgImportStop || m_bgImportCancel || !m_bgCopyQueue.empty() || !m_bgProbeQueue.empty() ||
+                           !m_bgModelConvertQueue.empty() || !m_bgAnimQueue.empty();
+                });
+                if (m_bgImportStop) {
+                    return;
+                }
+                if (m_bgImportCancel) {
+                    m_bgCopyQueue.clear();
+                    m_bgProbeQueue.clear();
+                    m_bgProbeQueuedKeys.clear();
+                    m_bgModelConvertQueue.clear();
+                    m_bgModelConvertInFlightKeys.clear();
+                    m_bgAnimQueue.clear();
+                    m_bgAnimQueuedKeys.clear();
+                    dirsToClean.swap(m_bgCopyCleanupDirs);
+                    cleanupCopyDirs = !dirsToClean.empty();
+                    m_bgImportCancel = false;
+                    m_bgImportPhase = BackgroundImportPhaseUVE::Idle;
+                    m_bgImportCurrentItem.clear();
+                } else if (!m_bgCopyQueue.empty()) {
+                    copyTask = std::move(m_bgCopyQueue.front());
+                    m_bgCopyQueue.pop_front();
+                    hasCopy = true;
+                    m_bgImportPhase = BackgroundImportPhaseUVE::Copying;
+                    m_bgImportCurrentItem = copyTask.destination.filename().string();
+                    if (m_bgCopyQueue.empty() && !m_bgCopyCleanupDirs.empty()) {
+                        dirsToClean.swap(m_bgCopyCleanupDirs);
+                        cleanupCopyDirs = true;
+                    }
+                } else if (!m_bgProbeQueue.empty()) {
+                    probeTask = std::move(m_bgProbeQueue.front());
+                    m_bgProbeQueue.pop_front();
+                    hasProbe = true;
+                    m_bgImportPhase = BackgroundImportPhaseUVE::Probing;
+                    m_bgImportCurrentItem = probeTask.source.filename().string();
+                } else if (!m_bgModelConvertQueue.empty()) {
+                    modelTask = std::move(m_bgModelConvertQueue.front());
+                    m_bgModelConvertQueue.pop_front();
+                    hasModel = true;
+                    m_bgImportPhase = BackgroundImportPhaseUVE::ImportingModel;
+                    m_bgImportCurrentItem = modelTask.request.sourcePath.filename().string();
+                } else if (!m_bgAnimQueue.empty()) {
+                    animTask = std::move(m_bgAnimQueue.front());
+                    m_bgAnimQueue.pop_front();
+                    hasAnim = true;
+                    m_bgImportPhase = BackgroundImportPhaseUVE::ExtractingAnimations;
+                    m_bgImportCurrentItem = animTask.absoluteSource.filename().string();
+                }
+            }
+
+            if (hasCopy) {
+                const bool copied = CopyFileAtomicallyUVE(copyTask.source, copyTask.destination);
+                if (copied) {
+                    std::lock_guard<std::mutex> lock(m_bgImportMutex);
+                    m_bgCompletedCopies.push_back(copyTask.destination);
+                    ++m_bgCopyBatchDone;
+                } else {
+                    std::lock_guard<std::mutex> lock(m_bgImportMutex);
+                    ++m_bgCopyBatchDone;
+                }
+            } else if (hasProbe) {
+                EditorModelSourceInfoUVE info = ReadModelSourceInfoUVE(probeTask.source);
+                std::lock_guard<std::mutex> lock(m_bgImportMutex);
+                m_bgProbeQueuedKeys.erase(probeTask.key);
+                m_bgCompletedProbes.push_back(BgModelProbeResultUVE{
+                    std::move(probeTask.key), std::move(probeTask.source), std::move(probeTask.stamp), probeTask.size,
+                    std::move(info)});
+                ++m_bgProbeBatchDone;
+            } else if (hasModel) {
+                // One lightweight single-job queue per model keeps peak job history O(1) across 1,000+ imports.
+                Asset::AssetImportQueueUVE singleJobQueue(m_services->GetAssetImporterUVE(),
+                                                          m_services->GetAssetDatabaseUVE(),
+                                                          m_services->GetDerivedArtifactCacheUVE());
+                BgModelConvertResultUVE outcome;
+                outcome.key = modelTask.key;
+                if (const std::optional<Asset::AssetImportJobIdUVE> id =
+                        singleJobQueue.EnqueueUVE(std::move(modelTask.request));
+                    id.has_value()) {
+                    static_cast<void>(singleJobQueue.TickUVE());
+                    const std::vector<Asset::AssetImportJobUVE> jobs = singleJobQueue.GetJobsUVE();
+                    const auto found = std::find_if(jobs.begin(), jobs.end(), [id](const Asset::AssetImportJobUVE& job) {
+                        return job.id == *id;
+                    });
+                    if (found != jobs.end() && found->state == Asset::AssetImportJobStateUVE::Succeeded) {
+                        outcome.succeeded = true;
+                        outcome.cacheHit = found->cacheHit;
+                    } else {
+                        outcome.errorReason = "the importer reported no reason";
+                        if (found != jobs.end()) {
+                            for (const Asset::AssetImportDiagnosticUVE& diagnostic : found->diagnostics) {
+                                if (diagnostic.severity == Asset::AssetImportDiagnosticSeverityUVE::Error &&
+                                    !diagnostic.message.empty()) {
+                                    outcome.errorReason = diagnostic.message;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    outcome.errorReason = "unable to enqueue model import";
+                }
+                std::lock_guard<std::mutex> lock(m_bgImportMutex);
+                m_bgCompletedModels.push_back(std::move(outcome));
+            } else if (hasAnim) {
+                ExtractedModelAnimationsUVE extracted = ExtractModelAnimationsOffThreadUVE(
+                    animTask.absoluteSource, animTask.contentRoot, animTask.importedModel, animTask.keepInModel,
+                    animTask.retargetedCurrent);
+                BgAnimExtractResultUVE res;
+                res.absoluteSource = std::move(extracted.absoluteSource);
+                res.contentRoot = std::move(extracted.contentRoot);
+                res.importedModel = std::move(extracted.importedModel);
+                res.keepInModel = extracted.keepInModel;
+                res.embeddedTakes = std::move(extracted.embeddedTakes);
+                res.writtenLooseFiles = std::move(extracted.writtenLooseFiles);
+                std::lock_guard<std::mutex> lock(m_bgImportMutex);
+                m_bgAnimQueuedKeys.erase(animTask.absoluteSource.generic_string());
+                m_bgCompletedAnims.push_back(std::move(res));
+                ++m_bgAnimBatchDone;
+            }
+
+            if (cleanupCopyDirs) {
+                for (const std::filesystem::path& dir : dirsToClean) {
+                    std::error_code rmErr;
+                    std::filesystem::remove_all(dir, rmErr);
+                }
+            }
+
+            // Gentle per-item pacing between items in a multi-item batch so low-end CPUs and
+            // Snapdragon 665 Android devices stay responsive and cool without thermal/RAM spikes.
+            std::unique_lock<std::mutex> lock(m_bgImportMutex);
+            const bool morePending = !m_bgCopyQueue.empty() || !m_bgProbeQueue.empty() ||
+                                     !m_bgModelConvertQueue.empty() || !m_bgAnimQueue.empty();
+            if (!morePending) {
+                m_bgImportPhase = BackgroundImportPhaseUVE::Idle;
+                m_bgImportCurrentItem.clear();
+            } else if (!m_bgImportStop && !m_bgImportCancel && !m_bgImportHasPending) {
+                m_bgImportCv.wait_for(lock, kBatchItemBreathingYieldUVE,
+                                      [this]() { return m_bgImportStop || m_bgImportCancel; });
+            }
+        }
+    });
+}
+
+void EditorUVE::StopBackgroundModelImportWorkerUVE() {
+    if (m_externalScanCancel != nullptr) {
+        m_externalScanCancel->store(true, std::memory_order_relaxed);
+    }
+    if (m_externalScanFuture.valid()) {
+        static_cast<void>(m_externalScanFuture.get());
+    }
+    if (m_bgImportWorker.joinable()) {
+        {
+            std::lock_guard<std::mutex> lock(m_bgImportMutex);
+            m_bgImportStop = true;
+        }
+        m_bgImportCv.notify_all();
+        m_bgImportWorker.join();
+    }
+    m_bgModelImportQueue.reset();
+}
+
+void EditorUVE::CancelBackgroundImportsUVE() {
+    bool cancelledAny = false;
+    {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        const bool hasQueued = !m_bgCopyQueue.empty() || !m_bgProbeQueue.empty() || !m_bgModelConvertQueue.empty() ||
+                               !m_bgAnimQueue.empty() || m_bgImportPhase != BackgroundImportPhaseUVE::Idle;
+        if (hasQueued) {
+            cancelledAny = true;
+        }
+        m_bgImportCancel = true;
+        m_bgCopyQueue.clear();
+        m_bgProbeQueue.clear();
+        m_bgProbeQueuedKeys.clear();
+        m_bgModelConvertQueue.clear();
+        m_bgModelConvertInFlightKeys.clear();
+        m_bgAnimQueue.clear();
+        m_bgAnimQueuedKeys.clear();
+        m_bgCopyBatchTotal = 0U;
+        m_bgCopyBatchDone = 0U;
+        m_bgProbeBatchTotal = 0U;
+        m_bgProbeBatchDone = 0U;
+        m_bgAnimBatchTotal = 0U;
+        m_bgAnimBatchDone = 0U;
+    }
+    m_bgImportCv.notify_all();
+    if (!m_pendingModelAnimations.empty() || !m_modelImportJobs.empty()) {
+        cancelledAny = true;
+    }
+    m_pendingModelAnimations.clear();
+    m_pendingModelAnimationKeys.clear();
+    m_modelAnimationBatchTotal = 0U;
+    m_modelAnimationBatchDone = 0U;
+    m_modelImportJobs.clear();
+    m_importBatchTotal = 0U;
+    m_importBatchCompleted = 0U;
+    if (cancelledAny) {
+        m_contentStatusMessage = "Import cancelled.";
+    }
+}
+
+void EditorUVE::EnqueueBackgroundExternalCopiesUVE(
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> items,
+    std::vector<std::filesystem::path> cleanupDirs) {
+    if (items.empty()) {
+        return;
+    }
+    EnsureBackgroundModelImportWorkerUVE();
+    {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        m_bgImportCancel = false;
+        m_bgCopyBatchTotal += items.size();
+        for (auto& [src, dst] : items) {
+            m_bgCopyQueue.push_back(BgCopyTaskUVE{std::move(src), std::move(dst)});
+        }
+        for (std::filesystem::path& dir : cleanupDirs) {
+            m_bgCopyCleanupDirs.push_back(std::move(dir));
+        }
+        m_bgImportHasPending = m_startupLoading;
+    }
+    m_bgImportCv.notify_one();
+}
+
+void EditorUVE::SeedObservedContentTreeUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
+    m_lastObservedContentTree.clear();
+    m_lastObservedContentTree.reserve(snapshot.entries.size());
+    std::uint64_t signature = 1469598103934665603ULL;
+    for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+        const std::string key = entry.relativePath.generic_string();
+        ExternalFileStatUVE stat;
+        stat.isDirectory = (entry.kind == Asset::ProjectFileEntryKindUVE::Directory);
+        if (!stat.isDirectory) {
+            const std::filesystem::path absolute = snapshot.contentRoot / entry.relativePath;
+            std::error_code ec;
+            const auto wt = std::filesystem::last_write_time(absolute, ec);
+            if (!ec) {
+                stat.mtimeTicks = static_cast<std::int64_t>(wt.time_since_epoch().count());
+                stat.size = std::filesystem::file_size(absolute, ec);
+            }
+        }
+        HashString64UVE(signature, key);
+        HashCombine64UVE(signature, stat.isDirectory ? 1ULL : 0ULL);
+        HashCombine64UVE(signature, static_cast<std::uint64_t>(stat.size));
+        HashCombine64UVE(signature, static_cast<std::uint64_t>(stat.mtimeTicks));
+        m_lastObservedContentTree.emplace(key, stat);
+    }
+    m_lastContentSnapshotSignature = signature;
+    m_hasContentSnapshotSignature = true;
+}
+
+bool EditorUVE::PollExternalContentChangesNowUVE() {
+    if (m_services == nullptr) {
+        return false;
+    }
+    Asset::IProjectChangeWatcherUVE& watcher = m_services->GetProjectChangeWatcherUVE();
+    const std::uint64_t seqBefore = watcher.GetSnapshotUVE().latestSequence;
+    static_cast<void>(watcher.PollNowUVE(m_services->GetAssetDatabaseUVE(), m_services->GetDerivedArtifactCacheUVE()));
+    const Asset::ProjectChangeSnapshotUVE watcherSnap = watcher.GetSnapshotUVE();
+
+    bool treeChanged = watcherSnap.latestSequence > seqBefore || watcherSnap.rescanRequired || !m_projectFileSnapshotInitialized;
+    if (!treeChanged) {
+        const std::filesystem::path contentRoot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        std::unordered_map<std::string, ExternalFileStatUVE> currentTree;
+        std::error_code ec;
+        if (!contentRoot.empty() && std::filesystem::is_directory(contentRoot, ec)) {
+            for (std::filesystem::recursive_directory_iterator it(
+                     contentRoot, std::filesystem::directory_options::skip_permission_denied, ec),
+                 end;
+                 !ec && it != end; it.increment(ec)) {
+                std::error_code stErr;
+                const std::filesystem::file_status st = it->symlink_status(stErr);
+                if (stErr || std::filesystem::is_symlink(st)) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
+                const std::string fname = it->path().filename().string();
+                if (fname.empty() || fname.front() == '.') {
+                    if (std::filesystem::is_directory(st)) {
+                        it.disable_recursion_pending();
+                    }
+                    continue;
+                }
+                if (std::filesystem::is_regular_file(st) && it->path().extension() == ".uvcopy-tmp") {
+                    continue;
+                }
+                const std::filesystem::path rel = std::filesystem::relative(it->path(), contentRoot, stErr);
+                if (stErr || rel.empty()) {
+                    continue;
+                }
+                ExternalFileStatUVE stat;
+                stat.isDirectory = std::filesystem::is_directory(st);
+                if (!stat.isDirectory) {
+                    const auto wt = std::filesystem::last_write_time(it->path(), stErr);
+                    if (!stErr) {
+                        stat.mtimeTicks = static_cast<std::int64_t>(wt.time_since_epoch().count());
+                        stat.size = std::filesystem::file_size(it->path(), stErr);
+                    }
+                }
+                currentTree.emplace(rel.generic_string(), stat);
+            }
+        }
+        treeChanged = (currentTree != m_lastObservedContentTree);
+    }
+
+    if (treeChanged) {
+        m_projectFileLastObservedChangeSequence = watcherSnap.latestSequence;
+        RefreshProjectFileIndexUVE();
+        return true;
+    }
+    return false;
+}
+
+void EditorUVE::TickExternalContentWatcherUVE() {
+    if (!m_prismUiRequested || m_services == nullptr || !m_projectFileSnapshotInitialized ||
+        m_playModeState != EditorPlayModeStateUVE::Edit) {
+        return;
+    }
+
+    const bool focused = IsAnyEditorWindowFocusedUVE();
+    if (!m_wasAnyWindowFocused && focused) {
+        m_externalWatchImmediateRequested = true;
+    }
+    m_wasAnyWindowFocused = focused;
+
+    const auto now = std::chrono::steady_clock::now();
+
+    if (m_externalScanFuture.valid() &&
+        m_externalScanFuture.wait_for(std::chrono::seconds::zero()) == std::future_status::ready) {
+        std::unordered_map<std::string, ExternalFileStatUVE> scanned = m_externalScanFuture.get();
+        bool hasReadyDelta = false;
+
+        // Detect deleted paths.
+        for (const auto& entry : m_lastObservedContentTree) {
+            if (scanned.find(entry.first) == scanned.end()) {
+                hasReadyDelta = true;
+                m_stabilizingExternalFiles.erase(entry.first);
+            }
+        }
+
+        // Detect new or modified paths with 300 ms write-stability debounce for active writes.
+        const auto fileNow = std::filesystem::file_time_type::clock::now();
+        for (const auto& [key, newStat] : scanned) {
+            const auto prevIt = m_lastObservedContentTree.find(key);
+            const bool unchanged = (prevIt != m_lastObservedContentTree.end() && prevIt->second == newStat);
+            if (unchanged) {
+                m_stabilizingExternalFiles.erase(key);
+                continue;
+            }
+            if (newStat.isDirectory) {
+                hasReadyDelta = true;
+                continue;
+            }
+            const auto stabIt = m_stabilizingExternalFiles.find(key);
+            if (stabIt != m_stabilizingExternalFiles.end()) {
+                if (stabIt->second.size != newStat.size || stabIt->second.mtimeTicks != newStat.mtimeTicks) {
+                    stabIt->second.size = newStat.size;
+                    stabIt->second.mtimeTicks = newStat.mtimeTicks;
+                    stabIt->second.lastChangedAt = now;
+                } else if (now - stabIt->second.lastChangedAt >= kExternalWriteStabilityDelayUVE) {
+                    m_stabilizingExternalFiles.erase(stabIt);
+                    hasReadyDelta = true;
+                }
+            } else {
+                const auto fileTime = std::filesystem::file_time_type(std::filesystem::file_time_type::duration(newStat.mtimeTicks));
+                const bool recentlyWritten = (fileNow >= fileTime) &&
+                                             ((fileNow - fileTime) < kExternalWriteStabilityDelayUVE);
+                if (recentlyWritten) {
+                    m_stabilizingExternalFiles.emplace(key, StabilizingExternalFileUVE{newStat.size, newStat.mtimeTicks, now});
+                } else {
+                    hasReadyDelta = true;
+                }
+            }
+        }
+
+        if (hasReadyDelta) {
+            // Refresh index now; keep any still-writing files unacknowledged so they trigger once settled.
+            RefreshProjectFileIndexUVE();
+            for (const auto& pending : m_stabilizingExternalFiles) {
+                m_lastObservedContentTree.erase(pending.first);
+            }
+        }
+    }
+
+    if (!m_externalScanFuture.valid()) {
+        const double interval = m_stabilizingExternalFiles.empty() ? kExternalWatchIdleIntervalSecondsUVE
+                                                                   : kExternalWatchStabilizingIntervalSecondsUVE;
+        const bool intervalElapsed = m_lastExternalWatchPoll == std::chrono::steady_clock::time_point{} ||
+                                     std::chrono::duration<double>(now - m_lastExternalWatchPoll).count() >= interval;
+        if (m_externalWatchImmediateRequested || intervalElapsed) {
+            m_externalWatchImmediateRequested = false;
+            m_lastExternalWatchPoll = now;
+            const std::filesystem::path contentRoot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+            if (!contentRoot.empty()) {
+                std::shared_ptr<std::atomic<bool>> cancelFlag = m_externalScanCancel;
+                m_externalScanFuture = std::async(
+                    std::launch::async,
+                    [contentRoot, cancelFlag = std::move(cancelFlag)]() -> std::unordered_map<std::string, ExternalFileStatUVE> {
+                        std::unordered_map<std::string, ExternalFileStatUVE> result;
+                        std::error_code ec;
+                        if (!std::filesystem::is_directory(contentRoot, ec)) {
+                            return result;
+                        }
+                        for (std::filesystem::recursive_directory_iterator it(
+                                 contentRoot, std::filesystem::directory_options::skip_permission_denied, ec),
+                             end;
+                             !ec && it != end; it.increment(ec)) {
+                            if (cancelFlag != nullptr && cancelFlag->load(std::memory_order_relaxed)) {
+                                return {};
+                            }
+                            std::error_code stErr;
+                            const std::filesystem::file_status st = it->symlink_status(stErr);
+                            if (stErr || std::filesystem::is_symlink(st)) {
+                                it.disable_recursion_pending();
+                                continue;
+                            }
+                            const std::string fname = it->path().filename().string();
+                            if (fname.empty() || fname.front() == '.') {
+                                if (std::filesystem::is_directory(st)) {
+                                    it.disable_recursion_pending();
+                                }
+                                continue;
+                            }
+                            if (std::filesystem::is_regular_file(st) && it->path().extension() == ".uvcopy-tmp") {
+                                continue;
+                            }
+                            const std::filesystem::path rel = std::filesystem::relative(it->path(), contentRoot, stErr);
+                            if (stErr || rel.empty()) {
+                                continue;
+                            }
+                            ExternalFileStatUVE stat;
+                            stat.isDirectory = std::filesystem::is_directory(st);
+                            if (!stat.isDirectory) {
+                                const auto wt = std::filesystem::last_write_time(it->path(), stErr);
+                                if (!stErr) {
+                                    stat.mtimeTicks = static_cast<std::int64_t>(wt.time_since_epoch().count());
+                                    stat.size = std::filesystem::file_size(it->path(), stErr);
+                                }
+                            }
+                            result.emplace(rel.generic_string(), stat);
+                        }
+                        return result;
+                    });
+            }
+        }
+    }
+}
+
+void EditorUVE::EnqueueModelSourceIfReadyUVE(const std::string& key, const std::filesystem::path& source,
+                                             const EditorModelSourceInfoUVE& info,
+                                             const std::uint32_t maxEmbeddedTextureResolution) {
+    const auto stampIt = m_modelSourceStampCache.find(key);
+    const bool animsAlreadyDone = (stampIt != m_modelSourceStampCache.end() && stampIt->second.animsImported);
+    if (info.animationCount > 0U && !animsAlreadyDone) {
+        QueueModelAnimationImportUVE(source);
+    }
+    if (info.animationOnly) {
+        return; // Motion with nothing to draw: there is no mesh to import.
+    }
+    const std::filesystem::path relativePath(key);
+    const std::filesystem::path importedModelPath = GetImportedModelPathUVE(relativePath);
+    if (stampIt != m_modelSourceStampCache.end() && stampIt->second.modelImported) {
+        std::error_code existsErr;
+        if (std::filesystem::is_regular_file(importedModelPath, existsErr)) {
+            return; // Already converted and registered for this exact source stamp in this session.
+        }
+    }
+    // A character Retarget conformed keeps its conformed model until its source changes:
+    // importing it again would put the source's own bones back under clips made for the engine's.
+    if (IsRetargetedModelCurrentUVE(relativePath)) {
+        static_cast<void>(RegisterImportedModelArtifactsUVE(importedModelPath));
+        return;
+    }
+
+    Asset::AssetImportRequestUVE request;
+    request.sourcePath = source;
+    request.destinationPath = importedModelPath;
+    auto modelSettings = std::make_shared<Asset::ModelImportSettingsUVE>();
+    modelSettings->maxEmbeddedTextureResolution = maxEmbeddedTextureResolution;
+    request.settings = std::move(modelSettings);
+
+    if (m_prismUiRequested) {
+        EnsureBackgroundModelImportWorkerUVE();
+        bool notifyWorker = false;
+        {
+            std::lock_guard<std::mutex> lock(m_bgImportMutex);
+            if (m_bgModelConvertInFlightKeys.insert(key).second) {
+                m_bgImportCancel = false;
+                m_bgModelConvertQueue.push_back(BgModelConvertTaskUVE{key, std::move(request)});
+                ++m_importBatchTotal;
+                m_bgImportHasPending = m_startupLoading;
+                notifyWorker = true;
+            }
+        }
+        if (notifyWorker) {
+            m_bgImportCv.notify_one();
+        }
+        return;
+    }
+
+    if (m_modelImportJobs.find(key) != m_modelImportJobs.end()) {
+        return;
+    }
+    Asset::IAssetImportQueueUVE& queue = ActiveModelImportQueueUVE();
+    if (const std::optional<Asset::AssetImportJobIdUVE> job = queue.EnqueueUVE(std::move(request));
+        job.has_value()) {
+        m_modelImportJobs.emplace(key, *job);
+    }
+}
+
 void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
-    Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
+    // Keep headless/test sessions on the deterministic main-thread queue; run heavy FBX/model
+    // probing, conversion, and animation extraction one-by-one on the serialized background worker
+    // in interactive PRISM sessions to prevent UI/ANR stalls on 500+ file drops.
+    if (m_prismUiRequested) {
+        EnsureBackgroundModelImportWorkerUVE();
+    }
+    const Render::RendererProfileResolutionUVE profileRes = GetRendererProfileResolutionUVE();
+    const std::uint32_t maxEmbeddedTextureResolution =
+        (profileRes.effective == Platform::RendererProfileUVE::Compatibility) ? 1024U : 2048U;
+
+    std::unordered_set<std::string> presentKeys;
+    bool notifyProbes = false;
     m_modelSources.clear();
     for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
         if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory || !IsModelSourcePathUVE(entry.relativePath)) {
             continue;
         }
         const std::string key = entry.relativePath.generic_string();
+        presentKeys.insert(key);
         const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
-        const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
-        // An FBX's takes (the extension is compared as the model check compares it: any case).
-        if (info.animationCount > 0U) {
-            QueueModelAnimationImportUVE(source);
-        }
-        if (info.animationOnly) {
-            continue; // Motion with nothing to draw: there is no mesh to import.
-        }
-        if (m_modelImportJobs.find(key) != m_modelImportJobs.end()) {
-            continue; // Already queued or running; its completion is collected by PollModelImportJobsUVE.
-        }
-        // A character Retarget conformed keeps its conformed model until its source changes:
-        // importing it again would put the source's own bones back under clips made for the
-        // engine's.
-        if (IsRetargetedModelCurrentUVE(entry.relativePath)) {
-            static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(entry.relativePath)));
+        const std::string stamp = SourceStampUVE(source);
+        std::error_code sizeError;
+        const std::uintmax_t fileSize = std::filesystem::file_size(source, sizeError);
+
+        const auto cached = m_modelSourceStampCache.find(key);
+        if (cached != m_modelSourceStampCache.end() && !stamp.empty() && !sizeError &&
+            cached->second.stamp == stamp && cached->second.size == fileSize) {
+            const EditorModelSourceInfoUVE& info = m_modelSources[key] = cached->second.info;
+            EnqueueModelSourceIfReadyUVE(key, source, info, maxEmbeddedTextureResolution);
             continue;
         }
-        Asset::AssetImportRequestUVE request;
-        request.sourcePath = source;
-        request.destinationPath = GetImportedModelPathUVE(entry.relativePath);
-        request.settings = std::make_shared<const Asset::AssetImportSettingsUVE>();
-        if (const std::optional<Asset::AssetImportJobIdUVE> job = queue.EnqueueUVE(std::move(request));
-            job.has_value()) {
-            // Deliberately NOT cleared here. A refresh re-queues whatever is not in flight, so a
-            // file that keeps failing is retried on every refresh; clearing the reason on each
-            // attempt would make the editor's message blink in and out of existence instead of
-            // staying on the file that is broken. Only a success clears it.
-            m_modelImportJobs.emplace(key, *job);
+
+        if (m_prismUiRequested) {
+            std::lock_guard<std::mutex> lock(m_bgImportMutex);
+            if (m_bgProbeQueuedKeys.insert(key).second) {
+                m_bgImportCancel = false;
+                m_bgProbeQueue.push_back(BgModelProbeTaskUVE{key, source, stamp, sizeError ? 0U : fileSize});
+                ++m_bgProbeBatchTotal;
+                m_bgImportHasPending = m_startupLoading;
+                notifyProbes = true;
+            }
+            continue;
         }
+
+        EditorModelSourceInfoUVE parsedInfo = ReadModelSourceInfoUVE(source);
+        if (!stamp.empty() && !sizeError) {
+            m_modelSourceStampCache[key] = CachedModelSourceStampUVE{stamp, fileSize, parsedInfo};
+        }
+        const EditorModelSourceInfoUVE& info = m_modelSources[key] = std::move(parsedInfo);
+        EnqueueModelSourceIfReadyUVE(key, source, info, maxEmbeddedTextureResolution);
+    }
+    for (auto it = m_modelSourceStampCache.begin(); it != m_modelSourceStampCache.end();) {
+        if (presentKeys.find(it->first) == presentKeys.end()) {
+            it = m_modelSourceStampCache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (notifyProbes) {
+        m_bgImportCv.notify_one();
     }
 }
 
@@ -7090,9 +8033,33 @@ void EditorUVE::QueueModelAnimationImportUVE(const std::filesystem::path& absolu
         static_cast<void>(ImportModelAnimationsUVE(absoluteSource));
         return;
     }
-    if (m_pendingModelAnimationKeys.insert(absoluteSource.generic_string()).second) {
-        m_pendingModelAnimations.push_back(absoluteSource);
-        ++m_modelAnimationBatchTotal;
+    EnsureBackgroundModelImportWorkerUVE();
+    const Asset::ProjectFileSnapshotUVE projectSnapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    std::error_code error;
+    std::filesystem::path relativeSource = std::filesystem::relative(absoluteSource, projectSnapshot.contentRoot, error);
+    if (error) {
+        relativeSource.clear();
+    }
+    const EditorModelSourceInfoUVE* const knownInfo =
+        !relativeSource.empty() ? FindModelSourceInfoUVE(relativeSource) : nullptr;
+    const bool keepInModel = !relativeSource.empty() && knownInfo != nullptr && !knownInfo->animationOnly;
+    const std::filesystem::path importedModel = keepInModel ? GetImportedModelPathUVE(relativeSource) : std::filesystem::path{};
+    const bool retargetedCurrent = keepInModel && IsRetargetedModelCurrentUVE(relativeSource);
+
+    bool notify = false;
+    {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        if (m_bgAnimQueuedKeys.insert(absoluteSource.generic_string()).second) {
+            m_bgImportCancel = false;
+            m_bgAnimQueue.push_back(BgAnimExtractTaskUVE{
+                absoluteSource, projectSnapshot.contentRoot, importedModel, keepInModel, retargetedCurrent});
+            ++m_bgAnimBatchTotal;
+            m_bgImportHasPending = m_startupLoading;
+            notify = true;
+        }
+    }
+    if (notify) {
+        m_bgImportCv.notify_one();
     }
 }
 
@@ -7125,6 +8092,15 @@ void EditorUVE::UpdateStartupLoadingUVE() {
         m_startupStepBegan = now;
     };
     const double inStep = std::chrono::duration<double>(now - m_startupStepBegan).count();
+    bool bgBusy = false;
+    {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        bgBusy = !m_bgCopyQueue.empty() || !m_bgProbeQueue.empty() || !m_bgModelConvertQueue.empty() ||
+                 !m_bgModelConvertInFlightKeys.empty() || !m_bgAnimQueue.empty() ||
+                 !m_bgCompletedCopies.empty() || !m_bgCompletedProbes.empty() ||
+                 !m_bgCompletedModels.empty() || !m_bgCompletedAnims.empty() ||
+                 m_bgImportPhase != BackgroundImportPhaseUVE::Idle;
+    }
     switch (m_startupStep) {
     case 0: // The project's files.
         if (m_projectFileSnapshotInitialized) {
@@ -7132,7 +8108,7 @@ void EditorUVE::UpdateStartupLoadingUVE() {
         }
         break;
     case 1: // Its models and the takes inside them.
-        if (m_modelImportJobs.empty() && m_pendingModelAnimations.empty()) {
+        if (!bgBusy && m_modelImportJobs.empty() && m_pendingModelAnimations.empty()) {
             advance();
         }
         break;
@@ -7150,110 +8126,279 @@ void EditorUVE::UpdateStartupLoadingUVE() {
     if (std::chrono::duration<double>(now - m_startupBegan).count() > 180.0) {
         m_startupLoading = false;
     }
+    if (!m_startupLoading) {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        m_bgImportHasPending = false; // enable gentle 15 ms pacing for post-startup interactive batches
+    }
 }
 
 EditorUVE::EditorLoadingStateUVE EditorUVE::GetLoadingStateUVE() const {
     EditorLoadingStateUVE state;
-    const std::size_t modelTotal = std::max(m_importBatchTotal, m_modelImportJobs.size() + m_importBatchCompleted);
-    const std::size_t total = modelTotal + m_modelAnimationBatchTotal;
-    const std::size_t done = m_importBatchCompleted + m_modelAnimationBatchDone;
-    const float work = total > 0U ? std::clamp(static_cast<float>(done) / static_cast<float>(total), 0.0F, 1.0F) : 1.0F;
-    const auto counted = [](const char* what, const std::size_t at, const std::size_t of) {
-        return std::string(what) + " " + std::to_string(std::min(at + 1U, of)) + " of " + std::to_string(of);
-    };
-    std::string workDetail;
-    if (!m_modelImportJobs.empty()) {
-        workDetail = counted("Importing model", m_importBatchCompleted, modelTotal);
-    } else if (!m_pendingModelAnimations.empty()) {
-        workDetail = counted("Storing animations of model", m_modelAnimationBatchDone, m_modelAnimationBatchTotal) +
-                     " (" + m_pendingModelAnimations.front().filename().string() + ")";
+    BackgroundImportPhaseUVE bgPhase = BackgroundImportPhaseUVE::Idle;
+    std::string bgItem;
+    std::size_t copyTotal = 0U;
+    std::size_t copyDone = 0U;
+    std::size_t probeTotal = 0U;
+    std::size_t probeDone = 0U;
+    std::size_t bgModelInFlight = 0U;
+    std::size_t animBgTotal = 0U;
+    std::size_t animBgDone = 0U;
+    bool bgActive = false;
+    {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        bgPhase = m_bgImportPhase;
+        bgItem = m_bgImportCurrentItem;
+        copyTotal = m_bgCopyBatchTotal;
+        copyDone = m_bgCopyBatchDone;
+        probeTotal = m_bgProbeBatchTotal;
+        probeDone = m_bgProbeBatchDone;
+        bgModelInFlight = m_bgModelConvertInFlightKeys.size();
+        animBgTotal = m_bgAnimBatchTotal;
+        animBgDone = m_bgAnimBatchDone;
+        bgActive = bgPhase != BackgroundImportPhaseUVE::Idle || !m_bgCopyQueue.empty() || !m_bgProbeQueue.empty() ||
+                   !m_bgModelConvertQueue.empty() || !m_bgModelConvertInFlightKeys.empty() || !m_bgAnimQueue.empty();
     }
+
+    const std::size_t modelInFlight = m_modelImportJobs.size() + bgModelInFlight;
+    const std::size_t modelTotal = std::max(m_importBatchTotal, modelInFlight + m_importBatchCompleted);
+    const std::size_t animTotal = m_modelAnimationBatchTotal + animBgTotal;
+    const std::size_t animDone = m_modelAnimationBatchDone + animBgDone;
+    const std::size_t total = copyTotal + probeTotal + modelTotal + animTotal;
+    const std::size_t done = std::min(total, copyDone + probeDone + m_importBatchCompleted + animDone);
+    const float work = total > 0U ? std::clamp(static_cast<float>(done) / static_cast<float>(total), 0.0F, 1.0F) : 1.0F;
+
+    std::string phaseLabel;
+    if (bgPhase == BackgroundImportPhaseUVE::Copying || copyTotal > copyDone) {
+        phaseLabel = "Copying assets";
+    } else if (bgPhase == BackgroundImportPhaseUVE::Probing || probeTotal > probeDone) {
+        phaseLabel = "Scanning models";
+    } else if (bgPhase == BackgroundImportPhaseUVE::ImportingModel || modelInFlight > 0U) {
+        phaseLabel = "Importing models";
+    } else if (bgPhase == BackgroundImportPhaseUVE::ExtractingAnimations || animTotal > animDone ||
+               !m_pendingModelAnimations.empty()) {
+        phaseLabel = "Importing animations";
+        if (bgItem.empty() && !m_pendingModelAnimations.empty()) {
+            bgItem = m_pendingModelAnimations.front().filename().string();
+        }
+    }
+
+    const std::string countText =
+        total > 0U ? (std::to_string(std::min(done + (bgActive ? 1U : 0U), total)) + " / " + std::to_string(total))
+                   : std::string{};
+
     if (m_startupLoading && m_state == EditorStateUVE::Running) {
         state.startup = true;
+        state.done = done;
+        state.total = total;
+        state.currentItem = bgItem;
         switch (m_startupStep) {
         case 0:
             state.step = "Scanning project files";
-            state.progress = 0.05F;
+            state.progress = 0.08F;
             break;
         case 1:
-            state.step = "Importing models";
-            state.detail = workDetail;
-            state.progress = 0.15F + 0.6F * work;
+            state.step = phaseLabel.empty() ? "Importing models" : phaseLabel;
+            state.detail = !countText.empty() && !bgItem.empty() ? (countText + " · " + bgItem)
+                                                                  : (!countText.empty() ? countText : bgItem);
+            state.progress = 0.15F + 0.60F * work;
             break;
         case 2: {
             state.step = "Preparing animation previews";
             const std::size_t left = PendingAnimationIconCountUVE();
             const std::size_t peak = std::max(m_startupIconPeak, left);
-            state.detail = left > 0U ? std::to_string(peak - left) + " of " + std::to_string(peak) : std::string{};
+            state.detail = left > 0U ? std::to_string(peak - left) + " / " + std::to_string(peak) : std::string{};
             state.progress = 0.75F + 0.23F * (peak > 0U ? static_cast<float>(peak - left) / static_cast<float>(peak) : 1.0F);
             break;
         }
         default:
-            state.step = "Opening the editor";
+            state.step = "Opening editor";
             state.progress = 1.0F;
             break;
         }
         return state;
     }
-    if (!workDetail.empty()) {
+
+    if (bgActive || !phaseLabel.empty()) {
         state.busy = true;
-        state.step = workDetail;
+        state.cancellable = true;
+        state.done = done;
+        state.total = total;
+        state.currentItem = std::move(bgItem);
+        state.step = phaseLabel.empty() ? "Importing assets" : std::move(phaseLabel);
+        state.detail = countText;
         state.progress = work;
     }
     return state;
 }
 
 void EditorUVE::PollModelImportJobsUVE() {
-    if (m_modelImportJobs.empty()) {
-        m_importBatchTotal = 0U;
-        m_importBatchCompleted = 0U;
-        return;
+    std::vector<std::filesystem::path> completedCopies;
+    std::vector<BgModelProbeResultUVE> completedProbes;
+    std::vector<BgModelConvertResultUVE> completedModels;
+    std::vector<BgAnimExtractResultUVE> completedAnims;
+    bool copyQueueEmpty = true;
+    bool bgCompletelyIdle = true;
+    {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        completedCopies.swap(m_bgCompletedCopies);
+        completedProbes.swap(m_bgCompletedProbes);
+        completedModels.swap(m_bgCompletedModels);
+        completedAnims.swap(m_bgCompletedAnims);
+        copyQueueEmpty = m_bgCopyQueue.empty();
+        for (const BgModelConvertResultUVE& res : completedModels) {
+            m_bgModelConvertInFlightKeys.erase(res.key);
+        }
+        bgCompletelyIdle = m_bgCopyQueue.empty() && m_bgProbeQueue.empty() && m_bgModelConvertQueue.empty() &&
+                           m_bgModelConvertInFlightKeys.empty() && m_bgAnimQueue.empty() &&
+                           m_bgImportPhase == BackgroundImportPhaseUVE::Idle;
     }
-    if (m_importBatchTotal < m_modelImportJobs.size() + m_importBatchCompleted) {
-        m_importBatchTotal = m_modelImportJobs.size() + m_importBatchCompleted;
-    }
-    const std::vector<Asset::AssetImportJobUVE> jobs = m_services->GetAssetImportQueueUVE().GetJobsUVE();
-    bool imported = false;
-    for (auto it = m_modelImportJobs.begin(); it != m_modelImportJobs.end();) {
-        const auto job = std::find_if(jobs.begin(), jobs.end(),
-                                      [&it](const Asset::AssetImportJobUVE& candidate) { return candidate.id == it->second; });
-        if (job == jobs.end() || job->state == Asset::AssetImportJobStateUVE::Failed) {
-            if (job != jobs.end()) {
-                // The importer's own last error is the reason a reader needs; the log file has the
-                // same text, but a log the editor never shows is the same as no message at all.
-                std::string reason = "the importer reported no reason";
-                for (const Asset::AssetImportDiagnosticUVE& diagnostic : job->diagnostics) {
-                    if (diagnostic.severity == Asset::AssetImportDiagnosticSeverityUVE::Error && !diagnostic.message.empty()) {
-                        reason = diagnostic.message;
-                    }
-                }
-                m_modelImportFailures[it->first] = std::move(reason);
-                UVE_WARNING("EditorUVE: could not import model {}: {}", it->first, m_modelImportFailures[it->first]);
-            }
-            ++m_importBatchCompleted;
-            it = m_modelImportJobs.erase(it);
-        } else if (job->state == Asset::AssetImportJobStateUVE::Succeeded) {
-            // A cache hit ran no importer, so the materials and textures it would have registered
-            // are registered here instead - this is the only place that knows a conversion is
-            // accounted for whether or not it executed.
-            static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
-            // Its takes go into the model now that the model is there.
-            if (const auto info = m_modelSources.find(it->first); info != m_modelSources.end() && info->second.animationCount > 0U) {
-                QueueModelAnimationImportUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / it->first);
-            }
-            // The GUIDs an import wrote into its materials and meshes are kept with the project, so
-            // the next session finds them (and the import cache stays valid instead of importing again).
-            static_cast<void>(m_services->GetAssetDatabaseUVE().SaveUVE());
-            imported = imported || !job->cacheHit;
-            m_modelImportFailures.erase(it->first);
-            ++m_importBatchCompleted;
-            it = m_modelImportJobs.erase(it);
-        } else {
-            ++it;
+
+    bool databaseDirty = false;
+    bool needsIndexRefresh = false;
+    bool importedNewMesh = false;
+
+    if (!completedCopies.empty()) {
+        Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+        for (const std::filesystem::path& copiedPath : completedCopies) {
+            static_cast<void>(database.RegisterUVE(copiedPath));
+            ++m_bgCopiesSinceRefresh;
+        }
+        databaseDirty = true;
+        if (m_bgCopiesSinceRefresh >= kExternalCopyRefreshStrideUVE || copyQueueEmpty) {
+            m_bgCopiesSinceRefresh = 0U;
+            needsIndexRefresh = true;
         }
     }
-    if (imported) {
+
+    if (!completedProbes.empty()) {
+        const Render::RendererProfileResolutionUVE profileRes = GetRendererProfileResolutionUVE();
+        const std::uint32_t maxEmbeddedTextureResolution =
+            (profileRes.effective == Platform::RendererProfileUVE::Compatibility) ? 1024U : 2048U;
+        for (BgModelProbeResultUVE& probe : completedProbes) {
+            if (!probe.stamp.empty()) {
+                m_modelSourceStampCache[probe.key] = CachedModelSourceStampUVE{probe.stamp, probe.size, probe.info};
+            }
+            const EditorModelSourceInfoUVE& stored = m_modelSources[probe.key] = std::move(probe.info);
+            EnqueueModelSourceIfReadyUVE(probe.key, probe.source, stored, maxEmbeddedTextureResolution);
+        }
+    }
+
+    if (!completedModels.empty()) {
+        const std::filesystem::path contentRoot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        for (const BgModelConvertResultUVE& outcome : completedModels) {
+            if (outcome.succeeded) {
+                static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(outcome.key)));
+                if (const auto stampIt = m_modelSourceStampCache.find(outcome.key);
+                    stampIt != m_modelSourceStampCache.end()) {
+                    stampIt->second.modelImported = true;
+                }
+                if (const auto info = m_modelSources.find(outcome.key);
+                    info != m_modelSources.end() && info->second.animationCount > 0U) {
+                    if (const auto stampIt = m_modelSourceStampCache.find(outcome.key);
+                        stampIt != m_modelSourceStampCache.end()) {
+                        stampIt->second.animsImported = false;
+                    }
+                    QueueModelAnimationImportUVE(contentRoot / outcome.key);
+                }
+                databaseDirty = true;
+                importedNewMesh = importedNewMesh || !outcome.cacheHit;
+                m_modelImportFailures.erase(outcome.key);
+            } else {
+                m_modelImportFailures[outcome.key] = outcome.errorReason;
+                UVE_WARNING("EditorUVE: could not import model {}: {}", outcome.key, outcome.errorReason);
+            }
+            ++m_importBatchCompleted;
+        }
+    }
+
+    if (!completedAnims.empty()) {
+        Asset::IAssetDatabaseUVE& database = m_services->GetAssetDatabaseUVE();
+        for (const BgAnimExtractResultUVE& anim : completedAnims) {
+            const std::vector<std::filesystem::path> registered = RegisterExtractedModelAnimationsUVE(
+                database, anim.absoluteSource, anim.contentRoot, anim.importedModel, anim.keepInModel,
+                anim.embeddedTakes, anim.writtenLooseFiles, false);
+            std::error_code relErr;
+            const std::filesystem::path rel = std::filesystem::relative(anim.absoluteSource, anim.contentRoot, relErr);
+            if (!relErr && !rel.empty()) {
+                const bool modelReady = !anim.keepInModel || std::filesystem::is_regular_file(anim.importedModel, relErr);
+                if (modelReady) {
+                    if (const auto stampIt = m_modelSourceStampCache.find(rel.generic_string());
+                        stampIt != m_modelSourceStampCache.end()) {
+                        stampIt->second.animsImported = true;
+                    }
+                }
+            }
+            if (!registered.empty()) {
+                databaseDirty = true;
+                if (!anim.keepInModel) {
+                    needsIndexRefresh = true;
+                }
+            }
+        }
+    }
+
+    // Legacy / headless main-thread model import queue path (used when !m_prismUiRequested).
+    if (!m_modelImportJobs.empty()) {
+        if (m_importBatchTotal < m_modelImportJobs.size() + m_importBatchCompleted) {
+            m_importBatchTotal = m_modelImportJobs.size() + m_importBatchCompleted;
+        }
+        const std::vector<Asset::AssetImportJobUVE> jobs = ActiveModelImportQueueUVE().GetJobsUVE();
+        for (auto it = m_modelImportJobs.begin(); it != m_modelImportJobs.end();) {
+            const auto job = std::find_if(jobs.begin(), jobs.end(),
+                                          [&it](const Asset::AssetImportJobUVE& candidate) { return candidate.id == it->second; });
+            if (job == jobs.end() || job->state == Asset::AssetImportJobStateUVE::Failed) {
+                if (job != jobs.end()) {
+                    std::string reason = "the importer reported no reason";
+                    for (const Asset::AssetImportDiagnosticUVE& diagnostic : job->diagnostics) {
+                        if (diagnostic.severity == Asset::AssetImportDiagnosticSeverityUVE::Error && !diagnostic.message.empty()) {
+                            reason = diagnostic.message;
+                        }
+                    }
+                    m_modelImportFailures[it->first] = std::move(reason);
+                    UVE_WARNING("EditorUVE: could not import model {}: {}", it->first, m_modelImportFailures[it->first]);
+                }
+                ++m_importBatchCompleted;
+                it = m_modelImportJobs.erase(it);
+            } else if (job->state == Asset::AssetImportJobStateUVE::Succeeded) {
+                static_cast<void>(RegisterImportedModelArtifactsUVE(GetImportedModelPathUVE(it->first)));
+                if (const auto info = m_modelSources.find(it->first); info != m_modelSources.end() && info->second.animationCount > 0U) {
+                    QueueModelAnimationImportUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / it->first);
+                }
+                databaseDirty = true;
+                importedNewMesh = importedNewMesh || !job->cacheHit;
+                m_modelImportFailures.erase(it->first);
+                ++m_importBatchCompleted;
+                it = m_modelImportJobs.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    if (databaseDirty) {
+        static_cast<void>(m_services->GetAssetDatabaseUVE().SaveUVE());
+    }
+    if (importedNewMesh) {
         ClearMeshThumbnailCacheUVE(); // A freshly converted mesh has a thumbnail now.
+    }
+    if (needsIndexRefresh) {
+        RefreshProjectFileIndexUVE();
+    }
+
+    if (bgCompletelyIdle && m_modelImportJobs.empty()) {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        if (m_bgCopyQueue.empty() && m_bgProbeQueue.empty() && m_bgModelConvertQueue.empty() &&
+            m_bgModelConvertInFlightKeys.empty() && m_bgAnimQueue.empty() &&
+            m_bgImportPhase == BackgroundImportPhaseUVE::Idle) {
+            m_bgCopyBatchTotal = 0U;
+            m_bgCopyBatchDone = 0U;
+            m_bgProbeBatchTotal = 0U;
+            m_bgProbeBatchDone = 0U;
+            m_bgAnimBatchTotal = 0U;
+            m_bgAnimBatchDone = 0U;
+            m_importBatchTotal = 0U;
+            m_importBatchCompleted = 0U;
+        }
     }
 }
 
@@ -7270,11 +8415,17 @@ void EditorUVE::RefreshProjectFileIndexUVE() {
             // A successful full index refresh is the explicit boundary that safely clears watcher overflow.
             projectChangeWatcher.AcknowledgeRescanUVE();
         }
-        // On-disk content may have changed since these were cached; re-decode lazily on next display.
-        ClearTextureThumbnailCacheUVE();
-        ClearMeshThumbnailCacheUVE();
-        ClearMaterialThumbnailCacheUVE();
-        QueueModelAutoImportsUVE(projectFileIndex.GetSnapshotUVE());
+        const Asset::ProjectFileSnapshotUVE refreshed = projectFileIndex.GetSnapshotUVE();
+        const std::uint64_t previousSignature = m_lastContentSnapshotSignature;
+        const bool hadPreviousSignature = m_hasContentSnapshotSignature;
+        SeedObservedContentTreeUVE(refreshed);
+        // Only clear cached thumbnails when on-disk content actually changed.
+        if (!hadPreviousSignature || m_lastContentSnapshotSignature != previousSignature) {
+            ClearTextureThumbnailCacheUVE();
+            ClearMeshThumbnailCacheUVE();
+            ClearMaterialThumbnailCacheUVE();
+        }
+        QueueModelAutoImportsUVE(refreshed);
     } else {
         m_projectFileRefreshAttemptedForRescan = changesBeforeRefresh.rescanRequired;
     }

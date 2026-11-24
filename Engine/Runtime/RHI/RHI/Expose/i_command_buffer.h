@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string_view>
@@ -200,7 +201,23 @@ public:
     /// each backend inserts the barriers that guarantee it.
     virtual void DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
                              std::uint32_t groupCountZ) = 0;
+
+    /// True when the backend retains uniform values inside each pipeline's native program object
+    /// across draws on the same command buffer (immediate OpenGL / GLES), letting ShaderProgramUVE
+    /// flush only uniforms that changed since the last ApplyToUVE() instead of re-uploading all ~200.
+    [[nodiscard]] virtual bool RetainsUniformStatePerPipelineUVE() const noexcept { return false; }
+
+    /// Monotonic identity unique to this command buffer object (prevents heap-address aliasing
+    /// across frames when command buffers are allocated and destroyed each frame).
+    [[nodiscard]] std::uint64_t GetInstanceIdUVE() const noexcept { return m_instanceId; }
+
 private:
+    [[nodiscard]] static std::uint64_t AllocateInstanceIdUVE() noexcept {
+        static std::atomic<std::uint64_t> nextId{1U};
+        return nextId.fetch_add(1U, std::memory_order_relaxed);
+    }
+
+    std::uint64_t m_instanceId = AllocateInstanceIdUVE();
     std::vector<std::shared_ptr<void>> m_retainedResources;
 };
 

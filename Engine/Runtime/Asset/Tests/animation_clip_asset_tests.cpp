@@ -321,4 +321,47 @@ TEST(AnimationClipAssetUVETest, OtherObjectTracksRoundTripAndOnlyAClipWithThemWr
     std::filesystem::remove(path);
 }
 
+TEST(AnimationClipAssetUVETest, InspectSummaryMatchesFullLoadAcrossSchemasAndStates) {
+    const std::filesystem::path dir = ::UVE::Tests::MakeTestCaseDirectoryUVE();
+    // 1. Object-only v2 clip (no rest, no bones).
+    const std::filesystem::path objPath = dir / "obj.uvanim";
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(MakeValidClipUVE(), objPath));
+    const AnimationClipSummaryUVE objSummary = InspectAnimationClipFileSummaryUVE(objPath);
+    EXPECT_TRUE(objSummary.valid);
+    EXPECT_FALSE(objSummary.conformed);
+    EXPECT_FALSE(objSummary.hasRest);
+    EXPECT_FALSE(objSummary.hasBones);
+
+    // 2. Skeletal v3 clip with rest skeleton, unconformed.
+    AnimationClipAssetUVE skel;
+    skel.clipId = "walk";
+    skel.durationSeconds = 0.5;
+    const AnimationAssetPoseUVE pose{{0.0F, 1.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+    skel.bones = {AnimationAssetBoneTrackUVE{"Hips", {{0.0, pose}, {0.5, pose}}}};
+    skel.rest = {AnimationAssetRestBoneUVE{"Hips", -1, {0.0F, 1.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}};
+    skel.conformed = false;
+    const std::filesystem::path readyPath = dir / "ready.uvanim";
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(skel, readyPath));
+    const AnimationClipSummaryUVE readySummary = InspectAnimationClipFileSummaryUVE(readyPath);
+    EXPECT_TRUE(readySummary.valid);
+    EXPECT_FALSE(readySummary.conformed);
+    EXPECT_TRUE(readySummary.hasRest);
+    EXPECT_TRUE(readySummary.hasBones);
+
+    // 3. Skeletal v3 clip already conformed.
+    skel.conformed = true;
+    const std::filesystem::path donePath = dir / "done.uvanim";
+    ASSERT_TRUE(SaveAnimationClipAssetUVE(skel, donePath));
+    const AnimationClipSummaryUVE doneSummary = InspectAnimationClipFileSummaryUVE(donePath);
+    EXPECT_TRUE(doneSummary.valid);
+    EXPECT_TRUE(doneSummary.conformed);
+    EXPECT_TRUE(doneSummary.hasRest);
+    EXPECT_TRUE(doneSummary.hasBones);
+
+    // 4. Corrupt payload reports invalid.
+    const std::vector<std::byte> junk{std::byte{'{'}, std::byte{'!'}};
+    EXPECT_FALSE(InspectAnimationClipSummaryUVE(junk).valid);
+    EXPECT_FALSE(InspectAnimationClipFileSummaryUVE(dir / "missing.uvanim").valid);
+}
+
 } // namespace UVE::Asset::Tests

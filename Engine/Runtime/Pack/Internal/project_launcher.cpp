@@ -225,6 +225,7 @@ void ApplyProjectAuthoringPathsUVE(Core::EngineConfigUVE& config, const Platform
     config.inputMapFilePath = layout.projectRoot / kDefaultConfigUVE.inputMapFilePath.filename();
     config.assetDatabaseFilePath = layout.projectRoot / package.assetDatabasePath;
     config.projectDisplayNameUVE = package.displayName;
+    config.requestedRendererProfileUVE = package.rendererProfile;
 }
 
 [[nodiscard]] Platform::EditorProjectVersionUVE ToProjectVersionUVE(const Core::VersionUVE& version) noexcept {

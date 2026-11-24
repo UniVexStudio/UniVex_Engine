@@ -646,6 +646,7 @@ struct EngineConfigUVE {
     std::int64_t maxPathLengthWarningUVE = 240;
     std::int64_t packMountPriorityUVE = 100;
     std::int64_t activeQualityTierUVE = 2; // 0=Low, 1=Medium, 2=High, 3=Ultra
+    Platform::RendererProfileUVE requestedRendererProfileUVE = Platform::DefaultRendererProfileForHostUVE();
     bool autoDetectQualityTierUVE = false;
     bool allowRuntimeQualitySwitchingUVE = true;
     std::vector<std::string> platformFeatureTagsUVE{"desktop", "gpu_compute"};

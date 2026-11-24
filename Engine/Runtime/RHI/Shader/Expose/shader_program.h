@@ -98,6 +98,12 @@ private:
         }
     };
 
+    struct PendingUniformEntryUVE final {
+        std::string name;
+        PendingUniformValueUVE value;
+        bool dirty = true;
+    };
+
     void SetPendingUniformUVE(std::string_view name, PendingUniformValueUVE value);
 
     PipelineHandleUVE m_pipeline = kInvalidPipelineHandleUVE;
@@ -106,8 +112,12 @@ private:
     ShaderCompileDiagnosticsUVE m_diagnostics;
     std::vector<UniformReflectionUVE> m_uniforms;
     std::uint64_t m_contentHash = 0;
-    std::unordered_map<std::string, PendingUniformValueUVE, TransparentStringHashUVE, TransparentStringEqualUVE>
-        m_pendingUniforms;
+    mutable std::vector<PendingUniformEntryUVE> m_uniformEntries;
+    std::unordered_map<std::string, std::size_t, TransparentStringHashUVE, TransparentStringEqualUVE>
+        m_uniformIndexByName;
+    mutable std::vector<std::size_t> m_dirtyUniformIndices;
+    mutable PipelineHandleUVE m_lastSyncedPipeline = kInvalidPipelineHandleUVE;
+    mutable std::uint64_t m_lastSyncedBufferId = 0U;
 };
 
 } // namespace UVE::Render::Shader

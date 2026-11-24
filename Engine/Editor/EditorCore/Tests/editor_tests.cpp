@@ -28,8 +28,11 @@
 
 #include <GL/gl.h>
 
+#include "animation_clip_asset.h"
 #include "material_asset.h"
 #include "mesh_asset.h"
+#include "model_animations.h"
+#include "skeleton_asset.h"
 #include "texture_asset.h"
 #include "engine_core.h"
 #include "engine_project_settings.h"
@@ -48,6 +51,7 @@
 #include "prefab_instance_component.h"
 #include "primitive_mesh_component.h"
 #include "script_component.h"
+#include "skin_component.h"
 #include "transform_component.h"
 #include "visibility_component.h"
 #include "all_objects_3d.h"
@@ -128,6 +132,15 @@ struct EditorUVEAccessUVE final {
 
     [[nodiscard]] static bool IsRetargetPreviewActiveUVE(const EditorUVE& editor) {
         return editor.m_retargetPreview.has_value();
+    }
+    static void TickRetargetWindowUVE(EditorUVE& editor) {
+        editor.TickRetargetWindowUVE();
+    }
+    [[nodiscard]] static std::vector<std::filesystem::path> RetargetWindowAnimationsUVE(const EditorUVE& editor) {
+        return editor.m_retargetWindow.has_value() ? editor.m_retargetWindow->animations : std::vector<std::filesystem::path>{};
+    }
+    [[nodiscard]] static std::filesystem::path RetargetWindowTargetUVE(const EditorUVE& editor) {
+        return editor.m_retargetWindow.has_value() ? editor.m_retargetWindow->target : std::filesystem::path{};
     }
     static void RebuildRetargetPreviewUVE(EditorUVE& editor, const RetargetPlanUVE& plan, const std::filesystem::path& model) {
         editor.RebuildRetargetPreviewUVE(plan, model);
@@ -6556,6 +6569,314 @@ TEST(EditorUVETest, ToolWindowsSetFocusPendingOnReopenUVE) {
     }
     engine.Shutdown();
     std::filesystem::remove_all(scratch);
+}
+
+TEST(EditorUVETest, OpenRetargetWindowForPathsStrictlyUsesMultiSelectionAndFolderRecursivelyDetectsAllAnimations) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("retarget_multiselect_folder");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content / "Mixamo" / "Combat");
+    std::filesystem::create_directories(content / "Other");
+
+    const auto writeClip = [](const std::filesystem::path& path, const char* id) {
+        Asset::AnimationClipAssetUVE clip;
+        clip.clipId = id;
+        clip.durationSeconds = 0.5;
+        const Asset::AnimationAssetPoseUVE pose{{0.0F, 1.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}};
+        clip.bones = {Asset::AnimationAssetBoneTrackUVE{"Hips", {{0.0, pose}, {0.5, pose}}}};
+        clip.rest = {Asset::AnimationAssetRestBoneUVE{"Hips", -1, {0.0F, 1.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}}};
+        EXPECT_TRUE(Asset::SaveAnimationClipAssetUVE(clip, path));
+    };
+    writeClip(content / "Mixamo" / "Idle.uvanim", "Idle");
+    writeClip(content / "Mixamo" / "Walk.uvanim", "Walk");
+    writeClip(content / "Mixamo" / "Run.uvanim", "Run");
+    writeClip(content / "Mixamo" / "Combat" / "Slash.uvanim", "Slash");
+    writeClip(content / "Other" / "Ignored.uvanim", "Ignored");
+
+    Core::EngineConfigUVE config;
+    config.mode = Core::EngineModeUVE::Headless;
+    config.contentRootPath = content;
+    config.cacheRootPath = scratch / "cache";
+    config.settingsFilePath = scratch / "project.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        editor.RefreshProjectFileIndexUVE();
+
+        // 1. Multi-select strictly passes ONLY the selected animations (never unselected siblings!).
+        editor.OpenRetargetWindowForPathsUVE({std::filesystem::path("Mixamo/Walk.uvanim"),
+                                              std::filesystem::path("Mixamo/Combat/Slash.uvanim")});
+        ASSERT_TRUE(editor.IsRetargetWindowOpenUVE());
+        EditorUVEAccessUVE::TickRetargetWindowUVE(editor);
+        EXPECT_TRUE(EditorUVEAccessUVE::RetargetWindowTargetUVE(editor).empty());
+        const std::vector<std::filesystem::path> pickedAnims = EditorUVEAccessUVE::RetargetWindowAnimationsUVE(editor);
+        ASSERT_EQ(pickedAnims.size(), 2U);
+        EXPECT_EQ(pickedAnims[0].filename().string(), "Slash.uvanim");
+        EXPECT_EQ(pickedAnims[1].filename().string(), "Walk.uvanim");
+        editor.CloseRetargetWindowUVE();
+
+        // 2. Folder right-click recursively discovers every animation under Mixamo (and excludes Other).
+        editor.OpenRetargetWindowForFolderUVE(std::filesystem::path("Mixamo"));
+        ASSERT_TRUE(editor.IsRetargetWindowOpenUVE());
+        EditorUVEAccessUVE::TickRetargetWindowUVE(editor);
+        EXPECT_TRUE(EditorUVEAccessUVE::RetargetWindowTargetUVE(editor).empty());
+        const std::vector<std::filesystem::path> folderAnims = EditorUVEAccessUVE::RetargetWindowAnimationsUVE(editor);
+        ASSERT_EQ(folderAnims.size(), 4U);
+        for (const std::filesystem::path& p : folderAnims) {
+            EXPECT_NE(p.filename().string(), "Ignored.uvanim");
+        }
+        editor.CloseRetargetWindowUVE();
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch);
+}
+
+TEST(EditorUVETest, SetSelectedMeshSourceAutoAttachesAPoseUvskelSkeletonUnderPlayer3DWithUndoRedo) {
+    const std::filesystem::path scratch = ::UVE::Tests::MakeTestCaseDirectoryUVE("player3d_apose_skel");
+    const std::filesystem::path content = scratch / "Content";
+    std::filesystem::create_directories(content / "Characters");
+
+    // Author a rigged .uvmodel plus a sibling .uvskel with a distinct A-pose rest position.
+    Asset::MeshAssetUVE mesh;
+    mesh.vertices = {
+        Asset::MeshVertexUVE{{0.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 0.0F, 0.0F},
+        Asset::MeshVertexUVE{{1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 1.0F, 0.0F},
+        Asset::MeshVertexUVE{{0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, 0.0F, 1.0F},
+    };
+    mesh.indices = {0U, 1U, 2U};
+    mesh.localBounds = Math::AabbUVE{{0.0F, 0.0F, 0.0F}, {1.0F, 1.0F, 0.0F}};
+    mesh.joints = {
+        Asset::MeshJointUVE{Asset::kInvalidJointParentUVE, Math::Matrix4x4UVE::IdentityUVE(), "Root"},
+        Asset::MeshJointUVE{0U, Math::Matrix4x4UVE::IdentityUVE(), "Hips"},
+    };
+    mesh.skinningInfluences = {
+        Asset::MeshSkinningInfluenceUVE{{1U, 0U, 0U, 0U}, {1.0F, 0.0F, 0.0F, 0.0F}},
+        Asset::MeshSkinningInfluenceUVE{{1U, 0U, 0U, 0U}, {1.0F, 0.0F, 0.0F, 0.0F}},
+        Asset::MeshSkinningInfluenceUVE{{1U, 0U, 0U, 0U}, {1.0F, 0.0F, 0.0F, 0.0F}},
+    };
+    const std::filesystem::path modelPath = content / "Characters" / "Hero.uvmodel";
+    ASSERT_TRUE(Asset::SaveMeshAssetUVE(mesh, modelPath));
+
+    Asset::SkeletonAssetUVE skel;
+    skel.skeletonId = "Hero";
+    skel.joints = {
+        Asset::SkeletonJointUVE{"Root", -1, {0.0F, 0.0F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}},
+        Asset::SkeletonJointUVE{"Hips", 0, {0.0F, 0.95F, 0.0F}, {}, {1.0F, 1.0F, 1.0F}},
+    };
+    const std::filesystem::path skelPath = content / "Characters" / "Hero.uvskel";
+    ASSERT_TRUE(Asset::SaveSkeletonAssetUVE(skel, skelPath));
+
+    Core::EngineConfigUVE config;
+    config.mode = Core::EngineModeUVE::Headless;
+    config.contentRootPath = content;
+    config.cacheRootPath = scratch / "cache";
+    config.settingsFilePath = scratch / "project.json";
+    config.inputMapFilePath = scratch / "input_map.json";
+    config.saveDirectoryPath = scratch / "saves";
+    config.shaderCachePath = scratch / "shader_cache";
+
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        editor.RefreshProjectFileIndexUVE();
+
+        Scene::IEntityManagerUVE& em = engine.GetServicesUVE().GetEntityManagerUVE();
+        Scene::ISceneGraphUVE& sg = engine.GetServicesUVE().GetSceneGraphUVE();
+
+        // Build Player3D -> MeshInstance3D (no Skeleton3D yet) and assign Hero.uvmodel.
+        const Scene::EntityUVE player = editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::Player3D);
+        ASSERT_NE(player, Scene::kInvalidEntityUVE);
+        const Scene::EntityUVE meshEntity =
+            editor.CreateDocumentSceneObjectUVE(Scene::Objects::SceneObjectKindUVE::MeshInstance3D, player);
+        ASSERT_NE(meshEntity, Scene::kInvalidEntityUVE);
+        editor.SelectEntityUVE(meshEntity);
+
+        const Asset::AssetGuidUVE guid = engine.GetServicesUVE().GetAssetDatabaseUVE().RegisterUVE(modelPath);
+        ASSERT_TRUE(editor.SetSelectedMeshSourceUVE(guid, std::nullopt));
+
+        // A child Skeleton3D loaded from Hero.uvskel (with the A-pose Hips height 0.95) is auto-created!
+        const std::vector<Scene::EntityUVE> children = sg.GetChildrenUVE(em, meshEntity);
+        ASSERT_EQ(children.size(), 1U);
+        ASSERT_TRUE(em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(children.front()));
+        const auto& autoSkel = em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(children.front());
+        ASSERT_EQ(autoSkel.bones.size(), 2U);
+        EXPECT_EQ(autoSkel.bones[1].name, "Hips");
+        EXPECT_NEAR(autoSkel.bones[1].position.y, 0.95F, 1e-4F);
+        EXPECT_EQ(autoSkel.skeletonAssetPath, "Characters/Hero.uvmodel");
+        EXPECT_TRUE(em.HasComponentUVE<Scene::SkinComponentUVE>(meshEntity));
+
+        // Undo removes the auto-created Skeleton3D and Skin; Redo brings both back.
+        ASSERT_TRUE(editor.UndoUVE());
+        EXPECT_TRUE(sg.GetChildrenUVE(em, meshEntity).empty());
+        EXPECT_FALSE(em.HasComponentUVE<Scene::SkinComponentUVE>(meshEntity));
+
+        ASSERT_TRUE(editor.RedoUVE());
+        const std::vector<Scene::EntityUVE> redoneChildren = sg.GetChildrenUVE(em, meshEntity);
+        ASSERT_EQ(redoneChildren.size(), 1U);
+        ASSERT_TRUE(em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(redoneChildren.front()));
+        EXPECT_EQ(em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(redoneChildren.front()).bones.size(), 2U);
+        EXPECT_TRUE(em.HasComponentUVE<Scene::SkinComponentUVE>(meshEntity));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch);
+}
+
+TEST(EditorUVETest, ExternalContentWatcher_PollNowDetectsExternalFilesAndIgnoresTempCopies) {
+    const std::filesystem::path scratch = std::filesystem::temp_directory_path() / "uve_ext_watch_test";
+    std::error_code ec;
+    std::filesystem::remove_all(scratch, ec);
+    const std::filesystem::path content = scratch / "Content";
+    ASSERT_TRUE(std::filesystem::create_directories(content / "Existing"));
+    {
+        std::ofstream f(content / "Existing" / "Seed.txt", std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(f.is_open());
+        f << "seed";
+    }
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    config.projectChangeWatchPollIntervalSecondsUVE = 3600.0;
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        editor.TickUVE();
+
+        // Quiet poll right after baseline finds no delta.
+        EXPECT_FALSE(editor.PollExternalContentChangesNowUVE());
+
+        // Transient .uvcopy-tmp files must stay hidden from both index and watcher.
+        {
+            std::ofstream tmp(content / "InFlight.fbx.uvcopy-tmp", std::ios::binary | std::ios::trunc);
+            ASSERT_TRUE(tmp.is_open());
+            tmp << "partial";
+        }
+        EXPECT_FALSE(editor.PollExternalContentChangesNowUVE());
+
+        // Simulate adding an external folder + file outside the Editor (OS/Android File Manager).
+        ASSERT_TRUE(std::filesystem::create_directories(content / "ExternalPack" / "Locomotion"));
+        {
+            std::ofstream ext(content / "ExternalPack" / "Locomotion" / "Walk.txt", std::ios::binary | std::ios::trunc);
+            ASSERT_TRUE(ext.is_open());
+            ext << "external-drop";
+        }
+
+        EXPECT_TRUE(editor.PollExternalContentChangesNowUVE());
+        const Asset::ProjectFileSnapshotUVE refreshed =
+            engine.GetServicesUVE().GetProjectFileIndexUVE().GetSnapshotUVE();
+        const bool foundExternal = std::any_of(
+            refreshed.entries.begin(), refreshed.entries.end(),
+            [](const Asset::ProjectFileEntryUVE& entry) {
+                return entry.relativePath == std::filesystem::path{"ExternalPack/Locomotion/Walk.txt"};
+            });
+        const bool foundTemp = std::any_of(
+            refreshed.entries.begin(), refreshed.entries.end(),
+            [](const Asset::ProjectFileEntryUVE& entry) {
+                return entry.relativePath.extension() == ".uvcopy-tmp";
+            });
+        EXPECT_TRUE(foundExternal);
+        EXPECT_FALSE(foundTemp);
+
+        // Next poll with no further disk writes reports no delta.
+        EXPECT_FALSE(editor.PollExternalContentChangesNowUVE());
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch, ec);
+}
+
+TEST(EditorUVETest, ImportExternalFilesUVE_RecursivelyCopiesFoldersPreservesSubfoldersSkipsHiddenAndSelfCopy) {
+    const std::filesystem::path scratch = std::filesystem::temp_directory_path() / "uve_import_folder_test";
+    std::error_code ec;
+    std::filesystem::remove_all(scratch, ec);
+    const std::filesystem::path content = scratch / "Content";
+    const std::filesystem::path externalRoot = scratch / "ExternalDownloads" / "MixamoAnims";
+    ASSERT_TRUE(std::filesystem::create_directories(content / "Characters"));
+    ASSERT_TRUE(std::filesystem::create_directories(externalRoot / "Locomotion"));
+    ASSERT_TRUE(std::filesystem::create_directories(externalRoot / "Combat"));
+    ASSERT_TRUE(std::filesystem::create_directories(externalRoot / ".hidden_meta"));
+
+    const auto writeText = [](const std::filesystem::path& p, const std::string& body) {
+        std::ofstream out(p, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(out.is_open());
+        out << body;
+    };
+    writeText(externalRoot / "Locomotion" / "Walk.txt", "walk-data");
+    writeText(externalRoot / "Combat" / "Slash.txt", "slash-data");
+    writeText(externalRoot / ".DS_Store", "macos-junk");
+    writeText(externalRoot / ".hidden_meta" / "Secret.txt", "hidden");
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        editor.TickUVE();
+
+        // Import entire folder preserving its subfolder layout inside Content/Characters.
+        ASSERT_TRUE(editor.ImportExternalFilesUVE({externalRoot}, content / "Characters"));
+        EXPECT_TRUE(std::filesystem::is_regular_file(content / "Characters" / "MixamoAnims" / "Locomotion" / "Walk.txt"));
+        EXPECT_TRUE(std::filesystem::is_regular_file(content / "Characters" / "MixamoAnims" / "Combat" / "Slash.txt"));
+        EXPECT_FALSE(std::filesystem::exists(content / "Characters" / "MixamoAnims" / ".DS_Store"));
+        EXPECT_FALSE(std::filesystem::exists(content / "Characters" / "MixamoAnims" / ".hidden_meta"));
+
+        // Self-recursive folder copy (destination inside source) must be rejected cleanly.
+        EXPECT_FALSE(editor.ImportExternalFilesUVE({content}, content / "Characters" / "Nested"));
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch, ec);
+}
+
+TEST(EditorUVETest, BackgroundImportCancel_ClearsPendingQueuesSafely) {
+    const std::filesystem::path scratch = std::filesystem::temp_directory_path() / "uve_cancel_import_test";
+    std::error_code ec;
+    std::filesystem::remove_all(scratch, ec);
+    const std::filesystem::path content = scratch / "Content";
+    ASSERT_TRUE(std::filesystem::create_directories(content));
+
+    Core::EngineConfigUVE config = MakeEditorTestConfigUVE();
+    config.projectContentRootUVE = content;
+    Core::EngineCoreUVE engine(config);
+    engine.Init();
+    ASSERT_TRUE(engine.Load());
+    {
+        EditorUVE editor(engine.GetServicesUVE(), scratch / "main.uvscene", 16U, &engine);
+        editor.InitUVE();
+        editor.DismissStartupLoadingUVE();
+        editor.TickUVE();
+
+        // Cancelling when idle or queued leaves loading state clean and non-busy.
+        editor.CancelBackgroundImportsUVE();
+        const EditorUVE::EditorLoadingStateUVE state = editor.GetLoadingStateUVE();
+        EXPECT_FALSE(state.startup);
+        EXPECT_FALSE(state.busy);
+        EXPECT_EQ(state.total, 0U);
+
+        editor.ShutdownUVE();
+    }
+    engine.Shutdown();
+    std::filesystem::remove_all(scratch, ec);
 }
 
 } // namespace UVE::Editor::Tests

@@ -11,11 +11,13 @@
 #   Release / Linux      The engine (editor, runtime, packer), Release.
 #   Release / Windows    The same on Windows; the staged editor is started once so its DLLs are proven.
 #   Release / Android    The engine for Android (the runtime until the editor runs there).
+#   All CI Checks        Aggregate gate that passes only when all 7 jobs above succeeded.
 #   Publish the release  Release only, after everything above passed: one GitHub Release.
 #
-# Every job builds on every push, so breakage on any platform shows up with the change that caused
-# it. On a release each job also packages what it built - nothing is compiled twice - and Publish puts
-# the engine packages, the Hub installers and the Hub APK, each with its .sha256, into one release.
+# Every job builds on every push and pull request, so breakage on any platform (Linux, Windows, or
+# Android) blocks merging before it can reach master. On a release each job also packages what it
+# built - nothing is compiled twice - and Publish puts the engine packages, the Hub installers and
+# the Hub APK, each with its .sha256, into one release.
 #
 # Two kinds of release, both made by the same jobs:
 #
@@ -26,7 +28,7 @@
 #                         prereleases, the Hub's Beta channel.
 #
 # The engine's version comes from the tag, or from the built editor for master; the Hub's version is
-# always read from the Hub that was built. Other branches are checked through pull requests.
+# always read from the Hub that was built. Pull requests run the full 7-job matrix without publishing.
 #
 # Where a release goes is switched by the PUBLISH_RELEASES repository variable:
 #
@@ -64,7 +66,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.head_ref || github.ref }}
   # A newer push replaces a running check, never a running release.
   cancel-in-progress: ${{ !((github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v')) }}
 
@@ -359,9 +361,7 @@ jobs:
   hub-windows:
     name: Hub / Windows
     runs-on: windows-latest
-    # Windows minutes count double and Android builds and the emulator are long: a pull request is
-    # checked on Linux, and these run on master, version tags and by hand.
-    if: github.event_name != 'pull_request'
+    # Runs on pull requests, master, version tags, and manual dispatch so breakage never reaches master.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -465,9 +465,7 @@ jobs:
   hub-android:
     name: Hub / Android
     runs-on: ubuntu-latest
-    # Windows minutes count double and Android builds and the emulator are long: a pull request is
-    # checked on Linux, and these run on master, version tags and by hand.
-    if: github.event_name != 'pull_request'
+    # Runs on pull requests, master, version tags, and manual dispatch so breakage never reaches master.
     timeout-minutes: 90
     env:
       # The emulator the Hub is started on: an x86_64 system image (runs under KVM) of a recent Android.
@@ -679,9 +677,7 @@ jobs:
   release-windows:
     name: Release / Windows
     runs-on: windows-latest
-    # Windows minutes count double and Android builds and the emulator are long: a pull request is
-    # checked on Linux, and these run on master, version tags and by hand.
-    if: github.event_name != 'pull_request'
+    # Runs on pull requests, master, version tags, and manual dispatch so breakage never reaches master.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -799,9 +795,7 @@ jobs:
   release-android:
     name: Release / Android
     runs-on: ubuntu-latest
-    # Windows minutes count double and Android builds and the emulator are long: a pull request is
-    # checked on Linux, and these run on master, version tags and by hand.
-    if: github.event_name != 'pull_request'
+    # Runs on pull requests, master, version tags, and manual dispatch so breakage never reaches master.
     timeout-minutes: 120
     env:
       UVBT_COMPILER_LAUNCHER: ccache
@@ -891,6 +885,46 @@ jobs:
           path: build/android-editor/
           if-no-files-found: error
           retention-days: 7
+
+  # ---------------------------------------------------------------------------------------------
+  # Single aggregate gate for master branch protection: passes only if all 7 jobs succeeded.
+  # ---------------------------------------------------------------------------------------------
+  ci-gate:
+    name: All CI Checks
+    if: always()
+    needs: [linux, hub-linux, hub-windows, hub-android, release-linux, release-windows, release-android]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify every CI job passed
+        env:
+          RES_LINUX: ${{ needs.linux.result }}
+          RES_HUB_LINUX: ${{ needs.hub-linux.result }}
+          RES_HUB_WINDOWS: ${{ needs.hub-windows.result }}
+          RES_HUB_ANDROID: ${{ needs.hub-android.result }}
+          RES_RELEASE_LINUX: ${{ needs.release-linux.result }}
+          RES_RELEASE_WINDOWS: ${{ needs.release-windows.result }}
+          RES_RELEASE_ANDROID: ${{ needs.release-android.result }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for pair in \
+            "Ubuntu / GCC:${RES_LINUX}" \
+            "Hub / Linux:${RES_HUB_LINUX}" \
+            "Hub / Windows:${RES_HUB_WINDOWS}" \
+            "Hub / Android:${RES_HUB_ANDROID}" \
+            "Release / Linux:${RES_RELEASE_LINUX}" \
+            "Release / Windows:${RES_RELEASE_WINDOWS}" \
+            "Release / Android:${RES_RELEASE_ANDROID}"; do
+            name="${pair%:*}"
+            result="${pair##*:}"
+            echo "${name}: ${result}"
+            if [ "${result}" != "success" ]; then
+              echo "::error::Required CI job '${name}' did not succeed (result: ${result})."
+              failed=1
+            fi
+          done
+          exit "${failed}"
 
   # ---------------------------------------------------------------------------------------------
   # Release only: one GitHub Release, once the tests passed and every platform is packaged.

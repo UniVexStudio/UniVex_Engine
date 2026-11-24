@@ -9,6 +9,8 @@
 #include <span>
 #include <vector>
 
+#include "application_window_settings.h"
+#include "device_operations.h"
 #include "matrix4x4.h"
 #include "vector3.h"
 #include "render_resource_descs.h"
@@ -20,6 +22,44 @@
 #include "vfx_draw_list.h"
 
 namespace UVE::Render {
+
+/// Runtime resolution of a project's requested RendererProfileUVE against real GPU capabilities.
+struct RendererProfileResolutionUVE final {
+    Platform::RendererProfileUVE requested = Platform::DefaultRendererProfileForHostUVE();
+    Platform::RendererProfileUVE effective = Platform::DefaultRendererProfileForHostUVE();
+    bool fallbackApplied = false;
+    std::string_view fallbackReason;
+};
+
+/// Resolves `requested` against `capabilities`, stepping down Forward+ -> Mobile -> Compatibility
+/// only when the active GPU/backend lacks required hardware features.
+[[nodiscard]] constexpr RendererProfileResolutionUVE ResolveEffectiveRendererProfileUVE(
+    const Platform::RendererProfileUVE requested,
+    const RenderDeviceCapabilitiesUVE& capabilities) noexcept {
+    const bool supportsHdr16F =
+        capabilities.halfFloatColorTargets != RenderFeatureSupportUVE::Unsupported;
+    const bool supportsSsbo =
+        capabilities.storageBuffers != RenderFeatureSupportUVE::Unsupported;
+    if (requested == Platform::RendererProfileUVE::ForwardPlus) {
+        if (supportsSsbo && supportsHdr16F) {
+            return {requested, Platform::RendererProfileUVE::ForwardPlus, false, {}};
+        }
+        if (supportsHdr16F) {
+            return {requested, Platform::RendererProfileUVE::Mobile, true,
+                    "GPU/backend lacks SSBO support; using Mobile"};
+        }
+        return {requested, Platform::RendererProfileUVE::Compatibility, true,
+                "GPU/backend lacks SSBO and HDR16F support; using Compatibility"};
+    }
+    if (requested == Platform::RendererProfileUVE::Mobile) {
+        if (supportsHdr16F) {
+            return {requested, Platform::RendererProfileUVE::Mobile, false, {}};
+        }
+        return {requested, Platform::RendererProfileUVE::Compatibility, true,
+                "GPU/backend lacks HDR16F support; using Compatibility"};
+    }
+    return {requested, Platform::RendererProfileUVE::Compatibility, false, {}};
+}
 
 /// Post-process controls. The final tone-mapping pass supports bilinear or nearest-neighbour
 /// spatial reconstruction and ACES or linear-clamp tone mapping; fast approximate AA is opt-in and
@@ -480,6 +520,17 @@ public:
     /// Sets the rendering scalability / quality preset (0: Low, 1: Medium, 2: High/Ultra).
     virtual void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept {
         static_cast<void>(scalabilityMode);
+    }
+
+    /// Sets the project renderer profile (`Compatibility`, `Mobile`, `Forward+`).
+    /// Implementations resolve this against real device capabilities and may step down cleanly.
+    virtual void SetRendererProfileUVE(Platform::RendererProfileUVE profile) noexcept {
+        static_cast<void>(profile);
+    }
+
+    /// Returns the requested vs effective renderer profile and any hardware fallback reason.
+    [[nodiscard]] virtual RendererProfileResolutionUVE GetRendererProfileResolutionUVE() const noexcept {
+        return {};
     }
 
     /// Updates the culling controls used by later frames. The default implementation is a no-op so

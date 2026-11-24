@@ -494,5 +494,19 @@ TEST_F(ProjectLauncherUVETest, PrepareEditor_ReportsCompatibilityOfOlderProject)
     EXPECT_EQ(result.setup->compatibility.verdict, ProjectCompatibilityVerdictUVE::OlderNeedsUpgrade);
 }
 
+TEST_F(ProjectLauncherUVETest, PrepareEditor_PropagatesProjectRendererProfileToEngineConfig) {
+    Platform::EditorProjectPackageUVE package = MakeAuthoringPackageUVE();
+    package.rendererProfile = Platform::RendererProfileUVE::Compatibility;
+    ASSERT_TRUE(Platform::EditorProjectPackageCodecUVE::SaveUVE(projectFile(), package).IsAcceptedUVE());
+
+    Core::EngineConfigUVE config = MakeHeadlessConfigUVE(projectRoot);
+    config.requestedRendererProfileUVE = Platform::RendererProfileUVE::ForwardPlus;
+    const ProjectEditorSetupResultUVE result =
+        PrepareProjectEditorUVE(projectFile(), kAuthoringEngineVersionUVE, config);
+
+    ASSERT_TRUE(result.IsReadyUVE()) << result.message;
+    EXPECT_EQ(config.requestedRendererProfileUVE, Platform::RendererProfileUVE::Compatibility);
+}
+
 } // namespace
 } // namespace UVE::Pack::Tests

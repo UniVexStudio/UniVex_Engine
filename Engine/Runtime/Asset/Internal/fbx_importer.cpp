@@ -34,24 +34,27 @@ constexpr std::string_view kFbxTemporarySuffixUVE = ".uve_fbx_tmp";
 /// Normal usage; occlusion is linear data. Getting this wrong is the classic "normal maps look
 /// inverted and albedo looks washed out" import bug, so it is decided here once, by slot, rather
 /// than left to whatever the default happens to be.
-[[nodiscard]] TextureImportSettingsUVE ColorSlotSettingsUVE() {
+[[nodiscard]] TextureImportSettingsUVE ColorSlotSettingsUVE(const std::uint32_t maxResolutionClamp) {
     TextureImportSettingsUVE settings;
     settings.colorSpace = TextureAssetColorSpaceUVE::Srgb;
     settings.usage = TextureUsageUVE::Color;
+    settings.maxResolutionClamp = maxResolutionClamp;
     return settings;
 }
 
-[[nodiscard]] TextureImportSettingsUVE NormalSlotSettingsUVE() {
+[[nodiscard]] TextureImportSettingsUVE NormalSlotSettingsUVE(const std::uint32_t maxResolutionClamp) {
     TextureImportSettingsUVE settings;
     settings.colorSpace = TextureAssetColorSpaceUVE::Linear;
     settings.usage = TextureUsageUVE::Normal;
+    settings.maxResolutionClamp = maxResolutionClamp;
     return settings;
 }
 
-[[nodiscard]] TextureImportSettingsUVE DataSlotSettingsUVE() {
+[[nodiscard]] TextureImportSettingsUVE DataSlotSettingsUVE(const std::uint32_t maxResolutionClamp) {
     TextureImportSettingsUVE settings;
     settings.colorSpace = TextureAssetColorSpaceUVE::Linear;
     settings.usage = TextureUsageUVE::Data;
+    settings.maxResolutionClamp = maxResolutionClamp;
     return settings;
 }
 
@@ -68,7 +71,7 @@ constexpr std::string_view kFbxTemporarySuffixUVE = ".uve_fbx_tmp";
 /// published `.uvtex` is named after the material's own stem plus the slot, so a re-import lands on
 /// the same path - and therefore, through RegisterUVE, on the same GUID.
 void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const std::filesystem::path& sourceDirectory,
-                           const std::string_view modelStem, const FbxTextureSourceUVE& source,
+                           const std::string_view modelStem, FbxTextureSourceUVE& source,
                            const std::string& materialStem, const std::string_view materialName,
                            const std::string_view slotName, const TextureImportSettingsUVE& settings,
                            IAssetDatabaseUVE& assetDatabase, AssetGuidUVE& slot) {
@@ -88,7 +91,11 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
     };
 
     if (source.HasImageUVE()) {
-        if (publish(source.embedded, "the " + std::string{slotName} + " map embedded in the FBX")) {
+        const bool published = publish(source.embedded, "the " + std::string{slotName} + " map embedded in the FBX");
+        // Release raw embedded bytes immediately after decoding to keep peak RAM low on mobile.
+        source.embedded.clear();
+        source.embedded.shrink_to_fit();
+        if (published) {
             return;
         }
     } else if (!source.file.empty()) {
@@ -125,12 +132,21 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
 [[nodiscard]] bool ImportFbxSourceUVE(const std::filesystem::path& sourcePath,
                                       const std::filesystem::path& destinationPath,
                                       IAssetDatabaseUVE& assetDatabase,
-                                      const AssetImportSettingsUVE& /*settings*/) {
+                                      const AssetImportSettingsUVE& settings) {
     if (destinationPath.extension() != ".uvmodel") {
         UVE_ERROR("FbxImporterUVE: destination \"{}\" must use the .uvmodel extension",
                   destinationPath.string());
         return false;
     }
+
+    std::uint32_t maxTextureResolution = 2048U;
+    if (const auto* const modelSettings = dynamic_cast<const ModelImportSettingsUVE*>(&settings);
+        modelSettings != nullptr) {
+        maxTextureResolution = modelSettings->maxEmbeddedTextureResolution;
+    }
+    const TextureImportSettingsUVE colorSettings = ColorSlotSettingsUVE(maxTextureResolution);
+    const TextureImportSettingsUVE normalSettings = NormalSlotSettingsUVE(maxTextureResolution);
+    const TextureImportSettingsUVE dataSettings = DataSlotSettingsUVE(maxTextureResolution);
 
     std::vector<std::byte> sourceBytes;
     if (!Detail::ReadBoundedSourceBytesUVE(sourcePath, kFbxImporterNameUVE, kMaximumFbxMeshSourceBytesUVE,
@@ -138,49 +154,55 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
         return false;
     }
 
-    MeshAssetUVE mesh;
-    // The converter reports one range per material its faces use; which published slot each range
-    // belongs to is known here, because only this importer knows which materials were publishable.
-    std::vector<FbxSurfaceRangeUVE> surfaceRanges;
-    if (!ConvertFbxMeshUVE(sourceBytes, mesh, &surfaceRanges)) {
-        UVE_ERROR("FbxImporterUVE: source \"{}\" failed FBX mesh conversion", sourcePath.string());
+    // Single-pass extraction: parse the FBX once with ufbx and pull mesh, materials, skeleton,
+    // per-node parts, and scene hierarchy from the same in-memory scene.
+    FbxSceneImportBundleUVE bundle;
+    if (!ExtractFbxImportBundleUVE(sourceBytes, bundle, kMaximumAnimationAssetBonesUVE)) {
+        UVE_ERROR("FbxImporterUVE: source \"{}\" failed FBX conversion", sourcePath.string());
         return false;
     }
+    // Release raw FBX file bytes before decoding embedded textures to avoid doubling peak RAM.
+    sourceBytes.clear();
+    sourceBytes.shrink_to_fit();
+
+    MeshAssetUVE& mesh = bundle.mergedMesh;
+    const std::vector<FbxSurfaceRangeUVE>& surfaceRanges = bundle.surfaceRanges;
 
     // Foundation WP7: publish every material as its own .uvmat beside the model and reference
     // them from the mesh. Materials are published BEFORE the mesh so a failure leaves no
     // .uvmodel pointing at materials that do not exist.
-    const std::optional<std::vector<FbxMaterialUVE>> materials = ReadFbxMaterialsUVE(sourceBytes);
-    if (!materials.has_value()) {
+    if (!bundle.materials.has_value()) {
         UVE_ERROR("FbxImporterUVE: source \"{}\" failed FBX material conversion", sourcePath.string());
         return false;
     }
+    std::vector<FbxMaterialUVE>& materials = *bundle.materials;
     const std::string modelStem = destinationPath.stem().string();
     const std::filesystem::path directory = destinationPath.parent_path();
     std::vector<std::string> usedStems;
     std::vector<AssetGuidUVE> materialGuids;
-    materialGuids.reserve(materials->size());
+    materialGuids.reserve(materials.size());
     // File material position -> published slot. A material ReadFbxMaterialsUVE could not validate
     // is left out of the published list, so the range's file position cannot be used as a slot
     // directly; this is the one place both orders are known.
     std::unordered_map<std::uint32_t, std::uint32_t> slotOfSourceIndex;
-    slotOfSourceIndex.reserve(materials->size());
-    for (std::size_t materialIndex = 0U; materialIndex < materials->size(); ++materialIndex) {
-        const FbxMaterialUVE& source = (*materials)[materialIndex];
+    slotOfSourceIndex.reserve(materials.size());
+    const std::filesystem::path sourceDirectory = sourcePath.parent_path();
+    const std::string sourceStem = sourcePath.stem().string();
+    for (std::size_t materialIndex = 0U; materialIndex < materials.size(); ++materialIndex) {
+        FbxMaterialUVE& source = materials[materialIndex];
         // The stem is needed before the materials are written now: the textures derived from this
         // material are published first and named after it, so a re-import finds them by the same
         // path and therefore the same GUID.
         const std::string stem = Detail::MakeMaterialFileStemUVE(modelStem, source.name, materialIndex, "material", usedStems);
         MaterialAssetUVE material = source.material;
-        const std::filesystem::path sourceDirectory = sourcePath.parent_path();
-        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourcePath.stem().string(), source.albedo, stem,
-                              source.name, "albedo", ColorSlotSettingsUVE(), assetDatabase, material.albedoTexture);
-        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourcePath.stem().string(), source.normal, stem,
-                              source.name, "normal", NormalSlotSettingsUVE(), assetDatabase, material.normalTexture);
-        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourcePath.stem().string(), source.emissive, stem,
-                              source.name, "emissive", ColorSlotSettingsUVE(), assetDatabase, material.emissiveTexture);
-        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourcePath.stem().string(), source.ambientOcclusion, stem,
-                              source.name, "ambientOcclusion", DataSlotSettingsUVE(), assetDatabase, material.aoTexture);
+        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourceStem, source.albedo, stem,
+                              source.name, "albedo", colorSettings, assetDatabase, material.albedoTexture);
+        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourceStem, source.normal, stem,
+                              source.name, "normal", normalSettings, assetDatabase, material.normalTexture);
+        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourceStem, source.emissive, stem,
+                              source.name, "emissive", colorSettings, assetDatabase, material.emissiveTexture);
+        PublishTextureSlotUVE(destinationPath, sourceDirectory, sourceStem, source.ambientOcclusion, stem,
+                              source.name, "ambientOcclusion", dataSettings, assetDatabase, material.aoTexture);
         const std::filesystem::path materialPath = directory / (stem + ".uvmat");
         if (!Detail::PublishAssetAtomicallyUVE(materialPath, kFbxImporterNameUVE, kFbxTemporarySuffixUVE,
                                                [&material](const std::filesystem::path& temporaryPath) {
@@ -241,13 +263,11 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
         // `.uvskel` holding bones the mesh dropped would be a rig whose tracks point at nothing.
         static_assert(kMaximumSkeletonAssetJointsUVE >= kMaximumAnimationAssetBonesUVE,
                       "a published rig must be able to hold every bone a mesh can hold");
-        std::size_t droppedBones = 0U;
-        const std::optional<GltfSkeletonUVE> skeleton =
-            ReadFbxSkeletonUVE(sourceBytes, kMaximumAnimationAssetBonesUVE, FbxBoneOverflowUVE::Truncate, &droppedBones);
-        if (skeleton.has_value() && droppedBones > 0U) {
+        const std::optional<GltfSkeletonUVE>& skeleton = bundle.skeleton;
+        if (skeleton.has_value() && bundle.droppedBones > 0U) {
             UVE_WARNING("FbxImporterUVE: \"{}\" holds {} bones over the {} cap; the published .uvskel keeps the {} "
                         "the model kept",
-                        sourcePath.string(), kMaximumAnimationAssetBonesUVE + droppedBones,
+                        sourcePath.string(), kMaximumAnimationAssetBonesUVE + bundle.droppedBones,
                         kMaximumAnimationAssetBonesUVE, skeleton->joints.size());
         }
         if (skeleton.has_value() && skeleton->joints.size() == mesh.joints.size()) {
@@ -281,8 +301,8 @@ void PublishTextureSlotUVE(const std::filesystem::path& destinationPath, const s
     // it is what the Retarget window and every older scene refer to. A part shares the merged model's joints
     // and bind poses, so it binds to the same skeleton by name. Parts never fail the import - without them
     // the merged model still draws the whole character.
-    std::vector<FbxMeshPartUVE> parts;
-    const bool partsKnown = ConvertFbxMeshPartsUVE(sourceBytes, parts);
+    std::vector<FbxMeshPartUVE>& parts = bundle.parts;
+    const bool partsKnown = bundle.partsKnown;
     // The `.part-` file stem of each part, empty for a part that is not published on its own (the merged model
     // is then that part: a file with one mesh node has nothing to split).
     std::vector<std::string> publishedPartStems(parts.size());
@@ -343,12 +363,11 @@ merged model still draws it",
     const std::filesystem::path legacyNodesPath = directory / (modelStem + ".uvnodes");
     std::error_code cleanError;
     std::filesystem::remove(legacyNodesPath, cleanError);
-    std::vector<FbxHierarchyEntryUVE> hierarchy;
-    if (allPartsPublished && ReadFbxHierarchyUVE(sourceBytes, hierarchy) && !hierarchy.empty()) {
+    if (allPartsPublished && bundle.hierarchyKnown && !bundle.hierarchy.empty()) {
         nlohmann::json document;
         document["version"] = 1;
         nlohmann::json list = nlohmann::json::array();
-        for (const FbxHierarchyEntryUVE& item : hierarchy) {
+        for (const FbxHierarchyEntryUVE& item : bundle.hierarchy) {
             nlohmann::json entry;
             entry["name"] = item.name;
             entry["parent"] = item.parent;

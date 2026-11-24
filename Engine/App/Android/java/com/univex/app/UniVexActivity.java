@@ -17,6 +17,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Looper;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.text.InputType;
@@ -38,9 +39,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The NativeActivity every UniVex app runs in, made full screen: the status and navigation bars are
@@ -52,22 +56,34 @@ import java.util.concurrent.TimeUnit;
  * Keyboard, SwiftKey) stream committed text and backspace/enter actions cleanly into native code,
  * tracks connected hardware mouse/keyboard devices to auto-hide touch viewport controllers,
  * exposes public storage paths and All Files Access permission helpers, opens Android's own file
- * picker for native code (pickFile, takePickedFile), and bridges the system clipboard.
+ * picker for native code (pickFile, pickFiles, pickFolder, takePickedFile, takePickedPaths), and
+ * bridges the system clipboard.
  */
 public class UniVexActivity extends NativeActivity {
     private static final int PICK_FILE_REQUEST = 0x5576;
     private static final int STORAGE_PERMISSION_REQUEST = 0x5577;
+    private static final int PICK_FILES_REQUEST = 0x5578;
+    private static final int PICK_FOLDER_REQUEST = 0x5579;
     private static final String PICKED_FOLDER = "picked";
+    private static final String PICKED_BATCH_PREFIX = "picked_batch_";
     private static final int COPY_BUFFER_BYTES = 1 << 16;
     private static final String ANY_TYPE = "*/*";
     private static final String PICK_ERROR_PREFIX = "error:";
     private static final long CLIPBOARD_READ_TIMEOUT_MS = 250L;
     private static final char IME_EVENT_SEPARATOR = '\u001E';
+    private static final char PICK_PATH_SEPARATOR = '\u001E';
+    private static final int MAX_FOLDER_IMPORT_DEPTH = 16;
+    private static final int MAX_FOLDER_IMPORT_FILES = 4096;
 
-    // The last pick: null while one is running or none was asked for, "" when cancelled,
+    // The last single pick (Hub .uvpackage): null while running, "" when cancelled,
     // "error:<reason>" on failure, else the copied file path in cache.
     private volatile String pickedFile;
     private volatile boolean picking;
+    // The last multi-file or folder pick (Editor Import): null while running, "" when cancelled,
+    // "error:<reason>" on failure, else PICK_PATH_SEPARATOR-delimited staged paths in cache.
+    private volatile String pickedPaths;
+    private volatile boolean pickingMulti;
+    private final AtomicLong pickBatchCounter = new AtomicLong(0L);
     private volatile String launchProject;
 
     // Hidden 1x1 focusable view hosting the soft keyboard InputConnection.
@@ -463,6 +479,56 @@ public class UniVexActivity extends NativeActivity {
         return result;
     }
 
+    /** Opens Android's native file manager with multi-select enabled; results arrive via takePickedPaths. */
+    public void pickFiles() {
+        if (pickingMulti) {
+            return;
+        }
+        pickingMulti = true;
+        pickedPaths = null;
+        runOnUiThread(() -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType(ANY_TYPE);
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            try {
+                startActivityForResult(intent, PICK_FILES_REQUEST);
+            } catch (RuntimeException noPicker) {
+                finishMultiPick(PICK_ERROR_PREFIX + "No Android file picker is available on this device.");
+            }
+        });
+    }
+
+    /** Opens Android's native folder picker (SAF tree); staged folder arrives via takePickedPaths. */
+    public void pickFolder() {
+        if (pickingMulti) {
+            return;
+        }
+        pickingMulti = true;
+        pickedPaths = null;
+        runOnUiThread(() -> {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            try {
+                startActivityForResult(intent, PICK_FOLDER_REQUEST);
+            } catch (RuntimeException noPicker) {
+                finishMultiPick(PICK_ERROR_PREFIX + "No Android folder picker is available on this device.");
+            }
+        });
+    }
+
+    /**
+     * Returns PICK_PATH_SEPARATOR-delimited staged paths from pickFiles/pickFolder, "" when cancelled,
+     * "error:<reason>" on failure, or null while running. A finished result is returned once.
+     */
+    public String takePickedPaths() {
+        if (pickingMulti) {
+            return null;
+        }
+        String result = pickedPaths;
+        pickedPaths = null;
+        return result;
+    }
+
     /** Reads plain text from Android's system clipboard; safe to call from the native thread. */
     public String getClipboardText() {
         final String[] holder = new String[] {""};
@@ -520,22 +586,60 @@ public class UniVexActivity extends NativeActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode != PICK_FILE_REQUEST) {
-            super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PICK_FILE_REQUEST) {
+            Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            if (uri == null) {
+                finishPick("");
+                return;
+            }
+            // Copied off the UI thread: an engine package is tens of megabytes.
+            new Thread(() -> finishPick(copyToCache(uri))).start();
             return;
         }
-        Uri uri = resultCode == RESULT_OK && data != null ? data.getData() : null;
-        if (uri == null) {
-            finishPick("");
+        if (requestCode == PICK_FILES_REQUEST) {
+            if (resultCode != RESULT_OK || data == null) {
+                finishMultiPick("");
+                return;
+            }
+            List<Uri> uris = new ArrayList<>();
+            ClipData clip = data.getClipData();
+            if (clip != null && clip.getItemCount() > 0) {
+                for (int i = 0; i < clip.getItemCount(); ++i) {
+                    Uri u = clip.getItemAt(i).getUri();
+                    if (u != null) {
+                        uris.add(u);
+                    }
+                }
+            } else if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+            if (uris.isEmpty()) {
+                finishMultiPick("");
+                return;
+            }
+            new Thread(() -> finishMultiPick(copyFilesToBatchCache(uris))).start();
             return;
         }
-        // Copied off the UI thread: an engine package is tens of megabytes.
-        new Thread(() -> finishPick(copyToCache(uri))).start();
+        if (requestCode == PICK_FOLDER_REQUEST) {
+            Uri treeUri = resultCode == RESULT_OK && data != null ? data.getData() : null;
+            if (treeUri == null) {
+                finishMultiPick("");
+                return;
+            }
+            new Thread(() -> finishMultiPick(copyTreeToBatchCache(treeUri))).start();
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     private void finishPick(String path) {
         pickedFile = path;
         picking = false;
+    }
+
+    private void finishMultiPick(String paths) {
+        pickedPaths = paths;
+        pickingMulti = false;
     }
 
     private String copyToCache(Uri uri) {
@@ -552,23 +656,196 @@ public class UniVexActivity extends NativeActivity {
             }
         }
         File target = new File(folder, displayName(uri));
-        try (InputStream input = getContentResolver().openInputStream(uri);
-             OutputStream output = new FileOutputStream(target)) {
-            if (input == null) {
-                target.delete();
-                return PICK_ERROR_PREFIX + "Unable to open the selected file.";
-            }
-            byte[] buffer = new byte[COPY_BUFFER_BYTES];
-            for (int read; (read = input.read(buffer)) > 0; ) {
-                output.write(buffer, 0, read);
-            }
-            return target.getAbsolutePath();
-        } catch (Exception failed) {
+        if (!streamUriToFile(uri, target)) {
             target.delete();
-            String reason = failed.getMessage();
-            return PICK_ERROR_PREFIX + "Unable to copy the selected file into app storage"
-                    + (reason != null && !reason.isEmpty() ? ": " + reason : ".");
+            return PICK_ERROR_PREFIX + "Unable to copy the selected file into app storage.";
         }
+        return target.getAbsolutePath();
+    }
+
+    private String copyFilesToBatchCache(List<Uri> uris) {
+        File batchDir = new File(getCacheDir(),
+                PICKED_BATCH_PREFIX + System.currentTimeMillis() + "_" + pickBatchCounter.incrementAndGet());
+        if (!batchDir.isDirectory() && !batchDir.mkdirs()) {
+            return PICK_ERROR_PREFIX + "Unable to create the app cache folder for importing.";
+        }
+        StringBuilder joined = new StringBuilder();
+        int copied = 0;
+        for (Uri uri : uris) {
+            if (copied >= MAX_FOLDER_IMPORT_FILES) {
+                break;
+            }
+            String safeName = sanitizeSegment(displayName(uri), "asset_" + copied);
+            File target = uniqueChildFile(batchDir, safeName);
+            if (streamUriToFile(uri, target)) {
+                if (joined.length() > 0) {
+                    joined.append(PICK_PATH_SEPARATOR);
+                }
+                joined.append(target.getAbsolutePath());
+                ++copied;
+            } else {
+                target.delete();
+            }
+        }
+        if (copied == 0) {
+            deleteRecursive(batchDir);
+            return PICK_ERROR_PREFIX + "Unable to copy any of the selected files into app storage.";
+        }
+        return joined.toString();
+    }
+
+    private String copyTreeToBatchCache(Uri treeUri) {
+        String rootDocId;
+        try {
+            rootDocId = DocumentsContract.getTreeDocumentId(treeUri);
+        } catch (IllegalArgumentException invalid) {
+            return PICK_ERROR_PREFIX + "The selected Android folder could not be opened.";
+        }
+        File batchDir = new File(getCacheDir(),
+                PICKED_BATCH_PREFIX + System.currentTimeMillis() + "_" + pickBatchCounter.incrementAndGet());
+        String folderName = queryTreeFolderName(treeUri, rootDocId);
+        File stagedRoot = new File(batchDir, sanitizeSegment(folderName, "ImportedFolder"));
+        if (!stagedRoot.isDirectory() && !stagedRoot.mkdirs()) {
+            return PICK_ERROR_PREFIX + "Unable to create the app cache folder for folder import.";
+        }
+        int[] copiedCount = new int[] {0};
+        copyDocumentTreeRecursive(treeUri, rootDocId, stagedRoot, 0, copiedCount);
+        if (copiedCount[0] == 0) {
+            deleteRecursive(batchDir);
+            return PICK_ERROR_PREFIX + "The selected folder contained no readable files.";
+        }
+        return stagedRoot.getAbsolutePath();
+    }
+
+    private String queryTreeFolderName(Uri treeUri, String docId) {
+        Uri docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId);
+        try (Cursor cursor = getContentResolver().query(docUri,
+                new String[] {DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                String name = cursor.getString(0);
+                if (name != null && !name.isEmpty()) {
+                    return name;
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to docId tail.
+        }
+        int slash = docId.lastIndexOf('/');
+        int colon = docId.lastIndexOf(':');
+        int cut = Math.max(slash, colon);
+        if (cut >= 0 && cut + 1 < docId.length()) {
+            return docId.substring(cut + 1);
+        }
+        return "ImportedFolder";
+    }
+
+    private void copyDocumentTreeRecursive(Uri treeUri, String parentDocId, File destDir, int depth, int[] copiedCount) {
+        if (depth > MAX_FOLDER_IMPORT_DEPTH || copiedCount[0] >= MAX_FOLDER_IMPORT_FILES) {
+            return;
+        }
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId);
+        String[] projection = new String[] {
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+        };
+        try (Cursor cursor = getContentResolver().query(childrenUri, projection, null, null, null)) {
+            if (cursor == null) {
+                return;
+            }
+            while (cursor.moveToNext()) {
+                if (copiedCount[0] >= MAX_FOLDER_IMPORT_FILES) {
+                    break;
+                }
+                String childDocId = cursor.getString(0);
+                String rawName = cursor.getString(1);
+                String mime = cursor.getString(2);
+                if (childDocId == null || rawName == null || rawName.isEmpty() || rawName.startsWith(".")) {
+                    continue;
+                }
+                String safeName = sanitizeSegment(rawName, null);
+                if (safeName == null) {
+                    continue;
+                }
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                    File subDir = new File(destDir, safeName);
+                    if (subDir.isDirectory() || subDir.mkdirs()) {
+                        copyDocumentTreeRecursive(treeUri, childDocId, subDir, depth + 1, copiedCount);
+                    }
+                } else {
+                    Uri childUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childDocId);
+                    File target = new File(destDir, safeName);
+                    if (streamUriToFile(childUri, target)) {
+                        copiedCount[0]++;
+                    } else {
+                        target.delete();
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Skip unreadable subtrees cleanly rather than failing the whole import.
+        }
+    }
+
+    private boolean streamUriToFile(Uri uri, File target) {
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) {
+                return false;
+            }
+            try (OutputStream output = new FileOutputStream(target)) {
+                byte[] buffer = new byte[COPY_BUFFER_BYTES];
+                for (int read; (read = input.read(buffer)) > 0; ) {
+                    output.write(buffer, 0, read);
+                }
+            }
+            return true;
+        } catch (Exception failed) {
+            return false;
+        }
+    }
+
+    private static String sanitizeSegment(String raw, String fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        String leaf = new File(raw).getName().trim();
+        if (leaf.isEmpty() || ".".equals(leaf) || "..".equals(leaf) || leaf.startsWith(".")) {
+            return fallback;
+        }
+        String cleaned = leaf.replace('/', '_').replace('\\', '_');
+        return cleaned.isEmpty() ? fallback : cleaned;
+    }
+
+    private static File uniqueChildFile(File dir, String filename) {
+        File candidate = new File(dir, filename);
+        if (!candidate.exists()) {
+            return candidate;
+        }
+        int dot = filename.lastIndexOf('.');
+        String stem = dot > 0 ? filename.substring(0, dot) : filename;
+        String ext = dot > 0 ? filename.substring(dot) : "";
+        for (int index = 2; index < 10000; ++index) {
+            File alt = new File(dir, stem + "_" + index + ext);
+            if (!alt.exists()) {
+                return alt;
+            }
+        }
+        return candidate;
+    }
+
+    private static void deleteRecursive(File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
+                }
+            }
+        }
+        file.delete();
     }
 
     // The document's own file name (its extension tells native code what it is), without folders.

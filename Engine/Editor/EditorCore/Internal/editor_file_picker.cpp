@@ -90,6 +90,13 @@ void EditorUVE::OpenFilePickerUVE(FilePickerRequestUVE request) {
                 pick(chosen);
             };
         }
+        if (m_entityDocumentActive && request.onPickMany) {
+            request.onPickMany = [this, pickMany = std::move(request.onPickMany)](
+                                     const std::vector<std::filesystem::path>& chosen) {
+                const EntityDocumentScopeUVE scope(*this);
+                pickMany(chosen);
+            };
+        }
         m_filePickerHost(std::move(request));
         return;
     }

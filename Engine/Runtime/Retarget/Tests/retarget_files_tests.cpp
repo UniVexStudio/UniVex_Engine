@@ -12,7 +12,9 @@
 #include "retarget_test_rig.h"
 #include "Support/test_scratch.h"
 #include "animation_clip_asset.h"
+#include "model_animations.h"
 #include "retarget_files.h"
+#include "skeleton_asset.h"
 
 namespace UVE::Retarget {
 namespace {
@@ -171,6 +173,144 @@ TEST(RetargetFilesUVETest, RetargetFilesUVE_ChangesNothingWhenTheCharacterCannot
     ASSERT_TRUE(Asset::SaveMeshAssetUVE(plain, fixture.request.model));
     EXPECT_FALSE(RetargetFilesUVE(fixture.request, GetHumanoidReferenceUVE()).ok);
     EXPECT_EQ(ReadAllUVE(fixture.request.animations[0]), idleBefore);
+}
+
+TEST(RetargetFilesUVETest, RetargetFilesUVE_ConformsFiftyEmbeddedAnimationsInOneWriteAndRestoresOnUndo) {
+    const fs::path dir = Tests::MakeTestCaseDirectoryUVE();
+    const TPoseRigUVE rig;
+    const fs::path model = dir / "hero.uvmodel";
+    ASSERT_TRUE(Asset::SaveMeshAssetUVE(MakeMeshUVE(rig), model));
+
+    constexpr std::size_t kTakeCount = 50U;
+    std::vector<Asset::AnimationClipAssetUVE> embeddedClips;
+    embeddedClips.reserve(kTakeCount);
+    RetargetFilesRequestUVE request;
+    request.model = model;
+    request.backupRoot = dir / ".retarget-backup";
+    request.useBrain = false;
+    for (std::size_t i = 0U; i < kTakeCount; ++i) {
+        const std::string name = "Anim_" + std::to_string(i);
+        embeddedClips.push_back(MakeClipUVE(rig, name));
+        request.animations.push_back(Asset::MakeEmbeddedClipPathUVE(model, name));
+    }
+    constexpr std::uint64_t kStamp = 0x123456789ABCDEF0ULL;
+    ASSERT_TRUE(Asset::SaveModelAnimationsUVE(model, embeddedClips, kStamp));
+    const std::string modelBefore = ReadAllUVE(model);
+
+    const RetargetFilesResultUVE result = RetargetFilesUVE(request, GetHumanoidReferenceUVE());
+    ASSERT_TRUE(result.ok) << result.error;
+    ASSERT_EQ(result.files.size(), 2U + kTakeCount);
+    for (const RetargetFileReportUVE& entry : result.files) {
+        EXPECT_TRUE(entry.changed) << entry.file << ": " << entry.note;
+    }
+
+    // All 50 embedded takes are now conformed with humanoid bones, and the source stamp is preserved.
+    std::vector<Asset::AnimationClipAssetUVE> afterTakes;
+    std::uint64_t afterStamp = 0U;
+    ASSERT_TRUE(Asset::LoadAllModelAnimationsUVE(model, afterTakes, &afterStamp));
+    ASSERT_EQ(afterTakes.size(), kTakeCount);
+    EXPECT_EQ(afterStamp, kStamp);
+    for (std::size_t i = 0U; i < kTakeCount; ++i) {
+        EXPECT_EQ(afterTakes[i].clipId, "Anim_" + std::to_string(i));
+        EXPECT_TRUE(afterTakes[i].conformed);
+        EXPECT_FALSE(afterTakes[i].bones.empty());
+        EXPECT_EQ(afterTakes[i].bones[1].bone, "Hips");
+    }
+
+    // Sibling .uvskel was created in the A-pose.
+    fs::path skelPath = model;
+    skelPath.replace_extension(".uvskel");
+    Asset::SkeletonAssetUVE skel;
+    ASSERT_TRUE(Asset::LoadSkeletonAssetUVE(skelPath, skel));
+    EXPECT_FALSE(skel.joints.empty());
+
+    // Undo restores the .uvmodel (including all 50 pre-retarget takes) byte-for-byte and removes .uvskel.
+    std::string restoreError;
+    ASSERT_TRUE(RestoreRetargetBackupUVE(result.backupDir, &restoreError)) << restoreError;
+    EXPECT_EQ(ReadAllUVE(model), modelBefore);
+    EXPECT_FALSE(fs::exists(skelPath));
+}
+
+TEST(RetargetFilesUVETest, RetargetFilesUVE_ConformsEmbeddedTakesOnlyOnAlreadyConformedModelAndBacksUpModel) {
+    const fs::path dir = Tests::MakeTestCaseDirectoryUVE();
+    const TPoseRigUVE rig;
+    const fs::path model = dir / "hero.uvmodel";
+    ASSERT_TRUE(Asset::SaveMeshAssetUVE(MakeMeshUVE(rig), model));
+
+    // Step 1: conform the character mesh alone first.
+    RetargetFilesRequestUVE firstReq;
+    firstReq.model = model;
+    firstReq.backupRoot = dir / ".backup-first";
+    firstReq.useBrain = false;
+    ASSERT_TRUE(RetargetFilesUVE(firstReq, GetHumanoidReferenceUVE()).ok);
+
+    // Step 2: embed 10 un-conformed takes into the already-conformed .uvmodel.
+    std::vector<Asset::AnimationClipAssetUVE> rawTakes;
+    RetargetFilesRequestUVE takesReq;
+    takesReq.backupRoot = dir / ".backup-takes";
+    takesReq.useBrain = false;
+    for (std::size_t i = 0U; i < 10U; ++i) {
+        const std::string name = "Take_" + std::to_string(i);
+        rawTakes.push_back(MakeClipUVE(rig, name));
+        takesReq.animations.push_back(Asset::MakeEmbeddedClipPathUVE(model, name));
+    }
+    ASSERT_TRUE(Asset::SaveModelAnimationsUVE(model, rawTakes, 42U));
+    const std::string modelBeforeTakes = ReadAllUVE(model);
+
+    // Step 3: conform ONLY the embedded takes (request.model is empty!).
+    const RetargetFilesResultUVE result = RetargetFilesUVE(takesReq, GetHumanoidReferenceUVE());
+    ASSERT_TRUE(result.ok) << result.error;
+    ASSERT_EQ(result.files.size(), 10U);
+    for (const RetargetFileReportUVE& entry : result.files) {
+        EXPECT_TRUE(entry.changed) << entry.file << ": " << entry.note;
+    }
+    ASSERT_FALSE(result.backupDir.empty());
+
+    std::vector<Asset::AnimationClipAssetUVE> afterTakes;
+    ASSERT_TRUE(Asset::LoadAllModelAnimationsUVE(model, afterTakes));
+    ASSERT_EQ(afterTakes.size(), 10U);
+    for (const Asset::AnimationClipAssetUVE& clip : afterTakes) {
+        EXPECT_TRUE(clip.conformed);
+    }
+
+    // Undo restores the real backing .uvmodel file byte-for-byte.
+    std::string restoreError;
+    ASSERT_TRUE(RestoreRetargetBackupUVE(result.backupDir, &restoreError)) << restoreError;
+    EXPECT_EQ(ReadAllUVE(model), modelBeforeTakes);
+}
+
+TEST(RetargetFilesUVETest, RetargetFilesUVE_StreamsLargeBatchOfLooseAnimationsWithRigCacheAndUndo) {
+    const fs::path dir = Tests::MakeTestCaseDirectoryUVE();
+    const TPoseRigUVE rig;
+    constexpr std::size_t kClipCount = 120U;
+    RetargetFilesRequestUVE request;
+    request.backupRoot = dir / ".retarget-backup";
+    request.useBrain = false;
+    std::vector<std::string> originals;
+    originals.reserve(kClipCount);
+    for (std::size_t i = 0U; i < kClipCount; ++i) {
+        const fs::path clipPath = dir / ("anim_" + std::to_string(i) + ".uvanim");
+        ASSERT_TRUE(Asset::SaveAnimationClipAssetUVE(MakeClipUVE(rig, "anim_" + std::to_string(i)), clipPath));
+        if (i == 0U || i == kClipCount - 1U) {
+            originals.push_back(ReadAllUVE(clipPath));
+        }
+        request.animations.push_back(clipPath);
+    }
+
+    const RetargetFilesResultUVE result = RetargetFilesUVE(request, GetHumanoidReferenceUVE());
+    ASSERT_TRUE(result.ok) << result.error;
+    ASSERT_EQ(result.files.size(), kClipCount);
+    for (std::size_t i = 0U; i < kClipCount; ++i) {
+        EXPECT_TRUE(result.files[i].changed);
+        const Asset::AnimationClipSummaryUVE summary = Asset::InspectAnimationClipFileSummaryUVE(request.animations[i]);
+        EXPECT_TRUE(summary.valid);
+        EXPECT_TRUE(summary.conformed);
+    }
+
+    std::string restoreError;
+    ASSERT_TRUE(RestoreRetargetBackupUVE(result.backupDir, &restoreError)) << restoreError;
+    EXPECT_EQ(ReadAllUVE(request.animations.front()), originals.front());
+    EXPECT_EQ(ReadAllUVE(request.animations.back()), originals.back());
 }
 
 } // namespace

@@ -195,6 +195,7 @@ private:
     std::shared_ptr<prism::TextInput> m_detailsSearch;
     std::shared_ptr<prism::Label> m_detailsTitle;
     std::shared_ptr<prism::Label> m_statusLabel;
+    std::shared_ptr<prism::Button> m_rendererProfileButton;
     std::shared_ptr<prism::Widget> m_dockArea;
     std::shared_ptr<prism::StackSwitcher> m_dockPages;
     std::vector<std::shared_ptr<prism::Button>> m_dockTabs;

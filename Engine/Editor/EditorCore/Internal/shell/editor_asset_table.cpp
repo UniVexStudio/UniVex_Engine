@@ -40,6 +40,7 @@
 #include "prism/Views.h"
 
 #include <algorithm>
+#include <unordered_map>
 #include <array>
 #include <cctype>
 #include <chrono>
@@ -561,12 +562,19 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
     createRow->add(addButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(saveAllButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     auto importButton = prism::make<prism::Button>("Import", prism::Icon::Open, prism::ButtonStyle::Toolbar);
-    importButton->setTooltip("Import models, textures and sounds into this folder");
+    importButton->setTooltip("Import one or more models, animations, textures, or sounds into this folder");
     importButton->onClick = [this] {
         const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
         static_cast<void>(m_editor.PromptImportFilesUVE(root / m_editor.m_assetTableDirectory));
     };
+    auto importFolderButton = prism::make<prism::Button>("Import Folder", prism::Icon::FolderOpen, prism::ButtonStyle::Toolbar);
+    importFolderButton->setTooltip("Import an entire folder (preserving subfolders) into this directory");
+    importFolderButton->onClick = [this] {
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        static_cast<void>(m_editor.PromptImportFolderUVE(root / m_editor.m_assetTableDirectory));
+    };
     createRow->add(importButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
+    createRow->add(importFolderButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     createRow->add(prism::make<prism::Spacer>(), prism::Slot{1.0F});
     auto createBar = prism::make<prism::Border>();
     createBar->setBackground(prism::ThemeColor(&prism::Theme::header));
@@ -627,6 +635,48 @@ prism::Ref<prism::Widget> EditorAssetTableUVE::BuildUVE() {
         if (id > 0 && static_cast<std::size_t>(id) <= m_folderIds.size()) {
             GoToFolderUVE(std::filesystem::path(m_folderIds[static_cast<std::size_t>(id - 1)]));
         }
+    };
+    m_folders->onContext = [this](prism::TreeNode* node, const prism::Vec2 at) {
+        if (node == nullptr || node->id <= 0 || static_cast<std::size_t>(node->id) > m_folderIds.size()) {
+            return;
+        }
+        const std::filesystem::path relFolder(m_folderIds[static_cast<std::size_t>(node->id - 1)]);
+        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        const std::string folderPrefix = relFolder.generic_string();
+        std::size_t animCount = 0U;
+        for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
+            if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                continue;
+            }
+            const std::string p = entry.relativePath.generic_string();
+            const bool inside = folderPrefix.empty() || p == folderPrefix ||
+                                (p.size() > folderPrefix.size() && p.compare(0U, folderPrefix.size(), folderPrefix) == 0 &&
+                                 p[folderPrefix.size()] == '/');
+            if (!inside) {
+                continue;
+            }
+            const std::string ext = LowerExtensionUVE(entry.relativePath);
+            if (ext == ".uvanim" || ext == ".uvmodel") {
+                ++animCount;
+            } else if (EditorUVE::IsModelSourcePathUVE(entry.relativePath)) {
+                const EditorModelSourceInfoUVE* const src = m_editor.FindModelSourceInfoUVE(entry.relativePath);
+                if (src == nullptr || src->rigged || src->hasSkeleton || src->animationCount > 0U || src->animationOnly) {
+                    ++animCount;
+                }
+            }
+        }
+        std::vector<prism::MenuItem> items;
+        items.push_back(prism::MenuItem::Item("Open", [this, relFolder] { GoToFolderUVE(relFolder); }, "", prism::Icon::FolderOpen));
+        if (animCount > 0U) {
+            prism::MenuItem retarget = prism::MenuItem::Item(
+                "Retarget Folder (" + std::to_string(animCount) + ")...",
+                [this, relFolder] { m_editor.OpenRetargetWindowForFolderUVE(relFolder); });
+            if (!m_editor.IsAuthoringCommandAllowedUVE()) {
+                retarget.disabled();
+            }
+            items.push_back(std::move(retarget));
+        }
+        prism::showMenu(std::move(items), prism::Rect{at.x, at.y, 1.0F, 1.0F}, prism::PopupPlacement::Below);
     };
     auto contentSection = prism::vbox(0.0F);
     contentSection->add(SectionHeaderUVE("Content", true, m_folders, searchToggle));
@@ -1582,7 +1632,11 @@ std::vector<prism::MenuItem> EditorAssetTableUVE::CatalogueMenuUVE() {
     };
 
     items.push_back(prism::MenuItem::Header("GET"));
-    items.push_back(prism::MenuItem::Item("Import to Current Folder", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Item("Import Files to Current Folder...", [this] { CreateCatalogueItemUVE(""); }, "Ctrl+I", prism::Icon::Open));
+    items.push_back(prism::MenuItem::Item("Import Folder to Current Folder...", [this] {
+        const Asset::ProjectFileSnapshotUVE snapshot = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+        static_cast<void>(m_editor.PromptImportFolderUVE(snapshot.contentRoot / m_editor.m_assetTableDirectory));
+    }, "", prism::Icon::FolderOpen));
     items.push_back(prism::MenuItem::Header("CREATE"));
     items.push_back(item("New Folder", "folder", prism::Icon::Folder, "Folder"));
     items.push_back(prism::MenuItem::Sep());
@@ -2210,7 +2264,7 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
     // A clip of an animation-only file places that file, playing this clip.
     const std::filesystem::path clipSource =
         extension == ".uvanim" ? m_editor.FindAnimationClipSourceUVE(entry.relativePath) : std::filesystem::path{};
-    if (modelReady || (info != nullptr && info->hasSkeleton) || !clipSource.empty()) {
+    if (modelReady || uvmodel || (info != nullptr && info->hasSkeleton) || !clipSource.empty()) {
         add(prism::MenuItem::Item("Place in Scene", [this, rel = entry.relativePath, clipSource, name] {
             const Scene::EntityUVE placed = clipSource.empty()
                                                 ? m_editor.PlaceModelSourceUVE(rel)
@@ -2229,20 +2283,96 @@ void EditorAssetTableUVE::ShowItemMenuUVE(const std::size_t entryIndex, const pr
             if (!entities.HasComponentUVE<Scene::MeshComponentUVE>(m_editor.m_selectedEntity)) {
                 return;
             }
-            Scene::MeshComponentUVE mesh = entities.GetComponentUVE<Scene::MeshComponentUVE>(m_editor.m_selectedEntity);
-            mesh.meshGuid = modelReady ? m_editor.RegisterImportedModelArtifactsUVE(importedModel) : *entry.registeredAssetGuid;
-            static_cast<void>(m_editor.SetSelectedSceneComponentUVE(EditorSceneComponentKindUVE::Mesh, mesh));
+            const Asset::AssetGuidUVE meshGuid =
+                modelReady ? m_editor.RegisterImportedModelArtifactsUVE(importedModel) : *entry.registeredAssetGuid;
+            static_cast<void>(m_editor.SetSelectedMeshSourceUVE(meshGuid, std::nullopt));
         }), canAssign);
     }
-    const bool canRetarget = extension == ".uvanim" || uvmodel || (info != nullptr && (info->rigged || info->hasSkeleton));
-    if (canRetarget) {
-        add(prism::MenuItem::Item("Retarget...", [this, extension, absolute, rel = entry.relativePath] {
-            if (extension == ".uvanim") {
-                m_editor.OpenRetargetWindowUVE({absolute}, {});
-            } else {
-                m_editor.OpenRetargetWindowUVE({}, rel);
+    const auto isRetargetableFile = [this](const Asset::ProjectFileEntryUVE& item) -> bool {
+        if (item.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+            return false;
+        }
+        const std::string ext = LowerExtensionUVE(item.relativePath);
+        if (ext == ".uvanim" || ext == ".uvmodel") {
+            return true;
+        }
+        if (EditorUVE::IsModelSourcePathUVE(item.relativePath)) {
+            const EditorModelSourceInfoUVE* const src = m_editor.FindModelSourceInfoUVE(item.relativePath);
+            return src == nullptr || src->rigged || src->hasSkeleton || src->animationCount > 0U || src->animationOnly;
+        }
+        return false;
+    };
+    const auto countInFolder = [&snapshot, &isRetargetableFile](const std::filesystem::path& relFolder) -> std::size_t {
+        const std::string prefix = relFolder.generic_string();
+        std::size_t count = 0U;
+        for (const Asset::ProjectFileEntryUVE& item : snapshot.entries) {
+            if (!isRetargetableFile(item)) {
+                continue;
             }
-        }), allowed);
+            const std::string p = item.relativePath.generic_string();
+            if (prefix.empty() || p == prefix ||
+                (p.size() > prefix.size() && p.compare(0U, prefix.size(), prefix) == 0 && p[prefix.size()] == '/')) {
+                ++count;
+            }
+        }
+        return count;
+    };
+    const bool inMultiSelect = m_editor.m_contentSelection.ItemsUVE().size() > 1U &&
+                               m_editor.m_contentSelection.ContainsUVE(entry.relativePath.generic_string());
+    if (inMultiSelect) {
+        // Strictly retarget ONLY the multi-selected items (expanding any selected folders recursively).
+        const std::vector<std::filesystem::path> picked = TopLevelContentPathsUVE(PickedContentUVE());
+        std::unordered_map<std::string, const Asset::ProjectFileEntryUVE*> entryIndex;
+        entryIndex.reserve(snapshot.entries.size());
+        for (const Asset::ProjectFileEntryUVE& item : snapshot.entries) {
+            entryIndex.emplace(item.relativePath.generic_string(), &item);
+        }
+        std::vector<std::filesystem::path> retargetPicked;
+        retargetPicked.reserve(picked.size());
+        std::size_t retargetableCount = 0U;
+        for (const std::filesystem::path& rel : picked) {
+            const auto found = entryIndex.find(rel.generic_string());
+            if (found == entryIndex.end()) {
+                continue;
+            }
+            if (found->second->kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                const std::size_t c = countInFolder(rel);
+                if (c > 0U) {
+                    retargetPicked.push_back(rel);
+                    retargetableCount += c;
+                }
+            } else if (isRetargetableFile(*found->second)) {
+                retargetPicked.push_back(rel);
+                ++retargetableCount;
+            }
+        }
+        if (!retargetPicked.empty()) {
+            add(prism::MenuItem::Item(
+                    "Retarget Selected (" + std::to_string(retargetableCount) + ")...",
+                    [this, retargetPicked = std::move(retargetPicked)] {
+                        m_editor.OpenRetargetWindowForPathsUVE(retargetPicked);
+                    }),
+                allowed);
+        }
+    } else if (directory) {
+        const std::size_t folderCount = countInFolder(entry.relativePath);
+        if (folderCount > 0U) {
+            add(prism::MenuItem::Item(
+                    "Retarget Folder (" + std::to_string(folderCount) + ")...",
+                    [this, rel = entry.relativePath] { m_editor.OpenRetargetWindowForFolderUVE(rel); }),
+                allowed);
+        }
+    } else {
+        const bool canRetarget = extension == ".uvanim" || uvmodel || (info != nullptr && (info->rigged || info->hasSkeleton));
+        if (canRetarget) {
+            add(prism::MenuItem::Item("Retarget...", [this, extension, absolute, rel = entry.relativePath] {
+                if (extension == ".uvanim") {
+                    m_editor.OpenRetargetWindowUVE({absolute}, {});
+                } else {
+                    m_editor.OpenRetargetWindowUVE({}, rel);
+                }
+            }), allowed);
+        }
     }
     if (!items.empty()) {
         items.push_back(prism::MenuItem::Sep());

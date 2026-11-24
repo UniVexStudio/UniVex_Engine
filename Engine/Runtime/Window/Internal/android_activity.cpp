@@ -60,6 +60,9 @@ inline constexpr const char* kPickFileMethodUVE = "pickFile";
 inline constexpr const char* kPickFileSignatureUVE = "()V";
 inline constexpr const char* kTakePickedFileMethodUVE = "takePickedFile";
 inline constexpr const char* kTakePickedFileSignatureUVE = "()Ljava/lang/String;";
+inline constexpr const char* kPickFilesMethodUVE = "pickFiles";
+inline constexpr const char* kPickFolderMethodUVE = "pickFolder";
+inline constexpr const char* kTakePickedPathsMethodUVE = "takePickedPaths";
 inline constexpr const char* kGetClipboardMethodUVE = "getClipboardText";
 inline constexpr const char* kGetClipboardSignatureUVE = "()Ljava/lang/String;";
 inline constexpr const char* kSetClipboardMethodUVE = "setClipboardText";
@@ -68,6 +71,65 @@ inline constexpr const char* kKeyEventClassUVE = "android/view/KeyEvent";
 inline constexpr const char* kKeyEventConstructorUVE = "(II)V";
 inline constexpr const char* kUnicodeCharMethodUVE = "getUnicodeChar";
 inline constexpr const char* kUnicodeCharSignatureUVE = "(I)I";
+
+[[nodiscard]] bool CallVoidActivityMethodUVE(ANativeActivity* const activity, const char* const methodName) {
+    if (activity == nullptr) {
+        return false;
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return false;
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID method = type != nullptr ? env->GetMethodID(type, methodName, kPickFileSignatureUVE) : nullptr;
+    bool started = false;
+    if (method != nullptr) {
+        env->CallVoidMethod(activity->clazz, method);
+        started = !env->ExceptionCheck();
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return started;
+}
+
+[[nodiscard]] std::optional<std::string> TakeOptionalStringActivityMethodUVE(ANativeActivity* const activity,
+                                                                             const char* const methodName) {
+    if (activity == nullptr) {
+        return std::string{};
+    }
+    const ScopedJniEnvUVE scope(activity->vm);
+    JNIEnv* const env = scope.EnvUVE();
+    if (env == nullptr) {
+        return std::string{};
+    }
+    const jclass type = env->GetObjectClass(activity->clazz);
+    const jmethodID take =
+        type != nullptr ? env->GetMethodID(type, methodName, kTakePickedFileSignatureUVE) : nullptr;
+    std::optional<std::string> result = std::string{}; // no picker: nothing will ever arrive
+    if (take != nullptr) {
+        const auto picked = static_cast<jstring>(env->CallObjectMethod(activity->clazz, take));
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        } else if (picked == nullptr) {
+            result = std::nullopt;
+        } else {
+            const char* const chars = env->GetStringUTFChars(picked, nullptr);
+            result = chars != nullptr ? std::string(chars) : std::string{};
+            if (chars != nullptr) {
+                env->ReleaseStringUTFChars(picked, chars);
+            }
+            env->DeleteLocalRef(picked);
+        }
+    }
+    env->ExceptionClear();
+    if (type != nullptr) {
+        env->DeleteLocalRef(type);
+    }
+    return result;
+}
 
 } // namespace
 
@@ -108,61 +170,23 @@ unsigned int AndroidKeyCharacterUVE(ANativeActivity* const activity, const int a
 }
 
 bool StartAndroidFilePickUVE(ANativeActivity* const activity) {
-    if (activity == nullptr) {
-        return false;
-    }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
-    if (env == nullptr) {
-        return false;
-    }
-    const jclass type = env->GetObjectClass(activity->clazz);
-    const jmethodID pick = type != nullptr ? env->GetMethodID(type, kPickFileMethodUVE, kPickFileSignatureUVE) : nullptr;
-    bool started = false;
-    if (pick != nullptr) {
-        env->CallVoidMethod(activity->clazz, pick);
-        started = !env->ExceptionCheck();
-    }
-    env->ExceptionClear();
-    if (type != nullptr) {
-        env->DeleteLocalRef(type);
-    }
-    return started;
+    return CallVoidActivityMethodUVE(activity, kPickFileMethodUVE);
 }
 
 std::optional<std::string> TakeAndroidPickedFileUVE(ANativeActivity* const activity) {
-    if (activity == nullptr) {
-        return std::string{};
-    }
-    const ScopedJniEnvUVE scope(activity->vm);
-    JNIEnv* const env = scope.EnvUVE();
-    if (env == nullptr) {
-        return std::string{};
-    }
-    const jclass type = env->GetObjectClass(activity->clazz);
-    const jmethodID take =
-        type != nullptr ? env->GetMethodID(type, kTakePickedFileMethodUVE, kTakePickedFileSignatureUVE) : nullptr;
-    std::optional<std::string> result = std::string{};   // no picker: nothing will ever arrive
-    if (take != nullptr) {
-        const auto picked = static_cast<jstring>(env->CallObjectMethod(activity->clazz, take));
-        if (env->ExceptionCheck()) {
-            env->ExceptionClear();
-        } else if (picked == nullptr) {
-            result = std::nullopt;
-        } else {
-            const char* const chars = env->GetStringUTFChars(picked, nullptr);
-            result = chars != nullptr ? std::string(chars) : std::string{};
-            if (chars != nullptr) {
-                env->ReleaseStringUTFChars(picked, chars);
-            }
-            env->DeleteLocalRef(picked);
-        }
-    }
-    env->ExceptionClear();
-    if (type != nullptr) {
-        env->DeleteLocalRef(type);
-    }
-    return result;
+    return TakeOptionalStringActivityMethodUVE(activity, kTakePickedFileMethodUVE);
+}
+
+bool StartAndroidMultiFilePickUVE(ANativeActivity* const activity) {
+    return CallVoidActivityMethodUVE(activity, kPickFilesMethodUVE);
+}
+
+bool StartAndroidFolderPickUVE(ANativeActivity* const activity) {
+    return CallVoidActivityMethodUVE(activity, kPickFolderMethodUVE);
+}
+
+std::optional<std::string> TakeAndroidPickedPathsUVE(ANativeActivity* const activity) {
+    return TakeOptionalStringActivityMethodUVE(activity, kTakePickedPathsMethodUVE);
 }
 
 std::optional<std::string> ReadAndroidClipboardUVE(ANativeActivity* const activity) {

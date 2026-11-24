@@ -60,6 +60,7 @@ public:
     void DrawUVE(std::uint32_t vertexCount, std::uint32_t instanceCount) override;
     void DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
                      std::uint32_t groupCountZ) override;
+    [[nodiscard]] bool RetainsUniformStatePerPipelineUVE() const noexcept override { return true; }
 
 private:
     using UniformRecordUVE = Detail::GlDeviceStateUVE::PipelineRecordUVE::UniformRecordUVE;
