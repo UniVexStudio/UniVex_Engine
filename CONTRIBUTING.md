@@ -56,3 +56,15 @@ Thank you for your interest in contributing to the **UniVex Engine**! This docum
    - [ ] All new tests pass cleanly.
    - [ ] Zero compiler warnings (`UVBT_WERROR=1`).
    - [ ] Filled out all sections of `.github/PULL_REQUEST_TEMPLATE.md`.
+
+---
+
+## 5. Contributor License Agreement (CLA)
+
+Because UniVex Engine and UniVex Hub are source-available, submitting a pull request, patch, commit, asset, or other contribution ("Contribution") to UniVex Studios means you agree to the following terms:
+
+- **Ownership**: You keep copyright ownership of your original Contribution.
+- **Copyright license**: You grant UniVex Studios a perpetual, worldwide, non-exclusive, irrevocable, royalty-free, transferable, and sublicensable license to reproduce, modify, prepare derivative works of, publicly display, publicly perform, distribute, and relicense your Contribution (in whole or in part) under the [UniVex Engine & Hub EULA](LICENSE) and any future license terms adopted by UniVex Studios.
+- **Patent license**: You grant UniVex Studios and recipients of UniVex software a perpetual, worldwide, non-exclusive, irrevocable, royalty-free patent license to make, use, sell, offer to sell, import, and otherwise transfer your Contribution, covering only the patent claims you control that are necessarily infringed by your Contribution alone or in combination with the project.
+- **Right to submit**: You represent that the Contribution is your original work (or that you have permission from your employer or copyright holder to submit it under these terms) and that, to your knowledge, it does not infringe third-party intellectual property rights.
+- **No warranty**: Unless required by applicable law or agreed to in writing, your Contribution is provided "as is", without warranties or conditions of any kind.
