@@ -4259,6 +4259,18 @@ struct Renderer3DUVE::ImplUVE {
                 lastBlendedVariant = blendedVariant;
                 lastRenderLayers = item.renderLayers;
                 lastOpacity = item.opacity;
+            } else if (commandBuffer.RetainsUniformStatePerPipelineUVE()) {
+                program->SetMatrix4x4UVE("uModel", item.worldMatrix);
+                program->SetMatrix3x3UVE("uNormalMatrix", normalMatrix);
+                if (item.renderLayers != lastRenderLayers) {
+                    program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                    lastRenderLayers = item.renderLayers;
+                }
+                if (item.opacity != lastOpacity) {
+                    program->SetFloatUVE("uSurfaceOpacity", item.opacity);
+                    lastOpacity = item.opacity;
+                }
+                program->ApplyToUVE(commandBuffer);
             } else {
                 commandBuffer.SetUniformMatrix4x4UVE("uModel", item.worldMatrix);
                 commandBuffer.SetUniformMatrix4x4UVE("uNormalMatrix", Math::ToMatrix4x4UVE(normalMatrix));
@@ -4718,6 +4730,24 @@ struct Renderer3DUVE::ImplUVE {
                 lastRenderLayers = item.renderLayers;
                 lastOpacity = item.opacity;
                 lastAlbedoColor = effectiveAlbedo;
+            } else if (commandBuffer.RetainsUniformStatePerPipelineUVE()) {
+                program->SetMatrix4x4UVE("uModel", item.worldMatrix);
+                program->SetMatrix3x3UVE("uNormalMatrix", normalMatrix);
+                if (overrideAlbedo && (effectiveAlbedo.x != lastAlbedoColor.x ||
+                                       effectiveAlbedo.y != lastAlbedoColor.y ||
+                                       effectiveAlbedo.z != lastAlbedoColor.z)) {
+                    program->SetVector3UVE("uAlbedoColor", effectiveAlbedo);
+                    lastAlbedoColor = effectiveAlbedo;
+                }
+                if (item.renderLayers != lastRenderLayers) {
+                    program->SetIntUVE("uMeshRenderLayers", static_cast<std::int32_t>(item.renderLayers));
+                    lastRenderLayers = item.renderLayers;
+                }
+                if (item.opacity != lastOpacity) {
+                    program->SetFloatUVE("uSurfaceOpacity", item.opacity);
+                    lastOpacity = item.opacity;
+                }
+                program->ApplyToUVE(commandBuffer);
             } else {
                 commandBuffer.SetUniformMatrix4x4UVE("uModel", item.worldMatrix);
                 commandBuffer.SetUniformMatrix4x4UVE("uNormalMatrix", Math::ToMatrix4x4UVE(normalMatrix));

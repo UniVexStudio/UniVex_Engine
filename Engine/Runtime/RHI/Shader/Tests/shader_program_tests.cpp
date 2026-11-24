@@ -249,8 +249,9 @@ TEST_F(ShaderProgramUVETest, ApplyToUVE_RetainingBufferFlushesOnlyDirtyUniformsO
     program->ApplyToUVE(firstBuffer);
     EXPECT_TRUE(firstBuffer.pushedUniforms.empty());
 
-    // Switching to a new command buffer flushes the full uniform state cleanly.
+    // Switching to a new command buffer flushes the full uniform state cleanly even if memory is reused.
     RetainingCommandBufferStubUVE secondBuffer;
+    EXPECT_NE(firstBuffer.GetInstanceIdUVE(), secondBuffer.GetInstanceIdUVE());
     program->ApplyToUVE(secondBuffer);
     EXPECT_EQ(secondBuffer.pushedUniforms.size(), 2U);
 }

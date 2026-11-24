@@ -105,7 +105,8 @@ void ShaderProgramUVE::ApplyToUVE(ICommandBufferUVE& commandBuffer) const {
     };
 
     const bool retainsState = commandBuffer.RetainsUniformStatePerPipelineUVE();
-    if (retainsState && m_lastSyncedPipeline == m_pipeline && m_lastSyncedBuffer == &commandBuffer) {
+    const std::uint64_t bufferId = commandBuffer.GetInstanceIdUVE();
+    if (retainsState && m_lastSyncedPipeline == m_pipeline && m_lastSyncedBufferId == bufferId && bufferId != 0U) {
         for (const std::size_t index : m_dirtyUniformIndices) {
             PendingUniformEntryUVE& entry = m_uniformEntries[index];
             flushEntry(entry);
@@ -122,10 +123,10 @@ void ShaderProgramUVE::ApplyToUVE(ICommandBufferUVE& commandBuffer) const {
     m_dirtyUniformIndices.clear();
     if (retainsState) {
         m_lastSyncedPipeline = m_pipeline;
-        m_lastSyncedBuffer = &commandBuffer;
+        m_lastSyncedBufferId = bufferId;
     } else {
         m_lastSyncedPipeline = kInvalidPipelineHandleUVE;
-        m_lastSyncedBuffer = nullptr;
+        m_lastSyncedBufferId = 0U;
     }
 }
 

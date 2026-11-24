@@ -117,7 +117,7 @@ private:
         m_uniformIndexByName;
     mutable std::vector<std::size_t> m_dirtyUniformIndices;
     mutable PipelineHandleUVE m_lastSyncedPipeline = kInvalidPipelineHandleUVE;
-    mutable const ICommandBufferUVE* m_lastSyncedBuffer = nullptr;
+    mutable std::uint64_t m_lastSyncedBufferId = 0U;
 };
 
 } // namespace UVE::Render::Shader

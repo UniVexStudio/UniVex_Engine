@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string_view>
@@ -205,7 +206,18 @@ public:
     /// across draws on the same command buffer (immediate OpenGL / GLES), letting ShaderProgramUVE
     /// flush only uniforms that changed since the last ApplyToUVE() instead of re-uploading all ~200.
     [[nodiscard]] virtual bool RetainsUniformStatePerPipelineUVE() const noexcept { return false; }
+
+    /// Monotonic identity unique to this command buffer object (prevents heap-address aliasing
+    /// across frames when command buffers are allocated and destroyed each frame).
+    [[nodiscard]] std::uint64_t GetInstanceIdUVE() const noexcept { return m_instanceId; }
+
 private:
+    [[nodiscard]] static std::uint64_t AllocateInstanceIdUVE() noexcept {
+        static std::atomic<std::uint64_t> nextId{1U};
+        return nextId.fetch_add(1U, std::memory_order_relaxed);
+    }
+
+    std::uint64_t m_instanceId = AllocateInstanceIdUVE();
     std::vector<std::shared_ptr<void>> m_retainedResources;
 };
 
