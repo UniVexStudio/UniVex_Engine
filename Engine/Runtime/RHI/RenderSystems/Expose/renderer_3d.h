@@ -76,6 +76,8 @@ public:
     void SetMaterialSamplerSettingsUVE(bool repeatEnabled, float maxAnisotropy) noexcept override;
     void SetShadingModeUVE(std::int32_t shadingMode) noexcept override;
     void SetScalabilityModeUVE(std::int32_t scalabilityMode) noexcept override;
+    void SetRendererProfileUVE(Platform::RendererProfileUVE profile) noexcept override;
+    [[nodiscard]] RendererProfileResolutionUVE GetRendererProfileResolutionUVE() const noexcept override;
     void SetMeshUploadBudgetUVE(std::size_t meshesPerFrame) noexcept override;
     void SetUIRuntimeUVE(const UI::UIRuntimeUVE* uiRuntime) noexcept override;
     void SetVfxDrawListUVE(const VfxDrawListUVE* vfxDrawList) noexcept override;

@@ -511,6 +511,49 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildToolbarRowUVE() {
     m_statusLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
     row->add(m_statusLabel, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
 
+    m_rendererProfileButton = prism::make<prism::Button>("Forward+", prism::Icon::Profiler, prism::ButtonStyle::Toolbar);
+    m_rendererProfileButton->setTooltip("Project Renderer Profile (Compatibility / Mobile / Forward+)");
+    m_rendererProfileButton->onClick = [this] {
+        const Render::RendererProfileResolutionUVE res = m_editor.GetRendererProfileResolutionUVE();
+        static constexpr std::array<Platform::RendererProfileUVE, 3> kProfiles{
+            Platform::RendererProfileUVE::Compatibility,
+            Platform::RendererProfileUVE::Mobile,
+            Platform::RendererProfileUVE::ForwardPlus,
+        };
+        std::vector<prism::MenuItem> items;
+        for (const Platform::RendererProfileUVE profile : kProfiles) {
+            std::string label(Platform::GetRendererProfileDisplayNameUVE(profile));
+            if (profile == Platform::RendererProfileUVE::Compatibility) {
+                label += " (Low-End / Fast RGBA8)";
+            } else if (profile == Platform::RendererProfileUVE::Mobile) {
+                label += " (Balanced Mobile PBR)";
+            } else {
+                label += " (Desktop Full PBR)";
+            }
+            items.push_back(prism::MenuItem::Check(
+                std::move(label), res.requested == profile, [this, profile] {
+                    m_editor.SetRendererProfileUVE(profile);
+                    const Render::RendererProfileResolutionUVE updated = m_editor.GetRendererProfileResolutionUVE();
+                    if (prism::Application::exists()) {
+                        if (updated.fallbackApplied) {
+                            prism::Application::get().notify(
+                                std::string(Platform::GetRendererProfileDisplayNameUVE(updated.requested)) +
+                                    " not supported on this GPU - using " +
+                                    std::string(Platform::GetRendererProfileDisplayNameUVE(updated.effective)),
+                                prism::ToastLevel::Warning);
+                        } else {
+                            prism::Application::get().notify(
+                                "Renderer switched to " +
+                                    std::string(Platform::GetRendererProfileDisplayNameUVE(updated.effective)),
+                                prism::ToastLevel::Info);
+                        }
+                    }
+                }));
+        }
+        prism::showMenu(std::move(items), m_rendererProfileButton->rect(), prism::PopupPlacement::Below);
+    };
+    row->add(m_rendererProfileButton, prism::Slot{0.0F, {}, prism::HAlign::Right, prism::VAlign::Center});
+
     auto sized = prism::make<prism::SizeBox>();
     sized->setHeightOverride(singleSurface ? 22.0F : 25.0F);
     sized->setContent(row);
@@ -1144,6 +1187,24 @@ void EditorShellUVE::RefreshToolbarUVE() {
         }
         if (m_statusLabel->text() != text) {
             m_statusLabel->setText(text);
+        }
+    }
+    if (m_rendererProfileButton) {
+        const Render::RendererProfileResolutionUVE res = m_editor.GetRendererProfileResolutionUVE();
+        std::string label(Platform::GetRendererProfileDisplayNameUVE(res.effective));
+        if (res.fallbackApplied) {
+            label += " (Fallback)";
+        }
+        if (m_rendererProfileButton->text() != label) {
+            m_rendererProfileButton->setText(label);
+            if (res.fallbackApplied) {
+                m_rendererProfileButton->setTooltip(
+                    "Requested " + std::string(Platform::GetRendererProfileDisplayNameUVE(res.requested)) +
+                    " -> Fallback: " + std::string(res.fallbackReason));
+            } else {
+                m_rendererProfileButton->setTooltip(
+                    std::string(Platform::GetRendererProfileDescriptionUVE(res.effective)));
+            }
         }
     }
 }

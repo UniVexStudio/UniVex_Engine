@@ -432,7 +432,12 @@ constexpr std::array<float, 4> kDefaultSceneClearColorUVE{0.050F, 0.050F, 0.050F
 // renderability (all desktop GL 3.3+, Vulkan, Null model, and modern Android GPUs exposing
 // GL_EXT_color_buffer_float / GL_EXT_color_buffer_half_float), falling back to core RGBA8Unorm
 // only on constrained ES 3.0 implementations without float render target extensions.
-[[nodiscard]] TextureFormatUVE SceneColorTargetFormatUVE(const IRenderDeviceUVE& renderDevice) noexcept {
+[[nodiscard]] TextureFormatUVE SceneColorTargetFormatUVE(
+    const IRenderDeviceUVE& renderDevice,
+    const Platform::RendererProfileUVE effectiveProfile = Platform::RendererProfileUVE::ForwardPlus) noexcept {
+    if (effectiveProfile == Platform::RendererProfileUVE::Compatibility) {
+        return TextureFormatUVE::RGBA8Unorm;
+    }
     return renderDevice.GetCapabilitiesUVE().halfFloatColorTargets != RenderFeatureSupportUVE::Unsupported
                ? TextureFormatUVE::RGBA16Float
                : TextureFormatUVE::RGBA8Unorm;
@@ -1398,7 +1403,8 @@ struct Renderer3DUVE::ImplUVE {
             cache.captureResolution = resolution;
         }
         if (cache.cube == kInvalidTextureHandleUVE) {
-            const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
+            const TextureFormatUVE sceneColorFormat =
+                SceneColorTargetFormatUVE(renderDevice, rendererProfileResolution.effective);
             TextureDescUVE cubeDesc{resolution, resolution, sceneColorFormat, 1};
             cubeDesc.type = TextureTypeUVE::Cubemap;
             cubeDesc.arrayLayers =
@@ -1591,9 +1597,14 @@ struct Renderer3DUVE::ImplUVE {
     /// The stage description the shared built-in lit program is built from, kept so a material that
     /// asks for a different blend/cull/depth state can have the SAME source linked with that state.
     Shader::ShaderProgramStagesDescUVE defaultLitStagesDesc;
-    /// Built-in lit programs by pipeline state (see MaterialPipelineStateUVE). Bounded by the
-    /// number of distinct state combinations the project actually authors, not by material count.
+    /// Built-in lit programs by (effectiveProfile << 16) | MaterialPipelineStateUVE::PackUVE().
     std::unordered_map<std::uint32_t, std::shared_ptr<Shader::ShaderProgramUVE>> standardLitPrograms;
+    std::array<std::shared_ptr<Shader::ShaderProgramUVE>, 3U> defaultLitProgramsByProfile{};
+    std::array<std::shared_ptr<Shader::ShaderProgramUVE>, 3U> defaultLitBlendedProgramsByProfile{};
+    RendererProfileResolutionUVE rendererProfileResolution{};
+    /// Programs that already received this render pass's frame-wide lighting & shadow uniforms.
+    std::vector<const Shader::ShaderProgramUVE*> frameUniformUploadedPrograms;
+    void BeginFrameUniformScopeUVE() noexcept { frameUniformUploadedPrograms.clear(); }
     /// Material handles the primitive path is drawing this frame, keyed by GUID and pruned to the
     /// GUIDs extraction named. Mirrors `unmaterialedMeshHandles`: the handle owns the reference
     /// that keeps the payload loaded between extraction and the colour pass, which a
@@ -1660,8 +1671,15 @@ struct Renderer3DUVE::ImplUVE {
         Asset::AssetGuidUVE meshGuid = Asset::kInvalidAssetGuidUVE;
         std::vector<Math::Matrix4x4UVE> lastLocals;
         Math::AabbUVE localBounds;
+        std::vector<std::uint32_t> jointToBoneIndex;
+        std::size_t cachedSkeletonBoneCount = 0U;
+        std::uint64_t cachedSkeletonNameHash = 0U;
     };
     std::unordered_map<std::uint64_t, SkinnedMeshGpuUVE> skinnedMeshCache;
+    std::vector<Math::Matrix4x4UVE> skinLocalsScratch;
+    std::vector<Math::Matrix4x4UVE> skinMatricesScratch;
+    std::vector<Asset::MeshVertexUVE> skinVerticesScratch;
+    std::vector<Math::Matrix4x4UVE> skinModelSpaceScratch;
     std::uint64_t skinnedFrame = 0U;
     std::size_t skinnedMeshesThisFrame = 0U;
     std::unordered_map<std::uint8_t, MeshGpuResourcesUVE> primitiveMeshCache;
@@ -1824,7 +1842,8 @@ struct Renderer3DUVE::ImplUVE {
     /// not usable; higher bloom scales are added later, only when requested.
     [[nodiscard]] std::optional<SizedTargetSetUVE> CreateTargetSetUVE(const std::uint32_t width,
                                                                       const std::uint32_t height) {
-        const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
+        const TextureFormatUVE sceneColorFormat =
+            SceneColorTargetFormatUVE(renderDevice, rendererProfileResolution.effective);
         SizedTargetSetUVE set;
         set.colorTarget =
             renderDevice.CreateTextureUVE(TextureDescUVE{width, height, sceneColorFormat, 1});
@@ -1911,6 +1930,83 @@ struct Renderer3DUVE::ImplUVE {
         DestroyTextureIfValidUVE(renderDevice, set.wboitRevealTarget);
     }
 
+    void RecreateTargetSetsForProfileFormatChangeUVE() {
+        const std::uint32_t activeW = targetWidth;
+        const std::uint32_t activeH = targetHeight;
+        for (const auto& [sizeKey, set] : targetSetCache) {
+            DestroyTargetSetUVE(set);
+        }
+        targetSetCache.clear();
+        colorTarget = kInvalidTextureHandleUVE;
+        depthTarget = kInvalidTextureHandleUVE;
+        bloomMipTargets = {};
+        bloomMipTargetCount = 0U;
+        ssaoTarget = kInvalidTextureHandleUVE;
+        ssaoBlurTarget = kInvalidTextureHandleUVE;
+        contactShadowTarget = kInvalidTextureHandleUVE;
+        ssrTarget = kInvalidTextureHandleUVE;
+        if (activeW > 0U && activeH > 0U) {
+            if (std::optional<SizedTargetSetUVE> recreated = CreateTargetSetUVE(activeW, activeH);
+                recreated.has_value()) {
+                const auto inserted = targetSetCache.emplace(std::pair{activeW, activeH}, *recreated);
+                ActivateTargetSetUVE(inserted.first->second, activeW, activeH);
+            }
+        }
+    }
+
+    void EnsureShadowMapResolutionUVE(const std::uint32_t requestedResolution) {
+        const std::uint32_t clamped = std::clamp(requestedResolution, 256U, 4096U);
+        if (clamped == shadowMapResolution && AreShadowMapTargetsValidUVE(shadowMapTargets)) {
+            return;
+        }
+        for (TextureHandleUVE& target : shadowMapTargets) {
+            DestroyTextureIfValidUVE(renderDevice, target);
+            target = renderDevice.CreateTextureUVE(
+                TextureDescUVE{clamped, clamped, TextureFormatUVE::Depth32Float, 1});
+        }
+        shadowMapResolution = clamped;
+    }
+
+    [[nodiscard]] Shader::ShaderProgramStagesDescUVE MakeLitStagesDescForProfileUVE(
+        const Platform::RendererProfileUVE profile) const {
+        Shader::ShaderProgramStagesDescUVE desc = defaultLitStagesDesc;
+        if (profile == Platform::RendererProfileUVE::Compatibility) {
+            desc.vertexSource.extraDefines.emplace_back("UVE_COMPATIBILITY", "1");
+            desc.fragmentSource.extraDefines.emplace_back("UVE_COMPATIBILITY", "1");
+        } else if (profile == Platform::RendererProfileUVE::Mobile) {
+            desc.vertexSource.extraDefines.emplace_back("UVE_MOBILE_PROFILE", "1");
+            desc.fragmentSource.extraDefines.emplace_back("UVE_MOBILE_PROFILE", "1");
+        }
+        return desc;
+    }
+
+    void EnsureDefaultLitProgramsForProfileUVE(const Platform::RendererProfileUVE profile) {
+        if (defaultLitStagesDesc.vertexLayout.empty()) {
+            return;
+        }
+        const std::size_t idx = std::min<std::size_t>(static_cast<std::size_t>(profile), 2U);
+        if (defaultLitProgramsByProfile[idx] == nullptr) {
+            Shader::ShaderProgramStagesDescUVE desc = MakeLitStagesDescForProfileUVE(profile);
+            desc.debugNameUVE = "BuiltInLit default (" +
+                                std::string(Platform::GetRendererProfileNameUVE(profile)) + ")";
+            defaultLitProgramsByProfile[idx] = shaderManager.CreateProgramFromStagesUVE(desc);
+            const std::uint32_t key =
+                (static_cast<std::uint32_t>(idx) << 16U) |
+                MaterialPipelineStateUVE{desc.blendMode, desc.cullMode, desc.depthTestEnabled, desc.depthWriteEnabled}
+                    .PackUVE();
+            standardLitPrograms.emplace(key, defaultLitProgramsByProfile[idx]);
+
+            Shader::ShaderProgramStagesDescUVE blendedDesc = desc;
+            blendedDesc.depthWriteEnabled = false;
+            blendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
+            blendedDesc.depthCompare = DepthCompareUVE::LessOrEqual;
+            blendedDesc.debugNameUVE = desc.debugNameUVE + " blended";
+            defaultLitBlendedProgramsByProfile[idx] = shaderManager.CreateProgramFromStagesUVE(blendedDesc);
+        }
+        defaultLitMaterialResources.program = defaultLitProgramsByProfile[idx];
+        defaultLitMaterialResources.blendedProgram = defaultLitBlendedProgramsByProfile[idx];
+    }
+
     [[nodiscard]] SizedTargetSetUVE* ActiveTargetSetMutableUVE() noexcept {
         const auto it = targetSetCache.find({targetWidth, targetHeight});
         return it == targetSetCache.end() ? nullptr : &it->second;
@@ -1925,7 +2021,8 @@ struct Renderer3DUVE::ImplUVE {
             set->taaHistoryTargets[1] != kInvalidTextureHandleUVE) {
             return true;
         }
-        const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
+        const TextureFormatUVE sceneColorFormat =
+            SceneColorTargetFormatUVE(renderDevice, rendererProfileResolution.effective);
         for (TextureHandleUVE& handle : set->taaHistoryTargets) {
             if (handle == kInvalidTextureHandleUVE) {
                 handle = renderDevice.CreateTextureUVE(
@@ -1953,7 +2050,8 @@ struct Renderer3DUVE::ImplUVE {
             set->wboitRevealTarget != kInvalidTextureHandleUVE) {
             return true;
         }
-        const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
+        const TextureFormatUVE sceneColorFormat =
+            SceneColorTargetFormatUVE(renderDevice, rendererProfileResolution.effective);
         if (set->wboitAccumTarget == kInvalidTextureHandleUVE) {
             set->wboitAccumTarget = renderDevice.CreateTextureUVE(
                 TextureDescUVE{targetWidth, targetHeight, sceneColorFormat, 1});
@@ -1974,9 +2072,10 @@ struct Renderer3DUVE::ImplUVE {
     }
 
     [[nodiscard]] bool EnsureClusteredLightBuffersUVE() {
-#if defined(__ANDROID__)
-        return false;
-#else
+        if (rendererProfileResolution.effective != Platform::RendererProfileUVE::ForwardPlus ||
+            renderDevice.GetCapabilitiesUVE().storageBuffers == RenderFeatureSupportUVE::Unsupported) {
+            return false;
+        }
         if (clusteredLightBuffer != kInvalidBufferHandleUVE &&
             clusteredCellBuffer != kInvalidBufferHandleUVE &&
             clusteredIndexBuffer != kInvalidBufferHandleUVE) {
@@ -2006,7 +2105,6 @@ struct Renderer3DUVE::ImplUVE {
             return false;
         }
         return true;
-#endif
     }
 
     /// Points the active target members at `set`. Every render pass reads these members, so
@@ -2042,7 +2140,8 @@ struct Renderer3DUVE::ImplUVE {
             requestedMipCount, MaximumBloomMipCountForTargetUVE(targetWidth, targetHeight));
         std::uint32_t mipWidth = HalfExtentUVE(targetWidth);
         std::uint32_t mipHeight = HalfExtentUVE(targetHeight);
-        const TextureFormatUVE sceneColorFormat = SceneColorTargetFormatUVE(renderDevice);
+        const TextureFormatUVE sceneColorFormat =
+            SceneColorTargetFormatUVE(renderDevice, rendererProfileResolution.effective);
         for (std::uint32_t mipIndex = 1U; mipIndex < targetMipCount; ++mipIndex) {
             mipWidth = HalfExtentUVE(mipWidth);
             mipHeight = HalfExtentUVE(mipHeight);
@@ -2540,14 +2639,16 @@ struct Renderer3DUVE::ImplUVE {
     [[nodiscard]] std::shared_ptr<Shader::ShaderProgramUVE> StandardLitProgramUVE(
         const Asset::MaterialAssetUVE& material) {
         const MaterialPipelineStateUVE state = ResolveMaterialPipelineStateUVE(material);
-        const std::uint32_t key = state.PackUVE();
+        const std::uint32_t profileSlot =
+            std::min<std::uint32_t>(static_cast<std::uint32_t>(rendererProfileResolution.effective), 2U);
+        const std::uint32_t key = (profileSlot << 16U) | state.PackUVE();
         if (const auto cached = standardLitPrograms.find(key); cached != standardLitPrograms.end()) {
             return cached->second;
         }
         if (defaultLitStagesDesc.vertexLayout.empty()) {
             return nullptr; // Program creation has not run yet this session.
         }
-        Shader::ShaderProgramStagesDescUVE desc = defaultLitStagesDesc;
+        Shader::ShaderProgramStagesDescUVE desc = MakeLitStagesDescForProfileUVE(rendererProfileResolution.effective);
         desc.blendMode = state.blendMode;
         desc.cullMode = state.cullMode;
         desc.depthTestEnabled = state.depthTestEnabled;
@@ -2909,23 +3010,45 @@ struct Renderer3DUVE::ImplUVE {
             return nullptr;
         }
         const std::vector<Scene::SkeletonBonePoseUVE> pose = Scene::GetSkeletonCurrentPoseUVE(*skeleton);
-        // The same name rules the recorded Skin was built with, so an imported model and the
-        // skeleton an animator drives cannot bind differently. A joint the lookup cannot place -
-        // no bone of its name, or a pose that does not cover that bone - is left at its own rest
-        // pose rather than being skinned by whatever bone happened to sit at that index.
-        Scene::SkeletonBoneLookupUVE boneLookup;
-        boneLookup.BuildUVE(*skeleton);
-        std::vector<Math::Matrix4x4UVE> locals;
+        const MeshGpuResourcesUVE& shared = ResolveMeshGpuResourcesUVE(guid, &mesh);
+        if (!IsValidMeshGpuResourcesUVE(shared)) {
+            return nullptr;
+        }
+        const std::uint64_t key = (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index;
+        SkinnedMeshGpuUVE& entry = skinnedMeshCache[key];
+
+        // Hash bone names to detect rig edits without rebuilding SkeletonBoneLookupUVE every frame.
+        std::uint64_t nameHash = 1469598103934665603ULL;
+        for (const Scene::SkeletonBoneUVE& bone : skeleton->bones) {
+            for (const unsigned char ch : bone.name) {
+                nameHash = (nameHash ^ ch) * 1099511628211ULL;
+            }
+            nameHash = (nameHash ^ 0xFFU) * 1099511628211ULL;
+        }
+        constexpr std::uint32_t kUnmappedJointBoneUVE = std::numeric_limits<std::uint32_t>::max();
+        if (entry.meshGuid != guid || entry.jointToBoneIndex.size() != mesh.joints.size() ||
+            entry.cachedSkeletonBoneCount != skeleton->bones.size() ||
+            entry.cachedSkeletonNameHash != nameHash) {
+            Scene::SkeletonBoneLookupUVE boneLookup;
+            boneLookup.BuildUVE(*skeleton);
+            entry.jointToBoneIndex.assign(mesh.joints.size(), kUnmappedJointBoneUVE);
+            for (std::size_t jointIndex = 0U; jointIndex < mesh.joints.size(); ++jointIndex) {
+                std::uint32_t foundIndex = 0U;
+                if (boneLookup.TryFindUVE(mesh.joints[jointIndex].name, foundIndex)) {
+                    entry.jointToBoneIndex[jointIndex] = foundIndex;
+                }
+            }
+            entry.cachedSkeletonBoneCount = skeleton->bones.size();
+            entry.cachedSkeletonNameHash = nameHash;
+        }
+
+        auto& locals = skinLocalsScratch;
+        locals.clear();
         locals.reserve(mesh.joints.size());
         for (std::size_t jointIndex = 0U; jointIndex < mesh.joints.size(); ++jointIndex) {
             const Asset::MeshJointUVE& joint = mesh.joints[jointIndex];
-            std::uint32_t foundIndex = 0U;
-            if (!boneLookup.TryFindUVE(joint.name, foundIndex) || foundIndex >= pose.size()) {
-                // The joint's own rest pose, relative to its parent joint: bind(parent)^-1 * bind(joint),
-                // with bind = inverse(inverseBindMatrix). An identity local is NOT the rest pose - it
-                // drops the joint onto its parent and pulls every vertex it holds off the model, which
-                // is how a character whose rig names only partly match the skeleton lost its skin and
-                // left nothing but bones on screen.
+            const std::uint32_t foundIndex = entry.jointToBoneIndex[jointIndex];
+            if (foundIndex == kUnmappedJointBoneUVE || foundIndex >= pose.size()) {
                 Math::Matrix4x4UVE bind;
                 Math::Matrix4x4UVE rest = Math::Matrix4x4UVE::IdentityUVE();
                 if (Math::TryInverseUVE(joint.inverseBindMatrix, bind)) {
@@ -2940,12 +3063,6 @@ struct Renderer3DUVE::ImplUVE {
             const Scene::SkeletonBonePoseUVE& local = pose[foundIndex];
             locals.push_back(Math::Matrix4x4UVE::ComposeTrsUVE(local.position, local.rotation, local.scale));
         }
-        const MeshGpuResourcesUVE& shared = ResolveMeshGpuResourcesUVE(guid, &mesh);
-        if (!IsValidMeshGpuResourcesUVE(shared)) {
-            return nullptr;
-        }
-        const std::uint64_t key = (static_cast<std::uint64_t>(entity.generation) << 32U) | entity.index;
-        SkinnedMeshGpuUVE& entry = skinnedMeshCache[key];
         if (entry.resources.vertexBuffer.value != 0U && entry.meshGuid == guid &&
             entry.lastLocals.size() == locals.size() &&
             std::memcmp(entry.lastLocals.data(), locals.data(), locals.size() * sizeof(Math::Matrix4x4UVE)) == 0) {
@@ -2956,15 +3073,18 @@ struct Renderer3DUVE::ImplUVE {
             ++skinnedMeshesThisFrame;
             return &entry.resources;
         }
-        std::vector<Math::Matrix4x4UVE> skinning;
-        std::vector<Asset::MeshVertexUVE> vertices;
+        auto& skinning = skinMatricesScratch;
+        auto& vertices = skinVerticesScratch;
+        skinning.clear();
+        vertices.clear();
         if (!Asset::TryResolvePoseUVE(mesh.joints, locals, skinning)) {
             return nullptr;
         }
         // Reconcile 100x / 0.01x FBX unit-scale mismatches between the skeleton pose and the mesh's
         // inverseBindMatrix (e.g. a unit-scale RigFromMeshUVE skeleton on a cm-scaled FBX bind matrix,
         // or a cm-scaled FBX animation clip playing on a conformed unit-scale mesh).
-        std::vector<Math::Matrix4x4UVE> modelSpace;
+        auto& modelSpace = skinModelSpaceScratch;
+        modelSpace.clear();
         for (std::size_t index = 0U; index < skinning.size(); ++index) {
             const Math::Matrix4x4UVE& sk = skinning[index];
             const float skinScale =
@@ -3057,7 +3177,7 @@ struct Renderer3DUVE::ImplUVE {
         entry.resources.indexCount = shared.indexCount;
         entry.frame = skinnedFrame;
         entry.meshGuid = guid;
-        entry.lastLocals = std::move(locals);
+        entry.lastLocals = locals;
         entry.localBounds = outBounds;
         if (!IsValidMeshGpuResourcesUVE(entry.resources)) {
             return nullptr;
@@ -3700,19 +3820,20 @@ struct Renderer3DUVE::ImplUVE {
         const std::size_t activeLightCount = std::min(frameUniforms.lights.SizeUVE(), frameUniforms.activeLightCap);
         program.SetIntUVE("uActiveLightCount",
                           activeLightCount == 0U ? -1 : static_cast<std::int32_t>(activeLightCount));
-#if !defined(__ANDROID__)
-        program.SetIntUVE("uClusteredLightingEnabled", frameUniforms.clusteredLightingEnabled ? 1 : 0);
-        if (frameUniforms.clusteredLightingEnabled) {
-            program.SetVector3UVE("uClusterGridDims",
-                                  Math::Vector3UVE{static_cast<float>(kLightClusterCountXUVE),
-                                                   static_cast<float>(kLightClusterCountYUVE),
-                                                   static_cast<float>(kLightClusterCountZUVE)});
-            program.SetVector2UVE("uClusterNearFar",
-                                  Math::Vector2UVE{frameUniforms.clusterNear, frameUniforms.clusterFar});
-            program.SetVector2UVE("uClusterViewportSize",
-                                  Math::Vector2UVE{frameUniforms.viewportWidth, frameUniforms.viewportHeight});
+        if (rendererProfileResolution.effective == Platform::RendererProfileUVE::ForwardPlus &&
+            renderDevice.GetCapabilitiesUVE().storageBuffers != RenderFeatureSupportUVE::Unsupported) {
+            program.SetIntUVE("uClusteredLightingEnabled", frameUniforms.clusteredLightingEnabled ? 1 : 0);
+            if (frameUniforms.clusteredLightingEnabled) {
+                program.SetVector3UVE("uClusterGridDims",
+                                      Math::Vector3UVE{static_cast<float>(kLightClusterCountXUVE),
+                                                       static_cast<float>(kLightClusterCountYUVE),
+                                                       static_cast<float>(kLightClusterCountZUVE)});
+                program.SetVector2UVE("uClusterNearFar",
+                                      Math::Vector2UVE{frameUniforms.clusterNear, frameUniforms.clusterFar});
+                program.SetVector2UVE("uClusterViewportSize",
+                                      Math::Vector2UVE{frameUniforms.viewportWidth, frameUniforms.viewportHeight});
+            }
         }
-#endif
         for (std::size_t lightIndex = 0; lightIndex < kMaxLightsUVE; ++lightIndex) {
             program.SetIntUVE(uniformNames.lightShadowSlots[lightIndex], frameUniforms.lightShadowSlots[lightIndex]);
             // The shader's light slots are fixed at kMaxLightsUVE, but the extracted list only
@@ -3748,54 +3869,68 @@ struct Renderer3DUVE::ImplUVE {
                                           const Asset::MaterialAssetUVE& material,
                                           const FrameUniformsUVE& frameUniforms,
                                           const bool blendedVariant) {
-        ApplyLightingUniformsUVE(program, frameUniforms);
-        program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
-        program.SetIntUVE("uOrthographic", frameUniforms.isOrthographic ? 1 : 0);
-        program.SetVector3UVE("uCameraForward", frameUniforms.cameraForward);
-        program.SetMatrix4x4UVE(uniformNames.legacyLightSpaceMatrix, frameUniforms.lightSpaceMatrices[0]);
-        program.SetIntUVE("uShadowMapTexture", static_cast<std::int32_t>(kShadowMapTextureSlotUVE));
-        program.SetIntUVE("uShadowCascadeCount", frameUniforms.cascadeCount);
-        program.SetFloatUVE("uShadowCascadeBlendRatio", frameUniforms.cascadeBlendRatio);
-        program.SetFloatUVE("uShadowMaxDistanceFadeRange", frameUniforms.shadowDistanceFadeRange);
-        for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
-            const std::uint32_t textureSlot =
-                kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex);
-            program.SetMatrix4x4UVE(uniformNames.lightSpaceMatrices[cascadeIndex],
-                                    frameUniforms.lightSpaceMatrices[cascadeIndex]);
-            program.SetFloatUVE(uniformNames.shadowCascadeSplits[cascadeIndex],
-                                frameUniforms.cascadeSplits[cascadeIndex]);
-            program.SetIntUVE(uniformNames.shadowMapTextures[cascadeIndex],
-                              static_cast<std::int32_t>(textureSlot));
-        }
-        // The atlas contract. Uploaded for all four light slots every frame, not just the ones in
-        // use: a slot that had a tile last frame and does not this frame must be actively cleared,
-        // or the shader would keep sampling a tile that now belongs to a different light.
-        program.SetIntUVE("uShadowAtlasTexture", static_cast<std::int32_t>(kShadowAtlasTextureSlotUVE));
-        program.SetVector2UVE(uniformNames.shadowAtlasTexelSize, frameUniforms.shadowAtlasTexelSize);
-        for (std::size_t lightSlot = 0; lightSlot < kMaxShadowedLightsUVE; ++lightSlot) {
-            program.SetMatrix4x4UVE(uniformNames.lightShadowMatrices[lightSlot],
-                                    frameUniforms.lightShadowMatrices[lightSlot]);
-            program.SetVector4UVE(uniformNames.lightShadowTileRects[lightSlot],
-                                  frameUniforms.lightShadowTileRects[lightSlot]);
-            program.SetIntUVE(uniformNames.lightShadowEnabled[lightSlot],
-                              frameUniforms.lightShadowEnabled[lightSlot]);
-            program.SetVector2UVE(uniformNames.lightShadowDepthRanges[lightSlot],
-                                  frameUniforms.lightShadowDepthRanges[lightSlot]);
-        }
-        if (frameUniforms.pointShadowTilesActive) {
-            // All 24 slots, not just the ones this frame's point lights own: the shader indexes
-            // this array by [lightIndex * 6 + face], so an entry left over from a light that
-            // stopped casting would be read by a face this frame never rendered.
-            for (std::size_t tileSlot = 0; tileSlot < kMaxShadowTilesUVE; ++tileSlot) {
-                program.SetVector4UVE(uniformNames.lightShadowCubeRects[tileSlot],
-                                      frameUniforms.lightShadowCubeRects[tileSlot]);
+        const bool frameAlreadyUploaded =
+            std::find(frameUniformUploadedPrograms.begin(), frameUniformUploadedPrograms.end(), &program) !=
+            frameUniformUploadedPrograms.end();
+        if (!frameAlreadyUploaded) {
+            ApplyLightingUniformsUVE(program, frameUniforms);
+            program.SetVector3UVE("uViewPosition", frameUniforms.viewPosition);
+            program.SetIntUVE("uOrthographic", frameUniforms.isOrthographic ? 1 : 0);
+            program.SetVector3UVE("uCameraForward", frameUniforms.cameraForward);
+            program.SetMatrix4x4UVE(uniformNames.legacyLightSpaceMatrix, frameUniforms.lightSpaceMatrices[0]);
+            program.SetIntUVE("uShadowMapTexture", static_cast<std::int32_t>(kShadowMapTextureSlotUVE));
+            program.SetIntUVE("uShadowCascadeCount", frameUniforms.cascadeCount);
+            program.SetFloatUVE("uShadowCascadeBlendRatio", frameUniforms.cascadeBlendRatio);
+            program.SetFloatUVE("uShadowMaxDistanceFadeRange", frameUniforms.shadowDistanceFadeRange);
+            for (std::size_t cascadeIndex = 0; cascadeIndex < kShadowCascadeCountUVE; ++cascadeIndex) {
+                const std::uint32_t textureSlot =
+                    kShadowCascadeFirstTextureSlotUVE + static_cast<std::uint32_t>(cascadeIndex);
+                program.SetMatrix4x4UVE(uniformNames.lightSpaceMatrices[cascadeIndex],
+                                        frameUniforms.lightSpaceMatrices[cascadeIndex]);
+                program.SetFloatUVE(uniformNames.shadowCascadeSplits[cascadeIndex],
+                                    frameUniforms.cascadeSplits[cascadeIndex]);
+                program.SetIntUVE(uniformNames.shadowMapTextures[cascadeIndex],
+                                  static_cast<std::int32_t>(textureSlot));
             }
+            // The atlas contract. Uploaded for all four light slots once per program per pass so
+            // cleared tiles never leak from an earlier frame.
+            program.SetIntUVE("uShadowAtlasTexture", static_cast<std::int32_t>(kShadowAtlasTextureSlotUVE));
+            program.SetVector2UVE(uniformNames.shadowAtlasTexelSize, frameUniforms.shadowAtlasTexelSize);
+            for (std::size_t lightSlot = 0; lightSlot < kMaxShadowedLightsUVE; ++lightSlot) {
+                program.SetMatrix4x4UVE(uniformNames.lightShadowMatrices[lightSlot],
+                                        frameUniforms.lightShadowMatrices[lightSlot]);
+                program.SetVector4UVE(uniformNames.lightShadowTileRects[lightSlot],
+                                      frameUniforms.lightShadowTileRects[lightSlot]);
+                program.SetIntUVE(uniformNames.lightShadowEnabled[lightSlot],
+                                  frameUniforms.lightShadowEnabled[lightSlot]);
+                program.SetVector2UVE(uniformNames.lightShadowDepthRanges[lightSlot],
+                                      frameUniforms.lightShadowDepthRanges[lightSlot]);
+            }
+            if (frameUniforms.pointShadowTilesActive) {
+                for (std::size_t tileSlot = 0; tileSlot < kMaxShadowTilesUVE; ++tileSlot) {
+                    program.SetVector4UVE(uniformNames.lightShadowCubeRects[tileSlot],
+                                          frameUniforms.lightShadowCubeRects[tileSlot]);
+                }
+            }
+            program.SetIntUVE("uShadowPcfKernelRadius", frameUniforms.shadowPcfKernelRadius);
+            program.SetFloatUVE("uShadowMapResolution", static_cast<float>(shadowMapResolution));
+            program.SetFloatUVE("uShadowBias", frameUniforms.shadowBias);
+            program.SetFloatUVE("uShadowNormalBias", frameUniforms.shadowNormalBias);
+            program.SetFloatUVE("uShadowOpacity", frameUniforms.shadowOpacity);
+            program.SetIntUVE("uShadingMode", shadingMode);
+            program.SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
+            program.SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
+            program.SetIntUVE("uAOTexture", static_cast<std::int32_t>(kAoTextureSlotUVE));
+            program.SetIntUVE("uMetallicRoughnessTexture",
+                              static_cast<std::int32_t>(kMetallicRoughnessTextureSlotUVE));
+            program.SetIntUVE("uEmissiveTexture", static_cast<std::int32_t>(kEmissiveTextureSlotUVE));
+            program.SetIntUVE(uniformNames.reflectionProbeCube,
+                              static_cast<std::int32_t>(kReflectionProbeFirstTextureSlotUVE));
+            program.SetIntUVE("uReflectionProbeSecondaryCube",
+                              static_cast<std::int32_t>(kReflectionProbeSecondaryTextureSlotUVE));
+            program.SetVector3UVE("uGiIndirectIrradiance", frameUniforms.giIndirectIrradiance);
+            frameUniformUploadedPrograms.push_back(&program);
         }
-        program.SetIntUVE("uShadowPcfKernelRadius", frameUniforms.shadowPcfKernelRadius);
-        program.SetFloatUVE("uShadowMapResolution", static_cast<float>(shadowMapResolution));
-        program.SetFloatUVE("uShadowBias", frameUniforms.shadowBias);
-        program.SetFloatUVE("uShadowNormalBias", frameUniforms.shadowNormalBias);
-        program.SetFloatUVE("uShadowOpacity", frameUniforms.shadowOpacity);
         program.SetIntUVE("uDisableReceiveShadows", material.receiveShadows ? 0 : 1);
         program.SetVector3UVE("uAlbedoColor", Math::ToVector3UVE(material.albedoColor));
         program.SetFloatUVE("uMetallic", material.metallic);
@@ -3844,7 +3979,6 @@ struct Renderer3DUVE::ImplUVE {
         setMap("uEmissiveMapTransform", "uEmissiveMapControl", Asset::MaterialMapUVE::Emissive, material.emissiveTexture,
                material.emissionOnUv2);
         program.SetIntUVE("uUnshaded", material.unshaded ? 1 : 0);
-        program.SetIntUVE("uShadingMode", shadingMode);
         program.SetFloatUVE("uAlphaCutoff", material.alphaCutoff);
         // The material's own alpha, which until now reached nothing: only the pipeline state and
         // the SurfaceInstance fade did. See the shader's ComposeFragmentUVE for what these feed.
@@ -3857,24 +3991,13 @@ struct Renderer3DUVE::ImplUVE {
         program.SetIntUVE("uPremultiplyAlpha",
                           !blendedVariant && MaterialPremultipliesAlphaUVE(material) ? 1 : 0);
         program.SetIntUVE("uPackIndirectWeightAlpha", blends ? 0 : 1);
-        program.SetIntUVE("uAlbedoTexture", static_cast<std::int32_t>(kAlbedoTextureSlotUVE));
-        program.SetIntUVE("uNormalTexture", static_cast<std::int32_t>(kNormalTextureSlotUVE));
-        program.SetIntUVE("uAOTexture", static_cast<std::int32_t>(kAoTextureSlotUVE));
-        program.SetIntUVE("uMetallicRoughnessTexture",
-                          static_cast<std::int32_t>(kMetallicRoughnessTextureSlotUVE));
-        program.SetIntUVE("uEmissiveTexture", static_cast<std::int32_t>(kEmissiveTextureSlotUVE));
         program.SetIntUVE("uReflectionProbeEnabled", reflectionProbeEnabled);
         program.SetVector3UVE("uReflectionProbePosition", reflectionProbePosition);
         program.SetVector3UVE("uReflectionProbeAxisX", reflectionProbeAxisX);
         program.SetVector3UVE("uReflectionProbeAxisY", reflectionProbeAxisY);
         program.SetVector3UVE("uReflectionProbeAxisZ", reflectionProbeAxisZ);
         program.SetVector3UVE("uReflectionProbeHalfExtents", reflectionProbeHalfExtents);
-        program.SetIntUVE(uniformNames.reflectionProbeCube,
-                          static_cast<std::int32_t>(kReflectionProbeFirstTextureSlotUVE));
-        program.SetIntUVE("uReflectionProbeSecondaryCube",
-                          static_cast<std::int32_t>(kReflectionProbeSecondaryTextureSlotUVE));
         program.SetFloatUVE("uReflectionProbeBlendWeight", reflectionProbeBlendWeight);
-        program.SetVector3UVE("uGiIndirectIrradiance", frameUniforms.giIndirectIrradiance);
     }
 
     /// Binds shadow cascades, material/probe textures, and the world ambient map for every lit draw.
@@ -3948,7 +4071,6 @@ struct Renderer3DUVE::ImplUVE {
         if (environmentEquirectSampler != kInvalidSamplerHandleUVE) {
             commandBuffer.BindSamplerUVE(environmentEquirectSampler, kAmbientEnvironmentTextureSlotUVE);
         }
-#if !defined(__ANDROID__)
         if (frameUniforms.clusteredLightingEnabled &&
             clusteredLightBuffer != kInvalidBufferHandleUVE &&
             clusteredCellBuffer != kInvalidBufferHandleUVE &&
@@ -3957,7 +4079,6 @@ struct Renderer3DUVE::ImplUVE {
             commandBuffer.BindStorageBufferUVE(clusteredCellBuffer, kClusteredCellSlotUVE);
             commandBuffer.BindStorageBufferUVE(clusteredIndexBuffer, kClusteredIndexSlotUVE);
         }
-#endif
     }
 
     /// Records `items` as instanced draws where the material supports it, falling back to the
@@ -4758,6 +4879,8 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     // Created through the same cache path a later resize uses, rather than allocated directly:
     // the destructor frees size-dependent targets as CACHE ENTRIES, so a set created outside the
     // cache would simply leak. One owner for these textures, not two.
+    m_impl->rendererProfileResolution = ResolveEffectiveRendererProfileUVE(
+        Platform::DefaultRendererProfileForHostUVE(), renderDevice.GetCapabilitiesUVE());
     if (std::optional<ImplUVE::SizedTargetSetUVE> initialSet =
             m_impl->CreateTargetSetUVE(targetWidth, targetHeight);
         initialSet.has_value()) {
@@ -4830,17 +4953,14 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     shadowProgramDesc.debugNameUVE = "ShadowDepth";
     m_impl->shadowProgram = shaderManager.CreateProgramUVE(shadowProgramDesc);
 
-    // The instanced twin of the shadow program. Same source file, same layout, one define - so the
-    // depth a shadow map records cannot drift between the two paths. Compiled unconditionally
-    // rather than lazily: a shadow pass that stalls mid-frame waiting for a program is worse than
-    // one extra compile at startup, and the non-instanced program remains the fallback if this one
-    // fails to link.
-#if !defined(__ANDROID__)
-    Shader::ShaderProgramDescUVE instancedShadowProgramDesc = shadowProgramDesc;
-    instancedShadowProgramDesc.extraDefines.emplace_back("UVE_INSTANCED", "1");
-    instancedShadowProgramDesc.debugNameUVE = "ShadowDepthInstanced";
-    m_impl->instancedShadowProgram = shaderManager.CreateProgramUVE(instancedShadowProgramDesc);
-#endif
+    // The instanced twin of the shadow program requires SSBO transforms (std430), so gate on real
+    // storage-buffer capability rather than compile-time OS macros.
+    if (renderDevice.GetCapabilitiesUVE().storageBuffers != RenderFeatureSupportUVE::Unsupported) {
+        Shader::ShaderProgramDescUVE instancedShadowProgramDesc = shadowProgramDesc;
+        instancedShadowProgramDesc.extraDefines.emplace_back("UVE_INSTANCED", "1");
+        instancedShadowProgramDesc.debugNameUVE = "ShadowDepthInstanced";
+        m_impl->instancedShadowProgram = shaderManager.CreateProgramUVE(instancedShadowProgramDesc);
+    }
 
     Shader::ShaderProgramDescUVE toneMappingProgramDesc;
     toneMappingProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kFullscreenQuadVirtualPath);
@@ -4932,20 +5052,21 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     wboitCompositeDesc.debugNameUVE = "WBOITComposite";
     m_impl->wboitCompositeProgram = shaderManager.CreateProgramUVE(wboitCompositeDesc);
 
-#if !defined(__ANDROID__)
-    Shader::ShaderProgramDescUVE wboitLitDesc;
-    wboitLitDesc.virtualFilePath = std::string(Shader::BuiltIn::kLitShadowed3DVirtualPath);
-    wboitLitDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitShadowed3DSource);
-    wboitLitDesc.vertexLayout = MeshVertexLayoutUVE();
-    wboitLitDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
-    wboitLitDesc.depthTestEnabled = true;
-    wboitLitDesc.depthWriteEnabled = false;
-    wboitLitDesc.blendMode = PipelineBlendModeUVE::Additive;
-    wboitLitDesc.cullMode = CullModeUVE::None;
-    wboitLitDesc.extraDefines.emplace_back("UVE_WBOIT", "1");
-    wboitLitDesc.debugNameUVE = "LitWBOIT";
-    m_impl->wboitLitProgram = shaderManager.CreateProgramUVE(wboitLitDesc);
-#endif
+    if (m_impl->rendererProfileResolution.effective == Platform::RendererProfileUVE::ForwardPlus &&
+        renderDevice.GetCapabilitiesUVE().halfFloatColorTargets != RenderFeatureSupportUVE::Unsupported) {
+        Shader::ShaderProgramDescUVE wboitLitDesc;
+        wboitLitDesc.virtualFilePath = std::string(Shader::BuiltIn::kLitShadowed3DVirtualPath);
+        wboitLitDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitShadowed3DSource);
+        wboitLitDesc.vertexLayout = MeshVertexLayoutUVE();
+        wboitLitDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
+        wboitLitDesc.depthTestEnabled = true;
+        wboitLitDesc.depthWriteEnabled = false;
+        wboitLitDesc.blendMode = PipelineBlendModeUVE::Additive;
+        wboitLitDesc.cullMode = CullModeUVE::None;
+        wboitLitDesc.extraDefines.emplace_back("UVE_WBOIT", "1");
+        wboitLitDesc.debugNameUVE = "LitWBOIT";
+        m_impl->wboitLitProgram = shaderManager.CreateProgramUVE(wboitLitDesc);
+    }
 
     Shader::ShaderProgramDescUVE particleProgramDesc;
     particleProgramDesc.virtualFilePath = std::string(Shader::BuiltIn::kParticleVirtualPath);
@@ -4980,10 +5101,8 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     m_impl->decalProgram = shaderManager.CreateProgramUVE(decalProgramDesc);
 
     // The built-in lit material: `kLitShadowed3DSource` split into its two stages by the defines
-    // the source itself branches on. This is the PBR/texture/shadow path Standard materials shade
-    // through, so "no material" is not a second, simpler shading model - it is this one, with
-    // neutral inputs. Two variants, exactly like a material's own programs: the ordinary pipeline
-    // keeps depth writes for early-z, the blended one exists for SurfaceInstance fades.
+    // the source itself branches on. Profile variants (`UVE_COMPATIBILITY`, `UVE_MOBILE_PROFILE`,
+    // or full Forward+) are built lazily per effective RendererProfileUVE.
     Shader::ShaderProgramStagesDescUVE defaultLitDesc;
     defaultLitDesc.vertexSource.stage = ShaderStageUVE::Vertex;
     defaultLitDesc.vertexSource.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitShadowed3DSource);
@@ -4999,30 +5118,8 @@ Renderer3DUVE::Renderer3DUVE(IRenderDeviceUVE& renderDevice, IRenderSystemUVE& r
     defaultLitDesc.depthWriteEnabled = true;
     defaultLitDesc.cullMode = CullModeUVE::Back;
     defaultLitDesc.debugNameUVE = "BuiltInLit default material";
-    m_impl->defaultLitMaterialResources.program =
-        shaderManager.CreateProgramFromStagesUVE(defaultLitDesc);
-    // Kept so a material asking for another blend/cull/depth state can have this source linked
-    // with that state. The desc as written IS one of those states, so it is registered under its
-    // own key and a material that happens to ask for exactly it reuses this program.
     m_impl->defaultLitStagesDesc = defaultLitDesc;
-    // The key is read back out of the desc that was just linked rather than written out again: a
-    // literal here would keep pointing at the shared program if the default desc ever changed its
-    // cull or depth state, and the shared program would then be reused for a state it does not have.
-    m_impl->standardLitPrograms.emplace(MaterialPipelineStateUVE{defaultLitDesc.blendMode,
-                                                                defaultLitDesc.cullMode,
-                                                                defaultLitDesc.depthTestEnabled,
-                                                                defaultLitDesc.depthWriteEnabled}
-                                            .PackUVE(),
-                                        m_impl->defaultLitMaterialResources.program);
-    Shader::ShaderProgramStagesDescUVE defaultLitBlendedDesc = defaultLitDesc;
-    defaultLitBlendedDesc.depthWriteEnabled = false;
-    defaultLitBlendedDesc.blendMode = PipelineBlendModeUVE::SourceAlphaOver;
-    // Overlays pass at EQUAL depth so coplanar blends survive the unified LESS default, the same
-    // choice the per-material blended pipeline makes.
-    defaultLitBlendedDesc.depthCompare = DepthCompareUVE::LessOrEqual;
-    defaultLitBlendedDesc.debugNameUVE = defaultLitDesc.debugNameUVE + " blended";
-    m_impl->defaultLitMaterialResources.blendedProgram =
-        shaderManager.CreateProgramFromStagesUVE(defaultLitBlendedDesc);
+    m_impl->EnsureDefaultLitProgramsForProfileUVE(m_impl->rendererProfileResolution.effective);
     m_impl->defaultLitMaterialResources.supportsInstancing = false;
     m_impl->defaultLitMaterialResources.albedoTexture = m_impl->fallbackWhiteTexture;
     m_impl->defaultLitMaterialResources.normalTexture = m_impl->fallbackNormalTexture;
@@ -5716,12 +5813,13 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
     ShadowCascadeMatricesUVE lightSpaceMatrices{};
     ShadowCascadeSplitsUVE cascadeSplits{};
     std::int32_t cascadeCount = 0;
-#if defined(__ANDROID__)
+    const Platform::RendererProfileUVE effectiveProfile = m_impl->rendererProfileResolution.effective;
     const std::size_t activeCascadeCount =
-        m_impl->scalabilityMode <= 0 ? 1U : std::min<std::size_t>(2U, kShadowCascadeCountUVE);
-#else
-    const std::size_t activeCascadeCount = kShadowCascadeCountUVE;
-#endif
+        effectiveProfile == Platform::RendererProfileUVE::Compatibility
+            ? 1U
+            : (effectiveProfile == Platform::RendererProfileUVE::Mobile
+                   ? std::min<std::size_t>(2U, kShadowCascadeCountUVE)
+                   : kShadowCascadeCountUVE);
     if (shadowsReady) {
         // The caster may keep its shadow closer than the camera sees (a sharper shadow where it
         // matters) and choose how its cascades share that distance.
@@ -5839,21 +5937,22 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             shadowPcfKernelRadius =
                 static_cast<std::int32_t>(std::clamp(std::lround(shadowCaster->shadowBlur), 0L, 2L));
         }
-#if defined(__ANDROID__)
-        shadowPcfKernelRadius = std::min(shadowPcfKernelRadius, m_impl->shadowPcfKernelRadius);
-#endif
+        if (effectiveProfile != Platform::RendererProfileUVE::ForwardPlus) {
+            shadowPcfKernelRadius = std::min(shadowPcfKernelRadius, m_impl->shadowPcfKernelRadius);
+        }
     }
 
     // ---- Atlas shadows (spot + point) ----------------------------------------------------------
     // Planned AFTER the directional block because these lights inherit the frame's resolved bias and
     // opacity, and BEFORE the frame uniforms because the plan is what fills them. The atlas itself is
-    // created on demand: 64 MiB of Depth32F is not a cost an empty scene should pay.
+    // created on demand: 64 MiB of Depth32F is not a cost an empty scene or Compatibility profile pays.
     LightShadowPlanUVE shadowPlan{};
     std::array<std::size_t, kMaxShadowTilesUVE> activeShadowTiles{};
     std::size_t activeShadowTileCount = 0U;
     m_impl->spotShadowCandidatesThisFrame = 0U;
     m_impl->pointShadowCandidatesThisFrame = 0U;
-    if (!capturingProbe && m_impl->shadowProgram != nullptr && m_impl->shadowProgram->IsValidUVE()) {
+    if (!capturingProbe && effectiveProfile != Platform::RendererProfileUVE::Compatibility &&
+        m_impl->shadowProgram != nullptr && m_impl->shadowProgram->IsValidUVE()) {
         for (std::size_t lightIndex = 0; lightIndex < lights.SizeUVE(); ++lightIndex) {
             const LightDataUVE& light = lights[lightIndex];
             if (IsSpotLightShadowCandidateUVE(light, frustum)) {
@@ -6272,6 +6371,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
             }
             m_impl->lastFrameDiagnostics.mainPassRecorded = true;
             commandBuffer.BeginRenderPassUVE(passDesc);
+            m_impl->BeginFrameUniformScopeUVE();
             m_impl->instancedDrawCallsThisFrame = 0U;
             m_impl->instancedObjectsThisFrame = 0U;
             m_impl->indirectInstancedDrawCallsThisFrame = 0U;
@@ -6353,6 +6453,7 @@ void Renderer3DUVE::RenderFrameUVE(Scene::IEntityManagerUVE& entityManager, Scen
                     passDesc.extraColorAttachments[0].loadOp = LoadOpUVE::Clear;
                     passDesc.extraColorAttachments[0].clearColor = {0.0F, 0.0F, 0.0F, 0.0F};
                     commandBuffer.BeginRenderPassUVE(passDesc);
+                    m_impl->BeginFrameUniformScopeUVE();
                     for (const RenderItemUVE& item : queue.transparentItems) {
                         const MaterialGpuResourcesUVE* const materialResources =
                             m_impl->ResolveMaterialGpuResourcesUVE(item.materialHandle);
@@ -7864,6 +7965,98 @@ void Renderer3DUVE::SetScalabilityModeUVE(const std::int32_t scalabilityMode) no
         m_impl->activeMaxClusteredLights = kMaxClusteredLightsUVE;
         m_impl->activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
     }
+}
+
+void Renderer3DUVE::SetRendererProfileUVE(const Platform::RendererProfileUVE profile) noexcept {
+    const RenderDeviceCapabilitiesUVE caps = m_impl->renderDevice.GetCapabilitiesUVE();
+    const RendererProfileResolutionUVE resolved = ResolveEffectiveRendererProfileUVE(profile, caps);
+    const Platform::RendererProfileUVE previousEffective = m_impl->rendererProfileResolution.effective;
+    const TextureFormatUVE previousColorFormat =
+        SceneColorTargetFormatUVE(m_impl->renderDevice, previousEffective);
+    m_impl->rendererProfileResolution = resolved;
+    if (resolved.fallbackApplied) {
+        UVE_WARNING("Renderer3DUVE: requested {} renderer fell back to {} ({})",
+                    Platform::GetRendererProfileDisplayNameUVE(resolved.requested),
+                    Platform::GetRendererProfileDisplayNameUVE(resolved.effective),
+                    resolved.fallbackReason);
+    }
+
+    if (resolved.effective == Platform::RendererProfileUVE::Compatibility) {
+        m_impl->scalabilityMode = 0;
+        m_impl->shadowPcfKernelRadius = 0;
+        m_impl->EnsureShadowMapResolutionUVE(512U);
+        m_impl->activeMaxLightsPerFrame = 4U;
+        m_impl->activeMaxClusteredLights = 16U;
+        m_impl->activeMaxInstancesPerFrame = 16'384U;
+        m_impl->activeMaxParticleGpuDrawCommands = 4'096U;
+        m_impl->postProcessSettings.ssaoEnabledUVE = false;
+        m_impl->postProcessSettings.ssaoQualityUVE = 0U;
+        m_impl->postProcessSettings.ssaoBlurEnabledUVE = false;
+        m_impl->postProcessSettings.bloomEnabledUVE = false;
+        m_impl->postProcessSettings.contactShadowsEnabledUVE = false;
+        m_impl->postProcessSettings.ssrEnabledUVE = false;
+        m_impl->postProcessSettings.temporalAAEnabledUVE = false;
+        m_impl->postProcessSettings.orderIndependentTransparencyEnabledUVE = false;
+        m_impl->postProcessSettings.clusteredLightingEnabledUVE = false;
+    } else if (resolved.effective == Platform::RendererProfileUVE::Mobile) {
+        m_impl->scalabilityMode = 1;
+        m_impl->shadowPcfKernelRadius = 1;
+        m_impl->EnsureShadowMapResolutionUVE(1024U);
+        m_impl->activeMaxLightsPerFrame = 8U;
+        m_impl->activeMaxClusteredLights = 64U;
+        m_impl->activeMaxInstancesPerFrame = 65'536U;
+        m_impl->activeMaxParticleGpuDrawCommands = 16'384U;
+        m_impl->postProcessSettings.ssaoEnabledUVE = false;
+        m_impl->postProcessSettings.ssaoQualityUVE = 0U;
+        m_impl->postProcessSettings.ssaoBlurEnabledUVE = false;
+        m_impl->postProcessSettings.bloomEnabledUVE = false;
+        m_impl->postProcessSettings.contactShadowsEnabledUVE = false;
+        m_impl->postProcessSettings.ssrEnabledUVE = false;
+        m_impl->postProcessSettings.temporalAAEnabledUVE = false;
+        m_impl->postProcessSettings.orderIndependentTransparencyEnabledUVE = false;
+        m_impl->postProcessSettings.clusteredLightingEnabledUVE = false;
+    } else {
+        m_impl->scalabilityMode = 2;
+        m_impl->shadowPcfKernelRadius = 2;
+        m_impl->EnsureShadowMapResolutionUVE(2048U);
+        m_impl->activeMaxLightsPerFrame = kMaxLightsUVE;
+        m_impl->activeMaxClusteredLights = kMaxClusteredLightsUVE;
+        m_impl->activeMaxInstancesPerFrame = kMaximumInstancesPerFrameUVE;
+        m_impl->activeMaxParticleGpuDrawCommands = kMaximumParticleGpuDrawCommandsUVE;
+        m_impl->postProcessSettings.ssaoEnabledUVE = true;
+        m_impl->postProcessSettings.ssaoQualityUVE = 1U;
+        m_impl->postProcessSettings.ssaoBlurEnabledUVE = true;
+        m_impl->postProcessSettings.bloomEnabledUVE = true;
+        m_impl->postProcessSettings.clusteredLightingEnabledUVE =
+            caps.storageBuffers != RenderFeatureSupportUVE::Unsupported;
+        if (m_impl->wboitLitProgram == nullptr &&
+            caps.halfFloatColorTargets != RenderFeatureSupportUVE::Unsupported) {
+            Shader::ShaderProgramDescUVE wboitLitDesc;
+            wboitLitDesc.virtualFilePath = std::string(Shader::BuiltIn::kLitShadowed3DVirtualPath);
+            wboitLitDesc.embeddedFallbackSourceCode = std::string(Shader::BuiltIn::kLitShadowed3DSource);
+            wboitLitDesc.vertexLayout = MeshVertexLayoutUVE();
+            wboitLitDesc.vertexStride = static_cast<std::uint32_t>(sizeof(Asset::MeshVertexUVE));
+            wboitLitDesc.depthTestEnabled = true;
+            wboitLitDesc.depthWriteEnabled = false;
+            wboitLitDesc.blendMode = PipelineBlendModeUVE::Additive;
+            wboitLitDesc.cullMode = CullModeUVE::None;
+            wboitLitDesc.extraDefines.emplace_back("UVE_WBOIT", "1");
+            wboitLitDesc.debugNameUVE = "LitWBOIT";
+            m_impl->wboitLitProgram = m_impl->shaderManager.CreateProgramUVE(wboitLitDesc);
+        }
+    }
+
+    if (previousEffective != resolved.effective) {
+        m_impl->EnsureDefaultLitProgramsForProfileUVE(resolved.effective);
+        m_impl->materialCache.clear();
+    }
+    if (SceneColorTargetFormatUVE(m_impl->renderDevice, resolved.effective) != previousColorFormat) {
+        m_impl->RecreateTargetSetsForProfileFormatChangeUVE();
+    }
+}
+
+RendererProfileResolutionUVE Renderer3DUVE::GetRendererProfileResolutionUVE() const noexcept {
+    return m_impl->rendererProfileResolution;
 }
 
 void Renderer3DUVE::SetSceneClearColorUVE(const std::array<float, 4U>& color) noexcept {

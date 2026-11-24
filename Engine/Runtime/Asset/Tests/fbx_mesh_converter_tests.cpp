@@ -885,5 +885,45 @@ TEST(FbxMeshConverterUVETest, TheImporterPublishesAUveModelAndRegistersIt) {
     std::filesystem::remove(destinationPath);
 }
 
+TEST(FbxMeshConverterUVETest, ExtractFbxImportBundleUVE_MatchesIndividualReadersOnMultiMeshScene) {
+    const std::string fbx = MakeTwoMeshFbxUVE();
+    const std::vector<std::byte> bytes = BytesUVE(fbx);
+
+    FbxSceneImportBundleUVE bundle;
+    ASSERT_TRUE(ExtractFbxImportBundleUVE(bytes, bundle));
+
+    MeshAssetUVE individualMerged;
+    std::vector<FbxSurfaceRangeUVE> individualSurfaces;
+    ASSERT_TRUE(ConvertFbxMeshUVE(bytes, individualMerged, &individualSurfaces));
+    std::vector<FbxMeshPartUVE> individualParts;
+    ASSERT_TRUE(ConvertFbxMeshPartsUVE(bytes, individualParts));
+    std::vector<FbxHierarchyEntryUVE> individualHierarchy;
+    ASSERT_TRUE(ReadFbxHierarchyUVE(bytes, individualHierarchy));
+
+    EXPECT_EQ(bundle.mergedMesh.vertices.size(), individualMerged.vertices.size());
+    EXPECT_EQ(bundle.mergedMesh.indices, individualMerged.indices);
+    EXPECT_EQ(bundle.surfaceRanges.size(), individualSurfaces.size());
+    ASSERT_TRUE(bundle.partsKnown);
+    ASSERT_EQ(bundle.parts.size(), individualParts.size());
+    for (std::size_t i = 0U; i < individualParts.size(); ++i) {
+        EXPECT_EQ(bundle.parts[i].name, individualParts[i].name);
+        EXPECT_EQ(bundle.parts[i].mesh.vertices.size(), individualParts[i].mesh.vertices.size());
+        EXPECT_EQ(bundle.parts[i].mesh.indices, individualParts[i].mesh.indices);
+    }
+    ASSERT_TRUE(bundle.hierarchyKnown);
+    ASSERT_EQ(bundle.hierarchy.size(), individualHierarchy.size());
+    for (std::size_t i = 0U; i < individualHierarchy.size(); ++i) {
+        EXPECT_EQ(bundle.hierarchy[i].name, individualHierarchy[i].name);
+        EXPECT_EQ(bundle.hierarchy[i].parent, individualHierarchy[i].parent);
+        EXPECT_EQ(bundle.hierarchy[i].part, individualHierarchy[i].part);
+    }
+
+    ModelImportSettingsUVE compatSettings;
+    compatSettings.maxEmbeddedTextureResolution = 1024U;
+    ModelImportSettingsUVE desktopSettings;
+    desktopSettings.maxEmbeddedTextureResolution = 2048U;
+    EXPECT_NE(compatSettings.GetCacheVersionUVE(), desktopSettings.GetCacheVersionUVE());
+}
+
 } // namespace
 } // namespace UVE::Asset::Tests

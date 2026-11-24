@@ -190,5 +190,38 @@ TEST(EmbeddedTextureImportUVETest, BytesThatCannotBeDecodedPublishNothingAtAll) 
     EXPECT_FALSE(std::filesystem::exists(std::filesystem::path{destination.string() + ".uve_embedded_tex_tmp"}));
 }
 
+TEST(EmbeddedTextureImportUVETest, PrepareTextureForImportUVE_DownsamplesOversizedTexturePreservingAspectRatio) {
+    TextureAssetUVE texture;
+    texture.width = 64U;
+    texture.height = 32U;
+    texture.format = TextureAssetFormatUVE::RGBA8Unorm;
+    texture.colorSpace = TextureAssetColorSpaceUVE::Srgb;
+    texture.usage = TextureUsageUVE::Color;
+    texture.pixels.resize(64U * 32U * 4U);
+    for (std::size_t i = 0U; i < 64U * 32U; ++i) {
+        texture.pixels[i * 4U + 0U] = std::byte{200};
+        texture.pixels[i * 4U + 1U] = std::byte{100};
+        texture.pixels[i * 4U + 2U] = std::byte{50};
+        texture.pixels[i * 4U + 3U] = std::byte{255};
+    }
+
+    TextureImportSettingsUVE clamped;
+    clamped.colorSpace = TextureAssetColorSpaceUVE::Srgb;
+    clamped.usage = TextureUsageUVE::Color;
+    clamped.generateMipmaps = true;
+    clamped.compressionMode = TextureCompressionModeUVE::None;
+    clamped.maxResolutionClamp = 16U;
+
+    ASSERT_TRUE(Detail::PrepareTextureForImportUVE(texture, clamped));
+    EXPECT_EQ(texture.width, 16U);
+    EXPECT_EQ(texture.height, 8U);
+    EXPECT_GT(texture.mipLevels.size(), 1U);
+    ASSERT_GE(texture.pixels.size(), 4U);
+    EXPECT_EQ(texture.pixels[0], std::byte{200});
+    EXPECT_EQ(texture.pixels[1], std::byte{100});
+    EXPECT_EQ(texture.pixels[2], std::byte{50});
+    EXPECT_EQ(texture.pixels[3], std::byte{255});
+}
+
 } // namespace
 } // namespace UVE::Asset::Tests

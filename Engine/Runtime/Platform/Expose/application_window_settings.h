@@ -50,6 +50,23 @@ enum class DisplayOrientationUVE : std::uint8_t {
     PortraitUpsideDown,
 };
 
+/// Godot-style rendering profile persisted per project in `.uvproject`.
+/// Runtime GPU capability checks may automatically fall back to a lower profile when required
+/// features (such as SSBOs or HDR16F render targets) are unavailable on the active device.
+enum class RendererProfileUVE : std::uint8_t {
+    Compatibility = 0U,
+    Mobile = 1U,
+    ForwardPlus = 2U,
+};
+
+[[nodiscard]] constexpr RendererProfileUVE DefaultRendererProfileForHostUVE() noexcept {
+#if defined(__ANDROID__)
+    return RendererProfileUVE::Compatibility;
+#else
+    return RendererProfileUVE::ForwardPlus;
+#endif
+}
+
 [[nodiscard]] std::string_view GetWindowModeNameUVE(WindowModeUVE mode) noexcept;
 [[nodiscard]] std::optional<WindowModeUVE> ParseWindowModeUVE(std::string_view name) noexcept;
 [[nodiscard]] std::string_view GetVSyncModeNameUVE(VSyncModeUVE mode) noexcept;
@@ -60,5 +77,9 @@ enum class DisplayOrientationUVE : std::uint8_t {
 [[nodiscard]] std::optional<AspectPolicyUVE> ParseAspectPolicyUVE(std::string_view name) noexcept;
 [[nodiscard]] std::string_view GetDisplayOrientationNameUVE(DisplayOrientationUVE orientation) noexcept;
 [[nodiscard]] std::optional<DisplayOrientationUVE> ParseDisplayOrientationUVE(std::string_view name) noexcept;
+[[nodiscard]] std::string_view GetRendererProfileNameUVE(RendererProfileUVE profile) noexcept;
+[[nodiscard]] std::string_view GetRendererProfileDisplayNameUVE(RendererProfileUVE profile) noexcept;
+[[nodiscard]] std::string_view GetRendererProfileDescriptionUVE(RendererProfileUVE profile) noexcept;
+[[nodiscard]] std::optional<RendererProfileUVE> ParseRendererProfileUVE(std::string_view name) noexcept;
 
 } // namespace UVE::Platform

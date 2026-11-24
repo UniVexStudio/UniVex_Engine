@@ -213,8 +213,85 @@ AssetGuidUVE ResolveImportedSiblingTextureGuidUVE(const std::filesystem::path& d
     return fallbackGuid;
 }
 
+namespace {
+
+void DownsampleRgba8ToMaxExtentUVE(TextureAssetUVE& texture, const std::uint32_t maxExtent) {
+    if (maxExtent == 0U || texture.format != TextureAssetFormatUVE::RGBA8Unorm ||
+        (texture.width <= maxExtent && texture.height <= maxExtent) ||
+        texture.width == 0U || texture.height == 0U) {
+        return;
+    }
+    const std::uint64_t expectedBytes =
+        static_cast<std::uint64_t>(texture.width) * static_cast<std::uint64_t>(texture.height) * 4ULL;
+    if (texture.pixels.size() != expectedBytes) {
+        return;
+    }
+    std::uint32_t dstW = texture.width;
+    std::uint32_t dstH = texture.height;
+    if (texture.width >= texture.height) {
+        dstW = maxExtent;
+        dstH = std::max(1U, static_cast<std::uint32_t>(
+                                (static_cast<std::uint64_t>(texture.height) * maxExtent + texture.width / 2U) /
+                                texture.width));
+    } else {
+        dstH = maxExtent;
+        dstW = std::max(1U, static_cast<std::uint32_t>(
+                                (static_cast<std::uint64_t>(texture.width) * maxExtent + texture.height / 2U) /
+                                texture.height));
+    }
+
+    std::vector<std::byte> resized(static_cast<std::size_t>(dstW) * static_cast<std::size_t>(dstH) * 4U);
+    const std::uint32_t srcW = texture.width;
+    const std::uint32_t srcH = texture.height;
+    const std::byte* const src = texture.pixels.data();
+    std::byte* const dst = resized.data();
+
+    for (std::uint32_t y = 0U; y < dstH; ++y) {
+        const std::uint32_t y0 = static_cast<std::uint32_t>((static_cast<std::uint64_t>(y) * srcH) / dstH);
+        const std::uint32_t y1 = std::min(
+            srcH, std::max(y0 + 1U, static_cast<std::uint32_t>(
+                                        (static_cast<std::uint64_t>(y + 1U) * srcH + dstH - 1U) / dstH)));
+        for (std::uint32_t x = 0U; x < dstW; ++x) {
+            const std::uint32_t x0 = static_cast<std::uint32_t>((static_cast<std::uint64_t>(x) * srcW) / dstW);
+            const std::uint32_t x1 = std::min(
+                srcW, std::max(x0 + 1U, static_cast<std::uint32_t>(
+                                            (static_cast<std::uint64_t>(x + 1U) * srcW + dstW - 1U) / dstW)));
+            std::uint64_t sumR = 0ULL, sumG = 0ULL, sumB = 0ULL, sumA = 0ULL;
+            std::uint64_t count = 0ULL;
+            for (std::uint32_t sy = y0; sy < y1; ++sy) {
+                const std::size_t rowBase = static_cast<std::size_t>(sy) * srcW * 4U;
+                for (std::uint32_t sx = x0; sx < x1; ++sx) {
+                    const std::size_t offset = rowBase + static_cast<std::size_t>(sx) * 4U;
+                    sumR += static_cast<std::uint8_t>(src[offset + 0U]);
+                    sumG += static_cast<std::uint8_t>(src[offset + 1U]);
+                    sumB += static_cast<std::uint8_t>(src[offset + 2U]);
+                    sumA += static_cast<std::uint8_t>(src[offset + 3U]);
+                    ++count;
+                }
+            }
+            const std::size_t dstOffset = (static_cast<std::size_t>(y) * dstW + x) * 4U;
+            const std::uint64_t half = count / 2ULL;
+            dst[dstOffset + 0U] = static_cast<std::byte>((sumR + half) / count);
+            dst[dstOffset + 1U] = static_cast<std::byte>((sumG + half) / count);
+            dst[dstOffset + 2U] = static_cast<std::byte>((sumB + half) / count);
+            dst[dstOffset + 3U] = static_cast<std::byte>((sumA + half) / count);
+        }
+    }
+
+    texture.width = dstW;
+    texture.height = dstH;
+    texture.pixels = std::move(resized);
+    texture.mipLevels.clear();
+}
+
+} // namespace
+
 [[nodiscard]] bool PrepareTextureForImportUVE(TextureAssetUVE& texture,
                                                const TextureImportSettingsUVE& settings) {
+    if (settings.maxResolutionClamp > 0U &&
+        (texture.width > settings.maxResolutionClamp || texture.height > settings.maxResolutionClamp)) {
+        DownsampleRgba8ToMaxExtentUVE(texture, settings.maxResolutionClamp);
+    }
     if (settings.generateMipmaps &&
         !GenerateTextureMipmapsUVE(texture, settings.mipFilter, settings.maxMipLevels)) {
         return false;

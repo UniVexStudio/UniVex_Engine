@@ -334,5 +334,48 @@ TEST_F(EditorProjectPackageUVETest, Validate_RejectsTraversalStartupScenePathBut
     EXPECT_EQ(EditorProjectPackageCodecUVE::ValidateUVE(package).code, EditorProjectPackageCodeUVE::InvalidPath);
 }
 
+TEST_F(EditorProjectPackageUVETest, SaveAndLoad_RoundTripsAllRendererProfiles) {
+    for (const RendererProfileUVE profile :
+         {RendererProfileUVE::Compatibility, RendererProfileUVE::Mobile, RendererProfileUVE::ForwardPlus}) {
+        EditorProjectPackageUVE expected = MakePackage();
+        expected.rendererProfile = profile;
+
+        ASSERT_TRUE(EditorProjectPackageCodecUVE::SaveUVE(packagePath, expected).IsAcceptedUVE());
+        const EditorProjectPackageLoadResultUVE loadResult = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
+
+        ASSERT_TRUE(loadResult.IsAcceptedUVE()) << loadResult.result.message;
+        EXPECT_EQ(loadResult.package->rendererProfile, profile);
+        EXPECT_EQ(ParseRendererProfileUVE(GetRendererProfileNameUVE(profile)), profile);
+    }
+}
+
+TEST_F(EditorProjectPackageUVETest, Load_DefaultsMissingRendererProfileAndRejectsUnknownProfile) {
+    const nlohmann::json legacyJson{{"format", "uvproject"},
+                                    {"schemaVersion", kCurrentEditorProjectSchemaVersionUVE},
+                                    {"revision", 1U},
+                                    {"projectId", "legacy-renderer-default"},
+                                    {"displayName", "Legacy"},
+                                    {"engineVersion", {{"major", 0U}, {"minor", 1U}, {"patch", 0U}, {"build", 1U}}},
+                                    {"contentRoot", "assets"},
+                                    {"assetDatabasePath", ".uvassetdb"},
+                                    {"settingsPath", ".uvsettings"}};
+    {
+        std::ofstream output(packagePath, std::ios::binary | std::ios::trunc);
+        output << legacyJson.dump();
+    }
+    const EditorProjectPackageLoadResultUVE legacyLoad = EditorProjectPackageCodecUVE::LoadUVE(packagePath);
+    ASSERT_TRUE(legacyLoad.IsAcceptedUVE()) << legacyLoad.result.message;
+    EXPECT_EQ(legacyLoad.package->rendererProfile, DefaultRendererProfileForHostUVE());
+
+    nlohmann::json invalidJson = legacyJson;
+    invalidJson["rendererProfile"] = "ultra_raytrace";
+    {
+        std::ofstream output(packagePath, std::ios::binary | std::ios::trunc);
+        output << invalidJson.dump();
+    }
+    EXPECT_EQ(EditorProjectPackageCodecUVE::LoadUVE(packagePath).result.code,
+              EditorProjectPackageCodeUVE::ParseFailed);
+}
+
 } // namespace
 } // namespace UVE::Platform::Tests

@@ -185,5 +185,75 @@ TEST_F(ShaderProgramUVETest, SetFloatUVE_CalledTwiceForSameName_LastValueWins) {
     EXPECT_EQ(matchCount, 1);
 }
 
+class RetainingCommandBufferStubUVE final : public ICommandBufferUVE {
+public:
+    void BeginRenderPassUVE(const RenderPassDescUVE&) override {}
+    void EndRenderPassUVE() override {}
+    void BindPipelineUVE(const PipelineHandleUVE) override { ++pipelineBinds; }
+    void BindVertexBufferUVE(const BufferHandleUVE, const std::uint32_t) override {}
+    void BindIndexBufferUVE(const BufferHandleUVE) override {}
+    void BindTextureUVE(const TextureHandleUVE, const std::uint32_t) override {}
+    void BindSamplerUVE(const SamplerHandleUVE, const std::uint32_t) override {}
+    void BindUniformBufferUVE(const BufferHandleUVE, const std::uint32_t) override {}
+    void BindStorageBufferUVE(const BufferHandleUVE, const std::uint32_t) override {}
+    void SetUniformFloatUVE(const std::string_view name, const float) override {
+        pushedUniforms.emplace_back(name);
+    }
+    void SetUniformIntUVE(const std::string_view name, const std::int32_t) override {
+        pushedUniforms.emplace_back(name);
+    }
+    void SetUniformBoolUVE(const std::string_view name, const bool) override {
+        pushedUniforms.emplace_back(name);
+    }
+    void SetUniformVector2UVE(const std::string_view name, const Math::Vector2UVE&) override {
+        pushedUniforms.emplace_back(name);
+    }
+    void SetUniformVector3UVE(const std::string_view name, const Math::Vector3UVE&) override {
+        pushedUniforms.emplace_back(name);
+    }
+    void SetUniformVector4UVE(const std::string_view name, const Math::Vector4UVE&) override {
+        pushedUniforms.emplace_back(name);
+    }
+    void SetUniformMatrix4x4UVE(const std::string_view name, const Math::Matrix4x4UVE&) override {
+        pushedUniforms.emplace_back(name);
+    }
+    void DrawIndexedUVE(const std::uint32_t, const std::uint32_t, const std::uint32_t) override {}
+    void DrawUVE(const std::uint32_t, const std::uint32_t) override {}
+    void DrawIndexedIndirectUVE(const BufferHandleUVE, const std::uint64_t) override {}
+    void DispatchUVE(const std::uint32_t, const std::uint32_t, const std::uint32_t) override {}
+    [[nodiscard]] bool RetainsUniformStatePerPipelineUVE() const noexcept override { return true; }
+
+    std::size_t pipelineBinds = 0U;
+    std::vector<std::string> pushedUniforms;
+};
+
+TEST_F(ShaderProgramUVETest, ApplyToUVE_RetainingBufferFlushesOnlyDirtyUniformsOnSubsequentDraws) {
+    const std::shared_ptr<ShaderProgramUVE> program = MakeReadyProgramUVE();
+    RetainingCommandBufferStubUVE firstBuffer;
+
+    program->SetFloatUVE("uStaticParam", 2.0F);
+    program->SetFloatUVE("uDynamicParam", 1.0F);
+    program->ApplyToUVE(firstBuffer);
+    ASSERT_EQ(firstBuffer.pushedUniforms.size(), 2U);
+
+    // Updating only one uniform pushes strictly that dirty uniform on the same command buffer.
+    firstBuffer.pushedUniforms.clear();
+    program->SetFloatUVE("uDynamicParam", 4.0F);
+    program->ApplyToUVE(firstBuffer);
+    ASSERT_EQ(firstBuffer.pushedUniforms.size(), 1U);
+    EXPECT_EQ(firstBuffer.pushedUniforms[0], "uDynamicParam");
+
+    // Re-setting an identical value marks nothing dirty and pushes zero uniforms.
+    firstBuffer.pushedUniforms.clear();
+    program->SetFloatUVE("uDynamicParam", 4.0F);
+    program->ApplyToUVE(firstBuffer);
+    EXPECT_TRUE(firstBuffer.pushedUniforms.empty());
+
+    // Switching to a new command buffer flushes the full uniform state cleanly.
+    RetainingCommandBufferStubUVE secondBuffer;
+    program->ApplyToUVE(secondBuffer);
+    EXPECT_EQ(secondBuffer.pushedUniforms.size(), 2U);
+}
+
 } // namespace
 } // namespace UVE::Render::Shader::Tests

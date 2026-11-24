@@ -316,6 +316,16 @@ using JsonUVE = nlohmann::json;
     // value(...) rather than at(...): older .uvproject files predate this field and have no
     // "startupScenePath" key at all - they must still load, just with no startup scene configured.
     package.startupScenePath = json.value("startupScenePath", std::string{});
+    if (json.contains("rendererProfile")) {
+        if (!json.at("rendererProfile").is_string()) {
+            return std::nullopt;
+        }
+        const auto parsedProfile = ParseRendererProfileUVE(json.at("rendererProfile").get<std::string>());
+        if (!parsedProfile.has_value()) {
+            return std::nullopt;
+        }
+        package.rendererProfile = *parsedProfile;
+    }
     return package;
 }
 
@@ -406,7 +416,8 @@ using JsonUVE = nlohmann::json;
                    {"contentRoot", package.contentRoot.generic_string()},
                    {"assetDatabasePath", package.assetDatabasePath.generic_string()},
                    {"settingsPath", package.settingsPath.generic_string()},
-                   {"startupScenePath", package.startupScenePath.generic_string()}};
+                   {"startupScenePath", package.startupScenePath.generic_string()},
+                   {"rendererProfile", std::string{GetRendererProfileNameUVE(package.rendererProfile)}}};
 }
 
 [[nodiscard]] EditorProjectPackageResultUVE WriteJsonAtomicallyUVE(
@@ -580,6 +591,10 @@ EditorProjectPackageResultUVE EditorProjectPackageCodecUVE::ValidateUVE(
         return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPath,
                              "The .uvproject startup scene path must be bounded, relative, normalized, and "
                              "traversal-free.");
+    }
+    if (GetRendererProfileNameUVE(package.rendererProfile).empty()) {
+        return MakeResultUVE(EditorProjectPackageCodeUVE::InvalidPackage,
+                             "The .uvproject rendererProfile contains an unsupported value.");
     }
     return MakeResultUVE(EditorProjectPackageCodeUVE::Applied, "The .uvproject package is valid.");
 }

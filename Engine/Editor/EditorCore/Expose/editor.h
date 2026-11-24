@@ -5,6 +5,7 @@
 #include "texture_import_settings.h"
 #include <array>
 #include <chrono>
+#include <condition_variable>
 #include <limits>
 #include <map>
 #include <memory>
@@ -20,6 +21,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <typeindex>
 #include <unordered_map>
 #include <unordered_set>
@@ -104,6 +106,7 @@
 
 namespace UVE::Asset {
 struct AnimationClipAssetUVE;
+class AssetImportQueueUVE;
 } // namespace UVE::Asset
 
 namespace UVE::Editor::Tests {
@@ -525,6 +528,9 @@ public:
     [[nodiscard]] EditorLoadingStateUVE GetLoadingStateUVE() const;
     void DismissStartupLoadingUVE() noexcept { m_startupLoading = false; }
     void SetPrismUiEnabledUVE(bool enabled, std::filesystem::path assetDir = {});
+    void SetProjectFilePathUVE(std::filesystem::path projectFile);
+    void SetRendererProfileUVE(Platform::RendererProfileUVE profile);
+    [[nodiscard]] Render::RendererProfileResolutionUVE GetRendererProfileResolutionUVE() const noexcept;
     void SetSafeAreaCallbackUVE(std::function<std::array<float, 4>()> callback);
     [[nodiscard]] std::array<float, 4> SafeAreaInsetsUVE() const;
     [[nodiscard]] bool IsPrismUiActiveUVE() const noexcept { return m_levelShell != nullptr; }
@@ -2803,6 +2809,9 @@ private:
     std::size_t m_startupIconPeak = 0U;
     /// Collects finished auto-imports; a successful one refreshes the mesh thumbnails.
     void PollModelImportJobsUVE();
+    [[nodiscard]] Asset::IAssetImportQueueUVE& ActiveModelImportQueueUVE() const noexcept;
+    void EnsureBackgroundModelImportWorkerUVE();
+    void StopBackgroundModelImportWorkerUVE();
     /// Registers the converted mesh at `importedModel` and every published asset beside it -
     /// its `.uvmat` materials, its `.uvtex` textures, its `.uvskel` rig.
     ///
@@ -3414,6 +3423,18 @@ private:
     std::map<std::string, std::string> m_modelImportFailures;
     /// Every content-relative model source, as the last project refresh read it.
     std::map<std::string, EditorModelSourceInfoUVE> m_modelSources;
+    struct CachedModelSourceStampUVE final {
+        std::string stamp;
+        std::uintmax_t size = 0U;
+        EditorModelSourceInfoUVE info;
+    };
+    std::unordered_map<std::string, CachedModelSourceStampUVE> m_modelSourceStampCache;
+    std::unique_ptr<Asset::AssetImportQueueUVE> m_bgModelImportQueue;
+    std::mutex m_bgImportMutex;
+    std::condition_variable m_bgImportCv;
+    bool m_bgImportStop = false;
+    bool m_bgImportHasPending = false;
+    std::thread m_bgImportWorker;
     MeshThumbnailRendererUVE m_meshThumbnailRenderer;
     MaterialThumbnailRendererUVE m_materialThumbnailRenderer;
     AssetTableTypeFocusUVE m_assetTableTypeFocus = AssetTableTypeFocusUVE::All;
@@ -3654,6 +3675,7 @@ private:
     std::map<std::string, std::uintptr_t> m_vfxThumbnailCache;
     bool m_prismUiRequested = false;
     std::filesystem::path m_prismAssetDir;
+    std::filesystem::path m_projectFilePath;
     std::function<std::array<float, 4>()> m_safeAreaCallback;
     std::unique_ptr<EditorShellUVE> m_levelShell;
     // UI/render state is isolated per window, matching the dedicated per-window viewports.

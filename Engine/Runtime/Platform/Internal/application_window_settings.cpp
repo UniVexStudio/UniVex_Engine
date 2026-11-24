@@ -62,6 +62,11 @@ constexpr std::array kOrientationsUVE{
     std::pair{DisplayOrientationUVE::LandscapeRight, std::string_view{"landscapeRight"}},
     std::pair{DisplayOrientationUVE::PortraitUpsideDown, std::string_view{"portraitUpsideDown"}},
 };
+constexpr std::array kRendererProfilesUVE{
+    std::pair{RendererProfileUVE::Compatibility, std::string_view{"compatibility"}},
+    std::pair{RendererProfileUVE::Mobile, std::string_view{"mobile"}},
+    std::pair{RendererProfileUVE::ForwardPlus, std::string_view{"forward_plus"}},
+};
 
 } // namespace
 
@@ -94,6 +99,34 @@ std::string_view GetDisplayOrientationNameUVE(const DisplayOrientationUVE orient
 }
 std::optional<DisplayOrientationUVE> ParseDisplayOrientationUVE(const std::string_view name) noexcept {
     return LookupValueUVE(name, kOrientationsUVE);
+}
+std::string_view GetRendererProfileNameUVE(const RendererProfileUVE profile) noexcept {
+    return LookupNameUVE(profile, kRendererProfilesUVE);
+}
+std::string_view GetRendererProfileDisplayNameUVE(const RendererProfileUVE profile) noexcept {
+    switch (profile) {
+        case RendererProfileUVE::Compatibility:
+            return "Compatibility";
+        case RendererProfileUVE::Mobile:
+            return "Mobile";
+        case RendererProfileUVE::ForwardPlus:
+            return "Forward+";
+    }
+    return "Compatibility";
+}
+std::string_view GetRendererProfileDescriptionUVE(const RendererProfileUVE profile) noexcept {
+    switch (profile) {
+        case RendererProfileUVE::Compatibility:
+            return "Fastest RGBA8 renderer for low-end mobile GPUs (e.g. Snapdragon 665) and older desktops. Low RAM, 1 shadow, up to 4 lights.";
+        case RendererProfileUVE::Mobile:
+            return "Balanced mobile PBR renderer with HDR lighting, 2 shadow cascades, FXAA, and up to 8 lights.";
+        case RendererProfileUVE::ForwardPlus:
+            return "Full desktop PBR with clustered SSBO lighting, 3 shadow cascades, SSAO, Bloom, and MSAA. Auto-falls back to Mobile if GPU lacks support.";
+    }
+    return {};
+}
+std::optional<RendererProfileUVE> ParseRendererProfileUVE(const std::string_view name) noexcept {
+    return LookupValueUVE(name, kRendererProfilesUVE);
 }
 
 } // namespace UVE::Platform

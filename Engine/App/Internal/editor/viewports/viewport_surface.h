@@ -57,31 +57,35 @@ void main() {
     [[nodiscard]] Scene::IEntityManagerUVE& EntityManagerUVE() noexcept { return m_entityManager; }
     [[nodiscard]] const Scene::IEntityManagerUVE& EntityManagerUVE() const noexcept { return m_entityManager; }
 
-    /// Resolved quality settings for a viewport surface preset (`0=Auto, 1=Low, 2=Medium, 3=High, 4=Ultra`).
+    /// Resolved viewport surface settings derived from the active effective RendererProfileUVE.
     struct QualityConfigUVE final {
         float renderScale = 1.0F;
         int msaaSamples = 0;
         int fxaaQuality = 1;
-        float casSharpen = 0.25F;
+        float casSharpen = 0.20F;
         bool ssaoEnabled = false;
         std::uint32_t ssaoQuality = 0U;
         std::uint32_t shadowAtlasResolution = 1024U;
         float maxAnisotropy = 4.0F;
         std::int32_t scalabilityMode = 1;
         bool gpuOutlineOnly = false;
-        bool bloomEnabled = true;
+        bool bloomEnabled = false;
     };
 
-    /// Resolves quality settings for `qualityPreset` (with one-time GPU-tier auto-detection for Auto).
+    /// Resolves viewport surface settings from the active effective RendererProfileUVE.
     [[nodiscard]] QualityConfigUVE ResolveQualityConfigUVE(int qualityPreset);
 
-    /// Applies the selected quality preset to this surface, the 3D renderer, and publishes
-    /// `overlayState.resolvedRenderScale`.
+    /// Syncs this surface and `overlayState.resolvedRenderScale` to the renderer's effective profile.
     void ApplyQualityPresetUVE(int qualityPreset,
                                const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState);
 
-    /// True when the active quality preset prefers GPU-side selection outlines (avoiding glReadPixels).
+    /// True when the active profile prefers GPU-side selection outlines (avoiding glReadPixels).
     [[nodiscard]] bool PreferGpuSelectionOutlineUVE() const noexcept { return m_gpuOutlineOnly; }
+
+    /// True when the renderer is running the ultra-lightweight Compatibility profile.
+    [[nodiscard]] bool IsCompatibilityProfileUVE() const noexcept {
+        return m_appliedEffectiveProfile == 0;
+    }
 
     /// Ensures GLEW, `ViewportRenderPass`, and sized scene/MSAA/resolve framebuffers are ready.
     [[nodiscard]] bool PrepareFrameUVE(int width, int height);
@@ -126,8 +130,8 @@ void main() {
                           int width,
                           int height);
 
-    /// Resolves the scene framebuffer through the Post-Composite FXAA 3.11 + CAS sharpen pass into
-    /// the 2D display texture, restores `previousFbo`, and returns the resolved native GL texture id.
+    /// Resolves the scene framebuffer (directly returning `m_sceneColorTexture` when MSAA/FXAA/CAS
+    /// are disabled in Compatibility mode), restores `previousFbo`, and returns the native GL texture id.
     [[nodiscard]] std::uint64_t EndPassAndResolveUVE(int width, int height, GLint previousFbo);
 
 private:
@@ -159,20 +163,11 @@ private:
     int m_framebufferHeight = 0;
     int m_allocatedMsaaSamples = -1;
 
-#if defined(UNIVEX_GL_ES)
     int m_desiredMsaaSamples = 0;
-    int m_fxaaQuality = 1;
-    float m_casSharpen = 0.28F;
+    int m_fxaaQuality = 0;
+    float m_casSharpen = 0.0F;
     bool m_gpuOutlineOnly = true;
-#else
-    int m_desiredMsaaSamples = 2;
-    int m_fxaaQuality = 2;
-    float m_casSharpen = 0.22F;
-    bool m_gpuOutlineOnly = false;
-#endif
-    int m_appliedQualityPreset = -1;
-    bool m_gpuTierProbed = false;
-    int m_detectedMobileTier = 1; // 0=Low, 1=Medium, 2=High
+    int m_appliedEffectiveProfile = -1;
 
     struct MeshBlitUniformsUVE final {
         GLint meshColor = -1;

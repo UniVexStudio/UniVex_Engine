@@ -120,23 +120,6 @@ prism::Ref<prism::Widget> EditorViewToolbarUVE::BuildUVE(const bool gizmoOnly, p
         prism::showMenu(std::move(items), m_shadingButton->rect(), prism::PopupPlacement::Below);
     };
     settings->add(m_shadingButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-
-    // Quality: live render scale, FXAA 3.11 + CAS sharpen, shadows & SSAO preset switcher.
-    m_qualityButton = prism::make<prism::Button>("Auto", prism::Icon::Profiler, prism::ButtonStyle::Toolbar);
-    m_qualityButton->setTooltip("Viewport render quality preset (render scale, FXAA + sharpen, SSAO)");
-    m_qualityButton->onClick = [this] {
-        static constexpr std::array<const char*, 5> kQualityLabels{
-            "Auto (Recommended)", "Low (60-120 FPS)", "Medium (Balanced)", "High (Native + FXAA)", "Ultra (Max Quality)"};
-        std::vector<prism::MenuItem> items;
-        for (int i = 0; i < static_cast<int>(kQualityLabels.size()); ++i) {
-            items.push_back(prism::MenuItem::Check(
-                kQualityLabels[static_cast<std::size_t>(i)],
-                m_editor.m_viewportOverlayState.qualityPreset == i,
-                [this, i] { m_editor.m_viewportOverlayState.qualityPreset = i; }));
-        }
-        prism::showMenu(std::move(items), m_qualityButton->rect(), prism::PopupPlacement::Below);
-    };
-    settings->add(m_qualityButton, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
     settings->add(HSeparatorUVE());
 
     // Preview: the editor-only sun and sky, and their settings.
@@ -366,14 +349,6 @@ void EditorViewToolbarUVE::RefreshUVE() {
                 kShadingNamesUVE[static_cast<std::size_t>(std::clamp(state.shadingMode, 0, static_cast<int>(kShadingNamesUVE.size()) - 1))];
             if (m_shadingButton->text() != text) {
                 m_shadingButton->setText(text);
-            }
-        }
-        if (m_qualityButton) {
-            static constexpr std::array<const char*, 5> kQualityShort{"Auto", "Low", "Med", "High", "Ultra"};
-            const std::string text =
-                kQualityShort[static_cast<std::size_t>(std::clamp(state.qualityPreset, 0, static_cast<int>(kQualityShort.size()) - 1))];
-            if (m_qualityButton->text() != text) {
-                m_qualityButton->setText(text);
             }
         }
         if (m_sunButton) {

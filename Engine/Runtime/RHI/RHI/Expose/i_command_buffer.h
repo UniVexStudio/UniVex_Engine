@@ -200,6 +200,11 @@ public:
     /// each backend inserts the barriers that guarantee it.
     virtual void DispatchUVE(std::uint32_t groupCountX, std::uint32_t groupCountY,
                              std::uint32_t groupCountZ) = 0;
+
+    /// True when the backend retains uniform values inside each pipeline's native program object
+    /// across draws on the same command buffer (immediate OpenGL / GLES), letting ShaderProgramUVE
+    /// flush only uniforms that changed since the last ApplyToUVE() instead of re-uploading all ~200.
+    [[nodiscard]] virtual bool RetainsUniformStatePerPipelineUVE() const noexcept { return false; }
 private:
     std::vector<std::shared_ptr<void>> m_retainedResources;
 };

@@ -223,30 +223,6 @@ void main() {
 }
 )";
 
-[[nodiscard]] int DetectMobileGpuTierUVE() {
-    const char* rawRenderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
-    if (rawRenderer == nullptr) {
-        return 1; // Medium fallback
-    }
-    std::string gpu(rawRenderer);
-    std::transform(gpu.begin(), gpu.end(), gpu.begin(),
-                   [](const unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-
-    const auto has = [&gpu](const std::string_view token) { return gpu.find(token) != std::string::npos; };
-    if (has("swiftshader") || has("llvmpipe") || has("softpipe") || has("virgl") || has("emulator") ||
-        has("mali-g31") || has("mali-g52") || has("mali-g57") || has("mali-t") || has("mali-4") ||
-        has("powervr") || has("adreno (tm) 5") || has("adreno 5") || has("adreno (tm) 61") ||
-        has("adreno 61") || has("adreno (tm) 62") || has("adreno 62") || has("adreno (tm) 63") ||
-        has("adreno 63")) {
-        return 0; // Low-tier mobile GPU
-    }
-    if (has("adreno (tm) 7") || has("adreno 7") || has("adreno (tm) 8") || has("adreno 8") ||
-        has("immortalis") || has("mali-g715") || has("mali-g720") || has("xclipse") || has("apple")) {
-        return 2; // High-tier flagship mobile GPU
-    }
-    return 1; // Mid-range mobile GPU
-}
-
 } // namespace
 
 ViewportSurfaceUVE::ViewportSurfaceUVE(Core::EngineServicesUVE& services)
@@ -260,73 +236,57 @@ ViewportSurfaceUVE::~ViewportSurfaceUVE() {
     }
 }
 
-ViewportSurfaceUVE::QualityConfigUVE ViewportSurfaceUVE::ResolveQualityConfigUVE(const int qualityPreset) {
-    const int clamped = std::clamp(qualityPreset, 0, 4);
-#if defined(UNIVEX_GL_ES)
-    if (!m_gpuTierProbed && EnsureGlewInitializedUVE()) {
-        m_gpuTierProbed = true;
-        m_detectedMobileTier = DetectMobileGpuTierUVE();
-    }
-    const int effective = clamped == 0 ? (m_detectedMobileTier == 0 ? 1 : (m_detectedMobileTier == 2 ? 3 : 2)) : clamped;
+ViewportSurfaceUVE::QualityConfigUVE ViewportSurfaceUVE::ResolveQualityConfigUVE(const int /*qualityPreset*/) {
+    const Platform::RendererProfileUVE effective =
+        m_services.GetRenderer3DUVE().GetRendererProfileResolutionUVE().effective;
     switch (effective) {
-        case 1: // Low (60-120 FPS)
-            return QualityConfigUVE{0.65F, 0, 1, 0.32F, false, 0U, 512U, 2.0F, 0, true, false};
-        case 2: // Medium (Balanced)
-            return QualityConfigUVE{0.80F, 0, 1, 0.28F, false, 0U, 1024U, 4.0F, 1, true, false};
-        case 3: // High (Crisp Native-Near + FXAA)
-            return QualityConfigUVE{0.92F, 0, 2, 0.26F, false, 0U, 1024U, 8.0F, 2, true, true};
-        case 4: // Ultra (Native + 2x MSAA + SSAO)
+        case Platform::RendererProfileUVE::Compatibility:
+            // Zero MSAA, zero post-AA resolve pass, 512px shadows, 4 lights, RGBA8 color target.
+            return QualityConfigUVE{0.85F, 0, 0, 0.0F, false, 0U, 512U, 2.0F, 0, true, false};
+        case Platform::RendererProfileUVE::Mobile:
+            // Balanced mobile PBR: 0x MSAA, lightweight FXAA + subtle CAS, 1024px shadows, 8 lights.
+            return QualityConfigUVE{0.95F, 0, 1, 0.22F, false, 0U, 1024U, 4.0F, 1, true, false};
+        case Platform::RendererProfileUVE::ForwardPlus:
         default:
-            return QualityConfigUVE{1.00F, 2, 2, 0.24F, true, 1U, 2048U, 16.0F, 2, true, true};
+            // Full desktop PBR: native 1.0x, 2x MSAA, FXAA high + CAS, SSAO + Bloom, 2048px shadows.
+            return QualityConfigUVE{1.00F, 2, 2, 0.20F, true, 1U, 2048U, 8.0F, 2, false, true};
     }
-#else
-    const int effective = clamped == 0 ? 3 : clamped;
-    switch (effective) {
-        case 1: // Low
-            return QualityConfigUVE{0.70F, 0, 1, 0.30F, false, 0U, 512U, 2.0F, 0, true, false};
-        case 2: // Medium
-            return QualityConfigUVE{0.85F, 0, 1, 0.26F, false, 0U, 1024U, 4.0F, 1, true, true};
-        case 3: // High (Desktop default)
-            return QualityConfigUVE{1.00F, 2, 2, 0.22F, true, 1U, 2048U, 8.0F, 2, false, true};
-        case 4: // Ultra
-        default:
-            return QualityConfigUVE{1.00F, 4, 2, 0.20F, true, 2U, 2048U, 16.0F, 2, false, true};
-    }
-#endif
 }
 
 void ViewportSurfaceUVE::ApplyQualityPresetUVE(const int qualityPreset,
                                                const Editor::EditorUVE::ViewportOverlayStateUVE& overlayState) {
-    const int clamped = std::clamp(qualityPreset, 0, 4);
-    const QualityConfigUVE cfg = ResolveQualityConfigUVE(clamped);
+    Render::IRenderer3DUVE& renderer = m_services.GetRenderer3DUVE();
+    const Platform::RendererProfileUVE effective = renderer.GetRendererProfileResolutionUVE().effective;
+    const int effectiveIndex = static_cast<int>(effective);
+    const QualityConfigUVE cfg = ResolveQualityConfigUVE(qualityPreset);
     overlayState.resolvedRenderScale = cfg.renderScale;
 
-    if (m_appliedQualityPreset == clamped) {
+    if (m_appliedEffectiveProfile == effectiveIndex) {
         return;
     }
-    m_appliedQualityPreset = clamped;
+    m_appliedEffectiveProfile = effectiveIndex;
     m_desiredMsaaSamples = cfg.msaaSamples;
     m_fxaaQuality = cfg.fxaaQuality;
     m_casSharpen = cfg.casSharpen;
     m_gpuOutlineOnly = cfg.gpuOutlineOnly;
 
-    Render::IRenderer3DUVE& renderer = m_services.GetRenderer3DUVE();
     Render::PostProcessSettingsUVE post{};
     post.bloomEnabledUVE = cfg.bloomEnabled;
     post.ssaoEnabledUVE = cfg.ssaoEnabled;
     post.ssaoQualityUVE = cfg.ssaoQuality;
     post.ssaoBlurEnabledUVE = cfg.ssaoEnabled;
-    // Post-composite FXAA 3.11 + CAS runs once in EndPassAndResolveUVE over meshes, silhouettes,
-    // sky, and grid together, avoiding double-AA blur and saving a full-screen pass on mobile.
+    post.clusteredLightingEnabledUVE =
+        effective == Platform::RendererProfileUVE::ForwardPlus &&
+        m_services.GetRenderDeviceUVE().GetCapabilitiesUVE().storageBuffers != Render::RenderFeatureSupportUVE::Unsupported;
+    // Post-composite FXAA + CAS runs once in EndPassAndResolveUVE (or is skipped in Compatibility).
     post.fastApproximateAAEnabledUVE = false;
     post.sharpeningAmountUVE = 0.0F;
     post.acesToneMappingEnabledUVE = true;
     post.toneMappingMethodUVE = 2U;
-    post.ditheringEnabledUVE = true;
+    post.ditheringEnabledUVE = effective != Platform::RendererProfileUVE::Compatibility;
     renderer.SetPostProcessSettingsUVE(post);
     renderer.SetShadowAtlasTileResolutionUVE(cfg.shadowAtlasResolution);
     renderer.SetMaterialSamplerSettingsUVE(true, cfg.maxAnisotropy);
-    renderer.SetScalabilityModeUVE(cfg.scalabilityMode);
 }
 
 bool ViewportSurfaceUVE::PrepareFrameUVE(const int width, const int height) {
@@ -550,6 +510,11 @@ void ViewportSurfaceUVE::BlitMeshLayerUVE(const univex::integration::EditorMeshL
 }
 
 std::uint64_t ViewportSurfaceUVE::EndPassAndResolveUVE(const int width, const int height, const GLint previousFbo) {
+    if (m_msaaFbo == 0U && m_fxaaQuality == 0 && m_casSharpen <= 0.001F) {
+        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFbo));
+        return static_cast<std::uint64_t>(m_sceneColorTexture);
+    }
+
     if (m_msaaFbo != 0U) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, m_msaaFbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_sceneFbo);

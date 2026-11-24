@@ -144,6 +144,8 @@ private:
     prism::Ref<prism::TextInput> m_projectLocation;
     prism::Ref<prism::ComboBox> m_newProjectEngine;
     std::vector<Core::VersionUVE> m_newProjectEngineVersions;
+    prism::Ref<prism::ComboBox> m_newProjectRenderer;
+    prism::Ref<prism::Label> m_rendererDescription;
 
     prism::Ref<prism::Box> m_engineRows;
     prism::Ref<prism::Label> m_feedStatus;

@@ -518,6 +518,12 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
     overlayState.sceneDepth.clear();
     overlayState.sceneDepthWidth = overlayState.sceneDepthHeight = 0;
 
+    if (surface.IsCompatibilityProfileUVE()) {
+        // Compatibility profile skips the extra depth-linearization FBO pass and glReadPixels
+        // GPU->CPU readback altogether to maximize frame pacing on low-end TBDR GPUs.
+        return;
+    }
+
     Core::EngineServicesUVE& services = surface.MutableServicesUVE();
     const Render::SceneDepthExportUVE depth = services.GetRenderer3DUVE().GetLastSceneDepthUVE();
     auto* const glDevice = dynamic_cast<Render::GlRenderDeviceUVE*>(&services.GetRenderDeviceUVE());
@@ -526,10 +532,8 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
         return;
     }
 
-#if defined(UNIVEX_GL_ES)
-    // On mobile TBDR GPUs, reading back scene depth every frame forces an unnecessary tile flush
-    // when nothing changed. Reuse the last depth snapshot while static, and refresh every 4th frame
-    // while camera/scene is moving.
+    // Reuse the last depth snapshot while static, and throttle readbacks during camera motion on
+    // both desktop and mobile to avoid redundant fullscreen depth passes and pipeline flushes.
     std::uint64_t depthKey = 1469598103934665603ULL;
     const auto mixDepthKey = [&depthKey](const void* data, const std::size_t size) {
         const auto* bytes = static_cast<const unsigned char*>(data);
@@ -561,7 +565,6 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
         overlayState.sceneDepthHeight = m_cachedHostDepthHeight;
         return;
     }
-#endif
 
     const GLuint depthTexture = static_cast<GLuint>(glDevice->GetNativeTextureIdUVE(depth.depthTexture));
     const GLuint fullscreenVao = surface.FullscreenVaoUVE();
@@ -697,6 +700,7 @@ void ViewportSceneInteractionUVE::ExportSceneDepthForHostUVE(
             m_cachedHostDepth = overlayState.sceneDepth;
             m_cachedHostDepthWidth = m_hostDepthWidth;
             m_cachedHostDepthHeight = m_hostDepthHeight;
+            m_cachedHostDepthKey = depthKey;
         }
 #endif
     }

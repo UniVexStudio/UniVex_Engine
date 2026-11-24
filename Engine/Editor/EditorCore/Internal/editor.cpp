@@ -7,6 +7,7 @@
 #include "logging_macros.h"
 #include "animation_clip_asset.h"
 #include "animation_library_asset.h"
+#include "asset_import_queue.h"
 #include "montage_library_asset.h"
 #include "fbx_mesh_converter.h"
 #include "gltf_metadata.h"
@@ -243,11 +244,47 @@ EditorUVE::EditorUVE(Core::EngineServicesUVE& services, std::filesystem::path ac
 
 EditorUVE::~EditorUVE() {
     ShutdownUVE();
+    StopBackgroundModelImportWorkerUVE();
 }
 
 void EditorUVE::SetPrismUiEnabledUVE(const bool enabled, std::filesystem::path assetDir) {
     m_prismUiRequested = enabled;
     m_prismAssetDir = std::move(assetDir);
+}
+
+void EditorUVE::SetProjectFilePathUVE(std::filesystem::path projectFile) {
+    m_projectFilePath = std::move(projectFile);
+}
+
+void EditorUVE::SetRendererProfileUVE(const Platform::RendererProfileUVE profile) {
+    m_services->GetRenderer3DUVE().SetRendererProfileUVE(profile);
+    if (m_projectFilePath.empty()) {
+        return;
+    }
+    const Platform::EditorProjectPackageLoadResultUVE loaded =
+        Platform::EditorProjectPackageCodecUVE::LoadUVE(m_projectFilePath);
+    if (!loaded.IsAcceptedUVE()) {
+        UVE_WARNING("EditorUVE: could not load {} to persist renderer profile: {}",
+                    m_projectFilePath.string(), loaded.result.message);
+        return;
+    }
+    if (loaded.package->rendererProfile == profile) {
+        return;
+    }
+    Platform::EditorProjectPackageUVE updated = *loaded.package;
+    updated.rendererProfile = profile;
+    updated.revision = loaded.package->revision + 1U;
+    const Platform::EditorProjectPackageResultUVE saved =
+        Platform::EditorProjectPackageCodecUVE::ApplyUpdateUVE(
+            m_projectFilePath, loaded.package->revision, updated);
+    if (!saved.IsAcceptedUVE()) {
+        UVE_WARNING("EditorUVE: could not persist renderer profile to {}: {}",
+                    m_projectFilePath.string(), saved.message);
+    }
+}
+
+Render::RendererProfileResolutionUVE EditorUVE::GetRendererProfileResolutionUVE() const noexcept {
+    return m_services->GetRenderer3DUVE().GetRendererProfileResolutionUVE();
 }
 
 void EditorUVE::SetSafeAreaCallbackUVE(std::function<std::array<float, 4>()> callback) {
@@ -5079,6 +5116,7 @@ void EditorUVE::SetExtendedPreferencesUVE(EditorExtendedPreferencesUVE preferenc
 }
 
 void EditorUVE::ShutdownUVE() {
+    StopBackgroundModelImportWorkerUVE();
     if (m_state == EditorStateUVE::Shutdown || m_state == EditorStateUVE::Uninitialized) {
         return;
     }
@@ -7012,16 +7050,91 @@ void EditorUVE::MarkRetargetedModelUVE(const std::filesystem::path& relativeSour
     out << SourceStampUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource) << "\n";
 }
 
+Asset::IAssetImportQueueUVE& EditorUVE::ActiveModelImportQueueUVE() const noexcept {
+    if (m_bgModelImportQueue != nullptr) {
+        return *m_bgModelImportQueue;
+    }
+    return m_services->GetAssetImportQueueUVE();
+}
+
+void EditorUVE::EnsureBackgroundModelImportWorkerUVE() {
+    if (m_bgModelImportQueue != nullptr) {
+        return;
+    }
+    m_bgModelImportQueue = std::make_unique<Asset::AssetImportQueueUVE>(
+        m_services->GetAssetImporterUVE(), m_services->GetAssetDatabaseUVE(),
+        m_services->GetDerivedArtifactCacheUVE());
+    {
+        std::lock_guard<std::mutex> lock(m_bgImportMutex);
+        m_bgImportStop = false;
+        m_bgImportHasPending = false;
+    }
+    m_bgImportWorker = std::thread([this]() {
+        for (;;) {
+            {
+                std::unique_lock<std::mutex> lock(m_bgImportMutex);
+                m_bgImportCv.wait(lock, [this]() { return m_bgImportStop || m_bgImportHasPending; });
+                if (m_bgImportStop) {
+                    return;
+                }
+                m_bgImportHasPending = false;
+            }
+            while (m_bgModelImportQueue->TickUVE()) {
+                std::lock_guard<std::mutex> lock(m_bgImportMutex);
+                if (m_bgImportStop) {
+                    return;
+                }
+            }
+        }
+    });
+}
+
+void EditorUVE::StopBackgroundModelImportWorkerUVE() {
+    if (m_bgImportWorker.joinable()) {
+        {
+            std::lock_guard<std::mutex> lock(m_bgImportMutex);
+            m_bgImportStop = true;
+        }
+        m_bgImportCv.notify_all();
+        m_bgImportWorker.join();
+    }
+    m_bgModelImportQueue.reset();
+}
+
 void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& snapshot) {
-    Asset::IAssetImportQueueUVE& queue = m_services->GetAssetImportQueueUVE();
+    // Keep headless/test sessions on the deterministic main-thread queue; run heavy FBX/model
+    // imports on a serialized background thread in interactive PRISM sessions to prevent UI/ANR stalls.
+    if (m_prismUiRequested) {
+        EnsureBackgroundModelImportWorkerUVE();
+    }
+    Asset::IAssetImportQueueUVE& queue = ActiveModelImportQueueUVE();
+    const Render::RendererProfileResolutionUVE profileRes = GetRendererProfileResolutionUVE();
+    const std::uint32_t maxEmbeddedTextureResolution =
+        (profileRes.effective == Platform::RendererProfileUVE::Compatibility) ? 1024U : 2048U;
+
     m_modelSources.clear();
+    bool enqueuedAny = false;
     for (const Asset::ProjectFileEntryUVE& entry : snapshot.entries) {
         if (entry.kind == Asset::ProjectFileEntryKindUVE::Directory || !IsModelSourcePathUVE(entry.relativePath)) {
             continue;
         }
         const std::string key = entry.relativePath.generic_string();
         const std::filesystem::path source = snapshot.contentRoot / entry.relativePath;
-        const EditorModelSourceInfoUVE& info = m_modelSources[key] = ReadModelSourceInfoUVE(source);
+        const std::string stamp = SourceStampUVE(source);
+        std::error_code sizeError;
+        const std::uintmax_t fileSize = std::filesystem::file_size(source, sizeError);
+        EditorModelSourceInfoUVE parsedInfo;
+        const auto cached = m_modelSourceStampCache.find(key);
+        if (cached != m_modelSourceStampCache.end() && !stamp.empty() && !sizeError &&
+            cached->second.stamp == stamp && cached->second.size == fileSize) {
+            parsedInfo = cached->second.info;
+        } else {
+            parsedInfo = ReadModelSourceInfoUVE(source);
+            if (!stamp.empty() && !sizeError) {
+                m_modelSourceStampCache[key] = CachedModelSourceStampUVE{stamp, fileSize, parsedInfo};
+            }
+        }
+        const EditorModelSourceInfoUVE& info = m_modelSources[key] = std::move(parsedInfo);
         // An FBX's takes (the extension is compared as the model check compares it: any case).
         if (info.animationCount > 0U) {
             QueueModelAnimationImportUVE(source);
@@ -7042,7 +7155,9 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
         Asset::AssetImportRequestUVE request;
         request.sourcePath = source;
         request.destinationPath = GetImportedModelPathUVE(entry.relativePath);
-        request.settings = std::make_shared<const Asset::AssetImportSettingsUVE>();
+        auto modelSettings = std::make_shared<Asset::ModelImportSettingsUVE>();
+        modelSettings->maxEmbeddedTextureResolution = maxEmbeddedTextureResolution;
+        request.settings = std::move(modelSettings);
         if (const std::optional<Asset::AssetImportJobIdUVE> job = queue.EnqueueUVE(std::move(request));
             job.has_value()) {
             // Deliberately NOT cleared here. A refresh re-queues whatever is not in flight, so a
@@ -7050,7 +7165,22 @@ void EditorUVE::QueueModelAutoImportsUVE(const Asset::ProjectFileSnapshotUVE& sn
             // attempt would make the editor's message blink in and out of existence instead of
             // staying on the file that is broken. Only a success clears it.
             m_modelImportJobs.emplace(key, *job);
+            enqueuedAny = true;
         }
+    }
+    for (auto it = m_modelSourceStampCache.begin(); it != m_modelSourceStampCache.end();) {
+        if (m_modelSources.find(it->first) == m_modelSources.end()) {
+            it = m_modelSourceStampCache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (enqueuedAny && m_bgModelImportQueue != nullptr) {
+        {
+            std::lock_guard<std::mutex> lock(m_bgImportMutex);
+            m_bgImportHasPending = true;
+        }
+        m_bgImportCv.notify_one();
     }
 }
 
@@ -7212,7 +7342,7 @@ void EditorUVE::PollModelImportJobsUVE() {
     if (m_importBatchTotal < m_modelImportJobs.size() + m_importBatchCompleted) {
         m_importBatchTotal = m_modelImportJobs.size() + m_importBatchCompleted;
     }
-    const std::vector<Asset::AssetImportJobUVE> jobs = m_services->GetAssetImportQueueUVE().GetJobsUVE();
+    const std::vector<Asset::AssetImportJobUVE> jobs = ActiveModelImportQueueUVE().GetJobsUVE();
     bool imported = false;
     for (auto it = m_modelImportJobs.begin(); it != m_modelImportJobs.end();) {
         const auto job = std::find_if(jobs.begin(), jobs.end(),

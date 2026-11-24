@@ -149,6 +149,10 @@ struct EditorProjectPackageUVE final {
     /// written before this field existed; the codec defaults it to empty on load for those.
     std::filesystem::path startupScenePath;
 
+    /// Project rendering profile chosen in UniVex Hub (`Compatibility`, `Mobile`, or `Forward+`).
+    /// Absent in older `.uvproject` files; defaults to the host's recommended profile on load.
+    RendererProfileUVE rendererProfile = DefaultRendererProfileForHostUVE();
+
     [[nodiscard]] bool operator==(const EditorProjectPackageUVE&) const = default;
 };
 

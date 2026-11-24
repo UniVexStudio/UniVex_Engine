@@ -323,6 +323,21 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildNewProjectPageUVE() {
     m_projectName = prism::make<prism::TextInput>("", "My Game");
     m_projectLocation = prism::make<prism::TextInput>(m_settings.defaultProjectLocation.string());
     m_newProjectEngine = prism::make<prism::ComboBox>();
+    const Platform::RendererProfileUVE defaultProfile =
+        m_context.compactLayout ? Platform::RendererProfileUVE::Compatibility : Platform::DefaultRendererProfileForHostUVE();
+    const std::vector<std::string> rendererLabels{
+        std::string(Platform::GetRendererProfileDisplayNameUVE(Platform::RendererProfileUVE::Compatibility)),
+        std::string(Platform::GetRendererProfileDisplayNameUVE(Platform::RendererProfileUVE::Mobile)),
+        std::string(Platform::GetRendererProfileDisplayNameUVE(Platform::RendererProfileUVE::ForwardPlus)),
+    };
+    m_newProjectRenderer = prism::make<prism::ComboBox>(rendererLabels, static_cast<int>(defaultProfile));
+    m_rendererDescription = prism::make<prism::Label>(
+        std::string(Platform::GetRendererProfileDescriptionUVE(defaultProfile)), prism::FontRole::Small);
+    m_rendererDescription->setColor(&prism::Theme::textDim);
+    m_newProjectRenderer->onChange = [this](const int index) {
+        const auto profile = static_cast<Platform::RendererProfileUVE>(std::clamp(index, 0, 2));
+        m_rendererDescription->setText(std::string(Platform::GetRendererProfileDescriptionUVE(profile)));
+    };
     auto create = prism::make<prism::Button>("Create and Open", prism::Icon::Plus, prism::ButtonStyle::Primary);
     create->onClick = [this] { CreateProjectUVE(); };
 
@@ -333,6 +348,8 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildNewProjectPageUVE() {
         stacked->add(FieldRowUVE("Name", m_projectName, true));
         stacked->add(FieldRowUVE("Location", FolderFieldUVE(m_projectLocation, "Where to create the project"), true));
         stacked->add(FieldRowUVE("Engine", m_newProjectEngine, true));
+        stacked->add(FieldRowUVE("Renderer", m_newProjectRenderer, true));
+        stacked->add(m_rendererDescription);
         stacked->add(create, prism::Slot{0.0F, {}, prism::HAlign::Fill});
         auto scroll = prism::make<prism::ScrollView>();
         scroll->setContent(stacked);
@@ -351,6 +368,8 @@ prism::Ref<prism::Widget> HubWindowUVE::BuildNewProjectPageUVE() {
     details->add(FieldRowUVE("Name", m_projectName));
     details->add(FieldRowUVE("Location", FolderFieldUVE(m_projectLocation, "Where to create the project")));
     details->add(FieldRowUVE("Engine", m_newProjectEngine));
+    details->add(FieldRowUVE("Renderer", m_newProjectRenderer));
+    details->add(m_rendererDescription);
     details->add(create, prism::Slot{0.0F, {}, prism::HAlign::Left});
     body->add(details, prism::Slot{1.0F});
 
@@ -649,9 +668,12 @@ void HubWindowUVE::CreateProjectUVE() {
         return;
     }
     const Core::VersionUVE engineVersion = m_newProjectEngineVersions[static_cast<std::size_t>(engineIndex)];
+    const int rendererIndex = m_newProjectRenderer ? std::clamp(m_newProjectRenderer->selected(), 0, 2)
+                                                   : static_cast<int>(Platform::DefaultRendererProfileForHostUVE());
+    const auto rendererProfile = static_cast<Platform::RendererProfileUVE>(rendererIndex);
     const std::string displayName = m_projectName->text();
     const Pack::ProjectCreationResultUVE created = Pack::CreateProjectFromTemplateUVE(
-        m_templates[m_selectedTemplate], location, m_projectName->text(), engineVersion);
+        m_templates[m_selectedTemplate], location, m_projectName->text(), engineVersion, rendererProfile);
     if (!created.IsCreatedUVE()) {
         SetStatusUVE(created.message, true);
         return;
