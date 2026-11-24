@@ -639,9 +639,13 @@ void Application::dispatchWheel(MouseEvent e) {
 
 void Application::dispatchKey(KeyEvent e) {
   e.mods = m_mods;
-  if (!m_popups.empty()) {
-    auto w = m_popups.back().widget;
-    Widget* pf = focus();
+  Widget* pf = focus();
+  // A floating popup takes keys only through its own focus; otherwise they go on to the window beneath it.
+  auto top = std::find_if(m_popups.rbegin(), m_popups.rend(), [pf](const Popup& p) {
+    return p.opt.modal || p.opt.dismissOnOutside || (pf && pf->isDescendantOf(p.widget.get()));
+  });
+  if (top != m_popups.rend()) {
+    auto w = top->widget;
     if (pf && pf->isDescendantOf(w.get()))
       for (Widget* x = pf; x; x = x->m_parent) {
         if (x->enabled() && x->onKeyDown(e)) { invalidate(); return; }

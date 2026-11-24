@@ -154,6 +154,9 @@ private:
     /// Blueprint mode: the graph takes the whole centre (no viewport, no dock); Components and
     /// Details stay on the left.
     std::shared_ptr<prism::StackSwitcher> m_centreStack;
+    std::shared_ptr<prism::Widget> m_leftColumn;   // Components + Details
+    bool m_centreFocus = false;                    // the Designer / Graph alone, full width
+    void SetCentreFocusUVE(bool on);
     std::shared_ptr<prism::Widget> m_dockBar;
     bool m_blueprintMode = false;
     /// The sub row's trail beside Simulate: Viewport | <folder> > BP_A > BP_B ..., one crumb per

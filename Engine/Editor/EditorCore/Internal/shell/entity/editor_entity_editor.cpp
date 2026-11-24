@@ -359,6 +359,7 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildUVE() {
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
     columns->add(left, prism::Splitter::Pane{340.0F, 240.0F, 900.0F, false});
+    m_leftColumn = left;
     m_centreStack = prism::make<prism::StackSwitcher>();
     m_centreStack->addPage(BuildCentreUVE());
     m_centreStack->addPage(BuildBlueprintViewUVE());
@@ -609,9 +610,11 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildComponentsUVE() {
     };
     m_components->onDelete = [this](prism::TreeNode* node) {
         const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
-        if (entity != Scene::kInvalidEntityUVE && entity != m_editor.GetEntityEditorRootUVE()) {
+        if (m_editor.IsEntitySelectedUVE(entity)) {
+            m_editor.RequestDeleteSelectedEntitiesUVE();
+        } else if (entity != Scene::kInvalidEntityUVE && entity != m_editor.GetEntityEditorRootUVE()) {
             m_editor.SelectEntityUVE(entity);
-            static_cast<void>(m_editor.DeleteSelectedEntityUVE());
+            m_editor.RequestDeleteSelectedEntitiesUVE();
         }
     };
     // Drag a row onto another: inside it (a child), or before / after it (a sibling).
@@ -959,6 +962,16 @@ prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildSequencerPageUVE() {
 
 prism::Ref<prism::Widget> EditorEntityEditorUVE::BuildGraphPageUVE() {
     return PanelUVE(m_animGraphPanel.BuildUVE());
+}
+
+void EditorEntityEditorUVE::SetCentreFocusUVE(const bool on) {
+    m_centreFocus = on;
+    if (m_leftColumn) {
+        m_leftColumn->setVisible(!on);
+    }
+    if (prism::Application::exists()) {
+        prism::Application::get().invalidateLayout();
+    }
 }
 
 void EditorEntityEditorUVE::SetDockFullUVE(const bool full) {
@@ -1393,6 +1406,14 @@ void EditorEntityEditorUVE::SyncBlueprintCrumbsUVE() {
         stage->onClick = [this] { SetWidgetPageUVE(2); };
         m_crumbRow->add(graph, CentreUVE());
         m_crumbRow->add(stage, CentreUVE());
+        // On a phone the Designer and the Graph are squeezed beside Components and Details: Focus
+        // gives them the whole width.
+        auto focus = prism::make<prism::Button>("Focus", prism::Icon::LayoutFull, prism::ButtonStyle::Toolbar);
+        focus->setCheckable(true);
+        focus->setChecked(m_centreFocus);
+        focus->setTooltip("Focus: hide Components and Details so the Designer or Graph fills the window");
+        focus->onToggle = [this](const bool on) { SetCentreFocusUVE(on); };
+        m_crumbRow->add(focus, CentreUVE());
         if (!m_blueprintMode && !m_stageMode && m_designer) {
             // The screen the widget is designed for.
             auto bar = prism::make<prism::Label>("|", prism::FontRole::Small);

@@ -50,8 +50,9 @@ public:
     [[nodiscard]] prism::Ref<prism::Widget> BuildSearchUVE();
 
     /// Pulls new log lines (always, so nothing is missed while the page is hidden), and refreshes
-    /// the console and profiler while their page is the one showing.
-    void RefreshUVE(bool consoleShown, bool profilerShown);
+    /// the console and profiler while their page is the one showing. `gpuMs`: the GPU time of the
+    /// latest frame measured (0 when unknown), for the Timeline.
+    void RefreshUVE(bool consoleShown, bool profilerShown, float gpuMs = 0.0F);
 
     /// A message as the sink received it (any thread), waiting for the next refresh.
     struct LogLineUVE final {
@@ -105,7 +106,7 @@ private:
     // The Timeline: PRISM's frame profiler, fed every frame with the engine's numbers.
     std::shared_ptr<prism::Profiler> m_timeline;
     std::chrono::steady_clock::time_point m_lastFrame{};
-    void FeedTimelineUVE();
+    void FeedTimelineUVE(bool shown, float gpuMs);
     std::vector<EditorRenderStatRowUVE> m_frameRows;
     std::vector<Core::ProfilerSpanRowUVE> m_spanRows;
     std::vector<Core::ProfilerCounterRowUVE> m_counterRows;

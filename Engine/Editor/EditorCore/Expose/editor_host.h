@@ -47,6 +47,8 @@ inline constexpr int kExtraCaptionIdUVE = 100;
 
 class EditorHostUVE final {
 public:
+    /// Files dragged from the system's file manager and dropped on the main window (desktop).
+    std::function<void(std::vector<std::filesystem::path>)> onFilesDropped;
     /// One engine render target to place under an EngineView hole this frame.
     struct ViewImageUVE final {
         prism::Rect rect;              ///< window pixels, top-left origin
@@ -106,6 +108,11 @@ public:
     /// The same for window `id` (not the main one), presented at once; the main context is
     /// current again when it returns.
     void RenderWindowUVE(int id, std::span<const ViewImageUVE> views);
+    /// Times the GPU work the main context gets between these two calls; the result is read a few
+    /// frames later, never waited for. GpuFrameMsUVE: the latest one, 0 where the GL cannot time.
+    void BeginGpuTimerUVE();
+    void EndGpuTimerUVE();
+    [[nodiscard]] float GpuFrameMsUVE() const noexcept;
 
     /// True once the PRISM close button (or quit) asked the editor to exit.
     [[nodiscard]] bool QuitRequestedUVE() const noexcept;
@@ -133,6 +140,7 @@ public:
 private:
     class PlatformUVE;
     struct CompositorUVE;
+    struct GpuTimerUVE;
     struct ChainUVE;
     friend class PlatformUVE;
 
@@ -160,6 +168,7 @@ private:
     std::unique_ptr<prism::Application> m_app;
     std::shared_ptr<prism::GlBackend> m_backend;
     std::unique_ptr<CompositorUVE> m_compositor;
+    std::unique_ptr<GpuTimerUVE> m_gpuTimer;
     std::unique_ptr<ChainUVE> m_chain;
     std::unique_ptr<WindowUVE> m_main;
     std::map<int, std::unique_ptr<WindowUVE>> m_windows;   // secondary windows by PRISM id

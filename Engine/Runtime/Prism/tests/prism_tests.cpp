@@ -255,6 +255,66 @@ static void testHitAndRouting(Application& app) {
   CHECK(clicks == 1);                                                    // disabled widgets ignore clicks
 }
 
+class KeyCounter : public Widget {
+public:
+  int deletes = 0;
+  bool focusable() const override { return true; }
+  bool onKeyDown(const KeyEvent& e) override {
+    if (e.key != Key::Delete) return false;
+    deletes++;
+    return true;
+  }
+};
+
+// A floating popup (not modal, not closed by an outside click) leaves the keys to the focused widget beneath it,
+// so a tool panel's Ctrl+Z / Delete reach the editor; a modal popup still takes every key.
+static void testFloatingPopupKeys(Application& app) {
+  SECTION("keys pass a floating popup to the focused window");
+  app.hostResize(600, 400);
+  auto target = make<KeyCounter>();
+  app.setRoot(target);
+  app.tick();
+  int saves = 0;
+  app.setShortcutHandler([&saves](Key k, uint8_t mods) {
+    if (k != Key::S || mods != ModCtrl) return false;
+    saves++;
+    return true;
+  });
+  auto panel = make<KeyCounter>();
+  panel->setFixedSize(120, 60);
+  PopupOptions o;
+  o.placement = PopupPlacement::AtPoint;
+  o.anchor = Rect{20, 20, 0, 0};
+  o.modal = false;
+  o.dismissOnOutside = false;
+  app.showPopup(panel, o);
+  app.setFocus(target.get());
+  app.hostKey(Key::Delete, 0);
+  app.hostKey(Key::S, ModCtrl);
+  CHECK(target->deletes == 1 && panel->deletes == 0);
+  CHECK(saves == 1);
+  CHECK(app.topPopup() == panel.get());                                  // the panel stays open
+  app.setFocus(panel.get());                                             // focus inside the panel keeps its keys
+  app.hostKey(Key::Delete, 0);
+  CHECK(panel->deletes == 1 && target->deletes == 1);
+  app.setFocus(target.get());
+  auto dialog = make<KeyCounter>();
+  dialog->setFixedSize(120, 60);
+  PopupOptions m;
+  m.placement = PopupPlacement::Center;
+  m.modal = true;
+  m.dismissOnOutside = false;
+  app.showPopup(dialog, m);
+  app.hostKey(Key::Delete, 0);
+  app.hostKey(Key::S, ModCtrl);
+  CHECK(dialog->deletes == 1 && target->deletes == 1 && saves == 1);
+  app.hostKey(Key::Escape, 0);                                           // Escape closes the modal one only
+  CHECK(app.topPopup() == panel.get());
+  app.closeAllPopups();
+  app.setShortcutHandler(nullptr);
+  app.setFocus(nullptr);
+}
+
 static void testToastsAndTimers(Application& app, TestPlatform& plat) {
   SECTION("toasts and timers");
   app.setRoot(make<Spacer>());
@@ -2820,6 +2880,12 @@ static void testProfiler(Application& app) {
   pf->clear();
   CHECK(pf->frameCount() == 0 && pf->shownFrame() == nullptr);
   app.tick(); app.render();
+  const auto gen = app.paintGeneration();
+  pf->pushFrame({}, false);
+  CHECK(pf->frameCount() == 1 && app.paintGeneration() == gen);  // recorded without a repaint (hidden panel)
+  pf->pushFrame({});
+  CHECK(pf->frameCount() == 2 && app.paintGeneration() != gen);
+  app.tick(); app.render();
 }
 
 static void testColorPickerWindow(Application& app) {
@@ -3481,6 +3547,7 @@ int main(int argc, char** argv) {
   testTheme();
   testLayout(app);
   testHitAndRouting(app);
+  testFloatingPopupKeys(app);
   testDialogButtonsReadFields(app);
   testDialogDragAndDisabledChoices(app);
   testSmoothImageScaling();

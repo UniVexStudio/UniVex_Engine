@@ -27,7 +27,7 @@ struct ProfileFrame {
 class Profiler : public Widget {
 public:
   Profiler();
-  void pushFrame(ProfileFrame f);          // ignored while paused
+  void pushFrame(ProfileFrame f, bool repaint = true);   // ignored while paused; repaint=false records unseen
   void clear();
   void setPaused(bool p);
   bool paused() const { return m_paused; }

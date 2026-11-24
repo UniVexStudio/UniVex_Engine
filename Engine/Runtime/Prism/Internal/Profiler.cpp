@@ -18,7 +18,7 @@ std::string fmt(const char* f, double a, double b = 0) { char s[64]; snprintf(s,
 
 Profiler::Profiler() { m_frames.reserve(kHistory); }
 
-void Profiler::pushFrame(ProfileFrame f) {
+void Profiler::pushFrame(ProfileFrame f, bool repaint) {
   if (m_paused) return;
   if (m_frames.size() >= kHistory) {
     m_frames.erase(m_frames.begin());
@@ -26,7 +26,7 @@ void Profiler::pushFrame(ProfileFrame f) {
     else if (m_selected == 0) m_selected = -1;
   }
   m_frames.push_back(std::move(f));
-  invalidate();
+  if (repaint) invalidate();
 }
 void Profiler::clear() { m_frames.clear(); m_selected = -1; invalidate(); }
 void Profiler::setPaused(bool p) { m_paused = p; invalidate(); }

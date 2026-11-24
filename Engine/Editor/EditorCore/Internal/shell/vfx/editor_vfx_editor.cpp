@@ -276,9 +276,11 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildUVE() {
     window->add(BuildTitleBarUVE());
 
     auto columns = prism::make<prism::Splitter>(prism::Orientation::Horizontal);
-    columns->add(BuildLeftColumnUVE(), prism::Splitter::Pane{395.0F, 330.0F, 640.0F, false});
+    m_leftColumn = BuildLeftColumnUVE();
+    m_rightColumn = BuildRightColumnUVE();
+    columns->add(m_leftColumn, prism::Splitter::Pane{395.0F, 330.0F, 640.0F, false});
     columns->add(BuildCentreColumnUVE(), prism::Splitter::Pane{695.0F, 420.0F, 1e9F, true});
-    columns->add(BuildRightColumnUVE(), prism::Splitter::Pane{350.0F, 260.0F, 600.0F, false});
+    columns->add(m_rightColumn, prism::Splitter::Pane{350.0F, 260.0F, 600.0F, false});
     window->add(columns, prism::Slot{1.0F});
 
     auto frame = prism::make<VfxWindowFrameUVE>();
@@ -421,6 +423,18 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildTitleBarUVE() {
     return BuildEditorHeaderUVE(std::move(desc));
 }
 
+void EditorVfxEditorUVE::SetGraphFocusUVE(const bool on) {
+    m_graphFocus = on;
+    for (const std::shared_ptr<prism::Widget>& panel : {m_leftColumn, m_rightColumn, m_compilePanel}) {
+        if (panel) {
+            panel->setVisible(!on);
+        }
+    }
+    if (prism::Application::exists()) {
+        prism::Application::get().invalidateLayout();
+    }
+}
+
 prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
     auto row = prism::hbox(3.0F);
     row->setPadding(prism::Margin(5.0F, 1.0F, 5.0F, 1.0F));
@@ -463,6 +477,10 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildToolbarUVE() {
         }
     };
     row->add(m_boundsButton, CentreSlotUVE());
+    auto focus = ToolButtonUVE(prism::Icon::LayoutFull, "Focus: the graph fills the window (side panels and compile results hidden)", "Focus");
+    focus->setCheckable(true);
+    focus->onToggle = [this](const bool on) { SetGraphFocusUVE(on); };
+    row->add(focus, CentreSlotUVE());
     if (prism::Ref<prism::Widget> controls = MakeTouchControlsButtonUVE()) {   // touch screens: Undo, Ctrl, ...
         row->add(controls, CentreSlotUVE());
     }
@@ -763,7 +781,8 @@ prism::Ref<prism::Widget> EditorVfxEditorUVE::BuildCentreColumnUVE() {
 
     auto centreSplit = prism::make<prism::Splitter>(prism::Orientation::Vertical);
     centreSplit->add(PanelUVE(graphBox), prism::Splitter::Pane{590.0F, 260.0F, 1e9F, true});
-    centreSplit->add(PanelUVE(compileBox), prism::Splitter::Pane{165.0F, 110.0F, 360.0F, false});
+    m_compilePanel = PanelUVE(compileBox);
+    centreSplit->add(m_compilePanel, prism::Splitter::Pane{165.0F, 110.0F, 360.0F, false});
     return centreSplit;
 }
 

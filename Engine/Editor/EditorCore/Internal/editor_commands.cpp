@@ -10,12 +10,17 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "editor_commands.h"
+
+#include "prism/Application.h"
+#include "prism/Controls.h"
+#include "prism/Views.h"
 
 namespace UVE::Editor {
 namespace {
@@ -80,8 +85,8 @@ void EditorUVE::RegisterEditorCommandsUVE() {
         [this] { return CanRedoUVE(); }, [this] { static_cast<void>(RedoUVE()); });
     add("edit.duplicate", "Duplicate", "Edit", {KeyUVE(EditorKeyUVE::D, true)}, canChangeSelection,
         [this] { static_cast<void>(DuplicateSelectedEntityUVE()); });
-    add("edit.delete", "Delete", "Edit", {KeyUVE(EditorKeyUVE::Delete)}, canChangeSelection,
-        [this] { static_cast<void>(DeleteSelectedEntityUVE()); });
+    add("edit.delete", "Delete", "Edit", {KeyUVE(EditorKeyUVE::Delete)},
+        [this] { return !CollectDeletableSelectionUVE().empty(); }, [this] { RequestDeleteSelectedEntitiesUVE(); });
     add("edit.cut", "Cut", "Edit", {KeyUVE(EditorKeyUVE::X, true)}, canChangeSelection,
         [this] { static_cast<void>(CutSelectedObjectUVE()); });
     add("edit.copy", "Copy", "Edit", {KeyUVE(EditorKeyUVE::C, true)}, canChangeSelection,
@@ -142,6 +147,32 @@ void EditorUVE::RegisterEditorCommandsUVE() {
             }
         }
     }
+}
+
+void EditorUVE::RequestDeleteSelectedEntitiesUVE() {
+    const std::size_t count = CollectDeletableSelectionUVE().size();
+    if (count <= 1U || !prism::Application::exists()) {
+        static_cast<void>(DeleteSelectedEntitiesUVE());
+        return;
+    }
+    const bool entityDocument = m_entityDocumentActive;
+    const std::vector<Scene::EntityUVE> asked = m_selectedEntities;
+    const auto erase = [this, entityDocument, asked] {
+        std::optional<EntityDocumentScopeUVE> scope;
+        if (entityDocument) {
+            scope.emplace(*this);
+            if (!m_entityDocumentActive) {
+                return;   // the entity was closed meanwhile
+            }
+        }
+        // Only what the question named: a selection changed since then is left alone.
+        if (m_selectedEntities == asked) {
+            static_cast<void>(DeleteSelectedEntitiesUVE());
+        }
+    };
+    auto text = prism::make<prism::Label>("Delete " + std::to_string(count) + " objects?");
+    prism::showDialog("Delete Objects", text,
+                      {prism::DialogButton{"Cancel", false, {}}, prism::DialogButton{"Delete", true, erase}}, 380.0F);
 }
 
 const std::vector<EditorCommandUVE>& EditorUVE::GetEditorCommandsUVE() const noexcept {

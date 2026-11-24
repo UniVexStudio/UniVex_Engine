@@ -153,6 +153,11 @@ bool EditorShellUVE::InitializeUVE(GLFWwindow* const window, const std::filesyst
     LoadThumbnailBackdropUVE(assetDir / "images" / "thumbnail_backdrop.png");
     m_dockPanels.AttachLogUVE();
     m_editor.SetFilePickerHostUVE([this](FilePickerRequestUVE request) { m_fileDialog.OpenUVE(std::move(request)); });
+    // Dropped from the file manager: imported into the folder the Asset Table shows.
+    m_host.onFilesDropped = [this](std::vector<std::filesystem::path> files) {
+        const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
+        static_cast<void>(m_editor.ImportExternalFilesUVE(files, root / m_editor.m_assetTableDirectory));
+    };
     m_host.SetRootUVE(BuildLayoutUVE());
     // Every keyboard shortcut is an editor command's (the same registry the menus use).
     m_host.AppUVE().setShortcutHandler([this](const prism::Key key, const std::uint8_t mods) {
@@ -581,8 +586,10 @@ prism::Ref<prism::Widget> EditorShellUVE::BuildOutlinerUVE() {
     m_outliner->onDelete = [this](prism::TreeNode* node) {
         const Scene::EntityUVE entity = EntityForTreeIdUVE(node->id);
         if (entity != Scene::kInvalidEntityUVE) {
-            m_editor.SelectEntityUVE(entity);
-            static_cast<void>(m_editor.DeleteSelectedEntityUVE());
+            if (!m_editor.IsEntitySelectedUVE(entity)) {
+                m_editor.SelectEntityUVE(entity);
+            }
+            m_editor.RequestDeleteSelectedEntitiesUVE();
         }
     };
     m_outliner->onContext = [this](prism::TreeNode* node, const prism::Vec2 at) {
@@ -720,11 +727,16 @@ bool EditorShellUVE::DropContentOnOutlinerUVE(const std::string& relativePath, c
     std::string extension = relative.extension().string();
     std::transform(extension.begin(), extension.end(), extension.begin(),
                    [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const std::filesystem::path clipSource =
+        extension == ".uvanim" ? m_editor.FindAnimationClipSourceUVE(relative) : std::filesystem::path{};
     Scene::EntityUVE placed = Scene::kInvalidEntityUVE;
     if (extension == ".uventity" || extension == ".uvprefab") {
         placed = m_editor.PlaceEntityAssetUVE(snapshot.contentRoot / relative, parent);
     } else if (EditorUVE::IsModelSourcePathUVE(relative)) {
         placed = m_editor.PlaceModelSourceUVE(relative, parent);
+    } else if (!clipSource.empty()) {
+        // The Asset Table lists an animation-only file as its clips: one places the file, playing it.
+        placed = m_editor.PlaceModelSourceUVE(clipSource, parent, relative);
     } else {
         m_editor.m_contentStatusMessage = "Only entity assets and models can be placed in the Outliner.";
         return false;
@@ -1189,6 +1201,7 @@ void EditorShellUVE::FrameUVE() {
     if (!m_host.IsReadyUVE()) {
         return;
     }
+    m_host.BeginGpuTimerUVE();
     if (m_safeFrame) {
         const std::array<float, 4> area = m_editor.SafeAreaInsetsUVE();
         if (area != m_safeArea) {
@@ -1233,7 +1246,7 @@ void EditorShellUVE::FrameUVE() {
     m_assetTable.RefreshUVE();
     {
         const int page = m_dockPages ? m_dockPages->activeIndex() : 0;
-        m_dockPanels.RefreshUVE(m_dockVisible && page == 2, m_dockVisible && page == 3);
+        m_dockPanels.RefreshUVE(m_dockVisible && page == 2, m_dockVisible && page == 3, m_host.GpuFrameMsUVE());
     }
     // The Entity Editor's window follows the entity session; its panels read the entity's document.
     m_entityEditor.SyncUVE();
@@ -1411,6 +1424,7 @@ void EditorShellUVE::FrameUVE() {
         AppendCameraScreenUVE(m_editor, m_details2, m_cameraScreen.get(), views);
         m_host.RenderUVE(views);
     }
+    m_host.EndGpuTimerUVE();
     {
         const EditorUVE::EntityDocumentScopeUVE scope(m_editor);
         m_entityEditor.RenderUVE();

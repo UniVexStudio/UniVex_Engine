@@ -12,6 +12,7 @@
 #include <filesystem>
 
 #include "android_host.h"
+#include "editor.h"
 #include "editor_main.h"
 #include "launcher_window.h"
 #include "prism/Application.h"
@@ -60,12 +61,24 @@ extern "C" __attribute__((visibility("default"))) int UveEditorRunUVE(android_ap
         return UVE::AndroidHost::BeforeFrameUVE(activity, core, kEditorRenderedMarkerUVE);
     };
     __android_log_print(ANDROID_LOG_INFO, UVE::AndroidHost::kLogTagUVE, "UVE_EDITOR_STARTED");
+    // Import opens Android's own file manager (it reaches Downloads, Drive and USB storage).
+    UVE::Editor::SetSystemImportPickerUVE([&activity](std::function<void(const std::filesystem::path&)> onPicked) {
+        return UVE::AndroidHost::StartFilePickUVE(
+            activity, {".fbx", ".gltf", ".glb", ".obj", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg",
+                       ".mp3", ".uvshader", ".glsl"},
+            std::move(onPicked), [](const std::string& reason) {
+                __android_log_print(ANDROID_LOG_WARN, UVE::AndroidHost::kLogTagUVE, "UVE_IMPORT_PICK %s", reason.c_str());
+            });
+    });
     int exitCode = kEditorStartFailedExitCodeUVE;
     try {
         exitCode = UVE::App::RunEditorUVE(argc, argv, platform);
     } catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_ERROR, UVE::AndroidHost::kLogTagUVE, "UVE_EDITOR_FAILED %s", error.what());
     }
+    UVE::Editor::SetSystemImportPickerUVE({});
+    activity.pendingPick = nullptr;
+    activity.pendingPickError = nullptr;
     UVE::AndroidHost::DetachEngineUVE(activity);
     __android_log_print(ANDROID_LOG_INFO, UVE::AndroidHost::kLogTagUVE, "UVE_EDITOR_STOPPED %d", exitCode);
     return exitCode;

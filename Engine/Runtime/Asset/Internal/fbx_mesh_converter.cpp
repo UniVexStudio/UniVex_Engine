@@ -16,6 +16,7 @@
 #include <string>
 #include <span>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -142,9 +143,27 @@ struct FbxBoneObjectUVE final {
 /// `outDropped`, when non-null, receives the number of bones the cap excluded - it counts the bones
 /// left over, so the file's own bone count is `maximumBones + *outDropped`. Empty optional when the
 /// cap is exceeded and `overflow` is Fail.
+/// Nodes a skin cluster deforms with. Blender, Maya, 3ds Max and Mixamo exports often bind skin to
+/// Null / Dummy / Locator nodes that carry no bone attribute: they are bones all the same.
+[[nodiscard]] std::unordered_set<const ufbx_node*> FbxClusterBoneNodesUVE(const ufbx_scene& scene) {
+    std::unordered_set<const ufbx_node*> nodes;
+    for (std::size_t i = 0U; i < scene.skin_clusters.count; ++i) {
+        const ufbx_node* const node = scene.skin_clusters.data[i]->bone_node;
+        if (node != nullptr && node != scene.root_node) {
+            nodes.insert(node);
+        }
+    }
+    return nodes;
+}
+
+[[nodiscard]] bool IsFbxBoneNodeUVE(const ufbx_node& node, const std::unordered_set<const ufbx_node*>& clusterBones) {
+    return node.bone != nullptr || clusterBones.count(&node) != 0U;
+}
+
 [[nodiscard]] std::optional<std::vector<FbxBoneObjectUVE>> CollectFbxBonesUVE(
     const ufbx_scene& scene, const std::size_t maximumBones,
     const FbxBoneOverflowUVE overflow = FbxBoneOverflowUVE::Fail, std::size_t* const outDropped = nullptr) {
+    const std::unordered_set<const ufbx_node*> clusterBones = FbxClusterBoneNodesUVE(scene);
     std::vector<FbxBoneObjectUVE> bones;
     std::unordered_map<const ufbx_node*, std::int32_t> boneOfObject;
     std::set<std::string> usedNames;
@@ -156,7 +175,7 @@ struct FbxBoneObjectUVE final {
         for (std::size_t child = object->children.count; child > 0U; --child) {
             pending.push_back(object->children.data[child - 1U]);
         }
-        if (object->bone == nullptr) {
+        if (!IsFbxBoneNodeUVE(*object, clusterBones)) {
             continue;
         }
         if (bones.size() >= maximumBones) {
@@ -276,17 +295,17 @@ static bool ConvertFbxMeshImplUVE(const std::span<const std::byte> source, MeshA
         // A skinned file keeps its skin: every bone becomes a joint (the same bones, order and
         // names the skeleton and its clips use), and each corner its strongest four influences.
         std::unordered_map<const ufbx_node*, std::uint32_t> jointOfObject;
-        const bool skinned = scene->skin_deformers.count > 0U;
+        // Truncating rather than refusing: a rig with more bones than a joint list can hold
+        // still produces a usable mesh, and the alternative - failing the whole conversion -
+        // leaves a character that does not import at all.
+        std::size_t droppedBones = 0U;
+        std::optional<std::vector<FbxBoneObjectUVE>> bones;
+        if (scene->skin_deformers.count > 0U) {
+            bones = CollectFbxBonesUVE(*scene, maximumJoints, FbxBoneOverflowUVE::Truncate, &droppedBones);
+        }
+        // A skin that binds no bone at all still imports, as a static mesh.
+        const bool skinned = bones.has_value() && !bones->empty();
         if (skinned) {
-            // Truncating rather than refusing: a rig with more bones than a joint list can hold
-            // still produces a usable mesh, and the alternative - failing the whole conversion -
-            // leaves a character that does not import at all.
-            std::size_t droppedBones = 0U;
-            const std::optional<std::vector<FbxBoneObjectUVE>> bones =
-                CollectFbxBonesUVE(*scene, maximumJoints, FbxBoneOverflowUVE::Truncate, &droppedBones);
-            if (!bones.has_value() || bones->empty()) {
-                return false;
-            }
             if (droppedBones > 0U) {
                 UVE_WARNING("FbxMeshConverterUVE: the rig holds {} bones, over the {} bone limit; the mesh keeps "
                             "the first {} and drops {}, whose weights are renormalized onto the bones that remain",
@@ -726,7 +745,11 @@ std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const st
         }
         FbxSourceSummaryUVE summary;
         summary.meshCount = scene->meshes.count;
-        summary.boneCount = scene->bones.count;
+        summary.boneCount = 0U;
+        const std::unordered_set<const ufbx_node*> clusterBones = FbxClusterBoneNodesUVE(*scene);
+        for (std::size_t i = 0U; i < scene->nodes.count; ++i) {
+            summary.boneCount += IsFbxBoneNodeUVE(*scene->nodes.data[i], clusterBones) ? 1U : 0U;
+        }
         summary.animationCount = scene->anim_stacks.count;
         for (const ufbx_anim_stack* const stack : scene->anim_stacks) {
             const double length = stack->time_end - stack->time_begin;
@@ -792,7 +815,8 @@ std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const st
         if (!scene) {
             return clips;
         }
-        const std::optional<std::vector<FbxBoneObjectUVE>> bones = CollectFbxBonesUVE(*scene, maximumBones);
+        const std::optional<std::vector<FbxBoneObjectUVE>> bones =
+            CollectFbxBonesUVE(*scene, maximumBones, FbxBoneOverflowUVE::Truncate);
         if (!bones.has_value() || bones->empty()) {
             return clips;
         }

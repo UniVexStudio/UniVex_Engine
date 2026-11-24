@@ -342,7 +342,17 @@ void EditorDetailsUVE::AddSkeletonSourceUVE(const int category, const EntryUVE& 
         };
         const auto bindAbsolute = [this, bind](const std::filesystem::path& absolute) {
             const std::filesystem::path root = m_editor.m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot;
-            const std::filesystem::path relative = absolute.lexically_relative(root);
+            const auto contentRelative = [](const std::filesystem::path& path, const std::filesystem::path& base) {
+                // Both sides canonical: a symlinked or relative content root (Android /sdcard, "assets/")
+                // must not make a file inside the project look outside it.
+                std::error_code canonError;
+                std::filesystem::path p = std::filesystem::weakly_canonical(path, canonError);
+                if (canonError) { p = path; }
+                std::filesystem::path b = std::filesystem::weakly_canonical(base, canonError);
+                if (canonError) { b = base; }
+                return p.lexically_relative(b);
+            };
+            const std::filesystem::path relative = contentRelative(absolute, root);
             if (relative.empty() || *relative.begin() == "..") {
                 m_editor.m_contentStatusMessage = "A skeleton's model must be in the project: use Import to bring it in.";
                 return;

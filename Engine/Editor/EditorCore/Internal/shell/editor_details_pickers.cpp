@@ -56,7 +56,8 @@ EditorDetailsUVE::PickerSpecUVE EditorDetailsUVE::PickerSpecForUVE(const std::ve
     };
     if (has(".uvmodel")) {
         spec.title = "Mesh";
-        spec.listed = {".uvmodel"};
+        // Content holds the model sources (.fbx, ...); their .uvmodel is in DerivedData, so list both.
+        spec.listed = {".uvmodel", ".glb", ".gltf", ".fbx", ".obj"};
         spec.loadable = {".uvmodel", ".glb", ".gltf", ".fbx", ".obj"};
     } else if (has(".uvmat") || has(".uvmaterial")) {
         spec.title = "Material";
@@ -186,8 +187,17 @@ void EditorDetailsUVE::ShowPickerUVE(const PickerSpecUVE& spec, PickerActionsUVE
             published.contains((file.relativePath.parent_path() / file.relativePath.stem()).generic_string())) {
             continue;
         }
+        const bool modelSource = EditorUVE::IsModelSourcePathUVE(file.relativePath);
+        if (modelSource && spec.title == "Mesh") {
+            // An animation-only file has no mesh to show.
+            if (const EditorModelSourceInfoUVE* info = m_editor.FindModelSourceInfoUVE(file.relativePath); info != nullptr && info->animationOnly) {
+                continue;
+            }
+        }
         const std::filesystem::path absolute = snapshot.contentRoot / file.relativePath;
-        const bool isCurrent = !shared->current.empty() && shared->current == absolute;
+        const bool isCurrent = !shared->current.empty() &&
+                               (shared->current == absolute ||
+                                (modelSource && shared->current == m_editor.GetImportedModelPathUVE(file.relativePath)));
         prism::MenuItem item = prism::MenuItem::Check(file.relativePath.generic_string(), isCurrent, onTarget([shared, absolute] {
             if (shared->file) {
                 shared->file(absolute);

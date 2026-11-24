@@ -315,7 +315,17 @@ Asset::AssetGuidUVE EditorUVE::PublishModelSourceUVE(const std::filesystem::path
     // .uvmodel outside the project - a mesh that works today and is gone the moment the project
     // folder is moved or shared.
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    std::filesystem::path relative = absolutePath.lexically_relative(project.contentRoot);
+    const auto contentRelative = [](const std::filesystem::path& path, const std::filesystem::path& base) {
+    // Both sides canonical: a symlinked or relative content root (Android /sdcard, "assets/")
+    // must not make a file inside the project look outside it.
+    std::error_code canonError;
+    std::filesystem::path p = std::filesystem::weakly_canonical(path, canonError);
+    if (canonError) { p = path; }
+    std::filesystem::path b = std::filesystem::weakly_canonical(base, canonError);
+    if (canonError) { b = base; }
+    return p.lexically_relative(b);
+};
+    std::filesystem::path relative = contentRelative(absolutePath, project.contentRoot);
     if (relative.empty() || *relative.begin() == "..") {
         const std::filesystem::path modelDirectory = project.contentRoot / "Models";
         std::filesystem::create_directories(modelDirectory, error);
