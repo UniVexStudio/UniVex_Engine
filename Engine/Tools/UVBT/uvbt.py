@@ -11,12 +11,104 @@ import argparse
 import concurrent.futures
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
+import urllib.request
 from pathlib import Path
+
+
+def _download_github_tag_tarball(url: str, tag: str, dest: Path) -> bool:
+    """Downloads and extracts a public GitHub tag archive into `dest`.
+
+    Uses GitHub's codeload CDN, which is independent of git-upload-pack rate limits and
+    never consumes repository git credentials. Returns True on success.
+    """
+    match = re.fullmatch(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?/?", url)
+    if not match:
+        return False
+    archive_url = f"https://github.com/{match.group(1)}/archive/refs/tags/{tag}.tar.gz"
+    req = urllib.request.Request(archive_url, headers={"User-Agent": "UVBT/1.0"})
+    try:
+        with tempfile.TemporaryDirectory(dir=str(dest.parent), prefix=".uvbt_fetch_") as tmp:
+            tmp_dir = Path(tmp)
+            archive_path = tmp_dir / "source.tar.gz"
+            with urllib.request.urlopen(req, timeout=60) as response, archive_path.open("wb") as out:
+                shutil.copyfileobj(response, out)
+            staging = tmp_dir / "extract"
+            staging.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(archive_path, "r:gz") as tar:
+                for member in tar.getmembers():
+                    member_path = Path(member.name)
+                    if member_path.is_absolute() or ".." in member_path.parts:
+                        raise RuntimeError(f"Unsafe archive entry: {member.name}")
+                if hasattr(tarfile, "tar_filter"):
+                    tar.extractall(staging, filter="tar")
+                else:
+                    tar.extractall(staging)
+            roots = [p for p in staging.iterdir() if p.is_dir()]
+            if len(roots) != 1:
+                return False
+            if dest.exists():
+                shutil.rmtree(dest, ignore_errors=True)
+            shutil.move(str(roots[0]), str(dest))
+            return True
+    except Exception as exc:
+        print(f"[UVBT] Warning: archive fallback {archive_url} failed: {exc}", flush=True)
+        return False
+
+
+def git_clone_public(url: str, tag: str, dest: Path, retries: int = 4) -> None:
+    """Fetches a public third-party repository at `tag` into `dest`.
+
+    Runs outside the repository root with any inherited GitHub extraheader cleared so a
+    repo-scoped CI token never triggers HTTP 403 against public upstream repositories.
+    Falls back to the GitHub tag tarball CDN if git-upload-pack is throttled, and retries
+    transient failures with jittered exponential backoff.
+    """
+    dest = dest.resolve()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    cmd = [
+        "git",
+        "-c", "http.https://github.com/.extraheader=",
+        "-c", "credential.helper=",
+        "clone", "--depth", "1", "-b", tag, url, str(dest),
+    ]
+    last_error = None
+    for attempt in range(1, retries + 1):
+        if dest.exists():
+            shutil.rmtree(dest, ignore_errors=True)
+        try:
+            subprocess.run(cmd, cwd=tempfile.gettempdir(), env=env, check=True)
+            return
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            if dest.exists():
+                shutil.rmtree(dest, ignore_errors=True)
+            print(
+                f"[UVBT] Warning: git clone {url} ({tag}) failed (attempt {attempt}/{retries}); "
+                "trying tag archive fallback...",
+                flush=True,
+            )
+            if _download_github_tag_tarball(url, tag, dest):
+                return
+            if attempt < retries:
+                delay = 3 * (2 ** (attempt - 1)) + random.uniform(0.0, 2.0)
+                print(
+                    f"[UVBT] Warning: fetch {url} ({tag}) failed (attempt {attempt}/{retries}); "
+                    f"retrying in {delay:.1f}s...",
+                    flush=True,
+                )
+                time.sleep(delay)
+    raise last_error
+
 
 # Data that ships beside a built executable. The directory and file names are the ones the engine
 # looks for (Engine/Tools/test_shared_names.py checks them against the C++ constants).
@@ -608,7 +700,7 @@ class EngineBuilder:
                     if not (dest / ".git").exists():
                         shutil.rmtree(dest, ignore_errors=True)
                 if not dest.exists():
-                    subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(dest)], check=True)
+                    git_clone_public(url, tag, dest)
                 for bcs_name, content in saved_bcs.items():
                     (dest / bcs_name).write_text(content, encoding="utf-8")
 
@@ -720,7 +812,7 @@ class EngineBuilder:
         glfw = tp_dir / "android" / name
         if not (glfw / "include" / "GLFW" / "glfw3.h").exists():
             print(f"[UVBT] Fetching Android dependency '{name}' headers ({tag})...", flush=True)
-            subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(glfw)], check=True)
+            git_clone_public(url, tag, glfw)
 
         # android_native_app_glue: the NDK's bridge from NativeActivity to android_main.
         glue_lib = tp_lib_dir / "libandroid_native_app_glue.a"
@@ -739,7 +831,7 @@ class EngineBuilder:
             if not source.is_dir():
                 print(f"[UVBT] Fetching Android dependency '{name}' ({tag})...", flush=True)
                 source.parent.mkdir(parents=True, exist_ok=True)
-                subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(source)], check=True)
+                git_clone_public(url, tag, source)
             build = tp_lib_dir / f"{name}-build"
             print(f"[UVBT] Building Android dependency '{name}' for {toolchain.abi}...", flush=True)
             subprocess.run(["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
@@ -773,7 +865,7 @@ class EngineBuilder:
             if not (glfw_src / "include" / "GLFW" / "glfw3.h").is_file():
                 name, url, tag = LINUX_GLFW_REPO
                 print(f"[UVBT] Fetching Linux dependency '{name}' ({tag})...", flush=True)
-                subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(glfw_src)], check=True)
+                git_clone_public(url, tag, glfw_src)
             if not glfw_lib.exists():
                 glfw_build = tp_lib_dir / "glfw-build"
                 print("[UVBT] Building static libglfw3.a for Linux...", flush=True)
@@ -799,7 +891,7 @@ class EngineBuilder:
             if not (glew_src / "include" / "GL" / "glew.h").is_file():
                 name, url, tag = LINUX_GLEW_REPO
                 print(f"[UVBT] Fetching Linux dependency '{name}' ({tag})...", flush=True)
-                subprocess.run(["git", "clone", "--depth", "1", "-b", tag, url, str(glew_src)], check=True)
+                git_clone_public(url, tag, glew_src)
             if not glew_lib.exists():
                 print("[UVBT] Building static libGLEW.a for Linux...", flush=True)
                 glew_obj = tp_lib_dir / "glew.o"
