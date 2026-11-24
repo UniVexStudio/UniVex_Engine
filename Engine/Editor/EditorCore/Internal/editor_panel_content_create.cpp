@@ -7,6 +7,8 @@
 #endif
 #include <windows.h>
 #include <commdlg.h>
+#include <objbase.h>
+#include <shobjidl.h>
 #endif
 // Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 
@@ -50,11 +52,125 @@ namespace {
 #pragma GCC diagnostic ignored "-Wcast-function-type"
 #endif
 using GetOpenFileNameWFn = BOOL (WINAPI *)(LPOPENFILENAMEW);
+using CoInitializeExFn = HRESULT (WINAPI *)(LPVOID, DWORD);
+using CoUninitializeFn = void (WINAPI *)();
+using CoCreateInstanceFn = HRESULT (WINAPI *)(REFCLSID, LPUNKNOWN, DWORD, REFIID, LPVOID*);
+using CoTaskMemFreeFn = void (WINAPI *)(LPVOID);
+
 inline GetOpenFileNameWFn LoadGetOpenFileNameW(HMODULE comdlg) noexcept {
     if (comdlg == nullptr) {
         return nullptr;
     }
     return reinterpret_cast<GetOpenFileNameWFn>(GetProcAddress(comdlg, "GetOpenFileNameW"));
+}
+
+enum class WinNativePickOutcomeUVE : std::uint8_t {
+    Picked,
+    Cancelled,
+    Unavailable,
+};
+
+// Standard COM CLSID_FileOpenDialog / IID_IFileOpenDialog defined inline so MinGW/MSVC need no extra -luuid/-lole32 link libs.
+inline constexpr GUID kClsidFileOpenDialogUVE{
+    0xDC1C5A9CU, 0xE88AU, 0x4DDEU, {0xA5U, 0xA1U, 0x60U, 0xF8U, 0x2AU, 0x20U, 0xAEU, 0xF7U}};
+inline constexpr GUID kIidIFileOpenDialogUVE{
+    0xD57C7288U, 0xD4ADU, 0x4768U, {0xBEU, 0x02U, 0x9DU, 0x96U, 0x95U, 0x32U, 0xD9U, 0x60U}};
+
+[[nodiscard]] WinNativePickOutcomeUVE PickWithWindowsFileOpenDialogUVE(
+    const bool pickFolders, std::vector<std::filesystem::path>& outPaths) {
+    outPaths.clear();
+    HMODULE ole32 = LoadLibraryA("ole32.dll");
+    if (ole32 == nullptr) {
+        return WinNativePickOutcomeUVE::Unavailable;
+    }
+    const auto pCoInitializeEx = reinterpret_cast<CoInitializeExFn>(GetProcAddress(ole32, "CoInitializeEx"));
+    const auto pCoUninitialize = reinterpret_cast<CoUninitializeFn>(GetProcAddress(ole32, "CoUninitialize"));
+    const auto pCoCreateInstance = reinterpret_cast<CoCreateInstanceFn>(GetProcAddress(ole32, "CoCreateInstance"));
+    const auto pCoTaskMemFree = reinterpret_cast<CoTaskMemFreeFn>(GetProcAddress(ole32, "CoTaskMemFree"));
+    if (pCoInitializeEx == nullptr || pCoUninitialize == nullptr || pCoCreateInstance == nullptr ||
+        pCoTaskMemFree == nullptr) {
+        FreeLibrary(ole32);
+        return WinNativePickOutcomeUVE::Unavailable;
+    }
+
+    const HRESULT initHr = pCoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    const bool shouldUninit = SUCCEEDED(initHr);
+    if (FAILED(initHr) && initHr != RPC_E_CHANGED_MODE) {
+        FreeLibrary(ole32);
+        return WinNativePickOutcomeUVE::Unavailable;
+    }
+
+    IFileOpenDialog* dialog = nullptr;
+    HRESULT hr = pCoCreateInstance(kClsidFileOpenDialogUVE, nullptr, CLSCTX_INPROC_SERVER, kIidIFileOpenDialogUVE,
+                                   reinterpret_cast<void**>(&dialog));
+    if (FAILED(hr) || dialog == nullptr) {
+        if (shouldUninit) {
+            pCoUninitialize();
+        }
+        FreeLibrary(ole32);
+        return WinNativePickOutcomeUVE::Unavailable;
+    }
+
+    DWORD options = 0U;
+    if (SUCCEEDED(dialog->GetOptions(&options))) {
+        options |= FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR | FOS_ALLOWMULTISELECT | FOS_PATHMUSTEXIST;
+        if (pickFolders) {
+            options |= FOS_PICKFOLDERS;
+        } else {
+            options |= FOS_FILEMUSTEXIST;
+        }
+        dialog->SetOptions(options);
+    }
+    dialog->SetTitle(pickFolders ? L"Select Folder(s) to Import" : L"Select Assets to Import");
+    if (!pickFolders) {
+        static constexpr COMDLG_FILTERSPEC kFilters[] = {
+            {L"All Supported Assets",
+             L"*.fbx;*.gltf;*.glb;*.obj;*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.wav;*.ogg;*.mp3;*.uvs;*.uvshader;*.glsl;*.uvanim"},
+            {L"3D Models & Animations (*.fbx;*.gltf;*.glb;*.obj;*.uvanim)", L"*.fbx;*.gltf;*.glb;*.obj;*.uvanim"},
+            {L"Images & Textures (*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr)", L"*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr"},
+            {L"Audio (*.wav;*.ogg;*.mp3)", L"*.wav;*.ogg;*.mp3"},
+            {L"Scripts & Shaders (*.uvs;*.uvshader;*.glsl)", L"*.uvs;*.uvshader;*.glsl"},
+            {L"All Files (*.*)", L"*.*"},
+        };
+        dialog->SetFileTypes(static_cast<UINT>(sizeof(kFilters) / sizeof(kFilters[0])), kFilters);
+        dialog->SetFileTypeIndex(1U);
+    }
+
+    WinNativePickOutcomeUVE outcome = WinNativePickOutcomeUVE::Cancelled;
+    hr = dialog->Show(nullptr);
+    if (SUCCEEDED(hr)) {
+        IShellItemArray* items = nullptr;
+        if (SUCCEEDED(dialog->GetResults(&items)) && items != nullptr) {
+            DWORD count = 0U;
+            if (SUCCEEDED(items->GetCount(&count))) {
+                outPaths.reserve(static_cast<std::size_t>(count));
+                for (DWORD i = 0U; i < count; ++i) {
+                    IShellItem* item = nullptr;
+                    if (SUCCEEDED(items->GetItemAt(i, &item)) && item != nullptr) {
+                        PWSTR pszPath = nullptr;
+                        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &pszPath)) && pszPath != nullptr) {
+                            outPaths.emplace_back(pszPath);
+                            pCoTaskMemFree(pszPath);
+                        }
+                        item->Release();
+                    }
+                }
+            }
+            items->Release();
+        }
+        outcome = outPaths.empty() ? WinNativePickOutcomeUVE::Cancelled : WinNativePickOutcomeUVE::Picked;
+    } else if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+        outcome = WinNativePickOutcomeUVE::Cancelled;
+    } else {
+        outcome = WinNativePickOutcomeUVE::Unavailable;
+    }
+
+    dialog->Release();
+    if (shouldUninit) {
+        pCoUninitialize();
+    }
+    FreeLibrary(ole32);
+    return outcome;
 }
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
@@ -223,10 +339,69 @@ void EditorUVE::BeginContentRenameUVE(const std::filesystem::path& relativePath)
 
 namespace {
 SystemImportPickerUVE g_systemImportPickerUVE;
+SystemImportFilesPickerUVE g_systemImportFilesPickerUVE;
+SystemImportFolderPickerUVE g_systemImportFolderPickerUVE;
+
+[[nodiscard]] std::filesystem::path DefaultImportStartDirectoryUVE() {
+#if defined(__ANDROID__)
+    const char* const storage = std::getenv("UNIVEX_ANDROID_PUBLIC_STORAGE");
+    const std::filesystem::path home = (storage != nullptr && *storage != '\0') ? std::filesystem::path(storage)
+                                                                                : std::filesystem::path("/storage/emulated/0");
+    const std::filesystem::path downloads = home / "Download";
+#else
+#if defined(_WIN32)
+    const char* const homeEnv = std::getenv("USERPROFILE");
+#else
+    const char* const homeEnv = std::getenv("HOME");
+#endif
+    const std::filesystem::path home = homeEnv != nullptr ? std::filesystem::path(homeEnv) : std::filesystem::path();
+    const std::filesystem::path downloads = home / "Downloads";
+#endif
+    std::error_code error;
+    return std::filesystem::is_directory(downloads, error) ? downloads : home;
+}
+
+[[nodiscard]] bool IsSameOrSubpathUVE(const std::filesystem::path& parent, const std::filesystem::path& candidate) {
+    std::error_code ec;
+    const std::filesystem::path pNorm = std::filesystem::weakly_canonical(parent, ec).lexically_normal();
+    if (ec) {
+        return false;
+    }
+    const std::filesystem::path cNorm = std::filesystem::weakly_canonical(candidate, ec).lexically_normal();
+    if (ec) {
+        return false;
+    }
+    auto pIt = pNorm.begin();
+    auto cIt = cNorm.begin();
+    for (; pIt != pNorm.end(); ++pIt, ++cIt) {
+        if (cIt == cNorm.end() || *pIt != *cIt) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] bool HasHiddenSegmentUVE(const std::filesystem::path& relativePath) {
+    for (const std::filesystem::path& part : relativePath) {
+        const std::string segment = part.string();
+        if (!segment.empty() && segment != "." && segment != ".." && segment.front() == '.') {
+            return true;
+        }
+    }
+    return false;
+}
 } // namespace
 
 void SetSystemImportPickerUVE(SystemImportPickerUVE picker) {
     g_systemImportPickerUVE = std::move(picker);
+}
+
+void SetSystemImportFilesPickerUVE(SystemImportFilesPickerUVE picker) {
+    g_systemImportFilesPickerUVE = std::move(picker);
+}
+
+void SetSystemImportFolderPickerUVE(SystemImportFolderPickerUVE picker) {
+    g_systemImportFolderPickerUVE = std::move(picker);
 }
 
 bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirectory) {
@@ -234,6 +409,17 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
     const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
 
 #if defined(_WIN32)
+    {
+        std::vector<std::filesystem::path> chosenFiles;
+        const WinNativePickOutcomeUVE outcome = PickWithWindowsFileOpenDialogUVE(false, chosenFiles);
+        if (outcome == WinNativePickOutcomeUVE::Picked) {
+            return ImportExternalFilesUVE(chosenFiles, destDir);
+        }
+        if (outcome == WinNativePickOutcomeUVE::Cancelled) {
+            return false;
+        }
+    }
+    // Fallback if COM IFileOpenDialog is unavailable.
     HMODULE comdlg = LoadLibraryA("comdlg32.dll");
     if (comdlg != nullptr) {
         const GetOpenFileNameWFn pGetOpenFileNameW = LoadGetOpenFileNameW(comdlg);
@@ -246,8 +432,8 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
             ofn.nMaxFile = static_cast<DWORD>(buffer.size());
             ofn.lpstrTitle = L"Select Assets to Import";
             ofn.lpstrFilter =
-                L"All Supported Assets\0*.fbx;*.gltf;*.glb;*.obj;*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.wav;*.ogg;*.mp3;*.uvs;*.uvshader;*.glsl\0"
-                L"3D Models (*.fbx;*.gltf;*.glb;*.obj)\0*.fbx;*.gltf;*.glb;*.obj\0"
+                L"All Supported Assets\0*.fbx;*.gltf;*.glb;*.obj;*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.wav;*.ogg;*.mp3;*.uvs;*.uvshader;*.glsl;*.uvanim\0"
+                L"3D Models & Animations (*.fbx;*.gltf;*.glb;*.obj;*.uvanim)\0*.fbx;*.gltf;*.glb;*.obj;*.uvanim\0"
                 L"Images & Textures (*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr)\0*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr\0"
                 L"Audio (*.wav;*.ogg;*.mp3)\0*.wav;*.ogg;*.mp3\0"
                 L"Scripts & Shaders (*.uvs;*.uvshader;*.glsl)\0*.uvs;*.uvshader;*.glsl\0"
@@ -263,10 +449,8 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
                 std::wstring firstString(ptr);
                 ptr += firstString.size() + 1U;
                 if (*ptr == L'\0') {
-                    // Single file selected
                     chosenFiles.push_back(std::filesystem::path(firstString));
                 } else {
-                    // Multiple files: first string is directory, followed by null-separated filenames
                     std::filesystem::path baseDir(firstString);
                     while (*ptr != L'\0') {
                         std::wstring filename(ptr);
@@ -283,46 +467,81 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
     }
 #endif
 
-    // Android: straight into the system file manager (it reaches Downloads, Drive, USB); the file
-    // comes back as a copy in the app cache and is imported into destDir.
+    // Android: straight into the system file manager with multi-select enabled (reaches Downloads,
+    // Drive, USB); chosen files arrive staged in cache and are imported one-by-one into destDir.
+    if (g_systemImportFilesPickerUVE &&
+        g_systemImportFilesPickerUVE([this, destDir](const std::vector<std::filesystem::path>& chosen) {
+            static_cast<void>(ImportExternalFilesUVE(chosen, destDir, true));
+        })) {
+        return false;
+    }
     if (g_systemImportPickerUVE &&
         g_systemImportPickerUVE([this, destDir](const std::filesystem::path& chosen) {
-            static_cast<void>(ImportExternalFilesUVE({chosen}, destDir));
+            static_cast<void>(ImportExternalFilesUVE({chosen}, destDir, true));
         })) {
-        return false;   // the import happens when the pick comes back
+        return false;
     }
 
-    // Any file on this computer, through the editor's own file dialog; it is imported into destDir.
+    // Fallback: PRISM file dialog with multi-select enabled.
     FilePickerRequestUVE request;
     request.mode = FilePickerModeUVE::Open;
+    request.allowMultiSelect = true;
     request.title = "Import Assets";
-    request.extensions = {".fbx", ".gltf", ".glb", ".obj", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg", ".mp3", ".uvshader", ".glsl"};
-    request.onPick = [this, destDir](const std::filesystem::path& chosen) { static_cast<void>(ImportExternalFilesUVE({chosen}, destDir)); };
-    // Start where downloaded models usually are, not in the (often empty) project folder.
-    {
-#if defined(__ANDROID__)
-        const char* const storage = std::getenv("UNIVEX_ANDROID_PUBLIC_STORAGE");
-        const std::filesystem::path home = (storage != nullptr && *storage != '\0') ? std::filesystem::path(storage)
-                                                                                  : std::filesystem::path("/storage/emulated/0");
-        const std::filesystem::path downloads = home / "Download";
-#else
+    request.extensions = {".fbx", ".gltf", ".glb", ".obj", ".uvanim", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg", ".mp3", ".uvs", ".uvshader", ".glsl"};
+    request.onPick = [this, destDir](const std::filesystem::path& chosen) {
+        static_cast<void>(ImportExternalFilesUVE({chosen}, destDir));
+    };
+    request.onPickMany = [this, destDir](const std::vector<std::filesystem::path>& chosen) {
+        static_cast<void>(ImportExternalFilesUVE(chosen, destDir));
+    };
+    request.startDirectory = DefaultImportStartDirectoryUVE();
+    OpenFilePickerUVE(std::move(request));
+    return false;
+}
+
+bool EditorUVE::PromptImportFolderUVE(const std::filesystem::path& targetDirectory) {
+    const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+    const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
+
 #if defined(_WIN32)
-        const char* const homeEnv = std::getenv("USERPROFILE");
-#else
-        const char* const homeEnv = std::getenv("HOME");
-#endif
-        const std::filesystem::path home = homeEnv != nullptr ? std::filesystem::path(homeEnv) : std::filesystem::path();
-        const std::filesystem::path downloads = home / "Downloads";
-#endif
-        std::error_code error;
-        request.startDirectory = std::filesystem::is_directory(downloads, error) ? downloads : home;
+    {
+        std::vector<std::filesystem::path> chosenFolders;
+        const WinNativePickOutcomeUVE outcome = PickWithWindowsFileOpenDialogUVE(true, chosenFolders);
+        if (outcome == WinNativePickOutcomeUVE::Picked) {
+            return ImportExternalFilesUVE(chosenFolders, destDir);
+        }
+        if (outcome == WinNativePickOutcomeUVE::Cancelled) {
+            return false;
+        }
     }
+#endif
+
+    // Android: native SAF folder picker (ACTION_OPEN_DOCUMENT_TREE) preserving subfolder layout.
+    if (g_systemImportFolderPickerUVE &&
+        g_systemImportFolderPickerUVE([this, destDir](const std::vector<std::filesystem::path>& chosen) {
+            static_cast<void>(ImportExternalFilesUVE(chosen, destDir, true));
+        })) {
+        return false;
+    }
+
+    // Linux / fallback: PRISM folder picker.
+    FilePickerRequestUVE request;
+    request.mode = FilePickerModeUVE::OpenFolder;
+    request.title = "Import Folder";
+    request.onPick = [this, destDir](const std::filesystem::path& chosen) {
+        static_cast<void>(ImportExternalFilesUVE({chosen}, destDir));
+    };
+    request.onPickMany = [this, destDir](const std::vector<std::filesystem::path>& chosen) {
+        static_cast<void>(ImportExternalFilesUVE(chosen, destDir));
+    };
+    request.startDirectory = DefaultImportStartDirectoryUVE();
     OpenFilePickerUVE(std::move(request));
     return false;
 }
 
 bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>& sourceFiles,
-                                      const std::filesystem::path& targetDirectory) {
+                                      const std::filesystem::path& targetDirectory,
+                                      const bool deleteStagedSources) {
     if (m_services == nullptr || sourceFiles.empty()) {
         return false;
     }
@@ -331,24 +550,124 @@ bool EditorUVE::ImportExternalFilesUVE(const std::vector<std::filesystem::path>&
     std::error_code ec;
     std::filesystem::create_directories(destDir, ec);
 
-    std::size_t importedCount = 0;
-    for (const std::filesystem::path& src : sourceFiles) {
-        if (!std::filesystem::exists(src, ec)) {
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> copyItems;
+    std::vector<std::filesystem::path> cleanupDirs;
+
+    for (const std::filesystem::path& rawSrc : sourceFiles) {
+        std::error_code stErr;
+        const std::filesystem::file_status st = std::filesystem::symlink_status(rawSrc, stErr);
+        if (stErr || !std::filesystem::exists(st) || std::filesystem::is_symlink(st)) {
             continue;
         }
-        const std::filesystem::path destFile = destDir / src.filename();
-        std::filesystem::copy_file(src, destFile, std::filesystem::copy_options::overwrite_existing, ec);
-        if (!ec) {
+        if (std::filesystem::is_directory(st)) {
+            // Reject self-recursive folder copy (destination inside or equal to source).
+            if (IsSameOrSubpathUVE(rawSrc, destDir)) {
+                m_contentStatusMessage = "Skipped self-recursive folder import: " + rawSrc.filename().generic_string();
+                continue;
+            }
+            const std::filesystem::path folderName = rawSrc.filename().empty() ? rawSrc.parent_path().filename() : rawSrc.filename();
+            const std::filesystem::path targetRoot = folderName.empty() ? destDir : (destDir / folderName);
+            std::error_code walkErr;
+            for (std::filesystem::recursive_directory_iterator it(
+                     rawSrc, std::filesystem::directory_options::skip_permission_denied, walkErr),
+                 end;
+                 !walkErr && it != end; it.increment(walkErr)) {
+                std::error_code entryErr;
+                const std::filesystem::file_status entrySt = it->symlink_status(entryErr);
+                if (entryErr || std::filesystem::is_symlink(entrySt)) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
+                const std::string fname = it->path().filename().string();
+                if (fname.empty() || fname.front() == '.') {
+                    if (std::filesystem::is_directory(entrySt)) {
+                        it.disable_recursion_pending();
+                    }
+                    continue;
+                }
+                if (!std::filesystem::is_regular_file(entrySt) || it->path().extension() == ".uvcopy-tmp") {
+                    continue;
+                }
+                const std::filesystem::path rel = std::filesystem::relative(it->path(), rawSrc, entryErr);
+                if (entryErr || rel.empty() || HasHiddenSegmentUVE(rel)) {
+                    continue;
+                }
+                const std::filesystem::path destFile = targetRoot / rel;
+                std::error_code eqErr;
+                if (std::filesystem::weakly_canonical(it->path(), eqErr) == std::filesystem::weakly_canonical(destFile, eqErr) && !eqErr) {
+                    continue;
+                }
+                copyItems.emplace_back(it->path(), destFile);
+            }
+            if (deleteStagedSources) {
+                cleanupDirs.push_back(rawSrc.parent_path());
+            }
+        } else if (std::filesystem::is_regular_file(st)) {
+            const std::string fname = rawSrc.filename().string();
+            if (fname.empty() || fname.front() == '.' || rawSrc.extension() == ".uvcopy-tmp") {
+                continue;
+            }
+            const std::filesystem::path destFile = destDir / rawSrc.filename();
+            std::error_code eqErr;
+            if (std::filesystem::weakly_canonical(rawSrc, eqErr) == std::filesystem::weakly_canonical(destFile, eqErr) && !eqErr) {
+                continue;
+            }
+            copyItems.emplace_back(rawSrc, destFile);
+            if (deleteStagedSources && rawSrc.has_parent_path()) {
+                cleanupDirs.push_back(rawSrc.parent_path());
+            }
+        }
+    }
+
+    // Deduplicate staged cleanup roots.
+    if (!cleanupDirs.empty()) {
+        std::sort(cleanupDirs.begin(), cleanupDirs.end());
+        cleanupDirs.erase(std::unique(cleanupDirs.begin(), cleanupDirs.end()), cleanupDirs.end());
+    }
+
+    if (copyItems.empty()) {
+        for (const std::filesystem::path& dir : cleanupDirs) {
+            std::error_code rmErr;
+            std::filesystem::remove_all(dir, rmErr);
+        }
+        return false;
+    }
+
+    const std::string targetLabel = destDir.filename().empty() ? "Content" : destDir.filename().generic_string();
+
+    // Interactive PRISM mode: copy strictly one file at a time on the single background worker
+    // so importing 500-1,000+ assets never freezes or crashes low-end desktop/mobile devices.
+    if (m_prismUiRequested) {
+        const std::size_t count = copyItems.size();
+        EnqueueBackgroundExternalCopiesUVE(std::move(copyItems), std::move(cleanupDirs));
+        m_contentStatusMessage = "Queued " + std::to_string(count) + " asset(s) for import into " + targetLabel + ".";
+        return true;
+    }
+
+    // Headless/test mode: copy synchronously and deterministically.
+    std::size_t importedCount = 0U;
+    for (const auto& [src, destFile] : copyItems) {
+        std::error_code copyErr;
+        if (destFile.has_parent_path()) {
+            std::filesystem::create_directories(destFile.parent_path(), copyErr);
+        }
+        if (!copyErr) {
+            std::filesystem::copy_file(src, destFile, std::filesystem::copy_options::overwrite_existing, copyErr);
+        }
+        if (!copyErr) {
             ++importedCount;
             m_services->GetAssetDatabaseUVE().RegisterUVE(destFile);
         }
+    }
+    for (const std::filesystem::path& dir : cleanupDirs) {
+        std::error_code rmErr;
+        std::filesystem::remove_all(dir, rmErr);
     }
 
     if (importedCount > 0U) {
         m_projectFileSnapshotInitialized = false;
         RefreshProjectFileIndexUVE(); // queues the new files' model and animation imports
-        m_contentStatusMessage = "Imported " + std::to_string(importedCount) + " asset(s) into " +
-                                 (destDir.filename().empty() ? "Content" : destDir.filename().generic_string()) + ".";
+        m_contentStatusMessage = "Imported " + std::to_string(importedCount) + " asset(s) into " + targetLabel + ".";
         return true;
     }
     return false;

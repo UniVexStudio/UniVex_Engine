@@ -241,18 +241,17 @@ constexpr std::size_t kAllFbxMeshesUVE = static_cast<std::size_t>(-1);
 /// Converts the file's meshes into one MeshAssetUVE: all of them (`onlyMeshIndex` is kAllFbxMeshesUVE) or
 /// just the one at that index in the scene's mesh list. The joint list is the rig's, whichever meshes are
 /// taken, so the parts of one file share their joints and bind poses exactly.
-static bool ConvertFbxMeshImplUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
-                                  std::vector<FbxSurfaceRangeUVE>* const outSurfaces, const std::size_t maximumJoints,
-                                  const std::size_t onlyMeshIndex, std::uint32_t* const outOnlyMaterial = nullptr) {
+static bool ConvertFbxMeshFromSceneUVE(const ufbx_scene* const scene, MeshAssetUVE& outMesh,
+                                       std::vector<FbxSurfaceRangeUVE>* const outSurfaces,
+                                       const std::size_t maximumJoints, const std::size_t onlyMeshIndex,
+                                       std::uint32_t* const outOnlyMaterial = nullptr) {
     if (outSurfaces != nullptr) {
         outSurfaces->clear();
     }
+    if (scene == nullptr) {
+        return false;
+    }
     try {
-        const ScenePtrUVE scene = LoadSceneUVE(source, true);
-        if (!scene) {
-            return false;
-        }
-
         MeshAssetUVE candidate;
         std::unordered_map<CornerKeyUVE, std::uint32_t, CornerKeyHashUVE> shared;
 
@@ -604,17 +603,23 @@ static bool ConvertFbxMeshImplUVE(const std::span<const std::byte> source, MeshA
 
 bool ConvertFbxMeshUVE(const std::span<const std::byte> source, MeshAssetUVE& outMesh,
                        std::vector<FbxSurfaceRangeUVE>* const outSurfaces, const std::size_t maximumJoints) {
-    return ConvertFbxMeshImplUVE(source, outMesh, outSurfaces, maximumJoints, kAllFbxMeshesUVE);
+    if (outSurfaces != nullptr) {
+        outSurfaces->clear();
+    }
+    const ScenePtrUVE scene = LoadSceneUVE(source, true);
+    if (!scene) {
+        return false;
+    }
+    return ConvertFbxMeshFromSceneUVE(scene.get(), outMesh, outSurfaces, maximumJoints, kAllFbxMeshesUVE);
 }
 
-bool ConvertFbxMeshPartsUVE(const std::span<const std::byte> source, std::vector<FbxMeshPartUVE>& outParts,
-                            const std::size_t maximumJoints) {
+static bool ConvertFbxMeshPartsFromSceneUVE(const ufbx_scene* const scene, std::vector<FbxMeshPartUVE>& outParts,
+                                            const std::size_t maximumJoints) {
     outParts.clear();
+    if (scene == nullptr) {
+        return false;
+    }
     try {
-        const ScenePtrUVE scene = LoadSceneUVE(source, true);
-        if (!scene) {
-            return false;
-        }
         std::vector<FbxMeshPartUVE> parts;
         for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
             const ufbx_mesh* const mesh = scene->meshes.data[meshIndex];
@@ -631,7 +636,8 @@ bool ConvertFbxMeshPartsUVE(const std::span<const std::byte> source, std::vector
             } else {
                 part.name = "Mesh" + std::to_string(parts.size());
             }
-            if (!ConvertFbxMeshImplUVE(source, part.mesh, &part.surfaces, maximumJoints, meshIndex, &part.onlyMaterialSourceIndex)) {
+            if (!ConvertFbxMeshFromSceneUVE(scene, part.mesh, &part.surfaces, maximumJoints, meshIndex,
+                                            &part.onlyMaterialSourceIndex)) {
                 return false;
             }
             parts.push_back(std::move(part));
@@ -649,13 +655,23 @@ bool ConvertFbxMeshPartsUVE(const std::span<const std::byte> source, std::vector
     }
 }
 
-bool ReadFbxHierarchyUVE(const std::span<const std::byte> source, std::vector<FbxHierarchyEntryUVE>& outHierarchy) {
+bool ConvertFbxMeshPartsUVE(const std::span<const std::byte> source, std::vector<FbxMeshPartUVE>& outParts,
+                            const std::size_t maximumJoints) {
+    outParts.clear();
+    const ScenePtrUVE scene = LoadSceneUVE(source, true);
+    if (!scene) {
+        return false;
+    }
+    return ConvertFbxMeshPartsFromSceneUVE(scene.get(), outParts, maximumJoints);
+}
+
+static bool ReadFbxHierarchyFromSceneUVE(const ufbx_scene* const scene,
+                                         std::vector<FbxHierarchyEntryUVE>& outHierarchy) {
     outHierarchy.clear();
+    if (scene == nullptr) {
+        return false;
+    }
     try {
-        const ScenePtrUVE scene = LoadSceneUVE(source, true);
-        if (!scene) {
-            return false;
-        }
         // The same meshes, in the same order, as ConvertFbxMeshPartsUVE: an entry's `part` indexes its list.
         std::unordered_map<const ufbx_mesh*, std::int32_t> partOfMesh;
         for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
@@ -737,6 +753,15 @@ bool ReadFbxHierarchyUVE(const std::span<const std::byte> source, std::vector<Fb
     }
 }
 
+bool ReadFbxHierarchyUVE(const std::span<const std::byte> source, std::vector<FbxHierarchyEntryUVE>& outHierarchy) {
+    outHierarchy.clear();
+    const ScenePtrUVE scene = LoadSceneUVE(source, true);
+    if (!scene) {
+        return false;
+    }
+    return ReadFbxHierarchyFromSceneUVE(scene.get(), outHierarchy);
+}
+
 std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const std::byte> source) {
     try {
         const ScenePtrUVE scene = LoadSceneUVE(source, false);
@@ -764,16 +789,14 @@ std::optional<FbxSourceSummaryUVE> DescribeFbxSourceUVE(const std::span<const st
     }
 }
 
-
-std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byte> source,
-                                                  const std::size_t maximumJoints,
-                                                  const FbxBoneOverflowUVE overflow,
-                                                  std::size_t* const outDroppedBones) {
+static std::optional<GltfSkeletonUVE> ReadFbxSkeletonFromSceneUVE(const ufbx_scene* const scene,
+                                                                  const std::size_t maximumJoints,
+                                                                  const FbxBoneOverflowUVE overflow,
+                                                                  std::size_t* const outDroppedBones) {
+    if (scene == nullptr) {
+        return std::nullopt;
+    }
     try {
-        const ScenePtrUVE scene = LoadSceneUVE(source, false);
-        if (!scene) {
-            return std::nullopt;
-        }
         const std::optional<std::vector<FbxBoneObjectUVE>> bones =
             CollectFbxBonesUVE(*scene, maximumJoints, overflow, outDroppedBones);
         if (!bones.has_value() || bones->empty()) {
@@ -805,6 +828,17 @@ std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byt
     } catch (const std::bad_alloc&) {
         return std::nullopt;
     }
+}
+
+std::optional<GltfSkeletonUVE> ReadFbxSkeletonUVE(const std::span<const std::byte> source,
+                                                  const std::size_t maximumJoints,
+                                                  const FbxBoneOverflowUVE overflow,
+                                                  std::size_t* const outDroppedBones) {
+    const ScenePtrUVE scene = LoadSceneUVE(source, false);
+    if (!scene) {
+        return std::nullopt;
+    }
+    return ReadFbxSkeletonFromSceneUVE(scene.get(), maximumJoints, overflow, outDroppedBones);
 }
 
 std::vector<AnimationClipAssetUVE> ReadFbxAnimationsUVE(const std::span<const std::byte> source,
@@ -1006,11 +1040,8 @@ namespace {
 
 } // namespace
 
-std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<const std::byte> source) {
-    // Geometry and animation are irrelevant to materials, and both are skipped so a large model
-    // does not pay for data this reader never touches.
-    const ScenePtrUVE scene = LoadSceneUVE(source, /*geometry=*/false, /*animation=*/false);
-    if (!scene) {
+static std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsFromSceneUVE(const ufbx_scene* const scene) {
+    if (scene == nullptr) {
         return std::nullopt;
     }
     try {
@@ -1130,6 +1161,55 @@ std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<c
         UVE_ERROR("FbxMeshConverterUVE: out of memory while reading materials");
         return std::nullopt;
     }
+}
+
+std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(const std::span<const std::byte> source) {
+    // Geometry and animation are irrelevant to materials, and both are skipped so a large model
+    // does not pay for data this reader never touches.
+    const ScenePtrUVE scene = LoadSceneUVE(source, /*geometry=*/false, /*animation=*/false);
+    if (!scene) {
+        return std::nullopt;
+    }
+    return ReadFbxMaterialsFromSceneUVE(scene.get());
+}
+
+bool ExtractFbxImportBundleUVE(const std::span<const std::byte> source, FbxSceneImportBundleUVE& outBundle,
+                               const std::size_t maximumJoints) {
+    outBundle = FbxSceneImportBundleUVE{};
+    const ScenePtrUVE scene = LoadSceneUVE(source, /*geometry=*/true, /*animation=*/false);
+    if (!scene) {
+        return false;
+    }
+    FbxSceneImportBundleUVE bundle;
+    if (!ConvertFbxMeshFromSceneUVE(scene.get(), bundle.mergedMesh, &bundle.surfaceRanges, maximumJoints,
+                                    kAllFbxMeshesUVE)) {
+        return false;
+    }
+    bundle.materials = ReadFbxMaterialsFromSceneUVE(scene.get());
+    if (!bundle.materials.has_value()) {
+        return false;
+    }
+    if (bundle.mergedMesh.IsSkinnedUVE() && !bundle.mergedMesh.joints.empty()) {
+        bundle.skeleton = ReadFbxSkeletonFromSceneUVE(scene.get(), maximumJoints, FbxBoneOverflowUVE::Truncate,
+                                                      &bundle.droppedBones);
+    }
+    std::size_t validMeshCount = 0U;
+    for (std::size_t meshIndex = 0U; meshIndex < scene->meshes.count; ++meshIndex) {
+        const ufbx_mesh* const mesh = scene->meshes.data[meshIndex];
+        if (mesh != nullptr && mesh->vertex_position.exists && mesh->num_triangles != 0U) {
+            ++validMeshCount;
+        }
+    }
+    if (validMeshCount >= 2U) {
+        bundle.partsKnown = ConvertFbxMeshPartsFromSceneUVE(scene.get(), bundle.parts, maximumJoints);
+    } else {
+        bundle.partsKnown = validMeshCount == 1U;
+    }
+    if (bundle.partsKnown) {
+        bundle.hierarchyKnown = ReadFbxHierarchyFromSceneUVE(scene.get(), bundle.hierarchy);
+    }
+    outBundle = std::move(bundle);
+    return true;
 }
 
 } // namespace UVE::Asset

@@ -80,6 +80,16 @@ struct TextImportSettingsUVE final : AssetImportSettingsUVE {
     [[nodiscard]] std::string GetCacheVersionUVE() const override;
 };
 
+/// Settings for raw 3D model importers (FBX/glTF/OBJ), bounding embedded texture size according
+/// to the project's active renderer profile so 4K maps do not OOM-crash low-RAM mobile devices.
+struct ModelImportSettingsUVE final : AssetImportSettingsUVE {
+    std::uint32_t maxEmbeddedTextureResolution = 2048U;
+
+    [[nodiscard]] std::string GetCacheVersionUVE() const override {
+        return "model-v1-tex" + std::to_string(maxEmbeddedTextureResolution);
+    }
+};
+
 /// IAssetImporterUVE is the spec's "import pipeline with settings per asset type" (Part 7.4):
 /// register an import function per source file extension, then ImportUVE() any source file
 /// through whichever one matches. Built-in registrations include the bounded text parser for `.txt`,

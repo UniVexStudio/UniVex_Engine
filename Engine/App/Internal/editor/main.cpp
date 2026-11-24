@@ -337,17 +337,6 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
     }
 #if defined(__ANDROID__)
     config.renderBackendPreferenceUVE = UVE::Core::RenderBackendPreferenceUVE::OpenGLUVE;
-    // Start mobile editor with mobile-friendly shadow & SSAO budgets so low-end GPUs hit 60-120 FPS
-    // immediately while keeping FXAA 3.11 + subtle sharpening on for crisp, smooth edges.
-    config.shadowMapResolution = 1024U;
-    config.ssaoEnabledUVE = false;
-    config.postProcessAAMethodUVE = UVE::Core::PostProcessAAMethodUVE::FastApproximateUVE;
-    config.screenSpaceAAQualityUVE = 1U;
-    config.sharpeningAmountUVE = 0.28F;
-#else
-    config.postProcessAAMethodUVE = UVE::Core::PostProcessAAMethodUVE::FastApproximateUVE;
-    config.screenSpaceAAQualityUVE = 2U;
-    config.sharpeningAmountUVE = 0.22F;
 #endif
     config.enableConsoleLogging = !options.bridgeStdio;
     config.headlessUVE = options.headless;
@@ -384,6 +373,14 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
         if (options.scenePath.empty()) {
             options.scenePath = project->startupScene;
         }
+    }
+
+    if (options.prismUi && !options.headless) {
+        // Interactive PRISM sessions detect external Content/ additions asynchronously in
+        // EditorUVE::TickExternalContentWatcherUVE (focus regain + 2s off-thread metadata scan
+        // with 300ms write-stability debounce), preventing synchronous SHA-256 hashing of large
+        // externally pasted folders on the UI thread inside EngineCoreUVE::TickFrameUVE().
+        config.projectChangeWatchPollIntervalSecondsUVE = 86400.0;
     }
 
     UVE::Core::EngineCoreUVE engine(config);
@@ -436,6 +433,9 @@ int UVE::App::RunEditorUVE(const int argc, char** argv, const EditorPlatformUVE&
         }
 
         UVE::Editor::EditorUVE editor(engine.GetServicesUVE(), options.scenePath, 100U, &engine);
+        if (project.has_value()) {
+            editor.SetProjectFilePathUVE(project->projectFile);
+        }
         if (options.prismUi && !options.headless) {
             // PRISM's fonts / themes / locales ship next to the executable (UVBT copies them).
             std::error_code assetError;

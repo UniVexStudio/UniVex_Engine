@@ -61,24 +61,39 @@ extern "C" __attribute__((visibility("default"))) int UveEditorRunUVE(android_ap
         return UVE::AndroidHost::BeforeFrameUVE(activity, core, kEditorRenderedMarkerUVE);
     };
     __android_log_print(ANDROID_LOG_INFO, UVE::AndroidHost::kLogTagUVE, "UVE_EDITOR_STARTED");
-    // Import opens Android's own file manager (it reaches Downloads, Drive and USB storage).
-    UVE::Editor::SetSystemImportPickerUVE([&activity](std::function<void(const std::filesystem::path&)> onPicked) {
-        return UVE::AndroidHost::StartFilePickUVE(
-            activity, {".fbx", ".gltf", ".glb", ".obj", ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".wav", ".ogg",
-                       ".mp3", ".uvshader", ".glsl"},
-            std::move(onPicked), [](const std::string& reason) {
-                __android_log_print(ANDROID_LOG_WARN, UVE::AndroidHost::kLogTagUVE, "UVE_IMPORT_PICK %s", reason.c_str());
-            });
-    });
+    // Import opens Android's own file manager directly (multi-select files and whole folders).
+    static const std::vector<std::string> kImportExtensions{
+        ".fbx", ".gltf", ".glb", ".obj", ".uvanim", ".png", ".jpg", ".jpeg",
+        ".tga", ".bmp",  ".hdr", ".wav", ".ogg",    ".mp3", ".uvs", ".uvshader", ".glsl"};
+    UVE::Editor::SetSystemImportFilesPickerUVE(
+        [&activity](std::function<void(const std::vector<std::filesystem::path>&)> onPicked) {
+            return UVE::AndroidHost::StartMultiFilePickUVE(
+                activity, kImportExtensions, std::move(onPicked), [](const std::string& reason) {
+                    __android_log_print(ANDROID_LOG_WARN, UVE::AndroidHost::kLogTagUVE, "UVE_IMPORT_PICK %s",
+                                        reason.c_str());
+                });
+        });
+    UVE::Editor::SetSystemImportFolderPickerUVE(
+        [&activity](std::function<void(const std::vector<std::filesystem::path>&)> onPicked) {
+            return UVE::AndroidHost::StartFolderPickUVE(
+                activity, std::move(onPicked), [](const std::string& reason) {
+                    __android_log_print(ANDROID_LOG_WARN, UVE::AndroidHost::kLogTagUVE, "UVE_IMPORT_FOLDER_PICK %s",
+                                        reason.c_str());
+                });
+        });
     int exitCode = kEditorStartFailedExitCodeUVE;
     try {
         exitCode = UVE::App::RunEditorUVE(argc, argv, platform);
     } catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_ERROR, UVE::AndroidHost::kLogTagUVE, "UVE_EDITOR_FAILED %s", error.what());
     }
+    UVE::Editor::SetSystemImportFilesPickerUVE({});
+    UVE::Editor::SetSystemImportFolderPickerUVE({});
     UVE::Editor::SetSystemImportPickerUVE({});
     activity.pendingPick = nullptr;
     activity.pendingPickError = nullptr;
+    activity.pendingMultiPick = nullptr;
+    activity.pendingMultiPickError = nullptr;
     UVE::AndroidHost::DetachEngineUVE(activity);
     __android_log_print(ANDROID_LOG_INFO, UVE::AndroidHost::kLogTagUVE, "UVE_EDITOR_STOPPED %d", exitCode);
     return exitCode;

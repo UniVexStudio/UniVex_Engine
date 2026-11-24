@@ -4,14 +4,36 @@
 
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "animation_clip_asset.h"
 #include "mesh_asset.h"
-#include "retarget_conform.h"
+#include "model_animations.h"
 #include "retarget_brain.h"
+#include "retarget_conform.h"
 #include "retarget_humanoid.h"
 
 namespace UVE::Editor {
+namespace {
+
+[[nodiscard]] Retarget::RetargetAnimationCheckUVE CheckFromSummaryUVE(const Asset::AnimationClipSummaryUVE& summary) {
+    if (!summary.valid) {
+        return {Retarget::RetargetAnimationStateUVE::Unreadable, "cannot read it"};
+    }
+    if (summary.conformed) {
+        return {Retarget::RetargetAnimationStateUVE::AlreadyConformed, "already conformed"};
+    }
+    if (!summary.hasRest) {
+        return {Retarget::RetargetAnimationStateUVE::NoSkeleton, "it has no skeleton, import the FBX again"};
+    }
+    if (!summary.hasBones) {
+        return {Retarget::RetargetAnimationStateUVE::NoBones, "it moves no bones"};
+    }
+    return {Retarget::RetargetAnimationStateUVE::Ready, {}};
+}
+
+} // namespace
 
 std::size_t RetargetPlanUVE::ReadyAnimationsUVE() const noexcept {
     return static_cast<std::size_t>(std::ranges::count(animations, Retarget::RetargetAnimationStateUVE::Ready,
@@ -32,10 +54,103 @@ std::array<float, 3> GetRetargetStatusColourUVE(const Retarget::JointStatusUVE s
     return {0.50F, 0.52F, 0.56F};
 }
 
-RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const std::span<const std::filesystem::path> animations) {
+RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile,
+                                const std::span<const std::filesystem::path> animations,
+                                const RetargetPlanProgressUVE& progress,
+                                const std::atomic<bool>* const cancel) {
     RetargetPlanUVE plan;
     plan.model = modelFile;
     const Retarget::HumanoidReferenceUVE& reference = Retarget::GetHumanoidReferenceUVE();
+    const auto cancelled = [cancel]() noexcept {
+        return cancel != nullptr && cancel->load(std::memory_order_relaxed);
+    };
+
+    // Single-read metadata cache per backing .uvmodel so planning 50+ embedded takes reads disk once.
+    std::unordered_map<std::string, std::unordered_map<std::string, Asset::AnimationClipSummaryUVE>> modelSummaryCache;
+    const auto loadModelSummaries = [&](const std::filesystem::path& model)
+        -> const std::unordered_map<std::string, Asset::AnimationClipSummaryUVE>& {
+        const std::string key = model.lexically_normal().generic_string();
+        auto it = modelSummaryCache.find(key);
+        if (it != modelSummaryCache.end()) {
+            return it->second;
+        }
+        std::unordered_map<std::string, Asset::AnimationClipSummaryUVE> map;
+        std::vector<std::pair<std::string, Asset::AnimationClipSummaryUVE>> summaries;
+        if (Asset::InspectModelAnimationsSummaryUVE(model, summaries)) {
+            map.reserve(summaries.size());
+            for (auto& [takeName, summary] : summaries) {
+                map.emplace(std::move(takeName), summary);
+            }
+        }
+        return modelSummaryCache.emplace(key, std::move(map)).first->second;
+    };
+
+    // Gather requested animations + all takes embedded inside `modelFile`, deduplicated in O(N).
+    std::vector<std::filesystem::path> allAnimations;
+    allAnimations.reserve(animations.size());
+    std::unordered_set<std::string> seenAnimations;
+    seenAnimations.reserve(animations.size() + 16U);
+    const auto addAnimationOnce = [&](const std::filesystem::path& path) {
+        if (path.empty()) {
+            return;
+        }
+        std::filesystem::path embeddedModel;
+        std::string embeddedTake;
+        const std::string key = Asset::SplitEmbeddedClipPathUVE(path, embeddedModel, embeddedTake)
+                                    ? (embeddedModel.lexically_normal().generic_string() + "#" + embeddedTake)
+                                    : path.lexically_normal().generic_string();
+        if (seenAnimations.insert(key).second) {
+            allAnimations.push_back(path);
+        }
+    };
+    for (const std::filesystem::path& file : animations) {
+        addAnimationOnce(file);
+    }
+    if (!modelFile.empty()) {
+        std::vector<std::pair<std::string, Asset::AnimationClipSummaryUVE>> embedded;
+        if (Asset::InspectModelAnimationsSummaryUVE(modelFile, embedded)) {
+            const std::string key = modelFile.lexically_normal().generic_string();
+            auto& map = modelSummaryCache[key];
+            map.reserve(embedded.size());
+            for (const auto& [takeName, summary] : embedded) {
+                map.emplace(takeName, summary);
+                addAnimationOnce(Asset::MakeEmbeddedClipPathUVE(modelFile, takeName));
+            }
+        }
+    }
+
+    const auto summaryOf = [&](const std::filesystem::path& file) -> Asset::AnimationClipSummaryUVE {
+        std::filesystem::path embeddedModel;
+        std::string embeddedTake;
+        if (Asset::SplitEmbeddedClipPathUVE(file, embeddedModel, embeddedTake)) {
+            const auto& map = loadModelSummaries(embeddedModel);
+            const auto found = map.find(embeddedTake);
+            return found == map.end() ? Asset::AnimationClipSummaryUVE{} : found->second;
+        }
+        return Asset::InspectAnimationClipFileSummaryUVE(file);
+    };
+
+    // Inspect animations via zero-DOM SAX summary so scanning 1,000 files skips keyframe parsing.
+    plan.animations.reserve(allAnimations.size());
+    std::filesystem::path firstRestClip;
+    for (std::size_t i = 0U; i < allAnimations.size(); ++i) {
+        if (cancelled()) {
+            return plan;
+        }
+        const std::filesystem::path& file = allAnimations[i];
+        if (progress && (i == 0U || (i & 15U) == 0U || i + 1U == allAnimations.size())) {
+            progress(i, allAnimations.size(), Asset::AssetDisplayNameUVE(file));
+        }
+        const Asset::AnimationClipSummaryUVE summary = summaryOf(file);
+        if (firstRestClip.empty() && summary.valid && summary.hasRest) {
+            firstRestClip = file;
+        }
+        const Retarget::RetargetAnimationCheckUVE check = CheckFromSummaryUVE(summary);
+        plan.animations.push_back(RetargetAnimationRowUVE{file, check.state, check.note});
+    }
+    if (cancelled()) {
+        return plan;
+    }
 
     std::optional<Retarget::RetargetSkeletonUVE> resolvedRig;
     if (!modelFile.empty()) {
@@ -51,10 +166,12 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
             }
         }
     } else {
-        for (const std::filesystem::path& file : animations) {
+        // Animation-only batch: read the full rest skeleton of ONLY the first clip that carries one.
+        if (!firstRestClip.empty()) {
             Asset::AnimationClipAssetUVE clip;
-            if (Asset::LoadAnimationClipAssetUVE(file, clip) && !clip.rest.empty()) {
+            if (Asset::LoadAnimationClipAssetUVE(firstRestClip, clip) && !clip.rest.empty()) {
                 Retarget::RetargetSkeletonUVE rig;
+                rig.bones.reserve(clip.rest.size());
                 for (const Asset::AnimationAssetRestBoneUVE& rest : clip.rest) {
                     Retarget::RetargetBoneUVE bone;
                     bone.name = rest.bone;
@@ -65,7 +182,6 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
                     rig.bones.push_back(std::move(bone));
                 }
                 resolvedRig = std::move(rig);
-                break;
             }
         }
         if (!resolvedRig.has_value()) {
@@ -81,6 +197,7 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
                                                      : Retarget::MatchHumanoidUVE(rig, reference);
         plan.usedBrain = Retarget::IsDefaultRigBrainReadyUVE();
         std::vector<std::string> names;
+        names.reserve(rig.bones.size());
         for (const Retarget::RetargetBoneUVE& bone : rig.bones) {
             names.push_back(bone.name);
         }
@@ -129,12 +246,10 @@ RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile, const st
         }
     }
 
-    for (const std::filesystem::path& file : animations) {
-        const Retarget::RetargetAnimationCheckUVE check = Retarget::CheckAnimationForRetargetUVE(file);
-        plan.animations.push_back(RetargetAnimationRowUVE{file, check.state, check.note});
+    if (progress && !allAnimations.empty()) {
+        progress(allAnimations.size(), allAnimations.size(), {});
     }
     return plan;
 }
 
 } // namespace UVE::Editor
-

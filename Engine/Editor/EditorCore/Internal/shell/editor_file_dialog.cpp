@@ -229,11 +229,13 @@ void EditorFileDialogUVE::FrameUVE() {
 prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
     const bool import = m_request.quickImport;
     const bool save = m_request.mode == FilePickerModeUVE::Save;
+    const bool openFolder = m_request.mode == FilePickerModeUVE::OpenFolder;
     auto window = prism::vbox();
 
     // Title bar: shared PRISM tool window chrome with icon, DragStrip, Floating/Full toggle, and Close.
-    window->add(BuildToolWindowTitleBarUVE(m_request.title.empty() ? std::string("Open File") : m_request.title,
-                                           prism::Icon::FolderOpen, [this] { CancelUVE(); }));
+    window->add(BuildToolWindowTitleBarUVE(
+        m_request.title.empty() ? std::string(openFolder ? "Select Folder" : "Open File") : m_request.title,
+        prism::Icon::FolderOpen, [this] { CancelUVE(); }));
 
     // Navigation: up, the path (type one and press Enter), search.
     auto nav = prism::hbox(4.0F);
@@ -330,11 +332,46 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
                  col == 2 ? prism::HAlign::Right : prism::HAlign::Left, true);
     };
     m_table->onSelect = [this](const std::vector<int>& rows) {
+        if (!m_fileName) {
+            return;
+        }
+        if (m_request.mode == FilePickerModeUVE::OpenFolder) {
+            std::vector<std::string> dirNames;
+            for (const int row : rows) {
+                if (row >= 0 && static_cast<std::size_t>(row) < m_entries.size() &&
+                    m_entries[static_cast<std::size_t>(row)].directory) {
+                    dirNames.push_back(Utf8UVE(m_entries[static_cast<std::size_t>(row)].path.filename()));
+                }
+            }
+            if (dirNames.size() == 1U) {
+                m_fileName->setText(dirNames.front());
+            } else if (dirNames.size() > 1U) {
+                m_fileName->setText(std::to_string(dirNames.size()) + " folders selected");
+            } else {
+                m_fileName->setText("");
+            }
+            return;
+        }
+        if (m_request.allowMultiSelect) {
+            std::vector<std::string> fileNames;
+            for (const int row : rows) {
+                if (row >= 0 && static_cast<std::size_t>(row) < m_entries.size() &&
+                    !m_entries[static_cast<std::size_t>(row)].directory) {
+                    fileNames.push_back(Utf8UVE(m_entries[static_cast<std::size_t>(row)].path.filename()));
+                }
+            }
+            if (fileNames.size() == 1U) {
+                m_fileName->setText(fileNames.front());
+            } else if (fileNames.size() > 1U) {
+                m_fileName->setText(std::to_string(fileNames.size()) + " files selected");
+            }
+            return;
+        }
         if (rows.empty() || rows.front() < 0 || static_cast<std::size_t>(rows.front()) >= m_entries.size()) {
             return;
         }
         const EntryUVE& entry = m_entries[static_cast<std::size_t>(rows.front())];
-        if (!entry.directory && m_fileName) {
+        if (!entry.directory) {
             m_fileName->setText(Utf8UVE(entry.path.filename()));
         }
     };
@@ -345,7 +382,7 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
         const EntryUVE entry = m_entries[static_cast<std::size_t>(row)];
         if (entry.directory) {
             GoToUVE(entry.path);
-        } else {
+        } else if (m_request.mode != FilePickerModeUVE::OpenFolder) {
             if (m_fileName) {
                 m_fileName->setText(Utf8UVE(entry.path.filename()));
             }
@@ -361,13 +398,18 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
     // File name and kind.
     auto fileRow = prism::hbox(6.0F);
     fileRow->setPadding(prism::Margin(8.0F, 6.0F, 8.0F, 2.0F));
-    auto fileLabel = prism::make<prism::Label>(save ? "Save as" : "File");
+    auto fileLabel = prism::make<prism::Label>(openFolder ? "Folder" : save ? "Save as" : "File");
     fileLabel->setColor(prism::ThemeColor(&prism::Theme::textDim));
     auto fileLabelBox = prism::make<prism::SizeBox>();
     fileLabelBox->setWidthOverride(80.0F);
     fileLabelBox->setContent(fileLabel);
     fileRow->add(fileLabelBox, prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    m_fileName = prism::make<prism::TextInput>(m_request.saveName, save ? "Name" : "Pick a file, or type its name");
+    const std::string placeholder = openFolder
+                                        ? "Current folder (or select subfolder)"
+                                        : save ? "Name"
+                                               : (m_request.allowMultiSelect ? "Pick one or more files (Ctrl/Shift+click)"
+                                                                             : "Pick a file, or type its name");
+    m_fileName = prism::make<prism::TextInput>(m_request.saveName, placeholder);
     m_fileName->onCommit = [this](const std::string&) { ConfirmUVE(); };
     fileRow->add(m_fileName, prism::Slot{1.0F, {}, prism::HAlign::Fill, prism::VAlign::Center});
     std::string kinds;
@@ -376,7 +418,9 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
     }
     // A slot's pick shows only what the slot takes; an open-ended pick can show everything.
     std::vector<std::string> filters;
-    if (!kinds.empty()) {
+    if (openFolder) {
+        filters.emplace_back("Folders (preserves subfolders)");
+    } else if (!kinds.empty()) {
         filters.push_back(kinds);
     } else {
         filters.emplace_back("All files (*.*)");
@@ -418,8 +462,10 @@ prism::Ref<prism::Widget> EditorFileDialogUVE::BuildUVE() {
     m_status = prism::make<prism::Label>("", prism::FontRole::Small);
     m_status->setColor(prism::ThemeColor(&prism::Theme::textDim));
     buttons->add(m_status, prism::Slot{1.0F, {}, prism::HAlign::Left, prism::VAlign::Center});
-    auto confirm = prism::make<prism::Button>(import ? "Import" : save ? "Save" : "Load",
-                                              import ? prism::Icon::Open : prism::Icon::Check, prism::ButtonStyle::Primary);
+    const char* const confirmLabel = openFolder ? "Import Folder" : (import || m_request.allowMultiSelect) ? "Import" : save ? "Save" : "Load";
+    auto confirm = prism::make<prism::Button>(confirmLabel,
+                                              (openFolder || import || m_request.allowMultiSelect) ? prism::Icon::Open : prism::Icon::Check,
+                                              prism::ButtonStyle::Primary);
     confirm->onClick = [this] { ConfirmUVE(); };
     auto cancel = prism::make<prism::Button>("Cancel", prism::Icon::None, prism::ButtonStyle::Default);
     cancel->onClick = [this] { CancelUVE(); };
@@ -460,6 +506,9 @@ void EditorFileDialogUVE::GoToUVE(const std::filesystem::path& directory) {
     }
     if (m_search) {
         m_search->setText("");
+    }
+    if (m_request.mode == FilePickerModeUVE::OpenFolder && m_fileName) {
+        m_fileName->setText("");
     }
     RebuildListUVE();
 }
@@ -510,7 +559,7 @@ void EditorFileDialogUVE::RebuildListUVE() {
             files += entry.directory ? 0U : 1U;
         }
         std::string text = std::to_string(files) + (files == 1U ? " file" : " files") + " here, " +
-                           std::to_string(m_entries.size() - files) + " folders with more";
+                           std::to_string(m_entries.size() - files) + " folders";
         if (hidden > 0U) {
             text += " (other kinds hidden)";
         }
@@ -551,6 +600,67 @@ void EditorFileDialogUVE::CancelUVE() {
 }
 
 void EditorFileDialogUVE::ConfirmUVE() {
+    std::error_code error;
+    if (m_request.mode == FilePickerModeUVE::OpenFolder) {
+        std::vector<std::filesystem::path> chosenDirs;
+        if (m_table) {
+            for (const int row : m_table->selection()) {
+                if (row >= 0 && static_cast<std::size_t>(row) < m_entries.size() &&
+                    m_entries[static_cast<std::size_t>(row)].directory) {
+                    chosenDirs.push_back(m_entries[static_cast<std::size_t>(row)].path);
+                }
+            }
+        }
+        if (chosenDirs.empty()) {
+            const std::string name = m_fileName ? m_fileName->text() : std::string();
+            if (!name.empty()) {
+                const std::filesystem::path typed =
+                    std::filesystem::path{name}.is_absolute() ? std::filesystem::path{name} : (m_directory / name);
+                if (std::filesystem::is_directory(typed, error)) {
+                    chosenDirs.push_back(typed);
+                }
+            }
+        }
+        if (chosenDirs.empty() && std::filesystem::is_directory(m_directory, error)) {
+            chosenDirs.push_back(m_directory);
+        }
+        if (chosenDirs.empty()) {
+            if (m_status) {
+                m_status->setText("Select a valid folder first.");
+            }
+            return;
+        }
+        auto pickMany = std::move(m_request.onPickMany);
+        auto pick = std::move(m_request.onPick);
+        m_request.onPickMany = {};
+        m_request.onPick = {};
+        m_closePending = true;
+        if (pickMany) {
+            pickMany(chosenDirs);
+        } else if (pick) {
+            pick(chosenDirs.front());
+        }
+        return;
+    }
+
+    if (m_request.allowMultiSelect && m_request.onPickMany && m_table && !m_table->selection().empty()) {
+        std::vector<std::filesystem::path> chosenFiles;
+        for (const int row : m_table->selection()) {
+            if (row >= 0 && static_cast<std::size_t>(row) < m_entries.size() &&
+                !m_entries[static_cast<std::size_t>(row)].directory) {
+                chosenFiles.push_back(m_entries[static_cast<std::size_t>(row)].path);
+            }
+        }
+        if (!chosenFiles.empty()) {
+            auto pickMany = std::move(m_request.onPickMany);
+            m_request.onPickMany = {};
+            m_request.onPick = {};
+            m_closePending = true;
+            pickMany(chosenFiles);
+            return;
+        }
+    }
+
     const std::string name = m_fileName ? m_fileName->text() : std::string();
     if (name.empty()) {
         if (m_status) {
@@ -558,7 +668,6 @@ void EditorFileDialogUVE::ConfirmUVE() {
         }
         return;
     }
-    std::error_code error;
     std::filesystem::path chosen = std::filesystem::path{name}.is_absolute() ? std::filesystem::path{name} : m_directory / name;
 
     if (m_request.mode == FilePickerModeUVE::Save) {
@@ -595,10 +704,14 @@ void EditorFileDialogUVE::ConfirmUVE() {
         m_editor.RefreshProjectFileIndexUVE();
     }
     // The pick runs once; the window closes between frames.
+    auto pickMany = std::move(m_request.onPickMany);
     auto pick = std::move(m_request.onPick);
+    m_request.onPickMany = {};
     m_request.onPick = {};
     m_closePending = true;
-    if (pick) {
+    if (m_request.allowMultiSelect && pickMany) {
+        pickMany({chosen});
+    } else if (pick) {
         pick(chosen);
     }
 }

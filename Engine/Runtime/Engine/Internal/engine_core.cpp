@@ -5477,6 +5477,10 @@ void ApplyEngineConfigToRenderer3DUVE(const EngineConfigUVE& config, Render::IRe
     renderer.SetMaterialSamplerSettingsUVE(
         config.defaultTextureRepeatModeUVE != 0,
         static_cast<float>(std::clamp<std::int64_t>(config.defaultAnisotropyLevelUVE, 1, 16)));
+    if (config.requestedRendererProfileUVE != Platform::RendererProfileUVE::ForwardPlus ||
+        renderer.GetRendererProfileResolutionUVE().requested != config.requestedRendererProfileUVE) {
+        renderer.SetRendererProfileUVE(config.requestedRendererProfileUVE);
+    }
     if (config.activeQualityTierUVE != EngineConfigUVE{}.activeQualityTierUVE) {
         renderer.SetScalabilityModeUVE(static_cast<std::int32_t>(config.activeQualityTierUVE));
     }

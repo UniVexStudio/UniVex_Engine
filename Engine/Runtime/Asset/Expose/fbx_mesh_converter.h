@@ -220,4 +220,24 @@ struct FbxMaterialUVE final {
 /// exceed kMaximumFbxMeshSourceBytesUVE; an empty vector means the file has no materials at all.
 [[nodiscard]] std::optional<std::vector<FbxMaterialUVE>> ReadFbxMaterialsUVE(std::span<const std::byte> source);
 
+/// Complete single-pass FBX extraction bundle parsed from one `ufbx_load_memory` call,
+/// eliminating redundant `N_meshes + 5` full-file re-parses during import.
+struct FbxSceneImportBundleUVE final {
+    MeshAssetUVE mergedMesh;
+    std::vector<FbxSurfaceRangeUVE> surfaceRanges;
+    std::optional<std::vector<FbxMaterialUVE>> materials;
+    std::optional<GltfSkeletonUVE> skeleton;
+    std::size_t droppedBones = 0U;
+    bool partsKnown = false;
+    std::vector<FbxMeshPartUVE> parts;
+    bool hierarchyKnown = false;
+    std::vector<FbxHierarchyEntryUVE> hierarchy;
+};
+
+/// Parses `source` once with ufbx and extracts merged mesh, materials, skeleton (if skinned),
+/// per-node mesh parts (when the scene holds 2+ valid meshes), and object hierarchy from the shared parsed scene.
+[[nodiscard]] bool ExtractFbxImportBundleUVE(std::span<const std::byte> source,
+                                             FbxSceneImportBundleUVE& outBundle,
+                                             std::size_t maximumJoints = kMaximumAnimationAssetBonesUVE);
+
 } // namespace UVE::Asset

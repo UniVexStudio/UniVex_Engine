@@ -50,5 +50,6 @@ void setBrandMark(std::vector<uint32_t> argb, int w, int h);
 bool hasBrandMark();
 // Draws the brand mark scaled into `box`; nothing when none is set.
 void drawBrandMark(Canvas& c, Rect box);
+void drawBrandMark(Canvas& c, Rect box, float alpha);
 
 } // namespace prism

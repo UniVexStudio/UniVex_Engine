@@ -372,7 +372,8 @@ std::string MakeProjectFileStemUVE(const std::string_view displayName) {
 ProjectCreationResultUVE CreateProjectFromTemplateUVE(const ProjectTemplateUVE& projectTemplate,
                                                       const std::filesystem::path& parentDirectory,
                                                       const std::string_view displayName,
-                                                      const Core::VersionUVE& engineVersion) {
+                                                      const Core::VersionUVE& engineVersion,
+                                                      const Platform::RendererProfileUVE rendererProfile) {
     const std::string stem = MakeProjectFileStemUVE(displayName);
     if (stem.empty() || displayName.size() > Platform::kMaximumEditorProjectNameBytesUVE) {
         return CreationFailureUVE(ProjectCreationCodeUVE::InvalidName,
@@ -428,6 +429,7 @@ ProjectCreationResultUVE CreateProjectFromTemplateUVE(const ProjectTemplateUVE& 
     package.assetDatabasePath = kDefaultConfigUVE.assetDatabaseFilePath.filename();
     package.settingsPath = kDefaultConfigUVE.projectSettingsFilePath.filename();
     package.startupScenePath = projectTemplate.startupScenePath;
+    package.rendererProfile = rendererProfile;
     const std::filesystem::path stagedManifest =
         staging.PathUVE() / (stem + std::string(Platform::kEditorProjectFileExtensionUVE));
     const Platform::EditorProjectPackageResultUVE saved =

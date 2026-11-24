@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <span>
 #include <utility>
 
 namespace UVE::Asset {
@@ -139,6 +140,60 @@ bool LoadModelAnimationUVE(const std::filesystem::path& model, const std::string
         }
     }
     return false;
+}
+
+bool LoadAllModelAnimationsUVE(const std::filesystem::path& model,
+                               std::vector<AnimationClipAssetUVE>& outClips,
+                               std::uint64_t* outStamp) {
+    outClips.clear();
+    if (outStamp != nullptr) {
+        *outStamp = 0U;
+    }
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(model, error)) {
+        return false;
+    }
+    const std::optional<std::vector<std::byte>> payload = ReadMeshPayloadUVE(model);
+    std::vector<TakeUVE> takes;
+    std::uint64_t stamp = 0U;
+    if (!payload.has_value() || !ReadTakesUVE(*payload, takes, &stamp)) {
+        return false;
+    }
+    if (outStamp != nullptr) {
+        *outStamp = stamp;
+    }
+    outClips.reserve(takes.size());
+    for (const TakeUVE& take : takes) {
+        const std::vector<std::byte> bytes(payload->begin() + static_cast<std::ptrdiff_t>(take.payloadAt),
+                                           payload->begin() + static_cast<std::ptrdiff_t>(take.payloadAt + take.payloadBytes));
+        AnimationClipAssetUVE clip;
+        if (ParseAnimationClipPayloadUVE(bytes, clip)) {
+            clip.clipId = take.name;
+            outClips.push_back(std::move(clip));
+        }
+    }
+    return true;
+}
+
+bool InspectModelAnimationsSummaryUVE(
+    const std::filesystem::path& model,
+    std::vector<std::pair<std::string, AnimationClipSummaryUVE>>& outSummaries) {
+    outSummaries.clear();
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(model, error)) {
+        return false;
+    }
+    const std::optional<std::vector<std::byte>> payload = ReadMeshPayloadUVE(model);
+    std::vector<TakeUVE> takes;
+    if (!payload.has_value() || !ReadTakesUVE(*payload, takes)) {
+        return false;
+    }
+    outSummaries.reserve(takes.size());
+    for (const TakeUVE& take : takes) {
+        const std::span<const std::byte> bytes(payload->data() + take.payloadAt, take.payloadBytes);
+        outSummaries.emplace_back(take.name, InspectAnimationClipSummaryUVE(bytes));
+    }
+    return true;
 }
 
 std::vector<std::byte> ExtractModelAnimationSectionUVE(const std::vector<std::byte>& meshPayload) {

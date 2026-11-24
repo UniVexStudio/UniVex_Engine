@@ -5246,4 +5246,80 @@ TEST_F(Renderer3DUVETest, StandaloneSky3DPreservesDefaultPostProcessingPasses) {
     EXPECT_TRUE(diagnostics.toneMappingPassRecorded);
 }
 
+TEST(RendererProfileResolutionUVETest, StepsDownCleanlyByDeviceCapabilities) {
+    RenderDeviceCapabilitiesUVE fullGpu{};
+    fullGpu.storageBuffers = RenderFeatureSupportUVE::Native;
+    fullGpu.halfFloatColorTargets = RenderFeatureSupportUVE::Native;
+    {
+        const auto res = ResolveEffectiveRendererProfileUVE(Platform::RendererProfileUVE::ForwardPlus, fullGpu);
+        EXPECT_EQ(res.requested, Platform::RendererProfileUVE::ForwardPlus);
+        EXPECT_EQ(res.effective, Platform::RendererProfileUVE::ForwardPlus);
+        EXPECT_FALSE(res.fallbackApplied);
+        EXPECT_TRUE(res.fallbackReason.empty());
+    }
+    {
+        const auto res = ResolveEffectiveRendererProfileUVE(Platform::RendererProfileUVE::Mobile, fullGpu);
+        EXPECT_EQ(res.effective, Platform::RendererProfileUVE::Mobile);
+        EXPECT_FALSE(res.fallbackApplied);
+    }
+
+    RenderDeviceCapabilitiesUVE gles30Gpu{};
+    gles30Gpu.storageBuffers = RenderFeatureSupportUVE::Unsupported;
+    gles30Gpu.halfFloatColorTargets = RenderFeatureSupportUVE::Native;
+    {
+        const auto res = ResolveEffectiveRendererProfileUVE(Platform::RendererProfileUVE::ForwardPlus, gles30Gpu);
+        EXPECT_EQ(res.requested, Platform::RendererProfileUVE::ForwardPlus);
+        EXPECT_EQ(res.effective, Platform::RendererProfileUVE::Mobile);
+        EXPECT_TRUE(res.fallbackApplied);
+        EXPECT_FALSE(res.fallbackReason.empty());
+    }
+    {
+        const auto res = ResolveEffectiveRendererProfileUVE(Platform::RendererProfileUVE::Mobile, gles30Gpu);
+        EXPECT_EQ(res.effective, Platform::RendererProfileUVE::Mobile);
+        EXPECT_FALSE(res.fallbackApplied);
+    }
+
+    RenderDeviceCapabilitiesUVE lowEndGpu{};
+    lowEndGpu.storageBuffers = RenderFeatureSupportUVE::Unsupported;
+    lowEndGpu.halfFloatColorTargets = RenderFeatureSupportUVE::Unsupported;
+    {
+        const auto res = ResolveEffectiveRendererProfileUVE(Platform::RendererProfileUVE::ForwardPlus, lowEndGpu);
+        EXPECT_EQ(res.effective, Platform::RendererProfileUVE::Compatibility);
+        EXPECT_TRUE(res.fallbackApplied);
+        EXPECT_FALSE(res.fallbackReason.empty());
+    }
+    {
+        const auto res = ResolveEffectiveRendererProfileUVE(Platform::RendererProfileUVE::Mobile, lowEndGpu);
+        EXPECT_EQ(res.effective, Platform::RendererProfileUVE::Compatibility);
+        EXPECT_TRUE(res.fallbackApplied);
+    }
+    {
+        const auto res = ResolveEffectiveRendererProfileUVE(Platform::RendererProfileUVE::Compatibility, lowEndGpu);
+        EXPECT_EQ(res.effective, Platform::RendererProfileUVE::Compatibility);
+        EXPECT_FALSE(res.fallbackApplied);
+    }
+}
+
+TEST_F(Renderer3DUVETest, SetRendererProfileUVE_SwitchesProfilesAndDisablesHeavyPassesInCompatibility) {
+    const Scene::EntityUVE cameraEntity = MakeCameraEntityUVE();
+    WaitUntilShadowProgramReadyUVE();
+
+    renderer3D->SetRendererProfileUVE(Platform::RendererProfileUVE::Compatibility);
+    EXPECT_EQ(renderer3D->GetRendererProfileResolutionUVE().effective, Platform::RendererProfileUVE::Compatibility);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    const Renderer3DFrameDiagnosticsUVE compatDiag = renderer3D->GetLastFrameDiagnosticsUVE();
+    EXPECT_FALSE(compatDiag.ssaoPassRecorded);
+    EXPECT_FALSE(compatDiag.bloomPassRecorded);
+
+    renderer3D->SetRendererProfileUVE(Platform::RendererProfileUVE::Mobile);
+    EXPECT_EQ(renderer3D->GetRendererProfileResolutionUVE().requested, Platform::RendererProfileUVE::Mobile);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_FALSE(renderer3D->GetLastFrameDiagnosticsUVE().ssaoPassRecorded);
+
+    renderer3D->SetRendererProfileUVE(Platform::RendererProfileUVE::ForwardPlus);
+    EXPECT_EQ(renderer3D->GetRendererProfileResolutionUVE().requested, Platform::RendererProfileUVE::ForwardPlus);
+    renderer3D->RenderFrameUVE(entityManager, cameraEntity);
+    EXPECT_TRUE(renderer3D->GetLastFrameDiagnosticsUVE().toneMappingPassRecorded);
+}
+
 } // namespace UVE::Render::Tests

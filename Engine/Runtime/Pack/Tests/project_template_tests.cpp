@@ -201,5 +201,25 @@ TEST(ShippedProjectTemplatesUVETest, EveryShippedTemplateLoads) {
     EXPECT_GE(discovery.templates.size(), 2U);
 }
 
+TEST_F(ProjectTemplateUVETest, Create_StampsSelectedRendererProfileIntoProjectManifest) {
+    const ProjectTemplateUVE projectTemplate = LoadStarterTemplateUVE();
+
+    const ProjectCreationResultUVE compat = CreateProjectFromTemplateUVE(
+        projectTemplate, projectsRoot, "Compat Game", kEngineVersionUVE, Platform::RendererProfileUVE::Compatibility);
+    ASSERT_TRUE(compat.IsCreatedUVE()) << compat.message;
+    const Platform::EditorProjectPackageLoadResultUVE compatLoaded =
+        Platform::EditorProjectPackageCodecUVE::LoadUVE(compat.projectFile);
+    ASSERT_TRUE(compatLoaded.IsAcceptedUVE()) << compatLoaded.result.message;
+    EXPECT_EQ(compatLoaded.package->rendererProfile, Platform::RendererProfileUVE::Compatibility);
+
+    const ProjectCreationResultUVE mobile = CreateProjectFromTemplateUVE(
+        projectTemplate, projectsRoot, "Mobile Game", kEngineVersionUVE, Platform::RendererProfileUVE::Mobile);
+    ASSERT_TRUE(mobile.IsCreatedUVE()) << mobile.message;
+    const Platform::EditorProjectPackageLoadResultUVE mobileLoaded =
+        Platform::EditorProjectPackageCodecUVE::LoadUVE(mobile.projectFile);
+    ASSERT_TRUE(mobileLoaded.IsAcceptedUVE()) << mobileLoaded.result.message;
+    EXPECT_EQ(mobileLoaded.package->rendererProfile, Platform::RendererProfileUVE::Mobile);
+}
+
 } // namespace
 } // namespace UVE::Pack::Tests

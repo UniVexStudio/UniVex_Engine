@@ -106,86 +106,98 @@ namespace {
 
 } // namespace
 
+std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForModelFileUVE(
+    const std::filesystem::path& importedPath, const std::size_t maximumBones) const {
+    std::error_code ec;
+    if (importedPath.empty() || !std::filesystem::is_regular_file(importedPath, ec)) {
+        return std::nullopt;
+    }
+    const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(importedPath, ec);
+    const Asset::MeshAssetUVE* meshPtr = nullptr;
+    Asset::MeshAssetUVE loadedMesh;
+    if (!ec && m_inspectorMeshAssetCache.has_value() &&
+        m_inspectorMeshAssetCache->resolvedPath == importedPath &&
+        m_inspectorMeshAssetCache->lastWriteTime == writeTime) {
+        meshPtr = &m_inspectorMeshAssetCache->meshAsset;
+    } else if (Asset::LoadMeshAssetUVE(importedPath, loadedMesh)) {
+        if (!ec) {
+            m_inspectorMeshAssetCache = EntityEditorMeshCacheEntryUVE{importedPath, writeTime, loadedMesh};
+        }
+        meshPtr = &loadedMesh;
+    }
+    // First, prefer the sibling .uvskel rig authored directly for this model (including Retarget's
+    // A-pose humanoid skeleton), with matching joint hierarchy, binds, and scale.
+    std::filesystem::path skelPath = importedPath;
+    skelPath.replace_extension(".uvskel");
+    Asset::SkeletonAssetUVE skelAsset;
+    const auto sameJoints = [&] {
+        if (meshPtr == nullptr || meshPtr->joints.size() != skelAsset.joints.size()) {
+            return meshPtr == nullptr;
+        }
+        for (std::size_t joint = 0U; joint < skelAsset.joints.size(); ++joint) {
+            if (skelAsset.joints[joint].name != meshPtr->joints[joint].name) {
+                return false;
+            }
+        }
+        return true;
+    };
+    if (std::filesystem::is_regular_file(skelPath, ec) && Asset::LoadSkeletonAssetUVE(skelPath, skelAsset) &&
+        !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones && sameJoints()) {
+        Asset::GltfSkeletonUVE skeleton;
+        skeleton.skinCount = 1U;
+        skeleton.joints.reserve(skelAsset.joints.size());
+        for (const Asset::SkeletonJointUVE& joint : skelAsset.joints) {
+            Asset::GltfJointUVE gltfJoint;
+            gltfJoint.name = joint.name;
+            gltfJoint.parentIndex = joint.parent;
+            gltfJoint.translation = joint.position;
+            gltfJoint.rotation = joint.rotation;
+            gltfJoint.scale = joint.scale;
+            skeleton.joints.push_back(std::move(gltfJoint));
+        }
+        return skeleton;
+    }
+
+    if (meshPtr != nullptr && !meshPtr->joints.empty()) {
+        if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(*meshPtr);
+            rig.has_value() && !rig->bones.empty() && rig->bones.size() <= maximumBones) {
+            Asset::GltfSkeletonUVE skeleton;
+            skeleton.skinCount = 1U;
+            skeleton.joints.reserve(rig->bones.size());
+            for (const Retarget::RetargetBoneUVE& bone : rig->bones) {
+                Asset::GltfJointUVE joint;
+                joint.name = bone.name;
+                joint.parentIndex = bone.parent;
+                joint.translation = bone.position;
+                joint.rotation = bone.rotation;
+                joint.scale = Math::Vector3UVE{bone.scale, bone.scale, bone.scale};
+                skeleton.joints.push_back(std::move(joint));
+            }
+            return skeleton;
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const std::filesystem::path& relativeSource,
                                                                           const std::size_t maximumBones) const {
-    // Use the imported .uvmodel skeleton directly whenever available so we never re-parse the raw
-    // multi-megabyte .fbx on the UI thread, and so characters conformed by Retarget retain their
-    // humanoid rig.
+    // Use the imported .uvmodel (+ sibling .uvskel) directly whenever available so we never re-parse
+    // the raw multi-megabyte .fbx on the UI thread, and so characters conformed by Retarget retain
+    // their humanoid A-pose rig whether referenced by source (.fbx/.glb) or directly by .uvmodel.
+    std::string ext = relativeSource.extension().string();
+    std::ranges::transform(ext, ext.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (ext == ".uvmodel") {
+        const std::filesystem::path modelPath =
+            relativeSource.is_absolute()
+                ? relativeSource
+                : (m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource);
+        return ReadSkeletonForModelFileUVE(modelPath, maximumBones);
+    }
     if (IsModelSourcePathUVE(relativeSource)) {
-        const std::filesystem::path importedPath = GetImportedModelPathUVE(relativeSource);
-        std::error_code ec;
-        if (std::filesystem::is_regular_file(importedPath, ec)) {
-            const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(importedPath, ec);
-            const Asset::MeshAssetUVE* meshPtr = nullptr;
-            Asset::MeshAssetUVE loadedMesh;
-            if (!ec && m_inspectorMeshAssetCache.has_value() &&
-                m_inspectorMeshAssetCache->resolvedPath == importedPath &&
-                m_inspectorMeshAssetCache->lastWriteTime == writeTime) {
-                meshPtr = &m_inspectorMeshAssetCache->meshAsset;
-            } else if (Asset::LoadMeshAssetUVE(importedPath, loadedMesh)) {
-                if (!ec) {
-                    m_inspectorMeshAssetCache = EntityEditorMeshCacheEntryUVE{importedPath, writeTime, loadedMesh};
-                }
-                meshPtr = &loadedMesh;
-            }
-            // First, prefer the model importer's exact .uvskel rig authored directly for this model
-            // with matching joint hierarchy, binds, and scale.
-            std::filesystem::path skelPath = importedPath;
-            skelPath.replace_extension(".uvskel");
-            Asset::SkeletonAssetUVE skelAsset;
-            // Only while it still describes the mesh's joints (Retarget renames them).
-            const auto sameJoints = [&] {
-                if (meshPtr == nullptr || meshPtr->joints.size() != skelAsset.joints.size()) {
-                    return meshPtr == nullptr;
-                }
-                for (std::size_t joint = 0U; joint < skelAsset.joints.size(); ++joint) {
-                    if (skelAsset.joints[joint].name != meshPtr->joints[joint].name) {
-                        return false;
-                    }
-                }
-                return true;
-            };
-            if (std::filesystem::is_regular_file(skelPath, ec) && Asset::LoadSkeletonAssetUVE(skelPath, skelAsset) &&
-                !skelAsset.joints.empty() && skelAsset.joints.size() <= maximumBones && sameJoints()) {
-                Asset::GltfSkeletonUVE skeleton;
-                skeleton.skinCount = 1U;
-                skeleton.joints.reserve(skelAsset.joints.size());
-                for (const Asset::SkeletonJointUVE& joint : skelAsset.joints) {
-                    Asset::GltfJointUVE gltfJoint;
-                    gltfJoint.name = joint.name;
-                    gltfJoint.parentIndex = joint.parent;
-                    gltfJoint.translation = joint.position;
-                    gltfJoint.rotation = joint.rotation;
-                    gltfJoint.scale = joint.scale;
-                    skeleton.joints.push_back(std::move(gltfJoint));
-                }
-                return skeleton;
-            }
-
-            if (meshPtr != nullptr && !meshPtr->joints.empty()) {
-                std::vector<std::string> jointNames;
-                jointNames.reserve(meshPtr->joints.size());
-                for (const Asset::MeshJointUVE& joint : meshPtr->joints) {
-                    jointNames.push_back(joint.name);
-                }
-                if (Retarget::AreHumanoidNamesUVE(jointNames, Retarget::GetHumanoidReferenceUVE())) {
-                    if (const std::optional<Retarget::RetargetSkeletonUVE> rig = Retarget::RigFromMeshUVE(*meshPtr);
-                        rig.has_value() && !rig->bones.empty() && rig->bones.size() <= maximumBones) {
-                        Asset::GltfSkeletonUVE skeleton;
-                        skeleton.skinCount = 1U;
-                        for (const Retarget::RetargetBoneUVE& bone : rig->bones) {
-                            Asset::GltfJointUVE joint;
-                            joint.name = bone.name;
-                            joint.parentIndex = bone.parent;
-                            joint.translation = bone.position;
-                            joint.rotation = bone.rotation;
-                            joint.scale = Math::Vector3UVE{bone.scale, bone.scale, bone.scale};
-                            skeleton.joints.push_back(std::move(joint));
-                        }
-                        return skeleton;
-                    }
-                }
-            }
+        if (const std::optional<Asset::GltfSkeletonUVE> imported =
+                ReadSkeletonForModelFileUVE(GetImportedModelPathUVE(relativeSource), maximumBones);
+            imported.has_value()) {
+            return imported;
         }
     }
     return ReadSkeletonSourceUVE(m_services->GetProjectFileIndexUVE().GetSnapshotUVE().contentRoot / relativeSource,
@@ -195,41 +207,48 @@ std::optional<Asset::GltfSkeletonUVE> EditorUVE::ReadSkeletonForSourceUVE(const 
 Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& relativeSource,
                                                 Scene::EntityUVE parent,
                                                 const std::filesystem::path& relativeClip) {
-    if (!IsAuthoringCommandAllowedUVE() || !IsModelSourcePathUVE(relativeSource)) {
+    std::string sourceExt = relativeSource.extension().string();
+    std::ranges::transform(sourceExt, sourceExt.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const bool isDirectUvModel = sourceExt == ".uvmodel";
+    if (!IsAuthoringCommandAllowedUVE() || (!IsModelSourcePathUVE(relativeSource) && !isDirectUvModel)) {
         return Scene::kInvalidEntityUVE;
     }
     const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
-    const std::filesystem::path source = project.contentRoot / relativeSource;
+    const std::filesystem::path source =
+        relativeSource.is_absolute() ? relativeSource : (project.contentRoot / relativeSource);
     std::error_code error;
     if (!std::filesystem::is_regular_file(source, error)) {
         return Scene::kInvalidEntityUVE;
     }
     const std::optional<Asset::GltfSkeletonUVE> skeleton = ReadSkeletonForSourceUVE(relativeSource, Scene::kMaximumSkeletonBonesUVE);
-    const std::filesystem::path importedModel = GetImportedModelPathUVE(relativeSource);
+    const std::filesystem::path importedModel = isDirectUvModel ? source : GetImportedModelPathUVE(relativeSource);
     const bool hasMesh = std::filesystem::is_regular_file(importedModel, error);
     // An object is built only from a finished import. What used to happen here - a file that could
     // be read for bones but whose converted mesh was not written yet - produced an Armature with no
     // mesh, indistinguishable from an animation-only import, and nothing ever gave it one.
-    const std::string* const importFailure = FindModelImportFailureUVE(relativeSource);
-    // A retry in flight outranks the previous attempt's reason: the file may already be fixed, and
-    // "still importing" is the truth about this moment.
-    const bool importInFlight = m_modelImportJobs.contains(relativeSource.generic_string());
-    // Read on demand rather than only from the refresh cache: a placement that ran first used to see
-    // "no information" and wait forever for a mesh that was never going to be converted, because a
-    // bones-only file is an animation and is never queued as a mesh at all.
-    const EditorModelSourceInfoUVE sourceInfo = ReadModelSourceInfoForSourceUVE(relativeSource);
-    switch (DecideModelSourcePlacementUVE(hasMesh, &sourceInfo, importFailure != nullptr && !importInFlight)) {
-    case ModelSourcePlacementUVE::PlaceModel:
-    case ModelSourcePlacementUVE::PlaceAnimationOnly:
-        break;
-    case ModelSourcePlacementUVE::ImportFailed:
-        m_contentStatusMessage = relativeSource.filename().string() + " could not be imported: " +
-                                 (importFailure != nullptr ? *importFailure : std::string{"unknown reason"});
-        return Scene::kInvalidEntityUVE;
-    case ModelSourcePlacementUVE::WaitForImport:
-        m_contentStatusMessage = relativeSource.filename().string() +
-                                 " is still importing; nothing was placed. Try again once its mesh is converted.";
-        return Scene::kInvalidEntityUVE;
+    EditorModelSourceInfoUVE sourceInfo;
+    if (!isDirectUvModel) {
+        const std::string* const importFailure = FindModelImportFailureUVE(relativeSource);
+        // A retry in flight outranks the previous attempt's reason: the file may already be fixed, and
+        // "still importing" is the truth about this moment.
+        const bool importInFlight = m_modelImportJobs.contains(relativeSource.generic_string());
+        // Read on demand rather than only from the refresh cache: a placement that ran first used to see
+        // "no information" and wait forever for a mesh that was never going to be converted, because a
+        // bones-only file is an animation and is never queued as a mesh at all.
+        sourceInfo = ReadModelSourceInfoForSourceUVE(relativeSource);
+        switch (DecideModelSourcePlacementUVE(hasMesh, &sourceInfo, importFailure != nullptr && !importInFlight)) {
+        case ModelSourcePlacementUVE::PlaceModel:
+        case ModelSourcePlacementUVE::PlaceAnimationOnly:
+            break;
+        case ModelSourcePlacementUVE::ImportFailed:
+            m_contentStatusMessage = relativeSource.filename().string() + " could not be imported: " +
+                                     (importFailure != nullptr ? *importFailure : std::string{"unknown reason"});
+            return Scene::kInvalidEntityUVE;
+        case ModelSourcePlacementUVE::WaitForImport:
+            m_contentStatusMessage = relativeSource.filename().string() +
+                                     " is still importing; nothing was placed. Try again once its mesh is converted.";
+            return Scene::kInvalidEntityUVE;
+        }
     }
     if (!hasMesh && !skeleton.has_value()) {
         // The source claims motion but no bone survived the read, so there is nothing to build.
@@ -239,12 +258,12 @@ Scene::EntityUVE EditorUVE::PlaceModelSourceUVE(const std::filesystem::path& rel
     // The file's takes, imported beside it as <file>_<take>.uvanim (importing them now if needed).
     std::vector<std::filesystem::path> clips;
     if (skeleton.has_value()) {
-        if (sourceInfo.animationCount > 0U) {
+        if (!isDirectUvModel && sourceInfo.animationCount > 0U) {
             static_cast<void>(ImportModelAnimationsUVE(source));
         }
         // A model with a mesh keeps its takes inside it: those are its player's animations.
-        for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(GetImportedModelPathUVE(relativeSource))) {
-            clips.push_back(Asset::MakeEmbeddedClipPathUVE(GetImportedModelPathUVE(relativeSource), take.name));
+        for (const Asset::ModelAnimationEntryUVE& take : Asset::ListModelAnimationsUVE(importedModel)) {
+            clips.push_back(Asset::MakeEmbeddedClipPathUVE(importedModel, take.name));
         }
         const std::string prefix = source.stem().string() + "_";
         std::filesystem::path fragmentModel;

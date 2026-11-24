@@ -606,6 +606,64 @@ void UpdateFilePickUVE(ActivityStateUVE& state) {
     onPicked(pickedPath);
 }
 
+/// Hands a finished multi-file or folder SAF pick to whoever asked for it.
+void UpdateMultiPickUVE(ActivityStateUVE& state) {
+    if (!state.pendingMultiPick) {
+        return;
+    }
+    const std::optional<std::string> picked = Window::TakeAndroidPickedPathsUVE(state.app->activity);
+    if (!picked.has_value()) {
+        return; // still running
+    }
+    const auto onPicked = std::move(state.pendingMultiPick);
+    const auto onError = std::move(state.pendingMultiPickError);
+    const std::vector<std::string> suffixes = std::move(state.multiPickSuffixes);
+    const bool pickingFolders = state.multiPickFolders;
+    state.pendingMultiPick = nullptr;
+    state.pendingMultiPickError = nullptr;
+    state.multiPickSuffixes.clear();
+    state.multiPickFolders = false;
+    if (picked->empty()) {
+        return; // cancelled
+    }
+    if (picked->starts_with(kPickErrorPrefixUVE)) {
+        const std::string reason = picked->substr(kPickErrorPrefixUVE.size());
+        __android_log_print(ANDROID_LOG_WARN, kLogTagUVE, "UVE_ANDROID_HOST_WARNING multi pick failed: %s",
+                            reason.c_str());
+        if (onError) {
+            onError(reason);
+        }
+        return;
+    }
+    std::vector<std::filesystem::path> paths;
+    std::size_t start = 0U;
+    while (start <= picked->size()) {
+        const std::size_t sep = picked->find('\x1E', start);
+        const std::string piece =
+            sep == std::string::npos ? picked->substr(start) : picked->substr(start, sep - start);
+        if (!piece.empty()) {
+            const std::filesystem::path p(piece);
+            if (pickingFolders || suffixes.empty() || MatchesPickedFileUVE(p, suffixes)) {
+                paths.push_back(p);
+            } else {
+                std::error_code rmErr;
+                std::filesystem::remove(p, rmErr);
+            }
+        }
+        if (sep == std::string::npos) {
+            break;
+        }
+        start = sep + 1U;
+    }
+    if (paths.empty()) {
+        if (onError) {
+            onError("None of the selected files matched supported asset types.");
+        }
+        return;
+    }
+    onPicked(paths);
+}
+
 /// A finger held still long enough cancels the initial left press cleanly and fires a right click.
 void UpdateLongPressUVE(TouchGestureUVE& touch) {
     if (!touch.longPressArmed || touch.fingers != 1 || NowMsUVE() - touch.startMs < kLongPressMsUVE) {
@@ -775,7 +833,7 @@ bool PumpEventsUVE(ActivityStateUVE& state, const int idleWaitMs) {
     int firstPollWaitMs = 0;
     if (idleWaitMs > 0 && state.resumed && app->window != nullptr && state.touch.fingers == 0 &&
         state.touch.claimedPointerIds.empty() && !state.keyboardShown && state.imeDrainTailFrames <= 0 &&
-        !state.pendingPick && (NowMsUVE() - state.lastInteractionMs) >= kIdleWakeHoldMsUVE) {
+        !state.pendingPick && !state.pendingMultiPick && (NowMsUVE() - state.lastInteractionMs) >= kIdleWakeHoldMsUVE) {
         firstPollWaitMs = idleWaitMs;
     }
     bool firstPoll = true;
@@ -802,6 +860,7 @@ bool BeforeFrameUVE(ActivityStateUVE& state, Core::EngineCoreUVE& core, const ch
     UpdateLongPressUVE(state.touch);
     UpdateSoftKeyboardUVE(state);
     UpdateFilePickUVE(state);
+    UpdateMultiPickUVE(state);
     state.windowManager = dynamic_cast<Window::AndroidWindowManagerUVE*>(&core.GetServicesUVE().GetWindowManagerUVE());
     if (++state.framesStarted == 2U && renderedMarker != nullptr) {
         __android_log_print(ANDROID_LOG_INFO, kLogTagUVE, "%s", renderedMarker);
@@ -823,6 +882,32 @@ bool StartFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& s
     state.pendingPick = std::move(onPicked);
     state.pendingPickError = std::move(onError);
     state.pickSuffixes = suffixes;
+    return true;
+}
+
+bool StartMultiFilePickUVE(ActivityStateUVE& state, const std::vector<std::string>& suffixes,
+                           std::function<void(const std::vector<std::filesystem::path>&)> onPicked,
+                           std::function<void(const std::string&)> onError) {
+    if (state.app == nullptr || !Window::StartAndroidMultiFilePickUVE(state.app->activity)) {
+        return false;
+    }
+    state.pendingMultiPick = std::move(onPicked);
+    state.pendingMultiPickError = std::move(onError);
+    state.multiPickSuffixes = suffixes;
+    state.multiPickFolders = false;
+    return true;
+}
+
+bool StartFolderPickUVE(ActivityStateUVE& state,
+                        std::function<void(const std::vector<std::filesystem::path>&)> onPicked,
+                        std::function<void(const std::string&)> onError) {
+    if (state.app == nullptr || !Window::StartAndroidFolderPickUVE(state.app->activity)) {
+        return false;
+    }
+    state.pendingMultiPick = std::move(onPicked);
+    state.pendingMultiPickError = std::move(onError);
+    state.multiPickSuffixes.clear();
+    state.multiPickFolders = true;
     return true;
 }
 

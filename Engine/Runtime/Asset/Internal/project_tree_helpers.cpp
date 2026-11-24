@@ -85,6 +85,15 @@ BuildRegisteredAssetsByRelativePathUVE(const std::filesystem::path& absoluteCont
         if (std::filesystem::is_symlink(entryStatus)) {
             iterator.disable_recursion_pending();
         } else if (std::filesystem::is_directory(entryStatus) || std::filesystem::is_regular_file(entryStatus)) {
+            if (std::filesystem::is_regular_file(entryStatus) &&
+                entry.path().extension() == ".uvcopy-tmp") {
+                iterator.increment(errorCode);
+                if (errorCode) {
+                    outDiagnostic = "Unable to continue project content enumeration: " + errorCode.message();
+                    return false;
+                }
+                continue;
+            }
             const std::optional<std::filesystem::path> relativePath =
                 MakeRootRelativePathUVE(entry.path(), absoluteContentRoot);
             if (!relativePath.has_value()) {

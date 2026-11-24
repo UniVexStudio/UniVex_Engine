@@ -2015,14 +2015,18 @@ out vec3 vWorldNormal;
 out vec3 vWorldTangent;
 out float vTangentHandedness;
 out vec2 vTexCoord;
+#if !defined(UVE_COMPATIBILITY)
 // Object-space position, normal, and object-to-world normal basis for triplanar mapping.
 out vec3 vObjectPosition;
 out vec3 vObjectNormal;
 out vec3 vNormalAxisX;
 out vec3 vNormalAxisY;
 out vec3 vNormalAxisZ;
+#endif
 out vec4 vLightSpacePosition;
+#if !defined(UVE_COMPATIBILITY)
 out vec4 vLightSpacePositions[3];
+#endif
 
 #if defined(UVE_INSTANCED) || defined(UVE_INDIRECT_INSTANCED)
 // The instanced variant reads its per-object transforms from a storage buffer indexed by
@@ -2084,6 +2088,21 @@ void main() {
     vWorldTangent = mat3(model) * aTangent.xyz;
     vTangentHandedness = aTangent.w;
     vTexCoord = aTexCoord;
+#if defined(UVE_COMPATIBILITY)
+    if (uShadowCascadeCount > 0) {
+        mat4 lightMatrix = uLightSpaceMatrices[0];
+        float worldNormalLen = length(vWorldNormal);
+        vec3 offsetNormal = worldNormalLen > 1.0e-5 ? (vWorldNormal / worldNormalLen) : vec3(0.0, 1.0, 0.0);
+        float texelWorld = 0.0;
+        float scale = length(vec3(lightMatrix[0][0], lightMatrix[1][0], lightMatrix[2][0]));
+        if (uShadowMapResolution > 1.0 && scale > 1.0e-6) {
+            texelWorld = 2.0 / (scale * uShadowMapResolution);
+        }
+        vLightSpacePosition = lightMatrix * vec4(worldPosition.xyz + offsetNormal * (texelWorld * 0.9), 1.0);
+    } else {
+        vLightSpacePosition = uLightSpaceMatrix * worldPosition;
+    }
+#else
     // Scale-invariant object-space coordinates: triplanar projection moves and rotates with the
     // mesh while automatically tiling when the mesh is scaled so textures never stretch.
     vec3 objectScale = vec3(
@@ -2125,6 +2144,7 @@ void main() {
         float slopeOffset = texelWorld * mix(0.35, 1.35, sinTheta);
         vLightSpacePositions[cascadeIndex] = lightMatrix * vec4(worldPosition.xyz + offsetNormal * slopeOffset, 1.0);
     }
+#endif
     gl_Position = uViewProjection * worldPosition;
 }
 #endif
@@ -2135,13 +2155,17 @@ in vec3 vWorldNormal;
 in vec3 vWorldTangent;
 in float vTangentHandedness;
 in vec2 vTexCoord;
+#if !defined(UVE_COMPATIBILITY)
 in vec3 vObjectPosition;
 in vec3 vObjectNormal;
 in vec3 vNormalAxisX;
 in vec3 vNormalAxisY;
 in vec3 vNormalAxisZ;
+#endif
 in vec4 vLightSpacePosition;
+#if !defined(UVE_COMPATIBILITY)
 in vec4 vLightSpacePositions[3];
+#endif
 #ifdef UVE_WBOIT
 layout(location = 0) out vec4 FragColor;
 layout(location = 1) out vec4 FragRevealage;
@@ -2164,7 +2188,7 @@ struct LightUVE {
 uniform LightUVE uLights[16];
 uniform int uActiveLightCount;
 uniform int uLightShadowSlot[16];
-#if !defined(UVE_MOBILE)
+#if !defined(UVE_MOBILE) && !defined(UVE_COMPATIBILITY) && !defined(UVE_MOBILE_PROFILE)
 struct ClusteredGpuLightUVE {
     vec4 positionAndRange;
     vec4 directionAndType;
@@ -2684,6 +2708,7 @@ ivec2 CascadeMapSizeUVE(int cascadeIndex) {
     return textureSize(uShadowMapTextures[2], 0);
 }
 
+#if !defined(UVE_COMPATIBILITY)
 vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
     if (cascadeIndex == 0) {
         return vLightSpacePositions[0];
@@ -2693,6 +2718,7 @@ vec4 CascadeLightSpacePositionUVE(int cascadeIndex) {
     }
     return vLightSpacePositions[2];
 }
+#endif
 
 // 16-tap golden-angle Vogel disc for isotropic, clumping-free soft shadow penumbra integration.
 const vec2 kVogelDisk16UVE[16] = vec2[16](
@@ -2736,6 +2762,11 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
     float compareDepth = currentDepth - bias;
     float visibleWeight = 0.0;
     float totalWeight = 0.0;
+#if defined(UVE_COMPATIBILITY)
+    float sampledDepth = texture(uShadowMapTexture, projected.xy).r;
+    visibleWeight = compareDepth > sampledDepth ? 0.0 : 1.0;
+    totalWeight = 1.0;
+#else
     if (filterMode == 0) {
         float sampledDepth = cascadeIndex < 0 ? texture(uShadowMapTexture, projected.xy).r
                                               : SampleCascadeDepthUVE(cascadeIndex, projected.xy);
@@ -2748,7 +2779,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
         float sinA = sin(angle);
         mat2 rotation = mat2(cosA, sinA, -sinA, cosA);
         float radius = 2.0;
-#if !defined(UVE_MOBILE)
+#if !defined(UVE_MOBILE) && !defined(UVE_MOBILE_PROFILE)
         if (filterMode == 2) {
             mat4 lightMat = cascadeIndex < 0 ? uLightSpaceMatrix : uLightSpaceMatrices[clamp(cascadeIndex, 0, 2)];
             float xyScale = length(vec3(lightMat[0][0], lightMat[1][0], lightMat[2][0]));
@@ -2773,7 +2804,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
             }
         }
 #endif
-#if defined(UVE_MOBILE)
+#if defined(UVE_MOBILE) || defined(UVE_MOBILE_PROFILE)
         int tapStep = filterMode >= 2 ? 2 : 4;
 #else
         int tapStep = 1;
@@ -2788,6 +2819,7 @@ float ShadowFactorFromPositionUVE(vec4 lightSpacePosition, vec3 normal, vec3 lig
             totalWeight += tapW;
         }
     }
+#endif
 
     float coverage = visibleWeight / max(totalWeight, 1.0e-5);
     float factor = mix(1.0, coverage, clamp(uShadowOpacity, 0.0, 1.0));
@@ -2808,6 +2840,21 @@ float FadeShadowToLitAtDistanceUVE(float shadowFactor, float viewDepth, float fi
 }
 
 float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
+#if defined(UVE_COMPATIBILITY)
+    float shadowFactor = ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
+    if (uShadowCascadeCount > 0) {
+        float planarDepth = dot(vWorldPosition - uViewPosition, SafeNormalizeUVE(uCameraForward));
+        float viewDepth = (uOrthographic != 0 || planarDepth > 0.0)
+                              ? max(planarDepth, 0.0)
+                              : length(vWorldPosition - uViewPosition);
+        float farDepth = uShadowCascadeSplits[0];
+        if (viewDepth > farDepth) {
+            return 1.0;
+        }
+        return FadeShadowToLitAtDistanceUVE(shadowFactor, viewDepth, farDepth);
+    }
+    return shadowFactor;
+#else
     if (uShadowCascadeCount <= 0) {
         // No cascades: one map in uShadowMapTexture, projected by vLightSpacePosition.
         return ShadowFactorFromPositionUVE(vLightSpacePosition, normal, lightDirection, -1);
@@ -2850,6 +2897,7 @@ float DirectionalShadowFactorUVE(vec3 normal, vec3 lightDirection) {
         return 1.0;
     }
     return finalFactor;
+#endif
 }
 
 // kAtlasShadowBiasMetersPerUnitUVE keeps the atlas on the same authored scale as the cascades: the
@@ -3075,6 +3123,143 @@ vec4 ComposeOutputUVE(vec3 color, float surfaceOpacity, float indirectWeight) {
     }
     return ComposeFragmentUVE(color, surfaceOpacity);
 }
+#if defined(UVE_COMPATIBILITY)
+vec4 ReadMapCompatUVE(sampler2D map, vec2 uv1, vec2 uv2, vec4 transform, vec4 control, vec4 neutral) {
+    if (control.z >= 0.999) {
+        return neutral;
+    }
+    vec2 uv = (control.w > 0.5 ? uv2 : uv1) * (vec2(1.0) + transform.xy) + transform.zw;
+    vec4 value = texture(map, uv);
+    int channel = int(control.x + 0.5);
+    if (channel >= 1) {
+        float grey = channel == 1 ? value.r : channel == 2 ? value.g : channel == 3 ? value.b : value.a;
+        value = vec4(grey, grey, grey, channel == 4 ? 1.0 : value.a);
+    }
+    if (control.y > 0.5) {
+        value.rgb = vec3(1.0) - value.rgb;
+    }
+    return mix(value, neutral, clamp(control.z, 0.0, 1.0));
+}
+void main() {
+    vec2 uv1 = vTexCoord * uUvScale.xy + uUvOffset.xy;
+    vec2 uv2 = vTexCoord * uUv2Scale.xy + uUv2Offset.xy;
+    vec4 albedoSample = ReadMapCompatUVE(uAlbedoTexture, uv1, uv2, uAlbedoMapTransform, uAlbedoMapControl, vec4(1.0));
+    if (uAlphaCutoff > 0.0 && albedoSample.a < uAlphaCutoff) {
+        discard;
+    }
+    vec3 albedo = albedoSample.rgb * uAlbedoColor;
+    float materialAlpha = uAlphaSource == 0 ? clamp(albedoSample.a * uAlbedoAlpha, 0.0, 1.0) : 1.0;
+    float surfaceOpacity = clamp(uSurfaceOpacity, 0.0, 1.0) * materialAlpha;
+    if (uShadingMode == 1 || uUnshaded != 0) {
+        FragColor = ComposeOutputUVE(albedo, surfaceOpacity, 0.0);
+        return;
+    }
+    if (uShadingMode == 2) {
+        FragColor = ComposeOutputUVE(mix(albedo * 0.25, vec3(0.05, 0.85, 1.0), 0.75), surfaceOpacity, 0.0);
+        return;
+    }
+    float ambientOcclusion = mix(1.0, ReadMapCompatUVE(uAOTexture, uv1, uv2, uOcclusionMapTransform, uOcclusionMapControl, vec4(1.0)).r, clamp(uOcclusionStrength, 0.0, 1.0));
+    vec3 normal = SafeNormalizeUVE(vWorldNormal);
+    if (dot(normal, normal) <= kBrdfEpsilonUVE * kBrdfEpsilonUVE) {
+        normal = vec3(0.0, 0.0, 1.0);
+    }
+    if (uNormalMapControl.z < 0.999) {
+        vec3 tangent = vWorldTangent - normal * dot(normal, vWorldTangent);
+        if (dot(tangent, tangent) <= 0.00000001) {
+            vec3 fallbackAxis = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+            tangent = cross(fallbackAxis, normal);
+        }
+        tangent = SafeNormalizeUVE(tangent);
+        vec3 bitangent = SafeNormalizeUVE(cross(normal, tangent)) * (vTangentHandedness < 0.0 ? -1.0 : 1.0);
+        vec3 tsNormal = ReadMapCompatUVE(uNormalTexture, uv1, uv2, uNormalMapTransform, uNormalMapControl, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+        if (uNormalFlipGreen != 0) {
+            tsNormal.y = -tsNormal.y;
+        }
+        tsNormal.xy *= uNormalScale;
+        normal = SafeNormalizeUVE(mat3(tangent, bitangent, normal) * tsNormal);
+    }
+    if (uShadingMode == 4) {
+        FragColor = ComposeOutputUVE(normal * 0.5 + 0.5, surfaceOpacity, 0.0);
+        return;
+    }
+    vec3 viewDirection = uOrthographic != 0
+                             ? SafeNormalizeUVE(-uCameraForward)
+                             : SafeNormalizeUVE(uViewPosition - vWorldPosition);
+    if (!gl_FrontFacing) {
+        normal = -normal;
+    }
+    if (uShadingMode == 3) {
+        albedo = vec3(0.82);
+    }
+    vec3 mrSample = ReadMapCompatUVE(uMetallicRoughnessTexture, uv1, uv2, uMetallicRoughnessMapTransform, uMetallicRoughnessMapControl, vec4(1.0)).rgb;
+    float metallic = uShadingMode == 3 ? 0.0 : clamp(uMetallic * mrSample.b, 0.0, 1.0);
+    float roughness = uShadingMode == 3 ? 0.5 : clamp(uRoughness * mrSample.g, 0.06, 1.0);
+    float dielectricSpec = clamp(uDielectricSpecular, 0.0, 1.0);
+    float dielectricF0 = 0.16 * dielectricSpec * dielectricSpec;
+    vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
+    float normalDotView = max(dot(normal, viewDirection), 0.001);
+    vec2 envBrdf = EnvBrdfApproxUVE(roughness, normalDotView);
+    vec3 ambientColor = AmbientFromSourceUVE(normal);
+    vec3 specEnv = uSkyReflectionsLinked != 0 ? SkyReflectionUVE(reflect(-viewDirection, normal), roughness) : ambientColor;
+    vec3 indirectLighting = ((vec3(1.0) - baseReflectance) * (1.0 - metallic) * albedo * (ambientColor + max(uGiIndirectIrradiance, vec3(0.0))) +
+                             (baseReflectance * envBrdf.x + vec3(envBrdf.y)) * specEnv) * ambientOcclusion;
+    vec3 emissiveLighting =
+        uEmissiveColor * max(uEmissiveEnergy, 0.0) *
+        ReadMapCompatUVE(uEmissiveTexture, uv1, uv2, uEmissiveMapTransform, uEmissiveMapControl, vec4(1.0)).rgb;
+    vec3 lighting = indirectLighting + emissiveLighting;
+
+    int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, 4) : 4);
+    for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
+        LightUVE light = uLights[lightIndex];
+        if (light.intensity <= 0.0 || (light.cullMask & uMeshRenderLayers) == 0) {
+            continue;
+        }
+        vec3 lightDirection;
+        float attenuation = 1.0;
+        if (light.type == 0) {
+            lightDirection = SafeNormalizeUVE(-light.direction);
+        } else {
+            vec3 toLight = light.position - vWorldPosition;
+            float distanceToLight = max(length(toLight), 0.0001);
+            lightDirection = toLight / distanceToLight;
+            attenuation = 1.0 / max(distanceToLight * distanceToLight, 0.0001);
+            if (light.range > 0.0) {
+                float r2 = (distanceToLight / light.range);
+                r2 *= r2;
+                float w = clamp(1.0 - r2 * r2, 0.0, 1.0);
+                attenuation *= w * w;
+            }
+            if (light.type == 2) {
+                float cosOuter = cos(radians(light.spotAngleDegrees));
+                float cosInner = cos(radians(light.spotAngleDegrees) * kSpotInnerConeRatioUVE);
+                float coneAlignment = dot(-lightDirection, SafeNormalizeUVE(light.direction));
+                float coneFalloff = clamp((coneAlignment - cosOuter) / max(cosInner - cosOuter, kBrdfEpsilonUVE), 0.0, 1.0);
+                attenuation *= coneFalloff * coneFalloff;
+            }
+        }
+        float normalDotLight = max(dot(normal, lightDirection), 0.0);
+        if (normalDotLight <= 0.0 || attenuation <= 0.0) {
+            continue;
+        }
+        vec3 halfDirection = SafeNormalizeUVE(lightDirection + viewDirection);
+        float normalDotHalf = max(dot(normal, halfDirection), 0.0);
+        float halfDotView = max(dot(halfDirection, viewDirection), 0.0);
+        vec3 fresnel = FresnelSchlickUVE(halfDotView, baseReflectance);
+        float distribution = DistributionGgxUVE(normalDotHalf, roughness);
+        float visibility = VisibilitySmithGGXCorrelatedUVE(normalDotView, normalDotLight, roughness);
+        vec3 specular = (distribution * visibility * fresnel) * max(light.specular, 0.0);
+        vec3 diffuse = (vec3(1.0) - fresnel) * (1.0 - metallic) * albedo / kPiUVE;
+        vec3 directContribution = (diffuse + specular) * (light.color * light.intensity * attenuation) * normalDotLight;
+        if (uDisableReceiveShadows == 0 && light.type == 0) {
+            directContribution *= clamp(DirectionalShadowFactorUVE(normal, lightDirection), 0.0, 1.0);
+        }
+        lighting += directContribution;
+    }
+    vec3 finalColor = max(lighting, vec3(0.0));
+    float indirectWeight = clamp(LuminanceUVE(indirectLighting) / max(LuminanceUVE(finalColor), 1.0e-4), 0.0, 1.0);
+    FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
+}
+#else
 // One UV set: planar 2D coordinates or normal-weighted triplanar projection.
 struct UvSetUVE {
     vec2 uv;
@@ -3288,7 +3473,7 @@ void main() {
     vec3 baseReflectance = mix(vec3(dielectricF0), albedo, metallic);
     float normalDotView = max(dot(normal, viewDirection), 0.001);
 
-#if !defined(UVE_MOBILE)
+#if !defined(UVE_MOBILE) && !defined(UVE_MOBILE_PROFILE)
     if (uClusteredLightingEnabled != 0) {
         int gridX = max(int(uClusterGridDims.x + 0.5), 1);
         int gridY = max(int(uClusterGridDims.y + 0.5), 1);
@@ -3387,7 +3572,12 @@ void main() {
     } else
 #endif
     {
-        int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, 16) : 16);
+#if defined(UVE_MOBILE_PROFILE)
+        int maxProfileLights = 8;
+#else
+        int maxProfileLights = 16;
+#endif
+        int activeLightCount = uActiveLightCount < 0 ? 0 : (uActiveLightCount > 0 ? min(uActiveLightCount, maxProfileLights) : maxProfileLights);
         for (int lightIndex = 0; lightIndex < activeLightCount; ++lightIndex) {
             LightUVE light = uLights[lightIndex];
             if (light.intensity <= 0.0) {
@@ -3477,6 +3667,7 @@ void main() {
     FragColor = ComposeOutputUVE(finalColor, surfaceOpacity, indirectWeight);
 #endif
 }
+#endif
 #endif
 )GLSLSRC";
 

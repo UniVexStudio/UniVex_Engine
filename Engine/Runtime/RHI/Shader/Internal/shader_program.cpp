@@ -21,12 +21,24 @@ std::optional<UniformReflectionUVE> ShaderProgramUVE::FindUniformUVE(std::string
 }
 
 void ShaderProgramUVE::SetPendingUniformUVE(std::string_view name, PendingUniformValueUVE value) {
-    const auto existingIt = m_pendingUniforms.find(name);
-    if (existingIt != m_pendingUniforms.end()) {
-        existingIt->second = std::move(value);
+    const auto existingIt = m_uniformIndexByName.find(name);
+    if (existingIt != m_uniformIndexByName.end()) {
+        PendingUniformEntryUVE& entry = m_uniformEntries[existingIt->second];
+        if (entry.value == value) {
+            return;
+        }
+        entry.value = std::move(value);
+        if (!entry.dirty) {
+            entry.dirty = true;
+            m_dirtyUniformIndices.push_back(existingIt->second);
+        }
         return;
     }
-    m_pendingUniforms.emplace(std::string(name), std::move(value));
+    const std::size_t index = m_uniformEntries.size();
+    std::string ownedName(name);
+    m_uniformEntries.push_back(PendingUniformEntryUVE{ownedName, std::move(value), true});
+    m_uniformIndexByName.emplace(std::move(ownedName), index);
+    m_dirtyUniformIndices.push_back(index);
 }
 
 void ShaderProgramUVE::SetFloatUVE(std::string_view name, float value) {
@@ -69,27 +81,52 @@ void ShaderProgramUVE::ApplyToUVE(ICommandBufferUVE& commandBuffer) const {
     }
 
     commandBuffer.BindPipelineUVE(m_pipeline);
-    for (const auto& [name, value] : m_pendingUniforms) {
+    const auto flushEntry = [&commandBuffer](const PendingUniformEntryUVE& entry) {
         std::visit(
             [&](const auto& concreteValue) {
                 using ValueTypeUVE = std::decay_t<decltype(concreteValue)>;
                 if constexpr (std::is_same_v<ValueTypeUVE, float>) {
-                    commandBuffer.SetUniformFloatUVE(name, concreteValue);
+                    commandBuffer.SetUniformFloatUVE(entry.name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, std::int32_t>) {
-                    commandBuffer.SetUniformIntUVE(name, concreteValue);
+                    commandBuffer.SetUniformIntUVE(entry.name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, bool>) {
-                    commandBuffer.SetUniformBoolUVE(name, concreteValue);
+                    commandBuffer.SetUniformBoolUVE(entry.name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector2UVE>) {
-                    commandBuffer.SetUniformVector2UVE(name, concreteValue);
+                    commandBuffer.SetUniformVector2UVE(entry.name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector3UVE>) {
-                    commandBuffer.SetUniformVector3UVE(name, concreteValue);
+                    commandBuffer.SetUniformVector3UVE(entry.name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Vector4UVE>) {
-                    commandBuffer.SetUniformVector4UVE(name, concreteValue);
+                    commandBuffer.SetUniformVector4UVE(entry.name, concreteValue);
                 } else if constexpr (std::is_same_v<ValueTypeUVE, Math::Matrix4x4UVE>) {
-                    commandBuffer.SetUniformMatrix4x4UVE(name, concreteValue);
+                    commandBuffer.SetUniformMatrix4x4UVE(entry.name, concreteValue);
                 }
             },
-            value);
+            entry.value);
+    };
+
+    const bool retainsState = commandBuffer.RetainsUniformStatePerPipelineUVE();
+    const std::uint64_t bufferId = commandBuffer.GetInstanceIdUVE();
+    if (retainsState && m_lastSyncedPipeline == m_pipeline && m_lastSyncedBufferId == bufferId && bufferId != 0U) {
+        for (const std::size_t index : m_dirtyUniformIndices) {
+            PendingUniformEntryUVE& entry = m_uniformEntries[index];
+            flushEntry(entry);
+            entry.dirty = false;
+        }
+        m_dirtyUniformIndices.clear();
+        return;
+    }
+
+    for (PendingUniformEntryUVE& entry : m_uniformEntries) {
+        flushEntry(entry);
+        entry.dirty = false;
+    }
+    m_dirtyUniformIndices.clear();
+    if (retainsState) {
+        m_lastSyncedPipeline = m_pipeline;
+        m_lastSyncedBufferId = bufferId;
+    } else {
+        m_lastSyncedPipeline = kInvalidPipelineHandleUVE;
+        m_lastSyncedBufferId = 0U;
     }
 }
 
