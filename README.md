@@ -21,3 +21,8 @@ xvfb-run -a ./.uvbt/bin/Linux/Debug/UniVexTests
 # Build the Editor
 ./uvbt build UniVexEditor Linux Release
 ```
+
+## License
+
+UniVex Engine and UniVex Hub are licensed under the **UniVex Engine & Hub EULA v1.0** (Source-Available — **100% free and 0% royalty** for personal, indie, and commercial games/applications; engine/source redistribution and rebranding are restricted). See [`LICENSE`](LICENSE) for full terms, [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for open-source library and font attributions, and [`CONTRIBUTING.md`](CONTRIBUTING.md#5-contributor-license-agreement-cla) for contributor terms.
+
