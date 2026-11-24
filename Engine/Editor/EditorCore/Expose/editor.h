@@ -404,6 +404,12 @@ enum class FilePickerModeUVE {
 /// dotted kinds to offer (".uvanimlib"); empty offers every file. `startDirectory` is
 /// content-relative (empty is Content itself); `onPick` fires once with the absolute choice, or
 /// never when the pick is cancelled.
+/// The system's own file picker for Import (Android's file manager), set by the platform host; when
+/// it is set, Import opens it directly instead of the editor's file dialog. It calls `onPicked` with
+/// the chosen file; false when it could not open.
+using SystemImportPickerUVE = std::function<bool(std::function<void(const std::filesystem::path&)> onPicked)>;
+void SetSystemImportPickerUVE(SystemImportPickerUVE picker);
+
 struct FilePickerRequestUVE final {
     FilePickerModeUVE mode = FilePickerModeUVE::Open;
     std::string title;

@@ -221,6 +221,14 @@ void EditorUVE::BeginContentRenameUVE(const std::filesystem::path& relativePath)
     m_contentRenameFocus = true;
 }
 
+namespace {
+SystemImportPickerUVE g_systemImportPickerUVE;
+} // namespace
+
+void SetSystemImportPickerUVE(SystemImportPickerUVE picker) {
+    g_systemImportPickerUVE = std::move(picker);
+}
+
 bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirectory) {
     const Asset::ProjectFileSnapshotUVE snapshot = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
     const std::filesystem::path destDir = targetDirectory.empty() ? (snapshot.contentRoot / m_assetTableDirectory) : targetDirectory;
@@ -274,6 +282,15 @@ bool EditorUVE::PromptImportFilesUVE(const std::filesystem::path& targetDirector
         FreeLibrary(comdlg);
     }
 #endif
+
+    // Android: straight into the system file manager (it reaches Downloads, Drive, USB); the file
+    // comes back as a copy in the app cache and is imported into destDir.
+    if (g_systemImportPickerUVE &&
+        g_systemImportPickerUVE([this, destDir](const std::filesystem::path& chosen) {
+            static_cast<void>(ImportExternalFilesUVE({chosen}, destDir));
+        })) {
+        return false;   // the import happens when the pick comes back
+    }
 
     // Any file on this computer, through the editor's own file dialog; it is imported into destDir.
     FilePickerRequestUVE request;
