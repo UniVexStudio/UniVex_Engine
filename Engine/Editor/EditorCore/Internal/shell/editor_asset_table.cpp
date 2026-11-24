@@ -749,6 +749,8 @@ void EditorAssetTableUVE::GoToFolderUVE(const std::filesystem::path& directory) 
     m_editor.m_selectedProjectFile.reset();
     m_editor.m_selectedAsset.reset();
     m_editor.m_contentSelection.ClearUVE();
+    // Files copied into the folder from outside (a file manager, USB) show up and start importing on open.
+    m_editor.RefreshProjectFileIndexUVE();
     ChangedUVE();
 }
 
@@ -915,6 +917,7 @@ void EditorAssetTableUVE::RebuildItemsUVE() {
         HashUVE(h, m_iconGenerationShown);
     }
     HashUVE(h, m_editor.m_materialThumbnailGeneration);
+    HashUVE(h, m_editor.m_meshThumbnailGeneration);   // a model finishing its import redraws its tile
     HashUVE(h, m_editor.m_assetTableDirectory.generic_string());
     HashUVE(h, m_editor.m_assetFilter);
     HashUVE(h, m_editor.m_assetTableShelf);
