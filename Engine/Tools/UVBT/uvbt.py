@@ -142,6 +142,7 @@ ANDROID_SYSTEM_LIBRARIES = ["android", "log", "EGL", "GLESv3", "m", "dl"]
 # The entry points Android loads dynamically (NativeActivity glue and Hub's dlopen editor entry).
 ANDROID_ACTIVITY_ENTRY = "ANativeActivity_onCreate"
 ANDROID_EDITOR_ENTRY = "UveEditorRunUVE"
+ANDROID_EDITOR_ABI_VERSION_ENTRY = "UveEditorAbiVersionUVE"
 # Optional static Linux UI libraries built when system packages are absent or UVBT_STATIC_LINUX_UI=1.
 LINUX_GLFW_REPO = ("glfw", "https://github.com/glfw/glfw.git", "3.4")
 LINUX_GLEW_REPO = ("glew", "https://github.com/Perlmint/glew-cmake.git", "glew-cmake-2.2.0")
@@ -1287,10 +1288,11 @@ class EngineBuilder:
                 link_cmd += ["-Wl,-rpath,$ORIGIN/lib:$ORIGIN", "-Wl,--disable-new-dtags"]
         if toolchain.is_android:
             export_map = obj_dir / "android_exports.map"
-            # Glob form: only the editor library defines the entry, and lld rejects unmatched exact names.
+            # Glob form: only the editor library defines the entries, and lld rejects unmatched exact names.
             editor_entry_glob = f"{ANDROID_EDITOR_ENTRY[:-1]}[{ANDROID_EDITOR_ENTRY[-1]}]"
+            editor_abi_glob = f"{ANDROID_EDITOR_ABI_VERSION_ENTRY[:-1]}[{ANDROID_EDITOR_ABI_VERSION_ENTRY[-1]}]"
             export_map.write_text(
-                f"{{\n  global:\n    {ANDROID_ACTIVITY_ENTRY};\n    {editor_entry_glob};\n  local:\n    *;\n}};\n",
+                f"{{\n  global:\n    {ANDROID_ACTIVITY_ENTRY};\n    {editor_entry_glob};\n    {editor_abi_glob};\n  local:\n    *;\n}};\n",
                 encoding="utf-8",
             )
             link_cmd += ["-shared", "-static-libstdc++", f"-Wl,-u,{ANDROID_ACTIVITY_ENTRY}", "-Wl,--no-undefined",

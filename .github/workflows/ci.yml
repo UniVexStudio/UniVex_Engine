@@ -1,23 +1,19 @@
 # Copyright (c) 2026 UniVex Studios. All Rights Reserved.
 #
-# Everything this project checks and releases, in one file, in the order a person would ask about it.
+# Everything UniVex Engine checks and releases, in one file:
 #
-#   Ubuntu / GCC         Debug. The source checkers in Engine/Tools, the whole tree, a cooked-project
+#   Ubuntu / GCC         Debug. The source checkers in Engine/Tools, engine targets, a cooked-project
 #                        smoke test, UniVexTests (against real software GL and Vulkan drivers) and
 #                        PRISM's own test harness.
-#   Hub / Linux          UniVex Hub and its installer, Release.
-#   Hub / Windows        The same as Windows applications (MSYS2 UCRT64, g++).
-#   Hub / Android        The Hub's APK, built with the NDK.
 #   Release / Linux      The engine (editor, runtime, packer), Release.
 #   Release / Windows    The same on Windows; the staged editor is started once so its DLLs are proven.
-#   Release / Android    The engine for Android (the runtime until the editor runs there).
-#   All CI Checks        Aggregate gate that passes only when all 7 jobs above succeeded.
-#   Publish the release  Release only, after everything above passed: one GitHub Release.
+#   Release / Android    The Android engine runtime and in-process editor shared library (arm64-v8a + x86_64)
+#                        with strict ELF symbol isolation verified against contracts/v1.
+#   All CI Checks        Aggregate gate that passes only when all 4 jobs above succeeded.
+#   Publish the release  Release only, after everything above passed: .uvpackage archives + .sha256 files.
 #
-# Every job builds on every push and pull request, so breakage on any platform (Linux, Windows, or
-# Android) blocks merging before it can reach master. On a release each job also packages what it
-# built - nothing is compiled twice - and Publish puts the engine packages, the Hub installers and
-# the Hub APK, each with its .sha256, into one release.
+# UniVex Hub (desktop installers and signed Android Hub APK) builds and releases independently from
+# UniVexStudio/UniVex_Hub against the shared v1 contracts under contracts/v1/.
 #
 # Two kinds of release, both made by the same jobs:
 #
@@ -27,22 +23,16 @@
 #   a tag v<version>      A versioned release (e.g. v0.2.0, v0.2.0-beta). Tags ending in -beta are
 #                         prereleases, the Hub's Beta channel.
 #
-# The engine's version comes from the tag, or from the built editor for master; the Hub's version is
-# always read from the Hub that was built. Pull requests run the full 7-job matrix without publishing.
-#
 # Where a release goes is switched by the PUBLISH_RELEASES repository variable:
 #
 #   not "true" (default)  The development repository in DEV_RELEASES_REPOSITORY below (a repository
-#                         variable of the same name overrides it). The Hub never reads it: builds from
-#                         there are installed with the Hub's "Import package...".
+#                         variable of the same name overrides it).
 #   "true"                Tag releases go to the repository Engine/Distribution/engine_feed.json
 #                         names, the one the Hub reads to offer engine versions. Master builds always
 #                         go to the development repository.
 #
 # Publishing needs the RELEASES_TOKEN secret: a fine-grained access token with Contents: write on
-# those two repositories only. An APK is signed with the key in the ANDROID_KEYSTORE secret (base64,
-# with ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS) when it is set, so installed copies update in
-# place; otherwise with a throwaway debug key. Only a public release refuses to ship without it.
+# those two repositories only.
 #
 # Every build compiles through ccache (UVBT_COMPILER_LAUNCHER) with the cache kept between runs, so a
 # run recompiles only what changed since the last one instead of the whole tree.
@@ -147,8 +137,6 @@ jobs:
           ./uvbt build UniVexPack Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexAssetWorkload Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexEditor Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
-          ./uvbt build UniVexHub Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
-          ./uvbt build UniVexHubSetup Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ./uvbt build UniVexPrismTests Linux ${{ matrix.mode }} -j"$(nproc)" 2>&1 | tee -a build-output.log
           ccache -s
 
@@ -247,345 +235,11 @@ jobs:
       - name: Validate the CI annotation helper
         run: python3 -m unittest discover -s Engine/Tools/ci -p 'test_*.py'
 
-      - name: Validate the engine and installer packagers
+      - name: Validate the engine packager and shared contracts
         run: |
-          python3 -m unittest discover -s Engine/Tools -p 'test_*_installer.py'
           python3 -m unittest discover -s Engine/Tools -p 'test_package_engine.py'
           python3 -m unittest discover -s Engine/Tools -p 'test_shared_names.py'
           python3 -m unittest discover -s Engine/Tools -p 'test_uvbt.py'
-
-  # ---------------------------------------------------------------------------------------------
-  # Hub / <platform>: UniVex Hub and its installer. Built on every push; packaged on a release.
-  # ---------------------------------------------------------------------------------------------
-  hub-linux:
-    name: Hub / Linux
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    outputs:
-      hub-version: ${{ steps.version.outputs.hub-version }}
-    env:
-      UVBT_COMPILER_LAUNCHER: ccache
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_COMPILERCHECK: content
-      CCACHE_MAXSIZE: 3G
-    steps:
-      - uses: actions/checkout@v5
-      - name: Restore the compiler cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            .ccache
-            .uvbt/tp_lib/Linux
-          key: ccache-linux-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
-          restore-keys: ccache-linux-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build libglfw3-dev libglew-dev libgl1-mesa-dev \
-            libglu1-mesa-dev zlib1g-dev libjpeg-dev libfreetype-dev libcurl4-openssl-dev patchelf xvfb ccache \
-            libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libxmu-dev libbz2-dev
-      - name: Build
-        run: |
-          set -euo pipefail
-          ccache -z
-          ./uvbt build UniVexHub Linux Release -j"$(nproc)"
-          # Build the single-file setup executable with static UI libs so it runs on any Linux distro.
-          UVBT_STATIC_LINUX_UI=1 ./uvbt build UniVexHubSetup Linux Release -j"$(nproc)"
-          ccache -s
-      - name: Save the compiler cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            .ccache
-            .uvbt/tp_lib/Linux
-          key: ccache-linux-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
-      - name: Read the Hub's version
-        id: version
-        run: echo "hub-version=$(.uvbt/bin/Linux/Release/uve_hub --version)" >> "${GITHUB_OUTPUT}"
-      # Packaged and smoke-tested on every run so the shipped Linux installer and .deb are always verified.
-      - name: Package the installer
-        run: |
-          python3 Engine/Tools/make_hub_installer.py --bin .uvbt/bin/Linux/Release --target linux \
-            --tag "hub-v${{ steps.version.outputs.hub-version }}" --output dist --deb
-      - name: Verify, install, launch and uninstall the Linux Hub
-        run: |
-          set -euo pipefail
-          installer=$(ls dist/UniVexHubSetup-*-linux)
-          ldd "${installer}" | tee /tmp/hub-setup-ldd.txt
-          if grep -Eq 'not found|libglfw|libGLEW|libjpeg|libfreetype' /tmp/hub-setup-ldd.txt; then
-            echo "::error::UniVexHubSetup carries non-portable shared library dependencies."
-            exit 1
-          fi
-          install_dir="${RUNNER_TEMP}/UniVexHubLinuxTest"
-          home_dir="${RUNNER_TEMP}/UniVexHubLinuxHome"
-          mkdir -p "${home_dir}"
-          HOME="${home_dir}" "${installer}" --silent --install-dir "${install_dir}"
-          ldd "${install_dir}/uve_hub" | tee /tmp/hub-installed-ldd.txt
-          if grep -q 'not found' /tmp/hub-installed-ldd.txt; then
-            echo "::error::Installed uve_hub has unresolved shared libraries."
-            exit 1
-          fi
-          HOME="${home_dir}" "${install_dir}/uve_hub" --version
-          HOME="${home_dir}" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a "${install_dir}/uve_hub" --frames 3
-          HOME="${home_dir}" "${install_dir}/uve_hub_setup" --uninstall --silent --install-dir "${install_dir}"
-          if [ -e "${install_dir}/uve_hub" ]; then
-            echo "::error::Linux Hub uninstall left uve_hub behind."
-            exit 1
-          fi
-          deb=$(ls dist/UniVexHub-*-linux-amd64.deb)
-          dpkg-deb --info "${deb}"
-          dpkg-deb --contents "${deb}" > /tmp/hub-deb-contents.txt
-          grep -q 'usr/share/applications/univex-hub.desktop' /tmp/hub-deb-contents.txt
-          deb_root="${RUNNER_TEMP}/UniVexHubDebTest"
-          rm -rf "${deb_root}" && mkdir -p "${deb_root}"
-          dpkg-deb -x "${deb}" "${deb_root}"
-          grep -q '^Terminal=false$' "${deb_root}/usr/share/applications/univex-hub.desktop"
-          ldd "${deb_root}/opt/univex-hub/uve_hub" | tee /tmp/hub-deb-ldd.txt
-          if grep -q 'not found' /tmp/hub-deb-ldd.txt; then
-            echo "::error::Debian package uve_hub has unresolved shared libraries."
-            exit 1
-          fi
-          HOME="${home_dir}" "${deb_root}/opt/univex-hub/uve_hub" --version
-          HOME="${home_dir}" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a "${deb_root}/opt/univex-hub/uve_hub" --frames 3
-      - name: Hand the release files to the publish job
-        if: env.IS_RELEASE == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: hub-linux
-          path: dist/
-          if-no-files-found: error
-          retention-days: 7
-
-  hub-windows:
-    name: Hub / Windows
-    runs-on: windows-latest
-    # Runs on pull requests, master, version tags, and manual dispatch so breakage never reaches master.
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v5
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            git
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-python
-            mingw-w64-ucrt-x86_64-glfw
-            mingw-w64-ucrt-x86_64-glew
-            mingw-w64-ucrt-x86_64-zlib
-            mingw-w64-ucrt-x86_64-libjpeg-turbo
-            mingw-w64-ucrt-x86_64-freetype
-            mingw-w64-ucrt-x86_64-ccache
-      - name: Restore the compiler cache
-        uses: actions/cache/restore@v4
-        with:
-          path: .ccache
-          key: ccache-windows-hub-${{ github.sha }}
-          restore-keys: ccache-windows-hub-
-      - name: Build
-        shell: msys2 {0}
-        env:
-          UVBT_COMPILER_LAUNCHER: ccache
-          CCACHE_DIR: ${{ github.workspace }}/.ccache
-          CCACHE_BASEDIR: ${{ github.workspace }}
-          CCACHE_COMPILERCHECK: content
-          CCACHE_MAXSIZE: 3G
-        run: |
-          set -euo pipefail
-          ccache -z
-          # The Windows installer is an Inno Setup wizard (make_hub_installer.py), so only the Hub is built.
-          ./uvbt build UniVexHub Windows Release -j4
-          ccache -s
-      - name: Save the compiler cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: ccache-windows-hub-${{ github.sha }}
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $iscc) {
-            choco install innosetup --yes --no-progress
-            $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe" | Select-Object -First 1
-          }
-          if (-not $iscc) { Write-Error "Inno Setup's ISCC.exe was not found after installing it"; exit 1 }
-          "UVE_ISCC=$($iscc.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      # Packaged on every run, so the check below proves the installer a release would ship.
-      - name: Package the installer
-        shell: msys2 {0}
-        run: |
-          set -euo pipefail
-          bin=.uvbt/bin/Windows/Release
-          objdump -p "$bin/uve_hub.exe" > /tmp/hub-pe.txt
-          grep -q 'Subsystem.*Windows GUI' /tmp/hub-pe.txt
-          hub_version=$("$bin/uve_hub.exe" --version | tr -d '\r')
-          python Engine/Tools/make_hub_installer.py --bin "$bin" --target windows --tag "hub-v${hub_version}" --output dist
-      # Installs silently with nothing but Windows itself on PATH (no MSYS2 libraries to hide a DLL the
-      # installer forgot), starts the installed Hub, then uninstalls.
-      - name: Install, start and uninstall the Hub
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem dist\UniVexHubSetup-*-windows.exe | Select-Object -First 1
-          $target = Join-Path $env:RUNNER_TEMP "UniVexHubInstall"
-          $log = Join-Path $env:RUNNER_TEMP "UniVexHubSetup.log"
-          $setup = Start-Process -FilePath $installer.FullName -Wait -PassThru `
-            -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=`"$target`"", "/LOG=`"$log`""
-          if ($setup.ExitCode -ne 0) { Get-Content $log; Write-Error "setup exited with $($setup.ExitCode)"; exit 1 }
-          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-          $versionOut = Join-Path $env:RUNNER_TEMP "uve_hub_version.txt"
-          $probe = Start-Process -FilePath (Join-Path $target "uve_hub.exe") -ArgumentList "--version" `
-            -NoNewWindow -Wait -PassThru -RedirectStandardOutput $versionOut
-          $version = if (Test-Path $versionOut) { (Get-Content -Raw $versionOut).Trim() } else { "" }
-          if ($probe.ExitCode -ne 0 -or -not $version) { Write-Error "the installed Hub did not start (exit $($probe.ExitCode))"; exit 1 }
-          Write-Output "Installed Hub reports version $version"
-          $uninstaller = Get-ChildItem (Join-Path $target "unins*.exe") | Select-Object -First 1
-          $removal = Start-Process -FilePath $uninstaller.FullName -Wait -PassThru -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
-          if ($removal.ExitCode -ne 0) { Write-Error "uninstall exited with $($removal.ExitCode)"; exit 1 }
-          # The uninstaller hands over to a copy of itself in the temporary folder and returns at once.
-          $deadline = (Get-Date).AddSeconds(120)
-          while ((Test-Path (Join-Path $target "uve_hub.exe")) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
-          if (Test-Path (Join-Path $target "uve_hub.exe")) { Write-Error "uninstall left the Hub behind"; exit 1 }
-      - name: Hand the release files to the publish job
-        if: env.IS_RELEASE == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: hub-windows
-          path: dist/
-          if-no-files-found: error
-          retention-days: 7
-
-  # The NDK and SDK pieces are the versions UVBT and build_apk.py name.
-  hub-android:
-    name: Hub / Android
-    runs-on: ubuntu-latest
-    # Runs on pull requests, master, version tags, and manual dispatch so breakage never reaches master.
-    timeout-minutes: 90
-    env:
-      # The emulator the Hub is started on: an x86_64 system image (runs under KVM) of a recent Android.
-      EMULATOR_ABI: x86_64
-      EMULATOR_API_LEVEL: 34
-      UVBT_COMPILER_LAUNCHER: ccache
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_BASEDIR: ${{ github.workspace }}
-      CCACHE_COMPILERCHECK: content
-      CCACHE_MAXSIZE: 3G
-    steps:
-      - uses: actions/checkout@v5
-      - name: Restore the compiler cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            .ccache
-            .uvbt/tp_lib/Android
-            ThirdParty/android
-          key: android-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
-          restore-keys: android-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-
-      - name: Install the Android SDK pieces
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build ccache
-          packages=$(python3 - <<'PY'
-          import sys
-          sys.path.insert(0, "Engine/Tools/android")
-          import build_apk
-          print(f"ndk;{build_apk.uvbt.ANDROID_NDK_VERSION} build-tools;{build_apk.ANDROID_BUILD_TOOLS} "
-                f"platforms;{build_apk.ANDROID_PLATFORM}")
-          PY
-          )
-          # `yes` ends with a broken pipe once the licenses are accepted; that is not a failure.
-          (yes || true) | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
-          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ${packages}
-      - name: Build the Hub APK
-        env:
-          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
-          # Only a public release must carry the real key; development builds fall back to a debug key.
-          PUBLIC_RELEASE: ${{ vars.PUBLISH_RELEASES == 'true' && startsWith(github.ref, 'refs/tags/v') }}
-          UVE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          UVE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          set -euo pipefail
-          ccache -z
-          signing=()
-          if [ -n "${ANDROID_KEYSTORE}" ]; then
-            # Pasted base64 often carries line breaks, spaces or a byte-order mark; skip them.
-            printf '%s' "${ANDROID_KEYSTORE}" | base64 --decode --ignore-garbage > "${RUNNER_TEMP}/release.keystore"
-            if check=$(keytool -list -keystore "${RUNNER_TEMP}/release.keystore" -storepass:env UVE_ANDROID_KEYSTORE_PASSWORD 2>&1); then
-              signing=(--keystore "${RUNNER_TEMP}/release.keystore")
-              echo "Signing Hub APK with permanent release keystore (alias: ${UVE_ANDROID_KEY_ALIAS})."
-            else
-              # keytool's own reason (wrong password, not a keystore, ...) and the decoded size; no secret.
-              reason=$(printf '%s\n' "${check}" | grep -i 'error' | tail -n 1)
-              size=$(wc -c < "${RUNNER_TEMP}/release.keystore")
-              message="The ANDROID_KEYSTORE secret (${size} bytes once decoded) is not a keystore that ANDROID_KEYSTORE_PASSWORD opens: ${reason}. Paste the base64 of the .keystore/.jks file again, and check the password."
-              if [ "${PUBLIC_RELEASE}" = "true" ] || [ "${IS_RELEASE}" = "true" ]; then
-                echo "::error::${message}"
-                exit 1
-              fi
-              echo "::warning::${message} This build is signed with a debug key."
-            fi
-          elif [ "${PUBLIC_RELEASE}" = "true" ]; then
-            echo "::error::A public release needs the ANDROID_KEYSTORE secret, so installed copies can update."
-            exit 1
-          else
-            echo "::warning::ANDROID_KEYSTORE is not set: the APK is signed with a throwaway debug key, so it cannot update an installed copy."
-          fi
-          python3 Engine/Tools/android/build_apk.py --sdk "${ANDROID_HOME}" --app hub --build-dir build/android --build-number "${GITHUB_RUN_NUMBER:-0}" "${signing[@]}"
-          rm -f "${RUNNER_TEMP}/release.keystore"
-          ccache -s
-      - name: Save the compiler cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            .ccache
-            .uvbt/tp_lib/Android
-            ThirdParty/android
-          key: android-hub-${{ hashFiles('Engine/Tools/UVBT/uvbt.py') }}-${{ github.sha }}
-      # The Hub and an ABI-matching x86_64 engine package are tested together on the emulator so
-      # in-process dlopen, ELF isolation and Android 14 read-only library loading are proven end to end.
-      - name: Build the Hub APK and engine package for the emulator
-        run: |
-          set -euo pipefail
-          python3 Engine/Tools/android/build_apk.py --sdk "${ANDROID_HOME}" --app hub --abi "${EMULATOR_ABI}" \
-            --debuggable --build-dir build/android-emulator
-          UVBT_ANDROID_ABI="${EMULATOR_ABI}" ./uvbt build UniVexEditorAndroid Android Release -j"$(nproc)"
-          engine_tag=$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools/android'); import build_apk; M,m,p,b = build_apk.read_source_version('runtime'); print(f'v{M}.{m}.{p}+build.{b}-beta')")
-          python3 Engine/Tools/package_engine.py --bin ".uvbt/bin/Android/${EMULATOR_ABI}/Release" \
-            --target "android-${EMULATOR_ABI}" --tag "${engine_tag}" --skip-version-check \
-            --output build/android-emulator-pkg
-      - name: Let the emulator use KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Start the Hub and Editor on an emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: ${{ env.EMULATOR_API_LEVEL }}
-          arch: ${{ env.EMULATOR_ABI }}
-          target: google_apis
-          # Emulator 37.x on API 34 segfaults QEMU intermittently under legacy swiftshader_indirect
-          # when sensorLandscape activities render GLES 3.0; ANGLE-over-SwiftShader is stable.
-          emulator-options: -no-window -gpu swangle_indirect -no-snapshot -noaudio -no-boot-anim
-          disable-animations: true
-          script: |
-            python3 Engine/Tools/android/smoke_hub.py --adb adb --serial emulator-5554 --apk "build/android-emulator/UniVexHub-${EMULATOR_ABI}.apk" --engine-package build/android-emulator-pkg/univex-engine-*-android-${EMULATOR_ABI}.uvpackage
-      - name: Hand the release files to the publish job
-        if: env.IS_RELEASE == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: hub-android
-          path: build/android/UniVexHub-*.apk
-          if-no-files-found: error
-          retention-days: 7
 
   # ---------------------------------------------------------------------------------------------
   # Release / <platform>: the engine (editor, runtime, packer) in Release. Built on every push;
@@ -868,7 +522,11 @@ jobs:
               echo "::error::${abi}/${editor_lib} does not export UveEditorRunUVE."
               exit 1
             fi
-            unexpected=$(printf '%s\n' "${exported}" | grep -Ev '^(UveEditorRunUVE|ANativeActivity_onCreate|_edata|_end|__bss_start)$' || true)
+            if ! printf '%s\n' "${exported}" | grep -qx 'UveEditorAbiVersionUVE'; then
+              echo "::error::${abi}/${editor_lib} does not export UveEditorAbiVersionUVE."
+              exit 1
+            fi
+            unexpected=$(printf '%s\n' "${exported}" | grep -Ev '^(UveEditorRunUVE|UveEditorAbiVersionUVE|ANativeActivity_onCreate|_edata|_end|__bss_start)$' || true)
             if [ -n "${unexpected}" ]; then
               echo "::error::${abi}/${editor_lib} leaks unexpected dynamic symbols: ${unexpected}"
               exit 1
@@ -887,21 +545,18 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------------------------
-  # Single aggregate gate for master branch protection: passes only if all 7 jobs succeeded.
+  # Single aggregate gate for master branch protection: passes only if all 4 engine jobs succeeded.
   # ---------------------------------------------------------------------------------------------
   ci-gate:
     name: All CI Checks
     if: always()
-    needs: [linux, hub-linux, hub-windows, hub-android, release-linux, release-windows, release-android]
+    needs: [linux, release-linux, release-windows, release-android]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Verify every CI job passed
         env:
           RES_LINUX: ${{ needs.linux.result }}
-          RES_HUB_LINUX: ${{ needs.hub-linux.result }}
-          RES_HUB_WINDOWS: ${{ needs.hub-windows.result }}
-          RES_HUB_ANDROID: ${{ needs.hub-android.result }}
           RES_RELEASE_LINUX: ${{ needs.release-linux.result }}
           RES_RELEASE_WINDOWS: ${{ needs.release-windows.result }}
           RES_RELEASE_ANDROID: ${{ needs.release-android.result }}
@@ -910,9 +565,6 @@ jobs:
           failed=0
           for pair in \
             "Ubuntu / GCC:${RES_LINUX}" \
-            "Hub / Linux:${RES_HUB_LINUX}" \
-            "Hub / Windows:${RES_HUB_WINDOWS}" \
-            "Hub / Android:${RES_HUB_ANDROID}" \
             "Release / Linux:${RES_RELEASE_LINUX}" \
             "Release / Windows:${RES_RELEASE_WINDOWS}" \
             "Release / Android:${RES_RELEASE_ANDROID}"; do
@@ -927,12 +579,12 @@ jobs:
           exit "${failed}"
 
   # ---------------------------------------------------------------------------------------------
-  # Release only: one GitHub Release, once the tests passed and every platform is packaged.
+  # Release only: one GitHub Release with engine .uvpackage archives + .sha256 checksums.
   # ---------------------------------------------------------------------------------------------
   publish:
     name: Publish the release
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, hub-linux, hub-windows, hub-android, release-linux, release-windows, release-android]
+    needs: [linux, release-linux, release-windows, release-android]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -964,7 +616,7 @@ jobs:
       - name: Collect the release files
         uses: actions/download-artifact@v4
         with:
-          pattern: "{release,hub}-*"
+          pattern: "release-*"
           path: dist
           merge-multiple: true
       - name: Collect the Android engine builds
@@ -978,18 +630,6 @@ jobs:
           for abi in arm64-v8a x86_64; do
             python3 Engine/Tools/package_engine.py --bin "build/android-editor/${abi}" --target "android-${abi}" \
               --tag "${{ needs.release-linux.outputs.release-tag }}" --skip-version-check --require-runtime --output dist
-          done
-      - name: Name the APK after the Hub's version
-        env:
-          HUB_VERSION: ${{ needs.hub-linux.outputs.hub-version }}
-        run: |
-          set -euo pipefail
-          display=$(python3 -c "import sys; sys.path.insert(0, 'Engine/Tools'); import package_engine; print(package_engine.display_version(sys.argv[1]))" "${HUB_VERSION}")
-          for apk in dist/UniVexHub-*.apk; do
-            abi=$(basename "${apk}" .apk); abi=${abi#UniVexHub-}
-            named="dist/UniVexHub-${display}-android-${abi}.apk"
-            mv "${apk}" "${named}"
-            (cd dist && sha256sum "$(basename "${named}")" > "$(basename "${named}").sha256")
           done
       - name: Publish the release
         env:

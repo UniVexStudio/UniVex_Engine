@@ -5,19 +5,19 @@ One workflow, `.github/workflows/ci.yml`, checks every push and makes every rele
 ## Releases
 
 Every push to `master` is a development release, and a tag `v<version>` is a versioned release.
-Every job builds as on any check; the Hub and Release jobs then package what they built, and
-**Publish the release** puts everything into one GitHub Release:
+Every job builds as on any check; the Release jobs then package what they built, and
+**Publish the release** puts the engine packages into one GitHub Release:
 
-- `univex-engine-<version>-<linux|windows|android>.uvpackage` - the engine, per platform. The
-  Android package is the editor as a library (`uve_editor`), which UniVex Hub on Android loads to
-  open a project; Release / Android builds it and Publish packages it with the release's tag
-- `UniVexHubSetup-<hub version>-<linux|windows>` - the Hub installers: on Windows a setup wizard
-  (Inno Setup, `Engine/Distribution/windows/UniVexHub.iss`), which Hub / Windows installs, starts
-  and uninstalls on every run with only Windows' own folders on `PATH`
-- `UniVexHub-<hub version>-android-<abi>.apk` - the Hub for Android
+- `univex-engine-<version>-<linux|windows|android-arm64-v8a|android-x86_64>.uvpackage` - the engine,
+  per platform. The Android packages ship the in-process editor library (`uve_editor`) and Android
+  runtime library (`libunivex_android.so`), which UniVex Hub loads via `dlopen` per `contracts/v1/`;
+  `Release / Android` builds and verifies ELF symbol isolation, and `Publish the release` packages
+  them with the release's tag.
 
-each with a `.sha256` beside it. The files travel between jobs as artifacts, which are deleted once
-the release is published (and kept for seven days if publishing fails, so the builds are not lost).
+each with a `.sha256` beside it. UniVex Hub installers (`UniVexHubSetup-*`, `.deb`, and signed
+`UniVexHub-*.apk`) are built and released separately from `UniVexStudio/UniVex_Hub`. The files
+travel between jobs as artifacts, which are deleted once the release is published (and kept for
+seven days if publishing fails, so the builds are not lost).
 
 The repository variable `PUBLISH_RELEASES` decides where the release goes:
 

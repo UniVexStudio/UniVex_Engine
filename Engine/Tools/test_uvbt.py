@@ -66,7 +66,7 @@ class FindNdkTest(unittest.TestCase):
 class GuiAppTargetTest(unittest.TestCase):
     def test_gui_targets_opt_into_windows_subsystem(self) -> None:
         targets_dir = Path(__file__).resolve().parents[1] / "Source" / "Targets"
-        for gui_target in ("UniVexHub", "UniVexHubSetup", "UniVexEditor", "UniVexRuntime"):
+        for gui_target in ("UniVexEditor", "UniVexRuntime"):
             info = uvbt.CSharpParser.parse_target_cs(targets_dir / f"{gui_target}.Target.cs")
             self.assertTrue(info.is_gui_app, f"{gui_target}.Target.cs should set IsGuiApp = true")
         for cli_target in ("UniVexPack", "UniVexAssetWorkload"):
