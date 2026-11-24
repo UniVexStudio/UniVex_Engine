@@ -330,24 +330,25 @@ bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::fil
     std::string take;
     if (SplitEmbeddedClipPathUVE(path, model, take)) {
         std::vector<AnimationClipAssetUVE> takes;
+        std::uint64_t stamp = 0U;
+        if (!LoadAllModelAnimationsUVE(model, takes, &stamp)) {
+            return false;
+        }
         bool replaced = false;
-        for (const ModelAnimationEntryUVE& entry : ListModelAnimationsUVE(model)) {
-            AnimationClipAssetUVE existing;
-            if (entry.name == take) {
+        for (AnimationClipAssetUVE& existing : takes) {
+            if (existing.clipId == take) {
                 existing = clip;
                 existing.clipId = take;
                 replaced = true;
-            } else if (!LoadModelAnimationUVE(model, entry.name, existing)) {
-                return false;
+                break;
             }
-            takes.push_back(std::move(existing));
         }
         if (!replaced) {
             AnimationClipAssetUVE added = clip;
             added.clipId = take;
             takes.push_back(std::move(added));
         }
-        return SaveModelAnimationsUVE(model, takes, ReadModelAnimationStampUVE(model));
+        return SaveModelAnimationsUVE(model, takes, stamp);
     }
     std::vector<std::byte> payload;
     if (!SerializeAnimationClipPayloadUVE(clip, payload)) {
@@ -355,6 +356,188 @@ bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip, const std::fil
         return false;
     }
     return WriteUveFileUVE(path, AssetKindUVE::Animation, payload);
+}
+
+namespace {
+
+struct AnimationClipSummarySaxUVE final : nlohmann::json_sax<JsonUVE> {
+    int depth = 0;
+    bool rootIsObject = false;
+    std::string topKey;
+    bool inRestArray = false;
+    bool inBonesArray = false;
+    bool hasSchema = false;
+    bool validSchema = false;
+    bool v3OrHigher = false;
+    bool hasClipId = false;
+    bool hasDuration = false;
+    bool hasSamples = false;
+    bool hasEvents = false;
+    bool conformed = false;
+    bool hasRest = false;
+    bool hasBones = false;
+
+    bool null() override {
+        if (depth == 1) {
+            topKey.clear();
+        }
+        return true;
+    }
+    bool boolean(const bool val) override {
+        if (depth == 1 && topKey == "conformed") {
+            conformed = val;
+        }
+        if (depth == 1) {
+            topKey.clear();
+        }
+        return true;
+    }
+    bool number_integer(const number_integer_t val) override {
+        if (depth == 1 && topKey == "durationSeconds") {
+            hasDuration = val >= 0;
+        }
+        if (depth == 1) {
+            topKey.clear();
+        }
+        return true;
+    }
+    bool number_unsigned(const number_unsigned_t) override {
+        if (depth == 1 && topKey == "durationSeconds") {
+            hasDuration = true;
+        }
+        if (depth == 1) {
+            topKey.clear();
+        }
+        return true;
+    }
+    bool number_float(const number_float_t val, const string_t&) override {
+        if (depth == 1 && topKey == "durationSeconds") {
+            hasDuration = std::isfinite(val) && val >= 0.0;
+        }
+        if (depth == 1) {
+            topKey.clear();
+        }
+        return true;
+    }
+    bool string(string_t& val) override {
+        if (depth == 1) {
+            if (topKey == "schema") {
+                hasSchema = true;
+                validSchema = (val == kAnimationSchemaV4UVE || val == kAnimationSchemaV3UVE ||
+                               val == kAnimationSchemaUVE || val == kAnimationSchemaV1UVE);
+                v3OrHigher = (val == kAnimationSchemaV4UVE || val == kAnimationSchemaV3UVE);
+            } else if (topKey == "clipId") {
+                hasClipId = !val.empty();
+            }
+            topKey.clear();
+        }
+        return true;
+    }
+    bool binary(binary_t&) override {
+        if (depth == 1) {
+            topKey.clear();
+        }
+        return true;
+    }
+    bool start_object(std::size_t) override {
+        if (depth == 0) {
+            rootIsObject = true;
+        } else if (depth == 2) {
+            if (inRestArray) {
+                hasRest = true;
+            }
+            if (inBonesArray) {
+                hasBones = true;
+            }
+        }
+        ++depth;
+        return true;
+    }
+    bool end_object() override {
+        --depth;
+        if (depth == 1) {
+            topKey.clear();
+        }
+        return true;
+    }
+    bool start_array(std::size_t) override {
+        if (depth == 1) {
+            if (topKey == "samples") {
+                hasSamples = true;
+            } else if (topKey == "events") {
+                hasEvents = true;
+            } else if (topKey == "rest") {
+                inRestArray = true;
+            } else if (topKey == "bones") {
+                inBonesArray = true;
+            }
+        }
+        ++depth;
+        return true;
+    }
+    bool end_array() override {
+        --depth;
+        if (depth == 1) {
+            inRestArray = false;
+            inBonesArray = false;
+            topKey.clear();
+        }
+        return true;
+    }
+    bool key(string_t& val) override {
+        if (depth == 1) {
+            topKey = val;
+        }
+        return true;
+    }
+    bool parse_error(std::size_t, const std::string&, const JsonUVE::exception&) override {
+        return false;
+    }
+};
+
+} // namespace
+
+AnimationClipSummaryUVE InspectAnimationClipSummaryUVE(const std::span<const std::byte> payload) {
+    AnimationClipSummaryUVE summary;
+    if (payload.empty() || payload.size() > kMaximumAnimationAssetPayloadBytesUVE) {
+        return summary;
+    }
+    AnimationClipSummarySaxUVE sax;
+    const auto* const begin = reinterpret_cast<const char*>(payload.data());
+    const auto* const end = begin + payload.size();
+    const bool parsed = JsonUVE::sax_parse(begin, end, &sax);
+    if (!parsed || !sax.rootIsObject || !sax.hasSchema || !sax.validSchema || !sax.hasClipId || !sax.hasDuration ||
+        !sax.hasSamples || !sax.hasEvents) {
+        return summary;
+    }
+    summary.valid = true;
+    summary.conformed = sax.v3OrHigher && sax.conformed;
+    summary.hasRest = sax.v3OrHigher && sax.hasRest;
+    summary.hasBones = sax.hasBones;
+    return summary;
+}
+
+AnimationClipSummaryUVE InspectAnimationClipFileSummaryUVE(const std::filesystem::path& path) {
+    std::filesystem::path model;
+    std::string take;
+    if (SplitEmbeddedClipPathUVE(path, model, take)) {
+        std::vector<std::pair<std::string, AnimationClipSummaryUVE>> summaries;
+        if (!InspectModelAnimationsSummaryUVE(model, summaries)) {
+            return {};
+        }
+        for (const auto& [name, summary] : summaries) {
+            if (name == take) {
+                return summary;
+            }
+        }
+        return {};
+    }
+    const std::optional<std::pair<UveFileHeaderUVE, std::vector<std::byte>>> file = ReadUveFileUVE(path);
+    if (!file.has_value() || file->first.assetType != AssetKindUVE::Animation || file->second.empty() ||
+        file->second.size() > kMaximumAnimationAssetPayloadBytesUVE) {
+        return {};
+    }
+    return InspectAnimationClipSummaryUVE(file->second);
 }
 
 bool LoadAnimationClipAssetUVE(const std::filesystem::path& path, AnimationClipAssetUVE& outClip) {

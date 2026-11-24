@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -127,6 +128,19 @@ struct AnimationClipAssetUVE final {
 /// Saves a validated animation clip as an AssetKindUVE::Animation envelope.
 [[nodiscard]] bool SaveAnimationClipAssetUVE(const AnimationClipAssetUVE& clip,
                                               const std::filesystem::path& path);
+/// Lightweight metadata for batch scanning (Retarget planner) without parsing keyframe curves.
+struct AnimationClipSummaryUVE final {
+    bool valid = false;
+    bool conformed = false;
+    bool hasRest = false;
+    bool hasBones = false;
+};
+
+/// Inspects a serialized clip payload via streaming SAX without allocating DOM nodes or keyframe arrays.
+[[nodiscard]] AnimationClipSummaryUVE InspectAnimationClipSummaryUVE(std::span<const std::byte> payload);
+/// Inspects a `.uvanim` file or `<model>.uvmodel#<take>` path without parsing keyframe curves.
+[[nodiscard]] AnimationClipSummaryUVE InspectAnimationClipFileSummaryUVE(const std::filesystem::path& path);
+
 /// A clip's payload (the JSON a .uvanim file's envelope holds), in memory: what a model keeps
 /// for each of its takes. False for an invalid or oversized clip.
 [[nodiscard]] bool SerializeAnimationClipPayloadUVE(const AnimationClipAssetUVE& clip, std::vector<std::byte>& outPayload);

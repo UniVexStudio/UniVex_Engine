@@ -1570,13 +1570,140 @@ bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
     }
     const EditorSelectionSnapshotUVE selectionBefore = CaptureSelectionSnapshotUVE();
     const bool dirtyBefore = m_sceneDirty;
+    std::optional<Scene::SkinComponentUVE> beforeSkin;
+    if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
+        beforeSkin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
+    }
     if (!ApplyMeshSourceStateUVE(m_selectedEntity, afterMesh, afterShape)) {
         return false;
     }
-    // A skinned mesh takes the bones of the model it now draws. A rigged model on an object with no
-    // Skin yet gets one when a Skeleton3D with bones stands beside it (on it, a child, the parent or a
-    // sibling); with none, the status says how to get its skeleton.
+    Scene::EntityUVE syncedSkeletonEntity = Scene::kInvalidEntityUVE;
+    std::optional<Scene::Skeleton3DComponentUVE> beforeSkeleton;
+    std::optional<Scene::Skeleton3DComponentUVE> afterSkeleton;
+    Scene::EntityUVE createdSkeletonEntity = Scene::kInvalidEntityUVE;
+    std::optional<Scene::SceneSnapshotUVE> createdSkeletonSnapshot;
+    // A skinned mesh takes the bones of the model it now draws. When a rigged model is assigned to
+    // a MeshInstance3D (e.g. under Player3D / Character3D / Entity), ensure a matching Skeleton3D
+    // loaded from its sibling .uvskel (A-pose once retargeted) stands beside it so the renderer
+    // skins into the skeleton's rest pose instead of falling back to raw unskinned T-pose vertices.
     if (!shape.has_value() && model != Asset::kInvalidAssetGuidUVE) {
+        if (const std::optional<Asset::MeshAssetUVE> meshAsset = LoadEntityMeshAssetUVE(m_selectedEntity);
+            meshAsset.has_value() && !meshAsset->joints.empty()) {
+            const Asset::ProjectFileSnapshotUVE project = m_services->GetProjectFileIndexUVE().GetSnapshotUVE();
+            std::filesystem::path resolvedModel = m_services->GetAssetDatabaseUVE().ResolveUVE(model);
+            std::error_code ec;
+            if (resolvedModel.extension() != ".uvmodel" || !std::filesystem::is_regular_file(resolvedModel, ec)) {
+                const std::filesystem::path rel = resolvedModel.lexically_relative(project.contentRoot);
+                if (!rel.empty() && *rel.begin() != "..") {
+                    const std::filesystem::path imported = GetImportedModelPathUVE(rel);
+                    if (std::filesystem::is_regular_file(imported, ec)) {
+                        resolvedModel = imported;
+                    }
+                }
+            }
+            const std::optional<Asset::GltfSkeletonUVE> modelSkeleton =
+                ReadSkeletonForModelFileUVE(resolvedModel, Scene::kMaximumSkeletonBonesUVE);
+            if (modelSkeleton.has_value() && !modelSkeleton->joints.empty()) {
+                // Recover the cleanest asset path for Skeleton3DComponentUVE::skeletonAssetPath so
+                // future Retarget / Undo runs keep this skeleton synchronized automatically.
+                std::string skelAssetPath;
+                const std::filesystem::path relToContent = resolvedModel.lexically_relative(project.contentRoot);
+                if (!relToContent.empty() && *relToContent.begin() != "..") {
+                    skelAssetPath = relToContent.generic_string();
+                } else {
+                    const std::filesystem::path cacheRoot = m_services->GetDerivedArtifactCacheUVE().GetCacheRootUVE();
+                    std::filesystem::path importedRoot =
+                        cacheRoot.has_filename() ? cacheRoot.parent_path() : cacheRoot.parent_path().parent_path();
+                    importedRoot /= "Imported";
+                    const std::filesystem::path relToImported = resolvedModel.lexically_relative(importedRoot);
+                    if (!relToImported.empty() && *relToImported.begin() != ".." && relToImported.extension() == ".uvmodel") {
+                        std::filesystem::path sourceRel = relToImported;
+                        sourceRel.replace_extension();
+                        skelAssetPath = sourceRel.generic_string();
+                    } else {
+                        skelAssetPath = resolvedModel.generic_string();
+                    }
+                }
+
+                // Locate an existing Skeleton3D in SkinForEntityUVE's scope (self, child, parent, sibling).
+                Scene::ISceneGraphUVE& sceneGraph = m_services->GetSceneGraphUVE();
+                Scene::EntityUVE existingSkel = Scene::kInvalidEntityUVE;
+                if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(m_selectedEntity)) {
+                    existingSkel = m_selectedEntity;
+                } else {
+                    for (const Scene::EntityUVE child : sceneGraph.GetChildrenUVE(entityManager, m_selectedEntity)) {
+                        if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(child)) {
+                            existingSkel = child;
+                            break;
+                        }
+                    }
+                    if (existingSkel == Scene::kInvalidEntityUVE &&
+                        entityManager.HasComponentUVE<Scene::HierarchyComponentUVE>(m_selectedEntity)) {
+                        const Scene::EntityUVE parent =
+                            entityManager.GetComponentUVE<Scene::HierarchyComponentUVE>(m_selectedEntity).parent;
+                        if (parent != Scene::kInvalidEntityUVE) {
+                            if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(parent)) {
+                                existingSkel = parent;
+                            } else {
+                                for (const Scene::EntityUVE sibling : sceneGraph.GetChildrenUVE(entityManager, parent)) {
+                                    if (entityManager.HasComponentUVE<Scene::Skeleton3DComponentUVE>(sibling)) {
+                                        existingSkel = sibling;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                const auto fillBones = [&modelSkeleton](Scene::Skeleton3DComponentUVE& comp, const std::string& path) {
+                    comp.skeletonAssetPath = path;
+                    comp.bones.clear();
+                    comp.bones.reserve(modelSkeleton->joints.size());
+                    for (const Asset::GltfJointUVE& joint : modelSkeleton->joints) {
+                        comp.bones.push_back(Scene::SkeletonBoneUVE{
+                            joint.name, joint.parentIndex, joint.translation, joint.rotation, joint.scale});
+                    }
+                    comp.pose.clear();
+                };
+
+                if (existingSkel != Scene::kInvalidEntityUVE) {
+                    Scene::Skeleton3DComponentUVE& skelComp =
+                        entityManager.GetComponentUVE<Scene::Skeleton3DComponentUVE>(existingSkel);
+                    bool anyOverlap = false;
+                    if (!skelComp.bones.empty()) {
+                        Scene::SkeletonBoneLookupUVE lookup;
+                        lookup.BuildUVE(skelComp);
+                        std::uint32_t unused = 0U;
+                        for (const Asset::MeshJointUVE& joint : meshAsset->joints) {
+                            if (lookup.TryFindUVE(joint.name, unused)) {
+                                anyOverlap = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (skelComp.bones.empty() || !anyOverlap) {
+                        syncedSkeletonEntity = existingSkel;
+                        beforeSkeleton = skelComp;
+                        fillBones(skelComp, skelAssetPath);
+                        afterSkeleton = skelComp;
+                    }
+                } else {
+                    Scene::Skeleton3DObjectDefinitionUVE skelDef;
+                    fillBones(skelDef.skeleton, skelAssetPath);
+                    const Scene::EntityUVE skelEntity =
+                        CreateDocumentEntityShellInternalUVE(MakeUniqueDocumentEntityNameUVE("Skeleton3D"));
+                    if (skelEntity != Scene::kInvalidEntityUVE) {
+                        Scene::ApplySkeleton3DObjectDefinitionUVE(entityManager, skelEntity, skelDef);
+                        Scene::SetSceneObjectKindUVE(entityManager, skelEntity, Scene::Objects::SceneObjectKindUVE::Skeleton3D);
+                        sceneGraph.SetParentUVE(entityManager, skelEntity, m_selectedEntity);
+                        InvalidateHierarchyFilterCacheUVE();
+                        createdSkeletonEntity = skelEntity;
+                        createdSkeletonSnapshot = CaptureSubtreeUVE(skelEntity);
+                    }
+                }
+            }
+        }
         if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
             auto skin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
             AutoPopulateSkinFromModelUVE(m_selectedEntity, skin);
@@ -1592,9 +1719,27 @@ bool EditorUVE::SetSelectedMeshSourceUVE(const Asset::AssetGuidUVE model,
             }
         }
     }
+    std::optional<Scene::SkinComponentUVE> afterSkin;
+    if (entityManager.HasComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity)) {
+        afterSkin = entityManager.GetComponentUVE<Scene::SkinComponentUVE>(m_selectedEntity);
+    }
     m_sceneDirty = true;
-    RecordHistoryUVE(MeshSourceHistoryEntryUVE{m_selectedEntity, beforeMesh, beforeShape, afterMesh, afterShape,
-                                               selectionBefore, CaptureSelectionSnapshotUVE(), dirtyBefore, true});
+    RecordHistoryUVE(MeshSourceHistoryEntryUVE{m_selectedEntity,
+                                               beforeMesh,
+                                               beforeShape,
+                                               afterMesh,
+                                               afterShape,
+                                               beforeSkin,
+                                               afterSkin,
+                                               syncedSkeletonEntity,
+                                               beforeSkeleton,
+                                               afterSkeleton,
+                                               createdSkeletonEntity,
+                                               createdSkeletonSnapshot,
+                                               selectionBefore,
+                                               CaptureSelectionSnapshotUVE(),
+                                               dirtyBefore,
+                                               true});
     return true;
 }
 
@@ -4452,6 +4597,25 @@ bool EditorUVE::UndoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (!ApplyMeshSourceStateUVE(typedEntry.entity, typedEntry.beforeMesh, typedEntry.beforeShape)) {
                     return false;
                 }
+                Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
+                if (typedEntry.createdSkeletonEntity != Scene::kInvalidEntityUVE &&
+                    IsDocumentEntityUVE(typedEntry.createdSkeletonEntity)) {
+                    DestroyDocumentSubtreeUVE(typedEntry.createdSkeletonEntity);
+                    typedEntry.createdSkeletonEntity = Scene::kInvalidEntityUVE;
+                }
+                if (typedEntry.syncedSkeletonEntity != Scene::kInvalidEntityUVE &&
+                    typedEntry.beforeSkeleton.has_value() &&
+                    IsDocumentEntityUVE(typedEntry.syncedSkeletonEntity) &&
+                    em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(typedEntry.syncedSkeletonEntity)) {
+                    em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(typedEntry.syncedSkeletonEntity) =
+                        *typedEntry.beforeSkeleton;
+                }
+                if (typedEntry.beforeSkin.has_value()) {
+                    em.AddComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity, *typedEntry.beforeSkin);
+                } else if (em.HasComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity)) {
+                    em.RemoveComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity);
+                }
+                InvalidateHierarchyFilterCacheUVE();
                 RestoreSelectionUVE(typedEntry.selectionBefore);
                 m_sceneDirty = typedEntry.dirtyBefore;
                 return true;
@@ -4607,6 +4771,29 @@ bool EditorUVE::RedoHistoryEntryUVE(HistoryEntryUVE& entry) {
                 if (!ApplyMeshSourceStateUVE(typedEntry.entity, typedEntry.afterMesh, typedEntry.afterShape)) {
                     return false;
                 }
+                Scene::IEntityManagerUVE& em = m_services->GetEntityManagerUVE();
+                if (typedEntry.createdSkeletonSnapshot.has_value() &&
+                    (typedEntry.createdSkeletonEntity == Scene::kInvalidEntityUVE ||
+                     !em.IsAliveUVE(typedEntry.createdSkeletonEntity))) {
+                    const Scene::EntityUVE restored =
+                        RestoreSubtreeUnderParentUVE(*typedEntry.createdSkeletonSnapshot, typedEntry.entity);
+                    if (restored != Scene::kInvalidEntityUVE) {
+                        typedEntry.createdSkeletonEntity = restored;
+                    }
+                }
+                if (typedEntry.syncedSkeletonEntity != Scene::kInvalidEntityUVE &&
+                    typedEntry.afterSkeleton.has_value() &&
+                    IsDocumentEntityUVE(typedEntry.syncedSkeletonEntity) &&
+                    em.HasComponentUVE<Scene::Skeleton3DComponentUVE>(typedEntry.syncedSkeletonEntity)) {
+                    em.GetComponentUVE<Scene::Skeleton3DComponentUVE>(typedEntry.syncedSkeletonEntity) =
+                        *typedEntry.afterSkeleton;
+                }
+                if (typedEntry.afterSkin.has_value()) {
+                    em.AddComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity, *typedEntry.afterSkin);
+                } else if (em.HasComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity)) {
+                    em.RemoveComponentUVE<Scene::SkinComponentUVE>(typedEntry.entity);
+                }
+                InvalidateHierarchyFilterCacheUVE();
                 RestoreSelectionUVE(typedEntry.selectionAfter);
                 m_sceneDirty = typedEntry.dirtyAfter;
                 return true;
@@ -6800,6 +6987,10 @@ std::vector<std::filesystem::path> EditorUVE::ImportModelAnimationsUVE(const std
         if (Asset::ReadModelAnimationStampUVE(importedModel) == stamp) {
             return written;   // its takes came from this version of the source already
         }
+        // Never overwrite embedded takes on a retargeted model whose source has not changed.
+        if (IsRetargetedModelCurrentUVE(relativeSource) && !Asset::ListModelAnimationsUVE(importedModel).empty()) {
+            return written;
+        }
     }
     if (const auto cacheIt = s_importedAnimCache.find(cacheKey);
         cacheIt != s_importedAnimCache.end() && cacheIt->second.sourceTime == sourceTime) {
@@ -7022,6 +7213,9 @@ namespace {
 } // namespace
 
 bool EditorUVE::IsRetargetedModelCurrentUVE(const std::filesystem::path& relativeSource) const {
+    if (!IsModelSourcePathUVE(relativeSource)) {
+        return false;
+    }
     const std::filesystem::path imported = GetImportedModelPathUVE(relativeSource);
     std::error_code error;
     if (imported.empty() || !std::filesystem::is_regular_file(imported, error)) {

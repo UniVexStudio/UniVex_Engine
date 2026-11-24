@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace UVE::Asset {
@@ -24,6 +25,16 @@ struct ModelAnimationEntryUVE final {
 
 /// Reads take `name` of `model`.
 [[nodiscard]] bool LoadModelAnimationUVE(const std::filesystem::path& model, const std::string& name, AnimationClipAssetUVE& outClip);
+
+/// Reads every take kept in `model` in a single file read (optionally returning its source stamp).
+[[nodiscard]] bool LoadAllModelAnimationsUVE(const std::filesystem::path& model,
+                                             std::vector<AnimationClipAssetUVE>& outClips,
+                                             std::uint64_t* outStamp = nullptr);
+
+/// Inspects metadata of every take kept in `model` in a single file read without parsing keyframes.
+[[nodiscard]] bool InspectModelAnimationsSummaryUVE(
+    const std::filesystem::path& model,
+    std::vector<std::pair<std::string, AnimationClipSummaryUVE>>& outSummaries);
 
 /// Replaces every take kept in `model` (an existing .uvmodel) with `clips`, each under its clipId.
 /// The mesh data is left as it is. An empty list removes them.

@@ -10,6 +10,7 @@
 #include "Support/test_scratch.h"
 #include "animation_clip_asset.h"
 #include "editor_retarget_plan.h"
+#include "model_animations.h"
 
 namespace UVE::Editor {
 namespace {
@@ -110,6 +111,39 @@ TEST(RetargetPlanUVETest, AConformedCharacterIsRecognisedAndNeedsNothingWithoutA
     EXPECT_EQ(plan.CountUVE(JointStatusUVE::Missing), 0U);
     EXPECT_EQ(plan.CountUVE(JointStatusUVE::Good), plan.joints.size());
     EXPECT_FALSE(plan.CanGenerateUVE()) << "nothing to conform";
+}
+
+TEST(RetargetPlanUVETest, EmbeddedAnimationsAreDiscoveredEvenWhenCharacterIsAlreadyConformed) {
+    const PlanFixtureUVE fixture;
+    Retarget::RetargetFilesRequestUVE request;
+    request.model = fixture.model;
+    request.backupRoot = fixture.dir / ".backup";
+    request.useBrain = false;
+    ASSERT_TRUE(Retarget::RetargetFilesUVE(request, Retarget::GetHumanoidReferenceUVE()).ok);
+
+    // Embed 10 un-conformed takes into the already-conformed .uvmodel.
+    std::vector<Asset::AnimationClipAssetUVE> takes;
+    for (std::size_t i = 0U; i < 10U; ++i) {
+        takes.push_back(MakeClipUVE(fixture.rig, "Take_" + std::to_string(i)));
+    }
+    ASSERT_TRUE(Asset::SaveModelAnimationsUVE(fixture.model, takes, 7U));
+
+    const RetargetPlanUVE plan = PlanRetargetUVE(fixture.model, {});
+    ASSERT_TRUE(plan.modelReadable) << plan.modelError;
+    EXPECT_TRUE(plan.modelAlreadyConformed);
+    ASSERT_EQ(plan.animations.size(), 10U);
+    EXPECT_EQ(plan.ReadyAnimationsUVE(), 10U);
+    EXPECT_TRUE(plan.CanGenerateUVE()) << "embedded animations still need conforming";
+
+    // Animation-only plan with all clips already conformed cannot generate.
+    const RetargetPlanUVE allDoneAnimOnly = PlanRetargetUVE({}, std::span<const fs::path>(&fixture.animations[2], 1U));
+    EXPECT_EQ(allDoneAnimOnly.ReadyAnimationsUVE(), 0U);
+    EXPECT_FALSE(allDoneAnimOnly.CanGenerateUVE());
+
+    // Pre-set cancel flag exits immediately without scanning animations.
+    std::atomic<bool> cancel{true};
+    const RetargetPlanUVE cancelled = PlanRetargetUVE(fixture.model, {}, {}, &cancel);
+    EXPECT_TRUE(cancelled.animations.empty());
 }
 
 } // namespace

@@ -376,6 +376,21 @@ struct RetargetWindowStateUVE final {
     std::future<Retarget::RetargetFilesResultUVE> job;
     /// The character file the running job conforms.
     std::filesystem::path jobModel;
+    /// True when the running job conformed the character mesh itself (not only its animations).
+    bool jobConformedModel = false;
+    /// Un-imported animation model sources queued from a folder/multi-select retarget, drained
+    /// incrementally within a per-frame time budget so the editor stays responsive.
+    std::deque<std::filesystem::path> pendingFolderImports;
+    std::size_t pendingImportTotal = 0U;
+    std::size_t pendingImportDone = 0U;
+    /// Background plan scan for large animation batches so opening a 1,000-clip folder never stalls UI.
+    std::future<RetargetPlanUVE> planJob;
+    std::shared_ptr<std::atomic<bool>> planCancel = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<Progress> planProgress = std::make_shared<Progress>();
+    std::filesystem::path planModelFile;
+    /// True when an empty target should auto-pick the first project character; false for explicit
+    /// animation-only multi-select or folder batches.
+    bool autoSelectDefaultCandidate = true;
     /// Characters conformed or restored while the window was open: the scene put aside by the
     /// preview still holds their old bones until it is back.
     std::vector<std::filesystem::path> changedModels;
@@ -1110,6 +1125,11 @@ public:
     /// Opens the Retarget window for `animations` (absolute `.uvanim` paths). `target` is the
     /// character's content-relative model source or `.uvmodel`, or empty to choose in the window.
     void OpenRetargetWindowUVE(std::vector<std::filesystem::path> animations, std::filesystem::path target = {});
+    /// Opens the Retarget window for an explicit multi-selection of content-relative files/folders:
+    /// strictly only the selected items (expanding any selected folders recursively) are included.
+    void OpenRetargetWindowForPathsUVE(const std::vector<std::filesystem::path>& relativePaths);
+    /// Opens the Retarget window for all animations inside a content-relative folder (recursively).
+    void OpenRetargetWindowForFolderUVE(const std::filesystem::path& relativeFolder);
     [[nodiscard]] bool IsRetargetWindowOpenUVE() const noexcept { return m_retargetWindow.has_value(); }
     void CloseRetargetWindowUVE();
     /// Opens `assetPath` (absolute `.uvanimlib`) in the Animation Library window. Opening another
@@ -2248,6 +2268,13 @@ private:
         std::optional<Scene::PrimitiveMeshComponentUVE> beforeShape;
         Scene::MeshComponentUVE afterMesh{};
         std::optional<Scene::PrimitiveMeshComponentUVE> afterShape;
+        std::optional<Scene::SkinComponentUVE> beforeSkin;
+        std::optional<Scene::SkinComponentUVE> afterSkin;
+        Scene::EntityUVE syncedSkeletonEntity = Scene::kInvalidEntityUVE;
+        std::optional<Scene::Skeleton3DComponentUVE> beforeSkeleton;
+        std::optional<Scene::Skeleton3DComponentUVE> afterSkeleton;
+        Scene::EntityUVE createdSkeletonEntity = Scene::kInvalidEntityUVE;
+        std::optional<Scene::SceneSnapshotUVE> createdSkeletonSnapshot;
         EditorSelectionSnapshotUVE selectionBefore;
         EditorSelectionSnapshotUVE selectionAfter;
         bool dirtyBefore = false;
@@ -2785,6 +2812,8 @@ private:
     [[nodiscard]] std::filesystem::path GetImportedModelPathUVE(const std::filesystem::path& relativeSource) const;
     /// The skeleton a model source gives a Skeleton3D: the imported model's when it has been
     /// conformed to the humanoid (Retarget), else the source file's own bones.
+    [[nodiscard]] std::optional<Asset::GltfSkeletonUVE> ReadSkeletonForModelFileUVE(const std::filesystem::path& importedModelPath,
+                                                                                    std::size_t maximumBones) const;
     [[nodiscard]] std::optional<Asset::GltfSkeletonUVE> ReadSkeletonForSourceUVE(const std::filesystem::path& relativeSource,
                                                                                  std::size_t maximumBones) const;
     /// Queues an import for every model source in `snapshot` that is not already in flight. An

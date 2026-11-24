@@ -365,8 +365,20 @@ void EditorDetailsUVE::AddSkeletonSourceUVE(const int category, const EntryUVE& 
         items.push_back(prism::MenuItem::Sep());
         bool any = false;
         for (const Asset::ProjectFileEntryUVE& file : snapshot.entries) {
+            if (file.kind == Asset::ProjectFileEntryKindUVE::Directory) {
+                continue;
+            }
             const EditorModelSourceInfoUVE* const source = m_editor.FindModelSourceInfoUVE(file.relativePath);
-            if (file.kind == Asset::ProjectFileEntryKindUVE::Directory || source == nullptr || !source->hasSkeleton) {
+            std::string ext = file.relativePath.extension().string();
+            std::ranges::transform(ext, ext.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            bool hasRig = (source != nullptr && source->hasSkeleton);
+            if (!hasRig && ext == ".uvmodel") {
+                std::filesystem::path skelPath = snapshot.contentRoot / file.relativePath;
+                skelPath.replace_extension(".uvskel");
+                std::error_code ec;
+                hasRig = std::filesystem::is_regular_file(skelPath, ec);
+            }
+            if (!hasRig) {
                 continue;
             }
             any = true;
@@ -377,7 +389,7 @@ void EditorDetailsUVE::AddSkeletonSourceUVE(const int category, const EntryUVE& 
             items.push_back(prism::MenuItem::Item("No rigged models in this project yet", {}).disabled());
         }
         items.push_back(prism::MenuItem::Sep());
-        const std::vector<std::string> kinds{".glb", ".gltf", ".fbx"};
+        const std::vector<std::string> kinds{".uvmodel", ".glb", ".gltf", ".fbx"};
         items.push_back(prism::MenuItem::Item("Load...", [this, kinds, bindAbsolute] {
             FilePickerRequestUVE request;
             request.title = "Load Skeleton Source";

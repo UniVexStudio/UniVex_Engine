@@ -8,6 +8,7 @@
 #include "editor_retarget_diagram.h"
 
 #include "animation_clip_asset.h"
+#include "model_animations.h"
 #include "retarget_skeleton.h"
 
 #include "i_project_file_index.h"
@@ -153,7 +154,7 @@ prism::Ref<prism::Widget> EditorRetargetWindowUVE::BuildUVE() {
             return {};
         }
         const RetargetAnimationRowUVE& r = rows[static_cast<std::size_t>(row)];
-        return col == 0 ? r.file.stem().string() : std::string(AnimationStateLabelUVE(r.state));
+        return col == 0 ? Asset::AssetDisplayNameUVE(r.file) : std::string(AnimationStateLabelUVE(r.state));
     };
     m_animations->paintCell = [this](prism::Canvas& c, const int row, const int col, const prism::Rect r, bool) {
         if (!m_editor.m_retargetWindow.has_value() || col != 0) {
@@ -440,6 +441,9 @@ void EditorRetargetWindowUVE::RefreshUVE() {
     RetargetWindowStateUVE& window = *m_editor.m_retargetWindow;
     const RetargetPlanUVE& plan = window.plan;
     const bool running = window.job.valid();
+    const bool importing = !window.pendingFolderImports.empty();
+    const bool scanning = window.planJob.valid();
+    const bool busy = running || importing || scanning;
 
     // The character picker follows the project's rigged characters.
     const std::vector<std::filesystem::path> candidates = m_editor.RetargetCandidatesUVE();
@@ -461,7 +465,7 @@ void EditorRetargetWindowUVE::RefreshUVE() {
         if (m_character->selected() != selected) {
             m_character->setSelected(selected);
         }
-        m_character->setEnabled(!running);
+        m_character->setEnabled(!running && !importing);
     }
 
     const bool filterChanged = (m_filter && m_filter->text() != m_shownFilter) ||
@@ -496,19 +500,22 @@ void EditorRetargetWindowUVE::RefreshUVE() {
         RebuildSourceUVE(true);
     }
     if (m_generate) {
-        m_generate->setEnabled(!running && plan.CanGenerateUVE() && m_editor.IsAuthoringCommandAllowedUVE());
-        const std::string label = plan.modelReadable && plan.CharacterDoneUVE()
+        m_generate->setEnabled(!busy && plan.CanGenerateUVE() && m_editor.IsAuthoringCommandAllowedUVE());
+        const bool animOnlyOrDone = plan.modelReadable && (plan.model.empty() || plan.CharacterDoneUVE());
+        const std::string label = animOnlyOrDone
                                       ? (plan.ReadyAnimationsUVE() > 0U ? "Retarget Animations" : "Already Retargeted")
                                       : plan.renameOnly ? "Generate (Rename Only)" : "Generate Retarget";
         if (m_generate->text() != label) {
             m_generate->setText(label);
         }
-        m_generate->setTooltip(plan.CharacterDoneUVE() ? "This character is retargeted already: Undo Last, or import it again, to retarget it anew"
+        m_generate->setTooltip(plan.model.empty()
+                                   ? "Conforms the listed animations in place to the engine's humanoid skeleton"
+                               : plan.CharacterDoneUVE() ? "This character is retargeted already: Undo Last, or import it again, to retarget it anew"
                                : plan.renameOnly       ? "The character has every bone, helper and IK target: its bones only take the engine's names"
                                                        : "Adds the bones the character lacks, then names every bone as the engine's");
     }
     if (m_undo) {
-        m_undo->setEnabled(!running && !window.lastBackup.empty());
+        m_undo->setEnabled(!busy && !window.lastBackup.empty());
     }
     if (m_progress && m_status) {
         if (running) {
@@ -521,13 +528,34 @@ void EditorRetargetWindowUVE::RefreshUVE() {
             }
             m_progress->setVisible(true);
             m_progress->setValue(static_cast<float>(done) / static_cast<float>(total));
-            m_status->setText("Retargeting " + what + " ...");
+            char line[256];
+            std::snprintf(line, sizeof(line), "Retargeting %zu / %zu: %s ...", done, total, what.c_str());
+            m_status->setText(line);
+        } else if (importing) {
+            const std::size_t done = window.pendingImportDone;
+            const std::size_t total = std::max<std::size_t>(1U, window.pendingImportTotal);
+            m_progress->setVisible(true);
+            m_progress->setValue(static_cast<float>(done) / static_cast<float>(total));
+            char line[160];
+            std::snprintf(line, sizeof(line), "Preparing folder animations %zu / %zu ...", done, total);
+            m_status->setText(line);
+        } else if (scanning) {
+            const std::size_t done = window.planProgress->done;
+            const std::size_t total = std::max<std::size_t>(1U, window.planProgress->total);
+            m_progress->setVisible(true);
+            m_progress->setValue(static_cast<float>(done) / static_cast<float>(total));
+            char line[160];
+            std::snprintf(line, sizeof(line), "Scanning animations %zu / %zu ...", done, total);
+            m_status->setText(line);
         } else {
             m_progress->setVisible(false);
             std::string text = window.status;
             if (text.empty() && plan.modelReadable) {
                 char line[192];
-                if (plan.CharacterDoneUVE()) {
+                if (plan.model.empty()) {
+                    std::snprintf(line, sizeof(line), "%zu of %zu animations will be conformed.",
+                                  plan.ReadyAnimationsUVE(), plan.animations.size());
+                } else if (plan.CharacterDoneUVE()) {
                     std::snprintf(line, sizeof(line), "The character is retargeted already (Undo Last or import it again to redo it); %zu of %zu animations will be conformed.",
                                   plan.ReadyAnimationsUVE(), plan.animations.size());
                 } else if (plan.renameOnly) {
@@ -615,7 +643,8 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
         for (std::size_t ref = 0U; ref < reference.skeleton.bones.size(); ++ref) {
             referenceOf.emplace(reference.skeleton.bones[ref].name, ref);
         }
-        for (const std::filesystem::path& file : window.animations) {
+        for (const RetargetAnimationRowUVE& animRow : plan.animations) {
+            const std::filesystem::path& file = animRow.file;
             Asset::AnimationClipAssetUVE clip;
             if (!Asset::LoadAnimationClipAssetUVE(file, clip) || clip.rest.empty()) {
                 continue;
@@ -667,7 +696,7 @@ void EditorRetargetWindowUVE::RebuildSourceUVE(const bool refit) {
                 }
                 joints.push_back(std::move(joint));
             }
-            caption = file.stem().string() + " - " + std::to_string(rig.bones.size()) + " bones";
+            caption = Asset::AssetDisplayNameUVE(file) + " - " + std::to_string(rig.bones.size()) + " bones";
             break;
         }
     }

@@ -3,9 +3,11 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -79,7 +81,7 @@ struct RetargetPlanUVE final {
     [[nodiscard]] std::size_t ReadyAnimationsUVE() const noexcept;
     /// Generate needs a character it can conform and something to do.
     [[nodiscard]] bool CanGenerateUVE() const noexcept {
-        return modelReadable && (ReadyAnimationsUVE() > 0U || !CharacterDoneUVE());
+        return modelReadable && (ReadyAnimationsUVE() > 0U || (!model.empty() && !CharacterDoneUVE()));
     }
     /// The character needs nothing more (named as the engine's, or retargeted already).
     [[nodiscard]] bool CharacterDoneUVE() const noexcept {
@@ -87,9 +89,15 @@ struct RetargetPlanUVE final {
     }
 };
 
-/// Reads the character (a `.uvmodel` with a skin) and the animations and works out the plan.
+/// Optional progress callback while scanning a batch of animations: (done, total, label).
+using RetargetPlanProgressUVE = std::function<void(std::size_t done, std::size_t total, const std::string& what)>;
+
+/// Reads the character (a `.uvmodel` with a skin) and the animations (plus any takes embedded in
+/// `modelFile`) and works out the plan without touching a file.
 [[nodiscard]] RetargetPlanUVE PlanRetargetUVE(const std::filesystem::path& modelFile,
-                                              std::span<const std::filesystem::path> animations);
+                                              std::span<const std::filesystem::path> animations,
+                                              const RetargetPlanProgressUVE& progress = {},
+                                              const std::atomic<bool>* cancel = nullptr);
 
 /// The joint colour as red, green, blue in 0..1: green good, yellow check, red broken, grey missing.
 /// One place, so the window's dots and the viewport's bones always agree.

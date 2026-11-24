@@ -775,7 +775,7 @@ bool EditorShellUVE::DropContentOnOutlinerUVE(const std::string& relativePath, c
     Scene::EntityUVE placed = Scene::kInvalidEntityUVE;
     if (extension == ".uventity" || extension == ".uvprefab") {
         placed = m_editor.PlaceEntityAssetUVE(snapshot.contentRoot / relative, parent);
-    } else if (EditorUVE::IsModelSourcePathUVE(relative)) {
+    } else if (EditorUVE::IsModelSourcePathUVE(relative) || extension == ".uvmodel") {
         placed = m_editor.PlaceModelSourceUVE(relative, parent);
     } else if (!clipSource.empty()) {
         // The Asset Table lists an animation-only file as its clips: one places the file, playing it.
