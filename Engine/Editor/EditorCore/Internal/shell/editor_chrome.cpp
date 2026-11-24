@@ -439,24 +439,12 @@ prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc) {
         row1Sized->setHeightOverride(kCompactTitleRowUVE);
         row1Sized->setContent(row1);
 
-        const bool hasSecondRow = desc.toolbarRow != nullptr;
+        // As on desktop: the logo sits beside the title row only, and the toolbar runs the full width
+        // under it (a logo spanning both rows pushed every editor's toolbar right and took its height).
         auto outer = prism::hbox();
-        outer->add(prism::make<LogoBoxUVE>(/*compact*/ true, /*spansTwoRows*/ hasSecondRow),
+        outer->add(prism::make<LogoBoxUVE>(/*compact*/ true, /*spansTwoRows*/ false),
                    prism::Slot{0.0F, {}, prism::HAlign::Left, prism::VAlign::Fill});
-
-        if (hasSecondRow) {
-            auto row1Border = prism::make<prism::Border>();
-            row1Border->setBackground(prism::ThemeColor(&prism::Theme::header));
-            row1Border->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
-            row1Border->setChild(row1Sized);
-
-            auto rightCol = prism::vbox();
-            rightCol->add(row1Border);
-            rightCol->add(desc.toolbarRow);
-            outer->add(rightCol, prism::Slot{1.0F});
-        } else {
-            outer->add(row1Sized, prism::Slot{1.0F});
-        }
+        outer->add(row1Sized, prism::Slot{1.0F});
 
         if (desc.outTitleRow != nullptr) {
             *desc.outTitleRow = outer;
@@ -466,6 +454,12 @@ prism::Ref<prism::Widget> BuildEditorHeaderUVE(EditorHeaderDescUVE desc) {
         bar->setBackground(prism::ThemeColor(&prism::Theme::header));
         bar->setBorder(prism::ThemeColor(&prism::Theme::border), prism::Margin(0.0F, 0.0F, 0.0F, 1.0F));
         bar->setChild(outer);
+        if (desc.toolbarRow != nullptr) {
+            auto combined = prism::vbox();
+            combined->add(bar);
+            combined->add(desc.toolbarRow);
+            return combined;
+        }
         return bar;
     }
 
